@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, exists, inArray } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE } from '@boardsesh/board-config';
 import { AURORA_BOARDS } from '@boardsesh/shared-schema';
@@ -38,7 +38,9 @@ function validateAndParseSetIds(setIds: string): number[] {
  * Assert that a board configuration is represented by the authoritative
  * hardware catalog. The helper never rewrites the caller's setIds: duplicate
  * and differently ordered IDs are accepted when every unique membership is
- * valid for the exact layout and product size.
+ * valid for the exact layout and product size. Aurora placements are
+ * layout-and-set specific (not size specific), so each membership must also
+ * have a physical placement on that layout.
  */
 export async function assertKnownBoardConfig(
   boardType: string,
@@ -84,6 +86,18 @@ export async function assertKnownBoardConfig(
         eq(dbSchema.boardProductSizesLayoutsSets.layoutId, layoutId),
         eq(dbSchema.boardProductSizesLayoutsSets.productSizeId, productSizeId),
         inArray(dbSchema.boardProductSizesLayoutsSets.setId, uniqueSetIds),
+        exists(
+          db
+            .select({ id: dbSchema.boardPlacements.id })
+            .from(dbSchema.boardPlacements)
+            .where(
+              and(
+                eq(dbSchema.boardPlacements.boardType, dbSchema.boardProductSizesLayoutsSets.boardType),
+                eq(dbSchema.boardPlacements.layoutId, dbSchema.boardProductSizesLayoutsSets.layoutId),
+                eq(dbSchema.boardPlacements.setId, dbSchema.boardProductSizesLayoutsSets.setId),
+              ),
+            ),
+        ),
       ),
     );
 

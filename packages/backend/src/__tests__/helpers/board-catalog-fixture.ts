@@ -8,6 +8,7 @@ export type AuroraCatalogConfigFixture = {
   layoutId: number;
   sizeId: number;
   setIds: number[];
+  placementSetIds?: number[];
   associationIdBase: number;
   isListed?: boolean;
 };
@@ -18,12 +19,16 @@ type CatalogKey = { boardType: string; id: number };
  * Install the smallest real relational catalog needed by resolver integration
  * tests. Only rows actually inserted by this call are removed, so the helper
  * neither overwrites nor deletes catalog data another fixture already owns.
+ * Every associated set gets a matching placement unless placementSetIds
+ * deliberately supplies a smaller set for a listed-but-unplaced fixture.
  */
 export async function seedAuroraCatalogFixtures(configs: AuroraCatalogConfigFixture[]): Promise<() => Promise<void>> {
   const insertedProducts: CatalogKey[] = [];
   const insertedLayouts: CatalogKey[] = [];
   const insertedSizes: CatalogKey[] = [];
   const insertedSets: CatalogKey[] = [];
+  const insertedHoles: CatalogKey[] = [];
+  const insertedPlacements: CatalogKey[] = [];
   const insertedAssociations: CatalogKey[] = [];
 
   for (const config of configs) {
@@ -74,6 +79,35 @@ export async function seedAuroraCatalogFixtures(configs: AuroraCatalogConfigFixt
       if (insertedSet) insertedSets.push(insertedSet);
     }
 
+    const holeId = config.associationIdBase;
+    const [insertedHole] = await db
+      .insert(dbSchema.boardHoles)
+      .values({
+        boardType: config.boardType,
+        id: holeId,
+        productId: config.productId,
+        name: 'Catalog validation test hole',
+      })
+      .onConflictDoNothing()
+      .returning({ boardType: dbSchema.boardHoles.boardType, id: dbSchema.boardHoles.id });
+    if (insertedHole) insertedHoles.push(insertedHole);
+
+    const placementSetIds = config.placementSetIds ?? config.setIds;
+    for (const [placementIndex, setId] of placementSetIds.entries()) {
+      const [insertedPlacement] = await db
+        .insert(dbSchema.boardPlacements)
+        .values({
+          boardType: config.boardType,
+          id: config.associationIdBase + placementIndex,
+          layoutId: config.layoutId,
+          holeId,
+          setId,
+        })
+        .onConflictDoNothing()
+        .returning({ boardType: dbSchema.boardPlacements.boardType, id: dbSchema.boardPlacements.id });
+      if (insertedPlacement) insertedPlacements.push(insertedPlacement);
+    }
+
     for (const [setIndex, setId] of config.setIds.entries()) {
       const [insertedAssociation] = await db
         .insert(dbSchema.boardProductSizesLayoutsSets)
@@ -104,6 +138,16 @@ export async function seedAuroraCatalogFixtures(configs: AuroraCatalogConfigFixt
             eq(dbSchema.boardProductSizesLayoutsSets.id, id),
           ),
         );
+    }
+    for (const { boardType, id } of insertedPlacements.reverse()) {
+      await db
+        .delete(dbSchema.boardPlacements)
+        .where(and(eq(dbSchema.boardPlacements.boardType, boardType), eq(dbSchema.boardPlacements.id, id)));
+    }
+    for (const { boardType, id } of insertedHoles.reverse()) {
+      await db
+        .delete(dbSchema.boardHoles)
+        .where(and(eq(dbSchema.boardHoles.boardType, boardType), eq(dbSchema.boardHoles.id, id)));
     }
     for (const { boardType, id } of insertedSets.reverse()) {
       await db

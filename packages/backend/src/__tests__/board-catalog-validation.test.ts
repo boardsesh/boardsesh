@@ -19,6 +19,7 @@ const LAYOUT_ID = 2_100_412_931;
 const SIZE_ID = 2_100_412_932;
 const SET_A_ID = 2_100_412_933;
 const SET_B_ID = 2_100_412_934;
+const SET_C_ID = 2_100_412_939;
 const OTHER_LAYOUT_ID = 2_100_412_935;
 const OTHER_SIZE_ID = 2_100_412_936;
 const UNKNOWN_LAYOUT_ID = 2_100_412_940;
@@ -135,7 +136,8 @@ beforeAll(async () => {
       productId: PRODUCT_ID,
       layoutId: LAYOUT_ID,
       sizeId: SIZE_ID,
-      setIds: [SET_A_ID, SET_B_ID],
+      setIds: [SET_A_ID, SET_B_ID, SET_C_ID],
+      placementSetIds: [SET_A_ID, SET_B_ID],
       associationIdBase: 2_100_412_950,
       isListed: false,
     },
@@ -254,7 +256,12 @@ describe('assertKnownBoardConfig', () => {
       assertKnownBoardConfig('kilter', LAYOUT_ID, SIZE_ID, `${SET_B_ID},${SET_A_ID},${SET_B_ID}`),
     ).resolves.toBeUndefined();
 
-    expect(selectSpy).toHaveBeenCalledTimes(1);
+    expect(selectSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a listed set with no placement, including a partial valid and orphaned set selection', async () => {
+    await expectUnknownBoardConfig(assertKnownBoardConfig('kilter', LAYOUT_ID, SIZE_ID, String(SET_C_ID)));
+    await expectUnknownBoardConfig(assertKnownBoardConfig('kilter', LAYOUT_ID, SIZE_ID, `${SET_A_ID},${SET_C_ID}`));
   });
 
   it('rejects a set associated only with another layout, another size, or no association', async () => {
@@ -285,6 +292,7 @@ describe('assertKnownBoardConfig', () => {
   });
 
   it('validates MoonBoard against its exact static size, layout, and layout-specific sets', async () => {
+    const selectSpy = vi.spyOn(db, 'select');
     const moonboardLayout = MOONBOARD_LAYOUTS['moonboard-2016'];
     const [firstSet, secondSet] = MOONBOARD_SETS['moonboard-2016'];
 
@@ -308,6 +316,7 @@ describe('assertKnownBoardConfig', () => {
         String(MOONBOARD_SETS['moonboard-2010'][0].id),
       ),
     );
+    expect(selectSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -343,6 +352,20 @@ describe('board-presence catalog gates', () => {
           sizeId: UNKNOWN_SIZE_ID,
           setIds: String(UNKNOWN_SET_ID),
         },
+        authCtx(AUTO_GYM_USER_ID),
+      ),
+    );
+
+    expect(await sideEffectCounts(AUTO_GYM_USER_ID)).toEqual(before);
+  });
+
+  it('rejects an authenticated listed-but-unplaced config before creating the system owner or board', async () => {
+    const before = await sideEffectCounts(AUTO_GYM_USER_ID);
+
+    await expectUnknownBoardConfig(
+      boardPresenceMutations.resolveBoardForConfig(
+        undefined,
+        { boardType: 'kilter', layoutId: LAYOUT_ID, sizeId: SIZE_ID, setIds: String(SET_C_ID) },
         authCtx(AUTO_GYM_USER_ID),
       ),
     );
@@ -516,6 +539,26 @@ describe('board-presence catalog gates', () => {
     expect(await sideEffectCounts(SERIAL_USER_ID)).toEqual(before);
   });
 
+  it('rejects a fresh serial-board insert for a listed-but-unplaced config with no board side effect', async () => {
+    const before = await sideEffectCounts(SERIAL_USER_ID);
+
+    await expectUnknownBoardConfig(
+      boardPresenceMutations.resolveBoardForSerial(
+        undefined,
+        {
+          serial: 'CATALOG-UNPLACED-1',
+          boardType: 'kilter',
+          layoutId: LAYOUT_ID,
+          sizeId: SIZE_ID,
+          setIds: String(SET_C_ID),
+        },
+        authCtx(SERIAL_USER_ID),
+      ),
+    );
+
+    expect(await sideEffectCounts(SERIAL_USER_ID)).toEqual(before);
+  });
+
   it('creates a fresh serial board for a valid catalog config without creating a gym', async () => {
     const before = await sideEffectCounts(SERIAL_USER_ID);
     const submittedSerial = '  catalog-fresh-valid-1  ';
@@ -641,6 +684,20 @@ describe('social board create catalog gate', () => {
     expect(await sideEffectCounts(AUTO_GYM_USER_ID)).toEqual(before);
   });
 
+  it('rejects a listed-but-unplaced auto-gym-path config before creating a board or gym', async () => {
+    const before = await sideEffectCounts(AUTO_GYM_USER_ID);
+
+    await expectUnknownBoardConfig(
+      socialBoardMutations.createBoard(
+        undefined,
+        { input: createInput({ setIds: String(SET_C_ID) }) },
+        authCtx(AUTO_GYM_USER_ID),
+      ),
+    );
+
+    expect(await sideEffectCounts(AUTO_GYM_USER_ID)).toEqual(before);
+  });
+
   it('rejects an unknown plain-insert-path config without touching the existing gym or boards', async () => {
     await db.insert(dbSchema.gyms).values({
       uuid: uuidv4(),
@@ -750,6 +807,32 @@ describe('social board update catalog gate', () => {
       socialBoardMutations.updateBoard(
         undefined,
         { input: { boardUuid: board.uuid, layoutId: OTHER_LAYOUT_ID } },
+        authCtx(UPDATE_USER_ID),
+      ),
+    );
+
+    const [after] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+    expect(after).toEqual(before);
+  });
+
+  it('rejects a listed-but-unplaced partial config edit before the write and preserves the row', async () => {
+    const board = await insertTestBoard({
+      ownerId: UPDATE_USER_ID,
+      layoutId: LAYOUT_ID,
+      sizeId: SIZE_ID,
+      setIds: String(SET_A_ID),
+      name: 'Before unplaced rejection',
+    });
+    const before = await db
+      .select()
+      .from(dbSchema.userBoards)
+      .where(eq(dbSchema.userBoards.id, board.id))
+      .then((rows) => rows[0]);
+
+    await expectUnknownBoardConfig(
+      socialBoardMutations.updateBoard(
+        undefined,
+        { input: { boardUuid: board.uuid, setIds: String(SET_C_ID) } },
         authCtx(UPDATE_USER_ID),
       ),
     );
