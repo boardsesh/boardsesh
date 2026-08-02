@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { eq, and, count, isNull, isNotNull, sql, ilike, or, desc, inArray, type SQL } from 'drizzle-orm';
+import { eq, ne, and, count, isNull, isNotNull, notExists, sql, ilike, or, desc, inArray, type SQL } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
@@ -465,17 +465,23 @@ export const MAX_FOREIGN_GYM_LINKS = 20;
  * edit rights over the board (see `viewerCanAdminGym` → `requireBoardEditAccess`).
  */
 export async function requireBoardGymLinkAccess(opts: {
+  ctx: ConnectionContext;
   gymUuid: string;
   userId: string;
   boardLatitude: number | null;
   boardLongitude: number | null;
 }): Promise<typeof dbSchema.gyms.$inferSelect> {
-  const { gymUuid, userId, boardLatitude, boardLongitude } = opts;
+  const { ctx, gymUuid, userId, boardLatitude, boardLongitude } = opts;
   const { gym, isOwner, memberRole } = await loadGymWithMemberRole(gymUuid, userId);
 
   // Staff keep the unconditional path — including for gyms or boards that have
   // no coordinates at all, which would otherwise fail the proximity test.
   if (isOwner || memberRole === 'admin') return gym;
+
+  // The tight bucket belongs to the self-service path only. Charged here rather
+  // than at the call site so a gym owner adding several boards to their OWN gym
+  // isn't throttled by a limit named for a path they're not on.
+  await applyRateLimit(ctx, 5, 'linkBoardToForeignGym');
 
   // A private gym must be indistinguishable from a non-existent one, or this
   // becomes a probe for private home-wall gyms.
@@ -505,9 +511,20 @@ export async function requireBoardGymLinkAccess(opts: {
         eq(dbSchema.userBoards.ownerId, userId),
         isNull(dbSchema.userBoards.deletedAt),
         isNull(dbSchema.gyms.deletedAt),
-        sql`${dbSchema.gyms.id} <> ${gym.id}`,
-        sql`${dbSchema.gyms.ownerId} <> ${userId}`,
-        sql`NOT EXISTS (SELECT 1 FROM gym_members gm WHERE gm.gym_id = ${dbSchema.gyms.id} AND gm.user_id = ${userId} AND gm.role = 'admin')`,
+        ne(dbSchema.gyms.id, gym.id),
+        ne(dbSchema.gyms.ownerId, userId),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(dbSchema.gymMembers)
+            .where(
+              and(
+                eq(dbSchema.gymMembers.gymId, dbSchema.gyms.id),
+                eq(dbSchema.gymMembers.userId, userId),
+                eq(dbSchema.gymMembers.role, 'admin'),
+              ),
+            ),
+        ),
       ),
     );
   if (foreignGyms >= MAX_FOREIGN_GYM_LINKS) {
@@ -1268,11 +1285,8 @@ export const socialGymMutations = {
     }
 
     if (validatedInput.gymUuid) {
-      // Linking to a gym the caller doesn't run is the common case (a climber
-      // putting their board on the gym they climb at), so it gets its own,
-      // tighter rate bucket than the 20/min this mutation otherwise allows.
-      await applyRateLimit(ctx, 5, 'linkBoardToForeignGym');
       const gym = await requireBoardGymLinkAccess({
+        ctx,
         gymUuid: validatedInput.gymUuid,
         userId,
         boardLatitude: board.latitude,
