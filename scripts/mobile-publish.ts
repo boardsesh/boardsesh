@@ -79,6 +79,17 @@ export function buildSelfHostedEoasArgs(
   platform: OtaPublishPlatform,
   updateMessage: string,
 ): string[] {
+  const sourceMapArgs =
+    channelName === 'production'
+      ? [
+          // Keep the exact production export that eoas uploads on disk with
+          // external source maps. The platform-specific workflow uploads this
+          // directory to Sentry immediately; the next publish replaces `dist`.
+          '--dumpSourcemap',
+          '--outputDir',
+          'dist',
+        ]
+      : [];
   return [
     EOAS_PACKAGE_SPEC,
     'publish',
@@ -88,6 +99,7 @@ export function buildSelfHostedEoasArgs(
     platform,
     '--message',
     updateMessage,
+    ...sourceMapArgs,
     '--nonInteractive',
     // The repo uses bun; force bunx so eoas spawns `bunx expo export` regardless
     // of the nearest package.json's packageManager field.

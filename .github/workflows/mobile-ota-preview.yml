@@ -406,6 +406,10 @@ jobs:
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
         run: vp run mobile:publish -- --channel "$CHANNEL" --platform android
 
+      # Only the production channel asks mobile:publish to retain external maps
+      # in dist. PR previews use pr-N channels, so they neither keep nor upload
+      # source maps; never provide SENTRY_AUTH_TOKEN to this PR-author-code job.
+
   # ── Map pr-<number> → its same-named branch on the self-hosted server. Channel
   # creation/mapping is a dashboard-admin action the eoo_ publish key CANNOT perform — so it
   # logs in with OTA_ADMIN_* (ota-preview-unattended environment, no reviewers). This is

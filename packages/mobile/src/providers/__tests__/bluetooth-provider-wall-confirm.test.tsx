@@ -6,16 +6,29 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import type { BoardSerialConfig } from '@boardsesh/graphql/operations';
 import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
-import type { PickerState } from '../../lib/ble/use-board-bluetooth';
-import type { BleDisconnectInfo } from '../../lib/ble/types';
+import type { BleConnectionEnded, BleConnectionHandle, PickerState } from '../../lib/ble/use-board-bluetooth';
 import { setHoldColorOverridesPreference } from '../../lib/hold-color-overrides';
 
 type TestResolvedBoard = { boardId: number };
 
 type BluetoothHookOptions = {
-  onConnectSuccess?: (serial: string | null) => void;
+  onConnectSuccess?: (serial: string | null, connection: BleConnectionHandle) => void;
+  onConnectionEnded?: (connection: BleConnectionEnded) => void;
   holdsData?: unknown;
 };
+
+function makeConnectionHandle(
+  generation: number = 1,
+  setIds: string = '1,20',
+  setAnalyticsBoardId: (boardId: number) => boolean = () => true,
+): BleConnectionHandle {
+  return {
+    generation,
+    configIdentity: `kilter:1:10:${setIds}`,
+    config: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds },
+    setAnalyticsBoardId,
+  };
+}
 type SendFramesToBoard = (
   frames: string,
   mirrored?: boolean,
@@ -41,7 +54,7 @@ const queue = vi.hoisted(() => ({
   participantId: 'participant-self' as string | null,
   lastConnectedBoardSerial: null as string | null,
   confirmClimbOnWall: vi.fn(async () => {}),
-  reportWallDisconnect: vi.fn(async () => {}),
+  reportWallDisconnect: vi.fn(async (_sessionId?: string | null) => {}),
   setSessionBoardSerial: vi.fn(async () => {}),
 }));
 
@@ -57,7 +70,6 @@ const bluetooth = vi.hoisted(() => {
       pickerState: null as PickerState | null,
       reconnectSerialForCurrentBoard: null,
       connectInitialSendRef: { current: null as { frames: string; mirrored: boolean; colorSignature: string } | null },
-      lastDisconnectInfoRef: { current: null as BleDisconnectInfo | null },
     },
     useBoardBluetooth: vi.fn((options: BluetoothHookOptions) => {
       mock.options = options;
@@ -179,14 +191,17 @@ vi.mock('../queue-provider', () => ({
     state: { currentClimbQueueItem: queue.currentClimbQueueItem, queue: [] },
   }),
   useQueueActions: () => ({ setCurrentClimb: vi.fn() }),
-  useQueueSessionControls: () => ({
-    sessionId: queue.sessionId,
-    participantId: queue.participantId,
-    lastConnectedBoardSerial: queue.lastConnectedBoardSerial,
-    confirmClimbOnWall: queue.confirmClimbOnWall,
-    reportWallDisconnect: queue.reportWallDisconnect,
-    setSessionBoardSerial: queue.setSessionBoardSerial,
-  }),
+  useQueueSessionControls: () => {
+    const activeSessionId = queue.sessionId;
+    return {
+      sessionId: activeSessionId,
+      participantId: queue.participantId,
+      lastConnectedBoardSerial: queue.lastConnectedBoardSerial,
+      confirmClimbOnWall: queue.confirmClimbOnWall,
+      reportWallDisconnect: () => queue.reportWallDisconnect(activeSessionId),
+      setSessionBoardSerial: queue.setSessionBoardSerial,
+    };
+  },
 }));
 
 vi.mock('../toast-provider', () => ({
@@ -294,6 +309,8 @@ describe('BluetoothProvider wall-confirm integration', () => {
     bluetooth.state.loading = false;
     bluetooth.state.pickerState = null;
     bluetooth.state.reconnectSerialForCurrentBoard = null;
+    bluetooth.state.disconnect.mockReset();
+    bluetooth.state.disconnect.mockResolvedValue(undefined);
     bluetooth.state.sendFramesToBoard.mockReset();
     bluetooth.state.sendFramesToBoard.mockResolvedValue(true);
     bluetooth.state.connectInitialSendRef.current = null;
@@ -309,6 +326,8 @@ describe('BluetoothProvider wall-confirm integration', () => {
     presence.resolveAndBindBoardByUuid.mockResolvedValue(null);
     presence.reportClimbForBoard.mockClear();
     presence.reportClimbForBoard.mockResolvedValue(true);
+    presence.reportDisconnectForBoard.mockClear();
+    presence.reportDisconnectForBoard.mockResolvedValue(true);
     presence.showUndoWallChangeSnackbar.mockClear();
     capturedBluetooth = null;
   });
@@ -581,7 +600,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
   it('stores a newly connected board serial on active sessions', () => {
     renderProvider();
 
-    bluetooth.options?.onConnectSuccess?.('SERIAL-1');
+    bluetooth.options?.onConnectSuccess?.('SERIAL-1', makeConnectionHandle());
 
     expect(queue.setSessionBoardSerial).toHaveBeenCalledWith('SERIAL-1');
     expect(analytics.track).toHaveBeenCalledWith('Session Board Serial Set', {
@@ -596,7 +615,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
     queue.sessionId = null;
     renderProvider();
 
-    bluetooth.options?.onConnectSuccess?.('SERIAL-1');
+    bluetooth.options?.onConnectSuccess?.('SERIAL-1', makeConnectionHandle());
     expect(queue.setSessionBoardSerial).not.toHaveBeenCalled();
 
     queue.sessionId = 'session-1';
@@ -604,7 +623,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
     cleanup();
     renderProvider();
 
-    bluetooth.options?.onConnectSuccess?.('SERIAL-1');
+    bluetooth.options?.onConnectSuccess?.('SERIAL-1', makeConnectionHandle());
     expect(queue.setSessionBoardSerial).not.toHaveBeenCalled();
   });
 
@@ -635,7 +654,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       presence.enabled = true;
       renderProvider();
 
-      bluetooth.options?.onConnectSuccess?.('SERIAL-1');
+      bluetooth.options?.onConnectSuccess?.('SERIAL-1', makeConnectionHandle());
 
       expect(presence.resolveAndBindBoard).toHaveBeenCalledWith({
         serial: 'SERIAL-1',
@@ -646,11 +665,127 @@ describe('BluetoothProvider wall-confirm integration', () => {
       });
     });
 
+    it('resolves against the immutable connection snapshot after the rendered route changes', () => {
+      presence.enabled = true;
+      const connection = makeConnectionHandle();
+      const { rerender } = renderProvider();
+      rerender(
+        createElement(BluetoothProvider, {
+          boardName: 'tension',
+          layoutId: 8,
+          sizeId: 12,
+          setIds: '3,4',
+          children: createElement('div', null),
+        }),
+      );
+
+      act(() => {
+        bluetooth.options?.onConnectSuccess?.('SERIAL-1', connection);
+      });
+
+      expect(presence.resolveAndBindBoard).toHaveBeenCalledWith({
+        serial: 'SERIAL-1',
+        boardType: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1,20',
+      });
+    });
+
+    it('attaches a cached board binding to a reconnect generation and releases that holder on disconnect', async () => {
+      presence.enabled = true;
+      presence.boardId = 99;
+      presence.resolveAndBindBoard.mockResolvedValueOnce({ boardId: 99 });
+      bluetooth.state.isConnected = false;
+      let attachedBoardId: number | undefined;
+      const connection = makeConnectionHandle(2, '1,20', (boardId) => {
+        attachedBoardId = boardId;
+        return true;
+      });
+      const { rerender } = renderProvider();
+
+      act(() => {
+        bluetooth.options?.onConnectSuccess?.('SERIAL-1', connection);
+      });
+      await waitFor(() => {
+        expect(attachedBoardId).toBe(99);
+      });
+
+      bluetooth.state.isConnected = true;
+      rerender(
+        createElement(BluetoothProvider, {
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,20',
+          children: createElement('div', null),
+        }),
+      );
+      await waitFor(() => {
+        expect(presence.reportClimbForBoard).toHaveBeenCalledWith(
+          99,
+          { uuid: 'queue-climb-1', climb: { uuid: 'climb-1' } },
+          40,
+        );
+      });
+
+      act(() => {
+        bluetooth.options?.onConnectionEnded?.({
+          reason: 'unexpected',
+          disconnectTrigger: 'link_drop',
+          connectionDurationSec: 8,
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,20',
+          boardId: attachedBoardId,
+          inSession: true,
+        });
+      });
+
+      expect(presence.reportDisconnectForBoard).toHaveBeenCalledWith(99);
+    });
+
+    it('does not attach a rendered board id when the connection resolver returns null', async () => {
+      presence.enabled = true;
+      presence.boardId = 99;
+      let finishResolve: (binding: TestResolvedBoard | null) => void = () => {};
+      presence.resolveAndBindBoard.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishResolve = resolve;
+        }),
+      );
+      const setAnalyticsBoardId = vi.fn(() => true);
+      renderProvider();
+
+      act(() => {
+        bluetooth.options?.onConnectSuccess?.('DIFFERENT-SERIAL', makeConnectionHandle(2, '1,20', setAnalyticsBoardId));
+      });
+      await act(async () => {
+        finishResolve(null);
+      });
+
+      expect(setAnalyticsBoardId).not.toHaveBeenCalled();
+      act(() => {
+        bluetooth.options?.onConnectionEnded?.({
+          reason: 'unexpected',
+          disconnectTrigger: 'link_drop',
+          connectionDurationSec: 3,
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,20',
+          inSession: false,
+        });
+      });
+      expect(presence.reportDisconnectForBoard).not.toHaveBeenCalled();
+    });
+
     it('does NOT resolve the board on connect when the flag is off', () => {
       presence.enabled = false;
       renderProvider();
 
-      bluetooth.options?.onConnectSuccess?.('SERIAL-1');
+      bluetooth.options?.onConnectSuccess?.('SERIAL-1', makeConnectionHandle());
 
       expect(presence.resolveAndBindBoard).not.toHaveBeenCalled();
     });
@@ -659,7 +794,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       presence.enabled = true;
       renderProvider();
 
-      bluetooth.options?.onConnectSuccess?.(null);
+      bluetooth.options?.onConnectSuccess?.(null, makeConnectionHandle());
 
       expect(presence.resolveAndBindBoard).not.toHaveBeenCalled();
       expect(presence.resolveAndBindBoardByConfig).toHaveBeenCalledWith({
@@ -692,137 +827,113 @@ describe('BluetoothProvider wall-confirm integration', () => {
       expect(presence.showUndoWallChangeSnackbar).not.toHaveBeenCalled();
     });
 
-    it('attaches the captured disconnect reason to the unexpected-drop analytics event', async () => {
-      // Start connected so the next transition reads as a real drop, not the
-      // initial mount.
-      presence.boardId = 99;
-      bluetooth.state.isConnected = true;
-      bluetooth.state.lastDisconnectInfoRef.current = null;
-
-      const { rerender } = renderProvider(createElement(BluetoothProbe));
-      analytics.track.mockClear();
-
-      // The hook stashes a native-iOS peer-terminated drop (CBError 7 — what a
-      // takeover looks like) just before the link goes down.
-      bluetooth.state.lastDisconnectInfoRef.current = {
-        source: 'native-ios',
-        iosErrorCode: 7,
-        errorDomain: 'CBErrorDomain',
-        description: 'The specified device has disconnected from us.',
-      };
-      bluetooth.state.isConnected = false;
-      rerender(
-        createElement(BluetoothProvider, {
-          boardName: 'kilter',
-          layoutId: 1,
-          sizeId: 10,
-          setIds: '1,20',
-          children: createElement(BluetoothProbe),
-        }),
-      );
-
-      await waitFor(() => {
-        expect(analytics.track).toHaveBeenCalledWith(
-          'Bluetooth Disconnected',
-          expect.objectContaining({
-            reason: 'unexpected',
-            boardId: 99,
-            disconnectSource: 'native-ios',
-            disconnectIosCode: 7,
-            disconnectErrorDomain: 'CBErrorDomain',
-            disconnectReason: 'The specified device has disconnected from us.',
-            disconnectCategory: 'peer_terminated',
-          }),
-        );
-      });
-    });
-
-    it('tags a write-failure drop with disconnectSource write-failure', async () => {
-      bluetooth.state.isConnected = true;
-      bluetooth.state.lastDisconnectInfoRef.current = null;
-
-      const { rerender } = renderProvider(createElement(BluetoothProbe));
-      analytics.track.mockClear();
-
-      // The write-failure path (use-board-bluetooth) stashes this shape before
-      // flipping the link down — no platform codes, just the source.
-      bluetooth.state.lastDisconnectInfoRef.current = { source: 'write-failure' };
-      bluetooth.state.isConnected = false;
-      rerender(
-        createElement(BluetoothProvider, {
-          boardName: 'kilter',
-          layoutId: 1,
-          sizeId: 10,
-          setIds: '1,20',
-          children: createElement(BluetoothProbe),
-        }),
-      );
-
-      await waitFor(() => {
-        expect(analytics.track).toHaveBeenCalledWith(
-          'Bluetooth Disconnected',
-          expect.objectContaining({
-            reason: 'unexpected',
-            disconnectSource: 'write-failure',
-            disconnectCategory: 'write_failure',
-          }),
-        );
-      });
-    });
-
-    it('omits reason fields when no disconnect info was captured', async () => {
-      bluetooth.state.isConnected = true;
-      bluetooth.state.lastDisconnectInfoRef.current = null;
-
-      const { rerender } = renderProvider(createElement(BluetoothProbe));
-      analytics.track.mockClear();
-
-      // Ref stays null (a drop the adapters didn't classify) — the event still
-      // fires, just without any disconnect* reason fields.
-      bluetooth.state.isConnected = false;
-      rerender(
-        createElement(BluetoothProvider, {
-          boardName: 'kilter',
-          layoutId: 1,
-          sizeId: 10,
-          setIds: '1,20',
-          children: createElement(BluetoothProbe),
-        }),
-      );
-
-      await waitFor(() => {
-        expect(analytics.track).toHaveBeenCalledWith(
-          'Bluetooth Disconnected',
-          expect.objectContaining({ reason: 'unexpected' }),
-        );
-      });
-      const disconnectCall = analytics.track.mock.calls.find(([event]) => event === 'Bluetooth Disconnected');
-      expect(disconnectCall?.[1].disconnectSource).toBeUndefined();
-      expect(disconnectCall?.[1].disconnectIosCode).toBeUndefined();
-      // The category is always present on unexpected drops — an unclassifiable
-      // one reads 'unknown' so its share stays measurable in PostHog.
-      expect(disconnectCall?.[1].disconnectCategory).toBe('unknown');
-    });
-
-    it('tags a user-initiated disconnect with the resolved board id', async () => {
-      presence.boardId = 99;
-      bluetooth.state.isConnected = true;
-
+    it('maps an unexpected hook end record to analytics and releases its snapshotted board', () => {
       renderProvider(createElement(BluetoothProbe));
       analytics.track.mockClear();
+      queue.reportWallDisconnect.mockClear();
+      presence.reportDisconnectForBoard.mockClear();
 
-      await act(async () => {
-        await capturedBluetooth?.disconnect();
+      bluetooth.options?.onConnectionEnded?.({
+        reason: 'unexpected',
+        disconnectTrigger: 'link_drop',
+        connectionDurationSec: 151,
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1,20',
+        boardId: 99,
+        inSession: true,
+        disconnectInfo: {
+          source: 'native-ios',
+          iosErrorCode: 7,
+          errorDomain: 'CBErrorDomain',
+          description: 'The specified device has disconnected from us.',
+        },
       });
 
-      expect(analytics.track).toHaveBeenCalledWith(
-        'Bluetooth Disconnected',
-        expect.objectContaining({ reason: 'user', boardId: 99 }),
+      expect(queue.reportWallDisconnect).toHaveBeenCalledOnce();
+      expect(presence.reportDisconnectForBoard).toHaveBeenCalledWith(99);
+      expect(analytics.track).toHaveBeenCalledWith('Bluetooth Disconnected', {
+        reason: 'unexpected',
+        disconnectTrigger: 'link_drop',
+        connectionDurationSec: 151,
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1,20',
+        boardId: 99,
+        inSession: true,
+        disconnectSource: 'native-ios',
+        disconnectReason: 'The specified device has disconnected from us.',
+        disconnectContext: undefined,
+        disconnectIosCode: 7,
+        disconnectAndroidCode: undefined,
+        disconnectBleCode: undefined,
+        disconnectErrorDomain: 'CBErrorDomain',
+        disconnectCategory: 'peer_terminated',
+      });
+    });
+
+    it('uses old-board attribution for a deliberate config switch and omits transport fields', () => {
+      presence.boardId = 222;
+      renderProvider(createElement(BluetoothProbe));
+      analytics.track.mockClear();
+      presence.reportDisconnectForBoard.mockClear();
+
+      bluetooth.options?.onConnectionEnded?.({
+        reason: 'user',
+        disconnectTrigger: 'config_switch',
+        connectionDurationSec: 12,
+        boardName: 'tension',
+        layoutId: 8,
+        sizeId: 12,
+        setIds: '3,4',
+        boardId: 111,
+        inSession: false,
+      });
+
+      expect(queue.reportWallDisconnect).toHaveBeenCalledWith('session-1');
+      expect(presence.reportDisconnectForBoard).toHaveBeenCalledWith(111);
+      const disconnectProperties = analytics.track.mock.calls.find(
+        ([event]) => event === 'Bluetooth Disconnected',
+      )?.[1];
+      expect(disconnectProperties).toEqual(
+        expect.objectContaining({
+          reason: 'user',
+          disconnectTrigger: 'config_switch',
+          boardName: 'tension',
+          boardId: 111,
+          connectionDurationSec: 12,
+        }),
       );
-      // Deliberate disconnects have nothing to classify — the category is an
-      // unexpected-drop-only field, so queries read its absence as "user chose".
-      const userDisconnectCall = analytics.track.mock.calls.find(([event]) => event === 'Bluetooth Disconnected');
-      expect(userDisconnectCall?.[1].disconnectCategory).toBeUndefined();
+      expect(disconnectProperties).not.toHaveProperty('disconnectCategory');
+      expect(disconnectProperties).not.toHaveProperty('disconnectSource');
+    });
+
+    it('coalesces repeated user disconnects while the adapter teardown is pending', async () => {
+      let resolveAdapterDisconnect: () => void = () => {};
+      bluetooth.state.disconnect.mockReturnValue(
+        new Promise<void>((resolve) => {
+          resolveAdapterDisconnect = resolve;
+        }),
+      );
+      bluetooth.state.isConnected = true;
+      renderProvider(createElement(BluetoothProbe));
+
+      let firstDisconnect: Promise<void> | undefined;
+      let secondDisconnect: Promise<void> | undefined;
+      act(() => {
+        firstDisconnect = capturedBluetooth?.disconnect();
+        secondDisconnect = capturedBluetooth?.disconnect();
+      });
+
+      expect(bluetooth.state.disconnect).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        resolveAdapterDisconnect();
+        await Promise.all([firstDisconnect, secondDisconnect]);
+      });
+      expect(bluetooth.state.disconnect).toHaveBeenCalledTimes(1);
     });
 
     it('shows the Undo snackbar once after an armed control gain reports a wall change', async () => {
@@ -1012,7 +1123,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       );
 
       const { rerender } = renderProvider();
-      bluetooth.options?.onConnectSuccess?.('SERIAL-PENDING');
+      bluetooth.options?.onConnectSuccess?.('SERIAL-PENDING', makeConnectionHandle());
 
       bluetooth.state.isConnected = true;
       rerender(
@@ -1040,6 +1151,134 @@ describe('BluetoothProvider wall-confirm integration', () => {
       });
     });
 
+    it('ignores a generation-one resolve that lands during generation two, then accepts generation two', async () => {
+      presence.enabled = true;
+      presence.boardId = null;
+      bluetooth.state.isConnected = false;
+      let resolveGenerationOne: (value: { boardId: number }) => void = () => {};
+      let resolveGenerationTwo: (value: { boardId: number }) => void = () => {};
+      presence.resolveAndBindBoard
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolveGenerationOne = resolve;
+          }),
+        )
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolveGenerationTwo = resolve;
+          }),
+        );
+      const setGenerationOneBoardId = vi.fn(() => false);
+      const setGenerationTwoBoardId = vi.fn(() => true);
+      const generationOne = makeConnectionHandle(1, '1,20', setGenerationOneBoardId);
+      const generationTwo = makeConnectionHandle(2, '1,20', setGenerationTwoBoardId);
+
+      const { rerender } = renderProvider();
+      bluetooth.options?.onConnectSuccess?.('SERIAL-ONE', generationOne);
+      bluetooth.options?.onConnectSuccess?.('SERIAL-TWO', generationTwo);
+
+      bluetooth.state.isConnected = true;
+      rerender(
+        createElement(BluetoothProvider, {
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,20',
+          children: createElement('div', null),
+        }),
+      );
+      await waitFor(() => {
+        expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1');
+      });
+
+      await act(async () => {
+        resolveGenerationOne({ boardId: 111 });
+      });
+      expect(setGenerationOneBoardId).toHaveBeenCalledWith(111);
+      expect(presence.reportClimbForBoard).not.toHaveBeenCalled();
+
+      await act(async () => {
+        resolveGenerationTwo({ boardId: 222 });
+      });
+      expect(setGenerationTwoBoardId).toHaveBeenCalledWith(222);
+      await waitFor(() => {
+        expect(presence.reportClimbForBoard).toHaveBeenCalledWith(
+          222,
+          { uuid: 'queue-climb-1', climb: { uuid: 'climb-1' } },
+          40,
+        );
+      });
+    });
+
+    it('attaches a shared pending same-wall resolve to generation two and releases its holder', async () => {
+      presence.enabled = true;
+      presence.boardId = null;
+      bluetooth.state.isConnected = false;
+      let resolveSharedBinding: (value: { boardId: number }) => void = () => {};
+      const sharedBindingPromise = new Promise<{ boardId: number }>((resolve) => {
+        resolveSharedBinding = resolve;
+      });
+      presence.resolveAndBindBoard.mockReturnValue(sharedBindingPromise);
+      const setGenerationOneBoardId = vi.fn(() => false);
+      let generationTwoBoardId: number | undefined;
+      const setGenerationTwoBoardId = vi.fn((boardId: number) => {
+        generationTwoBoardId = boardId;
+        return true;
+      });
+      const generationOne = makeConnectionHandle(1, '1,20', setGenerationOneBoardId);
+      const generationTwo = makeConnectionHandle(2, '1,20', setGenerationTwoBoardId);
+
+      const { rerender } = renderProvider();
+      bluetooth.options?.onConnectSuccess?.('SAME-SERIAL', generationOne);
+      bluetooth.options?.onConnectSuccess?.('SAME-SERIAL', generationTwo);
+      expect(presence.resolveAndBindBoard).toHaveBeenCalledTimes(2);
+
+      bluetooth.state.isConnected = true;
+      rerender(
+        createElement(BluetoothProvider, {
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,20',
+          children: createElement('div', null),
+        }),
+      );
+      await waitFor(() => {
+        expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1');
+      });
+      expect(presence.reportClimbForBoard).not.toHaveBeenCalled();
+
+      await act(async () => {
+        resolveSharedBinding({ boardId: 321 });
+      });
+      expect(setGenerationOneBoardId).toHaveBeenCalledWith(321);
+      expect(setGenerationTwoBoardId).toHaveBeenCalledWith(321);
+      await waitFor(() => {
+        expect(presence.reportClimbForBoard).toHaveBeenCalledWith(
+          321,
+          { uuid: 'queue-climb-1', climb: { uuid: 'climb-1' } },
+          40,
+        );
+      });
+
+      presence.reportDisconnectForBoard.mockClear();
+      act(() => {
+        bluetooth.options?.onConnectionEnded?.({
+          reason: 'unexpected',
+          disconnectTrigger: 'link_drop',
+          connectionDurationSec: 6,
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,20',
+          boardId: generationTwoBoardId,
+          inSession: true,
+        });
+      });
+      expect(generationTwoBoardId).toBe(321);
+      expect(presence.reportDisconnectForBoard).toHaveBeenCalledWith(321);
+    });
+
     it('preserves the armed Undo snackbar while a wall report waits for board resolution', async () => {
       presence.enabled = true;
       presence.boardId = null;
@@ -1053,7 +1292,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       );
 
       const { rerender } = renderProvider(createElement(BluetoothProbe));
-      bluetooth.options?.onConnectSuccess?.('SERIAL-PENDING');
+      bluetooth.options?.onConnectSuccess?.('SERIAL-PENDING', makeConnectionHandle());
       capturedBluetooth?.armUndoWallChangeToast();
 
       bluetooth.state.isConnected = true;
@@ -1093,7 +1332,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       );
 
       const { rerender } = renderProvider(createElement(BluetoothProbe));
-      bluetooth.options?.onConnectSuccess?.('SERIAL-PENDING');
+      bluetooth.options?.onConnectSuccess?.('SERIAL-PENDING', makeConnectionHandle());
       capturedBluetooth?.armUndoWallChangeToast();
 
       bluetooth.state.isConnected = true;
@@ -1232,7 +1471,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       presence.resolveAndBindBoard.mockResolvedValueOnce({ boardId: 99 });
       renderProvider();
 
-      bluetooth.options?.onConnectSuccess?.('SERIAL-SECRET-123');
+      bluetooth.options?.onConnectSuccess?.('SERIAL-SECRET-123', makeConnectionHandle());
 
       await waitFor(() => {
         expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
@@ -1291,6 +1530,18 @@ describe('BluetoothProvider wall-confirm integration', () => {
         expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalled();
       });
       queue.reportWallDisconnect.mockClear();
+      bluetooth.state.disconnect.mockImplementation(async () => {
+        bluetooth.options?.onConnectionEnded?.({
+          reason: 'user',
+          disconnectTrigger: 'explicit_user',
+          connectionDurationSec: 4,
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,20',
+          inSession: true,
+        });
+      });
 
       await act(async () => {
         await capturedBluetooth?.disconnect();
@@ -1300,30 +1551,92 @@ describe('BluetoothProvider wall-confirm integration', () => {
     });
 
     it('reports wall disconnect to the session on an unexpected BLE drop', async () => {
-      const { rerender } = renderProvider();
+      renderProvider();
 
       await waitFor(() => {
         expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalled();
       });
       queue.reportWallDisconnect.mockClear();
 
-      // Simulate an involuntary drop: isConnected flips true -> false with no
-      // user-initiated disconnect in flight. The drop effect frees the board
-      // hold and broadcasts WallDisconnected to the session.
-      bluetooth.state.isConnected = false;
-      await act(async () => {
-        rerender(
-          createElement(BluetoothProvider, {
-            boardName: 'kilter',
-            layoutId: 1,
-            sizeId: 10,
-            setIds: '1,20',
-            children: createElement('div', null),
-          }),
-        );
+      act(() => {
+        bluetooth.options?.onConnectionEnded?.({
+          reason: 'unexpected',
+          disconnectTrigger: 'link_drop',
+          connectionDurationSec: 4,
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,20',
+          inSession: true,
+          disconnectInfo: { source: 'ble-plx' },
+        });
       });
 
       expect(queue.reportWallDisconnect).toHaveBeenCalled();
+    });
+
+    it('clears the current session when the BLE connection opened solo and joined later', () => {
+      queue.sessionId = null;
+      const { rerender } = renderProvider();
+      queue.sessionId = 'session-B';
+      rerender(
+        createElement(BluetoothProvider, {
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,20',
+          children: createElement('div', null),
+        }),
+      );
+      queue.reportWallDisconnect.mockClear();
+
+      act(() => {
+        bluetooth.options?.onConnectionEnded?.({
+          reason: 'unexpected',
+          disconnectTrigger: 'link_drop',
+          connectionDurationSec: 8,
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,20',
+          inSession: false,
+        });
+      });
+
+      expect(queue.reportWallDisconnect).toHaveBeenCalledWith('session-B');
+    });
+
+    it('clears session B rather than stale session A after the active session changes', () => {
+      queue.sessionId = 'session-A';
+      const { rerender } = renderProvider();
+      queue.sessionId = 'session-B';
+      rerender(
+        createElement(BluetoothProvider, {
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,20',
+          children: createElement('div', null),
+        }),
+      );
+      queue.reportWallDisconnect.mockClear();
+
+      act(() => {
+        bluetooth.options?.onConnectionEnded?.({
+          reason: 'user',
+          disconnectTrigger: 'explicit_user',
+          connectionDurationSec: 8,
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,20',
+          inSession: true,
+        });
+      });
+
+      expect(queue.reportWallDisconnect).toHaveBeenCalledOnce();
+      expect(queue.reportWallDisconnect).toHaveBeenCalledWith('session-B');
+      expect(queue.reportWallDisconnect).not.toHaveBeenCalledWith('session-A');
     });
   });
 });

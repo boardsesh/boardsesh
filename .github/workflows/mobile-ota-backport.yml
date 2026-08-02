@@ -130,6 +130,27 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
+      # The hotfix tree is about to move to an older release anchor, which may
+      # predate OTA source-map support. Snapshot the exact trusted workflow commit
+      # before that checkout; never take release tooling from a cherry-picked fix.
+      - name: Snapshot trusted OTA publish tooling
+        run: |
+          set -euo pipefail
+          tooling_root="$RUNNER_TEMP/ota-publish-tooling"
+          mkdir -p "$tooling_root/scripts/lib"
+          for source_path in \
+            scripts/mobile-publish.ts \
+            scripts/lib/eoas.ts \
+            scripts/lib/mobile-publish-retry.ts \
+            scripts/mobile-upload-sourcemaps.ts
+          do
+            echo "Snapshotting trusted OTA tooling: $source_path"
+            if ! git show "$GITHUB_SHA:$source_path" > "$tooling_root/$source_path"; then
+              echo "::error::Could not snapshot trusted OTA tooling file '$source_path' from $GITHUB_SHA."
+              exit 1
+            fi
+          done
+
       - name: Locate the release anchor and prepare the hotfix tree
         id: anchor
         env:
@@ -188,12 +209,51 @@ jobs:
           echo "Cherry-picking onto $tag: ${commits[*]}"
           git cherry-pick "${commits[@]}"
 
+      - name: Overlay trusted OTA publish tooling
+        run: |
+          set -euo pipefail
+          tooling_root="$RUNNER_TEMP/ota-publish-tooling"
+          mkdir -p scripts/lib
+          cp "$tooling_root/scripts/mobile-publish.ts" scripts/mobile-publish.ts
+          cp "$tooling_root/scripts/lib/eoas.ts" scripts/lib/eoas.ts
+          cp "$tooling_root/scripts/lib/mobile-publish-retry.ts" scripts/lib/mobile-publish-retry.ts
+          cp "$tooling_root/scripts/mobile-upload-sourcemaps.ts" scripts/mobile-upload-sourcemaps.ts
+          git add scripts/mobile-publish.ts scripts/lib/eoas.ts scripts/lib/mobile-publish-retry.ts scripts/mobile-upload-sourcemaps.ts
+          if ! git diff --cached --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore(ota): overlay trusted publish tooling"
+          fi
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::Trusted tooling overlay left the hotfix tree dirty; eoas would refuse to publish."
+            git status --short
+            exit 1
+          fi
+
       # Install AFTER the anchor checkout + cherry-pick so node_modules matches the
       # OLD release's lockfile, not main's. Resolving the fingerprint against
       # main's deps would diverge from what the shipped binary embedded and cause
       # a spurious mismatch (or, worse, a false match).
       - name: Install Node.js dependencies (workspace root)
         run: bun install --frozen-lockfile
+
+      # The trusted wrapper deliberately invokes the official uploader installed
+      # by the anchored app. Reject anchors that do not carry the audited 7.11.0
+      # implementation instead of changing dependencies (and the fingerprint).
+      - name: Validate anchored Sentry uploader support
+        run: |
+          set -euo pipefail
+          sentry_version="$(jq -r '.dependencies["@sentry/react-native"] // .devDependencies["@sentry/react-native"] // empty' packages/mobile/package.json)"
+          if [ "$sentry_version" != "7.11.0" ]; then
+            echo "::error::This anchor has @sentry/react-native $sentry_version; OTA source-map backports require exactly 7.11.0. Ship a native update instead."
+            exit 1
+          fi
+          uploader_path="$(cd packages/mobile && bun -e 'const path = require("node:path"); const packageJson = require.resolve("@sentry/react-native/package.json"); console.log(path.join(path.dirname(packageJson), "scripts", "expo-upload-sourcemaps.js"));')"
+          if [ ! -f "$uploader_path" ]; then
+            echo "::error::The anchored @sentry/react-native install has no official Expo source-map uploader."
+            exit 1
+          fi
+          echo "::notice::Anchored app has the audited @sentry/react-native 7.11.0 Expo uploader."
 
       - name: Write .env for Expo build-time inlining
         working-directory: packages/mobile
@@ -240,6 +300,7 @@ jobs:
           echo "::notice::$PLATFORM fingerprint $short matches the approved anchor — safe to publish."
 
       - name: Publish OTA to the approved release
+        id: publish
         if: ${{ !inputs.dry_run }}
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
@@ -250,6 +311,28 @@ jobs:
         run: |
           vp run mobile:publish -- --channel production --platform "$PLATFORM" --message "Backport to v$VERSION ($FIX_COMMITS)"
 
+      - name: Upload backport OTA source maps to Sentry
+        id: upload_sourcemaps
+        if: ${{ !inputs.dry_run && steps.publish.outcome == 'success' }}
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          PLATFORM: ${{ matrix.platform }}
+        # The old anchor's vite.config may not define the new task. The trusted,
+        # dependency-light helper was overlaid above, so invoke it directly.
+        run: bun scripts/mobile-upload-sourcemaps.ts --platform "$PLATFORM"
+
       - name: Dry-run note
         if: ${{ inputs.dry_run }}
         run: echo "::notice::dry_run — verified the fingerprint match for ${{ matrix.platform }} but skipped the publish. Re-run with dry_run unchecked to ship."
+
+      - name: Warn that the published backport source maps are missing
+        if: ${{ always() && !inputs.dry_run && steps.publish.outcome == 'success' && steps.upload_sourcemaps.outcome != 'success' }}
+        run: echo "::warning::The ${{ matrix.platform }} backport OTA is live, but its Sentry source-map upload did not succeed. Recreate the exact export before another eoas publish replaces dist."
+
+      - name: Require the published backport source-map upload
+        if: ${{ always() && !inputs.dry_run && steps.publish.outcome == 'success' && steps.upload_sourcemaps.outcome != 'success' }}
+        run: |
+          echo "::error::The published ${{ matrix.platform }} backport has no accepted Sentry source maps."
+          exit 1

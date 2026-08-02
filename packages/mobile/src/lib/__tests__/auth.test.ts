@@ -43,6 +43,12 @@ describe('classifyNativeAuthFailureReason', () => {
     ).toBe('browser_unavailable');
   });
 
+  it('keeps an exhausted Android browser race distinct from browser presentation failures', () => {
+    expect(classifyNativeAuthFailureReason({ success: false, status: null, error: 'browser_timeout' }, 'oauth')).toBe(
+      'browser_timeout',
+    );
+  });
+
   // Regression: the classifier used to string-match the 401 body against
   // 'Invalid credentials', but the backend says 'Invalid email or password' —
   // every real wrong-password attempt was mislabelled. Classify by endpoint.

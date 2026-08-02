@@ -464,6 +464,38 @@ describe('useNativeOAuthSignIn — Android Google config-class fallback (#3100)'
     expect(reportErrorMock).not.toHaveBeenCalled();
   });
 
+  it('reports browser timeout as a warning failure with the generic OAuth copy', async () => {
+    signInWithGoogleMock.mockRejectedValue(Object.assign(new Error('developer error'), { code: 'DEVELOPER_ERROR' }));
+    signInWithGoogleWebMock.mockResolvedValue({ success: false, status: null, error: 'browser_timeout' });
+
+    const setError = await runSignIn('google');
+
+    expect(trackedEvents()).toContainEqual({
+      event: 'Login Failed',
+      flow: 'web_fallback',
+      reason: 'browser_timeout',
+      recoverable: undefined,
+      mechanism: 'browser_deeplink',
+    });
+    expect(trackedEvents()).not.toContainEqual(
+      expect.objectContaining({ event: 'Login Cancelled', flow: 'web_fallback' }),
+    );
+    expect(trackedEvents()).not.toContainEqual(
+      expect.objectContaining({ flow: 'web_fallback', reason: 'browser_unavailable' }),
+    );
+    expect(reportErrorMock).toHaveBeenCalledWith(expect.any(Error), {
+      level: 'warning',
+      tags: {
+        source: 'native-auth',
+        provider: 'google',
+        flow: 'web_fallback',
+        failure_reason: 'browser_timeout',
+      },
+      extra: { status: null, server_error: 'browser_timeout' },
+    });
+    expect(setError).toHaveBeenLastCalledWith('nativeStart.oauthError');
+  });
+
   it('surfaces the native error (no fallback) for a non-config Google throw — NETWORK_ERROR (7)', async () => {
     // Strict scope: only DEVELOPER_ERROR / INTERNAL_ERROR recover. A transient
     // NETWORK_ERROR keeps surfacing its native error rather than bouncing to a browser.

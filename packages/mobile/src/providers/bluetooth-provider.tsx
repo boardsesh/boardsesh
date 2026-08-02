@@ -15,7 +15,13 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useBoardPresenceCurrent } from '@boardsesh/board-presence-react';
 import type { BoardPresenceClimb, ClimbQueueItemInput } from '@boardsesh/shared-schema';
 import { emitWallConfirm } from '@boardsesh/play-view';
-import { useBoardBluetooth, boardConfigKey, type SendFramesToBoard } from '../lib/ble/use-board-bluetooth';
+import {
+  useBoardBluetooth,
+  boardConfigKey,
+  type BleConnectionHandle,
+  type BleConnectionEnded,
+  type SendFramesToBoard,
+} from '../lib/ble/use-board-bluetooth';
 import { hasRenderableFrames } from '../lib/ble/renderable-frames';
 import { useResolvedBleDeviceBoards } from '../lib/ble/resolve-serials';
 import { classifyBleDisconnect } from '../lib/ble/disconnect-category';
@@ -513,16 +519,15 @@ export function BluetoothProvider({
     [holdColorSignature],
   );
 
-  // Mirror the board config props so the empty-dep-ish connect callback resolves
-  // the serial against the board currently in view without churning identity.
+  // Mirror the rendered board config for identity-stable send/skip analytics.
+  // Connection resolution uses BleConnectionHandle.config instead (the exact
+  // adapter-generation snapshot), never these mutable route refs.
   const boardNameRef = useRef(boardName);
   boardNameRef.current = boardName;
   const layoutIdRef = useRef(layoutId);
   layoutIdRef.current = layoutId;
   const sizeIdRef = useRef(sizeId);
   sizeIdRef.current = sizeId;
-  const setIdsRef = useRef(setIds);
-  setIdsRef.current = setIds;
   const sessionIdRef = useRef(sessionId);
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -563,6 +568,7 @@ export function BluetoothProvider({
   const pendingReportSignatureRef = useRef<string | null>(null);
   const pendingWallReportRef = useRef<PendingWallReport | null>(null);
   const pendingPresenceResolveRef = useRef(false);
+  const pendingPresenceResolveConnectionRef = useRef<BleConnectionHandle | null>(null);
   const resolvedPresenceBoardIdRef = useRef<number | null>(presenceBoardId);
   const undoWallChangeTargetRef = useRef<BoardPresenceClimb | null>(null);
   const previousPresenceBoardIdRef = useRef<number | null>(presenceBoardId);
@@ -754,7 +760,7 @@ export function BluetoothProvider({
   );
 
   const handleConnectSuccess = useCallback(
-    (serial: string | null) => {
+    (serial: string | null, connection: BleConnectionHandle) => {
       lastAcceptedReportSignatureRef.current = null;
       lastAcceptedWallSignatureRef.current = null;
       pendingReportSignatureRef.current = null;
@@ -762,16 +768,22 @@ export function BluetoothProvider({
       undoWallChangeTargetRef.current = null;
       resolvedPresenceBoardIdRef.current = null;
 
-      const boardType = boardNameRef.current;
-      const layoutId = layoutIdRef.current;
-      const sizeId = sizeIdRef.current;
-      const setIds = setIdsRef.current ?? '';
+      // Resolver arguments come from the immutable adapter-generation snapshot,
+      // never mutable route refs. A route/config change can render while a
+      // connect is completing; its board identity must not be assigned to the
+      // older physical link.
+      const { boardName: boardType, layoutId, sizeId, setIds: connectionSetIds } = connection.config;
+      const setIds = connectionSetIds ?? '';
 
       // Resolve+bind the shared board so the wall feed subscribes. Aurora uses
       // its controller serial; serial-less boards use the per-config fallback
-      // when the backend supports it. This is independent of party sessions.
+      // when the backend supports it. An unchanged binding returns its cached
+      // identity instead of resolving over the network, because every new BLE
+      // generation still needs to attach that board ID for holder release.
+      // This is independent of party sessions.
       if (presenceEnabledRef.current && boardType && layoutId != null && layoutId > 0 && sizeId != null && sizeId > 0) {
         pendingPresenceResolveRef.current = true;
+        pendingPresenceResolveConnectionRef.current = connection;
         const resolvePromise =
           serial && serial.length > 0
             ? resolveAndBindBoard({ serial, boardType, layoutId, sizeId, setIds })
@@ -779,6 +791,11 @@ export function BluetoothProvider({
         void resolvePromise
           .then((resolved) => {
             if (!resolved) return;
+            // The resolver belongs to the generation that initiated it. An old
+            // controller can resolve after a replacement connection with the
+            // same layout/size; its guarded handle rejects the stale ID without
+            // occupying the new generation's still-empty attribution slot.
+            if (!connection.setAnalyticsBoardId(resolved.boardId)) return;
             resolvedPresenceBoardIdRef.current = resolved.boardId;
             replayPendingWallReport(resolved.boardId);
           })
@@ -786,7 +803,10 @@ export function BluetoothProvider({
             console.warn('[board-presence] board resolve failed', error);
           })
           .finally(() => {
-            pendingPresenceResolveRef.current = false;
+            if (pendingPresenceResolveConnectionRef.current === connection) {
+              pendingPresenceResolveConnectionRef.current = null;
+              pendingPresenceResolveRef.current = false;
+            }
           });
       }
 
@@ -798,11 +818,11 @@ export function BluetoothProvider({
       track('Session Board Serial Set', {
         mode: 'party',
         previousSerialKnown: previousSerial != null,
-        boardLayout: boardName ?? '',
+        boardLayout: boardType,
         boardId: resolvedPresenceBoardIdRef.current ?? presenceBoardIdRef.current ?? undefined,
       });
     },
-    [boardName, setSessionBoardSerial, resolveAndBindBoard, resolveAndBindBoardByConfig, replayPendingWallReport],
+    [setSessionBoardSerial, resolveAndBindBoard, resolveAndBindBoardByConfig, replayPendingWallReport],
   );
 
   // Hold placements for the active board, required by the hook's
@@ -830,6 +850,57 @@ export function BluetoothProvider({
   // and send analytics without re-creating its callbacks when the flag flips.
   const getConnectedViaMismatchOverride = useCallback(() => connectedViaMismatchOverrideRef.current, []);
 
+  // The BLE hook owns the physical adapter lifetime and hands us the attribution
+  // captured when that exact generation opened. Release and analytics must use
+  // that snapshot: the provider may already be rendering a different route by
+  // the time a config-switch teardown completes.
+  const handleBluetoothConnectionEnded = useCallback(
+    (connection: BleConnectionEnded) => {
+      clearPendingWallReportAndUndoToastArm();
+      connectedViaMismatchOverrideRef.current = false;
+
+      // reportWallDisconnect targets the queue provider's CURRENT session and
+      // is a no-op in solo. Calling it unconditionally avoids skipping cleanup
+      // when a connection opened solo and later joined, and avoids pretending
+      // the snapshotted analytics boolean identifies a mutable session.
+      void reportWallDisconnectRef.current();
+      if (connection.boardId !== undefined) {
+        void reportDisconnectForBoardRef.current(connection.boardId);
+      }
+
+      const commonProperties = {
+        boardName: connection.boardName,
+        layoutId: connection.layoutId,
+        sizeId: connection.sizeId,
+        setIds: connection.setIds,
+        boardId: connection.boardId,
+        reason: connection.reason,
+        disconnectTrigger: connection.disconnectTrigger,
+        inSession: connection.inSession,
+        connectionDurationSec: connection.connectionDurationSec,
+      };
+
+      if (connection.reason === 'unexpected') {
+        const disconnectInfo = connection.disconnectInfo;
+        track(SHARED_EVENTS.BluetoothDisconnected, {
+          ...commonProperties,
+          disconnectSource: disconnectInfo?.source,
+          disconnectReason: disconnectInfo?.description,
+          disconnectContext: disconnectInfo?.context,
+          disconnectIosCode: disconnectInfo?.iosErrorCode,
+          disconnectAndroidCode: disconnectInfo?.androidErrorCode,
+          disconnectBleCode: disconnectInfo?.bleErrorCode,
+          disconnectErrorDomain: disconnectInfo?.errorDomain,
+          disconnectCategory: classifyBleDisconnect(disconnectInfo),
+        });
+        return;
+      }
+
+      track(SHARED_EVENTS.BluetoothDisconnected, commonProperties);
+    },
+    [clearPendingWallReportAndUndoToastArm],
+  );
+
   const {
     isConnected,
     loading,
@@ -840,7 +911,6 @@ export function BluetoothProvider({
     reconnectSerialForCurrentBoard,
     reconnectDeviceIdForCurrentBoard,
     connectInitialSendRef,
-    lastDisconnectInfoRef,
   } = useBoardBluetooth({
     boardName,
     layoutId,
@@ -849,8 +919,10 @@ export function BluetoothProvider({
     boardUuid,
     holdsData,
     analyticsBoardId: presenceBoardId,
+    analyticsInSession: sessionId != null,
     ledColorOverrides: bluetoothColorOverrides,
     onConnectSuccess: handleConnectSuccess,
+    onConnectionEnded: handleBluetoothConnectionEnded,
     getConnectedViaMismatchOverride,
   });
 
@@ -1285,50 +1357,35 @@ export function BluetoothProvider({
   const [reassertNonce, setReassertNonce] = useState(0);
   const reassertWall = useCallback(() => setReassertNonce((nonce) => nonce + 1), []);
 
-  // Detect an unexpected drop (connected → disconnected without a user-initiated
-  // disconnect) for telemetry only. `isUserDisconnectRef` suppresses deliberate ones.
-  const wasConnectedRef = useRef(false);
-  const isUserDisconnectRef = useRef(false);
+  const disconnectInFlightRef = useRef<Promise<void> | null>(null);
 
-  // Free this client's board-connection hold when the BLE link goes down (the
-  // holder = last sender, so a disconnect means we're no longer writing the
-  // wall). Best-effort and idempotent: the server clear is a compare-and-delete,
-  // so it's a no-op once another phone took over (last-connection-wins). The
-  // binding stays so a reconnect re-takes. Also broadcast the session-scoped
-  // WallDisconnected so every member's lightbulb clears (the current climb is
-  // preserved); a true no-op in solo (reportWallDisconnect no-ops without a
-  // session), so it's safe to fire unconditionally on any drop.
-  const releaseBoardHolder = useCallback(() => {
-    void reportWallDisconnectRef.current();
-    const boardId = resolvedPresenceBoardIdRef.current ?? presenceBoardIdRef.current;
-    if (boardId === null) return;
-    void reportDisconnectForBoardRef.current(boardId);
-  }, []);
-
-  // Wrap disconnect to track user-initiated disconnects
+  // Coalesce adapter disconnect calls. The hook consumes and reports the active
+  // generation synchronously before awaiting the native adapter teardown.
   const wrappedDisconnect = useCallback(async () => {
+    const disconnectInFlight = disconnectInFlightRef.current;
+    if (disconnectInFlight) {
+      await disconnectInFlight;
+      return;
+    }
+
     clearPendingWallReportAndUndoToastArm();
-    releaseBoardHolder();
     connectedViaMismatchOverrideRef.current = false;
-    isUserDisconnectRef.current = true;
-    track(SHARED_EVENTS.BluetoothDisconnected, {
-      boardName,
-      boardId: resolvedPresenceBoardIdRef.current ?? presenceBoardIdRef.current ?? undefined,
-      reason: 'user',
-      inSession: sessionIdRef.current != null,
-    });
-    try {
-      await disconnect();
-    } catch {
+    const disconnectOperation = disconnect().catch(() => {
       // The native iOS adapter's disconnect() can reject (e.g. peripheral
       // already torn down). Callers `void` this promise, so an unhandled
       // rejection would surface as error-reporting noise. Connection state is
       // cleared before the await, so the disconnect is effectively done either way —
       // safe to swallow, matching the keep-awake `.catch(() => {})` pattern.
+    });
+    disconnectInFlightRef.current = disconnectOperation;
+    try {
+      await disconnectOperation;
     } finally {
-      isUserDisconnectRef.current = false;
+      if (disconnectInFlightRef.current === disconnectOperation) {
+        disconnectInFlightRef.current = null;
+      }
     }
-  }, [clearPendingWallReportAndUndoToastArm, releaseBoardHolder, disconnect, boardName]);
+  }, [clearPendingWallReportAndUndoToastArm, disconnect]);
 
   // Register with the module-level status store so consumers rendered outside
   // this provider (e.g. the root tab bar, the long-press BLE controls sheet) can
@@ -1342,47 +1399,6 @@ export function BluetoothProvider({
     });
     return release;
   }, [isConnected, wrappedDisconnect]);
-
-  // Losing the BLE link is expected (RF noise, or another climber grabbing the
-  // last-connection-wins board), so an unexpected drop just lets the lightbulb go
-  // unlit (driven by isConnected) — we never auto-reconnect, buzz an error, or pop
-  // the device picker. Reconnecting stays a deliberate lightbulb tap. Recorded so
-  // drop frequency stays visible in analytics.
-  useEffect(() => {
-    if (wasConnectedRef.current && !isConnected && !isUserDisconnectRef.current) {
-      clearPendingWallReportAndUndoToastArm();
-      connectedViaMismatchOverrideRef.current = false;
-      // An unexpected drop also frees our board hold (the booted phone is no
-      // longer writing the wall). Compare-and-delete server-side, so if another
-      // phone already took over this is a no-op.
-      releaseBoardHolder();
-      // The hook stashed the drop's platform reason (CoreBluetooth / ble-plx
-      // code, or a write-stall context) on this ref before flipping isConnected.
-      // Flattened onto the event so analytics can tell a takeover apart from a
-      // range/idle timeout — the gap that left `disconnectReason` null before.
-      const disconnectInfo = lastDisconnectInfoRef.current;
-      track(SHARED_EVENTS.BluetoothDisconnected, {
-        boardName,
-        // The resolved DB board id (same value the send events carry), so
-        // takeover analysis can join disconnects to another user's connect on
-        // the SAME board instead of a fragile last-connect join per user.
-        boardId: resolvedPresenceBoardIdRef.current ?? presenceBoardIdRef.current ?? undefined,
-        reason: 'unexpected',
-        inSession: sessionIdRef.current != null,
-        disconnectSource: disconnectInfo?.source,
-        disconnectReason: disconnectInfo?.description,
-        disconnectContext: disconnectInfo?.context,
-        disconnectIosCode: disconnectInfo?.iosErrorCode,
-        disconnectAndroidCode: disconnectInfo?.androidErrorCode,
-        disconnectBleCode: disconnectInfo?.bleErrorCode,
-        disconnectErrorDomain: disconnectInfo?.errorDomain,
-        disconnectCategory: classifyBleDisconnect(disconnectInfo),
-      });
-    }
-    wasConnectedRef.current = isConnected;
-    // lastDisconnectInfoRef is a stable ref (read via .current), so it's
-    // intentionally not a dependency — the isConnected transition is the trigger.
-  }, [clearPendingWallReportAndUndoToastArm, releaseBoardHolder, isConnected, boardName]);
 
   const value = useMemo<BluetoothContextValue>(
     () => ({

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, act, waitFor } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode } from 'react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import type { ClimbQueueItemInput, ResolvedBoard } from '@boardsesh/shared-schema';
+import type { BoardCandidate, ClimbQueueItemInput, ResolvedBoard } from '@boardsesh/shared-schema';
 
 const transport = vi.hoisted(() => ({
   resolveBoardForSerial: vi.fn(
@@ -29,6 +29,14 @@ const sharedProvider = vi.hoisted(() => ({
 // spy — so we can assert the foreground sync and catch-up telemetry wiring.
 const refreshMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
+const disambiguationSheet = vi.hoisted(() => ({
+  props: null as {
+    visible: boolean;
+    candidates: BoardCandidate[];
+    onPick: (boardId: number) => void;
+    onCancel: () => void;
+  } | null,
+}));
 // Capture the AppState 'change' handler so a test can fire 'active'/'background'.
 const appState = vi.hoisted(() => {
   const ref: { handler: ((state: string) => void) | null } = { handler: null };
@@ -73,7 +81,10 @@ vi.mock('../../lib/graphql/ws-client', () => ({ getWsClient: () => ({}) }));
 // Keep react-native host components (the disambiguation Modal) out of this
 // jsdom suite — it asserts provider logic, not the picker UI.
 vi.mock('../../components/board-discovery/BoardDisambiguationSheet', () => ({
-  BoardDisambiguationSheet: () => null,
+  BoardDisambiguationSheet: (props: NonNullable<typeof disambiguationSheet.props>) => {
+    disambiguationSheet.props = props;
+    return null;
+  },
 }));
 
 // Capture the boardId handed to the shared provider so we can assert it updates
@@ -96,7 +107,11 @@ vi.mock('@boardsesh/board-presence-react', () => ({
   useBoardPresenceActions: () => ({ refresh: refreshMock }),
 }));
 
-import { MobileBoardPresenceProvider, useBoardPresenceControls } from '../board-presence-provider';
+import {
+  MobileBoardPresenceProvider,
+  useBoardPresenceControls,
+  type BoardBindingIdentity,
+} from '../board-presence-provider';
 
 let capturedControls: ReturnType<typeof useBoardPresenceControls> | null = null;
 function Probe() {
@@ -145,6 +160,7 @@ describe('MobileBoardPresenceProvider', () => {
     refreshMock.mockClear();
     trackMock.mockClear();
     appState.addEventListener.mockClear();
+    disambiguationSheet.props = null;
     capturedControls = null;
   });
 
@@ -194,13 +210,73 @@ describe('MobileBoardPresenceProvider', () => {
     await act(async () => {
       await capturedControls?.resolveAndBindBoard(args);
     });
+    let cachedBinding: BoardBindingIdentity | null | undefined;
     await act(async () => {
-      await capturedControls?.resolveAndBindBoard(args);
+      cachedBinding = await capturedControls?.resolveAndBindBoard(args);
     });
+    expect(cachedBinding).toEqual({ boardId: 42 });
     expect(transport.resolveBoardCandidatesForSerial).toHaveBeenCalledTimes(1);
   });
 
-  it('does not bind a board when the serial maps to several candidates (awaits the pick)', async () => {
+  it('re-resolves the same serial when its board config changes', async () => {
+    renderProvider();
+    const originalArgs = { serial: 'SERIAL-1', boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2' };
+
+    await act(async () => {
+      await capturedControls?.resolveAndBindBoard(originalArgs);
+    });
+    await waitFor(() => {
+      expect(sharedProvider.lastBoardId).toBe(42);
+    });
+
+    transport.resolveBoardCandidatesForSerial.mockResolvedValueOnce({
+      board: { boardId: 45, boardName: 'Reset Wall' },
+      candidates: null,
+    } as unknown as { board: ResolvedBoard | null; candidates: unknown[] | null });
+    let rebound: BoardBindingIdentity | null | undefined;
+    await act(async () => {
+      rebound = await capturedControls?.resolveAndBindBoard({ ...originalArgs, setIds: '3,4' });
+    });
+
+    expect(rebound).toEqual(expect.objectContaining({ boardId: 45 }));
+    expect(transport.resolveBoardCandidatesForSerial).toHaveBeenCalledTimes(2);
+    expect(sharedProvider.lastBoardId).toBe(45);
+  });
+
+  it('shares an in-flight serial+config result with a same-wall reconnect', async () => {
+    let resolveBoard: ((value: { board: ResolvedBoard; candidates: null }) => void) | null = null;
+    transport.resolveBoardCandidatesForSerial.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveBoard = resolve;
+        }),
+    );
+    renderProvider();
+    const args = { serial: 'SERIAL-1', boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2' };
+
+    let firstPromise: Promise<BoardBindingIdentity | null> | undefined;
+    let reconnectPromise: Promise<BoardBindingIdentity | null> | undefined;
+    act(() => {
+      firstPromise = capturedControls?.resolveAndBindBoard(args);
+      reconnectPromise = capturedControls?.resolveAndBindBoard(args);
+    });
+    expect(transport.resolveBoardCandidatesForSerial).toHaveBeenCalledTimes(1);
+
+    let firstBinding: BoardBindingIdentity | null | undefined;
+    let reconnectBinding: BoardBindingIdentity | null | undefined;
+    await act(async () => {
+      resolveBoard?.({
+        board: { boardId: 42, boardName: 'Garage Wall' } as unknown as ResolvedBoard,
+        candidates: null,
+      });
+      [firstBinding, reconnectBinding] = await Promise.all([firstPromise, reconnectPromise]);
+    });
+
+    expect(firstBinding).toEqual({ boardId: 42 });
+    expect(reconnectBinding).toEqual({ boardId: 42 });
+  });
+
+  it('shares an ambiguous serial resolution until the picker binds a board', async () => {
     transport.resolveBoardCandidatesForSerial.mockResolvedValue({
       board: null,
       candidates: [
@@ -210,18 +286,109 @@ describe('MobileBoardPresenceProvider', () => {
     } as unknown as { board: ResolvedBoard | null; candidates: unknown[] | null });
     renderProvider();
 
+    const args = {
+      serial: 'SHARED-SERIAL',
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1,2',
+    };
+    let firstPromise: Promise<BoardBindingIdentity | null> | undefined;
+    let reconnectPromise: Promise<BoardBindingIdentity | null> | undefined;
+    act(() => {
+      firstPromise = capturedControls?.resolveAndBindBoard(args);
+    });
+    await waitFor(() => {
+      expect(disambiguationSheet.props?.visible).toBe(true);
+    });
+    act(() => {
+      reconnectPromise = capturedControls?.resolveAndBindBoard(args);
+    });
+    expect(transport.resolveBoardCandidatesForSerial).toHaveBeenCalledTimes(1);
+
+    let firstBinding: BoardBindingIdentity | null | undefined;
+    let reconnectBinding: BoardBindingIdentity | null | undefined;
     await act(async () => {
-      const resolved = await capturedControls?.resolveAndBindBoard({
+      disambiguationSheet.props?.onPick(2);
+      [firstBinding, reconnectBinding] = await Promise.all([firstPromise, reconnectPromise]);
+    });
+
+    expect(transport.chooseBoardForSerial).toHaveBeenCalledWith({ boardId: 2, serial: 'SHARED-SERIAL' });
+    expect(firstBinding).toEqual({ boardId: 77 });
+    expect(reconnectBinding).toEqual({ boardId: 77 });
+    expect(sharedProvider.lastBoardId).toBe(77);
+  });
+
+  it('settles an ambiguous serial resolution with null when the picker is cancelled', async () => {
+    transport.resolveBoardCandidatesForSerial.mockResolvedValue({
+      board: null,
+      candidates: [
+        { boardId: 1, boardUuid: 'a', boardName: 'Home', boardType: 'kilter', isOwnedByMe: true, isPublic: false },
+      ],
+    } as unknown as { board: ResolvedBoard | null; candidates: unknown[] | null });
+    renderProvider();
+
+    let bindingPromise: Promise<BoardBindingIdentity | null> | undefined;
+    act(() => {
+      bindingPromise = capturedControls?.resolveAndBindBoard({
         serial: 'SHARED-SERIAL',
         boardType: 'kilter',
         layoutId: 1,
         sizeId: 10,
         setIds: '1,2',
       });
-      // Ambiguous → no board bound yet; the user must pick via the prompt.
-      expect(resolved).toBeNull();
     });
+    await waitFor(() => {
+      expect(disambiguationSheet.props?.visible).toBe(true);
+    });
+
+    let binding: BoardBindingIdentity | null | undefined;
+    await act(async () => {
+      disambiguationSheet.props?.onCancel();
+      binding = await bindingPromise;
+    });
+
+    expect(binding).toBeNull();
     expect(sharedProvider.lastBoardId).toBeNull();
+    expect(disambiguationSheet.props?.visible).toBe(false);
+  });
+
+  it('invalidates an ambiguous serial deferred when a different binding key starts', async () => {
+    transport.resolveBoardCandidatesForSerial.mockResolvedValue({
+      board: null,
+      candidates: [
+        { boardId: 1, boardUuid: 'a', boardName: 'Home', boardType: 'kilter', isOwnedByMe: true, isPublic: false },
+      ],
+    } as unknown as { board: ResolvedBoard | null; candidates: unknown[] | null });
+    renderProvider();
+
+    let serialPromise: Promise<BoardBindingIdentity | null> | undefined;
+    act(() => {
+      serialPromise = capturedControls?.resolveAndBindBoard({
+        serial: 'SHARED-SERIAL',
+        boardType: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1,2',
+      });
+    });
+    await waitFor(() => {
+      expect(disambiguationSheet.props?.visible).toBe(true);
+    });
+
+    let uuidBinding: BoardBindingIdentity | null | undefined;
+    let serialBinding: BoardBindingIdentity | null | undefined;
+    await act(async () => {
+      const uuidPromise = capturedControls?.resolveAndBindBoardByUuid({
+        boardUuid: '11111111-1111-4111-8111-111111111111',
+      });
+      [serialBinding, uuidBinding] = await Promise.all([serialPromise, uuidPromise]);
+    });
+
+    expect(serialBinding).toBeNull();
+    expect(uuidBinding).toEqual({ boardId: 44 });
+    expect(disambiguationSheet.props?.visible).toBe(false);
+    expect(sharedProvider.lastBoardId).toBe(44);
   });
 
   it('resolves+binds by config when no serial is available', async () => {
@@ -266,7 +433,27 @@ describe('MobileBoardPresenceProvider', () => {
     });
   });
 
-  it('does not start a second uuid resolve while the same uuid is pending', async () => {
+  it('returns the cached board identity without re-resolving an unchanged uuid', async () => {
+    renderProvider();
+    const args = { boardUuid: '11111111-1111-4111-8111-111111111111' };
+
+    await act(async () => {
+      await capturedControls?.resolveAndBindBoardByUuid(args);
+    });
+    await waitFor(() => {
+      expect(sharedProvider.lastBoardId).toBe(44);
+    });
+
+    let cachedBinding: BoardBindingIdentity | null | undefined;
+    await act(async () => {
+      cachedBinding = await capturedControls?.resolveAndBindBoardByUuid(args);
+    });
+
+    expect(cachedBinding).toEqual({ boardId: 44 });
+    expect(transport.resolveBoardForUuid).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares the in-flight result without starting a second uuid resolve', async () => {
     let resolveBoard: ((value: ResolvedBoard) => void) | null = null;
     transport.resolveBoardForUuid.mockImplementationOnce(
       () =>
@@ -276,27 +463,30 @@ describe('MobileBoardPresenceProvider', () => {
     );
     renderProvider();
 
-    let firstPromise: Promise<ResolvedBoard | null> | undefined;
+    let firstPromise: Promise<BoardBindingIdentity | null> | undefined;
     act(() => {
       firstPromise = capturedControls?.resolveAndBindBoardByUuid({
         boardUuid: '11111111-1111-4111-8111-111111111111',
       });
     });
 
-    let secondResult: ResolvedBoard | null | undefined;
-    await act(async () => {
-      secondResult = await capturedControls?.resolveAndBindBoardByUuid({
+    let secondPromise: Promise<BoardBindingIdentity | null> | undefined;
+    act(() => {
+      secondPromise = capturedControls?.resolveAndBindBoardByUuid({
         boardUuid: '11111111-1111-4111-8111-111111111111',
       });
     });
 
-    expect(secondResult).toBeNull();
     expect(transport.resolveBoardForUuid).toHaveBeenCalledTimes(1);
 
+    let firstResult: BoardBindingIdentity | null | undefined;
+    let secondResult: BoardBindingIdentity | null | undefined;
     await act(async () => {
       resolveBoard?.({ boardId: 44, boardName: 'Named Board' } as unknown as ResolvedBoard);
-      await firstPromise;
+      [firstResult, secondResult] = await Promise.all([firstPromise, secondPromise]);
     });
+    expect(firstResult).toEqual({ boardId: 44 });
+    expect(secondResult).toEqual({ boardId: 44 });
     await waitFor(() => {
       expect(sharedProvider.lastBoardId).toBe(44);
     });
@@ -320,9 +510,39 @@ describe('MobileBoardPresenceProvider', () => {
 
     await act(async () => {
       const resolved = await capturedControls?.resolveAndBindBoardByConfig(args);
-      expect(resolved).toBeNull();
+      expect(resolved).toEqual({ boardId: 43 });
     });
     expect(transport.resolveBoardForConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares an in-flight config result with a same-wall reconnect', async () => {
+    let resolveBoard: ((value: ResolvedBoard) => void) | null = null;
+    transport.resolveBoardForConfig.mockImplementationOnce(
+      () =>
+        new Promise<ResolvedBoard>((resolve) => {
+          resolveBoard = resolve;
+        }),
+    );
+    renderProvider();
+    const args = { boardType: 'moonboard', layoutId: 1, sizeId: 1, setIds: '2019' };
+
+    let firstPromise: Promise<BoardBindingIdentity | null> | undefined;
+    let reconnectPromise: Promise<BoardBindingIdentity | null> | undefined;
+    act(() => {
+      firstPromise = capturedControls?.resolveAndBindBoardByConfig(args);
+      reconnectPromise = capturedControls?.resolveAndBindBoardByConfig(args);
+    });
+    expect(transport.resolveBoardForConfig).toHaveBeenCalledTimes(1);
+
+    let firstBinding: BoardBindingIdentity | null | undefined;
+    let reconnectBinding: BoardBindingIdentity | null | undefined;
+    await act(async () => {
+      resolveBoard?.({ boardId: 43, boardName: 'MoonBoard 40' } as unknown as ResolvedBoard);
+      [firstBinding, reconnectBinding] = await Promise.all([firstPromise, reconnectPromise]);
+    });
+
+    expect(firstBinding).toEqual({ boardId: 43 });
+    expect(reconnectBinding).toEqual({ boardId: 43 });
   });
 
   it('ignores stale config resolve results after a newer selected config resolves', async () => {
@@ -341,8 +561,8 @@ describe('MobileBoardPresenceProvider', () => {
     );
     renderProvider();
 
-    let firstPromise: Promise<ResolvedBoard | null> | undefined;
-    let secondPromise: Promise<ResolvedBoard | null> | undefined;
+    let firstPromise: Promise<BoardBindingIdentity | null> | undefined;
+    let secondPromise: Promise<BoardBindingIdentity | null> | undefined;
     act(() => {
       firstPromise = capturedControls?.resolveAndBindBoardByConfig({
         boardType: 'moonboard',
@@ -358,6 +578,12 @@ describe('MobileBoardPresenceProvider', () => {
       });
     });
 
+    let invalidatedFirstResult: BoardBindingIdentity | null | undefined;
+    await act(async () => {
+      invalidatedFirstResult = await firstPromise;
+    });
+    expect(invalidatedFirstResult).toBeNull();
+
     await act(async () => {
       resolveSecond?.({ boardId: 44, boardName: 'Kilter' } as unknown as ResolvedBoard);
       await secondPromise;
@@ -366,7 +592,7 @@ describe('MobileBoardPresenceProvider', () => {
       expect(sharedProvider.lastBoardId).toBe(44);
     });
 
-    let firstResult: ResolvedBoard | null | undefined;
+    let firstResult: BoardBindingIdentity | null | undefined;
     await act(async () => {
       resolveFirst?.({ boardId: 43, boardName: 'MoonBoard 40' } as unknown as ResolvedBoard);
       firstResult = await firstPromise;
@@ -374,6 +600,39 @@ describe('MobileBoardPresenceProvider', () => {
 
     expect(firstResult).toBeNull();
     expect(sharedProvider.lastBoardId).toBe(44);
+  });
+
+  it('settles a pending resolution with null on reset and ignores its late result', async () => {
+    let resolveBoard: ((value: ResolvedBoard) => void) | null = null;
+    transport.resolveBoardForConfig.mockImplementationOnce(
+      () =>
+        new Promise<ResolvedBoard>((resolve) => {
+          resolveBoard = resolve;
+        }),
+    );
+    renderProvider();
+
+    let bindingPromise: Promise<BoardBindingIdentity | null> | undefined;
+    act(() => {
+      bindingPromise = capturedControls?.resolveAndBindBoardByConfig({
+        boardType: 'moonboard',
+        layoutId: 1,
+        sizeId: 1,
+        setIds: '2019',
+      });
+      capturedControls?.resetPresence();
+    });
+
+    let binding: BoardBindingIdentity | null | undefined;
+    await act(async () => {
+      binding = await bindingPromise;
+    });
+    expect(binding).toBeNull();
+
+    await act(async () => {
+      resolveBoard?.({ boardId: 43, boardName: 'Late MoonBoard' } as unknown as ResolvedBoard);
+    });
+    expect(sharedProvider.lastBoardId).toBeNull();
   });
 
   it('clears the bound board while a different uuid resolve is pending', async () => {
@@ -423,7 +682,7 @@ describe('MobileBoardPresenceProvider', () => {
     );
     renderProvider();
 
-    let serialPromise: Promise<ResolvedBoard | null> | undefined;
+    let serialPromise: Promise<BoardBindingIdentity | null> | undefined;
     await act(async () => {
       serialPromise = capturedControls?.resolveAndBindBoard({
         serial: 'SERIAL-1',
@@ -440,7 +699,7 @@ describe('MobileBoardPresenceProvider', () => {
       expect(sharedProvider.lastBoardId).toBe(44);
     });
 
-    let serialResult: ResolvedBoard | null | undefined;
+    let serialResult: BoardBindingIdentity | null | undefined;
     await act(async () => {
       resolveSerial?.({ boardId: 42, boardName: 'Serial Board' } as unknown as ResolvedBoard);
       serialResult = await serialPromise;

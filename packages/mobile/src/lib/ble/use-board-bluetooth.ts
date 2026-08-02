@@ -272,6 +272,50 @@ export type SendFramesToBoard = (
   sendContext?: BleSendContext,
 ) => Promise<boolean | undefined>;
 
+export type BleDisconnectTrigger = 'explicit_user' | 'config_switch' | 'connection_replacement' | 'link_drop';
+
+export type BleConnectionEnded = {
+  reason: 'user' | 'unexpected';
+  disconnectTrigger: BleDisconnectTrigger;
+  connectionDurationSec: number;
+  boardName: string;
+  layoutId?: number;
+  sizeId?: number;
+  setIds?: string;
+  boardId?: number;
+  inSession: boolean;
+  /** Present only for unexpected transport drops. */
+  disconnectInfo?: BleDisconnectInfo;
+};
+
+export type BleConnectionConfigSnapshot = {
+  readonly boardName: string;
+  readonly layoutId?: number;
+  readonly sizeId?: number;
+  readonly setIds?: string;
+};
+
+export type BleConnectionHandle = {
+  generation: number;
+  configIdentity: string;
+  /** Immutable board config captured beside the adapter generation. Consumers
+   * must use this for asynchronous connection work instead of rendered refs. */
+  config: BleConnectionConfigSnapshot;
+  /**
+   * Attach the board-presence ID resolved for this exact connection. Returns
+   * false when the generation/config is stale or a different ID already won.
+   */
+  setAnalyticsBoardId: (boardId: number) => boolean;
+};
+
+type ActiveBleConnectionLifetime = {
+  adapter: BluetoothAdapter;
+  generation: number;
+  configIdentity: string;
+  startedAtMs: number;
+  attribution: Omit<BleConnectionEnded, 'reason' | 'disconnectTrigger' | 'connectionDurationSec' | 'disconnectInfo'>;
+};
+
 type UseBoardBluetoothOptions = {
   boardName?: string;
   layoutId?: number;
@@ -283,18 +327,29 @@ type UseBoardBluetoothOptions = {
   holdsData?: HoldPlacement[];
   ledColorOverrides?: LedColorOverrides;
   analyticsBoardId?: number | null;
+  analyticsInSession?: boolean;
+  onConnectionEnded?: (connection: BleConnectionEnded) => void;
   /** Fired on every connection-state edge. A consumer must tolerate a `false`
    *  with no preceding `true`: when connect()'s initial write kills the link,
    *  the drop teardown fires `false` and connect() then bails before it would
    *  ever have fired `true` (#3875). */
   onConnectionChange?: (connected: boolean) => void;
-  onConnectSuccess?: (serial: string | null) => void;
+  onConnectSuccess?: (serial: string | null, connection: BleConnectionHandle) => void;
   /** Reads whether this connection was made via the mismatch "Connect anyway"
    *  override, attached to connection + send analytics. */
   getConnectedViaMismatchOverride?: () => boolean;
 };
 
 const KEEP_AWAKE_TAG = 'boardsesh-ble';
+
+function connectionConfigIdentity(
+  boardName: string | undefined,
+  layoutId: number | undefined,
+  sizeId: number | undefined,
+  setIds: string | undefined,
+): string {
+  return `${boardName ?? ''}:${layoutId ?? ''}:${sizeId ?? ''}:${setIds ?? ''}`;
+}
 
 /**
  * Create a single AbortSignal that fires when either of the two input signals
@@ -368,6 +423,8 @@ export function useBoardBluetooth({
   holdsData,
   ledColorOverrides,
   analyticsBoardId,
+  analyticsInSession = false,
+  onConnectionEnded,
   onConnectionChange,
   onConnectSuccess,
   getConnectedViaMismatchOverride,
@@ -435,16 +492,108 @@ export function useBoardBluetooth({
   // would otherwise race the in-flight native disconnect and re-establish the
   // connection the user just closed.
   const adoptionSuppressedRef = useRef(false);
-  // The configKey the live connection was established for. Lets the
-  // config-switch effect tell a genuine board/layout/size change (tear down)
-  // from an unrelated re-render (no-op), and is the key cleared on every drop.
-  const connectedConfigKeyRef = useRef<string | null>(null);
+  // Full config identity the live connection was established for. Includes set
+  // IDs so a set-only route switch ends the old attribution generation rather
+  // than allowing its asynchronous board resolve to bleed into the new setup.
+  const connectedConfigIdentityRef = useRef<string | null>(null);
   // What connect() pushed as its initialFrames write, if any. The AutoSender
   // (mounted right after isConnected flips true) reads this one-shot seed so a
   // byte-identical current climb doesn't get re-sent immediately on connect —
   // a redundant full-frame write plus a doubled success haptic.
   const connectInitialSendRef = useRef<{ frames: string; mirrored: boolean; colorSignature: string } | null>(null);
   const configuredDeviceNameRef = useRef<string | undefined>(undefined);
+  // The physical-link lifetime belongs to the adapter generation, not React's
+  // rendered `isConnected` edge. It begins as soon as the adapter identity and
+  // disconnect subscription are installed, before native configuration or the
+  // initial frame write, and is consumed exactly once by a matching end path.
+  const nextConnectionGenerationRef = useRef(0);
+  const activeConnectionLifetimeRef = useRef<ActiveBleConnectionLifetime | null>(null);
+  const onConnectionEndedRef = useRef(onConnectionEnded);
+  onConnectionEndedRef.current = onConnectionEnded;
+  // A connect callback can outlive the render which started its asynchronous
+  // adapter request. Read session attribution when that request actually opens
+  // a physical-link generation, rather than from the callback's stale closure.
+  const analyticsInSessionRef = useRef(analyticsInSession);
+  analyticsInSessionRef.current = analyticsInSession;
+
+  const beginConnectionLifetime = useCallback(
+    (adapter: BluetoothAdapter, generation: number, configIdentity: string) => {
+      activeConnectionLifetimeRef.current = {
+        adapter,
+        generation,
+        configIdentity,
+        startedAtMs: Date.now(),
+        attribution: {
+          boardName: boardName ?? '',
+          layoutId,
+          sizeId,
+          setIds,
+          inSession: analyticsInSessionRef.current,
+        },
+      };
+    },
+    [boardName, layoutId, setIds, sizeId],
+  );
+
+  const createConnectionHandle = useCallback(
+    (
+      adapter: BluetoothAdapter,
+      generation: number,
+      configIdentity: string,
+      config: BleConnectionConfigSnapshot,
+    ): BleConnectionHandle => ({
+      generation,
+      configIdentity,
+      config,
+      setAnalyticsBoardId: (boardId: number): boolean => {
+        const lifetime = activeConnectionLifetimeRef.current;
+        if (
+          !lifetime ||
+          lifetime.adapter !== adapter ||
+          lifetime.generation !== generation ||
+          lifetime.configIdentity !== configIdentity
+        ) {
+          return false;
+        }
+        const existingBoardId = lifetime.attribution.boardId;
+        if (existingBoardId !== undefined) {
+          return existingBoardId === boardId;
+        }
+        lifetime.attribution.boardId = boardId;
+        return true;
+      },
+    }),
+    [],
+  );
+
+  const consumeConnectionLifetime = useCallback(
+    (
+      expectedAdapter: BluetoothAdapter,
+      expectedGeneration: number,
+      reason: BleConnectionEnded['reason'],
+      disconnectTrigger: BleDisconnectTrigger,
+      disconnectInfo?: BleDisconnectInfo,
+      notify: boolean = true,
+    ): boolean => {
+      const lifetime = activeConnectionLifetimeRef.current;
+      if (!lifetime || lifetime.adapter !== expectedAdapter || lifetime.generation !== expectedGeneration) {
+        return false;
+      }
+
+      activeConnectionLifetimeRef.current = null;
+      if (notify) {
+        onConnectionEndedRef.current?.({
+          ...lifetime.attribution,
+          reason,
+          disconnectTrigger,
+          connectionDurationSec: Math.max(0, Math.round((Date.now() - lifetime.startedAtMs) / 1000)),
+          ...(reason === 'unexpected' && disconnectInfo ? { disconnectInfo } : {}),
+        });
+      }
+      return true;
+    },
+    [],
+  );
 
   // ledColorOverrides narrowed to string values, shared by the connect and
   // adoption configureBoard calls so both push identical overrides natively.
@@ -508,43 +657,49 @@ export function useBoardBluetooth({
     });
   }, []);
 
-  const clearConnectionAfterDrop = useCallback(() => {
-    unsubDisconnectRef.current?.();
-    unsubDisconnectRef.current = null;
-    const adapter = adapterRef.current;
-    adapterRef.current = null;
-    configuredDeviceNameRef.current = undefined;
-    connectedConfigKeyRef.current = null;
-    writeAbortRef.current?.abort();
-    writeAbortRef.current = null;
-    writeChainRef.current = Promise.resolve();
-    moonboardWriteFailureStreakRef.current = 0;
-    setIsConnected(false);
-    onConnectionChange?.(false);
-    // Drop the connect-time BLE diagnostic tags so a later unrelated error
-    // doesn't carry stale ble_* tags from this (now-dead) connection.
-    clearBleDiagnosticsTags();
-    // Two callers reach here: the adapter's own disconnect event (the adapter
-    // already self-cleaned, so disconnect() is now a no-op), and the
-    // write-failure drop path (isDisconnectionError). In the latter the
-    // RNBleAdapter's onDeviceDisconnected subscription and a possibly half-alive
-    // native link would otherwise leak — dispose explicitly.
-    void adapter?.disconnect().catch(() => {});
-  }, [onConnectionChange]);
-
-  // Stash the most recent drop's reason so the provider's isConnected-transition
-  // effect — which actually fires the `Bluetooth Disconnected` analytics event —
-  // can attach it. Set synchronously here, before clearConnectionAfterDrop flips
-  // isConnected, so it's current when that effect reads it. Reset on a fresh
-  // connect so a later clean transition can't inherit a stale reason.
-  const lastDisconnectInfoRef = useRef<BleDisconnectInfo | null>(null);
+  const clearConnectionAfterDrop = useCallback(
+    (expectedAdapter: BluetoothAdapter) => {
+      // A callback from a replaced adapter must not tear down the new link.
+      if (adapterRef.current !== expectedAdapter) return;
+      unsubDisconnectRef.current?.();
+      unsubDisconnectRef.current = null;
+      adapterRef.current = null;
+      configuredDeviceNameRef.current = undefined;
+      connectedConfigIdentityRef.current = null;
+      writeAbortRef.current?.abort();
+      writeAbortRef.current = null;
+      writeChainRef.current = Promise.resolve();
+      moonboardWriteFailureStreakRef.current = 0;
+      setIsConnected(false);
+      onConnectionChange?.(false);
+      // Drop the connect-time BLE diagnostic tags so a later unrelated error
+      // doesn't carry stale ble_* tags from this (now-dead) connection.
+      clearBleDiagnosticsTags();
+      // Two callers reach here: the adapter's own disconnect event (the adapter
+      // already self-cleaned, so disconnect() is now a no-op), and the
+      // write-failure drop path (isDisconnectionError). In the latter the
+      // RNBleAdapter's onDeviceDisconnected subscription and a possibly half-alive
+      // native link would otherwise leak — dispose explicitly.
+      void expectedAdapter.disconnect().catch(() => {});
+    },
+    [onConnectionChange],
+  );
 
   const handleDisconnection = useCallback(
-    (info?: BleDisconnectInfo) => {
-      lastDisconnectInfoRef.current = info ?? null;
-      clearConnectionAfterDrop();
+    (expectedAdapter: BluetoothAdapter, expectedGeneration: number, info?: BleDisconnectInfo) => {
+      const lifetime = activeConnectionLifetimeRef.current;
+      if (
+        adapterRef.current !== expectedAdapter ||
+        !lifetime ||
+        lifetime.adapter !== expectedAdapter ||
+        lifetime.generation !== expectedGeneration
+      ) {
+        return;
+      }
+      consumeConnectionLifetime(expectedAdapter, expectedGeneration, 'unexpected', 'link_drop', info);
+      clearConnectionAfterDrop(expectedAdapter);
     },
-    [clearConnectionAfterDrop],
+    [clearConnectionAfterDrop, consumeConnectionLifetime],
   );
 
   const sendFramesToBoard = useCallback(
@@ -601,6 +756,7 @@ export function useBoardBluetooth({
         // race that way are exactly the ones whose diagnostics matter. Never
         // let the fetch itself fail an already-settled send.
         let sendAdapter: BluetoothAdapter | null = null;
+        let sendGeneration: number | null = null;
         const fetchWriteDiagnostics = async (): Promise<BleWriteDiagnostics | null> =>
           (await sendAdapter?.getLastWriteDiagnostics?.().catch(() => null)) ?? null;
         try {
@@ -619,6 +775,8 @@ export function useBoardBluetooth({
             return;
           }
           sendAdapter = adapterRef.current;
+          const activeLifetime = activeConnectionLifetimeRef.current;
+          sendGeneration = activeLifetime?.adapter === sendAdapter ? activeLifetime.generation : null;
 
           if (boardName === 'moonboard') {
             const sent = await dispatchMoonboardPacket(
@@ -808,7 +966,9 @@ export function useBoardBluetooth({
             if (lostLink) {
               track(SHARED_EVENTS.BluetoothConnectionStolen, { boardName, layoutId, sizeId });
             }
-            handleDisconnection({ source: 'write-failure' });
+            if (sendAdapter && sendGeneration !== null) {
+              handleDisconnection(sendAdapter, sendGeneration, { source: 'write-failure' });
+            }
           }
           return false;
         } finally {
@@ -896,11 +1056,22 @@ export function useBoardBluetooth({
         // Fresh connection generation — a stale dead-link streak must not carry over.
         moonboardWriteFailureStreakRef.current = 0;
 
-        // Clean up any existing adapter
+        // Clean up any existing adapter. A live link replaced by a new connect
+        // is a deliberate end of the old generation and keeps the old board's
+        // snapshotted attribution.
         if (adapterRef.current) {
+          const previousAdapter = adapterRef.current;
+          const previousLifetime = activeConnectionLifetimeRef.current;
+          if (previousLifetime?.adapter === previousAdapter) {
+            consumeConnectionLifetime(previousAdapter, previousLifetime.generation, 'user', 'connection_replacement');
+          }
           unsubDisconnectRef.current?.();
+          unsubDisconnectRef.current = null;
+          adapterRef.current = null;
+          connectedConfigIdentityRef.current = null;
+          configuredDeviceNameRef.current = undefined;
           try {
-            await adapterRef.current.disconnect();
+            await previousAdapter.disconnect();
           } catch {
             // The previous adapter may already be torn down — e.g. after a
             // write-failure disconnect (another device grabbed the board) the
@@ -924,16 +1095,28 @@ export function useBoardBluetooth({
         apiLevelRef.current = parseApiLevel(connection.deviceName);
         configuredDeviceNameRef.current = connection.deviceName;
 
-        unsubDisconnectRef.current = adapter.onDisconnect(handleDisconnection);
+        const connectionGeneration = nextConnectionGenerationRef.current + 1;
+        nextConnectionGenerationRef.current = connectionGeneration;
         adapterRef.current = adapter;
         // Assigned here, beside adapterRef, rather than after the initial send:
         // the physical link exists from this line on, and the config-switch effect
         // early-returns while this ref is null. Leaving it null across the awaited
-        // initial write meant a board/layout/size change landing in that window
+        // initial write meant a board/layout/size/set change landing in that window
         // couldn't tear the (now-wrong) connection down. Both drop paths
         // (clearConnectionAfterDrop, teardownConnection) already clear it.
-        connectedConfigKeyRef.current =
-          layoutId !== undefined && sizeId !== undefined ? boardConfigKey(boardName, layoutId, sizeId) : null;
+        const connectionConfig = { boardName: boardName ?? '', layoutId, sizeId, setIds };
+        const connectionIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds);
+        connectedConfigIdentityRef.current = connectionIdentity;
+        unsubDisconnectRef.current = adapter.onDisconnect((info) => {
+          handleDisconnection(adapter, connectionGeneration, info);
+        });
+        beginConnectionLifetime(adapter, connectionGeneration, connectionIdentity);
+        const connectionHandle = createConnectionHandle(
+          adapter,
+          connectionGeneration,
+          connectionIdentity,
+          connectionConfig,
+        );
 
         // Push board configuration into the native BoardBleManager so the
         // Dynamic Island widget intent path (next/prev tapped while the app
@@ -1014,9 +1197,9 @@ export function useBoardBluetooth({
         // in board presence that we cannot write to (#3875).
         //
         // A third, non-drop route reaches this bail: the config-switch effect
-        // below. Its deps (boardName/layoutId/sizeId) are route-derived provider
+        // below. Its deps (boardName/layoutId/sizeId/setIds) are route-derived provider
         // state, so navigating to a different board while the awaited write is in
-        // flight re-runs it, and — since connectedConfigKeyRef is now assigned when
+        // flight re-runs it, and — since connectedConfigIdentityRef is assigned when
         // the link opens rather than after this send — it tears the now-stale
         // connection down. Bailing is right (the adapter really is gone), but the
         // alert then reads "move closer" for what was a deliberate switch. Accepted:
@@ -1074,10 +1257,9 @@ export function useBoardBluetooth({
             ? { frames: initialFrames, mirrored: !!mirrored, colorSignature }
             : null;
 
-        lastDisconnectInfoRef.current = null;
         setIsConnected(true);
         onConnectionChange?.(true);
-        onConnectSuccess?.(parsedSerial);
+        onConnectSuccess?.(parsedSerial, connectionHandle);
         // Connect-time BLE write diagnostics (iOS native adapter only; null on
         // Android/web and on binaries too old to report them). Set as global
         // Sentry tags so they ride any later write-stall report, and recorded on
@@ -1209,6 +1391,9 @@ export function useBoardBluetooth({
     },
     [
       handleDisconnection,
+      beginConnectionLifetime,
+      consumeConnectionLifetime,
+      createConnectionHandle,
       boardName,
       layoutId,
       sizeId,
@@ -1228,61 +1413,67 @@ export function useBoardBluetooth({
     ],
   );
 
-  const teardownConnection = useCallback(async () => {
-    // Suppress native-connection adoption until the next deliberate connect:
-    // the native disconnect below is async, so a backgrounding/foregrounding
-    // app could otherwise see getConnectedDevice still report the device this
-    // teardown is closing and silently re-adopt it.
-    adoptionSuppressedRef.current = true;
-    unsubDisconnectRef.current?.();
-    unsubDisconnectRef.current = null;
-    const adapter = adapterRef.current;
-    adapterRef.current = null;
-    configuredDeviceNameRef.current = undefined;
-    connectedConfigKeyRef.current = null;
-    // Cancel every in-flight and queued write of this connection generation,
-    // and unblock the write chain for the next connect.
-    writeAbortRef.current?.abort();
-    writeAbortRef.current = null;
-    writeChainRef.current = Promise.resolve();
-    setIsConnected(false);
-    onConnectionChange?.(false);
-    clearBleDiagnosticsTags();
-    await adapter?.disconnect();
-  }, [onConnectionChange]);
+  const teardownConnection = useCallback(
+    async (disconnectTrigger: Exclude<BleDisconnectTrigger, 'link_drop'>) => {
+      // Suppress native-connection adoption until the next deliberate connect:
+      // the native disconnect below is async, so a backgrounding/foregrounding
+      // app could otherwise see getConnectedDevice still report the device this
+      // teardown is closing and silently re-adopt it.
+      adoptionSuppressedRef.current = true;
+      unsubDisconnectRef.current?.();
+      unsubDisconnectRef.current = null;
+      const adapter = adapterRef.current;
+      const lifetime = activeConnectionLifetimeRef.current;
+      if (adapter && lifetime?.adapter === adapter) {
+        consumeConnectionLifetime(adapter, lifetime.generation, 'user', disconnectTrigger);
+      }
+      adapterRef.current = null;
+      configuredDeviceNameRef.current = undefined;
+      connectedConfigIdentityRef.current = null;
+      // Cancel every in-flight and queued write of this connection generation,
+      // and unblock the write chain for the next connect.
+      writeAbortRef.current?.abort();
+      writeAbortRef.current = null;
+      writeChainRef.current = Promise.resolve();
+      setIsConnected(false);
+      onConnectionChange?.(false);
+      clearBleDiagnosticsTags();
+      await adapter?.disconnect();
+    },
+    [consumeConnectionLifetime, onConnectionChange],
+  );
 
   const disconnect = useCallback(async () => {
     // A deliberate disconnect forgets the board — only an involuntary drop or a
     // config switch keeps the silent same-board reconnect memory alive. Clears
     // the persisted copy too so the next launch doesn't resurrect it.
     forgetConnectedBoard();
-    await teardownConnection();
+    await teardownConnection('explicit_user');
   }, [forgetConnectedBoard, teardownConnection]);
 
   // If the active board config changes while a connection is live, tear it down.
-  // BluetoothProvider is mounted once globally; without this a board/layout/size
+  // BluetoothProvider is mounted once globally; without this a board/layout/size/set
   // switch would keep the old physical link but encode sends with the NEW
   // config's LED placement map — wrong-format packets streamed to the OLD wall.
   useEffect(() => {
-    const connectedKey = connectedConfigKeyRef.current;
-    if (!adapterRef.current || !connectedKey) return;
-    const activeKey =
-      boardName && layoutId !== undefined && sizeId !== undefined ? boardConfigKey(boardName, layoutId, sizeId) : null;
-    if (activeKey === connectedKey) return;
+    const connectedIdentity = connectedConfigIdentityRef.current;
+    if (!adapterRef.current || !connectedIdentity) return;
+    const activeIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds);
+    if (activeIdentity === connectedIdentity) return;
     // teardownConnection sets adoptionSuppressedRef on purpose: the named-device
     // adopt guard is boardType-granular only, so a same-family layout switch
     // (kilter/8/17 -> kilter/8/25) could otherwise race the async native
     // disconnect and re-adopt the old wall. A deliberate connect re-arms
     // adoption. lastConnectedBoard is PRESERVED so switching back offers a silent
     // reconnect (reconnectSerialForCurrentBoard self-guards on configKey).
-    void teardownConnection().catch(() => {});
+    void teardownConnection('config_switch').catch(() => {});
     // isConnected is a dep so a config switch that lands while a connect is
     // still in flight (adapterRef not yet set when this effect last ran) is
     // re-checked the moment the connect completes and flips isConnected.
     // clearConnectionAfterDrop can also race here: if a native drop already
     // nulled adapterRef.current the early-return above prevents a double
     // teardown, which is intentional.
-  }, [boardName, layoutId, sizeId, isConnected, teardownConnection]);
+  }, [boardName, layoutId, sizeId, setIds, isConnected, teardownConnection]);
 
   // iOS-only: adopt a connection the native BoardBleManager established
   // outside JS — the Dynamic Island lightbulb's reconnect-by-last-known-board,
@@ -1310,6 +1501,8 @@ export function useBoardBluetooth({
       // advertisement name.
       const adoptedBoardType = parseAnyBoardTypeFromDeviceName(deviceName);
       const currentConfigKey = boardConfigKey(boardName, layoutId, sizeId);
+      const currentConnectionConfig = { boardName, layoutId, sizeId, setIds };
+      const currentConnectionIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds);
       const rememberedBoard = lastConnectedBoardRef.current;
       const canAdoptNamelessRememberedBoard = !adoptedBoardType && rememberedBoard?.configKey === currentConfigKey;
       if (
@@ -1324,8 +1517,20 @@ export function useBoardBluetooth({
       adapter.adoptConnection(deviceId);
       apiLevelRef.current = parseApiLevel(deviceName);
       configuredDeviceNameRef.current = deviceName;
-      unsubDisconnectRef.current = adapter.onDisconnect(handleDisconnection);
+      const connectionGeneration = nextConnectionGenerationRef.current + 1;
+      nextConnectionGenerationRef.current = connectionGeneration;
       adapterRef.current = adapter;
+      connectedConfigIdentityRef.current = currentConnectionIdentity;
+      unsubDisconnectRef.current = adapter.onDisconnect((info) => {
+        handleDisconnection(adapter, connectionGeneration, info);
+      });
+      beginConnectionLifetime(adapter, connectionGeneration, currentConnectionIdentity);
+      const connectionHandle = createConnectionHandle(
+        adapter,
+        connectionGeneration,
+        currentConnectionIdentity,
+        currentConnectionConfig,
+      );
       void adapter
         .configureBoard({
           boardName,
@@ -1344,11 +1549,9 @@ export function useBoardBluetooth({
       } else if (boardName === 'moonboard') {
         rememberConnectedBoard({ configKey: currentConfigKey, deviceId });
       }
-      connectedConfigKeyRef.current = currentConfigKey;
-      lastDisconnectInfoRef.current = null;
       setIsConnected(true);
       onConnectionChange?.(true);
-      onConnectSuccess?.(serial);
+      onConnectSuccess?.(serial, connectionHandle);
       // Surface this adopted connection's write diagnostics to Sentry too
       // (widget reconnect / state restoration paths, not just JS connect).
       // Fire-and-forget; a native rejection is intentionally ignored.
@@ -1387,8 +1590,11 @@ export function useBoardBluetooth({
     };
   }, [
     boardName,
+    beginConnectionLifetime,
+    createConnectionHandle,
     layoutId,
     sizeId,
+    setIds,
     devicePicker,
     handleDisconnection,
     onConnectionChange,
@@ -1420,12 +1626,10 @@ export function useBoardBluetooth({
   // when nothing is remembered or the user switched boards (in which case the
   // caller opens the device picker instead).
   //
-  // Deliberately keyed on board+layout+size only — NOT set_ids, which web's
-  // boardIdentityKey also folds in. The mobile BluetoothProvider is handed a
-  // single global activeBoard (no set_ids), and the LED placement map keys on
-  // layout+size alone, so a same-board reconnect renders identically regardless
-  // of set_ids. Don't thread set_ids in here without also passing it to the
-  // provider.
+  // Deliberately keyed on board+layout+size only — NOT set_ids, which the tracked
+  // connection identity above does include. Reconnect targeting identifies the
+  // same physical controller and the LED placement map keys on layout+size; the
+  // lifetime still ends on a set-only route switch so attribution cannot bleed.
   const currentConfigKey =
     boardName && layoutId !== undefined && sizeId !== undefined ? boardConfigKey(boardName, layoutId, sizeId) : null;
   // The remembered board only counts while the route still points at the same
@@ -1468,10 +1672,23 @@ export function useBoardBluetooth({
       pickerRejectRef.current?.(new Error('Device selection cancelled'));
       pickerRejectRef.current = null;
       unsubDisconnectRef.current?.();
+      unsubDisconnectRef.current = null;
       writeAbortRef.current?.abort();
-      void adapterRef.current?.disconnect();
+      const adapter = adapterRef.current;
+      const lifetime = activeConnectionLifetimeRef.current;
+      if (adapter && lifetime?.adapter === adapter) {
+        // A provider unmount is component teardown, not an observed BLE end:
+        // its analytics/presence callback owners are unmounting too. Ordinary
+        // navigation keeps this global provider mounted, while user-triggered
+        // disconnects go through teardownConnection and do notify. Consume this
+        // lifetime silently so the native disconnect callback cannot emit it
+        // later after the subscription and owners are gone.
+        consumeConnectionLifetime(adapter, lifetime.generation, 'user', 'explicit_user', undefined, false);
+      }
+      adapterRef.current = null;
+      void adapter?.disconnect();
     };
-  }, []);
+  }, [consumeConnectionLifetime]);
 
   return {
     isConnected,
@@ -1483,6 +1700,5 @@ export function useBoardBluetooth({
     reconnectSerialForCurrentBoard,
     reconnectDeviceIdForCurrentBoard,
     connectInitialSendRef,
-    lastDisconnectInfoRef,
   };
 }

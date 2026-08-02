@@ -115,4 +115,21 @@ describe('backport OTA workflow upload pressure', () => {
     const timeout = Number(jobBlock(backport, 'backport').match(/timeout-minutes: (\d+)/)?.[1]);
     expect(timeout).toBeGreaterThanOrEqual(45);
   });
+
+  it('overlays every trusted helper required by production publish and source-map upload', () => {
+    const snapshot = stepBlock(backport, 'Snapshot trusted OTA publish tooling');
+    const overlay = stepBlock(backport, 'Overlay trusted OTA publish tooling');
+    const gitAddLine = overlay.split('\n').find((line) => line.trimStart().startsWith('git add '));
+
+    for (const implementationPath of [
+      'scripts/mobile-publish.ts',
+      'scripts/lib/eoas.ts',
+      'scripts/lib/mobile-publish-retry.ts',
+      'scripts/mobile-upload-sourcemaps.ts',
+    ]) {
+      expect(snapshot).toContain(implementationPath);
+      expect(overlay).toContain(implementationPath);
+      expect(gitAddLine).toContain(implementationPath);
+    }
+  });
 });

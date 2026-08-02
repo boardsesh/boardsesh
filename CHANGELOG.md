@@ -16,6 +16,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Android Google sign-in now waits for the browser callback when the app resumes instead of failing early. ([#4151](https://github.com/boardsesh/boardsesh/pull/4151))
 - Board hold overlays recover instead of erroring when the phone reclaims cache storage mid-render. ([#4114](https://github.com/boardsesh/boardsesh/pull/4114))
 - See send counts update as soon as you log a climb, then stay in sync with the crew. ([#4146](https://github.com/boardsesh/boardsesh/pull/4146))
 - Keep an iPhone board reconnect from being knocked out by a late Bluetooth failure from the previous attempt. ([#4173](https://github.com/boardsesh/boardsesh/pull/4173))

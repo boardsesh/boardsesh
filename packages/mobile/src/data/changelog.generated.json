@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-02T07:41:57.029Z",
+  "generatedAt": "2026-08-02T11:39:56.566Z",
   "entries": [
+    {
+      "prNumber": 4151,
+      "category": "fixed",
+      "title": "Android Google sign-in now waits for the browser callback when the app resumes instead of failing early.",
+      "mergedAt": "2026-08-02T11:39:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4151"
+    },
     {
       "prNumber": 4114,
       "category": "fixed",
@@ -2777,6 +2784,19 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-08-02T17:35:43+10:00",
+      "sha": "7c2996974c347521b519565f88a78691402abfde",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "aa9011dbfe19cdbabda39af9c535f7cfa21e3754",
+        "ios": "b5c1c04bb78f976202f4d7f170c0ab4b25b1416f"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-08-02T16:09:01+10:00",

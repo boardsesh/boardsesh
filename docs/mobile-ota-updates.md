@@ -50,12 +50,12 @@ Postgres and left V2 untouched. Two servers now run in parallel:
 
 ## Two hosting paths (don't mix them up)
 
-|                | Preview / dev                            | Production                                                                                                                       |
-| -------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Built by       | `eas build` (`mobile:preview-build`)     | bare `expo prebuild` + xcodebuild/gradle (the `ios-testflight-rn` / `android-apk-rn` workflows)                                  |
-| Hosting        | EAS free tier (`u.expo.dev`)             | self-hosted expo-open-ota V3 (`updates.boardsesh.com`)                                                                           |
-| Channel source | `channel` in `eas.json`                  | `expo-channel-name` request header baked in by `expo prebuild`                                                                   |
-| Publish        | `vp run mobile:publish` (→ `eas update`) | auto on push to `main` (`mobile-ota-production.yml`); manual: `vp run mobile:publish -- --channel production` (→ `eoas publish`) |
+|                | Preview / dev                            | Production                                                                                                                                                                      |
+| -------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Built by       | `eas build` (`mobile:preview-build`)     | bare `expo prebuild` + xcodebuild/gradle (the `ios-testflight-rn` / `android-apk-rn` workflows)                                                                                 |
+| Hosting        | EAS free tier (`u.expo.dev`)             | self-hosted expo-open-ota V3 (`updates.boardsesh.com`)                                                                                                                          |
+| Channel source | `channel` in `eas.json`                  | `expo-channel-name` request header baked in by `expo prebuild`                                                                                                                  |
+| Publish        | `vp run mobile:publish` (→ `eas update`) | auto on push to `main` (`mobile-ota-production.yml`); manual: publish one platform, then immediately run `mobile:upload-sourcemaps` (→ `eoas publish` + Sentry Debug ID upload) |
 
 A third path rides the **same self-hosted server**: per-PR `pr-<number>` channels that let any user
 validate a specific PR on a store/TestFlight build via the in-app switcher — see
@@ -131,23 +131,34 @@ regenerating it, then `changelog-discord-summary.ts` diffs the two snapshots and
 entries grouped as New / Improved / Fixed. When nothing new shipped (changelog unchanged) it falls
 back to the triggering commit's subject.
 
-**Manual** (one branch, ad hoc) — set the V3 server URL and an app-scoped `EOO_TOKEN`:
+**Manual** (one branch, ad hoc) — publish exactly one platform, then upload that export's source
+maps before running `eoas` again:
 
 ```sh
 EXPO_UPDATES_URL=https://updates.boardsesh.com/manifest \
 EOO_TOKEN=eoo_… \
-  vp run mobile:publish -- --channel production --message "fix: <what>"
+  vp run mobile:publish -- --channel production --platform ios --message "fix: <what>"
+
+SENTRY_AUTH_TOKEN=sntrys_… \
+  vp run mobile:upload-sourcemaps -- --platform ios
 ```
 
 The wrapper translates its `--channel production` selector to `eoas publish --branch production`.
 It deliberately does not pass eoas's deprecated `--channel` option; channel creation and mapping are
-control-plane operations described below. The publish does an `expo export` and uploads the bundle
-to our storage via the server. `eoas` reads the server URL from `updates.url` in
-`app.config.ts`, so `EXPO_UPDATES_URL` must be present. **Auth is `EOO_TOKEN`, not an Expo token:**
-the V3 control-plane server rejects Expo tokens, so publish/rollback need an app-scoped `eoo_` key
-minted in the dashboard. The CLI is pinned to **`eoas@3.0.5`** via `EOAS_PACKAGE_SPEC` in
-`scripts/lib/eoas.ts` — it must match the deployed server version exactly (V3 routes are
-app-scoped; a `v2` CLI 404s). Bump the server image and the pin in lockstep.
+control-plane operations described below. The production publish runs
+`eoas publish --branch production --dumpSourcemap --outputDir dist`, which exports the bundle plus
+its external map and uploads the OTA bundle to our storage via the server. `eoas` reads the server
+URL from `updates.url` in `app.config.ts`, so `EXPO_UPDATES_URL` must be present.
+**Auth is `EOO_TOKEN`, not an Expo token:** the V3 control-plane server rejects Expo tokens, so
+publish/rollback need an app-scoped `eoo_` key minted in the dashboard. The CLI is pinned to
+**`eoas@3.0.5`** via `EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts` — it must match the deployed server
+version exactly (V3 routes are app-scoped; a `v2` CLI 404s). Bump the server image and the pin in
+lockstep.
+
+For Android, use `--platform android` on both commands and provide the same
+`GOOGLE_MAPS_API_KEY` used by the Android native build while publishing. Do not use `--platform all`:
+each `eoas publish` removes and recreates `packages/mobile/dist`, so the second platform would erase
+the first platform's source maps before they reached Sentry.
 
 **Transient upload failures** are retried only when eoas output contains the exact S3 SlowDown XML
 response or an explicit HTTP 5xx status. Each platform gets at most four attempts, with 30, 60, and
@@ -161,6 +172,30 @@ iOS fails. The run fails unless every requested platform succeeds, but it does n
 roll back a platform that already published. A single eoas invocation can still upload some objects
 before its server-row write fails; making that internal PUT/database operation atomic requires an
 upstream expo-open-ota change.
+
+### OTA source maps and Sentry
+
+Production and approved-release backport workflows publish and upload in this order: iOS OTA → iOS
+maps → Android OTA → Android maps. The wrapper derives executable bundles from the requested
+platform in `dist/metadata.json` (the primary bundle plus declared DOM component JavaScript), then
+validates each bundle/map pair and map Debug ID. Public-folder JavaScript is not update executable
+metadata and is ignored. Only validated pairs are staged for the official `@sentry/react-native`
+7.11 Expo uploader, whose recursive scan cannot see other files in `dist`. Sentry matches the running
+OTA bundle to its map by Debug ID. It deliberately receives no synthetic release or dist, so the
+SDK's native release/dist continue to describe the installed store binary.
+
+Expo 57 declares DOM component JavaScript under `www.bundle`, but independently content-hashes its
+map filename. Sentry 7.11 can only group an exact adjacent `<bundle>.map`, so the wrapper rejects
+such an export with an actionable error instead of silently omitting executable code. Boardsesh does
+not currently use Expo DOM components; add an audited pairing/upload path before introducing one.
+
+Publishing and source-map acceptance are **not atomic**. The OTA can already be live when Sentry
+rejects its map. CI therefore lets changelog, deployment notice, and health reporting finish, warns
+that crash frames may remain minified, and then fails the workflow. For a manual retry, return to the
+exact same commit/tree, platform, and build environment that produced the live OTA, rerun that one
+platform's publish to regenerate `dist`, and immediately run `mobile:upload-sourcemaps` before any
+other `eoas publish`. A newer tree or different environment can produce a different Debug ID and
+cannot repair the already-published artifact.
 
 **Progressive rollouts** are a control-plane feature: `eoas publish --branch production
 --rollout-percentage N` ships to only `N%` of the channel's installs. Finish or revert
@@ -403,14 +438,18 @@ Confirm the Android release actually shipped before relying on an Android backpo
 2. Run the **Mobile OTA Backport** workflow (`mobile-ota-backport.yml`, `workflow_dispatch`) with the
    approved `version` (e.g. `2.1.0`), the `platform` (`all`/`ios`/`android`), and the fix commit
    SHA(s). Leave `dry_run` on for the first pass.
-3. It checks out `release/<platform>-v<version>-<shortfp>`, cherry-picks the fix, and **verifies the
-   resolved fingerprint's 12-char prefix equals the anchor's `<shortfp>`**. A mismatch means the
-   cherry-pick touched native inputs — it aborts, because an OTA would resolve a fingerprint no
-   shipped binary has and silently never land. Ship such a fix as a new native build instead.
-4. Re-run with `dry_run` off. The wrapper targets the `production` branch under the approved
-   fingerprint, reaching that release's installs. It shares the `mobile-ota-production` concurrency
-   lane and limits the platform matrix to one publish at a time, so it never races a `main` OTA or
-   bursts iOS and Android uploads concurrently.
+3. It checks out `release/<platform>-v<version>-<shortfp>`, cherry-picks the fix, overlays the exact
+   workflow commit's dependency-light publish/source-map tooling, and commits that overlay so `eoas`
+   sees a clean tree. It then verifies the resolved fingerprint's 12-char prefix equals the anchor's
+   `<shortfp>`. A mismatch means the cherry-pick or tooling changed native inputs — it aborts,
+   because an OTA would resolve a fingerprint no shipped binary has and silently never land. Anchors
+   without the audited `@sentry/react-native` 7.11 uploader also abort. Do not change that
+   dependency on the frozen anchor: ship a native update with a supported uploader, wait for its
+   approved release anchor, and backport against that new anchor instead.
+4. Re-run with `dry_run` off to publish under the approved fingerprint and immediately upload that
+   platform's Debug ID source map. It shares the `mobile-ota-production` concurrency lane, limits
+   the platform matrix to one publish at a time, and never races a `main` OTA or bursts iOS and
+   Android uploads concurrently. A dry run neither publishes nor uploads.
 
 To find the anchor for a release: `git tag -l 'release/ios-v2.1.0-*'`.
 
@@ -736,8 +775,13 @@ EXPO_UPDATES_URL=https://example.test/manifest EXPO_UPDATES_CHANNEL=production b
 3. Ship one native TestFlight build from `main` (bakes in the fingerprint runtimeVersion + server
    URL + cert). Existing `appVersion`-era installs won't receive fingerprint OTAs — they update
    from the store once.
-4. Make a trivial JS change, push to `main` (or `vp run mobile:publish -- --channel production`),
-   relaunch the TestFlight app, and confirm the OTA downloads and applies.
+4. Make a trivial JS change, push to `main` (or publish and upload one platform with the manual
+   commands above), relaunch the TestFlight/internal-track app, and confirm the OTA downloads and
+   applies.
+5. On one TestFlight iOS install and one internal/store Android install running the new OTA, use the
+   tester crash tool to send a JavaScript error. Confirm both events resolve to
+   `packages/mobile/src/...` source lines, their Debug IDs match the uploaded OTA maps, and the
+   events' native release/dist still identify the installed store binaries rather than the OTA.
 
 ## In-app channel switcher ("Try a preview", production builds)
 
@@ -824,6 +868,10 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   [Channel↔branch mapping](#channelbranch-mapping-control-plane)). The channel name and the baked
   header are independent: the baked `expo-channel-name=production` drives the fingerprint, `pr-<number>`
   drives where the bundle lands and what the switcher selects.
+- **Source maps stay local to the runner.** The shared publisher generates external maps for these
+  exports, but the preview workflow intentionally has no `SENTRY_AUTH_TOKEN` and never uploads them.
+  It runs PR-authored code, so granting a Sentry upload credential would cross the preview security
+  boundary. The next platform publish replaces `dist`; the runner discards the final copy.
 - **Fingerprint parity.** A native-change PR resolves a new fingerprint no shipped binary has, so
   that platform is **skipped** — `vp run check:mobile-ota-compat` (the same engine as
   `mobile-ota-check.yml`) gates each platform, and the PR comment says so. The env is held

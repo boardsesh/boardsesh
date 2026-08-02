@@ -11,14 +11,14 @@ The BLE connection is managed by `useBoardBluetooth` hook and exposed via `Bluet
    - Web: uses Web Bluetooth API (`navigator.bluetooth.requestDevice`).
    - Capacitor (native iOS/Android): uses `react-native-ble-plx` equivalent with a custom `DevicePickerDialog` rendered as a bottom sheet (`Dialog` on web).
 3. **Availability check** -- `adapter.isAvailable()` confirms BLE is supported.
-4. **Existing adapter cleanup** -- if a prior connection exists, emits `Bluetooth Disconnected` event with `reason: 'reconnect'`, then disconnects.
+4. **Existing adapter cleanup** -- on mobile, if a prior adapter exists, ends that generation with `reason: 'user'` and `disconnectTrigger: 'connection_replacement'`, then disconnects it before the new scan.
 5. **Device request and connect** -- `adapter.requestAndConnect(targetSerial)` opens the device picker (OS native on web, custom dialog on Capacitor with RSSI-based signal indicators).
 6. **Device name parsing** -- `parseApiLevel(deviceName)` extracts the Aurora API level from the device name (e.g., `Kilter Board#751737@3` yields API level 3). `parseSerialNumber(deviceName)` extracts the serial (e.g., `751737`).
-7. **Board configuration** -- adapters with a native background writer call `adapter.configureBoard()` with board name, layout ID, size ID, API level, device name, and colour overrides.
-8. **Disconnection listener** -- `adapter.onDisconnect(handleDisconnection)` is registered.
-9. **Initial frames** -- if provided, `sendFramesToBoard(initialFrames, mirrored)` sends the first climb immediately.
+7. **Tracked adapter generation** -- mobile installs the adapter identity and `onDisconnect` listener, then starts one transport lifetime with a snapshot of the full board config (including set IDs) and session state. The connection handle carries that immutable config snapshot, and board presence later attaches its resolved board ID only if that adapter generation is still live.
+8. **Board configuration** -- adapters with a native background writer call `adapter.configureBoard()` with board name, layout ID, size ID, API level, device name, and colour overrides.
+9. **Initial frames** -- if provided, `sendFramesToBoard(initialFrames, mirrored)` sends the first climb immediately. A link drop during this write still ends the generation even though the UI never reached `isConnected: true`.
 10. **Serial recording** -- for Aurora boards, `recordBoardSerial()` POSTs the serial-to-config mapping to `/api/internal/board-serials` for future auto-matching.
-11. **Session serial broadcast** -- `onConnectSuccess(parsedSerial)` fires, which in `BluetoothProvider` calls `setSessionBoardSerial(serial)` if a session is active.
+11. **Session serial broadcast** -- `onConnectSuccess(parsedSerial, connectionHandle)` fires. `BluetoothProvider` resolves the board using the handle's snapshotted config and calls `setSessionBoardSerial(serial)` if a session is active. An unchanged binding returns its cached ID, while same-key reconnects share an in-flight resolve. Ambiguous serial resolution stays pending through the picker choice. This lets the newest generation attach and later release the holder; stale, cancelled, invalidated, and failed resolutions return `null` and cannot populate another config.
 12. **Wake lock** -- `useWakeLock(isConnected)` keeps the screen on while connected.
 
 **Device picker dialog (`DevicePickerDialog`):**
@@ -112,20 +112,22 @@ Long-pressing the lightbulb opens the `LightControlDrawer` (`light-control-drawe
 **User-initiated disconnect (`disconnect` callback):**
 
 - Updates state synchronously for immediate UI feedback.
-- Clears `connectedAtRef`, unsubscribes disconnect listener, nulls adapter ref.
-- Fires `Bluetooth Disconnected` analytics with `reason: 'user'`, `disconnectReason: 'user_initiated'`, and `connectionDurationSec`.
+- Consumes the active adapter generation exactly once, unsubscribes the adapter disconnect listener, and nulls the adapter ref.
+- Fires `Bluetooth Disconnected` analytics with `reason: 'user'`, a low-cardinality `disconnectTrigger` (`explicit_user`, `config_switch`, or `connection_replacement`), and `connectionDurationSec`.
+- Uses the board config and analytics session state captured when that generation started. Its board ID is attached only through the matching generation's guarded resolve, including cached identities for already-bound reconnects, so every holder is released while a config switch still releases the old wall, never the newly rendered route.
+- Calls session wall-disconnect cleanup unconditionally against the current queue session (a no-op in solo). This safely handles a connection that opened solo and joined later, or moved from one session to another; the snapshotted session boolean remains analytics-only.
 
 **Unexpected disconnect (`handleDisconnection` callback):**
 
-- Fires when the adapter reports `gattserverdisconnected`.
-- Only runs on unexpected drops (signal loss, board power-off, OS BLE stack reset) because user-initiated disconnects null the listener first.
-- Fires analytics with `reason: 'lost'`, `disconnectReason: 'gatt_error'`.
+- Fires when native iOS or ble-plx reports a link drop, or when a write failure tears down the connection.
+- Consumes only when both adapter identity and generation match, so duplicate or stale callbacks cannot end a replacement link.
+- Fires analytics with `reason: 'unexpected'`, `disconnectTrigger: 'link_drop'`, the available platform-specific `disconnect*` fields, and the same `connectionDurationSec` lifetime property. Platform fields and `disconnectCategory` are absent from deliberate disconnects.
 
-**Navigation disconnect (unmount cleanup):**
+**Unmount cleanup:**
 
 - Rejects any pending picker promise.
-- If still connected at unmount, fires analytics with `reason: 'navigation'`, `disconnectReason: 'unknown'`.
-- Calls `adapter.disconnect()`.
+- Silently consumes the generation, unsubscribes the adapter disconnect listener, aborts pending writes, and calls `adapter.disconnect()`.
+- Does not emit `Bluetooth Disconnected` for component teardown; tracked mobile disconnects remain `user` or `unexpected`.
 
 **Status store (`bluetooth-status-store.ts`):**
 

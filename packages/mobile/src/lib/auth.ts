@@ -1,4 +1,4 @@
-import { Linking, Platform } from 'react-native';
+import { AppState, Linking, Platform } from 'react-native';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
 import { getRandomBytes, digestStringAsync, CryptoDigestAlgorithm, CryptoEncoding } from 'expo-crypto';
@@ -275,8 +275,9 @@ async function exchangeTransferToken(transferToken: string): Promise<OAuthSignIn
  * SFSafariViewController that presents reliably, and the server's callback page
  * (packages/web/app/api/auth/native/callback/route.ts) deep-links back via a
  * JS/meta-refresh redirect built for exactly this hand-off — the same one the
- * legacy Capacitor app shipped with. This is the restoration of the proven flow
- * from PR #2721, scoped to the fallback.
+ * legacy Capacitor app shipped with. Android keeps listening after its Custom
+ * Tab reports `opened`, then uses an observed background/foreground round trip
+ * plus a bounded callback grace to distinguish a returned callback from cancel.
  *
  * Never throws: every outcome maps to an OAuthSignInResult (success / cancelled /
  * failure) so the caller treats it exactly like the native path.
@@ -290,9 +291,14 @@ async function signInWithProviderWeb(provider: AuthProvider): Promise<OAuthSignI
   // wrapped so a synchronous throw from it can't reject the race's success branch.
   const race = await raceBrowserSignIn(
     {
+      platform: Platform.OS === 'android' ? 'android' : 'ios',
       addUrlListener: (listener) => Linking.addEventListener('url', listener),
+      addAppStateListener: (listener) => AppState.addEventListener('change', listener),
+      getCurrentAppState: () => AppState.currentState,
       openBrowser: (url) => WebBrowser.openBrowserAsync(url),
       dismissBrowser: async () => WebBrowser.dismissBrowser(),
+      setTimer: (callback, delayMs) => setTimeout(callback, delayMs),
+      clearTimer: (timer) => clearTimeout(timer),
     },
     startUrl,
     NATIVE_OAUTH_REDIRECT,
@@ -302,6 +308,11 @@ async function signInWithProviderWeb(provider: AuthProvider): Promise<OAuthSignI
   // fixing — a real "couldn't open the browser", not a user cancel and not a
   // network-class server failure. Its own analytics reason so it's visible.
   if (race.type === 'error') return { success: false, status: null, error: 'browser_unavailable' };
+
+  // The Android Custom Tab opened but neither a callback nor a terminal close
+  // signal arrived within the bounded race. Keep this distinct from both a
+  // browser presentation error and an intentional user cancellation.
+  if (race.type === 'timeout') return { success: false, status: null, error: 'browser_timeout' };
 
   // The user closed the browser before the callback deep link arrived.
   if (race.type === 'cancel') return { success: false, cancelled: true };

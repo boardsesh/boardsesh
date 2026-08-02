@@ -70,8 +70,9 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
       // the flow dying programmatically (sub-second).
       const attemptStartedAt = Date.now();
 
-      // Browser-OAuth fallback, iOS-only, for both Google and Apple. The native
-      // SDK can fail before any network call — Google on iOS 26.5.1 (GIDSignIn
+      // Browser-OAuth fallback for both providers on iOS and for recoverable
+      // Android Google config errors. The native SDK can fail before any network
+      // call — Google on iOS 26.5.1 (GIDSignIn
       // "Unable to open Safari"), Apple on ASAuthorizationError.unknown (code
       // 1000: device not signed into iCloud, 2FA disabled, transient Apple ID
       // issues) — and that failure isn't fatal: the web NextAuth handoff completes
@@ -79,11 +80,9 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
       // flow: 'web_fallback' so we can measure how often it rescues a native
       // failure, and fully owns the outcome (success returns, a browser cancel
       // stays silent, a real failure reaches error tracking + the error region).
-      // Not used on Android: the redirect to com.boardsesh.app://auth/callback
-      // doesn't reliably return through openAuthSessionAsync there, an Android
-      // native Google failure is almost always an unregistered signing-cert SHA-1
-      // (a Google Cloud fix), and Apple sign-in isn't offered on Android at all —
-      // so we surface the real error instead (see auth.ts).
+      // Android's Google fallback keeps its Custom Tab deep-link listener alive
+      // after `opened`; it remains deliberately limited to the config-class
+      // failures below. Apple sign-in is not offered on Android.
       // Keyed by provider so the map is exhaustive: extending Provider without a
       // web fn here is a type error, rather than silently routing the new provider
       // to the Google flow.
@@ -155,7 +154,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           ...registrationProps,
         });
         reportError(new Error(`Web-fallback ${provider} sign-in failed: ${fallback.error}`), {
-          level: fallback.error === 'network' ? 'warning' : 'error',
+          level: fallback.error === 'network' || fallback.error === 'browser_timeout' ? 'warning' : 'error',
           tags: { source: 'native-auth', provider, flow: 'web_fallback', failure_reason: fallbackReason },
           extra: { status: fallback.status, server_error: fallback.error },
         });

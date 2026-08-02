@@ -1,18 +1,30 @@
 /// <reference types="node" />
 
 import { describe, expect, it } from 'vitest';
+import { EOAS_PACKAGE_SPEC } from './lib/eoas';
 import { buildEasUpdateArgs, buildSelfHostedEoasArgs, parseArgs, requestedSelfHostedPlatforms } from './mobile-publish';
 
 describe('mobile publish argument routing', () => {
   it('maps the wrapper channel selector to an eoas branch without a deprecated channel flag', () => {
     const args = buildSelfHostedEoasArgs('production', 'ios', 'fix the queue');
 
-    expect(args).toContain('--branch');
-    expect(args[args.indexOf('--branch') + 1]).toBe('production');
+    expect(args).toEqual([
+      EOAS_PACKAGE_SPEC,
+      'publish',
+      '--branch',
+      'production',
+      '--platform',
+      'ios',
+      '--message',
+      'fix the queue',
+      '--dumpSourcemap',
+      '--outputDir',
+      'dist',
+      '--nonInteractive',
+      '--packageRunner',
+      'bunx',
+    ]);
     expect(args).not.toContain('--channel');
-    expect(args[args.indexOf('--platform') + 1]).toBe('ios');
-    expect(args).toContain('--nonInteractive');
-    expect(args[args.indexOf('--packageRunner') + 1]).toBe('bunx');
   });
 
   it('keeps the EAS preview command arguments unchanged', () => {

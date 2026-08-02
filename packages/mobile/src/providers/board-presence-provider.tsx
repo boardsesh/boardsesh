@@ -56,8 +56,52 @@ export type ResolveBoardUuidArgs = {
   boardUuid: string;
 };
 
+/** Stable identity needed by BLE lifetime attribution. Resolver callers must
+ * not depend on the backend's richer board payload. */
+export type BoardBindingIdentity = Pick<ResolvedBoard, 'boardId'>;
+
+type BoardBindingResolutionKind = 'serial' | 'config' | 'uuid';
+
+type PendingBoardBindingResolution = {
+  key: string;
+  kind: BoardBindingResolutionKind;
+  promise: Promise<BoardBindingIdentity | null>;
+  settle: (binding: BoardBindingIdentity | null) => void;
+  choiceInFlight: boolean;
+};
+
+function createPendingBoardBindingResolution(
+  key: string,
+  kind: BoardBindingResolutionKind,
+): PendingBoardBindingResolution {
+  let resolvePromise: (binding: BoardBindingIdentity | null) => void = () => {};
+  let settled = false;
+  const promise = new Promise<BoardBindingIdentity | null>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return {
+    key,
+    kind,
+    promise,
+    choiceInFlight: false,
+    settle: (binding) => {
+      if (settled) return;
+      settled = true;
+      resolvePromise(binding);
+    },
+  };
+}
+
 function boardConfigResolveKey({ boardType, layoutId, sizeId, setIds }: ResolveBoardConfigArgs): string {
-  return `${boardType}:${layoutId}:${sizeId}:${setIds}`;
+  return `config:${boardType}:${layoutId}:${sizeId}:${setIds}`;
+}
+
+function boardSerialResolveKey(args: ResolveBoardArgs): string {
+  return `serial:${args.serial}:${args.boardType}:${args.layoutId}:${args.sizeId}:${args.setIds}`;
+}
+
+function boardUuidResolveKey({ boardUuid }: ResolveBoardUuidArgs): string {
+  return `uuid:${boardUuid}`;
 }
 
 type BoardPresenceControlsValue = {
@@ -70,19 +114,25 @@ type BoardPresenceControlsValue = {
    * Resolve (and bind) the shared board for a just-connected serial, then store
    * its boardId so the wall feed subscribes. No-op (resolves null) when no
    * transport/client is available (e.g. the outside-provider fallback).
-   * Idempotent for an unchanged serial.
+   * An unchanged, already-bound serial/config returns its cached board identity
+   * without another transport request so a new BLE generation can attribute
+   * its eventual release. Same-key callers share an in-flight resolution,
+   * including the deferred serial-disambiguation choice.
    */
-  resolveAndBindBoard: (args: ResolveBoardArgs) => Promise<ResolvedBoard | null>;
+  resolveAndBindBoard: (args: ResolveBoardArgs) => Promise<BoardBindingIdentity | null>;
   /**
    * Resolve a board by config when no serial is available, then store its
-   * boardId. No-op when the active transport does not support config fallback.
+   * boardId. An unchanged bound config returns its cached identity, and
+   * same-key callers share an in-flight result. No-op when the active transport
+   * does not support config fallback.
    */
-  resolveAndBindBoardByConfig: (args: ResolveBoardConfigArgs) => Promise<ResolvedBoard | null>;
+  resolveAndBindBoardByConfig: (args: ResolveBoardConfigArgs) => Promise<BoardBindingIdentity | null>;
   /**
    * Resolve a selected named board by UUID, then store its boardId. This is the
-   * preferred non-BLE path for board sheet stats/history.
+   * preferred non-BLE path for board sheet stats/history. An unchanged bound
+   * UUID returns its cached identity; same-key callers share an in-flight result.
    */
-  resolveAndBindBoardByUuid: (args: ResolveBoardUuidArgs) => Promise<ResolvedBoard | null>;
+  resolveAndBindBoardByUuid: (args: ResolveBoardUuidArgs) => Promise<BoardBindingIdentity | null>;
   /**
    * Report directly to a specific board id. Used immediately after a connect
    * resolve when the React boardId context has not re-rendered yet.
@@ -119,6 +169,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
   // for the choice.
   const [pendingDisambiguation, setPendingDisambiguation] = useState<{
     serial: string;
+    resolutionKey: string;
     candidates: BoardCandidate[];
   } | null>(null);
 
@@ -136,11 +187,13 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
   const clientRef = useRef(client);
   clientRef.current = client;
 
-  // The serial last resolved, so a reconnect to the same wall doesn't re-resolve.
-  const lastResolvedSerialRef = useRef<string | null>(null);
-  const lastResolvedConfigKeyRef = useRef<string | null>(null);
-  const lastResolvedBoardUuidRef = useRef<string | null>(null);
-  const resolveGenerationRef = useRef(0);
+  // A bound identity is cached by the exact resolver key. A same-key reconnect
+  // can reuse it; a different serial/config/UUID must resolve independently.
+  const boundBoardBindingRef = useRef<{ resolutionKey: string; boardId: number } | null>(null);
+  // Every exact key has at most one deferred resolution. Same-wall reconnects
+  // share this promise so the newest BLE generation can attach the eventual ID
+  // even when an older generation started the network request or picker.
+  const pendingBoardBindingResolutionRef = useRef<PendingBoardBindingResolution | null>(null);
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
   // Mirror boardId into a ref so the empty-dep callback can read it without
@@ -152,120 +205,177 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
   const pendingDisambiguationRef = useRef(pendingDisambiguation);
   pendingDisambiguationRef.current = pendingDisambiguation;
 
-  const resetPresence = useCallback(() => {
-    lastResolvedSerialRef.current = null;
-    lastResolvedConfigKeyRef.current = null;
-    lastResolvedBoardUuidRef.current = null;
-    resolveGenerationRef.current += 1;
-    setPendingDisambiguation(null);
-    setBoardId(null);
-  }, []);
-
-  const resolveAndBindBoard = useCallback(async (args: ResolveBoardArgs): Promise<ResolvedBoard | null> => {
-    const activeClient = clientRef.current;
-    if (!enabledRef.current || activeClient === null) {
-      return null;
-    }
-    if (lastResolvedSerialRef.current === args.serial && boardIdRef.current !== null) {
-      return null;
-    }
-    const resolveGeneration = resolveGenerationRef.current + 1;
-    resolveGenerationRef.current = resolveGeneration;
-    lastResolvedConfigKeyRef.current = null;
-    lastResolvedBoardUuidRef.current = null;
-    lastResolvedSerialRef.current = args.serial;
-    setBoardId(null);
-    try {
-      const result = await activeClient.resolveBoardCandidatesForSerial(args);
-      if (resolveGenerationRef.current !== resolveGeneration) {
-        return null;
+  const settleActiveResolution = useCallback(
+    (pendingResolution: PendingBoardBindingResolution, binding: BoardBindingIdentity | null): boolean => {
+      if (pendingBoardBindingResolutionRef.current !== pendingResolution) {
+        return false;
       }
-      if (result.board) {
-        setPendingDisambiguation(null);
-        setBoardId(result.board.boardId);
-        return result.board;
+      pendingBoardBindingResolutionRef.current = null;
+      setPendingDisambiguation(null);
+      if (binding) {
+        boundBoardBindingRef.current = {
+          resolutionKey: pendingResolution.key,
+          boardId: binding.boardId,
+        };
+        boardIdRef.current = binding.boardId;
+        setBoardId(binding.boardId);
+      } else {
+        boundBoardBindingRef.current = null;
+        boardIdRef.current = null;
+        setBoardId(null);
       }
-      if (result.candidates && result.candidates.length > 0) {
-        // Several boards share this serial — ask the user which wall they're at.
-        // Binding waits for `chooseBoard`; leave boardId null so the wall feed
-        // stays inert until then.
-        setPendingDisambiguation({ serial: args.serial, candidates: result.candidates });
-        // Allow a later reconnect to re-prompt if they dismiss without picking.
-        lastResolvedSerialRef.current = null;
-        return null;
-      }
-      return null;
-    } catch (error) {
-      if (resolveGenerationRef.current === resolveGeneration) {
-        lastResolvedSerialRef.current = null;
-      }
-      console.warn('[board-presence] resolveBoardCandidatesForSerial failed', error);
-      return null;
-    }
-  }, []);
-
-  const resolveAndBindBoardByUuid = useCallback(async (args: ResolveBoardUuidArgs): Promise<ResolvedBoard | null> => {
-    const activeClient = clientRef.current;
-    if (!enabledRef.current || activeClient === null || !activeClient.resolveBoardForUuid) {
-      return null;
-    }
-    if (lastResolvedBoardUuidRef.current === args.boardUuid) {
-      return null;
-    }
-    const resolveGeneration = resolveGenerationRef.current + 1;
-    resolveGenerationRef.current = resolveGeneration;
-    lastResolvedBoardUuidRef.current = args.boardUuid;
-    lastResolvedConfigKeyRef.current = null;
-    lastResolvedSerialRef.current = null;
-    setBoardId(null);
-    try {
-      const resolved = await activeClient.resolveBoardForUuid(args);
-      if (resolveGenerationRef.current !== resolveGeneration) {
-        return null;
-      }
-      setBoardId(resolved.boardId);
-      return resolved;
-    } catch (error) {
-      if (resolveGenerationRef.current === resolveGeneration) {
-        lastResolvedBoardUuidRef.current = null;
-      }
-      console.warn('[board-presence] resolveBoardForUuid failed', error);
-      return null;
-    }
-  }, []);
-
-  const resolveAndBindBoardByConfig = useCallback(
-    async (args: ResolveBoardConfigArgs): Promise<ResolvedBoard | null> => {
-      const activeClient = clientRef.current;
-      if (!enabledRef.current || activeClient === null || !activeClient.resolveBoardForConfig) {
-        return null;
-      }
-      const configKey = boardConfigResolveKey(args);
-      if (lastResolvedConfigKeyRef.current === configKey && boardIdRef.current !== null) {
-        return null;
-      }
-      const resolveGeneration = resolveGenerationRef.current + 1;
-      resolveGenerationRef.current = resolveGeneration;
-      lastResolvedConfigKeyRef.current = configKey;
-      lastResolvedBoardUuidRef.current = null;
-      lastResolvedSerialRef.current = null;
-      setBoardId(null);
-      try {
-        const resolved = await activeClient.resolveBoardForConfig(args);
-        if (resolveGenerationRef.current !== resolveGeneration || lastResolvedConfigKeyRef.current !== configKey) {
-          return null;
-        }
-        setBoardId(resolved.boardId);
-        return resolved;
-      } catch (error) {
-        if (resolveGenerationRef.current === resolveGeneration && lastResolvedConfigKeyRef.current === configKey) {
-          lastResolvedConfigKeyRef.current = null;
-        }
-        console.warn('[board-presence] resolveBoardForConfig failed', error);
-        return null;
-      }
+      pendingResolution.settle(binding);
+      return true;
     },
     [],
+  );
+
+  const beginResolution = useCallback(
+    (resolutionKey: string, kind: BoardBindingResolutionKind): PendingBoardBindingResolution => {
+      const previousResolution = pendingBoardBindingResolutionRef.current;
+      if (previousResolution) {
+        pendingBoardBindingResolutionRef.current = null;
+        previousResolution.settle(null);
+      }
+      setPendingDisambiguation(null);
+      boundBoardBindingRef.current = null;
+      boardIdRef.current = null;
+      setBoardId(null);
+      const pendingResolution = createPendingBoardBindingResolution(resolutionKey, kind);
+      pendingBoardBindingResolutionRef.current = pendingResolution;
+      return pendingResolution;
+    },
+    [],
+  );
+
+  const resetPresence = useCallback(() => {
+    const pendingResolution = pendingBoardBindingResolutionRef.current;
+    pendingBoardBindingResolutionRef.current = null;
+    pendingResolution?.settle(null);
+    boundBoardBindingRef.current = null;
+    setPendingDisambiguation(null);
+    boardIdRef.current = null;
+    setBoardId(null);
+  }, []);
+
+  // A provider teardown must not leave a serial-disambiguation promise (and its
+  // Bluetooth callers) pending forever. Avoid state writes during unmount.
+  useEffect(
+    () => () => {
+      const pendingResolution = pendingBoardBindingResolutionRef.current;
+      pendingBoardBindingResolutionRef.current = null;
+      pendingResolution?.settle(null);
+    },
+    [],
+  );
+
+  const resolveAndBindBoard = useCallback(
+    (args: ResolveBoardArgs): Promise<BoardBindingIdentity | null> => {
+      const activeClient = clientRef.current;
+      if (!enabledRef.current || activeClient === null) {
+        return Promise.resolve(null);
+      }
+      const resolutionKey = boardSerialResolveKey(args);
+      const pendingResolution = pendingBoardBindingResolutionRef.current;
+      if (pendingResolution?.key === resolutionKey) {
+        return pendingResolution.promise;
+      }
+      const boundBinding = boundBoardBindingRef.current;
+      if (boundBinding?.resolutionKey === resolutionKey) {
+        return Promise.resolve({ boardId: boundBinding.boardId });
+      }
+
+      const newResolution = beginResolution(resolutionKey, 'serial');
+      void activeClient
+        .resolveBoardCandidatesForSerial(args)
+        .then((result) => {
+          if (pendingBoardBindingResolutionRef.current !== newResolution) return;
+          if (result.board) {
+            settleActiveResolution(newResolution, { boardId: result.board.boardId });
+            return;
+          }
+          if (result.candidates && result.candidates.length > 0) {
+            // Keep the keyed promise pending through disambiguation. A same-wall
+            // reconnect shares it and can attach the chosen ID to its newer BLE
+            // generation; cancel/different-key/reset settle it with null.
+            setPendingDisambiguation({
+              serial: args.serial,
+              resolutionKey,
+              candidates: result.candidates,
+            });
+            return;
+          }
+          settleActiveResolution(newResolution, null);
+        })
+        .catch((error: unknown) => {
+          settleActiveResolution(newResolution, null);
+          console.warn('[board-presence] resolveBoardCandidatesForSerial failed', error);
+        });
+      return newResolution.promise;
+    },
+    [beginResolution, settleActiveResolution],
+  );
+
+  const resolveAndBindBoardByUuid = useCallback(
+    (args: ResolveBoardUuidArgs): Promise<BoardBindingIdentity | null> => {
+      const activeClient = clientRef.current;
+      if (!enabledRef.current || activeClient === null || !activeClient.resolveBoardForUuid) {
+        return Promise.resolve(null);
+      }
+      const resolutionKey = boardUuidResolveKey(args);
+      const pendingResolution = pendingBoardBindingResolutionRef.current;
+      if (pendingResolution?.key === resolutionKey) {
+        return pendingResolution.promise;
+      }
+      const boundBinding = boundBoardBindingRef.current;
+      if (boundBinding?.resolutionKey === resolutionKey) {
+        return Promise.resolve({ boardId: boundBinding.boardId });
+      }
+
+      const newResolution = beginResolution(resolutionKey, 'uuid');
+      void activeClient
+        .resolveBoardForUuid(args)
+        .then((resolved) => {
+          settleActiveResolution(newResolution, { boardId: resolved.boardId });
+        })
+        .catch((error: unknown) => {
+          settleActiveResolution(newResolution, null);
+          console.warn('[board-presence] resolveBoardForUuid failed', error);
+        });
+      return newResolution.promise;
+    },
+    [beginResolution, settleActiveResolution],
+  );
+
+  const resolveAndBindBoardByConfig = useCallback(
+    (args: ResolveBoardConfigArgs): Promise<BoardBindingIdentity | null> => {
+      const activeClient = clientRef.current;
+      if (!enabledRef.current || activeClient === null || !activeClient.resolveBoardForConfig) {
+        return Promise.resolve(null);
+      }
+      const resolutionKey = boardConfigResolveKey(args);
+      const pendingResolution = pendingBoardBindingResolutionRef.current;
+      if (pendingResolution?.key === resolutionKey) {
+        return pendingResolution.promise;
+      }
+      const boundBinding = boundBoardBindingRef.current;
+      if (boundBinding?.resolutionKey === resolutionKey) {
+        return Promise.resolve({ boardId: boundBinding.boardId });
+      }
+
+      const newResolution = beginResolution(resolutionKey, 'config');
+      void activeClient
+        .resolveBoardForConfig(args)
+        .then((resolved) => {
+          settleActiveResolution(newResolution, { boardId: resolved.boardId });
+        })
+        .catch((error: unknown) => {
+          settleActiveResolution(newResolution, null);
+          console.warn('[board-presence] resolveBoardForConfig failed', error);
+        });
+      return newResolution.promise;
+    },
+    [beginResolution, settleActiveResolution],
   );
 
   const reportClimbForBoard = useCallback(
@@ -299,30 +409,49 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
 
   // Confirm the board the user picked from the disambiguation prompt: remember
   // the choice server-side and bind it as the active wall.
-  const chooseDisambiguatedBoard = useCallback(async (chosenBoardId: number): Promise<void> => {
-    const activeClient = clientRef.current;
-    const pending = pendingDisambiguationRef.current;
-    if (!enabledRef.current || activeClient === null || pending === null) {
-      return;
-    }
-    const resolveGeneration = resolveGenerationRef.current + 1;
-    resolveGenerationRef.current = resolveGeneration;
-    try {
-      const resolved = await activeClient.chooseBoardForSerial({ boardId: chosenBoardId, serial: pending.serial });
-      if (resolveGenerationRef.current !== resolveGeneration) {
+  const chooseDisambiguatedBoard = useCallback(
+    async (chosenBoardId: number): Promise<void> => {
+      const activeClient = clientRef.current;
+      const pendingDisambiguationState = pendingDisambiguationRef.current;
+      const pendingResolution = pendingBoardBindingResolutionRef.current;
+      if (
+        !enabledRef.current ||
+        activeClient === null ||
+        pendingDisambiguationState === null ||
+        pendingResolution?.kind !== 'serial' ||
+        pendingResolution.key !== pendingDisambiguationState.resolutionKey ||
+        pendingResolution.choiceInFlight
+      ) {
         return;
       }
-      lastResolvedSerialRef.current = pending.serial;
-      setPendingDisambiguation(null);
-      setBoardId(resolved.boardId);
-    } catch (error) {
-      console.warn('[board-presence] chooseBoardForSerial failed', error);
-    }
-  }, []);
+      pendingResolution.choiceInFlight = true;
+      try {
+        const resolved = await activeClient.chooseBoardForSerial({
+          boardId: chosenBoardId,
+          serial: pendingDisambiguationState.serial,
+        });
+        settleActiveResolution(pendingResolution, { boardId: resolved.boardId });
+      } catch (error) {
+        settleActiveResolution(pendingResolution, null);
+        console.warn('[board-presence] chooseBoardForSerial failed', error);
+      }
+    },
+    [settleActiveResolution],
+  );
 
   const cancelDisambiguation = useCallback(() => {
+    const pendingDisambiguationState = pendingDisambiguationRef.current;
+    const pendingResolution = pendingBoardBindingResolutionRef.current;
+    if (
+      pendingDisambiguationState &&
+      pendingResolution?.kind === 'serial' &&
+      pendingResolution.key === pendingDisambiguationState.resolutionKey
+    ) {
+      settleActiveResolution(pendingResolution, null);
+      return;
+    }
     setPendingDisambiguation(null);
-  }, []);
+  }, [settleActiveResolution]);
 
   // Telemetry only when a catch-up recovered missed wall events. Foreground and
   // reconnect catch-ups with a zero delta happen often and add no product signal.

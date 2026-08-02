@@ -11,8 +11,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // the browser promise, letting each test fire the deep link, close the browser,
 // or fail it to open — in any order.
 let urlListener: ((event: { url: string }) => void) | null = null;
-let resolveBrowser: (() => void) | null = null;
+let appStateListener: ((state: 'active' | 'background' | 'inactive' | 'unknown' | 'extension') => void) | null = null;
+let currentAppState: 'active' | 'background' | 'inactive' | 'unknown' | 'extension' | null = 'active';
+let resolveBrowser: ((result: unknown) => void) | null = null;
 let rejectBrowser: ((reason: unknown) => void) | null = null;
+const platformState = { OS: 'ios' };
 
 const removeListenerMock = vi.fn(() => {
   urlListener = null;
@@ -21,9 +24,27 @@ const addEventListenerMock = vi.fn((_event: string, listener: (event: { url: str
   urlListener = listener;
   return { remove: removeListenerMock };
 });
+const removeAppStateListenerMock = vi.fn(() => {
+  appStateListener = null;
+});
+const addAppStateEventListenerMock = vi.fn(
+  (_event: string, listener: (state: 'active' | 'background' | 'inactive' | 'unknown' | 'extension') => void) => {
+    appStateListener = listener;
+    return { remove: removeAppStateListenerMock };
+  },
+);
 
 vi.mock('react-native', () => ({
-  Platform: { OS: 'ios' },
+  Platform: platformState,
+  AppState: {
+    get currentState() {
+      return currentAppState;
+    },
+    addEventListener: (
+      event: string,
+      listener: (state: 'active' | 'background' | 'inactive' | 'unknown' | 'extension') => void,
+    ) => addAppStateEventListenerMock(event, listener),
+  },
   Linking: {
     addEventListener: (event: string, listener: (event: { url: string }) => void) =>
       addEventListenerMock(event, listener),
@@ -82,15 +103,20 @@ const CALLBACK_SCHEME = 'com.boardsesh.app://auth/callback';
 function armBrowser() {
   openBrowserAsyncMock.mockImplementation(
     () =>
-      new Promise<void>((resolve, reject) => {
+      new Promise<unknown>((resolve, reject) => {
         resolveBrowser = resolve;
         rejectBrowser = reject;
       }),
   );
 }
 const fireDeepLink = (url: string) => urlListener?.({ url });
-const closeBrowser = () => resolveBrowser?.();
+const resolveBrowserResult = (result: unknown) => resolveBrowser?.(result);
+const closeBrowser = () => resolveBrowserResult({ type: 'dismiss' });
 const failBrowser = (reason: unknown) => rejectBrowser?.(reason);
+const fireAppState = (state: 'active' | 'background' | 'inactive' | 'unknown' | 'extension') => {
+  currentAppState = state;
+  appStateListener?.(state);
+};
 
 const okExchange = () =>
   new Response(JSON.stringify({ jwt: 'jwt-1', refreshToken: 'refresh-1', expiresAt: '2026-01-01T00:00:00.000Z' }), {
@@ -99,6 +125,9 @@ const okExchange = () =>
 
 function resetMocks() {
   urlListener = null;
+  appStateListener = null;
+  currentAppState = 'active';
+  platformState.OS = 'ios';
   resolveBrowser = null;
   rejectBrowser = null;
   openBrowserAsyncMock.mockReset();
@@ -106,6 +135,8 @@ function resetMocks() {
   dismissBrowserMock.mockResolvedValue(undefined);
   removeListenerMock.mockClear();
   addEventListenerMock.mockClear();
+  removeAppStateListenerMock.mockClear();
+  addAppStateEventListenerMock.mockClear();
   storeTokensMock.mockReset();
   clearTokensForGenerationMock.mockReset();
   clearTokensForGenerationMock.mockResolvedValue(true);
@@ -145,6 +176,52 @@ describe('signInWithGoogleWeb', () => {
       expect.objectContaining({ method: 'POST', body: JSON.stringify({ transferToken: 'tok-123' }) }),
     );
     expect(storeTokensMock).toHaveBeenCalledWith('jwt-1', 'refresh-1', '2026-01-01T00:00:00.000Z');
+  });
+
+  it('keeps the Android listener alive after opened and exchanges the callback after foregrounding', async () => {
+    vi.useFakeTimers();
+    try {
+      platformState.OS = 'android';
+      const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue(okExchange());
+
+      const racePromise = signInWithGoogleWeb();
+      resolveBrowserResult({ type: 'opened' });
+      await Promise.resolve();
+      expect(removeListenerMock).not.toHaveBeenCalled();
+
+      fireAppState('background');
+      fireAppState('active');
+      fireDeepLink(`${CALLBACK_SCHEME}?transferToken=android-tok`);
+
+      await expect(racePromise).resolves.toEqual({ success: true });
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://backend.test/auth/native/exchange',
+        expect.objectContaining({ body: JSON.stringify({ transferToken: 'android-tok' }) }),
+      );
+      expect(removeListenerMock).toHaveBeenCalledOnce();
+      expect(removeAppStateListenerMock).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('maps an exhausted Android callback race to browser_timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      platformState.OS = 'android';
+      const fetchMock = vi.spyOn(global, 'fetch');
+
+      const racePromise = signInWithGoogleWeb();
+      resolveBrowserResult({ type: 'opened' });
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(5 * 60_000 + 1_000);
+
+      await expect(racePromise).resolves.toEqual({ success: false, status: null, error: 'browser_timeout' });
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('treats a closed browser (no callback deep link) as a cancellation and never exchanges', async () => {

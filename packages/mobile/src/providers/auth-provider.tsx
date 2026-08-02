@@ -46,7 +46,7 @@ type AuthState = {
   isLoading: boolean;
   signInWithApple: (webAttemptId?: string, isRegistration?: boolean) => Promise<OAuthSignInResult>;
   signInWithGoogle: (webAttemptId?: string, isRegistration?: boolean) => Promise<OAuthSignInResult>;
-  // Browser-OAuth fallback for when native Google sign-in can't present (iOS 26.5.1).
+  // Browser-OAuth fallback for supported native Google presentation/config failures.
   signInWithGoogleWeb: (isRegistration?: boolean) => Promise<OAuthSignInResult>;
   // Browser-OAuth fallback for when native Sign in with Apple throws (code 1000).
   signInWithAppleWeb: (isRegistration?: boolean) => Promise<OAuthSignInResult>;
@@ -111,6 +111,26 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   const remoteRevalidationRef = useRef<Promise<void> | null>(null);
   const nativeSessionDegradedRef = useRef(false);
   const reconnectAuthCheckRef = useRef<Promise<void> | null>(null);
+  // Android returns to `active` before Linking delivers the browser OAuth
+  // callback. Suppress only the provider's generic foreground read while a
+  // fallback owns that hand-off; each successful wrapper still runs its own
+  // explicit check after the transfer token has been exchanged. A suppressed
+  // active event is retained as one deferred check so a keychain read that
+  // became available while the browser was open is not lost.
+  const browserFallbackAuthChecksRef = useRef(0);
+  const deferredBrowserFallbackAuthCheckRef = useRef(false);
+  const authProviderMountedRef = useRef(true);
+
+  useEffect(() => {
+    // React StrictMode replays effects without recreating refs, so restore the
+    // mounted bit in setup as well as clearing it during cleanup.
+    authProviderMountedRef.current = true;
+    return () => {
+      authProviderMountedRef.current = false;
+      browserFallbackAuthChecksRef.current = 0;
+      deferredBrowserFallbackAuthCheckRef.current = false;
+    };
+  }, []);
 
   const updateNativeSessionDegraded = useCallback((degraded: boolean) => {
     nativeSessionDegradedRef.current = degraded;
@@ -557,6 +577,26 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     return enqueueAuthTransition(() => checkAuthForTransition(transitionEpoch));
   }, [beginAuthTransition, checkAuthForTransition, enqueueAuthTransition]);
 
+  const checkAuthAfterSuccessfulBrowserFallback = useCallback(async (): Promise<void> => {
+    if (!authProviderMountedRef.current) return;
+    // The explicit success read subsumes active events that happened before it.
+    // Keep suppression held during the await so a newer active event can re-arm
+    // the deferred read for the final fallback release.
+    deferredBrowserFallbackAuthCheckRef.current = false;
+    await checkAuth();
+  }, [checkAuth]);
+
+  const releaseBrowserFallbackAuthCheckSuppression = useCallback(async (): Promise<void> => {
+    if (!authProviderMountedRef.current) return;
+    browserFallbackAuthChecksRef.current = Math.max(0, browserFallbackAuthChecksRef.current - 1);
+    if (browserFallbackAuthChecksRef.current !== 0 || !deferredBrowserFallbackAuthCheckRef.current) return;
+
+    // Coalesce every active event suppressed by this group of overlapping
+    // fallbacks into exactly one read after the last fallback has released.
+    deferredBrowserFallbackAuthCheckRef.current = false;
+    await checkAuth();
+  }, [checkAuth]);
+
   useEffect(() => {
     // Belt-and-braces: checkAuth already resolves its own rejections, but keep
     // the invocation from producing an unhandled rejection if that ever changes.
@@ -565,9 +605,13 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active') {
-        void checkAuth();
+      if (!authProviderMountedRef.current) return;
+      if (nextAppState !== 'active') return;
+      if (browserFallbackAuthChecksRef.current > 0) {
+        deferredBrowserFallbackAuthCheckRef.current = true;
+        return;
       }
+      void checkAuth();
     });
     return () => subscription.remove();
   }, [checkAuth]);
@@ -611,18 +655,23 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     return result;
   }, [checkAuth]);
 
-  // Browser-based Google fallback (native SDK can't present the OAuth browser on
-  // iOS 26.5.1). Same success contract as the native flow: re-run checkAuth so the
-  // provider flips to the authenticated UI.
+  // Browser-based Google fallback for supported iOS presentation and Android
+  // config failures. Same success contract as the native flow: re-run checkAuth
+  // so the provider flips to the authenticated UI.
   const signInWithGoogleWeb = useCallback(
     async (isRegistration = false): Promise<OAuthSignInResult> => {
-      const result = await authSignInWithGoogleWeb(isRegistration);
-      if (result.success) {
-        await checkAuth();
+      browserFallbackAuthChecksRef.current += 1;
+      try {
+        const result = await authSignInWithGoogleWeb(isRegistration);
+        if (result.success) {
+          await checkAuthAfterSuccessfulBrowserFallback();
+        }
+        return result;
+      } finally {
+        await releaseBrowserFallbackAuthCheckSuppression();
       }
-      return result;
     },
-    [checkAuth],
+    [checkAuthAfterSuccessfulBrowserFallback, releaseBrowserFallbackAuthCheckSuppression],
   );
 
   // Browser-based Apple fallback (native Sign in with Apple threw a non-cancel
@@ -630,13 +679,18 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // provider flips to the authenticated UI.
   const signInWithAppleWeb = useCallback(
     async (isRegistration = false): Promise<OAuthSignInResult> => {
-      const result = await authSignInWithAppleWeb(isRegistration);
-      if (result.success) {
-        await checkAuth();
+      browserFallbackAuthChecksRef.current += 1;
+      try {
+        const result = await authSignInWithAppleWeb(isRegistration);
+        if (result.success) {
+          await checkAuthAfterSuccessfulBrowserFallback();
+        }
+        return result;
+      } finally {
+        await releaseBrowserFallbackAuthCheckSuppression();
       }
-      return result;
     },
-    [checkAuth],
+    [checkAuthAfterSuccessfulBrowserFallback, releaseBrowserFallbackAuthCheckSuppression],
   );
 
   const signInWithCredentials = useCallback(

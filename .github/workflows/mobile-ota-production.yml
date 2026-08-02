@@ -264,6 +264,20 @@ jobs:
           if [ -n "$INPUT_MESSAGE" ]; then args+=(--message "$INPUT_MESSAGE"); fi
           vp run mobile:publish -- "${args[@]}"
 
+      # eoas leaves this platform's export in packages/mobile/dist. Upload it
+      # before the Android publish, which cleans/replaces dist. Keep this
+      # non-blocking here so Android, changelog, publish notification, and health
+      # reporting still complete; the explicit terminal gate below turns the run
+      # red after those operational steps.
+      - name: Upload iOS OTA source maps to Sentry
+        id: upload_sourcemaps_ios
+        if: steps.publish_ios.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: vp run mobile:upload-sourcemaps -- --platform ios
+
       - name: Publish Android OTA
         id: publish_android
         if: always() && steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')
@@ -279,6 +293,15 @@ jobs:
           args=(--channel production --platform android)
           if [ -n "$INPUT_MESSAGE" ]; then args+=(--message "$INPUT_MESSAGE"); fi
           vp run mobile:publish -- "${args[@]}"
+
+      - name: Upload Android OTA source maps to Sentry
+        id: upload_sourcemaps_android
+        if: steps.publish_android.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: vp run mobile:upload-sourcemaps -- --platform android
 
       # Publish both requested platforms before deciding the job result. This
       # makes a partial release explicit without trying to roll back the platform
@@ -419,25 +442,6 @@ jobs:
             | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
               echo "::warning::Failed to post Discord notification (see status above)"
 
-      - name: Notify deployments channel of failure
-        if: always() && github.ref == 'refs/heads/main' && failure()
-        env:
-          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          COMMIT_SHA: ${{ github.sha }}
-          IOS_OUTCOME: ${{ steps.publish_ios.outcome }}
-          ANDROID_OUTCOME: ${{ steps.publish_android.outcome }}
-        run: |
-          if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
-            echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
-            exit 0
-          fi
-          CONTENT=$(printf '🚨 **Production OTA publish failed** on `%s`\n• iOS: %s\n• Android: %s\n• Any successful platform remains published; no automatic rollback was attempted.\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$IOS_OUTCOME" "$ANDROID_OUTCOME" "$RUN_URL")
-          jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
-            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
-              echo "::warning::Failed to post Discord notification (see status above)"
-
       # Post-publish OTA health gate — NON-BLOCKING. Production OTAs publish to our
       # self-hosted server (not EAS), so `eas update:insights` can't see them.
       # Instead we read the app's own launch telemetry from PostHog
@@ -494,6 +498,51 @@ jobs:
           HEADER='🩺 **Production OTA health**'
           [ "$HEALTH_OUTCOME" = "failure" ] && HEADER='🚨 **Production OTA health — emergency-launch spike**'
           CONTENT=$(printf '%s\n%s\n<%s>' "$HEADER" "$(cat "$SUMMARY_FILE")" "$RUN_URL")
+          jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo "::warning::Failed to post Discord notification (see status above)"
+
+      # Source-map upload is deliberately non-atomic with OTA publish: by the time
+      # Sentry accepts the Debug ID, the update is already live. Surface that exact
+      # degraded state in the Actions log before the terminal gate turns the run
+      # red. The one Discord failure notification below includes both publish and
+      # source-map outcomes, avoiding a second alert for this same failure.
+      - name: Warn that published OTA source maps are missing
+        if: always() && ((steps.publish_ios.outcome == 'success' && steps.upload_sourcemaps_ios.outcome != 'success') || (steps.publish_android.outcome == 'success' && steps.upload_sourcemaps_android.outcome != 'success'))
+        env:
+          IOS_PUBLISH_OUTCOME: ${{ steps.publish_ios.outcome }}
+          ANDROID_PUBLISH_OUTCOME: ${{ steps.publish_android.outcome }}
+          IOS_MAP_OUTCOME: ${{ steps.upload_sourcemaps_ios.outcome }}
+          ANDROID_MAP_OUTCOME: ${{ steps.upload_sourcemaps_android.outcome }}
+        run: |
+          platforms=""
+          [ "$IOS_PUBLISH_OUTCOME" = "success" ] && [ "$IOS_MAP_OUTCOME" != "success" ] && platforms="iOS"
+          [ "$ANDROID_PUBLISH_OUTCOME" = "success" ] && [ "$ANDROID_MAP_OUTCOME" != "success" ] && platforms="${platforms:+$platforms, }Android"
+          echo "::warning::The $platforms OTA is live, but its Sentry source-map upload did not succeed. Recreate the exact platform export before another eoas publish replaces dist."
+
+      - name: Require every published OTA source-map upload
+        if: always() && ((steps.publish_ios.outcome == 'success' && steps.upload_sourcemaps_ios.outcome != 'success') || (steps.publish_android.outcome == 'success' && steps.upload_sourcemaps_android.outcome != 'success'))
+        run: |
+          echo "::error::At least one published OTA has no accepted Sentry source maps."
+          exit 1
+
+      - name: Notify deployments channel of failure
+        if: always() && github.ref == 'refs/heads/main' && failure()
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+          IOS_OUTCOME: ${{ steps.publish_ios.outcome }}
+          ANDROID_OUTCOME: ${{ steps.publish_android.outcome }}
+          IOS_MAP_OUTCOME: ${{ steps.upload_sourcemaps_ios.outcome }}
+          ANDROID_MAP_OUTCOME: ${{ steps.upload_sourcemaps_android.outcome }}
+        run: |
+          if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
+            echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
+            exit 0
+          fi
+          CONTENT=$(printf '🚨 **Production OTA workflow failed** on `%s`\n• iOS publish: %s · source maps: %s\n• Android publish: %s · source maps: %s\n• Any successful platform remains published; no automatic rollback was attempted.\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$IOS_OUTCOME" "$IOS_MAP_OUTCOME" "$ANDROID_OUTCOME" "$ANDROID_MAP_OUTCOME" "$RUN_URL")
           jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
             | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
               echo "::warning::Failed to post Discord notification (see status above)"
