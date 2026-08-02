@@ -296,6 +296,18 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // UUIDs remain independent. One global deferred request is enough because
     // connect is last-request-wins throughout the manager.
     private var managerCancellationBarriers: [UUID: ManagerCancellationBarrier] = [:]
+    // UUIDs whose EXPIRED cancellation barrier was displaced by a fresh explicit
+    // connect (see connectOnBleQueue). The cancelled attempt's terminal callback
+    // usually never arrives — that's why the barrier expired — but if it lands
+    // late it must be ignored: the fresh attempt owns all live state for the
+    // UUID, and without this marker the late didDisconnect would pass the
+    // wasCurrentPeripheral check (the fresh attempt optimistically re-set
+    // connectedPeripheral to the same UUID) and tear the new attempt down.
+    // Cleared by the swallow itself, by the fresh attempt's didConnect
+    // (CoreBluetooth delivers a peripheral's callbacks in order, so the old
+    // attempt's callback cannot arrive after the new attempt's didConnect), and
+    // below .poweredOn (every old link generation is invalid there).
+    private var displacedCancellationPeripheralIds: Set<UUID> = []
     private var deferredConnectRequest: DeferredConnectRequest?
     private var peripheralGenerations: [UUID: UInt64] = [:]
     private var connectionGeneration: UInt64 = 0
@@ -750,13 +762,28 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // request; an unrelated UUID is free to connect immediately.
         if let peripheralId = requestedPeripheralId,
            let cancellationBarrier = managerCancellationBarriers[peripheralId] {
-            deferConnectUntilCancellationSettles(
-                deviceId: deviceId,
-                peripheralId: peripheralId,
-                barrier: cancellationBarrier,
-                completion: completion
-            )
-            return
+            if cancellationBarrier.hasExpired {
+                // The watchdog expired with no terminal callback — which
+                // CoreBluetooth legitimately never delivers for a cancelled
+                // PENDING connect. An expired barrier must not block a fresh
+                // explicit connect: insta-failing here left the board
+                // permanently unconnectable for the rest of the app session
+                // (picker, Live Activity lightbulb, and write-stall recovery
+                // all route through this path). Displace the expired barrier
+                // and proceed with a normal connect; the tombstone below
+                // swallows the old cancel's terminal callback in the unlikely
+                // case it still arrives.
+                cancellationBarrier.watchdog?.cancel()
+                managerCancellationBarriers.removeValue(forKey: peripheralId)
+                displacedCancellationPeripheralIds.insert(peripheralId)
+            } else {
+                deferConnectUntilCancellationSettles(
+                    deviceId: deviceId,
+                    peripheralId: peripheralId,
+                    completion: completion
+                )
+                return
+            }
         }
 
         // A new request to an unblocked UUID wins over a request parked behind a
@@ -826,13 +853,22 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private func deferConnectUntilCancellationSettles(
         deviceId: String,
         peripheralId: UUID,
-        barrier: ManagerCancellationBarrier,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         failDeferredConnect(BoardBleError.superseded)
-        guard !barrier.hasExpired else {
-            completion(.failure(BoardBleError.connectTimedOut))
-            return
+        // A pending connect to a DIFFERENT board must not keep racing while
+        // this newer request waits out the barrier: left alone it could
+        // connect, emit onConnected, and light the wall for up to the connect
+        // timeout before the deferred request wins. Mirror the non-deferred
+        // supersede: settle its promise now and bump the generation so its
+        // late didConnect hits the stale branch's corrective cancel. (The
+        // pending connect can never target the barriered UUID itself — every
+        // barrier registration settles the pending connect first.)
+        if pendingConnectCompletion != nil {
+            completePendingConnect(.failure(BoardBleError.superseded))
+            connectionGeneration += 1
+            connectedPeripheral = nil
+            writeCharacteristic = nil
         }
         deferredConnectRequest = DeferredConnectRequest(
             deviceId: deviceId,
@@ -1209,6 +1245,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // than remain parked across the next powered-on session.
             managerCancellationBarriers.values.forEach { $0.watchdog?.cancel() }
             managerCancellationBarriers.removeAll()
+            displacedCancellationPeripheralIds.removeAll()
             intentionalDisconnectGenerations.removeAll()
             failDeferredConnect(BoardBleError.bluetoothUnavailable)
             failReconnectScan(BoardBleError.bluetoothUnavailable)
@@ -1346,13 +1383,43 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        handleDidConnectOnBleQueue(peripheral: peripheral) {
+            peripheral.delegate = self
+            peripheral.discoverServices(writeServiceUuids())
+        }
+    }
+
+    /// Shared delegate body for the real `didConnect` callback and the native
+    /// XCTest seam. Service discovery needs a concrete `CBPeripheral`, so it
+    /// stays in the delegate's closure; every manager-state decision lives here.
+    private func handleDidConnectOnBleQueue(
+        peripheral: WritableBlePeripheral,
+        beginServiceDiscovery: () -> Void
+    ) {
         guard peripheralGenerations[peripheral.identifier] == connectionGeneration else {
-            cancelPeripheralConnection(peripheral)
+            // The system finished bringing up a link no live generation owns
+            // (e.g. a connect that raced its own cancellation). It MUST be
+            // cancelled concretely or it lingers as a system-held connection
+            // that blocks the wall — these boards are last-connection-wins.
+            // Cancelling a CONNECTED peripheral yields exactly one
+            // didDisconnect, so when this UUID's barrier is already awaiting a
+            // terminal callback the corrective cancel still goes out (it can't
+            // manufacture a second callback here) and the existing barrier
+            // consumes the resulting didDisconnect; no second barrier is
+            // registered.
+            if !registerManagerCancellationBarrierOnBleQueue(peripheralId: peripheral.identifier) {
+                logger.info("Stale BLE didConnect for \(peripheral.identifier.uuidString, privacy: .public) raced an in-flight cancellation; reissuing the concrete cancel under the existing barrier")
+            }
+            performCancelPeripheralConnection(peripheral)
             return
         }
-        peripheral.delegate = self
+        // The live attempt reached didConnect. A displaced cancellation's late
+        // terminal callback would have been delivered before this (CoreBluetooth
+        // delivers a peripheral's callbacks in order), so the tombstone is done —
+        // clear it so a later genuine drop of THIS link is never swallowed.
+        displacedCancellationPeripheralIds.remove(peripheral.identifier)
         retriedFullServiceDiscovery.remove(peripheral.identifier)
-        peripheral.discoverServices(writeServiceUuids())
+        beginServiceDiscovery()
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
@@ -1393,6 +1460,15 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         let wasCurrentPeripheral = connectedPeripheral?.identifier == peripheral.identifier
 
         if consumeManagerCancellationBarrierOnBleQueue(peripheralId: peripheral.identifier) {
+            return
+        }
+
+        // Late terminal callback from a cancelled attempt whose EXPIRED barrier
+        // was displaced by a fresh explicit connect (see connectOnBleQueue).
+        // The fresh attempt owns all live state for this UUID — without this
+        // check the callback would pass wasCurrentPeripheral (the fresh attempt
+        // re-set connectedPeripheral to the same UUID) and wrongly tear it down.
+        if displacedCancellationPeripheralIds.remove(peripheral.identifier) != nil {
             return
         }
 
@@ -2481,19 +2557,27 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         connectedPeripheral = nil
     }
 
-    /// The single concrete `CBCentralManager.cancelPeripheralConnection` call
-    /// site. Every `WritableBlePeripheral` is a `CBPeripheral` outside tests, so
-    /// in production this is exactly the old inline call. The test override lets
-    /// the write flow-control suite observe intentional cancels without a real
-    /// CoreBluetooth peripheral.
+    /// Barrier-gated cancel used by every teardown path except the stale
+    /// didConnect branch. A barrier means this UUID already has a manager
+    /// cancel awaiting its sole terminal callback; reissuing a cancel for a
+    /// still-PENDING connect could manufacture a second callback that no
+    /// generation token can classify, so the first cancellation owns teardown
+    /// until the barrier settles.
     private func cancelPeripheralConnection(_ peripheral: WritableBlePeripheral) {
-        // A barrier means this UUID already has a manager cancel awaiting its
-        // sole terminal callback. Reissuing cancel in a didConnect race could
-        // manufacture a second callback that no generation token can classify,
-        // so the first cancellation owns teardown until the barrier settles.
         guard registerManagerCancellationBarrierOnBleQueue(peripheralId: peripheral.identifier) else {
             return
         }
+        performCancelPeripheralConnection(peripheral)
+    }
+
+    /// The single concrete `CBCentralManager.cancelPeripheralConnection` call
+    /// site, with no barrier bookkeeping. Every `WritableBlePeripheral` is a
+    /// `CBPeripheral` outside tests, so in production this is exactly the old
+    /// inline call. The stale didConnect branch calls this directly because its
+    /// corrective cancel of a CONNECTED peripheral must go out even when the
+    /// UUID's barrier is already registered. The test override lets the native
+    /// suites observe cancels without a real CoreBluetooth peripheral.
+    private func performCancelPeripheralConnection(_ peripheral: WritableBlePeripheral) {
         #if DEBUG || BOARDSESH_TESTS
         if let overrideForTesting = cancelPeripheralConnectionOverrideForTesting {
             overrideForTesting(peripheral)
@@ -2521,6 +2605,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // Timeout protects promises, not ordering. A disconnected peripheral
             // state is not evidence that CoreBluetooth delivered the terminal
             // callback, so retain the barrier and never force a connect here.
+            // The retained barrier stays effective against DEFERRED waiters
+            // only until a fresh explicit connect displaces it — an expired
+            // barrier must not make the board permanently unconnectable when
+            // CoreBluetooth never delivers a callback for a cancelled pending
+            // connect (see connectOnBleQueue).
             cancellationBarrier.hasExpired = true
             guard self.deferredConnectRequest?.peripheralId == peripheralId else { return }
             self.failDeferredConnect(BoardBleError.connectTimedOut)
@@ -2721,6 +2810,17 @@ extension BoardBleManager {
             }
         }
 
+        /// Fire the exact `didConnect` decision (stale-generation corrective
+        /// cancel vs current-generation bookkeeping). Service discovery needs a
+        /// concrete `CBPeripheral`, so the current-generation arm's discovery
+        /// closure is a no-op here; drive `fireConnectionReady` afterwards to
+        /// reach the write-ready success point.
+        func fireDidConnect(peripheral: WritableBlePeripheral) {
+            manager.runOnBleQueueSync {
+                manager.handleDidConnectOnBleQueue(peripheral: peripheral) {}
+            }
+        }
+
         /// Fire the unavailable half of `centralManagerDidUpdateState`.
         func fireCentralStateUpdate(_ state: CBManagerState) {
             manager.runOnBleQueueSync {
@@ -2779,6 +2879,7 @@ extension BoardBleManager {
         var hasPendingConnect: Bool { manager.pendingConnectCompletion != nil }
         var deferredConnectPeripheralId: UUID? { manager.deferredConnectRequest?.peripheralId }
         var managerCancellationBarrierIds: Set<UUID> { Set(manager.managerCancellationBarriers.keys) }
+        var displacedCancellationPeripheralIds: Set<UUID> { manager.displacedCancellationPeripheralIds }
 
         func intentionalDisconnectGeneration(for peripheralId: UUID) -> UInt64? {
             manager.intentionalDisconnectGenerations[peripheralId]

@@ -408,10 +408,10 @@ final class BoardBleDisconnectTests: XCTestCase {
         XCTAssertTrue(connectedPeripheralIds.isEmpty)
     }
 
-    func testBarrierWatchdogRejectsWaiterWithoutForcingConnectAndRetainsBarrier() {
+    func testBarrierWatchdogRejectsWaiterButFreshConnectDisplacesExpiredBarrier() {
         let peripheral = FakeWritablePeripheral()
         var deferredError: Error?
-        var retryAfterExpiryError: Error?
+        var retryResults: [Result<Void, Error>] = []
         installConnection(peripheral: peripheral) { _, _ in }
 
         manager.testHooks.sync {
@@ -422,6 +422,9 @@ final class BoardBleDisconnectTests: XCTestCase {
         }
         fireLatestOneShot(label: "managerCancellationBarrierWatchdog")
 
+        // At expiry the parked waiter is rejected (its promise must settle) and
+        // the barrier is retained: expiry alone is not evidence CoreBluetooth
+        // delivered the terminal callback.
         XCTAssertEqual(deferredError?.localizedDescription, BoardBleError.connectTimedOut.localizedDescription)
         XCTAssertTrue(connectedPeripheralIds.isEmpty)
         XCTAssertEqual(
@@ -429,20 +432,212 @@ final class BoardBleDisconnectTests: XCTestCase {
             Set([peripheral.identifier])
         )
 
+        // A fresh explicit connect AFTER expiry must proceed as a normal
+        // pending connect — never insta-fail — and displaces the expired
+        // barrier (gone from the map, tombstoned for one late callback).
         manager.testHooks.sync {
+            manager.connect(deviceId: peripheral.identifier.uuidString) { retryResults.append($0) }
+        }
+        XCTAssertTrue(retryResults.isEmpty)
+        XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier])
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.managerCancellationBarrierIds.isEmpty })
+        XCTAssertEqual(
+            manager.testHooks.sync { manager.testHooks.displacedCancellationPeripheralIds },
+            Set([peripheral.identifier])
+        )
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.hasPendingConnect })
+        XCTAssertNotNil(scheduler.lastOneShot(label: "connectTimeout"))
+
+        // The retry's own didConnect retires the tombstone (in-order delivery:
+        // the old attempt's callback cannot arrive after it) and the connection
+        // completes normally.
+        manager.testHooks.fireDidConnect(peripheral: peripheral)
+        XCTAssertTrue(
+            manager.testHooks.sync { manager.testHooks.displacedCancellationPeripheralIds.isEmpty }
+        )
+        manager.testHooks.fireConnectionReady(
+            peripheral: peripheral,
+            characteristic: makeWriteCharacteristic()
+        )
+        XCTAssertEqual(retryResults.count, 1)
+        if case .failure(let error) = retryResults[0] {
+            XCTFail("expected the post-expiry connect to succeed, got \(error)")
+        }
+    }
+
+    func testConnectTimeoutThenExpiredBarrierDoesNotWedgeRetry() {
+        let peripheral = FakeWritablePeripheral()
+        var firstConnectError: Error?
+        var retryResults: [Result<Void, Error>] = []
+        var disconnectEventCount = 0
+        manager.testHooks.sync {
+            manager.setEventHandlers(
+                onScanResult: nil,
+                onDisconnect: { _, _ in disconnectEventCount += 1 },
+                onConnected: nil
+            )
+            manager.testHooks.setDiscoveredPeripheral(peripheral)
             manager.connect(deviceId: peripheral.identifier.uuidString) { result in
-                if case .failure(let error) = result { retryAfterExpiryError = error }
+                if case .failure(let error) = result { firstConnectError = error }
             }
         }
+        XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier])
+
+        // Out of range: the connect timeout fires and cancels the pending
+        // OS-level connect, registering the cancellation barrier.
+        fireLatestOneShot(label: "connectTimeout")
         XCTAssertEqual(
-            retryAfterExpiryError?.localizedDescription,
+            firstConnectError?.localizedDescription,
             BoardBleError.connectTimedOut.localizedDescription
         )
-        XCTAssertTrue(connectedPeripheralIds.isEmpty)
+        XCTAssertEqual(cancelledPeripheralIds, [peripheral.identifier])
+        XCTAssertEqual(
+            manager.testHooks.sync { manager.testHooks.managerCancellationBarrierIds },
+            Set([peripheral.identifier])
+        )
 
+        // Cancelling a PENDING connect legitimately yields NO terminal
+        // callback, so the barrier watchdog expires with nothing to consume.
+        fireLatestOneShot(label: "managerCancellationBarrierWatchdog")
+        XCTAssertEqual(
+            manager.testHooks.sync { manager.testHooks.managerCancellationBarrierIds },
+            Set([peripheral.identifier])
+        )
+
+        // The user walks back into range and retries. The retry must proceed
+        // as a normal pending connect, not insta-fail for the rest of the app
+        // session (the pre-fix wedge).
+        manager.testHooks.sync {
+            manager.connect(deviceId: peripheral.identifier.uuidString) { retryResults.append($0) }
+        }
+        XCTAssertTrue(retryResults.isEmpty)
+        XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier, peripheral.identifier])
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.managerCancellationBarrierIds.isEmpty })
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.hasPendingConnect })
+
+        // A late didDisconnect for the OLD cancelled attempt is a no-op: it
+        // must not fail the retry, emit a disconnect event, or cancel the
+        // retry's OS-level connect.
+        manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
+        XCTAssertTrue(retryResults.isEmpty)
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.hasPendingConnect })
+        XCTAssertEqual(disconnectEventCount, 0)
+        XCTAssertEqual(cancelledPeripheralIds, [peripheral.identifier])
+        XCTAssertTrue(
+            manager.testHooks.sync { manager.testHooks.displacedCancellationPeripheralIds.isEmpty }
+        )
+
+        // The retry completes as a normal connect.
+        manager.testHooks.fireDidConnect(peripheral: peripheral)
+        manager.testHooks.fireConnectionReady(
+            peripheral: peripheral,
+            characteristic: makeWriteCharacteristic()
+        )
+        XCTAssertEqual(retryResults.count, 1)
+        if case .failure(let error) = retryResults[0] {
+            XCTFail("expected the retry to succeed, got \(error)")
+        }
+        XCTAssertEqual(disconnectEventCount, 0)
+    }
+
+    func testStaleDidConnectUnderActiveBarrierStillIssuesConcreteCancel() {
+        let peripheral = FakeWritablePeripheral()
+        var firstConnectError: Error?
+        var disconnectEventCount = 0
+        manager.testHooks.sync {
+            manager.setEventHandlers(
+                onScanResult: nil,
+                onDisconnect: { _, _ in disconnectEventCount += 1 },
+                onConnected: nil
+            )
+            manager.testHooks.setDiscoveredPeripheral(peripheral)
+            manager.connect(deviceId: peripheral.identifier.uuidString) { result in
+                if case .failure(let error) = result { firstConnectError = error }
+            }
+        }
+        fireLatestOneShot(label: "connectTimeout")
+        XCTAssertEqual(
+            firstConnectError?.localizedDescription,
+            BoardBleError.connectTimedOut.localizedDescription
+        )
+        XCTAssertEqual(cancelledPeripheralIds, [peripheral.identifier])
+        XCTAssertEqual(scheduler.oneShots(label: "managerCancellationBarrierWatchdog").count, 1)
+
+        // The OS finished the connect anyway, racing the cancel: the system now
+        // holds a live connection no generation owns. The corrective cancel
+        // must go out even though this UUID's barrier is already registered —
+        // skipping it left the connection blocking the wall.
+        manager.testHooks.fireDidConnect(peripheral: peripheral)
+        XCTAssertEqual(cancelledPeripheralIds, [peripheral.identifier, peripheral.identifier])
+        // No second barrier: the existing one still owns the terminal callback.
+        XCTAssertEqual(scheduler.oneShots(label: "managerCancellationBarrierWatchdog").count, 1)
+        XCTAssertEqual(
+            manager.testHooks.sync { manager.testHooks.managerCancellationBarrierIds },
+            Set([peripheral.identifier])
+        )
+
+        // Cancelling a CONNECTED peripheral yields exactly one didDisconnect,
+        // which the existing barrier consumes silently.
         manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
         XCTAssertTrue(manager.testHooks.sync { manager.testHooks.managerCancellationBarrierIds.isEmpty })
-        XCTAssertTrue(connectedPeripheralIds.isEmpty)
+        XCTAssertEqual(disconnectEventCount, 0)
+        // No auto-reconnect follows the corrective cancel.
+        XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier])
+    }
+
+    func testDeferredConnectSupersedesPendingDifferentBoardConnect() {
+        let barrieredPeripheral = FakeWritablePeripheral()
+        let otherPeripheral = FakeWritablePeripheral()
+        var otherConnectError: Error?
+        var deferredResults: [Result<Void, Error>] = []
+        var disconnectEventCount = 0
+        installConnection(peripheral: barrieredPeripheral) { _, _ in disconnectEventCount += 1 }
+
+        manager.testHooks.sync {
+            manager.disconnect()
+            manager.testHooks.setDiscoveredPeripheral(otherPeripheral)
+            manager.connect(deviceId: otherPeripheral.identifier.uuidString) { result in
+                if case .failure(let error) = result { otherConnectError = error }
+            }
+        }
+        XCTAssertEqual(connectedPeripheralIds, [otherPeripheral.identifier])
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.hasPendingConnect })
+        let otherConnectTimeout = scheduler.lastOneShot(label: "connectTimeout")
+
+        manager.testHooks.sync {
+            manager.connect(deviceId: barrieredPeripheral.identifier.uuidString) { deferredResults.append($0) }
+        }
+
+        // Deferring behind the barrier must settle the in-flight different-board
+        // connect NOW — left alone it keeps racing for up to the connect
+        // timeout and can light the wall before the deferred connect wins.
+        XCTAssertEqual(
+            otherConnectError?.localizedDescription,
+            BoardBleError.superseded.localizedDescription
+        )
+        XCTAssertFalse(manager.testHooks.sync { manager.testHooks.hasPendingConnect })
+        XCTAssertTrue(otherConnectTimeout?.cancelled ?? false)
+        XCTAssertEqual(
+            manager.testHooks.sync { manager.testHooks.deferredConnectPeripheralId },
+            barrieredPeripheral.identifier
+        )
+        XCTAssertNil(manager.connectedDeviceId)
+
+        // The superseded board's late didConnect is stale → corrective cancel.
+        manager.testHooks.fireDidConnect(peripheral: otherPeripheral)
+        XCTAssertEqual(
+            cancelledPeripheralIds,
+            [barrieredPeripheral.identifier, otherPeripheral.identifier]
+        )
+
+        // The barrier settles → the deferred same-board connect starts.
+        manager.testHooks.fireDidDisconnect(peripheral: barrieredPeripheral, error: nil)
+        XCTAssertEqual(
+            connectedPeripheralIds,
+            [otherPeripheral.identifier, barrieredPeripheral.identifier]
+        )
+        XCTAssertTrue(deferredResults.isEmpty)
+        XCTAssertEqual(disconnectEventCount, 0)
     }
 
     func testBluetoothUnavailableRejectsDeferredConnectAndClearsCancellationState() {
