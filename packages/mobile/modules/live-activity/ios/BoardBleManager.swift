@@ -297,15 +297,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // connect is last-request-wins throughout the manager.
     private var managerCancellationBarriers: [UUID: ManagerCancellationBarrier] = [:]
     // UUIDs whose EXPIRED cancellation barrier was displaced by a fresh explicit
-    // connect (see connectOnBleQueue). The cancelled attempt's terminal callback
-    // usually never arrives — that's why the barrier expired — but if it lands
-    // late it must be ignored: the fresh attempt owns all live state for the
-    // UUID, and without this marker the late didDisconnect would pass the
-    // wasCurrentPeripheral check (the fresh attempt optimistically re-set
-    // connectedPeripheral to the same UUID) and tear the new attempt down.
-    // Cleared by the swallow itself, by the fresh attempt's didConnect
-    // (CoreBluetooth delivers a peripheral's callbacks in order, so the old
-    // attempt's callback cannot arrive after the new attempt's didConnect), and
+    // connect (see connectOnBleQueue). CoreBluetooth supplies no attempt
+    // identity, so the first terminal callback after displacement is
+    // unattributable and conservatively swallowed. If it was the retry's
+    // genuine failure, the retry's still-live timeout settles it once. Cleared
+    // by that swallow, by didConnect, by a newer cancellation barrier, and
     // below .poweredOn (every old link generation is invalid there).
     private var displacedCancellationPeripheralIds: Set<UUID> = []
     private var deferredConnectRequest: DeferredConnectRequest?
@@ -770,9 +766,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 // permanently unconnectable for the rest of the app session
                 // (picker, Live Activity lightbulb, and write-stall recovery
                 // all route through this path). Displace the expired barrier
-                // and proceed with a normal connect; the tombstone below
-                // swallows the old cancel's terminal callback in the unlikely
-                // case it still arrives.
+                // and proceed with a normal connect. CoreBluetooth supplies no
+                // attempt identity, so the first terminal callback after this
+                // displacement is unattributable and conservatively swallowed;
+                // a genuine retry failure remains live for its timeout to
+                // settle once.
                 cancellationBarrier.watchdog?.cancel()
                 managerCancellationBarriers.removeValue(forKey: peripheralId)
                 displacedCancellationPeripheralIds.insert(peripheralId)
@@ -1434,6 +1432,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         if consumeManagerCancellationBarrierOnBleQueue(peripheralId: peripheral.identifier) {
             return
         }
+        // CoreBluetooth supplies no attempt identity, so the first terminal
+        // callback after an expired barrier is displaced is unattributable and
+        // conservatively swallowed. If it was the retry's genuine failure, the
+        // retry's still-live timeout settles it once.
+        if displacedCancellationPeripheralIds.remove(peripheral.identifier) != nil {
+            return
+        }
         guard peripheralGenerations[peripheral.identifier] == connectionGeneration else { return }
         // Every connect attempt (user-initiated picker connect, or the Live Activity
         // lightbulb's reconnectToLastKnownBoard) sets pendingConnectCompletion, so a
@@ -1463,11 +1468,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             return
         }
 
-        // Late terminal callback from a cancelled attempt whose EXPIRED barrier
-        // was displaced by a fresh explicit connect (see connectOnBleQueue).
-        // The fresh attempt owns all live state for this UUID — without this
-        // check the callback would pass wasCurrentPeripheral (the fresh attempt
-        // re-set connectedPeripheral to the same UUID) and wrongly tear it down.
+        // CoreBluetooth supplies no attempt identity, so the first terminal
+        // callback after an expired barrier is displaced is unattributable and
+        // conservatively swallowed. If it was the retry's genuine failure, the
+        // retry's still-live timeout settles it once. This is the didDisconnect
+        // half of the same tombstone consumed by didFailToConnect above.
         if displacedCancellationPeripheralIds.remove(peripheral.identifier) != nil {
             return
         }
@@ -2593,6 +2598,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
     private func registerManagerCancellationBarrierOnBleQueue(peripheralId: UUID) -> Bool {
         guard managerCancellationBarriers[peripheralId] == nil else { return false }
+        // A fresh manager cancellation becomes the sole owner of the next
+        // terminal callback for this UUID. Retire any displaced-attempt
+        // tombstone first so it cannot survive this barrier and swallow a later
+        // genuine terminal callback (for example when the retry itself times
+        // out before either attempt reports one).
+        displacedCancellationPeripheralIds.remove(peripheralId)
         let cancellationBarrier = ManagerCancellationBarrier()
         managerCancellationBarriers[peripheralId] = cancellationBarrier
         cancellationBarrier.watchdog = timerScheduler.scheduleOneShot(
