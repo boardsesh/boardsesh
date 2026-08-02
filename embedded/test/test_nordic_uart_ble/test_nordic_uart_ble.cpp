@@ -8,6 +8,7 @@
 #include <Preferences.h>
 
 #include <cstring>
+#include <log_buffer.h>
 #include <nordic_uart_ble.h>
 #include <unity.h>
 
@@ -26,8 +27,8 @@ static int lastAngle = 0;
 
 // These duplicate the externally observable connection request deliberately so
 // the test fails if production changes its BLE timing contract.
-constexpr uint16_t kExpectedConnectionIntervalMin = 6;           // 7.5 ms in 1.25 ms units
-constexpr uint16_t kExpectedConnectionIntervalMax = 18;          // 22.5 ms in 1.25 ms units
+constexpr uint16_t kExpectedConnectionIntervalMin = 12;          // 15 ms in 1.25 ms units
+constexpr uint16_t kExpectedConnectionIntervalMax = 24;          // 30 ms in 1.25 ms units
 constexpr uint16_t kExpectedConnectionLatency = 0;               // No skipped connection events
 constexpr uint16_t kExpectedConnectionSupervisionTimeout = 200;  // 2 s in 10 ms units
 
@@ -113,6 +114,14 @@ void test_begin_starts_advertising(void) {
     TEST_ASSERT_TRUE(NimBLEDevice::getAdvertising()->isAdvertising());
     TEST_ASSERT_TRUE(ble->isAdvertising());
     TEST_ASSERT_TRUE(ble->isAdvertisingEnabled());
+}
+
+void test_begin_advertises_expected_preferred_connection_intervals(void) {
+    ble->begin("Test Device");
+
+    NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
+    TEST_ASSERT_EQUAL(kExpectedConnectionIntervalMin, advertising->getMinPreferred());
+    TEST_ASSERT_EQUAL(kExpectedConnectionIntervalMax, advertising->getMaxPreferred());
 }
 
 void test_begin_can_delay_advertising(void) {
@@ -231,6 +240,22 @@ void test_connection_requests_expected_connection_parameters_before_callback(voi
     TEST_ASSERT_EQUAL(kExpectedConnectionSupervisionTimeout, server->getConnectionParameterUpdateTimeout());
     TEST_ASSERT_EQUAL(1, connectCallbackCount);
     TEST_ASSERT_EQUAL(1, connectionParameterRequestCountSeenByCallback);
+}
+
+void test_connection_parameter_update_logs_effective_values(void) {
+    ble_gap_conn_desc desc;
+    memset(&desc, 0, sizeof(desc));
+    desc.conn_itvl = kExpectedConnectionIntervalMax;
+    desc.conn_latency = kExpectedConnectionLatency;
+    desc.supervision_timeout = kExpectedConnectionSupervisionTimeout;
+    NimBLEConnInfo connInfo(&desc);
+
+    Logger.clear();
+    ble->onConnParamsUpdate(connInfo);
+
+    TEST_ASSERT_EQUAL_STRING(
+        "BLE: Effective connection parameters: interval=24 (1.25 ms units), latency=0, timeout=200 (10 ms units)\n",
+        Logger.getBuffer().c_str());
 }
 
 void test_reconnect_requests_connection_parameters_again(void) {
@@ -726,6 +751,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_begin_sets_power_level);
     RUN_TEST(test_begin_creates_server);
     RUN_TEST(test_begin_starts_advertising);
+    RUN_TEST(test_begin_advertises_expected_preferred_connection_intervals);
     RUN_TEST(test_begin_can_delay_advertising);
     RUN_TEST(test_start_advertising_tracks_state);
     RUN_TEST(test_begin_registers_aurora_service_uuid);
@@ -739,6 +765,7 @@ int main(int argc, char** argv) {
 
     // Connection lifecycle tests
     RUN_TEST(test_connection_requests_expected_connection_parameters_before_callback);
+    RUN_TEST(test_connection_parameter_update_logs_effective_values);
     RUN_TEST(test_reconnect_requests_connection_parameters_again);
     RUN_TEST(test_connection_callback_called_on_connect);
     RUN_TEST(test_advertising_stops_while_connected);

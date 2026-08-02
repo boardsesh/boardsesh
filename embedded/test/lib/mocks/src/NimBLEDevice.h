@@ -36,6 +36,9 @@ constexpr uint32_t INDICATE = 0x20;
 // BLE gap connection descriptor
 struct ble_gap_conn_desc {
     uint16_t conn_handle;
+    uint16_t conn_itvl;
+    uint16_t conn_latency;
+    uint16_t supervision_timeout;
     uint8_t peer_ota_addr[6];
     uint8_t peer_id_addr[6];
     uint8_t our_id_addr[6];
@@ -109,6 +112,9 @@ class NimBLEConnInfo {
 
     NimBLEAddress getAddress() const { return NimBLEAddress(desc_ ? desc_->peer_ota_addr : nullptr); }
     uint16_t getConnHandle() const { return desc_ ? desc_->conn_handle : BLE_HS_CONN_HANDLE_NONE; }
+    uint16_t getConnInterval() const { return desc_ ? desc_->conn_itvl : 0; }
+    uint16_t getConnLatency() const { return desc_ ? desc_->conn_latency : 0; }
+    uint16_t getConnTimeout() const { return desc_ ? desc_->supervision_timeout : 0; }
     ble_gap_conn_desc* getDesc() const { return desc_; }
 
   private:
@@ -124,6 +130,7 @@ class NimBLEServerCallbacks {
     virtual void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) {
         onConnect(pServer, connInfo.getDesc());
     }
+    virtual void onConnParamsUpdate(NimBLEConnInfo& connInfo) { (void)connInfo; }
     virtual void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) {
         (void)reason;
         onDisconnect(pServer, connInfo.getDesc());
@@ -235,12 +242,13 @@ class NimBLEAdvertising {
         return true;
     }
 
-    void setMinPreferred(uint8_t minInterval) { minInterval_ = minInterval; }
+    void setMinPreferred(uint16_t minInterval) { minInterval_ = minInterval; }
 
-    void setMaxPreferred(uint8_t maxInterval) { maxInterval_ = maxInterval; }
-    void setPreferredParams(uint8_t minInterval, uint8_t maxInterval) {
+    void setMaxPreferred(uint16_t maxInterval) { maxInterval_ = maxInterval; }
+    bool setPreferredParams(uint16_t minInterval, uint16_t maxInterval) {
         setMinPreferred(minInterval);
         setMaxPreferred(maxInterval);
+        return true;
     }
 
     void start() {
@@ -256,11 +264,15 @@ class NimBLEAdvertising {
     const std::string& getAdvertisementName() const { return advertisementName_; }
     const std::string& getScanResponseName() const { return scanResponseName_; }
     const std::vector<std::string>& getServiceUUIDs() const { return serviceUUIDs_; }
+    uint16_t getMinPreferred() const { return minInterval_; }
+    uint16_t getMaxPreferred() const { return maxInterval_; }
     int getStartCount() const { return startCount_; }
     void mockReset() {
         advertising_ = false;
         scanResponse_ = false;
         startCount_ = 0;
+        minInterval_ = 0;
+        maxInterval_ = 0;
         advertisementName_.clear();
         scanResponseName_.clear();
         serviceUUIDs_.clear();
@@ -269,8 +281,8 @@ class NimBLEAdvertising {
   private:
     bool advertising_ = false;
     bool scanResponse_ = false;
-    uint8_t minInterval_ = 0;
-    uint8_t maxInterval_ = 0;
+    uint16_t minInterval_ = 0;
+    uint16_t maxInterval_ = 0;
     std::string advertisementName_;
     std::string scanResponseName_;
     std::vector<std::string> serviceUUIDs_;
@@ -395,7 +407,7 @@ class NimBLEServer {
     }
 
     void updateConnParams(uint16_t connHandle, uint16_t minInterval, uint16_t maxInterval, uint16_t latency,
-                          uint16_t timeout) {
+                          uint16_t timeout) const {
         connectionParameterUpdateCallCount_++;
         connectionParameterUpdateHandle_ = connHandle;
         connectionParameterUpdateMinInterval_ = minInterval;
@@ -442,12 +454,12 @@ class NimBLEServer {
     int connectedCount_;
     bool started_;
     uint16_t disconnectedHandle_ = BLE_HS_CONN_HANDLE_NONE;
-    int connectionParameterUpdateCallCount_ = 0;
-    uint16_t connectionParameterUpdateHandle_ = BLE_HS_CONN_HANDLE_NONE;
-    uint16_t connectionParameterUpdateMinInterval_ = 0;
-    uint16_t connectionParameterUpdateMaxInterval_ = 0;
-    uint16_t connectionParameterUpdateLatency_ = 0;
-    uint16_t connectionParameterUpdateTimeout_ = 0;
+    mutable int connectionParameterUpdateCallCount_ = 0;
+    mutable uint16_t connectionParameterUpdateHandle_ = BLE_HS_CONN_HANDLE_NONE;
+    mutable uint16_t connectionParameterUpdateMinInterval_ = 0;
+    mutable uint16_t connectionParameterUpdateMaxInterval_ = 0;
+    mutable uint16_t connectionParameterUpdateLatency_ = 0;
+    mutable uint16_t connectionParameterUpdateTimeout_ = 0;
 };
 
 // =============================================================================
