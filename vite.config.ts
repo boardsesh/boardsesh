@@ -839,6 +839,26 @@ export default defineConfig({
         dependsOn: ['db:up', 'mobile:web-runtime:install'],
         cache: false,
       },
+
+      // --- Post-deploy production smokes ---
+      // Read-only reachability checks against a deployed host. Run by
+      // production-deploy.yml after each deploy; safe to run by hand against
+      // production or a preview (`vp run smoke:production -- --base https://…`).
+      // Never cached — the point is to observe the live deploy, not to memoise
+      // an answer from the last one.
+      'smoke:production': {
+        command: 'tsx scripts/production-smoke.ts',
+        cache: false,
+      },
+      // Browser boot check for app.boardsesh.com — proves the bundle evaluates
+      // and React mounts, which the curl smoke in production-deploy.yml cannot
+      // see. Uses its own Playwright config (no globalSetup, no webServer) so
+      // it can never seed or sign in against a production host.
+      'smoke:app-boot': {
+        command:
+          'cd packages/web && PLAYWRIGHT_TEST_BASE_URL=${PLAYWRIGHT_TEST_BASE_URL:-https://app.boardsesh.com} bunx playwright test --config=playwright.production.config.ts',
+        cache: false,
+      },
     },
   },
 });

@@ -60,7 +60,14 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
-      testIgnore: ['**/layout-screenshots.spec.ts', '**/help-screenshots.spec.ts', '**/expo-web/**'],
+      // `production/` runs against a deployed host under its own config
+      // (playwright.production.config.ts) — never against the local dev server.
+      testIgnore: [
+        '**/layout-screenshots.spec.ts',
+        '**/help-screenshots.spec.ts',
+        '**/expo-web/**',
+        '**/production/**',
+      ],
     },
 
     // Expo-web smoke — drives the mobile app compiled for the browser at /app.
