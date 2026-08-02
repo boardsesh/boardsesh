@@ -1188,13 +1188,24 @@ export const tickMutations = {
       if (canonicalClimbedAt !== undefined) updates.climbedAt = canonicalClimbedAt;
       // Angle edits go through the same #3529 resolution as saveTick, against the
       // tick's OWN climb — an edit to 25° on a 40°-graded MoonBoard problem would
-      // otherwise strand the tick exactly the way a fresh save used to. Resolved
-      // only inside this branch: a quality/comment-only edit must never snap a
-      // historical tick that predates the fix.
+      // otherwise strand the tick exactly the way a fresh save used to.
       //
       // Resolved here, REPORTED after the UPDATE lands (below) — the same stance
       // saveTick takes, so the counter means one thing at both call sites: ticks
       // we actually moved.
+      //
+      // KNOWN, and an open question rather than a settled design: this branch keys
+      // off the field being PRESENT, not off it having changed, and the two shipped
+      // clients disagree about that. Web's logbook edit
+      // (packages/web/app/components/library/logbook-feed-item.tsx, handleSave)
+      // omits `angle` entirely, so a web edit never resolves. Mobile's
+      // LogbookEditSheet (packages/mobile/src/components/you/LogbookEditSheet.tsx)
+      // puts the tick's CURRENT angle in every save, so any edit from that sheet —
+      // comment-only included — resolves, and on a historical wrong-angle tick it
+      // moves the tick and fires the counter. Tightening this to
+      // `validatedInput.angle !== targetTick.angle` would make an unchanged angle
+      // field behave like an absent one; that is a behaviour decision, deliberately
+      // not taken here.
       if (validatedInput.angle !== undefined) {
         updates.angle = await resolveMoonBoardTickAngle(tx, {
           boardType: targetTick.boardType,
@@ -1264,8 +1275,11 @@ export const tickMutations = {
     // Report the #3529 snap only once the UPDATE has landed, off the RETURNING
     // row — the saveTick stance, applied here so one `MoonBoard Tick Angle
     // Snapped` event means the same thing whichever mutation emitted it. The
-    // `angle !== undefined` guard keeps a quality/comment-only edit silent even
-    // when the tick already sits at an angle its climb isn't graded at.
+    // `angle !== undefined` guard keeps an edit that omits the field silent (the
+    // web logbook edit's shape); an edit that carries the field reports whenever
+    // the stored angle came back different, which includes the mobile sheet's
+    // comment-only save on an already-stranded tick — see the note on the
+    // resolve branch above.
     if (validatedInput.angle !== undefined && updated.angle !== validatedInput.angle) {
       logger.warn(
         `[updateTick] moonboard tick angle snapped to the climb's graded angle (#3529): ` +

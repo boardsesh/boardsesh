@@ -439,9 +439,12 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
     });
   });
 
-  // 10. A quality/comment-only edit must not reach the resolver at all — a
-  // historical tick predating the fix stays where the climber put it until they
-  // deliberately edit its angle.
+  // 10. An edit that OMITS the angle field must not reach the resolver at all.
+  // That is the shape web's logbook edit sends (logbook-feed-item.tsx handleSave
+  // has no `angle` key), and on it a historical tick predating the fix stays
+  // where the climber put it. Mobile's LogbookEditSheet always sends the tick's
+  // current angle, so its comment-only save does NOT take this path — see the
+  // note on updateTick's resolve branch.
   it('leaves the angle untouched on an edit that does not mention the angle', async () => {
     await tickMutations.saveTick(
       undefined,

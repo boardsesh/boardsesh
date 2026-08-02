@@ -123,10 +123,15 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
  * NOT about the legacy web proxy — that route returns 400 for MoonBoard and can
  * never write a MoonBoard tick.)
  *
- * The exception goes inert on its own once #3851's angle-agnostic import lands
- * and sets board_climbs.angle = NULL on the canonical climb. See the fuller
- * forward-compat note on resolveMoonBoardTickAngle, including the #3849 window
- * and the #3852 interaction.
+ * The exception does NOT retire itself when #3851's angle-agnostic import lands.
+ * #3851 sets board_climbs.angle = NULL only on the rows it INSERTS; its upsert
+ * set-list on board_climbs carries characteristics and description, not angle,
+ * and it ships no migration — so a re-import leaves existing canonical rows at
+ * the angle they already have and this guard keeps firing on them. Removing it
+ * is a deliberate edit here and in resolveMoonBoardTickAngle (and a migration,
+ * if the canonical angles are ever to go null). See the fuller forward-compat
+ * note on resolveMoonBoardTickAngle, including the #3849 window and the #3852
+ * interaction.
  *
  * Seeded rows carry quality_normalized = TRUE. Every value the row can ever
  * hold is on the canonical 1-5 scale: the Boardsesh blend is built from native

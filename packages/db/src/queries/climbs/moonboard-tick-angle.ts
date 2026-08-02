@@ -64,11 +64,18 @@ export type MoonBoardTickAngleInput = {
  * would make this function a no-op on the exact population it exists for.
  *
  * FORWARD COMPAT — when rule (d) must go:
- *   - #3851 (angle-agnostic MoonBoard import) sets `angle: null` on the canonical
- *     climb row. That is the real removal trigger, and it needs no code change:
- *     rule (c)'s `board_climbs.angle IS NULL` leg turns rule (d) inert by itself
- *     the moment an angle-agnostic re-import has run. That passthrough is the
- *     forward-compat guard, and it is pinned by a test.
+ *   - #3851 (angle-agnostic MoonBoard import) is the trigger to retire rule (d),
+ *     but it does NOT retire it by itself. #3851 writes `angle: null` only in the
+ *     values it INSERTS for a brand-new climb row; its `onConflictDoUpdate`
+ *     set-list on board_climbs is `{ characteristics, description }` — no
+ *     `angle` — and the PR ships no migration. So a re-import leaves every
+ *     existing canonical row's `board_climbs.angle` exactly as it is, and rule
+ *     (c)'s `board_climbs.angle IS NULL` leg keeps not matching them. Rule (c)
+ *     covers rows whose angle really is null (there is a test pinning that
+ *     passthrough), which is the shape newly-imported problems arrive in.
+ *     Retiring rule (d) for the rows already in the table is a deliberate code
+ *     change here and in the recompute seed guards — plus a migration, if the
+ *     canonical rows' angles are ever to become null.
  *   - #3849 (angle dedup) does NOT null the canonical angle. In the window after
  *     #3849 merges and before an angle-agnostic re-import, a merged problem that
  *     the catalog grades at only ONE angle keeps `angle = 40` with a single stats

@@ -7,16 +7,28 @@ import { boardClimbStats } from '../../schema/boards/unified';
  *
  * A stats row at a given (board_type, climb_uuid, angle) either holds something
  * only an upstream catalog could have supplied, or it holds nothing but
- * Boardsesh-derived counts. The four columns below are exactly the ones no
- * Boardsesh code path can invent:
+ * Boardsesh-derived counts. The four columns below are the ones no Boardsesh
+ * code path writes on a CATALOG climb:
  *
  *   - upstream_ascensionist_count  — the manufacturer's own repeat count
  *   - display_difficulty           — the catalog grade
  *   - benchmark_difficulty         — the catalog benchmark grade
  *   - upstream_quality_average     — the manufacturer's star average
  *
- * The tick recompute never writes any of them (see the recompute module doc), so
- * a row where all four are absent is provably an artefact of a tick landing at
+ * "On a catalog climb" is the load-bearing qualifier, not decoration. Two
+ * Boardsesh writers do set display_difficulty / benchmark_difficulty:
+ * saveMoonBoardClimb (packages/backend/src/graphql/resolvers/climbs/mutations.ts)
+ * and the web saveClimb proxy's saveClimbStats('moonboard', …)
+ * (packages/web/app/api/v1/[board_name]/proxy/saveClimb/route.ts). Both write
+ * them only for a climb they are creating, and both create that climb with a
+ * non-null board_climbs.user_id — and every consumer of this predicate consults
+ * it strictly behind the user-created fence (bc.user_id IS NULL), so neither
+ * writer's rows are ever reached through it. If that ever stopped holding, the
+ * failure direction is protective: an extra TRUE reads as "real catalog data",
+ * and the fix responds by declining to move the tick or delete the row.
+ *
+ * The tick recompute never writes any of the four (see the recompute module doc),
+ * so a row where all four are absent is provably an artefact of a tick landing at
  * that angle — a phantom row — rather than a graded angle of the problem.
  *
  * Why the whole fix hangs on this rather than on bare row existence: under

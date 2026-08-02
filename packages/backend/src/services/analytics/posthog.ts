@@ -21,8 +21,10 @@ export type BackendAnalyticsEvent =
   // Fires when saveTick or updateTick moved a MoonBoard tick to the angle its
   // climb is actually graded at (#3529). Same counting discipline as the line
   // above: count DISTINCT USERS. A sustained hit rate means a client surface is
-  // sending the wrong angle and wants fixing too; a decline to zero once
-  // #3851's angle-agnostic import lands is what tells us the snap can retire.
+  // sending the wrong angle and wants fixing too; a decline to zero is the
+  // evidence that the snap could be retired. Retiring it is a deliberate code
+  // change either way — #3851's angle-agnostic import does not do it on its own,
+  // since it only nulls board_climbs.angle on rows it inserts.
   | 'MoonBoard Tick Angle Snapped';
 
 interface CaptureBackendEventOptions {
