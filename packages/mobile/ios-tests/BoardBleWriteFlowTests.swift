@@ -1377,39 +1377,6 @@ final class BoardBleWriteFlowTests: XCTestCase {
         XCTAssertEqual(peripheral.writtenChunks.count, 1)
         XCTAssertEqual(String(data: peripheral.writtenChunks[0].data, encoding: .utf8), "l##")
     }
-}
-
-@available(iOS 17.0, *)
-final class WaiterPoolOutcomeTests: XCTestCase {
-    func testWaitReportsImmediateSignalAndTimeoutOutcomes() async {
-        let queue = DispatchQueue(label: "com.boardsesh.tests.waiter-pool")
-        let pool = WaiterPool(queue: queue)
-
-        let immediateResult = await pool.wait(timeout: 1) { true }
-        let timeoutResult = await pool.wait(timeout: 0) { false }
-        XCTAssertTrue(immediateResult)
-        XCTAssertFalse(timeoutResult)
-    }
-
-    func testWaitReportsExplicitSignal() async {
-        let queue = DispatchQueue(label: "com.boardsesh.tests.waiter-pool-signal")
-        let pool = WaiterPool(queue: queue)
-        let resultTask = Task {
-            await pool.wait(timeout: 1) { false }
-        }
-
-        var waiterWasRegistered = false
-        for _ in 0..<1_000 {
-            waiterWasRegistered = queue.sync { pool.hasPendingWaiters }
-            if waiterWasRegistered { break }
-            await Task.yield()
-        }
-        XCTAssertTrue(waiterWasRegistered)
-        queue.sync { pool.signalAll() }
-
-        let signaledResult = await resultTask.value
-        XCTAssertTrue(signaledResult)
-    }
 
     func testMoonBoardAckWatchdogStartsBoundedConnectionRecovery() {
         let hooks = manager.testHooks
@@ -1448,5 +1415,38 @@ final class WaiterPoolOutcomeTests: XCTestCase {
         XCTAssertNotNil(scheduler.lastOneShot(label: "writeStallRecoveryWatchdog"))
         XCTAssertFalse(hooks.sync { hooks.hasPendingWriteAck })
         XCTAssertEqual(disconnectEventCount, 0)
+    }
+}
+
+@available(iOS 17.0, *)
+final class WaiterPoolOutcomeTests: XCTestCase {
+    func testWaitReportsImmediateSignalAndTimeoutOutcomes() async {
+        let queue = DispatchQueue(label: "com.boardsesh.tests.waiter-pool")
+        let pool = WaiterPool(queue: queue)
+
+        let immediateResult = await pool.wait(timeout: 1) { true }
+        let timeoutResult = await pool.wait(timeout: 0) { false }
+        XCTAssertTrue(immediateResult)
+        XCTAssertFalse(timeoutResult)
+    }
+
+    func testWaitReportsExplicitSignal() async {
+        let queue = DispatchQueue(label: "com.boardsesh.tests.waiter-pool-signal")
+        let pool = WaiterPool(queue: queue)
+        let resultTask = Task {
+            await pool.wait(timeout: 1) { false }
+        }
+
+        var waiterWasRegistered = false
+        for _ in 0..<1_000 {
+            waiterWasRegistered = queue.sync { pool.hasPendingWaiters }
+            if waiterWasRegistered { break }
+            await Task.yield()
+        }
+        XCTAssertTrue(waiterWasRegistered)
+        queue.sync { pool.signalAll() }
+
+        let signaledResult = await resultTask.value
+        XCTAssertTrue(signaledResult)
     }
 }
