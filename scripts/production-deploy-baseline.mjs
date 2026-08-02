@@ -37,6 +37,11 @@ function selectLatestCompletedRun(previousRunsResponse) {
     return { run: null, reason: 'no completed production deployment exists' };
   }
 
+  // The workflow-runs response has no completed_at field. run_started_at does
+  // not order finishes when queued or overlapping runs take different amounts
+  // of time, so updated_at is the closest completion proxy. If later metadata
+  // updates ever reorder it, the marker and ancestry checks below still fail
+  // closed rather than trusting unrelated production history.
   const candidates = previousRunsResponse.workflow_runs.map((run) => ({
     run,
     completedAt: typeof run?.updated_at === 'string' ? Date.parse(run.updated_at) : Number.NaN,

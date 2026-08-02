@@ -978,6 +978,7 @@ jobs:
           OTA_CONFIGURED: ${{ needs.publish-mobile-ota.outputs.configured }}
           OTA_ALL_SUCCESS: ${{ needs.publish-mobile-ota.outputs.all_success }}
           OTA_ANY_SUCCESS: ${{ needs.publish-mobile-ota.outputs.any_success }}
+          OTA_CHANGELOG_SYNCED: ${{ needs.publish-mobile-ota.outputs.changelog_synced }}
           OTA_PLATFORM: ${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'all' }}
         run: |
           set -euo pipefail
@@ -1070,10 +1071,20 @@ jobs:
             elif [ "$OTA_ALL_SUCCESS" != true ] || [ "$OTA_ANY_SUCCESS" != true ]; then
               echo "::error::configured OTA did not prove every requested platform succeeded"
               failures=$((failures + 1))
-            elif [ "$OTA_PLATFORM" != all ]; then
-              # A deliberate one-platform manual publish is useful, but it is not
-              # a global production baseline for subsequent component diffs.
-              ota_release_held=true
+            else
+              if [ "$OTA_PLATFORM" != all ]; then
+                # A deliberate one-platform manual publish is useful, but it is not
+                # a global production baseline for subsequent component diffs.
+                ota_release_held=true
+              fi
+              if [ "$OTA_CHANGELOG_SYNCED" != true ]; then
+                # Non-main manual releases and installations without the
+                # main-bypass app may publish successfully, but changed generated
+                # files remain local. Do not let that run become the component
+                # baseline until a main release synchronizes the changelog.
+                ota_release_held=true
+                echo "::warning::OTA published, but the generated changelog was not synchronized to main."
+              fi
             fi
           else
             require_skipped "$OTA_RESULT" publish-mobile-ota

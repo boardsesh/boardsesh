@@ -143,11 +143,13 @@ fetches current `origin/main` before any production mutation. That intermediate 
 `superseded` and every downstream job skips; the later queued run releases the newer SHA. Only the
 positively identified generated-commit exception above may sit ahead. For component detection, the
 workflow reads a bounded Actions history page, selects the run with the latest unambiguous
-completion timestamp, and trusts its SHA only when both the workflow and its
+`updated_at` completion proxy (`run_started_at` does not order finishes), and trusts its SHA only
+when both the workflow and its
 `mark-production-promoted` job succeeded. The marker is emitted for a fully reflected release or a
-trusted no-change diff, never for rollback, app hold, unconfigured OTA, one-platform OTA,
-superseded, failed, or cancelled runs. Missing or ambiguous evidence forces the next run through the
-full release graph. There is no mutable “last-deployed SHA” branch, tag, or external state.
+trusted no-change diff, never for rollback, app hold, unconfigured OTA, one-platform OTA, a changed
+changelog that did not reach `main`, superseded, failed, or cancelled runs. Missing or ambiguous
+evidence forces the next run through the full release graph. There is no mutable “last-deployed
+SHA” branch, tag, or external state.
 
 Each platform's publish is followed by its own Sentry source-map upload, because every `eoas
 publish` recreates `packages/mobile/dist` and would erase the previous platform's maps. The upload
@@ -174,7 +176,11 @@ publish is reported as release-held and cannot become the global component basel
 message, each platform uses the selected commit's short hash plus subject, even after changelog
 generation moves local `HEAD`. Manual dispatch deliberately bypasses the automatic stale-push guard:
 selecting an older or non-main ref is an operator-authorized full-stack release or rollback, and all
-components are forced through the graph. The separate Mobile OTA Backport workflow remains OTA-only.
+components are forced through the graph. A non-main dispatch never receives the app credential that
+bypasses `main` branch protection and therefore never pushes generated changelog files to `main`. If
+generation changed those files, the release is reported as held and cannot become the next component
+baseline; a later successful main release regenerates and synchronizes them. The separate Mobile OTA
+Backport workflow remains OTA-only.
 
 **Local OTA-only emergency publish** (bypasses the unified server/web gate) — publish exactly one
 platform, then upload that export's source maps before running `eoas` again:
@@ -773,13 +779,16 @@ be requested.
 OTA it regenerates the file from merged-PR `## Release Notes` sections whose merge commits are
 ancestors of the exact deployed SHA, then commits it locally before `eoas publish` (which needs a
 clean tree).
-It **pushes the commit back to `main`** only after every requested platform succeeds (the commit is
-tagged `[skip ci]` so the push can't re-trigger the OTA). A partial or total publish failure leaves
-the local CI commit unpushed; the next run regenerates the same source-of-truth files.
+It **pushes the commit back to `main`** only after every requested platform succeeds and the release
+itself runs from `main` (the commit is tagged `[skip ci]` so the push can't re-trigger the OTA). A
+partial or total publish failure, a non-main manual release, or missing push-back app configuration
+leaves the local CI commit unpushed; the release is held as a future component baseline, and the next
+successful main run regenerates the same source-of-truth files.
 Nothing else writes the file: the native build workflows and `refresh-acknowledgements.yml` only
 _read_ it, and a CI guard (`changelog-owned` in `ci.yml`) fails any PR that edits it. A fully
-successful OTA still publishes when the push-back identity is not wired — the push-back just keeps
-`main`'s copy (which the native binaries embed) current.
+successful OTA still publishes when the push-back identity is not wired, but a changed local
+snapshot holds the release baseline until a later main run brings the committed copy (which native
+binaries embed) current.
 
 ### Native-release markers + on-demand update check
 
@@ -808,8 +817,10 @@ which blocks the default `GITHUB_TOKEN` from pushing directly. One-time setup:
 5. **Wire the secrets**: set repo **variable** `OTA_PUSH_APP_ID` = the App ID, and repo **secret**
    `OTA_PUSH_APP_PRIVATE_KEY` = the `.pem` contents.
 
-Until those exist, the OTA's "Push changelog to main" step no-ops with a `::warning::` (the OTA
-itself still ships). A fine-grained PAT from a user who's in the bypass list works too — store it as
+Until those exist, the OTA's "Push changelog to main" step is skipped (the OTA itself still ships).
+When generation changed the files, the parent reports the release as held and does not write a
+promotion marker; the next main release runs the full graph and retries the synchronization. A
+fine-grained PAT from a user who's in the bypass list works too — store it as
 `OTA_PUSH_APP_PRIVATE_KEY`'s equivalent and swap the `Mint push token` step for a direct
 `secrets.<PAT>` (ask if you prefer that route).
 

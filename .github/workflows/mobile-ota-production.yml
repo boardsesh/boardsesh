@@ -68,6 +68,9 @@ on:
       changelog_changed:
         description: 'Whether changelog generation produced a new snapshot'
         value: ${{ jobs.publish.outputs.changelog_changed }}
+      changelog_synced:
+        description: 'Whether no changelog update was needed or the generated update reached main'
+        value: ${{ jobs.publish.outputs.changelog_synced }}
       changelog_summary_base64:
         description: 'Base64-encoded Discord-safe changelog summary'
         value: ${{ jobs.publish.outputs.changelog_summary_base64 }}
@@ -146,6 +149,7 @@ jobs:
       health_status: ${{ steps.result.outputs.health_status }}
       sourcemaps_status: ${{ steps.result.outputs.sourcemaps_status }}
       changelog_changed: ${{ steps.result.outputs.changelog_changed }}
+      changelog_synced: ${{ steps.result.outputs.changelog_synced }}
       changelog_summary_base64: ${{ steps.result.outputs.changelog_summary_base64 }}
 
     # EOO_TOKEN (the app-scoped expo-open-ota publish key) is NOT a job-level env:
@@ -169,7 +173,7 @@ jobs:
       # rejected; the app is. Skips cleanly when the app isn't configured.
       - name: Mint push token
         id: push_token
-        if: vars.OTA_PUSH_APP_ID != ''
+        if: github.ref == 'refs/heads/main' && vars.OTA_PUSH_APP_ID != ''
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ vars.OTA_PUSH_APP_ID }}
@@ -448,8 +452,10 @@ jobs:
       # Auth is the app token that checkout persisted (the app is in main's
       # PR-bypass list; github-actions[bot] is not, so it would 403). Skips when the
       # app isn't configured — checkout then holds only the default token, the OTA
-      # already shipped, and main's committed copy is just left unchanged.
+      # already shipped, and main's committed copy is left unchanged. The result
+      # output below makes that release-held rather than a trusted baseline.
       - name: Push changelog to main
+        id: push_changelog
         if: github.ref == 'refs/heads/main' && steps.publish_summary.outputs.all_success == 'true' && steps.generate.outputs.changed == 'true' && vars.OTA_PUSH_APP_ID != ''
         run: |
           set -euo pipefail
@@ -541,12 +547,21 @@ jobs:
           IOS_MAP_OUTCOME: ${{ steps.upload_sourcemaps_ios.outcome }}
           ANDROID_MAP_OUTCOME: ${{ steps.upload_sourcemaps_android.outcome }}
           CHANGELOG_CHANGED: ${{ steps.generate.outputs.changed }}
+          CHANGELOG_PUSH_OUTCOME: ${{ steps.push_changelog.outcome }}
         run: |
           set -euo pipefail
           configured=${GATE_CONFIGURED:-false}
           all_success=${ALL_SUCCESS:-false}
           any_success=${ANY_SUCCESS:-false}
           changelog_changed=${CHANGELOG_CHANGED:-false}
+
+          # A skipped push is successful only when generation found nothing to
+          # commit. Changed output must positively reach main before the parent
+          # can trust this run as the next component baseline.
+          changelog_synced=false
+          if [ "$changelog_changed" != true ] || [ "${CHANGELOG_PUSH_OUTCOME:-skipped}" = success ]; then
+            changelog_synced=true
+          fi
 
           health_status=not-run
           if [ "$any_success" = true ]; then
@@ -586,6 +601,7 @@ jobs:
           echo "health_status=$health_status" >> "$GITHUB_OUTPUT"
           echo "sourcemaps_status=$sourcemaps_status" >> "$GITHUB_OUTPUT"
           echo "changelog_changed=$changelog_changed" >> "$GITHUB_OUTPUT"
+          echo "changelog_synced=$changelog_synced" >> "$GITHUB_OUTPUT"
           echo "changelog_summary_base64=$changelog_summary_base64" >> "$GITHUB_OUTPUT"
 
       # The published OTA is live but unsymbolicated. Name the platforms in this

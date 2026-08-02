@@ -57,6 +57,7 @@ function runReleaseGate(overrides: Record<string, string>): { status: number; st
       OTA_CONFIGURED: 'false',
       OTA_ALL_SUCCESS: 'false',
       OTA_ANY_SUCCESS: 'false',
+      OTA_CHANGELOG_SYNCED: 'true',
       OTA_PLATFORM: 'all',
       ...overrides,
     },
@@ -315,6 +316,47 @@ describe('unified production deploy workflow', () => {
         BUILD_BACKEND_RESULT: 'failure',
       }),
     ).toEqual({ status: 1, state: 'promoted' });
+  });
+
+  it.each([
+    ['successful child job with partial outputs', 'success'],
+    ['failed child job with partial outputs', 'failure'],
+  ])('rejects a configured partial OTA: %s', (_description, otaResult) => {
+    expect(
+      runReleaseGate({
+        OTA_CHANGED: 'true',
+        OTA_RESULT: otaResult,
+        OTA_CONFIGURED: 'true',
+        OTA_ALL_SUCCESS: 'false',
+        OTA_ANY_SUCCESS: 'true',
+      }).status,
+    ).toBe(1);
+  });
+
+  it('holds a successful OTA until a changed changelog is synchronized', () => {
+    const successfulOta = {
+      OTA_CHANGED: 'true',
+      OTA_RESULT: 'success',
+      OTA_CONFIGURED: 'true',
+      OTA_ALL_SUCCESS: 'true',
+      OTA_ANY_SUCCESS: 'true',
+    };
+
+    expect(runReleaseGate({ ...successfulOta, OTA_CHANGELOG_SYNCED: 'false' })).toEqual({
+      status: 0,
+      state: 'release-held',
+    });
+    expect(runReleaseGate({ ...successfulOta, OTA_CHANGELOG_SYNCED: 'true' })).toEqual({
+      status: 0,
+      state: 'promoted',
+    });
+    expect(
+      runReleaseGate({
+        ...successfulOta,
+        OTA_CHANGELOG_SYNCED: 'false',
+        OTA_PLATFORM: 'ios',
+      }),
+    ).toEqual({ status: 0, state: 'release-held' });
   });
 
   it('uses the derived changelog range and reports OTA outcome and health', () => {

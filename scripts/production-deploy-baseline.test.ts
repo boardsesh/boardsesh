@@ -100,7 +100,7 @@ describe('production deploy baseline selection', () => {
     expect(selectBaseline({ previousJobsResponse: null }).forceComponents).toBe(true);
   });
 
-  it('selects the run that completed last when creation order and execution order differ', () => {
+  it('selects by completion proxy when creation and run-start ordering disagree', () => {
     expect(
       selectBaseline({
         changelogBaseSha: 'older-created-manual',
@@ -111,6 +111,7 @@ describe('production deploy baseline selection', () => {
               head_sha: 'newer-created',
               conclusion: 'success',
               created_at: '2026-08-01T11:05:00Z',
+              run_started_at: '2026-08-01T11:25:00Z',
               updated_at: '2026-08-01T11:20:00Z',
             },
             {
@@ -118,6 +119,7 @@ describe('production deploy baseline selection', () => {
               head_sha: 'older-created-manual',
               conclusion: 'success',
               created_at: '2026-08-01T11:00:00Z',
+              run_started_at: '2026-08-01T11:10:00Z',
               updated_at: '2026-08-01T11:30:00Z',
             },
           ],

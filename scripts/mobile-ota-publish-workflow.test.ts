@@ -35,6 +35,47 @@ function stepBlock(workflow: string, stepName: string): string {
   return workflow.slice(start, end);
 }
 
+function runOtaResultStep(overrides: Record<string, string>): Record<string, string> {
+  const resultStep = stepBlock(production, 'Record OTA result');
+  const runBlock = resultStep.match(/        run: \|\n([\s\S]*)/)?.[1];
+  expect(runBlock).toBeDefined();
+  const shellScript = (runBlock ?? '')
+    .split('\n')
+    .map((line) => line.replace(/^ {10}/, ''))
+    .join('\n');
+  const runnerTemp = mkdtempSync(resolve(tmpdir(), 'boardsesh-ota-result-'));
+  const outputPath = resolve(runnerTemp, 'github-output');
+  const result = spawnSync('bash', ['-c', shellScript], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      GITHUB_OUTPUT: outputPath,
+      RUNNER_TEMP: runnerTemp,
+      GATE_CONFIGURED: 'true',
+      ALL_SUCCESS: 'true',
+      ANY_SUCCESS: 'true',
+      IOS_OUTCOME: 'success',
+      ANDROID_OUTCOME: 'success',
+      HEALTH_OUTCOME: 'skipped',
+      CHANGELOG_CHANGED: 'false',
+      CHANGELOG_PUSH_OUTCOME: 'skipped',
+      ...overrides,
+    },
+  });
+  expect(result.status, result.stderr).toBe(0);
+  const outputs = Object.fromEntries(
+    readFileSync(outputPath, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const separatorIndex = line.indexOf('=');
+        return [line.slice(0, separatorIndex), line.slice(separatorIndex + 1)];
+      }),
+  );
+  rmSync(runnerTemp, { recursive: true, force: true });
+  return outputs;
+}
+
 describe('production OTA workflow reliability', () => {
   it('is reusable-only and inherits the unified production deployment lane', () => {
     expect(production).toContain('on:\n  workflow_call:');
@@ -204,16 +245,36 @@ describe('production OTA workflow reliability', () => {
   });
 
   it('pushes the changelog and permits the parent success notice only after the release gate passes', () => {
+    const mint = stepBlock(production, 'Mint push token');
     const push = stepBlock(production, 'Push changelog to main');
     const success = jobBlock(productionDeploy, 'notify-success');
 
+    expect(mint).toContain("github.ref == 'refs/heads/main'");
+    expect(push).toContain('id: push_changelog');
+    expect(push).toContain("github.ref == 'refs/heads/main'");
     expect(push).toContain("steps.publish_summary.outputs.all_success == 'true'");
     expect(push).not.toContain('if: always()');
+    expect(production).toContain('value: ${{ jobs.publish.outputs.changelog_synced }}');
+    expect(production).toContain('changelog_synced: ${{ steps.result.outputs.changelog_synced }}');
     expect(success).toContain("needs.release-gate.result == 'success'");
     expect(success).toContain("needs.release-gate.outputs.state == 'promoted'");
     expect(success).toContain("needs.release-gate.outputs.state == 'release-held'");
     expect(success).toContain('OTA_IOS_OUTCOME');
     expect(success).toContain('OTA_ANDROID_OUTCOME');
+  });
+
+  it.each([
+    ['unchanged generation with a skipped push', 'false', 'skipped', 'true'],
+    ['changed generation with a successful push', 'true', 'success', 'true'],
+    ['changed generation with a skipped push', 'true', 'skipped', 'false'],
+    ['changed generation with a failed push', 'true', 'failure', 'false'],
+  ])('reports changelog synchronization for %s', (_description, changed, pushOutcome, expectedSynced) => {
+    expect(
+      runOtaResultStep({
+        CHANGELOG_CHANGED: changed,
+        CHANGELOG_PUSH_OUTCOME: pushOutcome,
+      }).changelog_synced,
+    ).toBe(expectedSynced);
   });
 
   it('runs the health check after any successful platform, including partial success', () => {
@@ -225,6 +286,7 @@ describe('production OTA workflow reliability', () => {
 
   it('returns publish and health outcomes instead of posting duplicate deploy notifications', () => {
     expect(production).toContain('health_status:');
+    expect(production).toContain('changelog_synced:');
     expect(production).toContain('changelog_summary_base64:');
     expect(production).toContain('name: Record OTA result');
     expect(production).not.toContain('name: Notify deployments channel');
