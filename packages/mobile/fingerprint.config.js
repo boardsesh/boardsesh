@@ -90,6 +90,12 @@ module.exports = {
       // at prebuild, so a permission-string edit is a native change no OTA can
       // deliver — without this it would leave runtimeVersion untouched and ship to
       // binaries whose prompts still read the old text.
+      //
+      // `overrideHashKey` names the source in the hash tree; it does NOT replace the
+      // content digest (see createSourceId in @expo/fingerprint's hash/Hash.js —
+      // the key is only the source id, contents are hashed either way). Confirmed by
+      // probe: editing one string in locales/de.json moves the resolved iOS
+      // runtimeVersion.
     },
     {
       type: 'dir',

@@ -529,11 +529,21 @@ jobs:
           set -euo pipefail
           mkdir -p "${RUNNER_TEMP}/play-whatsnew"
           staged=0
-          for changelog in fastlane/metadata/android/*/changelogs/default.txt; do
+          # Walk the LOCALE dirs, not the changelog glob, so a locale that has
+          # listing text but no changelog is reported instead of silently
+          # inheriting the default language's notes. It's a warning, not an
+          # error: Play falls back cleanly, and a half-finished translation
+          # shouldn't block a release.
+          for locale_dir in fastlane/metadata/android/*/; do
             # An unmatched glob stays literal under bash's default nullglob=off,
             # so skip it and let the staged==0 check below report the real problem.
-            [ -f "$changelog" ] || continue
-            locale="$(basename "$(dirname "$(dirname "$changelog")")")"
+            [ -d "$locale_dir" ] || continue
+            locale="$(basename "$locale_dir")"
+            changelog="${locale_dir}changelogs/default.txt"
+            if [ ! -f "$changelog" ]; then
+              echo "::warning::No changelogs/default.txt for Play locale ${locale} — it will fall back to the default listing language."
+              continue
+            fi
             cp "$changelog" "${RUNNER_TEMP}/play-whatsnew/whatsnew-${locale}"
             echo "Staged Play release notes for ${locale}"
             staged=$((staged + 1))
