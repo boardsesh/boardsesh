@@ -159,17 +159,30 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
   /**
    * Pick (or clear) the board's gym. Stamping the gym's own coordinates onto the
    * board is what lets the server's proximity check pass for a gym the user
-   * doesn't run, and it's the more accurate value anyway. A location name the
-   * user already typed is left alone.
+   * doesn't run, and it's the more accurate value anyway.
+   *
+   * The location name is back-filled from the gym only when it's blank or still
+   * holds the name this function last put there. Guarding on "blank" alone made
+   * the back-fill sticky: pick gym A, switch to gym B, and the board ends up
+   * linked to B but labelled A. Anything the user typed themselves is left alone.
    */
+  const autoFilledLocationRef = useRef<string | null>(null);
   const setSelectedGym = useCallback(
     (gym: { uuid: string; name: string; latitude?: number | null; longitude?: number | null } | null) => {
       setSelectedGymState(gym ? { uuid: gym.uuid, name: gym.name } : null);
       if (!gym) return;
       if (gym.latitude != null && gym.longitude != null) {
         setCoords({ latitude: gym.latitude, longitude: gym.longitude });
+      } else {
+        // A gym with no coordinates can't vouch for the previous gym's, and a
+        // stale pair would aim the server's proximity check at the wrong place.
+        setCoords(null);
       }
-      setLocationName((previous) => (previous.trim().length > 0 ? previous : gym.name));
+      setLocationName((previous) => {
+        const isOurs = previous.trim().length === 0 || previous === autoFilledLocationRef.current;
+        return isOurs ? gym.name : previous;
+      });
+      autoFilledLocationRef.current = gym.name;
     },
     [],
   );

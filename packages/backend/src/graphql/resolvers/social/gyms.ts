@@ -449,6 +449,14 @@ export const SELF_LINK_PROXIMITY_METERS = PROXIMITY_MATCH_RADIUS_METERS;
 export const MAX_FOREIGN_GYM_LINKS = 20;
 
 /**
+ * Beyond this many of the caller's own boards listed at ONE gym they don't run,
+ * stop allowing more. Bounds how far a single listing can be flooded, which the
+ * distinct-gym cap above deliberately does not (it excludes the target gym so
+ * several walls at your home gym cost one slot).
+ */
+export const MAX_BOARDS_PER_FOREIGN_GYM = 5;
+
+/**
  * Gate for attaching a board the caller OWNS to a gym: owner/admin of the gym as
  * before, plus a self-service path so a climber can put their board on the gym
  * they actually climb at without being staff there. Before #4166 this was
@@ -478,14 +486,21 @@ export async function requireBoardGymLinkAccess(opts: {
   // no coordinates at all, which would otherwise fail the proximity test.
   if (isOwner || memberRole === 'admin') return gym;
 
+  // A private gym must be indistinguishable from a non-existent one, or this
+  // becomes a probe for private home-wall gyms.
+  //
+  // This MUST stay above the rate limit. A missing gym throws out of
+  // loadGymWithMemberRole without ever reaching the bucket, so charging before
+  // this check made the two cases distinguishable by bucket state even though
+  // they share a message: probe five times, then call once against a known
+  // public gym — "rate limit exceeded" means the uuid is a live private gym,
+  // "not authorized" means it doesn't exist.
+  if (!gym.isPublic) throw new Error('Gym not found');
+
   // The tight bucket belongs to the self-service path only. Charged here rather
   // than at the call site so a gym owner adding several boards to their OWN gym
   // isn't throttled by a limit named for a path they're not on.
   await applyRateLimit(ctx, 5, 'linkBoardToForeignGym');
-
-  // A private gym must be indistinguishable from a non-existent one, or this
-  // becomes a probe for private home-wall gyms.
-  if (!gym.isPublic) throw new Error('Gym not found');
 
   if (boardLatitude == null || boardLongitude == null || gym.latitude == null || gym.longitude == null) {
     throw new Error('Not authorized to link board to this gym');
@@ -531,12 +546,32 @@ export async function requireBoardGymLinkAccess(opts: {
     throw new Error('Not authorized to link board to this gym');
   }
 
+  // Depth, not just breadth. The count above deliberately excludes this gym so
+  // several boards at the gym you actually climb at cost one slot — but that
+  // left the number of boards one account can push onto a SINGLE gym's listing
+  // unbounded. A climber has a handful of walls at one gym; a flood is someone
+  // else's problem to clean up by hand, one detach at a time.
+  const [{ count: boardsAtThisGym }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(dbSchema.userBoards)
+    .where(
+      and(
+        eq(dbSchema.userBoards.ownerId, userId),
+        eq(dbSchema.userBoards.gymId, gym.id),
+        isNull(dbSchema.userBoards.deletedAt),
+      ),
+    );
+  if (boardsAtThisGym >= MAX_BOARDS_PER_FOREIGN_GYM) {
+    throw new Error('Not authorized to link board to this gym');
+  }
+
   logger.warn('board linked to a gym the owner does not administer', {
     userId,
     gymId: gym.id,
     gymUuid: gym.uuid,
     distanceMeters: Math.round(distance),
     existingForeignGyms: foreignGyms,
+    existingBoardsAtThisGym: boardsAtThisGym,
   });
 
   return gym;

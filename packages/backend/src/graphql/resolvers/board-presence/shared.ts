@@ -416,12 +416,32 @@ export function assertAnonReadableBoard(board: BoardVisibility, viewerUserId: st
   }
 }
 
+/**
+ * The caller's own live board for this config — preferring the one this serial
+ * should bind to.
+ *
+ * An owner can hold several boards of one configuration since #4166 dropped the
+ * per-owner config unique index (the same MoonBoard 2024 at home and at a gym).
+ * This was `.limit(1)` with no ordering, so with two such boards the pick was
+ * arbitrary and the serial-bind caller would either refuse to connect — throwing
+ * "already linked to another wall serial" because it happened to pick the board
+ * bound to the OTHER controller — or stamp this wall's serial onto the wrong
+ * board, silently misattributing every later presence event and tick.
+ *
+ * Ordering makes it deterministic and correct:
+ *   1. already bound to `preferredSerial` — the board actually being connected;
+ *   2. unbound — free to take this serial;
+ *   3. bound to a different serial — reached only when nothing better exists,
+ *      which is the genuine "already linked elsewhere" case.
+ * `id` breaks remaining ties so repeat calls agree with each other.
+ */
 export async function findOwnActiveBoardByConfig(
   ownerId: string,
   boardType: string,
   layoutId: number,
   sizeId: number,
   setIds: string,
+  preferredSerial?: string,
 ): Promise<ActivePresenceBoard | undefined> {
   const normalizedSetIds = normalizeSetIds(setIds);
   const [board] = await db
@@ -445,6 +465,15 @@ export async function findOwnActiveBoardByConfig(
         eq(dbSchema.userBoards.setIds, normalizedSetIds),
         isNull(dbSchema.userBoards.deletedAt),
       ),
+    )
+    .orderBy(
+      sql`CASE
+            WHEN ${preferredSerial ?? null}::text IS NOT NULL
+             AND ${dbSchema.userBoards.serialNumber} = ${preferredSerial ?? null}::text THEN 0
+            WHEN ${dbSchema.userBoards.serialNumber} IS NULL THEN 1
+            ELSE 2
+          END`,
+      asc(dbSchema.userBoards.id),
     )
     .limit(1);
   return board;

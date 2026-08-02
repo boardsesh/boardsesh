@@ -297,7 +297,8 @@
       "noGymHint": "Elle apparaîtra quand même sur la carte avec son propre repère.",
       "addNew": "Ma salle n'est pas listée",
       "empty": "Aucune salle à proximité",
-      "sharedEditHint": "L'équipe de cette salle pourra modifier les infos de cette board."
+      "sharedEditHint": "L'équipe de cette salle pourra modifier les infos de cette board.",
+      "linkError": "Impossible d'associer cette salle. Elle est peut-être trop loin de ta board. Tes autres modifications ont bien été enregistrées."
     }
   },
   "boardEntity": {
@@ -351,8 +352,8 @@
       "createdNamed": "Board « {{name}} » créée !",
       "namePlaceholder": "ex. Home Board, nom de la salle",
       "locationPlaceholder": "ex. ville, nom de la salle",
-      "duplicateTitle": "Tu as déjà cette configuration",
-      "duplicateBody": "Tu as déjà « {{name}} » avec le même layout, la même taille et les mêmes sets de prises. N’en ajoute une autre que si c’est un autre mur.",
+      "duplicateTitle": "Vous avez déjà cette configuration",
+      "duplicateBody": "Vous avez déjà « {{name}} » avec le même layout, la même taille et les mêmes sets de prises. N'en ajoutez une autre que si c'est un autre mur.",
       "addAnyway": "L'ajouter quand même",
       "keepEditing": "Annuler"
     },
