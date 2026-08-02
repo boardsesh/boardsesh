@@ -942,7 +942,7 @@ describe('social board update catalog gate', () => {
     expect(updated.angle).toBe(-5);
   });
 
-  it('accepts an exact full legacy tuple as a metadata edit and preserves its raw config', async () => {
+  it('accepts an exact full legacy tuple, restores the board, and preserves its raw config', async () => {
     const board = await insertTestBoard({
       ownerId: UPDATE_USER_ID,
       layoutId: UNKNOWN_LAYOUT_ID,
