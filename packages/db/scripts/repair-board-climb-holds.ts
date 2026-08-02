@@ -20,6 +20,55 @@ import {
 
 export type RepairQueryExecutor = { execute(query: SQLWrapper | string): PromiseLike<unknown> };
 
+export type RepairBatchLimits = {
+  maxIdentityRecords: number;
+  maxMutationRecords: number;
+  maxParameterBytes: number;
+};
+
+export const DEFAULT_REPAIR_BATCH_LIMITS: Readonly<RepairBatchLimits> = {
+  maxIdentityRecords: 500,
+  maxMutationRecords: 5_000,
+  maxParameterBytes: 1024 * 1024,
+};
+
+type JsonBatch<RecordType> = { records: RecordType[]; json: string };
+
+function validateBatchLimit(name: keyof RepairBatchLimits, limit: number): void {
+  if (!Number.isSafeInteger(limit) || limit <= 0) throw new Error(`${name} must be a positive integer`);
+}
+
+function* jsonBatches<RecordType>(
+  records: Iterable<RecordType>,
+  maxRecords: number,
+  maxParameterBytes: number,
+): Generator<JsonBatch<RecordType>> {
+  if (!Number.isSafeInteger(maxRecords) || maxRecords <= 0) throw new Error('batch record limit must be positive');
+  validateBatchLimit('maxParameterBytes', maxParameterBytes);
+  let batch: RecordType[] = [];
+  let serializedRecords: string[] = [];
+  let batchBytes = 2;
+
+  for (const record of records) {
+    const serializedRecord = JSON.stringify(record);
+    const recordBytes = Buffer.byteLength(serializedRecord);
+    if (recordBytes + 2 > maxParameterBytes) {
+      throw new Error(`one repair JSON record exceeds the ${maxParameterBytes}-byte parameter limit`);
+    }
+    const additionalBytes = recordBytes + (batch.length > 0 ? 1 : 0);
+    if (batch.length >= maxRecords || batchBytes + additionalBytes > maxParameterBytes) {
+      yield { records: batch, json: `[${serializedRecords.join(',')}]` };
+      batch = [];
+      serializedRecords = [];
+      batchBytes = 2;
+    }
+    batch.push(record);
+    serializedRecords.push(serializedRecord);
+    batchBytes += recordBytes + (batch.length > 1 ? 1 : 0);
+  }
+  if (batch.length > 0) yield { records: batch, json: `[${serializedRecords.join(',')}]` };
+}
+
 type ScriptArgs = {
   apply: boolean;
   expectedDigest: string | null;
@@ -206,42 +255,53 @@ export async function fetchCandidateClimbs(executor: RepairQueryExecutor): Promi
 
 type PlacementReference = { board_type: string; layout_id: number; hold_id: number };
 
-async function fetchExistingPlacementKeys(
+export async function fetchExistingPlacementKeys(
   executor: RepairQueryExecutor,
   climbs: ReadonlyArray<RepairClimbInput>,
+  batchLimits: RepairBatchLimits = DEFAULT_REPAIR_BATCH_LIMITS,
 ): Promise<Set<string>> {
   const preliminary = buildRepairManifest(climbs, new Set<string>());
-  const references: PlacementReference[] = preliminary.entries.flatMap((entry) =>
-    (entry.projectedRows ?? []).map((row) => ({
-      board_type: entry.boardType,
-      layout_id: entry.layoutId,
-      hold_id: row.holdId,
-    })),
-  );
-  if (references.length === 0) return new Set();
-  const rows = await executeRows<PlacementReference>(
-    executor,
-    sql`
-      WITH projected AS (
-        SELECT DISTINCT board_type, layout_id, hold_id
-        FROM jsonb_to_recordset(${JSON.stringify(references)}::jsonb)
-          AS row(board_type text, layout_id integer, hold_id integer)
-      )
-      SELECT projected.board_type, projected.layout_id, projected.hold_id
-      FROM projected
-      INNER JOIN board_placements placement
-        ON placement.board_type = projected.board_type
-       AND placement.layout_id = projected.layout_id
-       AND placement.id = projected.hold_id
-      ORDER BY projected.board_type, projected.layout_id, projected.hold_id
-    `,
-  );
-  return new Set(rows.map((row) => placementKey(row.board_type, row.layout_id, row.hold_id)));
+  const referencesByKey = new Map<string, PlacementReference>();
+  for (const entry of preliminary.entries) {
+    for (const row of entry.projectedRows ?? []) {
+      const key = placementKey(entry.boardType, entry.layoutId, row.holdId);
+      referencesByKey.set(key, { board_type: entry.boardType, layout_id: entry.layoutId, hold_id: row.holdId });
+    }
+  }
+  const existingKeys = new Set<string>();
+  for (const batch of jsonBatches(
+    referencesByKey.values(),
+    batchLimits.maxMutationRecords,
+    batchLimits.maxParameterBytes,
+  )) {
+    const rows = await executeRows<PlacementReference>(
+      executor,
+      sql`
+        WITH projected AS (
+          SELECT board_type, layout_id, hold_id
+          FROM jsonb_to_recordset(${batch.json}::jsonb)
+            AS row(board_type text, layout_id integer, hold_id integer)
+        )
+        SELECT projected.board_type, projected.layout_id, projected.hold_id
+        FROM projected
+        INNER JOIN board_placements placement
+          ON placement.board_type = projected.board_type
+         AND placement.layout_id = projected.layout_id
+         AND placement.id = projected.hold_id
+        ORDER BY projected.board_type, projected.layout_id, projected.hold_id
+      `,
+    );
+    for (const row of rows) existingKeys.add(placementKey(row.board_type, row.layout_id, row.hold_id));
+  }
+  return existingKeys;
 }
 
-async function buildManifest(executor: RepairQueryExecutor): Promise<RepairManifest> {
+async function buildManifest(
+  executor: RepairQueryExecutor,
+  batchLimits: RepairBatchLimits = DEFAULT_REPAIR_BATCH_LIMITS,
+): Promise<RepairManifest> {
   const climbs = await fetchCandidateClimbs(executor);
-  const placementKeys = await fetchExistingPlacementKeys(executor, climbs);
+  const placementKeys = await fetchExistingPlacementKeys(executor, climbs, batchLimits);
   return buildRepairManifest(climbs, placementKeys);
 }
 
@@ -296,13 +356,65 @@ function printManifest(manifest: RepairManifest, digest: string, reportLimit: nu
   if (!apply) console.info('[repair-board-climb-holds] dry-run only; no locks or writes were taken');
 }
 
-type MutationRow = RepairHoldRow & { boardType: string; climbUuid: string };
-
 function climbIdentityKey(boardType: string, climbUuid: string): string {
   return `${boardType}\u0000${climbUuid}`;
 }
 
-export async function applyRepairManifest(executor: RepairQueryExecutor, manifest: RepairManifest): Promise<void> {
+type AffectedCountRow = { affected_count: number };
+
+function mutationBatchIdentities(records: ReadonlyArray<{ board_type: string; climb_uuid: string }>): string {
+  return Array.from(new Set(records.map((record) => `${record.board_type}/${record.climb_uuid}`))).join(', ');
+}
+
+function mutationRows(entries: ReadonlyArray<RepairManifest['entries'][number]>): Generator<{
+  board_type: string;
+  climb_uuid: string;
+  hold_id: number;
+  frame_number: number;
+  hold_state: string;
+}> {
+  return (function* generateRows() {
+    for (const entry of entries) {
+      for (const row of entry.projectedRows ?? []) {
+        yield {
+          board_type: entry.boardType,
+          climb_uuid: entry.uuid,
+          hold_id: row.holdId,
+          frame_number: row.frameNumber,
+          hold_state: row.holdState,
+        };
+      }
+    }
+  })();
+}
+
+function invalidMutationRows(entries: ReadonlyArray<RepairManifest['entries'][number]>): Generator<{
+  board_type: string;
+  climb_uuid: string;
+  hold_id: number;
+  frame_number: number;
+  hold_state: string;
+}> {
+  return (function* generateRows() {
+    for (const entry of entries) {
+      for (const row of entry.invalidRows) {
+        yield {
+          board_type: entry.boardType,
+          climb_uuid: entry.uuid,
+          hold_id: row.holdId,
+          frame_number: row.frameNumber,
+          hold_state: row.holdState,
+        };
+      }
+    }
+  })();
+}
+
+export async function applyRepairManifest(
+  executor: RepairQueryExecutor,
+  manifest: RepairManifest,
+  batchLimits: RepairBatchLimits = DEFAULT_REPAIR_BATCH_LIMITS,
+): Promise<void> {
   const recomputedBlockerCount = manifest.entries.reduce((total, entry) => total + entry.blockers.length, 0);
   if (manifest.counts.blockers !== recomputedBlockerCount) {
     throw new Error(
@@ -316,99 +428,113 @@ export async function applyRepairManifest(executor: RepairQueryExecutor, manifes
   const changedEntries = manifest.entries.filter((entry) => entry.changed);
   const invalidOnlyEntries = manifest.entries.filter((entry) => !entry.multiFrame && entry.invalidRows.length > 0);
 
-  if (changedEntries.length > 0) {
-    const deleted = await executeRows<{ board_type: string }>(
+  for (const batch of jsonBatches(
+    changedEntries.map((entry) => ({
+      board_type: entry.boardType,
+      climb_uuid: entry.uuid,
+      expected_rows: entry.oldRows.length,
+    })),
+    batchLimits.maxIdentityRecords,
+    batchLimits.maxParameterBytes,
+  )) {
+    const [{ affected_count: deletedCount } = { affected_count: -1 }] = await executeRows<AffectedCountRow>(
       executor,
       sql`
         WITH changed AS (
-          SELECT *
-          FROM jsonb_to_recordset(${JSON.stringify(
-            changedEntries.map((entry) => ({ board_type: entry.boardType, climb_uuid: entry.uuid })),
-          )}::jsonb) AS row(board_type text, climb_uuid text)
+          SELECT board_type, climb_uuid
+          FROM jsonb_to_recordset(${batch.json}::jsonb)
+            AS row(board_type text, climb_uuid text, expected_rows integer)
+        ), deleted AS (
+          DELETE FROM board_climb_holds stored
+          USING changed
+          WHERE stored.board_type = changed.board_type
+            AND stored.climb_uuid = changed.climb_uuid
+          RETURNING 1
         )
-        DELETE FROM board_climb_holds stored
-        USING changed
-        WHERE stored.board_type = changed.board_type
-          AND stored.climb_uuid = changed.climb_uuid
-        RETURNING stored.board_type
+        SELECT COUNT(*)::integer AS affected_count FROM deleted
       `,
     );
-    const expectedDeletedRows = changedEntries.reduce((total, entry) => total + entry.oldRows.length, 0);
-    if (deleted.length !== expectedDeletedRows) {
-      throw new Error('deleted changed-row count did not match the manifest');
+    const expectedDeletedRows = batch.records.reduce((total, entry) => total + entry.expected_rows, 0);
+    if (deletedCount !== expectedDeletedRows) {
+      throw new Error(
+        `deleted changed-row count did not match the manifest for ${mutationBatchIdentities(batch.records)}: expected=${expectedDeletedRows} actual=${deletedCount}`,
+      );
     }
   }
-  const insertionRows: MutationRow[] = changedEntries.flatMap((entry) =>
-    (entry.projectedRows ?? []).map((row) => ({ ...row, boardType: entry.boardType, climbUuid: entry.uuid })),
-  );
-  if (insertionRows.length > 0) {
-    const returned = await executeRows<{ board_type: string }>(
+  for (const batch of jsonBatches(
+    mutationRows(changedEntries),
+    batchLimits.maxMutationRecords,
+    batchLimits.maxParameterBytes,
+  )) {
+    const [{ affected_count: insertedCount } = { affected_count: -1 }] = await executeRows<AffectedCountRow>(
       executor,
       sql`
-        INSERT INTO board_climb_holds (board_type, climb_uuid, hold_id, frame_number, hold_state)
-        SELECT board_type, climb_uuid, hold_id, frame_number, hold_state
-        FROM jsonb_to_recordset(${JSON.stringify(
-          insertionRows.map((row) => ({
-            board_type: row.boardType,
-            climb_uuid: row.climbUuid,
-            hold_id: row.holdId,
-            frame_number: row.frameNumber,
-            hold_state: row.holdState,
-          })),
-        )}::jsonb) AS row(board_type text, climb_uuid text, hold_id integer, frame_number integer, hold_state text)
-        RETURNING board_type
+        WITH inserted AS (
+          INSERT INTO board_climb_holds (board_type, climb_uuid, hold_id, frame_number, hold_state)
+          SELECT board_type, climb_uuid, hold_id, frame_number, hold_state
+          FROM jsonb_to_recordset(${batch.json}::jsonb)
+            AS row(board_type text, climb_uuid text, hold_id integer, frame_number integer, hold_state text)
+          RETURNING 1
+        )
+        SELECT COUNT(*)::integer AS affected_count FROM inserted
       `,
     );
-    if (returned.length !== insertionRows.length) throw new Error('inserted row count did not match the manifest');
+    if (insertedCount !== batch.records.length) {
+      throw new Error(
+        `inserted row count did not match the manifest for ${mutationBatchIdentities(batch.records)}: expected=${batch.records.length} actual=${insertedCount}`,
+      );
+    }
   }
 
-  const invalidRows = invalidOnlyEntries.flatMap((entry) =>
-    entry.invalidRows.map((row) => ({ ...row, boardType: entry.boardType, climbUuid: entry.uuid })),
-  );
-  if (invalidRows.length > 0) {
-    const deleted = await executeRows<{ board_type: string }>(
+  for (const batch of jsonBatches(
+    invalidMutationRows(invalidOnlyEntries),
+    batchLimits.maxMutationRecords,
+    batchLimits.maxParameterBytes,
+  )) {
+    const [{ affected_count: deletedCount } = { affected_count: -1 }] = await executeRows<AffectedCountRow>(
       executor,
       sql`
         WITH doomed AS (
-          SELECT *
-          FROM jsonb_to_recordset(${JSON.stringify(
-            invalidRows.map((row) => ({
-              board_type: row.boardType,
-              climb_uuid: row.climbUuid,
-              hold_id: row.holdId,
-              frame_number: row.frameNumber,
-              hold_state: row.holdState,
-            })),
-          )}::jsonb) AS row(board_type text, climb_uuid text, hold_id integer, frame_number integer, hold_state text)
+          SELECT board_type, climb_uuid, hold_id, frame_number, hold_state
+          FROM jsonb_to_recordset(${batch.json}::jsonb)
+            AS row(board_type text, climb_uuid text, hold_id integer, frame_number integer, hold_state text)
+        ), deleted AS (
+          DELETE FROM board_climb_holds stored
+          USING doomed
+          WHERE stored.board_type = doomed.board_type
+            AND stored.climb_uuid = doomed.climb_uuid
+            AND stored.hold_id = doomed.hold_id
+            AND stored.frame_number = doomed.frame_number
+            AND stored.hold_state = doomed.hold_state
+          RETURNING 1
         )
-        DELETE FROM board_climb_holds stored
-        USING doomed
-        WHERE stored.board_type = doomed.board_type
-          AND stored.climb_uuid = doomed.climb_uuid
-          AND stored.hold_id = doomed.hold_id
-          AND stored.frame_number = doomed.frame_number
-          AND stored.hold_state = doomed.hold_state
-        RETURNING stored.board_type
+        SELECT COUNT(*)::integer AS affected_count FROM deleted
       `,
     );
-    if (deleted.length !== invalidRows.length) throw new Error('deleted invalid row count did not match the manifest');
+    if (deletedCount !== batch.records.length) {
+      throw new Error(
+        `deleted invalid row count did not match the manifest for ${mutationBatchIdentities(batch.records)}: expected=${batch.records.length} actual=${deletedCount}`,
+      );
+    }
   }
 
   const fingerprintUpdates = manifest.entries.filter((candidate) => candidate.fingerprint.shouldUpdate);
-  if (fingerprintUpdates.length > 0) {
+  for (const batch of jsonBatches(
+    fingerprintUpdates.map((entry) => ({
+      board_type: entry.boardType,
+      uuid: entry.uuid,
+      old_fingerprint: entry.fingerprint.old,
+      projected_fingerprint: entry.fingerprint.projected,
+    })),
+    batchLimits.maxIdentityRecords,
+    batchLimits.maxParameterBytes,
+  )) {
     const updated = await executeRows<{ board_type: string; uuid: string }>(
       executor,
       sql`
         WITH changes AS (
-          SELECT *
-          FROM jsonb_to_recordset(${JSON.stringify(
-            fingerprintUpdates.map((entry) => ({
-              board_type: entry.boardType,
-              uuid: entry.uuid,
-              old_fingerprint: entry.fingerprint.old,
-              projected_fingerprint: entry.fingerprint.projected,
-            })),
-          )}::jsonb)
+          SELECT board_type, uuid, old_fingerprint, projected_fingerprint
+          FROM jsonb_to_recordset(${batch.json}::jsonb)
             AS row(board_type text, uuid text, old_fingerprint text, projected_fingerprint text)
         )
         UPDATE board_climbs stored
@@ -421,21 +547,32 @@ export async function applyRepairManifest(executor: RepairQueryExecutor, manifes
       `,
     );
     const updatedKeys = new Set(updated.map((row) => climbIdentityKey(row.board_type, row.uuid)));
-    const failedKeys = fingerprintUpdates
-      .filter((entry) => !updatedKeys.has(climbIdentityKey(entry.boardType, entry.uuid)))
-      .map((entry) => `${entry.boardType}/${entry.uuid}`);
-    if (updated.length !== fingerprintUpdates.length || failedKeys.length > 0) {
+    const failedKeys = batch.records
+      .filter((entry) => !updatedKeys.has(climbIdentityKey(entry.board_type, entry.uuid)))
+      .map((entry) => `${entry.board_type}/${entry.uuid}`);
+    if (updated.length !== batch.records.length || failedKeys.length > 0) {
       throw new Error(`fingerprint guard failed for ${failedKeys.join(', ') || 'unexpected duplicate identity'}`);
     }
   }
 }
 
-export async function verifyAppliedRepair(executor: RepairQueryExecutor, manifest: RepairManifest): Promise<void> {
+export async function verifyAppliedRepair(
+  executor: RepairQueryExecutor,
+  manifest: RepairManifest,
+  batchLimits: RepairBatchLimits = DEFAULT_REPAIR_BATCH_LIMITS,
+): Promise<void> {
   const changedEntries = manifest.entries.filter((entry) => entry.changed);
-  const actualRowsByIdentity = new Map<string, RepairHoldRow[]>(
-    changedEntries.map((entry) => [climbIdentityKey(entry.boardType, entry.uuid), []]),
+  const changedEntriesByIdentity = new Map(
+    changedEntries.map((entry) => [climbIdentityKey(entry.boardType, entry.uuid), entry]),
   );
-  if (changedEntries.length > 0) {
+  for (const batch of jsonBatches(
+    changedEntries.map((entry) => ({ board_type: entry.boardType, climb_uuid: entry.uuid })),
+    batchLimits.maxIdentityRecords,
+    batchLimits.maxParameterBytes,
+  )) {
+    const actualRowsByIdentity = new Map<string, RepairHoldRow[]>(
+      batch.records.map(({ board_type, climb_uuid }) => [climbIdentityKey(board_type, climb_uuid), []]),
+    );
     const actual = await executeRows<{
       board_type: string;
       climb_uuid: string;
@@ -446,10 +583,8 @@ export async function verifyAppliedRepair(executor: RepairQueryExecutor, manifes
       executor,
       sql`
         WITH targets AS (
-          SELECT *
-          FROM jsonb_to_recordset(${JSON.stringify(
-            changedEntries.map((entry) => ({ board_type: entry.boardType, climb_uuid: entry.uuid })),
-          )}::jsonb) AS row(board_type text, climb_uuid text)
+          SELECT board_type, climb_uuid
+          FROM jsonb_to_recordset(${batch.json}::jsonb) AS row(board_type text, climb_uuid text)
         )
         SELECT stored.board_type, stored.climb_uuid, stored.hold_id, stored.frame_number, stored.hold_state
         FROM board_climb_holds stored
@@ -464,11 +599,13 @@ export async function verifyAppliedRepair(executor: RepairQueryExecutor, manifes
       if (!identityRows) throw new Error(`post-write verification returned an unexpected identity`);
       identityRows.push({ holdId: row.hold_id, frameNumber: row.frame_number, holdState: row.hold_state });
     }
-  }
-  for (const entry of changedEntries) {
-    const actualRows = sortRepairRows(actualRowsByIdentity.get(climbIdentityKey(entry.boardType, entry.uuid)) ?? []);
-    if (JSON.stringify(actualRows) !== JSON.stringify(entry.projectedRows)) {
-      throw new Error(`post-write row verification failed for ${entry.boardType}/${entry.uuid}`);
+    for (const { board_type: boardType, climb_uuid: climbUuid } of batch.records) {
+      const entry = changedEntriesByIdentity.get(climbIdentityKey(boardType, climbUuid));
+      if (!entry) throw new Error('post-write verification lost a requested identity');
+      const actualRows = sortRepairRows(actualRowsByIdentity.get(climbIdentityKey(entry.boardType, entry.uuid)) ?? []);
+      if (JSON.stringify(actualRows) !== JSON.stringify(entry.projectedRows)) {
+        throw new Error(`post-write row verification failed for ${entry.boardType}/${entry.uuid}`);
+      }
     }
   }
   const [{ invalid_count: invalidCount } = { invalid_count: -1 }] = await executeRows<{ invalid_count: number }>(
@@ -485,9 +622,10 @@ export async function verifyAppliedRepair(executor: RepairQueryExecutor, manifes
 export async function runRepair(
   args: ScriptArgs,
   database: ReturnType<typeof createScriptDb> = createScriptDb(),
+  batchLimits: RepairBatchLimits = DEFAULT_REPAIR_BATCH_LIMITS,
 ): Promise<{ manifest: RepairManifest; digest: string; applied: boolean }> {
   try {
-    const initialManifest = await buildManifest(database.db);
+    const initialManifest = await buildManifest(database.db, batchLimits);
     const initialDigest = digestRepairManifest(initialManifest);
     printManifest(initialManifest, initialDigest, args.reportLimit, args.apply);
     if (!args.apply) return { manifest: initialManifest, digest: initialDigest, applied: false };
@@ -505,11 +643,11 @@ export async function runRepair(
         await transaction.execute(sql`LOCK TABLE board_climb_holds IN SHARE ROW EXCLUSIVE MODE`);
         await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtext('boardsesh:repair-board-climb-holds:v1'))`);
 
-        const lockedManifest = await buildManifest(transaction);
+        const lockedManifest = await buildManifest(transaction, batchLimits);
         const lockedDigest = digestRepairManifest(lockedManifest);
         verifyGuards(args, lockedManifest, lockedDigest);
-        await applyRepairManifest(transaction, lockedManifest);
-        await verifyAppliedRepair(transaction, lockedManifest);
+        await applyRepairManifest(transaction, lockedManifest, batchLimits);
+        await verifyAppliedRepair(transaction, lockedManifest, batchLimits);
       },
       { isolationLevel: 'repeatable read' },
     );
