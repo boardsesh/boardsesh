@@ -23,10 +23,11 @@ describe('isLocaleOverride', () => {
     expect(isLocaleOverride('en-US')).toBe(true);
     expect(isLocaleOverride('es')).toBe(true);
     expect(isLocaleOverride('fr')).toBe(true);
+    expect(isLocaleOverride('de')).toBe(true);
   });
 
   it('rejects unknown locales and non-string junk', () => {
-    expect(isLocaleOverride('de')).toBe(false);
+    expect(isLocaleOverride('ja')).toBe(false);
     expect(isLocaleOverride('')).toBe(false);
     expect(isLocaleOverride(null)).toBe(false);
     expect(isLocaleOverride(undefined)).toBe(false);
