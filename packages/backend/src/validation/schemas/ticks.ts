@@ -35,6 +35,7 @@ export const SaveTickInputSchema = z
     comment: z.string().max(2000),
     climbedAt: z
       .string()
+      .refine((value) => !Number.isNaN(new Date(value).getTime()), 'Climbed at must be a valid date')
       .refine(hasSupportedPostgresTimestampPrecision, 'Climbed at supports at most six fractional-second digits'),
     sessionId: z.string().optional(),
     layoutId: z.number().int().positive().optional(),
