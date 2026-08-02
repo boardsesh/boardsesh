@@ -151,6 +151,17 @@ describe('linkBoardToGym — self-service proximity path', () => {
     await expect(linkBoardToGym(fourth, gym.uuid, OWNER)).resolves.toBe(true);
   });
 
+  it('does not charge a gym owner the self-service rate bucket', async () => {
+    // The 5/min bucket belongs to the non-owner path. Charging it at the call
+    // site throttled a gym owner adding a sixth board to their OWN gym, under a
+    // limit named for a path they were never on.
+    const gym = await insertGym({ ownerId: OWNER, name: 'My Gym' });
+    for (let index = 0; index < 8; index++) {
+      const boardUuid = await insertBoard({ ownerId: OWNER });
+      await expect(linkBoardToGym(boardUuid, gym.uuid, OWNER)).resolves.toBe(true);
+    }
+  });
+
   it('unlinking stays the board owner’s own call and needs no proximity', async () => {
     const gym = await insertGym({ ownerId: STRANGER, name: 'Klimmuur', ...BASE });
     const boardUuid = await insertBoard({ ownerId: OWNER, latitude: LAT_60M, longitude: BASE.longitude });

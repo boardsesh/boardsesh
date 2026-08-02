@@ -1697,6 +1697,7 @@ export const socialBoardMutations = {
 
     if (validatedInput.gymUuid) {
       const gym = await requireBoardGymLinkAccess({
+        ctx,
         gymUuid: validatedInput.gymUuid,
         userId,
         boardLatitude: incomingLocation.latitude,
