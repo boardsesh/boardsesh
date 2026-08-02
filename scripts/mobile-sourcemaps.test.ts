@@ -629,14 +629,17 @@ describe('source-map CLI arguments', () => {
 });
 
 describe('self-hosted OTA publisher and workflow contracts', () => {
-  it('always retains EOAS source maps in dist without changing the EAS preview path', () => {
-    const selfHostedArgs = buildSelfHostedEoasArgs('production', 'ios', 'source-map contract');
+  it('retains production EOAS source maps without adding export work to either preview path', () => {
+    const productionArgs = buildSelfHostedEoasArgs('production', 'ios', 'source-map contract');
+    const selfHostedPreviewArgs = buildSelfHostedEoasArgs('pr-4134', 'ios', 'preview contract');
     const easArgs = buildEasUpdateArgs('preview', 'preview contract', 'ios');
 
-    expect(selfHostedArgs.filter((argument) => argument === '--dumpSourcemap')).toEqual(['--dumpSourcemap']);
+    expect(productionArgs.filter((argument) => argument === '--dumpSourcemap')).toEqual(['--dumpSourcemap']);
     expect(
-      selfHostedArgs.slice(selfHostedArgs.indexOf('--outputDir'), selfHostedArgs.indexOf('--outputDir') + 2),
+      productionArgs.slice(productionArgs.indexOf('--outputDir'), productionArgs.indexOf('--outputDir') + 2),
     ).toEqual(['--outputDir', 'dist']);
+    expect(selfHostedPreviewArgs).not.toContain('--dumpSourcemap');
+    expect(selfHostedPreviewArgs).not.toContain('--outputDir');
     expect(easArgs).not.toContain('--dumpSourcemap');
     expect(easArgs).not.toContain('--outputDir');
   });
@@ -663,6 +666,7 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
     for (const stepName of ['Upload iOS OTA source maps to Sentry', 'Upload Android OTA source maps to Sentry']) {
       const step = workflowStep(workflow, stepName);
       expect(step).toContain('continue-on-error: true');
+      expect(step).toContain('timeout-minutes: 10');
       expect(step).toMatch(/^\s+SENTRY_AUTH_TOKEN:\s*\$\{\{ secrets\.SENTRY_AUTH_TOKEN \}\}$/m);
       expect(step).toContain('vp run mobile:upload-sourcemaps');
     }

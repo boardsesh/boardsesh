@@ -273,6 +273,7 @@ jobs:
         id: upload_sourcemaps_ios
         if: steps.publish_ios.outcome == 'success'
         continue-on-error: true
+        timeout-minutes: 10
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: vp run mobile:upload-sourcemaps -- --platform ios
@@ -297,6 +298,7 @@ jobs:
         id: upload_sourcemaps_android
         if: steps.publish_android.outcome == 'success'
         continue-on-error: true
+        timeout-minutes: 10
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: vp run mobile:upload-sourcemaps -- --platform android

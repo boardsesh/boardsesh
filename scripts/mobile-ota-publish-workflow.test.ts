@@ -116,12 +116,15 @@ describe('backport OTA workflow upload pressure', () => {
     expect(timeout).toBeGreaterThanOrEqual(45);
   });
 
-  it('overlays the retry implementation required by the trusted publish wrapper', () => {
+  it('overlays every trusted helper required by production publish and source-map upload', () => {
     const snapshot = stepBlock(backport, 'Snapshot trusted OTA publish tooling');
     const overlay = stepBlock(backport, 'Overlay trusted OTA publish tooling');
+    const gitAddLine = overlay.split('\n').find((line) => line.trimStart().startsWith('git add '));
 
-    expect(snapshot).toContain('scripts/lib/mobile-publish-retry.ts');
-    expect(overlay).toContain('scripts/lib/mobile-publish-retry.ts');
-    expect(overlay).toMatch(/git add .*scripts\/lib\/mobile-publish-retry\.ts/);
+    for (const implementationPath of ['scripts/lib/mobile-publish-retry.ts', 'scripts/mobile-upload-sourcemaps.ts']) {
+      expect(snapshot).toContain(implementationPath);
+      expect(overlay).toContain(implementationPath);
+      expect(gitAddLine).toContain(implementationPath);
+    }
   });
 });
