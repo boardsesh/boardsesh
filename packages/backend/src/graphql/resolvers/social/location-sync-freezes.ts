@@ -195,9 +195,12 @@ export const socialLocationSyncFreezeMutations = {
     ctx: ConnectionContext,
   ): Promise<ClearLocationSyncFreezeResult> => {
     await requireAdmin(ctx);
+    const performedBy = ctx.userId;
+    if (!performedBy) {
+      throw new Error('Authentication required to perform this operation');
+    }
     await applyRateLimit(ctx, CLEAR_FREEZE_MUTATION_LIMIT, 'clearLocationSyncFreeze');
     const validated = validateInput(ClearLocationSyncFreezeInputSchema, input, 'input');
-    const performedBy = ctx.userId!;
     const expectedSyncFrozenAt = new Date(validated.expectedSyncFrozenAt);
 
     const result = await db.transaction(async (tx): Promise<ClearLocationSyncFreezeResult> => {
