@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import { describe, expect, it } from 'vitest';
-import { FIXTURE_PATHS, WWW_CHECKS, type SmokeResponse } from './production-smoke';
+import { FIXTURE_PATHS, WWW_CHECKS, parseBaseUrl, type SmokeResponse } from './production-smoke';
 
 // The assertions are the whole product here: the runner is a retry loop, but
 // the check table is what decides whether a broken deploy is caught. These
@@ -120,5 +120,27 @@ describe('www production smoke checks', () => {
   it('builds fixture paths from the configured value', () => {
     expect(FIXTURE_PATHS.SMOKE_KIOSK_GYM_SLUG('movement-lu')).toBe('/kiosk/movement-lu');
     expect(FIXTURE_PATHS.SMOKE_EMBED_BOARD_UUID('abc-123')).toBe('/embed/board/abc-123');
+  });
+});
+
+describe('parseBaseUrl', () => {
+  it('defaults to production when no --base is given', () => {
+    expect(parseBaseUrl([])).toBe('https://www.boardsesh.com');
+  });
+
+  it('takes the --base value and strips a trailing slash', () => {
+    // The slash matters: paths are concatenated, so `…com/` + `/robots.txt`
+    // would request `//robots.txt`.
+    expect(parseBaseUrl(['--base', 'https://preview.example.com'])).toBe('https://preview.example.com');
+    expect(parseBaseUrl(['--base', 'https://preview.example.com/'])).toBe('https://preview.example.com');
+  });
+
+  it('rejects a --base with no value', () => {
+    expect(() => parseBaseUrl(['--base'])).toThrow(/needs a URL/);
+  });
+
+  it('rejects a malformed --base rather than failing three retries deep', () => {
+    expect(() => parseBaseUrl(['--base', 'www.boardsesh.com'])).toThrow(/not a valid URL/);
+    expect(() => parseBaseUrl(['--base', 'not a url at all'])).toThrow(/not a valid URL/);
   });
 });

@@ -267,7 +267,7 @@ async function runCheck(check: SmokeCheck, baseUrl: string, env: NodeJS.ProcessE
 }
 
 /** `--base` is the only override — one documented way to point this elsewhere. */
-function parseBaseUrl(argv: string[]): string {
+export function parseBaseUrl(argv: string[]): string {
   const flagIndex = argv.indexOf('--base');
   if (flagIndex === -1) return DEFAULT_BASE_URL;
   const value = argv[flagIndex + 1];
