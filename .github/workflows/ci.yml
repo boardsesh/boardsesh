@@ -85,6 +85,10 @@ jobs:
               - 'scripts/mobile-platform-imports-check.sh'
               - 'scripts/mobile-web-bundle-check.sh'
               - 'scripts/sync-mobile-board-renderer-wasm.sh'
+              # The live fingerprint gates run in the mobile-bundle job; a PR
+              # editing only their logic must still trigger that job.
+              - 'scripts/mobile-fingerprint-inputs-check.ts'
+              - 'scripts/mobile-patches-check.ts'
             ocr:
               - 'packages/moonboard-ocr/**'
             locationSync:

@@ -84,6 +84,10 @@ module.exports = {
       filePath: '../../patches',
       reasons: ['bunPatchedDependencies'],
       overrideHashKey: 'bunPatchedDependencies',
+      // The whole dir is hashed, so a future patch to a WEB-ONLY dependency
+      // would also move the fingerprint and force a store-build train. That
+      // fails in the safe direction (over-triggering); if web patches ever
+      // become common, narrow this to the mobile-reachable patch files.
     },
   ],
   fileHookTransform,
