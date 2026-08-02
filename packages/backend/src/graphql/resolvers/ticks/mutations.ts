@@ -621,8 +621,6 @@ export const tickMutations = {
       publishDebouncedSessionStats(sessionId);
     }
 
-    logger.info(`[deleteTick] deleted tick=${uuid} user=${userId} rows=${deletedTicks.length}`);
-
     return true;
   },
 
@@ -1084,14 +1082,14 @@ export const tickMutations = {
 
       const finalStatus = validatedInput.status ?? targetTick.status;
       const finalAttemptCount = validatedInput.attemptCount ?? targetTick.attemptCount;
-      if (finalStatus === 'flash' && finalAttemptCount !== 1) {
-        logger.warn('[updateTick] Coerced flash tick attemptCount to 1', {
-          tickUuid: uuid,
-          userId,
-          previousAttemptCount: finalAttemptCount,
-        });
-        updates.attemptCount = 1;
-      } else if (finalStatus === 'flash') {
+      if (finalStatus === 'flash') {
+        if (finalAttemptCount !== 1) {
+          logger.warn('[updateTick] Coerced flash tick attemptCount to 1', {
+            tickUuid: uuid,
+            userId,
+            previousAttemptCount: finalAttemptCount,
+          });
+        }
         // A locally edited survivor can directly hide rows whose editable
         // payload differs. Reassert the flash invariant across every member.
         updates.attemptCount = 1;
