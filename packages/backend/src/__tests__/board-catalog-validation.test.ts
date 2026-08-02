@@ -636,7 +636,13 @@ describe('social board create catalog gate', () => {
     const submittedSetIds = `${SET_B_ID},${SET_A_ID},${SET_B_ID}`;
     const created = await socialBoardMutations.createBoard(
       undefined,
-      { input: createInput({ setIds: submittedSetIds }) },
+      // A location name is what puts this on the mint path now. #4166 changed
+      // auto-gym from per-user ("the caller owns no gyms") to per-location, so a
+      // board that says nothing about where it is no longer mints a gym — the
+      // old rule produced one named after the BOARD with null coordinates, which
+      // could never surface in proximity search. The transaction path this test
+      // exists to cover is unchanged; it just needs a place to mint for.
+      { input: createInput({ setIds: submittedSetIds, locationName: 'Catalog Test Gym' }) },
       authCtx(AUTO_GYM_USER_ID),
     );
 
