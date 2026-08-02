@@ -306,7 +306,7 @@
       "deletedWarning": "This listing is deleted. A matching source can bring it back on the next sync.",
       "ownerProtectedWarning": "This gym has a user owner or an approved claim. The ownership guard remains active after the freeze is released.",
       "noSourceWarning": "No sync source is currently linked to this gym. Releasing the freeze will have no effect until a source matches it.",
-      "moonBoardWarning": "MoonBoard locations refresh every 6–8 hours. After this freeze is released, the next scheduled cycle or a manual MoonBoard location sync can apply upstream changes.",
+      "moonBoardWarning": "MoonBoard location syncs run by hand, not on a schedule. After the freeze is released, upstream changes land when someone runs the next MoonBoard location sync.",
       "reasonLabel": "Reason",
       "reasonPlaceholder": "Why should upstream data take over again?",
       "reasonRemaining": "Characters still needed: {{count}}",

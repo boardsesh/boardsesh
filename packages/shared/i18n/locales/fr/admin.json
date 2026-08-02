@@ -306,7 +306,7 @@
       "deletedWarning": "Cette fiche est supprimée. Une source correspondante pourra la restaurer lors de la prochaine synchronisation.",
       "ownerProtectedWarning": "Cette salle a un propriétaire ou une revendication approuvée. La protection du propriétaire reste active après la libération du gel.",
       "noSourceWarning": "Aucune source de synchronisation n’est actuellement liée à cette salle. Libérer le gel n’aura aucun effet tant qu’une source ne lui correspond pas.",
-      "moonBoardWarning": "Les lieux MoonBoard sont actualisés toutes les 6 à 8 heures. Après la libération de ce gel, le prochain cycle planifié ou une synchronisation manuelle des lieux MoonBoard pourra appliquer les changements de la source.",
+      "moonBoardWarning": "Les synchronisations de lieux MoonBoard se lancent à la main, sans planification. Après la libération du gel, les changements de la source s’appliqueront quand quelqu’un lancera la prochaine synchronisation de lieux MoonBoard.",
       "reasonLabel": "Motif",
       "reasonPlaceholder": "Pourquoi les données source doivent-elles reprendre le dessus ?",
       "reasonRemaining": "Caractères encore nécessaires : {{count}}",

@@ -306,7 +306,7 @@
       "deletedWarning": "Esta ficha está eliminada. Una fuente coincidente puede recuperarla en la próxima sincronización.",
       "ownerProtectedWarning": "Este gimnasio tiene propietario o una reclamación aprobada. La protección de propiedad sigue activa después de liberar el bloqueo.",
       "noSourceWarning": "Ahora mismo no hay ninguna fuente de sincronización vinculada a este gimnasio. Liberar el bloqueo no tendrá efecto hasta que coincida una fuente.",
-      "moonBoardWarning": "Las ubicaciones de MoonBoard se actualizan cada 6–8 horas. Tras liberar este bloqueo, el siguiente ciclo programado o una sincronización manual de ubicaciones de MoonBoard podrá aplicar los cambios de la fuente.",
+      "moonBoardWarning": "Las sincronizaciones de ubicaciones de MoonBoard se lanzan a mano, no siguen ninguna programación. Tras liberar el bloqueo, los cambios de la fuente se aplicarán cuando alguien lance la siguiente sincronización de ubicaciones de MoonBoard.",
       "reasonLabel": "Motivo",
       "reasonPlaceholder": "¿Por qué deben volver a prevalecer los datos originales?",
       "reasonRemaining": "Caracteres que faltan: {{count}}",
