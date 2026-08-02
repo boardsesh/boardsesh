@@ -517,14 +517,31 @@ jobs:
             echo "::warning::GOOGLE_PLAY_SERVICE_ACCOUNT_JSON not set — skipping Play upload (first upload is manual; see docs/android-sideload-build.md)."
           fi
 
-      # Play "What's new" for this release, from the source-controlled changelog
-      # (fastlane/metadata/android/en-US/changelogs/default.txt). r0adkll expects
-      # <dir>/whatsnew-<locale>; Play caps the note at 500 characters.
+      # Play "What's new" for this release, from the source-controlled changelogs
+      # (fastlane/metadata/android/<locale>/changelogs/default.txt). r0adkll expects
+      # <dir>/whatsnew-<locale>; Play caps each note at 500 characters and falls
+      # back to the default listing language for any locale we don't stage. Every
+      # locale folder ships, so a translated changelog reaches Play the same
+      # release it lands — en-US alone used to silently drop es-ES/fr-FR/de-DE.
       - name: Stage Play release notes
         if: github.ref == 'refs/heads/main' && env.PLAY_UPLOAD_ENABLED == 'true'
         run: |
+          set -euo pipefail
           mkdir -p "${RUNNER_TEMP}/play-whatsnew"
-          cp fastlane/metadata/android/en-US/changelogs/default.txt "${RUNNER_TEMP}/play-whatsnew/whatsnew-en-US"
+          staged=0
+          for changelog in fastlane/metadata/android/*/changelogs/default.txt; do
+            # An unmatched glob stays literal under bash's default nullglob=off,
+            # so skip it and let the staged==0 check below report the real problem.
+            [ -f "$changelog" ] || continue
+            locale="$(basename "$(dirname "$(dirname "$changelog")")")"
+            cp "$changelog" "${RUNNER_TEMP}/play-whatsnew/whatsnew-${locale}"
+            echo "Staged Play release notes for ${locale}"
+            staged=$((staged + 1))
+          done
+          if [ "$staged" -eq 0 ]; then
+            echo "::error::No fastlane/metadata/android/*/changelogs/default.txt found — Play would ship with no release notes."
+            exit 1
+          fi
 
       - name: Upload AAB to Play internal track
         id: play_upload
