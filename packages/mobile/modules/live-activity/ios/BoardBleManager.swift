@@ -1435,7 +1435,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // CoreBluetooth supplies no attempt identity, so the first terminal
         // callback after an expired barrier is displaced is unattributable and
         // conservatively swallowed. If it was the retry's genuine failure, the
-        // retry's still-live timeout settles it once.
+        // retry's still-live timeout settles it once, with up to the 8-second
+        // connect-timeout latency accepted to avoid failing the wrong attempt.
         if displacedCancellationPeripheralIds.remove(peripheral.identifier) != nil {
             return
         }
