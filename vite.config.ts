@@ -854,9 +854,11 @@ export default defineConfig({
       // and React mounts, which the curl smoke in production-deploy.yml cannot
       // see. Uses its own Playwright config (no globalSetup, no webServer) so
       // it can never seed or sign in against a production host.
+      // To point this at a preview instead, run playwright directly with
+      // PLAYWRIGHT_TEST_BASE_URL set — the config requires it and says so.
       'smoke:app-boot': {
         command:
-          'cd packages/web && PLAYWRIGHT_TEST_BASE_URL=${PLAYWRIGHT_TEST_BASE_URL:-https://app.boardsesh.com} bunx playwright test --config=playwright.production.config.ts',
+          'cd packages/web && PLAYWRIGHT_TEST_BASE_URL=https://app.boardsesh.com bunx playwright test --config=playwright.production.config.ts',
         cache: false,
       },
     },
