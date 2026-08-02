@@ -4,9 +4,14 @@ import {
   consumeInterruptedLiveActivityIntentRuns,
   markLiveActivityIntentReactRootMounted,
 } from '../lib/live-activity/live-activity-plugin';
-import { captureLiveActivityIntentDiagnostic } from '../lib/sentry';
+import { captureLiveActivityIntentDiagnostic, isSentryEnabled } from '../lib/sentry';
 
 export async function consumeAndReportInterruptedLiveActivityIntents(): Promise<void> {
+  // Consuming is destructive — the native store drops the records — so leave
+  // them stored until a reporter exists. A production build whose Sentry DSN
+  // is missing or mis-injected must not silently destroy the evidence #4077
+  // needs; the store is ring- and TTL-bounded, so deferring costs nothing.
+  if (!isSentryEnabled) return;
   const diagnostics = await consumeInterruptedLiveActivityIntentRuns();
   for (const diagnostic of diagnostics) {
     captureLiveActivityIntentDiagnostic(diagnostic);

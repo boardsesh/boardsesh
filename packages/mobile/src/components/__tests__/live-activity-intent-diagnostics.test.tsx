@@ -9,6 +9,7 @@ const nativeDiagnostics = vi.hoisted(() => ({
 
 const sentryDiagnostics = vi.hoisted(() => ({
   capture: vi.fn(),
+  enabled: true,
 }));
 
 const appState = vi.hoisted(() => {
@@ -53,6 +54,9 @@ vi.mock('../../lib/live-activity/live-activity-plugin', () => ({
 
 vi.mock('../../lib/sentry', () => ({
   captureLiveActivityIntentDiagnostic: sentryDiagnostics.capture,
+  get isSentryEnabled() {
+    return sentryDiagnostics.enabled;
+  },
 }));
 
 import {
@@ -82,6 +86,17 @@ describe('LiveActivityIntentDiagnostics', () => {
     nativeDiagnostics.consume.mockReset();
     nativeDiagnostics.consume.mockResolvedValue([]);
     sentryDiagnostics.capture.mockClear();
+    sentryDiagnostics.enabled = true;
+  });
+
+  it('leaves the once-only store untouched when no Sentry reporter exists', async () => {
+    sentryDiagnostics.enabled = false;
+    nativeDiagnostics.consume.mockResolvedValueOnce([diagnostic]);
+
+    await consumeAndReportInterruptedLiveActivityIntents();
+
+    expect(nativeDiagnostics.consume).not.toHaveBeenCalled();
+    expect(sentryDiagnostics.capture).not.toHaveBeenCalled();
   });
 
   it('reports each sanitized record returned by the once-only native consumer', async () => {
