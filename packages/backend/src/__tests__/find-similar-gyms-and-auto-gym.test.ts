@@ -437,7 +437,15 @@ describe('createBoard auto-gym — per-location minting', () => {
     const afterFirst = await countGyms();
 
     const second = await createBoard(
-      { name: 'Second board', locationName: 'Klimmuur', latitude: LAT_60M, longitude: BASE.longitude },
+      // Same config at the same place: a real duplicate, which is the user's
+      // call to make. The flag isolates what's under test — gym resolution.
+      {
+        name: 'Second board',
+        locationName: 'Klimmuur',
+        latitude: LAT_60M,
+        longitude: BASE.longitude,
+        allowDuplicateConfig: true,
+      },
       authCtx(QUERIER),
     );
 
@@ -535,7 +543,13 @@ describe('createBoard auto-gym — per-location minting', () => {
     const afterFirst = await countGyms();
 
     const second = await createBoard(
-      { name: 'Second board', locationName: 'Klimmuur', latitude: BASE.latitude, longitude: BASE.longitude },
+      {
+        name: 'Second board',
+        locationName: 'Klimmuur',
+        latitude: BASE.latitude,
+        longitude: BASE.longitude,
+        allowDuplicateConfig: true,
+      },
       authCtx(QUERIER),
     );
 
@@ -567,7 +581,10 @@ describe('createBoard auto-gym — per-location minting', () => {
     expect(await countGyms()).toBe(before + 1);
 
     // A second board at the same typed name converges rather than minting a twin.
-    const second = await createBoard({ name: 'Garage board 2', locationName: 'My Garage' }, authCtx(QUERIER));
+    const second = await createBoard(
+      { name: 'Garage board 2', locationName: 'My Garage', allowDuplicateConfig: true },
+      authCtx(QUERIER),
+    );
     expect(second.gymId).toBe(board.gymId);
     expect(await countGyms()).toBe(before + 1);
   });
