@@ -55,8 +55,103 @@ const CLIMB_NAME = 'Twin Test Climb';
 const ANGLE = 40;
 // Millisecond-precision instant: the twins share it exactly.
 const CLIMBED_AT = '2026-05-01T18:22:37.000Z';
+const LOCK_WAIT_TIMEOUT_MS = 4_000;
+const LOCK_WAIT_POLL_INTERVAL_MS = 20;
 
 type TickOverrides = Partial<typeof dbSchema.boardseshTicks.$inferInsert>;
+
+function rowsOf<Row>(result: unknown): Row[] {
+  return Array.from(result as Iterable<Row>);
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+/**
+ * Proves that a second connection is actually waiting for the transaction
+ * holding a user lock. A fixed delay only proves that the scheduler happened
+ * not to run the contender yet, which made these serialization tests flaky.
+ */
+async function waitForContenderToBlockOn(holderBackendPid: number, contender: Promise<unknown>): Promise<void> {
+  let stopPolling = false;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const contenderSettledEarly = contender.then(
+    () => {
+      throw new Error('The lock contender settled before PostgreSQL reported its wait');
+    },
+    (error: unknown) => {
+      throw new Error('The lock contender rejected before PostgreSQL reported its wait', { cause: error });
+    },
+  );
+  const observedWait = (async () => {
+    while (!stopPolling) {
+      const result = await db.execute(sql`
+        SELECT waiting.pid
+        FROM pg_locks AS waiting
+        JOIN pg_locks AS held
+          ON held.pid = ${holderBackendPid}
+         AND held.locktype = 'advisory'
+         AND held.granted = true
+         AND held.database IS NOT DISTINCT FROM waiting.database
+         AND held.classid IS NOT DISTINCT FROM waiting.classid
+         AND held.objid IS NOT DISTINCT FROM waiting.objid
+         AND held.objsubid IS NOT DISTINCT FROM waiting.objsubid
+        JOIN pg_stat_activity AS activity ON activity.pid = waiting.pid
+        WHERE waiting.locktype = 'advisory'
+          AND waiting.granted = false
+          AND activity.datname = current_database()
+          AND activity.wait_event_type = 'Lock'
+          AND activity.wait_event = 'advisory'
+          AND ${holderBackendPid} = ANY(pg_blocking_pids(activity.pid))
+      `);
+      if (rowsOf<{ pid: number }>(result).length > 0) return;
+      await delay(LOCK_WAIT_POLL_INTERVAL_MS);
+    }
+  })();
+  const hangGuard = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(
+        new Error(
+          `Timed out after ${LOCK_WAIT_TIMEOUT_MS}ms waiting for a contender blocked by PostgreSQL backend ${holderBackendPid}`,
+        ),
+      );
+    }, LOCK_WAIT_TIMEOUT_MS);
+  });
+
+  try {
+    await Promise.race([observedWait, contenderSettledEarly, hangGuard]);
+  } finally {
+    stopPolling = true;
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+async function verifyContentionAndRelease(params: {
+  holderBackendPid: number;
+  holder: Promise<unknown>;
+  contender: Promise<unknown>;
+  releaseHolder: () => void;
+}): Promise<void> {
+  const { holderBackendPid, holder, contender, releaseHolder } = params;
+  let observationFailure: { error: unknown } | undefined;
+  try {
+    await waitForContenderToBlockOn(holderBackendPid, contender);
+  } catch (error: unknown) {
+    observationFailure = { error };
+  } finally {
+    releaseHolder();
+  }
+
+  const operationResults = await Promise.allSettled([holder, contender]);
+  if (observationFailure) throw observationFailure.error;
+
+  const operationFailures = operationResults.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
+  if (operationFailures.length === 1) throw operationFailures[0];
+  if (operationFailures.length > 1) {
+    throw new AggregateError(operationFailures, 'The lock holder and contender both rejected');
+  }
+}
 
 /** Stable ordering for assertions; a native tick's NULL aurora_id sorts last. */
 function byAuroraId(left: string | null, right: string | null): number {
@@ -992,33 +1087,29 @@ describe('#3535 Aurora-side duplicate ascents', () => {
     const legacyLockRelease = new Promise<void>((resolve) => {
       releaseLegacyLock = resolve;
     });
-    let signalLegacyLockHeld!: () => void;
-    const legacyLockHeld = new Promise<void>((resolve) => {
+    let signalLegacyLockHeld!: (backendPid: number) => void;
+    const legacyLockHeld = new Promise<number>((resolve) => {
       signalLegacyLockHeld = resolve;
     });
     const legacyLockTransaction = db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${0x5449434b}, hashtext(${USER_ID}))`);
-      signalLegacyLockHeld();
+      const [{ backendPid }] = rowsOf<{ backendPid: number }>(
+        await tx.execute(sql`SELECT pg_backend_pid() AS "backendPid"`),
+      );
+      signalLegacyLockHeld(backendPid);
       await legacyLockRelease;
+      return backendPid;
     });
-    await legacyLockHeld;
-
-    let compatibleAcquisitionSettled = false;
-    const compatibleAcquisition = db
-      .transaction(async (tx) => {
-        await acquireUserTickMutationLock(tx as unknown as Parameters<typeof acquireUserTickMutationLock>[0], USER_ID);
-      })
-      .finally(() => {
-        compatibleAcquisitionSettled = true;
-      });
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 75));
-      expect(compatibleAcquisitionSettled).toBe(false);
-    } finally {
-      releaseLegacyLock();
-    }
-
-    await Promise.all([legacyLockTransaction, compatibleAcquisition]);
+    const legacyBackendPid = await legacyLockHeld;
+    const compatibleAcquisition = db.transaction(async (tx) => {
+      await acquireUserTickMutationLock(tx as unknown as Parameters<typeof acquireUserTickMutationLock>[0], USER_ID);
+    });
+    await verifyContentionAndRelease({
+      holderBackendPid: legacyBackendPid,
+      holder: legacyLockTransaction,
+      contender: compatibleAcquisition,
+      releaseHolder: releaseLegacyLock,
+    });
   });
 
   it('Aurora apply and updateTick serialize over two connections', async () => {
@@ -1043,9 +1134,9 @@ describe('#3535 Aurora-side duplicate ascents', () => {
     const importRelease = new Promise<void>((resolve) => {
       releaseImport = resolve;
     });
-    let importReady!: (uuid: string) => void;
-    const importedUuid = new Promise<string>((resolve) => {
-      importReady = resolve;
+    let signalImportReady!: (result: { tickUuid: string; backendPid: number }) => void;
+    const importedTick = new Promise<{ tickUuid: string; backendPid: number }>((resolve) => {
+      signalImportReady = resolve;
     });
     const applyDb = db as unknown as Parameters<typeof applyAuroraAscents>[0];
     const importTransaction = db.transaction(async (tx) => {
@@ -1054,24 +1145,25 @@ describe('#3535 Aurora-side duplicate ascents', () => {
         .select({ uuid: dbSchema.boardseshTicks.uuid })
         .from(dbSchema.boardseshTicks)
         .where(sql`aurora_id = 'aur-concurrent'`);
-      importReady(row.uuid);
+      const [{ backendPid }] = rowsOf<{ backendPid: number }>(
+        await tx.execute(sql`SELECT pg_backend_pid() AS "backendPid"`),
+      );
+      signalImportReady({ tickUuid: row.uuid, backendPid });
       await importRelease;
     });
-    const tickUuid = await importedUuid;
+    const { tickUuid, backendPid } = await importedTick;
 
-    let mutationSettled = false;
-    const mutation = tickMutations
-      .updateTick(null, { uuid: tickUuid, input: { comment: 'local wins' } }, authenticatedContext)
-      .finally(() => {
-        mutationSettled = true;
-      });
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 75));
-      expect(mutationSettled).toBe(false);
-    } finally {
-      releaseImport();
-    }
-    await Promise.all([importTransaction, mutation]);
+    const mutation = tickMutations.updateTick(
+      null,
+      { uuid: tickUuid, input: { comment: 'local wins' } },
+      authenticatedContext,
+    );
+    await verifyContentionAndRelease({
+      holderBackendPid: backendPid,
+      holder: importTransaction,
+      contender: mutation,
+      releaseHolder: releaseImport,
+    });
     const [stored] = await db
       .select({ comment: dbSchema.boardseshTicks.comment })
       .from(dbSchema.boardseshTicks)
@@ -1105,9 +1197,9 @@ describe('#3535 Aurora-side duplicate ascents', () => {
     const importRelease = new Promise<void>((resolve) => {
       releaseImport = resolve;
     });
-    let importReady!: (uuid: string) => void;
-    const importedUuid = new Promise<string>((resolve) => {
-      importReady = resolve;
+    let signalImportReady!: (result: { tickUuid: string; backendPid: number }) => void;
+    const importedTick = new Promise<{ tickUuid: string; backendPid: number }>((resolve) => {
+      signalImportReady = resolve;
     });
     const importTransaction = db.transaction(async (tx) => {
       await applyLogs(
@@ -1121,24 +1213,25 @@ describe('#3535 Aurora-side duplicate ascents', () => {
         .select({ uuid: dbSchema.boardseshTicks.uuid })
         .from(dbSchema.boardseshTicks)
         .where(eq(dbSchema.boardseshTicks.kilterId, logUuid));
-      importReady(row.uuid);
+      const [{ backendPid }] = rowsOf<{ backendPid: number }>(
+        await tx.execute(sql`SELECT pg_backend_pid() AS "backendPid"`),
+      );
+      signalImportReady({ tickUuid: row.uuid, backendPid });
       await importRelease;
     });
-    const tickUuid = await importedUuid;
+    const { tickUuid, backendPid } = await importedTick;
 
-    let mutationSettled = false;
-    const mutation = tickMutations
-      .updateTick(null, { uuid: tickUuid, input: { comment: 'local after Kilter' } }, authenticatedContext)
-      .finally(() => {
-        mutationSettled = true;
-      });
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 75));
-      expect(mutationSettled).toBe(false);
-    } finally {
-      releaseImport();
-    }
-    await Promise.all([importTransaction, mutation]);
+    const mutation = tickMutations.updateTick(
+      null,
+      { uuid: tickUuid, input: { comment: 'local after Kilter' } },
+      authenticatedContext,
+    );
+    await verifyContentionAndRelease({
+      holderBackendPid: backendPid,
+      holder: importTransaction,
+      contender: mutation,
+      releaseHolder: releaseImport,
+    });
     const [stored] = await db
       .select({ comment: dbSchema.boardseshTicks.comment })
       .from(dbSchema.boardseshTicks)
