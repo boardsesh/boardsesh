@@ -35,8 +35,9 @@ includes the three iPhone portrait slots plus 13-inch and 11-inch iPad landscape
 slots.
 
 The upload expects the generated Apple locale folders `en-US`, `es-ES`, `es-MX`,
-and `fr-FR`. The app has one Spanish locale (`es`), so the capture pipeline
-writes the same Spanish screenshots to both App Store Connect Spanish locales.
+`fr-FR`, and `de-DE`. The app has one Spanish locale (`es`), so the capture
+pipeline writes the same Spanish screenshots to both App Store Connect Spanish
+locales; German and French each map to one.
 
 The Android lane uploads PNGs in `app-stores/google/screenshots/pixel-2/` to the
 Google Play phone screenshot slot as **screenshots only**, staged into
