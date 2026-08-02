@@ -970,8 +970,38 @@ describe('social board update catalog gate', () => {
     expect(after).toEqual(before);
   });
 
-  it('does not canonicalize overlong stored numeric set IDs as valid submitted membership', async () => {
-    const overlongStoredSetIds = `${'0'.repeat(256)}1`;
+  it('accepts equivalent overlength stored numeric formatting and preserves its raw config', async () => {
+    const overlongStoredSetIds = `${'0'.repeat(256)}${UNKNOWN_SET_ID},${'0'.repeat(257)}`;
+    const board = await insertTestBoard({
+      ownerId: UPDATE_USER_ID,
+      layoutId: UNKNOWN_LAYOUT_ID,
+      sizeId: UNKNOWN_SIZE_ID,
+      setIds: overlongStoredSetIds,
+      name: 'Overlong legacy config',
+    });
+
+    const updated = await socialBoardMutations.updateBoard(
+      undefined,
+      {
+        input: {
+          boardUuid: board.uuid,
+          name: 'Overlong legacy config fixed',
+          layoutId: UNKNOWN_LAYOUT_ID,
+          sizeId: UNKNOWN_SIZE_ID,
+          setIds: `${UNKNOWN_SET_ID},0`,
+        },
+      },
+      authCtx(UPDATE_USER_ID),
+    );
+    const [after] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+
+    expect(updated.name).toBe('Overlong legacy config fixed');
+    expect(updated.setIds).toBe(overlongStoredSetIds);
+    expect(after.setIds).toBe(overlongStoredSetIds);
+  });
+
+  it('rejects different membership from overlength stored numeric formatting and preserves the row', async () => {
+    const overlongStoredSetIds = `${'0'.repeat(256)}${UNKNOWN_SET_ID}`;
     const board = await insertTestBoard({
       ownerId: UPDATE_USER_ID,
       layoutId: UNKNOWN_LAYOUT_ID,
@@ -990,7 +1020,7 @@ describe('social board update catalog gate', () => {
             name: 'Must not save',
             layoutId: UNKNOWN_LAYOUT_ID,
             sizeId: UNKNOWN_SIZE_ID,
-            setIds: '1',
+            setIds: String(UNKNOWN_SET_ID + 1),
           },
         },
         authCtx(UPDATE_USER_ID),

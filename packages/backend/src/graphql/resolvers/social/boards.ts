@@ -18,7 +18,6 @@ import {
   PopularBoardConfigsInputSchema,
   SerialNumberLookupSchema,
   RecordBoardSerialInputSchema,
-  NumericCsvSchema,
   UUIDSchema,
 } from '../../../validation/schemas';
 import { generateUniqueGymSlug, requireBoardGymLinkAccess, userCanEditGym } from './gyms';
@@ -45,22 +44,42 @@ function throwIfBoardSerialConflict(error: unknown): void {
 }
 
 /**
- * Return canonical numeric set membership for comparison, without accepting
+ * Return canonical decimal set membership for comparison, without accepting
  * malformed stored values as equivalent to a valid editor submission. Board
- * rows predate the current input schema, so their raw set_ids text cannot be
- * assumed to be valid decimal CSV.
+ * rows predate the current input schema, so stored values may exceed today's
+ * request length cap. Parse them structurally rather than feeding arbitrarily
+ * long decimal tokens to BigInt; allocation is limited to normalized tokens,
+ * so legacy leading-zero padding is discarded before strings are retained.
  */
 function canonicalSetIdMembership(setIds: string): string | undefined {
-  const parsedSetIds = NumericCsvSchema.safeParse(setIds);
-  if (!parsedSetIds.success) return undefined;
+  const normalizedSetIds = new Set<string>();
+  let tokenStart = 0;
 
-  return [...new Set(parsedSetIds.data.split(',').map((setId) => BigInt(setId)))]
+  for (let index = 0; index <= setIds.length; index += 1) {
+    const character = setIds[index];
+    if (index < setIds.length && character !== ',') {
+      if (character === undefined || character < '0' || character > '9') return undefined;
+      continue;
+    }
+
+    if (index === tokenStart) return undefined;
+
+    let firstSignificantDigit = tokenStart;
+    while (firstSignificantDigit < index - 1 && setIds[firstSignificantDigit] === '0') {
+      firstSignificantDigit += 1;
+    }
+    normalizedSetIds.add(setIds.slice(firstSignificantDigit, index));
+    tokenStart = index + 1;
+  }
+
+  return [...normalizedSetIds]
     .sort((firstSetId, secondSetId) => {
+      const lengthDifference = firstSetId.length - secondSetId.length;
+      if (lengthDifference !== 0) return lengthDifference;
       if (firstSetId < secondSetId) return -1;
       if (firstSetId > secondSetId) return 1;
       return 0;
     })
-    .map(String)
     .join(',');
 }
 
