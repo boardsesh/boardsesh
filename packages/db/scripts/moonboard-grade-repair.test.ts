@@ -1,16 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  assertCompleteMoonBoardCatalog,
+  assertMoonBoardCatalogFile,
   executeMoonBoardGradeRepair,
   extractMoonBoard8cCandidates,
   parseMoonBoard8cRepairArgs,
   planMoonBoardGradeRepairs,
   resolveMoonBoardGradeRepairTargets,
   resolveTerminalMoonBoardAlias,
+  type MoonBoardCatalogSource,
   type MoonBoardGradeRepairStore,
   type MoonBoardStoredGradeRow,
 } from './moonboard-grade-repair.js';
-import type { MoonBoardCatalogProblem } from './moonboard-catalog-helpers.js';
+import { HOLDSETUP_TO_LAYOUT, type MoonBoardCatalogProblem } from './moonboard-catalog-helpers.js';
 
 void test('repair CLI is dry-run unless --apply is explicitly present', () => {
   assert.deepEqual(parseMoonBoard8cRepairArgs(['/catalog']), { apply: false, catalogPath: '/catalog' });
@@ -76,6 +79,52 @@ const CATALOG_PROBLEMS: MoonBoardCatalogProblem[] = [
     configurations: [{ apiId: 80340, grade: '9A', configuration: '40°', repeats: 1, isBenchmark: false }],
   },
 ];
+
+function completeCatalogSources(): MoonBoardCatalogSource[] {
+  return Object.keys(HOLDSETUP_TO_LAYOUT).map((holdsetup) => ({
+    fileName: `holdsetup-${holdsetup}.json`,
+    dump: {
+      count: 1,
+      holdsetup: Number(holdsetup),
+      problems: [{ ...CATALOG_PROBLEMS[0], id: Number(holdsetup), holdsetup: Number(holdsetup) }],
+    },
+  }));
+}
+
+void test('complete catalog validation rejects a truncated file even when all seven holdsetups are present', () => {
+  const sources = completeCatalogSources();
+  assert.doesNotThrow(() => assertCompleteMoonBoardCatalog(sources));
+  const truncatedSource = sources.find((source) => source.dump.holdsetup === 19);
+  assert.ok(truncatedSource);
+  truncatedSource.dump.count = 2;
+
+  assert.throws(
+    () => assertCompleteMoonBoardCatalog(sources),
+    /holdsetup-19\.json declares count 2 but contains 1 problems/,
+  );
+});
+
+void test('catalog count validation rejects empty and malformed declarations', () => {
+  for (const count of [undefined, '1', 0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(
+      () =>
+        assertMoonBoardCatalogFile(
+          { count, holdsetup: 21, problems: count === 0 ? [] : [CATALOG_PROBLEMS[0]] },
+          'moonboard-2024.json',
+        ),
+      /moonboard-2024\.json has invalid count/,
+      String(count),
+    );
+  }
+
+  assert.throws(
+    () =>
+      assertCompleteMoonBoardCatalog(
+        completeCatalogSources().map((source) => ({ ...source, dump: { ...source.dump, count: 0, problems: [] } })),
+      ),
+    /has invalid count 0/,
+  );
+});
 
 function safeStoredRow(input: Partial<MoonBoardStoredGradeRow> & Pick<MoonBoardStoredGradeRow, 'climbUuid'>) {
   return {

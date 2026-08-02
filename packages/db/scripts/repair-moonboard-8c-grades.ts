@@ -22,6 +22,8 @@ import {
 import { createScriptDb, describeDatabaseHost, getScriptDatabaseUrl } from './db-connection.js';
 import {
   MOONBOARD_8C_DIFFICULTY_IDS,
+  assertCompleteMoonBoardCatalog,
+  assertMoonBoardCatalogFile,
   executeMoonBoardGradeRepair,
   extractMoonBoard8cCandidates,
   parseMoonBoard8cRepairArgs,
@@ -32,26 +34,13 @@ import {
   type MoonBoardGradeRepairUpdate,
   type MoonBoardStoredGradeRow,
 } from './moonboard-grade-repair.js';
-import { HOLDSETUP_TO_LAYOUT, type MoonBoardCatalogFile } from './moonboard-catalog-helpers.js';
 
 const EXPECTED_GRADE_NAMES = new Map<number, string>([
   [32, '8c/V15'],
   [33, '8c+/V16'],
 ]);
-const EXPECTED_HOLDSETUPS = Object.keys(HOLDSETUP_TO_LAYOUT).map(Number);
 
 type ScriptTransaction = Parameters<Parameters<ReturnType<typeof createScriptDb>['db']['transaction']>[0]>[0];
-
-function isMoonBoardCatalogFile(input: unknown): input is MoonBoardCatalogFile {
-  return (
-    input !== null &&
-    typeof input === 'object' &&
-    'holdsetup' in input &&
-    typeof input.holdsetup === 'number' &&
-    'problems' in input &&
-    Array.isArray(input.problems)
-  );
-}
 
 function readCatalogSources(catalogDir: string): MoonBoardCatalogSource[] {
   if (!fs.existsSync(catalogDir) || !fs.statSync(catalogDir).isDirectory()) {
@@ -65,30 +54,9 @@ function readCatalogSources(catalogDir: string): MoonBoardCatalogSource[] {
 
   return fileNames.map((fileName) => {
     const parsed: unknown = JSON.parse(fs.readFileSync(path.join(catalogDir, fileName), 'utf8'));
-    if (!isMoonBoardCatalogFile(parsed)) throw new Error(`${fileName} is not a MoonBoard catalog file`);
+    assertMoonBoardCatalogFile(parsed, fileName);
     return { fileName, dump: parsed };
   });
-}
-
-function assertCompleteCatalog(sources: readonly MoonBoardCatalogSource[]): void {
-  const filesByHoldsetup = new Map<number, string[]>();
-  for (const source of sources) {
-    const fileNames = filesByHoldsetup.get(source.dump.holdsetup) ?? [];
-    fileNames.push(source.fileName);
-    filesByHoldsetup.set(source.dump.holdsetup, fileNames);
-  }
-
-  const missing = EXPECTED_HOLDSETUPS.filter((holdsetup) => !filesByHoldsetup.has(holdsetup));
-  const duplicates = [...filesByHoldsetup.entries()].filter(([, fileNames]) => fileNames.length > 1);
-  if (missing.length > 0 || duplicates.length > 0) {
-    const duplicateSummary = duplicates
-      .map(([holdsetup, fileNames]) => `${holdsetup} (${fileNames.join(', ')})`)
-      .join('; ');
-    throw new Error(
-      `Catalog must contain exactly one file for each known holdsetup. Missing: ${missing.join(', ') || 'none'}; ` +
-        `duplicates: ${duplicateSummary || 'none'}`,
-    );
-  }
 }
 
 async function assertGradeRowsReady(transaction: ScriptTransaction): Promise<void> {
@@ -232,7 +200,7 @@ async function main(): Promise<void> {
   const { apply, catalogPath } = parseMoonBoard8cRepairArgs(process.argv.slice(2));
   const catalogDir = path.resolve(process.cwd(), catalogPath);
   const sources = readCatalogSources(catalogDir);
-  assertCompleteCatalog(sources);
+  assertCompleteMoonBoardCatalog(sources);
   const { candidates, unknownHoldsetups } = extractMoonBoard8cCandidates(sources);
   if (unknownHoldsetups.length > 0) {
     throw new Error(

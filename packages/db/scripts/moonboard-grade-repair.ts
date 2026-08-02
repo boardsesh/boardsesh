@@ -3,6 +3,7 @@ import { HOLDSETUP_TO_LAYOUT, catalogProblemToClimbs, type MoonBoardCatalogFile 
 export const MOONBOARD_8C_DIFFICULTY_IDS = [32, 33] as const;
 
 const MOONBOARD_8C_DIFFICULTY_ID_SET = new Set<number>(MOONBOARD_8C_DIFFICULTY_IDS);
+const EXPECTED_HOLDSETUPS = Object.keys(HOLDSETUP_TO_LAYOUT).map(Number);
 const APPLY_FLAG = '--apply';
 const ARG_SEPARATOR = '--';
 
@@ -33,6 +34,52 @@ export type MoonBoardCatalogSource = {
   fileName: string;
   dump: MoonBoardCatalogFile;
 };
+
+function assertCatalogProblemCount(fileName: string, count: unknown, problemCount: number): asserts count is number {
+  if (typeof count !== 'number' || !Number.isSafeInteger(count) || count <= 0) {
+    throw new Error(`${fileName} has invalid count ${String(count)}; expected a positive safe integer`);
+  }
+  if (count !== problemCount) {
+    throw new Error(`${fileName} declares count ${count} but contains ${problemCount} problems`);
+  }
+}
+
+export function assertMoonBoardCatalogFile(input: unknown, fileName: string): asserts input is MoonBoardCatalogFile {
+  if (
+    input === null ||
+    typeof input !== 'object' ||
+    !('holdsetup' in input) ||
+    typeof input.holdsetup !== 'number' ||
+    !('problems' in input) ||
+    !Array.isArray(input.problems)
+  ) {
+    throw new Error(`${fileName} is not a MoonBoard catalog file`);
+  }
+
+  assertCatalogProblemCount(fileName, 'count' in input ? input.count : undefined, input.problems.length);
+}
+
+export function assertCompleteMoonBoardCatalog(sources: readonly MoonBoardCatalogSource[]): void {
+  const filesByHoldsetup = new Map<number, string[]>();
+  for (const source of sources) {
+    assertCatalogProblemCount(source.fileName, source.dump.count, source.dump.problems.length);
+    const fileNames = filesByHoldsetup.get(source.dump.holdsetup) ?? [];
+    fileNames.push(source.fileName);
+    filesByHoldsetup.set(source.dump.holdsetup, fileNames);
+  }
+
+  const missing = EXPECTED_HOLDSETUPS.filter((holdsetup) => !filesByHoldsetup.has(holdsetup));
+  const duplicates = [...filesByHoldsetup.entries()].filter(([, fileNames]) => fileNames.length > 1);
+  if (missing.length > 0 || duplicates.length > 0) {
+    const duplicateSummary = duplicates
+      .map(([holdsetup, fileNames]) => `${holdsetup} (${fileNames.join(', ')})`)
+      .join('; ');
+    throw new Error(
+      `Catalog must contain exactly one file for each known holdsetup. Missing: ${missing.join(', ') || 'none'}; ` +
+        `duplicates: ${duplicateSummary || 'none'}`,
+    );
+  }
+}
 
 export type MoonBoardGradeRepairCandidate = {
   sourceUuid: string;
