@@ -157,19 +157,26 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       // It can be rejected on its own terms (too far from a gym the user doesn't
       // run), so it's reported separately rather than failing the whole save.
       const nextGymUuid = builder.selectedGym?.uuid ?? null;
+      let gymLinkError: string | null = null;
       if (nextGymUuid !== (board.gymUuid ?? null)) {
         try {
           await linkBoardToGym.mutateAsync({ boardUuid: board.uuid, gymUuid: nextGymUuid });
         } catch (error) {
-          setUpdateError(extractGraphqlMessage(error) ?? t('mobile.gymPicker.linkError'));
-          setSubmitting(false);
-          return;
+          gymLinkError = extractGraphqlMessage(error) ?? t('mobile.gymPicker.linkError');
         }
       }
 
       // The active board is a denormalised AsyncStorage copy — re-persist it so
       // the rename / angle / visibility change reaches BLE + the play drawer.
+      // This runs even when the gym link failed: the rest of the edit DID save,
+      // and bailing early left the stored copy stale against the server.
       if (activeBoard?.uuid === updated.uuid) await setActiveBoard(updated);
+
+      if (gymLinkError) {
+        setUpdateError(gymLinkError);
+        setSubmitting(false);
+        return;
+      }
       router.back();
       // Navigated away on success — leave `submitting` set (unmounting).
     } catch (error) {

@@ -297,7 +297,8 @@
       "noGymHint": "Seguirá apareciendo en el mapa con su propio marcador.",
       "addNew": "Mi gimnasio no aparece",
       "empty": "No hay gimnasios cerca",
-      "sharedEditHint": "El personal de este gimnasio podrá editar los datos de este plafón."
+      "sharedEditHint": "El personal de este gimnasio podrá editar los datos de este plafón.",
+      "linkError": "No se pudo vincular ese gimnasio. Puede estar demasiado lejos de tu plafón. El resto de cambios sí se guardaron."
     }
   },
   "boardEntity": {

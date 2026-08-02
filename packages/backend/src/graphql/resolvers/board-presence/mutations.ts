@@ -92,7 +92,15 @@ function toBoardCandidate(
 /**
  * No board carries this serial yet: bind it onto the caller's own board for
  * this config, or create a fresh owned board. (Branches (b)+(c) of the old
- * resolver; the per-owner unique index keeps a same-owner bind race fail-safe.)
+ * resolver.)
+ *
+ * The caller may own SEVERAL boards of this config since #4166 (the same wall at
+ * home and at a gym), so `findOwnActiveBoardByConfig` gets the serial and returns
+ * the board this one should bind to — already bound to it, else unbound, else one
+ * bound elsewhere. Without that preference the pick was arbitrary, and this could
+ * refuse to connect a perfectly bindable board or stamp the serial onto the wrong
+ * one. The same-owner bind race stays fail-safe via `user_boards_unique_owner_serial`
+ * (the per-owner *config* index this comment used to cite is gone).
  */
 async function bindOrCreateOwnBoardForSerial(
   userId: string,
@@ -105,6 +113,7 @@ async function bindOrCreateOwnBoardForSerial(
     config.layoutId,
     config.sizeId,
     config.setIds,
+    serial,
   );
   if (ownBoard) {
     if (ownBoard.serialNumber && ownBoard.serialNumber !== serial) {
@@ -128,6 +137,7 @@ async function bindOrCreateOwnBoardForSerial(
           config.layoutId,
           config.sizeId,
           config.setIds,
+          serial,
         );
         if (winner?.serialNumber === serial) {
           return winner;
@@ -141,6 +151,7 @@ async function bindOrCreateOwnBoardForSerial(
       config.layoutId,
       config.sizeId,
       config.setIds,
+      serial,
     );
     if (refreshed?.serialNumber === serial) {
       return refreshed;
@@ -179,6 +190,7 @@ async function bindOrCreateOwnBoardForSerial(
         config.layoutId,
         config.sizeId,
         config.setIds,
+        serial,
       );
       if (winner?.serialNumber === serial) {
         return winner;

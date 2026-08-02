@@ -297,7 +297,8 @@
       "noGymHint": "It'll still show on the map as its own pin.",
       "addNew": "My gym isn't listed",
       "empty": "No gyms nearby",
-      "sharedEditHint": "This gym's staff will be able to edit this board's details."
+      "sharedEditHint": "This gym's staff will be able to edit this board's details.",
+      "linkError": "Couldn't link that gym. It may be too far from your board. Your other changes were saved."
     }
   },
   "boardEntity": {

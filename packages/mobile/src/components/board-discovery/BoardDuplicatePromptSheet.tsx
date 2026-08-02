@@ -71,7 +71,8 @@ export function BoardDuplicatePromptSheet({
       ref={sheetRef}
       index={0}
       snapPoints={snapPoints}
-      enablePanDownToClose
+      // Pan-down is a second route to the same cancel, so it closes too.
+      enablePanDownToClose={!busy}
       onChange={managed.onChange}
       onFullyDismissed={managed.onFullyDismissed}
       handleIndicatorStyle={styles.indicator}
@@ -105,9 +106,14 @@ export function BoardDuplicatePromptSheet({
             {t('mobile.create.duplicate.addAnotherHint')}
           </Text>
         </View>
+        {/* Also disabled while busy: cancelling mid-switch used to release the
+            in-flight lock while the board fetch was still running, and the
+            resolved fetch then activated the old board and threw the form away —
+            the #4166 symptom, through this sheet. */}
         <Button
           title={t('mobile.create.duplicate.cancel')}
           onPress={onDismiss}
+          disabled={busy}
           variant="text"
           size="medium"
           role="cancel"

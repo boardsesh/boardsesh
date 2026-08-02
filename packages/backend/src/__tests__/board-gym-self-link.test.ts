@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
-import { socialGymMutations } from '../graphql/resolvers/social/gyms';
+import { socialGymMutations, MAX_BOARDS_PER_FOREIGN_GYM } from '../graphql/resolvers/social/gyms';
 import { socialGymStrayBoardMutations } from '../graphql/resolvers/social/gym-stray-boards';
 import { resetAllRateLimits } from '../utils/rate-limiter';
 
@@ -121,6 +121,44 @@ describe('linkBoardToGym — self-service proximity path', () => {
     const boardUuid = await insertBoard({ ownerId: OWNER, latitude: LAT_60M, longitude: BASE.longitude });
 
     await expect(linkBoardToGym(boardUuid, gym.uuid, OWNER)).rejects.toThrow(/Gym not found/);
+  });
+
+  it('does not spend the rate bucket on a private gym, so it cannot be told from a missing one', async () => {
+    // The shared message alone isn't enough. A missing gym throws before the
+    // bucket is charged, so charging on the private branch let an attacker
+    // distinguish the two: probe five times, then watch whether a sixth call
+    // reports a rate limit ("live private gym") or a plain refusal ("no such gym").
+    const privateGym = await insertGym({
+      ownerId: STRANGER,
+      name: 'Secret Home Wall',
+      ...BASE,
+      isPublic: false,
+    });
+    const boardUuid = await insertBoard({ ownerId: OWNER, latitude: LAT_60M, longitude: BASE.longitude });
+
+    for (let probe = 0; probe < 6; probe++) {
+      await expect(linkBoardToGym(boardUuid, privateGym.uuid, OWNER)).rejects.toThrow(/Gym not found/);
+    }
+
+    // Bucket untouched, so a genuine self-service link still goes through.
+    const publicGym = await insertGym({ ownerId: STRANGER, name: 'Klimmuur', ...BASE });
+    await expect(linkBoardToGym(boardUuid, publicGym.uuid, OWNER)).resolves.toBe(true);
+  });
+
+  it('caps how many of one owner’s boards can be listed at a single foreign gym', async () => {
+    // The distinct-gym cap deliberately excludes the gym being linked, so without
+    // this one a single listing could be flooded without limit.
+    const gym = await insertGym({ ownerId: STRANGER, name: 'Klimmuur', ...BASE });
+    for (let index = 0; index < MAX_BOARDS_PER_FOREIGN_GYM; index++) {
+      const boardUuid = await insertBoard({ ownerId: OWNER, latitude: LAT_60M, longitude: BASE.longitude });
+      await expect(linkBoardToGym(boardUuid, gym.uuid, OWNER)).resolves.toBe(true);
+    }
+
+    // Filling the cap also spends the 5/min bucket, which would mask the refusal
+    // under test. Clear it so the assertion is about the depth cap alone.
+    resetAllRateLimits();
+    const overflow = await insertBoard({ ownerId: OWNER, latitude: LAT_60M, longitude: BASE.longitude });
+    await expect(linkBoardToGym(overflow, gym.uuid, OWNER)).rejects.toThrow(/Not authorized to link board/);
   });
 
   it("refuses to move somebody else's board, however close it is", async () => {
