@@ -9,6 +9,7 @@ vi.mock('../public-api-rate-limit-redis.server', () => ({
 import {
   createPublicApiRateLimitGuard,
   PUBLIC_API_MAX_REQUESTS,
+  PUBLIC_API_RATE_LIMIT_WINDOW_MS,
   PUBLIC_API_RATE_LIMIT_OPERATION,
   resolvePublicApiClientIdentity,
   resolvePublicApiRateLimitNamespace,
@@ -79,6 +80,28 @@ describe('public API client identity', () => {
 });
 
 describe('public API guard', () => {
+  it('uses the injected clock for the default local limiter across its fixed window', async () => {
+    let currentTime = 1_000;
+    const guard = createPublicApiRateLimitGuard({
+      environment: { VERCEL: '1', VERCEL_ENV: 'production' },
+      getRedisEvaluator: () => undefined,
+      now: () => currentTime,
+    });
+    const publicRequest = request('/api/v1/kilter/grades', '203.0.113.8');
+
+    for (let requestIndex = 0; requestIndex < PUBLIC_API_MAX_REQUESTS; requestIndex += 1) {
+      await expect(guard(publicRequest)).resolves.toBeNull();
+    }
+    await expect(guard(publicRequest)).resolves.toMatchObject({ status: 429 });
+
+    // Preserve MemoryRateLimiter's established inclusive reset boundary: exactly
+    // resetAt is still in the old window, and the next millisecond starts a new one.
+    currentTime += PUBLIC_API_RATE_LIMIT_WINDOW_MS;
+    await expect(guard(publicRequest)).resolves.toMatchObject({ status: 429 });
+    currentTime += 1;
+    await expect(guard(publicRequest)).resolves.toBeNull();
+  });
+
   it('shares one aggregate budget across grade and heatmap reads behind a gym NAT', async () => {
     const guard = createPublicApiRateLimitGuard({
       environment: { VERCEL: '1', VERCEL_ENV: 'production' },
