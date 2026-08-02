@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+// Relative, not '@boardsesh/i18n': the scripts vitest project doesn't resolve
+// workspace package names (same as mobile-locales-parity.test.ts).
+import { SUPPORTED_LOCALES } from '../../packages/shared/i18n/src/config';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -473,5 +476,18 @@ describe('resolveAppStoreLocaleTargets', () => {
       { appLocale: 'fr', appStoreLocales: ['fr-FR'] },
       { appLocale: 'de', appStoreLocales: ['de-DE'] },
     ]);
+  });
+
+  // STORE_READY_APP_LOCALES is annotated `readonly Locale[]`, but nothing
+  // typechecks the root scripts/ directory (there is no `typecheck:scripts` task
+  // — see the dependsOn list in vite.config.ts), so that annotation is erased
+  // rather than enforced. A locale added to the capture set before it exists in
+  // SUPPORTED_LOCALES would sail through CI and then fail at capture time with an
+  // unresolvable App Store folder. Assert the subset at runtime instead.
+  it('keeps the default capture set inside SUPPORTED_LOCALES', () => {
+    const supported: readonly string[] = SUPPORTED_LOCALES;
+    for (const appLocale of parseArgs(['--locales', 'all']).appLocales) {
+      expect({ appLocale, supported: supported.includes(appLocale) }).toEqual({ appLocale, supported: true });
+    }
   });
 });

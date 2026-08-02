@@ -3,6 +3,22 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { ExpoConfig, ConfigContext } from 'expo/config';
 
+/**
+ * Languages the binary ships, as iOS language codes. Single source for two things
+ * that must agree: `ios.infoPlist.CFBundleLocalizations` (what the App Store lists
+ * under "Languages", and what iOS matches the device locale against) and the
+ * top-level `locales` map (which Expo turns into <lang>.lproj/InfoPlist.strings at
+ * prebuild). Must cover every language in SUPPORTED_LOCALES —
+ * scripts/mobile-locales-parity.test.ts enforces that, and that each code has a
+ * matching locales/<code>.json translating the same keys.
+ */
+export const APP_LOCALIZATIONS = ['en', 'de', 'es', 'fr'] as const;
+
+/** Where the InfoPlist strings for a declared localization live, relative to this config. */
+export function localeStringsPath(language: string): string {
+  return `./locales/${language}.json`;
+}
+
 type WebPlatformResolution = {
   platforms: NonNullable<ExpoConfig['platforms']>;
   web?: NonNullable<ExpoConfig['web']>;
@@ -301,14 +317,8 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     // This is also what makes the App Store product page list German, Spanish
     // and French under "Languages" — Apple reads the localizations shipped in
     // the binary, not the storefront listings, so a de-DE listing alone would
-    // still show "English" there. Keep the key set in sync across all four
-    // files and with CFBundleLocalizations.
-    locales: {
-      en: './locales/en.json',
-      de: './locales/de.json',
-      es: './locales/es.json',
-      fr: './locales/fr.json',
-    },
+    // still show "English" there.
+    locales: Object.fromEntries(APP_LOCALIZATIONS.map((language) => [language, localeStringsPath(language)])),
     ...(EAS_PROJECT_ID
       ? {
           // `fingerprint` (not `appVersion`): the runtimeVersion is a hash of the
@@ -373,12 +383,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       },
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
-        // Declares the languages the app ships, which is what the App Store
-        // shows under "Languages" and what iOS matches the device locale
-        // against. Must stay in sync with the top-level `locales` map (which
-        // writes the matching <lang>.lproj bundles) and with SUPPORTED_LOCALES
-        // in @boardsesh/i18n, the list the JS UI actually translates into.
-        CFBundleLocalizations: ['en', 'de', 'es', 'fr'],
+        CFBundleLocalizations: [...APP_LOCALIZATIONS],
         // iPad rotates freely — landscape is the primary canvas for the sidebar +
         // panes — while iPhone stays portrait-locked via the top-level
         // `orientation: 'portrait'`. This `~ipad` key overrides the base
