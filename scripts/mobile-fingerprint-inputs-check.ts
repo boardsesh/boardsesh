@@ -79,6 +79,13 @@ export function validateFingerprintSources(platform: Platform, sources: readonly
       filePath: 'fingerprint.config.js',
     },
     {
+      // Required on BOTH platforms despite the iOS-sounding name. The files are
+      // iOS-only in effect (Expo turns them into <lang>.lproj/InfoPlist.strings;
+      // Android takes nothing from them), but they're referenced by app.config.ts,
+      // which is shared — so both fingerprints must track their contents or an
+      // Android OTA could ship against a config the binary never had. An
+      // "android: expected exactly one iosInfoPlistLocales source" failure is
+      // therefore real, not a platform mix-up.
       overrideHashKey: 'iosInfoPlistLocales',
       type: 'dir',
       filePath: 'locales',
