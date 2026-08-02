@@ -1,2 +1,2 @@
-DROP INDEX "user_boards_unique_owner_config";--> statement-breakpoint
+DROP INDEX IF EXISTS "user_boards_unique_owner_config";--> statement-breakpoint
 CREATE INDEX "user_boards_owner_config_idx" ON "user_boards" USING btree ("owner_id","board_type","layout_id","size_id","set_ids") WHERE "user_boards"."deleted_at" IS NULL;

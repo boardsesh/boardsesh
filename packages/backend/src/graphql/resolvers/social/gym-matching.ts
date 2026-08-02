@@ -318,7 +318,11 @@ export async function resolveAutoGymForBoard(opts: {
   }
 
   // Backstop against a scripted create loop minting a gym per call. Rate limiting
-  // caps the rate; this caps the total.
+  // caps the rate; this caps the total. Deliberately a plain read outside the
+  // insert transaction: two concurrent creates can both see 24 and both mint, so
+  // the cap is approximate by design. It exists to stop a runaway, not to hold an
+  // invariant — paying for row locks on every create to make it exact would be
+  // the wrong trade.
   const [{ count: ownedGymCount }] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(dbSchema.gyms)
