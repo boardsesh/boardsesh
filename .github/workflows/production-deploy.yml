@@ -744,6 +744,11 @@ jobs:
         # This puts a real browser in front of the deploy and confirms React
         # mounted into #root. Read-only — it never signs in, and it runs under
         # playwright.production.config.ts, which declares no globalSetup.
+        #
+        # No rollback guard here, unlike the www smoke. Pages has no instant-
+        # rollback signal to read; the subdomain's equivalent is the job-level
+        # APP_WEB_DEPLOY_HOLD `if:` above, which skips this whole job — this
+        # step included — so there is nothing left to guard at step level.
         env:
           PLAYWRIGHT_TEST_BASE_URL: https://app.boardsesh.com
         run: cd packages/web && bunx playwright test --config=playwright.production.config.ts

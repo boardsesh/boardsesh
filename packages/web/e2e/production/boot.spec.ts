@@ -13,6 +13,11 @@
 // and must stay read-only, which is also why it lives under its own config
 // (playwright.production.config.ts) with no globalSetup.
 
+// Measured against live app.boardsesh.com on 2026-08-02: root boot 5.3s, deep
+// route 1.8s. The 60s polls below are ~10x that, so they are headroom for a
+// cold edge rather than a value anything is expected to approach. If a future
+// splash screen renders with no text at all, this is the test that will say so
+// — which is the point; a splash with no visible text is not a booted app.
 import { expect, test, type Page } from '@playwright/test';
 
 /**
