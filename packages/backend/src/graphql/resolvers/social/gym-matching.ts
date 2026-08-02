@@ -186,6 +186,11 @@ async function findOwnGymsByExactName(opts: {
   if (normalized.length === 0) return [];
 
   const hasCoords = latitude != null && longitude != null;
+  // No bounding box in SQL: it requires non-null lat/lng, which would drop the
+  // caller's OWN same-named gym when that gym has no coordinates — and a gym
+  // minted from a location name alone has none. Dropping it meant a second board
+  // at the same typed place, this time with coordinates, minted a twin instead of
+  // converging. Distance is applied below, and only where there is one.
   const rows = await db
     .select(gymColumns)
     .from(dbSchema.gyms)
@@ -194,7 +199,6 @@ async function findOwnGymsByExactName(opts: {
         isNull(dbSchema.gyms.deletedAt),
         eq(dbSchema.gyms.ownerId, userId),
         sql`${normalizedNameExpr} = ${normalized}`,
-        ...(hasCoords ? [withinBoundingBox(latitude, longitude, radiusMeters)] : []),
       ),
     );
 
@@ -204,7 +208,7 @@ async function findOwnGymsByExactName(opts: {
     return rows.map((row) => ({ ...row, distanceMeters: null })).sort((first, second) => first.id - second.id);
   }
 
-  return rows
+  const placed = rows
     .filter(
       (row): row is typeof row & { latitude: number; longitude: number } =>
         row.latitude != null && row.longitude != null,
@@ -212,6 +216,15 @@ async function findOwnGymsByExactName(opts: {
     .map((row) => ({ ...row, distanceMeters: haversineTo({ latitude, longitude }, row) }))
     .filter((row) => row.distanceMeters <= radiusMeters)
     .sort((first, second) => first.distanceMeters - second.distanceMeters);
+  if (placed.length > 0) return placed;
+
+  // Fall back to the caller's same-named gyms that carry no coordinates at all.
+  // Their name is the only evidence available, and it's their own gym, so reusing
+  // it beats minting a duplicate. A later edit can give it coordinates.
+  return rows
+    .filter((row) => row.latitude == null || row.longitude == null)
+    .map((row) => ({ ...row, distanceMeters: null }))
+    .sort((first, second) => first.id - second.id);
 }
 
 /** Live gyms of any owner within `radiusMeters`, regardless of name. Nearest-first. */

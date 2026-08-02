@@ -526,6 +526,23 @@ describe('createBoard auto-gym — per-location minting', () => {
     expect(board.gymId).toBeNull();
   });
 
+  it('converges onto the caller’s own same-named gym even when that gym has no coordinates', async () => {
+    // Board 1 names a place but can't stamp coordinates (you have to be standing
+    // there), so its gym is minted with none. Board 2 at the same place, this
+    // time with coordinates, must reuse that gym — the SQL bounding box excludes
+    // null-coordinate rows, so filtering there minted a twin.
+    const first = await createBoard({ name: 'First board', locationName: 'Klimmuur' }, authCtx(QUERIER));
+    const afterFirst = await countGyms();
+
+    const second = await createBoard(
+      { name: 'Second board', locationName: 'Klimmuur', latitude: BASE.latitude, longitude: BASE.longitude },
+      authCtx(QUERIER),
+    );
+
+    expect(second.gymId).toBe(first.gymId);
+    expect(await countGyms()).toBe(afterFirst);
+  });
+
   it('stops minting once the caller is at the gym cap, still creating the board', async () => {
     // The runaway backstop. Approximate by design (read outside the insert
     // transaction), so this pins the threshold behaviour, not exactness.
