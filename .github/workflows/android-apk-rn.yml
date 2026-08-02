@@ -539,6 +539,14 @@ jobs:
             # so skip it and let the staged==0 check below report the real problem.
             [ -d "$locale_dir" ] || continue
             locale="$(basename "$locale_dir")"
+            # Only stage locale-shaped names. Permissive enough for everything
+            # Play accepts (en-US, es, pt-BR, zh-Hans, fil) while skipping a
+            # non-locale dir that lands here — `whatsnew-templates` would be an
+            # unrecognized tag Play rejects with a confusing message.
+            if ! printf '%s' "$locale" | grep -qE '^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$'; then
+              echo "::warning::Skipping non-locale directory fastlane/metadata/android/${locale}/"
+              continue
+            fi
             changelog="${locale_dir}changelogs/default.txt"
             if [ ! -f "$changelog" ]; then
               echo "::warning::No changelogs/default.txt for Play locale ${locale} — it will fall back to the default listing language."
