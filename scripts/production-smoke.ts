@@ -101,15 +101,15 @@ function firstFailure(...reasons: (string | null)[]): string | null {
  * `<h1>` or a known class would be guessing at markup this script can't see.
  * An error shell is a couple of KB; a rendered board page is far larger.
  */
-const MIN_RENDERED_PAGE_BYTES = 4_000;
+const MIN_RENDERED_PAGE_CHARS = 4_000;
 
 function renderedHtmlPage(response: SmokeResponse): string | null {
   return firstFailure(
     expectStatus(response, 200),
     expectContentType(response, 'text/html'),
-    response.body.length >= MIN_RENDERED_PAGE_BYTES
+    response.body.length >= MIN_RENDERED_PAGE_CHARS
       ? null
-      : `page is ${response.body.length} bytes, under the ${MIN_RENDERED_PAGE_BYTES}-byte floor — likely an error shell, not a render`,
+      : `page is ${response.body.length} chars, under the ${MIN_RENDERED_PAGE_CHARS}-char floor — likely an error shell, not a render`,
   );
 }
 
@@ -265,6 +265,13 @@ function parseBaseUrl(argv: string[]): string {
   if (flagIndex === -1) return DEFAULT_BASE_URL;
   const value = argv[flagIndex + 1];
   if (!value) throw new Error('--base needs a URL');
+  // Validate here rather than letting a typo surface three retries deep as a
+  // fetch error that reads like the site is down.
+  try {
+    new URL(value);
+  } catch {
+    throw new Error(`--base is not a valid URL: ${value} (did you include the scheme?)`);
+  }
   return value.replace(/\/$/, '');
 }
 
