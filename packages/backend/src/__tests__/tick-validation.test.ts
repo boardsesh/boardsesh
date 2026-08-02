@@ -189,6 +189,40 @@ describe('UpdateTickInputSchema', () => {
   });
 });
 
+describe('tickMutations.saveTick validation', () => {
+  it('rejects an invalid climbed-at timestamp before querying or writing the database', async () => {
+    const selectSpy = vi.spyOn(db, 'select');
+    const transactionSpy = vi.spyOn(db, 'transaction');
+
+    try {
+      await expect(
+        tickMutations.saveTick(
+          null,
+          {
+            input: {
+              boardType: 'kilter',
+              climbUuid: TEST_CLIMB_UUID,
+              angle: 40,
+              isMirror: false,
+              status: 'attempt',
+              attemptCount: 1,
+              isBenchmark: false,
+              comment: '',
+              climbedAt: 'not a date',
+            },
+          },
+          authenticatedContext,
+        ),
+      ).rejects.toThrowError(/Climbed at must be a valid date/);
+      expect(selectSpy).not.toHaveBeenCalled();
+      expect(transactionSpy).not.toHaveBeenCalled();
+    } finally {
+      selectSpy.mockRestore();
+      transactionSpy.mockRestore();
+    }
+  });
+});
+
 describeWithDatabase('tickMutations.updateTick', () => {
   beforeEach(async () => {
     await cleanupTickValidationRows();
