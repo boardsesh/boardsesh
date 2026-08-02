@@ -145,23 +145,20 @@ SENTRY_AUTH_TOKEN=sntrys_… \
 
 The wrapper translates its `--channel production` selector to `eoas publish --branch production`.
 It deliberately does not pass eoas's deprecated `--channel` option; channel creation and mapping are
-control-plane operations described below. The publish does an `expo export` and uploads the bundle
-to our storage via the server. `eoas` reads the server URL from `updates.url` in
-`app.config.ts`, so `EXPO_UPDATES_URL` must be present. **Auth is `EOO_TOKEN`, not an Expo token:**
+control-plane operations described below. The production publish runs
+`eoas publish --branch production --dumpSourcemap --outputDir dist`, which exports the bundle plus
+its external map and uploads the OTA bundle to our storage via the server. `eoas` reads the server
+URL from `updates.url` in `app.config.ts`, so `EXPO_UPDATES_URL` must be present.
+**Auth is `EOO_TOKEN`, not an Expo token:** the V3 control-plane server rejects Expo tokens, so
+publish/rollback need an app-scoped `eoo_` key minted in the dashboard. The CLI is pinned to
+**`eoas@3.0.5`** via `EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts` — it must match the deployed server
+version exactly (V3 routes are app-scoped; a `v2` CLI 404s). Bump the server image and the pin in
+lockstep.
 
 For Android, use `--platform android` on both commands and provide the same
 `GOOGLE_MAPS_API_KEY` used by the Android native build while publishing. Do not use `--platform all`:
 each `eoas publish` removes and recreates `packages/mobile/dist`, so the second platform would erase
 the first platform's source maps before they reached Sentry.
-
-The publish runs `eoas publish --branch production --dumpSourcemap --outputDir dist`, which exports
-the bundle plus its external map and uploads the OTA bundle to our storage via the server. `eoas`
-reads the server URL from `updates.url` in `app.config.ts`, so `EXPO_UPDATES_URL` must be present.
-**Auth is `EOO_TOKEN`, not an Expo token:**
-the V3 control-plane server rejects Expo tokens, so publish/rollback need an app-scoped `eoo_` key
-minted in the dashboard. The CLI is pinned to **`eoas@3.0.5`** via `EOAS_PACKAGE_SPEC` in
-`scripts/lib/eoas.ts` — it must match the deployed server version exactly (V3 routes are
-app-scoped; a `v2` CLI 404s). Bump the server image and the pin in lockstep.
 
 **Transient upload failures** are retried only when eoas output contains the exact S3 SlowDown XML
 response or an explicit HTTP 5xx status. Each platform gets at most four attempts, with 30, 60, and
@@ -446,8 +443,9 @@ Confirm the Android release actually shipped before relying on an Android backpo
    sees a clean tree. It then verifies the resolved fingerprint's 12-char prefix equals the anchor's
    `<shortfp>`. A mismatch means the cherry-pick or tooling changed native inputs — it aborts,
    because an OTA would resolve a fingerprint no shipped binary has and silently never land. Anchors
-   without the audited `@sentry/react-native` 7.11 uploader also abort; changing that dependency
-   would change the approved native fingerprint.
+   without the audited `@sentry/react-native` 7.11 uploader also abort. Do not change that
+   dependency on the frozen anchor: ship a native update with a supported uploader, wait for its
+   approved release anchor, and backport against that new anchor instead.
 4. Re-run with `dry_run` off to publish under the approved fingerprint and immediately upload that
    platform's Debug ID source map. It shares the `mobile-ota-production` concurrency lane, limits
    the platform matrix to one publish at a time, and never races a `main` OTA or bursts iOS and

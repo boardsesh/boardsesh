@@ -121,7 +121,12 @@ describe('backport OTA workflow upload pressure', () => {
     const overlay = stepBlock(backport, 'Overlay trusted OTA publish tooling');
     const gitAddLine = overlay.split('\n').find((line) => line.trimStart().startsWith('git add '));
 
-    for (const implementationPath of ['scripts/lib/mobile-publish-retry.ts', 'scripts/mobile-upload-sourcemaps.ts']) {
+    for (const implementationPath of [
+      'scripts/mobile-publish.ts',
+      'scripts/lib/eoas.ts',
+      'scripts/lib/mobile-publish-retry.ts',
+      'scripts/mobile-upload-sourcemaps.ts',
+    ]) {
       expect(snapshot).toContain(implementationPath);
       expect(overlay).toContain(implementationPath);
       expect(gitAddLine).toContain(implementationPath);

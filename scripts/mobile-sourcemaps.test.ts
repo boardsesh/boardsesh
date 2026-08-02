@@ -671,12 +671,16 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
       expect(step).toContain('vp run mobile:upload-sourcemaps');
     }
     expect((workflow.match(/^\s+SENTRY_AUTH_TOKEN:/gm) ?? []).length).toBe(2);
-    expect(workflowStep(workflow, 'Require every published OTA source-map upload')).toContain(
-      "steps.upload_sourcemaps_ios.outcome == 'failure'",
-    );
-    expect(workflowStep(workflow, 'Require every published OTA source-map upload')).toContain(
-      "steps.upload_sourcemaps_android.outcome == 'failure'",
-    );
+    for (const gateStepName of [
+      'Warn that published OTA source maps are missing',
+      'Require every published OTA source-map upload',
+    ]) {
+      const sourceMapGate = workflowStep(workflow, gateStepName);
+      for (const platform of ['ios', 'android']) {
+        expect(sourceMapGate).toContain(`steps.publish_${platform}.outcome == 'success'`);
+        expect(sourceMapGate).toContain(`steps.upload_sourcemaps_${platform}.outcome != 'success'`);
+      }
+    }
     const failureNotification = workflowStep(workflow, 'Notify deployments channel of failure');
     expect(failureNotification).toContain('Production OTA workflow failed');
     expect(failureNotification).not.toContain('Production OTA publish failed');
@@ -739,12 +743,19 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
     const uploadStep = workflowStep(workflow, 'Upload backport OTA source maps to Sentry');
     expect(uploadStep).toContain("!inputs.dry_run && steps.publish.outcome == 'success'");
     expect(uploadStep).toContain('continue-on-error: true');
+    expect(uploadStep).toContain('timeout-minutes: 10');
     expect(uploadStep).toContain('run: bun scripts/mobile-upload-sourcemaps.ts');
     expect((workflow.match(/^\s+SENTRY_AUTH_TOKEN:/gm) ?? []).length).toBe(1);
-    expect(workflowStep(workflow, 'Require the published backport source-map upload')).toContain('!inputs.dry_run');
+    const backportGate = workflowStep(workflow, 'Require the published backport source-map upload');
+    expect(backportGate).toContain('!inputs.dry_run');
+    expect(backportGate).toContain("steps.publish.outcome == 'success'");
+    expect(backportGate).toContain("steps.upload_sourcemaps.outcome != 'success'");
+    expect(workflowStep(workflow, 'Validate anchored Sentry uploader support')).toContain(
+      '.devDependencies["@sentry/react-native"]',
+    );
   });
 
-  it('generates but never uploads source maps or exposes a Sentry token in PR previews', () => {
+  it('never uploads source maps or exposes a Sentry token in PR previews', () => {
     const previewWorkflow = readRepositoryFile('.github/workflows/mobile-ota-preview.yml');
     expect(previewWorkflow).toContain('vp run mobile:publish');
     expect(previewWorkflow).not.toContain('mobile:upload-sourcemaps');

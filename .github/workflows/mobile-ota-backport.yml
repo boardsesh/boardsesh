@@ -243,7 +243,7 @@ jobs:
       - name: Validate anchored Sentry uploader support
         run: |
           set -euo pipefail
-          sentry_version="$(jq -r '.dependencies["@sentry/react-native"] // empty' packages/mobile/package.json)"
+          sentry_version="$(jq -r '.dependencies["@sentry/react-native"] // .devDependencies["@sentry/react-native"] // empty' packages/mobile/package.json)"
           if [ "$sentry_version" != "7.11.0" ]; then
             echo "::error::This anchor has @sentry/react-native $sentry_version; OTA source-map backports require exactly 7.11.0. Ship a native update instead."
             exit 1
@@ -315,6 +315,7 @@ jobs:
         id: upload_sourcemaps
         if: ${{ !inputs.dry_run && steps.publish.outcome == 'success' }}
         continue-on-error: true
+        timeout-minutes: 10
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           PLATFORM: ${{ matrix.platform }}
@@ -327,11 +328,11 @@ jobs:
         run: echo "::notice::dry_run — verified the fingerprint match for ${{ matrix.platform }} but skipped the publish. Re-run with dry_run unchecked to ship."
 
       - name: Warn that the published backport source maps are missing
-        if: ${{ always() && !inputs.dry_run && steps.upload_sourcemaps.outcome == 'failure' }}
-        run: echo "::warning::The ${{ matrix.platform }} backport OTA is live, but its Sentry source-map upload failed. Recreate the exact export before another eoas publish replaces dist."
+        if: ${{ always() && !inputs.dry_run && steps.publish.outcome == 'success' && steps.upload_sourcemaps.outcome != 'success' }}
+        run: echo "::warning::The ${{ matrix.platform }} backport OTA is live, but its Sentry source-map upload did not succeed. Recreate the exact export before another eoas publish replaces dist."
 
       - name: Require the published backport source-map upload
-        if: ${{ always() && !inputs.dry_run && steps.upload_sourcemaps.outcome == 'failure' }}
+        if: ${{ always() && !inputs.dry_run && steps.publish.outcome == 'success' && steps.upload_sourcemaps.outcome != 'success' }}
         run: |
           echo "::error::The published ${{ matrix.platform }} backport has no accepted Sentry source maps."
           exit 1

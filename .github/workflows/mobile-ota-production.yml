@@ -508,18 +508,20 @@ jobs:
       # red. The one Discord failure notification below includes both publish and
       # source-map outcomes, avoiding a second alert for this same failure.
       - name: Warn that published OTA source maps are missing
-        if: always() && (steps.upload_sourcemaps_ios.outcome == 'failure' || steps.upload_sourcemaps_android.outcome == 'failure')
+        if: always() && ((steps.publish_ios.outcome == 'success' && steps.upload_sourcemaps_ios.outcome != 'success') || (steps.publish_android.outcome == 'success' && steps.upload_sourcemaps_android.outcome != 'success'))
         env:
+          IOS_PUBLISH_OUTCOME: ${{ steps.publish_ios.outcome }}
+          ANDROID_PUBLISH_OUTCOME: ${{ steps.publish_android.outcome }}
           IOS_MAP_OUTCOME: ${{ steps.upload_sourcemaps_ios.outcome }}
           ANDROID_MAP_OUTCOME: ${{ steps.upload_sourcemaps_android.outcome }}
         run: |
           platforms=""
-          [ "$IOS_MAP_OUTCOME" = "failure" ] && platforms="iOS"
-          [ "$ANDROID_MAP_OUTCOME" = "failure" ] && platforms="${platforms:+$platforms, }Android"
-          echo "::warning::The $platforms OTA is live, but its Sentry source-map upload failed. Recreate the exact platform export before another eoas publish replaces dist."
+          [ "$IOS_PUBLISH_OUTCOME" = "success" ] && [ "$IOS_MAP_OUTCOME" != "success" ] && platforms="iOS"
+          [ "$ANDROID_PUBLISH_OUTCOME" = "success" ] && [ "$ANDROID_MAP_OUTCOME" != "success" ] && platforms="${platforms:+$platforms, }Android"
+          echo "::warning::The $platforms OTA is live, but its Sentry source-map upload did not succeed. Recreate the exact platform export before another eoas publish replaces dist."
 
       - name: Require every published OTA source-map upload
-        if: always() && (steps.upload_sourcemaps_ios.outcome == 'failure' || steps.upload_sourcemaps_android.outcome == 'failure')
+        if: always() && ((steps.publish_ios.outcome == 'success' && steps.upload_sourcemaps_ios.outcome != 'success') || (steps.publish_android.outcome == 'success' && steps.upload_sourcemaps_android.outcome != 'success'))
         run: |
           echo "::error::At least one published OTA has no accepted Sentry source maps."
           exit 1
