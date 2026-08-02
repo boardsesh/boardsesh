@@ -821,6 +821,40 @@ describe('social board update catalog gate', () => {
     expect(after).toEqual(before);
   });
 
+  it('rejects malformed submitted set IDs during input validation and preserves the row', async () => {
+    const board = await insertTestBoard({
+      ownerId: UPDATE_USER_ID,
+      layoutId: LAYOUT_ID,
+      sizeId: SIZE_ID,
+      setIds: String(SET_A_ID),
+      name: 'Before malformed rejection',
+    });
+    const [before] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+
+    let caughtError: unknown;
+    try {
+      await socialBoardMutations.updateBoard(
+        undefined,
+        {
+          input: {
+            boardUuid: board.uuid,
+            name: 'Must not save',
+            setIds: `${SET_A_ID}, ${SET_B_ID}`,
+          },
+        },
+        authCtx(UPDATE_USER_ID),
+      );
+    } catch (error) {
+      caughtError = error;
+    }
+
+    expect(caughtError).toBeInstanceOf(Error);
+    expect(caughtError).not.toBeInstanceOf(GraphQLError);
+    expect((caughtError as Error).message).toMatch(/comma-separated list of integers/);
+    const [after] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+    expect(after).toEqual(before);
+  });
+
   it('rejects a listed-but-unplaced partial config edit before the write and preserves the row', async () => {
     const board = await insertTestBoard({
       ownerId: UPDATE_USER_ID,

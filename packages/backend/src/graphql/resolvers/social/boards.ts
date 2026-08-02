@@ -58,7 +58,7 @@ function canonicalSetIdMembership(setIds: string): string | undefined {
   for (let index = 0; index <= setIds.length; index += 1) {
     const character = setIds[index];
     if (index < setIds.length && character !== ',') {
-      if (character === undefined || character < '0' || character > '9') return undefined;
+      if (character < '0' || character > '9') return undefined;
       continue;
     }
 
@@ -74,6 +74,7 @@ function canonicalSetIdMembership(setIds: string): string | undefined {
 
   return [...normalizedSetIds]
     .sort((firstSetId, secondSetId) => {
+      // Leading zeros are already stripped, so length then lexical order is numeric order without BigInt.
       const lengthDifference = firstSetId.length - secondSetId.length;
       if (lengthDifference !== 0) return lengthDifference;
       if (firstSetId < secondSetId) return -1;
