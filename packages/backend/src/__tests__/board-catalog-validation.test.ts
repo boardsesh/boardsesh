@@ -867,4 +867,163 @@ describe('social board update catalog gate', () => {
     expect(updated.sizeId).toBe(UNKNOWN_SIZE_ID);
     expect(updated.setIds).toBe(String(UNKNOWN_SET_ID));
   });
+
+  it('accepts an exact full legacy tuple as a metadata edit and preserves its raw config', async () => {
+    const board = await insertTestBoard({
+      ownerId: UPDATE_USER_ID,
+      layoutId: UNKNOWN_LAYOUT_ID,
+      sizeId: UNKNOWN_SIZE_ID,
+      setIds: String(UNKNOWN_SET_ID),
+      name: 'Legacy metadata',
+    });
+    const originalUpdatedAt = new Date('2026-01-01T00:00:00.000Z');
+    await db
+      .update(dbSchema.userBoards)
+      .set({ deletedAt: originalUpdatedAt, syncFrozenAt: null, updatedAt: originalUpdatedAt })
+      .where(eq(dbSchema.userBoards.id, board.id));
+
+    const updated = await socialBoardMutations.updateBoard(
+      undefined,
+      {
+        input: {
+          boardUuid: board.uuid,
+          name: 'Legacy metadata fixed',
+          layoutId: UNKNOWN_LAYOUT_ID,
+          sizeId: UNKNOWN_SIZE_ID,
+          setIds: String(UNKNOWN_SET_ID),
+        },
+      },
+      authCtx(UPDATE_USER_ID),
+    );
+    const [after] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+
+    expect(updated.name).toBe('Legacy metadata fixed');
+    expect(updated.layoutId).toBe(UNKNOWN_LAYOUT_ID);
+    expect(updated.sizeId).toBe(UNKNOWN_SIZE_ID);
+    expect(updated.setIds).toBe(String(UNKNOWN_SET_ID));
+    expect(after).toMatchObject({
+      deletedAt: null,
+      layoutId: UNKNOWN_LAYOUT_ID,
+      sizeId: UNKNOWN_SIZE_ID,
+      setIds: String(UNKNOWN_SET_ID),
+    });
+    expect(after.syncFrozenAt).toBeInstanceOf(Date);
+    expect(after.updatedAt.getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
+  });
+
+  it('treats reordered, duplicate, and leading-zero set IDs as the same legacy config', async () => {
+    const storedSetIds = `00${UNKNOWN_SET_ID},${UNKNOWN_SET_ID},${UNKNOWN_SET_ID + 1}`;
+    const board = await insertTestBoard({
+      ownerId: UPDATE_USER_ID,
+      layoutId: UNKNOWN_LAYOUT_ID,
+      sizeId: UNKNOWN_SIZE_ID,
+      setIds: storedSetIds,
+      name: 'Legacy set formatting',
+    });
+
+    const updated = await socialBoardMutations.updateBoard(
+      undefined,
+      {
+        input: {
+          boardUuid: board.uuid,
+          name: 'Legacy set formatting fixed',
+          layoutId: UNKNOWN_LAYOUT_ID,
+          sizeId: UNKNOWN_SIZE_ID,
+          setIds: `${UNKNOWN_SET_ID + 1},${UNKNOWN_SET_ID}`,
+        },
+      },
+      authCtx(UPDATE_USER_ID),
+    );
+    const [after] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+
+    expect(updated.setIds).toBe(storedSetIds);
+    expect(after.setIds).toBe(storedSetIds);
+  });
+
+  it('does not treat malformed stored set IDs as equivalent to a valid submission', async () => {
+    const board = await insertTestBoard({
+      ownerId: UPDATE_USER_ID,
+      layoutId: UNKNOWN_LAYOUT_ID,
+      sizeId: UNKNOWN_SIZE_ID,
+      setIds: `${UNKNOWN_SET_ID},legacy`,
+      name: 'Malformed legacy config',
+    });
+    const [before] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+
+    await expectUnknownBoardConfig(
+      socialBoardMutations.updateBoard(
+        undefined,
+        {
+          input: {
+            boardUuid: board.uuid,
+            name: 'Must not save',
+            layoutId: UNKNOWN_LAYOUT_ID,
+            sizeId: UNKNOWN_SIZE_ID,
+            setIds: String(UNKNOWN_SET_ID),
+          },
+        },
+        authCtx(UPDATE_USER_ID),
+      ),
+    );
+
+    const [after] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+    expect(after).toEqual(before);
+  });
+
+  it('does not canonicalize overlong stored numeric set IDs as valid submitted membership', async () => {
+    const overlongStoredSetIds = `${'0'.repeat(256)}1`;
+    const board = await insertTestBoard({
+      ownerId: UPDATE_USER_ID,
+      layoutId: UNKNOWN_LAYOUT_ID,
+      sizeId: UNKNOWN_SIZE_ID,
+      setIds: overlongStoredSetIds,
+      name: 'Overlong legacy config',
+    });
+    const [before] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+
+    await expectUnknownBoardConfig(
+      socialBoardMutations.updateBoard(
+        undefined,
+        {
+          input: {
+            boardUuid: board.uuid,
+            name: 'Must not save',
+            layoutId: UNKNOWN_LAYOUT_ID,
+            sizeId: UNKNOWN_SIZE_ID,
+            setIds: '1',
+          },
+        },
+        authCtx(UPDATE_USER_ID),
+      ),
+    );
+
+    const [after] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+    expect(after).toEqual(before);
+  });
+
+  it.each([
+    ['layout', { layoutId: LAYOUT_ID, sizeId: UNKNOWN_SIZE_ID, setIds: String(UNKNOWN_SET_ID) }],
+    ['size', { layoutId: UNKNOWN_LAYOUT_ID, sizeId: SIZE_ID, setIds: String(UNKNOWN_SET_ID) }],
+    ['set IDs', { layoutId: UNKNOWN_LAYOUT_ID, sizeId: UNKNOWN_SIZE_ID, setIds: String(SET_A_ID) }],
+  ])('rejects a genuine legacy %s config change and preserves the row', async (_fieldName, changedConfig) => {
+    const board = await insertTestBoard({
+      ownerId: UPDATE_USER_ID,
+      layoutId: UNKNOWN_LAYOUT_ID,
+      sizeId: UNKNOWN_SIZE_ID,
+      setIds: String(UNKNOWN_SET_ID),
+      name: 'Legacy config before rejection',
+    });
+    const [before] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+
+    await expectUnknownBoardConfig(
+      socialBoardMutations.updateBoard(
+        undefined,
+        { input: { boardUuid: board.uuid, name: 'Must not save', ...changedConfig } },
+        authCtx(UPDATE_USER_ID),
+      ),
+    );
+
+    const [after] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+    expect(after).toEqual(before);
+  });
 });

@@ -18,6 +18,7 @@ import {
   PopularBoardConfigsInputSchema,
   SerialNumberLookupSchema,
   RecordBoardSerialInputSchema,
+  NumericCsvSchema,
   UUIDSchema,
 } from '../../../validation/schemas';
 import { generateUniqueGymSlug, requireBoardGymLinkAccess, userCanEditGym } from './gyms';
@@ -41,6 +42,26 @@ function throwIfBoardSerialConflict(error: unknown): void {
       extensions: { code: 'BOARD_SERIAL_ALREADY_LINKED' },
     });
   }
+}
+
+/**
+ * Return canonical numeric set membership for comparison, without accepting
+ * malformed stored values as equivalent to a valid editor submission. Board
+ * rows predate the current input schema, so their raw set_ids text cannot be
+ * assumed to be valid decimal CSV.
+ */
+function canonicalSetIdMembership(setIds: string): string | undefined {
+  const parsedSetIds = NumericCsvSchema.safeParse(setIds);
+  if (!parsedSetIds.success) return undefined;
+
+  return [...new Set(parsedSetIds.data.split(',').map((setId) => BigInt(setId)))]
+    .sort((firstSetId, secondSetId) => {
+      if (firstSetId < secondSetId) return -1;
+      if (firstSetId > secondSetId) return 1;
+      return 0;
+    })
+    .map(String)
+    .join(',');
 }
 
 /**
@@ -1868,18 +1889,19 @@ export const socialBoardMutations = {
     // owner/admin may edit. Community moderators can fix outdated catalog boards.
     await requireBoardEditAccess(ctx, board);
 
-    // Config field changes (layoutId, sizeId, setIds). Authorized editors may
-    // change these even when the board has logged climbs — a config change
-    // reflects a real physical reconfiguration. Old boardsesh_ticks rows are
-    // left untouched: they keep referencing the climbs/config they were logged
-    // against. We do not delete, move, or modify any tick rows here.
-    const hasConfigChange =
-      validatedInput.layoutId !== undefined ||
-      validatedInput.sizeId !== undefined ||
-      validatedInput.setIds !== undefined;
+    // Editors submit the whole config tuple, including for metadata-only
+    // saves. Compare its effective meaning with the stored tuple instead of
+    // treating field presence as a physical reconfiguration. Stored malformed
+    // CSV intentionally has no canonical form, so it cannot bypass catalog
+    // validation when a config value is submitted.
     const newLayoutId = validatedInput.layoutId ?? board.layoutId;
     const newSizeId = validatedInput.sizeId ?? board.sizeId;
     const newSetIds = validatedInput.setIds ?? board.setIds;
+    const hasConfigChange =
+      (validatedInput.layoutId !== undefined && newLayoutId !== board.layoutId) ||
+      (validatedInput.sizeId !== undefined && newSizeId !== board.sizeId) ||
+      (validatedInput.setIds !== undefined &&
+        canonicalSetIdMembership(newSetIds) !== canonicalSetIdMembership(board.setIds));
 
     if (hasConfigChange) {
       await assertKnownBoardConfig(board.boardType, newLayoutId, newSizeId, newSetIds);
