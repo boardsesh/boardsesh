@@ -30,7 +30,10 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, w
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import ts from 'typescript';
+// TypeScript 7 is the native port and ships no JS compiler API, so the AST
+// walk runs on the pinned 6.x copy. See `typescript-compiler-api` in
+// packages/web/package.json.
+import ts from 'typescript-compiler-api';
 import rawAllowlist from './import-graph-allowlist.json';
 
 const WEB_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
