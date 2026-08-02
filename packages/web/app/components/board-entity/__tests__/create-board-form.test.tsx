@@ -1,9 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { render, act } from '@testing-library/react';
+import { render, act, screen } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
-import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import CreateBoardForm from '../create-board-form';
+
+// #4166. This used to look the user's boards up on EVERY create failure and call
+// anything with a matching config a duplicate — so a rate-limit or auth failure
+// reported itself as a duplicate whenever such a board happened to exist. The
+// server now says so explicitly with a BOARD_DUPLICATE_CONFIG code carrying the
+// existing board's identity, so the 20-page myBoards scan is gone and the branch
+// keys off the code alone.
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
@@ -13,41 +19,56 @@ vi.mock('react-i18next', () => ({
   Trans: ({ children }: { children?: React.ReactNode }) => children ?? null,
 }));
 
-const mockShowMessage = vi.fn();
+// vi.hoisted: the component is imported at the top of this file, which runs
+// these mock factories before a plain `const` on the line below would have
+// initialised. (CI also typechecks test files, so no spread-wrapped vi.fn.)
+const mockShowMessage = vi.hoisted(() => vi.fn());
 vi.mock('@/app/components/providers/snackbar-provider', () => ({
   useSnackbar: () => ({ showMessage: mockShowMessage }),
 }));
 
-vi.mock('@/app/hooks/use-ws-auth-token', () => ({
-  useWsAuthToken: vi.fn(),
-}));
-const mockUseWsAuthToken = vi.mocked(useWsAuthToken);
-
-const mockRequest = vi.fn();
-vi.mock('@/app/lib/graphql/client', () => ({
-  createGraphQLHttpClient: () => ({ request: mockRequest }),
-}));
-
+const mockPush = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/i18n/use-locale-router', () => ({
-  useLocaleRouter: () => ({ push: vi.fn() }),
+  useLocaleRouter: () => ({ push: mockPush }),
 }));
 
-let capturedOnError: ((error: unknown, serverMessage: string | null) => Promise<void>) | null = null;
+const mockTrack = vi.hoisted(() => vi.fn());
+vi.mock('@/app/lib/analytics', () => ({ track: mockTrack }));
+
+const mockExecute = vi.hoisted(() => vi.fn());
+const errorHolder = vi.hoisted(() => ({
+  onError: null as ((error: unknown, serverMessage: string | null) => Promise<void>) | null,
+}));
 vi.mock('@/app/hooks/use-entity-mutation', () => ({
   useEntityMutation: (_mutation: unknown, opts: { onError?: (e: unknown, s: string | null) => Promise<void> }) => {
-    capturedOnError = opts.onError ?? null;
-    return { execute: vi.fn(), token: 'test-token' };
+    errorHolder.onError = opts.onError ?? null;
+    return { execute: mockExecute };
   },
 }));
 
+// Exposes onSubmit so a test can drive a real submit — "add it anyway" replays
+// the values from the attempt that was refused, so it only means anything after
+// one.
+const SUBMIT_VALUES = {
+  name: 'Home Wall',
+  description: '',
+  locationName: 'Garage',
+  isPublic: true,
+  isUnlisted: false,
+  hideLocation: false,
+  isOwned: true,
+  angle: 40,
+};
 vi.mock('../board-form', () => ({
-  default: () => React.createElement('div', { 'data-testid': 'board-form' }),
+  default: ({ onSubmit }: { onSubmit: (values: typeof SUBMIT_VALUES) => void }) =>
+    React.createElement(
+      'button',
+      { 'data-testid': 'board-form', type: 'button', onClick: () => onSubmit(SUBMIT_VALUES) },
+      'submit form',
+    ),
 }));
 
-vi.mock('@boardsesh/graphql/operations', () => ({
-  CREATE_BOARD: 'CREATE_BOARD',
-  GET_MY_BOARDS: 'GET_MY_BOARDS',
-}));
+vi.mock('@boardsesh/graphql/operations', () => ({ CREATE_BOARD: 'CREATE_BOARD' }));
 
 const defaultProps = {
   boardType: 'kilter',
@@ -57,70 +78,93 @@ const defaultProps = {
   defaultAngle: 40,
 };
 
-const matchingBoard = {
-  name: 'Home Wall',
-  boardType: 'kilter',
-  layoutId: 1,
-  sizeId: 2,
-  setIds: 'set-1',
-  slug: 'home-wall',
-  angle: 40,
-};
+/** A graphql-request ClientError carrying the server's duplicate rejection. */
+function duplicateError(overrides: Record<string, unknown> = {}) {
+  return {
+    response: {
+      errors: [
+        {
+          message: 'You already have this board at this location',
+          extensions: {
+            code: 'BOARD_DUPLICATE_CONFIG',
+            existingBoardUuid: 'existing-uuid',
+            existingBoardName: 'Home Wall',
+            existingBoardSlug: 'home-wall',
+            existingBoardLocationName: 'Garage',
+            ...overrides,
+          },
+        },
+      ],
+    },
+  };
+}
 
 function renderAndGetOnError(props = defaultProps) {
   render(React.createElement(CreateBoardForm, props));
-  return capturedOnError!;
+  return errorHolder.onError!;
 }
 
 describe('CreateBoardForm — handleCreateError', () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks();
-    mockRequest.mockReset();
-    capturedOnError = null;
-    mockUseWsAuthToken.mockReturnValue({
-      token: 'test-token',
-      isAuthenticated: true,
-      isLoading: false,
-      error: null,
-    });
+    errorHolder.onError = null;
   });
 
-  it('shows duplicate snackbar with Go to your board action when match found', async () => {
+  it('opens the duplicate dialog naming the existing board', async () => {
     const onError = renderAndGetOnError();
-    mockRequest.mockResolvedValueOnce({
-      myBoards: { boards: [matchingBoard], hasMore: false, totalCount: 1 },
+
+    await act(async () => {
+      await onError(duplicateError(), 'You already have this board at this location');
+    });
+
+    expect(screen.getByText(/Home Wall/)).toBeTruthy();
+    // The dialog replaces the snackbar entirely: this needs three outcomes and
+    // the snackbar only has one action slot.
+    expect(mockShowMessage).not.toHaveBeenCalled();
+  });
+
+  it('offers "add it anyway", which retries with allowDuplicateConfig', async () => {
+    const onError = renderAndGetOnError();
+
+    // A real submit first: execute resolves undefined (the mutation hook swallows
+    // the failure and routes it to onError), which is what the server refusing a
+    // duplicate looks like from here.
+    await act(async () => {
+      screen.getByTestId('board-form').click();
+    });
+    expect(mockExecute).toHaveBeenCalledTimes(1);
+    expect(mockExecute.mock.calls[0][0].input.allowDuplicateConfig).toBeUndefined();
+
+    await act(async () => {
+      await onError(duplicateError(), null);
     });
 
     await act(async () => {
-      await onError(new Error('duplicate'), 'You already have a board with this configuration');
+      screen.getByText('Add it anyway').click();
     });
 
-    expect(mockShowMessage).toHaveBeenCalledTimes(1);
-    const [message, severity, action, duration] = mockShowMessage.mock.calls[0];
-    expect(severity).toBe('error');
-    expect(duration).toBe(8000);
-    expect(message).toContain('Home Wall');
-    expect(action).toMatchObject({ label: expect.any(String) });
+    expect(mockExecute).toHaveBeenCalledTimes(2);
+    // Same values, now with the user's confirmation attached.
+    expect(mockExecute.mock.calls[1][0].input).toMatchObject({
+      name: 'Home Wall',
+      locationName: 'Garage',
+      allowDuplicateConfig: true,
+    });
   });
 
-  it('falls back to serverMessage when no matching board found', async () => {
+  it('falls back to serverMessage for a NON-duplicate failure', async () => {
     const onError = renderAndGetOnError();
-    mockRequest.mockResolvedValueOnce({
-      myBoards: { boards: [], hasMore: false, totalCount: 0 },
-    });
 
     await act(async () => {
-      await onError(new Error('error'), 'server error message');
+      await onError(new Error('rate limited'), 'server error message');
     });
 
     expect(mockShowMessage).toHaveBeenCalledWith('server error message', 'error');
+    expect(screen.queryByText(/Home Wall/)).toBeNull();
   });
 
-  it('falls back to i18n error key when no match and no serverMessage', async () => {
+  it('falls back to the i18n error key when there is no serverMessage', async () => {
     const onError = renderAndGetOnError();
-    mockRequest.mockResolvedValueOnce({
-      myBoards: { boards: [], hasMore: false, totalCount: 0 },
-    });
 
     await act(async () => {
       await onError(new Error('error'), null);
@@ -132,57 +176,26 @@ describe('CreateBoardForm — handleCreateError', () => {
     );
   });
 
-  it('falls back to serverMessage when findBoardForConfig throws', async () => {
+  it('does not treat an unrelated error as a duplicate', async () => {
+    // The old behaviour: any error plus an owned board of this config read as a
+    // duplicate. Only the server's code decides now.
     const onError = renderAndGetOnError();
-    mockRequest.mockRejectedValueOnce(new Error('network failure'));
 
     await act(async () => {
-      await onError(new Error('error'), 'server error message');
+      await onError({ response: { errors: [{ extensions: { code: 'RATE_LIMITED' } }] } }, 'slow down');
+    });
+
+    expect(mockShowMessage).toHaveBeenCalledWith('slow down', 'error');
+    expect(screen.queryByText('Add it anyway')).toBeNull();
+  });
+
+  it('ignores a malformed duplicate payload with no board uuid', async () => {
+    const onError = renderAndGetOnError();
+
+    await act(async () => {
+      await onError(duplicateError({ existingBoardUuid: undefined }), 'server error message');
     });
 
     expect(mockShowMessage).toHaveBeenCalledWith('server error message', 'error');
-  });
-
-  it('skips board lookup and falls back to serverMessage when token is null', async () => {
-    mockUseWsAuthToken.mockReturnValue({
-      token: null,
-      isAuthenticated: false,
-      isLoading: false,
-      error: null,
-    });
-    const onError = renderAndGetOnError();
-
-    await act(async () => {
-      await onError(new Error('error'), 'server error message');
-    });
-
-    expect(mockRequest).not.toHaveBeenCalled();
-    expect(mockShowMessage).toHaveBeenCalledWith('server error message', 'error');
-  });
-
-  it('paginates until a match is found across multiple pages', async () => {
-    const onError = renderAndGetOnError();
-    // First page: no match, hasMore true
-    mockRequest.mockResolvedValueOnce({
-      myBoards: {
-        boards: [{ ...matchingBoard, boardType: 'tension', setIds: 'other' }],
-        hasMore: true,
-        totalCount: 51,
-      },
-    });
-    // Second page: contains the match
-    mockRequest.mockResolvedValueOnce({
-      myBoards: { boards: [matchingBoard], hasMore: false, totalCount: 51 },
-    });
-
-    await act(async () => {
-      await onError(new Error('duplicate'), 'You already have a board with this configuration');
-    });
-
-    expect(mockRequest).toHaveBeenCalledTimes(2);
-    const [message, severity, , duration] = mockShowMessage.mock.calls[0];
-    expect(severity).toBe('error');
-    expect(duration).toBe(8000);
-    expect(message).toContain('Home Wall');
   });
 });
