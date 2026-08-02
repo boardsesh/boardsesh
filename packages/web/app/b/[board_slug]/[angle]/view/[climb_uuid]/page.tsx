@@ -24,9 +24,6 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
 
   try {
     const board = await resolveBoardBySlug(params.board_slug);
-    // `boardBySlug` masks a board this viewer may not read as null, so the
-    // climb's name and description never reach an anonymous crawler for a
-    // board that shouldn't be readable at all.
     if (!board) {
       return createPageMetadata({
         title: t('metadata.view.fallbackTitle'),
@@ -58,9 +55,9 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
       locale,
       imagePath: ogImagePath,
       imageAlt: t('metadata.view.imageAlt', { climbName, grade: climbGrade, boardName: boardDetails.board_name }),
-      // Unlisted boards are link-only by design: keep the climb readable but
-      // out of the crawl. A private board only resolves for its owner or gym
-      // staff, never for a crawler, but keep it out of the index as well.
+      // Unlisted is link-only by design, and a private board is readable to a
+      // slug holder until #4087 masks it — neither belongs in the index. This
+      // is indexation only; it is not the access control, which #4087 owns.
       robots: board.isUnlisted || !board.isPublic ? { index: false, follow: true } : undefined,
     });
   } catch {

@@ -118,7 +118,7 @@ describe('board slug list metadata', () => {
     expect(canonicalOf(metadata)).toContain('/b/my-board/40/list');
   });
 
-  it('noindexes a private board that resolved for its owner', async () => {
+  it('noindexes a private board however it resolved', async () => {
     resolveBoardBySlug.mockResolvedValue(board({ isPublic: false }));
 
     const metadata = await generateMetadata();
@@ -126,20 +126,20 @@ describe('board slug list metadata', () => {
     expect(metadata.robots).toEqual({ index: false, follow: true });
   });
 
-  it('falls back to generic metadata when the backend masks the board — no name or canonical leak', async () => {
-    // What an anonymous request for a private board gets back: `boardBySlug`
-    // answers null, the same as a slug that does not exist.
+  it('falls back to generic metadata for an unresolvable slug — no name or canonical leak', async () => {
+    // `boardBySlug` answers null for a slug that does not exist, and will also
+    // answer null for a private board once #4087 masks it.
     resolveBoardBySlug.mockResolvedValue(null);
 
     const metadata = await generateMetadata();
 
     expect(metadata.alternates?.canonical).toBeUndefined();
-    expect(String(metadata.title)).not.toContain('my-board');
+    expect(JSON.stringify(metadata.title)).not.toContain('my-board');
   });
 });
 
-describe('board slug list page — masked board access', () => {
-  it('404s instead of rendering the list when the backend masks the board', async () => {
+describe('board slug list page — unresolvable board', () => {
+  it('404s instead of rendering the list when the slug does not resolve', async () => {
     const { notFound } = await import('next/navigation');
     vi.mocked(notFound).mockClear();
     resolveBoardBySlug.mockResolvedValue(null);

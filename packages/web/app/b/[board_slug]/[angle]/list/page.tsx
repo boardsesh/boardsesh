@@ -21,8 +21,6 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
 
   try {
     const board = await resolveBoardBySlug(params.board_slug);
-    // `boardBySlug` masks a board this viewer may not read as null, so a
-    // private board's name and description never reach an anonymous crawler.
     if (!board) {
       return createPageMetadata({
         title: t('metadata.list.fallbackTitle'),
@@ -33,9 +31,9 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
 
     const boardName = formatBoardDisplayName(board.boardType);
     const angle = params.angle;
-    // Unlisted boards are link-only by design. A private board only resolves
-    // for its owner or gym staff, never for a crawler, but keep it out of the
-    // index too so a signed-in render can't seed one.
+    // Unlisted is link-only by design, and a private board is readable to a
+    // slug holder until #4087 masks it — neither belongs in the index. This is
+    // indexation only; it is not the access control, which #4087 owns.
     const listShouldNoindex =
       board.isUnlisted || !board.isPublic || hasListFilterParams(searchParams as unknown as ListPageSearchParams);
 

@@ -1,7 +1,6 @@
 import { cache } from 'react';
 import type { ParsedBoardRouteParameters, BoardName } from '@/app/lib/types';
 import { getGraphQLHttpUrl } from '@/app/lib/graphql/client';
-import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 
 export type ResolvedBoard = {
   uuid: string;
@@ -27,15 +26,14 @@ export type ResolvedBoard = {
  * Resolve a board entity by its slug.
  * Uses React cache() to deduplicate within a single server request.
  *
- * The viewer's session token is forwarded so the backend can apply its own
- * read mask: `boardBySlug` returns null for a private board unless the caller
- * owns it or runs its linked gym. Sending the request anonymously would hide
- * every private board from its own owner, so pages must not assume this is an
- * anonymous read.
+ * This read is anonymous, and its result lands in a cross-user data cache, so
+ * treat every field it returns as disclosable to whoever holds the slug. That
+ * is what #4087 changes: it forwards the viewer's token and splits the cache so
+ * `boardBySlug` can mask a private board. Until it lands, `isPublic` here is
+ * only good enough to drive `noindex` — never to decide what a page renders.
  */
 export const resolveBoardBySlug = cache(async (slug: string): Promise<ResolvedBoard | null> => {
   const url = getGraphQLHttpUrl();
-  const authToken = await getServerAuthToken();
   const query = `
     query BoardBySlug($slug: String!) {
       boardBySlug(slug: $slug) {
@@ -61,15 +59,9 @@ export const resolveBoardBySlug = cache(async (slug: string): Promise<ResolvedBo
   try {
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, variables: { slug } }),
-      // Only the anonymous answer is shareable between viewers. An
-      // authenticated one can carry a private board plus per-viewer fields
-      // (isOwned), so it must never land in the cross-user data cache.
-      ...(authToken ? { cache: 'no-store' as const } : { next: { revalidate: 300 } }),
+      next: { revalidate: 300 }, // Cache for 5 minutes
     });
 
     if (!response.ok) {
