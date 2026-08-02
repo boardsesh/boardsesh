@@ -1,0 +1,644 @@
+{
+  "languageSwitcher": {
+    "ariaLabelWithCurrent": "Sprache: {{language}}"
+  },
+  "auth": {
+    "mustBeSignedIn": "Du musst angemeldet sein"
+  },
+  "mobile": {
+    "avatar": {
+      "viewProfile": "Profil von {{name}} ansehen",
+      "thisClimber": "dieser Person"
+    },
+    "more": {
+      "title": "Mehr",
+      "library": "Bibliothek",
+      "development": "Entwicklung",
+      "metroServersTitle": "Metro-Server",
+      "metroServersSubtitle": "Zwischen Tailnet-Bundlern wechseln",
+      "accessibility": {
+        "title": "Barrierefreiheit",
+        "description": "Wähle Griff-Farben und Marker-Formen, die sich leichter unterscheiden lassen. Farbänderungen wirken sich auch auf die Beleuchtung deiner Board aus (außer bei MoonBoards); Form, Größe und Strichstärke ändern nur die Anzeige in der App.",
+        "rowSubtitleShort": "Griff-Farben und -Formen für Farbsehschwächen",
+        "markersTitle": "Griff-Marker",
+        "resetAll": "Griff-Marker zurücksetzen",
+        "save": "Marker speichern",
+        "rowAccessibility": "{{role}}, {{mode}}",
+        "rowSubtitle": "{{colorMode}}, {{shape}}",
+        "pickerSubtitle": "Stell zuerst die Helligkeit ein, dann Sättigung und Farbton.",
+        "shapeLabel": "Form",
+        "modeLabel": "Farbmodus für Griffe",
+        "defaultCopy": "Boardsesh nutzt die Standardfarbe für diesen Grifftyp und überspringt ihn bei Bluetooth-Overrides.",
+        "hexLabel": "Hex",
+        "invalidHex": "Nutze einen Hex-Farbwert wie #33ccff.",
+        "mode": {
+          "default": "Standard",
+          "user": "Eigene Farbe"
+        },
+        "sliders": {
+          "lightness": "Helligkeit",
+          "saturation": "Sättigung",
+          "hue": "Farbton"
+        },
+        "shapes": {
+          "circle": "Kreis",
+          "triangleUp": "Dreieck nach oben",
+          "triangleDown": "Dreieck nach unten",
+          "square": "Quadrat",
+          "diamond": "Raute",
+          "octagon": "Achteck"
+        },
+        "preview": {
+          "title": "Vorschau",
+          "caption": "Deine Marker auf deiner Board. Die Farben erscheinen hier unverändert — mit dem Check unten siehst du, wie sie wirken."
+        },
+        "cvd": {
+          "title": "Farbsehschwäche-Check",
+          "subtitle": "Sieh dir an, wie deine Marker bei verschiedenen Farbsehschwächen aussehen, damit die vier Rollen gut unterscheidbar bleiben.",
+          "none": "Normal",
+          "deuteranopiaShort": "Deutan",
+          "protanopiaShort": "Protan",
+          "tritanopiaShort": "Tritan",
+          "compareHint": "Eine Simulation der Marker von oben — deine echten Farben bleiben so, wie du sie eingestellt hast."
+        },
+        "compare": {
+          "accessibility": "Vorschau der Farben für Griff-Rollen"
+        },
+        "brush": {
+          "title": "Strichstärke",
+          "subtitle": "Ändere, wie dick die Umrisse der Marker sind.",
+          "value": "{{value}}x",
+          "save": "Strichstärke speichern",
+          "rowAccessibility": "Strichstärke, {{value}}x"
+        },
+        "size": {
+          "title": "Markergröße",
+          "subtitle": "Ändere, wie groß die Marker-Formen sind.",
+          "value": "{{value}}x",
+          "save": "Größe speichern",
+          "rowAccessibility": "Markergröße, {{value}}x"
+        },
+        "roles": {
+          "starting": "Start",
+          "hand": "Mitte",
+          "finish": "Top",
+          "foot": "Fuß"
+        }
+      },
+      "storage": {
+        "title": "Speicher",
+        "rowLabel": "Speicher verwalten",
+        "rowSubtitle": "Sieh, wie viel deine Downloads belegen, und räum auf",
+        "intro": "Heruntergeladene Boards belegen Platz auf diesem Handy. Lösch die, auf denen du gerade nicht kletterst.",
+        "offNote": "Offline-Downloads sind gerade aus. Du kannst trotzdem löschen, was schon auf diesem Handy liegt.",
+        "totalLabel": "Offline-Boards",
+        "freeLabel": "Frei auf diesem Handy",
+        "boardsHeader": "Heruntergeladene Boards",
+        "reservedHeader": "Reservierter Speicher",
+        "reservedNote": "{{size}} von entfernten Boards sind noch auf diesem Handy belegt. Zum Freigeben braucht es Platz — bei wenig Speicher kann es fehlschlagen.",
+        "compact": "{{size}} freigeben",
+        "rowCaption_one": "Etwa {{size}} · {{count, number}} Boulder",
+        "rowCaption_other": "Etwa {{size}} · {{count, number}} Boulder",
+        "unknownScope": "Layout {{layoutId}} · Größe {{sizeId}}",
+        "keptOffline": "Offline verfügbar",
+        "notKeptOffline": "Nicht mehr offline verfügbar — belegt aber noch Platz",
+        "estimateNote": "Die Board-Größen sind Schätzungen. Zwei Größen desselben Layouts teilen sich ihre Boulder, deshalb ergeben sie zusammen nicht die Gesamtsumme.",
+        "remove": "Entfernen",
+        "removeAria": "{{name}} von diesem Handy entfernen",
+        "cancel": "Abbrechen",
+        "removeTitle": "{{name}} entfernen?",
+        "removeMessage": "Gibt etwa {{size}} frei und hält diese Board nicht mehr offline. Deine Begehungen und Playlists bleiben — hol sie dir jederzeit zurück.",
+        "removeConfirm": "Entfernen",
+        "removeError": "Diese Board ließ sich nicht entfernen. Versuch es nochmal.",
+        "compactFailed": "Die Boulder sind weg, aber die Datei ließ sich nicht verkleinern. Schaff etwas Platz und versuch es nochmal.",
+        "removeAll": "Alle Downloads entfernen",
+        "removeAllTitle": "Alle Downloads entfernen?",
+        "removeAllMessage": "Gibt etwa {{size}} frei und schaltet Downloads für alle Boards ab. Deine Begehungen und Playlists bleiben — sie hängen an deinem Konto, nicht an diesem Handy.",
+        "removeAllConfirm": "Alle entfernen",
+        "emptyTitle": "Noch nichts heruntergeladen",
+        "emptySubtitle": "Mach eine Board offline verfügbar, dann taucht sie hier auf.",
+        "errorTitle": "Deine Downloads ließen sich nicht messen",
+        "errorSubtitle": "Beim Lesen dessen, was auf diesem Handy liegt, kam etwas dazwischen.",
+        "errorRetry": "Nochmal versuchen"
+      },
+      "appearance": {
+        "title": "Darstellung",
+        "system": "System",
+        "light": "Hell",
+        "dark": "Dunkel"
+      },
+      "gradeFormat": {
+        "title": "Grad-Format",
+        "description": "Wähle, wie Grade in der ganzen App angezeigt werden.",
+        "vGrade": "V-Grad",
+        "font": "Französisch",
+        "both": "Beide"
+      },
+      "displayOptions": {
+        "title": "Anzeige",
+        "playlistTags": "Playlist-Tags anzeigen",
+        "playlistTagsDescription": "Sieh direkt in der Liste, in welchen Playlists ein Boulder steckt.",
+        "quickActionsButton": "Schnellaktionen-Button anzeigen",
+        "quickActionsButtonDescription": "Gibt jedem Boulder einen ⋮-Button für Warteschlange, Eintrag, Playlists und mehr. Langes Drücken geht weiterhin.",
+        "boardseshGrades": "Boardsesh-Grade anzeigen",
+        "boardseshGradesDescription": "Grade aus echten Begehungen über alle Boards hinweg. Bis genug Begehungen da sind, bleibt der Grad der Routenbauer*in."
+      },
+      "offline": {
+        "title": "Offline",
+        "autoDownload": "Boards offline halten",
+        "autoDownloadDescription": "Lade jede Board herunter, die du nutzt, damit du ohne Empfang stöbern und Begehungen eintragen kannst. Neue Boards laden automatisch.",
+        "downloadingAll_one": "1 Board wird für offline geladen",
+        "downloadingAll_other": "{{count}} Boards werden für offline geladen"
+      },
+      "language": {
+        "title": "Sprache",
+        "system": "System",
+        "description": "„System“ folgt der Sprache deines Geräts.",
+        "contributeTitle": "Hilf mit, Boardsesh zu übersetzen",
+        "contributeSubtitle": "Die Übersetzungen kommen aus der Community. Öffne die {{language}}-Dateien auf GitHub, um eine Formulierung zu korrigieren oder zu ergänzen."
+      },
+      "diagnostics": {
+        "title": "Privatsphäre",
+        "recording": "Hilf uns, besser zu werden",
+        "recordingDescription": "Sende anonyme, maskierte Session-Aufzeichnungen, damit wir Bugs schneller plattmachen. Deine Eingaben und Fotos bleiben verborgen. Du kannst es jederzeit abschalten."
+      },
+      "integrations": {
+        "title": "Verbundene Apps",
+        "subtitle": "Board-Konten, Apple Health",
+        "subtitleWithStrava": "Board-Konten, Apple Health, Strava"
+      },
+      "syncIssues": {
+        "title": "Sync-Probleme",
+        "description_one": "1 Änderung konnte nicht synchronisiert werden. Jetzt nochmal senden.",
+        "description_other": "{{count}} Änderungen konnten nicht synchronisiert werden. Jetzt nochmal senden.",
+        "retry": "Sync wiederholen"
+      },
+      "signOut": {
+        "pendingTitle": "Abmelden?",
+        "pendingMessage_one": "1 Änderung ist noch nicht synchronisiert. Beim Abmelden geht sie verloren.",
+        "pendingMessage_other": "{{count}} Änderungen sind noch nicht synchronisiert. Beim Abmelden gehen sie verloren.",
+        "confirm": "Abmelden",
+        "cancel": "Abbrechen",
+        "failureTitle": "Abmeldung nicht bestätigt",
+        "failure": "Boardsesh konnte die Abmeldung nicht bestätigen. Verbinde dich neu und melde dich nochmal ab, bevor du dieses Gerät aus der Hand gibst."
+      }
+    },
+    "about": {
+      "title": "Über",
+      "heroTitle": "Boardsesh",
+      "heroBody": "Steuere deine Board vom Handy: Boulder finden, Begehungen einreihen, die Wand beleuchten und die Session am Laufen halten.",
+      "sectionTitle": "Wofür Boardsesh da ist",
+      "whatItDoesTitle": "Klettern ohne App-Hopping",
+      "whatItDoesBody": "Suchen, einreihen, beleuchten, eintragen und teilen an einem Ort, während du an der Wand bleibst.",
+      "boardsTitle": "Für deine Boards",
+      "boardsBody": "Boardsesh unterstützt Sessions an deinem Kilter Board, Tension Board und MoonBoard, ohne sich als offizielle App auszugeben.",
+      "openTitle": "Offen entwickelt",
+      "openBody": "Das Projekt ist Open Source, damit Kletterer*innen Ecken und Kanten melden, Features vorschlagen und mitbestimmen können, was als Nächstes kommt.",
+      "independentBody": "Boardsesh steht in keiner Verbindung zu Aurora Climbing, Kilter, Tension, Moon Climbing oder einem anderen Board-Hersteller und wird von ihnen nicht unterstützt.",
+      "viewOnGithub": "Auf GitHub ansehen",
+      "joinDiscord": "Discord beitreten",
+      "partnerTitle": "Offiziell mit uns zusammenarbeiten",
+      "partnerBody": "Boardsesh arbeitet von außen mit Kilter, Tension und MoonBoard. Wenn du Boards baust und etwas Offizielles zusammen machen willst, reden wir gern.",
+      "acknowledgementsLink": "Danksagungen",
+      "acknowledgementsLinkBody": "Die Menschen hinter Boardsesh",
+      "changelogLink": "Neuigkeiten",
+      "changelogLinkBody": "Aktuelle Updates und Fixes"
+    },
+    "acknowledgements": {
+      "title": "Danksagungen",
+      "intro": "Boardsesh gibt es dank der Menschen, die es bauen, unterstützen und endloses Board-Gerede aushalten. Danke.",
+      "contributorsTitle": "Mitwirkende",
+      "contributorsBody": "Alle, die auf GitHub Code, Fixes und Ideen beigesteuert haben.",
+      "sponsorsTitle": "Sponsoren",
+      "sponsorsBody": "Kletterer*innen, die über GitHub Sponsors das Licht anlassen.",
+      "sponsorsEmpty": "Noch keine Sponsoren — willst du den Anfang machen?",
+      "privateSponsorsThanks": "und {{count}} weitere, die privat sponsern — auch euch danke",
+      "becomeSponsor": "Sponsor werden",
+      "personalTitle": "Persönlicher Dank",
+      "discordTitle": "Alle in unserem Discord",
+      "discordBody": "Danke für die Beta, die Motivation und die Bug-Reports. Tippen zum Beitreten.",
+      "friendsTitle": "Die Crew",
+      "friendsBody": "{{names}}, danke, dass ihr immer noch mit mir seshen wollt, obwohl ich alle zum Beta-Testen zwinge statt zum Klettern. Euer Feedback aus der Praxis hat Boardsesh wirklich die Richtung gegeben.",
+      "alexBody": "Für Design-Feedback im Ruhestand vom anderen Ende der Welt — hoffentlich kreuzen sich unsere Kletterwege irgendwann wieder.",
+      "dogBody": "Danke an Scout für die emotionale Unterstützung, sie ist die wahre MVP von Boardsesh. Und das, obwohl sie gar nicht klettert und einfach nur Strandhund sein will.",
+      "ossLicensesLink": "Open-Source-Lizenzen",
+      "ossLicensesBody": "Die Open-Source-Software, auf der Boardsesh aufbaut"
+    },
+    "licenses": {
+      "title": "Open-Source-Lizenzen",
+      "intro": "Boardsesh ist mit diesen Open-Source-Paketen gebaut. Danke an alle, die sie pflegen.",
+      "viewSource": "Quellcode ansehen",
+      "close": "Schließen"
+    },
+    "onboarding": {
+      "replaySection": "Rundgang",
+      "replayTitle": "Rundgang wiederholen",
+      "replaySubtitle": "Sieh dir den Rundgang nochmal an",
+      "replayError": "Der Rundgang ließ sich nicht öffnen. Versuch es nochmal.",
+      "prompt": {
+        "title": "Sieh live, was auf deiner Wand leuchtet",
+        "body": "Folge der Board in deiner Halle und Boardsesh zeigt, was gerade leuchtet: wer ihn beleuchtet hat, den Grad, wer ihn gebaut hat, die letzten Begehungen. Du startest nichts, es ist einfach da.",
+        "footnote": "Dazu Crew-Sessions, der Workout-Builder und deine Begehungen, sobald du an einer Wand stehst.",
+        "findBoard": "Meine Board finden",
+        "lookAround": "Erst mal umschauen"
+      },
+      "boardRevealTip": "Tippen, um zu sehen, was andere Boardsesh-Nutzer*innen auf der Wand beleuchtet haben.",
+      "quickActionsTip": "Drück lange auf einen Boulder für Schnellaktionen wie Warteschlange, Eintrag und Playlists.",
+      "tips": {
+        "workout": "Bau ein Workout: Volume, Pyramide, Leiter oder Grad-Fokus. Grad setzen, Runs vorab ansehen, einen nach dem anderen toppen.",
+        "crew": "Kletterst du mit anderen? Startet eine Session und teilt euch eine Warteschlange. Jede*r legt den nächsten Run auf, ohne das Handy weiterzureichen.",
+        "record": "Deine Begehungen landen unter Fortschritt im Diagramm: Gradverteilung und schwerste Begehung. Importier dein Kilter- und Tension-Routenbuch aus Aurora und starte mit deiner Historie.",
+        "accessory": "Die Leiste unten zeigt immer, was auf der Board liegt. Von dort wechselst du Boulder."
+      }
+    },
+    "nav": {
+      "home": "Start",
+      "boards": "Boards",
+      "climbs": "Boulder",
+      "wall": "An der Wand",
+      "profile": "Profil",
+      "holdFilter": "Grifftypen",
+      "zoneFilter": "Board-Bereich",
+      "setters": "Routenbauer*innen"
+    },
+    "changelog": {
+      "title": "Neuigkeiten",
+      "intro": "Aktuelle Updates und Fixes, neueste zuerst.",
+      "currentBuild": "Du bist auf dem Build vom {{date}}",
+      "currentBuildVersion": "Du bist auf Version {{version}}",
+      "category": {
+        "new": "Neu",
+        "improved": "Verbessert",
+        "fixed": "Behoben"
+      },
+      "viewPr": "Auf GitHub ansehen",
+      "empty": "Noch nichts eingetragen — wir waren zu sehr am Klettern. Schau nach der nächsten Begehung wieder rein.",
+      "nativeRelease": {
+        "title": "App-Update",
+        "appStore": "Eine neue Version ist im App Store gelandet.",
+        "playStore": "Eine neue Version ist im Play Store gelandet."
+      },
+      "checkForUpdates": "Nach Updates suchen",
+      "checking": "Wird geprüft…",
+      "downloading": "Wird geladen…",
+      "upToDate": {
+        "title": "Alles aktuell",
+        "message": "Du bist schon auf der neuesten Version."
+      },
+      "updateReady": {
+        "title": "Update bereit",
+        "message": "Boardsesh jetzt neu starten und die neueste Version nutzen?",
+        "restart": "Neu starten",
+        "later": "Später"
+      },
+      "checkError": {
+        "title": "Update-Suche fehlgeschlagen",
+        "message": "Beim Abrufen der neuesten Version ging etwas schief. Versuch es gleich nochmal."
+      }
+    },
+    "previewChannels": {
+      "screenTitle": "App-Previews",
+      "entryTitle": "Preview ausprobieren",
+      "intro": "Lade einen kommenden Pull Request und teste ihn vor dem Release. Beim Wechsel startet die App auf dieser Version neu; mit Zurücksetzen geht es zurück.",
+      "currentSection": "Aktuelle Version",
+      "buildChannelLabel": "Build-Channel",
+      "selectedChannelLabel": "Gewählter Channel",
+      "defaultValue": "{{channel}} (Standard)",
+      "runtimeVersionLabel": "Runtime-Version",
+      "unavailableNotice": "Previews brauchen einen TestFlight- oder App-Store-Build, deshalb ist Wechseln hier aus.",
+      "listSection": "Verfügbare Previews",
+      "productionTitle": "Produktion",
+      "productionSubtitle": "Die stabile Version, die alle nutzen",
+      "loading": "Previews werden geladen…",
+      "empty": "Gerade keine Previews zum Testen. Schau bald wieder rein.",
+      "error": "Previews ließen sich nicht laden. Versuch es gleich nochmal.",
+      "reset": "Auf {{channel}} zurücksetzen",
+      "confirmSwitchTitle": "Zu dieser Preview wechseln?",
+      "confirmSwitchMessage": "„{{label}}“ laden und neu starten? Dafür muss eine Preview für deine App-Version veröffentlicht sein.",
+      "confirmSwitchConfirm": "Wechseln",
+      "cancel": "Abbrechen",
+      "confirmResetTitle": "Zurück zu {{channel}}?",
+      "confirmResetMessage": "Preview verlassen und zurück zu „{{channel}}“? Die App startet neu.",
+      "confirmResetConfirm": "Zurücksetzen",
+      "switchFailedTitle": "Wechsel fehlgeschlagen",
+      "switchFailedFallback": "Wechsel nicht möglich. Dieser Build unterstützt vielleicht keine Previews.",
+      "restartTitle": "Zum Abschluss neu starten",
+      "restartSwitchMessage": "„{{label}}“ geladen. Starte die App neu, um darauf zu wechseln.",
+      "restartResetMessage": "Preview entfernt. Starte die App neu, um zu „{{channel}}“ zurückzukehren.",
+      "resetFailedTitle": "Zurücksetzen fehlgeschlagen",
+      "resetFailedReason": "Zurücksetzen nicht möglich.",
+      "resetFailedMessage": "{{reason}} Bleibt auf „{{channel}}“.",
+      "presetSection": "Weitere Channels",
+      "manualSection": "Channel manuell eingeben",
+      "manualHint": "Die Preview-Liste ließ sich nicht laden. Gib einen Channel-Namen ein (etwa pr-1234), um manuell zu wechseln.",
+      "manualPlaceholder": "Channel-Name",
+      "manualInputA11y": "Channel-Name zum Wechseln"
+    }
+  },
+  "lightControl": {
+    "title": "Licht",
+    "turnOffAll": "Alle Lichter ausschalten",
+    "partyMode": "Party-Modus",
+    "stopParty": "Party stoppen",
+    "partyUnsupported": "Party-Modus gibt es auf dieser Board nicht",
+    "discoMode": "Boulder als Disco",
+    "stopDisco": "Disco stoppen",
+    "discoNeedsClimb": "Lade einen Boulder, um die Disco zu starten",
+    "clearFailed": "Die Board ließ sich nicht leeren",
+    "lightShowFailed": "Die Board ist mitten in der Show weg. Verbinde neu und versuch es nochmal.",
+    "customizeColors": "LED-Farben anpassen",
+    "customizeColorsUnsupported": "Eigene Farben gibt es auf dieser Board nicht",
+    "customizeColorsTitle": "LED-Farben",
+    "customizeColorsHelp": "Wähle, in welchen Farben deine Board Hände, Füße und den Topgriff beleuchtet. Startgriffe bleiben standardmäßig grün.",
+    "resetColors": "Zurücksetzen",
+    "disconnect": "Board trennen",
+    "role": {
+      "HAND": "Hände",
+      "FOOT": "Füße",
+      "FINISH": "Top"
+    }
+  },
+  "bluetooth": {
+    "boardTaken": "Board weg — ein anderes Handy oder eine andere App hat sich verbunden.",
+    "takeItBack": "Zurückholen",
+    "boardNotFound": "Deine Board wurde nicht gefunden. Prüf, ob sie an und in Reichweite ist — und wenn ein anderes Handy verbunden ist, trenn dort zuerst.",
+    "connectFailed": "Verbindung fehlgeschlagen. Geh näher an die Board und versuch es nochmal.",
+    "serviceMissing": "Verbunden, aber die Board hat nicht geantwortet. Schalt sie aus und wieder ein und versuch es nochmal.",
+    "unavailable": "Bluetooth ist aus. Schalt es ein, um dich mit deiner Board zu verbinden.",
+    "unknownError": "Verbindung zu deiner Board fehlgeschlagen. Versuch es nochmal.",
+    "incompatibleClimb": "Dieser Boulder ist für eine andere Board, deshalb wurde er nicht beleuchtet.",
+    "unrecognisedHoldData": "Dieser Boulder hat unbekannte Griffdaten und lässt sich nicht auf der Board beleuchten.",
+    "ledDataMissing": "Beleuchten nicht möglich — für diese Board-Konfiguration fehlen die LED-Daten.",
+    "partialHoldsSkipped_one": "{{count}} Griff ließ sich nicht beleuchten — deine Board hat vielleicht eine andere Größe als die, für die dieser Boulder gebaut wurde.",
+    "partialHoldsSkipped_other": "{{count}} Griffe ließen sich nicht beleuchten — deine Board hat vielleicht eine andere Größe als die, für die dieser Boulder gebaut wurde.",
+    "allHoldsSkipped": "Kein einziger Griff dieses Boulders ließ sich beleuchten — er ist wohl für eine andere Board gebaut."
+  },
+  "actions": {
+    "yes": "Ja",
+    "no": "Nein",
+    "cancel": "Abbrechen",
+    "delete": "Löschen",
+    "edit": "Bearbeiten",
+    "close": "Schließen",
+    "back": "Zurück",
+    "next": "Weiter",
+    "done": "Fertig",
+    "retry": "Nochmal versuchen",
+    "loading": "Wird geladen...",
+    "clear": "Leeren"
+  },
+  "ariaLabels": {
+    "close": "Schließen",
+    "back": "Zurück",
+    "clearSearch": "Suche leeren",
+    "openFilters": "Filter öffnen",
+    "openQueue": "Warteschlange öffnen",
+    "openStatsFilters": "Statistik-Filter öffnen",
+    "shareProfile": "Profil teilen",
+    "settings": "Einstellungen",
+    "notifications": "Benachrichtigungen",
+    "searchClimbsByName": "Boulder nach Namen suchen",
+    "userMenu": "Nutzer*innen-Menü",
+    "toggleDarkMode": "Dunkelmodus umschalten",
+    "startClimbing": "In der App loslegen"
+  },
+  "boardSelector": {
+    "title": "Board auswählen"
+  },
+  "header": {
+    "you": "Du",
+    "profile": "Profil",
+    "statistics": "Statistiken",
+    "sessions": "Sessions",
+    "createdClimbs": "Gebaute Boulder",
+    "auroraMigration": "Aurora-Migration",
+    "searchPlaceholder": "Was willst du klettern?",
+    "searchClimbsPlaceholder": "Boulder suchen...",
+    "startClimbing": "Loslegen"
+  },
+  "share": {
+    "profileTitle": "Kletterprofil von {{name}}",
+    "profileText": "Schau dir das Kletterprofil von {{name}} auf Boardsesh an",
+    "fallbackName": "mir",
+    "viewedFallbackName": "dieser Person",
+    "linkCopied": "Link kopiert!",
+    "shareFailed": "Teilen fehlgeschlagen"
+  },
+  "myBoards": {
+    "title": "Meine Boards",
+    "findBoard": "Board finden",
+    "boardDetail": "Board",
+    "searchPlaceholder": "Nach Name oder Ort suchen...",
+    "ariaFindBoard": "Eine Board finden",
+    "ariaCreateBoard": "Eine Board anlegen",
+    "empty": "Noch keine Boards. Leg eine über die Board-Auswahl an und du bist startklar."
+  },
+  "myGyms": {
+    "title": "Meine Hallen",
+    "empty": "Deine Halle ist vielleicht schon auf Boardsesh. Finde sie und verwalte deine Boards und deine Crew.",
+    "findGym": "Deine Halle finden",
+    "ariaFindGym": "Deine Halle finden",
+    "roleOwner": "Inhaber*in",
+    "roleAdmin": "Admin",
+    "roleEditor": "Bearbeiter*in",
+    "roleMember": "Mitglied",
+    "manage": "Verwalten",
+    "view": "Ansehen",
+    "loadError": "Deine Hallen ließen sich nicht laden. Versuch es nochmal."
+  },
+  "userDrawer": {
+    "signIn": "Anmelden",
+    "signInModalTitle": "Bei Boardsesh anmelden",
+    "signInModalDescription": "Melde dich an, um Favoriten zu speichern, Begehungen einzutragen und mehr.",
+    "changeBoard": "Board wechseln",
+    "devUrl": "Dev-URL",
+    "development": "Entwicklung",
+    "devBuild": "Dev-Build",
+    "branch": "Branch",
+    "qaNotes": "QA-Notizen",
+    "qaNotesEmpty": "Keine QA-Notizen-Datei",
+    "classifyHolds": "Griffe klassifizieren",
+    "myPlaylists": "Meine Playlists",
+    "recentSessions": "Letzte Sessions",
+    "help": "Hilfe",
+    "about": "Über",
+    "whatsNew": "Neuigkeiten",
+    "newBadge": "Neu",
+    "rateBoardsesh": "Boardsesh bewerten",
+    "reportBug": "Bug melden",
+    "joinDiscord": "Discord beitreten",
+    "logout": "Abmelden",
+    "logoutError": "Abmelden hat nicht geklappt. Prüf deine Verbindung und versuch es nochmal."
+  },
+  "loading": {
+    "messages": [
+      "Deine Board wird eingerichtet...",
+      "Boulder werden zusammengestellt...",
+      "Die Wand wird vorbereitet...",
+      "Hold-Sets werden geladen...",
+      "Gleich geht's los...",
+      "Die LEDs wärmen sich auf...",
+      "Board-Konfiguration wird synchronisiert...",
+      "Schwierigkeitsgrade werden kalibriert...",
+      "Kletterlaune wird hochgefahren...",
+      "Zustand der Routen wird geprüft..."
+    ]
+  },
+  "emptyState": {
+    "default": "Keine Daten"
+  },
+  "comment": {
+    "placeholder": "Kommentar hinzufügen...",
+    "replyPlaceholder": "Antwort schreiben...",
+    "thoughtsPlaceholder": "Teil deine Gedanken...",
+    "shortPlaceholder": "Kommentieren...",
+    "submit": "Posten",
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "signInPrompt": "Melde dich an, um zu kommentieren.",
+    "discussionTitle": "Diskussion",
+    "empty": "Noch keine Kommentare. Sag was.",
+    "deleted": "[gelöscht]",
+    "edited": "(bearbeitet)",
+    "userFallback": "Nutzer*in",
+    "reply": "Antworten",
+    "showRepliesOne": "1 Antwort anzeigen",
+    "showRepliesMany": "{{count}} Antworten anzeigen",
+    "count_one": "{{count}} Kommentar",
+    "count_other": "{{count}} Kommentare",
+    "sort": {
+      "new": "Neu",
+      "top": "Top",
+      "controversial": "Umstritten",
+      "hot": "Angesagt"
+    },
+    "delete": {
+      "title": "Kommentar löschen",
+      "description": "Willst du diesen Kommentar wirklich löschen? Das lässt sich nicht rückgängig machen.",
+      "confirm": "Löschen",
+      "editAria": "Kommentar bearbeiten",
+      "deleteAria": "Kommentar löschen"
+    },
+    "errors": {
+      "post": "Kommentar konnte nicht gepostet werden",
+      "update": "Kommentar konnte nicht aktualisiert werden",
+      "delete": "Kommentar konnte nicht gelöscht werden",
+      "reply": "Antwort konnte nicht gepostet werden",
+      "loadReplies": "Antworten konnten nicht geladen werden"
+    }
+  },
+  "vote": {
+    "upvote": "Hochstimmen",
+    "downvote": "Runterstimmen",
+    "like": "Gefällt mir",
+    "unlike": "Gefällt mir nicht mehr",
+    "signInPrompt": "Melde dich an, um abzustimmen",
+    "failed": "Abstimmen fehlgeschlagen"
+  },
+  "proposal": {
+    "trigger": "Änderung vorschlagen",
+    "drawerTitle": "Vorschlag erstellen",
+    "submit": "Vorschlag erstellen",
+    "submitting": "Wird erstellt...",
+    "cancel": "Abbrechen",
+    "types": {
+      "grade": "Grad",
+      "classic": "Classic",
+      "benchmark": "Benchmark"
+    },
+    "fields": {
+      "angle": "Winkel",
+      "proposedGrade": "Vorgeschlagener Grad",
+      "proposedStatus": "Vorgeschlagener Status",
+      "reasonLabel": "Begründung (optional)",
+      "reasonPlaceholder": "Warum findest du diese Änderung nötig?",
+      "yes": "Ja",
+      "no": "Nein"
+    },
+    "hints": {
+      "classic": "Classic-Vorschläge gelten für alle Winkel.",
+      "benchmark": "Benchmark-Vorschläge gelten pro Winkel."
+    },
+    "outlierWarning": "Der Grad bei diesem Winkel wirkt im Vergleich zu den Nachbarwinkeln wie ein Ausreißer. Dieser Vorschlag wird eventuell automatisch angenommen, wenn er zu den Nachbarwerten passt.",
+    "validation": {
+      "signIn": "Melde dich an, um Vorschläge zu erstellen",
+      "signInToVote": "Melde dich an, um über Vorschläge abzustimmen",
+      "missingValue": "Bitte gib einen Vorschlagswert ein",
+      "sameGrade": "Der vorgeschlagene Grad entspricht dem aktuellen Grad",
+      "noData": "Vorschlag fehlgeschlagen: keine Daten zurückgegeben",
+      "failed": "Vorschlag konnte nicht erstellt werden",
+      "failedToVote": "Abstimmen fehlgeschlagen",
+      "failedToResolve": "Vorschlag konnte nicht abgeschlossen werden",
+      "failedToDelete": "Vorschlag konnte nicht gelöscht werden"
+    },
+    "created": "Vorschlag erstellt"
+  },
+  "follow": {
+    "follow": "Folgen",
+    "following": "Folgst du",
+    "unfollow": "Nicht mehr folgen"
+  },
+  "feedback": {
+    "title": "Gefällt dir Boardsesh?"
+  },
+  "betaVideos": {
+    "empty": "Noch keine Beta-Videos"
+  },
+  "moonboardImport": {
+    "removeConfirmTitle": "Diesen Boulder entfernen?"
+  },
+  "ascents": {
+    "deleteTitle": "Begehung löschen",
+    "deleteDescription": "Wirklich? Das lässt sich nicht rückgängig machen.",
+    "statusFlash": "Flash",
+    "statusSend": "Begehung",
+    "statusAttempt": "Versuch",
+    "flashed_one": "Geflasht",
+    "flashed_other": "{{count}} Flashes",
+    "sent_one": "Getoppt",
+    "sent_other": "{{count}} Begehungen",
+    "attempts_one": "1 Versuch",
+    "attempts_other": "{{count}} Versuche"
+  },
+  "board": {
+    "resetZoom": "Zoom zurücksetzen"
+  },
+  "playback": {
+    "play": "Abspielen",
+    "pause": "Pause",
+    "replay": "Nochmal",
+    "controls": "Wiedergabesteuerung",
+    "speed": "Geschwindigkeit",
+    "frameOfTotal": "Bild {{index}} von {{total}}",
+    "prevFrame": "Vorheriges Bild",
+    "nextFrame": "Nächstes Bild",
+    "speedHalf": "0,5×",
+    "speedNormal": "1×",
+    "speedCustom": "{{value}}×",
+    "speedCustomLabel": "Eigene Geschwindigkeit"
+  },
+  "capacitorRetirement": {
+    "title": "Boardsesh hat eine neue App",
+    "description": "Diese Version ist ausgemustert. Hol dir das neu gebaute Boardsesh — Routenbuch, Sessions und Crew kommen mit.",
+    "cta": "Neue App holen",
+    "fallbackCta": "Stattdessen die Store-Seite öffnen"
+  },
+  "otaPreview": {
+    "metadata": {
+      "title": "PR #{{number}} in der App testen",
+      "description": "Lade den Boardsesh-Preview-Build für Pull Request #{{number}} direkt in die App."
+    },
+    "eyebrow": "App-Preview",
+    "heading": "PR #{{number}} in Boardsesh testen",
+    "intro": "Dieser Pull Request ist als Preview-Build veröffentlicht. Lade ihn in die App, nimm ihn richtig ran und setz danach zurück.",
+    "openInApp": "In Boardsesh öffnen",
+    "openInAppHint": "Tipp hier auf dem Handy, auf dem Boardsesh installiert ist. Die App fragt vor dem Wechsel und startet dann mit der Preview neu.",
+    "qrDivider": "oder",
+    "qrHint": "Mit dem Handy scannen, um diese Seite dort zu öffnen.",
+    "notesHeading": "Gut zu wissen",
+    "noteBuild": "Previews brauchen einen TestFlight- oder App-Store-Build. Ein Dev-Build über Metro kann nicht wechseln.",
+    "noteNative": "Wenn dieser Pull Request nativen Code geändert hat, gibt es keine Preview — dafür braucht es einen frischen TestFlight- oder Play-Build.",
+    "noteManual": "Von Hand: Neuigkeiten → Preview ausprobieren → <code>{{channel}}</code>.",
+    "viewPullRequest": "Pull Request #{{number}} auf GitHub lesen"
+  }
+}

@@ -1,0 +1,193 @@
+{
+  "metadata": {
+    "dashboard": {
+      "title": "Du",
+      "description": "Dein Kletter-Dashboard auf Boardsesh"
+    },
+    "logbook": {
+      "title": "Routenbuch",
+      "description": "Dein Routenbuch auf Boardsesh"
+    },
+    "sessions": {
+      "title": "Sessions",
+      "description": "Deine Kletter-Sessions auf Boardsesh"
+    }
+  },
+  "tabs": {
+    "progress": "Fortschritt",
+    "sessions": "Sessions",
+    "logbook": "Routenbuch",
+    "social": "Social",
+    "climbs": "Boulder"
+  },
+  "progress": {
+    "title": "Fortschritt"
+  },
+  "mobile": {
+    "unknownName": "Kletterer*in",
+    "cancel": "Abbrechen",
+    "sessions": {
+      "weeklySends": "{{count}} Begehungen diese Woche",
+      "weekly": {
+        "sessions": "Sessions",
+        "sends": "Begehungen",
+        "flashes": "Flashes",
+        "attempts": "Versuche"
+      },
+      "streak": "{{count}} Wochen in Folge",
+      "sectionToday": "Heute",
+      "sectionThisWeek": "Diese Woche",
+      "sectionEarlier": "Früher",
+      "emptyTitle": "Noch keine Sessions",
+      "emptyBody": "Starte eine Session, dann landen deine Boulder hier.",
+      "emptyCta": "Session starten"
+    },
+    "progress": {
+      "empty": "Noch nichts eingetragen — deine Statistiken kommen, sobald du Boulder abhakst."
+    },
+    "social": {
+      "title": "Social",
+      "followers": "Follower",
+      "following": "Folge ich",
+      "findFriends": "Suchen",
+      "searchPlaceholder": "Kletterer*innen suchen",
+      "clearSearch": "Suche löschen",
+      "you": "Du",
+      "followAction": "Folgen",
+      "unfollowAction": "Entfolgen",
+      "followUser": "{{name}} folgen",
+      "unfollowUser": "{{name}} entfolgen",
+      "followerCount_one": "{{count}} Follower",
+      "followerCount_other": "{{count}} Follower",
+      "followingCount": "{{count}} gefolgt",
+      "recentAscents_one": "{{count}} Begehung diesen Monat",
+      "recentAscents_other": "{{count}} Begehungen diesen Monat",
+      "emptyFollowers": "Noch keine Follower",
+      "emptyFollowing": "Du folgst noch niemandem",
+      "searchHint": "Gib mindestens 2 Zeichen ein, um Kletterer*innen zu suchen",
+      "emptySearch": "Keine Kletterer*innen gefunden",
+      "emptySearchBody": "Keine Kletterer*innen passen zu „{{query}}“.",
+      "loadError": "Kletterer*innen konnten nicht geladen werden",
+      "retry": "Erneut versuchen",
+      "instagramLink": "Instagram",
+      "instagramOpenError": "Instagram konnte nicht geöffnet werden"
+    },
+    "profile": {
+      "title": "Profil",
+      "errorTitle": "Dieses Profil konnte nicht geladen werden",
+      "notFoundTitle": "Kletterer*in nicht gefunden",
+      "notFoundBody": "Wir konnten diese Person nicht finden.",
+      "noClimbs": "Noch keine Boulder erstellt",
+      "climbsError": "Boulder konnten nicht geladen werden",
+      "betaShelf": {
+        "title": "Beta-Videos",
+        "seeAll": "Alle ansehen",
+        "allTitle": "Beta-Videos",
+        "empty": "Noch keine Beta-Videos",
+        "emptyBody": "Beta, die diese*r Kletterer*in teilt, taucht hier auf."
+      }
+    },
+    "comments": {
+      "title": "Kommentare",
+      "empty": "Noch keine Kommentare — fang das Gespräch an",
+      "placeholder": "Kommentar hinzufügen …",
+      "sendError": "Dein Kommentar ging nicht raus. Versuch es noch mal."
+    },
+    "filter": {
+      "title": "Filter",
+      "timeRange": "Zeitraum",
+      "board": "Board",
+      "allBoards": "Alle Boards",
+      "all": "Alle",
+      "year": "Jahr",
+      "month": "Monat",
+      "week": "Woche",
+      "done": "Fertig"
+    },
+    "logbook": {
+      "empty": "Dein Routenbuch ist leer — trag deine erste Begehung ein.",
+      "emptyFiltered": "Keine Boulder passen zu diesen Filtern.",
+      "errorTitle": "Dein Routenbuch konnte nicht geladen werden",
+      "errorBody": "Prüf deine Verbindung und versuch es erneut.",
+      "retry": "Erneut versuchen",
+      "searchPlaceholder": "Deine Boulder durchsuchen",
+      "filter": "Filtern",
+      "sort": "Sortieren",
+      "refine": "Verfeinern",
+      "advanced": "Erweitert",
+      "preset": {
+        "latest": "Neueste",
+        "hardest": "Schwerste"
+      },
+      "flashOnly": "Nur Flash",
+      "grade": "Grad",
+      "angle": "Winkel",
+      "show": "Anzeigen",
+      "angleMin": "Min. Winkel",
+      "angleMax": "Max. Winkel",
+      "dateRange": "Zeitraum",
+      "dateFrom": "Von",
+      "dateTo": "Bis",
+      "dateAny": "Alle",
+      "dateSince": "Seit {{date}}",
+      "dateUntil": "Bis {{date}}",
+      "benchmarksOnly": "Nur Benchmarks",
+      "reset": "Zurücksetzen",
+      "editTitle": "Begehung bearbeiten",
+      "statusLabel": "Status",
+      "gradeLabel": "Grad",
+      "angleLabel": "Winkel",
+      "qualityLabel": "Sterne",
+      "triesLabel": "Versuche",
+      "dateLabel": "Datum",
+      "timeLabel": "Uhrzeit",
+      "futureTimeAdjusted": "Zeit in der Zukunft auf jetzt gesetzt.",
+      "commentLabel": "Kommentar",
+      "commentPlaceholder": "Wie lief's?",
+      "save": "Speichern",
+      "delete": "Löschen",
+      "deleteTitle": "Begehung löschen",
+      "deleteConfirm": "Das entfernt die eingetragene Begehung und lässt sich nicht rückgängig machen.",
+      "saveError": "Deine Änderungen konnten nicht gespeichert werden. Versuch es erneut.",
+      "deleteError": "Die Begehung konnte nicht gelöscht werden. Versuch es erneut.",
+      "tries_one": "{{count}} Versuch",
+      "tries_other": "{{count}} Versuche",
+      "status": {
+        "flash": "Flash",
+        "send": "Getoppt",
+        "attempt": "Versuch",
+        "sends": "Begehungen",
+        "attempts": "Versuche",
+        "both": "Beides"
+      },
+      "row": {
+        "project": "Projekt",
+        "stars": "{{count}}★",
+        "a11ySent": "Getoppt",
+        "a11yFlashed": "Geflasht",
+        "a11yCommunityGrade": "Community-Grad {{grade}}",
+        "a11yGradeDelta": "du hast {{logged}} vergeben, die Community sagt {{consensus}}",
+        "a11yStars": "mit {{count}} von 5 Sternen bewertet",
+        "a11yHasNote": "hat Notiz",
+        "a11yHasBetaVideo": "hat Beta-Video",
+        "a11yMirrored": "gespiegelt",
+        "editAction": "Eintrag bearbeiten",
+        "deleteAction": "Eintrag löschen",
+        "moreActions": "Weitere Aktionen"
+      },
+      "day": {
+        "today": "Heute",
+        "yesterday": "Gestern",
+        "climbs_one": "{{count}} Boulder",
+        "climbs_other": "{{count}} Boulder",
+        "sends_one": "{{count}} Begehung",
+        "sends_other": "{{count}} Begehungen",
+        "top": "max. {{grade}}"
+      },
+      "chooser": {
+        "editTitle": "Welchen Eintrag bearbeiten?",
+        "deleteTitle": "Welchen Eintrag löschen?"
+      }
+    }
+  }
+}

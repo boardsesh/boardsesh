@@ -1,0 +1,428 @@
+{
+  "metadata": {
+    "title": "{{gymName}} · Kiosk {{kioskName}}",
+    "description": "Live-Blick auf die Wand bei {{gymName}} — sieh, was beleuchtet ist und wer gerade abgeht.",
+    "fallbackTitle": "Hallen-Kiosk",
+    "fallbackDescription": "Live-Blick auf die Board für Kletterhallen."
+  },
+  "header": {
+    "reconnecting": "Verbindet neu…"
+  },
+  "setup": {
+    "title": "Dieser Kiosk ist noch nicht eingerichtet",
+    "body": "Häng auf der Verwaltungsseite deiner Halle eine Board an diesen Kiosk, dann taucht die Wand hier auf."
+  },
+  "retry": {
+    "title": "Boardsesh ist gerade nicht erreichbar",
+    "body": "Bleib dran — dieser Bildschirm verbindet sich von allein neu. Die Wand ist zurück, sobald wir es sind."
+  },
+  "board": {
+    "wallsOpen": "Wand ist frei",
+    "lastLit": "Zuletzt beleuchtet: {{name}}",
+    "litBy": "beleuchtet von {{name}}",
+    "unnamedClimb": "Boulder ohne Namen"
+  },
+  "installQr": {
+    "caption": "Scannen und an dieser Wand loggen"
+  },
+  "leaderboard": {
+    "periodSession": "Session-Rangliste",
+    "periodLast24h": "Letzte 24 Stunden",
+    "periodWeek": "Diese Woche",
+    "periodMonth": "Diesen Monat",
+    "allBoards": "Alle Boards",
+    "anonymous": "Anonyme*r Kletterer*in",
+    "sends_one": "Begehung",
+    "sends_other": "Begehungen",
+    "live": "Live",
+    "updatedAt": "Aktualisiert {{time}}",
+    "emptyTitle": "Noch niemand auf der Board",
+    "emptyBody": "Beleuchte einen Boulder und topp ihn — die Rangliste fängt mit dir an.",
+    "unavailableTitle": "Die Rangliste ist gerade außer Reichweite",
+    "unavailableBody": "Wir probieren weiter — die Platzierungen kommen von allein zurück."
+  },
+  "attribution": {
+    "poweredBy": "Läuft mit"
+  },
+  "embed": {
+    "metadata": {
+      "boardTitle": "{{boardName}} — Live-Blick auf die Board",
+      "boardDescription": "Sieh, was gerade auf {{boardName}} beleuchtet ist. Läuft mit Boardsesh.",
+      "boardFallbackTitle": "Live-Blick auf die Board",
+      "boardFallbackDescription": "Live-Widget für Kletterboards. Läuft mit Boardsesh.",
+      "leaderboardTitle": "{{gymName}} — Rangliste",
+      "leaderboardDescription": "Wer bei {{gymName}} toppt. Läuft mit Boardsesh.",
+      "leaderboardFallbackTitle": "Hallen-Rangliste",
+      "leaderboardFallbackDescription": "Widget für die Hallen-Rangliste. Läuft mit Boardsesh."
+    },
+    "leaderboard": {
+      "errorTitle": "Rangliste nicht verfügbar",
+      "errorBody": "Die neuesten Begehungen kamen nicht durch. Es probiert von allein weiter."
+    },
+    "boardButton": "Diese Board einbetten",
+    "railButton": "Rangliste einbetten",
+    "boardDialogTitle": "{{name}} einbetten",
+    "railDialogTitle": "Die Rangliste von {{name}} einbetten",
+    "copy": "Kopieren",
+    "copied": "In die Zwischenablage kopiert.",
+    "copyFailed": "Kopieren hat nicht geklappt — markier den Code und kopier ihn von Hand.",
+    "periodNote": "Der Parameter period nimmt day, week oder month.",
+    "docsHint": "Füg das in eine beliebige HTML-Seite ein — es bleibt live.",
+    "close": "Schließen",
+    "publicOnlyBoard": "Nur öffentliche Boards lassen sich einbetten.",
+    "publicOnlyGym": "Nur öffentliche Hallen können die Rangliste einbetten."
+  },
+  "gymPage": {
+    "metaTitle": "Kletterhalle {{gymName}}",
+    "metaDescription": "Sieh dir die Boards und die Live-Wand von {{gymName}} auf Boardsesh an.",
+    "breadcrumbHome": "Boardsesh",
+    "manageGym": "Halle verwalten",
+    "seeOnTheWall": "Sieh, was an der Wand hängt",
+    "boardsHeading": "Boards",
+    "boardCount_one": "{{count}} Board",
+    "boardCount_other": "{{count}} Boards",
+    "visitWebsite": "Website besuchen",
+    "noBoardsYet": "Hier sind noch keine Boards gelistet.",
+    "exploreFeed": "Sieh, was Kletterer*innen gerade toppen",
+    "claimTitle": "Ist das deine Halle?",
+    "claimBody": "Übernimm sie und steuere die Boards, den Auftritt und das, was an der Wand läuft.",
+    "claimCta": "Diese Halle übernehmen",
+    "owner": {
+      "linkBoards": {
+        "title": "Verknüpf deine Boards",
+        "body": "Kletterer*innen sehen hier noch keine Wand."
+      },
+      "putOnTv": {
+        "title": "Bring diese Wand auf einen TV",
+        "body": "Mach aus einem Bildschirm in deiner Halle eine Live-Anzeige der Board."
+      },
+      "addBranding": {
+        "title": "Bring dein Branding rein",
+        "body": "Füg Logo und Farben hinzu, damit die Seite nach dir aussieht."
+      }
+    }
+  },
+  "manage": {
+    "welcome": {
+      "title": "Bring deine Wand live",
+      "allDoneTitle": "Alles startklar",
+      "allDoneBody": "Deine Halle ist bereit. Schließ das, wann du magst.",
+      "progress": "{{done}} von {{total}} erledigt",
+      "dismiss": "Ausblenden",
+      "steps": {
+        "kiosk": {
+          "title": "Ab auf den TV",
+          "body": "Bau einen Kiosk für deine Wandanzeige"
+        },
+        "branding": {
+          "title": "Setz dein Branding",
+          "body": "Füg Logo und Farben hinzu"
+        },
+        "boards": {
+          "title": "Verknüpf deine Boards",
+          "body": "Häng die Wände deiner Halle rein"
+        },
+        "members": {
+          "title": "Hol deine Crew dazu",
+          "body": "Füg das Team und die Routenbauer*innen hinzu, die mitziehen"
+        }
+      }
+    },
+    "title": "{{gymName}} verwalten",
+    "backToGym": "Zurück zur Hallenseite",
+    "accessDenied": "Du hast keine Berechtigung, diese Halle zu verwalten.",
+    "tabs": {
+      "kiosks": "Kioske",
+      "branding": "Branding",
+      "boards": "Boards",
+      "members": "Mitglieder",
+      "insights": "Statistiken",
+      "overview": "Überblick",
+      "profile": "Profil",
+      "comments": "Kommentare"
+    },
+    "insights": {
+      "subtitle": "Wie deine Boards diese Woche im Vergleich zur letzten liefen.",
+      "uniqueClimbers": "Kletterer*innen",
+      "ascents": "Begehungen",
+      "busiestDay": "Stärkster Tag",
+      "byDay": "Begehungen pro Tag",
+      "byDayAria": "Begehungen pro Wochentag",
+      "topClimbs": "Woran gerade alle arbeiten",
+      "noTopClimbs": "Diese Woche noch keine Begehungen eingetragen.",
+      "unnamedClimb": "Boulder ohne Namen",
+      "ascentsCount_one": "{{count}} Begehung",
+      "ascentsCount_other": "{{count}} Begehungen",
+      "deltaUp": "+{{count}} zur Vorwoche",
+      "deltaDown": "−{{count}} zur Vorwoche",
+      "deltaFlat": "Wie in der Vorwoche",
+      "loadError": "Die Zahlen dieser Woche kamen nicht durch.",
+      "empty": {
+        "title": "Diese Woche keine Begehungen",
+        "body": "Zeit, die Wand neu zu schrauben? Sobald hier jemand eine Begehung einträgt, siehst du, wer da war und woran alle arbeiten."
+      }
+    },
+    "navGuard": {
+      "title": "Ungespeicherte Änderungen verwerfen?",
+      "body": "Auf diesem Tab liegen noch ungespeicherte Änderungen. Wenn du gehst, sind sie weg.",
+      "discard": "Verwerfen und gehen",
+      "stay": "Hier bleiben"
+    },
+    "slugGuard": {
+      "title": "Gib dieser Halle eine Webadresse",
+      "body": "Dein Kiosk und die öffentliche Hallenseite brauchen einen kurzen URL-Slug, bevor die jemand öffnen kann.",
+      "label": "URL-Slug",
+      "helper": "boardsesh.com/gym/{{slug}}",
+      "placeholder": "deine-halle",
+      "save": "Slug speichern",
+      "errorEmpty": "Gib einen Slug ein.",
+      "errorInvalid": "Nur Kleinbuchstaben, Zahlen und Bindestriche.",
+      "saved": "Slug gespeichert.",
+      "saveFailed": "Der Slug ließ sich nicht speichern."
+    },
+    "kiosks": {
+      "emptyTitle": "Richte einen Bildschirm auf deine Wand",
+      "emptyBody": "Ein Kiosk zeigt live, was auf deinen Boards beleuchtet ist — in jedem TV-Browser. Leg einen an, weis ihm deine Boards zu und öffne seine URL auf dem Bildschirm.",
+      "cta": "Kiosk einrichten",
+      "heading": "Kioske",
+      "description": "TV-Bildschirme, die deine Wände live zeigen. Jeder Kiosk hat seine eigene URL.",
+      "newKiosk": "Neuer Kiosk",
+      "capReached": "Eine Halle kann bis zu {{max}} Kioske haben.",
+      "needSlugHint": "Setz oben den URL-Slug deiner Halle — ohne ihn haben die Kioske keine Adresse, die ein TV öffnen kann.",
+      "loadError": "Die Kioske dieser Halle kamen nicht durch.",
+      "defaultBadge": "Standard",
+      "boardCount_one": "{{count}} Board",
+      "boardCount_other": "{{count}} Boards",
+      "railOn": "Rangliste an",
+      "railOff": "Keine Rangliste",
+      "openTv": "TV-Ansicht öffnen",
+      "openTvNeedsSlug": "Setz zuerst den URL-Slug deiner Halle (siehe Banner oben).",
+      "urlPending": "URL: /kiosk/…/{{slug}} — braucht den Hallen-Slug",
+      "edit": "Bearbeiten",
+      "delete": "Löschen",
+      "deleteTitle": "Diesen Kiosk löschen?",
+      "deleteBody": "„{{name}}“ geht aus: Jeder TV, der ihn zeigt, landet auf einer Nicht-gefunden-Seite. Das lässt sich nicht rückgängig machen.",
+      "deleteBodyDefault": "„{{name}}“ ist dein Standard-Kiosk: Ein TV auf der kurzen /kiosk-URL springt auf deinen nächstältesten Kiosk, TVs auf der eigenen URL dieses Kiosks landen auf einer Nicht-gefunden-Seite. Das lässt sich nicht rückgängig machen.",
+      "deleteConfirm": "Löschen",
+      "cancel": "Abbrechen",
+      "deleted": "Kiosk gelöscht.",
+      "deleteFailed": "Der Kiosk ließ sich nicht löschen.",
+      "liveness": {
+        "live": "Live",
+        "lastSeenMinutes_one": "Zuletzt gesehen vor {{count}} Minute",
+        "lastSeenMinutes_other": "Zuletzt gesehen vor {{count}} Minuten",
+        "lastSeenHours_one": "Zuletzt gesehen vor {{count}} Stunde",
+        "lastSeenHours_other": "Zuletzt gesehen vor {{count}} Stunden",
+        "noSignalDays_one": "Seit {{count}} Tag kein Signal",
+        "noSignalDays_other": "Seit {{count}} Tagen kein Signal",
+        "noSignalYet": "Noch kein Signal",
+        "reinstall": "Auf dem TV neu einrichten"
+      },
+      "reinstall": {
+        "title": "Bring diesen Bildschirm zurück",
+        "body": "Öffne diese URL im Browser des TVs, um „{{name}}“ zurückzuholen, oder scann sie mit dem Handy und schick sie rüber.",
+        "scanHint": "Scannen und auf dem Handy öffnen",
+        "openTv": "TV-Ansicht öffnen",
+        "close": "Fertig",
+        "noUrl": "Setz zuerst den URL-Slug deiner Halle — dann bekommt dieser Kiosk einen Link, den du auf jeden Bildschirm bringen kannst."
+      }
+    },
+    "boards": {
+      "heading": "Boards in dieser Halle",
+      "description": "Verknüpf die Boards, die dir gehören, damit sie auf deiner Hallenseite und in den Kiosken auftauchen.",
+      "addBoard": "Board hinzufügen",
+      "empty": "Noch keine Boards verknüpft. Füg eine hinzu, dann geht's los.",
+      "loadError": "Die Boards dieser Halle kamen nicht durch.",
+      "unlink": "Trennen",
+      "onlyOwnerCanUnlink": "Nur wem die Board gehört, kann sie trennen",
+      "readOnlyHint": "Nur Inhaber*innen oder Admins der Halle können Boards verknüpfen.",
+      "unlinkTitle": "Diese Board trennen?",
+      "unlinkBody": "\"{{name}}\" taucht dann nicht mehr auf der Seite und in den Kiosken dieser Halle auf. Du kannst sie jederzeit wieder verknüpfen.",
+      "unlinkConfirm": "Trennen",
+      "cancel": "Abbrechen",
+      "linked": "Board verknüpft.",
+      "linkFailed": "Die Board ließ sich nicht verknüpfen.",
+      "unlinked": "Board getrennt.",
+      "unlinkFailed": "Die Board ließ sich nicht trennen.",
+      "visibility": {
+        "public": "Öffentlich",
+        "unlisted": "Nicht gelistet",
+        "private": "Privat"
+      },
+      "addDialog": {
+        "title": "Eine deiner Boards hinzufügen",
+        "body": "Wähl eine Board, die dir gehört, und verknüpf sie mit dieser Halle.",
+        "empty": "Du hast keine Boards mehr übrig, die du verknüpfen könntest.",
+        "loading": "Deine Boards werden geladen…",
+        "link": "Verknüpfen",
+        "close": "Schließen"
+      },
+      "strays": {
+        "heading": "Boards, die dir gehören könnten",
+        "description": "Die stehen bei deiner Halle oder sind von einem zusammengeführten Eintrag abgefallen. Häng die dran, die hierher gehören.",
+        "reasonMerged": "Stand auf einem zusammengeführten Eintrag",
+        "reasonNearby": "{{meters}} m entfernt",
+        "reasonNearbyGeneric": "Gleich um die Ecke",
+        "onListing": "auf \"{{name}}\"",
+        "attach": "Zur Halle hinzufügen",
+        "attached": "Board zu deiner Halle hinzugefügt.",
+        "attachFailed": "Diese Board ließ sich nicht hinzufügen.",
+        "empty": "Gerade nichts Loses. Jede Board in der Nähe deiner Halle steht schon in deinem Eintrag.",
+        "loadError": "Konnte nicht nach herrenlosen Boards suchen.",
+        "retry": "Nochmal versuchen"
+      }
+    },
+    "presets": {
+      "single": "Eine Wand",
+      "dual": "Zwei Wände",
+      "triple": "Drei Wände",
+      "quad": "Vier Wände",
+      "none": "Noch keine Boards"
+    },
+    "createDialog": {
+      "title": "Neuer Kiosk",
+      "body": "Benenn ihn nach dem Ort des Bildschirms — „TV am Empfang“, „Kilter-Ecke“.",
+      "nameLabel": "Kiosk-Name",
+      "namePlaceholder": "TV an der Hauptwand",
+      "urlHint": "Die URL wird beim Anlegen vergeben.",
+      "create": "Kiosk anlegen",
+      "cancel": "Abbrechen",
+      "created": "Kiosk angelegt — seine URL endet auf /{{slug}}.",
+      "createFailed": "Der Kiosk ließ sich nicht anlegen."
+    },
+    "editor": {
+      "back": "Alle Kioske",
+      "save": "Layout speichern",
+      "saved": "Kiosk gespeichert.",
+      "saveFailed": "Der Kiosk ließ sich nicht speichern.",
+      "needSlug": "Setz den Hallen-Slug, damit dieser Kiosk seine URL bekommt",
+      "boardsHeading": "Boards auf diesem Bildschirm",
+      "boardsLoadError": "Die Boards dieser Halle kamen nicht durch. Lad die Seite neu und probier es nochmal.",
+      "slotLabel": "Platz {{index}}",
+      "slotUnknownBoard": "Diese Board steht nicht mehr in dieser Halle — nimm sie raus.",
+      "addBoard": "Board hinzufügen",
+      "addBoardHelper": "Die Reihenfolge der Plätze ist die Reihenfolge auf dem Bildschirm.",
+      "addBoardNoneLeft": "Jede Board der Halle hängt schon an diesem Kiosk.",
+      "addBoardFullHelper": "Ein Kiosk zeigt bis zu {{max}} Boards.",
+      "moveUp": "Nach oben",
+      "moveDown": "Nach unten",
+      "removeSlot": "Board entfernen",
+      "presetNoneHelper": "Füg eine Board hinzu, dann erscheint hier das TV-Layout.",
+      "quadRailHint": "Vier Boards plus Rangliste wird eng — jede Board bekommt auf einem 1080p-TV etwa 740×420 Pixel. Prüf in der Vorschau, ob man das quer durch die Halle noch liest.",
+      "leaderboardHeading": "Ranglisten-Leiste",
+      "railSwitch": "Rangliste anzeigen",
+      "railDisabledTooltip": "Weis erst mindestens eine Board zu — die Rangliste wertet die Begehungen auf den Boards dieses Kiosks aus.",
+      "scopeLabel": "Wertet Begehungen aus auf",
+      "scopeAll": "Allen Boards des Kiosks",
+      "periodLabel": "Zeitfenster",
+      "period": {
+        "session": "Session",
+        "day": "Letzte 24 Stunden",
+        "week": "Woche",
+        "month": "Monat"
+      },
+      "previewHeading": "Live-Vorschau",
+      "previewHint": "Das ist die echte Kiosk-Darstellung — Begehungen tauchen live auf, und ungespeicherte Änderungen siehst du sofort.",
+      "previewMissingBoard": "Diese Board steht nicht mehr in dieser Halle",
+      "previewUnavailable": "{{name}} lässt sich hier nicht darstellen",
+      "slotDuplicateError": "Diese Board liegt schon auf einem anderen Platz.",
+      "scopeInvalidError": "Wähl eine der Boards dieses Kiosks.",
+      "installQrHeading": "QR-Code zur App-Installation",
+      "installQrSwitch": "QR-Code zur App-Installation auf jeder Board zeigen",
+      "installQrHelper": "Jede Board zeigt einen Code, den Kletterer*innen scannen, um sich Boardsesh zu holen und ihre Begehungen an dieser Wand einzutragen.",
+      "discardTitle": "Änderungen verwerfen?",
+      "discardBody": "Deine Layout-Änderungen sind noch nicht gespeichert.",
+      "keepEditing": "Weiter bearbeiten",
+      "discard": "Verwerfen"
+    },
+    "overview": {
+      "quickLinksHeading": "Deine Halle steuern",
+      "viewPublicPage": "Öffentliche Seite ansehen",
+      "embedAction": "Auf deiner Website einbetten",
+      "stats": {
+        "boards": "Boards",
+        "members": "Mitglieder",
+        "followers": "Follower",
+        "kiosks": "Kioske"
+      },
+      "quickLinks": {
+        "kiosks": {
+          "title": "Ab auf den TV",
+          "body": "Bau eine Wandanzeige für deine Halle"
+        },
+        "branding": {
+          "title": "Setz deine Farben",
+          "body": "Füg Logo und Markenfarben hinzu"
+        },
+        "boards": {
+          "title": "Verknüpf deine Boards",
+          "body": "Häng die Wände deiner Halle rein"
+        },
+        "members": {
+          "title": "Hol deine Crew dazu",
+          "body": "Füg das Team und die Routenbauer*innen hinzu, die die Halle schmeißen"
+        },
+        "insights": {
+          "title": "Sieh die Woche in Zahlen",
+          "body": "Wer klettert und was getoppt wird"
+        },
+        "profile": {
+          "title": "Profil bearbeiten",
+          "body": "Name, Adresse, Website und Sichtbarkeit"
+        }
+      }
+    },
+    "profile": {
+      "heading": "Hallenprofil",
+      "description": "Name und Adresse deiner Halle und das, was Kletterer*innen auf der öffentlichen Seite sehen."
+    },
+    "comments": {
+      "intro": "Antworte im Kommentar-Thread deiner Halle, ohne die Konsole zu verlassen.",
+      "heading": "Was deine Crew sagt"
+    }
+  },
+  "branding": {
+    "logo": {
+      "heading": "Hallen-Logo",
+      "description": "Erscheint im Kiosk-Header und in Einbettungen. Transparente PNGs machen sich auf dem dunklen TV am besten.",
+      "upload": "Logo hochladen",
+      "replace": "Logo ersetzen",
+      "remove": "Entfernen",
+      "removed": "Logo entfernt.",
+      "uploaded": "Logo gespeichert.",
+      "uploadFailed": "Das Logo ließ sich nicht hochladen.",
+      "saveFailed": "Das Logo ließ sich nicht speichern.",
+      "tooLarge": "Die Datei ist größer als 10 MB. Nimm ein kleineres Bild.",
+      "uploadTooLarge": "Die Datei ist größer als 2 MB, und animierte GIFs lassen sich hier nicht verkleinern. Nimm eine kleinere.",
+      "unsupportedType": "Nimm ein JPG-, PNG-, GIF- oder WebP-Bild.",
+      "currentAlt": "Logo von {{gymName}}",
+      "emptyPlaceholder": "Kein Logo",
+      "formatsHint": "JPG, PNG, GIF oder WebP. Wird auf 512 px skaliert — Transparenz bleibt."
+    },
+    "colors": {
+      "heading": "Markenfarben",
+      "description": "Dein Kiosk bleibt dunkel; diese Farben setzen die Akzente auf Grad-Chips und Highlights.",
+      "primary": "Primärfarbe",
+      "accent": "Akzentfarbe",
+      "invalidHex": "Nimm einen Hex-Wert im Format #RRGGBB.",
+      "contrastWarning": "{{colors}}: auf dem dunklen Kiosk-Bildschirm schwer zu lesen (unter 3:1 Kontrast). Der Kiosk hellt die Farbe automatisch auf, bis sie lesbar ist.",
+      "save": "Farben speichern",
+      "saved": "Farben gespeichert.",
+      "saveFailed": "Die Farben ließen sich nicht speichern.",
+      "unsavedHint": "Ungespeicherte Änderungen"
+    },
+    "preview": {
+      "heading": "Kiosk-Vorschau",
+      "sampleChip": "Akzent-Beispiel",
+      "poweredByNote": "Das Badge „Läuft mit Boardsesh“ steht auf jedem Kiosk und in jeder Einbettung und lässt sich nicht entfernen."
+    },
+    "reset": {
+      "button": "Branding auf Standard zurücksetzen",
+      "title": "Branding zurücksetzen?",
+      "body": "Löscht dein Logo und alle drei Farben. Kioske und Einbettungen sehen wieder aus wie Boardsesh.",
+      "confirm": "Zurücksetzen",
+      "cancel": "Abbrechen",
+      "done": "Branding zurückgesetzt."
+    }
+  }
+}

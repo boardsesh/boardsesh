@@ -1,0 +1,556 @@
+{
+  "metadata": {
+    "settings": {
+      "title": "Einstellungen",
+      "description": "Verwalte dein Boardsesh-Konto, dein Profil und deine Einstellungen"
+    }
+  },
+  "title": "Einstellungen",
+  "loading": {
+    "profileError": "Profil konnte nicht geladen werden"
+  },
+  "profile": {
+    "title": "Profil",
+    "subtitle": "Leg fest, wie du auf Boardsesh erscheinst",
+    "editAction": "Profil bearbeiten",
+    "avatar": {
+      "label": "Avatar",
+      "upload": "Hochladen",
+      "change": "Ändern",
+      "remove": "Entfernen",
+      "hint": "JPG, PNG, GIF oder WebP. Bis 10 MB — wird automatisch komprimiert.",
+      "hintMobile": "Wird automatisch quadratisch zugeschnitten und komprimiert.",
+      "permissionDenied": "Erlaube den Fotozugriff in den Einstellungen, um einen Avatar zu wählen."
+    },
+    "displayName": {
+      "label": "Anzeigename",
+      "placeholder": "Gib deinen Anzeigenamen ein"
+    },
+    "instagram": {
+      "label": "Instagram-Profil",
+      "placeholder": "https://instagram.com/username"
+    },
+    "email": {
+      "label": "E-Mail",
+      "help": "Die E-Mail-Adresse lässt sich nicht ändern"
+    },
+    "save": "Änderungen speichern",
+    "saved": "Einstellungen gespeichert",
+    "saveError": "Einstellungen konnten nicht gespeichert werden",
+    "validation": {
+      "displayNameTooLong": "Der Anzeigename muss kürzer als 100 Zeichen sein",
+      "invalidInstagramUrl": "Gib bitte eine gültige Instagram-Profil-URL ein",
+      "invalidImageType": "Nur JPG-, PNG-, GIF- und WebP-Bilder sind erlaubt",
+      "imageTooLarge": "Das Bild muss kleiner als 10 MB sein",
+      "compressionFailed": "Komprimieren hat nicht geklappt — probier ein kleineres Bild"
+    },
+    "avatarUploadFailed": "Avatar-Upload fehlgeschlagen"
+  },
+  "preferences": {
+    "title": "Anzeige",
+    "subtitle": "Leg fest, wie Grade und andere Daten angezeigt werden",
+    "gradeFormat": {
+      "label": "Format der Gradangabe",
+      "vGrade": "V-Grade (V3, V6, ...)",
+      "font": "Font (6A, 7C+, ...)"
+    },
+    "appleHealth": {
+      "label": "Apple Health",
+      "switchLabel": "Sessions automatisch in Apple Health speichern",
+      "subtitle": "Schalt das aus, um Sessions nur zu speichern, wenn du auf „In Apple Health speichern“ tippst."
+    }
+  },
+  "logbook": {
+    "title": "Dein Routenbuch",
+    "subtitle": "Sieh dir deine eingetragenen Boulder an und filtere sie"
+  },
+  "deleteAccount": {
+    "title": "Konto löschen",
+    "warning": "Löscht dein Konto und alle zugehörigen Daten endgültig. Das lässt sich nicht rückgängig machen.",
+    "button": "Konto löschen",
+    "dialog": {
+      "title": "Dein Konto löschen?",
+      "warning": "Das ist endgültig. Dein Profil, deine Boulder-Entwürfe, deine Routenbuch-Einträge und alle weiteren Daten werden gelöscht und lassen sich nicht wiederherstellen.",
+      "checking": "Wir prüfen deine Boulder...",
+      "publishedClimbs_one": "Du hast <strong>{{count}}</strong> veröffentlichten Boulder, der nach dem Löschen erhalten bleibt.",
+      "publishedClimbs_other": "Du hast <strong>{{count}}</strong> veröffentlichte Boulder, die nach dem Löschen erhalten bleiben.",
+      "removeSetterName": "Meinen Namen als Routenbauer*in von veröffentlichten Bouldern entfernen",
+      "confirmInstruction": "Tippe <strong>DELETE</strong> zum Bestätigen.",
+      "confirmPlaceholder": "DELETE",
+      "cancel": "Abbrechen",
+      "confirm": "Mein Konto löschen"
+    },
+    "error": "Konto konnte nicht gelöscht werden. Versuch es nochmal."
+  },
+  "password": {
+    "enabledTitle": "Login mit E-Mail und Passwort",
+    "enabledDescription": "Der Passwort-Login ist für {{email}} aktiv",
+    "title": "Login mit E-Mail und Passwort",
+    "description": "Leg ein Passwort fest, um dich mit deiner E-Mail-Adresse anzumelden. Praktisch für Browser, die die Google-Anmeldung nicht unterstützen (z. B. in der Boardsesh-iOS-App).",
+    "linkedProviderInfo_one": "Du bist gerade mit {{providers}} angemeldet. Ein Passwort zu setzen ändert nichts an deinem {{providers}}-Login.",
+    "linkedProviderInfo_other": "Du bist gerade mit {{providers}} angemeldet. Ein Passwort zu setzen ändert nichts an deinem Social-Login.",
+    "passwordLabel": "Passwort",
+    "passwordPlaceholder": "Passwort (mind. 8 Zeichen)",
+    "confirmLabel": "Passwort bestätigen",
+    "confirmPlaceholder": "Passwort bestätigen",
+    "submit": "Passwort setzen",
+    "success": "Passwort gesetzt! Du kannst dich jetzt mit E-Mail und Passwort anmelden.",
+    "validation": {
+      "enterPassword": "Gib bitte ein Passwort ein",
+      "tooShort": "Das Passwort muss mindestens 8 Zeichen haben",
+      "tooLong": "Das Passwort muss kürzer als 128 Zeichen sein",
+      "confirmRequired": "Bestätige bitte dein Passwort",
+      "mismatch": "Die Passwörter stimmen nicht überein",
+      "saveError": "Passwort konnte nicht gesetzt werden",
+      "retryError": "Passwort konnte nicht gesetzt werden. Versuch es nochmal."
+    }
+  },
+  "controllers": {
+    "title": "ESP32-Controller",
+    "subtitle": "Registriere ESP32-Geräte, um deine Board über eine Bluetooth-Bridge zu steuern. Damit kannst du Boardsesh zusammen mit den offiziellen Kilter-/Tension-Apps nutzen.",
+    "empty": "Keine Controller registriert. Füg einen ESP32 hinzu, um Boardsesh mit den offiziellen Apps zu nutzen.",
+    "add": "Controller hinzufügen",
+    "card": {
+      "unnamed": "Controller ohne Namen",
+      "board": "Board:",
+      "layout": "Layout:",
+      "layoutValue": "{{layoutId}} / Größe {{sizeId}}",
+      "lastSeen": "Zuletzt gesehen:",
+      "delete": "Controller löschen",
+      "deleteConfirm": {
+        "title": "Controller löschen",
+        "description": "Willst du diesen Controller wirklich löschen? Das lässt sich nicht rückgängig machen.",
+        "ok": "Ja, löschen",
+        "cancel": "Abbrechen"
+      }
+    },
+    "status": {
+      "online": "Online",
+      "offline": "Offline",
+      "neverConnected": "Nie verbunden",
+      "never": "Nie",
+      "justNow": "Gerade eben",
+      "minutesAgo_one": "vor {{count}} Minute",
+      "minutesAgo_other": "vor {{count}} Minuten",
+      "hoursAgo_one": "vor {{count}} Stunde",
+      "hoursAgo_other": "vor {{count}} Stunden"
+    },
+    "register": {
+      "title": "ESP32-Controller registrieren",
+      "description": "Registriere einen neuen ESP32-Controller, damit er LED-Befehle von Boardsesh bekommt. Du erhältst einen API-Key, den du auf dem Gerät hinterlegst.",
+      "nameLabel": "Controller-Name (optional)",
+      "namePlaceholder": "z. B. Board im Wohnzimmer",
+      "boardLabel": "Board-Typ",
+      "layoutLabel": "Layout",
+      "sizeLabel": "Größe",
+      "setsLabel": "Griff-Sets",
+      "submit": "Controller registrieren",
+      "submitting": "Wird registriert...",
+      "registerError": "Controller konnte nicht registriert werden"
+    },
+    "apiKey": {
+      "title": "Controller registriert",
+      "warningTitle": "Sichere diesen API-Key jetzt!",
+      "warning": "Du siehst diesen Key nur dieses eine Mal. Wenn er weg ist, musst du den Controller löschen und neu registrieren.",
+      "registered": "Dein Controller <strong>{{name}}</strong> ist registriert.",
+      "instruction": "Trag diesen API-Key in deiner ESP32-Konfiguration ein:",
+      "copy": "API-Key kopieren",
+      "done": "Fertig",
+      "copySuccess": "API-Key in die Zwischenablage kopiert",
+      "copyError": "Kopieren hat nicht geklappt – markier den Key und kopier ihn von Hand"
+    },
+    "deleteSuccess": "Controller gelöscht",
+    "deleteError": "Controller konnte nicht gelöscht werden"
+  },
+  "aurora": {
+    "title": "Board-Konten",
+    "subtitle": "Verknüpf deine Board-Konten, um deine Aurora-Daten nach Boardsesh zu holen, oder importier eine JSON-Exportdatei. Wir holen dein Routenbuch, deine Begehungen und deine Boulder alle 12 Stunden automatisch VON Aurora. Was in Boardsesh entsteht, bleibt hier und wandert nicht zurück zu Aurora.",
+    "card": {
+      "boardSuffix": "Board",
+      "username": "Benutzername:",
+      "lastSynced": "Zuletzt synchronisiert:",
+      "never": "Nie",
+      "kilterAuroraTitle": "Kilter (Aurora)",
+      "kilterAuroraCopy": "Du hast die alte Kilter-App von Aurora genutzt? Importier einen JSON-Export oder schreib Aurora Climbing eine Mail und fordere deine Daten an.",
+      "kilterNewTitle": "Kilter (neu)",
+      "kilterNewCopy": "Melde dich mit deinem Kilter-Benutzernamen und -Passwort an und hol deine Begehungen, Versuche, Bewertungen und Circuits nach Boardsesh.",
+      "kilterSignIn": "Bei Kilter anmelden",
+      "reconnect": "Neu verbinden",
+      "notConnected": "Nicht verbunden. Verknüpf dein {{boardName}}-Konto, um deine Aurora-Daten zu holen, oder importier eine JSON-Exportdatei.",
+      "link": "Verknüpfen",
+      "import": "Importieren",
+      "requestData": "Daten anfordern",
+      "unlink": "Trennen",
+      "unlinkConfirm": {
+        "title": "Konto-Verknüpfung entfernen",
+        "description": "Willst du dein {{boardName}}-Konto wirklich trennen?",
+        "ok": "Ja, trennen"
+      }
+    },
+    "status": {
+      "connected": "Verbunden",
+      "error": "Fehler",
+      "expired": "Abgelaufen",
+      "syncing": "Wird synchronisiert",
+      "duplicateAccountCircuits": "Circuits synchronisieren gerade nicht: Ein anderes Boardsesh-Konto hängt an diesem Board-Login, deshalb pausiert die Playlist-Sync für euch beide. Deine Begehungen und Bewertungen kommen weiter an."
+    },
+    "unsynced": {
+      "title_one": "{{count}} Eintrag wartet auf die Sync",
+      "title_other": "{{count}} Einträge warten auf die Sync",
+      "ascents_one": "{{count}} Begehung",
+      "ascents_other": "{{count}} Begehungen",
+      "climbs_one": "{{count}} Boulder",
+      "climbs_other": "{{count}} Boulder"
+    },
+    "linkDialog": {
+      "title": "{{boardName}}-Konto verknüpfen",
+      "description": "Gib Benutzernamen und Passwort deiner {{boardName}} Board ein, um deine Aurora-Daten zu holen. Deine Zugangsdaten werden verschlüsselt und sicher gespeichert. Die Sync läuft alle 12 Stunden.",
+      "usernameLabel": "Benutzername",
+      "usernamePlaceholder": "Gib deinen Benutzernamen ein",
+      "passwordLabel": "Passwort",
+      "passwordPlaceholder": "Gib dein Passwort ein",
+      "submit": "Konto verknüpfen",
+      "submitting": "Wird verknüpft...",
+      "linkError": "Konto konnte nicht verknüpft werden",
+      "linkSuccess": "{{boardName}}-Konto verknüpft. Deine Daten sind innerhalb von 12 Stunden da.",
+      "accountAlreadyLinked": "Ein anderes Boardsesh-Mitglied hat dieses Konto schon verknüpft. Wenn es deins ist, trenn es dort zuerst und versuch es dann nochmal."
+    },
+    "kilterLinkDialog": {
+      "title": "Bei Kilter anmelden",
+      "description": "Gib deinen Kilter-Benutzernamen und dein Passwort ein. Dein Passwort wird gegen ein sicheres Token getauscht und nie gespeichert. Deine Begehungen sind in ein paar Stunden da.",
+      "passwordHelp": "Funktioniert mit deinem bestehenden Kilter-Login. Konten mit Zwei-Faktor oder reinem Social-Login kommen hier nicht rein – nutz stattdessen den Import."
+    },
+    "unlinkSuccess": "Konto getrennt",
+    "unlinkError": "Konto konnte nicht getrennt werden",
+    "unlinkPartial": "Bei uns ist die Verbindung weg, in der Kilter-App bist du aber vielleicht noch angemeldet. Melde dich dort auch ab, wenn du die Verbindung ganz kappen willst.",
+    "loadRetry": "Nochmal versuchen",
+    "import": {
+      "steps": {
+        "climbs": "Boulder-Entwürfe werden importiert",
+        "resolving": "Boulder-Namen werden zugeordnet",
+        "dedup": "Duplikate werden geprüft",
+        "ascents": "Begehungen werden importiert",
+        "attempts": "Versuche werden importiert",
+        "circuits": "Circuits werden importiert"
+      },
+      "fileLabel": "Aurora-JSON-Exportdatei hochladen",
+      "tooLarge": "Die Datei ist zu groß (max. 200 MB). Prüf, ob du die richtige Datei ausgewählt hast.",
+      "parseError": "Die JSON-Datei ließ sich nicht lesen. Prüf bitte das Dateiformat.",
+      "readError": "Die Datei ließ sich nicht lesen. Versuch es nochmal.",
+      "failed": "Import fehlgeschlagen",
+      "successCount": "{{count}} Einträge importiert",
+      "partialWarning": "Import nur teilweise durchgelaufen — Details unten",
+      "dialog": {
+        "previewTitle": "Aurora-Daten importieren",
+        "importingTitle": "Aurora-Daten werden importiert...",
+        "completeTitle": "Import abgeschlossen",
+        "errorTitle": "Import fehlgeschlagen",
+        "previewIntro": "Daten von <strong>{{username}}</strong> nach <strong>{{boardName}}</strong> importieren:",
+        "draftClimbs": "{{count}} Boulder-Entwürfe",
+        "ascents": "{{count}} Begehungen",
+        "attempts": "{{count}} Versuche",
+        "circuits": "{{count}} Circuits",
+        "previewNote": "Boulder werden über den Namen zugeordnet. Was übrig bleibt, melden wir nach dem Import. Dieselbe Datei nochmal zu importieren erzeugt keine Duplikate.",
+        "cancel": "Abbrechen",
+        "confirm": "Importieren",
+        "close": "Schließen",
+        "errorTitleShort": "Import fehlgeschlagen"
+      },
+      "results": {
+        "draftClimbs": "Boulder-Entwürfe",
+        "draftClimbsSummary": "{{imported}} importiert, {{skipped}} übersprungen, {{failed}} fehlgeschlagen",
+        "ascents": "Begehungen",
+        "ascentsSummary": "{{imported}} importiert, {{skipped}} übersprungen (schon vorhanden), {{failed}} ohne Zuordnung",
+        "attempts": "Versuche",
+        "attemptsSummary": "{{imported}} importiert, {{skipped}} übersprungen (schon vorhanden), {{failed}} ohne Zuordnung",
+        "circuits": "Circuits",
+        "circuitsSummary": "{{imported}} importiert, {{skipped}} übersprungen, {{failed}} fehlgeschlagen",
+        "unresolvedAscentsTitle_one": "{{count}} Begehung ohne passenden Boulder",
+        "unresolvedAscentsTitle_other": "{{count}} Begehungen ohne passenden Boulder",
+        "unresolvedAttemptsTitle_one": "{{count}} Versuch ohne passenden Boulder",
+        "unresolvedAttemptsTitle_other": "{{count}} Versuche ohne passenden Boulder",
+        "unresolvedCircuitsTitle_one": "{{count}} Boulder aus einem Circuit ließ sich nicht zuordnen",
+        "unresolvedCircuitsTitle_other": "{{count}} Boulder aus Circuits ließen sich nicht zuordnen",
+        "unresolvedTitle_one": "{{count}} Boulder ließ sich nicht zuordnen",
+        "unresolvedTitle_other": "{{count}} Boulder ließen sich nicht zuordnen",
+        "unresolvedMore": "...und {{count}} weitere",
+        "partialTitle": "Der Import wurde unterbrochen",
+        "partialBody": "Vielleicht sind nicht alle Daten durchgekommen. Dieselbe Datei nochmal zu importieren ist unbedenklich und füllt die Lücken."
+      }
+    },
+    "kilterEmail": {
+      "subject": "Kilterboard-Daten",
+      "namePlaceholder": "[DEIN NAME]",
+      "emailPlaceholder": "[DEINE E-MAIL]",
+      "body": "Hallo!\n\nIch habe die App früher genutzt. Könnte ich eine Kopie meiner Daten bekommen, damit ich mein Routenbuch und den Rest für meine eigene Auswertung behalten kann?\n\nMein Benutzername ist {{name}}, hinterlegt unter dieser E-Mail-Adresse ({{email}}).\n\nDanke!\n\n{{name}}"
+    },
+    "moonboard": {
+      "title": "MoonBoard",
+      "copy": "Du hast einen MoonBoard-CSV-Export? Importier ihn hier. Du brauchst die Datei erst noch? Schreib MoonBoard eine Mail und fordere deine Daten an.",
+      "import": "Daten importieren",
+      "requestData": "Daten anfordern",
+      "requestDataDialog": {
+        "title": "Anfrage kopiert",
+        "message": "Deine Datenanfrage liegt in der Zwischenablage. Öffne dein Mailprogramm, starte eine Nachricht an MoonBoard und füg sie ein.",
+        "confirm": "E-Mail öffnen",
+        "cancel": "Jetzt nicht"
+      },
+      "email": {
+        "subject": "Subject access request – MoonBoard account data",
+        "body": "Name: [full name]\nMoonBoard username: [username]\nAccount email: [email address]\n\nMy MoonBoard logbook is personal data because it records my climbing activity and sporting achievements and is linked to my identifiable account. Please treat this as a UK GDPR subject access request and, where applicable, a data portability request. ICO guidance on personal data, subject access requests, data portability, and response time limits is linked below for reference:\nhttps://ico.org.uk/for-the-public/time-limits-for-responding-to-data-protection-rights-requests/\n\nPlease include all personal data linked to my MoonBoard account, including where available:\n\naccount/profile details;\nusername and account identifiers;\nproblems I have created or logged;\nsends, ascents, benchmarks, grades, repeats, attempts, dates, and session/history data;\nfavourites, saved problems, custom problems, and user-generated content linked to my account;\nboard/setup preferences and app/service usage data linked to my account;\nany related metadata or identifiers associated with my MoonBoard profile.\n\nThe ICO’s guidance says organisations should respond to subject access requests without undue delay and within one month. If you require identity verification, clarification, or a secure delivery method, please let me know promptly.\n\nWhere technically feasible, I would prefer the export in CSV or JSON format. Alternatively, please provide the data in another structured, commonly used, machine-readable format.\n\nPlease confirm receipt of this request and the date by which you expect to respond.\n\nKind regards,\n[name]"
+      },
+      "csvImport": {
+        "fileLabel": "MoonBoard-CSV-Export",
+        "parseError": "Diese MoonBoard-CSV ließ sich nicht lesen. Prüf, ob sie mit ProblemId,Grade,Tries,Attempts,Rating,Date beginnt.",
+        "parserUnavailable": "Der MoonBoard-CSV-Import ist in diesem Build noch nicht dabei.",
+        "failed": "MoonBoard-Import fehlgeschlagen. Versuch es nochmal.",
+        "successCount": "{{count}} MoonBoard-Routenbucheinträge importiert",
+        "partialWarning": "Der MoonBoard-Import ist nur teilweise durchgelaufen. Die Datei nochmal zu importieren ist unbedenklich.",
+        "interrupted": "Der MoonBoard-Import hat vorher aufgehört. Die Datei nochmal zu importieren ist unbedenklich.",
+        "interruptedShort": "Der MoonBoard-Import hat vorher aufgehört.",
+        "steps": {
+          "resolving": "MoonBoard-Boulder werden zugeordnet",
+          "dedup": "Duplikate werden geprüft",
+          "ascents": "Begehungen werden importiert",
+          "attempts": "Versuche werden importiert",
+          "recomputing": "MoonBoard-Statistiken werden aktualisiert",
+          "importing": "MoonBoard-Daten werden importiert"
+        }
+      },
+      "importDialog": {
+        "previewTitle": "MoonBoard-CSV importieren",
+        "importingTitle": "MoonBoard-Daten werden importiert...",
+        "completeTitle": "MoonBoard-Import abgeschlossen",
+        "errorTitle": "MoonBoard-Import fehlgeschlagen",
+        "previewIntro": "Diesen MoonBoard-Export nach Boardsesh importieren:",
+        "previewIntroWithUser": "MoonBoard-Daten von {{username}} nach Boardsesh importieren:",
+        "rows": "{{count}} CSV-Zeilen",
+        "sends": "{{count}} Begehungen",
+        "flashes": "{{count}} Flashes",
+        "attempts": "{{count}} Versuche",
+        "projects": "{{count}} Projekte",
+        "fails": "{{count}} Fehlversuche",
+        "angleNote": "Importe werden bei {{angle}}° gespeichert.",
+        "previewNote": "Zeilen mit Project und Fail werden zu Versuchen. Zeilen mit Session Flash werden zu Begehungen mit einem Versuch."
+      },
+      "importResults": {
+        "ascents": "Begehungen",
+        "ascentsSummary": "{{imported}} importiert, {{skipped}} übersprungen (schon vorhanden), {{failed}} ohne Zuordnung",
+        "attempts": "Versuche",
+        "attemptsSummary": "{{imported}} importiert, {{skipped}} übersprungen (schon vorhanden), {{failed}} ohne Zuordnung",
+        "unresolvedTitle": "{{count}} MoonBoard-Boulder ließen sich nicht zuordnen",
+        "partialTitle": "Der Import wurde unterbrochen",
+        "partialBody": "Vielleicht sind nicht alle MoonBoard-Daten durchgekommen. Dieselbe Datei nochmal zu importieren ist unbedenklich und füllt die Lücken."
+      }
+    },
+    "mobile": {
+      "connectedAs": "Verbunden als {{name}}",
+      "connected": "Verbunden",
+      "notConnected": "Nicht verbunden",
+      "kilterConnected": "Kilter verbunden",
+      "kilterNotAllowed": "Die Kilter-Sync ist für dieses Konto noch nicht freigeschaltet.",
+      "kilterConnectFailed": "Kilter ließ sich nicht verbinden. Versuch es nochmal.",
+      "linkSuccess": "{{boardName}} verknüpft",
+      "unlinkSuccess": "{{boardName}} getrennt",
+      "unlinkPartial": "{{boardName}} ist hier weg, beim Anbieter läuft die Sitzung aber vielleicht noch.",
+      "invalidCredentials": "Benutzername oder Passwort hat nicht gepasst.",
+      "rateLimited": "Zu viele Versuche. Probier es später nochmal.",
+      "requestFailed": "Die Verknüpfung ließ sich nicht speichern. Versuch es nochmal.",
+      "loadFailed": "Deine Board-Konten ließen sich nicht laden.",
+      "importMissingUser": "Wähl eine Aurora-JSON-Exportdatei aus.",
+      "importBoardWarning": "Das sieht nach {{layoutName}} aus. Importier nur nach {{boardName}}, wenn das so stimmt.",
+      "importPreviewIntro": "Daten von {{username}} nach {{boardName}} importieren:",
+      "importPartial": "Der Import ist nur teilweise durchgelaufen. Die Datei nochmal zu importieren ist unbedenklich.",
+      "importFailed": "Import fehlgeschlagen. Versuch es nochmal.",
+      "importInterrupted": "Der Import hat vorher aufgehört. Die Datei nochmal zu importieren ist unbedenklich.",
+      "requestDataFailed": "E-Mail ließ sich nicht öffnen. Versuch es nochmal.",
+      "requestDataCopyFailed": "Die Anfrage ließ sich nicht kopieren. Versuch es nochmal.",
+      "passwordHelp": "Deine Zugangsdaten werden vor dem Speichern verschlüsselt."
+    }
+  },
+  "healthkit": {
+    "save": "In Apple Health speichern",
+    "saving": "Wird in Apple Health gespeichert…",
+    "saved": "In Apple Health gespeichert",
+    "retry": "In Apple Health speichern (nochmal)"
+  },
+  "feedbackDialog": {
+    "titleRating": "Boardsesh bewerten",
+    "titleBug": "Fehler melden",
+    "submitRating": "Senden",
+    "submitBug": "Fehlerbericht senden",
+    "successRating": "Danke — ist notiert.",
+    "successBug": "Fehler notiert — danke.",
+    "errorRating": "Ging nicht raus — wir heben dein Feedback auf.",
+    "closeAria": "Schließen",
+    "joinDiscord": "Discord beitreten"
+  },
+  "feedbackForm": {
+    "missingHeading": "Was fehlt dir?",
+    "compactPlaceholder": "Sag uns, was helfen würde",
+    "skip": "Überspringen",
+    "sendAria": "Senden",
+    "cancel": "Abbrechen",
+    "saveDefault": "Speichern",
+    "bugPlaceholder": "Was hast du gemacht? Was hast du erwartet, was kam stattdessen?",
+    "ratingPlaceholder": "Was geht dir durch den Kopf?",
+    "remainingChars": "Noch {{count}} Zeichen",
+    "sessionRecordingLabel": "Session-Aufzeichnung einschalten",
+    "sessionRecordingDescription": "Hilf uns, den Fehler schneller zu beheben: Schalt die Session-Aufzeichnung ein und lös ihn nochmal aus. Danach kannst du sie wieder ausschalten.",
+    "bluetoothBugLabel": "Ich habe Bluetooth-Probleme",
+    "bluetoothBugDescription": "Sucht nach Boards in der Nähe und schickt uns, was sie funken, damit wir rausfinden, warum deine nicht verbindet. Es wird keine Board gesteuert — wir hören nur zu.",
+    "contactConsentLabel": "Dürfen wir dich dazu anschreiben?",
+    "contactConsentDescription": "So können wir dir den Link zum Issue mailen und nachfragen, wenn uns Details fehlen.",
+    "starRating_one": "{{count}} Stern",
+    "starRating_other": "{{count}} Sterne",
+    "nextAria": "Weiter"
+  },
+  "feedbackBanner": {
+    "successToast": "Danke — ist notiert.",
+    "errorToast": "Ging nicht raus — wir heben deine Bewertung auf.",
+    "dismissAria": "Ausblenden"
+  },
+  "storeReview": {
+    "title": "Hilf anderen, Boardsesh zu finden",
+    "body": "Danke für die Bewertung. Magst du auch kurz eine Rezension in deinem App-Store dalassen? Nichts hilft anderen Kletterer*innen mehr, uns zu finden.",
+    "notNow": "Jetzt nicht",
+    "leaveReview": "Rezension schreiben"
+  },
+  "sessionProvider": {
+    "deepLinkError": "Die Anmeldung mit Google, Apple oder Facebook klappt gerade vielleicht nicht. Starte die App neu."
+  },
+  "onboarding": {
+    "skipTour": "Tour überspringen",
+    "finish": "Fertig",
+    "next": "Weiter"
+  },
+  "devUrlDialog": {
+    "title": "Dev-URL",
+    "intro": "Richte die WebView auf eine andere Origin. Die App startet nach dem Speichern neu.",
+    "urlLabel": "Server-URL",
+    "useProduction": "Produktion verwenden",
+    "currentlyOverriding": "Wird gerade überschrieben mit: {{url}}",
+    "cancel": "Abbrechen",
+    "clearOverride": "Überschreibung aufheben",
+    "save": "Speichern & neu starten",
+    "restarting": "Startet neu…",
+    "validation": {
+      "enterUrl": "Gib eine URL ein",
+      "mustBeHttp": "Die URL muss mit http:// oder https:// beginnen",
+      "invalid": "Keine gültige URL",
+      "generic": "Da ist was schiefgelaufen"
+    }
+  },
+  "boardConfigMismatch": {
+    "title": "Board-Konfiguration passt nicht",
+    "intro": "Bei uns steht für diese Board eine andere Konfiguration als die, die du eingestellt hast.",
+    "currentLabel": "<strong>Du bist eingestellt auf:</strong>",
+    "recordedLabel": "<strong>Für diesen Controller hinterlegt:</strong>",
+    "mobileCurrentLabel": "Du bist eingestellt auf: {{config}}",
+    "mobileRecordedLabel": "Für diesen Controller hinterlegt: {{config}}",
+    "mobileConfigValue": "{{board}} Layout {{layoutId}}, Größe {{sizeId}}, Sets {{setIds}}",
+    "mobileUnknownConfig": "Unbekannte Board-Konfiguration",
+    "skippedSpillToast_one": "{{name}} übersprungen — gehört zu einer anderen Board",
+    "skippedSpillToast_other": "{{count}} Boulder übersprungen, die zu einer anderen Board gehören",
+    "mobileSwitchFailed": "Konnte nicht auf die Konfiguration dieser Board wechseln. Probier „Trotzdem verbinden“.",
+    "cancel": "Abbrechen",
+    "connectAnyway": "Trotzdem verbinden",
+    "switchToCorrect": "Auf die richtige Konfiguration wechseln",
+    "mobileConnectAnyway": "Trotzdem verbinden",
+    "mobileConnectAnywayWarning": "Bei uns gehört dieser Controller zu einem anderen Board-Setup. Wenn du trotzdem verbindest, werden Boulder womöglich falsch beleuchtet.",
+    "mobileSwitchSetup": "Board-Setup wechseln",
+    "mobileUseRecordedSetup": "Hinterlegtes Setup verwenden"
+  },
+  "devicePicker": {
+    "title": "Wähl deine Board",
+    "scanning": "Suche nach Boards in der Nähe…",
+    "lastConnected": "Zuletzt verbundene Board",
+    "unknownDevice": "Unbekanntes Gerät",
+    "lastConnectedAt": "Zuletzt verbunden {{time}}",
+    "cancel": "Abbrechen"
+  },
+  "bluetoothMismatch": {
+    "switchNoAngleToast": "Wechsel geht nicht — öffne zuerst einen Boulder bei einem bestimmten Winkel.",
+    "switchUrlFailedToast": "Konnte nicht auf die Konfiguration dieser Board wechseln. Probier „Trotzdem verbinden“."
+  },
+  "auroraImport": {
+    "unlinkSuccessToast": "Konto getrennt",
+    "uploadAriaLabel": "Aurora-JSON-Exportdatei hochladen"
+  },
+  "ble": {
+    "scanning": "Suche nach Boards in der Nähe…",
+    "selectBoard": "Board auswählen",
+    "devicesFound_one": "{{count}} Board gefunden",
+    "devicesFound_other": "{{count}} Boards gefunden",
+    "noDevicesFound": "Keine Boards in der Nähe gefunden",
+    "differentBoardType": "Die sehen nach anderen Boards aus als dein {{board}}-Setup.",
+    "troubleshootTitle": "Du siehst deine Board nicht?",
+    "troubleshootTips": "Prüf, ob sie an und wach ist. Es kann sich immer nur ein Handy mit einer Board verbinden — trenn also andere Geräte. Geh näher ran oder schalte Bluetooth einmal aus und wieder an.",
+    "locationHintTitle": "Android braucht den Standort, um Boards zu sehen",
+    "locationHintBody": "Ab Android 12 bleiben Bluetooth-Suchergebnisse verborgen, solange der Standort nicht freigegeben ist. Boardsesh nutzt deinen Standort nicht, um Boards zu finden, und ein kommendes Update wird diese Hürde endgültig los.",
+    "locationHintGrant": "Standort erlauben",
+    "locationHintGranted": "Standort erlaubt. Schließ das und verbinde nochmal, um deine Board zu sehen.",
+    "cancel": "Abbrechen",
+    "connectBoard": "Board verbinden",
+    "relightBoard": "Board neu beleuchten",
+    "turnOff": "Board ausschalten",
+    "holdForControls": "Halten für die Board-Steuerung",
+    "sendFailedTitle": "Board ließ sich nicht beleuchten",
+    "connectionFailedTitle": "Verbindung fehlgeschlagen",
+    "permissionRequired": "Bluetooth-Berechtigung nötig",
+    "errorPermissionDenied": "Erlaube Bluetooth, um eine Board zu verbinden.",
+    "errorLedMissing": "Konnte nichts an die Board schicken — für diese Board-Konfiguration fehlen die LED-Daten.",
+    "errorIncompatible": "Dieser Boulder gehört zu einer anderen Board-Konfiguration.",
+    "barControl": {
+      "connectedLabel": "Board verbunden, du hast die Steuerung",
+      "connectedHint": "Öffnet die Board-Steuerung",
+      "peerLabel": "An der Wand von {{name}}",
+      "peerLabelAnonymous": "An der Wand",
+      "peerHint": "Öffnet den Boulder an der Wand",
+      "disconnectedLabel": "Board getrennt",
+      "disconnectedHint": "Mit der Board verbinden"
+    }
+  },
+  "integrations": {
+    "title": "Verbundene Apps",
+    "appleHealth": {
+      "title": "Apple Health",
+      "autoSave": "Sessions automatisch speichern",
+      "autoSaveDescription": "Beendete Sessions landen als Kletter-Workouts mit geschätzten Kalorien in Apple Health.",
+      "permissionDenied": "Der Health-Zugriff ist aus. Erlaube Boardsesh in den Einstellungen, Workouts zu schreiben.",
+      "openSettings": "Einstellungen öffnen"
+    },
+    "strava": {
+      "title": "Strava",
+      "connect": "Mit Strava verbinden",
+      "connectedAs": "Verbunden als {{name}}",
+      "connected": "Verbunden",
+      "autoSync": "Sessions automatisch hochladen",
+      "autoSyncDescription": "Beendete Sessions tauchen als Klettereinheiten in deinem Strava-Feed auf.",
+      "disconnect": "Trennen",
+      "disconnectConfirmTitle": "Strava trennen?",
+      "disconnectConfirmBody": "Neue Sessions gehen nicht mehr zu Strava. Was schon hochgeladen ist, bleibt dort.",
+      "reconnect": "Neu verbinden",
+      "expired": "Die Verbindung ist abgelaufen. Verbinde neu, damit weiter hochgeladen wird."
+    },
+    "toast": {
+      "connected": "Strava verbunden",
+      "connectFailed": "Verbindung zu Strava fehlgeschlagen",
+      "disconnected": "Strava getrennt",
+      "disconnectFailed": "Strava ließ sich nicht trennen. Versuch es nochmal."
+    }
+  },
+  "watchPairing": {
+    "title": "Garmin-Uhr koppeln",
+    "subtitle": "Steuer deine Session vom Handgelenk",
+    "description": "Starte die Boardsesh-Aktivität auf deiner Garmin und tipp dann diesen Code ein, um die Uhr mit deinem Konto zu verbinden.",
+    "generate": "Kopplungscode holen",
+    "regenerate": "Neuer Code",
+    "codeInstruction": "Gib diesen Code auf deiner Uhr ein",
+    "expiresIn": "Läuft ab in {{seconds}}s",
+    "expired": "Code abgelaufen — hol dir einen neuen",
+    "generating": "Code kommt…",
+    "error": "Kein Code bekommen. Versuch es nochmal.",
+    "close": "Fertig"
+  }
+}

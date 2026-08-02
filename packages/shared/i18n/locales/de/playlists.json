@@ -1,0 +1,311 @@
+{
+  "metadata": {
+    "library": {
+      "title": "Kletter-Playlists entdecken",
+      "description": "Entdecke öffentliche Kletter-Playlists und verwalte nach dem Anmelden deine eigenen."
+    },
+    "detail": {
+      "fallbackTitle": "Playlist",
+      "fallbackDescription": "Kletter-Playlist auf Boardsesh"
+    }
+  },
+  "library": {
+    "signInBanner": {
+      "title": "Melde dich an für deine Bibliothek",
+      "description": "Halt deine Begehungen fest und verwalte Playlists.",
+      "cta": "Anmelden",
+      "modalTitle": "Bei Boardsesh anmelden",
+      "modalDescription": "Melde dich an, um deine Boulder festzuhalten und Playlists zu verwalten."
+    },
+    "sections": {
+      "jumpBackIn": "Weitermachen",
+      "pinned": "Angepinnt",
+      "smart": "Deine Auswahl",
+      "discover": "Entdecken",
+      "forYou": "Für dich",
+      "community": "Community-Playlists"
+    },
+    "communityByline": "{{creatorName}} - {{climbCount}}",
+    "allPlaylists": {
+      "title": "Meine Playlists",
+      "seeAll": "Alle ansehen",
+      "searchPlaceholder": "Nach Titel filtern",
+      "clearSearch": "Suche zurücksetzen",
+      "loadMoreError": "Es ließen sich nicht alle deine Playlists laden.",
+      "noResults": "Keine Playlist passt zu „{{query}}“"
+    },
+    "pin": {
+      "pin": "Anpinnen",
+      "unpin": "Abpinnen",
+      "pinAriaLabel": "Playlist anpinnen",
+      "unpinAriaLabel": "Playlist abpinnen",
+      "pinFailed": "Die Playlist ließ sich nicht anpinnen",
+      "unpinFailed": "Die Playlist ließ sich nicht abpinnen"
+    },
+    "smart": {
+      "fiveStars": {
+        "title": "Fünf Sterne",
+        "description": "Boulder, denen du fünf Sterne gegeben hast."
+      },
+      "mostRepeated": {
+        "title": "Am häufigsten wiederholt",
+        "description": "Boulder, zu denen du immer wieder zurückkommst."
+      },
+      "projects": {
+        "title": "Projekte",
+        "description": "Boulder, an denen du am meisten gearbeitet hast, ohne sie zu toppen."
+      },
+      "likedClimbs": {
+        "title": "Gelikte Boulder",
+        "description": "Alle Boulder, denen du ein Herz gegeben hast.",
+        "empty": {
+          "title": "Noch keine Likes",
+          "supporting": "Tipp bei einem Boulder aufs Herz, dann landet er hier."
+        }
+      },
+      "crowdFavorites": {
+        "title": "Publikumslieblinge",
+        "description": "Die meistbegangenen Klassiker für deine Board, die dir noch fehlen."
+      },
+      "hiddenGems": {
+        "title": "Geheimtipps",
+        "description": "Top bewertete Boulder für deine Board, die noch kaum jemand kennt."
+      },
+      "atYourLevel": {
+        "title": "Auf deinem Level",
+        "description": "Boulder rund um deinen Grad, passend zu deiner Board."
+      },
+      "fresh": {
+        "title": "Frisch",
+        "description": "Neue Boulder für deine Board von Routenbauer*innen, denen sich Folgen lohnt."
+      },
+      "notFound": {
+        "title": "Smart-Playlist nicht gefunden",
+        "description": "Diese Smart-Playlist gibt es nicht."
+      },
+      "empty": "Noch keine Boulder in dieser Smart-Playlist.",
+      "shareText": "Schau dir die Boulder von {{name}} auf Boardsesh an"
+    },
+    "empty": {
+      "title": "Noch keine Playlists",
+      "description": "Pack deine Projekte und Lieblingsboulder in eine Playlist, dann findest du sie schnell wieder.",
+      "createCta": "Playlist erstellen"
+    },
+    "createFab": {
+      "ariaLabel": "Playlist erstellen"
+    },
+    "customUnavailable": "Wähl eine deiner Boards oder eine beliebte Konfiguration und leg los.",
+    "errors": {
+      "loadTitle": "Bibliothek lädt nicht",
+      "loadDescription": "Beim Laden deiner Bibliothek ist etwas schiefgegangen. Versuch's nochmal.",
+      "tryAgain": "Nochmal versuchen"
+    }
+  },
+  "detail": {
+    "share": "Playlist teilen",
+    "actions": "Playlist-Aktionen",
+    "activateAll": "Alle Boulder in die Warteschlange",
+    "boardMismatch": {
+      "title": "Wechsel zu {{board}}, um diese Playlist zu klettern",
+      "subtitle": "Das sind {{board}}-Boulder. Wechsel die Board, um sie in die Warteschlange zu packen.",
+      "cta": "Board wechseln"
+    },
+    "unrenderableClimb": {
+      "subtitle": "Für diesen Boulder fehlen die Board-Daten."
+    },
+    "menu": {
+      "generate": "Generieren",
+      "editClimbs": "Boulder bearbeiten",
+      "edit": "Bearbeiten",
+      "delete": "Löschen"
+    },
+    "visibility": {
+      "public": "Öffentlich",
+      "private": "Privat"
+    },
+    "shareText": "Schau dir diese Kletter-Playlist auf Boardsesh an",
+    "shareFallbackTitle": "Playlist",
+    "shareSuccess": "Link in die Zwischenablage kopiert!",
+    "shareError": "Teilen fehlgeschlagen",
+    "deleted": "Playlist gelöscht",
+    "deleteFailed": "Die Playlist ließ sich nicht löschen",
+    "queueReplace": {
+      "title": "Playlist starten?",
+      "message_one": "Damit fliegt {{count}} Boulder aus der Warteschlange hinter deinem aktuellen Boulder.",
+      "message_other": "Damit fliegen {{count}} Boulder aus der Warteschlange hinter deinem aktuellen Boulder.",
+      "cancel": "Warteschlange behalten",
+      "confirm": "Playlist starten",
+      "loadFailed": "Die Playlist ließ sich nicht starten. Versuch's nochmal."
+    },
+    "deleteConfirm": {
+      "title": "Playlist löschen?",
+      "message": "Das löscht „{{name}}“ und die enthaltenen Boulder endgültig. Das lässt sich nicht rückgängig machen.",
+      "confirm": "Löschen",
+      "cancel": "Abbrechen"
+    },
+    "discussion": "Diskussion",
+    "empty": "Noch keine Boulder in dieser Playlist",
+    "climbCount_one": "{{count}} Boulder",
+    "climbCount_other": "{{count}} Boulder",
+    "followerCount_one": "{{count}} Follower",
+    "followerCount_other": "{{count}} Follower",
+    "followFailed": "Der Folgen-Status ließ sich nicht ändern",
+    "errors": {
+      "notFoundTitle": "Playlist nicht gefunden",
+      "notFoundDescription": "Diese Playlist wurde vielleicht gelöscht oder du darfst sie nicht sehen.",
+      "loadTitle": "Playlist lädt nicht",
+      "loadDescription": "Beim Laden dieser Playlist ist etwas schiefgegangen. Versuch's nochmal.",
+      "tryAgain": "Nochmal versuchen"
+    }
+  },
+  "editClimbs": {
+    "done": "Fertig",
+    "editDetailsAria": "Playlist-Details bearbeiten",
+    "removeAria": "{{name}} entfernen",
+    "dragHandleAria": "Ziehen, um {{name}} umzusortieren",
+    "removeConfirm": {
+      "title": "Boulder entfernen?",
+      "message": "„{{name}}“ aus dieser Playlist entfernen?",
+      "confirm": "Entfernen",
+      "cancel": "Abbrechen"
+    },
+    "removeFailed": "Der Boulder ließ sich nicht entfernen",
+    "reorderFailed": "Die neue Reihenfolge ließ sich nicht speichern"
+  },
+  "edit": {
+    "title": "Playlist bearbeiten",
+    "fields": {
+      "name": "Name der Playlist",
+      "namePlaceholder": "z. B. Fiese Leisten",
+      "description": "Beschreibung",
+      "descriptionPlaceholder": "Optionale Beschreibung für deine Playlist ...",
+      "color": "Farbe",
+      "icon": "Icon",
+      "iconHint": "Tipp ein beliebiges Emoji oder wähl eins unten",
+      "removeIcon": "Entfernen",
+      "visibility": "Sichtbarkeit",
+      "publicHint": "Öffentliche Playlists sieht jede*r mit dem Link",
+      "privateHint": "Private Playlists siehst nur du"
+    },
+    "actions": {
+      "cancel": "Abbrechen",
+      "save": "Speichern",
+      "saving": "Wird gespeichert ..."
+    },
+    "validation": {
+      "nameRequired": "Gib der Playlist einen Namen",
+      "nameTooLong": "Der Name darf höchstens 100 Zeichen haben",
+      "descriptionTooLong": "Die Beschreibung darf höchstens 500 Zeichen haben"
+    },
+    "messages": {
+      "updated": "Playlist aktualisiert",
+      "updateFailed": "Die Playlist ließ sich nicht aktualisieren"
+    }
+  },
+  "create": {
+    "drawerTitle": "Playlist erstellen",
+    "submit": "Erstellen",
+    "submitting": "Wird erstellt ...",
+    "fields": {
+      "name": "Name",
+      "namePlaceholder": "z. B. Fiese Leisten",
+      "description": "Beschreibung",
+      "descriptionPlaceholder": "Optionale Beschreibung ...",
+      "color": "Farbe"
+    }
+  },
+  "generator": {
+    "drawerTitle": "Playlist generieren",
+    "generatingTitle": "Wird generiert ...",
+    "optionsTitle": "Optionen",
+    "generatingProgress": "Boulder werden hinzugefügt ... {{current}} / {{total}}",
+    "generate": "Generieren",
+    "reset": "Zurücksetzen",
+    "totals": {
+      "total": "Gesamt",
+      "climbs_one": "{{count}} Boulder",
+      "climbs_other": "{{count}} Boulder"
+    },
+    "summaryRow_one": "{{count}} Boulder ({{range}})",
+    "summaryRow_other": "{{count}} Boulder ({{range}})",
+    "options": {
+      "warmUp": "Aufwärmen",
+      "targetAngle": "Ziel-Winkel",
+      "targetGrade": "Ziel-Grad",
+      "minAscents": "Min. Begehungen",
+      "minRating": "Min. Bewertung",
+      "any": "Alle",
+      "minAscentsOption": "{{value}}+",
+      "minRatingOption_one": "ab {{count}} Stern",
+      "minRatingOption_other": "ab {{count}} Sternen",
+      "climbBias": "Boulder-Auswahl",
+      "tallClimbsLabel": "Nur hohe Boulder",
+      "tallClimbsTooltip": "Zeigt nur Boulder, die Griffe in den unteren 8 Reihen nutzen (nur bei 8x12- und 10x12-Boards)",
+      "wideClimbsLabel": "Nur breite Boulder",
+      "wideClimbsTooltip": "Zeigt nur Boulder, die die seitlichen Erweiterungsgriffe der 10x10 nutzen",
+      "mainSetClimbs": "Boulder im Hauptteil",
+      "mainSetVariability": "Streuung im Hauptteil",
+      "numberOfSteps": "Anzahl Stufen",
+      "climbsPerStep": "Boulder pro Stufe",
+      "numberOfClimbs": "Anzahl Boulder"
+    },
+    "warmUpOptions": {
+      "standard": "Standard",
+      "extended": "Erweitert",
+      "none": "Ohne"
+    },
+    "climbBiasOptions": {
+      "unfamiliar": "Unbekannt",
+      "attempted": "Versucht",
+      "any": "Alle"
+    },
+    "workoutTypes": {
+      "volume": {
+        "name": "Volumen",
+        "description": "Erzeugt ein Workout mit vielen Bouldern."
+      },
+      "pyramid": {
+        "name": "Pyramide",
+        "description": "Arbeite dich zu einem Maximal-Grad hoch und wieder runter."
+      },
+      "ladder": {
+        "name": "Leiter",
+        "description": "Arbeite dich Stufe für Stufe durch die Grade nach oben."
+      },
+      "gradeFocus": {
+        "name": "Grad-Fokus",
+        "description": "Grad wählen und los!"
+      }
+    },
+    "sections": {
+      "warmUp": "Aufwärmen",
+      "increasing": "Aufsteigend",
+      "peak": "Spitze",
+      "decreasing": "Absteigend",
+      "main": "Hauptteil"
+    },
+    "chart": {
+      "ariaLabel": "Vorschau der Gradverteilung",
+      "configurePrompt": "Stell die Optionen ein für die Vorschau"
+    },
+    "messages": {
+      "noClimbs": "Keine Boulder zum Generieren",
+      "addedAll": "{{count}} Boulder zur Playlist hinzugefügt",
+      "addedPartial": "{{added}} Boulder hinzugefügt. {{failed}} Plätze blieben leer.",
+      "failed": "Die Playlist ließ sich nicht generieren. Keine passenden Boulder gefunden."
+    }
+  },
+  "bottomTabBar": {
+    "home": "Start",
+    "climb": "Klettern",
+    "discover": "Entdecken",
+    "feed": "Feed",
+    "create": "Erstellen",
+    "you": "Du",
+    "youSignInTitle": "Melde dich an für deinen Fortschritt",
+    "youSignInDescription": "Melde dich an für deine Statistiken, Sessions und dein Routenbuch.",
+    "selectBoardForPlaylist": "Wähl erst eine Board, dann leg die Playlist an",
+    "createdPlaylistToast": "Playlist „{{name}}“ erstellt",
+    "createPlaylistFailed": "Die Playlist ließ sich nicht erstellen"
+  }
+}

@@ -1,0 +1,304 @@
+{
+  "metadata": {
+    "admin": {
+      "title": "Admin-Panel",
+      "description": "Admin-Panel von Boardsesh"
+    },
+    "retention": {
+      "title": "Retention",
+      "description": "Dashboard zur Kohorten-Retention"
+    }
+  },
+  "title": "Admin-Panel",
+  "auth": {
+    "signInRequired": "Melde dich an, um ins Admin-Panel zu kommen.",
+    "noAccess": "Du hast keinen Admin-Zugang."
+  },
+  "tabs": {
+    "roles": "Rollen",
+    "settings": "Einstellungen"
+  },
+  "nav": {
+    "retention": "Retention-Dashboard",
+    "gymClaims": "Hallen-Ansprüche",
+    "feedback": "Bug-Reports",
+    "gymDuplicates": "Doppelte Hallen"
+  },
+  "feedback": {
+    "title": "Bug-Reports & Feedback",
+    "subtitle": "Bug-Reports und Bewertungen aus der App. Filtern, die E-Mail der meldenden Person finden und als erledigt markieren.",
+    "backToAdmin": "Zurück zum Admin-Panel",
+    "type": {
+      "bugs": "Bugs",
+      "ratings": "Bewertungen",
+      "all": "Alle",
+      "bug": "Bug",
+      "rating": "Bewertung"
+    },
+    "status": {
+      "new": "Neu",
+      "in_progress": "In Arbeit",
+      "resolved": "Erledigt",
+      "wont_fix": "Wird nicht behoben"
+    },
+    "statusFilter": {
+      "all": "Alle"
+    },
+    "search": {
+      "placeholder": "Kommentare durchsuchen"
+    },
+    "table": {
+      "date": "Datum",
+      "type": "Typ",
+      "platform": "Plattform",
+      "comment": "Kommentar",
+      "reporter": "Gemeldet von",
+      "status": "Status",
+      "github": "GitHub",
+      "actions": "Aktionen"
+    },
+    "reporter": {
+      "anonymous": "Anonym",
+      "copyEmail": "E-Mail kopieren",
+      "consentYes": "Kontakt OK",
+      "consentNo": "Keine Zustimmung"
+    },
+    "rating": {
+      "value": "{{rating}}/5"
+    },
+    "github": {
+      "view": "Issue #{{number}}"
+    },
+    "actions": {
+      "markDone": "Als erledigt markieren"
+    },
+    "detail": {
+      "toggle": "Details ein-/ausblenden",
+      "comment": "Kommentar",
+      "board": "Board",
+      "climb": "Boulder",
+      "session": "Session",
+      "url": "URL",
+      "userAgent": "User-Agent",
+      "resolvedBy": "Erledigt von"
+    },
+    "empty": "Kein Feedback passt zu diesen Filtern.",
+    "error": "Das Feedback ließ sich nicht laden.",
+    "retry": "Nochmal versuchen",
+    "loadMore": "Mehr laden",
+    "showing": "{{shown}} von {{total}} angezeigt",
+    "snackbar": {
+      "statusUpdated": "Status aktualisiert",
+      "updateFailed": "Der Status ließ sich nicht ändern",
+      "emailCopied": "E-Mail kopiert",
+      "copyFailed": "Kopieren fehlgeschlagen"
+    }
+  },
+  "retention": {
+    "heading": "Retention der Nutzer*innen",
+    "subheading": "Von allen, die sich in Woche W registriert haben: Welcher Anteil war an Tag N aktiv — klassische Dn-Retention. Berechnet für Einträge (geloggte Boulder) und für jede Aktivität in der App.",
+    "definitions": "Kohorte = Woche der Registrierung (UTC). Dn zählt eine Person, wenn sie im 24-Stunden-Fenster N Tage nach der Registrierung aktiv war (D7 = genau an Tag 7 aktiv, nicht irgendwann in den ersten 7 Tagen). Einträge = mindestens ein Boulder in Boardsesh eingetragen (aus Aurora importierte Einträge zählen nicht). Jede Aktivität = ein Eintrag, eine Party-Session hosten oder ihr beitreten, Favorit, Playlist (erstellt oder angepinnt), Folgen (Person, Routenbauer*in oder Playlist), Abo für neue Boulder, Kommentar, Stimme, Stimme zu einem Vorschlag oder Feedback. Kohorten, die jünger als das Fenster sind, zeigen —.",
+    "back": "Zurück zum Admin-Panel",
+    "table": {
+      "cohortWeek": "Kohorten-Woche",
+      "signups": "Registrierungen",
+      "groupTicks": "Einträge",
+      "groupAny": "Jede Aktivität",
+      "activated": "Aktiviert",
+      "d1": "D1",
+      "d3": "D3",
+      "d7": "D7",
+      "d30": "D30",
+      "notReady": "—",
+      "empty": "Noch keine Kohortendaten."
+    },
+    "chart": {
+      "title": "D7-Retention nach Kohorten-Woche",
+      "label": "Einträge",
+      "labelAny": "Jede Aktivität"
+    }
+  },
+  "roles": {
+    "heading": "Community-Rollen",
+    "grant": "Rolle vergeben",
+    "table": {
+      "user": "Nutzer*in",
+      "role": "Rolle",
+      "board": "Board",
+      "grantedBy": "Vergeben von",
+      "date": "Datum",
+      "actions": "Aktionen"
+    },
+    "labels": {
+      "admin": "Admin",
+      "leader": "Leader",
+      "tester": "Tester",
+      "global": "Global",
+      "fallbackUserInitial": "U",
+      "fallbackEmpty": "-"
+    },
+    "empty": "Noch keine Rollen vergeben",
+    "dialog": {
+      "title": "Rolle vergeben",
+      "search": {
+        "label": "Nutzer*in suchen",
+        "placeholder": "Namen eingeben zum Suchen ..."
+      },
+      "fallbackUserInitial": "U",
+      "change": "Ändern",
+      "roleLabel": "Rolle",
+      "boardTypeLabel": "Board-Typ (optional)",
+      "boardTypeOptions": {
+        "global": "Global (alle Boards)",
+        "kilter": "Kilter",
+        "tension": "Tension"
+      },
+      "roleOptions": {
+        "communityLeader": "Community Leader",
+        "admin": "Admin",
+        "tester": "Tester"
+      },
+      "cancel": "Abbrechen",
+      "submit": "Vergeben"
+    },
+    "snackbar": {
+      "granted": "Rolle vergeben",
+      "grantFailed": "Die Rolle ließ sich nicht vergeben",
+      "revoked": "Rolle entzogen",
+      "revokeFailed": "Die Rolle ließ sich nicht entziehen"
+    }
+  },
+  "settings": {
+    "heading": "Community-Einstellungen",
+    "scope": {
+      "label": "Geltungsbereich",
+      "options": {
+        "global": "Global",
+        "board": "Board",
+        "climb": "Boulder"
+      },
+      "boardTypeLabel": "Board-Typ",
+      "boardTypePlaceholder": "kilter, tension",
+      "climbUuidLabel": "Boulder-UUID",
+      "climbUuidPlaceholder": "Boulder-UUID"
+    },
+    "table": {
+      "setting": "Einstellung",
+      "description": "Beschreibung",
+      "value": "Wert"
+    },
+    "rows": {
+      "approvalThreshold": {
+        "label": "Schwelle für Annahme",
+        "description": "Gewichtete Stimmen für die automatische Annahme"
+      },
+      "outlierMinAscents": {
+        "label": "Min. Begehungen für Ausreißer",
+        "description": "Mindestzahl an Begehungen für die Ausreißer-Erkennung"
+      },
+      "outlierGradeDiff": {
+        "label": "Grad-Differenz für Ausreißer",
+        "description": "Schwelle der Grad-Differenz für Ausreißer"
+      },
+      "adminVoteWeight": {
+        "label": "Stimmgewicht Admin",
+        "description": "Multiplikator für das Stimmgewicht von Admins"
+      },
+      "leaderVoteWeight": {
+        "label": "Stimmgewicht Leader",
+        "description": "Multiplikator für das Stimmgewicht von Leadern"
+      }
+    },
+    "save": "Alle speichern",
+    "saving": "Wird gespeichert ...",
+    "snackbar": {
+      "saved_one": "{{count}} Einstellung gespeichert",
+      "saved_other": "{{count}} Einstellungen gespeichert",
+      "saveFailed": "Die Einstellungen ließen sich nicht speichern"
+    }
+  },
+  "gymClaims": {
+    "title": "Hallen-Ansprüche",
+    "backToAdmin": "Zurück zum Admin-Panel",
+    "heading": "Offene Ansprüche",
+    "empty": "Keine offenen Ansprüche",
+    "error": "Die Ansprüche ließen sich nicht laden. Versuch's nochmal.",
+    "retry": "Nochmal versuchen",
+    "approve": "Annehmen",
+    "deny": "Ablehnen",
+    "method": {
+      "domain": "Domain",
+      "admin": "Prüfung"
+    },
+    "snackbar": {
+      "approved": "Anspruch angenommen — Besitz übertragen",
+      "denied": "Anspruch abgelehnt",
+      "failed": "Der Anspruch ließ sich nicht ändern"
+    },
+    "table": {
+      "claimant": "Anspruchsteller*in",
+      "gym": "Halle",
+      "method": "Methode",
+      "detail": "Detail",
+      "date": "Datum",
+      "actions": "Aktionen"
+    },
+    "loadMore": "Mehr laden"
+  },
+  "gymDuplicates": {
+    "title": "Doppelte Hallen",
+    "backToAdmin": "Zurück zum Admin-Panel",
+    "heading": "Prüfliste für Duplikate",
+    "tabs": {
+      "duplicates": "Duplikate",
+      "orphans": "Waisen-Prüfung"
+    },
+    "tier": {
+      "a": "Exakter Treffer",
+      "b": "Ähnlicher Treffer"
+    },
+    "maxDistance": "Bis zu {{meters}} m auseinander",
+    "owner": {
+      "system": "System",
+      "user": "Gehört Nutzer*in"
+    },
+    "claim": {
+      "pending": "Anspruch offen",
+      "approved": "Anspruch angenommen"
+    },
+    "counts": "{{boards}} Boards · {{follows}} Follows · {{members}} Mitglieder · {{kiosks}} Kioske · {{claims}} Ansprüche",
+    "orphanCounts": "{{boards}} Boards · {{follows}} Follows · {{members}} Mitglieder · {{kiosks}} Kioske",
+    "distance": "{{meters}} m vom verbleibenden Eintrag",
+    "merge": "Zusammenführen",
+    "dismiss": "Kein Duplikat",
+    "confirm": {
+      "title": "Diese Hallen zusammenführen?",
+      "body": "Damit gehen {{count}} doppelte Hallen in {{canonical}} auf und {{boards}} Boards, {{follows}} Follows, {{members}} Mitglieder, {{kiosks}} Kioske und {{claims}} Ansprüche wandern dorthin. Das lässt sich nicht rückgängig machen.",
+      "cancel": "Abbrechen",
+      "confirm": "Zusammenführen",
+      "overrideWarning": "Achtung: Du behältst einen System-Eintrag statt einer Halle, die jemandem gehört oder beansprucht wird. Diese Halle geht dann im System-Eintrag auf. Mach das nur, wenn der System-Eintrag wirklich der richtige Platz ist.",
+      "confirmOverride": "Trotzdem zusammenführen"
+    },
+    "kioskWarning": "Kiosk „{{name}}“ von /{{previous}} nach /{{next}} verschoben",
+    "snackbar": {
+      "merged": "Hallen zusammengeführt",
+      "mergeFailed": "Die Hallen ließen sich nicht zusammenführen",
+      "dismissed": "Als kein Duplikat markiert",
+      "dismissFailed": "Die Gruppe ließ sich nicht ausblenden"
+    },
+    "empty": "Keine Duplikate zum Prüfen",
+    "error": "Die Duplikate ließen sich nicht laden. Versuch's nochmal.",
+    "retry": "Nochmal versuchen",
+    "loadMore": "Mehr laden",
+    "orphans": {
+      "summary": "{{count}} System-Hallen ohne Quelle für den Standort-Sync",
+      "empty": "Keine verwaisten Hallen",
+      "name": "Halle",
+      "address": "Adresse",
+      "counts": "Zahlen"
+    },
+    "ownerReports": {
+      "note": "Betreiber*innen können Duplikate jetzt auf ihrer Hallenseite melden. Diese Meldungen kommen vorerst als Team-E-Mail, behalte neben dieser Liste also auch das Postfach im Blick."
+    }
+  }
+}

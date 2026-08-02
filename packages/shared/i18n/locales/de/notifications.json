@@ -1,0 +1,45 @@
+{
+  "metadata": {
+    "notifications": {
+      "title": "Benachrichtigungen",
+      "description": "Deine Benachrichtigungen auf Boardsesh"
+    }
+  },
+  "title": "Benachrichtigungen",
+  "empty": "Noch nichts da",
+  "markAllRead": "Alle als gelesen markieren",
+  "actorSummary": {
+    "fallback": "Jemand",
+    "secondaryFallback": "jemand",
+    "two": "{{first}} und {{second}}",
+    "many": "{{first}} und {{count}} weitere",
+    "manyOne": "{{first}} und 1 weitere Person"
+  },
+  "items": {
+    "newFollower": "{{actor}} folgt dir jetzt",
+    "commentReplyWithBody": "{{actor}} hat geantwortet: „{{body}}“",
+    "commentReply": "{{actor}} hat auf deinen Kommentar geantwortet",
+    "commentOnTickWithBody": "{{actor}} hat kommentiert: „{{body}}“",
+    "commentOnTick": "{{actor}} hat deine Begehung kommentiert",
+    "commentOnClimbWithBody": "{{actor}} hat kommentiert: „{{body}}“",
+    "commentOnClimb": "{{actor}} hat einen Boulder kommentiert",
+    "voteOnTick": "{{actor}} gefällt deine Begehung",
+    "voteOnComment": "{{actor}} gefällt dein Kommentar",
+    "proposalCreated": "{{actor}} hat einen neuen Vorschlag erstellt",
+    "proposalApproved": "Der Vorschlag von {{actor}} wurde angenommen",
+    "proposalRejected": "Der Vorschlag von {{actor}} wurde abgelehnt",
+    "proposalVote": "{{actor}} hat über deinen Vorschlag abgestimmt",
+    "newClimb": "{{actor}} hat einen neuen Boulder erstellt",
+    "newClimbsSyncedSetter": "{{setter}} hat neue Boulder gesetzt",
+    "newClimbsSynced": "{{actor}} hat neue Boulder gesetzt",
+    "gymClaimApproved": "Du verwaltest jetzt {{gym}}",
+    "gymClaimApprovedGeneric": "Die Halle gehört jetzt dir — deine Anfrage ist durch",
+    "default": "Du hast eine neue Benachrichtigung"
+  },
+  "time": {
+    "justNow": "gerade eben",
+    "minutes": "{{count}} Min.",
+    "hours": "{{count}} Std.",
+    "days": "{{count}} T"
+  }
+}

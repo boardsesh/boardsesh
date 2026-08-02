@@ -1,0 +1,249 @@
+{
+  "metadata": {
+    "profile": {
+      "description": "Kletterprofil von {{name}} auf Boardsesh",
+      "fallbackTitle": "Profil",
+      "fallbackDescription": "Kletterprofil und Statistiken ansehen",
+      "notFoundTitle": "Profil nicht gefunden",
+      "notFoundDescription": "Dieses Kletterprofil konnte nicht gefunden werden.",
+      "ogAlt": "Kletterprofil von {{name}}"
+    },
+    "statistics": {
+      "title": "Statistiken"
+    },
+    "sessions": {
+      "title": "Sessions"
+    },
+    "climbs": {
+      "title": "Erstellte Boulder"
+    },
+    "setter": {
+      "title": "{{name}} - Routenbauer*in",
+      "description": "Boulder von {{name}} auf Boardsesh",
+      "fallbackTitle": "Routenbauer*in-Profil",
+      "fallbackDescription": "Routenbauer*in-Profil und Boulder auf Boardsesh ansehen",
+      "ogAlt": "Routenbauer*in-Profil von {{name}}"
+    }
+  },
+  "page": {
+    "lastThreeMonths": "Letzte 3 Monate",
+    "activityChartLabel": "Aktivität der letzten 3 Monate",
+    "displayNameFallback": "Kletterer*in",
+    "betaVideos": "Beta-Videos"
+  },
+  "nav": {
+    "statistics": {
+      "title": "Statistiken",
+      "subtitleSent": "{{count}} Boulder getoppt",
+      "subtitleEmpty": "Grade, Fortschritt und mehr"
+    },
+    "sessions": {
+      "title": "Sessions",
+      "subtitle": "Sessions und Aktivität"
+    },
+    "createdClimbs": {
+      "title": "Erstellte Boulder",
+      "subtitleOwn": "Boulder, die du erstellt hast",
+      "subtitleOther": "Boulder, die diese Person erstellt hat"
+    }
+  },
+  "stats": {
+    "problems": "Boulder",
+    "send": "Begehung",
+    "flash": "Flash",
+    "calendar": "Kalender",
+    "calendarAria": "Kletterkalender: {{days}} aktive Tage, {{count}} Boulder",
+    "calendarLess": "Weniger",
+    "calendarMore": "Mehr",
+    "boards": "Boards",
+    "layoutShareAria": "Board-Anteil an {{count}} Bouldern",
+    "layoutLegendAria": "{{name}}: {{percentage}}% ({{count}} Boulder)",
+    "percentile": "Perzentil",
+    "topPercent": "Top {{value}}%",
+    "moreSentThan": "Mehr Boulder getoppt als {{value}}% der Kletterer*innen",
+    "summary": "Übersicht",
+    "activity": "Aktivität",
+    "gradeDistribution": "Gradverteilung",
+    "flashVsRedpoint": "Flash vs. Rotpunkt",
+    "vPoints": "V-Punkte",
+    "vPointsTotal": "{{value}} gesamt",
+    "weekAxisLabel": "Woche",
+    "chartTooltipTotal": "Gesamt",
+    "gradeDistributionAria": "Gradverteilung über alle Boards",
+    "weeklyAttemptsAria": "Versuche pro Woche nach Schwierigkeit",
+    "flashRedpointAria": "Flash vs. Rotpunkt nach Grad",
+    "layoutTooltip": "{{name}}: {{count}} Boulder ({{percentage}}%)"
+  },
+  "empty": {
+    "userNotFound": "Nutzer*in nicht gefunden",
+    "noAscentData": "Keine Begehungen in diesem Zeitraum",
+    "noClimbingData": "Keine Kletterdaten in diesem Zeitraum"
+  },
+  "filter": {
+    "pageTitle": "Statistiken",
+    "drawer": {
+      "title": "Filter",
+      "board": "Board",
+      "timeRange": "Zeitraum",
+      "from": "Von",
+      "to": "Bis"
+    }
+  },
+  "analytics": {
+    "noData": "Noch keine Auswertungen vorhanden. Die Daten kommen beim Sync dazu.",
+    "ascentsOverTime": "Begehungen im Zeitverlauf",
+    "qualityOverTime": "Qualität im Zeitverlauf",
+    "gradeOverTime": "Grad im Zeitverlauf"
+  },
+  "logbook": {
+    "section": {
+      "noAscentsLogged": "Für diesen Boulder ist noch keine Begehung eingetragen"
+    },
+    "crew": {
+      "signInPrompt": "Melde dich an, um das Routenbuch deiner Crew für diesen Boulder zu sehen",
+      "loadError": "Das Routenbuch deiner Crew lädt gerade nicht. Versuch's gleich nochmal.",
+      "noneYet": "Aus deiner Crew hat diesen Boulder noch niemand eingetragen"
+    },
+    "entry": {
+      "mirroredTag": "Gespiegelt",
+      "attemptsLabel": "Versuche: {{count}}"
+    },
+    "form": {
+      "ascent": "Begehung",
+      "attempt": "Versuch",
+      "boulder": "Boulder",
+      "dateAndTime": "Datum und Uhrzeit",
+      "angle": "Winkel",
+      "pickAngle": "Winkel wählen",
+      "attempts": "Versuche",
+      "quality": "Qualität",
+      "difficulty": "Schwierigkeit",
+      "difficultyNoOverride": "Konsens-Grad übernehmen",
+      "notes": "Notizen",
+      "video": "Video",
+      "videoPlaceholder": "Instagram- oder TikTok-URL",
+      "videoHelper": "Füg einen Instagram- oder TikTok-Link ein, damit andere deine Beta sehen. (Optional)",
+      "mirrored": "Gespiegelt",
+      "submit": "Eintragen",
+      "submitAtAngle": "Bei {{angle}}° eintragen",
+      "cancel": "Abbrechen",
+      "wallMoved": "Auf der Wand läuft jetzt {{wallClimb}}. Trotzdem {{loggingClimb}} eintragen?",
+      "switchClimb": "Zu {{climbName}} wechseln",
+      "switchDirtyConfirm": "Deine Eingaben gehen verloren. Trotzdem wechseln?",
+      "logType": "Art des Eintrags",
+      "saveFailed": "Dein Eintrag ließ sich nicht speichern. Versuch's nochmal.",
+      "sections": {
+        "details": "Details",
+        "howItFelt": "Wie war's?"
+      },
+      "validation": {
+        "flashOneAttempt": "Ein Flash hat genau 1 Versuch"
+      }
+    },
+    "feed": {
+      "deleteSwipeLabel": "Löschen",
+      "cancelEditing": "Bearbeiten abbrechen",
+      "saveEdit": "Speichern",
+      "moreActions": "Weitere Aktionen",
+      "editLog": "Eintrag bearbeiten",
+      "deleteLog": "Eintrag löschen",
+      "postToInstagram": "Auf Instagram posten",
+      "linkInstagramPost": "Instagram-Post verknüpfen",
+      "stars": "Sterne",
+      "user": "Nutzer*in",
+      "grade": "Grad",
+      "tries": "Versuche",
+      "selectGrade": "Eingetragenen Grad wählen",
+      "status": {
+        "flash": "Geflasht",
+        "send": "Getoppt",
+        "attempt": "Versucht"
+      },
+      "snackbar": {
+        "boardsLinkMissing": "Die verknüpfte Board war nicht zu finden — hier sind alle deine Einträge.",
+        "deleteFailed": "Eintrag konnte nicht gelöscht werden",
+        "tickDeleted": "Eintrag gelöscht",
+        "undo": "Rückgängig"
+      }
+    },
+    "search": {
+      "placeholder": "Boulder oder Notizen suchen",
+      "openFilters": "Filter öffnen",
+      "search": "Suchen",
+      "minGrade": "Min",
+      "maxGrade": "Max",
+      "any": "Alle",
+      "sort": "Sortieren",
+      "clearAll": "Alle zurücksetzen",
+      "filterCount_one": "aktiver Filter",
+      "filterCount_other": "aktive Filter",
+      "resultType": {
+        "includeSends": "Begehungen einbeziehen",
+        "includeAttempts": "Versuche einbeziehen",
+        "flashOnly": "Nur Flashes",
+        "benchmarkOnly": "Nur Benchmarks"
+      },
+      "dateAngle": {
+        "dateRange": "Zeitraum",
+        "startDate": "Startdatum",
+        "endDate": "Enddatum",
+        "wallAngleRange": "Wandwinkel ({{min}}°–{{max}}°)"
+      },
+      "sortFields": {
+        "date": "Datum",
+        "climbName": "Bouldername",
+        "loggedGrade": "Eingetragener Grad",
+        "consensusGrade": "Konsens-Grad",
+        "attemptCount": "Versuche"
+      },
+      "sortDirection": {
+        "desc": "Absteigend"
+      }
+    },
+    "instagram": {
+      "back": "Zurück",
+      "title": "Auf Instagram posten",
+      "subtitle": "Teil deine Begehung und verlink sie hier zurück.",
+      "betaLoadFailed": "Beta-Videos ließen sich nicht laden.",
+      "retry": "Nochmal versuchen",
+      "steps": {
+        "copy": "Kopier die Bildunterschrift und öffne Instagram.",
+        "paste": "Füg die Bildunterschrift beim Erstellen deines Posts ein.",
+        "comeBack": "Sobald dein Post online ist, komm hierher zurück.",
+        "pasteLink": "Füg den Instagram-Link ein, damit wir dein Video zur Begehung hier zeigen können."
+      },
+      "addLinkSubmit": "Instagram-Link hinzufügen",
+      "shareYourBeta": "Teil dein Beta-Video",
+      "shareYourBetaBody": "Wir kopieren die Bildunterschrift und öffnen Instagram, danach fügst du den fertigen Link hier wieder ein.",
+      "howItWorks": "So geht's",
+      "caption": "Bildunterschrift",
+      "copyAndOpen": "Kopieren & Instagram öffnen",
+      "pasteLinkTitle": "Instagram-Link einfügen",
+      "pasteLinkBody": "Sobald dein Post online ist, füg den Reel- oder Post-Link hier ein, damit Boardsesh dein Video zur Begehung zeigen kann.",
+      "pasteLinkHelper": "Füg die URL des veröffentlichten Reels oder Posts ein.",
+      "existingBetaVideos": "Vorhandene Beta-Videos",
+      "snackbar": {
+        "copyFailed": "Bildunterschrift ließ sich nicht kopieren. Versuch's nochmal.",
+        "openFailed": "Instagram ließ sich nicht öffnen. Öffne es selbst und füg die kopierte Bildunterschrift ein.",
+        "copied": "Bildunterschrift kopiert. Instagram öffnet gleich."
+      }
+    }
+  },
+  "mobile": {
+    "account": "Konto",
+    "signOut": "Abmelden"
+  },
+  "setter": {
+    "notFoundTitle": "Routenbauer*in nicht gefunden",
+    "notFoundMessage": "Dieses Profil gibt es vielleicht nicht mehr oder es wurde entfernt.",
+    "shareAriaLabel": "Routenbauer*in-Profil teilen",
+    "shareTitle": "{{name}} - Routenbauer*in",
+    "shareText": "Schau dir die Boulder von {{name}} auf Boardsesh an",
+    "linkCopied": "Link in die Zwischenablage kopiert!",
+    "shareFailed": "Teilen fehlgeschlagen",
+    "follower_one": "Follower",
+    "follower_other": "Follower",
+    "climb_one": "Boulder",
+    "climb_other": "Boulder"
+  }
+}
