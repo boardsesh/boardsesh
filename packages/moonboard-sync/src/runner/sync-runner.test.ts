@@ -62,6 +62,21 @@ describe('MoonBoardSyncRunner', () => {
     runnerHarness.syncMoonBoardLocations.mockResolvedValue(EMPTY_SUMMARY);
   });
 
+  it('stops a fresh runner without initializing sync resources', async () => {
+    const runner = new MoonBoardSyncRunner({
+      username: 'sync@example.com',
+      password: 'secret',
+    });
+
+    await expect(runner.stop()).resolves.toBeUndefined();
+
+    expect(runnerHarness.createDb).not.toHaveBeenCalled();
+    expect(runnerHarness.acquireOrRenewDaemonLease).not.toHaveBeenCalled();
+    expect(runnerHarness.releaseDaemonLease).not.toHaveBeenCalled();
+    expect(runnerHarness.syncMoonBoardLocations).not.toHaveBeenCalled();
+    expect(runnerHarness.closePool).not.toHaveBeenCalled();
+  });
+
   it('runs the existing location sync with configured credentials and database', async () => {
     const logs: string[] = [];
     const runner = new MoonBoardSyncRunner({
