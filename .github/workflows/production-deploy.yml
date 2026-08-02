@@ -436,15 +436,12 @@ jobs:
         env:
           SMOKE_KIOSK_GYM_SLUG: ${{ vars.SMOKE_KIOSK_GYM_SLUG }}
           SMOKE_EMBED_BOARD_UUID: ${{ vars.SMOKE_EMBED_BOARD_UUID }}
-        # `bunx tsx` rather than `vp run smoke:production`, matching this file's
-        # existing `bunx wrangler@4`. CLAUDE.md's no-bunx rule targets
-        # validation, which this isn't, and tsx resolves from the workspace that
-        # `bun install --frozen-lockfile` above already materialised. Reaching
-        # for vp here would mean curl-installing the toolchain onto the
-        # production deploy path — a network dependency that can red a healthy
-        # deploy after it has already shipped. `vp run smoke:production` remains
-        # the way to run this by hand.
-        run: bunx tsx scripts/production-smoke.ts
+        # Bun executes the TypeScript directly — no `bunx`, no `tsx`, nothing
+        # fetched at deploy time. `vp run smoke:production` is the same script
+        # and is how to run it by hand, but no deploy job has vp, and
+        # curl-installing the toolchain here would put a network dependency on
+        # the production deploy path that could red a deploy that shipped fine.
+        run: bun scripts/production-smoke.ts
 
   deploy-production-backend:
     needs: [detect-changes, check-rollback, build-backend, migrate]
