@@ -22,6 +22,11 @@ const CONCURRENCY_GATE_DIAGNOSTICS_PROJECT_PATH =
   'LiveActivityIntentDiagnosticsConcurrencyGate/LiveActivityIntentDiagnostics.swift';
 const SWIFT_FLAGS = '"$(inherited) -D WIDGET_EXTENSION -D BOARDSESH_TESTS"';
 
+// Non-live-activity module sources the generator also stages into the test target,
+// as `<packages/mobile-relative source path>` -> `<path inside the project>`.
+const BOARD_RENDERER_SOURCE_PATH = 'modules/board-renderer/ios/BoardRendererErrorClassification.swift';
+const BOARD_RENDERER_PROJECT_PATH = 'BoardseshTests/BoardRendererSources/BoardRendererErrorClassification.swift';
+
 const MODULE_SOURCE_NAMES = [
   'BoardBleManager.swift',
   'BoardBleWriteSeams.swift',
@@ -152,6 +157,7 @@ function createFixtureProject() {
   for (const moduleSourceName of MODULE_SOURCE_NAMES) {
     copyFixtureSource(`modules/live-activity/ios/${moduleSourceName}`, fixtureMobileRoot);
   }
+  copyFixtureSource(BOARD_RENDERER_SOURCE_PATH, fixtureMobileRoot);
 
   return { fixtureRoot, projectPath };
 }
@@ -217,6 +223,7 @@ describe('prepare-rn-ios-tests generated project', () => {
           .sort()
           .map((name) => `BoardseshTests/${name}`),
         ...MODULE_SOURCE_NAMES.map((name) => `BoardseshTests/LiveActivitySources/${name}`),
+        BOARD_RENDERER_PROJECT_PATH,
       ].sort();
 
       expect(sourcePaths(objects, testTarget).sort()).toEqual(expectedTestSources);
