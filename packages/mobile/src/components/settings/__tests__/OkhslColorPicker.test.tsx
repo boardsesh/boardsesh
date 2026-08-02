@@ -490,6 +490,44 @@ describe('OkhslColorPicker gradient updates', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('finishes a deferred release without applying a coordinate when the track measures zero width', () => {
+    responderHarness.deferMeasurements = true;
+    const onChange = vi.fn();
+    const { container } = render(<OkhslColorPicker value="#00ff00" onChange={onChange} />);
+
+    act(() => {
+      grant(LIGHTNESS_LABEL, 30);
+      move(LIGHTNESS_LABEL, 180);
+      release(LIGHTNESS_LABEL, 270);
+    });
+
+    expect(responderHarness.measurementCallCount).toBe(1);
+    expect(responderHarness.measurementCallbacks).toHaveLength(1);
+
+    act(() => {
+      resolveNextMeasurement(0);
+    });
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(responderHarness.measurementCallCount).toBe(1);
+    expect(responderHarness.measurementCallbacks).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+
+    act(() => {
+      fireTrackLayouts();
+    });
+
+    expect(responderHarness.measurementCallCount).toBe(1);
+    expect(responderHarness.measurementCallbacks).toHaveLength(0);
+
+    // The zero-width release still ends the picker-wide drag, so a later
+    // accessibility update applies its gradient immediately instead of being
+    // left behind the drag throttle.
+    fireEvent.doubleClick(slider(container, SATURATION_LABEL));
+    expect(onChange).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('installs measurement before a queued mount-time gesture reaches passive effects', () => {
     responderHarness.mountGesture = {
       label: LIGHTNESS_LABEL,

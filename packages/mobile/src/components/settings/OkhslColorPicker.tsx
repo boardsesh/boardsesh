@@ -186,6 +186,8 @@ const ChannelSlider = memo(function ChannelSlider({
     // it before passive effects can deliver queued touch events on a busy frame.
     measurePendingCoordinateRef.current = measurePendingCoordinate;
     return () => {
+      // Layout cleanup precedes the passive mountedRef cleanup, so prevent an
+      // in-flight stale result from scheduling another measurement in that gap.
       measurePendingCoordinateRef.current = () => undefined;
     };
   }, [measurePendingCoordinate]);
