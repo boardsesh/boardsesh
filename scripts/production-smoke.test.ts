@@ -58,6 +58,17 @@ describe('www production smoke checks', () => {
     expect(check.assert(response({ contentType: 'application/xml', body: '<urlset></urlset>' }))).toMatch(/loc/);
   });
 
+  it('rejects a session endpoint that 200s with an error payload', () => {
+    const check = checkNamed('auth session');
+    expect(check.assert(response({ contentType: 'application/json', body: '{}' }))).toBeNull();
+    // NextAuth answers 200 for an anonymous session, so status alone proves
+    // nothing here — the body is the only place a failure shows up.
+    expect(check.assert(response({ contentType: 'application/json', body: '{"error":"db down"}' }))).toMatch(/db down/);
+    expect(check.assert(response({ contentType: 'application/json', body: '<html>502</html>' }))).toMatch(
+      /not valid JSON/,
+    );
+  });
+
   it('rejects a ws-auth response that is not the anonymous payload shape', () => {
     const check = checkNamed('ws-auth');
     const healthy = response({

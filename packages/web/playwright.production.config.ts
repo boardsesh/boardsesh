@@ -15,6 +15,17 @@ import { defineConfig, devices } from '@playwright/test';
  *   PLAYWRIGHT_TEST_BASE_URL=https://app.boardsesh.com \
  *     bunx playwright test --config=playwright.production.config.ts
  */
+// Required rather than defaulted. Defaulting to production would mean a bare
+// `playwright test --config=…` silently drives the live site, which is a
+// surprising thing for a config to do on its own; an unset var should say so.
+const baseURL = process.env.PLAYWRIGHT_TEST_BASE_URL;
+if (!baseURL) {
+  throw new Error(
+    'PLAYWRIGHT_TEST_BASE_URL is required for the production smoke — ' +
+      'run `vp run smoke:app-boot`, or set it to the host you mean to check.',
+  );
+}
+
 export default defineConfig({
   testDir: './e2e/production',
   fullyParallel: false,
@@ -27,7 +38,7 @@ export default defineConfig({
   expect: { timeout: 20_000 },
   reporter: process.env.CI ? [['github'], ['list']] : 'list',
   use: {
-    baseURL: process.env.PLAYWRIGHT_TEST_BASE_URL,
+    baseURL,
     trace: 'on-all-retries',
     screenshot: 'only-on-failure',
     navigationTimeout: 60_000,

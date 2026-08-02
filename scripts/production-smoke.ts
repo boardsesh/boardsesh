@@ -74,6 +74,17 @@ function expectBodyContains(response: SmokeResponse, needle: string, label: stri
   return response.body.includes(needle) ? null : `response body has no ${label}`;
 }
 
+/** Parses the body as JSON, or explains why it isn't. */
+function expectJsonBody(response: SmokeResponse): { payload: Record<string, unknown> } | string {
+  try {
+    const parsed: unknown = JSON.parse(response.body);
+    if (typeof parsed !== 'object' || parsed === null) return `payload is not a JSON object: ${typeof parsed}`;
+    return { payload: parsed as Record<string, unknown> };
+  } catch {
+    return `payload is not valid JSON: ${response.body.slice(0, 120)}`;
+  }
+}
+
 /** First non-null failure reason, or null when every assertion passed. */
 function firstFailure(...reasons: (string | null)[]): string | null {
   return reasons.find((reason) => reason !== null) ?? null;
@@ -115,7 +126,17 @@ export const WWW_CHECKS: SmokeCheck[] = [
   {
     name: 'auth session endpoint answers anonymously',
     path: '/api/auth/session',
-    assert: (response) => firstFailure(expectStatus(response, 200), expectContentType(response, 'application/json')),
+    // Body shape matters as much as status: this is the SPA's identity
+    // provider, and a 200 carrying `{"error":"..."}` — or an HTML error page
+    // with a JSON content type — is exactly the failure a status-only check
+    // waves through.
+    assert: (response) => {
+      const failure = firstFailure(expectStatus(response, 200), expectContentType(response, 'application/json'));
+      if (failure) return failure;
+      const parsed = expectJsonBody(response);
+      if (typeof parsed === 'string') return parsed;
+      return 'error' in parsed.payload ? `session endpoint returned an error: ${String(parsed.payload.error)}` : null;
+    },
   },
   {
     name: 'ws-auth answers anonymously (kiosk + embed depend on it)',
@@ -126,15 +147,9 @@ export const WWW_CHECKS: SmokeCheck[] = [
     assert: (response) => {
       const failure = firstFailure(expectStatus(response, 200), expectContentType(response, 'application/json'));
       if (failure) return failure;
-      try {
-        const payload: unknown = JSON.parse(response.body);
-        if (typeof payload !== 'object' || payload === null || !('authenticated' in payload)) {
-          return 'payload has no `authenticated` field';
-        }
-        return null;
-      } catch {
-        return `payload is not valid JSON: ${response.body.slice(0, 120)}`;
-      }
+      const parsed = expectJsonBody(response);
+      if (typeof parsed === 'string') return parsed;
+      return 'authenticated' in parsed.payload ? null : 'payload has no `authenticated` field';
     },
   },
   {
