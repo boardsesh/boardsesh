@@ -1438,6 +1438,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // retry's still-live timeout settles it once, with up to the 8-second
         // connect-timeout latency accepted to avoid failing the wrong attempt.
         if displacedCancellationPeripheralIds.remove(peripheral.identifier) != nil {
+            logger.info("Swallowed unattributable BLE didFailToConnect for displaced \(peripheral.identifier.uuidString, privacy: .public): \(error?.localizedDescription ?? "no error", privacy: .public)")
             return
         }
         guard peripheralGenerations[peripheral.identifier] == connectionGeneration else { return }
@@ -1475,6 +1476,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // retry's still-live timeout settles it once. This is the didDisconnect
         // half of the same tombstone consumed by didFailToConnect above.
         if displacedCancellationPeripheralIds.remove(peripheral.identifier) != nil {
+            logger.info("Swallowed unattributable BLE didDisconnect for displaced \(deviceId, privacy: .public): \(error?.localizedDescription ?? "no error", privacy: .public)")
             return
         }
 
