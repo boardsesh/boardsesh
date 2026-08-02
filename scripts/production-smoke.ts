@@ -90,6 +90,29 @@ function firstFailure(...reasons: (string | null)[]): string | null {
   return reasons.find((reason) => reason !== null) ?? null;
 }
 
+/**
+ * A Next error shell is a well-formed 200-ish HTML document, so status and
+ * content-type alone accept it. The kiosk especially needs more than that —
+ * it is an unattended gym screen that reloads daily, so a render regression
+ * there sits broken for up to 24h with nobody watching.
+ *
+ * The floor is on body size rather than on specific markup, because these two
+ * checks only run against a fixture configured per-environment: asserting an
+ * `<h1>` or a known class would be guessing at markup this script can't see.
+ * An error shell is a couple of KB; a rendered board page is far larger.
+ */
+const MIN_RENDERED_PAGE_BYTES = 4_000;
+
+function renderedHtmlPage(response: SmokeResponse): string | null {
+  return firstFailure(
+    expectStatus(response, 200),
+    expectContentType(response, 'text/html'),
+    response.body.length >= MIN_RENDERED_PAGE_BYTES
+      ? null
+      : `page is ${response.body.length} bytes, under the ${MIN_RENDERED_PAGE_BYTES}-byte floor — likely an error shell, not a render`,
+  );
+}
+
 export const WWW_CHECKS: SmokeCheck[] = [
   {
     name: 'homepage renders server-side',
@@ -156,13 +179,13 @@ export const WWW_CHECKS: SmokeCheck[] = [
     name: 'kiosk page renders for a real gym',
     path: '',
     fixtureEnvVar: 'SMOKE_KIOSK_GYM_SLUG',
-    assert: (response) => firstFailure(expectStatus(response, 200), expectContentType(response, 'text/html')),
+    assert: renderedHtmlPage,
   },
   {
     name: 'board embed renders for a real board',
     path: '',
     fixtureEnvVar: 'SMOKE_EMBED_BOARD_UUID',
-    assert: (response) => firstFailure(expectStatus(response, 200), expectContentType(response, 'text/html')),
+    assert: renderedHtmlPage,
   },
 ];
 
@@ -236,9 +259,10 @@ async function runCheck(check: SmokeCheck, baseUrl: string, env: NodeJS.ProcessE
   return { name: check.name, state: 'fail', detail: `${path} — ${lastDetail}` };
 }
 
+/** `--base` is the only override — one documented way to point this elsewhere. */
 function parseBaseUrl(argv: string[]): string {
   const flagIndex = argv.indexOf('--base');
-  if (flagIndex === -1) return process.env.SMOKE_BASE_URL || DEFAULT_BASE_URL;
+  if (flagIndex === -1) return DEFAULT_BASE_URL;
   const value = argv[flagIndex + 1];
   if (!value) throw new Error('--base needs a URL');
   return value.replace(/\/$/, '');

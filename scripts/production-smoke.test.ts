@@ -85,6 +85,20 @@ describe('www production smoke checks', () => {
     expect(check.assert(response({ status: 401, contentType: 'application/json', body: '{}' }))).toMatch(/401/);
   });
 
+  it('rejects an error shell on the kiosk and embed pages', () => {
+    // A Next error page is a well-formed 200 text/html document, so status and
+    // content-type alone accept it. The kiosk is an unattended gym screen that
+    // reloads daily — a regression there sits broken for up to 24h unwatched.
+    for (const name of ['kiosk page', 'board embed']) {
+      const check = checkNamed(name);
+      expect(
+        check.assert(response({ body: '<html><body>x</body></html>' })),
+        `${name} accepted an error shell`,
+      ).toMatch(/error shell/);
+      expect(check.assert(response({ body: `<html>${'x'.repeat(5000)}</html>` }))).toBeNull();
+    }
+  });
+
   it('skips fixture-backed checks rather than failing when the fixture is unset', () => {
     // Fail-closed on missing config is how #3977 stopped production deploys for
     // two days. Every fixture-backed check must declare its env var and have a
