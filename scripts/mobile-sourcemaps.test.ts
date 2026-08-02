@@ -473,6 +473,60 @@ describe('official Sentry uploader invocation', () => {
     expect(spawnCalled).toBe(false);
   });
 
+  it('surfaces uploader startup errors and cleans its temporary directories', () => {
+    const fixture = createMobileFixture('ios');
+    let temporaryWorkingDirectory: string | undefined;
+    let stagingDirectory: string | undefined;
+
+    expect(() =>
+      uploadMobileSourceMaps(
+        {
+          platform: 'ios',
+          mobileDir: fixture.mobileDir,
+          outputDir: fixture.outputDir,
+          environment: { SENTRY_AUTH_TOKEN: 'secret-token' },
+        },
+        {
+          resolveUploader: () => join(fixture.mobileDir, 'fake-uploader.js'),
+          spawnUploader: (_executable, args, options) => {
+            temporaryWorkingDirectory = options.cwd;
+            stagingDirectory = args[1];
+            return { status: null, error: new Error('spawn EACCES') };
+          },
+        },
+      ),
+    ).toThrow('Could not start the official Sentry uploader: spawn EACCES');
+    expect(existsSync(temporaryWorkingDirectory ?? '')).toBe(false);
+    expect(existsSync(stagingDirectory ?? '')).toBe(false);
+  });
+
+  it('surfaces nonzero uploader exits and cleans its temporary directories', () => {
+    const fixture = createMobileFixture('android');
+    let temporaryWorkingDirectory: string | undefined;
+    let stagingDirectory: string | undefined;
+
+    expect(() =>
+      uploadMobileSourceMaps(
+        {
+          platform: 'android',
+          mobileDir: fixture.mobileDir,
+          outputDir: fixture.outputDir,
+          environment: { SENTRY_AUTH_TOKEN: 'secret-token' },
+        },
+        {
+          resolveUploader: () => join(fixture.mobileDir, 'fake-uploader.js'),
+          spawnUploader: (_executable, args, options) => {
+            temporaryWorkingDirectory = options.cwd;
+            stagingDirectory = args[1];
+            return { status: 17 };
+          },
+        },
+      ),
+    ).toThrow('Official Sentry uploader failed with exit code 17');
+    expect(existsSync(temporaryWorkingDirectory ?? '')).toBe(false);
+    expect(existsSync(stagingDirectory ?? '')).toBe(false);
+  });
+
   it('stages exactly declared executable groups, uses a fresh cwd, and cleans only its temporary root', () => {
     const fixture = createMobileFixture('android');
     const fakeUploaderPath = join(fixture.mobileDir, 'fake-uploader.js');
@@ -647,6 +701,17 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
     expect(overlayStep).toContain(
       'git add scripts/mobile-publish.ts scripts/lib/eoas.ts scripts/lib/mobile-publish-retry.ts',
     );
+    const overlayCommitGuardPosition = overlayStep.indexOf('if ! git diff --cached --quiet; then');
+    const overlayNamePosition = overlayStep.indexOf('git config user.name "github-actions[bot]"');
+    const overlayEmailPosition = overlayStep.indexOf(
+      'git config user.email "github-actions[bot]@users.noreply.github.com"',
+    );
+    const overlayCommitPosition = overlayStep.indexOf('git commit -m "chore(ota): overlay trusted publish tooling"');
+    expect(overlayCommitGuardPosition).toBeGreaterThanOrEqual(0);
+    expect(overlayNamePosition).toBeGreaterThan(overlayCommitGuardPosition);
+    expect(overlayEmailPosition).toBeGreaterThan(overlayCommitGuardPosition);
+    expect(overlayNamePosition).toBeLessThan(overlayCommitPosition);
+    expect(overlayEmailPosition).toBeLessThan(overlayCommitPosition);
     expect(overlayStep).toContain('git status --porcelain');
     expect(workflowStep(workflow, 'Validate anchored Sentry uploader support')).toContain('7.11.0');
 

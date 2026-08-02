@@ -216,6 +216,8 @@ jobs:
           cp "$tooling_root/scripts/mobile-upload-sourcemaps.ts" scripts/mobile-upload-sourcemaps.ts
           git add scripts/mobile-publish.ts scripts/lib/eoas.ts scripts/lib/mobile-publish-retry.ts scripts/mobile-upload-sourcemaps.ts
           if ! git diff --cached --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
             git commit -m "chore(ota): overlay trusted publish tooling"
           fi
           if [ -n "$(git status --porcelain)" ]; then
