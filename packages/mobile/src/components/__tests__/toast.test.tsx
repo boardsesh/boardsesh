@@ -7,7 +7,9 @@ import { createElement, type ReactNode } from 'react';
 const ctrl = vi.hoisted(() => ({
   variant: 'material' as 'material' | 'liquidGlass',
   nativeTabBar: false,
+  nativeBottomAccessoryAvailable: true,
   insetsBottom: 34,
+  segments: ['(tabs)', 'climbs'] as readonly string[],
 }));
 
 type ViewMockProps = { children?: ReactNode; accessibilityRole?: string };
@@ -64,11 +66,14 @@ vi.mock('react-native-paper', () => ({
     ),
 }));
 
-vi.mock('expo-router', () => ({ useSegments: () => ['(tabs)', 'climbs'] }));
+vi.mock('expo-router', () => ({ useSegments: () => ctrl.segments }));
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 47, bottom: ctrl.insetsBottom, left: 0, right: 0 }),
 }));
-vi.mock('../../hooks/use-bottom-accessory', () => ({ useNativeTabBar: () => ctrl.nativeTabBar }));
+vi.mock('../../hooks/use-bottom-accessory', () => ({
+  isBottomAccessoryAvailable: () => ctrl.nativeBottomAccessoryAvailable,
+  useNativeTabBar: () => ctrl.nativeTabBar,
+}));
 
 vi.mock('../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', { 'data-text': 'true' }, children),
@@ -88,9 +93,9 @@ vi.mock('../../theme/layout', () => ({
   MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT: 48,
   MATERIAL_TAB_BAR_HEIGHT: 80,
   TAB_BAR_HEIGHT: 49,
-  TOOLBAR_RESERVE: 56,
+  // Production semantics: glassSize.hero(56) + TOOLBAR_GAP_ABOVE_TABBAR(10).
+  TOOLBAR_RESERVE: 66,
 }));
-vi.mock('../../lib/route-segments', () => ({ isTabsRoute: () => true }));
 vi.mock('../../providers/theme-provider', () => ({
   useTheme: () => ({
     variant: ctrl.variant,
@@ -101,14 +106,21 @@ vi.mock('../../providers/theme-provider', () => ({
 }));
 
 import { Toast } from '../Toast';
+import { TAB_BAR_HEIGHT, TOOLBAR_RESERVE } from '../../theme/layout';
+import { spacing } from '../../theme/tokens';
 
 const toast = { id: 't1', message: 'Saved tick', variant: 'success' as const, duration: 3000 };
+// Representative iPhone native-tab inset without BottomAccessory. This is
+// realistic arithmetic, not a device-verified product contract.
+const NATIVE_TAB_ONLY_INSET = 34 + TAB_BAR_HEIGHT;
 
 describe('Toast', () => {
   beforeEach(() => {
     ctrl.variant = 'material';
     ctrl.nativeTabBar = false;
+    ctrl.nativeBottomAccessoryAvailable = true;
     ctrl.insetsBottom = 34;
+    ctrl.segments = ['(tabs)', 'climbs'];
   });
 
   it('renders a Paper Snackbar on the Material variant', () => {
@@ -178,8 +190,10 @@ describe('Toast', () => {
   it('preserves explicit tab and queue reserves on the Liquid Glass JS fallback', () => {
     ctrl.variant = 'liquidGlass';
     const { container } = render(<Toast toast={toast} onDismiss={() => {}} />);
-    // 34 safe area + 49 JS tab bar + 56 floating queue reserve + 8 gap.
-    expect(container.querySelector('[data-animated]')?.getAttribute('data-style')).toContain('"bottom":147');
+    const expectedBottom = 34 + TAB_BAR_HEIGHT + TOOLBAR_RESERVE + spacing[2];
+    expect(container.querySelector('[data-animated]')?.getAttribute('data-style')).toContain(
+      `"bottom":${expectedBottom}`,
+    );
   });
 
   it('does not add native tab or accessory chrome to the measured 139pt UIKit inset (#3973)', () => {
@@ -190,6 +204,33 @@ describe('Toast', () => {
     // 139 already includes the home indicator, native tab bar, and accessory;
     // Toast adds only its 8pt visual gap.
     expect(container.querySelector('[data-animated]')?.getAttribute('data-style')).toContain('"bottom":147');
+  });
+
+  it('clears the JS queue bar when NativeTabs cannot mount a BottomAccessory', () => {
+    ctrl.variant = 'liquidGlass';
+    ctrl.nativeTabBar = true;
+    ctrl.nativeBottomAccessoryAvailable = false;
+    ctrl.insetsBottom = NATIVE_TAB_ONLY_INSET;
+    const { container } = render(<Toast toast={toast} onDismiss={() => {}} />);
+    const expectedBottom = NATIVE_TAB_ONLY_INSET + TOOLBAR_RESERVE + spacing[2];
+    // NativeTabs owns the tab-only inset, while the unavailable BottomAccessory
+    // falls back to the JS queue tray. Do not add TAB_BAR_HEIGHT a second time.
+    expect(container.querySelector('[data-animated]')?.getAttribute('data-style')).toContain(
+      `"bottom":${expectedBottom}`,
+    );
+  });
+
+  it('does not reserve the JS queue bar on a pushed NativeTabs route', () => {
+    ctrl.variant = 'liquidGlass';
+    ctrl.nativeTabBar = true;
+    ctrl.nativeBottomAccessoryAvailable = false;
+    ctrl.insetsBottom = NATIVE_TAB_ONLY_INSET;
+    ctrl.segments = ['(tabs)', 'home', 'session', '[sessionId]'];
+    const { container } = render(<Toast toast={toast} onDismiss={() => {}} />);
+    const expectedBottom = NATIVE_TAB_ONLY_INSET + spacing[2];
+    expect(container.querySelector('[data-animated]')?.getAttribute('data-style')).toContain(
+      `"bottom":${expectedBottom}`,
+    );
   });
 
   it('auto-dismisses via timer on the Liquid Glass variant', () => {
