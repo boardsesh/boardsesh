@@ -26,7 +26,8 @@
  * match a real edge fail too, so the allowlist can't rot.
  */
 import { describe, expect, it } from 'vite-plus/test';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
@@ -510,20 +511,41 @@ describe('import-graph invariant: kept surfaces do not reach into the delete set
   });
 
   it('resolves the edge kinds a grep would miss', () => {
-    // dynamic(() => import('…')) — one live example, board-page/climbs-list.tsx.
-    const climbsList = join(WEB_ROOT, 'app', 'components', 'board-page', 'climbs-list.tsx');
-    const dynamicTargets = extractImports(climbsList)
-      .map((edge) => resolveSpecifier(edge.specifier, climbsList))
-      .filter((target): target is string => target !== null)
-      .map(toWebRelative);
-    expect(dynamicTargets).toContain('app/components/climb-card/drawer-climb-header.tsx');
+    // Both kinds are exercised against a scratch fixture rather than against
+    // real modules. The obvious live examples — `board-page/climbs-list.tsx`
+    // for the dynamic import, `library/library.module.css` for the stylesheet —
+    // are both in the delete set, so pinning them here would turn this test
+    // into an ENOENT crash the day the teardown lands. What is under test is
+    // the resolver, and the resolver outlives every file it walks.
+    const fixtureDir = mkdtempSync(join(tmpdir(), 'import-graph-edge-kinds-'));
+    try {
+      const importer = join(fixtureDir, 'importer.tsx');
+      writeFileSync(
+        importer,
+        [
+          `import dynamic from 'next/dynamic';`,
+          `import './styles.module.css';`,
+          `const Drawer = dynamic(() => import('./drawer'), { ssr: false });`,
+          `export default function Importer() {`,
+          `  return <Drawer />;`,
+          `}`,
+        ].join('\n'),
+      );
+      writeFileSync(join(fixtureDir, 'drawer.tsx'), `export default function Drawer() {\n  return null;\n}\n`);
+      writeFileSync(join(fixtureDir, 'styles.module.css'), `.root {\n  color: red;\n}\n`);
 
-    // `.module.css` — the library stylesheets six kept pages still pull in.
-    const playlistsPage = join(WEB_ROOT, 'app', 'playlists', 'page.tsx');
-    const cssTargets = extractImports(playlistsPage)
-      .map((edge) => resolveSpecifier(edge.specifier, playlistsPage))
-      .filter((target): target is string => target !== null)
-      .map(toWebRelative);
-    expect(cssTargets).toContain('app/components/library/library.module.css');
+      const targets = extractImports(importer)
+        .map((edge) => resolveSpecifier(edge.specifier, importer))
+        .filter((target): target is string => target !== null);
+
+      // `dynamic(() => import('…'))` — invisible to a plain import grep.
+      expect(targets).toContain(join(fixtureDir, 'drawer.tsx'));
+      // `.module.css` — an asset edge with no outgoing edges of its own.
+      expect(targets).toContain(join(fixtureDir, 'styles.module.css'));
+      // A bare package specifier resolves to null rather than a bogus path.
+      expect(resolveSpecifier('next/dynamic', importer)).toBeNull();
+    } finally {
+      rmSync(fixtureDir, { recursive: true, force: true });
+    }
   });
 });
