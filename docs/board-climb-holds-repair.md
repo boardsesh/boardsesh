@@ -16,7 +16,7 @@ Production access is never implicit. Get explicit operator approval separately f
 2. the production apply, including its short table-lock window; and
 3. the post-commit cache action.
 
-Pause catalog and sync writers only for the approved apply window. The transaction takes `SHARE ROW EXCLUSIVE` locks on `board_climbs` and `board_climb_holds`, uses a five-second lock timeout and a two-minute statement timeout, and rolls back on any manifest or verification mismatch. The statement timeout applies to each statement; if the large batch delete or insert times out, the entire transaction rolls back.
+Pause catalog and sync writers only for the approved apply window. The transaction takes `SHARE ROW EXCLUSIVE` locks on `board_climbs` and `board_climb_holds`, uses a five-second lock timeout and a two-minute statement timeout, and rolls back on any manifest or verification mismatch. Placement lookups, changed-climb identities, fingerprint updates, inserts, invalid-row deletes, and exact-row verification are split into bounded PostgreSQL JSON parameters: at most 500 identities or 5,000 mutation rows, and at most 1 MiB per parameter. All batches still run under the same locks in one transaction; a failure in a later batch rolls back every earlier batch.
 
 ## Target database
 
@@ -52,7 +52,7 @@ vp run db:repair-board-climb-holds -- --apply \
   --report-limit 100
 ```
 
-After the locks are acquired, the script rebuilds the manifest inside the repeatable-read transaction. Any drift aborts before writes. It then verifies the exact projected rows for every rebuilt climb and requires the global invalid-row count to be zero before commit. A second approved dry-run should report `changed=0`, `invalid_rows=0`, and a new stable digest for that clean state.
+After the locks are acquired, the script rebuilds the manifest inside the repeatable-read transaction. Any drift aborts before writes. It then verifies the exact projected rows for every rebuilt climb, including climbs whose authoritative projection is empty, and requires the global invalid-row count to be zero before commit. Only multi-frame projection is restricted to the Aurora-family board allowlist; invalid stored rows are discovered, deleted, and verified across all board types. A second approved dry-run should report `changed=0`, `invalid_rows=0`, and a new stable digest for that clean state.
 
 ## Popular-config cache
 
