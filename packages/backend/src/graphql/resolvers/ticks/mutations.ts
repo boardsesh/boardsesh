@@ -1237,6 +1237,12 @@ export const tickMutations = {
         .returning();
       const updatedTarget = updatedTicks.find((tick) => tick.uuid === uuid)!;
 
+      // This symmetry is a RUNTIME one only — do not assume the #3529 repair
+      // migration matches it. 0188's statement A updates boardsesh_ticks.angle and
+      // nothing else, so a historical tick it moves keeps its beta pinned at the
+      // pre-move angle until someone edits that tick's angle by hand and lands
+      // here. Accepted deliberately on 2026-08-02 rather than widening a migration
+      // that was already signed off; the reasoning is in that file's header.
       let movedBetaLinks = false;
       if (existingTicks.some((tick) => tick.angle !== updatedTarget.angle)) {
         const moved = await tx

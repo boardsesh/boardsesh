@@ -69,6 +69,19 @@
 --     at 40. board_climb_stats.ascensionist_count stays correct (the recompute
 --     counts DISTINCT climbers), so this is cosmetic in stats but visible in
 --     that climber's logbook. See the UNMEASURED block below.
+--   * BETA VIDEOS STAY AT THE OLD ANGLE (statement A). board_beta_links.angle is
+--     stamped from the tick when the video is attached, and A moves
+--     boardsesh_ticks.angle only — it does not carry the beta row across. So a
+--     moved tick with a tick_uuid-linked beta keeps that video pinned to the
+--     angle the tick left, and the mobile home feed (which opens a beta at the
+--     beta row's angle) opens an angle the problem is not graded at. Nothing
+--     revisits those rows on its own: the only writer of board_beta_links.angle
+--     after creation is updateTick (resolvers/ticks/mutations.ts), and only when
+--     a climber edits that tick's angle by hand. How many rows this affects is
+--     unmeasured. ACCEPTED by Marco on 2026-08-02 — this file ships at exactly
+--     the scope signed off on 2026-07-31, with no fourth statement, rather than
+--     widening it and voiding that sign-off. A deliberate boundary, not an
+--     oversight.
 --
 -- UNMEASURED — TAKE THESE TWO READINGS AS PART OF SIGN-OFF
 --   Neither number was taken when this file was written, and neither is implied
@@ -127,7 +140,9 @@
 -- not self-idempotent; this one does not need it.
 
 -- Statement A — move the stranded ticks to the angle their climb is graded at,
--- so the send lands on the row every surface already reads.
+-- so the send lands on the row every surface already reads. Ticks only: a linked
+-- board_beta_links row keeps the angle it was stamped with (see BETA VIDEOS
+-- above — accepted 2026-08-02).
 UPDATE boardsesh_ticks bt
    SET angle = bc.angle
   FROM board_climbs bc
