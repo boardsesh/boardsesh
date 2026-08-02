@@ -418,6 +418,23 @@ describe('official Sentry uploader invocation', () => {
     );
   });
 
+  it('reports missing mobile directories and installed uploader files clearly', () => {
+    const fixture = createMobileFixture();
+    const sentryRoot = join(fixture.mobileDir, 'node_modules', '@sentry', 'react-native');
+    mkdirSync(sentryRoot, { recursive: true });
+    writeFileSync(
+      join(sentryRoot, 'package.json'),
+      JSON.stringify({ name: '@sentry/react-native', version: '7.11.0' }),
+    );
+
+    expect(() => resolveInstalledSentryUploader(join(fixture.mobileDir, 'missing'))).toThrow(
+      'Mobile directory does not exist or is not a directory',
+    );
+    expect(() => resolveInstalledSentryUploader(fixture.mobileDir)).toThrow(
+      'Official Sentry Expo source-map uploader is missing',
+    );
+  });
+
   it('fixes org/project/url and removes release, dist, and CLI overrides', () => {
     const environment = createSentryUploadEnvironment({
       SENTRY_AUTH_TOKEN: ' token ',
@@ -621,6 +638,7 @@ describe('official Sentry uploader invocation', () => {
 describe('source-map CLI arguments', () => {
   it('requires one native platform', () => {
     expect(parseUploadArgs(['--platform', 'ios'])).toBe('ios');
+    expect(parseUploadArgs(['-p', 'ios'])).toBe('ios');
     expect(parseUploadArgs(['--platform=android'])).toBe('android');
     expect(() => parseUploadArgs([])).toThrow('--platform is required');
     expect(() => parseUploadArgs(['--platform', 'all'])).toThrow('--platform is required');

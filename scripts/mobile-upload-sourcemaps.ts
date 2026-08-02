@@ -333,7 +333,11 @@ function stageValidatedArtifacts(artifacts: ValidatedSourceMapArtifact[], stagin
 }
 
 export function resolveInstalledSentryUploader(mobileDirInput: string): string {
-  const mobileDir = realpathSync(resolve(mobileDirInput));
+  const requestedMobileDir = resolve(mobileDirInput);
+  if (!existsSync(requestedMobileDir) || !statSync(requestedMobileDir).isDirectory()) {
+    throw new Error(`Mobile directory does not exist or is not a directory: ${requestedMobileDir}`);
+  }
+  const mobileDir = realpathSync(requestedMobileDir);
   const requireFromMobile = createRequire(join(mobileDir, 'package.json'));
   let sentryPackageJsonPath: string;
   try {
