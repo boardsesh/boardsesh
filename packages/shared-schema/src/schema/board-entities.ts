@@ -203,6 +203,12 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     serialNumber: String
     "Paired Rogue Fitness timer's advertised BLE name"
     timerName: String
+    """
+    Create this board even though the caller already owns one with the same
+    configuration at the same place. Set only after the user has confirmed it is
+    a physically different wall (another gym, another room) — never by default.
+    """
+    allowDuplicateConfig: Boolean
   }
 
   """

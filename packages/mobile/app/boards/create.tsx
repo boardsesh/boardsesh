@@ -2,16 +2,48 @@ import { useCallback, useMemo, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
-import { useMyBoards, useCreateBoard, useProfile } from '../../src/lib/graphql/hooks';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
+import type { CreateBoardInput, UserBoard } from '@boardsesh/shared-schema';
+import { useCreateBoard, useProfile, fetchBoardByUuid } from '../../src/lib/graphql/hooks';
 import { useSetActiveBoard } from '../../src/lib/graphql/use-active-board';
+import {
+  extractGraphqlMessage,
+  isGraphqlRateLimitedError,
+  isExpectedAuthError,
+  readDuplicateBoardError,
+  type DuplicateBoardError,
+} from '../../src/lib/graphql/extract-error-message';
+import { track } from '../../src/lib/analytics';
 import { useAuth } from '../../src/providers/auth-provider';
-import { useToast } from '../../src/providers/toast-provider';
 import { hapticSelection } from '../../src/lib/haptics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { useBoardBuilder, type BoardBuilderSeed } from '../../src/components/board-discovery/use-board-builder';
 import { BoardForm } from '../../src/components/board-discovery/BoardForm';
+import { BoardDuplicatePromptSheet } from '../../src/components/board-discovery/BoardDuplicatePromptSheet';
 import { formatDefaultBoardName } from '../../src/components/board-discovery/board-builder-labels';
-import { findOwnedBoardForConfig } from '../../src/components/board-discovery/board-items';
+
+/** Analytics properties describing a create attempt. Never carries free text or coordinates. */
+function describeInput(input: CreateBoardInput, source: 'popular_seed' | 'scratch') {
+  return {
+    boardType: input.boardType,
+    layoutId: input.layoutId,
+    sizeId: input.sizeId,
+    setCount: input.setIds.split(',').filter(Boolean).length,
+    angle: input.angle,
+    isOwned: input.isOwned,
+    isPublic: input.isPublic,
+    hasLocationName: !!input.locationName,
+    hasCoords: input.latitude != null && input.longitude != null,
+    hasGym: !!input.gymUuid,
+    source,
+  };
+}
+
+function classifyCreateFailure(error: unknown): 'rate_limited' | 'auth' | 'exception' {
+  if (isGraphqlRateLimitedError(error)) return 'rate_limited';
+  if (isExpectedAuthError(error)) return 'auth';
+  return 'exception';
+}
 
 export default function CreateBoard() {
   const router = useRouter();
@@ -25,13 +57,10 @@ export default function CreateBoard() {
   const boardReturnTo = resolveBoardReturnTo(params.returnTo);
   const { isAuthenticated } = useAuth();
   const { t } = useTranslation('boards');
-  const { showToast } = useToast();
 
   const setActiveBoard = useSetActiveBoard();
   const createBoard = useCreateBoard();
   const { data: profile } = useProfile({ enabled: isAuthenticated });
-  const { data: boardConnection } = useMyBoards(undefined, { enabled: isAuthenticated });
-  const myBoards = boardConnection?.boards ?? [];
 
   // Pre-fill when opened from a Popular config. Memoised so the builder doesn't
   // re-seed (and wipe edits) on every render.
@@ -46,6 +75,7 @@ export default function CreateBoard() {
     };
   }, [params.seedBoardName, params.seedLayoutId, params.seedSizeId, params.seedSetIds]);
 
+  const source = seed ? 'popular_seed' : 'scratch';
   const builder = useBoardBuilder(seed);
 
   // Auto-generated default name, e.g. "Marco's Kilter Original 12×12", from the
@@ -67,39 +97,116 @@ export default function CreateBoard() {
   );
 
   const [submitting, setSubmitting] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [duplicate, setDuplicate] = useState<DuplicateBoardError | null>(null);
 
-  const handleCreate = useCallback(async () => {
-    if (submitting) return;
-    const input = builder.buildCreateInput(defaultName);
-    if (!input) return;
-    setSubmitting(true);
-    hapticSelection();
-    try {
-      // Activate an already-owned matching board instead of hitting the server's
-      // duplicate-config guard.
-      const owned = findOwnedBoardForConfig(myBoards, {
-        boardType: input.boardType,
-        layoutId: input.layoutId,
-        sizeId: input.sizeId,
-        setIds: input.setIds,
-      });
-      const board = owned ?? (await createBoard.mutateAsync(input));
+  const finish = useCallback(
+    async (board: UserBoard) => {
       await setActiveBoard(board);
       router.dismissTo(boardReturnTo);
-      // Navigated away on success — no need to clear `submitting` (unmounting).
+    },
+    [setActiveBoard, router, boardReturnTo],
+  );
+
+  /**
+   * Always calls the server. The old short-circuit — activate an owned board
+   * whose config matched and skip the mutation — is what made #4166 look like a
+   * success while silently discarding the form, so there is deliberately no
+   * client-side path that can complete a create without a server round trip.
+   * The server decides whether this is a duplicate, and the user decides what to
+   * do about it.
+   */
+  const handleCreate = useCallback(
+    async (options?: { allowDuplicateConfig?: boolean }) => {
+      if (submitting) return;
+      const input = builder.buildCreateInput(defaultName);
+      if (!input) return;
+      setSubmitting(true);
+      setCreateError(null);
+      hapticSelection();
+
+      try {
+        const board = await createBoard.mutateAsync({
+          ...input,
+          allowDuplicateConfig: options?.allowDuplicateConfig || undefined,
+        });
+        track(SHARED_EVENTS.BoardCreated, {
+          ...describeInput(input, source),
+          allowedDuplicate: !!options?.allowDuplicateConfig,
+        });
+        await finish(board);
+        // Navigated away on success — no need to clear `submitting` (unmounting).
+      } catch (error) {
+        const duplicateError = readDuplicateBoardError(error);
+        if (duplicateError) {
+          track(SHARED_EVENTS.BoardDuplicatePrompted, {
+            boardType: input.boardType,
+            source,
+            hasLocation: !!input.locationName || (input.latitude != null && input.longitude != null),
+          });
+          setDuplicate(duplicateError);
+          setSubmitting(false);
+          return;
+        }
+        track(SHARED_EVENTS.BoardCreateFailed, {
+          boardType: input.boardType,
+          source,
+          error_reason: classifyCreateFailure(error),
+        });
+        // Inline, never a toast: this screen is a `presentation: 'modal'` route
+        // and the toast overlay renders behind it, so a toast here is invisible.
+        setCreateError(extractGraphqlMessage(error) ?? t('mobile.create.createError'));
+        setSubmitting(false);
+      }
+    },
+    [submitting, builder, defaultName, createBoard, finish, source, t],
+  );
+
+  const handleUseExisting = useCallback(async () => {
+    if (!duplicate) return;
+    setSubmitting(true);
+    try {
+      const board = await fetchBoardByUuid(duplicate.boardUuid);
+      if (!board) throw new Error('Board not found');
+      track(SHARED_EVENTS.BoardCreateReusedExisting, { boardType: builder.boardName, source });
+      setDuplicate(null);
+      await finish(board);
     } catch {
-      showToast(t('mobile.create.createError'), 'error');
+      setDuplicate(null);
+      setCreateError(t('mobile.create.duplicate.switchError'));
       setSubmitting(false);
     }
-  }, [submitting, builder, defaultName, myBoards, createBoard, setActiveBoard, router, boardReturnTo, showToast, t]);
+  }, [duplicate, builder.boardName, source, finish, t]);
+
+  const handleAddAnother = useCallback(() => {
+    setDuplicate(null);
+    void handleCreate({ allowDuplicateConfig: true });
+  }, [handleCreate]);
+
+  const handleDismissDuplicate = useCallback(() => {
+    setDuplicate(null);
+    setSubmitting(false);
+  }, []);
 
   return (
-    <BoardForm
-      builder={builder}
-      defaultName={defaultName}
-      submitting={submitting}
-      onSubmit={() => void handleCreate()}
-      submitLabel={t('mobile.create.save')}
-    />
+    <>
+      <BoardForm
+        builder={builder}
+        defaultName={defaultName}
+        submitting={submitting}
+        errorMessage={createError}
+        onSubmit={() => void handleCreate()}
+        submitLabel={t('mobile.create.save')}
+      />
+      {duplicate && (
+        <BoardDuplicatePromptSheet
+          duplicate={duplicate}
+          busy={submitting}
+          onUseExisting={() => void handleUseExisting()}
+          onAddAnother={handleAddAnother}
+          onDismiss={handleDismissDuplicate}
+        />
+      )}
+    </>
   );
 }

@@ -1422,6 +1422,12 @@ export type ControllerRegistration = {
 
 /** Input for creating a board. */
 export type CreateBoardInput = {
+  /**
+   * Create this board even though the caller already owns one with the same
+   * configuration at the same place. Set only after the user has confirmed it is
+   * a physically different wall (another gym, another room) — never by default.
+   */
+  allowDuplicateConfig?: InputMaybe<Scalars['Boolean']['input']>;
   /** Default angle for this board (default 40) */
   angle?: InputMaybe<Scalars['Int']['input']>;
   /** Board type */
@@ -1584,6 +1590,18 @@ export type DeleteAccountInput = {
 
 export type DeleteProposalInput = {
   proposalUuid: Scalars['ID']['input'];
+};
+
+/**
+ * Input for removing a board from a gym's listing. The gate is edit access to the
+ * gym; the board must currently be listed at it. Clears the link only — the board
+ * itself is untouched and stays its owner's.
+ */
+export type DetachBoardFromGymInput = {
+  /** Board UUID to detach */
+  boardUuid: Scalars['ID']['input'];
+  /** Gym UUID to detach the board from */
+  gymUuid: Scalars['ID']['input'];
 };
 
 export type DeviceLogEntry = {
@@ -3070,6 +3088,12 @@ export type Mutation = {
   /** Delete a tick (climb attempt record). Only the owner can delete. */
   deleteTick: Scalars['Boolean']['output'];
   /**
+   * Remove a board from this gym's listing. Gated on edit access to the gym, and
+   * the board must currently be listed at it. Lets gym staff undo an unwanted
+   * self-link; clears gym_id only, leaving the board with its owner.
+   */
+  detachBoardFromGym: Scalars['Boolean']['output'];
+  /**
    * Unlink an external platform integration. Revokes the token on the
    * provider's side (best-effort) and deletes the stored credentials.
    * Requires authentication.
@@ -3121,7 +3145,12 @@ export type Mutation = {
   kioskHeartbeat: Scalars['Boolean']['output'];
   /** Leave the current session. */
   leaveSession: Scalars['Boolean']['output'];
-  /** Link or unlink a board to/from a gym. */
+  /**
+   * Link or unlink a board you own to/from a gym. Unlinking is always yours to
+   * do. Linking needs either owner/admin rights on the gym, or — so a climber can
+   * list their board at the gym they actually climb at — a public gym within
+   * 150 m of the board's coordinates, subject to a per-caller cap.
+   */
   linkBoardToGym: Scalars['Boolean']['output'];
   /** Mark all notifications as read. */
   markAllNotificationsRead: Scalars['Boolean']['output'];
@@ -3569,6 +3598,11 @@ export type MutationDeleteProposalArgs = {
 /** Root mutation type for all write operations. */
 export type MutationDeleteTickArgs = {
   uuid: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationDetachBoardFromGymArgs = {
+  input: DetachBoardFromGymInput;
 };
 
 /** Root mutation type for all write operations. */

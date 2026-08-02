@@ -395,5 +395,145 @@ describe('createBoard auto-gym guard (end-to-end mutation)', () => {
 
     // The board must NOT be linked to the stranger's claimable "Home Wall" pin.
     expect(board.gymId).not.toBe(systemGeneric.id);
+    // ...and a separate gym IS minted for it, so the board still lands somewhere.
+    expect(board.gymId).not.toBeNull();
+  });
+});
+
+/**
+ * Auto-gym resolves per LOCATION, not per user. Until #4166 a gym was minted only
+ * when the caller owned zero gyms, so every second-and-later board landed with
+ * `gym_id = NULL` — 29% of real user boards in production — and showed on the map
+ * as a bare pin instead of under the gym the user had just named.
+ *
+ * These also cover the transaction restructure: the PostGIS `location` writes now
+ * run after the transaction, each guarded. Previously they were inside it, and
+ * since this test DB has no PostGIS the whole mint rolled back — which is why the
+ * mint path had never actually executed under test.
+ */
+describe('createBoard auto-gym — per-location minting', () => {
+  it('mints a SECOND gym for a second board at a different location', async () => {
+    await createBoard(
+      { name: 'First board', locationName: 'Klimmuur', latitude: BASE.latitude, longitude: BASE.longitude },
+      authCtx(QUERIER),
+    );
+    const afterFirst = await countGyms();
+
+    const second = await createBoard(
+      { name: 'Second board', locationName: 'Boulder Space', latitude: LAT_2KM, longitude: BASE.longitude },
+      authCtx(QUERIER),
+    );
+
+    expect(second.gymId).not.toBeNull();
+    expect(await countGyms()).toBe(afterFirst + 1);
+  });
+
+  it('converges a second board at the same named location onto the same gym', async () => {
+    const first = await createBoard(
+      { name: 'First board', locationName: 'Klimmuur', latitude: BASE.latitude, longitude: BASE.longitude },
+      authCtx(QUERIER),
+    );
+    const afterFirst = await countGyms();
+
+    const second = await createBoard(
+      { name: 'Second board', locationName: 'Klimmuur', latitude: LAT_60M, longitude: BASE.longitude },
+      authCtx(QUERIER),
+    );
+
+    expect(second.gymId).toBe(first.gymId);
+    expect(await countGyms()).toBe(afterFirst);
+  });
+
+  it('converges on the caller’s own same-named gym a couple of km away', async () => {
+    const first = await createBoard(
+      { name: 'First board', locationName: 'Klimmuur', latitude: BASE.latitude, longitude: BASE.longitude },
+      authCtx(QUERIER),
+    );
+    const second = await createBoard(
+      { name: 'Second board', locationName: 'Klimmuur', latitude: LAT_2KM, longitude: BASE.longitude },
+      authCtx(QUERIER),
+    );
+    // Within the 5 km own-gym ceiling — one gym, two boards.
+    expect(second.gymId).toBe(first.gymId);
+  });
+
+  it('mints a separate gym for the same name 8 km away', async () => {
+    const first = await createBoard(
+      { name: 'First board', locationName: 'Klimmuur', latitude: BASE.latitude, longitude: BASE.longitude },
+      authCtx(QUERIER),
+    );
+    const second = await createBoard(
+      { name: 'Second board', locationName: 'Klimmuur', latitude: LAT_8KM, longitude: BASE.longitude },
+      authCtx(QUERIER),
+    );
+    expect(second.gymId).not.toBe(first.gymId);
+    expect(second.gymId).not.toBeNull();
+  });
+
+  it('leaves a board with no location at all unlinked', async () => {
+    // Previously this minted a gym named after the BOARD, with null coordinates —
+    // a row that can never appear in proximity search.
+    const before = await countGyms();
+    const board = await createBoard({ name: 'Nameless place board' }, authCtx(QUERIER));
+    expect(board.gymId).toBeNull();
+    expect(await countGyms()).toBe(before);
+  });
+
+  it('attaches on coordinates alone when exactly one nearby gym is reusable', async () => {
+    const systemGym = await insertGym({
+      ownerId: SYSTEM_OWNER,
+      name: 'Boulder Central',
+      latitude: BASE.latitude,
+      longitude: BASE.longitude,
+    });
+    const before = await countGyms();
+
+    const board = await createBoard(
+      { name: 'My Kilter', latitude: LAT_60M, longitude: BASE.longitude },
+      authCtx(QUERIER),
+    );
+
+    expect(board.gymId).toBe(systemGym.id);
+    expect(await countGyms()).toBe(before);
+  });
+
+  it('declines to guess when two nearby gyms are reusable', async () => {
+    await insertGym({
+      ownerId: SYSTEM_OWNER,
+      name: 'Boulder Central',
+      latitude: BASE.latitude,
+      longitude: BASE.longitude,
+    });
+    await insertGym({ ownerId: SYSTEM_OWNER, name: 'Other Wall', latitude: LAT_60M, longitude: BASE.longitude });
+    const before = await countGyms();
+
+    const board = await createBoard(
+      { name: 'My Kilter', latitude: LAT_120M, longitude: BASE.longitude },
+      authCtx(QUERIER),
+    );
+
+    expect(board.gymId).toBeNull();
+    expect(await countGyms()).toBe(before);
+  });
+
+  it('does not attach to another user’s gym on coordinates alone', async () => {
+    await insertGym({ ownerId: OTHER, name: 'Their Gym', latitude: BASE.latitude, longitude: BASE.longitude });
+    const board = await createBoard(
+      { name: 'My Kilter', latitude: LAT_60M, longitude: BASE.longitude },
+      authCtx(QUERIER),
+    );
+    expect(board.gymId).toBeNull();
+  });
+
+  it('mints with null coordinates when only a location name is given', async () => {
+    const before = await countGyms();
+    const board = await createBoard({ name: 'Garage board', locationName: 'My Garage' }, authCtx(QUERIER));
+    expect(board.gymId).not.toBeNull();
+    expect(await countGyms()).toBe(before + 1);
+
+    // A second board at the same typed name converges rather than minting a twin.
+    const second = await createBoard({ name: 'Garage board 2', locationName: 'My Garage' }, authCtx(QUERIER));
+    expect(second.gymId).toBe(board.gymId);
+    expect(await countGyms()).toBe(before + 1);
   });
 });

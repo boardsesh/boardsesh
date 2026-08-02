@@ -20,9 +20,9 @@ import {
   RecordBoardSerialInputSchema,
   UUIDSchema,
 } from '../../../validation/schemas';
-import { generateUniqueGymSlug, userCanEditGym } from './gyms';
-import { findExactNameMatchesWithin, decideAutoGymAttachment, AUTO_GYM_MATCH_RADIUS_METERS } from './gym-matching';
-import { isGenericGymName } from '@boardsesh/db/queries';
+import { generateUniqueGymSlug, requireBoardGymLinkAccess, userCanEditGym } from './gyms';
+import { resolveAutoGymForBoard } from './gym-matching';
+import { findBlockingDuplicate } from './board-duplicates';
 import { getUserCommunityRoles, hasAdminOrLeader, rolesGrantAdminOrLeader } from './roles';
 import { SYSTEM_BOARD_OWNER_ID, isRowAnonReadable, requireAnonReadableBoard } from '../board-presence/shared';
 import { assertKnownBoardConfig } from '../board-presence/board-catalog';
@@ -1609,224 +1609,203 @@ export const socialBoardMutations = {
     );
     const userId = ctx.userId!;
 
-    // Check for duplicate config
-    const [existing] = await db
-      .select({ id: dbSchema.userBoards.id })
-      .from(dbSchema.userBoards)
-      .where(
-        and(
-          eq(dbSchema.userBoards.ownerId, userId),
-          eq(dbSchema.userBoards.boardType, validatedInput.boardType),
-          eq(dbSchema.userBoards.layoutId, validatedInput.layoutId),
-          eq(dbSchema.userBoards.sizeId, validatedInput.sizeId),
-          eq(dbSchema.userBoards.setIds, validatedInput.setIds),
-          isNull(dbSchema.userBoards.deletedAt),
-        ),
-      )
-      .limit(1);
+    const incomingLocation = {
+      latitude: validatedInput.latitude ?? null,
+      longitude: validatedInput.longitude ?? null,
+      locationName: validatedInput.locationName ?? null,
+    };
 
-    if (existing) {
-      throw new Error('You already have a board with this configuration');
+    // Reject an accidental re-submit, but never a genuine second board. A config
+    // tuple alone doesn't identify a wall — the same MoonBoard 2024 exists at
+    // every gym that owns one — so the guard is config AND place, and the user
+    // can override it once they've confirmed the two walls really are different
+    // (#4166). Set-id equality is settled in JS, not SQL: the stored order is
+    // whatever the board was created with, so '25,26,27,24' and '24,25,26,27'
+    // are the same board but not the same string.
+    if (!validatedInput.allowDuplicateConfig) {
+      const ownedWithConfig = await db
+        .select({
+          uuid: dbSchema.userBoards.uuid,
+          slug: dbSchema.userBoards.slug,
+          name: dbSchema.userBoards.name,
+          setIds: dbSchema.userBoards.setIds,
+          latitude: dbSchema.userBoards.latitude,
+          longitude: dbSchema.userBoards.longitude,
+          locationName: dbSchema.userBoards.locationName,
+        })
+        .from(dbSchema.userBoards)
+        .where(
+          and(
+            eq(dbSchema.userBoards.ownerId, userId),
+            eq(dbSchema.userBoards.boardType, validatedInput.boardType),
+            eq(dbSchema.userBoards.layoutId, validatedInput.layoutId),
+            eq(dbSchema.userBoards.sizeId, validatedInput.sizeId),
+            isNull(dbSchema.userBoards.deletedAt),
+          ),
+        );
+
+      const existing = findBlockingDuplicate(ownedWithConfig, {
+        setIds: validatedInput.setIds,
+        ...incomingLocation,
+      });
+
+      if (existing) {
+        // The existing board travels with the error so the client can offer
+        // "use that one" without scanning its paginated myBoards cache — which
+        // defaults to 20 and so can't find a match for a user with more boards.
+        throw new GraphQLError('You already have this board at this location', {
+          extensions: {
+            code: 'BOARD_DUPLICATE_CONFIG',
+            existingBoardUuid: existing.uuid,
+            existingBoardSlug: existing.slug,
+            existingBoardName: existing.name,
+            existingBoardLocationName: existing.locationName,
+          },
+        });
+      }
     }
 
     const uuid = uuidv4();
     const slug = await generateUniqueSlug(validatedInput.name);
 
-    // Resolve gymId from gymUuid if provided
+    // Resolve the gym this board belongs to. An explicit gymUuid goes through the
+    // shared link gate (owner/admin, or a nearby public gym the caller is adding
+    // their own board to); otherwise infer one from the location.
     let gymId: number | null = null;
+    let mintGymNamed: string | null = null;
+
     if (validatedInput.gymUuid) {
-      const [gym] = await db
-        .select({ id: dbSchema.gyms.id, ownerId: dbSchema.gyms.ownerId })
-        .from(dbSchema.gyms)
-        .where(and(eq(dbSchema.gyms.uuid, validatedInput.gymUuid), isNull(dbSchema.gyms.deletedAt)))
-        .limit(1);
-
-      if (!gym) {
-        throw new Error('Gym not found');
-      }
-
-      // Verify user is owner or admin of the gym
-      if (gym.ownerId !== userId) {
-        const [member] = await db
-          .select({ role: dbSchema.gymMembers.role })
-          .from(dbSchema.gymMembers)
-          .where(
-            and(
-              eq(dbSchema.gymMembers.gymId, gym.id),
-              eq(dbSchema.gymMembers.userId, userId),
-              eq(dbSchema.gymMembers.role, 'admin'),
-            ),
-          )
-          .limit(1);
-
-        if (!member) {
-          throw new Error('Not authorized to link board to this gym');
-        }
-      }
-
+      const gym = await requireBoardGymLinkAccess({
+        gymUuid: validatedInput.gymUuid,
+        userId,
+        boardLatitude: incomingLocation.latitude,
+        boardLongitude: incomingLocation.longitude,
+      });
       gymId = gym.id;
     } else {
-      // Auto-create a gym if user has zero gyms
-      const [existingGym] = await db
-        .select({ id: dbSchema.gyms.id })
-        .from(dbSchema.gyms)
-        .where(and(eq(dbSchema.gyms.ownerId, userId), isNull(dbSchema.gyms.deletedAt)))
-        .limit(1);
-
-      if (!existingGym) {
-        const gymName = validatedInput.locationName || validatedInput.name;
-
-        // Dedup guard: before minting a fresh gym for the user's first board,
-        // look for a live gym of ANY owner at these exact coordinates + name
-        // (mirrors findSimilarGyms's physical-proximity tier). A SYSTEM-synced
-        // gym or one the user already owns is attached instead of duplicated —
-        // UNLESS the name is generic (home wall / garage / bare board brands),
-        // which collides across unrelated walls. Another user's gym, or a generic
-        // match, is left alone (mint a fresh gym as before) but logged so the
-        // admin dedup queue gets a signal.
-        if (validatedInput.latitude != null && validatedInput.longitude != null) {
-          const physicalMatches = await findExactNameMatchesWithin({
-            name: gymName,
-            latitude: validatedInput.latitude,
-            longitude: validatedInput.longitude,
-            radiusMeters: AUTO_GYM_MATCH_RADIUS_METERS,
-          });
-          const nearest = physicalMatches[0];
-          const decision = decideAutoGymAttachment(nearest, userId);
-          if (decision.action === 'attach') {
-            // Fall through to the normal board insert below, which links `gymId`.
-            gymId = decision.gymId;
-          } else if (nearest) {
-            logger.warn('createBoard auto-gym: nearby name match not auto-attached; minting a separate gym', {
-              userId,
-              gymName,
-              matchedGymId: nearest.id,
-              matchedGymUuid: nearest.uuid,
-              matchedOwnerId: nearest.ownerId,
-              matchedOwnerIsSystem: nearest.ownerId === SYSTEM_BOARD_OWNER_ID,
-              genericName: isGenericGymName(nearest.name),
-              distanceMeters: Math.round(nearest.distanceMeters ?? 0),
-            });
-          }
-        }
-      }
-
-      if (!existingGym && gymId === null) {
-        // Auto-create a gym for the user. If this fails, fall through
-        // and create the board without a gym link rather than failing entirely.
-        try {
-          const gymName = validatedInput.locationName || validatedInput.name;
-          const gymUuid = uuidv4();
-          const gymSlug = await generateUniqueGymSlug(gymName);
-
-          // Use transaction to atomically create gym + board
-          const board = await db.transaction(async (tx) => {
-            const [newGym] = await tx
-              .insert(dbSchema.gyms)
-              .values({
-                uuid: gymUuid,
-                slug: gymSlug,
-                ownerId: userId,
-                name: gymName,
-                isPublic: validatedInput.isPublic ?? true,
-                latitude: validatedInput.latitude ?? null,
-                longitude: validatedInput.longitude ?? null,
-              })
-              .returning();
-
-            if (validatedInput.latitude != null && validatedInput.longitude != null) {
-              await tx.execute(
-                sql`UPDATE gyms SET location = ST_MakePoint(${validatedInput.longitude}, ${validatedInput.latitude})::geography WHERE id = ${newGym.id}`,
-              );
-            }
-
-            const [newBoard] = await tx
-              .insert(dbSchema.userBoards)
-              .values({
-                uuid,
-                slug,
-                ownerId: userId,
-                boardType: validatedInput.boardType,
-                layoutId: validatedInput.layoutId,
-                sizeId: validatedInput.sizeId,
-                setIds: validatedInput.setIds,
-                name: validatedInput.name,
-                description: validatedInput.description ?? null,
-                locationName: validatedInput.locationName ?? null,
-                latitude: validatedInput.latitude ?? null,
-                longitude: validatedInput.longitude ?? null,
-                isPublic: validatedInput.isPublic ?? true,
-                isUnlisted: validatedInput.isUnlisted ?? false,
-                hideLocation: validatedInput.hideLocation ?? false,
-                isOwned: validatedInput.isOwned ?? true,
-                angle: validatedInput.angle ?? 40,
-                isAngleAdjustable: validatedInput.isAngleAdjustable ?? true,
-                serialNumber: validatedInput.serialNumber ?? null,
-                timerName: validatedInput.timerName ?? null,
-                gymId: newGym.id,
-              })
-              .returning();
-
-            if (validatedInput.latitude != null && validatedInput.longitude != null) {
-              await tx.execute(
-                sql`UPDATE user_boards SET location = ST_MakePoint(${validatedInput.longitude}, ${validatedInput.latitude})::geography WHERE id = ${newBoard.id}`,
-              );
-            }
-
-            return newBoard;
-          });
-
-          return await enrichBoard(board, userId);
-        } catch (error) {
-          throwIfBoardSerialConflict(error);
-          // Auto-gym creation failed; continue to create the board without a gym
-          logger.error('Auto-gym creation failed, creating board without gym:', error);
-        }
+      const resolution = await resolveAutoGymForBoard({
+        userId,
+        locationName: incomingLocation.locationName,
+        latitude: incomingLocation.latitude,
+        longitude: incomingLocation.longitude,
+      });
+      if (resolution.action === 'attach') {
+        gymId = resolution.gymId;
+      } else if (resolution.action === 'mint') {
+        mintGymNamed = resolution.name;
       }
     }
 
+    // One insert path for every case. The gym mint, when there is one, shares the
+    // board's transaction so we never leave a gym with no board behind. The
+    // PostGIS writes deliberately sit OUTSIDE it — see below.
     let board: typeof dbSchema.userBoards.$inferSelect;
-    try {
-      [board] = await db
-        .insert(dbSchema.userBoards)
-        .values({
-          uuid,
-          slug,
-          ownerId: userId,
-          boardType: validatedInput.boardType,
-          layoutId: validatedInput.layoutId,
-          sizeId: validatedInput.sizeId,
-          setIds: validatedInput.setIds,
-          name: validatedInput.name,
-          description: validatedInput.description ?? null,
-          locationName: validatedInput.locationName ?? null,
-          latitude: validatedInput.latitude ?? null,
-          longitude: validatedInput.longitude ?? null,
-          isPublic: validatedInput.isPublic ?? true,
-          isUnlisted: validatedInput.isUnlisted ?? false,
-          hideLocation: validatedInput.hideLocation ?? false,
-          isOwned: validatedInput.isOwned ?? true,
-          angle: validatedInput.angle ?? 40,
-          isAngleAdjustable: validatedInput.isAngleAdjustable ?? true,
-          serialNumber: validatedInput.serialNumber ?? null,
-          timerName: validatedInput.timerName ?? null,
-          gymId,
-        })
-        .returning();
-    } catch (error) {
-      throwIfBoardSerialConflict(error);
-      throw error;
+    let mintedGymId: number | null = null;
+
+    const boardValues = {
+      uuid,
+      slug,
+      ownerId: userId,
+      boardType: validatedInput.boardType,
+      layoutId: validatedInput.layoutId,
+      sizeId: validatedInput.sizeId,
+      setIds: validatedInput.setIds,
+      name: validatedInput.name,
+      description: validatedInput.description ?? null,
+      locationName: incomingLocation.locationName,
+      latitude: incomingLocation.latitude,
+      longitude: incomingLocation.longitude,
+      isPublic: validatedInput.isPublic ?? true,
+      isUnlisted: validatedInput.isUnlisted ?? false,
+      hideLocation: validatedInput.hideLocation ?? false,
+      isOwned: validatedInput.isOwned ?? true,
+      angle: validatedInput.angle ?? 40,
+      isAngleAdjustable: validatedInput.isAngleAdjustable ?? true,
+      serialNumber: validatedInput.serialNumber ?? null,
+      timerName: validatedInput.timerName ?? null,
+    };
+
+    if (mintGymNamed != null) {
+      const gymName = mintGymNamed;
+      try {
+        const gymUuid = uuidv4();
+        const gymSlug = await generateUniqueGymSlug(gymName);
+        const result = await db.transaction(async (tx) => {
+          const [newGym] = await tx
+            .insert(dbSchema.gyms)
+            .values({
+              uuid: gymUuid,
+              slug: gymSlug,
+              ownerId: userId,
+              name: gymName,
+              isPublic: validatedInput.isPublic ?? true,
+              latitude: incomingLocation.latitude,
+              longitude: incomingLocation.longitude,
+            })
+            .returning();
+
+          const [newBoard] = await tx
+            .insert(dbSchema.userBoards)
+            .values({ ...boardValues, gymId: newGym.id })
+            .returning();
+
+          return { newGym, newBoard };
+        });
+        mintedGymId = result.newGym.id;
+        board = result.newBoard;
+      } catch (error) {
+        throwIfBoardSerialConflict(error);
+        // The gym couldn't be minted; still create the board, unlinked, rather
+        // than failing the whole create.
+        logger.error('Auto-gym creation failed, creating board without gym:', error);
+        try {
+          [board] = await db
+            .insert(dbSchema.userBoards)
+            .values({ ...boardValues, gymId: null })
+            .returning();
+        } catch (fallbackError) {
+          throwIfBoardSerialConflict(fallbackError);
+          throw fallbackError;
+        }
+      }
+    } else {
+      try {
+        [board] = await db
+          .insert(dbSchema.userBoards)
+          .values({ ...boardValues, gymId })
+          .returning();
+      } catch (error) {
+        throwIfBoardSerialConflict(error);
+        throw error;
+      }
     }
 
-    // Populate the PostGIS location column if lat/lon provided. This is a
-    // denormalization used by proximity search — a failure here (e.g. PostGIS not
-    // installed) must not fail an otherwise-created board; log and continue, the
-    // column can be backfilled. Mirrors the auto-gym mint path, which already
-    // tolerates a location-write failure by falling through.
-    if (validatedInput.latitude != null && validatedInput.longitude != null) {
+    // Populate the PostGIS `location` columns. These are denormalizations used by
+    // proximity search, and they run AFTER the transaction, each guarded on its
+    // own. Inside the transaction a PostGIS failure (the column is absent in the
+    // backend test DB, and the extension can be missing anywhere) rolled the
+    // whole thing back and silently cost the user their gym; out here the worst
+    // case is a null `location` that a backfill can repair. The board id is
+    // logged so that backfill is a one-liner.
+    if (incomingLocation.latitude != null && incomingLocation.longitude != null) {
+      const { latitude, longitude } = incomingLocation;
+
+      if (mintedGymId != null) {
+        try {
+          await db.execute(
+            sql`UPDATE gyms SET location = ST_MakePoint(${longitude}, ${latitude})::geography WHERE id = ${mintedGymId}`,
+          );
+        } catch (error) {
+          logger.warn('createBoard: failed to set gym location geography; leaving it null', {
+            gymId: mintedGymId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
       try {
         await db.execute(
-          sql`UPDATE user_boards SET location = ST_MakePoint(${validatedInput.longitude}, ${validatedInput.latitude})::geography WHERE id = ${board.id}`,
+          sql`UPDATE user_boards SET location = ST_MakePoint(${longitude}, ${latitude})::geography WHERE id = ${board.id}`,
         );
       } catch (error) {
         logger.warn('createBoard: failed to set board location geography; leaving it null', {

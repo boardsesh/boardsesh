@@ -53,8 +53,8 @@ function* errorChain(error: unknown): Generator<ErrorRecord> {
 
 // Assert on the structured Postgres fields rather than error message text. A
 // message match on "duplicate key" is satisfied by any unique violation on the
-// table — including user_boards_unique_owner_config and the uuid primary key —
-// so it would go green without proving anything about the serial index.
+// table — the uuid primary key and user_boards_unique_slug both qualify — so it
+// would go green without proving anything about the serial index.
 // Both fields must come from the SAME chain node: a code read off one wrapper and
 // a constraint name off another would let two unrelated failures satisfy the
 // assertion together.
@@ -118,11 +118,13 @@ async function ensureUser(commandDb: ExecuteDb, id: string, email: string, name 
   `);
 }
 
-// `layoutId` varies so two boards owned by the same non-system user can differ in
-// board config. Without that, a second insert would also collide with
-// user_boards_unique_owner_config (owner_id, board_type, layout_id, size_id,
-// set_ids) and Postgres would report that constraint instead — the rejection
-// would prove nothing about the serial index under test.
+// `layoutId` varies so two boards owned by the same non-system user differ in
+// board config. This used to be load-bearing: a second insert would otherwise
+// collide with the user_boards_unique_owner_config index and Postgres would
+// report that constraint instead, proving nothing about the serial index. That
+// index was dropped in #4166 (a config tuple no longer identifies a board), so
+// the variation is now belt-and-braces — keep it so the fixtures stay honest
+// about representing distinct boards.
 async function insertBoard(
   commandDb: ExecuteDb,
   values: { uuid: string; slug: string; ownerId: string; serial: string; layoutId: number },
@@ -210,8 +212,8 @@ describe('user_boards serial uniqueness — system catalog exemption', () => {
             slug: 'serialuniq-other-2',
             ownerId: otherOwnerId,
             serial: sharedSerial,
-            // A different layout so user_boards_unique_owner_config cannot fire
-            // and only the serial index can reject this row.
+            // A different layout, so this row is unambiguously a distinct board
+            // and only the serial index can reject it.
             layoutId: 2,
           }),
         (error: unknown) => violatesConstraint(error, SERIAL_UNIQUENESS_INDEX),

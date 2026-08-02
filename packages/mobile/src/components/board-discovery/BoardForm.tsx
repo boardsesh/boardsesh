@@ -29,7 +29,9 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { TimerPairingSheet } from '../ble/TimerPairingSheet';
+import { GymPickerSheet } from './GymPickerSheet';
 import { spacing, borderRadius } from '../../theme/tokens';
+import { iosSystemColors } from '../../theme/ios-colors';
 
 const PREVIEW_MAX_HEIGHT = 260;
 
@@ -47,6 +49,12 @@ type BoardFormProps = {
    * ticks — the server rejects config changes on those). Shows a hint.
    */
   lockedConfig?: boolean;
+  /**
+   * A submit failure, rendered inline above the action. The create/edit screens
+   * are `presentation: 'modal'` routes and the toast overlay draws behind those,
+   * so a toast here would never be seen (#4166) — feedback lives in the form.
+   */
+  errorMessage?: string | null;
 };
 
 /**
@@ -63,6 +71,7 @@ export function BoardForm({
   onSubmit,
   submitLabel,
   lockedConfig = false,
+  errorMessage = null,
 }: BoardFormProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -71,11 +80,13 @@ export function BoardForm({
   const { width: windowWidth } = useWindowDimensions();
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [timerPairingOpen, setTimerPairingOpen] = useState(false);
+  const [gymPickerOpen, setGymPickerOpen] = useState(false);
 
   const { setCoords } = builder;
   const location = useDeviceLocation();
   const requestLocation = location.request;
   const onUseMyLocation = useCallback(() => void requestLocation(), [requestLocation]);
+  const onClearLocation = useCallback(() => setCoords(null), [setCoords]);
   useEffect(() => {
     // location.coords stays null until the user taps "Use my location" (request
     // is explicit), so this only stamps coords once they've opted in.
@@ -230,6 +241,33 @@ export function BoardForm({
               maxLength={100}
               returnKeyType="done"
             />
+
+            {/* Gym lives in the MAIN form, not behind "More options": attaching
+                the board to its gym is what puts it on the map under that gym,
+                and burying it is how boards ended up as lone pins (#4166). */}
+            <SectionLabel>{t('mobile.create.gym')}</SectionLabel>
+            <Pressable
+              onPress={() => setGymPickerOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.create.gym')}
+              style={({ pressed }) => [
+                styles.gymRow,
+                {
+                  backgroundColor: pressed ? systemColors.tertiaryBackground : systemColors.secondaryBackground,
+                  borderColor: systemColors.separator,
+                },
+              ]}
+            >
+              <Text
+                variant="body"
+                color={builder.selectedGym ? systemColors.label : systemColors.secondaryLabel}
+                numberOfLines={1}
+                style={styles.gymRowLabel}
+              >
+                {builder.selectedGym?.name ?? t('mobile.create.gymNone')}
+              </Text>
+              <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
+            </Pressable>
           </>
         ) : null}
 
@@ -284,12 +322,18 @@ export function BoardForm({
               accessibilityLabel={t('mobile.create.location')}
               maxLength={120}
             />
-            <Button
-              title={builder.coords ? t('mobile.create.locationSet') : t('mobile.create.useMyLocation')}
-              variant="text"
-              onPress={onUseMyLocation}
-              disabled={builder.coords != null}
-            />
+            {/* Stamping coordinates used to be one-way — the button simply went
+                disabled, leaving no way to undo a wrong location. */}
+            {builder.coords ? (
+              <Button
+                title={t('mobile.create.clearLocation')}
+                variant="text"
+                onPress={onClearLocation}
+                role="destructive"
+              />
+            ) : (
+              <Button title={t('mobile.create.useMyLocation')} variant="text" onPress={onUseMyLocation} />
+            )}
 
             <SectionLabel>{t('mobile.create.serial')}</SectionLabel>
             <BuilderTextInput
@@ -348,6 +392,25 @@ export function BoardForm({
         />
       ) : null}
 
+      {/* Presence-driven, like TimerPairingSheet — the two are never open at
+          once and the sheet coordinator serialises them. */}
+      {gymPickerOpen ? (
+        <GymPickerSheet
+          selectedUuid={builder.selectedGym?.uuid ?? null}
+          boardCoords={builder.coords}
+          onSelect={(gym) => {
+            builder.setSelectedGym(gym);
+            setGymPickerOpen(false);
+          }}
+          onRequestManualLocation={() => {
+            builder.setSelectedGym(null);
+            setGymPickerOpen(false);
+            setAdvancedOpen(true);
+          }}
+          onDismiss={() => setGymPickerOpen(false)}
+        />
+      ) : null}
+
       {/* Pinned, safe-area-aware primary action. */}
       <View
         style={[
@@ -359,6 +422,16 @@ export function BoardForm({
           },
         ]}
       >
+        {errorMessage ? (
+          <Text
+            variant="footnote"
+            color={iosSystemColors.systemRed}
+            style={styles.errorMessage}
+            accessibilityLiveRegion="polite"
+          >
+            {errorMessage}
+          </Text>
+        ) : null}
         <Button
           title={submitLabel}
           onPress={onSubmit}
@@ -534,5 +607,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingTop: spacing[3],
     borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  errorMessage: {
+    marginBottom: spacing[2],
+    textAlign: 'center',
+  },
+  gymRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[3],
+    borderRadius: borderRadius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  gymRowLabel: {
+    flex: 1,
   },
 });

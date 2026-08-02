@@ -287,6 +287,12 @@ export const ATTACH_BOARD_TO_GYM = gql`
   }
 `;
 
+export const DETACH_BOARD_FROM_GYM = gql`
+  mutation DetachBoardFromGym($input: DetachBoardFromGymInput!) {
+    detachBoardFromGym(input: $input)
+  }
+`;
+
 export const GRANT_GYM_WRITE_ACCESS = gql`
   mutation GrantGymWriteAccess($input: GrantGymWriteAccessInput!) {
     grantGymWriteAccess(input: $input)

@@ -118,7 +118,6 @@
       "location": "Emplacement",
       "locationPlaceholder": "Maison, nom de la salle ou ville",
       "useMyLocation": "Utiliser ma position",
-      "locationSet": "Position enregistrée",
       "serial": "Numéro de série du contrôleur",
       "serialPlaceholder": "p. ex. ABC-12345",
       "serialHint": "Optionnel — ton contrôleur se lie tout seul à la première connexion.",
@@ -129,7 +128,20 @@
       "timerHint": "Associe un minuteur Rogue à cette board. Quand tu pilotes le mur, chaque croix démarre son chronomètre.",
       "timerPairCta": "Associer un minuteur",
       "timerChangeCta": "Changer de minuteur",
-      "timerRemoveCta": "Retirer"
+      "timerRemoveCta": "Retirer",
+      "gym": "Salle",
+      "gymNone": "Pas dans une salle",
+      "clearLocation": "Effacer la position",
+      "duplicate": {
+        "title": "Tu as déjà cette configuration",
+        "body": "Tu as déjà « {{name}} » avec le même layout, la même taille et les mêmes sets de prises.",
+        "bodyWithLocation": "Tu as déjà « {{name}} » à {{location}}, avec le même layout, la même taille et les mêmes sets de prises.",
+        "useExisting": "Utiliser cette board",
+        "addAnother": "Ajouter une nouvelle board ici",
+        "addAnotherHint": "Choisis ça si c'est un autre mur : une autre salle, une autre pièce.",
+        "cancel": "Continuer à modifier",
+        "switchError": "Impossible de basculer sur cette board. Réessaie."
+      }
     },
     "custom": {
       "board": "Board",
@@ -276,6 +288,16 @@
       "pickerNoticeUnreachable": "Impossible de charger tes boards pour l'instant — voici celles que tu as téléchargées.",
       "pickerEmptyTitle": "Rien de téléchargé pour le moment",
       "pickerEmptyBody": "Les boards que tu rends disponibles hors ligne apparaissent ici. Télécharge-en une quand tu as du réseau."
+    },
+    "gymPicker": {
+      "title": "Où se trouve cette board ?",
+      "subtitle": "Choisis la salle où elle se trouve pour que les grimpeurs la trouvent sur la carte.",
+      "searchPlaceholder": "Rechercher une salle",
+      "noGym": "Pas dans une salle",
+      "noGymHint": "Elle apparaîtra quand même sur la carte avec son propre repère.",
+      "addNew": "Ma salle n'est pas listée",
+      "empty": "Aucune salle à proximité",
+      "sharedEditHint": "L'équipe de cette salle pourra modifier les infos de cette board."
     }
   },
   "boardEntity": {
@@ -324,12 +346,15 @@
       "submit": "Créer la board",
       "authRequired": "Vous devez être connecté pour créer une board",
       "errorMessage": "Impossible de créer la board. Elle existe peut-être déjà pour cette configuration.",
-      "duplicateNamed": "Vous avez déjà une board nommée « {{name}} » avec cette configuration.",
       "goToExisting": "Aller à votre board",
       "nameRequired": "Le nom de la board est obligatoire",
       "createdNamed": "Board « {{name}} » créée !",
       "namePlaceholder": "ex. Home Board, nom de la salle",
-      "locationPlaceholder": "ex. ville, nom de la salle"
+      "locationPlaceholder": "ex. ville, nom de la salle",
+      "duplicateTitle": "Tu as déjà cette configuration",
+      "duplicateBody": "Tu as déjà « {{name}} » avec le même layout, la même taille et les mêmes sets de prises. N’en ajoute une autre que si c’est un autre mur.",
+      "addAnyway": "L'ajouter quand même",
+      "keepEditing": "Annuler"
     },
     "fields": {
       "name": "Nom de la board",

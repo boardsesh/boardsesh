@@ -37,6 +37,9 @@ export type BoardBuilderSeed = {
   serialNumber?: string;
   /** Advertised BLE name of the Rogue workout timer paired to this board. */
   timerName?: string;
+  /** The gym this board is already linked to (edit only). */
+  gymUuid?: string | null;
+  gymName?: string | null;
 };
 
 function defaultAngle(boardName: BoardName): number {
@@ -80,6 +83,11 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
   );
   const [serialNumber, setSerialNumber] = useState(seed?.serialNumber ?? '');
   const [timerName, setTimerName] = useState(seed?.timerName ?? '');
+  // The gym this board sits in. Picking one is what gets the board onto the map
+  // under a gym rather than as a lone pin (#4166).
+  const [selectedGym, setSelectedGymState] = useState<{ uuid: string; name: string } | null>(
+    seed?.gymUuid && seed?.gymName ? { uuid: seed.gymUuid, name: seed.gymName } : null,
+  );
 
   // Re-seed when the seed's VALUES change (opened from a different Popular
   // config). Keyed on the serialized seed, not its object identity, so an
@@ -149,6 +157,24 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
   const canCreate = layoutId != null && sizeId != null && setIds.length > 0;
 
   /**
+   * Pick (or clear) the board's gym. Stamping the gym's own coordinates onto the
+   * board is what lets the server's proximity check pass for a gym the user
+   * doesn't run, and it's the more accurate value anyway. A location name the
+   * user already typed is left alone.
+   */
+  const setSelectedGym = useCallback(
+    (gym: { uuid: string; name: string; latitude?: number | null; longitude?: number | null } | null) => {
+      setSelectedGymState(gym ? { uuid: gym.uuid, name: gym.name } : null);
+      if (!gym) return;
+      if (gym.latitude != null && gym.longitude != null) {
+        setCoords({ latitude: gym.latitude, longitude: gym.longitude });
+      }
+      setLocationName((previous) => (previous.trim().length > 0 ? previous : gym.name));
+    },
+    [],
+  );
+
+  /**
    * The validated CreateBoardInput, or null when the config is incomplete.
    * `fallbackName` (e.g. an auto-generated "Marco's Kilter Original 12×12") is
    * used when the user left the name blank; defaults to the cleaned layout name.
@@ -173,6 +199,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
       locationName: locationName.trim() || undefined,
       latitude: coords?.latitude,
       longitude: coords?.longitude,
+      gymUuid: selectedGym?.uuid,
     };
   };
 
@@ -233,6 +260,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
     coords,
     serialNumber,
     timerName,
+    selectedGym,
     // derived
     layouts,
     sizes,
@@ -256,6 +284,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
     setCoords,
     setSerialNumber,
     setTimerName,
+    setSelectedGym,
     buildCreateInput,
     buildUpdateInput,
   };

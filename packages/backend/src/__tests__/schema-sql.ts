@@ -760,10 +760,16 @@ export const schemaSQL = `
   CREATE INDEX IF NOT EXISTS "user_boards_serial_idx"
     ON "user_boards" ("serial_number")
     WHERE "serial_number" IS NOT NULL AND "serial_number" <> '' AND "deleted_at" IS NULL;
-  -- One active board per owner per config (mirrors the prod partial unique index).
-  CREATE UNIQUE INDEX IF NOT EXISTS "user_boards_unique_owner_config"
+  -- Owner+config lookup for createBoard's duplicate check (mirrors the prod
+  -- partial index). NOT unique: the same config legitimately exists at two
+  -- different gyms (#4166), so createBoard enforces "same config AND same
+  -- place" in the resolver instead. The DROP handles a test DB created before
+  -- migration 0189, where the old unique index would still be present and
+  -- CREATE INDEX IF NOT EXISTS would silently leave it in place.
+  DROP INDEX IF EXISTS "user_boards_unique_owner_config";
+  CREATE INDEX IF NOT EXISTS "user_boards_owner_config_idx"
     ON "user_boards" ("owner_id", "board_type", "layout_id", "size_id", "set_ids")
-    WHERE "deleted_at" IS NULL AND "owner_id" != '00000000-0000-0000-0000-000000000000';
+    WHERE "deleted_at" IS NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS "user_boards_unique_slug"
     ON "user_boards" ("slug")
     WHERE "deleted_at" IS NULL;

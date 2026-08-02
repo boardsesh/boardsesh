@@ -388,6 +388,18 @@ export const gymsTypeDefs = /* GraphQL */ `
   }
 
   """
+  Input for removing a board from a gym's listing. The gate is edit access to the
+  gym; the board must currently be listed at it. Clears the link only — the board
+  itself is untouched and stays its owner's.
+  """
+  input DetachBoardFromGymInput {
+    "Gym UUID to detach the board from"
+    gymUuid: ID!
+    "Board UUID to detach"
+    boardUuid: ID!
+  }
+
+  """
   Input for granting a user write (editor) access to a gym.
   """
   input GrantGymWriteAccessInput {
