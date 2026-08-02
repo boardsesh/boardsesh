@@ -2513,6 +2513,12 @@ extension BoardBleManager {
             manager.peripheralGenerations[peripheralId]
         }
 
+        /// Seed a generation entry directly, so a test can prove a disconnect
+        /// path removes (or preserves) it without driving the full connect flow.
+        func setPeripheralGeneration(_ generation: UInt64, for peripheralId: UUID) {
+            manager.peripheralGenerations[peripheralId] = generation
+        }
+
         func setLearnedWriteWithResponseEntry(
             identity: String,
             learnedAt: TimeInterval

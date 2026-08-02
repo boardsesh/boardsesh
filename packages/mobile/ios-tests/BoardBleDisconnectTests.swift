@@ -127,6 +127,11 @@ final class BoardBleDisconnectTests: XCTestCase {
         var settledErrors: [Error?] = []
         installConnection(peripheral: currentPeripheral) { _, _ in disconnectEventCount += 1 }
         enqueueTwoWrites { settledErrors.append($0) }
+        // Seed a generation for the stale peripheral so the guard's cleanup line
+        // (removing a non-current peripheral's entry) has something to remove.
+        manager.testHooks.sync {
+            manager.testHooks.setPeripheralGeneration(7, for: stalePeripheral.identifier)
+        }
 
         let pendingWatchdog = scheduler.lastOneShot(label: "writeAckWatchdog")
         XCTAssertEqual(manager.testHooks.sync { manager.testHooks.writeQueueDepth }, 2)
@@ -134,6 +139,9 @@ final class BoardBleDisconnectTests: XCTestCase {
 
         manager.testHooks.fireDidDisconnect(peripheral: stalePeripheral, error: nil)
 
+        XCTAssertNil(
+            manager.testHooks.sync { manager.testHooks.peripheralGeneration(for: stalePeripheral.identifier) }
+        )
         XCTAssertEqual(manager.connectedDeviceId, currentPeripheral.identifier.uuidString)
         XCTAssertEqual(manager.testHooks.sync { manager.testHooks.writeQueueDepth }, 2)
         XCTAssertTrue(manager.testHooks.sync { manager.testHooks.isWriting })
@@ -174,12 +182,19 @@ final class BoardBleDisconnectTests: XCTestCase {
         XCTAssertEqual(disconnectEvents.count, 1)
         XCTAssertEqual(disconnectEvents.first?.deviceId, peripheral.identifier.uuidString)
         XCTAssertNil(disconnectEvents.first?.body)
+        // No auto-reconnect on an unexpected drop: these boards are
+        // last-connection-wins, so a silent re-grab would steal the wall back.
+        // The manager must not cancel, rescan, or reconnect on this path.
+        XCTAssertTrue(cancelledPeripheralIds.isEmpty)
+        XCTAssertEqual(stopScanCallCount, 0)
 
         manager.testHooks.fireWriteAck(error: nil)
         manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
         pendingWatchdog?.fire()
         XCTAssertEqual(settledErrors.count, 2)
         XCTAssertEqual(disconnectEvents.count, 1)
+        XCTAssertTrue(cancelledPeripheralIds.isEmpty)
+        XCTAssertEqual(stopScanCallCount, 0)
     }
 
     func testCurrentErrorDisconnectForwardsNSErrorToWritesAndEvent() {
@@ -219,10 +234,15 @@ final class BoardBleDisconnectTests: XCTestCase {
             disconnectEvents.first?.body?["errorDescription"] as? String,
             disconnectError.localizedDescription
         )
+        // No auto-reconnect on an error drop either (same board-stealing rule).
+        XCTAssertTrue(cancelledPeripheralIds.isEmpty)
+        XCTAssertEqual(stopScanCallCount, 0)
 
         manager.testHooks.fireWriteAck(error: nil)
         pendingWatchdog?.fire()
         XCTAssertEqual(settledErrors.count, 2)
         XCTAssertEqual(disconnectEvents.count, 1)
+        XCTAssertTrue(cancelledPeripheralIds.isEmpty)
+        XCTAssertEqual(stopScanCallCount, 0)
     }
 }
