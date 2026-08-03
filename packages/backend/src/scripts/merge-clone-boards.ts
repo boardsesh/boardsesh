@@ -19,6 +19,15 @@
 //   --merge             Repoint every clone's history/ticks/follows onto the
 //                       gym board and soft-delete the clone.
 //
+// The two phases barely overlap, and NOT in the direction you'd assume:
+// `findSerialBackfills` skips any serial another active board already carries,
+// and a live clone carries exactly the serials the merge is about. So a wall
+// with a clone gains its serial from `--merge` (the gym board adopts the
+// clone's), never from `--backfill-serials` — the backfill only covers walls
+// whose serial was recorded but which no clone ever took. Running the backfill
+// first is still the right order, because it's the safe half; just don't expect
+// it to touch anything in the merge set.
+//
 // Nothing is ever hard-deleted: a merged clone keeps its row with `deleted_at`
 // set, so a bad pairing is reversible from the report CSV.
 //
