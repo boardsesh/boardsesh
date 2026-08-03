@@ -110,7 +110,7 @@ export async function findSerialBackfills(database: Database | Transaction = db)
       dbSchema.userBoards,
       and(eq(dbSchema.userBoards.uuid, dbSchema.userBoardSerials.boardUuid), isNull(dbSchema.userBoards.deletedAt)),
     )
-    .where(and(isNull(dbSchema.userBoards.serialNumber), sql`${dbSchema.userBoards.gymId} IS NOT NULL`))
+    .where(and(isNull(dbSchema.userBoards.serialNumber), isNotNull(dbSchema.userBoards.gymId)))
     .groupBy(
       dbSchema.userBoards.id,
       dbSchema.userBoards.uuid,
@@ -211,7 +211,7 @@ export async function findClonePairs(database: Database | Transaction = db): Pro
         eq(target.ownerId, SYSTEM_BOARD_OWNER_ID),
         isNotNull(target.gymId),
         ne(target.id, clone.id),
-      )!,
+      ),
     )
     .where(and(isNull(clone.deletedAt), isNotNull(clone.serialNumber), ne(clone.ownerId, SYSTEM_BOARD_OWNER_ID)))
     .orderBy(asc(clone.id));
