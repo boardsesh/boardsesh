@@ -216,7 +216,7 @@ export async function findClonePairs(database: Database | Transaction = db): Pro
     .where(and(isNull(clone.deletedAt), isNotNull(clone.serialNumber), ne(clone.ownerId, SYSTEM_BOARD_OWNER_ID)))
     .orderBy(asc(clone.id));
 
-  return rows
+  const matched = rows
     .filter(
       (row) =>
         row.serialNumber !== null &&
@@ -237,6 +237,27 @@ export async function findClonePairs(database: Database | Transaction = db): Pro
       targetSerialNumber: row.targetSerialNumber,
       targetGymId: row.targetGymId === null ? null : Number(row.targetGymId),
     }));
+
+  // The serial join is on the serial alone, so a clone can come back paired with
+  // SEVERAL gym listings — different climbers recorded the same (reused) serial
+  // against different gyms. There is no way to tell from here which one the
+  // clone's history actually belongs to, and merging into the wrong gym is
+  // unrecoverable in spirit even if the rows survive. Skip those loudly and
+  // leave them for a human.
+  const targetsPerClone = new Map<number, Set<number>>();
+  for (const pair of matched) {
+    const targets = targetsPerClone.get(pair.cloneId) ?? new Set<number>();
+    targets.add(pair.targetId);
+    targetsPerClone.set(pair.cloneId, targets);
+  }
+  const ambiguous = matched.filter((pair) => (targetsPerClone.get(pair.cloneId)?.size ?? 0) > 1);
+  if (ambiguous.length > 0) {
+    const cloneIds = [...new Set(ambiguous.map((pair) => pair.cloneId))];
+    logger.warn(
+      `[merge-clone-boards] skipping ${cloneIds.length} clone board(s) matching more than one gym listing: ${cloneIds.join(', ')}`,
+    );
+  }
+  return matched.filter((pair) => targetsPerClone.get(pair.cloneId)?.size === 1);
 }
 
 // --- Merge --------------------------------------------------------------------
