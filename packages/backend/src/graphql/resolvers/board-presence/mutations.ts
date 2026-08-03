@@ -27,11 +27,14 @@ import { publishBoardQueuePreviewForSession } from '../../../services/board-queu
 import {
   assertValidBoardId,
   candidateToActiveBoard,
+  canClaimSerialForBoard,
+  claimSerialForBoard,
   defaultBoardName,
   findActiveBoardsBySerial,
   findChosenBoardForSerial,
   findOwnActiveBoardByConfig,
   findReachableActiveBoardByUuid,
+  findSelectedBoardForConnect,
   isDuplicateBoardSerialError,
   lastSentAtByBoardIds,
   normalizeSetIds,
@@ -191,16 +194,42 @@ async function bindOrCreateOwnBoardForSerial(
 
 /**
  * Decide which board a serial routes to for this user:
- *  - a previously-remembered choice wins (no prompt);
+ *  - the board the caller already had selected wins, when its config matches
+ *    the controller they just connected to (see below);
+ *  - otherwise a previously-remembered choice wins (no prompt);
  *  - no board carries the serial yet → bind/create the caller's own board;
  *  - exactly one board carries it → route there (and remember);
  *  - several boards carry it → return the candidates for the user to pick.
+ *
+ * Selection beating serial matching is what keeps a Bluetooth connect from
+ * silently moving someone off the wall they picked on the map. It also heals
+ * the data: most synced gym boards carry no serial, so before this the first
+ * connect at a gym fell through to `bindOrCreateOwnBoardForSerial` and minted a
+ * private duplicate that every later climber at that wall then resolved to.
+ * Claiming the serial onto the selected board makes the gym's own listing
+ * discoverable by serial for everyone after.
  */
 async function resolveSerialForUser(
   userId: string,
   serial: string,
   config: { boardType: string; layoutId: number; sizeId: number; setIds: string },
+  selectedBoardUuid?: string | null,
 ): Promise<SerialResolution> {
+  if (selectedBoardUuid) {
+    const selected = await findSelectedBoardForConnect(userId, selectedBoardUuid, config);
+    if (selected) {
+      const board =
+        selected.serialNumber === null && canClaimSerialForBoard(selected, userId)
+          ? await claimSerialForBoard(selected, serial)
+          : selected;
+      // Remember it even when the claim was skipped: the per-user link is what
+      // keeps a later connect (one that no longer carries the selection, e.g. a
+      // background reconnect) on the same wall.
+      await rememberBoardForSerial(userId, serial, selected);
+      return { kind: 'board', board };
+    }
+  }
+
   const chosen = await findChosenBoardForSerial(userId, serial);
   if (chosen) {
     return { kind: 'board', board: chosen };
@@ -234,7 +263,15 @@ export const boardPresenceMutations = {
       layoutId,
       sizeId,
       setIds,
-    }: { serial: string; boardType: string; layoutId: number; sizeId: number; setIds: string },
+      selectedBoardUuid,
+    }: {
+      serial: string;
+      boardType: string;
+      layoutId: number;
+      sizeId: number;
+      setIds: string;
+      selectedBoardUuid?: string | null;
+    },
     ctx: ConnectionContext,
   ): Promise<ResolvedBoard> => {
     requireAuthenticated(ctx);
@@ -242,9 +279,12 @@ export const boardPresenceMutations = {
 
     const validSerial = validateInput(BoardSerialSchema, serial, 'serial');
     const config = validateInput(BoardPresenceConfigInputSchema, { boardType, layoutId, sizeId, setIds }, 'input');
+    const validSelectedBoardUuid = selectedBoardUuid
+      ? validateInput(UUIDSchema, selectedBoardUuid, 'selectedBoardUuid')
+      : null;
     const userId = ctx.userId!;
 
-    const resolution = await resolveSerialForUser(userId, validSerial, config);
+    const resolution = await resolveSerialForUser(userId, validSerial, config, validSelectedBoardUuid);
     if (resolution.kind === 'board') {
       await pubsub.stampBoardMembership(String(resolution.board.id), userId);
       return toResolvedBoard(resolution.board);
@@ -271,7 +311,15 @@ export const boardPresenceMutations = {
       layoutId,
       sizeId,
       setIds,
-    }: { serial: string; boardType: string; layoutId: number; sizeId: number; setIds: string },
+      selectedBoardUuid,
+    }: {
+      serial: string;
+      boardType: string;
+      layoutId: number;
+      sizeId: number;
+      setIds: string;
+      selectedBoardUuid?: string | null;
+    },
     ctx: ConnectionContext,
   ): Promise<{ board: ResolvedBoard | null; candidates: BoardCandidatePayload[] | null }> => {
     requireAuthenticated(ctx);
@@ -279,9 +327,12 @@ export const boardPresenceMutations = {
 
     const validSerial = validateInput(BoardSerialSchema, serial, 'serial');
     const config = validateInput(BoardPresenceConfigInputSchema, { boardType, layoutId, sizeId, setIds }, 'input');
+    const validSelectedBoardUuid = selectedBoardUuid
+      ? validateInput(UUIDSchema, selectedBoardUuid, 'selectedBoardUuid')
+      : null;
     const userId = ctx.userId!;
 
-    const resolution = await resolveSerialForUser(userId, validSerial, config);
+    const resolution = await resolveSerialForUser(userId, validSerial, config, validSelectedBoardUuid);
     if (resolution.kind === 'board') {
       await pubsub.stampBoardMembership(String(resolution.board.id), userId);
       return { board: toResolvedBoard(resolution.board), candidates: null };

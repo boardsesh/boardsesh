@@ -1525,6 +1525,15 @@ export const socialBoardMutations = {
     // what *this* connect observed. The explicit null keeps the row honest.
     const apiLevelValue = apiLevel ?? null;
 
+    // `boardUuid` is the one column this upsert must NOT blank out. The board
+    // presence resolver writes the same column (rememberBoardForSerial) and both
+    // fire on the same BLE connect, so a connect made from a surface with no
+    // board in hand — a background reconnect, a bare /play route — would
+    // otherwise wipe the link the resolver just established and send the next
+    // connect back to serial matching. Only overwrite when this connect
+    // actually resolved a board.
+    const boardLinkUpdate = linkedBoardUuid ? { boardUuid: linkedBoardUuid } : {};
+
     await db
       .insert(dbSchema.userBoardSerials)
       .values({
@@ -1545,7 +1554,7 @@ export const socialBoardMutations = {
           sizeId,
           setIds,
           apiLevel: apiLevelValue,
-          boardUuid: linkedBoardUuid,
+          ...boardLinkUpdate,
           updatedAt: new Date(),
         },
       });

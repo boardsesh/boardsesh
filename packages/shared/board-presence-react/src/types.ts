@@ -92,13 +92,19 @@ export interface BoardPresenceClient {
    */
   reportClimb(boardId: number, climb: ClimbQueueItemInput, angle: number | null): Promise<boolean>;
 
-  /** Resolve (and bind) the shared board for a BLE serial. */
+  /**
+   * Resolve (and bind) the shared board for a BLE serial. Pass
+   * `selectedBoardUuid` when the caller already has a board selected (map
+   * finder / board picker) — a selection matching the connected config wins
+   * over serial matching, so connecting never moves the user off that wall.
+   */
   resolveBoardForSerial(args: {
     serial: string;
     boardType: string;
     layoutId: number;
     sizeId: number;
     setIds: string;
+    selectedBoardUuid?: string | null;
   }): Promise<ResolvedBoard>;
 
   /** Resolve the selected named board's wall feed before BLE connects. */

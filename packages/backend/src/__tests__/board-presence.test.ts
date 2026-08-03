@@ -781,6 +781,254 @@ describe('board-presence resolvers', () => {
         insertBoard({ ownerId: TEST_USER_ID, serial, layoutId: 9, sizeId: 10, setIds: '1', name: 'C' }),
       ).rejects.toThrow();
     });
+
+    // The wrong-board bug: a gym's synced listing carries no serial, so the first
+    // climber to connect minted a private duplicate that everyone afterwards
+    // matched instead — while the map finder still pointed at the gym listing.
+    describe('selectedBoardUuid (a picked board beats serial matching)', () => {
+      const SYSTEM_OWNER_ID = '00000000-0000-0000-0000-000000000000';
+
+      // Gym listings are owned by the system user. Other suites create it as a
+      // side effect of resolveSharedBoardForConfig, but these tests insert
+      // system-owned rows directly, so the FK target has to exist first.
+      beforeEach(async () => {
+        await db.execute(sql`
+          INSERT INTO users (id, email, name, created_at, updated_at)
+          VALUES (${SYSTEM_OWNER_ID}, 'system@boardsesh.com', 'Boardsesh', now(), now())
+          ON CONFLICT (id) DO NOTHING
+        `);
+      });
+
+      async function insertRealUuidBoard(opts: {
+        ownerId: string;
+        serial: string | null;
+        layoutId: number;
+        sizeId: number;
+        setIds: string;
+        name: string;
+        isPublic?: boolean;
+      }): Promise<{ id: number; uuid: string }> {
+        const uuid = uuidv4();
+        const slug = `presence-selected-${Math.random().toString(36).slice(2)}`;
+        const [row] = await db.execute(sql`
+          INSERT INTO user_boards
+            (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number, is_public)
+          VALUES (${uuid}, ${slug}, ${opts.ownerId}, 'kilter', ${opts.layoutId}, ${opts.sizeId}, ${opts.setIds},
+                  ${opts.name}, ${opts.serial}, ${opts.isPublic ?? true})
+          RETURNING id, uuid
+        `);
+        return { id: Number((row as { id: number }).id), uuid: (row as { uuid: string }).uuid };
+      }
+
+      async function serialOf(boardId: number): Promise<string | null> {
+        const [row] = await db.execute(sql`SELECT serial_number FROM user_boards WHERE id = ${boardId}`);
+        return (row as { serial_number: string | null }).serial_number;
+      }
+
+      it('keeps the connect on the picked gym board and claims the serial for it', async () => {
+        const serial = `SEL-${Date.now()}`;
+        // The duplicate an earlier climber minted, already carrying the serial.
+        const clone = await insertRealUuidBoard({
+          ownerId: SECOND_USER_ID,
+          serial,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,2',
+          name: 'Kilter Board',
+        });
+        // The gym's synced listing — right wall, no serial.
+        const gymBoard = await insertRealUuidBoard({
+          ownerId: SYSTEM_OWNER_ID,
+          serial: null,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,2',
+          name: 'The Gym - Kilter Board Original',
+        });
+
+        const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+          undefined,
+          {
+            serial,
+            boardType: 'kilter',
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '1,2',
+            selectedBoardUuid: gymBoard.uuid,
+          },
+          authCtx(),
+        );
+
+        expect(result.candidates).toBeNull();
+        expect(result.board?.boardId).toBe(gymBoard.id);
+        expect(result.board?.boardId).not.toBe(clone.id);
+        // The claim is what stops the NEXT climber landing on the clone.
+        expect(await serialOf(gymBoard.id)).toBe(serial);
+      });
+
+      it('remembers the picked board so a later connect without a selection stays on it', async () => {
+        const serial = `SELMEM-${Date.now()}`;
+        const clone = await insertRealUuidBoard({
+          ownerId: SECOND_USER_ID,
+          serial,
+          layoutId: 2,
+          sizeId: 20,
+          setIds: '5,6',
+          name: 'Kilter Board',
+        });
+        const gymBoard = await insertRealUuidBoard({
+          ownerId: SYSTEM_OWNER_ID,
+          serial: null,
+          layoutId: 2,
+          sizeId: 20,
+          setIds: '5,6',
+          name: 'Gym Wall',
+        });
+
+        await boardPresenceMutations.resolveBoardCandidatesForSerial(
+          undefined,
+          { serial, boardType: 'kilter', layoutId: 2, sizeId: 20, setIds: '5,6', selectedBoardUuid: gymBoard.uuid },
+          authCtx(),
+        );
+
+        // A background reconnect carries no selection; the remembered link must
+        // hold the wall rather than falling back to the (now ambiguous) serial.
+        const reconnect = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+          undefined,
+          { serial, boardType: 'kilter', layoutId: 2, sizeId: 20, setIds: '5,6' },
+          authCtx(),
+        );
+        expect(reconnect.candidates).toBeNull();
+        expect(reconnect.board?.boardId).toBe(gymBoard.id);
+        expect(reconnect.board?.boardId).not.toBe(clone.id);
+      });
+
+      it('ignores a selection whose config does not match the connected controller', async () => {
+        const serial = `SELMISMATCH-${Date.now()}`;
+        const serialBoard = await insertRealUuidBoard({
+          ownerId: SECOND_USER_ID,
+          serial,
+          layoutId: 3,
+          sizeId: 30,
+          setIds: '7,8',
+          name: 'Actual Wall',
+        });
+        // The user picked this on the map, then walked to a different wall.
+        const staleSelection = await insertRealUuidBoard({
+          ownerId: SYSTEM_OWNER_ID,
+          serial: null,
+          layoutId: 2,
+          sizeId: 20,
+          setIds: '5,6',
+          name: 'Somewhere Else',
+        });
+
+        const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+          undefined,
+          {
+            serial,
+            boardType: 'kilter',
+            layoutId: 3,
+            sizeId: 30,
+            setIds: '7,8',
+            selectedBoardUuid: staleSelection.uuid,
+          },
+          authCtx(),
+        );
+
+        expect(result.board?.boardId).toBe(serialBoard.id);
+        expect(await serialOf(staleSelection.id)).toBeNull();
+      });
+
+      it('binds a picked board that already carries a different serial without rewriting it', async () => {
+        const connectedSerial = `SELNEW-${Date.now()}`;
+        const existingSerial = `SELOLD-${Date.now()}`;
+        const picked = await insertRealUuidBoard({
+          ownerId: TEST_USER_ID,
+          serial: existingSerial,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,7',
+          name: 'Recontrollered Wall',
+        });
+
+        const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+          undefined,
+          {
+            serial: connectedSerial,
+            boardType: 'kilter',
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '1,7',
+            selectedBoardUuid: picked.uuid,
+          },
+          authCtx(),
+        );
+
+        expect(result.board?.boardId).toBe(picked.id);
+        // A board that already has a serial keeps it: a swapped controller is the
+        // owner's call to make, not something a connect should silently rewrite.
+        expect(await serialOf(picked.id)).toBe(existingSerial);
+      });
+
+      it('binds a stranger-owned public selection but never brands it with the serial', async () => {
+        const serial = `SELSTRANGER-${Date.now()}`;
+        const strangersBoard = await insertRealUuidBoard({
+          ownerId: SECOND_USER_ID,
+          serial: null,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,8',
+          name: "Someone Else's Wall",
+          isPublic: true,
+        });
+
+        const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+          undefined,
+          {
+            serial,
+            boardType: 'kilter',
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '1,8',
+            selectedBoardUuid: strangersBoard.uuid,
+          },
+          authCtx(),
+        );
+
+        expect(result.board?.boardId).toBe(strangersBoard.id);
+        // Stamping a serial here would redirect it for every climber who
+        // connects afterwards, so only own/system boards may be claimed.
+        expect(await serialOf(strangersBoard.id)).toBeNull();
+      });
+
+      it('legacy resolveBoardForSerial honours the selection too', async () => {
+        const serial = `SELLEGACY-${Date.now()}`;
+        await insertRealUuidBoard({
+          ownerId: SECOND_USER_ID,
+          serial,
+          layoutId: 3,
+          sizeId: 30,
+          setIds: '7,8',
+          name: 'Clone',
+        });
+        const gymBoard = await insertRealUuidBoard({
+          ownerId: SYSTEM_OWNER_ID,
+          serial: null,
+          layoutId: 3,
+          sizeId: 30,
+          setIds: '7,8',
+          name: 'Gym Listing',
+        });
+
+        const resolved = await boardPresenceMutations.resolveBoardForSerial(
+          undefined,
+          { serial, boardType: 'kilter', layoutId: 3, sizeId: 30, setIds: '7,8', selectedBoardUuid: gymBoard.uuid },
+          authCtx(),
+        );
+        expect(resolved.boardId).toBe(gymBoard.id);
+      });
+    });
   });
 
   describe('resolveBoardForUuid', () => {

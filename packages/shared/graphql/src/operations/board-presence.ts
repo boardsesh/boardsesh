@@ -96,7 +96,10 @@ export const REPORT_BOARD_CLIMB = `
 
 // Mutation — resolve (and bind) the shared board for a BLE serial. Called once
 // on BLE connect; the board-config args are used only to create the board the
-// first time a serial is seen. Returns the one board everyone at this wall shares.
+// first time a serial is seen. `selectedBoardUuid` is the board the user
+// already had picked (map finder / board picker) — when its config matches the
+// controller it wins, so connecting never moves them off the wall they chose.
+// Returns the one board everyone at this wall shares.
 export const RESOLVE_BOARD_FOR_SERIAL = `
   mutation ResolveBoardForSerial(
     $serial: String!
@@ -104,6 +107,7 @@ export const RESOLVE_BOARD_FOR_SERIAL = `
     $layoutId: Int!
     $sizeId: Int!
     $setIds: String!
+    $selectedBoardUuid: ID
   ) {
     resolveBoardForSerial(
       serial: $serial
@@ -111,6 +115,7 @@ export const RESOLVE_BOARD_FOR_SERIAL = `
       layoutId: $layoutId
       sizeId: $sizeId
       setIds: $setIds
+      selectedBoardUuid: $selectedBoardUuid
     ) {
       boardId
       boardName
@@ -133,6 +138,7 @@ export const RESOLVE_BOARD_CANDIDATES_FOR_SERIAL = `
     $layoutId: Int!
     $sizeId: Int!
     $setIds: String!
+    $selectedBoardUuid: ID
   ) {
     resolveBoardCandidatesForSerial(
       serial: $serial
@@ -140,6 +146,7 @@ export const RESOLVE_BOARD_CANDIDATES_FOR_SERIAL = `
       layoutId: $layoutId
       sizeId: $sizeId
       setIds: $setIds
+      selectedBoardUuid: $selectedBoardUuid
     ) {
       board {
         boardId

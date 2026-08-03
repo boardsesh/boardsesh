@@ -528,6 +528,14 @@ export function BluetoothProvider({
   layoutIdRef.current = layoutId;
   const sizeIdRef = useRef(sizeId);
   sizeIdRef.current = sizeId;
+  // The board the user currently has selected, read at connect time so the
+  // serial resolver can keep them on it. Unlike the config refs above this one
+  // IS the right source for resolution: "which wall did they pick" is a
+  // property of the moment the connect landed, not of the adapter generation.
+  // A stale value is harmless — the backend ignores a selection whose config
+  // doesn't match the controller that just connected.
+  const boardUuidRef = useRef(boardUuid);
+  boardUuidRef.current = boardUuid;
   const sessionIdRef = useRef(sessionId);
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -786,7 +794,14 @@ export function BluetoothProvider({
         pendingPresenceResolveConnectionRef.current = connection;
         const resolvePromise =
           serial && serial.length > 0
-            ? resolveAndBindBoard({ serial, boardType, layoutId, sizeId, setIds })
+            ? resolveAndBindBoard({
+                serial,
+                boardType,
+                layoutId,
+                sizeId,
+                setIds,
+                selectedBoardUuid: boardUuidRef.current ?? null,
+              })
             : resolveAndBindBoardByConfig({ boardType, layoutId, sizeId, setIds });
         void resolvePromise
           .then((resolved) => {

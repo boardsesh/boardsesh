@@ -456,6 +456,8 @@
       "litAgoDays": "{{count}}d",
       "litAgoWeeks": "{{count}}w",
       "sentByLine": "Sent by {{name}}",
+      "unnamedClimber": "Someone",
+      "sentByUnknownClimber": "Sent by someone",
       "emptyTitle": "Nobody's on this wall yet",
       "emptyBody": "Connect and send a climb to kick off the history.",
       "historyHeader": "Lit on this wall",
