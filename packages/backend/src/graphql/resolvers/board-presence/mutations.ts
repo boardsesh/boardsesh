@@ -414,8 +414,11 @@ async function resolveSelectedBoardForSerial(
        FOR UPDATE
     `);
     await lockBoardSerialWrite(tx, serial);
-    const selected = await findSelectedBoardForConnect(userId, selectedBoardUuid, config, tx);
-    if (!selected || !(await selectionBeatsSerialMatch(serial, tx, advertisedBoardType))) return undefined;
+    const [selected, selectionWins] = await Promise.all([
+      findSelectedBoardForConnect(userId, selectedBoardUuid, config, tx),
+      selectionBeatsSerialMatch(serial, tx, advertisedBoardType),
+    ]);
+    if (!selected || !selectionWins) return undefined;
     let board = selected;
     if (selected.serialNumber === null && canClaimSerialForBoard(selected, userId)) {
       try {

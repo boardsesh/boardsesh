@@ -119,7 +119,19 @@ export async function findSerialBackfills(database: Database | Transaction = db)
       dbSchema.userBoards,
       and(eq(dbSchema.userBoards.uuid, dbSchema.userBoardSerials.boardUuid), isNull(dbSchema.userBoards.deletedAt)),
     )
-    .where(and(isNull(dbSchema.userBoards.serialNumber), isNotNull(dbSchema.userBoards.gymId)))
+    .where(
+      and(
+        isNull(dbSchema.userBoards.serialNumber),
+        isNotNull(dbSchema.userBoards.gymId),
+        // Synced gym listings only. 1,554 user-owned boards also carry a gym_id
+        // (a home wall attached to its own auto-created gym, a board captured
+        // via the stray-board flow), and stamping a serial onto one of those
+        // would redirect it for every climber who connects afterwards — the
+        // exact failure this script exists to undo. Matches findClonePairs'
+        // guard on the merge target.
+        eq(dbSchema.userBoards.ownerId, SYSTEM_BOARD_OWNER_ID),
+      ),
+    )
     .groupBy(
       dbSchema.userBoards.id,
       dbSchema.userBoards.uuid,
@@ -303,8 +315,12 @@ export async function mergeClonePair(pair: ClonePair, tx: Transaction): Promise<
   const maxTargetSeq = Number(maxima?.max_target ?? 0);
   const maxCloneSeq = Number(maxima?.max_clone ?? 0);
   const targetPark = maxTargetSeq + maxCloneSeq + SEQ_PARK_OFFSET;
-  // Clone lands entirely above the target's parked band.
-  const clonePark = targetPark + maxTargetSeq;
+  // Clone lands entirely above the target's parked band. The second offset is
+  // belt-and-braces: `maxTargetSeq` alone already separates the bands whenever
+  // the target has rows (seq starts at 1, so maxTargetSeq = 0 means it has
+  // none), but that's a proof a reader has to reconstruct. A fixed gap makes
+  // the bands obviously disjoint and costs nothing on a bigint.
+  const clonePark = targetPark + maxTargetSeq + SEQ_PARK_OFFSET;
   await tx.execute(sql`
     UPDATE board_climb_events SET seq = seq + ${targetPark} WHERE board_id = ${pair.targetId}
   `);
