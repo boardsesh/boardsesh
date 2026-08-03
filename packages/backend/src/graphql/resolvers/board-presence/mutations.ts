@@ -44,6 +44,7 @@ import {
   reserveBoardPresenceSeq,
   requireActiveBoardById,
   resolveSharedBoardForConfig,
+  selectionBeatsSerialMatch,
   serialAlreadyBoundError,
   throwIfDuplicateBoardSerial,
   toResolvedBoard,
@@ -414,7 +415,7 @@ async function resolveSelectedBoardForSerial(
     `);
     await lockBoardSerialWrite(tx, serial);
     const selected = await findSelectedBoardForConnect(userId, selectedBoardUuid, config, tx);
-    if (!selected) return undefined;
+    if (!selected || !(await selectionBeatsSerialMatch(selected, serial, tx, advertisedBoardType))) return undefined;
     let board = selected;
     if (selected.serialNumber === null && canClaimSerialForBoard(selected, userId)) {
       try {
@@ -444,6 +445,19 @@ async function resolveSelectedBoardForSerial(
  *  - no board carries the serial yet → bind/create the caller's own board;
  *  - exactly one board carries it → route there (and remember);
  *  - several boards carry it → return the candidates for the user to pick.
+ *
+ * Selection beating serial matching is what keeps a Bluetooth connect from
+ * silently moving someone off the wall they picked on the map. It also heals
+ * the data: most synced gym boards carry no serial, so before this the first
+ * connect at a gym fell through to `bindOrCreateOwnBoardForSerial` and minted a
+ * private duplicate that every later climber at that wall then resolved to.
+ * Claiming the serial onto the selected board makes the gym's own listing
+ * discoverable by serial for everyone after.
+ *
+ * A selection only wins on `selectionBeatsSerialMatch`'s terms — a personal
+ * board loses to a synced gym listing that already carries the serial, because
+ * most personal boards are the auto-named onboarding template and travel with
+ * the climber rather than describing a wall.
  */
 async function resolveSerialForUser(
   userId: string,
