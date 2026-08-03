@@ -27,7 +27,7 @@ import { memo, useCallback } from 'react';
 import { StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Host, HStack, ScrollView, Menu, Picker, Button, Text, Divider } from '@expo/ui/swift-ui';
-import { buttonStyle, controlSize, tint, tag, padding } from '@expo/ui/swift-ui/modifiers';
+import { buttonStyle, controlSize, tint, tag, padding, fixedSize } from '@expo/ui/swift-ui/modifiers';
 import { PROGRESS_FILTER_VALUES, SORT_OPTIONS, GRADE_ACCURACY_VALUES } from '@boardsesh/climb-filters';
 import { getFilterKey } from '../../lib/recent-filter-store';
 import {
@@ -126,8 +126,18 @@ function FilterChipRowComponent({
   return (
     <Host matchContents={{ vertical: true }} style={styles.host}>
       <ScrollView axes="horizontal" showsIndicators={false}>
-        {/* Vertical slack lets a pressed chip's Liquid Glass lens expand without the host's fixed height clipping it. */}
-        <HStack spacing={spacing[2]} modifiers={[padding({ horizontal: spacing[4], vertical: spacing[2] })]}>
+        {/* Vertical slack lets a pressed chip's Liquid Glass lens expand without the host's fixed height clipping it.
+            `fixedSize(horizontal)` is what keeps the labels whole: a horizontal ScrollView still proposes its own
+            (screen) width to the content, so without it the HStack squeezes every chip toward its minimum and the
+            labels truncate ("Filter…", "Colle…") even though the row overflows and scrolls anyway. Sizing the stack
+            to its ideal width lets each chip take the space its label needs and the ScrollView do the scrolling. */}
+        <HStack
+          spacing={spacing[2]}
+          modifiers={[
+            padding({ horizontal: spacing[4], vertical: spacing[2] }),
+            fixedSize({ horizontal: true, vertical: false }),
+          ]}
+        >
           {/* Filters · N → the long-tail sheet. A button, not a menu. */}
           <Button
             label={filtersLabel}

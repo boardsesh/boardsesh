@@ -30,6 +30,7 @@ import {
   menuActionDismissBehavior,
   labelStyle,
   accessibilityLabel,
+  fixedSize,
 } from '@expo/ui/swift-ui/modifiers';
 import { useTheme } from '../../providers/theme-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
@@ -131,8 +132,17 @@ function LogbookChipRowComponent({
   return (
     <Host matchContents={{ vertical: true }} style={styles.host}>
       <ScrollView axes="horizontal" showsIndicators={false}>
-        {/* Vertical padding gives a pressed chip's glass lens room to expand. */}
-        <HStack spacing={spacing[2]} modifiers={[padding({ horizontal: spacing[4], vertical: spacing[2] })]}>
+        {/* Vertical padding gives a pressed chip's glass lens room to expand.
+            `fixedSize(horizontal)` keeps the labels whole: a horizontal ScrollView still proposes its own (screen)
+            width to the content, so without it the HStack squeezes every chip toward its minimum and the labels
+            truncate mid-word even though the row overflows and scrolls anyway (the same squeeze behind #3782). */}
+        <HStack
+          spacing={spacing[2]}
+          modifiers={[
+            padding({ horizontal: spacing[4], vertical: spacing[2] }),
+            fixedSize({ horizontal: true, vertical: false }),
+          ]}
+        >
           {/* Filter → the long-tail sheet. An action button, not a menu, and
               icon-only (see filterModifiers). Neutral glass until at least one
               facet is active, then amber — matching the climb search, where Filters
