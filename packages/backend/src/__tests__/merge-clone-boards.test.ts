@@ -142,6 +142,31 @@ describe('merge-clone-boards', () => {
       const pairs = (await findClonePairs()).filter((pair) => pair.serialNumber === serial);
       expect(pairs).toEqual([]);
     });
+
+    it('skips a clone that two different gyms both claim the serial for', async () => {
+      const serial = `MERGEAMBIG-${Date.now()}`;
+      // The supplier reuses serials, so two real gyms can legitimately have
+      // climbers who recorded the same one. Nothing here says which gym the
+      // clone's history belongs to, so it has to stay a human decision.
+      const firstGymBoard = await insertBoard({
+        ownerId: SYSTEM_OWNER_ID,
+        serial: null,
+        gymId: await insertGym('Ambiguous Gym A'),
+        name: 'Gym A - Kilter',
+      });
+      const secondGymBoard = await insertBoard({
+        ownerId: SYSTEM_OWNER_ID,
+        serial: null,
+        gymId: await insertGym('Ambiguous Gym B'),
+        name: 'Gym B - Kilter',
+      });
+      await insertBoard({ ownerId: CLONE_OWNER_ID, serial, gymId: null, name: 'Kilter Board' });
+      await linkSerial(OTHER_USER_ID, serial, firstGymBoard.uuid);
+      await linkSerial(CLONE_OWNER_ID, serial, secondGymBoard.uuid);
+
+      const pairs = (await findClonePairs()).filter((pair) => pair.serialNumber === serial);
+      expect(pairs).toEqual([]);
+    });
   });
 
   describe('findSerialBackfills', () => {
