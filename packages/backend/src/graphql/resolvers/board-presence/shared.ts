@@ -142,7 +142,37 @@ export async function findActiveBoardsBySerial(serial: string): Promise<SerialCa
 }
 
 /** A board the caller had selected when they connected, plus what the serial claim needs. */
-export type SelectedConnectBoard = ActivePresenceBoard & { uuid: string; ownerId: string };
+export type SelectedConnectBoard = ActivePresenceBoard & { uuid: string; ownerId: string; gymId: number | null };
+
+/**
+ * Whether a board is a gym's own listing mirrored from the location sync, as
+ * opposed to a personal board.
+ *
+ * This is the line between "a wall" and "a board configuration". Most personal
+ * boards are the auto-named template a climber gets at onboarding
+ * ("Kilter Original 12×12 with kickboard") and follow them from gym to gym, so
+ * having one selected says nothing about which wall they're standing at.
+ */
+export function isSyncedGymListing(board: Pick<SelectedConnectBoard, 'ownerId' | 'gymId'>): boolean {
+  return board.ownerId === SYSTEM_BOARD_OWNER_ID && board.gymId !== null;
+}
+
+/** Whether any synced gym listing already carries this serial. */
+export async function hasSyncedGymBoardForSerial(serial: string): Promise<boolean> {
+  const [board] = await db
+    .select({ id: dbSchema.userBoards.id })
+    .from(dbSchema.userBoards)
+    .where(
+      and(
+        eq(dbSchema.userBoards.serialNumber, serial),
+        isNull(dbSchema.userBoards.deletedAt),
+        eq(dbSchema.userBoards.ownerId, SYSTEM_BOARD_OWNER_ID),
+        isNotNull(dbSchema.userBoards.gymId),
+      ),
+    )
+    .limit(1);
+  return board !== undefined;
+}
 
 /**
  * The board the caller already had selected when the BLE connect landed (the
@@ -173,6 +203,7 @@ export async function findSelectedBoardForConnect(
       setIds: dbSchema.userBoards.setIds,
       serialNumber: dbSchema.userBoards.serialNumber,
       angle: dbSchema.userBoards.angle,
+      gymId: dbSchema.userBoards.gymId,
     })
     .from(dbSchema.userBoards)
     .where(
@@ -194,7 +225,32 @@ export async function findSelectedBoardForConnect(
   ) {
     return undefined;
   }
-  return { ...board, id: Number(board.id), layoutId: Number(board.layoutId), sizeId: Number(board.sizeId) };
+  return {
+    ...board,
+    id: Number(board.id),
+    layoutId: Number(board.layoutId),
+    sizeId: Number(board.sizeId),
+    gymId: board.gymId === null ? null : Number(board.gymId),
+  };
+}
+
+/**
+ * Whether the caller's selected board should beat serial matching, in order:
+ *
+ *  1. it already carries this serial — the strongest evidence there is;
+ *  2. it's a synced gym listing — a real place, which is what the selection is
+ *     meant to express (this is the case the wrong-board bug was about);
+ *  3. otherwise, a synced gym listing that already carries this serial wins
+ *     instead. A personal board is usually the auto-named onboarding template,
+ *     which travels with the climber and can't say which wall they're at;
+ *     letting it win would quietly stop ~200 climbers' sends reaching the gym
+ *     feeds they land on today (see PR #4187 discussion);
+ *  4. nothing else claims the serial, so the selection takes it.
+ */
+export async function selectionBeatsSerialMatch(board: SelectedConnectBoard, serial: string): Promise<boolean> {
+  if (board.serialNumber === serial) return true;
+  if (isSyncedGymListing(board)) return true;
+  return !(await hasSyncedGymBoardForSerial(serial));
 }
 
 /**

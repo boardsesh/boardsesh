@@ -41,6 +41,7 @@ import {
   rememberBoardForSerial,
   requireActiveBoardById,
   resolveSharedBoardForConfig,
+  selectionBeatsSerialMatch,
   serialAlreadyBoundError,
   throwIfDuplicateBoardSerial,
   toResolvedBoard,
@@ -208,6 +209,11 @@ async function bindOrCreateOwnBoardForSerial(
  * private duplicate that every later climber at that wall then resolved to.
  * Claiming the serial onto the selected board makes the gym's own listing
  * discoverable by serial for everyone after.
+ *
+ * A selection only wins on `selectionBeatsSerialMatch`'s terms — a personal
+ * board loses to a synced gym listing that already carries the serial, because
+ * most personal boards are the auto-named onboarding template and travel with
+ * the climber rather than describing a wall.
  */
 async function resolveSerialForUser(
   userId: string,
@@ -217,7 +223,7 @@ async function resolveSerialForUser(
 ): Promise<SerialResolution> {
   if (selectedBoardUuid) {
     const selected = await findSelectedBoardForConnect(userId, selectedBoardUuid, config);
-    if (selected) {
+    if (selected && (await selectionBeatsSerialMatch(selected, serial))) {
       const board =
         selected.serialNumber === null && canClaimSerialForBoard(selected, userId)
           ? await claimSerialForBoard(selected, serial)

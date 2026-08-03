@@ -177,6 +177,8 @@ async function cleanup(): Promise<void> {
     WHERE owner_id IN (${TEST_USER_ID}, ${SECOND_USER_ID})
        OR (owner_id = '00000000-0000-0000-0000-000000000000' AND slug LIKE 'presence-%')
   `);
+  // Gym rows minted by the selectedBoardUuid suite's synced-listing fixtures.
+  await db.execute(sql`DELETE FROM gyms WHERE slug LIKE 'presence-selected-%'`);
   await db.execute(
     sql`DELETE FROM board_climb_stats WHERE climb_uuid IN (${TEST_CLIMB_UUID}, ${OTHER_TEST_CLIMB_UUID})`,
   );
@@ -811,17 +813,39 @@ describe('board-presence resolvers', () => {
         setIds: string;
         name: string;
         isPublic?: boolean;
+        gymId?: number | null;
       }): Promise<{ id: number; uuid: string }> {
         const uuid = uuidv4();
         const slug = `presence-selected-${Math.random().toString(36).slice(2)}`;
         const [row] = await db.execute(sql`
           INSERT INTO user_boards
-            (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number, is_public)
+            (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number, is_public, gym_id)
           VALUES (${uuid}, ${slug}, ${opts.ownerId}, 'kilter', ${opts.layoutId}, ${opts.sizeId}, ${opts.setIds},
-                  ${opts.name}, ${opts.serial}, ${opts.isPublic ?? true})
+                  ${opts.name}, ${opts.serial}, ${opts.isPublic ?? true}, ${opts.gymId ?? null})
           RETURNING id, uuid
         `);
         return { id: Number((row as { id: number }).id), uuid: (row as { uuid: string }).uuid };
+      }
+
+      /** A synced gym listing: system-owned and linked to a gym row. */
+      async function insertGymListing(opts: {
+        serial: string | null;
+        layoutId: number;
+        sizeId: number;
+        setIds: string;
+        name: string;
+      }): Promise<{ id: number; uuid: string }> {
+        const [gymRow] = await db.execute(sql`
+          INSERT INTO gyms (uuid, name, slug, owner_id, is_public)
+          VALUES (${uuidv4()}, ${opts.name}, ${`presence-selected-${Math.random().toString(36).slice(2)}`},
+                  ${SYSTEM_OWNER_ID}, true)
+          RETURNING id
+        `);
+        return insertRealUuidBoard({
+          ...opts,
+          ownerId: SYSTEM_OWNER_ID,
+          gymId: Number((gymRow as { id: number }).id),
+        });
       }
 
       async function serialOf(boardId: number): Promise<string | null> {
@@ -841,8 +865,7 @@ describe('board-presence resolvers', () => {
           name: 'Kilter Board',
         });
         // The gym's synced listing — right wall, no serial.
-        const gymBoard = await insertRealUuidBoard({
-          ownerId: SYSTEM_OWNER_ID,
+        const gymBoard = await insertGymListing({
           serial: null,
           layoutId: 1,
           sizeId: 10,
@@ -880,8 +903,7 @@ describe('board-presence resolvers', () => {
           setIds: '5,6',
           name: 'Kilter Board',
         });
-        const gymBoard = await insertRealUuidBoard({
-          ownerId: SYSTEM_OWNER_ID,
+        const gymBoard = await insertGymListing({
           serial: null,
           layoutId: 2,
           sizeId: 20,
@@ -918,8 +940,7 @@ describe('board-presence resolvers', () => {
           name: 'Actual Wall',
         });
         // The user picked this on the map, then walked to a different wall.
-        const staleSelection = await insertRealUuidBoard({
-          ownerId: SYSTEM_OWNER_ID,
+        const staleSelection = await insertGymListing({
           serial: null,
           layoutId: 2,
           sizeId: 20,
@@ -975,6 +996,82 @@ describe('board-presence resolvers', () => {
         expect(await serialOf(picked.id)).toBe(existingSerial);
       });
 
+      // A personal board is usually the auto-named onboarding template, which
+      // follows the climber between gyms — it can't say which wall they're at.
+      it('routes a generic personal selection to the gym listing that owns the serial', async () => {
+        const serial = `SELTEMPLATE-${Date.now()}`;
+        const gymBoard = await insertGymListing({
+          serial,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '2,5',
+          name: 'Real Gym Wall',
+        });
+        const template = await insertRealUuidBoard({
+          ownerId: TEST_USER_ID,
+          serial: null,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '2,5',
+          name: 'Kilter Original 12×12 with kickboard',
+        });
+
+        const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+          undefined,
+          { serial, boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '2,5', selectedBoardUuid: template.uuid },
+          authCtx(),
+        );
+
+        expect(result.board?.boardId).toBe(gymBoard.id);
+        // And the template must not absorb the gym's serial, or it would start
+        // competing for it on every later climber's connect.
+        expect(await serialOf(template.id)).toBeNull();
+      });
+
+      it('lets a personal selection take the serial when no gym listing claims it', async () => {
+        const serial = `SELHOME-${Date.now()}`;
+        const homeBoard = await insertRealUuidBoard({
+          ownerId: TEST_USER_ID,
+          serial: null,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '2,6',
+          name: "Marco's Garage",
+        });
+
+        const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+          undefined,
+          { serial, boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '2,6', selectedBoardUuid: homeBoard.uuid },
+          authCtx(),
+        );
+
+        expect(result.board?.boardId).toBe(homeBoard.id);
+        expect(await serialOf(homeBoard.id)).toBe(serial);
+      });
+
+      it('keeps a personal selection that already carries the serial, gym listing or not', async () => {
+        const serial = `SELOWNSERIAL-${Date.now()}`;
+        // Serial reuse across walls is normal; a board already carrying this
+        // exact one is the strongest evidence we have of where the climber is.
+        await insertGymListing({ serial, layoutId: 1, sizeId: 10, setIds: '2,7', name: 'Some Other Gym' });
+        const mine = await insertRealUuidBoard({
+          ownerId: TEST_USER_ID,
+          serial,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '2,7',
+          name: 'My Wall With That Serial',
+        });
+
+        const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+          undefined,
+          { serial, boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '2,7', selectedBoardUuid: mine.uuid },
+          authCtx(),
+        );
+
+        expect(result.board?.boardId).toBe(mine.id);
+      });
+
       it('binds a stranger-owned public selection but never brands it with the serial', async () => {
         const serial = `SELSTRANGER-${Date.now()}`;
         const strangersBoard = await insertRealUuidBoard({
@@ -1016,8 +1113,7 @@ describe('board-presence resolvers', () => {
           setIds: '7,8',
           name: 'Clone',
         });
-        const gymBoard = await insertRealUuidBoard({
-          ownerId: SYSTEM_OWNER_ID,
+        const gymBoard = await insertGymListing({
           serial: null,
           layoutId: 3,
           sizeId: 30,
@@ -1036,7 +1132,7 @@ describe('board-presence resolvers', () => {
       describe('claimSerialForBoard', () => {
         async function boardFor(id: number, uuid: string): Promise<SelectedConnectBoard> {
           const [row] = await db.execute(sql`
-            SELECT owner_id, board_type, layout_id, size_id, set_ids, serial_number, angle, name
+            SELECT owner_id, board_type, layout_id, size_id, set_ids, serial_number, angle, name, gym_id
               FROM user_boards WHERE id = ${id}
           `);
           const board = row as {
@@ -1048,11 +1144,13 @@ describe('board-presence resolvers', () => {
             serial_number: string | null;
             angle: number;
             name: string;
+            gym_id: number | null;
           };
           return {
             id,
             uuid,
             ownerId: board.owner_id,
+            gymId: board.gym_id === null ? null : Number(board.gym_id),
             name: board.name,
             boardType: board.board_type,
             layoutId: Number(board.layout_id),
