@@ -943,7 +943,8 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     // Not `null`: on web there's no native splash to cover a blank render, so
     // returning nothing here leaves the page white until the session round-trip
     // resolves (~2s cold). Paint the splash placeholder instead — instant FCP on
-    // web, invisible on native (the OS splash is still up). Redirect/auth logic
+    // web. AppLoadingSplash renders nothing on native, where expo-splash-screen
+    // owns this window and draws the mark at its own size. Redirect/auth logic
     // below is unchanged; it only runs once the session has actually resolved.
     return <AppLoadingSplash />;
   }
