@@ -225,15 +225,16 @@ export async function findSelectedBoardForConnect(
  * function exists for, since most synced gym boards carry no serial at all
  * until a connect claims one for them.
  *
- * Deliberately makes no exception for a selection that already carries the
- * serial. Serials are reused across real gyms — 10 of them in production span
- * 4 km to 7,400 km — and there is no way to tell from a serial alone which of
- * those walls someone is standing at. Falling through hands those cases to
- * `findActiveBoardsBySerial`, which returns every match and lets the client
- * prompt; the pick is then remembered per user, so the prompt appears once.
- * Guessing silently is how the wrong-board bug looked to a climber.
+ * Takes only the serial, deliberately: nothing about the selected board changes
+ * the answer, not even it already carrying this serial. Serials are reused
+ * across real gyms — 10 of them in production span 4 km to 7,400 km — and there
+ * is no way to tell from a serial alone which of those walls someone is at.
+ * Falling through hands those cases to `findActiveBoardsBySerial`, which returns
+ * every match and lets the client prompt; the pick is then remembered per user,
+ * so the prompt appears once. Guessing silently is how the wrong-board bug
+ * looked to a climber.
  */
-export async function selectionBeatsSerialMatch(_board: SelectedConnectBoard, serial: string): Promise<boolean> {
+export async function selectionBeatsSerialMatch(serial: string): Promise<boolean> {
   return !(await hasSyncedGymBoardForSerial(serial));
 }
 

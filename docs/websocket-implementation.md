@@ -413,8 +413,19 @@ The web gym kiosk (`/kiosk/{gym-slug}`, `packages/web/app/components/kiosk/prese
 Mobile resolves the feed board id in this order:
 
 1. `resolveBoardForUuid(boardUuid)` for the selected named board. This is the default board-sheet path and binds to the actual `user_boards` row, so stats/history are available before Bluetooth connects and stay aligned with board-scoped ticks.
-2. `resolveBoardForSerial(serial, boardType, layoutId, sizeId, setIds)` after a BLE connection when the controller exposes a serial. This keeps everyone at the same physical wall converged on the same board id.
+2. `resolveBoardForSerial` / `resolveBoardCandidatesForSerial` after a BLE connection when the controller exposes a serial. This keeps everyone at the same physical wall converged on the same board id. See the precedence below — the connect also passes the board the user already had selected.
 3. `resolveBoardForConfig(boardType, layoutId, sizeId, setIds)` only when no serial is available, giving serial-less boards a per-config fallback feed.
+
+#### Which board a serial routes to
+
+The BLE connect sends `selectedBoardUuid` — the board the climber already had picked — alongside the serial. `resolveSerialForUser` decides:
+
+1. **A gym's own listing that already carries the serial wins**, before anything else is considered. That listing _is_ the wall; a selection is only a hint about it, and most personal boards are the auto-named onboarding template (`Kilter Original 12×12 with kickboard`) that travels with a climber between gyms. There is deliberately no exception for a selection that carries the serial itself.
+2. Otherwise **the selection decides**, but only when its board type / layout / size / normalized set ids match the controller that connected — a selection describing a different wall is stale and ignored. If that board carries no serial, the connect **claims** this one for it, which is what makes a gym listing discoverable by serial for everyone afterwards. Claims are limited to the caller's own boards and the system-owned synced catalog, guarded by `WHERE serial_number IS NULL` so a concurrent claim is fail-safe, and never overwrite a board that already carries a different serial.
+3. Otherwise a **previously remembered choice** (`user_board_serials.board_uuid`) wins, so the disambiguation prompt appears once per wall rather than every connect.
+4. Otherwise the serial's own matches decide: none → bind/create the caller's own board; exactly one → route there and remember; **several → return `candidates` and let the client prompt.**
+
+Rule 4's prompt is load-bearing. Serials are not unique — the supplier reuses them across unrelated gyms (production has 15 shared by two gym listings, up to 7,400 km apart), so guessing silently is exactly what made a Bluetooth connect land climbers on the wrong board. `recordBoardSerial` writes the same `board_uuid` column on the same connect and deliberately omits it from its conflict `SET` when the connect resolved no board, so a bare reconnect can't wipe what the resolver just established.
 
 Fresh board rows are created only for configurations in the hardware catalog. MoonBoard uses the static layout/size/set catalog shipped in `@boardsesh/board-config`; Aurora-family boards require every requested set to have an exact `board_product_sizes_layouts_sets` association for the submitted board type, layout, and product size. The create gate runs after an existing board lookup: a legacy row whose old configuration is no longer recognized can still be resolved, and an owner can still bind a newly seen serial to their existing legacy row, but a catalog miss cannot mint another user or system board. Anonymous `resolveBoardForConfig` remains bind-only and returns `NOT_FOUND` on a miss without consulting or mutating the catalog-backed create path.
 

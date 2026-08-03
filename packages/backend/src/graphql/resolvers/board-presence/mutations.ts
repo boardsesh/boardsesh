@@ -223,15 +223,18 @@ async function resolveSerialForUser(
 ): Promise<SerialResolution> {
   if (selectedBoardUuid) {
     const selected = await findSelectedBoardForConnect(userId, selectedBoardUuid, config);
-    if (selected && (await selectionBeatsSerialMatch(selected, serial))) {
+    if (selected && (await selectionBeatsSerialMatch(serial))) {
       const board =
         selected.serialNumber === null && canClaimSerialForBoard(selected, userId)
           ? await claimSerialForBoard(selected, serial)
           : selected;
       // Remember it even when the claim was skipped: the per-user link is what
       // keeps a later connect (one that no longer carries the selection, e.g. a
-      // background reconnect) on the same wall.
-      await rememberBoardForSerial(userId, serial, selected);
+      // background reconnect) on the same wall. Passes the post-claim `board`
+      // rather than `selected` purely so the two can't drift — the two differ
+      // only in `serialNumber`, which this never reads (it stores the `serial`
+      // argument).
+      await rememberBoardForSerial(userId, serial, board);
       return { kind: 'board', board };
     }
   }
