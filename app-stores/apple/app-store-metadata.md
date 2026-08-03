@@ -19,7 +19,7 @@
 > in `packages/mobile/app.config.ts`. Adding a listing locale without adding it
 > there leaves the page claiming English only.
 >
-> **First run for a brand-new locale:** `deliver` writes onto the *editable* version's
+> **First run for a brand-new locale:** `deliver` writes onto the _editable_ version's
 > localizations. If a newly added locale folder doesn't show up after a
 > `Mobile Store Metadata` run, add that language to the version once in App Store
 > Connect (version → **+** next to the language selector), then re-dispatch — every

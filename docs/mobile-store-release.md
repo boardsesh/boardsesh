@@ -61,10 +61,12 @@ folder.
    `fastlane/metadata/en-US/release_notes.txt` (iOS) and
    `fastlane/metadata/android/en-US/changelogs/default.txt` (Android) if the
    release notes changed — **and translate them into `es-ES`, `es-MX`, `fr-FR`
-   and `de-DE`**, which both stores upload verbatim. The changelog generator
-   (`scripts/generate-changelog.ts`) only writes English, so a locale left on
-   the previous release's notes ships stale copy. Play caps each changelog at
-   500 characters and German runs long — check before pushing. Merge to `main`.
+   and `de-DE`**, which both stores upload verbatim. Nothing generates these:
+   `scripts/generate-changelog.ts` writes only `CHANGELOG.md` and
+   `changelog.generated.json`, so every locale here is hand-written and a locale
+   you skip silently ships the previous release's notes. Play caps each
+   changelog at 500 characters and German runs long — check before pushing.
+   Merge to `main`.
 2. Merge auto-builds TestFlight + Play internal (Android changelog rides along).
 3. **In App Store Connect, create the new version first** — the `ios metadata`
    lane only writes into an existing _editable_ version. Then, if copy / icon /

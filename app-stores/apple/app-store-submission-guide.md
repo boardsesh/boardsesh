@@ -56,8 +56,9 @@ set. The other axis that helps the listing is locale, so that stays a full sweep
 <https://developer.apple.com/help/app-store-connect/manage-app-information/upload-app-previews-and-screenshots/>.)
 
 The app has `supportsTablet: true`, so the automated set includes iPad screenshots.
-`--locales all` captures `en-US`, `es`, and `fr`; the single Spanish app locale
-is uploaded to both App Store Connect Spanish locales: `es-ES` and `es-MX`.
+`--locales all` captures `en-US`, `es`, `fr`, and `de`; the single Spanish app
+locale is uploaded to both App Store Connect Spanish locales, `es-ES` and
+`es-MX`, while French and German each map to one (`fr-FR`, `de-DE`).
 
 Dark is the canonical appearance; pass `--theme light` for a light set.
 

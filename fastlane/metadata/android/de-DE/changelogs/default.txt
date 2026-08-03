@@ -3,6 +3,6 @@ Neu:
 - Der Boardsesh-Grad liest sich auf Kilter, Tension und MoonBoard gleich, aus echten Begehungen.
 - Jede Halle bekommt eine öffentliche Seite und ein Wand-Display für den Fernseher.
 - Android-Tablets bekommen die Zwei-Spalten-Wandansicht.
-- Sortierung Zufall, Projekte-Filter und angepinnte Filter.
+- Sortierung Zufall, Projektfilter und angepinnte Filter.
 
 Behoben: schnelleres Bluetooth, und dein Board taucht beim Neuverbinden wieder auf.

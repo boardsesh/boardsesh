@@ -199,7 +199,7 @@ integrations.ts`), then `vp run codegen`.
 3. The OAuth handlers, claim/dedupe, credential refresh, auto-sync fan-out,
    GraphQL surface, and the mobile hooks/registry/UI are provider-generic —
    the mobile side needs a card component, an `INTEGRATIONS` registry entry,
-   and i18n strings (all three locales).
+   and i18n strings (every locale in `SUPPORTED_LOCALES`).
 4. Env: client id/secret read lazily inside the provider impl; the redirect
    URI is `${BACKEND_PUBLIC_URL}/integrations/<provider>/callback` and the
    domain must be registered with the provider.

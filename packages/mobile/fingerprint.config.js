@@ -94,6 +94,13 @@ module.exports = {
       // `overrideHashKey` names the source in the hash tree; it does NOT replace the
       // content digest (see createSourceId in @expo/fingerprint's hash/Hash.js —
       // the key is only the source id, contents are hashed either way). Confirmed by
+      // Scope note: this hashes the dir for BOTH platforms, so an iOS-only wording
+      // tweak also bumps the Android fingerprint and costs an Android rebuild it
+      // doesn't strictly need. Accepted deliberately — Android's prebuild output
+      // does depend on the *set* of languages here (Expo writes an empty
+      // res/values-b+<lang>/strings.xml per entry), so a narrower per-platform
+      // source would be wrong, not just fiddlier.
+      //
       // probe: editing one string in locales/de.json moves the resolved iOS
       // runtimeVersion.
     },

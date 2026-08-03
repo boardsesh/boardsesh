@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   type Dimensions,
@@ -288,5 +291,19 @@ describe('findGooglePlayOffenders', () => {
     ]);
     expect(offenders).toHaveLength(1);
     expect(offenders[0].reason).toMatch(/no more than 2x/);
+  });
+});
+
+describe('Fastfile locale allowlist', () => {
+  // EXPECTED_DELIVER_LOCALES is the gate `fastlane ios screenshots` runs before
+  // uploading, and it's Ruby — nothing else in the TS test suite can see it, so
+  // it would drift silently on the next locale and only surface as a failed
+  // upload at release time. Parse the constant and hold it to the TS list.
+  it('matches EXPECTED_APP_STORE_LOCALES', () => {
+    const fastfile = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../../fastlane/Fastfile'), 'utf8');
+    const declaration = fastfile.match(/^EXPECTED_DELIVER_LOCALES\s*=\s*\[([^\]]*)\]/m);
+    expect(declaration, 'EXPECTED_DELIVER_LOCALES not found in fastlane/Fastfile').not.toBeNull();
+    const locales = [...(declaration?.[1] ?? '').matchAll(/"([^"]+)"/g)].map((entry) => entry[1]);
+    expect(locales.sort()).toEqual([...EXPECTED_APP_STORE_LOCALES].sort());
   });
 });

@@ -1,14 +1,14 @@
-Such dir einen Boulder, und dein Board leuchtet auf. Weniger Zeit am Handy, mehr Zeit an der Wand.
+Suche dir einen Boulder, und dein Board leuchtet auf. Weniger Zeit am Handy, mehr Zeit an der Wand.
 
 GRIFFE BELEUCHTEN
-Such dir einen beliebigen Boulder, und Boardsesh beleuchtet die Griffe an der Wand über Bluetooth, auf Kilter, Tension, MoonBoard, Decoy, Touchstone, Grasshopper und So iLL. Volle LED-Steuerung auf allen sieben, nicht nur Stöbern.
+Suche dir einen beliebigen Boulder, und Boardsesh beleuchtet die Griffe an der Wand über Bluetooth, auf Kilter, Tension, MoonBoard, Decoy, Touchstone, Grasshopper und So iLL. Volle LED-Steuerung auf allen sieben, nicht nur Stöbern.
 
 EINE APP FÜR JEDES BOARD, AN DEM DU KLETTERST
-Kilter, Tension und MoonBoard bringen jeweils ihre eigene App für ihr eigenes Board mit. Boardsesh arbeitet mit allen dreien, dazu Decoy, Touchstone, Grasshopper und So iLL, an einem Ort. Deine komplette Kletterhistorie über alle Boards hinweg liegt hier.
+Kilter, Tension und MoonBoard bringen jeweils ihre eigene App für ihr eigenes Board mit. Boardsesh kann alle drei, dazu Decoy, Touchstone, Grasshopper und So iLL — alles an einem Ort. Deine komplette Kletterhistorie über alle Boards hinweg liegt hier.
 
 BOARD-VERLAUF, IMMER AN
 Teilt ihr euch ein Board, verlierst du den letzten Boulder schnell aus den Augen, und irgendwer löscht ihn immer aus Versehen.
-In Boardsesh hat jedes Board, mit dem du dich verbindest, einen Live-Feed davon, was gerade an der Wand leuchtet: Name des Boulders, wer ihn beleuchtet hat, wer ihn geschraubt hat, Grad und Winkel, und die letzten Begehungen. Der Feed zieht mit, sobald sich an der Wand etwas ändert, damit du immer weißt, was oben hängt.
+In Boardsesh hat jedes Board, mit dem du dich verbindest, einen Live-Feed davon, was gerade an der Wand leuchtet: Name des Boulders, wer ihn beleuchtet hat, wer ihn geschraubt hat, Grad und Winkel und die letzten Begehungen. Der Feed zieht mit, sobald sich an der Wand etwas ändert, damit du immer weißt, was gerade leuchtet.
 
 BLEIBT VERBUNDEN
 Boardsesh hält die Verbindung zu deinem Board im Hintergrund am Leben, damit die Griffe durch deine Versuche hindurch leuchten, auch wenn der Bildschirm aus ist oder du die App wechselst. Eine laufende Benachrichtigung legt Zurück und Weiter auf deinen Sperrbildschirm, damit du durch die Warteschlange gehst, ohne die App wieder zu öffnen. Kein Neuverbinden zwischen den Bouldern.
@@ -16,14 +16,14 @@ Boardsesh hält die Verbindung zu deinem Board im Hintergrund am Leben, damit di
 SESSIONS MIT DEINER CREW
 Starte eine Session, und ihr teilt euch als Crew eine Warteschlange, die alle steuern können. Jede*r kann den nächsten Boulder am Board beleuchten. Am Ende bekommst du einen Rückblick mit Auswertung: Begehungen und Versuche, Gradverteilung, deine schwerste Begehung und deinen Fortschritt über die Zeit.
 
-BAU DIR EIN TRAINING
-Wähl Volumen, Pyramide, Leiter oder Grad-Fokus, leg Zielgrad und Warm-up fest, sieh dir die Boulder vorab an, und beleuchte sie einzeln am Board.
+BAU DIR EIN WORKOUT
+Wähle Volumen, Pyramide, Leiter oder Grad-Fokus, lege Zielgrad und Warm-up fest, sieh dir die Boulder vorab an, und beleuchte sie einzeln am Board.
 
 VERFOLG DEIN KLETTERN
-Trag Begehungen, Flashes und Versuche ein, und sieh im Tab Fortschritt zu, wie Begehungen und Grade steigen. Hol dir deine bisherigen Kilter- und Tension-Boulder rüber, indem du dein Routenbuch aus Aurora Climbing importierst.
+Trage Begehungen, Flashes und Versuche ein, und sieh im Tab Fortschritt zu, wie Begehungen und Grade steigen. Hol dir deine bisherigen Kilter- und Tension-Boulder rüber, indem du dein Routenbuch aus Aurora Climbing importierst.
 
 FINDE MEHR ZUM KLETTERN
-Folge deiner Crew und Routenbauer*innen, such nach Kletterer*innen, und pinn dir Playlists aus Entdecken.
+Folge deiner Crew und Routenbauer*innen, suche nach Kletterer*innen, und pinne dir Playlists aus Entdecken.
 
 KOSTENLOS, KEINE WERBUNG, KEIN ABO
 Open Source auf GitHub.

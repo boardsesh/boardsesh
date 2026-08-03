@@ -72,6 +72,19 @@ describe('mobile locale parity', () => {
     }
   });
 
+  it('declares no language the JS UI cannot render', () => {
+    // The other direction of the check above. A declared localization with a
+    // locale file but no catalog would put the language on the App Store product
+    // page while the app itself still renders English for it.
+    const supportedLanguages = SUPPORTED_LOCALES.map(languageSubtag);
+    for (const language of APP_LOCALIZATIONS) {
+      expect({ language, translated: supportedLanguages.includes(language) }).toEqual({
+        language,
+        translated: true,
+      });
+    }
+  });
+
   it('ships an InfoPlist strings file for every declared localization', () => {
     expect(localeFileNames()).toEqual([...APP_LOCALIZATIONS].sort());
   });
@@ -100,6 +113,10 @@ describe('mobile locale parity', () => {
     }
   });
 
+  // Load-bearing beyond the leak it names: Expo's iOS Locales plugin bails with an
+  // early `return` (not `continue`) on the first language whose map is empty, so a
+  // single empty `ios` block would silently drop InfoPlist.strings for every
+  // language after it in APP_LOCALIZATIONS order. Don't delete this as redundant.
   it('scopes every string to ios so none leak into Android resources', () => {
     for (const language of localeFileNames()) {
       // A key outside `ios` is emitted for BOTH platforms, so an InfoPlist key
@@ -115,6 +132,18 @@ describe('mobile locale parity', () => {
     for (const language of localeFileNames()) {
       for (const [key, value] of Object.entries(readLocaleStrings(language))) {
         expect({ language, key, empty: value.trim().length === 0 }).toEqual({ language, key, empty: false });
+      }
+    }
+  });
+
+  it('uses no double quote, which Expo writes unescaped into InfoPlist.strings', () => {
+    // ios/Locales.js emits `key = "${value}";` with no escaping, so a " in a
+    // translation produces a malformed .strings file — an iOS-only breakage that
+    // wouldn't show up until a device read the prompt. German quotes („…“) and
+    // French guillemets are fine; the ASCII one is not.
+    for (const language of localeFileNames()) {
+      for (const [key, value] of Object.entries(readLocaleStrings(language))) {
+        expect({ language, key, hasQuote: value.includes('"') }).toEqual({ language, key, hasQuote: false });
       }
     }
   });

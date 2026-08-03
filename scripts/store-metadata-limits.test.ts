@@ -56,9 +56,33 @@ function playLocales(): string[] {
     .sort();
 }
 
+/** File names in a locale dir, recursed one level so changelogs/ is included. */
+function fileSet(root: string, locale: string): string[] {
+  const names: string[] = [];
+  for (const entry of readdirSync(join(root, locale), { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      names.push(...readdirSync(join(root, locale, entry.name)).map((name) => `${entry.name}/${name}`));
+    } else if (entry.name.endsWith('.txt')) {
+      names.push(entry.name);
+    }
+  }
+  return names.sort();
+}
+
 describe('App Store listing copy', () => {
   it('has locale folders to check', () => {
     expect(appleLocales().length).toBeGreaterThan(0);
+  });
+
+  // The length checks below skip a missing file, and nothing else guards Apple
+  // metadata file parity — EXPECTED_DELIVER_LOCALES in the Fastfile gates only
+  // screenshots. Without this, deleting or renaming de-DE/description.txt ships a
+  // locale whose description silently keeps whatever was last uploaded.
+  it.each(appleLocales())('gives %s the same file set as en-US', (locale) => {
+    expect({ locale, files: fileSet(APPLE_METADATA, locale) }).toEqual({
+      locale,
+      files: fileSet(APPLE_METADATA, 'en-US'),
+    });
   });
 
   it.each(appleLocales())('keeps every %s field inside its App Store limit', (locale) => {
@@ -93,6 +117,16 @@ describe('App Store listing copy', () => {
 describe('Play listing copy', () => {
   it('has locale folders to check', () => {
     expect(playLocales().length).toBeGreaterThan(0);
+  });
+
+  it.each(playLocales())('gives %s the same file set as en-US', (locale) => {
+    // en-US additionally carries images/ (icon + feature graphic), which Play
+    // takes once for the whole listing rather than per locale.
+    const withoutImages = (files: string[]) => files.filter((name) => !name.startsWith('images/'));
+    expect({ locale, files: withoutImages(fileSet(PLAY_METADATA, locale)) }).toEqual({
+      locale,
+      files: withoutImages(fileSet(PLAY_METADATA, 'en-US')),
+    });
   });
 
   it.each(playLocales())('keeps every %s field inside its Play limit', (locale) => {
