@@ -81,22 +81,36 @@ function BottomChromeDebugOverlayInner() {
   const usesNativeTabBar = useNativeTabBar();
   const { variant } = useTheme();
 
-  const lines = [
-    `root ${formatOffset(insets.bottom)}  probe ${measured === null ? '—' : formatOffset(measured)}  pubs ${publishCount}`,
-    `${variant}  nativeBar ${usesNativeTabBar ? 'Y' : 'N'}  inTabs ${metrics.insideTabs ? 'Y' : 'N'}  ` +
-      `acc ${metrics.nativeAccessoryVisible ? 'Y' : 'N'}  jsQ ${metrics.jsQueueToolbarVisible ? 'Y' : 'N'}`,
-    `tabBarBottom ${formatOffset(metrics.tabBarBottom)}  scroll ${formatOffset(metrics.scrollBottomPadding)}`,
-    `preSession ${formatOffset(metrics.preSessionFooterBottom)}  inSession ${formatOffset(metrics.inSessionListBottom)}`,
-    `floating ${formatOffset(metrics.floatingControlBottom)}  fixed ${formatOffset(metrics.fixedFooterBottom)}`,
+  // Keyed by the stable row label (position in this fixed list), NOT the line
+  // content — a content key would remount every Text on each geometry change.
+  const lines: Array<[rowKey: string, text: string]> = [
+    [
+      'insets',
+      `root ${formatOffset(insets.bottom)}  probe ${measured === null ? '—' : formatOffset(measured)}  pubs ${publishCount}`,
+    ],
+    [
+      'flags',
+      `${variant}  nativeBar ${usesNativeTabBar ? 'Y' : 'N'}  inTabs ${metrics.insideTabs ? 'Y' : 'N'}  ` +
+        `acc ${metrics.nativeAccessoryVisible ? 'Y' : 'N'}  jsQ ${metrics.jsQueueToolbarVisible ? 'Y' : 'N'}`,
+    ],
+    ['bar', `tabBarBottom ${formatOffset(metrics.tabBarBottom)}  scroll ${formatOffset(metrics.scrollBottomPadding)}`],
+    [
+      'session',
+      `preSession ${formatOffset(metrics.preSessionFooterBottom)}  inSession ${formatOffset(metrics.inSessionListBottom)}`,
+    ],
+    [
+      'overlays',
+      `floating ${formatOffset(metrics.floatingControlBottom)}  fixed ${formatOffset(metrics.fixedFooterBottom)}`,
+    ],
   ];
 
   return (
     <View pointerEvents="box-none" style={[styles.root, { top: insets.top + 4 }]}>
       <View style={styles.panel}>
         <Text style={styles.title}>BOTTOM CHROME</Text>
-        {lines.map((line) => (
-          <Text key={line} style={styles.metrics}>
-            {line}
+        {lines.map(([rowKey, text]) => (
+          <Text key={rowKey} style={styles.metrics}>
+            {text}
           </Text>
         ))}
       </View>
