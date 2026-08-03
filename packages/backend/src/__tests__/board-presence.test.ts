@@ -1049,11 +1049,19 @@ describe('board-presence resolvers', () => {
         expect(await serialOf(homeBoard.id)).toBe(serial);
       });
 
-      it('keeps a personal selection that already carries the serial, gym listing or not', async () => {
+      it('prompts rather than guessing when a gym listing and the selection both carry the serial', async () => {
         const serial = `SELOWNSERIAL-${Date.now()}`;
-        // Serial reuse across walls is normal; a board already carrying this
-        // exact one is the strongest evidence we have of where the climber is.
-        await insertGymListing({ serial, layoutId: 1, sizeId: 10, setIds: '2,7', name: 'Some Other Gym' });
+        // Serials are reused across real gyms (10 in production, 4 km to
+        // 7,400 km apart), so a serial alone cannot say which wall someone is
+        // at. Falling through to the candidate list is what lets the client ask
+        // instead of silently picking — the pick is then remembered per user.
+        const gymBoard = await insertGymListing({
+          serial,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '2,7',
+          name: 'Some Other Gym',
+        });
         const mine = await insertRealUuidBoard({
           ownerId: TEST_USER_ID,
           serial,
@@ -1069,7 +1077,32 @@ describe('board-presence resolvers', () => {
           authCtx(),
         );
 
-        expect(result.board?.boardId).toBe(mine.id);
+        expect(result.board).toBeNull();
+        expect((result.candidates ?? []).map((candidate) => candidate.boardId).sort()).toEqual(
+          [gymBoard.id, mine.id].sort(),
+        );
+      });
+
+      it('sends a picked gym listing to its own board once it carries the serial', async () => {
+        // The steady state after a claim: the gym listing owns the serial, so
+        // the serial path lands on exactly that board with no prompt.
+        const serial = `SELGYMOWNS-${Date.now()}`;
+        const gymBoard = await insertGymListing({
+          serial,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '2,11',
+          name: 'Claimed Gym Wall',
+        });
+
+        const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+          undefined,
+          { serial, boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '2,11', selectedBoardUuid: gymBoard.uuid },
+          authCtx(),
+        );
+
+        expect(result.candidates).toBeNull();
+        expect(result.board?.boardId).toBe(gymBoard.id);
       });
 
       it('binds a stranger-owned public selection but never brands it with the serial', async () => {
@@ -1132,7 +1165,7 @@ describe('board-presence resolvers', () => {
       describe('claimSerialForBoard', () => {
         async function boardFor(id: number, uuid: string): Promise<SelectedConnectBoard> {
           const [row] = await db.execute(sql`
-            SELECT owner_id, board_type, layout_id, size_id, set_ids, serial_number, angle, name, gym_id
+            SELECT owner_id, board_type, layout_id, size_id, set_ids, serial_number, angle, name
               FROM user_boards WHERE id = ${id}
           `);
           const board = row as {
@@ -1144,13 +1177,11 @@ describe('board-presence resolvers', () => {
             serial_number: string | null;
             angle: number;
             name: string;
-            gym_id: number | null;
           };
           return {
             id,
             uuid,
             ownerId: board.owner_id,
-            gymId: board.gym_id === null ? null : Number(board.gym_id),
             name: board.name,
             boardType: board.board_type,
             layoutId: Number(board.layout_id),

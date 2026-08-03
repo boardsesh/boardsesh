@@ -142,20 +142,7 @@ export async function findActiveBoardsBySerial(serial: string): Promise<SerialCa
 }
 
 /** A board the caller had selected when they connected, plus what the serial claim needs. */
-export type SelectedConnectBoard = ActivePresenceBoard & { uuid: string; ownerId: string; gymId: number | null };
-
-/**
- * Whether a board is a gym's own listing mirrored from the location sync, as
- * opposed to a personal board.
- *
- * This is the line between "a wall" and "a board configuration". Most personal
- * boards are the auto-named template a climber gets at onboarding
- * ("Kilter Original 12×12 with kickboard") and follow them from gym to gym, so
- * having one selected says nothing about which wall they're standing at.
- */
-export function isSyncedGymListing(board: Pick<SelectedConnectBoard, 'ownerId' | 'gymId'>): boolean {
-  return board.ownerId === SYSTEM_BOARD_OWNER_ID && board.gymId !== null;
-}
+export type SelectedConnectBoard = ActivePresenceBoard & { uuid: string; ownerId: string };
 
 /** Whether any synced gym listing already carries this serial. */
 export async function hasSyncedGymBoardForSerial(serial: string): Promise<boolean> {
@@ -203,7 +190,6 @@ export async function findSelectedBoardForConnect(
       setIds: dbSchema.userBoards.setIds,
       serialNumber: dbSchema.userBoards.serialNumber,
       angle: dbSchema.userBoards.angle,
-      gymId: dbSchema.userBoards.gymId,
     })
     .from(dbSchema.userBoards)
     .where(
@@ -225,31 +211,29 @@ export async function findSelectedBoardForConnect(
   ) {
     return undefined;
   }
-  return {
-    ...board,
-    id: Number(board.id),
-    layoutId: Number(board.layoutId),
-    sizeId: Number(board.sizeId),
-    gymId: board.gymId === null ? null : Number(board.gymId),
-  };
+  return { ...board, id: Number(board.id), layoutId: Number(board.layoutId), sizeId: Number(board.sizeId) };
 }
 
 /**
- * Whether the caller's selected board should beat serial matching, in order:
+ * Whether the caller's selected board should beat serial matching.
  *
- *  1. it already carries this serial — the strongest evidence there is;
- *  2. it's a synced gym listing — a real place, which is what the selection is
- *     meant to express (this is the case the wrong-board bug was about);
- *  3. otherwise, a synced gym listing that already carries this serial wins
- *     instead. A personal board is usually the auto-named onboarding template,
- *     which travels with the climber and can't say which wall they're at;
- *     letting it win would quietly stop ~200 climbers' sends reaching the gym
- *     feeds they land on today (see PR #4187 discussion);
- *  4. nothing else claims the serial, so the selection takes it.
+ * A gym's own listing always wins when it already carries the serial: that
+ * listing IS the wall, whereas a selection is only a hint about it (most
+ * personal boards are the auto-named onboarding template, which travels with
+ * the climber between gyms). The selection therefore only decides when no gym
+ * listing claims the serial — which is exactly the wrong-board case this
+ * function exists for, since most synced gym boards carry no serial at all
+ * until a connect claims one for them.
+ *
+ * Deliberately makes no exception for a selection that already carries the
+ * serial. Serials are reused across real gyms — 10 of them in production span
+ * 4 km to 7,400 km — and there is no way to tell from a serial alone which of
+ * those walls someone is standing at. Falling through hands those cases to
+ * `findActiveBoardsBySerial`, which returns every match and lets the client
+ * prompt; the pick is then remembered per user, so the prompt appears once.
+ * Guessing silently is how the wrong-board bug looked to a climber.
  */
-export async function selectionBeatsSerialMatch(board: SelectedConnectBoard, serial: string): Promise<boolean> {
-  if (board.serialNumber === serial) return true;
-  if (isSyncedGymListing(board)) return true;
+export async function selectionBeatsSerialMatch(_board: SelectedConnectBoard, serial: string): Promise<boolean> {
   return !(await hasSyncedGymBoardForSerial(serial));
 }
 
