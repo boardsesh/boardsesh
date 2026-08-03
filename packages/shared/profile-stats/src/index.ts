@@ -23,7 +23,13 @@ export {
   parseLayoutKey,
   sortLayoutKeys,
 } from './layouts';
-export { parseTickTime, tickTimeMs, formatTickRelativeTime, formatTickAbsoluteTime } from './format-tick-time';
+export {
+  parseTickTime,
+  tickTimeMs,
+  formatTickRelativeTime,
+  formatTickAbsoluteTime,
+  setRelativeTimeLocale,
+} from './format-tick-time';
 export {
   deriveAngleLifetimeStats,
   groupEntriesByAngle,

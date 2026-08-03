@@ -10,6 +10,7 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import { getLocales } from 'expo-localization';
 import { SUPPORTED_LOCALES, DEFAULT_LOCALE, DEFAULT_NAMESPACE, MOBILE_NAMESPACES, type Locale } from '@boardsesh/i18n';
+import { setRelativeTimeLocale } from '@boardsesh/profile-stats';
 import { SCREENSHOT_LOCALE_OVERRIDE } from '../screenshot-mode';
 
 // --- Locale catalogs from @boardsesh/i18n ---
@@ -170,9 +171,19 @@ export function detectDeviceLocale(): Locale {
   return DEFAULT_LOCALE;
 }
 
+const initialLocale = detectDeviceLocale();
+
+// dayjs keeps its active locale module-global and defaults to English, so every
+// "vor 6 Minuten" in the app rendered as "6 minutes ago" until this ran. Set it
+// alongside i18n rather than inside the formatter: the formatter is called
+// per-row during scrolling, and switching locale on every call is both wasteful
+// and a cross-request hazard for the web surfaces that share the package.
+setRelativeTimeLocale(initialLocale);
+i18n.on('languageChanged', setRelativeTimeLocale);
+
 void i18n.use(initReactI18next).init({
   resources,
-  lng: detectDeviceLocale(),
+  lng: initialLocale,
   fallbackLng: DEFAULT_LOCALE,
   defaultNS: DEFAULT_NAMESPACE,
   ns: [...MOBILE_NAMESPACES],
