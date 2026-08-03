@@ -222,8 +222,15 @@ async function resolveSerialForUser(
   selectedBoardUuid?: string | null,
 ): Promise<SerialResolution> {
   if (selectedBoardUuid) {
-    const selected = await findSelectedBoardForConnect(userId, selectedBoardUuid, config);
-    if (selected && (await selectionBeatsSerialMatch(serial))) {
+    // Both lookups are independent, and this runs on every BLE connect (and
+    // reconnect) that carries a selection — which is the common case now — so
+    // overlap them rather than paying two serial round-trips. The cost when the
+    // selection turns out stale is one wasted indexed lookup.
+    const [selected, selectionWins] = await Promise.all([
+      findSelectedBoardForConnect(userId, selectedBoardUuid, config),
+      selectionBeatsSerialMatch(serial),
+    ]);
+    if (selected && selectionWins) {
       const board =
         selected.serialNumber === null && canClaimSerialForBoard(selected, userId)
           ? await claimSerialForBoard(selected, serial)

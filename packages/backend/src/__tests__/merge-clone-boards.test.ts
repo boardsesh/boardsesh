@@ -194,6 +194,24 @@ describe('merge-clone-boards', () => {
       const backfills = (await findSerialBackfills()).filter((row) => row.serialNumber === serial);
       expect(backfills).toEqual([]);
     });
+
+    it('never stamps a serial onto a user-owned board, gym-linked or not', async () => {
+      const serial = `BACKFILLUSER-${Date.now()}`;
+      // 1,554 user-owned boards carry a gym_id — a home wall attached to its own
+      // auto-created gym, or one captured through the stray-board flow. Stamping
+      // a serial onto one would redirect that serial for every climber who
+      // connects afterwards, which is the failure this whole script undoes.
+      const userOwned = await insertBoard({
+        ownerId: CLONE_OWNER_ID,
+        serial: null,
+        gymId: await insertGym("Someone's Home Gym"),
+        name: 'My Home Wall',
+      });
+      await linkSerial(OTHER_USER_ID, serial, userOwned.uuid);
+
+      const backfills = (await findSerialBackfills()).filter((row) => row.serialNumber === serial);
+      expect(backfills).toEqual([]);
+    });
   });
 
   describe('mergeClonePair', () => {
