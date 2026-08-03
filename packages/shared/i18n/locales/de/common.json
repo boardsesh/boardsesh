@@ -18,7 +18,7 @@
       "metroServersSubtitle": "Zwischen Tailnet-Bundlern wechseln",
       "accessibility": {
         "title": "Barrierefreiheit",
-        "description": "Wähle Griff-Farben und Marker-Formen, die sich leichter unterscheiden lassen. Farbänderungen wirken sich auch auf die Beleuchtung deinem Board aus (außer bei MoonBoards); Form, Größe und Strichstärke ändern nur die Anzeige in der App.",
+        "description": "Wähle Griff-Farben und Marker-Formen, die sich leichter unterscheiden lassen. Farbänderungen wirken sich auch auf die Beleuchtung deines Boards aus (außer bei MoonBoards); Form, Größe und Strichstärke ändern nur die Anzeige in der App.",
         "rowSubtitleShort": "Griff-Farben und -Formen für Farbsehschwächen",
         "markersTitle": "Griff-Marker",
         "resetAll": "Griff-Marker zurücksetzen",
@@ -116,7 +116,7 @@
         "removeAllMessage": "Gibt etwa {{size}} frei und schaltet Downloads für alle Boards ab. Deine Begehungen und Playlists bleiben — sie hängen an deinem Konto, nicht an diesem Handy.",
         "removeAllConfirm": "Alle entfernen",
         "emptyTitle": "Noch nichts heruntergeladen",
-        "emptySubtitle": "Mach ein Board offline verfügbar, dann taucht sie hier auf.",
+        "emptySubtitle": "Mach ein Board offline verfügbar, dann taucht es hier auf.",
         "errorTitle": "Deine Downloads ließen sich nicht messen",
         "errorSubtitle": "Beim Lesen dessen, was auf diesem Handy liegt, kam etwas dazwischen.",
         "errorRetry": "Nochmal versuchen"
@@ -146,7 +146,7 @@
       "offline": {
         "title": "Offline",
         "autoDownload": "Boards offline halten",
-        "autoDownloadDescription": "Lade jedes Board herunter, die du nutzt, damit du ohne Empfang stöbern und Begehungen eintragen kannst. Neue Boards laden automatisch.",
+        "autoDownloadDescription": "Lade jedes Board herunter, das du nutzt, damit du ohne Empfang stöbern und Begehungen eintragen kannst. Neue Boards laden automatisch.",
         "downloadingAll_one": "1 Board wird für offline geladen",
         "downloadingAll_other": "{{count}} Boards werden für offline geladen"
       },
@@ -237,7 +237,7 @@
       "replayError": "Der Rundgang ließ sich nicht öffnen. Versuch es nochmal.",
       "prompt": {
         "title": "Sieh live, was auf deiner Wand leuchtet",
-        "body": "Folge der Board in deiner Halle und Boardsesh zeigt, was gerade leuchtet: wer ihn beleuchtet hat, den Grad, wer ihn gebaut hat, die letzten Begehungen. Du startest nichts, es ist einfach da.",
+        "body": "Folge dem Board in deiner Halle und Boardsesh zeigt, was gerade leuchtet: wer ihn beleuchtet hat, den Grad, wer ihn gebaut hat, die letzten Begehungen. Du startest nichts, es ist einfach da.",
         "footnote": "Dazu Crew-Sessions, der Workout-Builder und deine Begehungen, sobald du an einer Wand stehst.",
         "findBoard": "Mein Board finden",
         "lookAround": "Erst mal umschauen"
@@ -340,14 +340,14 @@
     "turnOffAll": "Alle Lichter ausschalten",
     "partyMode": "Party-Modus",
     "stopParty": "Party stoppen",
-    "partyUnsupported": "Party-Modus gibt es auf dieses Board nicht",
+    "partyUnsupported": "Party-Modus gibt es auf diesem Board nicht",
     "discoMode": "Boulder als Disco",
     "stopDisco": "Disco stoppen",
     "discoNeedsClimb": "Lade einen Boulder, um die Disco zu starten",
     "clearFailed": "Das Board ließ sich nicht leeren",
     "lightShowFailed": "Das Board ist mitten in der Show weg. Verbinde neu und versuch es nochmal.",
     "customizeColors": "LED-Farben anpassen",
-    "customizeColorsUnsupported": "Eigene Farben gibt es auf dieses Board nicht",
+    "customizeColorsUnsupported": "Eigene Farben gibt es auf diesem Board nicht",
     "customizeColorsTitle": "LED-Farben",
     "customizeColorsHelp": "Wähle, in welchen Farben dein Board Hände, Füße und den Topgriff beleuchtet. Startgriffe bleiben standardmäßig grün.",
     "resetColors": "Zurücksetzen",
@@ -361,12 +361,12 @@
   "bluetooth": {
     "boardTaken": "Board weg — ein anderes Handy oder eine andere App hat sich verbunden.",
     "takeItBack": "Zurückholen",
-    "boardNotFound": "Dein Board wurde nicht gefunden. Prüf, ob sie an und in Reichweite ist — und wenn ein anderes Handy verbunden ist, trenn dort zuerst.",
+    "boardNotFound": "Dein Board wurde nicht gefunden. Prüf, ob es an und in Reichweite ist — und wenn ein anderes Handy verbunden ist, trenn dort zuerst.",
     "connectFailed": "Verbindung fehlgeschlagen. Geh näher ans Board und versuch es nochmal.",
     "serviceMissing": "Verbunden, aber das Board hat nicht geantwortet. Schalt es aus und wieder ein und versuch es nochmal.",
     "unavailable": "Bluetooth ist aus. Schalt es ein, um dich mit deinem Board zu verbinden.",
     "unknownError": "Verbindung zu deinem Board fehlgeschlagen. Versuch es nochmal.",
-    "incompatibleClimb": "Dieser Boulder ist für eine anderes Board, deshalb wurde er nicht beleuchtet.",
+    "incompatibleClimb": "Dieser Boulder ist für ein anderes Board, deshalb wurde er nicht beleuchtet.",
     "unrecognisedHoldData": "Dieser Boulder hat unbekannte Griffdaten und lässt sich nicht auf dem Board beleuchten.",
     "ledDataMissing": "Beleuchten nicht möglich — für diese Board-Konfiguration fehlen die LED-Daten.",
     "partialHoldsSkipped_one": "{{count}} Griff ließ sich nicht beleuchten — dein Board hat vielleicht eine andere Größe als die, für die dieser Boulder gebaut wurde.",

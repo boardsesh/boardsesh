@@ -94,7 +94,7 @@
     "createFab": {
       "ariaLabel": "Playlist erstellen"
     },
-    "customUnavailable": "Wähl eine deiner Boards oder eine beliebte Konfiguration und leg los.",
+    "customUnavailable": "Wähl eins deiner Boards oder eine beliebte Konfiguration und leg los.",
     "errors": {
       "loadTitle": "Bibliothek lädt nicht",
       "loadDescription": "Beim Laden deiner Bibliothek ist etwas schiefgegangen. Versuch's nochmal.",

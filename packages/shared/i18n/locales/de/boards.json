@@ -15,8 +15,8 @@
       "label": "Suchen"
     },
     "custom": {
-      "ariaLabel": "Eigene Board bauen",
-      "label": "Eigene Board"
+      "ariaLabel": "Eigenes Board bauen",
+      "label": "Eigenes Board"
     },
     "create": {
       "defaultLabel": "Neues Board"
@@ -37,7 +37,7 @@
       "notFound": "Dieses Board haben wir nicht gefunden",
       "noAccess": "Du darfst dieses Board nicht bearbeiten",
       "back": "Zurück",
-      "configLockedHint": "Du darfst Layout, Größe und Hold-Sets dieses Board nicht ändern."
+      "configLockedHint": "Du darfst Layout, Größe und Hold-Sets dieses Boards nicht ändern."
     },
     "gymEdit": {
       "screenTitle": "Halle bearbeiten",
@@ -111,7 +111,7 @@
       "anglePreview": "Wand auf {{angle}}° geneigt",
       "moreOptions": "Mehr Optionen",
       "ownBoard": "Dieses Board gehört mir",
-      "public": "Öffentliche Board",
+      "public": "Öffentliches Board",
       "publicHint": "Zeig sie auf der Karte, damit deine Crew sie findet",
       "unlisted": "Nicht gelistet",
       "hideLocation": "Genauen Standort verbergen",
@@ -126,7 +126,7 @@
       "createError": "Dieses Board ließ sich nicht anlegen. Versuch es nochmal.",
       "timer": "Workout-Timer",
       "timerNone": "Kein Timer gekoppelt",
-      "timerHint": "Koppel einen Rogue-Hallentimer mit dieses Board. Solange du die Wand steuerst, startet jeder beleuchtete Boulder die Stoppuhr.",
+      "timerHint": "Koppel einen Rogue-Hallentimer mit diesem Board. Solange du die Wand steuerst, startet jeder beleuchtete Boulder die Stoppuhr.",
       "timerPairCta": "Timer koppeln",
       "timerChangeCta": "Timer wechseln",
       "timerRemoveCta": "Entfernen"
@@ -147,8 +147,8 @@
       "unavailable": "Schalt Bluetooth ein, um zu suchen"
     },
     "boardDetail": {
-      "setActive": "Als aktive Board setzen",
-      "alreadyActive": "Aktive Board",
+      "setActive": "Als aktives Board setzen",
+      "alreadyActive": "Aktives Board",
       "stats": {
         "ascents": "Begehungen",
         "climbers": "Kletterer*innen",
@@ -163,7 +163,7 @@
       }
     },
     "disambiguation": {
-      "title": "An welcher Board bist du?",
+      "title": "An welchem Board bist du?",
       "subtitle": "Diese Seriennummer gehört zu mehreren Boards. Wähl die Wand, an der du stehst.",
       "yourBoard": "Dein Board",
       "cancel": "Jetzt nicht"
@@ -206,7 +206,7 @@
     },
     "timerPair": {
       "title": "Workout-Timer koppeln",
-      "subtitle": "Wähl den Rogue- oder Echo-Timer neben dieses Board.",
+      "subtitle": "Wähl den Rogue- oder Echo-Timer neben diesem Board.",
       "scanning": "Suche nach Timern in der Nähe…",
       "empty": "Keine Timer gefunden. Prüf, ob der Timer an und in Reichweite ist.",
       "cancel": "Abbrechen"
@@ -269,13 +269,13 @@
       "makeAvailableAria": "{{name}} offline verfügbar machen",
       "removeAria": "{{name}} aus dem Offline-Speicher entfernen",
       "enableTitle": "{{name}} herunterladen?",
-      "enableMessage": "Lädt alle Boulder dieses Board, damit du ohne Empfang stöbern und Begehungen eintragen kannst.",
-      "enableMessageWithSize": "Etwa {{size}}. Lädt alle Boulder dieses Board, damit du ohne Empfang stöbern und Begehungen eintragen kannst.",
+      "enableMessage": "Lädt alle Boulder dieses Boards, damit du ohne Empfang stöbern und Begehungen eintragen kannst.",
+      "enableMessageWithSize": "Etwa {{size}}. Lädt alle Boulder dieses Boards, damit du ohne Empfang stöbern und Begehungen eintragen kannst.",
       "enableConfirm": "Herunterladen",
       "pickerNotice": "Kein Empfang — hier sind deine heruntergeladenen Boards.",
       "pickerNoticeUnreachable": "Deine Boards sind gerade nicht erreichbar — hier sind die heruntergeladenen.",
       "pickerEmptyTitle": "Noch nichts heruntergeladen",
-      "pickerEmptyBody": "Boards, die du offline verfügbar machst, tauchen hier auf. Hol dir eine, solange du Empfang hast."
+      "pickerEmptyBody": "Boards, die du offline verfügbar machst, tauchen hier auf. Hol dir eins, solange du Empfang hast."
     }
   },
   "boardEntity": {
@@ -323,7 +323,7 @@
     "create": {
       "submit": "Board anlegen",
       "authRequired": "Du musst angemeldet sein, um ein Board anzulegen",
-      "errorMessage": "Board konnte nicht angelegt werden. Vielleicht gibt es sie für diese Konfiguration schon.",
+      "errorMessage": "Board konnte nicht angelegt werden. Vielleicht gibt es für diese Konfiguration schon eins.",
       "duplicateNamed": "Du hast mit diesem Setup schon ein Board namens „{{name}}“.",
       "goToExisting": "Zu deinem Board",
       "nameRequired": "Board-Name ist Pflicht",
@@ -339,7 +339,7 @@
       "serialNumber": "Seriennummer des Controllers",
       "defaultAngle": "Standardwinkel",
       "angleAdjustable": "Winkel ist verstellbar",
-      "isPublic": "Öffentliche Board",
+      "isPublic": "Öffentliches Board",
       "unlisted": "Nicht gelistet",
       "hideLocation": "Aus Boards in der Nähe ausblenden",
       "isOwned": "Dieses Board gehört mir",
@@ -387,7 +387,7 @@
     "setOnMap": "Standort auf der Karte setzen",
     "searchPlaceholder": "Adresse oder Stadt suchen...",
     "myLocation": "Mein Standort",
-    "helpText": "Klick auf die Karte, um den Standort deinem Board zu setzen, oder zieh den Marker zurecht"
+    "helpText": "Klick auf die Karte, um den Standort deines Boards zu setzen, oder zieh den Marker zurecht"
   },
   "boardLeaderboard": {
     "empty": "Für diesen Zeitraum noch keine Aktivität.",
@@ -506,7 +506,7 @@
     "createAnyway": "Nichts dabei? Leg deine Halle mit dem Button unten an."
   },
   "selectorDrawer": {
-    "customTitle": "Eigene Board",
+    "customTitle": "Eigenes Board",
     "createTitle": "Board anlegen",
     "createButton": "Board anlegen",
     "quickSession": "Schnelle Session",

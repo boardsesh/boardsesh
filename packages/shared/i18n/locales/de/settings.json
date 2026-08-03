@@ -204,7 +204,7 @@
     },
     "linkDialog": {
       "title": "{{boardName}}-Konto verknüpfen",
-      "description": "Gib Benutzernamen und Passwort deiner {{boardName}} Board ein, um deine Aurora-Daten zu holen. Deine Zugangsdaten werden verschlüsselt und sicher gespeichert. Die Sync läuft alle 12 Stunden.",
+      "description": "Gib Benutzernamen und Passwort für dein {{boardName}} Board ein, um deine Aurora-Daten zu holen. Deine Zugangsdaten werden verschlüsselt und sicher gespeichert. Die Sync läuft alle 12 Stunden.",
       "usernameLabel": "Benutzername",
       "usernamePlaceholder": "Gib deinen Benutzernamen ein",
       "passwordLabel": "Passwort",
@@ -356,7 +356,7 @@
       "invalidCredentials": "Benutzername oder Passwort hat nicht gepasst.",
       "rateLimited": "Zu viele Versuche. Probier es später nochmal.",
       "requestFailed": "Die Verknüpfung ließ sich nicht speichern. Versuch es nochmal.",
-      "loadFailed": "Dein Board-Konten ließen sich nicht laden.",
+      "loadFailed": "Deine Board-Konten ließen sich nicht laden.",
       "importMissingUser": "Wähl eine Aurora-JSON-Exportdatei aus.",
       "importBoardWarning": "Das sieht nach {{layoutName}} aus. Importier nur nach {{boardName}}, wenn das so stimmt.",
       "importPreviewIntro": "Daten von {{username}} nach {{boardName}} importieren:",
@@ -398,7 +398,7 @@
     "sessionRecordingLabel": "Session-Aufzeichnung einschalten",
     "sessionRecordingDescription": "Hilf uns, den Fehler schneller zu beheben: Schalt die Session-Aufzeichnung ein und lös ihn nochmal aus. Danach kannst du sie wieder ausschalten.",
     "bluetoothBugLabel": "Ich habe Bluetooth-Probleme",
-    "bluetoothBugDescription": "Sucht nach Boards in der Nähe und schickt uns, was sie funken, damit wir rausfinden, warum deine nicht verbindet. Es wird kein Board gesteuert — wir hören nur zu.",
+    "bluetoothBugDescription": "Sucht nach Boards in der Nähe und schickt uns, was sie funken, damit wir rausfinden, warum deins nicht verbindet. Es wird kein Board gesteuert — wir hören nur zu.",
     "contactConsentLabel": "Dürfen wir dich dazu anschreiben?",
     "contactConsentDescription": "So können wir dir den Link zum Issue mailen und nachfragen, wenn uns Details fehlen.",
     "starRating_one": "{{count}} Stern",
@@ -450,9 +450,9 @@
     "mobileRecordedLabel": "Für diesen Controller hinterlegt: {{config}}",
     "mobileConfigValue": "{{board}} Layout {{layoutId}}, Größe {{sizeId}}, Sets {{setIds}}",
     "mobileUnknownConfig": "Unbekannte Board-Konfiguration",
-    "skippedSpillToast_one": "{{name}} übersprungen — gehört zu einer anderen Board",
-    "skippedSpillToast_other": "{{count}} Boulder übersprungen, die zu einer anderen Board gehören",
-    "mobileSwitchFailed": "Konnte nicht auf die Konfiguration dieses Board wechseln. Probier „Trotzdem verbinden“.",
+    "skippedSpillToast_one": "{{name}} übersprungen — gehört zu einem anderen Board",
+    "skippedSpillToast_other": "{{count}} Boulder übersprungen, die zu einem anderen Board gehören",
+    "mobileSwitchFailed": "Konnte nicht auf die Konfiguration dieses Boards wechseln. Probier „Trotzdem verbinden“.",
     "cancel": "Abbrechen",
     "connectAnyway": "Trotzdem verbinden",
     "switchToCorrect": "Auf die richtige Konfiguration wechseln",
@@ -471,7 +471,7 @@
   },
   "bluetoothMismatch": {
     "switchNoAngleToast": "Wechsel geht nicht — öffne zuerst einen Boulder bei einem bestimmten Winkel.",
-    "switchUrlFailedToast": "Konnte nicht auf die Konfiguration dieses Board wechseln. Probier „Trotzdem verbinden“."
+    "switchUrlFailedToast": "Konnte nicht auf die Konfiguration dieses Boards wechseln. Probier „Trotzdem verbinden“."
   },
   "auroraImport": {
     "unlinkSuccessToast": "Konto getrennt",
@@ -508,7 +508,7 @@
       "peerLabelAnonymous": "An der Wand",
       "peerHint": "Öffnet den Boulder an der Wand",
       "disconnectedLabel": "Board getrennt",
-      "disconnectedHint": "Mit der Board verbinden"
+      "disconnectedHint": "Mit dem Board verbinden"
     }
   },
   "integrations": {

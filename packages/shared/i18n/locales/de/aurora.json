@@ -2,7 +2,7 @@
   "metadata": {
     "migration": {
       "title": "Von der alten Kilter-App migrieren",
-      "description": "Hol deine Daten von der Kilter Board zu Boardsesh, nachdem Aurora das Backend abgeschaltet hat."
+      "description": "Hol deine Daten vom Kilter Board zu Boardsesh, nachdem Aurora das Backend abgeschaltet hat."
     }
   },
   "migration": {

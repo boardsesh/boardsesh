@@ -160,7 +160,7 @@
         "attempt": "Versucht"
       },
       "snackbar": {
-        "boardsLinkMissing": "Die verknüpfte Board war nicht zu finden — hier sind alle deine Einträge.",
+        "boardsLinkMissing": "Das verknüpfte Board war nicht zu finden — hier sind alle deine Einträge.",
         "deleteFailed": "Eintrag konnte nicht gelöscht werden",
         "tickDeleted": "Eintrag gelöscht",
         "undo": "Rückgängig"

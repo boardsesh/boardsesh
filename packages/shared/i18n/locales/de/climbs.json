@@ -11,7 +11,7 @@
     "view": {
       "title": "{{climbName}} - {{grade}}",
       "description": "{{climbName}} - {{grade}} von {{setter}}. Qualität: {{quality}}/5. Begehungen: {{ascents}}",
-      "imageAlt": "{{climbName}} - {{grade}} auf der {{boardName}} Board",
+      "imageAlt": "{{climbName}} - {{grade}} auf dem {{boardName}} Board",
       "fallbackTitle": "Boulder",
       "fallbackDescription": "Boulder-Details und Beta-Videos ansehen",
       "seoHeading": "{{climbName}} — {{grade}}",
@@ -288,7 +288,7 @@
         "authModalTitle": "Melde dich an, um Einträge zu speichern",
         "authModalDescription": "Leg einen Account an, um deine Boulder einzutragen und deinen Fortschritt zu verfolgen.",
         "mirroredTooltip": "Tipp das Tag an, um festzulegen, ob du den Boulder auf der gespiegelten Seite getoppt hast",
-        "whichBoard": "An welcher Board hast du geklettert?"
+        "whichBoard": "An welchem Board hast du geklettert?"
       }
     },
     "navigation": {
@@ -356,8 +356,8 @@
     "title": "Boardsesh-Grad",
     "summary": "Wie schwer er wirklich ist",
     "universalLabel": "Boardsesh-Grad",
-    "localLabel": "Auf dieses Board",
-    "localScopeNote": "Auf der Skala dieses Board — noch nicht zwischen Boards vergleichbar",
+    "localLabel": "Auf diesem Board",
+    "localScopeNote": "Auf der Skala dieses Boards — noch nicht zwischen Boards vergleichbar",
     "universalComparison": "Tension-Skala: {{grade}}",
     "geometryEstimate": "Aus den Griffen: {{grade}}",
     "confirmedSubline_one": "Bestätigt durch {{count}} Begehung",
@@ -631,7 +631,7 @@
       },
       "offlineFilter": {
         "title": "Dieser Filter braucht Empfang",
-        "subtitle": "Entwürfe, Beta, Zonen und Griff-Filter funktionieren nur online. Setz ihn zurück, um weiter in deiner heruntergeladenen Board zu stöbern.",
+        "subtitle": "Entwürfe, Beta, Zonen und Griff-Filter funktionieren nur online. Setz ihn zurück, um weiter in deinem heruntergeladenen Board zu stöbern.",
         "cta": "Filter zurücksetzen"
       }
     },

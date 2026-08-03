@@ -94,7 +94,7 @@
       },
       "putOnTv": {
         "title": "Bring diese Wand auf einen TV",
-        "body": "Mach aus einem Bildschirm in deiner Halle eine Live-Anzeige der Board."
+        "body": "Mach aus einem Bildschirm in deiner Halle eine Live-Anzeige deiner Boards."
       },
       "addBranding": {
         "title": "Bring dein Branding rein",
@@ -250,8 +250,8 @@
         "private": "Privat"
       },
       "addDialog": {
-        "title": "Eine deiner Boards hinzufügen",
-        "body": "Wähl ein Board, die dir gehört, und verknüpf sie mit dieser Halle.",
+        "title": "Eines deiner Boards hinzufügen",
+        "body": "Wähl ein Board, das dir gehört, und verknüpf es mit dieser Halle.",
         "empty": "Du hast keine Boards mehr übrig, die du verknüpfen könntest.",
         "loading": "Deine Boards werden geladen…",
         "link": "Verknüpfen",
@@ -299,7 +299,7 @@
       "boardsHeading": "Boards auf diesem Bildschirm",
       "boardsLoadError": "Die Boards dieser Halle kamen nicht durch. Lad die Seite neu und probier es nochmal.",
       "slotLabel": "Platz {{index}}",
-      "slotUnknownBoard": "Dieses Board steht nicht mehr in dieser Halle — nimm sie raus.",
+      "slotUnknownBoard": "Dieses Board steht nicht mehr in dieser Halle — nimm es raus.",
       "addBoard": "Board hinzufügen",
       "addBoardHelper": "Die Reihenfolge der Plätze ist die Reihenfolge auf dem Bildschirm.",
       "addBoardNoneLeft": "Jedes Board der Halle hängt schon an diesem Kiosk.",
@@ -326,7 +326,7 @@
       "previewMissingBoard": "Dieses Board steht nicht mehr in dieser Halle",
       "previewUnavailable": "{{name}} lässt sich hier nicht darstellen",
       "slotDuplicateError": "Dieses Board liegt schon auf einem anderen Platz.",
-      "scopeInvalidError": "Wähl eine der Boards dieses Kiosks.",
+      "scopeInvalidError": "Wähl eines der Boards dieses Kiosks.",
       "installQrHeading": "QR-Code zur App-Installation",
       "installQrSwitch": "QR-Code zur App-Installation auf jedem Board zeigen",
       "installQrHelper": "Jedes Board zeigt einen Code, den Kletterer*innen scannen, um sich Boardsesh zu holen und ihre Begehungen an dieser Wand einzutragen.",

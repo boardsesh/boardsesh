@@ -83,7 +83,7 @@
     },
     "vision": {
       "title": "Unsere Vision",
-      "p1": "Kilter, Tension, MoonBoard, Decoy, Grasshopper. Jedes Board hat ihre eigene App und ihren eigenen abgeschotteten Garten. Dein Training sollte nicht in einem davon feststecken.",
+      "p1": "Kilter, Tension, MoonBoard, Decoy, Grasshopper. Jedes Board hat seine eigene App und seinen eigenen abgeschotteten Garten. Dein Training sollte nicht in einem davon feststecken.",
       "p2": "Boardsesh läuft mit allen, damit du einfach klettern kannst."
     },
     "features": {
@@ -127,8 +127,8 @@
       "title": "Unsere Haltung zu Boulderdaten",
       "facts": {
         "title": "Boulder sind faktische Daten",
-        "p1": "Ein Boulder auf einer standardisierten Board ist eine Liste von Griffpositionen auf einem festen, standardisierten Layout (z. B. „Start an A5, über B12, C3, D18, Top an K11“), zusammen mit einem Grad und einem Wandwinkel. Das sind faktische, funktionale Informationen — vergleichbar mit einer Schachstellung, GPS-Koordinaten oder einer Telefonnummer — und kein schöpferisches Werk.",
-        "p2": "Nach US-amerikanischem Urheberrecht sind Fakten nicht schutzfähig (<em>Feist Publications, Inc. v. Rural Telephone Service Co.</em>, 499 U.S. 340 (1991)). Eine standardisiertes Board mit einer endlichen Zahl an Griffen (typischerweise 200–500) bringt Boulderdefinitionen hervor, die von Natur aus begrenzt, faktisch und funktional sind."
+        "p1": "Ein Boulder auf einem standardisierten Board ist eine Liste von Griffpositionen auf einem festen, standardisierten Layout (z. B. „Start an A5, über B12, C3, D18, Top an K11“), zusammen mit einem Grad und einem Wandwinkel. Das sind faktische, funktionale Informationen — vergleichbar mit einer Schachstellung, GPS-Koordinaten oder einer Telefonnummer — und kein schöpferisches Werk.",
+        "p2": "Nach US-amerikanischem Urheberrecht sind Fakten nicht schutzfähig (<em>Feist Publications, Inc. v. Rural Telephone Service Co.</em>, 499 U.S. 340 (1991)). Ein standardisiertes Board mit einer endlichen Zahl an Griffen (typischerweise 200–500) bringt Boulderdefinitionen hervor, die von Natur aus begrenzt, faktisch und funktional sind."
       },
       "community": {
         "title": "Die Datenbank stammt aus der Community",
@@ -331,7 +331,7 @@
       "step1": "Such den Boulder, den du spiegeln willst",
       "step2": "Halt bei den Boulder-Aktionen nach dem Spiegel-Symbol Ausschau",
       "step3": "Schalt es an, um den Boulder waagerecht zu klappen",
-      "outro": "Wenn du per Bluetooth verbunden bist, zeigt die LED-Board das gespiegelte Muster automatisch. Das funktioniert auf unterstützten Boards wie Kilter Homewall."
+      "outro": "Wenn du per Bluetooth verbunden bist, zeigt das LED-Board das gespiegelte Muster automatisch. Das funktioniert auf unterstützten Boards wie Kilter Homewall."
     },
     "searchFilters": {
       "q": "Welche Suchfilter gibt es?",
@@ -374,8 +374,8 @@
       "excludeBody": "Boulder dürfen die gewählten Griffe nicht nutzen"
     },
     "bluetooth": {
-      "q": "Wie verbinde ich die LEDs meinem Board?",
-      "intro": "Boardsesh steuert das LED-System deinem Board per Web Bluetooth direkt aus dem Browser.",
+      "q": "Wie verbinde ich die LEDs meines Boards?",
+      "intro": "Boardsesh steuert das LED-System deines Boards per Web Bluetooth direkt aus dem Browser.",
       "requirementsLabel": "Was du brauchst:",
       "req1": "Chrome (empfohlen) oder einen anderen Browser mit Web Bluetooth",
       "req2": "Auf iOS: die Boardsesh-App (Safari kann kein Web Bluetooth)",
@@ -513,7 +513,7 @@
     },
     "bluetooth": {
       "title": "Bluetooth",
-      "body": "Boardsesh verbindet sich per Bluetooth Low Energy (BLE) mit dem LED-Controller deinem Kletterboard. Die Bluetooth-Verbindung dient ausschließlich dazu, Befehle zum Beleuchten von Griffen ans Board zu schicken. Über Bluetooth werden keine personenbezogenen Daten übertragen. Über die einfache Geräteerkennung beim Koppeln hinaus liest die App keine Daten vom Board."
+      "body": "Boardsesh verbindet sich per Bluetooth Low Energy (BLE) mit dem LED-Controller deines Kletterboards. Die Bluetooth-Verbindung dient ausschließlich dazu, Befehle zum Beleuchten von Griffen ans Board zu schicken. Über Bluetooth werden keine personenbezogenen Daten übertragen. Über die einfache Geräteerkennung beim Koppeln hinaus liest die App keine Daten vom Board."
     },
     "location": {
       "title": "Standortdaten",
