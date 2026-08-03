@@ -43,6 +43,15 @@ jobs:
       # deploy/app-subdomain/_headers ran zero jobs and ci-status passed on
       # `skipped`. Gates the `deploy-config` job (see below).
       deployConfig: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.deployConfig }}
+      # Store listing copy (fastlane/metadata/**/*.txt) and mobile InfoPlist
+      # locale files (packages/mobile/locales/*.json). Both are validated by
+      # filesystem-reading tests in scripts/ that Vitest's `--changed`
+      # module-graph analysis can never relate to a diff of these files, and
+      # neither path matches anyJs/rootCi/i18nCatalogs — so a PR touching only
+      # them would run zero validators and fail post-merge on main. Gates the
+      # `listing-guards` job (see below).
+      storeMetadata: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.storeMetadata }}
+      mobileLocales: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.mobileLocales }}
       # PR-only guard signal: did this PR edit the OTA-owned changelog data file?
       # Defaults false off PRs (the OTA bot legitimately rewrites it on push).
       changelogData: ${{ github.event_name == 'pull_request' && steps.filter.outputs.changelogData || 'false' }}
@@ -55,9 +64,10 @@ jobs:
       # shared-schema) that wouldn't trigger anyJs but still need setup so
       # test-backend / mobile-bundle / codegen-drift can run.
       runAny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.anyJs == 'true' || steps.filter.outputs.web == 'true' || steps.filter.outputs.i18nCatalogs == 'true' || steps.filter.outputs.sharedSchema == 'true' || steps.filter.outputs.sharedDeps == 'true' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.ocr == 'true' || steps.filter.outputs.locationSync == 'true' || steps.filter.outputs.rootCi == 'true' }}
-      # NOTE: deployConfig is deliberately NOT part of runAny — the deploy-config
-      # job below needs [changes] only (no bun-install/build:db setup pass), so a
-      # deploy/app-subdomain-only PR doesn't pay for a `setup` run nothing else
+      # NOTE: deployConfig, storeMetadata, and mobileLocales are deliberately
+      # NOT part of runAny — the deploy-config and listing-guards jobs below
+      # need [changes] only (no bun-install/build:db setup pass), so a PR
+      # touching only their files doesn't pay for a `setup` run nothing else
       # would consume.
     steps:
       - uses: actions/checkout@v6
@@ -128,6 +138,18 @@ jobs:
               - 'scripts/build-expo-web-export.sh'
               - 'Dockerfile.web'
               - '.github/workflows/production-deploy.yml'
+            # Everything scripts/store-metadata-limits.test.ts reads via fs at
+            # run time, plus the test itself.
+            storeMetadata:
+              - 'fastlane/metadata/**'
+              - 'scripts/store-metadata-limits.test.ts'
+            # Everything scripts/mobile-locales-parity.test.ts reads via fs at
+            # run time, plus the test itself. Its other inputs (app.config.ts,
+            # @boardsesh/i18n config) are static imports, so `--changed` in
+            # test-default already relates the test to diffs of those.
+            mobileLocales:
+              - 'packages/mobile/locales/**'
+              - 'scripts/mobile-locales-parity.test.ts'
             rootCi:
               - '.github/workflows/ci.yml'
               - 'vite.config.ts'
@@ -427,6 +449,32 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Validate deploy/app-subdomain config (_headers, _redirects, no-CSP rule)
         run: vp test run --project deploy-app-subdomain
+
+  listing-guards:
+    needs: [changes]
+    # Same rationale as deploy-config: these two suites read their inputs
+    # (fastlane/metadata/**/*.txt, packages/mobile/locales/*.json) via fs at run
+    # time, so Vitest's `--changed` module-graph analysis never selects them for
+    # a diff that only touches those files — and no other job's gate fires for
+    # them at all. Run both files unfiltered whenever either input set changes,
+    # so an over-limit store field or a malformed InfoPlist translation fails
+    # the PR instead of the post-merge run on main. (Pushes to main run the
+    # scripts project a second time inside test-default — harmless, and no
+    # substitute for this job on PRs.)
+    if: needs.changes.outputs.storeMetadata == 'true' || needs.changes.outputs.mobileLocales == 'true' || needs.changes.outputs.rootCi == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Validate store listing copy and mobile locale parity
+        run: vp test run --project scripts scripts/store-metadata-limits.test.ts scripts/mobile-locales-parity.test.ts
 
   test-default:
     needs: [changes, setup]
@@ -940,6 +988,7 @@ jobs:
       - release-notes
       - changelog-owned
       - deploy-config
+      - listing-guards
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
