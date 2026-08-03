@@ -195,9 +195,33 @@ Is it a secondary surface OVER the current screen, or its own full surface?
 
    A **pushed route** under `NativeTabs` is different: the native tab bar remains, but route
    classification deliberately unmounts the BottomAccessory / queue chrome on screens such as
-   session detail. Its bottom layout must therefore trust the raw UIKit safe-area inset for the
+   session detail. Its bottom layout must therefore trust the UIKit safe-area inset for the
    chrome that is actually present; it must not carry the accessory reserve forward from the tab
    root or add the tab-bar height a second time.
+
+   **Bottom-chrome geometry contract.** "The UIKit inset" is ambiguous — there are two
+   sampling points with different semantics, and conflating them is the recurring bug class
+   behind #3967/#3973/#4089 and the Start-capsule regression:
+   - The **root** `SafeAreaProvider` (what `BottomChromeMetricsProvider` in `app/_layout.tsx`
+     samples) reports the _window_ inset: home indicator only. UIKit tab-bar chrome never
+     reaches it.
+   - Each tab's content sits inside a **nested per-tab `SafeAreaProvider`** (expo-router's
+     `NativeTabsView` wraps every tab in one); _that_ inset folds in the tab bar, the
+     BottomAccessory, and the live minimize state. `NativeTabContentInsetProbe` (mounted in
+     every phone tab `_layout`, focus-gated) publishes it through
+     `src/lib/native-tab-content-inset-store.ts` so root-level consumers position with the
+     measurement instead of a reconstruction.
+
+   Rules: position against the inset measured at the surface you're positioning in, or consume
+   the published measurement via `useBottomChromeMetrics()` — `scrollBottomPadding` for
+   list/scroll content, `floatingControlBottom` for absolute overlays, `fixedFooterBottom` for
+   docked footers, `preSessionFooterBottom` / `inSessionListBottom` for the session surfaces.
+   Never hardcode what UIKit "must" have folded into an inset; constants are fallbacks for the
+   pre-measurement frames only, and test fixtures carry DEVICE_VERIFIED / INFERRED provenance
+   labels (`src/hooks/__tests__/bottom-chrome-metrics.test.ts` — extend its matrix when adding
+   a chrome state). On-device verification without a rebuild: More → Diagnostics → "Bottom
+   chrome diagnostics" overlays the live values (dev, preview builds, and `pr-<N>` OTA
+   channels).
 
 3. **Board gestures and modal/sheet pan don't mix.** A full-screen board you pan/pinch (the
    `holds` and `zone` filters) is a **pushed** route, not a modal — a modal/sheet's own pan

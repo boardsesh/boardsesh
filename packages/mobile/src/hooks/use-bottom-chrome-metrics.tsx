@@ -4,6 +4,7 @@ import { useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../providers/theme-provider';
 import { isAccessorySurfaceRoute, isTabsChromeRoute } from '../lib/route-segments';
+import { useNativeTabContentInsetBottom } from '../lib/native-tab-content-inset-store';
 import { useStickyAccessoryPresence } from './use-sticky-accessory-presence';
 import { isBottomAccessoryAvailable, useNativeTabBar } from './use-bottom-accessory';
 import { useDeviceLayout } from './use-device-layout';
@@ -62,6 +63,11 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   const usesSidebar = insideTabs && widthClass === 'regular';
   const detailPaneOwnsQueue =
     usesSidebar && resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane';
+  // This provider samples the ROOT safe-area inset (window / home indicator
+  // only). The in-tab inset — the one UIKit extends with the native tab bar +
+  // accessory — is published by NativeTabContentInsetProbe from inside the
+  // focused tab; see the sampling-point contract in bottom-chrome-metrics.ts.
+  const measuredTabContentInsetBottom = useNativeTabContentInsetBottom();
 
   return useMemo(
     () =>
@@ -75,6 +81,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
         nativeAccessoryMounted,
         usesSidebar,
         detailPaneOwnsQueue,
+        measuredTabContentInsetBottom,
       }),
     [
       variant,
@@ -86,6 +93,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
       nativeAccessoryMounted,
       usesSidebar,
       detailPaneOwnsQueue,
+      measuredTabContentInsetBottom,
     ],
   );
 }

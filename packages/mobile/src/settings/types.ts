@@ -21,6 +21,8 @@ export type AppSettings = {
   notifyClimbComments: boolean;
   /** One-shot: the "kiosk setup lives on the big screen" hint has been seen on My gyms. */
   kioskHintSeen: boolean;
+  /** Show the live bottom-chrome geometry overlay (dev / preview / pr-channel only). */
+  bottomChromeDiagnostics: boolean;
 };
 
 export type SettingsKey = keyof AppSettings;

@@ -31,6 +31,7 @@ import { drainMutationQueue } from '../../../src/offline/offline-sync-adapter';
 import { getHttpClient } from '../../../src/lib/graphql/client';
 import { hapticLight, hapticSelection } from '../../../src/lib/haptics';
 import { DevMetadataPanel } from '../../../src/components/DevMetadataPanel';
+import { useBottomChromeDiagnosticsEligible } from '../../../src/components/BottomChromeDebugOverlay';
 import { MoreForm } from '../../../src/components/MoreForm';
 import type { MoreButtonRow, MoreFormModel, MoreRow, MoreSection } from '../../../src/components/MoreForm.types';
 import { isPreviewBuild } from '../../../src/lib/preview-build';
@@ -75,6 +76,8 @@ export default function MoreScreen() {
   const { localePreference, setLocalePreference } = useLocalePreference();
   const { enabled: sessionRecordingEnabled, setEnabled: setSessionRecordingPreference } =
     useSessionRecordingPreference();
+  const bottomChromeDiagnosticsEligible = useBottomChromeDiagnosticsEligible();
+  const [bottomChromeDiagnostics, setBottomChromeDiagnostics] = useSetting('bottomChromeDiagnostics');
   const { enabled: showPlaylistTags, setEnabled: setShowPlaylistTags } = useShowPlaylistTagsPreference();
   const { enabled: showBoardseshGrades, setEnabled: setShowBoardseshGrades } = useBoardseshGradesPreference();
   const { enabled: showQuickActionsButton, setEnabled: setShowQuickActionsButton } = useClimbQuickActionsButton();
@@ -600,6 +603,25 @@ export default function MoreScreen() {
           setSessionRecordingEnabled(next);
         },
       },
+      // Bottom-chrome geometry overlay — dev / preview builds / pr-channel OTA
+      // testers only, so regular production users never see the row.
+      ...(bottomChromeDiagnosticsEligible
+        ? [
+            {
+              kind: 'toggle' as const,
+              key: 'bottomChromeDiagnostics',
+              // i18n-ignore-next-line — tester-only diagnostics
+              label: 'Bottom chrome diagnostics',
+              // i18n-ignore-next-line
+              subtitle: 'Overlay live tab-bar geometry values',
+              value: bottomChromeDiagnostics,
+              onValueChange: (next: boolean) => {
+                hapticSelection();
+                setBottomChromeDiagnostics(next);
+              },
+            },
+          ]
+        : []),
     ],
   });
 

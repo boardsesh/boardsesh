@@ -6,6 +6,7 @@ import { selectByVariant } from '../theme/variants/select-by-variant';
 import {
   MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT,
   MATERIAL_TAB_BAR_HEIGHT,
+  NATIVE_BOTTOM_ACCESSORY_HEIGHT,
   TAB_BAR_HEIGHT,
   TOOLBAR_GAP_ABOVE_TABBAR,
   TOOLBAR_RESERVE,
@@ -21,6 +22,32 @@ import {
  * accessory — a class of bug that is invisible in code review and only shows on
  * device. (Replaces the unit-tested pure `queueSnackbarBottomOffset` that was
  * folded into the hook.)
+ *
+ * ## The geometry contract: two safe-area sampling points
+ *
+ * There are TWO places a bottom inset can be read, with different semantics, and
+ * conflating them is what caused #3967 → #3973 → #4089 → the Start-capsule
+ * regression this contract was written for:
+ *
+ * - **Root provider** (where `BottomChromeMetricsProvider` samples, above the
+ *   navigator): the window's inset — home indicator only (34 on Face ID
+ *   iPhones, 0 on home-button devices). UIKit tab-bar chrome never reaches it.
+ * - **In-tab provider**: expo-router's `NativeTabsView` wraps each tab's
+ *   content in its own nested `SafeAreaProvider`; inside it the bottom inset
+ *   additionally folds in the UIKit tab bar, the BottomAccessory, and the live
+ *   minimize state (DEVICE_VERIFIED 139 = 34 + 49 bar + 56 accessory,
+ *   iPhone 17 Pro). `NativeTabContentInsetProbe` publishes this measurement as
+ *   `measuredTabContentInsetBottom`.
+ *
+ * Provenance rule: never assume what UIKit folds into an inset. Position
+ * against the inset measured at the surface you are positioning in, or consume
+ * the published measurement; hardcoded reconstructions are fallbacks for the
+ * pre-measurement frames only. Test constants must be labeled DEVICE_VERIFIED
+ * (with device + state) or INFERRED.
+ *
+ * Known transient windows (self-correcting within frames, by design): the
+ * accessory mounting/unmounting or a rotation briefly leaves a stale
+ * measurement until the probe's effect re-fires on the next inset event.
  */
 export type BottomChromeInputs = {
   /** Resolved UI variant; controls the JS toolbar shape/reserve. */
@@ -59,6 +86,15 @@ export type BottomChromeInputs = {
    * the JS queue toolbar because the pane is suppressed there.
    */
   detailPaneOwnsQueue?: boolean;
+  /**
+   * Bottom inset measured INSIDE the focused native tab's content (see the
+   * module docblock's sampling-point contract), published by
+   * `NativeTabContentInsetProbe` via `native-tab-content-inset-store`. `null`
+   * (the default) means "no measurement yet"; the native-overlay path then
+   * reconstructs the chrome from the root inset + constants. Ignored entirely
+   * off the native-tab-bar path — the JS bars sit outside every UIKit inset.
+   */
+  measuredTabContentInsetBottom?: number | null;
 };
 
 export type BottomChromeMetrics = {
@@ -70,8 +106,10 @@ export type BottomChromeMetrics = {
   /** Physical height of the rendered bottom tab bar; zero outside tabs/sidebar mode. */
   tabBarHeight: number;
   /**
-   * Bottom clearance through the tab bar. NativeTabs returns the raw UIKit inset
-   * because it already contains native chrome; JS tabs add their in-flow height.
+   * Bottom clearance through the tab bar. NativeTabs returns the measured
+   * in-tab inset (or its reconstruction while unmeasured) because UIKit folds
+   * the bar + accessory into that inset; JS tabs add their in-flow height to
+   * the root inset.
    */
   tabBarBottom: number;
   jsQueueReserve: number;
@@ -100,18 +138,17 @@ export type BottomChromeMetrics = {
   inSessionListBottom: number;
   /**
    * Bottom offset for the pre-session Start capsule / footer. Material uses the
-   * fixed-footer reserve; Liquid Glass anchors to the raw safe-area inset plus
-   * the JS queue reserve — identical arithmetic to {@link inSessionListBottom},
-   * and it must stay in lockstep with it: both surfaces clear the same bottom
-   * chrome, and letting one branch drift is what caused #3967.
+   * fixed-footer reserve; Liquid Glass anchors to the native chrome clearance
+   * plus the JS queue reserve — identical arithmetic to
+   * {@link inSessionListBottom}, and it must stay in lockstep with it: both
+   * surfaces clear the same bottom chrome, and letting one branch drift is what
+   * caused #3967.
    *
-   * Verified on-device (iPhone 17 Pro / iOS 26): with the native tab bar + climb
-   * accessory present, the safe-area bottom inset is 139 = home indicator (34) +
-   * tab bar (49) + accessory (56) — the glass tab bar extends the UIKit safe area.
-   * Every native-tab metric starts at that raw inset, rather than adding either
-   * piece of UIKit-owned chrome again; only separately rendered JS queue chrome
-   * may add a reserve. That evidence covers the *native tab bar* path with the
-   * accessory, where `jsQueueReserve` is 0, so this stays exactly 139.
+   * On the native tab bar, the clearance is the measured in-tab inset
+   * (DEVICE_VERIFIED 139 with the accessory on an iPhone 17 Pro — see the
+   * module docblock) or its reconstruction while unmeasured. The ROOT inset
+   * alone is never enough here: it excludes the 49pt bar, and anchoring to it
+   * is exactly how the Start capsule ended up underneath the tab bar.
    *
    * On the JS-tab-bar fallback (iOS < 26, non-glass-capable iPhones, iPad in a
    * narrow split, Android forced to Liquid Glass) the floating
@@ -145,6 +182,7 @@ export function computeBottomChromeMetrics({
   nativeAccessoryMounted,
   usesSidebar = false,
   detailPaneOwnsQueue = usesSidebar,
+  measuredTabContentInsetBottom = null,
 }: BottomChromeInputs): BottomChromeMetrics {
   // Regular-width iPad with the detail pane mounted: the left sidebar replaces
   // the bottom tab bar and the selected-climb pane replaces the floating queue
@@ -187,11 +225,15 @@ export function computeBottomChromeMetrics({
   const tabBarConstant = usesNativeTabBar ? TAB_BAR_HEIGHT : MATERIAL_TAB_BAR_HEIGHT;
   const tabBarHeight = insideTabs && !usesSidebar ? tabBarConstant : 0;
   // Only the native tab bar overlays content (UIKit draws it over the scroll view);
-  // the JS `MaterialTabBar` sits in flow. NativeTabs extends UIKit's safe-area
-  // inset to include both the bar and its BottomAccessory, so neither is an
-  // additional bottom offset. On-device, that inset is 139pt with an accessory on
-  // an iPhone 17 Pro (34 home indicator + 49 tab bar + 56 accessory).
-  const tabBarOverlaysContent = insideTabs && usesNativeTabBar;
+  // the JS `MaterialTabBar` sits in flow. NativeTabs extends the IN-TAB safe-area
+  // inset to include both the bar and its BottomAccessory (DEVICE_VERIFIED 139 =
+  // 34 + 49 + 56 on an iPhone 17 Pro) — but that fold-in exists only inside the
+  // tab's nested SafeAreaProvider, never in the root `insetsBottom` this function
+  // receives. See the module docblock's sampling-point contract. The sidebar
+  // shell never renders a native bottom bar (the rail replaces it), so a
+  // synthetic "sidebar + native tab signal" call must not consume the in-tab
+  // measurement or its reconstruction — hence the `!usesSidebar` term.
+  const tabBarOverlaysContent = insideTabs && usesNativeTabBar && !usesSidebar;
   // The Material bar reserves its full height even though it's tucked ~2px into the
   // tab bar (MATERIAL_TABBAR_OVERLAP in persistent-queue-bar), so its visible height
   // above the tab bar is ~2px less. The resulting 2px of extra scroll padding is
@@ -207,7 +249,26 @@ export function computeBottomChromeMetrics({
   // "native accessory visible without NativeTabs".
   const nativeAccessoryReserve =
     nativeAccessoryVisible && !tabBarOverlaysContent ? glassSize.standard + TOOLBAR_GAP_ABOVE_TABBAR : 0;
-  const tabBarBottom = insetsBottom + (tabBarOverlaysContent ? 0 : tabBarHeight);
+  // Native-overlay clearance: prefer the live in-tab measurement (it tracks the
+  // accessory and the minimize state); reconstruct from the root inset +
+  // constants only while unmeasured. The `>= insetsBottom` guard rejects
+  // physically impossible readings (an in-tab inset can never be smaller than
+  // the window's own inset) — e.g. a probe publish that raced a provider
+  // teardown — without imposing an assumption-based floor on valid ones.
+  const nativeChromeFallback =
+    insetsBottom + TAB_BAR_HEIGHT + (nativeAccessoryVisible ? NATIVE_BOTTOM_ACCESSORY_HEIGHT : 0);
+  const nativeChromeBottom =
+    measuredTabContentInsetBottom !== null && measuredTabContentInsetBottom >= insetsBottom
+      ? measuredTabContentInsetBottom
+      : nativeChromeFallback;
+  const tabBarBottom = tabBarOverlaysContent ? nativeChromeBottom : insetsBottom + tabBarHeight;
+  // Scroll padding is floored at the un-minimized reconstruction: the gesture
+  // that minimizes the bar is the same one scrolling the list, and shrinking
+  // contentContainer padding mid-scroll can clamp/jump the scroll offset near
+  // the end of content. ≤49pt of extra padding while minimized is invisible
+  // slack; floating controls deliberately keep tracking the live value instead
+  // (a capsule following the minimizing bar is correct).
+  const scrollTabBarBottom = tabBarOverlaysContent ? Math.max(tabBarBottom, nativeChromeFallback) : tabBarBottom;
   const activeQueueChromeReserve = Math.max(jsQueueReserve, nativeAccessoryReserve);
   const contentInsetBottom = tabBarOverlaysContent || !insideTabs ? tabBarBottom : 0;
   const fixedFooterBottom = contentInsetBottom + activeQueueChromeReserve;
@@ -222,21 +283,26 @@ export function computeBottomChromeMetrics({
     tabBarBottom,
     jsQueueReserve,
     nativeAccessoryReserve,
-    scrollBottomPadding: tabBarBottom + jsQueueReserve,
+    scrollBottomPadding: scrollTabBarBottom + jsQueueReserve,
     floatingControlBottom: tabBarBottom + Math.max(jsQueueReserve, nativeAccessoryReserve),
     fixedFooterBottom,
     // selectByVariant (vs a raw ternary) keeps these exhaustive: a new UiVariant is
     // a compile error here, since this file is outside the components/ guard scope.
+    // The liquidGlass branch clears the native chrome (measured in-tab inset /
+    // reconstruction) under the native bar, and the raw inset on the JS-bar
+    // fallback where the bar is a JS overlay handled by `jsQueueReserve` (#3967).
+    // The ROOT inset alone is never correct under the native bar — it excludes
+    // the 49pt bar, which is exactly how the Start capsule sank beneath it.
     inSessionListBottom: selectByVariant(uiVariant, {
       material: fixedFooterBottom,
-      liquidGlass: insetsBottom + jsQueueReserve,
+      liquidGlass: (tabBarOverlaysContent ? tabBarBottom : insetsBottom) + jsQueueReserve,
     }),
     // Keep this branch identical to `inSessionListBottom`: the JS queue tray is an
     // overlay outside the safe area, so the Start capsule only clears it when the
     // reserve is added explicitly (#3967).
     preSessionFooterBottom: selectByVariant(uiVariant, {
       material: fixedFooterBottom,
-      liquidGlass: insetsBottom + jsQueueReserve,
+      liquidGlass: (tabBarOverlaysContent ? tabBarBottom : insetsBottom) + jsQueueReserve,
     }),
   };
 }

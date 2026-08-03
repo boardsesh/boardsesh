@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { memo } from 'react';
 import type { BottomChromeMetrics } from '../bottom-chrome-metrics';
+import {
+  publishNativeTabContentInsetBottom,
+  resetNativeTabContentInsetForTests,
+} from '../../lib/native-tab-content-inset-store';
 
 // Hoisted, per-test-configurable view of the leaf inputs the provider gathers.
 // The whole point of the provider is to read these ONCE for the whole app, so
@@ -74,6 +78,7 @@ describe('BottomChromeMetricsProvider fan-out', () => {
     cfg.hasCurrentClimb = true;
     cfg.widthClass = 'compact';
     cfg.windowWidth = 430;
+    resetNativeTabContentInsetForTests();
     for (const key of Object.keys(counts)) delete counts[key];
     for (const key of Object.keys(received)) delete received[key];
   });
@@ -116,6 +121,20 @@ describe('BottomChromeMetricsProvider fan-out', () => {
     cfg.segments = ['(tabs)', 'climbs'];
     rerender(<Harness tick={1} />);
     expect(counts).toEqual({ a: 1, b: 1, c: 1 });
+  });
+
+  it('propagates an in-tab inset publish to consumers on the native-tab-bar path', () => {
+    // The probe publishes from inside a tab (a different subtree entirely); the
+    // provider must pick it up through the store subscription without any
+    // re-render of its own parents.
+    cfg.nativeTabBar = true;
+    cfg.hasCurrentClimb = false;
+    render(<Harness tick={0} />);
+    // Pre-measurement: the native path reconstructs the bar from the root inset.
+    expect(received.a.tabBarBottom).toBe(34 + 49);
+    act(() => publishNativeTabContentInsetBottom(90));
+    expect(received.a.tabBarBottom).toBe(90);
+    expect(counts).toEqual({ a: 2, b: 2, c: 2 });
   });
 
   it('re-renders every consumer once when the geometry actually changes (presence flips)', () => {

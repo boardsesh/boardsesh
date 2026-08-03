@@ -17,6 +17,7 @@ import {
 } from '../theme/layout';
 import type { UiVariant } from '../theme/resolve-ui-variant';
 import { isTabsRoute, isTopLevelTabRoute } from '../lib/route-segments';
+import { useNativeTabContentInsetBottom } from '../lib/native-tab-content-inset-store';
 import { useTheme } from '../providers/theme-provider';
 import { createVariantComponent, selectByVariant } from '../theme/variants';
 import { isBottomAccessoryAvailable, useNativeTabBar } from '../hooks/use-bottom-accessory';
@@ -74,19 +75,26 @@ function useToastBottomOffset(uiVariant: UiVariant) {
   });
   // ToastProvider sits above QueueProvider, so it cannot read current-climb state
   // from computeBottomChromeMetrics and conservatively reserves the JS queue bar.
-  // NativeTabs with BottomAccessory is different: UIKit has already folded both
-  // pieces of chrome into `insets.bottom`, so adding either reserve here recreates
-  // #3973. If a native tab bar is available but its BottomAccessory export is not,
-  // the JS PersistentQueueBar takes over on top-level tab routes; preserve that
-  // toolbar reserve without adding the native tab bar a second time. Pushed tab
-  // routes never render PersistentQueueBar, so they keep only the raw native inset.
-  // Material and the Liquid Glass JS fallback still need both explicit terms
-  // because their tab/queue bars are outside the UIKit safe-area inset.
+  // NativeTabs folds the bar (and BottomAccessory) into the IN-TAB inset only —
+  // this hook reads the ROOT provider (home indicator alone), so it clears the
+  // native chrome via the measurement NativeTabContentInsetProbe publishes; see
+  // the sampling-point contract in bottom-chrome-metrics.ts. Pre-measurement
+  // fallback reconstructs the bar from the root inset, but cannot include the
+  // accessory (no climb state up here) — a pre-publish toast may briefly sit
+  // behind the accessory platter, transient by design. If a native tab bar is
+  // available but its BottomAccessory export is not, the JS PersistentQueueBar
+  // takes over on top-level tab routes; preserve that toolbar reserve without
+  // adding the native tab bar a second time. Pushed tab routes never render
+  // PersistentQueueBar, so they keep only the native chrome clearance. Material
+  // and the Liquid Glass JS fallback still need both explicit terms because
+  // their tab/queue bars are outside every UIKit safe-area inset.
+  const measuredTabContentInsetBottom = useNativeTabContentInsetBottom();
   const tabBarHeight = selectByVariant(uiVariant, { material: MATERIAL_TAB_BAR_HEIGHT, liquidGlass: TAB_BAR_HEIGHT });
   if (!isTabsRoute(segments)) return insets.bottom + spacing[3];
   if (usesNativeTabBar) {
     const jsQueueReserve = !nativeBottomAccessoryAvailable && isTopLevelTabRoute(segments) ? toolbarReserve : 0;
-    return insets.bottom + jsQueueReserve + spacing[2];
+    const nativeChromeBottom = measuredTabContentInsetBottom ?? insets.bottom + TAB_BAR_HEIGHT;
+    return nativeChromeBottom + jsQueueReserve + spacing[2];
   }
   return insets.bottom + tabBarHeight + toolbarReserve + spacing[2];
 }

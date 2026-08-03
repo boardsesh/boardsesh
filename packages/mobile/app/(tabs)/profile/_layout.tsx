@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useStackScreenOptions } from '../../../src/hooks/use-stack-screen-options';
+import { NativeTabContentInsetProbe } from '../../../src/components/navigation/NativeTabContentInsetProbe';
 import { BoardArtVisibilityProvider } from '../../../src/providers/board-art-visibility-provider';
 
 export default function ProfileLayout() {
@@ -10,6 +11,7 @@ export default function ProfileLayout() {
 
   return (
     <BoardArtVisibilityProvider tab="profile">
+      <NativeTabContentInsetProbe />
       <Stack screenOptions={screenOptions}>
         {/* The You screen owns its top via the floating ProfileTopChrome (large
           title collapsing into a glass capsule), like the Discover/Climbs tabs —

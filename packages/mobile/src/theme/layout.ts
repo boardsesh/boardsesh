@@ -69,6 +69,14 @@ export const TOOLBAR_GAP = 8;
 /** Max readable width for UIKit's iOS 26 bottom accessory content. */
 export const NATIVE_BOTTOM_ACCESSORY_MAX_WIDTH = 420;
 
+/** Height UIKit's iOS 26 bottom accessory adds to the tab content's safe-area
+ *  inset (DEVICE_VERIFIED: 139 − 83 on an iPhone 17 Pro). Numerically equal to
+ *  `glassSize.hero` today, but that is a coincidence between UIKit's platter and
+ *  our FAB ladder — the bottom-chrome fallback arithmetic must reconstruct
+ *  UIKit-owned chrome, so it keys off this constant, which a ladder retune must
+ *  not move. */
+export const NATIVE_BOTTOM_ACCESSORY_HEIGHT = 56;
+
 /** Total horizontal screen gutter reserved around UIKit's iOS 26 bottom accessory. */
 export const NATIVE_BOTTOM_ACCESSORY_SCREEN_GUTTER = 32;
 

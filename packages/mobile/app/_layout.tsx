@@ -81,6 +81,7 @@ import { InstallReferrerTracker } from '../src/components/analytics/InstallRefer
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
 import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
+import { BottomChromeDebugOverlay } from '../src/components/BottomChromeDebugOverlay';
 import { LiveActivityIntentDiagnostics } from '../src/components/LiveActivityIntentDiagnostics';
 // Side-effect import: instantiates the Android-only MemoryTrim native module
 // (expo-modules-core creates modules lazily on first JS access), whose Kotlin
@@ -674,6 +675,10 @@ function RootLayout() {
                                                             <Stack> hit-region is frozen). No-op unless built with
                                                             EXPO_PUBLIC_FREEZE_DEBUG=1. */}
                                                                   <FreezeDebugOverlay />
+                                                                  {/* Live bottom-chrome geometry readout (dev / preview /
+                                                            pr-channel + settings toggle). Inside the metrics provider
+                                                            so it reads the same derived values consumers position with. */}
+                                                                  <BottomChromeDebugOverlay />
                                                                 </UserDrawerProvider>
                                                               </TabBarHeightProvider>
                                                               <AnalyticsScreenTracker />

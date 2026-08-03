@@ -9,6 +9,7 @@ const ctrl = vi.hoisted(() => ({
   nativeTabBar: false,
   nativeBottomAccessoryAvailable: true,
   insetsBottom: 34,
+  measuredTabContentInsetBottom: null as number | null,
   segments: ['(tabs)', 'climbs'] as readonly string[],
 }));
 
@@ -74,6 +75,9 @@ vi.mock('../../hooks/use-bottom-accessory', () => ({
   isBottomAccessoryAvailable: () => ctrl.nativeBottomAccessoryAvailable,
   useNativeTabBar: () => ctrl.nativeTabBar,
 }));
+vi.mock('../../lib/native-tab-content-inset-store', () => ({
+  useNativeTabContentInsetBottom: () => ctrl.measuredTabContentInsetBottom,
+}));
 
 vi.mock('../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', { 'data-text': 'true' }, children),
@@ -110,8 +114,8 @@ import { TAB_BAR_HEIGHT, TOOLBAR_RESERVE } from '../../theme/layout';
 import { spacing } from '../../theme/tokens';
 
 const toast = { id: 't1', message: 'Saved tick', variant: 'success' as const, duration: 3000 };
-// Representative iPhone native-tab inset without BottomAccessory. This is
-// realistic arithmetic, not a device-verified product contract.
+// The IN-TAB inset without BottomAccessory (root 34 + bar 49), as published by
+// NativeTabContentInsetProbe. Realistic arithmetic, INFERRED not device-verified.
 const NATIVE_TAB_ONLY_INSET = 34 + TAB_BAR_HEIGHT;
 
 describe('Toast', () => {
@@ -120,6 +124,7 @@ describe('Toast', () => {
     ctrl.nativeTabBar = false;
     ctrl.nativeBottomAccessoryAvailable = true;
     ctrl.insetsBottom = 34;
+    ctrl.measuredTabContentInsetBottom = null;
     ctrl.segments = ['(tabs)', 'climbs'];
   });
 
@@ -196,25 +201,47 @@ describe('Toast', () => {
     );
   });
 
-  it('does not add native tab or accessory chrome to the measured 139pt UIKit inset (#3973)', () => {
+  it('does not add native tab or accessory chrome to the measured 139pt in-tab inset (#3973)', () => {
     ctrl.variant = 'liquidGlass';
     ctrl.nativeTabBar = true;
-    ctrl.insetsBottom = 139;
+    // Toast samples the ROOT inset (34); the 139 accessory inset arrives as the
+    // in-tab measurement from NativeTabContentInsetProbe.
+    ctrl.insetsBottom = 34;
+    ctrl.measuredTabContentInsetBottom = 139;
     const { container } = render(<Toast toast={toast} onDismiss={() => {}} />);
     // 139 already includes the home indicator, native tab bar, and accessory;
     // Toast adds only its 8pt visual gap.
     expect(container.querySelector('[data-animated]')?.getAttribute('data-style')).toContain('"bottom":147');
   });
 
+  it('reconstructs the native bar from the root inset before the probe publishes', () => {
+    ctrl.variant = 'liquidGlass';
+    ctrl.nativeTabBar = true;
+    ctrl.insetsBottom = 34;
+    ctrl.measuredTabContentInsetBottom = null;
+    const { container } = render(<Toast toast={toast} onDismiss={() => {}} />);
+    // Pre-measurement frames: root (34) + TAB_BAR_HEIGHT + gap. The accessory
+    // cannot be reconstructed up here (no climb state above QueueProvider), so a
+    // pre-publish toast may briefly sit behind the accessory platter — see the
+    // useToastBottomOffset docblock. The accessory is available in this state, so
+    // no JS queue reserve either.
+    const expectedBottom = 34 + TAB_BAR_HEIGHT + spacing[2];
+    expect(container.querySelector('[data-animated]')?.getAttribute('data-style')).toContain(
+      `"bottom":${expectedBottom}`,
+    );
+  });
+
   it('clears the JS queue bar when NativeTabs cannot mount a BottomAccessory', () => {
     ctrl.variant = 'liquidGlass';
     ctrl.nativeTabBar = true;
     ctrl.nativeBottomAccessoryAvailable = false;
-    ctrl.insetsBottom = NATIVE_TAB_ONLY_INSET;
+    ctrl.insetsBottom = 34;
+    ctrl.measuredTabContentInsetBottom = NATIVE_TAB_ONLY_INSET;
     const { container } = render(<Toast toast={toast} onDismiss={() => {}} />);
     const expectedBottom = NATIVE_TAB_ONLY_INSET + TOOLBAR_RESERVE + spacing[2];
-    // NativeTabs owns the tab-only inset, while the unavailable BottomAccessory
-    // falls back to the JS queue tray. Do not add TAB_BAR_HEIGHT a second time.
+    // The in-tab measurement owns the tab-bar clearance, while the unavailable
+    // BottomAccessory falls back to the JS queue tray. Do not add TAB_BAR_HEIGHT
+    // a second time.
     expect(container.querySelector('[data-animated]')?.getAttribute('data-style')).toContain(
       `"bottom":${expectedBottom}`,
     );
@@ -224,7 +251,8 @@ describe('Toast', () => {
     ctrl.variant = 'liquidGlass';
     ctrl.nativeTabBar = true;
     ctrl.nativeBottomAccessoryAvailable = false;
-    ctrl.insetsBottom = NATIVE_TAB_ONLY_INSET;
+    ctrl.insetsBottom = 34;
+    ctrl.measuredTabContentInsetBottom = NATIVE_TAB_ONLY_INSET;
     ctrl.segments = ['(tabs)', 'home', 'session', '[sessionId]'];
     const { container } = render(<Toast toast={toast} onDismiss={() => {}} />);
     const expectedBottom = NATIVE_TAB_ONLY_INSET + spacing[2];
