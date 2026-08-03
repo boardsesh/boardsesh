@@ -23,7 +23,11 @@ import { boardPresenceMutations } from '../graphql/resolvers/board-presence/muta
 import { boardPresenceQueries } from '../graphql/resolvers/board-presence/queries';
 import { boardPresenceSubscriptions } from '../graphql/resolvers/board-presence/subscription';
 import { socialBoardQueries } from '../graphql/resolvers/social/boards';
-import { getBoardSeqFloor } from '../graphql/resolvers/board-presence/shared';
+import {
+  claimSerialForBoard,
+  getBoardSeqFloor,
+  type SelectedConnectBoard,
+} from '../graphql/resolvers/board-presence/shared';
 import { setCachedBoardPresenceStats } from '../graphql/resolvers/board-presence/stats';
 import { tickMutations } from '../graphql/resolvers/ticks/mutations';
 import { seedAuroraCatalogFixtures } from './helpers/board-catalog-fixture';
@@ -1027,6 +1031,102 @@ describe('board-presence resolvers', () => {
           authCtx(),
         );
         expect(resolved.boardId).toBe(gymBoard.id);
+      });
+
+      describe('claimSerialForBoard', () => {
+        async function boardFor(id: number, uuid: string): Promise<SelectedConnectBoard> {
+          const [row] = await db.execute(sql`
+            SELECT owner_id, board_type, layout_id, size_id, set_ids, serial_number, angle, name
+              FROM user_boards WHERE id = ${id}
+          `);
+          const board = row as {
+            owner_id: string;
+            board_type: string;
+            layout_id: number;
+            size_id: number;
+            set_ids: string;
+            serial_number: string | null;
+            angle: number;
+            name: string;
+          };
+          return {
+            id,
+            uuid,
+            ownerId: board.owner_id,
+            name: board.name,
+            boardType: board.board_type,
+            layoutId: Number(board.layout_id),
+            sizeId: Number(board.size_id),
+            setIds: board.set_ids,
+            serialNumber: board.serial_number,
+            angle: Number(board.angle),
+          };
+        }
+
+        it('reports the winner’s serial after losing the concurrent-claim race', async () => {
+          const mine = `RACEMINE-${Date.now()}`;
+          const theirs = `RACEWON-${Date.now()}`;
+          const board = await insertRealUuidBoard({
+            ownerId: SYSTEM_OWNER_ID,
+            serial: null,
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '2,7',
+            name: 'Contested Wall',
+          });
+          const stale = await boardFor(board.id, board.uuid);
+
+          // Another connect claimed it between our read and our write. The
+          // `serial_number IS NULL` predicate makes our UPDATE a no-op, and the
+          // re-read is what stops us reporting a serial the board doesn't have.
+          await db.execute(sql`UPDATE user_boards SET serial_number = ${theirs} WHERE id = ${board.id}`);
+
+          const claimed = await claimSerialForBoard(stale, mine);
+          expect(claimed.serialNumber).toBe(theirs);
+          expect(await serialOf(board.id)).toBe(theirs);
+        });
+
+        it('stamps the serial and reports it when the claim wins', async () => {
+          const serial = `RACEWIN-${Date.now()}`;
+          const board = await insertRealUuidBoard({
+            ownerId: SYSTEM_OWNER_ID,
+            serial: null,
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '2,8',
+            name: 'Free Wall',
+          });
+
+          const claimed = await claimSerialForBoard(await boardFor(board.id, board.uuid), serial);
+          expect(claimed.serialNumber).toBe(serial);
+          expect(await serialOf(board.id)).toBe(serial);
+        });
+
+        it('keeps the board bound when the owner already has that serial elsewhere', async () => {
+          const serial = `RACEDUPE-${Date.now()}`;
+          // The per-owner unique index rejects the stamp; binding must still work.
+          await insertRealUuidBoard({
+            ownerId: TEST_USER_ID,
+            serial,
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '2,9',
+            name: 'Already Bound',
+          });
+          const second = await insertRealUuidBoard({
+            ownerId: TEST_USER_ID,
+            serial: null,
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '2,10',
+            name: 'Second Wall',
+          });
+
+          const claimed = await claimSerialForBoard(await boardFor(second.id, second.uuid), serial);
+          expect(claimed.serialNumber).toBeNull();
+          expect(claimed.id).toBe(second.id);
+          expect(await serialOf(second.id)).toBeNull();
+        });
       });
     });
   });
