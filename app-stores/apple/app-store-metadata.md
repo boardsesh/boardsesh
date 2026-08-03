@@ -19,11 +19,12 @@
 > in `packages/mobile/app.config.ts`. Adding a listing locale without adding it
 > there leaves the page claiming English only.
 >
-> **First run for a brand-new locale:** `deliver` writes onto the _editable_ version's
-> localizations. If a newly added locale folder doesn't show up after a
-> `Mobile Store Metadata` run, add that language to the version once in App Store
-> Connect (version → **+** next to the language selector), then re-dispatch — every
-> later release picks it up from the folder on its own.
+> **A brand-new locale needs no App Store Connect setup.** `deliver` activates the
+> language on the editable version itself — adding `de-DE/` and merging was enough
+> (`Activating version language de-DE...` in the 2026-08-03 run). What it does need
+> is an _editable_ version to write onto: between releases there often isn't one, and
+> the `ios metadata` lane skips cleanly and says so. Create the version in App Store
+> Connect first, then dispatch.
 >
 > This doc keeps the operational material that `deliver` can't upload: review
 > notes, privacy labels, and the screenshot map.
