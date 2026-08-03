@@ -82,6 +82,7 @@ async function seedUsers(): Promise<void> {
 }
 
 async function cleanup(): Promise<void> {
+  await db.execute(sql`DELETE FROM board_sessions WHERE id LIKE 'merge-session-%'`);
   await db.execute(sql`
     DELETE FROM board_climb_events
      WHERE board_id IN (SELECT id FROM user_boards WHERE slug LIKE ${`${SLUG_PREFIX}%`})
@@ -290,6 +291,40 @@ describe('merge-clone-boards', () => {
         CLONE_OWNER_ID,
         OTHER_USER_ID,
       ]);
+    });
+
+    it('drops the duplicate session_boards row instead of colliding on the unique key', async () => {
+      const serial = `MERGESESSION-${Date.now()}`;
+      const { pair, gymBoard, clone } = await seedPair(serial);
+      // A party session that touched BOTH boards — which is the normal shape
+      // here, since the split meant one session could hop between them
+      // mid-climb. Repointing blind would violate session_boards_session_board_idx.
+      const bothSession = `merge-session-both-${Math.random().toString(36).slice(2)}`;
+      const cloneOnlySession = `merge-session-clone-${Math.random().toString(36).slice(2)}`;
+      for (const sessionId of [bothSession, cloneOnlySession]) {
+        await db.execute(sql`
+          INSERT INTO board_sessions (id, board_path) VALUES (${sessionId}, '/kilter/1/10/1,20/40')
+        `);
+      }
+      await db.execute(sql`
+        INSERT INTO session_boards (session_id, board_id) VALUES
+          (${bothSession}, ${gymBoard.id}), (${bothSession}, ${clone.id}),
+          (${cloneOnlySession}, ${clone.id})
+      `);
+
+      const counts = await db.transaction((tx) => mergeClonePair(pair, tx));
+      expect(counts.sessionBoardsDropped).toBe(1);
+      expect(counts.sessionBoards).toBe(1);
+
+      const linked = await db.execute(sql`
+        SELECT session_id FROM session_boards WHERE board_id = ${gymBoard.id} ORDER BY session_id
+      `);
+      expect((linked as unknown as { session_id: string }[]).map((row) => row.session_id).sort()).toEqual(
+        [bothSession, cloneOnlySession].sort(),
+      );
+      // And nothing is left pointing at the merged-away clone.
+      const stranded = await db.execute(sql`SELECT id FROM session_boards WHERE board_id = ${clone.id}`);
+      expect(stranded as unknown as unknown[]).toEqual([]);
     });
   });
 });

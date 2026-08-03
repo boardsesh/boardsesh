@@ -283,11 +283,13 @@ export async function claimSerialForBoard(board: SelectedConnectBoard, serial: s
     return board;
   }
   // Lost the `serial_number IS NULL` race — re-read what the winner wrote so
-  // the caller reports the board's real serial.
+  // the caller reports the board's real serial. Same `deleted_at` guard as the
+  // UPDATE: if the board was soft-deleted in between, reporting a serial read
+  // off a dead row would be worse than reporting none.
   const [current] = await db
     .select({ serialNumber: dbSchema.userBoards.serialNumber })
     .from(dbSchema.userBoards)
-    .where(eq(dbSchema.userBoards.id, board.id))
+    .where(and(eq(dbSchema.userBoards.id, board.id), isNull(dbSchema.userBoards.deletedAt)))
     .limit(1);
   return { ...board, serialNumber: current?.serialNumber ?? board.serialNumber };
 }
