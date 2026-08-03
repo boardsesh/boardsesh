@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { BottomSheetModal, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useTranslation } from 'react-i18next';
 import type { GradeBound } from '@boardsesh/climb-filters';
 import {
@@ -70,7 +70,7 @@ export function LogbookFilterSheet({
   const { t } = useTranslation('you');
   const theme = useTheme();
   const { systemColors } = theme;
-  const insets = useSafeAreaInsets();
+  const windowInsetBottom = useWindowBottomInset();
   const sheetRef = useRef<BottomSheetModal>(null);
   const scrollRef = useRef<ComponentRef<typeof BottomSheetScrollView>>(null);
 
@@ -250,7 +250,7 @@ export function LogbookFilterSheet({
         // With a fixed 90% snap point + enableDynamicSizing off, the content must
         // flex to fill the sheet and carry generous bottom padding so the last row
         // (Benchmarks only) scrolls fully into view when both sections are expanded.
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + spacing[8] }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: windowInsetBottom + spacing[8] }]}
       >
         {/* PRESET — the headline one-tap sort. Above Refine/Advanced. Suppressed
             when the toolbar's top-level sort chips own it (Liquid Glass), so sort

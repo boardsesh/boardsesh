@@ -3,7 +3,7 @@ import { Share, StyleSheet, View } from 'react-native';
 // SPIKE(spike/expo-bottom-sheet): swap gorhom -> Expo's native drop-in. The native
 // sheet renders its own scrim, so the custom SheetBackdrop wiring is dropped.
 import BottomSheet, { BottomSheetView, type BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
 import QRCode from 'react-native-qrcode-svg';
@@ -33,7 +33,7 @@ export function InviteSheet({ visible, onDismiss, sessionId }: InviteSheetProps)
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const { showToast } = useToast();
-  const insets = useSafeAreaInsets();
+  const windowInsetBottom = useWindowBottomInset();
   const sheetRef = useRef<BottomSheetMethods>(null);
 
   const shareUrl = useMemo(() => buildSessionShareUrl(sessionId), [sessionId]);
@@ -72,7 +72,7 @@ export function InviteSheet({ visible, onDismiss, sessionId }: InviteSheetProps)
       backgroundStyle={{ backgroundColor: systemColors.secondaryBackground }}
       handleIndicatorStyle={sheetStyles.indicator}
     >
-      <BottomSheetView style={[styles.content, { paddingBottom: insets.bottom + spacing[4] }]}>
+      <BottomSheetView style={[styles.content, { paddingBottom: windowInsetBottom + spacing[4] }]}>
         <Text variant="title2" style={styles.title}>
           {t('mobile.session.inviteTitle')}
         </Text>

@@ -216,6 +216,16 @@ Is it a secondary surface OVER the current screen, or its own full surface?
    the published measurement via `useBottomChromeMetrics()` — `scrollBottomPadding` for
    list/scroll content, `floatingControlBottom` for absolute overlays, `fixedFooterBottom` for
    docked footers, `preSessionFooterBottom` / `inSessionListBottom` for the session surfaces.
+
+   **Bottom-docked native sheets are the inverse case**: a sheet presents over the tab bar, so
+   the only chrome its content must clear is the **window's** bottom inset (home indicator /
+   gesture bar) — never its mount point's. A sheet mounted inside a tab inherits the per-tab
+   provider, whose 139pt inset floated the filter sheet's Apply button ~105pt up into the sheet
+   (#3776's "dead gap"). Every sheet footer/body bottom pad goes through
+   `useWindowBottomInset()` (`src/hooks/use-window-bottom-inset.ts`, fed by
+   `WindowInsetPublisher` in the root layout); the shared `Sheet` / `ModalSheet` wrappers
+   already do. Sheets mounted at the app root get the same value either way — the hook makes
+   the mount point irrelevant.
    Never hardcode what UIKit "must" have folded into an inset; constants are fallbacks for the
    pre-measurement frames only, and test fixtures carry DEVICE_VERIFIED / INFERRED provenance
    labels (`src/hooks/__tests__/bottom-chrome-metrics.test.ts` — extend its matrix when adding

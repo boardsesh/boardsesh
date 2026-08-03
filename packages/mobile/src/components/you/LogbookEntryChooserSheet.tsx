@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, type ComponentRef } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { BottomSheetModal, BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useTranslation } from 'react-i18next';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
 import { parseTickTime } from '@boardsesh/profile-stats';
@@ -49,7 +49,7 @@ const STATUS_ICON: Record<AscentFeedItem['status'], IconName> = {
 export function LogbookEntryChooserSheet({ entries, intent, onPick, onDismiss }: LogbookEntryChooserSheetProps) {
   const { t, i18n } = useTranslation('you');
   const { systemColors, brandColors } = useTheme();
-  const insets = useSafeAreaInsets();
+  const windowInsetBottom = useWindowBottomInset();
   const sheetRef = useRef<ComponentRef<typeof BottomSheetModal>>(null);
   const managed = useManagedSheet({ open: true, sheetRef, onClose: onDismiss });
   const snapPoints = useMemo(() => androidSafeSnapPoints(['45%']), []);
@@ -126,7 +126,7 @@ export function LogbookEntryChooserSheet({ entries, intent, onPick, onDismiss }:
       <BottomSheetFlatList
         data={entries}
         keyExtractor={chooserKeyExtractor}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing[6] }]}
+        contentContainerStyle={[styles.content, { paddingBottom: windowInsetBottom + spacing[6] }]}
         ListHeaderComponent={
           <Text variant="headline" style={styles.title}>
             {intent === 'delete' ? t('mobile.logbook.chooser.deleteTitle') : t('mobile.logbook.chooser.editTitle')}

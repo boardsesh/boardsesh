@@ -12,6 +12,7 @@ import {
   useNativeTabContentInsetBottom,
   useNativeTabContentInsetPublishCount,
 } from '../lib/native-tab-content-inset-store';
+import { usePublishedWindowInsetBottom } from '../lib/window-inset-store';
 
 /**
  * Live readout of the bottom-chrome geometry: the ROOT safe-area inset, the
@@ -77,6 +78,7 @@ function BottomChromeDebugOverlayInner() {
   const insets = useSafeAreaInsets();
   const measured = useNativeTabContentInsetBottom();
   const publishCount = useNativeTabContentInsetPublishCount();
+  const windowInset = usePublishedWindowInsetBottom();
   const metrics = useBottomChromeMetrics();
   const usesNativeTabBar = useNativeTabBar();
   const { variant } = useTheme();
@@ -88,6 +90,7 @@ function BottomChromeDebugOverlayInner() {
       'insets',
       `root ${formatOffset(insets.bottom)}  probe ${measured === null ? '—' : formatOffset(measured)}  pubs ${publishCount}`,
     ],
+    ['window', `window(sheets) ${windowInset === null ? '—' : formatOffset(windowInset)}`],
     [
       'flags',
       `${variant}  nativeBar ${usesNativeTabBar ? 'Y' : 'N'}  inTabs ${metrics.insideTabs ? 'Y' : 'N'}  ` +

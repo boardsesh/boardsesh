@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 // Migrated off @gorhom/bottom-sheet to Expo's native bottom sheet (#3167). The
 // native sheet draws its own scrim + drag handle, so the measured-handle peek
 // machinery is replaced by a small fixed reserve for the native grabber.
@@ -68,6 +69,10 @@ export function CreateDrawer({
 }: CreateDrawerProps) {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
+  // Bottom terms use the WINDOW inset: this drawer is a route inside the climbs
+  // tab, whose per-tab provider folds iOS 26 tab chrome the sheet covers into
+  // insets.bottom (see use-window-bottom-inset). insets.top stays local.
+  const windowInsetBottom = useWindowBottomInset();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const sheetRef = useRef<BottomSheet>(null);
 
@@ -78,7 +83,7 @@ export function CreateDrawer({
   // index the user is actually at (not a one-shot reset that breaks on rotation).
   const indexRef = useRef(0);
 
-  const boardMaxHeight = Math.max(200, windowHeight - insets.top - insets.bottom - ABOVE_FOLD_CHROME);
+  const boardMaxHeight = Math.max(200, windowHeight - insets.top - windowInsetBottom - ABOVE_FOLD_CHROME);
 
   // Compute the on-screen board size up front (window width minus the board
   // section margins, capped by the height budget) so the board paints on the
@@ -104,7 +109,7 @@ export function CreateDrawer({
   // action bar) + bottom safe area + a reveal margin so a hint of the below-fold
   // form peeks.
   const peekHeight =
-    aboveFoldHeight > 0 ? NATIVE_HANDLE_RESERVE + spacing[2] + aboveFoldHeight + insets.bottom + spacing[3] : 0;
+    aboveFoldHeight > 0 ? NATIVE_HANDLE_RESERVE + spacing[2] + aboveFoldHeight + windowInsetBottom + spacing[3] : 0;
 
   // Re-snap to the current index whenever the peek height changes: the first
   // measurement (fallback → measured peek) and any re-layout (rotation resizes
@@ -142,7 +147,7 @@ export function CreateDrawer({
     >
       <BottomSheetScrollView
         style={styles.scroll}
-        contentContainerStyle={{ paddingTop: spacing[2], paddingBottom: insets.bottom + spacing[4] }}
+        contentContainerStyle={{ paddingTop: spacing[2], paddingBottom: windowInsetBottom + spacing[4] }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >

@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, HoldFilterMode, HoldFilterType } from '@boardsesh/shared-schema';
 import { buildHoldFilterOptions } from '@boardsesh/climb-filters';
@@ -43,7 +43,7 @@ export function HoldFilterPicker({
 }: HoldFilterPickerProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
-  const insets = useSafeAreaInsets();
+  const windowInsetBottom = useWindowBottomInset();
   const {
     overrides: holdColorOverrides,
     shapes: holdShapeOverrides,
@@ -89,7 +89,10 @@ export function HoldFilterPicker({
 
   return (
     <View
-      style={[styles.section, { borderTopColor: systemColors.separator, paddingBottom: insets.bottom + spacing[3] }]}
+      style={[
+        styles.section,
+        { borderTopColor: systemColors.separator, paddingBottom: windowInsetBottom + spacing[3] },
+      ]}
     >
       <SegmentedControl
         options={applyModeOptions}

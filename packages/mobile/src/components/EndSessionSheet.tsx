@@ -5,7 +5,7 @@ import BottomSheet, {
   BottomSheetTextInput,
   type BottomSheetMethods,
 } from '@expo/ui/community/bottom-sheet';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useWindowBottomInset } from '../hooks/use-window-bottom-inset';
 import { useTranslation } from 'react-i18next';
 import { SESSION_NOTES_MAX_LENGTH } from '@boardsesh/shared-schema';
 import { Text } from './Text';
@@ -64,7 +64,7 @@ export function EndSessionSheet({
 }: EndSessionSheetProps) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
-  const insets = useSafeAreaInsets();
+  const windowInsetBottom = useWindowBottomInset();
   const sheetRef = useRef<BottomSheetMethods>(null);
 
   // Resolved mode. A known non-creator can never reach `end`, whatever mode
@@ -107,7 +107,7 @@ export function EndSessionSheet({
       backgroundStyle={{ backgroundColor: systemColors.secondaryBackground }}
       handleIndicatorStyle={sheetStyles.indicator}
     >
-      <BottomSheetView style={[styles.content, { paddingBottom: insets.bottom + spacing[3] }]}>
+      <BottomSheetView style={[styles.content, { paddingBottom: windowInsetBottom + spacing[3] }]}>
         {/* The Compose/UIKit sheet window does not resize for the keyboard, so a
             JS-side KeyboardAvoidingView lifts the recap input + buttons above it
             on both platforms (mirrors Sheet.tsx). BottomSheetView stays the

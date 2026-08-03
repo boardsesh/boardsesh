@@ -14,7 +14,7 @@ import BottomSheet, {
   BottomSheetView,
   type BottomSheetMethods,
 } from '@expo/ui/community/bottom-sheet';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useWindowBottomInset } from '../hooks/use-window-bottom-inset';
 import { hapticMedium } from '../lib/haptics';
 import { spacing } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
@@ -74,7 +74,7 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
   ref,
 ) {
   const { systemColors, sheet: sheetChrome } = useTheme();
-  const insets = useSafeAreaInsets();
+  const windowInsetBottom = useWindowBottomInset();
   const snapPoints = useMemo(() => customSnapPoints ?? ['50%', '90%'], [customSnapPoints]);
 
   const sheetRef = useRef<BottomSheetMethods>(null);
@@ -124,8 +124,10 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
   // Without a pinned footer the body sits against the bottom edge, so it has to
   // clear the Android edge-to-edge navigation bar itself — the native sheet does
   // not pad content for it. With a footer the body scrolls above the footer, which
-  // already carries `insets.bottom`.
-  const bodyContentContainerStyle = useSheetBodyContentStyle(Boolean(footer), contentContainerStyle, insets.bottom);
+  // already carries the window inset. The WINDOW inset, not the mount point's:
+  // a sheet docks over the tab bar, and a tab-mounted sheet's local inset folds
+  // in iOS 26 tab chrome the sheet covers (see use-window-bottom-inset).
+  const bodyContentContainerStyle = useSheetBodyContentStyle(Boolean(footer), contentContainerStyle, windowInsetBottom);
   // #3922: measure whichever view actually carries columnStyle — the body when
   // there is no footer, the KeyboardAvoidingView below when there is.
   const bodyLayout = footer ? undefined : onColumnLayout;
@@ -157,7 +159,7 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
         {
           backgroundColor: systemColors.secondaryBackground,
           borderTopColor: systemColors.separator,
-          paddingBottom: insets.bottom + spacing[3],
+          paddingBottom: windowInsetBottom + spacing[3],
         },
       ]}
     >

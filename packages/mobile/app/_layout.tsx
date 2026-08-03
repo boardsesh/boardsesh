@@ -82,6 +82,7 @@ import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
 import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
 import { BottomChromeDebugOverlay } from '../src/components/BottomChromeDebugOverlay';
+import { WindowInsetPublisher } from '../src/hooks/use-window-bottom-inset';
 import { LiveActivityIntentDiagnostics } from '../src/components/LiveActivityIntentDiagnostics';
 // Side-effect import: instantiates the Android-only MemoryTrim native module
 // (expo-modules-core creates modules lazily on first JS access), whose Kotlin
@@ -679,6 +680,9 @@ function RootLayout() {
                                                             pr-channel + settings toggle). Inside the metrics provider
                                                             so it reads the same derived values consumers position with. */}
                                                                   <BottomChromeDebugOverlay />
+                                                                  {/* Root-sampled window inset for bottom-docked sheets —
+                                                            here (outside the tabs) useSafeAreaInsets IS the window's. */}
+                                                                  <WindowInsetPublisher />
                                                                 </UserDrawerProvider>
                                                               </TabBarHeightProvider>
                                                               <AnalyticsScreenTracker />

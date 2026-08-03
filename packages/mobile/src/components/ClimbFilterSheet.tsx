@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { BottomSheetModal, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useWindowBottomInset } from '../hooks/use-window-bottom-inset';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import {
@@ -178,7 +178,11 @@ export function ClimbFilterSheet({
   const theme = useTheme();
   const { systemColors } = theme;
   const { isAuthenticated } = useAuth();
-  const insets = useSafeAreaInsets();
+  // The WINDOW inset, not this mount point's: this sheet lives in the climbs
+  // tab, whose per-tab provider folds the iOS 26 tab bar + accessory into
+  // insets.bottom — chrome the sheet covers. Padding the Apply footer with that
+  // floated it ~105pt up into the sheet (#3776's "dead gap").
+  const windowInsetBottom = useWindowBottomInset();
   const sheetRef = useRef<BottomSheetModal>(null);
   const scrollRef = useRef<ComponentRef<typeof BottomSheetScrollView>>(null);
   // Latest scroll offset, captured on scroll into a ref (no re-render).
@@ -1129,7 +1133,10 @@ export function ClimbFilterSheet({
         </BottomSheetScrollView>
 
         <View
-          style={[styles.footer, { paddingBottom: insets.bottom + spacing[3], borderTopColor: systemColors.separator }]}
+          style={[
+            styles.footer,
+            { paddingBottom: windowInsetBottom + spacing[3], borderTopColor: systemColors.separator },
+          ]}
         >
           <Button title={applyLabel} onPress={handleApply} variant="filled" size="large" style={styles.applyButton} />
         </View>
