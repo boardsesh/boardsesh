@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
@@ -26,8 +26,13 @@ vi.mock('../BoardseshLogo', () => ({
 import { AppLoadingSplash } from '../AppLoadingSplash';
 
 describe('AppLoadingSplash', () => {
-  it('paints the logo on web, where there is no OS splash to cover a blank render', () => {
+  // Each test sets the platform it needs; reset so a case that forgets can't
+  // inherit the previous one's OS.
+  beforeEach(() => {
     platformState.os = 'web';
+  });
+
+  it('paints the logo on web, where there is no OS splash to cover a blank render', () => {
     render(createElement(AppLoadingSplash));
 
     expect(screen.getByTestId('splash')).toBeTruthy();
@@ -38,6 +43,6 @@ describe('AppLoadingSplash', () => {
     platformState.os = os;
     const { container } = render(createElement(AppLoadingSplash));
 
-    expect(container.innerHTML).toBe('');
+    expect(container.firstChild).toBeNull();
   });
 });
