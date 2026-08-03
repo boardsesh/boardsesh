@@ -1773,6 +1773,8 @@ export const socialBoardMutations = {
     // what *this* connect observed. The explicit null keeps the row honest.
     const apiLevelValue = apiLevel ?? null;
 
+    const boardLinkUpdate = linkedBoardUuid ? { boardUuid: linkedBoardUuid } : {};
+
     // Board row first, pointer row second — the order every other serial-pointer
     // writer follows (pointer healing, serial resolution, the explicit choice,
     // the dedupe merge). Left bare, this upsert takes the (userId, serialNumber)
@@ -1825,7 +1827,7 @@ export const socialBoardMutations = {
             sizeId,
             setIds,
             apiLevel: apiLevelValue,
-            boardUuid: linkedBoardUuid,
+            ...boardLinkUpdate,
             updatedAt: new Date(),
           },
         });

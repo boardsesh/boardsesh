@@ -66,7 +66,7 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { offlineAwareRequest } from '../../lib/graphql/offline-request';
 import { GET_CLIMB, type GetClimbQueryResponse } from '../../lib/graphql/operations';
-import { boardPresenceClimbToClimb } from '../../lib/board-presence/presence-climb';
+import { boardPresenceClimbToClimb, wallDriverForClimb } from '../../lib/board-presence/presence-climb';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import { withAlpha } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -1213,7 +1213,7 @@ function HistoryRowContent({
   pressableAvatar = true,
 }: HistoryRowContentProps) {
   const { t } = useTranslation('session');
-  const litBy = climb.sentByDisplayName?.trim() || null;
+  const driver = wallDriverForClimb(climb, t('mobile.boardPresence.unnamedClimber'));
   const isKilterImport = climb.source === 'kilter';
   // Kilter imports only arrive while someone has the app open, so the history
   // has gaps; the time on each row is what makes them readable (#6012). It
@@ -1223,10 +1223,10 @@ function HistoryRowContent({
   const sentAgo = formatRelativeTime(climb.sentAt);
   const sourceLine = isKilterImport
     ? [t('mobile.boardPresence.kilterHistorySource'), sentAgo].filter(Boolean).join(' · ')
-    : litBy
+    : driver
       ? ''
       : sentAgo;
-  const senderTime = !isKilterImport && litBy ? sentAgo : '';
+  const senderTime = !isKilterImport && driver ? sentAgo : '';
 
   return (
     <>
@@ -1240,7 +1240,7 @@ function HistoryRowContent({
             {sourceLine}
           </Text>
         ) : null}
-        {litBy ? (
+        {driver ? (
           <View style={styles.historyDriverRow}>
             {/* Past send — no Bluetooth glyph (nobody's driving it now); just a
                 pressable face for attribution. */}
@@ -1248,12 +1248,12 @@ function HistoryRowContent({
               size={18}
               userId={pressableAvatar ? climb.sentByUserId : null}
               uri={climb.sentByAvatarUrl}
-              name={litBy}
+              name={driver.avatarName}
               status="none"
-              accessibilityLabel={t('mobile.boardPresence.drivenByA11y', { name: litBy })}
+              accessibilityLabel={t('mobile.boardPresence.drivenByA11y', { name: driver.label })}
             />
             <Text variant="caption1" color={secondaryColor} numberOfLines={1} style={styles.historyDriverName}>
-              {litBy}
+              {driver.label}
             </Text>
             {/* Its own Text so a long name truncates before the time does. */}
             {senderTime ? (

@@ -31,6 +31,8 @@ import { publishBoardQueuePreviewForSession } from '../../../services/board-queu
 import {
   assertValidBoardId,
   candidateToActiveBoard,
+  canClaimSerialForBoard,
+  findSelectedBoardForConnect,
   defaultBoardName,
   findActiveBoardsBySerial,
   findChosenBoardForSerial,
@@ -395,6 +397,47 @@ async function resolvePlannedSerialCandidate(
   });
 }
 
+/** Resolve a matching selection using the existing board-row → serial → pointer order. */
+async function resolveSelectedBoardForSerial(
+  userId: string,
+  serial: string,
+  selectedBoardUuid: string,
+  config: { boardType: string; layoutId: number; sizeId: number; setIds: string },
+  advertisedBoardType?: string | null,
+): Promise<ActivePresenceBoard | undefined> {
+  if (advertisedBoardType && advertisedBoardType !== config.boardType) return undefined;
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`
+      SELECT id FROM user_boards
+       WHERE uuid = ${selectedBoardUuid}
+       FOR UPDATE
+    `);
+    await lockBoardSerialWrite(tx, serial);
+    const selected = await findSelectedBoardForConnect(userId, selectedBoardUuid, config, tx);
+    if (!selected) return undefined;
+    let board = selected;
+    if (selected.serialNumber === null && canClaimSerialForBoard(selected, userId)) {
+      try {
+        // A per-owner serial collision must roll back only the claim, leaving
+        // the parent transaction usable for the selected-board pointer.
+        const updated = await tx.transaction(async (claimTx) => {
+          const [claimed] = await claimTx.update(dbSchema.userBoards)
+            .set({ serialNumber: serial, updatedAt: new Date() })
+            .where(and(eq(dbSchema.userBoards.id, selected.id), isNull(dbSchema.userBoards.serialNumber), isNull(dbSchema.userBoards.deletedAt)))
+            .returning({ serialNumber: dbSchema.userBoards.serialNumber });
+          return claimed;
+        });
+        if (updated) board = { ...selected, serialNumber: updated.serialNumber };
+      } catch (error) {
+        if (!isDuplicateBoardSerialError(error)) throw error;
+        logger.warn(`[board-presence] serial claim skipped, already bound elsewhere: ${String(error)}`);
+      }
+    }
+    await rememberBoardForSerial(userId, serial, board, tx);
+    return board;
+  });
+}
+
 /**
  * Decide which board a serial routes to for this user:
  *  - a previously-remembered choice wins (no prompt);
@@ -406,12 +449,16 @@ async function resolveSerialForUser(
   userId: string,
   serial: string,
   config: { boardType: string; layoutId: number; sizeId: number; setIds: string },
-  options: { autoPickMultiple?: boolean; advertisedBoardType?: string | null } = {},
+  options: { autoPickMultiple?: boolean; advertisedBoardType?: string | null; selectedBoardUuid?: string | null } = {},
 ): Promise<SerialResolution> {
   // The type the controller advertises over BLE. Every read below is scoped to
   // it, because Aurora reuses a serial across board apps and a board of another
   // type is a different physical controller, not a candidate.
-  const { advertisedBoardType } = options;
+  const { advertisedBoardType, selectedBoardUuid } = options;
+  if (selectedBoardUuid) {
+    const selected = await resolveSelectedBoardForSerial(userId, serial, selectedBoardUuid, config, advertisedBoardType);
+    if (selected) return { kind: 'board', board: selected };
+  }
   const chosen = await findChosenBoardForSerial(userId, serial, advertisedBoardType);
   if (chosen) {
     return { kind: 'board', board: chosen };
@@ -489,6 +536,7 @@ export const boardPresenceMutations = {
       sizeId,
       setIds,
       advertisedBoardType,
+      selectedBoardUuid,
     }: {
       serial: string;
       boardType: string;
@@ -496,6 +544,7 @@ export const boardPresenceMutations = {
       sizeId: number;
       setIds: string;
       advertisedBoardType?: string | null;
+      selectedBoardUuid?: string | null;
     },
     ctx: ConnectionContext,
   ): Promise<ResolvedBoard> => {
@@ -505,6 +554,7 @@ export const boardPresenceMutations = {
     const validSerial = validateInput(BoardSerialSchema, serial, 'serial');
     const config = validateInput(BoardPresenceConfigInputSchema, { boardType, layoutId, sizeId, setIds }, 'input');
     const validAdvertisedBoardType = validateAdvertisedBoardType(advertisedBoardType);
+    const validSelectedBoardUuid = selectedBoardUuid ? validateInput(UUIDSchema, selectedBoardUuid, 'selectedBoardUuid') : null;
     const userId = ctx.userId!;
 
     // Old clients can't prompt. The auto-pick's final candidate read and
@@ -512,6 +562,7 @@ export const boardPresenceMutations = {
     const resolution = await resolveSerialForUser(userId, validSerial, config, {
       autoPickMultiple: true,
       advertisedBoardType: validAdvertisedBoardType,
+      selectedBoardUuid: validSelectedBoardUuid,
     });
     // Auto-pick never returns candidates for a populated list, so the only way
     // here is the cross-type refusal above: the controller is not the board type
@@ -542,6 +593,7 @@ export const boardPresenceMutations = {
       sizeId,
       setIds,
       advertisedBoardType,
+      selectedBoardUuid,
     }: {
       serial: string;
       boardType: string;
@@ -549,6 +601,7 @@ export const boardPresenceMutations = {
       sizeId: number;
       setIds: string;
       advertisedBoardType?: string | null;
+      selectedBoardUuid?: string | null;
     },
     ctx: ConnectionContext,
   ): Promise<{ board: ResolvedBoard | null; candidates: BoardCandidatePayload[] | null }> => {
@@ -558,10 +611,12 @@ export const boardPresenceMutations = {
     const validSerial = validateInput(BoardSerialSchema, serial, 'serial');
     const config = validateInput(BoardPresenceConfigInputSchema, { boardType, layoutId, sizeId, setIds }, 'input');
     const validAdvertisedBoardType = validateAdvertisedBoardType(advertisedBoardType);
+    const validSelectedBoardUuid = selectedBoardUuid ? validateInput(UUIDSchema, selectedBoardUuid, 'selectedBoardUuid') : null;
     const userId = ctx.userId!;
 
     const resolution = await resolveSerialForUser(userId, validSerial, config, {
       advertisedBoardType: validAdvertisedBoardType,
+      selectedBoardUuid: validSelectedBoardUuid,
     });
     if (resolution.kind === 'board') {
       await pubsub.stampBoardMembership(String(resolution.board.id), userId);

@@ -168,6 +168,9 @@ export const mutationsTypeDefs = /* GraphQL */ `
     board app, so the same serial exists on controllers of different types; pass
     it and only boards of that type are candidates. Optional — clients shipped
     before this existed keep the old type-blind resolution.
+    \`selectedBoardUuid\` is the board the caller already has selected (map
+    finder / board picker); when it matches the connected config it wins over
+    serial matching — see \`resolveBoardCandidatesForSerial\`.
     """
     resolveBoardForSerial(
       serial: String!
@@ -176,6 +179,7 @@ export const mutationsTypeDefs = /* GraphQL */ `
       sizeId: Int!
       setIds: String!
       advertisedBoardType: String
+      selectedBoardUuid: ID
     ): ResolvedBoard!
 
     """
@@ -191,6 +195,12 @@ export const mutationsTypeDefs = /* GraphQL */ `
     board app, so the same serial exists on controllers of different types; pass
     it and only boards of that type are candidates. Optional — clients shipped
     before this existed keep the old type-blind resolution.
+    Pass \`selectedBoardUuid\` when the caller already has a board selected (map
+    finder / board picker). A selection whose config matches the connected
+    controller wins over serial matching, so a Bluetooth connect never silently
+    moves you off the wall you picked. If that board carries no serial yet, the
+    connect claims this one for it, which is how a synced gym board becomes
+    discoverable by serial for everyone after you.
     """
     resolveBoardCandidatesForSerial(
       serial: String!
@@ -199,6 +209,7 @@ export const mutationsTypeDefs = /* GraphQL */ `
       sizeId: Int!
       setIds: String!
       advertisedBoardType: String
+      selectedBoardUuid: ID
     ): ResolveBoardResult!
 
     """

@@ -8,6 +8,7 @@ import { BoardDriverAvatar } from '../BoardDriverAvatar';
 import { readableTextColor } from '../../grade/grade-chip-colors';
 import { useTheme } from '../../../providers/theme-provider';
 import { useDisplayGrade } from '../../../hooks/use-display-grade';
+import { wallDriverForClimb } from '../../../lib/board-presence/presence-climb';
 import { borderRadius, spacing } from '../../../theme/tokens';
 import type { WallKioskTypeScale } from './wall-kiosk-type';
 
@@ -157,28 +158,28 @@ function WallAttributionBlockComponent({
 }: WallAttributionBlockProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
-  const litBy = climb?.sentByDisplayName?.trim() || null;
+  const driver = climb ? wallDriverForClimb(climb, t('mobile.boardPresence.unnamedClimber')) : null;
 
-  if (!climb || compact || (!litBy && recentSenders.length === 0)) return null;
+  if (!climb || compact || (!driver && recentSenders.length === 0)) return null;
 
   return (
     <View style={styles.attributionRoot}>
-      {litBy ? (
+      {driver ? (
         <View style={styles.driverRow}>
           <BoardDriverAvatar
             size={driverSize}
             userId={climb.sentByUserId}
             uri={climb.sentByAvatarUrl}
-            name={litBy}
+            name={driver.avatarName}
             status="connected"
-            accessibilityLabel={t('mobile.boardPresence.drivenByA11y', { name: litBy })}
+            accessibilityLabel={t('mobile.boardPresence.drivenByA11y', { name: driver.label })}
           />
           <Text
             numberOfLines={1}
             color={systemColors.secondaryLabel}
             style={[styles.driverName, { fontSize: typeScale.metaFontSize, lineHeight: typeScale.metaLineHeight }]}
           >
-            {t('boardPresence.litByLine', { name: litBy })}
+            {t('boardPresence.litByLine', { name: driver.label })}
           </Text>
         </View>
       ) : null}
