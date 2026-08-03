@@ -1,9 +1,11 @@
 {
-  "NSHealthUpdateUsageDescription": "Boardsesh saves your finished climbing sessions to Apple Health as workouts.",
-  "NSHealthShareUsageDescription": "Boardsesh reads your body weight to estimate calories and your saved Boardsesh workouts to prevent duplicates.",
-  "NSBluetoothAlwaysUsageDescription": "Boardsesh uses Bluetooth to connect to your Kilter Board, Tension Board, or MoonBoard and light up climbing holds. No personal data is sent over Bluetooth.",
-  "NSBluetoothPeripheralUsageDescription": "Boardsesh uses Bluetooth to connect to your climbing board and control the LED holds.",
-  "NSLocationWhenInUseUsageDescription": "Boardsesh uses your location to find nearby boards to climb on and to discover nearby climbing sessions in Party Mode.",
-  "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh uses your location to find nearby boards to climb on and to discover nearby climbing sessions in Party Mode.",
-  "NSPhotoLibraryUsageDescription": "Boardsesh uses your photo library so you can pick a profile picture."
+  "ios": {
+    "NSHealthUpdateUsageDescription": "Boardsesh saves your finished climbing sessions to Apple Health as workouts.",
+    "NSHealthShareUsageDescription": "Boardsesh reads your body weight to estimate calories and your saved Boardsesh workouts to prevent duplicates.",
+    "NSBluetoothAlwaysUsageDescription": "Boardsesh uses Bluetooth to connect to your Kilter Board, Tension Board, or MoonBoard and light up climbing holds. No personal data is sent over Bluetooth.",
+    "NSBluetoothPeripheralUsageDescription": "Boardsesh uses Bluetooth to connect to your climbing board and control the LED holds.",
+    "NSLocationWhenInUseUsageDescription": "Boardsesh uses your location to find nearby boards to climb on and to discover nearby climbing sessions in Party Mode.",
+    "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh uses your location to find nearby boards to climb on and to discover nearby climbing sessions in Party Mode.",
+    "NSPhotoLibraryUsageDescription": "Boardsesh uses your photo library so you can pick a profile picture."
+  }
 }

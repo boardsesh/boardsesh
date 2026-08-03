@@ -1,9 +1,11 @@
 {
-  "NSHealthUpdateUsageDescription": "Boardsesh enregistre tes séances d'escalade terminées dans Apple Health comme entraînements.",
-  "NSHealthShareUsageDescription": "Boardsesh lit ton poids pour estimer les calories et tes entraînements Boardsesh enregistrés pour éviter les doublons.",
-  "NSBluetoothAlwaysUsageDescription": "Boardsesh utilise le Bluetooth pour se connecter à ta Kilter Board, Tension Board ou MoonBoard et allumer les prises. Aucune donnée personnelle n'est envoyée par Bluetooth.",
-  "NSBluetoothPeripheralUsageDescription": "Boardsesh utilise le Bluetooth pour se connecter à ta board et piloter les prises LED.",
-  "NSLocationWhenInUseUsageDescription": "Boardsesh utilise ta position pour trouver des boards près de chez toi et repérer les séances d'escalade proches en Mode soirée.",
-  "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh utilise ta position pour trouver des boards près de chez toi et repérer les séances d'escalade proches en Mode soirée.",
-  "NSPhotoLibraryUsageDescription": "Boardsesh utilise ta photothèque pour que tu puisses choisir une photo de profil."
+  "ios": {
+    "NSHealthUpdateUsageDescription": "Boardsesh enregistre tes séances d'escalade terminées dans Apple Health comme entraînements.",
+    "NSHealthShareUsageDescription": "Boardsesh lit ton poids pour estimer les calories et tes entraînements Boardsesh enregistrés pour éviter les doublons.",
+    "NSBluetoothAlwaysUsageDescription": "Boardsesh utilise le Bluetooth pour se connecter à ta Kilter Board, Tension Board ou MoonBoard et allumer les prises. Aucune donnée personnelle n'est envoyée par Bluetooth.",
+    "NSBluetoothPeripheralUsageDescription": "Boardsesh utilise le Bluetooth pour se connecter à ta board et piloter les prises LED.",
+    "NSLocationWhenInUseUsageDescription": "Boardsesh utilise ta position pour trouver des boards près de chez toi et repérer les séances d'escalade proches en Mode soirée.",
+    "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh utilise ta position pour trouver des boards près de chez toi et repérer les séances d'escalade proches en Mode soirée.",
+    "NSPhotoLibraryUsageDescription": "Boardsesh utilise ta photothèque pour que tu puisses choisir une photo de profil."
+  }
 }

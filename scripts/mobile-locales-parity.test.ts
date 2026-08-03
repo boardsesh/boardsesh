@@ -43,8 +43,25 @@ function localeFileNames(): string[] {
     .sort();
 }
 
+/**
+ * The iOS strings for a language. Keys at the TOP level of a locale file apply to
+ * every platform — Expo's Android Locales plugin writes them into
+ * res/values-b+<lang>/strings.xml — so InfoPlist keys have to sit under `ios` or
+ * they leak in as junk Android string resources.
+ */
 function readLocaleStrings(language: string): Record<string, string> {
-  return JSON.parse(readFileSync(resolve(LOCALES_DIR, `${language}.json`), 'utf8')) as Record<string, string>;
+  const file = JSON.parse(readFileSync(resolve(LOCALES_DIR, `${language}.json`), 'utf8')) as {
+    ios?: Record<string, string>;
+  };
+  return file.ios ?? {};
+}
+
+/** Anything outside the `ios` key, which would also be emitted for Android. */
+function nonIosKeys(language: string): string[] {
+  const file = JSON.parse(readFileSync(resolve(LOCALES_DIR, `${language}.json`), 'utf8')) as Record<string, unknown>;
+  return Object.keys(file)
+    .filter((key) => key !== 'ios')
+    .sort();
 }
 
 describe('mobile locale parity', () => {
@@ -80,6 +97,17 @@ describe('mobile locale parity', () => {
         language,
         keys: baseKeys,
       });
+    }
+  });
+
+  it('scopes every string to ios so none leak into Android resources', () => {
+    for (const language of localeFileNames()) {
+      // A key outside `ios` is emitted for BOTH platforms, so an InfoPlist key
+      // there becomes <string name="NSHealthUsageDescription"> in
+      // res/values-b+<lang>/strings.xml — junk Android resources that also make
+      // Android treat the language as a supported resource locale.
+      expect({ language, strayKeys: nonIosKeys(language) }).toEqual({ language, strayKeys: [] });
+      expect(Object.keys(readLocaleStrings(language)).length).toBeGreaterThan(0);
     }
   });
 

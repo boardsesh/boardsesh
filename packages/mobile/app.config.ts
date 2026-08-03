@@ -314,6 +314,11 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     // prompts follow the device language instead of always being English. The
     // `ios.infoPlist` values below stay as the base/en strings.
     //
+    // Every string in those files sits under an `ios` key — keys at the TOP level
+    // of a locale file are emitted for BOTH platforms, and Expo's Android Locales
+    // plugin turns them into res/values-b+<lang>/strings.xml, so InfoPlist keys
+    // would land as junk Android string resources.
+    //
     // This is also what makes the App Store product page list German, Spanish
     // and French under "Languages" — Apple reads the localizations shipped in
     // the binary, not the storefront listings, so a de-DE listing alone would
