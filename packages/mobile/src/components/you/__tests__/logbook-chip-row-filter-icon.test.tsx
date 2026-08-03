@@ -35,6 +35,7 @@ vi.mock('@expo/ui/swift-ui/modifiers', () => {
     menuActionDismissBehavior: make('menuActionDismissBehavior'),
     labelStyle: make('labelStyle'),
     accessibilityLabel: make('accessibilityLabel'),
+    fixedSize: make('fixedSize'),
   };
 });
 
