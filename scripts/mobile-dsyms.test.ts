@@ -250,12 +250,15 @@ describe('iOS TestFlight workflow wiring', () => {
     expect(workflow).toContain('voidzero-dev/setup-vp@v1');
   });
 
-  // A failure here must not skip the tag steps: without the fingerprint tag the
-  // next push to main rebuilds and re-uploads the same binary to TestFlight.
-  it('runs the upload after the fingerprint and build-number tags', () => {
-    expect(workflow.indexOf('- name: Upload iOS dSYMs to Sentry')).toBeGreaterThan(
-      workflow.indexOf('- name: Tag the uploaded iOS build number'),
-    );
+  // The step hard-fails, so it has to run while a failure is still recoverable:
+  // after the TestFlight export the binary has shipped, and after the
+  // fingerprint tag the next push skips the native build entirely — either way
+  // the dSYMs would never get a second chance without a manual rebuild.
+  it('runs the upload before the TestFlight export and the fingerprint tag', () => {
+    const uploadIndex = workflow.indexOf('- name: Upload iOS dSYMs to Sentry');
+    expect(uploadIndex).toBeGreaterThan(workflow.indexOf('- name: Archive'));
+    expect(uploadIndex).toBeLessThan(workflow.indexOf('- name: Export archive (uploads to TestFlight)'));
+    expect(uploadIndex).toBeLessThan(workflow.indexOf('- name: Tag the shipped iOS fingerprint'));
   });
 
   it('registers the vp task the workflow calls', () => {

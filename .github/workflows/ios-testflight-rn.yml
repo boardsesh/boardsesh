@@ -525,6 +525,28 @@ jobs:
             CURRENT_PROJECT_VERSION=${{ steps.build_number.outputs.value }} \
             DEVELOPMENT_TEAM=9L3HKPZBH3
 
+      # The @sentry/react-native "Upload Debug Symbols to Sentry" build phase runs
+      # INSIDE the app target's build, and the app's dSYM does not exist yet when
+      # it does: in run 30781376709 the phase uploaded at 03:32:14.54 and
+      # GenerateDSYMFile produced Boardsesh.app.dSYM at 03:32:16.95. So it found
+      # only the stripped executables and shipped those — symbol names, no DWARF,
+      # hence `(<unknown>)` for file and line on every native frame (#4202). The
+      # DWARF for statically linked pods (libRNScreens.a, where BOARDSESH-9K
+      # crashed) lives ONLY in the app's dSYM, so nothing that phase uploads can
+      # ever produce a line number. Don't move this back into the archive.
+      #
+      # Deliberately BEFORE the TestFlight export and the fingerprint tag: this
+      # step hard-fails, and after either of those a failure would be unfixable
+      # without a manual rebuild — the binary is already in TestFlight and the
+      # fingerprint tag makes the next push skip the native build, so the missing
+      # dSYMs never get a second chance. Here, a failure ships nothing and pushes
+      # no tag, so the next push simply builds and uploads again.
+      - name: Upload iOS dSYMs to Sentry
+        if: env.SENTRY_DISABLE_AUTO_UPLOAD == 'false'
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: vp run mobile:upload-dsyms -- --archive "$ARCHIVE_PATH"
+
       - name: Export archive (uploads to TestFlight)
         id: testflight_upload
         env:
@@ -637,26 +659,6 @@ jobs:
             echo "::error::Failed to push $tag."
             exit 1
           fi
-
-      # The @sentry/react-native "Upload Debug Symbols to Sentry" build phase runs
-      # INSIDE the app target's build, and the app's dSYM does not exist yet when
-      # it does: in run 30781376709 the phase uploaded at 03:32:14.54 and
-      # GenerateDSYMFile produced Boardsesh.app.dSYM at 03:32:16.95. So it found
-      # only the stripped executables and shipped those — symbol names, no DWARF,
-      # hence `(<unknown>)` for file and line on every native frame (#4202). The
-      # DWARF for statically linked pods (libRNScreens.a, where BOARDSESH-9K
-      # crashed) lives ONLY in the app's dSYM, so nothing that phase uploads can
-      # ever produce a line number. Don't move this back into the archive.
-      #
-      # Runs after the tag steps on purpose: this step hard-fails on a bad or
-      # missing upload, and a failure before the tags would leave the shipped
-      # fingerprint untagged, making the next push to main rebuild and re-upload
-      # the same binary to TestFlight.
-      - name: Upload iOS dSYMs to Sentry
-        if: steps.testflight_upload.outcome == 'success' && env.SENTRY_DISABLE_AUTO_UPLOAD == 'false'
-        env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-        run: vp run mobile:upload-dsyms -- --archive "$ARCHIVE_PATH"
 
       - name: Clean up keychain and credentials
         if: always()
