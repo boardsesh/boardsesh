@@ -212,8 +212,11 @@ export function uploadArchiveDsyms(
   if (uploadResult.error) {
     throw new Error(`Could not start sentry-cli: ${uploadResult.error.message}`);
   }
+  // Echo stderr on stderr (and first) so a failure is the thing you see in the
+  // CI log, not something buried under the upload listing.
+  if (uploadResult.stderr) console.error(uploadResult.stderr.trimEnd());
+  if (uploadResult.stdout) console.log(uploadResult.stdout.trimEnd());
   const output = `${uploadResult.stdout ?? ''}${uploadResult.stderr ?? ''}`;
-  if (output) console.log(output.trimEnd());
   if (uploadResult.status !== 0) {
     throw new Error(`sentry-cli debug-files upload failed with exit code ${uploadResult.status ?? 'unknown'}.`);
   }
@@ -226,18 +229,19 @@ export function uploadArchiveDsyms(
     );
   }
 
-  // Everything fed to sentry-cli here came out of `<archive>/dSYMs`, so anything
-  // it newly uploads should be a debug companion. Uploading something that isn't
-  // one is the #4202 signature (stripped executables reaching Sentry instead of
-  // DWARF) and worth shouting about. It's a warning rather than a failure on
-  // purpose: this step gates the TestFlight upload, and unlike the structural
-  // checks above, this one depends on sentry-cli's exact output wording — a
-  // cosmetic change upstream must not be able to block a release.
-  if (summary.uploaded > 0 && summary.debugCompanions === 0) {
+  // Everything fed to sentry-cli here came out of `<archive>/dSYMs`, so EVERY
+  // file it newly uploads should be a debug companion — a partial count is as
+  // much of a red flag as none at all. Uploading something that isn't one is the
+  // #4202 signature (stripped executables reaching Sentry instead of DWARF).
+  // It's a warning rather than a failure on purpose: this step gates the
+  // TestFlight upload, and unlike the structural checks above, this one depends
+  // on sentry-cli's exact output wording — a cosmetic change upstream must not
+  // be able to block a release.
+  if (summary.uploaded > summary.debugCompanions) {
     console.warn(
-      `::warning::sentry-cli uploaded ${summary.uploaded} file(s) from ${archiveDsyms.dsymsDir} but none were ` +
-        'reported as a debug companion. Native crashes may again arrive without file/line — check the output above ' +
-        'against #4202 before trusting the next crash report.',
+      `::warning::sentry-cli uploaded ${summary.uploaded} file(s) from ${archiveDsyms.dsymsDir} but only ` +
+        `${summary.debugCompanions} were reported as a debug companion. Native crashes may again arrive without ` +
+        'file/line — check the output above against #4202 before trusting the next crash report.',
     );
   }
 

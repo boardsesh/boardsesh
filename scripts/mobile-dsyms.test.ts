@@ -185,7 +185,34 @@ describe('uploadArchiveDsyms', () => {
     } finally {
       restoreWarn.mockRestore();
     }
-    expect(warnings.join('\n')).toContain('none were reported as a debug companion');
+    expect(warnings.join('\n')).toContain('only 0 were reported as a debug companion');
+  });
+
+  // A partial count is as much of a red flag as none at all.
+  it('warns when only some of the uploaded files were debug companions', () => {
+    const fixture = createArchiveFixture();
+    const warnings: string[] = [];
+    const restoreWarn = vi.spyOn(console, 'warn').mockImplementation((message: string) => void warnings.push(message));
+    try {
+      uploadArchiveDsyms(
+        { archivePath: fixture.archivePath, mobileDir: fixture.mobileDir, environment },
+        {
+          resolveSentryCli: () => '/fake/sentry-cli',
+          spawnSentryCli: () => ({
+            status: 0,
+            stdout: [
+              '> Found 4 debug information files',
+              '> Uploaded 2 missing debug information files',
+              '  UPLOADED d69bd35e-63ce-3442-8292-e49dc3f59ace (Boardsesh.app.dSYM; arm64 debug companion)',
+              '  UPLOADED 9eef0f2c-e2a3-3b64-ba15-7b31c56bcb50 (BoardseshBeta.appex/BoardseshBeta; arm64 executable)',
+            ].join('\n'),
+          }),
+        },
+      );
+    } finally {
+      restoreWarn.mockRestore();
+    }
+    expect(warnings.join('\n')).toContain('only 1 were reported as a debug companion');
   });
 
   // A re-run against an archive Sentry already has uploads nothing and lists no
