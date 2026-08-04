@@ -106,6 +106,17 @@ describe('archive dSYM validation', () => {
     expect(() => collectArchiveDsyms(fixture.archivePath)).toThrow('No dSYM bundles with a DWARF payload');
   });
 
+  // A link can't stand in for the debug information we're asserting on.
+  it('does not count a symlinked DWARF entry as a payload', () => {
+    const fixture = createArchiveFixture([]);
+    const dwarfDir = join(fixture.dsymsDir, 'Boardsesh.app.dSYM', 'Contents', 'Resources', 'DWARF');
+    mkdirSync(dwarfDir, { recursive: true });
+    const realPayload = join(dirname(fixture.archivePath), 'elsewhere-dwarf');
+    writeFileSync(realPayload, 'DWARF');
+    symlinkSync(realPayload, join(dwarfDir, 'Boardsesh'));
+    expect(() => collectArchiveDsyms(fixture.archivePath)).toThrow('No dSYM bundles with a DWARF payload');
+  });
+
   // The #4202 regression itself: the appexes' dSYMs existed early enough to be
   // uploaded, the app's did not — and only the app's carries the DWARF for
   // statically linked pods like libRNScreens.a.
@@ -177,11 +188,13 @@ describe('uploadArchiveDsyms', () => {
     expect(warnings.join('\n')).toContain('none were reported as a debug companion');
   });
 
-  it('does not warn when Sentry already had every dSYM', () => {
+  // A re-run against an archive Sentry already has uploads nothing and lists no
+  // companions — that's expected, and must not trip the warning above.
+  it('accepts a run where Sentry already had every dSYM, without warning', () => {
     const fixture = createArchiveFixture();
-    const restoreWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
-      uploadArchiveDsyms(
+      const result = uploadArchiveDsyms(
         { archivePath: fixture.archivePath, mobileDir: fixture.mobileDir, environment },
         {
           resolveSentryCli: () => '/fake/sentry-cli',
@@ -191,25 +204,11 @@ describe('uploadArchiveDsyms', () => {
           }),
         },
       );
-      expect(restoreWarn).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ found: 4, uploaded: 0, debugCompanions: 0 });
+      expect(warnSpy).not.toHaveBeenCalled();
     } finally {
-      restoreWarn.mockRestore();
+      warnSpy.mockRestore();
     }
-  });
-
-  it('accepts a run where Sentry already had every dSYM', () => {
-    const fixture = createArchiveFixture();
-    const result = uploadArchiveDsyms(
-      { archivePath: fixture.archivePath, mobileDir: fixture.mobileDir, environment },
-      {
-        resolveSentryCli: () => '/fake/sentry-cli',
-        spawnSentryCli: () => ({
-          status: 0,
-          stdout: '> Found 4 debug information files\n> Uploaded 0 missing debug information files\n',
-        }),
-      },
-    );
-    expect(result).toMatchObject({ found: 4, uploaded: 0, debugCompanions: 0 });
   });
 
   it('fails on a non-zero exit, an unstartable CLI, or an empty local scan', () => {

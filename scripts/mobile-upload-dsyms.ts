@@ -74,7 +74,7 @@ function assertRealDirectoryWithoutSymbolicLinks(candidatePath: string, label: s
     throw new Error(`${label} does not exist: ${candidatePath}`);
   }
   if (lstatSync(candidatePath).isSymbolicLink()) {
-    throw new Error(`Refusing symbolic-link ${label.toLocaleLowerCase('en-US')}: ${candidatePath}`);
+    throw new Error(`Refusing symbolic-link path for ${label}: ${candidatePath}`);
   }
   if (!statSync(candidatePath).isDirectory()) {
     throw new Error(`${label} is not a directory: ${candidatePath}`);
@@ -82,12 +82,16 @@ function assertRealDirectoryWithoutSymbolicLinks(candidatePath: string, label: s
   return realpathSync(candidatePath);
 }
 
-/** True when the bundle holds at least one non-empty `Contents/Resources/DWARF/*` payload. */
+/**
+ * True when the bundle holds at least one non-empty `Contents/Resources/DWARF/*`
+ * payload. Symlinked entries don't count — same posture as the directory checks
+ * above, so a link can't stand in for the debug information we're asserting on.
+ */
 function hasDwarfPayload(bundlePath: string): boolean {
   const dwarfDir = join(bundlePath, 'Contents', 'Resources', 'DWARF');
-  if (!existsSync(dwarfDir) || !statSync(dwarfDir).isDirectory()) return false;
+  if (!existsSync(dwarfDir) || lstatSync(dwarfDir).isSymbolicLink() || !statSync(dwarfDir).isDirectory()) return false;
   return readdirSync(dwarfDir).some((entryName) => {
-    const entryStats = statSync(join(dwarfDir, entryName));
+    const entryStats = lstatSync(join(dwarfDir, entryName));
     return entryStats.isFile() && entryStats.size > 0;
   });
 }
