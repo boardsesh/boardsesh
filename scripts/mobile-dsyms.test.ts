@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   collectArchiveDsyms,
   parseUploadDsymsArgs,
@@ -155,6 +155,48 @@ describe('uploadArchiveDsyms', () => {
     expect(result).toMatchObject({ found: 4, uploaded: 2, debugCompanions: 2 });
   });
 
+  // Uploading something that isn't a debug companion is the #4202 signature.
+  // Warned, not thrown: this step gates the TestFlight upload and the check
+  // depends on sentry-cli's output wording, which must not block a release.
+  it('warns when it uploaded files but none were debug companions', () => {
+    const fixture = createArchiveFixture();
+    const warnings: string[] = [];
+    const restoreWarn = vi.spyOn(console, 'warn').mockImplementation((message: string) => void warnings.push(message));
+    try {
+      const result = uploadArchiveDsyms(
+        { archivePath: fixture.archivePath, mobileDir: fixture.mobileDir, environment },
+        {
+          resolveSentryCli: () => '/fake/sentry-cli',
+          spawnSentryCli: () => ({ status: 0, stdout: EXECUTABLES_ONLY_OUTPUT }),
+        },
+      );
+      expect(result).toMatchObject({ uploaded: 3, debugCompanions: 0 });
+    } finally {
+      restoreWarn.mockRestore();
+    }
+    expect(warnings.join('\n')).toContain('none were reported as a debug companion');
+  });
+
+  it('does not warn when Sentry already had every dSYM', () => {
+    const fixture = createArchiveFixture();
+    const restoreWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      uploadArchiveDsyms(
+        { archivePath: fixture.archivePath, mobileDir: fixture.mobileDir, environment },
+        {
+          resolveSentryCli: () => '/fake/sentry-cli',
+          spawnSentryCli: () => ({
+            status: 0,
+            stdout: '> Found 4 debug information files\n> Uploaded 0 missing debug information files\n',
+          }),
+        },
+      );
+      expect(restoreWarn).not.toHaveBeenCalled();
+    } finally {
+      restoreWarn.mockRestore();
+    }
+  });
+
   it('accepts a run where Sentry already had every dSYM', () => {
     const fixture = createArchiveFixture();
     const result = uploadArchiveDsyms(
@@ -235,9 +277,11 @@ describe('argument parsing', () => {
     );
   });
 
-  it('rejects unknown and empty arguments', () => {
+  it('rejects unknown, empty, and value-less arguments', () => {
     expect(() => parseUploadDsymsArgs(['--platform', 'ios'])).toThrow('Unknown argument');
     expect(() => parseUploadDsymsArgs(['--archive', ''])).toThrow('--archive requires a path');
+    // Must not silently fall back to the default archive.
+    expect(() => parseUploadDsymsArgs(['--archive'])).toThrow('--archive requires a path');
   });
 });
 
