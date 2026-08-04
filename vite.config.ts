@@ -756,6 +756,10 @@ export default defineConfig({
         command: 'tsx scripts/mobile-upload-sourcemaps.ts',
         cache: false,
       },
+      'mobile:upload-dsyms': {
+        command: 'tsx scripts/mobile-upload-dsyms.ts',
+        cache: false,
+      },
       'mobile:ota-setup': {
         command: 'tsx scripts/mobile-ota-setup.ts',
         cache: false,

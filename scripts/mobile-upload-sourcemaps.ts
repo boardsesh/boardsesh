@@ -361,10 +361,11 @@ export function resolveInstalledSentryUploader(mobileDirInput: string): string {
   return existingPathWithin(packageRoot, uploaderPath, 'Official Sentry uploader');
 }
 
+/** Shared by the OTA source-map upload and the iOS dSYM upload (mobile-upload-dsyms.ts). */
 export function createSentryUploadEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const authToken = environment.SENTRY_AUTH_TOKEN?.trim();
   if (!authToken) {
-    throw new Error('SENTRY_AUTH_TOKEN is required to upload OTA source maps.');
+    throw new Error('SENTRY_AUTH_TOKEN is required to upload to Sentry.');
   }
   const uploaderEnvironment: NodeJS.ProcessEnv = {
     ...environment,

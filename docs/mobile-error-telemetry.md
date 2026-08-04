@@ -9,8 +9,9 @@ captures errors. Two reasons Sentry owns crashes:
   catches iOS/Android native faults — the board-renderer, live-activity, and BLE
   native modules, plus any Expo native module — persists them across the crash, and
   uploads on the next launch. That coverage gap is why Sentry is here.
-- **Symbolicated JS.** The CI build uploads source maps (+ dSYMs on iOS), so JS stack
-  traces resolve to real file/line instead of minified offsets.
+- **Symbolicated stacks.** The CI build uploads JS source maps and, on iOS, the
+  archive's dSYMs, so both JS and native frames resolve to real file/line instead of
+  minified offsets and bare symbol names.
 
 `src/lib/sentry.ts` calls `Sentry.init()` (gated `!!dsn && !__DEV__`, so local Metro
 dev never sends), owns the global `ErrorUtils` handler, and exposes `captureToSentry`
@@ -82,13 +83,33 @@ so events group in Sentry: `react-query`, `native-auth`, `queue-mutation`,
 
 ## Source maps / symbolication (CI)
 
-- **iOS** (`ios-testflight-rn.yml`): the `@sentry/react-native` Xcode build phases
-  upload JS source maps + dSYMs when `SENTRY_AUTH_TOKEN` is present
-  (`SENTRY_DISABLE_AUTO_UPLOAD` gates it; the build stays green without the token).
-- **Android** (`android-apk-rn.yml`): JS source-map upload is **disabled**
-  (`SENTRY_DISABLE_AUTO_UPLOAD=true`) — the Gradle upload task is incompatible with
-  the Gradle version Expo prebuild generates. Native crashes are still captured;
-  Android JS symbolication is a follow-up.
+Both are gated on `SENTRY_AUTH_TOKEN`; without it the builds stay green and upload
+nothing.
+
+- **iOS JS source maps** (`ios-testflight-rn.yml`): the `@sentry/react-native` Xcode
+  build phases upload them during `xcodebuild archive`
+  (`SENTRY_DISABLE_AUTO_UPLOAD=false`).
+- **iOS dSYMs** (`ios-testflight-rn.yml`, `Upload iOS dSYMs to Sentry`): a separate
+  step after the archive, running `vp run mobile:upload-dsyms` over
+  `<archive>/dSYMs`. It has to be separate: the Sentry build phase runs inside the
+  app target's build, ~2s before `GenerateDSYMFile` writes `Boardsesh.app.dSYM`, so
+  it only ever finds the stripped executables. Those carry a symbol table (function
+  names) but no DWARF, which is why every native frame read `(<unknown>)` for file
+  and line until #4202. The DWARF for statically linked pods — `libRNScreens.a` and
+  friends — exists _only_ inside the app's dSYM.
+  `scripts/mobile-upload-dsyms.ts` fails the job if that dSYM is missing from the
+  archive, so the regression can't come back quietly.
+- **Android JS source maps**: uploaded on the **OTA** path, not the Gradle one —
+  `mobile-ota-production.yml` runs `mobile:upload-sourcemaps` for Android on every
+  published update. The in-build Gradle task stays off
+  (`SENTRY_DISABLE_AUTO_UPLOAD=true` in `android-apk-rn.yml`) because it calls an API
+  the Gradle version Expo prebuild generates doesn't have. The gap that leaves is the
+  bundle baked into the APK, i.e. JS stacks from a device that hasn't taken its first
+  OTA yet.
+- **Android native symbols**: nothing to upload. The `.so` files come from prebuilt
+  React Native / Expo AARs that ship stripped, and we build no NDK code of our own, so
+  there is no Android equivalent of the iOS dSYM fix. Native Android crashes are still
+  captured, just not symbolicated.
 
 ## Verifying
 

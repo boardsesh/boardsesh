@@ -186,6 +186,13 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
+      # Needed by the post-archive `vp run mobile:upload-dsyms` step at the end
+      # of this job; the rest of the build shells out to bunx/xcodebuild directly.
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+
       - name: Install Node.js dependencies (workspace root)
         run: bun install --frozen-lockfile
 
@@ -483,18 +490,20 @@ jobs:
           </plist>
           PLIST
 
-      # The @sentry/react-native build phases upload JS source maps + native
-      # dSYMs during `xcodebuild archive`. Without a token the upload errors and
-      # fails the archive (sentry-xcode.sh exits non-zero), so gate it: only
-      # enable the upload when SENTRY_AUTH_TOKEN is present, otherwise skip it and
-      # keep the build green. SENTRY_DISABLE_AUTO_UPLOAD is read by both phases.
+      # The @sentry/react-native build phases upload the JS source maps during
+      # `xcodebuild archive`. Without a token the upload errors and fails the
+      # archive (sentry-xcode.sh exits non-zero), so gate it: only enable the
+      # upload when SENTRY_AUTH_TOKEN is present, otherwise skip it and keep the
+      # build green. SENTRY_DISABLE_AUTO_UPLOAD is read by both phases, and by
+      # the post-archive dSYM upload at the end of this job — the phases run too
+      # early to see the real dSYMs (see that step's comment / #4202).
       - name: Configure Sentry source map upload
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: |
           if [ -n "$SENTRY_AUTH_TOKEN" ]; then
             echo "SENTRY_DISABLE_AUTO_UPLOAD=false" >> "$GITHUB_ENV"
-            echo "Sentry auth token present — source maps + dSYMs will upload."
+            echo "Sentry auth token present — source maps upload during the archive, dSYMs after it."
           else
             echo "SENTRY_DISABLE_AUTO_UPLOAD=true" >> "$GITHUB_ENV"
             echo "::warning::SENTRY_AUTH_TOKEN not set — skipping Sentry source map upload."
@@ -628,6 +637,26 @@ jobs:
             echo "::error::Failed to push $tag."
             exit 1
           fi
+
+      # The @sentry/react-native "Upload Debug Symbols to Sentry" build phase runs
+      # INSIDE the app target's build, and the app's dSYM does not exist yet when
+      # it does: in run 30781376709 the phase uploaded at 03:32:14.54 and
+      # GenerateDSYMFile produced Boardsesh.app.dSYM at 03:32:16.95. So it found
+      # only the stripped executables and shipped those — symbol names, no DWARF,
+      # hence `(<unknown>)` for file and line on every native frame (#4202). The
+      # DWARF for statically linked pods (libRNScreens.a, where BOARDSESH-9K
+      # crashed) lives ONLY in the app's dSYM, so nothing that phase uploads can
+      # ever produce a line number. Don't move this back into the archive.
+      #
+      # Runs after the tag steps on purpose: this step hard-fails on a bad or
+      # missing upload, and a failure before the tags would leave the shipped
+      # fingerprint untagged, making the next push to main rebuild and re-upload
+      # the same binary to TestFlight.
+      - name: Upload iOS dSYMs to Sentry
+        if: steps.testflight_upload.outcome == 'success' && env.SENTRY_DISABLE_AUTO_UPLOAD == 'false'
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: vp run mobile:upload-dsyms -- --archive "$ARCHIVE_PATH"
 
       - name: Clean up keychain and credentials
         if: always()
