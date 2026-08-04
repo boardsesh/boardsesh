@@ -1,33 +1,32 @@
-// SegmentedControl — Android implementation, real Jetpack Compose via
-// @expo/ui/jetpack-compose.
+// SegmentedControl — Android implementation, react-native-paper `SegmentedButtons`
+// (the same component the web fallback uses; see SegmentedControl.web.tsx).
 //
-// A Material 3 `SingleChoiceSegmentedButtonRow` of `SegmentedButton`s inside its
-// own `Host`. Each button reports its selected state, fires the shared select
-// handler on tap, and disables per-segment via `enabled` (the one place Android
-// can do what iOS's segmented Picker can't). Brand selected-fill colour comes
-// from `segmentedBrandColors`; the rest of the surface/label colours come from
-// the Compose Material theme the Host sets up.
+// This control used to be a native Jetpack Compose `SingleChoiceSegmentedButtonRow`
+// via @expo/ui, but taps on it (and on every other @expo/ui `SegmentedButton` in the
+// app, e.g. Climb Bias) silently did nothing on real Android devices — confirmed via
+// a live OTA preview build, not just an emulator. The failure lives in @expo/ui's
+// Jetpack Compose `SingleChoiceSegmentedButtonRow`/`SegmentedButton` pairing
+// specifically: `Button.android.tsx` uses the same `<Host>`-wrapped @expo/ui Compose
+// pattern for a plain button and works fine, so this isn't the broader
+// Host/RNGH-touch-dispatch problem a previous fix here assumed (that fix shipped and
+// still didn't resolve it). Falling back to Paper sidesteps whatever is wrong with
+// that specific Compose row/button combo entirely — Paper is still a live dependency
+// for other native Android controls (Button.android.tsx's own doc comment; see the
+// paper-removal endgame in #3273), so this isn't introducing a new pattern.
 //
-// One Host per control is intentional for now (SegmentedControl is used
-// one-per-card). A later pass consolidates whole settings screens under one Host.
+// `tint` (the logbook's amber) recolours the selected segment via a scoped Paper
+// theme override — `secondaryContainer` is the fill, `onSecondaryContainer` the
+// on-fill label/check, derived to stay readable on the given fill. The default
+// (purple) needs no override — it's already the brand `secondaryContainer` from
+// buildPaperTheme (mirrors SegmentedControl.web.tsx's reasoning exactly).
 //
-// `accessibilityLabel` (the group name, e.g. "Appearance") is deliberately NOT
-// forwarded here. Material's `SingleChoiceSegmentedButtonRow` already exposes the
-// row as a single-choice group and each `SegmentedButton.Label` is announced with
-// its selected state, and every call site renders a visible `SectionHeader` above
-// the control that names the group. Compose (via @expo/ui) exposes no
-// `contentDescription`/group-label modifier, and wrapping the native Host in an
-// RN `accessible` View would collapse the segments into one node — breaking
-// per-segment selection. So the group label is carried by the heading, not the
-// control. (iOS applies it via the Picker's `accessibilityLabel` modifier, which
-// labels the group without hiding segments — hence the small, intentional
-// cross-platform asymmetry.)
+// `accessibilityLabel` (the group name, e.g. "Warm-up") IS forwarded here — unlike
+// the retired Compose version, Paper's `SegmentedButtons` exposes no group-label
+// semantics of its own, so it's carried by a wrapping `radiogroup` View (mirrors the
+// pre-@expo/ui Material implementation this restores).
 
-import { Host } from '@expo/ui';
-import { SingleChoiceSegmentedButtonRow, SegmentedButton, Text } from '@expo/ui/jetpack-compose';
-import { StyleSheet } from 'react-native';
-import { useTheme } from '../providers/theme-provider';
-import { segmentedBrandColors } from '../theme/expo-ui-modifiers';
+import { View } from 'react-native';
+import { SegmentedButtons } from 'react-native-paper';
 import { readableTextColor } from './grade/grade-chip-colors';
 import { makeSelectHandler } from './SegmentedControl.logic';
 import type { SegmentedControlProps } from './SegmentedControl.types';
@@ -38,54 +37,28 @@ export function SegmentedControl<K extends string = string>({
   onSelect,
   disabledKeys,
   tint,
+  accessibilityLabel,
 }: SegmentedControlProps<K>) {
-  const { brandColors } = useTheme();
   const handleSelect = makeSelectHandler(onSelect, disabledKeys);
-  // Default to the brand selected-fill (purple, with white on-fill text). When a
-  // custom tint is passed (the logbook's amber), the active label must derive its
-  // contrast from that fill — white-on-amber fails AA, so use a readable colour.
-  const colors = tint
-    ? { activeContainerColor: tint, activeContentColor: readableTextColor(tint) }
-    : segmentedBrandColors(brandColors);
 
   return (
-    // `matchContents={{ vertical: true }}` (NOT the boolean `matchContents`, which
-    // sizes to content in BOTH axes): the Host must fill the parent's width so the
-    // segmented row spans the card, while height still tracks content.
-    <Host matchContents={{ vertical: true }} style={styles.host}>
-      <SingleChoiceSegmentedButtonRow>
-        {options.map((option) => (
-          <SegmentedButton
-            key={option.key}
-            selected={option.key === selectedKey}
-            onClick={() => handleSelect(option.key)}
-            enabled={!disabledKeys?.has(option.key)}
-            colors={colors}
-          >
-            {/* The label slot is a native composable SLOT, so its child must be a
-                Compose view (a `Text`), not a raw string — a bare string doesn't
-                render and isn't exposed to the a11y tree. Mirrors @expo/ui's own
-                community SegmentedControl.android. */}
-            <SegmentedButton.Label>
-              <Text>{option.label}</Text>
-            </SegmentedButton.Label>
-          </SegmentedButton>
-        ))}
-      </SingleChoiceSegmentedButtonRow>
-    </Host>
+    <View accessibilityRole="radiogroup" accessibilityLabel={accessibilityLabel}>
+      <SegmentedButtons
+        value={selectedKey}
+        onValueChange={(next) => handleSelect(next as K)}
+        // A scoped colour override so the selected segment fills with `tint` and its
+        // label/check stay readable on that fill. Omitted (undefined) for the default
+        // purple — already the brand `secondaryContainer` from buildPaperTheme.
+        theme={
+          tint ? { colors: { secondaryContainer: tint, onSecondaryContainer: readableTextColor(tint) } } : undefined
+        }
+        buttons={options.map((option) => ({
+          value: option.key,
+          label: option.label,
+          accessibilityLabel: option.label,
+          disabled: disabledKeys?.has(option.key),
+        }))}
+      />
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  host: {
-    width: '100%',
-    // RN Android installs a background drawable even for a transparent colour, which
-    // makes the Host itself an RNGH hit-test target (shouldHandlerlessViewBecomeTouchTarget):
-    // without any background, RNGH's Android orchestrator ignores z-order and sees straight
-    // through handler-less, background-less native subtrees, so a tap meant for the Compose
-    // SegmentedButton can be claimed by an ancestor RNGH handler instead (the Warm-up and
-    // Climb Bias controls both went unresponsive on Android before this). Zero visual effect.
-    // Same fix as FilterChipRow.android.tsx's Host (commit abf7122a9).
-    backgroundColor: 'transparent',
-  },
-});
