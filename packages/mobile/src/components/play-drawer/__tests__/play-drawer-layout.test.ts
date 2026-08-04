@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { computeContainedBoardSize, computeFirstScreenHeight, computeLogbookScrollTarget } from '../play-drawer-layout';
+import {
+  CAROUSEL_LAYER_Z,
+  computeContainedBoardSize,
+  computeFirstScreenHeight,
+  computeLogbookScrollTarget,
+} from '../play-drawer-layout';
 
 describe('computeContainedBoardSize', () => {
   it('height-bounds a tall board on a wide box (horizontal letterbox)', () => {
@@ -79,5 +84,25 @@ describe('computeLogbookScrollTarget', () => {
 
   it('never returns a negative offset when the section already fits below the fold', () => {
     expect(computeLogbookScrollTarget({ ...base, firstScreenHeight: 100, sectionHeight: 40, viewport: 800 })).toBe(0);
+  });
+});
+
+describe('CAROUSEL_LAYER_Z', () => {
+  // These are hit-test ranks, not decoration. The pan-while-zoomed overlay is a
+  // SIBLING of the board, so burying it under the board means a drag that starts on
+  // the board never reaches the pan — that's #4191, where zooming a climb in the
+  // player left you unable to move around it (the create board, which has no zIndex
+  // at all, kept working). Raising boardWrapper for the card-stack paint order is
+  // what buried it, so keep the whole order asserted here.
+  it('puts the zoom-pan overlay above the board so a drag on the board can pan it', () => {
+    expect(CAROUSEL_LAYER_Z.zoomPan).toBeGreaterThan(CAROUSEL_LAYER_Z.board);
+  });
+
+  it('keeps the board above the incoming peek card', () => {
+    expect(CAROUSEL_LAYER_Z.board).toBeGreaterThan(CAROUSEL_LAYER_Z.peek);
+  });
+
+  it('keeps the reset-zoom button tappable above the pan overlay', () => {
+    expect(CAROUSEL_LAYER_Z.resetZoom).toBeGreaterThan(CAROUSEL_LAYER_Z.zoomPan);
   });
 });

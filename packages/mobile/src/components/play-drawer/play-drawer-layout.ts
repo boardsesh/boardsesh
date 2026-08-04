@@ -56,3 +56,20 @@ export function computeLogbookScrollTarget(params: {
   const headerToTop = sectionTopY - topInset - margin;
   return Math.max(0, Math.min(bottomIntoView, headerToTop));
 }
+
+/**
+ * Paint / hit-test order for the swipe carousel's sibling layers. RN sorts siblings by
+ * zIndex and hit-tests in reverse paint order, so these numbers decide which layer gets
+ * the touch, not just what you see.
+ *
+ * The board is raised above the incoming peek card, which means the pan-while-zoomed
+ * overlay — a SIBLING of the board, not an ancestor — has to be raised above the board
+ * too. Bury it and it never receives a touch that starts on the board, which is exactly
+ * how panning a zoomed climb died in the player (#4191).
+ */
+export const CAROUSEL_LAYER_Z = {
+  peek: 0,
+  board: 1,
+  zoomPan: 2,
+  resetZoom: 10,
+} as const;
