@@ -76,7 +76,10 @@ jobs:
     # macos-26 is GA on GitHub-hosted runners and matches the RN TestFlight
     # workflow's Xcode line; the PR workflow has passed on this label.
     runs-on: macos-26
-    timeout-minutes: 60
+    # 90, not 60: this job now compiles the app scheme (every Pod) on top of the
+    # Swift test target, and there's no DerivedData cache — only the Pods sources
+    # are cached. Native-input PRs only; the gate skips JS-only ones entirely.
+    timeout-minutes: 90
 
     env:
       WORKSPACE_PATH: packages/mobile/ios/Boardsesh.xcworkspace
@@ -135,6 +138,59 @@ jobs:
       - name: Install CocoaPods dependencies
         working-directory: packages/mobile/ios
         run: pod install
+
+      # The BoardseshTests scheme below is a STANDALONE Swift target built from
+      # copied sources — it never links the app and never compiles a single Pod.
+      # So until this step existed, a workflow whose path filter and native gate
+      # both key on `patches/**` compiled exactly zero lines of the native module
+      # code those patches change: a run over an unreviewed Objective-C++ patch
+      # went green with no `CompileC` anywhere in its log (caught on #4198).
+      #
+      # Building the app scheme is what actually compiles the Pods — RNScreens,
+      # Reanimated, the BLE stack, our own modules under packages/mobile/modules.
+      # Runs before the test target is grafted on, so it builds the project exactly
+      # as `expo prebuild` produced it. Signing is off: this is a compile gate, not
+      # something we install (contrast scripts/mobile-build-sim-app.ts, which
+      # ad-hoc signs because that app has to actually run).
+      - name: Build the app (compiles Pods + patched native modules)
+        run: |
+          set -o pipefail
+          build() {
+            xcodebuild build \
+              -workspace "$WORKSPACE_PATH" \
+              -scheme Boardsesh \
+              -configuration Debug \
+              -destination 'generic/platform=iOS Simulator' \
+              ARCHS=arm64 \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO \
+              2>&1 | tee "$1"
+          }
+          # New Architecture codegen ("Generate Specs") races the compile on a cold
+          # build — "Build input file cannot be found: .../ReactCodegen/*-generated.mm".
+          # Every run of this job is that scenario: a fresh runner with empty
+          # DerivedData. scripts/mobile-build-sim-app.ts retries once for exactly
+          # this reason; a real compile error still fails the retry.
+          build build.log || { echo "::warning::retrying after probable codegen race"; build build.log; }
+
+      # A green build is not proof the patch compiled. Expo's precompiled modules
+      # are ON by default (the generated Podfile sets EXPO_USE_PRECOMPILED_MODULES
+      # ||= 1) and swap a pod's source for a prebuilt xcframework the moment a
+      # tarball resolves. RNScreens has no prebuild today — hence the log line
+      # "prebuilt xcframework unavailable; building from source" — but if that ever
+      # changes, this gate goes green having compiled none of the patch, and the
+      # TestFlight build links the prebuilt too, shipping without it. So assert on
+      # a file the patch actually touches. `buildFromSource` in
+      # packages/mobile/package.json is the belt to this braces.
+      - name: Assert the patched native module really compiled
+        run: |
+          if ! grep -q 'RNSScrollViewFinder' build.log; then
+            echo "::error::No RNScreens source compiled — the patch was not exercised." \
+                 "Check whether a prebuilt xcframework replaced the pod."
+            exit 1
+          fi
+          echo "RNScreens compiled from source — patch exercised."
 
       - name: Add RN Swift test target
         run: node scripts/prepare-rn-ios-tests.mjs

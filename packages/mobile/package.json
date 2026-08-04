@@ -118,6 +118,13 @@
     "vitest": "^4.1.10"
   },
   "expo": {
+    "autolinking": {
+      "buildFromSource": [
+        "react-native-screens",
+        "@expo/ui",
+        "expo-dev-launcher"
+      ]
+    },
     "install": {
       "exclude": [
         "@react-native-async-storage/async-storage",

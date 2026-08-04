@@ -150,7 +150,7 @@ index 2434c61..fb36bbf 100644
 +
  @end
 diff --git a/ios/tabs/host/RNSTabsHostComponentView.mm b/ios/tabs/host/RNSTabsHostComponentView.mm
-index 8b61f5b..0b8028e 100644
+index 8b61f5b..3dc76cc 100644
 --- a/ios/tabs/host/RNSTabsHostComponentView.mm
 +++ b/ios/tabs/host/RNSTabsHostComponentView.mm
 @@ -53,6 +53,8 @@ namespace react = facebook::react;
@@ -162,7 +162,19 @@ index 8b61f5b..0b8028e 100644
  #endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
  }
  
-@@ -411,12 +413,108 @@ namespace react = facebook::react;
+@@ -88,6 +90,11 @@ namespace react = facebook::react;
+ 
+ #if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
+   _bottomAccessoryWrapperView = nil;
++  // rnscreens_bottomAccessoryDynamicAttachFix
++  // Redundant today (ivars are zero-initialized and `shouldBeRecycled` is NO), but
++  // this flag suppresses every later relayout while it's set, so if recycling is
++  // ever turned on a stale YES would silently break the accessory forever.
++  _rnscreens_bottomAccessoryRelayoutScheduled = NO;
+ #endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
+ }
+ 
+@@ -411,12 +418,116 @@ namespace react = facebook::react;
    if (_bottomAccessoryWrapperView != nil && !_bottomAccessoryHidden) {
      [_controller setBottomAccessory:[[UITabAccessory alloc] initWithContentView:_bottomAccessoryWrapperView]
                             animated:YES];
@@ -253,12 +265,20 @@ index 8b61f5b..0b8028e 100644
 +  id<UIViewControllerTransitionCoordinator> transitionCoordinator = _controller.transitionCoordinator;
 +  if (transitionCoordinator != nil) {
 +    __weak __typeof__(self) weakSelf = self;
-+    [transitionCoordinator
++    BOOL registered = [transitionCoordinator
 +        animateAlongsideTransition:nil
 +                        completion:^(__unused id<UIViewControllerTransitionCoordinatorContext> context) {
 +                          [weakSelf rnscreens_layoutBottomAccessoryOutsideTransition];
 +                        }];
-+    return;
++    if (registered) {
++      return;
++    }
++    // The coordinator refused the block (it stops accepting registrations once
++    // the transition is far enough along), so nothing will call us back. Falling
++    // through is not just the safe option, it's the necessary one: returning here
++    // would leave the coalescing flag armed with no pending pass, permanently
++    // suppressing every later attach nudge for this host. The transition is
++    // effectively over at this point, which is exactly when laying out is fine.
 +  }
 +#if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
 +  _rnscreens_bottomAccessoryRelayoutScheduled = NO;
