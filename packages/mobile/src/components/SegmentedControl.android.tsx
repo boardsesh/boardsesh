@@ -25,7 +25,7 @@
 // semantics of its own, so it's carried by a wrapping `radiogroup` View (mirrors the
 // pre-@expo/ui Material implementation this restores).
 
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { SegmentedButtons } from 'react-native-paper';
 import { readableTextColor } from './grade/grade-chip-colors';
 import { makeSelectHandler } from './SegmentedControl.logic';
@@ -41,24 +41,34 @@ export function SegmentedControl<K extends string = string>({
 }: SegmentedControlProps<K>) {
   const handleSelect = makeSelectHandler(onSelect, disabledKeys);
 
+  const control = (
+    <SegmentedButtons
+      value={selectedKey}
+      onValueChange={(next) => handleSelect(next as K)}
+      style={styles.row}
+      // A scoped colour override so the selected segment fills with `tint` and its
+      // label/check stay readable on that fill. Omitted (undefined) for the default
+      // purple — already the brand `secondaryContainer` from buildPaperTheme.
+      theme={tint ? { colors: { secondaryContainer: tint, onSecondaryContainer: readableTextColor(tint) } } : undefined}
+      buttons={options.map((option) => ({
+        value: option.key,
+        label: option.label,
+        accessibilityLabel: option.label,
+        disabled: disabledKeys?.has(option.key),
+      }))}
+    />
+  );
+
+  if (!accessibilityLabel) return control;
   return (
     <View accessibilityRole="radiogroup" accessibilityLabel={accessibilityLabel}>
-      <SegmentedButtons
-        value={selectedKey}
-        onValueChange={(next) => handleSelect(next as K)}
-        // A scoped colour override so the selected segment fills with `tint` and its
-        // label/check stay readable on that fill. Omitted (undefined) for the default
-        // purple — already the brand `secondaryContainer` from buildPaperTheme.
-        theme={
-          tint ? { colors: { secondaryContainer: tint, onSecondaryContainer: readableTextColor(tint) } } : undefined
-        }
-        buttons={options.map((option) => ({
-          value: option.key,
-          label: option.label,
-          accessibilityLabel: option.label,
-          disabled: disabledKeys?.has(option.key),
-        }))}
-      />
+      {control}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  row: {
+    width: '100%',
+  },
+});
