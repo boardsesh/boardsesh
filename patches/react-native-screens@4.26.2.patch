@@ -150,15 +150,30 @@ index 2434c61..fb36bbf 100644
 +
  @end
 diff --git a/ios/tabs/host/RNSTabsHostComponentView.mm b/ios/tabs/host/RNSTabsHostComponentView.mm
-index 8b61f5b..b3c7aeb 100644
+index 8b61f5b..e080e67 100644
 --- a/ios/tabs/host/RNSTabsHostComponentView.mm
 +++ b/ios/tabs/host/RNSTabsHostComponentView.mm
-@@ -414,9 +414,50 @@ namespace react = facebook::react;
+@@ -53,6 +53,8 @@ namespace react = facebook::react;
+ 
+ #if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
+   UIView *_Nullable _bottomAccessoryWrapperView;
++  // rnscreens_bottomAccessoryDynamicAttachFix
++  BOOL _rnscreens_bottomAccessoryRelayoutScheduled;
+ #endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
+ }
+ 
+@@ -411,12 +413,103 @@ namespace react = facebook::react;
+   if (_bottomAccessoryWrapperView != nil && !_bottomAccessoryHidden) {
+     [_controller setBottomAccessory:[[UITabAccessory alloc] initWithContentView:_bottomAccessoryWrapperView]
+                            animated:YES];
++    // rnscreens_bottomAccessoryDynamicAttachFix
++    // ATTACH ONLY. Detaching (`setBottomAccessory:nil`) is what happens on every
++    // route push that leaves an accessory surface, and it never needed a forced
++    // relayout — UIKit removes the accessory itself. Nudging there was pure risk.
++    [self rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance];
    } else {
      [_controller setBottomAccessory:nil animated:YES];
    }
-+  // rnscreens_bottomAccessoryDynamicAttachFix
-+  [self rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance];
  }
  #endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
  
@@ -171,34 +186,81 @@ index 8b61f5b..b3c7aeb 100644
 +// current climb exists, so the very first climb set (while the user is already
 +// on a tab) attaches an accessory that never renders until something else
 +// (a tab-item badge, a tab change) re-lays-out the bar. Force the layout pass
-+// ourselves whenever we touch the accessory after the host is on screen. A
-+// deferred re-assert covers the accessory content being sized asynchronously by
-+// the shadow-state proxy (the first synchronous pass can lay in a zero-size
-+// accessory before its frame KVO lands).
++// ourselves whenever we ATTACH the accessory after the host is on screen.
 +//
 +// Anchored on `applyBottomAccessoryVisibility` (4.26.0 extracted it out of
-+// `updateContainer`), so it now also covers the `bottomAccessoryHidden` prop
-+// path — the 4.25.2 patch only covered the mount/unmount path.
++// `updateContainer`), so it also covers the `bottomAccessoryHidden` prop path —
++// the 4.25.2 patch only covered the mount/unmount path.
++//
++// NEVER LAY OUT SYNCHRONOUSLY HERE, and never during a transition.
++//
++// `applyBottomAccessoryVisibility` runs from `updateContainer`, i.e. inside a
++// React Native mounting transaction. The original version of this method called
++// `-layoutIfNeeded` right there, and that synchronous layout got pulled into a
++// UIKit layout/animation feedback loop between a presenting/dismissing
++// UISheetPresentationController and the tab bar's minimize machinery: our
++// layout → `-[UITabBar layoutSubviews]` → `_minimizeBehavior` → a sheet
++// alongside-animation property set → `_sheetLayoutInfoLayout` → tab bar again.
++// On iOS 27 that trips an AnimationKit assertion; underneath it is a stack
++// overflow. Six users, 27 crashes, one of them looping 13 times in a session
++// (Sentry BOARDSESH-9K).
++//
++// So: hop out of the mounting transaction with a single coalesced
++// `dispatch_async`, and if a transition is running when it fires, hand the work
++// to the coordinator's completion block instead of laying out underneath it. The
++// deferred hop also still covers the original async-sizing case (the accessory
++// content is sized by the shadow-state proxy, so an immediate pass could lay in
++// a zero-size accessory before its frame KVO lands).
 +- (void)rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance
 +{
++#if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
 +  if (self.window == nil) {
 +    // Initial mount (accessory present from the start) lays in for free — only
 +    // the post-appearance attach needs the nudge.
 +    return;
 +  }
-+  UIView *controllerView = _controller.view;
-+  [controllerView setNeedsLayout];
-+  [controllerView layoutIfNeeded];
++  if (_rnscreens_bottomAccessoryRelayoutScheduled) {
++    // `applyBottomAccessoryVisibility` can fire several times per transaction
++    // (mount/unmount plus the `bottomAccessoryHidden` prop path). One pending
++    // pass is enough, and it also stops any re-entry from queueing more work.
++    return;
++  }
++  _rnscreens_bottomAccessoryRelayoutScheduled = YES;
++
 +  __weak __typeof__(self) weakSelf = self;
 +  dispatch_async(dispatch_get_main_queue(), ^{
 +    __typeof__(self) strongSelf = weakSelf;
 +    if (strongSelf == nil) {
 +      return;
 +    }
-+    UIView *deferredControllerView = strongSelf->_controller.view;
-+    [deferredControllerView setNeedsLayout];
-+    [deferredControllerView layoutIfNeeded];
++    strongSelf->_rnscreens_bottomAccessoryRelayoutScheduled = NO;
++    [strongSelf rnscreens_layoutBottomAccessoryOutsideTransition];
 +  });
++#endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
++}
++
++// rnscreens_bottomAccessoryDynamicAttachFix
++// Forcing layout while a presentation/dismissal is in flight is the dangerous
++// case (see above), so defer to the coordinator: its completion block runs once
++// the transition has finished and UIKit is no longer animating alongside.
++- (void)rnscreens_layoutBottomAccessoryOutsideTransition
++{
++  id<UIViewControllerTransitionCoordinator> transitionCoordinator = _controller.transitionCoordinator;
++  if (transitionCoordinator != nil) {
++    __weak __typeof__(self) weakSelf = self;
++    [transitionCoordinator
++        animateAlongsideTransition:nil
++                        completion:^(__unused id<UIViewControllerTransitionCoordinatorContext> context) {
++                          // Bounded: a coordinator completion fires once, and by
++                          // then the transition is over, so this cannot re-defer
++                          // forever.
++                          [weakSelf rnscreens_layoutBottomAccessoryOutsideTransition];
++                        }];
++    return;
++  }
++  UIView *controllerView = _controller.view;
++  [controllerView setNeedsLayout];
++  [controllerView layoutIfNeeded];
 +}
 +
  - (void)setLayoutDirection:(UITraitEnvironmentLayoutDirection)layoutDirection
