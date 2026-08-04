@@ -43,6 +43,14 @@ export function resolveExpoWebDevOrigin(rawOrigin) {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // Dev-only: let the HMR + RSC-debug WebSockets complete when the page is
+  // opened via the machine's Tailscale hostname. Next dev only allows
+  // localhost origins by default and hangs the WS handshake for anything else;
+  // because the RSC debug channel rides the same transport, a blocked origin
+  // stops hydration entirely (SSR renders, zero client-side execution).
+  // scripts/dev-with-tailscale.ts sets DEV_ALLOWED_ORIGINS to the resolved
+  // Tailscale hostname; empty outside that flow (localhost stays allowed).
+  allowedDevOrigins: process.env.DEV_ALLOWED_ORIGINS ? process.env.DEV_ALLOWED_ORIGINS.split(',') : [],
   typescript: {
     // ignoreBuildErrors: true,
   },

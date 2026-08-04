@@ -69,6 +69,11 @@ function main(): void {
   // the actual page origin in Tailscale / auto-incremented-port mode.
   overrideEnv('NEXTAUTH_URL', webOrigin);
   overrideEnv('BASE_URL', webOrigin);
+  // Next dev blocks non-localhost request origins by default, which hangs the
+  // HMR / RSC-debug WebSocket handshake and silently prevents hydration when
+  // the page is opened via the Tailscale hostname. next.config.mjs reads this
+  // into allowedDevOrigins.
+  overrideEnv('DEV_ALLOWED_ORIGINS', resolution.hostname);
 
   console.info(`[dev] Hostname: ${resolution.hostname} (${resolution.source})`);
   if (resolution.reason) {
