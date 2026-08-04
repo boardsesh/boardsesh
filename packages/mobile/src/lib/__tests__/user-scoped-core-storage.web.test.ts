@@ -83,6 +83,24 @@ describe('browser login-scoped core persistence', () => {
     await expect(getStoredQueueSnapshot()).resolves.toBeNull();
   });
 
+  it('round-trips the created-session id and scopes it per login (regression: web build lacked these exports)', async () => {
+    const { setCurrentUserStorageOwner } = await import('../user-storage-owner.web');
+    const { getStoredCreatedSessionId, setStoredCreatedSessionId, clearStoredCreatedSessionId } =
+      await import('../session-store.web');
+
+    setCurrentUserStorageOwner(userALogin);
+    await expect(getStoredCreatedSessionId()).resolves.toBeNull();
+    await setStoredCreatedSessionId('session-a');
+    await expect(getStoredCreatedSessionId()).resolves.toBe('session-a');
+
+    setCurrentUserStorageOwner(userBLogin);
+    await expect(getStoredCreatedSessionId()).resolves.toBeNull();
+
+    setCurrentUserStorageOwner(userALogin);
+    await clearStoredCreatedSessionId();
+    await expect(getStoredCreatedSessionId()).resolves.toBeNull();
+  });
+
   it('ignores legacy unowned values instead of assigning them to the next login', async () => {
     storageState.secure.set('boardsesh_active_session_id', 'legacy-session');
     storageState.preferences.set('boardsesh_active_board_v2', JSON.stringify(boardA));

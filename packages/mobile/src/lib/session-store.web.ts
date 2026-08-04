@@ -26,3 +26,34 @@ export function clearStoredSessionId(owner?: UserStorageOwner | null): Promise<v
   if (!storageKey) return Promise.resolve();
   return SecureStore.deleteItemAsync(storageKey);
 }
+
+/**
+ * Id of the session THIS DEVICE started (as opposed to joined) — web
+ * counterpart of session-store.ts's getStoredCreatedSessionId/set/clear. See
+ * that file for the full rationale (device provenance, why losing it is
+ * harmless). Scoped per signed-in user like the active-session keys above,
+ * via the current owner set by setCurrentUserStorageOwner.
+ */
+const CREATED_SESSION_ID_KEY = 'boardsesh_created_session_id';
+
+export async function getStoredCreatedSessionId(): Promise<string | null> {
+  const storageKey = userScopedStorageKey(CREATED_SESSION_ID_KEY);
+  if (!storageKey) return null;
+  try {
+    return await SecureStore.getItemAsync(storageKey);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredCreatedSessionId(sessionId: string): Promise<void> {
+  const storageKey = userScopedStorageKey(CREATED_SESSION_ID_KEY);
+  if (!storageKey) return Promise.resolve();
+  return SecureStore.setItemAsync(storageKey, sessionId, SECURE_STORE_WRITE_OPTIONS);
+}
+
+export function clearStoredCreatedSessionId(): Promise<void> {
+  const storageKey = userScopedStorageKey(CREATED_SESSION_ID_KEY);
+  if (!storageKey) return Promise.resolve();
+  return SecureStore.deleteItemAsync(storageKey);
+}
