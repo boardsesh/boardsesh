@@ -79,5 +79,13 @@ export function SegmentedControl<K extends string = string>({
 const styles = StyleSheet.create({
   host: {
     width: '100%',
+    // RN Android installs a background drawable even for a transparent colour, which
+    // makes the Host itself an RNGH hit-test target (shouldHandlerlessViewBecomeTouchTarget):
+    // without any background, RNGH's Android orchestrator ignores z-order and sees straight
+    // through handler-less, background-less native subtrees, so a tap meant for the Compose
+    // SegmentedButton can be claimed by an ancestor RNGH handler instead (the Warm-up and
+    // Climb Bias controls both went unresponsive on Android before this). Zero visual effect.
+    // Same fix as FilterChipRow.android.tsx's Host (commit abf7122a9).
+    backgroundColor: 'transparent',
   },
 });
