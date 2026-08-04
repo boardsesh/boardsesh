@@ -33,8 +33,9 @@ type UseZoomPanGestureOptions = {
   panActivationOffset?: number;
   /** RNGH ref to the surrounding scroll. Declares the pinch simultaneous with it
    * so a 2-finger zoom isn't cancelled by the scroll (the plain RN ScrollView the
-   * play route briefly used wasn't in RNGH's tree). Typed as RNGH's GestureRef
-   * shape so the method call needs no cast. */
+   * play route briefly used wasn't in RNGH's tree), and makes that scroll wait on
+   * the zoomed-only pan so a downward drag pans the board instead of scrolling the
+   * drawer. Typed as RNGH's GestureRef shape so the method call needs no cast. */
   scrollRef?: RefObject<ComponentType | undefined | null>;
   /** When set, the pinch gesture is tagged with this ref so the interactive
    * boards' per-hold tap/long-press detectors can mark themselves
@@ -242,8 +243,9 @@ export function useZoomPanGesture({
       });
     }
     // Declare the pinch simultaneous with the surrounding RNGH ScrollView so a
-    // 2-finger zoom isn't cancelled by the scroll. (The zoom-pan overlay lives on
-    // a separate, zoomed-only GestureDetector and needs no scroll relation.)
+    // 2-finger zoom isn't cancelled by the scroll. (The zoom-pan overlay lives on a
+    // separate, zoomed-only GestureDetector and takes the opposite relation — it
+    // BLOCKS the scroll; see zoomPanGesture below.)
     if (scrollRef) pinch.simultaneousWithExternalGesture(scrollRef);
     return pinch;
   }, [
@@ -302,6 +304,11 @@ export function useZoomPanGesture({
         .activeOffsetX([-panActivationOffset, panActivationOffset])
         .activeOffsetY([-panActivationOffset, panActivationOffset]);
     }
+    // Make the surrounding scroll wait for this pan to fail. The detector only mounts
+    // while zoomed, so claiming the drag there is exactly what we want: the board pans
+    // instead of the play drawer scrolling out from under a downward drag. Idle
+    // scrolling is untouched (no overlay, no relation).
+    if (scrollRef) pan.blocksExternalGesture(scrollRef);
     return pan;
   }, [
     scale,
@@ -312,6 +319,7 @@ export function useZoomPanGesture({
     containerWidthSV,
     containerHeightSV,
     panActivationOffset,
+    scrollRef,
   ]);
 
   const animatedZoomStyle = useAnimatedStyle(() => ({

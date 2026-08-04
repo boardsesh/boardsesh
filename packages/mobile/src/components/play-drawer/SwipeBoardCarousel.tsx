@@ -26,7 +26,7 @@ import { BoardImageNative } from '../BoardImageNative';
 import { Icon } from '../Icon';
 import { useCarouselGesture } from './use-carousel-gesture';
 import { useZoomPanGesture } from './use-zoom-pan-gesture';
-import { computeContainedBoardSize } from './play-drawer-layout';
+import { computeContainedBoardSize, CAROUSEL_LAYER_Z } from './play-drawer-layout';
 import { timing } from '../../theme/animations';
 import { overlays } from '../../theme/tokens';
 
@@ -376,8 +376,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     // Above the stacked (next) card so the current climb is the top card. Explicit
     // because the stacked card is absolutely positioned and renders after this in
-    // source order — zIndex governs paint order on both iOS and Android.
-    zIndex: 1,
+    // source order — zIndex governs paint order on both iOS and Android. The
+    // zoom-pan overlay sits above this again; see CAROUSEL_LAYER_Z.
+    zIndex: CAROUSEL_LAYER_Z.board,
   },
   peekWrapper: {
     position: 'absolute',
@@ -387,7 +388,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 0,
+    zIndex: CAROUSEL_LAYER_Z.peek,
   },
   zoomPanOverlay: {
     position: 'absolute',
@@ -395,12 +396,15 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    // Must out-rank boardWrapper: this overlay is the board's SIBLING, so a drag that
+    // starts on the board only reaches its pan when the overlay hit-tests first (#4191).
+    zIndex: CAROUSEL_LAYER_Z.zoomPan,
   },
   resetZoomWrapper: {
     position: 'absolute',
     top: 12,
     right: 12,
-    zIndex: 10,
+    zIndex: CAROUSEL_LAYER_Z.resetZoom,
   },
   resetZoomButton: {
     flexDirection: 'row',
