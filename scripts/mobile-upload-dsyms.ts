@@ -30,10 +30,20 @@ const DEFAULT_MOBILE_DIR = resolve(REPO_ROOT, 'packages', 'mobile');
 /** Matches ARCHIVE_PATH in .github/workflows/ios-testflight-rn.yml. */
 const DEFAULT_ARCHIVE_PATH = resolve(DEFAULT_MOBILE_DIR, 'ios', 'build', 'Boardsesh.xcarchive');
 
+/**
+ * Bound the upload. This step gates the TestFlight export, so a sentry-cli that
+ * hangs on a network stall would otherwise hold the release until the job's own
+ * 60-minute timeout. Ten minutes is far longer than the ~1.4s the real upload
+ * takes (run 30781376709) while still leaving room for a slow-but-alive run.
+ */
+const UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
+/** Node's 1 MB default would kill a healthy upload whose listing grew past it. */
+const UPLOAD_MAX_BUFFER_BYTES = 32 * 1024 * 1024;
+
 type SpawnSentryCli = (
   executable: string,
   args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; encoding: 'utf8' },
+  options: { cwd: string; env: NodeJS.ProcessEnv; encoding: 'utf8'; timeout: number; maxBuffer: number },
 ) => { status: number | null; stdout?: string; stderr?: string; error?: Error };
 
 export interface UploadDsymsOptions {
@@ -208,9 +218,16 @@ export function uploadArchiveDsyms(
     cwd: mobileDir,
     env: uploadEnvironment,
     encoding: 'utf8',
+    timeout: UPLOAD_TIMEOUT_MS,
+    maxBuffer: UPLOAD_MAX_BUFFER_BYTES,
   });
   if (uploadResult.error) {
-    throw new Error(`Could not start sentry-cli: ${uploadResult.error.message}`);
+    const { code } = uploadResult.error as NodeJS.ErrnoException;
+    throw new Error(
+      code === 'ETIMEDOUT'
+        ? `sentry-cli did not finish within ${UPLOAD_TIMEOUT_MS / 60_000} minutes and was killed: ${uploadResult.error.message}`
+        : `Could not run sentry-cli: ${uploadResult.error.message}`,
+    );
   }
   // Echo stderr on stderr (and first) so a failure is the thing you see in the
   // CI log, not something buried under the upload listing.

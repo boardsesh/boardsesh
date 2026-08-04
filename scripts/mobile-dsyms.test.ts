@@ -142,14 +142,14 @@ describe('uploadArchiveDsyms', () => {
 
   it('invokes sentry-cli against the archive dSYMs with the boardsesh Sentry env', () => {
     const fixture = createArchiveFixture(['Boardsesh.app.dSYM', 'BoardseshBeta.appex.dSYM']);
-    const invocations: { executable: string; args: string[]; env: NodeJS.ProcessEnv }[] = [];
+    const invocations: { executable: string; args: string[]; options: Record<string, unknown> }[] = [];
 
     const result = uploadArchiveDsyms(
       { archivePath: fixture.archivePath, mobileDir: fixture.mobileDir, environment },
       {
         resolveSentryCli: () => '/fake/sentry-cli',
         spawnSentryCli: (executable, args, options) => {
-          invocations.push({ executable, args, env: options.env });
+          invocations.push({ executable, args, options });
           return { status: 0, stdout: DEBUG_COMPANIONS_OUTPUT };
         },
       },
@@ -158,11 +158,15 @@ describe('uploadArchiveDsyms', () => {
     expect(invocations).toHaveLength(1);
     expect(invocations[0].executable).toBe('/fake/sentry-cli');
     expect(invocations[0].args).toEqual(['debug-files', 'upload', fixture.dsymsDir]);
-    expect(invocations[0].env).toMatchObject({
+    expect(invocations[0].options.env).toMatchObject({
       SENTRY_AUTH_TOKEN: 'test-token',
       SENTRY_ORG: 'boardsesh',
       SENTRY_PROJECT: 'boardsesh',
     });
+    // Bounded: this step gates the TestFlight export, so it must not hang, and
+    // Node's 1 MB default maxBuffer must not kill a healthy upload.
+    expect(invocations[0].options.timeout).toBe(600_000);
+    expect(invocations[0].options.maxBuffer).toBeGreaterThanOrEqual(32 * 1024 * 1024);
     expect(result).toMatchObject({ found: 4, uploaded: 2, debugCompanions: 2 });
   });
 
@@ -255,7 +259,18 @@ describe('uploadArchiveDsyms', () => {
         ...dependencies,
         spawnSentryCli: () => ({ status: null, error: new Error('ENOENT') }),
       }),
-    ).toThrow('Could not start sentry-cli');
+    ).toThrow('Could not run sentry-cli');
+
+    // A hung upload would otherwise hold the TestFlight export until the job's
+    // own timeout, so the kill must be reported as what it is.
+    const timeoutError: NodeJS.ErrnoException = new Error('spawnSync ETIMEDOUT');
+    timeoutError.code = 'ETIMEDOUT';
+    expect(() =>
+      uploadArchiveDsyms(options, {
+        ...dependencies,
+        spawnSentryCli: () => ({ status: null, error: timeoutError }),
+      }),
+    ).toThrow('did not finish within 10 minutes');
 
     expect(() =>
       uploadArchiveDsyms(options, {
