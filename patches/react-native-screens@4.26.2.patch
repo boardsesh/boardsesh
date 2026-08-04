@@ -150,7 +150,7 @@ index 2434c61..fb36bbf 100644
 +
  @end
 diff --git a/ios/tabs/host/RNSTabsHostComponentView.mm b/ios/tabs/host/RNSTabsHostComponentView.mm
-index 8b61f5b..e080e67 100644
+index 8b61f5b..0b8028e 100644
 --- a/ios/tabs/host/RNSTabsHostComponentView.mm
 +++ b/ios/tabs/host/RNSTabsHostComponentView.mm
 @@ -53,6 +53,8 @@ namespace react = facebook::react;
@@ -162,7 +162,7 @@ index 8b61f5b..e080e67 100644
  #endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
  }
  
-@@ -411,12 +413,103 @@ namespace react = facebook::react;
+@@ -411,12 +413,108 @@ namespace react = facebook::react;
    if (_bottomAccessoryWrapperView != nil && !_bottomAccessoryHidden) {
      [_controller setBottomAccessory:[[UITabAccessory alloc] initWithContentView:_bottomAccessoryWrapperView]
                             animated:YES];
@@ -223,26 +223,31 @@ index 8b61f5b..e080e67 100644
 +    // `applyBottomAccessoryVisibility` can fire several times per transaction
 +    // (mount/unmount plus the `bottomAccessoryHidden` prop path). One pending
 +    // pass is enough, and it also stops any re-entry from queueing more work.
++    // Stays armed until the layout actually RUNS, not just until the hop fires,
++    // so a re-entry during a pending coordinator wait can't start a second chain.
 +    return;
 +  }
 +  _rnscreens_bottomAccessoryRelayoutScheduled = YES;
 +
 +  __weak __typeof__(self) weakSelf = self;
 +  dispatch_async(dispatch_get_main_queue(), ^{
-+    __typeof__(self) strongSelf = weakSelf;
-+    if (strongSelf == nil) {
-+      return;
-+    }
-+    strongSelf->_rnscreens_bottomAccessoryRelayoutScheduled = NO;
-+    [strongSelf rnscreens_layoutBottomAccessoryOutsideTransition];
++    [weakSelf rnscreens_layoutBottomAccessoryOutsideTransition];
 +  });
 +#endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
 +}
 +
 +// rnscreens_bottomAccessoryDynamicAttachFix
 +// Forcing layout while a presentation/dismissal is in flight is the dangerous
-+// case (see above), so defer to the coordinator: its completion block runs once
-+// the transition has finished and UIKit is no longer animating alongside.
++// case (see above), so defer to the coordinator's completion block instead.
++//
++// Under continuous navigation a completion can fire straight into the NEXT
++// transition, so this chain is not bounded by a fixed number of hops — it drains
++// when navigation settles. That is the intended behaviour, not a compromise:
++// there is no safe moment to force tab-bar layout mid-transition, and while
++// transitions are running UIKit is laying the bar out anyway. The cost of being
++// wrong is a late-appearing accessory; the cost of laying out anyway is
++// BOARDSESH-9K. Clearing the coalescing flag only in the terminal branch keeps
++// the whole chain to a single in-flight pass.
 +- (void)rnscreens_layoutBottomAccessoryOutsideTransition
 +{
 +  id<UIViewControllerTransitionCoordinator> transitionCoordinator = _controller.transitionCoordinator;
@@ -251,13 +256,13 @@ index 8b61f5b..e080e67 100644
 +    [transitionCoordinator
 +        animateAlongsideTransition:nil
 +                        completion:^(__unused id<UIViewControllerTransitionCoordinatorContext> context) {
-+                          // Bounded: a coordinator completion fires once, and by
-+                          // then the transition is over, so this cannot re-defer
-+                          // forever.
 +                          [weakSelf rnscreens_layoutBottomAccessoryOutsideTransition];
 +                        }];
 +    return;
 +  }
++#if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
++  _rnscreens_bottomAccessoryRelayoutScheduled = NO;
++#endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
 +  UIView *controllerView = _controller.view;
 +  [controllerView setNeedsLayout];
 +  [controllerView layoutIfNeeded];
