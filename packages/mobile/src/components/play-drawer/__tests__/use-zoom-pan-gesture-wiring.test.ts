@@ -61,9 +61,11 @@ type Options = Parameters<typeof useZoomPanGesture>[0];
 const scrollRef = { current: null } as unknown as NonNullable<Options['scrollRef']>;
 
 function builderOfKind(kind: string): RecordedBuilder {
-  const found = recordedBuilders.find((builder) => builder.kind === kind);
-  if (!found) throw new Error(`no Gesture.${kind}() composed`);
-  return found;
+  const found = recordedBuilders.filter((builder) => builder.kind === kind);
+  // Insist on exactly one so a future test that re-renders (recomposing the gesture)
+  // can't quietly assert against the discarded first build and read as green.
+  if (found.length !== 1) throw new Error(`expected 1 Gesture.${kind}(), composed ${found.length}`);
+  return found[0] as RecordedBuilder;
 }
 
 function methodsOf(kind: string): string[] {
