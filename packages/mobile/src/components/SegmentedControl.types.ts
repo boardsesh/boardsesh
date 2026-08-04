@@ -1,11 +1,12 @@
 // Shared props for the platform-split SegmentedControl. The implementation is
 // split across SegmentedControl.ios.tsx (native @expo/ui SwiftUI segmented
-// Picker) and SegmentedControl.android.tsx (native @expo/ui Jetpack Compose
-// SingleChoiceSegmentedButtonRow). The split keeps each platform's @expo/ui
-// native tree — which resolves native views at module load — off the other
-// platform's bundle. The public API is identical to the previous
-// react-native-paper / Liquid-Glass implementation, so every call site is
-// unchanged.
+// Picker) and SegmentedControl.android.tsx (react-native-paper `SegmentedButtons`
+// — @expo/ui's Jetpack Compose SingleChoiceSegmentedButtonRow/SegmentedButton
+// pairing silently didn't respond to taps on real Android devices; see
+// SegmentedControl.android.tsx for the full story). The split keeps iOS's @expo/ui
+// native tree — which resolves native views at module load — off Android's bundle.
+// The public API is identical to the previous react-native-paper / Liquid-Glass
+// implementation, so every call site is unchanged.
 
 import type { ColorValue } from 'react-native';
 

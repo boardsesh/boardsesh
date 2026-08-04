@@ -1,15 +1,17 @@
 // SegmentedControl — web implementation (react-native-web + react-native-paper). A
-// Material 3 Paper `SegmentedButtons` row — the counterpart to the Compose
-// `SingleChoiceSegmentedButtonRow` in SegmentedControl.android.tsx. The selection
-// haptic + per-key disabled guard live in SegmentedControl.logic.ts, shared with
-// both native files.
+// Material 3 Paper `SegmentedButtons` row — the same component
+// SegmentedControl.android.tsx now uses too (@expo/ui's Jetpack Compose
+// SingleChoiceSegmentedButtonRow/SegmentedButton pairing didn't respond to taps on
+// real Android devices). The selection haptic + per-key disabled guard live in
+// SegmentedControl.logic.ts, shared with both native files.
 //
 // `tint` (the logbook's amber) recolours the selected segment via a scoped Paper
 // theme override — `secondaryContainer` is the fill, `onSecondaryContainer` the
 // on-fill label/check, derived to stay readable on the given fill. The default
 // (purple) needs no override — it's already the brand `secondaryContainer` from
-// buildPaperTheme. The `accessibilityLabel` group name is intentionally not applied
-// (mirrors Android: the visible section heading names the group).
+// buildPaperTheme. The `accessibilityLabel` group name, when given, wraps the
+// control in a `role="radiogroup"` div rather than being passed to Paper directly
+// (Paper's `SegmentedButtons` exposes no group-label prop of its own).
 
 import { createElement } from 'react';
 import { StyleSheet } from 'react-native';
