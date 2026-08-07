@@ -4,7 +4,7 @@
 // pickers + save row.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Pressable, StyleSheet, type TextStyle } from 'react-native';
-import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
+import { BottomSheetScrollView, BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import {
@@ -357,108 +357,135 @@ export const QuickTickBar = React.memo(function QuickTickBar({
     // The save row sits at the very bottom of LogAscentSheet, so the bottom
     // padding must clear the Android system nav bar / home indicator.
     <View style={[styles.container, { paddingBottom: insets.bottom + spacing[3] }]}>
-      <View style={styles.row}>
-        <Text variant="footnote" color={iosSystemColors.systemGray} style={styles.rowLabel}>
-          {t('playView.tickBar.gradeLabel')}
-        </Text>
-        <View style={styles.rowPicker}>
-          {grades && (
-            <GradeSingleSelectRail
-              grades={grades}
-              selectedDifficultyId={tickState.difficulty}
-              consensusDifficultyId={consensusDifficultyId}
-              onSelect={handleGradeSelect}
-              style={styles.gradeRailContent}
+      {/* Rows are ordered least-used at the top, most-used at the bottom, so the
+          controls people actually reach for sit in the thumb zone. Interaction
+          rates over 90 days of mobile ticks: tries 28%, stars 24%, grade 6.5%,
+          note 1.4%, date/time under 1%. Note stays directly above the save row
+          on purpose — it's rarely used, but a text field there is far less
+          fat-finger-prone than a picker would be (#4163).
+
+          Scrolls because the fixed content is ~450pt and the sheet's 60% snap
+          gives ~400pt on a small phone, which used to clip the save buttons with
+          no way to reach them. The error row and save row stay pinned below. */}
+      <BottomSheetScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        // The note field lives inside this scroll view; without this the first
+        // tap on Attempt/Send while the keyboard is up dismisses the keyboard
+        // instead of firing the button.
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Date and time on one row — two short, related values that don't each
+            need a row of their own, separated by an `@`. Both fields commit
+            through the same `handleClimbedAtChange`, so touching either one pins
+            the timestamp instead of logging a fresh save-time now. */}
+        <View style={styles.row}>
+          <Text variant="footnote" color={iosSystemColors.systemGray} style={styles.rowLabel}>
+            {t('playView.tickBar.dateLabel')}
+          </Text>
+          <View style={styles.dateTimeRow}>
+            {/* `flexShrink` rather than `flex: 1`: iOS renders a compact
+                DateTimePicker that sizes to its own content and clips (rather
+                than wrapping) when squeezed, so an even split would cut the date
+                off on a 320pt-wide screen. */}
+            <View style={styles.dateTimeField}>
+              <ClimbedAtField
+                value={climbedAt}
+                mode="date"
+                maximumDate={maximumClimbedAtDate}
+                onChange={handleClimbedAtChange}
+                onFutureAdjusted={handleFutureAdjusted}
+                accessibilityLabel={t('playView.tickBar.dateLabel')}
+              />
+            </View>
+            <Text variant="footnote" color={iosSystemColors.systemGray}>
+              @
+            </Text>
+            <View style={styles.dateTimeField}>
+              <ClimbedAtField
+                value={climbedAt}
+                mode="time"
+                maximumDate={maximumClimbedAtDate}
+                onChange={handleClimbedAtChange}
+                onFutureAdjusted={handleFutureAdjusted}
+                accessibilityLabel={t('playView.tickBar.timeLabel')}
+              />
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.row}>
+          <Text variant="footnote" color={iosSystemColors.systemGray} style={styles.rowLabel}>
+            {t('playView.tickBar.gradeLabel')}
+          </Text>
+          <View style={styles.rowPicker}>
+            {grades && (
+              <GradeSingleSelectRail
+                grades={grades}
+                selectedDifficultyId={tickState.difficulty}
+                consensusDifficultyId={consensusDifficultyId}
+                onSelect={handleGradeSelect}
+                style={styles.gradeRailContent}
+              />
+            )}
+          </View>
+        </View>
+
+        <View style={styles.row}>
+          <Text variant="footnote" color={iosSystemColors.systemGray} style={styles.rowLabel}>
+            {t('playView.tickBar.starsLabel')}
+          </Text>
+          <View style={styles.rowPicker}>
+            <InlineStarPicker quality={tickState.quality} onSelect={handleQualitySelect} />
+          </View>
+        </View>
+
+        <View style={styles.row}>
+          <Text variant="footnote" color={iosSystemColors.systemGray} style={styles.rowLabel}>
+            {t('playView.tickBar.triesLabel')}
+          </Text>
+          <View style={styles.rowPicker}>
+            <InlineTriesPicker
+              attemptCount={tickState.attemptCount}
+              minAttempts={MIN_ATTEMPT_COUNT}
+              onSelect={handleTriesSelect}
             />
-          )}
+          </View>
         </View>
-      </View>
 
-      <View style={styles.row}>
-        <Text variant="footnote" color={iosSystemColors.systemGray} style={styles.rowLabel}>
-          {t('playView.tickBar.triesLabel')}
-        </Text>
-        <View style={styles.rowPicker}>
-          <InlineTriesPicker
-            attemptCount={tickState.attemptCount}
-            minAttempts={MIN_ATTEMPT_COUNT}
-            onSelect={handleTriesSelect}
+        {/* Compact note row — same label grid as the picker rows above, with
+            a borderless input that auto-grows when focused. Lower visual
+            weight than the previous tall bordered textarea. */}
+        <View style={styles.row}>
+          <Text variant="footnote" color={iosSystemColors.systemGray} style={styles.rowLabel}>
+            {t('playView.tickBar.noteLabel')}
+          </Text>
+          {/* `BottomSheetTextInput` (vs the bare `TextInput`) is what makes
+              the host sheet auto-expand to its larger snap point when the
+              keyboard appears — otherwise the keyboard covers the comment
+              row and the save buttons. */}
+          <BottomSheetTextInput
+            value={comment}
+            onChangeText={setComment}
+            placeholder={t('playView.tickBar.commentPlaceholder')}
+            placeholderTextColor={systemColors.tertiaryLabel}
+            accessibilityLabel={t('playView.tickBar.commentAria')}
+            multiline
+            style={
+              {
+                flex: 1,
+                fontSize: 14,
+                lineHeight: 19,
+                color: systemColors.label,
+                minHeight: 36,
+                paddingVertical: spacing[1],
+                textAlignVertical: 'top',
+              } satisfies TextStyle
+            }
           />
         </View>
-      </View>
-
-      <View style={styles.row}>
-        <Text variant="footnote" color={iosSystemColors.systemGray} style={styles.rowLabel}>
-          {t('playView.tickBar.starsLabel')}
-        </Text>
-        <View style={styles.rowPicker}>
-          <InlineStarPicker quality={tickState.quality} onSelect={handleQualitySelect} />
-        </View>
-      </View>
-
-      <View style={styles.row}>
-        <Text variant="footnote" color={iosSystemColors.systemGray} style={styles.rowLabel}>
-          {t('playView.tickBar.dateLabel')}
-        </Text>
-        <View style={styles.rowPicker}>
-          <ClimbedAtField
-            value={climbedAt}
-            mode="date"
-            maximumDate={maximumClimbedAtDate}
-            onChange={handleClimbedAtChange}
-            onFutureAdjusted={handleFutureAdjusted}
-            accessibilityLabel={t('playView.tickBar.dateLabel')}
-          />
-        </View>
-      </View>
-
-      <View style={styles.row}>
-        <Text variant="footnote" color={iosSystemColors.systemGray} style={styles.rowLabel}>
-          {t('playView.tickBar.timeLabel')}
-        </Text>
-        <View style={styles.rowPicker}>
-          <ClimbedAtField
-            value={climbedAt}
-            mode="time"
-            maximumDate={maximumClimbedAtDate}
-            onChange={handleClimbedAtChange}
-            onFutureAdjusted={handleFutureAdjusted}
-            accessibilityLabel={t('playView.tickBar.timeLabel')}
-          />
-        </View>
-      </View>
-
-      {/* Compact note row — same label grid as the picker rows above, with
-          a borderless input that auto-grows when focused. Lower visual
-          weight than the previous tall bordered textarea. */}
-      <View style={styles.row}>
-        <Text variant="footnote" color={iosSystemColors.systemGray} style={styles.rowLabel}>
-          {t('playView.tickBar.noteLabel')}
-        </Text>
-        {/* `BottomSheetTextInput` (vs the bare `TextInput`) is what makes
-            the host sheet auto-expand to its larger snap point when the
-            keyboard appears — otherwise the keyboard covers the comment
-            row and the save buttons. */}
-        <BottomSheetTextInput
-          value={comment}
-          onChangeText={setComment}
-          placeholder={t('playView.tickBar.commentPlaceholder')}
-          placeholderTextColor={systemColors.tertiaryLabel}
-          accessibilityLabel={t('playView.tickBar.commentAria')}
-          multiline
-          style={
-            {
-              flex: 1,
-              fontSize: 14,
-              lineHeight: 19,
-              color: systemColors.label,
-              minHeight: 36,
-              paddingVertical: spacing[1],
-              textAlignVertical: 'top',
-            } satisfies TextStyle
-          }
-        />
-      </View>
+      </BottomSheetScrollView>
 
       {lastError ? (
         <View style={styles.errorRow}>
@@ -510,7 +537,28 @@ export const QuickTickBar = React.memo(function QuickTickBar({
 
 const styles = StyleSheet.create({
   container: {
+    // Fills LogAscentSheet's content view so the scroll view below can take the
+    // leftover height and the save row stays pinned to the bottom.
+    flex: 1,
     paddingTop: spacing[1],
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: spacing[2],
+  },
+  dateTimeRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+  dateTimeField: {
+    flexShrink: 1,
+    // Without this the web variant's `width: 100%` input refuses to shrink and
+    // pushes the time field off the row.
+    minWidth: 0,
   },
   row: {
     flexDirection: 'row',

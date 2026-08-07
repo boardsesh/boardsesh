@@ -47,7 +47,10 @@ vi.mock('react-native', () => ({
   }) => createElement('button', { 'data-label': accessibilityLabel, onClick: onPress, disabled }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
-vi.mock('@expo/ui/community/bottom-sheet', () => ({ BottomSheetTextInput: () => null }));
+vi.mock('@expo/ui/community/bottom-sheet', () => ({
+  BottomSheetTextInput: () => null,
+  BottomSheetScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+}));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
@@ -335,6 +338,28 @@ describe('QuickTickBar climbedAt', () => {
     });
   });
 
+  it('threads a picked time into saveTick — the time field commits like the date one', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2025-06-01T08:00:00.000Z'));
+    boardState.current = null;
+    const { getByTestId, container } = renderBar();
+
+    // Date and time render on one row but are separate fields. Touching only
+    // the time must still pin the timestamp, otherwise the save falls back to a
+    // fresh save-time now and silently discards the pick.
+    fireEvent.click(getByTestId('climbedat-time'));
+
+    const sendButton = Array.from(container.querySelectorAll('button')).find(
+      (node) => node.textContent === 'playView.tickBar.sendSaveLabel',
+    );
+    fireEvent.click(sendButton as Element);
+
+    expect(saveMock.mutate).toHaveBeenCalledTimes(1);
+    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({
+      climbedAt: '2025-03-15T12:00:00.000Z',
+    });
+  });
+
   it('logs a fresh save-time now when the date is left untouched', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2025-03-15T12:00:00.000Z'));
@@ -355,6 +380,42 @@ describe('QuickTickBar climbedAt', () => {
     expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({
       climbedAt: '2025-03-15T12:10:00.000Z',
     });
+  });
+});
+
+describe('QuickTickBar row order', () => {
+  // Rows run least-used at the top to most-used at the bottom so the controls
+  // people actually reach for land in the thumb zone (#4163). The ordering is
+  // driven by measured interaction rates — tries 28%, stars 24%, grade 6.5%,
+  // note 1.4%, date/time under 1% — so pin it down here rather than let a
+  // future edit quietly shuffle it back.
+  it('runs date, grade, stars, tries, note from top to bottom', () => {
+    boardState.current = null;
+    const { container } = renderBar();
+
+    const rowLabels = ['dateLabel', 'gradeLabel', 'starsLabel', 'triesLabel', 'noteLabel'].map(
+      (key) => `playView.tickBar.${key}`,
+    );
+    const rendered = Array.from(container.querySelectorAll('span'))
+      .map((node) => node.textContent ?? '')
+      .filter((text) => rowLabels.includes(text));
+
+    expect(rendered).toEqual(rowLabels);
+  });
+
+  it('puts date and time on a single row, separated by an @', () => {
+    boardState.current = null;
+    const { container, getByTestId } = renderBar();
+
+    // The time field no longer gets a label row of its own — an `@` between the
+    // two pickers carries the relationship instead.
+    const labels = Array.from(container.querySelectorAll('span')).map((node) => node.textContent ?? '');
+    expect(labels).not.toContain('playView.tickBar.timeLabel');
+    expect(labels).toContain('@');
+
+    // Both pickers are still rendered and reachable.
+    expect(getByTestId('climbedat-date')).toBeTruthy();
+    expect(getByTestId('climbedat-time')).toBeTruthy();
   });
 });
 
