@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { once } from 'node:events';
-import { access, mkdir, rm } from 'node:fs/promises';
+import { access, mkdir, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 
 const validateTokenMock = vi.hoisted(() => vi.fn());
@@ -126,6 +126,35 @@ describe('avatar upload routes', () => {
 
       // The stale .jpg from the first upload must be cleaned up.
       await expect(access(path.join(getAvatarsDir(), `${USER_ID}.jpg`))).rejects.toThrow();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('concurrent cross-extension uploads leave exactly one avatar (never zero)', async () => {
+    validateTokenMock.mockResolvedValue({ userId: USER_ID });
+    const { baseUrl, server } = await startAvatarServer();
+    try {
+      // Unserialized, each request writes its own file and then deletes the
+      // other's fresh one — both 200 with zero files left on disk.
+      const [jpegResponse, pngResponse] = await Promise.all([
+        uploadAvatar(baseUrl, new Blob([JPEG_BYTES], { type: 'image/jpeg' }), 'avatar.jpg'),
+        uploadAvatar(baseUrl, new Blob([PNG_BYTES], { type: 'image/png' }), 'avatar.png'),
+      ]);
+      expect(jpegResponse.status).toBe(200);
+      expect(pngResponse.status).toBe(200);
+
+      const survivors = (await readdir(getAvatarsDir())).filter((fileName) => fileName.startsWith(USER_ID));
+      expect(survivors).toHaveLength(1);
+
+      // The surviving file must be one of the two that were just uploaded and
+      // must actually serve.
+      const survivorExt = path.extname(survivors[0]).slice(1);
+      expect(['jpg', 'png']).toContain(survivorExt);
+      const survivorBody = survivorExt === 'jpg' ? await jpegResponse.json() : await pngResponse.json();
+      const { avatarUrl } = survivorBody as { avatarUrl: string };
+      const staticResponse = await fetch(`${baseUrl}${avatarUrl}`);
+      expect(staticResponse.status).toBe(200);
     } finally {
       await closeServer(server);
     }
