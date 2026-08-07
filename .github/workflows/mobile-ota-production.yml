@@ -542,8 +542,6 @@ jobs:
           IOS_OUTCOME: ${{ steps.publish_ios.outcome }}
           ANDROID_OUTCOME: ${{ steps.publish_android.outcome }}
           HEALTH_OUTCOME: ${{ steps.health.outcome }}
-          IOS_PUBLISH_OUTCOME: ${{ steps.publish_ios.outcome }}
-          ANDROID_PUBLISH_OUTCOME: ${{ steps.publish_android.outcome }}
           IOS_MAP_OUTCOME: ${{ steps.upload_sourcemaps_ios.outcome }}
           ANDROID_MAP_OUTCOME: ${{ steps.upload_sourcemaps_android.outcome }}
           CHANGELOG_CHANGED: ${{ steps.generate.outputs.changed }}
@@ -554,6 +552,10 @@ jobs:
           all_success=${ALL_SUCCESS:-false}
           any_success=${ANY_SUCCESS:-false}
           changelog_changed=${CHANGELOG_CHANGED:-false}
+          ios_outcome=${IOS_OUTCOME:-skipped}
+          android_outcome=${ANDROID_OUTCOME:-skipped}
+          ios_map_outcome=${IOS_MAP_OUTCOME:-skipped}
+          android_map_outcome=${ANDROID_MAP_OUTCOME:-skipped}
 
           # A skipped push is successful only when generation found nothing to
           # commit. Changed output must positively reach main before the parent
@@ -583,12 +585,12 @@ jobs:
           # that degraded state as a fact so the caller's single release
           # notification can name it instead of a bare workflow failure.
           sourcemaps_status=not-run
-          if [ "$IOS_PUBLISH_OUTCOME" = success ] || [ "$ANDROID_PUBLISH_OUTCOME" = success ]; then
+          if [ "$ios_outcome" = success ] || [ "$android_outcome" = success ]; then
             sourcemaps_status=ok
-            if [ "$IOS_PUBLISH_OUTCOME" = success ] && [ "$IOS_MAP_OUTCOME" != success ]; then
+            if [ "$ios_outcome" = success ] && [ "$ios_map_outcome" != success ]; then
               sourcemaps_status=missing
             fi
-            if [ "$ANDROID_PUBLISH_OUTCOME" = success ] && [ "$ANDROID_MAP_OUTCOME" != success ]; then
+            if [ "$android_outcome" = success ] && [ "$android_map_outcome" != success ]; then
               sourcemaps_status=missing
             fi
           fi
@@ -596,8 +598,8 @@ jobs:
           echo "configured=$configured" >> "$GITHUB_OUTPUT"
           echo "all_success=$all_success" >> "$GITHUB_OUTPUT"
           echo "any_success=$any_success" >> "$GITHUB_OUTPUT"
-          echo "ios_outcome=${IOS_OUTCOME:-skipped}" >> "$GITHUB_OUTPUT"
-          echo "android_outcome=${ANDROID_OUTCOME:-skipped}" >> "$GITHUB_OUTPUT"
+          echo "ios_outcome=$ios_outcome" >> "$GITHUB_OUTPUT"
+          echo "android_outcome=$android_outcome" >> "$GITHUB_OUTPUT"
           echo "health_status=$health_status" >> "$GITHUB_OUTPUT"
           echo "sourcemaps_status=$sourcemaps_status" >> "$GITHUB_OUTPUT"
           echo "changelog_changed=$changelog_changed" >> "$GITHUB_OUTPUT"

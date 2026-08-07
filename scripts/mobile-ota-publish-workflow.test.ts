@@ -56,6 +56,8 @@ function runOtaResultStep(overrides: Record<string, string>): Record<string, str
       ANY_SUCCESS: 'true',
       IOS_OUTCOME: 'success',
       ANDROID_OUTCOME: 'success',
+      IOS_MAP_OUTCOME: 'success',
+      ANDROID_MAP_OUTCOME: 'success',
       HEALTH_OUTCOME: 'skipped',
       CHANGELOG_CHANGED: 'false',
       CHANGELOG_PUSH_OUTCOME: 'skipped',
@@ -286,12 +288,93 @@ describe('production OTA workflow reliability', () => {
 
   it('returns publish and health outcomes instead of posting duplicate deploy notifications', () => {
     expect(production).toContain('health_status:');
+    expect(production).toContain('sourcemaps_status:');
     expect(production).toContain('changelog_synced:');
     expect(production).toContain('changelog_summary_base64:');
     expect(production).toContain('name: Record OTA result');
     expect(production).not.toContain('name: Notify deployments channel');
     expect(production).not.toContain('name: Notify deployments channel of failure');
     expect(production).not.toContain('name: Notify OTA health to Discord');
+  });
+
+  // Symbolication is invisible until someone reads a production stack trace, so
+  // nothing else would catch these steps being dropped in a bad merge.
+  it('uploads Sentry source maps for each published platform before the next export', () => {
+    const iosUpload = stepBlock(production, 'Upload iOS OTA source maps to Sentry');
+    const androidUpload = stepBlock(production, 'Upload Android OTA source maps to Sentry');
+
+    expect(iosUpload).toContain('id: upload_sourcemaps_ios');
+    expect(iosUpload).toContain("if: steps.publish_ios.outcome == 'success'");
+    expect(iosUpload).toContain('SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}');
+    expect(iosUpload).toContain('vp run mobile:upload-sourcemaps -- --platform ios');
+    expect(androidUpload).toContain('id: upload_sourcemaps_android');
+    expect(androidUpload).toContain("if: steps.publish_android.outcome == 'success'");
+    expect(androidUpload).toContain('SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}');
+    expect(androidUpload).toContain('vp run mobile:upload-sourcemaps -- --platform android');
+
+    // Every `eoas publish` recreates packages/mobile/dist, so the iOS upload has
+    // to sit between the two publishes, not after both.
+    const iosPublishIndex = production.indexOf('- name: Publish iOS OTA');
+    const iosUploadIndex = production.indexOf('- name: Upload iOS OTA source maps to Sentry');
+    const androidPublishIndex = production.indexOf('- name: Publish Android OTA');
+    const androidUploadIndex = production.indexOf('- name: Upload Android OTA source maps to Sentry');
+    expect(iosPublishIndex).toBeLessThan(iosUploadIndex);
+    expect(iosUploadIndex).toBeLessThan(androidPublishIndex);
+    expect(androidPublishIndex).toBeLessThan(androidUploadIndex);
+
+    // SENTRY_AUTH_TOKEN is a Production *environment* secret, so it resolves in
+    // the called job rather than being forwarded by the caller. Without the
+    // environment it silently becomes an empty string and every upload fails.
+    expect(jobBlock(production, 'publish')).toContain('environment: Production');
+    expect(production).not.toContain('SENTRY_AUTH_TOKEN:\n');
+  });
+
+  it('turns a published-but-unsymbolicated run red as its last act', () => {
+    const gate = stepBlock(production, 'Require every published OTA source-map upload');
+    const missingCondition =
+      "if: always() && ((steps.publish_ios.outcome == 'success' && steps.upload_sourcemaps_ios.outcome != 'success')" +
+      " || (steps.publish_android.outcome == 'success' && steps.upload_sourcemaps_android.outcome != 'success'))";
+
+    expect(gate).toContain(missingCondition);
+    expect(gate).toContain('exit 1');
+    expect(stepBlock(production, 'Warn that published OTA source maps are missing')).toContain(missingCondition);
+    // The gate must be last: `Record OTA result` has to publish the caller's
+    // outputs before this failure propagates up to production-deploy.yml.
+    expect(production.indexOf('- name: Record OTA result')).toBeLessThan(
+      production.indexOf('- name: Require every published OTA source-map upload'),
+    );
+    expect(production.trimEnd().endsWith('exit 1')).toBe(true);
+  });
+
+  it.each([
+    ['both platforms symbolicated', 'success', 'success', 'success', 'success', 'ok'],
+    ['iOS source maps rejected', 'success', 'failure', 'success', 'success', 'missing'],
+    ['Android source maps rejected', 'success', 'success', 'success', 'failure', 'missing'],
+    ['a deleted iOS upload step', 'success', '', 'success', 'success', 'missing'],
+    ['an iOS-only publish', 'success', 'success', 'skipped', 'skipped', 'ok'],
+    ['nothing published', 'failure', 'skipped', 'failure', 'skipped', 'not-run'],
+  ])(
+    'reports source-map status for %s',
+    (_description, iosOutcome, iosMapOutcome, androidOutcome, androidMapOutcome, expected) => {
+      expect(
+        runOtaResultStep({
+          IOS_OUTCOME: iosOutcome,
+          IOS_MAP_OUTCOME: iosMapOutcome,
+          ANDROID_OUTCOME: androidOutcome,
+          ANDROID_MAP_OUTCOME: androidMapOutcome,
+        }).sourcemaps_status,
+      ).toBe(expected);
+    },
+  );
+
+  it('names the degraded source-map state in the parent release notification', () => {
+    const failure = jobBlock(productionDeploy, 'notify-failure');
+
+    expect(production).toContain('value: ${{ jobs.publish.outputs.sourcemaps_status }}');
+    expect(production).toContain('sourcemaps_status: ${{ steps.result.outputs.sourcemaps_status }}');
+    expect(failure).toContain('OTA_SOURCEMAPS_STATUS: ${{ needs.publish-mobile-ota.outputs.sourcemaps_status }}');
+    expect(failure).toContain('source maps: %s');
+    expect(failure).toContain('"${OTA_SOURCEMAPS_STATUS:-not-run}"');
   });
 
   it('reruns when the self-hosted publish implementation changes', () => {

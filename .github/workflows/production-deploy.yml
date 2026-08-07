@@ -244,8 +244,19 @@ jobs:
                 BACKEND_CHANGED=true
                 ;;
             esac
+            # Docs, the mobile app, and the release plumbing itself never reach
+            # the Next bundle. That plumbing includes the OTA publisher and its
+            # source-map uploader, the changelog generator, the deploy-baseline
+            # helper, and the workflow tests that pin all of them — editing a CI
+            # helper must not run a web build, migrate, and Vercel promotion.
+            # Patterns continue across lines with a trailing backslash.
             case "$file" in
-              mobile/*|packages/mobile/*|docs/*|*.md|scripts/mobile-publish.ts|scripts/lib/mobile-publish-retry.ts|scripts/lib/eoas.ts|scripts/generate-changelog.ts|scripts/changelog-discord-summary.ts|scripts/lib/changelog-transform.ts|scripts/lib/changelog-discord-summary.ts|.github/workflows/mobile-ota-production.yml)
+              mobile/*|packages/mobile/*|docs/*|*.md|\
+              scripts/mobile-publish.ts|scripts/mobile-upload-sourcemaps.ts|scripts/lib/mobile-publish-retry.ts|scripts/lib/eoas.ts|\
+              scripts/generate-changelog.ts|scripts/changelog-discord-summary.ts|scripts/lib/changelog-transform.ts|scripts/lib/changelog-discord-summary.ts|\
+              scripts/production-deploy-baseline.mjs|scripts/__tests__/changelog-transform.test.ts|\
+              scripts/production-deploy-baseline.test.ts|scripts/production-deploy-workflow.test.ts|scripts/mobile-ota-publish-workflow.test.ts|\
+              .github/workflows/mobile-ota-production.yml)
                 ;;
               *)
                 WEB_CHANGED=true
@@ -264,7 +275,10 @@ jobs:
               # Root linker and patch inputs change the resolved Expo config or
               # native dependency graph, so the matching OTA must be published
               # through this unified release path too.
-              packages/mobile/*|packages/shared/*|packages/board-constants/*|packages/shared-schema/*|package.json|bun.lock|patches/*|scripts/mobile-publish.ts|scripts/lib/mobile-publish-retry.ts|scripts/lib/eoas.ts|scripts/generate-changelog.ts|scripts/changelog-discord-summary.ts|scripts/lib/changelog-transform.ts|scripts/lib/changelog-discord-summary.ts|.github/workflows/mobile-ota-production.yml|.github/workflows/production-deploy.yml)
+              packages/mobile/*|packages/shared/*|packages/board-constants/*|packages/shared-schema/*|package.json|bun.lock|patches/*|\
+              scripts/mobile-publish.ts|scripts/mobile-upload-sourcemaps.ts|scripts/lib/mobile-publish-retry.ts|scripts/lib/eoas.ts|\
+              scripts/generate-changelog.ts|scripts/changelog-discord-summary.ts|scripts/lib/changelog-transform.ts|scripts/lib/changelog-discord-summary.ts|\
+              .github/workflows/mobile-ota-production.yml|.github/workflows/production-deploy.yml)
                 OTA_CHANGED=true
                 ;;
             esac
@@ -1049,7 +1063,6 @@ jobs:
             require_skipped "$DEPLOY_APP_WEB_RESULT" deploy-app-web
           elif [ "$APP_CHANGED" = true ] && [ "$APP_WEB_HELD" = true ]; then
             app_release_held=true
-            echo "state-note=app-web-held" >> "$GITHUB_OUTPUT"
             require_skipped "$DEPLOY_APP_WEB_RESULT" deploy-app-web
           else
             require_result "$APP_CHANGED" "$DEPLOY_APP_WEB_RESULT" deploy-app-web
@@ -1287,6 +1300,11 @@ jobs:
           OTA_IOS_OUTCOME: ${{ needs.publish-mobile-ota.outputs.ios_outcome }}
           OTA_ANDROID_OUTCOME: ${{ needs.publish-mobile-ota.outputs.android_outcome }}
           OTA_HEALTH_STATUS: ${{ needs.publish-mobile-ota.outputs.health_status }}
+          # A live bundle whose Sentry source maps never landed fails the reusable
+          # workflow, so this is the notification that has to name it. Without the
+          # status the reader cannot tell "nothing published" from "published but
+          # unsymbolicated", which need opposite responses.
+          OTA_SOURCEMAPS_STATUS: ${{ needs.publish-mobile-ota.outputs.sourcemaps_status }}
           RELEASE_GATE: ${{ needs.release-gate.result }}
           PROMOTION_MARKER: ${{ needs.mark-production-promoted.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -1297,8 +1315,8 @@ jobs:
             exit 0
           fi
           # URL wrapped in <…> so Discord suppresses the inline preview embed.
-          CONTENT=$(printf '🚨 **Production release failed** on `%s`\n• detect-changes: %s\n• check-rollback: %s\n• build-web: %s\n• build-backend: %s\n• migrate: %s\n• deploy-web: %s\n• deploy-production-backend: %s\n• deploy-app-web: %s\n• mobile OTA: %s (iOS: %s, Android: %s; health: %s)\n• release-gate: %s\n• promotion marker: %s\nAny successful OTA platform remains published; no automatic rollback was attempted.\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$DETECT_CHANGES" "$CHECK_ROLLBACK" "$BUILD_WEB" "$BUILD_BACKEND" "$MIGRATE" "$DEPLOY_WEB" "$DEPLOY_BACKEND" "$DEPLOY_APP_WEB" "$OTA_RESULT" "${OTA_IOS_OUTCOME:-skipped}" "${OTA_ANDROID_OUTCOME:-skipped}" "${OTA_HEALTH_STATUS:-not-run}" "$RELEASE_GATE" "$PROMOTION_MARKER" "$RUN_URL")
+          CONTENT=$(printf '🚨 **Production release failed** on `%s`\n• detect-changes: %s\n• check-rollback: %s\n• build-web: %s\n• build-backend: %s\n• migrate: %s\n• deploy-web: %s\n• deploy-production-backend: %s\n• deploy-app-web: %s\n• mobile OTA: %s (iOS: %s, Android: %s; health: %s; source maps: %s)\n• release-gate: %s\n• promotion marker: %s\nAny successful OTA platform remains published; no automatic rollback was attempted.\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$DETECT_CHANGES" "$CHECK_ROLLBACK" "$BUILD_WEB" "$BUILD_BACKEND" "$MIGRATE" "$DEPLOY_WEB" "$DEPLOY_BACKEND" "$DEPLOY_APP_WEB" "$OTA_RESULT" "${OTA_IOS_OUTCOME:-skipped}" "${OTA_ANDROID_OUTCOME:-skipped}" "${OTA_HEALTH_STATUS:-not-run}" "${OTA_SOURCEMAPS_STATUS:-not-run}" "$RELEASE_GATE" "$PROMOTION_MARKER" "$RUN_URL")
           # --fail-with-body surfaces Discord's status + error body (e.g. 429,
           # rotated webhook) in the log instead of failing silently. Don't let a
           # webhook hiccup fail the job — the alert is best-effort.

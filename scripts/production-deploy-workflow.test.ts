@@ -73,6 +73,43 @@ function runReleaseGate(overrides: Record<string, string>): { status: number; st
   };
 }
 
+// Runs the workflow's own per-file `case` classifier rather than asserting on
+// its text: the patterns span several backslash-continued lines, so only
+// executing them proves a path lands in the lane it is meant to.
+function classifyChangedFile(changedFile: string): Record<string, string> {
+  const detect = jobBlock('detect-changes');
+  const loopEnd = '\n          done\n';
+  const start = detect.indexOf('          BACKEND_CHANGED=false');
+  const end = detect.indexOf(loopEnd, start);
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(end).toBeGreaterThan(start);
+  const classifier = detect
+    .slice(start, end + loopEnd.length)
+    .split('\n')
+    .map((line) => line.replace(/^ {10}/, ''))
+    .join('\n');
+  const shellScript = [
+    'set -euo pipefail',
+    `CHANGED_FILES=${JSON.stringify(changedFile)}`,
+    classifier,
+    'echo "backend=$BACKEND_CHANGED"',
+    'echo "web=$WEB_CHANGED"',
+    'echo "app=$APP_CHANGED"',
+    'echo "ota=$OTA_CHANGED"',
+  ].join('\n');
+  const result = spawnSync('bash', ['-c', shellScript], { encoding: 'utf8' });
+  expect(result.status, result.stderr).toBe(0);
+  return Object.fromEntries(
+    result.stdout
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const separatorIndex = line.indexOf('=');
+        return [line.slice(0, separatorIndex), line.slice(separatorIndex + 1)];
+      }),
+  );
+}
+
 describe('unified production deploy workflow', () => {
   it('uses one non-cancelling deployment lane for push and manual releases', () => {
     expect(workflow).toContain('push:\n    branches: [main]');
@@ -135,6 +172,25 @@ describe('unified production deploy workflow', () => {
     expect(detect).toContain('scripts/lib/mobile-publish-retry.ts');
     expect(detect).toContain('.github/workflows/mobile-ota-production.yml');
     expect(detect.indexOf('packages/mobile/*)')).toBeLessThan(detect.indexOf('packages/*|Dockerfile.backend'));
+  });
+
+  it.each([
+    // CI-only release plumbing: editing it must never build and promote Next.
+    ['scripts/production-deploy-baseline.mjs', { web: 'false' }],
+    ['scripts/production-deploy-baseline.test.ts', { web: 'false' }],
+    ['scripts/production-deploy-workflow.test.ts', { web: 'false' }],
+    ['scripts/mobile-ota-publish-workflow.test.ts', { web: 'false' }],
+    ['scripts/__tests__/changelog-transform.test.ts', { web: 'false' }],
+    // The source-map uploader runs inside the OTA publish, so it belongs to the
+    // OTA lane on exactly the same terms as the publish wrapper itself.
+    ['scripts/mobile-upload-sourcemaps.ts', { web: 'false', ota: 'true' }],
+    ['scripts/mobile-publish.ts', { web: 'false', ota: 'true' }],
+    // Guard the guard: a real web file must still classify as a web change, or
+    // the multi-line `case` patterns above could be silently swallowing files.
+    ['packages/web/app/page.tsx', { web: 'true' }],
+    ['scripts/refresh-recommendations.ts', { web: 'true' }],
+  ])('classifies %s without an unintended production web deploy', (changedFile, expected) => {
+    expect(classifyChangedFile(changedFile)).toMatchObject(expected);
   });
 
   it('keeps web and backend builds parallel, then migrates after every attempted build', () => {

@@ -50,11 +50,11 @@ Postgres and left V2 untouched. Two servers now run in parallel:
 
 ## Two hosting paths (don't mix them up)
 
-|                | Preview / dev                            | Production                                                                                                                                                                        |
-| -------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Built by       | `eas build` (`mobile:preview-build`)     | bare `expo prebuild` + xcodebuild/gradle (the `ios-testflight-rn` / `android-apk-rn` workflows)                                                                                    |
-| Hosting        | EAS free tier (`u.expo.dev`)             | self-hosted expo-open-ota V3 (`updates.boardsesh.com`)                                                                                                                             |
-| Channel source | `channel` in `eas.json`                  | `expo-channel-name` request header baked in by `expo prebuild`                                                                                                                     |
+|                | Preview / dev                            | Production                                                                                                                                                                          |
+| -------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Built by       | `eas build` (`mobile:preview-build`)     | bare `expo prebuild` + xcodebuild/gradle (the `ios-testflight-rn` / `android-apk-rn` workflows)                                                                                     |
+| Hosting        | EAS free tier (`u.expo.dev`)             | self-hosted expo-open-ota V3 (`updates.boardsesh.com`)                                                                                                                              |
+| Channel source | `channel` in `eas.json`                  | `expo-channel-name` request header baked in by `expo prebuild`                                                                                                                      |
 | Publish        | `vp run mobile:publish` (→ `eas update`) | `production-deploy.yml` calls reusable `mobile-ota-production.yml` after the server/web gates; manual releases use Production Deploy inputs (→ `eoas publish` + Sentry source maps) |
 
 A third path rides the **same self-hosted server**: per-PR `pr-<number>` channels that let any user
@@ -165,8 +165,9 @@ the parent classifies the release as held and does not emit a promotion marker. 
 builds (`ios-testflight-rn` / `android-apk-rn`) remain fingerprint-gated. The parent workflow emits
 one terminal notification after OTA and its non-blocking health check settle (promoted,
 release-held, rollback-held, app-web-only held, or failed); trusted no-change and superseded runs
-stay quiet. That message includes server/web/app-web state, per-platform OTA outcomes, health and
-source-map status, and the changelog diff grouped as New / Improved / Fixed.
+stay quiet. That message includes server/web/app-web state, per-platform OTA outcomes, health
+status, and the changelog diff grouped as New / Improved / Fixed; the failure variant also prints
+`sourcemaps_status`, so a live-but-unsymbolicated bundle reads differently from nothing published.
 
 **Manual unified release.** Run **Production Deploy** with the desired Git ref, `platform`, optional
 `message`, and optional `changelog_base_sha`. Leaving the base empty derives the selected commit's
