@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { eq, and, count, isNull, sql, ilike, or, asc, desc, inArray, like } from 'drizzle-orm';
+import { eq, ne, and, count, isNull, sql, ilike, or, asc, desc, inArray, like } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { normaliseSetIds } from '@boardsesh/board-config';
@@ -22,7 +22,7 @@ import {
 } from '../../../validation/schemas';
 import { generateUniqueGymSlug, requireBoardGymLinkAccess, userCanEditGym } from './gyms';
 import { resolveAutoGymForBoard } from './gym-matching';
-import { findBlockingDuplicate } from './board-duplicates';
+import { findBlockingDuplicate, type BoardLocation } from './board-duplicates';
 import { getUserCommunityRoles, hasAdminOrLeader, rolesGrantAdminOrLeader } from './roles';
 import { SYSTEM_BOARD_OWNER_ID, isRowAnonReadable, requireAnonReadableBoard } from '../board-presence/shared';
 import { assertKnownBoardConfig } from '../board-presence/board-catalog';
@@ -87,6 +87,87 @@ export async function generateUniqueSlug(name: string): Promise<string> {
 
   // Fallback: append UUID fragment
   return `${baseSlug}-${uuidv4().slice(0, 8)}`;
+}
+
+type DuplicateBoardCandidate = {
+  uuid: string;
+  slug: string;
+  name: string;
+  setIds: string;
+  angle: number;
+  latitude: number | null;
+  longitude: number | null;
+  locationName: string | null;
+};
+
+/**
+ * The owner's other live board that a create/edit would collide with, or
+ * undefined.
+ *
+ * SQL narrows to owner + type + layout + size only; set-id equality and the
+ * place comparison are settled in JS by `findBlockingDuplicate`, because the
+ * stored set-id order is whatever the board was created with ('25,26,27,24' and
+ * '24,25,26,27' are the same wall but not the same string).
+ *
+ * `excludeBoardId` is the row being edited — a board must never block itself.
+ */
+async function findOwnedBlockingDuplicate(opts: {
+  ownerId: string;
+  boardType: string;
+  layoutId: number;
+  sizeId: number;
+  incoming: BoardLocation & { setIds: string };
+  excludeBoardId?: number;
+}): Promise<DuplicateBoardCandidate | undefined> {
+  const ownedWithConfig = await db
+    .select({
+      uuid: dbSchema.userBoards.uuid,
+      slug: dbSchema.userBoards.slug,
+      name: dbSchema.userBoards.name,
+      setIds: dbSchema.userBoards.setIds,
+      angle: dbSchema.userBoards.angle,
+      latitude: dbSchema.userBoards.latitude,
+      longitude: dbSchema.userBoards.longitude,
+      locationName: dbSchema.userBoards.locationName,
+    })
+    .from(dbSchema.userBoards)
+    .where(
+      and(
+        eq(dbSchema.userBoards.ownerId, opts.ownerId),
+        eq(dbSchema.userBoards.boardType, opts.boardType),
+        eq(dbSchema.userBoards.layoutId, opts.layoutId),
+        eq(dbSchema.userBoards.sizeId, opts.sizeId),
+        isNull(dbSchema.userBoards.deletedAt),
+        opts.excludeBoardId != null ? ne(dbSchema.userBoards.id, opts.excludeBoardId) : undefined,
+      ),
+    )
+    // Already narrowed to one owner's boards of one exact type/layout/size,
+    // so this is a handful of rows; the cap is just a safety net against a
+    // pathological account.
+    .limit(100);
+
+  return findBlockingDuplicate(ownedWithConfig, opts.incoming);
+}
+
+/**
+ * The rejection both createBoard and updateBoard raise when the owner already
+ * has this wall at this place. The existing board travels with the error so the
+ * client can offer "use that one" without scanning its paginated myBoards cache
+ * — which defaults to 20 and so can't find a match for a user with more boards.
+ */
+function duplicateBoardConfigError(existing: DuplicateBoardCandidate): GraphQLError {
+  return new GraphQLError('You already have this board at this location', {
+    extensions: {
+      code: 'BOARD_DUPLICATE_CONFIG',
+      existingBoardUuid: existing.uuid,
+      existingBoardSlug: existing.slug,
+      existingBoardName: existing.name,
+      existingBoardLocationName: existing.locationName,
+      // Web's "go to your board" links to /b/<slug>/<angle>; without the
+      // board's own angle it would land on the board type's default.
+      existingBoardAngle: existing.angle,
+    },
+  });
 }
 
 /**
@@ -1633,53 +1714,16 @@ export const socialBoardMutations = {
           !!validatedInput.locationName || (validatedInput.latitude != null && validatedInput.longitude != null),
       });
     } else {
-      const ownedWithConfig = await db
-        .select({
-          uuid: dbSchema.userBoards.uuid,
-          slug: dbSchema.userBoards.slug,
-          name: dbSchema.userBoards.name,
-          setIds: dbSchema.userBoards.setIds,
-          angle: dbSchema.userBoards.angle,
-          latitude: dbSchema.userBoards.latitude,
-          longitude: dbSchema.userBoards.longitude,
-          locationName: dbSchema.userBoards.locationName,
-        })
-        .from(dbSchema.userBoards)
-        .where(
-          and(
-            eq(dbSchema.userBoards.ownerId, userId),
-            eq(dbSchema.userBoards.boardType, validatedInput.boardType),
-            eq(dbSchema.userBoards.layoutId, validatedInput.layoutId),
-            eq(dbSchema.userBoards.sizeId, validatedInput.sizeId),
-            isNull(dbSchema.userBoards.deletedAt),
-          ),
-        )
-        // Already narrowed to one owner's boards of one exact type/layout/size,
-        // so this is a handful of rows; the cap is just a safety net against a
-        // pathological account.
-        .limit(100);
-
-      const existing = findBlockingDuplicate(ownedWithConfig, {
-        setIds: validatedInput.setIds,
-        ...incomingLocation,
+      const existing = await findOwnedBlockingDuplicate({
+        ownerId: userId,
+        boardType: validatedInput.boardType,
+        layoutId: validatedInput.layoutId,
+        sizeId: validatedInput.sizeId,
+        incoming: { setIds: validatedInput.setIds, ...incomingLocation },
       });
 
       if (existing) {
-        // The existing board travels with the error so the client can offer
-        // "use that one" without scanning its paginated myBoards cache — which
-        // defaults to 20 and so can't find a match for a user with more boards.
-        throw new GraphQLError('You already have this board at this location', {
-          extensions: {
-            code: 'BOARD_DUPLICATE_CONFIG',
-            existingBoardUuid: existing.uuid,
-            existingBoardSlug: existing.slug,
-            existingBoardName: existing.name,
-            existingBoardLocationName: existing.locationName,
-            // Web's "go to your board" links to /b/<slug>/<angle>; without the
-            // board's own angle it would land on the board type's default.
-            existingBoardAngle: existing.angle,
-          },
-        });
+        throw duplicateBoardConfigError(existing);
       }
     }
 
@@ -1910,31 +1954,62 @@ export const socialBoardMutations = {
     if (validatedInput.timerName !== undefined) updateValues.timerName = validatedInput.timerName;
 
     if (hasConfigChange) {
-      // Check the unique constraint: no other active board with the same config
-      // for the board's OWNER (not the caller — a moderator may be editing a
-      // board owned by a system/import user). The DB's partial unique index
-      // exempts the system catalog owner (many gyms legitimately share a
-      // config), so skip the pre-check there or we'd block the very catalog
-      // fixes this feature exists for.
-      if (board.ownerId !== SYSTEM_BOARD_OWNER_ID) {
-        const [configConflict] = await db
-          .select({ id: dbSchema.userBoards.id })
-          .from(dbSchema.userBoards)
-          .where(
-            and(
-              eq(dbSchema.userBoards.ownerId, board.ownerId),
-              eq(dbSchema.userBoards.boardType, board.boardType),
-              eq(dbSchema.userBoards.layoutId, newLayoutId),
-              eq(dbSchema.userBoards.sizeId, newSizeId),
-              eq(dbSchema.userBoards.setIds, newSetIds),
-              isNull(dbSchema.userBoards.deletedAt),
-              sql`${dbSchema.userBoards.id} != ${board.id}`,
-            ),
-          )
-          .limit(1);
+      // The clients resend layout/size/setIds on every edit whenever the config
+      // section is unlocked, so `hasConfigChange` says "config fields were
+      // present", not "the config moved". Compare the effective values —
+      // set ids normalised, since the stored order is whatever the board was
+      // created with — and skip the guard when nothing actually changed.
+      // Without this skip, an owner of two same-config boards could never save
+      // ANY edit to either one: renaming a board would be rejected for
+      // colliding with its sibling.
+      const configActuallyChanged =
+        newLayoutId !== board.layoutId ||
+        newSizeId !== board.sizeId ||
+        normaliseSetIds(newSetIds) !== normaliseSetIds(board.setIds);
 
-        if (configConflict) {
-          throw new Error("The board's owner already has a board with this configuration");
+      // Keyed off the board's OWNER, not the caller — a moderator or gym admin
+      // may be editing someone else's board. The system catalog owner is exempt:
+      // many gyms legitimately share one config there, and blocking that would
+      // break the catalog fixes moderation exists for.
+      if (configActuallyChanged && board.ownerId !== SYSTEM_BOARD_OWNER_ID) {
+        if (validatedInput.allowDuplicateConfig) {
+          // Same trail as createBoard: this is the one path that lets an edit
+          // land on a config the owner already has at the same place, so record
+          // that a human confirmed it rather than leaving it indistinguishable
+          // from a script setting the flag on every call.
+          logger.info('updateBoard: duplicate-config guard bypassed by explicit confirmation', {
+            userId,
+            boardId: board.id,
+            ownerId: board.ownerId,
+            boardType: board.boardType,
+            layoutId: newLayoutId,
+            sizeId: newSizeId,
+          });
+        } else {
+          // Probe with the POST-update location, so an edit that moves this
+          // board onto a sibling's site is caught and one that moves it away is
+          // allowed. A location-only edit is deliberately NOT guarded at all
+          // (it never reaches here): as with createBoard after #4166, we block
+          // the accident of re-submitting a wall, not every way two rows can end
+          // up looking alike.
+          const existing = await findOwnedBlockingDuplicate({
+            ownerId: board.ownerId,
+            boardType: board.boardType,
+            layoutId: newLayoutId,
+            sizeId: newSizeId,
+            excludeBoardId: board.id,
+            incoming: {
+              setIds: newSetIds,
+              locationName:
+                validatedInput.locationName !== undefined ? validatedInput.locationName : board.locationName,
+              latitude: validatedInput.latitude !== undefined ? validatedInput.latitude : board.latitude,
+              longitude: validatedInput.longitude !== undefined ? validatedInput.longitude : board.longitude,
+            },
+          });
+
+          if (existing) {
+            throw duplicateBoardConfigError(existing);
+          }
         }
       }
 

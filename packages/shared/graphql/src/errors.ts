@@ -23,7 +23,7 @@ function asString(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-/** The board `createBoard` refused to duplicate, as named by the server. */
+/** The board the server refused to duplicate, as named by the server. */
 export type DuplicateBoardError = {
   boardUuid: string;
   boardName: string;
@@ -34,11 +34,13 @@ export type DuplicateBoardError = {
 };
 
 /**
- * `createBoard`'s "you already own this board at this place" rejection, with the
- * existing board's identity attached.
+ * The "you already own this board at this place" rejection, with the existing
+ * board's identity attached. Both `createBoard` and `updateBoard` throw it —
+ * create when a new board would land on one you own, update when a config change
+ * would make an existing board match a sibling.
  *
- * Not a failure to report — the user chooses between using that board and adding
- * a genuinely different one, and the create is retried with
+ * Not a failure to report — the user chooses between using that board and
+ * keeping a genuinely different one, and the mutation is retried with
  * `allowDuplicateConfig`. The board's identity comes off the error rather than
  * out of a client's `myBoards` cache, which is paginated and can't be searched
  * reliably (#4166).

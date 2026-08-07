@@ -306,8 +306,9 @@ describe('updateBoard config change with existing ticks', () => {
 describe('updateBoard duplicate-config uniqueness keys off the board owner', () => {
   it('blocks a config change that collides with another board owned by the BOARD OWNER', async () => {
     // The board's owner (SYS_OWNER) already has a second board with this config.
+    const ownerSecondBoardUuid = uuidv4();
     await insertBoard({
-      uuid: uuidv4(),
+      uuid: ownerSecondBoardUuid,
       ownerId: SYS_OWNER,
       layoutId: 2,
       sizeId: 11,
@@ -315,13 +316,24 @@ describe('updateBoard duplicate-config uniqueness keys off the board owner', () 
       name: 'Owner second board',
     });
 
-    await expect(
-      socialBoardMutations.updateBoard(
+    // Neither fixture board says where it is, and two placeless boards count as
+    // the same place — so the config change still collides. What the
+    // config-tuple rework changed is the SHAPE of the refusal: a typed
+    // BOARD_DUPLICATE_CONFIG naming the colliding board, which the client turns
+    // into a "save anyway?" prompt instead of a dead end.
+    const thrown = await socialBoardMutations
+      .updateBoard(
         null,
         { input: { boardUuid: kilterBoardUuid, layoutId: 2, sizeId: 11, setIds: '3,4' } },
         authCtx(GLOBAL_ADMIN),
-      ),
-    ).rejects.toThrow(/already has a board with this configuration/);
+      )
+      .then(
+        () => null,
+        (error: unknown) => error as { extensions?: Record<string, unknown> },
+      );
+
+    expect(thrown?.extensions?.code).toBe('BOARD_DUPLICATE_CONFIG');
+    expect(thrown?.extensions?.existingBoardUuid).toBe(ownerSecondBoardUuid);
   });
 
   it('does NOT block when only the editing admin owns a board with the target config', async () => {

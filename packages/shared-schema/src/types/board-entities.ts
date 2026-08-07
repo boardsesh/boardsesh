@@ -118,6 +118,12 @@ export type UpdateBoardInput = {
   setIds?: string;
   serialNumber?: string | null;
   timerName?: string | null;
+  /**
+   * Save even though the owner already has another board with the resulting
+   * configuration at this place. Set only after the user confirms it is a
+   * different physical wall.
+   */
+  allowDuplicateConfig?: boolean;
 };
 
 export type BoardLeaderboardInput = {
