@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-07T21:28:04.176Z",
+  "generatedAt": "2026-08-07T21:36:08.326Z",
   "entries": [
+    {
+      "prNumber": 4204,
+      "category": "fixed",
+      "title": "Zoom into a climb in the player, then drag to move around the board — panning works again, not just in the editor.",
+      "mergedAt": "2026-08-07T21:29:35Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4204"
+    },
     {
       "prNumber": 4174,
       "category": "fixed",
