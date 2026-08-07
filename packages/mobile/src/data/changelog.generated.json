@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-05T12:12:35.740Z",
+  "generatedAt": "2026-08-07T21:28:04.176Z",
   "entries": [
+    {
+      "prNumber": 4174,
+      "category": "fixed",
+      "title": "Adding a second board with the same setup at a different gym now works — you'll be asked whether it's a new wall or the one you already have",
+      "mergedAt": "2026-08-07T21:27:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4174",
+      "body": "New boards land under the right gym on the map, and you can pick that gym while adding them\nBoard creation tells you when something goes wrong instead of quietly doing nothing"
+    },
     {
       "prNumber": 4203,
       "category": "fixed",

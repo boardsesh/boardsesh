@@ -4,6 +4,14 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-07
+
+### Fixed
+
+- Adding a second board with the same setup at a different gym now works — you'll be asked whether it's a new wall or the one you already have ([#4174](https://github.com/boardsesh/boardsesh/pull/4174))
+  New boards land under the right gym on the map, and you can pick that gym while adding them
+  Board creation tells you when something goes wrong instead of quietly doing nothing
+
 ## 2026-08-05
 
 ### App update
