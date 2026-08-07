@@ -160,19 +160,33 @@ async function findOwnedBlockingDuplicate(opts: {
  * has this wall at this place. The existing board travels with the error so the
  * client can offer "use that one" without scanning its paginated myBoards cache
  * — which defaults to 20 and so can't find a match for a user with more boards.
+ *
+ * `includeIdentity` is false whenever the caller is not the board's owner. The
+ * probe keys on the OWNER's boards, but updateBoard is reachable by gym admins
+ * and community moderators, so attaching the colliding board's name, slug and
+ * location would hand a non-owner the identity of a board they may not be able
+ * to see at all — a private home wall, or one whose location `enrichBoard`
+ * masks behind `hideLocation`. Same leak class as the private-gym probe finding
+ * in the #4174 round: an error's extensions are a read channel, and they have
+ * to respect the same visibility rules the read resolvers do.
  */
-function duplicateBoardConfigError(existing: DuplicateBoardCandidate): GraphQLError {
+function duplicateBoardConfigError(
+  existing: DuplicateBoardCandidate,
+  { includeIdentity }: { includeIdentity: boolean },
+): GraphQLError {
   return new GraphQLError('You already have this board at this location', {
-    extensions: {
-      code: 'BOARD_DUPLICATE_CONFIG',
-      existingBoardUuid: existing.uuid,
-      existingBoardSlug: existing.slug,
-      existingBoardName: existing.name,
-      existingBoardLocationName: existing.locationName,
-      // Web's "go to your board" links to /b/<slug>/<angle>; without the
-      // board's own angle it would land on the board type's default.
-      existingBoardAngle: existing.angle,
-    },
+    extensions: includeIdentity
+      ? {
+          code: 'BOARD_DUPLICATE_CONFIG',
+          existingBoardUuid: existing.uuid,
+          existingBoardSlug: existing.slug,
+          existingBoardName: existing.name,
+          existingBoardLocationName: existing.locationName,
+          // Web's "go to your board" links to /b/<slug>/<angle>; without the
+          // board's own angle it would land on the board type's default.
+          existingBoardAngle: existing.angle,
+        }
+      : { code: 'BOARD_DUPLICATE_CONFIG' },
   });
 }
 
@@ -1749,7 +1763,8 @@ export const socialBoardMutations = {
       });
 
       if (existing) {
-        throw duplicateBoardConfigError(existing);
+        // The caller is always the owner here, so the full identity is theirs to see.
+        throw duplicateBoardConfigError(existing, { includeIdentity: true });
       }
     }
 
@@ -1938,6 +1953,14 @@ export const socialBoardMutations = {
     // owner/admin may edit. Community moderators can fix outdated catalog boards.
     await requireBoardEditAccess(ctx, board);
 
+    // Editing a soft-deleted board restores it (see `updateValues.deletedAt`
+    // below), and the cap counts live rows only — so a restore is +1 live board
+    // and pays the same toll as a mint. Without this, delete-N/create-N/restore-N
+    // walks an account to cap+N. Editing an already-live board never gets here.
+    if (board.deletedAt) {
+      await assertBoardCapNotReached(board.ownerId);
+    }
+
     // Config field changes (layoutId, sizeId, setIds). Authorized editors may
     // change these even when the board has logged climbs — a config change
     // reflects a real physical reconfiguration. Old boardsesh_ticks rows are
@@ -2034,7 +2057,11 @@ export const socialBoardMutations = {
           });
 
           if (existing) {
-            throw duplicateBoardConfigError(existing);
+            // The colliding board belongs to this board's OWNER. A gym admin or
+            // community moderator editing someone else's board gets the bare
+            // rejection code — enough to render "this config is taken", nothing
+            // that names or locates a board they have no read access to.
+            throw duplicateBoardConfigError(existing, { includeIdentity: board.ownerId === userId });
           }
         }
       }

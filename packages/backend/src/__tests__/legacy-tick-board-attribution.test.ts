@@ -33,9 +33,10 @@ import { tickMutations } from '../graphql/resolvers/ticks/mutations';
  * prefers the board the tick's session is being held on — the one signal that
  * actually knows which of the two walls the climber is standing at.
  *
- * The "insert the right board second" idiom is borrowed from
- * board-serial-config-preference.test.ts: an unordered limit(1) tends to return
- * the first row, so the expected board is inserted last.
+ * Where a case is about the ORDER of the pick, the boards carry explicit ids and
+ * the HIGHER id is inserted first, so an unordered scan returns the wrong board
+ * and the case fails on the old code. Seeding ascending — the obvious way to
+ * write it — passes either way and proves nothing.
  */
 
 const USER_ID = 'legacy-attr-user';
@@ -44,6 +45,12 @@ const PREFIX = 'LEGACY-ATTR-';
 const CLIMB_UUID = `${PREFIX}CLIMB`;
 
 const CONFIG = { boardType: 'kilter', layoutId: 8, sizeId: 25, setIds: '1,2' };
+
+// Explicit ids for the ordering case, well clear of the `user_boards_id_seq`
+// range so pinning them can't collide with a serial-assigned row (this suite
+// shares the worker DB and deletes only its own rows, never truncating).
+const LOWER_BOARD_ID = 900_000_100;
+const HIGHER_BOARD_ID = 900_000_200;
 
 function authCtx(userId = USER_ID): ConnectionContext {
   return {
@@ -78,12 +85,17 @@ async function insertBoard(opts: {
   setIds?: string;
   layoutId?: number;
   name: string;
+  id?: number;
 }): Promise<number> {
   const uuid = uuidv4();
+  // `id` is pinned only where the test is about the pick's ORDER; everywhere
+  // else the serial assigns it.
+  const idColumn = opts.id == null ? sql`` : sql`id, `;
+  const idValue = opts.id == null ? sql`` : sql`${opts.id}, `;
   const result = await db.execute(sql`
     INSERT INTO user_boards
-      (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, is_public, created_at, updated_at)
-    VALUES (${uuid}, ${uuid}, ${opts.ownerId ?? USER_ID}, ${CONFIG.boardType}, ${opts.layoutId ?? CONFIG.layoutId},
+      (${idColumn}uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, is_public, created_at, updated_at)
+    VALUES (${idValue}${uuid}, ${uuid}, ${opts.ownerId ?? USER_ID}, ${CONFIG.boardType}, ${opts.layoutId ?? CONFIG.layoutId},
             ${CONFIG.sizeId}, ${opts.setIds ?? CONFIG.setIds}, ${opts.name}, true, now(), now())
     RETURNING id
   `);
@@ -152,13 +164,16 @@ describe('legacy tick board attribution', () => {
   });
 
   it('picks the same board every time when the owner has two with this config', async () => {
-    const firstId = await insertBoard({ name: 'Home wall' });
-    await insertBoard({ name: 'Gym wall' });
+    // Seeded highest-id-FIRST: an unordered pick takes the row it happens to
+    // reach first, which is the gym wall, so this case only passes on a lookup
+    // that really orders by id.
+    await insertBoard({ id: HIGHER_BOARD_ID, name: 'Gym wall' });
+    await insertBoard({ id: LOWER_BOARD_ID, name: 'Home wall' });
 
     // Lowest id wins, and keeps winning — a climber's history for one wall must
     // not scatter across its twin between two logs of the same climb.
-    expect((await saveTick()).boardId).toBe(firstId);
-    expect((await saveTick()).boardId).toBe(firstId);
+    expect((await saveTick()).boardId).toBe(LOWER_BOARD_ID);
+    expect((await saveTick()).boardId).toBe(LOWER_BOARD_ID);
   });
 
   it("prefers the session's board over the config lookup's pick", async () => {

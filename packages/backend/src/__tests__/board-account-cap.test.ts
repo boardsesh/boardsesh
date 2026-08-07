@@ -48,7 +48,7 @@ async function seedBoard(opts: {
   config?: { boardType: string; layoutId: number; sizeId: number; setIds: string };
   deleted?: boolean;
   name?: string;
-}): Promise<number> {
+}): Promise<{ id: number; uuid: string }> {
   const uuid = uuidv4();
   const config = opts.config ?? CONFIG;
   const result = await db.execute(sql`
@@ -58,7 +58,7 @@ async function seedBoard(opts: {
             ${config.setIds}, ${opts.name ?? 'Seeded board'}, true, ${opts.deleted ? sql`now()` : null}, now(), now())
     RETURNING id
   `);
-  return Number(Array.from(result as Iterable<{ id: number }>)[0].id);
+  return { id: Number(Array.from(result as Iterable<{ id: number }>)[0].id), uuid };
 }
 
 /** Seed `count` live boards for OWNER in one statement per board. */
@@ -187,7 +187,7 @@ describe('per-account board cap', () => {
     // at the cap — otherwise reaching the limit would lock a climber out of
     // their own boards.
     await seedBoards(MAX_BOARDS_PER_ACCOUNT - 1);
-    const existingBoardId = await seedBoard({ config: OTHER_CONFIG, name: 'The connected wall' });
+    const { id: existingBoardId } = await seedBoard({ config: OTHER_CONFIG, name: 'The connected wall' });
     resetAllRateLimits();
 
     const resolved = await boardPresenceMutations.resolveBoardForSerial(
@@ -197,6 +197,61 @@ describe('per-account board cap', () => {
     );
 
     expect(resolved.boardId).toBe(existingBoardId);
+    expect(await liveBoardCount()).toBe(MAX_BOARDS_PER_ACCOUNT);
+  });
+});
+
+describe('per-account board cap on the soft-delete restore path', () => {
+  const isDeleted = async (boardUuid: string): Promise<boolean> => {
+    const result = await db.execute(sql`SELECT deleted_at FROM user_boards WHERE uuid = ${boardUuid}`);
+    return Array.from(result as Iterable<{ deleted_at: Date | null }>)[0]?.deleted_at != null;
+  };
+
+  const restore = (boardUuid: string) =>
+    socialBoardMutations.updateBoard(null, { input: { boardUuid, name: 'Back in service' } }, authCtx(OWNER));
+
+  it('refuses to restore a deleted board when the account is already at the cap', async () => {
+    // Editing a soft-deleted board restores it, so a restore is +1 live board.
+    // Without the same toll a mint pays, delete-N/create-N/restore-N walks an
+    // account to cap+N — the cap counts live rows only.
+    await seedBoards(MAX_BOARDS_PER_ACCOUNT);
+    const { uuid: deletedBoardUuid } = await seedBoard({ deleted: true, name: 'Retired wall' });
+    resetAllRateLimits();
+
+    const extensions = await captureLimitReached(restore(deletedBoardUuid));
+
+    expect(extensions).not.toBeNull();
+    expect(extensions?.maxBoards).toBe(MAX_BOARDS_PER_ACCOUNT);
+    expect(await isDeleted(deletedBoardUuid)).toBe(true);
+    expect(await liveBoardCount()).toBe(MAX_BOARDS_PER_ACCOUNT);
+  });
+
+  it('restores the deleted board when the account has room', async () => {
+    await seedBoards(MAX_BOARDS_PER_ACCOUNT - 1);
+    const { uuid: deletedBoardUuid } = await seedBoard({ deleted: true, name: 'Retired wall' });
+    resetAllRateLimits();
+
+    const restored = await restore(deletedBoardUuid);
+
+    expect(restored.name).toBe('Back in service');
+    expect(await isDeleted(deletedBoardUuid)).toBe(false);
+    expect(await liveBoardCount()).toBe(MAX_BOARDS_PER_ACCOUNT);
+  });
+
+  it('lets the owner keep editing a LIVE board at the cap', async () => {
+    // A live board's edit adds no row, so it must never pay the toll —
+    // otherwise reaching the cap would freeze every board on the account.
+    await seedBoards(MAX_BOARDS_PER_ACCOUNT - 1);
+    const { uuid: liveBoardUuid } = await seedBoard({ name: 'Working wall' });
+    resetAllRateLimits();
+
+    const updated = await socialBoardMutations.updateBoard(
+      null,
+      { input: { boardUuid: liveBoardUuid, name: 'Working wall (left)' } },
+      authCtx(OWNER),
+    );
+
+    expect(updated.name).toBe('Working wall (left)');
     expect(await liveBoardCount()).toBe(MAX_BOARDS_PER_ACCOUNT);
   });
 });
