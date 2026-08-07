@@ -64,8 +64,6 @@ type BluetoothContextValue = {
   ) => Promise<boolean>;
   disconnect: (reason?: BluetoothDisconnectReason) => Promise<void>;
   sendFramesToBoard: SendFramesToBoard;
-  /** Record a confirmed direct climb re-light (for example, mirror). */
-  notifyClimbDisplaySucceeded: () => void;
   clearBoard: () => Promise<boolean | undefined>;
   /**
    * Force the auto-sender to re-push the current climb to the wall once, even
@@ -188,7 +186,6 @@ function presenceClimbToQueueInput(climb: BoardPresenceClimb): ClimbQueueItemInp
 function BluetoothAutoSender({
   sendFramesToBoard,
   onWallConfirmed,
-  onClimbDisplaySucceeded,
   reassertNonce,
   connectInitialSendRef,
   lastPhysicalFramesRef,
@@ -204,8 +201,6 @@ function BluetoothAutoSender({
    * confirm (uuid only) and report the climb to the board-presence channel.
    */
   onWallConfirmed: (item: ClimbQueueItem) => void;
-  /** Called only after an app-initiated climb packet is confirmed by BLE. */
-  onClimbDisplaySucceeded: () => void;
   reassertNonce: number;
   // One-shot seed: what connect() already wrote as initialFrames, so the
   // freshly mounted AutoSender doesn't repeat a byte-identical first send.
@@ -458,7 +453,6 @@ function BluetoothAutoSender({
               lastSentSignatureRef.current = sendSignature;
               lastPhysicalFramesRef.current = physicalFramesSignature(item.climb.frames, !!item.climb.mirrored);
               onWallConfirmedRef.current(item);
-              onClimbDisplaySucceeded();
               hapticSuccess();
             }
           } catch (error) {
@@ -478,7 +472,7 @@ function BluetoothAutoSender({
     };
 
     void drain();
-  }, [currentClimbQueueItem, sendFramesToBoard, reassertNonce, colorSignature, onClimbDisplaySucceeded]);
+  }, [currentClimbQueueItem, sendFramesToBoard, reassertNonce, colorSignature]);
 
   return null;
 }
@@ -823,6 +817,15 @@ export function BluetoothProvider({
             // occupying the new generation's still-empty attribution slot.
             if (!connection.setAnalyticsBoardId(resolved.boardId)) return;
             resolvedPresenceBoardIdRef.current = resolved.boardId;
+            // Consume the pending-resolve marker BEFORE replaying: a wall
+            // confirm landing in the microtask gap between this .then and the
+            // .finally below would otherwise still read "resolving", queue a
+            // report after the replay already ran, and orphan it forever. The
+            // .finally stays for the null/failure paths (same idempotent guard).
+            if (pendingPresenceResolveConnectionRef.current === connection) {
+              pendingPresenceResolveConnectionRef.current = null;
+              pendingPresenceResolveRef.current = false;
+            }
             replayPendingWallReport(resolved.boardId);
           })
           .catch((error: unknown) => {
@@ -951,6 +954,26 @@ export function BluetoothProvider({
     onConnectionEnded: handleBluetoothConnectionEnded,
     getConnectedViaMismatchOverride,
   });
+
+  // Every successful board write is activity for the auto-disconnect deadline,
+  // no matter which surface wrote (queue auto-sender, mirror toggle, playback
+  // scrub, climb-edit preview, clear lights). Wrapping the sender here keeps
+  // all consumers covered without each one remembering to notify.
+  const sendFramesToBoardWithActivityReset = useCallback<SendFramesToBoard>(
+    (frames, mirrored, signal, sendContext) => {
+      // Pass the hook's promise through untouched (no extra await hop in the
+      // send path); the timer reset rides a side chain that only observes
+      // success. Callers keep owning failure handling on the returned promise.
+      const sendPromise = sendFramesToBoard(frames, mirrored, signal, sendContext);
+      sendPromise
+        .then((writeSucceeded) => {
+          if (writeSucceeded === true) resetAutoDisconnect();
+        })
+        .catch(() => {});
+      return sendPromise;
+    },
+    [sendFramesToBoard, resetAutoDisconnect],
+  );
 
   const resolvedPickerBoards = useResolvedBleDeviceBoards(pickerState?.devices ?? EMPTY_PICKER_DEVICES);
   const currentBoardConfig = useMemo(() => {
@@ -1225,7 +1248,7 @@ export function BluetoothProvider({
     }
 
     lastAcceptedReportSignatureRef.current = null;
-    const writeSucceeded = await sendFramesToBoard(frames, false, undefined, {
+    const writeSucceeded = await sendFramesToBoardWithActivityReset(frames, false, undefined, {
       sendSource: 'undo',
       climbUuid: undoTarget.climbUuid,
     }).catch((error: unknown) => {
@@ -1235,7 +1258,6 @@ export function BluetoothProvider({
     if (writeSucceeded !== true) {
       return false;
     }
-    resetAutoDisconnect();
     lastPhysicalFramesRef.current = physicalFramesSignature(frames, false);
 
     const accepted = await reportClimbForBoardRef
@@ -1251,7 +1273,7 @@ export function BluetoothProvider({
     lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(undoTarget);
     undoWallChangeTargetRef.current = null;
     return true;
-  }, [sendFramesToBoard, resetAutoDisconnect]);
+  }, [sendFramesToBoardWithActivityReset]);
 
   // Generalized `undoWallChange`: relight ANY presence climb (the wall kiosk's
   // "Light this" confirm), not just the captured undo target. Same BLE-first-
@@ -1272,7 +1294,7 @@ export function BluetoothProvider({
       }
 
       lastAcceptedReportSignatureRef.current = null;
-      const writeSucceeded = await sendFramesToBoard(frames, false, undefined, {
+      const writeSucceeded = await sendFramesToBoardWithActivityReset(frames, false, undefined, {
         sendSource: 'wall-relight',
         climbUuid: climb.climbUuid,
       }).catch((error: unknown) => {
@@ -1282,7 +1304,6 @@ export function BluetoothProvider({
       if (writeSucceeded !== true) {
         return false;
       }
-      resetAutoDisconnect();
       lastPhysicalFramesRef.current = physicalFramesSignature(frames, false);
 
       const accepted = await reportClimbForBoardRef
@@ -1298,12 +1319,12 @@ export function BluetoothProvider({
       lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(climb);
       return true;
     },
-    [sendFramesToBoard, resetAutoDisconnect],
+    [sendFramesToBoardWithActivityReset],
   );
 
   const clearBoard = useCallback(
-    () => sendFramesToBoard('', false, undefined, { sendSource: 'clear' }),
-    [sendFramesToBoard],
+    () => sendFramesToBoardWithActivityReset('', false, undefined, { sendSource: 'clear' }),
+    [sendFramesToBoardWithActivityReset],
   );
 
   // Advance the queue past a "spill" climb (one set for a different board/layout
@@ -1478,8 +1499,7 @@ export function BluetoothProvider({
       loading,
       connect,
       disconnect: wrappedDisconnect,
-      sendFramesToBoard,
-      notifyClimbDisplaySucceeded: resetAutoDisconnect,
+      sendFramesToBoard: sendFramesToBoardWithActivityReset,
       clearBoard,
       reassertWall,
       undoWallChange,
@@ -1496,8 +1516,7 @@ export function BluetoothProvider({
       loading,
       connect,
       wrappedDisconnect,
-      sendFramesToBoard,
-      resetAutoDisconnect,
+      sendFramesToBoardWithActivityReset,
       clearBoard,
       reassertWall,
       undoWallChange,
@@ -1531,9 +1550,8 @@ export function BluetoothProvider({
           Aurora is last-connection-wins, so one phone is physically connected. */}
       {isConnected && (
         <BluetoothAutoSender
-          sendFramesToBoard={sendFramesToBoard}
+          sendFramesToBoard={sendFramesToBoardWithActivityReset}
           onWallConfirmed={handleWallConfirmed}
-          onClimbDisplaySucceeded={resetAutoDisconnect}
           reassertNonce={reassertNonce}
           connectInitialSendRef={connectInitialSendRef}
           lastPhysicalFramesRef={lastPhysicalFramesRef}

@@ -611,14 +611,7 @@ export function PlayDrawer({
     // orientation. isConnected means this device holds the BLE link (and
     // therefore drives the wall).
     if (bluetooth?.isConnected && displayedClimb?.frames) {
-      void bluetooth
-        .sendFramesToBoard(displayedClimb.frames, nextMirrored)
-        .then((writeSucceeded) => {
-          if (writeSucceeded === true) bluetooth.notifyClimbDisplaySucceeded();
-        })
-        .catch(() => {
-          // A failed mirror write must not reset the inactivity deadline.
-        });
+      void bluetooth.sendFramesToBoard(displayedClimb.frames, nextMirrored);
     }
   }, [isMirrored, bluetooth, displayedClimb]);
 
