@@ -1090,4 +1090,153 @@ describe('social board update catalog gate', () => {
     const [after] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
     expect(after).toEqual(before);
   });
+
+  it('accepts whitespace-padded stored legacy set IDs and preserves their raw config', async () => {
+    const paddedStoredSetIds = ` ${UNKNOWN_SET_ID}, ${UNKNOWN_SET_ID + 1} `;
+    const board = await insertTestBoard({
+      ownerId: UPDATE_USER_ID,
+      layoutId: UNKNOWN_LAYOUT_ID,
+      sizeId: UNKNOWN_SIZE_ID,
+      setIds: paddedStoredSetIds,
+      name: 'Padded legacy config',
+    });
+
+    const updated = await socialBoardMutations.updateBoard(
+      undefined,
+      {
+        input: {
+          boardUuid: board.uuid,
+          name: 'Padded legacy config fixed',
+          layoutId: UNKNOWN_LAYOUT_ID,
+          sizeId: UNKNOWN_SIZE_ID,
+          setIds: `${UNKNOWN_SET_ID + 1},${UNKNOWN_SET_ID}`,
+        },
+      },
+      authCtx(UPDATE_USER_ID),
+    );
+    const [after] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+
+    expect(updated.name).toBe('Padded legacy config fixed');
+    expect(updated.setIds).toBe(paddedStoredSetIds);
+    expect(after.setIds).toBe(paddedStoredSetIds);
+  });
+
+  it.each([
+    ['a digit-splitting space', `${UNKNOWN_SET_ID} ${UNKNOWN_SET_ID}`],
+    ['an empty padded token', ` ,${UNKNOWN_SET_ID}`],
+  ])('still treats stored set IDs with %s as malformed and preserves the row', async (_caseName, storedSetIds) => {
+    const board = await insertTestBoard({
+      ownerId: UPDATE_USER_ID,
+      layoutId: UNKNOWN_LAYOUT_ID,
+      sizeId: UNKNOWN_SIZE_ID,
+      setIds: storedSetIds,
+      name: 'Malformed padded legacy config',
+    });
+    const [before] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+
+    await expectUnknownBoardConfig(
+      socialBoardMutations.updateBoard(
+        undefined,
+        {
+          input: {
+            boardUuid: board.uuid,
+            name: 'Must not save',
+            layoutId: UNKNOWN_LAYOUT_ID,
+            sizeId: UNKNOWN_SIZE_ID,
+            setIds: String(UNKNOWN_SET_ID),
+          },
+        },
+        authCtx(UPDATE_USER_ID),
+      ),
+    );
+
+    const [after] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+    expect(after).toEqual(before);
+  });
+
+  async function insertSoftDeletedLegacyBoardWithActiveTwin(deletedAt: Date): Promise<{ uuid: string; id: number }> {
+    const deletedBoard = await insertTestBoard({
+      ownerId: UPDATE_USER_ID,
+      layoutId: UNKNOWN_LAYOUT_ID,
+      sizeId: UNKNOWN_SIZE_ID,
+      setIds: String(UNKNOWN_SET_ID),
+      name: 'Deleted legacy board',
+    });
+    await db.update(dbSchema.userBoards).set({ deletedAt }).where(eq(dbSchema.userBoards.id, deletedBoard.id));
+    await insertTestBoard({
+      ownerId: UPDATE_USER_ID,
+      layoutId: UNKNOWN_LAYOUT_ID,
+      sizeId: UNKNOWN_SIZE_ID,
+      setIds: String(UNKNOWN_SET_ID),
+      name: 'Replacement legacy board',
+    });
+    return { uuid: deletedBoard.uuid, id: deletedBoard.id };
+  }
+
+  it('refuses to restore a soft-deleted legacy board into an owner config duplicate on a full-tuple save', async () => {
+    const deletedAt = new Date('2026-01-01T00:00:00.000Z');
+    const deletedBoard = await insertSoftDeletedLegacyBoardWithActiveTwin(deletedAt);
+
+    await expect(
+      socialBoardMutations.updateBoard(
+        undefined,
+        {
+          input: {
+            boardUuid: deletedBoard.uuid,
+            name: 'Must not restore',
+            layoutId: UNKNOWN_LAYOUT_ID,
+            sizeId: UNKNOWN_SIZE_ID,
+            setIds: String(UNKNOWN_SET_ID),
+          },
+        },
+        authCtx(UPDATE_USER_ID),
+      ),
+    ).rejects.toThrow(/already has a board with this configuration/);
+
+    const [after] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, deletedBoard.id));
+    expect(after.deletedAt).toEqual(deletedAt);
+    expect(after.name).toBe('Deleted legacy board');
+  });
+
+  it('refuses to restore a soft-deleted legacy board into an owner config duplicate on a metadata-only save', async () => {
+    const deletedAt = new Date('2026-01-01T00:00:00.000Z');
+    const deletedBoard = await insertSoftDeletedLegacyBoardWithActiveTwin(deletedAt);
+
+    await expect(
+      socialBoardMutations.updateBoard(
+        undefined,
+        { input: { boardUuid: deletedBoard.uuid, name: 'Must not restore' } },
+        authCtx(UPDATE_USER_ID),
+      ),
+    ).rejects.toThrow(/already has a board with this configuration/);
+
+    const [after] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, deletedBoard.id));
+    expect(after.deletedAt).toEqual(deletedAt);
+    expect(after.name).toBe('Deleted legacy board');
+  });
+
+  it('restores a soft-deleted legacy board when the owner has no active duplicate', async () => {
+    const deletedBoard = await insertTestBoard({
+      ownerId: UPDATE_USER_ID,
+      layoutId: UNKNOWN_LAYOUT_ID,
+      sizeId: UNKNOWN_SIZE_ID,
+      setIds: String(UNKNOWN_SET_ID),
+      name: 'Deleted legacy board',
+    });
+    await db
+      .update(dbSchema.userBoards)
+      .set({ deletedAt: new Date('2026-01-01T00:00:00.000Z') })
+      .where(eq(dbSchema.userBoards.id, deletedBoard.id));
+
+    const updated = await socialBoardMutations.updateBoard(
+      undefined,
+      { input: { boardUuid: deletedBoard.uuid, name: 'Back on the wall' } },
+      authCtx(UPDATE_USER_ID),
+    );
+    const [after] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, deletedBoard.id));
+
+    expect(updated.name).toBe('Back on the wall');
+    expect(after.deletedAt).toBeNull();
+    expect(after.setIds).toBe(String(UNKNOWN_SET_ID));
+  });
 });
