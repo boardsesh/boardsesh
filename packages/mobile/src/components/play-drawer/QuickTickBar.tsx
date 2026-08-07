@@ -357,16 +357,14 @@ export const QuickTickBar = React.memo(function QuickTickBar({
     // The save row sits at the very bottom of LogAscentSheet, so the bottom
     // padding must clear the Android system nav bar / home indicator.
     <View style={[styles.container, { paddingBottom: insets.bottom + spacing[3] }]}>
-      {/* Rows are ordered least-used at the top, most-used at the bottom, so the
-          controls people actually reach for sit in the thumb zone. Interaction
-          rates over 90 days of mobile ticks: tries 28%, stars 24%, grade 6.5%,
-          note 1.4%, date/time under 1%. Note stays directly above the save row
-          on purpose — it's rarely used, but a text field there is far less
-          fat-finger-prone than a picker would be (#4163).
+      {/* Row order is least-used at the top, most-used at the bottom, so the
+          common controls land in the thumb zone. Measured interaction rates:
+          tries 28%, stars 24%, grade 6.5%, note 1.4%, date/time <1% (#4163).
+          Note is the exception — rarely used, but kept off the save row's edge
+          because a text field there fat-fingers less than a picker.
 
-          Scrolls because the fixed content is ~450pt and the sheet's 60% snap
-          gives ~400pt on a small phone, which used to clip the save buttons with
-          no way to reach them. The error row and save row stay pinned below. */}
+          Scrolls because the rows overflow the sheet's 60% snap on a small
+          phone. The error row and save row stay pinned below. */}
       <BottomSheetScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}

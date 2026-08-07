@@ -355,6 +355,8 @@ describe('QuickTickBar climbedAt', () => {
     fireEvent.click(sendButton as Element);
 
     expect(saveMock.mutate).toHaveBeenCalledTimes(1);
+    // March, not the June system time: the stubbed ClimbedAtField always commits
+    // 2025-03-15 on click, so a save-time fallback would show June instead.
     expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({
       climbedAt: '2025-03-15T12:00:00.000Z',
     });
