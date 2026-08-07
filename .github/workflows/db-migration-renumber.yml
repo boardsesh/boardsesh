@@ -60,12 +60,13 @@ jobs:
       head_sha: ${{ steps.decide.outputs.head_sha }}
       skip_reason: ${{ steps.decide.outputs.skip_reason }}
     steps:
-      # Fail loudly rather than skipping. Without this the whole `renumber` job —
-      # including its comment step — is skipped by the `vars.OTA_PUSH_APP_ID` guard,
-      # so a missing or expired App credential looks exactly like "nothing to do":
-      # the dispatch fires, the gate passes, and stranded PRs get no explanation.
-      # This is operator misconfiguration, not a per-PR condition, so a red run is
-      # the right signal.
+      # Fail loudly rather than skipping. Without this the `renumber` job is skipped
+      # by its `vars.OTA_PUSH_APP_ID` guard, so a missing or expired App credential
+      # looks exactly like "nothing to do": the dispatch fires, the gate passes, and
+      # stranded PRs get no explanation. Failing here also stops the `comment` job,
+      # which needs a successful gate — otherwise it would post a "renumbering was
+      # held" comment blaming the PR for an operator misconfiguration. A red run is
+      # the right signal for that.
       - name: Require the push credential
         if: vars.OTA_PUSH_APP_ID == ''
         run: |
@@ -302,7 +303,9 @@ jobs:
           script: |
             // This dependency-free module comes from the immutable workflow
             // commit on a fresh runner that never executed PR-controlled code.
-            const { renderRenumberWorkflowComment } = require(
+            // Take the sticky marker from it too — a second copy here would drift
+            // and turn every upsert into a duplicate comment.
+            const { STICKY_MARKER, renderRenumberWorkflowComment } = require(
               `${process.env.GITHUB_WORKSPACE}/scripts/lib/db-renumber-comment.cjs`,
             );
             const commentBody = process.env.COMMENT_B64
@@ -325,14 +328,13 @@ jobs:
                 runId: context.runId,
               },
             });
-            const marker = '<!-- db-renumber -->';
 
             // Paginated: an unpaginated first-100 lookup would miss the marker on a
             // long PR and post a duplicate comment every run instead of updating.
             const comments = await github.paginate(github.rest.issues.listComments, {
               ...context.repo, issue_number: Number(process.env.PR_NUMBER), per_page: 100,
             });
-            const existing = comments.find((comment) => comment.body?.includes(marker));
+            const existing = comments.find((comment) => comment.body?.includes(STICKY_MARKER));
             if (existing) {
               await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
             } else {

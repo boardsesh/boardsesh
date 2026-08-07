@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { STICKY_MARKER as SCRIPT_STICKY_MARKER } from '../db-renumber-migration';
 import { STICKY_MARKER, renderRenumberWorkflowComment } from './db-renumber-comment.cjs';
 
 const context = {
@@ -38,6 +39,15 @@ function decide(overrides: Record<string, string> = {}) {
     ...overrides,
   });
 }
+
+describe('STICKY_MARKER', () => {
+  it('matches the marker the renumber script embeds in its own bodies', () => {
+    // The workflow upserts by searching every PR comment for this marker. If the
+    // two copies drift, the lookup stops finding the script-written comment and
+    // the bot posts a fresh duplicate on every run.
+    expect(STICKY_MARKER).toBe(SCRIPT_STICKY_MARKER);
+  });
+});
 
 describe('renderRenumberWorkflowComment', () => {
   it('posts the local renumber-success comment only after the force-push succeeds', () => {

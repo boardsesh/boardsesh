@@ -404,6 +404,14 @@ describe('workflow comment trust boundary', () => {
     expect(commentJob).not.toContain('.renumber-tooling');
   });
 
+  it('takes the sticky marker from the shared module rather than redefining it', () => {
+    // A literal copy here drifts silently: the upsert lookup stops matching the
+    // script-written comment and the bot posts a duplicate on every run.
+    expect(commentJob).toContain('const { STICKY_MARKER, renderRenumberWorkflowComment } = require(');
+    expect(commentJob).toContain('comment.body?.includes(STICKY_MARKER)');
+    expect(commentJob).not.toContain(`'${STICKY_MARKER}'`);
+  });
+
   it('stops the comment-job slice before a future sibling job', () => {
     const workflowWithLaterJob = `${workflowSource.trimEnd()}\n  later_job:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo .renumber-tooling\n`;
     expect(workflowWithLaterJob).toContain('.renumber-tooling');
