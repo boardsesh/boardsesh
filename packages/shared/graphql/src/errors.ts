@@ -63,3 +63,12 @@ export function readDuplicateBoardError(error: unknown): DuplicateBoardError | n
   }
   return null;
 }
+
+/**
+ * The server refusing to add another board because the account is at its
+ * ceiling. Worth branching on rather than surfacing as a generic failure: the
+ * fix is to delete a board the climber no longer uses, not to retry.
+ */
+export function isBoardLimitError(error: unknown): boolean {
+  return getGraphqlErrors(error).some((graphqlError) => graphqlError.extensions?.code === 'BOARD_LIMIT_REACHED');
+}

@@ -23,6 +23,7 @@ import {
 import { generateUniqueGymSlug, requireBoardGymLinkAccess, userCanEditGym } from './gyms';
 import { resolveAutoGymForBoard } from './gym-matching';
 import { findBlockingDuplicate, type BoardLocation } from './board-duplicates';
+import { assertBoardCapNotReached } from './board-limits';
 import { getUserCommunityRoles, hasAdminOrLeader, rolesGrantAdminOrLeader } from './roles';
 import {
   SYSTEM_BOARD_OWNER_ID,
@@ -1707,6 +1708,10 @@ export const socialBoardMutations = {
       validatedInput.setIds,
     );
     const userId = ctx.userId!;
+
+    // Before the duplicate guard, so the `allowDuplicateConfig` bypass — the one
+    // path that can add unlimited same-config boards — is capped too.
+    await assertBoardCapNotReached(userId);
 
     const incomingLocation = {
       latitude: validatedInput.latitude ?? null,

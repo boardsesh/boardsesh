@@ -17,6 +17,7 @@ import {
   ReportBoardClimbInputSchema,
 } from '../../../validation/schemas';
 import { generateUniqueSlug } from '../social/boards';
+import { assertBoardCapNotReached } from '../social/board-limits';
 import { assertKnownBoardConfig } from './board-catalog';
 import { logger } from '../../../utils/logger';
 import { pubsub } from '../../../pubsub/index';
@@ -160,6 +161,11 @@ async function bindOrCreateOwnBoardForSerial(
       throw serialAlreadyBoundError();
     }
   }
+
+  // Only the create branch is capped. Binding a serial onto a board the caller
+  // already owns adds no row, so an account at the cap must still be able to
+  // connect to the walls it has.
+  await assertBoardCapNotReached(userId);
 
   await assertKnownBoardConfig(config.boardType, config.layoutId, config.sizeId, config.setIds);
   const uuid = uuidv4();
