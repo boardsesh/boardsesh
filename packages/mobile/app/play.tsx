@@ -125,11 +125,21 @@ export default function PlayScreen() {
       {/* Edge-to-edge glass/material background with NO radius — full-screen, not
           a card. Rendered on the first frame so the present animates over it.
           GlassSurface resolves Liquid Glass / blur / Material / Reduce-
-          Transparency-solid per device. */}
+          Transparency-solid per device.
+
+          `level0` and `pointerEvents="none"` are load-bearing, not cosmetic. This
+          surface is a BACKGROUND with the player stacked on top as a sibling, and
+          Android orders siblings by Z: GlassSurface's Material branch otherwise
+          defaults to `shadows.sm` (elevation 2), which lifts the full-screen fill
+          above the elevation-0 PlayDrawer and paints over the whole player — the
+          drawer opened showing nothing but its own tint (#4209). A background also
+          has no business taking touches. */}
       <GlassSurface
         style={StyleSheet.absoluteFill}
         glassEffectStyle="regular"
         role="low"
+        level="level0"
+        pointerEvents="none"
         fallbackColor={systemColors.secondaryBackground}
         tintColor={playDrawerMaterialTint[colorScheme]}
       />

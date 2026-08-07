@@ -83,8 +83,9 @@ vi.mock('../../theme/ios-colors', () => ({
 }));
 
 // Real tokens.ts pulls in PlatformColor via ios-colors; the material branch only
-// needs shadows.sm, so stub it.
-vi.mock('../../theme/tokens', () => ({ shadows: { sm: {} } }));
+// needs shadows.sm, so stub it — with the real `elevation: 2`, because that
+// default cast is exactly what a background surface must opt out of (#4209).
+vi.mock('../../theme/tokens', () => ({ shadows: { sm: { elevation: 2 } } }));
 
 import { GlassSurface } from '../GlassSurface';
 
@@ -248,5 +249,31 @@ describe('GlassSurface Material elevation cast vs. a consumer clip', () => {
     // the consumers that never clipped.
     const elevated = container.querySelector('[data-elevation="3"]');
     expect(elevated?.firstElementChild?.getAttribute('data-testid')).toBe('card-content');
+  });
+});
+
+// A background surface stacks its content as a SIBLING, and Android orders
+// siblings by Z — so the Material branch's default `shadows.sm` cast (elevation 2)
+// raises the fill above the elevation-0 content and paints over it. That is what
+// hid the whole play drawer behind its own tint on Android 9 (#4209).
+describe('GlassSurface as a background (flat + non-interactive)', () => {
+  beforeEach(() => {
+    ctrl.variant = 'material';
+  });
+
+  it('casts shadows.sm by default — the footgun a background must opt out of', () => {
+    const { container } = render(<GlassSurface role="low" />);
+    expect(container.querySelector('[data-elevation="2"]')).not.toBeNull();
+  });
+
+  it('renders flat with level0 so it cannot outrank its sibling content', () => {
+    const { container } = render(<GlassSurface role="low" level="level0" />);
+    expect(container.querySelector('[data-elevation="0"]')).not.toBeNull();
+    expect(container.querySelector('[data-elevation="2"]')).toBeNull();
+  });
+
+  it('forwards pointerEvents to the Material surface so a background takes no touches', () => {
+    const { container } = render(<GlassSurface role="low" level="level0" pointerEvents="none" />);
+    expect(container.querySelector('[data-elevation="0"]')?.getAttribute('data-pe')).toBe('none');
   });
 });

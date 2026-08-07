@@ -153,10 +153,13 @@ function IpadSidebarComponent({ showWallCell = true }: { showWallCell?: boolean 
         },
       ]}
     >
-      {/* Glass fill behind the rail; nav items render as siblings on top. */}
+      {/* Glass fill behind the rail; nav items render as siblings on top, so the
+          fill stays flat — Android orders siblings by Z and the Material branch's
+          default `shadows.sm` cast (elevation 2) would raise it over them (#4209). */}
       <GlassSurface
         style={StyleSheet.absoluteFill}
         fallbackColor={systemColors.secondaryBackground}
+        level="level0"
         pointerEvents="none"
       />
       {/* The primary destinations form one tab group; the account row and the
