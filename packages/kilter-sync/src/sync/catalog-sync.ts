@@ -903,8 +903,9 @@ export function stageCatalogClimb(
     return 'folded';
   }
 
-  // 3. Genuinely new canonical.
-  index.fingerprintToCanonical.set(fingerprint, climb.climbUuid);
+  // 3. Genuinely new canonical. Empty projections keep a NULL fingerprint and
+  // stay out of the owner index: SHA256('') must not alias unrelated climbs.
+  if (fingerprint !== null) index.fingerprintToCanonical.set(fingerprint, climb.climbUuid);
   index.existingByLowerUuid.set(lowerUuid, climb.climbUuid);
   climbUuidToCanonical.set(lowerUuid, climb.climbUuid);
   batch.newClimbInserts.push({

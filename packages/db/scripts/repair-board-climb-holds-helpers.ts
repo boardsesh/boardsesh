@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import {
   isAuroraBoardName,
   legacyAuroraRawFrameHoldEvents,
-  parseFramesSegments,
   projectAuroraFramesToStoredRows,
   type StoredClimbHoldRow,
 } from '@boardsesh/board-constants/hold-states';
@@ -100,7 +99,12 @@ export function strictlyProjectStoredRows(
     const quotedDelta = frameNumber > 0 && rawSegment.startsWith('"');
     const body = quotedDelta ? rawSegment.slice(1) : rawSegment;
     if (body.length === 0) {
-      if (!quotedDelta) errors.push(`frame ${frameNumber} is an empty unquoted absolute frame`);
+      // An empty frame 0 is the delayed-start encoding: the board stays dark
+      // for one pace tick before the first hold lights. Both the Grips
+      // importer (`,"p100r13` for `h10p13s2`) and the legacy Aurora catalog
+      // emit it. A mid-string empty unquoted segment is still corruption —
+      // it would decode as a full-wall blackout frame.
+      if (!quotedDelta && frameNumber > 0) errors.push(`frame ${frameNumber} is an empty unquoted absolute frame`);
       continue;
     }
     let offset = 0;
@@ -124,11 +128,14 @@ export function strictlyProjectStoredRows(
     }
   }
 
-  const parsedSegments = parseFramesSegments(frames);
+  // frames_count counts the raw comma-delimited slots, which is what Aurora
+  // and Kilter Grips both record. `parseFramesSegments` drops the leading
+  // empty slot of a delayed-start climb, so comparing against its length
+  // would flag every such climb as drift.
   if (expectedFramesCount == null || !Number.isInteger(expectedFramesCount) || expectedFramesCount <= 0) {
     errors.push(`frames_count is invalid: ${String(expectedFramesCount)}`);
-  } else if (parsedSegments.length !== expectedFramesCount) {
-    errors.push(`frames_count mismatch: stored=${expectedFramesCount} parsed=${parsedSegments.length}`);
+  } else if (rawSegments.length !== expectedFramesCount) {
+    errors.push(`frames_count mismatch: stored=${expectedFramesCount} parsed=${rawSegments.length}`);
   }
   if (errors.length > 0) return { ok: false, errors };
 
