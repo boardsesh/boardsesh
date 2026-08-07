@@ -43,6 +43,61 @@ function throwIfBoardSerialConflict(error: unknown): void {
   }
 }
 
+function isAsciiWhitespace(character: string): boolean {
+  return character === ' ' || character === '\t' || character === '\n' || character === '\r' || character === '\f';
+}
+
+/**
+ * Return canonical decimal set membership for comparison, without accepting
+ * malformed stored values as equivalent to a valid editor submission. Board
+ * rows predate the current input schema, so stored values may exceed today's
+ * request length cap. Parse them structurally rather than feeding arbitrarily
+ * long decimal tokens to BigInt; allocation is limited to normalized tokens,
+ * so legacy leading-zero padding is discarded before strings are retained.
+ *
+ * Padding whitespace around an otherwise all-digit token is trimmed: legacy
+ * rows were written before the CSV format was validated, and the membership of
+ * "1, 2" is unambiguous. Whitespace inside a token ("1 2") stays malformed.
+ */
+function canonicalSetIdMembership(setIds: string): string | undefined {
+  const normalizedSetIds = new Set<string>();
+  let tokenStart = 0;
+
+  for (let index = 0; index <= setIds.length; index += 1) {
+    if (index < setIds.length && setIds[index] !== ',') continue;
+
+    let tokenBegin = tokenStart;
+    let tokenEnd = index;
+    while (tokenBegin < tokenEnd && isAsciiWhitespace(setIds[tokenBegin])) tokenBegin += 1;
+    while (tokenEnd > tokenBegin && isAsciiWhitespace(setIds[tokenEnd - 1])) tokenEnd -= 1;
+
+    if (tokenBegin === tokenEnd) return undefined;
+
+    let firstSignificantDigit = tokenBegin;
+    for (let digitIndex = tokenBegin; digitIndex < tokenEnd; digitIndex += 1) {
+      const character = setIds[digitIndex];
+      if (character < '0' || character > '9') return undefined;
+      if (character === '0' && firstSignificantDigit === digitIndex && digitIndex < tokenEnd - 1) {
+        firstSignificantDigit += 1;
+      }
+    }
+
+    normalizedSetIds.add(setIds.slice(firstSignificantDigit, tokenEnd));
+    tokenStart = index + 1;
+  }
+
+  return [...normalizedSetIds]
+    .sort((firstSetId, secondSetId) => {
+      // Leading zeros are already stripped, so length then lexical order is numeric order without BigInt.
+      const lengthDifference = firstSetId.length - secondSetId.length;
+      if (lengthDifference !== 0) return lengthDifference;
+      if (firstSetId < secondSetId) return -1;
+      if (firstSetId > secondSetId) return 1;
+      return 0;
+    })
+    .join(',');
+}
+
 /**
  * Generate a unique slug from a board name.
  * Uses a single query to fetch all existing slugs that share the same prefix,
@@ -1868,18 +1923,19 @@ export const socialBoardMutations = {
     // owner/admin may edit. Community moderators can fix outdated catalog boards.
     await requireBoardEditAccess(ctx, board);
 
-    // Config field changes (layoutId, sizeId, setIds). Authorized editors may
-    // change these even when the board has logged climbs — a config change
-    // reflects a real physical reconfiguration. Old boardsesh_ticks rows are
-    // left untouched: they keep referencing the climbs/config they were logged
-    // against. We do not delete, move, or modify any tick rows here.
-    const hasConfigChange =
-      validatedInput.layoutId !== undefined ||
-      validatedInput.sizeId !== undefined ||
-      validatedInput.setIds !== undefined;
+    // Editors submit the whole config tuple, including for metadata-only
+    // saves. Compare its effective meaning with the stored tuple instead of
+    // treating field presence as a physical reconfiguration. Stored malformed
+    // CSV intentionally has no canonical form, so it cannot bypass catalog
+    // validation when a config value is submitted.
     const newLayoutId = validatedInput.layoutId ?? board.layoutId;
     const newSizeId = validatedInput.sizeId ?? board.sizeId;
     const newSetIds = validatedInput.setIds ?? board.setIds;
+    const hasConfigChange =
+      (validatedInput.layoutId !== undefined && newLayoutId !== board.layoutId) ||
+      (validatedInput.sizeId !== undefined && newSizeId !== board.sizeId) ||
+      (validatedInput.setIds !== undefined &&
+        canonicalSetIdMembership(newSetIds) !== canonicalSetIdMembership(board.setIds));
 
     if (hasConfigChange) {
       await assertKnownBoardConfig(board.boardType, newLayoutId, newSizeId, newSetIds);
@@ -1909,7 +1965,21 @@ export const socialBoardMutations = {
     if (validatedInput.serialNumber !== undefined) updateValues.serialNumber = validatedInput.serialNumber;
     if (validatedInput.timerName !== undefined) updateValues.timerName = validatedInput.timerName;
 
-    if (hasConfigChange) {
+    // The config the row carries once this save lands: submitted values only
+    // reach it on a real change, so an unchanged save keeps the stored
+    // (possibly legacy-formatted) text.
+    const resultingLayoutId = hasConfigChange ? newLayoutId : board.layoutId;
+    const resultingSizeId = hasConfigChange ? newSizeId : board.sizeId;
+    const resultingSetIds = hasConfigChange ? newSetIds : board.setIds;
+
+    // Restoring a soft-deleted board puts its config back into the owner's
+    // active set, exactly like a reconfiguration does, so it clears the same
+    // duplicate gate — otherwise an owner who deleted a board and rebuilt it
+    // with the same config could restore the old row and end up with two
+    // active duplicates (user_boards_owner_config_idx is not unique). The
+    // check reads the owner's own rows only, so it never re-blocks the legacy
+    // metadata edits above.
+    if (hasConfigChange || board.deletedAt) {
       // Check the unique constraint: no other active board with the same config
       // for the board's OWNER (not the caller — a moderator may be editing a
       // board owned by a system/import user). The DB's partial unique index
@@ -1924,9 +1994,9 @@ export const socialBoardMutations = {
             and(
               eq(dbSchema.userBoards.ownerId, board.ownerId),
               eq(dbSchema.userBoards.boardType, board.boardType),
-              eq(dbSchema.userBoards.layoutId, newLayoutId),
-              eq(dbSchema.userBoards.sizeId, newSizeId),
-              eq(dbSchema.userBoards.setIds, newSetIds),
+              eq(dbSchema.userBoards.layoutId, resultingLayoutId),
+              eq(dbSchema.userBoards.sizeId, resultingSizeId),
+              eq(dbSchema.userBoards.setIds, resultingSetIds),
               isNull(dbSchema.userBoards.deletedAt),
               sql`${dbSchema.userBoards.id} != ${board.id}`,
             ),
@@ -1937,7 +2007,9 @@ export const socialBoardMutations = {
           throw new Error("The board's owner already has a board with this configuration");
         }
       }
+    }
 
+    if (hasConfigChange) {
       if (validatedInput.layoutId !== undefined) updateValues.layoutId = validatedInput.layoutId;
       if (validatedInput.sizeId !== undefined) updateValues.sizeId = validatedInput.sizeId;
       if (validatedInput.setIds !== undefined) updateValues.setIds = validatedInput.setIds;
