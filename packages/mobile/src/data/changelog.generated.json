@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-07T21:36:08.326Z",
+  "generatedAt": "2026-08-07T21:56:51.938Z",
   "entries": [
+    {
+      "prNumber": 4118,
+      "category": "fixed",
+      "title": "This only changes what reaches Sentry's `extra.cause` field for a developer-only telemetry event — no user-visible behavior, copy, or UI changes. The whole feature is also still gated behind `offline-board-downloads` at 0% rollout.",
+      "mergedAt": "2026-08-07T21:55:44Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4118"
+    },
     {
       "prNumber": 4204,
       "category": "fixed",
