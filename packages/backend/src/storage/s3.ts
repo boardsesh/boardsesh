@@ -274,17 +274,26 @@ export async function listS3Objects(prefix: string): Promise<S3ObjectSummary[]> 
 }
 
 /**
- * Delete all avatar files for a user (all extensions)
+ * Delete a user's avatar files (the key is `avatars/<userId>.<ext>`). Called
+ * AFTER a new avatar is written, with `keepExt` set to the new file's
+ * extension, so a re-upload at a different extension can't leave a stale file
+ * behind — and a failed replacement never destroys the existing avatar
+ * (write-first, clean-after; same contract as deleteGymLogosFromS3).
+ *
+ * S3 DeleteObject is idempotent (deleting a missing key succeeds), so any error
+ * here is a real failure (network/auth), not "already gone" — it's logged and
+ * swallowed: the new avatar is already saved, and a leftover stale-ext object
+ * is unreferenced (the stored avatarUrl points at the new key).
  */
-export async function deleteUserAvatarsFromS3(userId: string): Promise<void> {
-  const extensions = ['jpg', 'png', 'gif', 'webp'];
+export async function deleteUserAvatarsFromS3(userId: string, keepExt?: string): Promise<void> {
+  const extensions = ['jpg', 'png', 'gif', 'webp'].filter((ext) => ext !== keepExt);
 
   await Promise.all(
     extensions.map(async (ext) => {
       try {
         await deleteFromS3(`avatars/${userId}.${ext}`);
-      } catch {
-        // File doesn't exist, ignore
+      } catch (deleteError) {
+        logger.warn(`Failed to delete stale avatar avatars/${userId}.${ext} from S3:`, deleteError);
       }
     }),
   );

@@ -62,10 +62,13 @@ function extractAuthTokenFromHeader(req: IncomingMessage): string | null {
 }
 
 /**
- * Helper to delete existing avatars for a user (all extensions)
+ * Delete a user's stale avatar files from local storage. Called AFTER the new
+ * avatar is written, with `keepExt` set to the new file's extension, so a
+ * failed replacement never destroys the existing avatar (write-first,
+ * clean-after — same contract as deleteUserAvatarsFromS3).
  */
-async function deleteExistingAvatars(userId: string): Promise<void> {
-  const extensions = ['jpg', 'png', 'gif', 'webp'];
+async function deleteExistingAvatars(userId: string, keepExt?: string): Promise<void> {
+  const extensions = ['jpg', 'png', 'gif', 'webp'].filter((ext) => ext !== keepExt);
   for (const ext of extensions) {
     const filePath = path.join(AVATARS_DIR, `${userId}.${ext}`);
     try {
@@ -238,24 +241,23 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
       let avatarUrl: string;
 
       try {
+        // Write-first, clean-after: the new avatar must be saved before any
+        // stale file is deleted, so a failed upload can never destroy the
+        // avatar the user's stored avatarUrl still points at.
         if (useS3) {
-          // Delete existing avatars from S3
-          await deleteUserAvatarsFromS3(userId);
-
-          // Upload to S3
           const s3Key = `avatars/${avatarFileName}`;
           await uploadToS3(fileBuffer, s3Key, mimeType);
           // Return backend-relative URL instead of direct S3 URL
           // This allows the backend to proxy the image, avoiding S3 public access requirements
           avatarUrl = buildStaticAvatarUrl(avatarFileName, randomUUID());
-        } else {
-          // Delete any existing avatars for this user (all extensions) from local storage
-          await deleteExistingAvatars(userId);
 
-          // Save to local file system
+          await deleteUserAvatarsFromS3(userId, ext);
+        } else {
           const filePath = path.join(AVATARS_DIR, avatarFileName);
           await writeFile(filePath, fileBuffer);
           avatarUrl = buildStaticAvatarUrl(avatarFileName, randomUUID());
+
+          await deleteExistingAvatars(userId, ext);
         }
       } catch (saveErr) {
         logger.error('Failed to save avatar:', saveErr);
