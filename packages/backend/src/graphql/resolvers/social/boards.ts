@@ -24,7 +24,12 @@ import { generateUniqueGymSlug, requireBoardGymLinkAccess, userCanEditGym } from
 import { resolveAutoGymForBoard } from './gym-matching';
 import { findBlockingDuplicate, type BoardLocation } from './board-duplicates';
 import { getUserCommunityRoles, hasAdminOrLeader, rolesGrantAdminOrLeader } from './roles';
-import { SYSTEM_BOARD_OWNER_ID, isRowAnonReadable, requireAnonReadableBoard } from '../board-presence/shared';
+import {
+  SYSTEM_BOARD_OWNER_ID,
+  isRowAnonReadable,
+  normalizeSetIds,
+  requireAnonReadableBoard,
+} from '../board-presence/shared';
 import { assertKnownBoardConfig } from '../board-presence/board-catalog';
 import { publishBoardQueuePreviewTombstoneForBoard } from '../../../services/board-queue-preview';
 import { logger } from '../../../utils/logger';
@@ -171,8 +176,21 @@ function duplicateBoardConfigError(existing: DuplicateBoardCandidate): GraphQLEr
 }
 
 /**
- * Resolve a board ID from user + board config.
- * Used by tick logging to auto-populate boardId.
+ * Resolve a board ID from user + board config. Used by tick logging on the
+ * legacy `/[board_name]/[layout_id]/...` route, which names a configuration
+ * rather than a board entity.
+ *
+ * Set-id equality is settled in JS, not SQL. The stored value keeps the order
+ * the board was created with, so a SQL `eq()` called '25,26,27,24' and
+ * '24,25,26,27' different boards and the tick was recorded with no board at all.
+ *
+ * Since #4174 an owner may hold several boards of one configuration, so the pick
+ * has to be stable: `asc(id)` means the same tick always lands on the same
+ * board, and a climber's history for that wall doesn't split across siblings.
+ * Preferring the board the user most recently ticked was considered and left
+ * out — it can flip the moment they tick a sibling through the boardUuid route,
+ * which is less stable, not more. The session rung in saveTick is the signal
+ * that actually knows which wall the climber is on.
  */
 export async function resolveBoardFromPath(
   userId: string,
@@ -181,8 +199,8 @@ export async function resolveBoardFromPath(
   sizeId: number,
   setIds: string,
 ): Promise<number | null> {
-  const [board] = await db
-    .select({ id: dbSchema.userBoards.id })
+  const candidates = await db
+    .select({ id: dbSchema.userBoards.id, setIds: dbSchema.userBoards.setIds })
     .from(dbSchema.userBoards)
     .where(
       and(
@@ -190,13 +208,16 @@ export async function resolveBoardFromPath(
         eq(dbSchema.userBoards.boardType, boardType),
         eq(dbSchema.userBoards.layoutId, layoutId),
         eq(dbSchema.userBoards.sizeId, sizeId),
-        eq(dbSchema.userBoards.setIds, setIds),
         isNull(dbSchema.userBoards.deletedAt),
       ),
     )
-    .limit(1);
+    .orderBy(asc(dbSchema.userBoards.id))
+    // One owner's boards of one exact type/layout/size — a handful of rows; the
+    // cap is a safety net against a pathological account.
+    .limit(100);
 
-  return board?.id ?? null;
+  const targetSetIds = normalizeSetIds(setIds);
+  return candidates.find((candidate) => normalizeSetIds(candidate.setIds) === targetSetIds)?.id ?? null;
 }
 
 /**
