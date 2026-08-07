@@ -17,6 +17,7 @@ export const PUBLIC_API_RATE_LIMIT_OPERATION = 'public-api-v1:get';
 
 const SHARED_UNTRUSTED_IDENTITY = 'unknown';
 const PUBLIC_API_LOCAL_MAX_IDENTITIES = 10_000;
+const LOGGED_USER_AGENT_MAX_LENGTH = 200;
 
 type PublicApiEnvironment = {
   readonly VERCEL?: string;
@@ -26,6 +27,7 @@ type PublicApiEnvironment = {
 type PublicApiRateLimitGuardOptions = {
   environment?: PublicApiEnvironment;
   getRedisEvaluator?: () => RedisRateLimitEvaluate | undefined;
+  logRateLimited?: (message: string) => void;
   memoryLimiter?: MemoryRateLimiter;
   now?: () => number;
 };
@@ -60,6 +62,7 @@ export function createPublicApiRateLimitGuard(
   const {
     environment = process.env,
     getRedisEvaluator = getWebRedisRateLimitEvaluator,
+    logRateLimited = console.info,
     memoryLimiter: injectedMemoryLimiter,
     now = Date.now,
   } = options;
@@ -89,9 +92,39 @@ export function createPublicApiRateLimitGuard(
       return null;
     } catch (error) {
       if (!(error instanceof RateLimitError)) throw error;
+      // One line per rejected request, so 429 volume stays greppable in the
+      // function logs and an alert window can tell a scraper enumerating climb
+      // UUIDs apart from a busy gym sharing one NAT address. This replaces the
+      // per-route log the climb-stats endpoint used to emit.
+      logRateLimited(
+        `[public-api-rate-limit] 429 path=${resolveRequestPath(request)} ip=${clientIdentity} ua=${resolveLoggedUserAgent(request)}`,
+      );
       return createRateLimitedResponse(error.retryAfterSeconds);
     }
   };
+}
+
+function resolveRequestPath(request: Request): string {
+  try {
+    return new URL(request.url).pathname;
+  } catch {
+    return 'unknown';
+  }
+}
+
+/**
+ * The User-Agent is caller-controlled, unlike the normalized IP and the routed
+ * path, so cap its length and fold control characters before it reaches a log
+ * line something else will parse.
+ */
+function resolveLoggedUserAgent(request: Request): string {
+  const rawUserAgent = request.headers.get('user-agent');
+  if (!rawUserAgent) return 'unknown';
+  const sanitized = rawUserAgent.replaceAll(/\p{Cc}/gu, ' ').trim();
+  if (!sanitized) return 'unknown';
+  return sanitized.length > LOGGED_USER_AGENT_MAX_LENGTH
+    ? `${sanitized.slice(0, LOGGED_USER_AGENT_MAX_LENGTH)}…`
+    : sanitized;
 }
 
 function createRateLimitedResponse(retryAfterSeconds: number): NextResponse<ErrorResponse> {

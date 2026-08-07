@@ -15,10 +15,11 @@ import {
   resolvePublicApiRateLimitNamespace,
 } from '../public-api-rate-limit.server';
 
-function request(path: string, platformIp?: string): Request {
-  return new Request(`https://www.boardsesh.com${path}`, {
-    headers: platformIp ? { 'x-vercel-forwarded-for': platformIp } : undefined,
-  });
+function request(path: string, platformIp?: string, userAgent?: string): Request {
+  const headers: Record<string, string> = {};
+  if (platformIp) headers['x-vercel-forwarded-for'] = platformIp;
+  if (userAgent) headers['user-agent'] = userAgent;
+  return new Request(`https://www.boardsesh.com${path}`, { headers });
 }
 
 describe('public API client identity', () => {
@@ -85,6 +86,7 @@ describe('public API guard', () => {
     const guard = createPublicApiRateLimitGuard({
       environment: { VERCEL: '1', VERCEL_ENV: 'production' },
       getRedisEvaluator: () => undefined,
+      logRateLimited: () => undefined,
       now: () => currentTime,
     });
     const publicRequest = request('/api/v1/kilter/grades', '203.0.113.8');
@@ -106,6 +108,7 @@ describe('public API guard', () => {
     const guard = createPublicApiRateLimitGuard({
       environment: { VERCEL: '1', VERCEL_ENV: 'production' },
       getRedisEvaluator: () => undefined,
+      logRateLimited: () => undefined,
       memoryLimiter: new MemoryRateLimiter({ maxEntries: 10 }),
     });
 
@@ -154,11 +157,82 @@ describe('public API guard', () => {
     const guard = createPublicApiRateLimitGuard({
       environment: { VERCEL: '1', VERCEL_ENV: 'production' },
       getRedisEvaluator: () => vi.fn().mockRejectedValue(new RateLimitError(17)),
+      logRateLimited: () => undefined,
       memoryLimiter: new MemoryRateLimiter(),
     });
 
     const response = await guard(request('/api/v1/kilter/grades', '203.0.113.8'));
     expect(response?.status).toBe(429);
     expect(response?.headers.get('Retry-After')).toBe('17');
+  });
+});
+
+describe('429 observability', () => {
+  it('logs the rejected path, identity, and user agent once per rejection', async () => {
+    const logRateLimited = vi.fn();
+    const guard = createPublicApiRateLimitGuard({
+      environment: { VERCEL: '1', VERCEL_ENV: 'production' },
+      getRedisEvaluator: () => vi.fn().mockRejectedValue(new RateLimitError(9)),
+      logRateLimited,
+      memoryLimiter: new MemoryRateLimiter(),
+    });
+
+    await guard(request('/api/v1/kilter/climb-stats/abc123', '203.0.113.8', 'scraper/1.0'));
+
+    expect(logRateLimited).toHaveBeenCalledOnce();
+    expect(logRateLimited.mock.calls[0]?.[0]).toBe(
+      '[public-api-rate-limit] 429 path=/api/v1/kilter/climb-stats/abc123 ip=203.0.113.8 ua=scraper/1.0',
+    );
+  });
+
+  it('stays silent while requests are inside the budget', async () => {
+    const logRateLimited = vi.fn();
+    const guard = createPublicApiRateLimitGuard({
+      environment: { VERCEL: '1', VERCEL_ENV: 'production' },
+      getRedisEvaluator: () => undefined,
+      logRateLimited,
+      memoryLimiter: new MemoryRateLimiter(),
+    });
+
+    await expect(guard(request('/api/v1/kilter/grades', '203.0.113.8'))).resolves.toBeNull();
+    expect(logRateLimited).not.toHaveBeenCalled();
+  });
+
+  it('folds control characters and caps a caller-controlled user agent', async () => {
+    const logRateLimited = vi.fn();
+    const guard = createPublicApiRateLimitGuard({
+      environment: { VERCEL: '1', VERCEL_ENV: 'production' },
+      getRedisEvaluator: () => vi.fn().mockRejectedValue(new RateLimitError(9)),
+      logRateLimited,
+      memoryLimiter: new MemoryRateLimiter(),
+    });
+
+    // Header values cannot legally carry a raw newline, so build the hostile
+    // value after construction rather than trusting the Request constructor.
+    const hostileRequest = request('/api/v1/kilter/grades', '203.0.113.8');
+    hostileRequest.headers.set('user-agent', `curl/8\u0007ua=spoofed ${'A'.repeat(400)}`);
+    await guard(hostileRequest);
+
+    const loggedLine = String(logRateLimited.mock.calls[0]?.[0]);
+    expect(loggedLine).toContain('ua=curl/8 ua=spoofed');
+    expect(loggedLine).not.toContain('\u0007');
+    expect(loggedLine.endsWith('…')).toBe(true);
+    expect(loggedLine.length).toBeLessThan(300);
+  });
+
+  it('falls back to placeholders when the path and user agent are unavailable', async () => {
+    const logRateLimited = vi.fn();
+    const guard = createPublicApiRateLimitGuard({
+      environment: {},
+      getRedisEvaluator: () => vi.fn().mockRejectedValue(new RateLimitError(9)),
+      logRateLimited,
+      memoryLimiter: new MemoryRateLimiter(),
+    });
+
+    await guard(request('/api/v1/kilter/grades'));
+
+    expect(logRateLimited.mock.calls[0]?.[0]).toBe(
+      '[public-api-rate-limit] 429 path=/api/v1/kilter/grades ip=unknown ua=unknown',
+    );
   });
 });
