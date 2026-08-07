@@ -185,6 +185,11 @@ describe('unified production deploy workflow', () => {
     // OTA lane on exactly the same terms as the publish wrapper itself.
     ['scripts/mobile-upload-sourcemaps.ts', { web: 'false', ota: 'true' }],
     ['scripts/mobile-publish.ts', { web: 'false', ota: 'true' }],
+    // Root linker and patch inputs move the native fingerprint, so they must
+    // still reach the OTA lane through the wrapped `case` alternation.
+    ['package.json', { ota: 'true' }],
+    ['bun.lock', { ota: 'true' }],
+    ['patches/react-native+0.86.0.patch', { ota: 'true' }],
     // Guard the guard: a real web file must still classify as a web change, or
     // the multi-line `case` patterns above could be silently swallowing files.
     ['packages/web/app/page.tsx', { web: 'true' }],

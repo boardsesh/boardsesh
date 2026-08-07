@@ -241,10 +241,21 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
       expect(source, `${name} must react to native patch body changes`).toContain("- 'patches/**'");
     }
 
+    // The OTA alternation is wrapped across backslash-continued lines, so scope
+    // the search to that one `case` branch instead of matching a contiguous run
+    // of patterns — a reflow must not read as a dropped fingerprint input.
     const productionDeploy = readWorkflow('production-deploy.yml');
-    expect(productionDeploy, 'the unified release path must publish OTA for root patchedDependencies edits').toContain(
-      'package.json|bun.lock|patches/*|scripts/mobile-publish.ts',
+    const otaBranchEnd = productionDeploy.indexOf('OTA_CHANGED=true');
+    const otaBranch = productionDeploy.slice(
+      productionDeploy.lastIndexOf('case "$file" in', otaBranchEnd),
+      otaBranchEnd,
     );
+    expect(otaBranchEnd).toBeGreaterThan(0);
+    for (const fingerprintInput of ['package.json', 'bun.lock', 'patches/*', 'scripts/mobile-publish.ts']) {
+      expect(otaBranch, `the unified release path must publish OTA for ${fingerprintInput} edits`).toContain(
+        fingerprintInput,
+      );
+    }
 
     expect(readWorkflow(OTA_CHECK), 'OTA compatibility must react to fingerprint config edits').toContain(
       "- 'packages/mobile/**'",
