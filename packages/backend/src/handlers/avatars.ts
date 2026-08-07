@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import Busboy from 'busboy';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { mkdir, writeFile, unlink, access } from 'fs/promises';
+import { mkdir, writeFile, unlink } from 'fs/promises';
 import { applyCorsHeaders } from './cors';
 import { validateToken } from '../middleware/auth';
 import { isS3Configured, uploadToS3, deleteUserAvatarsFromS3 } from '../storage/s3';
@@ -72,13 +72,9 @@ async function deleteExistingAvatars(userId: string, keepExt?: string): Promise<
   for (const ext of extensions) {
     const filePath = path.join(AVATARS_DIR, `${userId}.${ext}`);
     try {
-      await access(filePath);
-    } catch {
-      continue; // File doesn't exist — nothing to clean up
-    }
-    try {
       await unlink(filePath);
     } catch (deleteError) {
+      if ((deleteError as NodeJS.ErrnoException).code === 'ENOENT') continue; // Nothing to clean up
       // The new avatar is already saved; a leftover stale-ext file is
       // unreferenced, so log for observability and carry on.
       logger.warn(`Failed to delete stale avatar ${filePath}:`, deleteError);

@@ -46,6 +46,20 @@ describe('deleteUserAvatarsFromS3', () => {
     expect(deletedKeys.sort()).toEqual([`avatars/${USER_ID}.gif`, `avatars/${USER_ID}.png`, `avatars/${USER_ID}.webp`]);
   });
 
+  it('deletes every extension when no keepExt is given', async () => {
+    sendMock.mockResolvedValue({});
+
+    await deleteUserAvatarsFromS3(USER_ID);
+
+    const deletedKeys = sendMock.mock.calls.map((call) => (call[0] as { input: { Key: string } }).input.Key);
+    expect(deletedKeys.sort()).toEqual([
+      `avatars/${USER_ID}.gif`,
+      `avatars/${USER_ID}.jpg`,
+      `avatars/${USER_ID}.png`,
+      `avatars/${USER_ID}.webp`,
+    ]);
+  });
+
   it('logs a warning and resolves when a delete fails (new avatar is already saved)', async () => {
     sendMock.mockRejectedValue(new Error('S3 unavailable'));
 
