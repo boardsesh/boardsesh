@@ -6,8 +6,13 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-08-07
 
+### New
+
+- Downloading a board for offline just got a lot lighter. The big boards drop from about 270 MB to about 100 MB, so your first download over a gym's wifi finishes noticeably sooner and eats far less data. ([#3819](https://github.com/boardsesh/boardsesh/pull/3819))
+
 ### Fixed
 
+- See when an offline board is retrying its fast download or falling back to the slower sync. ([#4150](https://github.com/boardsesh/boardsesh/pull/4150))
 - Private board links now keep working when you are signed in without exposing the board to signed-out visitors. ([#4087](https://github.com/boardsesh/boardsesh/pull/4087))
 - Browser board connections now retry one brief GATT failure without making you choose the board again. ([#4155](https://github.com/boardsesh/boardsesh/pull/4155))
 - Closes #4105 ([#4124](https://github.com/boardsesh/boardsesh/pull/4124))

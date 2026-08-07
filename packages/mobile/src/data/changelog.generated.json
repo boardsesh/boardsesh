@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-08-07T22:04:42.801Z",
+  "generatedAt": "2026-08-07T22:13:09.141Z",
   "entries": [
+    {
+      "prNumber": 3819,
+      "category": "new",
+      "title": "Downloading a board for offline just got a lot lighter. The big boards drop from about 270 MB to about 100 MB, so your first download over a gym's wifi finishes noticeably sooner and eats far less data.",
+      "mergedAt": "2026-08-07T22:10:58Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3819"
+    },
+    {
+      "prNumber": 4150,
+      "category": "fixed",
+      "title": "See when an offline board is retrying its fast download or falling back to the slower sync.",
+      "mergedAt": "2026-08-07T22:05:28Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4150"
+    },
     {
       "prNumber": 4087,
       "category": "fixed",
