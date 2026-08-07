@@ -655,8 +655,10 @@ async function syncBoardLayoutGroup(
         continue;
       }
 
-      // 3. Genuinely new canonical.
-      fingerprintToCanonical.set(fingerprint, fingerprintDecision.canonicalToInsert);
+      // 3. Genuinely new canonical. A hold-less climb carries a NULL
+      //    fingerprint and stays out of the owner index — SHA256('') is not an
+      //    identity, and indexing it would alias every later hold-less climb.
+      if (fingerprint !== null) fingerprintToCanonical.set(fingerprint, fingerprintDecision.canonicalToInsert);
       existingByLowerUuid.set(lowerUuid, climb.climbUuid);
       climbUuidToCanonical.set(lowerUuid, climb.climbUuid);
       newClimbInserts.push({

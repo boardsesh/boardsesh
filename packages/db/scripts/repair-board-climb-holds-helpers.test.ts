@@ -51,6 +51,44 @@ void test('strict projection rejects incomplete tokens, empty absolute frames, a
   assert.equal(countDrift.ok, false);
 });
 
+void test('strict projection accepts the delayed-start encoding our own catalog writer emits', () => {
+  // `decodeGripsClimbConcat('h10p13s2', …, 2)` writes exactly this pair, and
+  // catalog-sync stores frames_count 2 alongside it.
+  const result = strictlyProjectStoredRows('kilter', ',"p100r13', 2);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.deepEqual(result.rows, [{ holdId: 100, frameNumber: 0, holdState: 'HAND' }]);
+});
+
+void test('a delayed-start climb whose rows are already canonical plans no mutation', () => {
+  const manifest = buildRepairManifest(
+    [
+      {
+        boardType: 'kilter',
+        uuid: 'delayed-start',
+        layoutId: 1,
+        frames: ',"p100r13',
+        framesCount: 2,
+        holdFingerprint: fingerprintFromRepairRows([{ holdId: 100, frameNumber: 0, holdState: 'HAND' }]),
+        multiFrameTarget: true,
+        rows: [{ holdId: 100, frameNumber: 0, holdState: 'HAND' }],
+      },
+    ],
+    new Set([placementKey('kilter', 1, 100)]),
+  );
+
+  assert.equal(manifest.counts.blockers, 0);
+  assert.equal(manifest.counts.changedMultiFrameClimbs, 0);
+  assert.equal(manifest.counts.affectedClimbs, 0);
+  assert.equal(manifest.entries[0]?.fingerprint.classification, 'already-current');
+});
+
+void test('strict projection still blocks an empty absolute frame after frame 0', () => {
+  const trailing = strictlyProjectStoredRows('kilter', 'p1r13,', 2);
+  assert.equal(trailing.ok, false);
+  if (!trailing.ok) assert.match(trailing.errors.join('\n'), /frame 1 is an empty unquoted absolute frame/);
+});
+
 void test('strict projection blocks hold IDs that cannot enter an integer recordset', () => {
   const result = strictlyProjectStoredRows('tension', 'p2147483648r2', 1);
   assert.equal(result.ok, false);
