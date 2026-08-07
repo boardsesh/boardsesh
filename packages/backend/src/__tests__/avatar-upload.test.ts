@@ -56,7 +56,7 @@ function closeServer(server: Server): Promise<void> {
 
 async function removeUploadedAvatar(): Promise<void> {
   for (const ext of ['jpg', 'png', 'gif', 'webp']) {
-    await rm(path.join(getAvatarsDir(), `${USER_ID}.${ext}`), { force: true, recursive: true });
+    await rm(path.join(getAvatarsDir(), `${USER_ID}.${ext}`), { force: true });
   }
 }
 
@@ -140,15 +140,20 @@ describe('avatar upload routes', () => {
       const jpegBody = (await jpegResponse.json()) as { avatarUrl?: string };
 
       // Force the .png write to fail by occupying its path with a directory.
-      await mkdir(path.join(getAvatarsDir(), `${USER_ID}.png`));
+      const blockingDir = path.join(getAvatarsDir(), `${USER_ID}.png`);
+      await mkdir(blockingDir);
 
-      const pngResponse = await uploadAvatar(baseUrl, new Blob([PNG_BYTES], { type: 'image/png' }), 'avatar.png');
-      expect(pngResponse.status).toBe(500);
+      try {
+        const pngResponse = await uploadAvatar(baseUrl, new Blob([PNG_BYTES], { type: 'image/png' }), 'avatar.png');
+        expect(pngResponse.status).toBe(500);
 
-      // The previously uploaded avatar the stored avatarUrl points at must survive.
-      const staticResponse = await fetch(`${baseUrl}${jpegBody.avatarUrl}`);
-      expect(staticResponse.status).toBe(200);
-      expect(Buffer.from(await staticResponse.arrayBuffer())).toEqual(JPEG_BYTES);
+        // The previously uploaded avatar the stored avatarUrl points at must survive.
+        const staticResponse = await fetch(`${baseUrl}${jpegBody.avatarUrl}`);
+        expect(staticResponse.status).toBe(200);
+        expect(Buffer.from(await staticResponse.arrayBuffer())).toEqual(JPEG_BYTES);
+      } finally {
+        await rm(blockingDir, { recursive: true, force: true });
+      }
     } finally {
       await closeServer(server);
     }

@@ -73,9 +73,15 @@ async function deleteExistingAvatars(userId: string, keepExt?: string): Promise<
     const filePath = path.join(AVATARS_DIR, `${userId}.${ext}`);
     try {
       await access(filePath);
-      await unlink(filePath);
     } catch {
-      // File doesn't exist, ignore
+      continue; // File doesn't exist — nothing to clean up
+    }
+    try {
+      await unlink(filePath);
+    } catch (deleteError) {
+      // The new avatar is already saved; a leftover stale-ext file is
+      // unreferenced, so log for observability and carry on.
+      logger.warn(`Failed to delete stale avatar ${filePath}:`, deleteError);
     }
   }
 }
