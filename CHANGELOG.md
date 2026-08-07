@@ -8,6 +8,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Private board links now keep working when you are signed in without exposing the board to signed-out visitors. ([#4087](https://github.com/boardsesh/boardsesh/pull/4087))
+- Browser board connections now retry one brief GATT failure without making you choose the board again. ([#4155](https://github.com/boardsesh/boardsesh/pull/4155))
+- Closes #4105 ([#4124](https://github.com/boardsesh/boardsesh/pull/4124))
 - This only changes what reaches Sentry's `extra.cause` field for a developer-only telemetry event — no user-visible behavior, copy, or UI changes. The whole feature is also still gated behind `offline-board-downloads` at 0% rollout. ([#4118](https://github.com/boardsesh/boardsesh/pull/4118))
 - Zoom into a climb in the player, then drag to move around the board — panning works again, not just in the editor. ([#4204](https://github.com/boardsesh/boardsesh/pull/4204))
 - Adding a second board with the same setup at a different gym now works — you'll be asked whether it's a new wall or the one you already have ([#4174](https://github.com/boardsesh/boardsesh/pull/4174))

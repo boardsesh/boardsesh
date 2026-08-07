@@ -1,6 +1,27 @@
 {
-  "generatedAt": "2026-08-07T21:56:51.938Z",
+  "generatedAt": "2026-08-07T22:04:42.801Z",
   "entries": [
+    {
+      "prNumber": 4087,
+      "category": "fixed",
+      "title": "Private board links now keep working when you are signed in without exposing the board to signed-out visitors.",
+      "mergedAt": "2026-08-07T22:01:45Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4087"
+    },
+    {
+      "prNumber": 4155,
+      "category": "fixed",
+      "title": "Browser board connections now retry one brief GATT failure without making you choose the board again.",
+      "mergedAt": "2026-08-07T22:00:14Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4155"
+    },
+    {
+      "prNumber": 4124,
+      "category": "fixed",
+      "title": "Closes #4105",
+      "mergedAt": "2026-08-07T21:57:12Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4124"
+    },
     {
       "prNumber": 4118,
       "category": "fixed",
