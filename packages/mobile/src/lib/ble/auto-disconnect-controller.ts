@@ -1,6 +1,5 @@
 /** Timeout choices exposed by the mobile auto-disconnect setting. */
 export const AUTO_DISCONNECT_TIMEOUT_OPTIONS = [10, 15, 30, 45, 60, 120, 300, 600] as const;
-export type AutoDisconnectTimeoutSeconds = number;
 
 // Keep the controller independent of the browser-versus-native timer handle
 // shape. The mobile test runner and the native runtime return different values.
