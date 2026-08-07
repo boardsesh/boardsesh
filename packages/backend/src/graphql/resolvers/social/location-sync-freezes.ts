@@ -43,7 +43,10 @@ async function listFrozenGyms(input: {
     : and(isNotNull(dbSchema.gyms.syncFrozenAt), isNull(dbSchema.gyms.mergedIntoGymId));
 
   const [countRow] = await db.select({ value: count() }).from(dbSchema.gyms).where(frozenCondition);
-  const rows = await db
+  // One row past the page decides `hasMore` on its own, so a freeze released
+  // between the count and the page query can only skew the displayed total —
+  // never the "Load more" affordance.
+  const pageRows = await db
     .select({
       id: dbSchema.gyms.id,
       uuid: dbSchema.gyms.uuid,
@@ -56,8 +59,10 @@ async function listFrozenGyms(input: {
     .from(dbSchema.gyms)
     .where(frozenCondition)
     .orderBy(desc(dbSchema.gyms.syncFrozenAt), desc(dbSchema.gyms.id))
-    .limit(input.limit)
+    .limit(input.limit + 1)
     .offset(input.offset);
+  const hasMore = pageRows.length > input.limit;
+  const rows = hasMore ? pageRows.slice(0, input.limit) : pageRows;
 
   const gymIds = rows.map((row) => row.id);
   const [sourceRows, approvedClaimRows] =
@@ -102,8 +107,7 @@ async function listFrozenGyms(input: {
     sourceKeys: sourceKeysByGymId.get(row.id) ?? [],
   }));
 
-  const totalCount = Number(countRow?.value ?? 0);
-  return { entities, totalCount, hasMore: input.offset + entities.length < totalCount };
+  return { entities, totalCount: Number(countRow?.value ?? 0), hasMore };
 }
 
 async function listFrozenBoards(input: {
@@ -123,7 +127,8 @@ async function listFrozenBoards(input: {
     : isNotNull(dbSchema.userBoards.syncFrozenAt);
 
   const [countRow] = await db.select({ value: count() }).from(dbSchema.userBoards).where(frozenCondition);
-  const rows = await db
+  // Same limit+1 probe as the gym list: `hasMore` never depends on the count.
+  const pageRows = await db
     .select({
       id: dbSchema.userBoards.id,
       uuid: dbSchema.userBoards.uuid,
@@ -137,8 +142,10 @@ async function listFrozenBoards(input: {
     .from(dbSchema.userBoards)
     .where(frozenCondition)
     .orderBy(desc(dbSchema.userBoards.syncFrozenAt), desc(dbSchema.userBoards.id))
-    .limit(input.limit)
+    .limit(input.limit + 1)
     .offset(input.offset);
+  const hasMore = pageRows.length > input.limit;
+  const rows = hasMore ? pageRows.slice(0, input.limit) : pageRows;
 
   const entities: FrozenLocationSyncEntity[] = rows.map((row) => ({
     entityType: 'BOARD',
@@ -156,8 +163,7 @@ async function listFrozenBoards(input: {
     sourceKeys: [],
   }));
 
-  const totalCount = Number(countRow?.value ?? 0);
-  return { entities, totalCount, hasMore: input.offset + entities.length < totalCount };
+  return { entities, totalCount: Number(countRow?.value ?? 0), hasMore };
 }
 
 function alreadyUnfrozen(entityType: LocationSyncEntityType, entityUuid: string): ClearLocationSyncFreezeResult {
