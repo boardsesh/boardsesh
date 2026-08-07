@@ -13,6 +13,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { pubsub } from '../../../pubsub/index';
 import { applyRateLimit, validateInput } from '../shared/helpers';
 import { BoardClimbRecentSendersArgsSchema } from '../../../validation/schemas';
+import { parsePostgresUtcTimestamp } from '../../../utils/postgres-timestamps';
 import {
   assertAnonReadableBoard,
   requireActiveBoardWithVisibilityById,
@@ -207,18 +208,19 @@ export const boardPresenceQueries = {
       .orderBy(desc(latestSentAt), asc(dbSchema.boardseshTicks.userId))
       .limit(RECENT_CLIMB_SENDERS_LIMIT);
 
-    return rows.flatMap((row) =>
-      row.lastSentAt
+    return rows.flatMap((row) => {
+      const lastSentAt = parsePostgresUtcTimestamp(row.lastSentAt);
+      return lastSentAt
         ? [
             {
               userId: row.userId,
               displayName: row.profileDisplayName ?? row.senderName ?? null,
               avatarUrl: row.profileAvatarUrl ?? row.senderImage ?? null,
-              lastSentAt: new Date(row.lastSentAt).toISOString(),
+              lastSentAt,
             },
           ]
-        : [],
-    );
+        : [];
+    });
   },
 
   /**

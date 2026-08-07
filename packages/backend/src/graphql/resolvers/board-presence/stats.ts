@@ -15,6 +15,7 @@ import { db } from '../../../db/client';
 import { pubsub } from '../../../pubsub/index';
 import { redisClientManager } from '../../../redis/client';
 import { logger } from '../../../utils/logger';
+import { parsePostgresUtcTimestamp } from '../../../utils/postgres-timestamps';
 
 type BoardPresenceStatsRow = {
   climbsSentCount: number;
@@ -30,14 +31,6 @@ type BoardPresenceStatsRow = {
   sentByAvatarUrl: string | null;
   sentAt: string | Date | null;
 };
-
-function parsePostgresUtcTimestamp(timestamp: string | Date | null | undefined): string | null {
-  if (!timestamp) return null;
-  if (timestamp instanceof Date) return timestamp.toISOString();
-  const isoLikeTimestamp = timestamp.includes('T') ? timestamp : timestamp.replace(' ', 'T');
-  const zonedTimestamp = /(?:Z|[+-]\d{2}:?\d{2})$/.test(isoLikeTimestamp) ? isoLikeTimestamp : `${isoLikeTimestamp}Z`;
-  return new Date(zonedTimestamp).toISOString();
-}
 
 // Live stats cache: SearchCacheService's pattern (best-effort GET returning
 // null on error/Redis-off, fire-and-forget SET), but keyed per board and
