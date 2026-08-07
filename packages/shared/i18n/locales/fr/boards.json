@@ -37,7 +37,15 @@
       "notFound": "Board introuvable",
       "noAccess": "Vous n'avez pas la permission de modifier cette board",
       "back": "Retour",
-      "configLockedHint": "Vous n'avez pas la permission de modifier le layout, la taille ou les sets de cette board."
+      "configLockedHint": "Vous n'avez pas la permission de modifier le layout, la taille ou les sets de cette board.",
+      "duplicate": {
+        "title": "Tu as déjà cette configuration",
+        "body": "Avec ce changement, la board devient identique à « {{name}} » : même layout, même taille et mêmes sets de prises.",
+        "bodyWithLocation": "Avec ce changement, la board devient identique à « {{name}} » à {{location}} : même layout, même taille et mêmes sets de prises.",
+        "bodyGeneric": "Avec ce changement, la board devient identique à une autre que son propriétaire a déjà.",
+        "saveAnyway": "Enregistrer quand même",
+        "keepEditing": "Continuer à modifier"
+      }
     },
     "gymEdit": {
       "screenTitle": "Modifier la salle",
@@ -123,6 +131,7 @@
       "serialHint": "Optionnel — ton contrôleur se lie tout seul à la première connexion.",
       "save": "Enregistrer ma board",
       "createError": "Impossible de créer cette board. Réessaie.",
+      "limitReached": "Tu as atteint le nombre maximum de boards pour un compte. Supprime une board que tu n'utilises plus pour en ajouter une autre.",
       "timer": "Minuteur d'entraînement",
       "timerNone": "Aucun minuteur associé",
       "timerHint": "Associe un minuteur Rogue à cette board. Quand tu pilotes le mur, chaque croix démarre son chronomètre.",

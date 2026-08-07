@@ -37,7 +37,15 @@
       "notFound": "Dieses Board haben wir nicht gefunden",
       "noAccess": "Du darfst dieses Board nicht bearbeiten",
       "back": "Zurück",
-      "configLockedHint": "Du darfst Layout, Größe und Hold-Sets dieses Boards nicht ändern."
+      "configLockedHint": "Du darfst Layout, Größe und Hold-Sets dieses Boards nicht ändern.",
+      "duplicate": {
+        "title": "Dieses Setup hast du schon",
+        "body": "Mit dieser Änderung ist das Board identisch mit „{{name}}“ — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",
+        "bodyWithLocation": "Mit dieser Änderung ist das Board identisch mit „{{name}}“ in {{location}} — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",
+        "bodyGeneric": "Mit dieser Änderung ist das Board identisch mit einem anderen Board desselben Kontos.",
+        "saveAnyway": "Trotzdem speichern",
+        "keepEditing": "Weiter bearbeiten"
+      }
     },
     "gymEdit": {
       "screenTitle": "Halle bearbeiten",
@@ -123,6 +131,7 @@
       "serialHint": "Optional — dein Controller verknüpft sich beim ersten Verbinden selbst.",
       "save": "Mein Board speichern",
       "createError": "Dieses Board ließ sich nicht anlegen. Versuch es nochmal.",
+      "limitReached": "Du hast die maximale Anzahl Boards für ein Konto erreicht. Lösch ein Board, das du nicht mehr nutzt, um ein neues anzulegen.",
       "timer": "Workout-Timer",
       "timerNone": "Kein Timer gekoppelt",
       "timerHint": "Koppel einen Rogue-Hallentimer mit diesem Board. Solange du die Wand steuerst, startet jeder beleuchtete Boulder die Stoppuhr.",

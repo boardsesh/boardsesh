@@ -218,16 +218,28 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
 
   /**
    * The validated UpdateBoardInput for `boardUuid`, or null when the config is
-   * incomplete. Name/angle/visibility/location/serial are always editable. The
-   * config (layout/size/sets) is sent only when `lockedConfig` is false — the
-   * server rejects config changes on boards that already have ticks, and an
-   * unchanged config would still trip its duplicate-config guard, so we omit it.
+   * incomplete. Name/angle/visibility/location/serial are always editable.
+   *
+   * The config (layout/size/sets) is sent only when it is both unlocked and
+   * genuinely different from `currentConfig`. `lockedConfig` means the viewer may
+   * not change it at all. The unchanged case matters just as much: the form is
+   * seeded with the board's own config, so every save used to resend it, the
+   * server saw "config fields present" and ran its duplicate-config guard against
+   * a config that never moved — which is how renaming one of two same-config
+   * boards ended up rejected for colliding with its sibling. Set ids are compared
+   * normalised, since the stored order is whatever the board was created with.
+   *
    * Emptied location/serial are sent as `null` so editing them to blank clears
    * the stored value (vs `buildCreateInput`, which has nothing to clear).
    */
   const buildUpdateInput = (
     boardUuid: string,
-    options?: { lockedConfig?: boolean; fallbackName?: string },
+    options?: {
+      lockedConfig?: boolean;
+      fallbackName?: string;
+      /** The board's stored config, so an unchanged config is left out of the input. */
+      currentConfig?: { layoutId: number; sizeId: number; setIds: string };
+    },
   ): UpdateBoardInput | null => {
     if (layoutId == null || sizeId == null || setIds.length === 0) return null;
     const input: UpdateBoardInput = {
@@ -247,10 +259,17 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
       latitude: coords?.latitude,
       longitude: coords?.longitude,
     };
-    if (!options?.lockedConfig) {
+    const nextSetIds = normaliseSetIds(setIds.join(','));
+    const currentConfig = options?.currentConfig;
+    const configUnchanged =
+      currentConfig != null &&
+      currentConfig.layoutId === layoutId &&
+      currentConfig.sizeId === sizeId &&
+      normaliseSetIds(currentConfig.setIds) === nextSetIds;
+    if (!options?.lockedConfig && !configUnchanged) {
       input.layoutId = layoutId;
       input.sizeId = sizeId;
-      input.setIds = normaliseSetIds(setIds.join(','));
+      input.setIds = nextSetIds;
     }
     return input;
   };

@@ -86,4 +86,9 @@ export function isExpectedBetaValidationError(error: unknown): boolean {
 // The board-mutation rejections clients branch on are parsed in
 // @boardsesh/graphql so web and mobile read the same shapes. Re-exported here so
 // board screens keep a single import for GraphQL error handling.
-export { readDuplicateBoardError, isBoardLimitError, type DuplicateBoardError } from '@boardsesh/graphql/errors';
+export {
+  isDuplicateBoardError,
+  readDuplicateBoardError,
+  isBoardLimitError,
+  type DuplicateBoardError,
+} from '@boardsesh/graphql/errors';

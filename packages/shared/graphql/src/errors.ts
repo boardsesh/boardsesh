@@ -34,10 +34,24 @@ export type DuplicateBoardError = {
 };
 
 /**
- * The "you already own this board at this place" rejection, with the existing
- * board's identity attached. Both `createBoard` and `updateBoard` throw it —
- * create when a new board would land on one you own, update when a config change
- * would make an existing board match a sibling.
+ * The "you already own this board at this place" rejection, whether or not the
+ * server attached the colliding board's identity. Both `createBoard` and
+ * `updateBoard` throw it — create when a new board would land on one you own,
+ * update when a config change would make an existing board match a sibling.
+ *
+ * Use this to decide WHETHER to prompt, and `readDuplicateBoardError` to decide
+ * what to name in the prompt: `updateBoard` strips the identity extensions when
+ * the editor is not the board's owner (a gym admin, a community moderator), so
+ * a duplicate that a non-owner hit carries the code and nothing else.
+ */
+export function isDuplicateBoardError(error: unknown): boolean {
+  return getGraphqlErrors(error).some((graphqlError) => graphqlError.extensions?.code === 'BOARD_DUPLICATE_CONFIG');
+}
+
+/**
+ * The identity of the board the server refused to duplicate, or null when the
+ * server withheld it (see `isDuplicateBoardError` — a non-owner editor gets the
+ * bare code) or the error is something else entirely.
  *
  * Not a failure to report — the user chooses between using that board and
  * keeping a genuinely different one, and the mutation is retried with

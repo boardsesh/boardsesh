@@ -37,7 +37,15 @@
       "notFound": "No encontramos ese plafón",
       "noAccess": "No tienes permiso para editar este plafón",
       "back": "Volver",
-      "configLockedHint": "No tienes permiso para cambiar el layout, el tamaño ni los sets de este plafón."
+      "configLockedHint": "No tienes permiso para cambiar el layout, el tamaño ni los sets de este plafón.",
+      "duplicate": {
+        "title": "Ya tienes esta configuración",
+        "body": "Con este cambio el plafón queda igual que «{{name}}»: mismo layout, tamaño y sets de presas.",
+        "bodyWithLocation": "Con este cambio el plafón queda igual que «{{name}}» en {{location}}: mismo layout, tamaño y sets de presas.",
+        "bodyGeneric": "Con este cambio el plafón queda igual que otro que su propietario ya tiene.",
+        "saveAnyway": "Guardar igualmente",
+        "keepEditing": "Seguir editando"
+      }
     },
     "gymEdit": {
       "screenTitle": "Editar gimnasio",
@@ -123,6 +131,7 @@
       "serialHint": "Opcional: tu controlador se vincula solo la primera vez que conectas.",
       "save": "Guardar mi plafón",
       "createError": "No se pudo crear ese plafón. Inténtalo de nuevo.",
+      "limitReached": "Has llegado al número máximo de plafones para una cuenta. Borra uno que ya no uses para añadir otro.",
       "timer": "Temporizador de entrenamiento",
       "timerNone": "Sin temporizador vinculado",
       "timerHint": "Vincula un temporizador Rogue a este plafón. Mientras controlas el muro, cada encadene arranca su cronómetro.",

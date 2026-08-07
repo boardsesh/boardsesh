@@ -10,6 +10,7 @@ import {
   extractGraphqlMessage,
   isGraphqlRateLimitedError,
   isExpectedAuthError,
+  isBoardLimitError,
   readDuplicateBoardError,
   type DuplicateBoardError,
 } from '../../src/lib/graphql/extract-error-message';
@@ -39,9 +40,12 @@ function describeInput(input: CreateBoardInput, source: 'popular_seed' | 'scratc
   };
 }
 
-function classifyCreateFailure(error: unknown): 'rate_limited' | 'auth' | 'exception' {
+function classifyCreateFailure(error: unknown): 'rate_limited' | 'auth' | 'board_limit' | 'exception' {
   if (isGraphqlRateLimitedError(error)) return 'rate_limited';
   if (isExpectedAuthError(error)) return 'auth';
+  // Ahead of the catch-all so the account cap doesn't disappear into
+  // `exception` — it needs its own copy, and retrying will never clear it.
+  if (isBoardLimitError(error)) return 'board_limit';
   return 'exception';
 }
 
@@ -155,14 +159,21 @@ export default function CreateBoard() {
           setSubmitting(false);
           return;
         }
+        const reason = classifyCreateFailure(error);
         track(SHARED_EVENTS.BoardCreateFailed, {
           boardType: input.boardType,
           source,
-          error_reason: classifyCreateFailure(error),
+          error_reason: reason,
         });
         // Inline, never a toast: this screen is a `presentation: 'modal'` route
         // and the toast overlay renders behind it, so a toast here is invisible.
-        setCreateError(extractGraphqlMessage(error) ?? t('mobile.create.createError'));
+        // The cap gets our own copy rather than the server's message: what the
+        // climber needs is the way out (delete one you don't use), not the number.
+        setCreateError(
+          reason === 'board_limit'
+            ? t('mobile.create.limitReached')
+            : (extractGraphqlMessage(error) ?? t('mobile.create.createError')),
+        );
         inFlightRef.current = false;
         setSubmitting(false);
       }
