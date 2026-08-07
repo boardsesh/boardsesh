@@ -493,6 +493,26 @@
     "cancel": "Abbrechen",
     "connectBoard": "Board verbinden",
     "relightBoard": "Board neu beleuchten",
+    "autoDisconnect": {
+      "title": "Automatisch trennen",
+      "description": "Trennt die Verbindung zum Board, wenn für die gewählte Zeit kein Boulder angezeigt wurde.",
+      "enabledLabel": "Automatisch trennen",
+      "enabledDescription": "Lass andere Kletterer*innen verbinden, sobald der Timer abläuft.",
+      "timeoutLabel": "Trennen nach",
+      "toggleTitle": "Automatisch trennen",
+      "toggleSubtitle": "Trennen nach {{timeout}} ohne Aktivität",
+      "toggleAccessibility": "Automatisches Trennen umschalten",
+      "timeoutOptions": {
+        "10": "10 Sekunden",
+        "15": "15 Sekunden",
+        "30": "30 Sekunden",
+        "45": "45 Sekunden",
+        "60": "1 Minute",
+        "120": "2 Minuten",
+        "300": "5 Minuten",
+        "600": "10 Minuten"
+      }
+    },
     "turnOff": "Board ausschalten",
     "holdForControls": "Halten für die Board-Steuerung",
     "sendFailedTitle": "Board ließ sich nicht beleuchten",

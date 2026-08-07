@@ -495,7 +495,7 @@
     "relightBoard": "Reiluminar plafón",
     "autoDisconnect": {
       "title": "Desconexión automática",
-      "description": "Desconecta del plafón después de no mostrar una escalada durante el tiempo elegido.",
+      "description": "Desconecta del plafón cuando no se ha mostrado ningún bloque durante el tiempo elegido.",
       "enabledLabel": "Desconexión automática",
       "enabledDescription": "Permite que otros escaladores se conecten cuando termine el temporizador.",
       "timeoutLabel": "Desconectar después de",

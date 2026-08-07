@@ -495,7 +495,7 @@
     "relightBoard": "Rallumer la board",
     "autoDisconnect": {
       "title": "Déconnexion automatique",
-      "description": "Se déconnecter de la board après la durée choisie sans nouvelle escalade affichée.",
+      "description": "Se déconnecter de la board après la durée choisie sans nouveau bloc affiché.",
       "enabledLabel": "Déconnexion automatique",
       "enabledDescription": "Laisser les autres grimpeurs se connecter à l'expiration du délai.",
       "timeoutLabel": "Déconnecter après",
