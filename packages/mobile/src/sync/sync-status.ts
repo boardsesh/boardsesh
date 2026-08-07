@@ -8,7 +8,7 @@
 // one hook, so non-React callers (the bridge) can publish without a render.
 
 import { useSyncExternalStore } from 'react';
-import type { SyncProgress } from '@boardsesh/offline-sync';
+import type { BootstrapMetadataChangedInfo, ScopeDownloadCompleteInfo, SyncProgress } from '@boardsesh/offline-sync';
 
 export type SyncStatus = {
   /** Latest progress frame, or null before the first sync of this session. */
@@ -17,12 +17,22 @@ export type SyncStatus = {
   isSyncing: boolean;
   /** Epoch ms of the last cycle that reached the idle phase, or null. */
   lastSyncedAt: number | null;
+  /**
+   * Advances after each bootstrap scope settles. Consumers that read bootstrap
+   * markers from SQLite can refresh scope A while scope B is still downloading,
+   * without re-querying on every progress frame.
+   */
+  bootstrapMetadataRevision: number;
+  /** Advances immediately after one scope reaches its board-data tail. */
+  scopeCompletionRevision: number;
 };
 
 const IDLE_STATUS: SyncStatus = {
   progress: null,
   isSyncing: false,
   lastSyncedAt: null,
+  bootstrapMetadataRevision: 0,
+  scopeCompletionRevision: 0,
 };
 
 let currentStatus: SyncStatus = IDLE_STATUS;
@@ -58,6 +68,30 @@ export function setSyncProgress(progress: SyncProgress): void {
     progress,
     isSyncing: !reachedIdle,
     lastSyncedAt: completed ? Date.now() : currentStatus.lastSyncedAt,
+    bootstrapMetadataRevision: currentStatus.bootstrapMetadataRevision,
+    scopeCompletionRevision: currentStatus.scopeCompletionRevision,
+  };
+  emit();
+}
+
+/** Refresh persisted bootstrap facts after one scope reaches a coherent outcome. */
+export function notifyBootstrapMetadataChanged(_info: BootstrapMetadataChangedInfo): void {
+  currentStatus = {
+    ...currentStatus,
+    bootstrapMetadataRevision: currentStatus.bootstrapMetadataRevision + 1,
+  };
+  emit();
+}
+
+/**
+ * Publish the engine's per-scope completion callback without disturbing live
+ * progress for later scopes in the same cycle. SQLite markers are committed
+ * before this fires, so revision-keyed queries can read the completed state now.
+ */
+export function notifyScopeDownloadComplete(_info: ScopeDownloadCompleteInfo): void {
+  currentStatus = {
+    ...currentStatus,
+    scopeCompletionRevision: currentStatus.scopeCompletionRevision + 1,
   };
   emit();
 }

@@ -5,7 +5,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import type { GraphQLFetch } from '@boardsesh/offline-sync';
 import { getSetting, setOfflineBoardEnabled, offlineBoardScopeForBoard, rememberOfflineBoards } from '../settings';
 import { getHttpClient } from '../lib/graphql/client';
-import { setSyncProgress } from '../sync';
+import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
 import { triggerSync, drainMutationQueue } from './offline-sync-adapter';
 import { useSnapshotSource } from './use-snapshot-source';
 
@@ -49,6 +49,8 @@ export function useBoardDownloads() {
       rememberOfflineBoards(list);
       triggerSync(db, queryClient, graphqlFetch, () => getSetting('syncEnabledBoards'), drainQueue, {
         onProgress: setSyncProgress,
+        onBootstrapMetadataChanged: notifyBootstrapMetadataChanged,
+        onScopeDownloadComplete: notifyScopeDownloadComplete,
         snapshotSource,
       });
     },

@@ -171,15 +171,16 @@ Implemented in `snapshot-bootstrap.ts` (the ATTACH/import/verify mechanics) and 
 `pull-client.ts`'s `runBootstrapPhase`, which runs **before** the deletions phase of every sync cycle.
 
 **Eligibility**: a board scope (`boardType:layoutId:sizeId`) is only considered when it has **no
-checkpoint on either `board_climbs` or `board_climb_stats`** (i.e. genuinely fresh — nothing pulled yet)
-and its bootstrap attempt count is under `MAX_BOOTSTRAP_ATTEMPTS` (2). One artifact download is shared
-across every size of the same `(boardType, layoutId)` within a cycle.
+checkpoint on either snapshot-backed table, `board_climbs` or `board_climb_stats`** (i.e. genuinely
+fresh for the snapshot) and its bootstrap attempt count is under `MAX_BOOTSTRAP_ATTEMPTS` (2). The
+ordinary paged sync still downloads `board_climb_grades` before the scope is reported complete. One
+artifact download is shared across every size of the same `(boardType, layoutId)` within a cycle.
 
 A scope torn down from **More → Storage** becomes eligible again: `removeBoardScopeData`
-(`sync/scope-teardown.ts`) clears the scope's checkpoints **and** its `bootstrap-attempts:` /
-`bootstrap-done:` markers in the same transaction as the rows, so a re-download takes the snapshot fast
+(`sync/scope-teardown.ts`) clears all three board-data checkpoints **and** its `bootstrap-attempts:` /
+`bootstrap-done:` / `bootstrap-paged-fallback:` markers in the same transaction as the rows, so a re-download takes the snapshot fast
 path rather than a paged crawl — and `onScopeDownloadComplete` attributes it honestly instead of
-reporting a stale `method: 'snapshot'` for a run that actually paged. Both marker prefixes are exported
+reporting a stale `method: 'snapshot'` for a run that actually paged. All three marker prefixes are exported
 from `snapshot-bootstrap.ts` for that teardown alone; they stay package-internal (not re-exported from
 `index.ts`).
 
@@ -257,6 +258,18 @@ pre-import empty result set.
   scope would download. Note `bytes` is the **stored** object size: correct as a download figure while
   artifacts stay identity-encoded, and an undercount of the on-disk file the day `--gzip` ships.
 
+- **Download fallback status**: My Boards keeps the normal per-row download state (`pending`,
+  `downloading`, or `downloaded`) and separately derives a `BoardDownloadNotice` from the persisted
+  attempt, done, and explicit paged-fallback markers plus board checkpoints. The explicit outcome closes
+  the ambiguous failure-then-permanent-miss path; checkpoints keep a restored or flag-toggled mid-crawl
+  scope from being labelled as a retry after restart. Active bootstrap always outranks persisted history,
+  while pending and active paged fallback use different copy. The screen reads all enabled scopes' markers
+  with index-backed `GLOB` prefix ranges in one SQLite query into an O(1) map, refreshes after each scope's
+  bootstrap decision settles, and refreshes again on each `onScopeDownloadComplete` callback rather than
+  waiting for a multi-scope cycle to finish. The full transition message wraps instead of truncating.
+  Android exposes it as the only polite live region; iOS announces semantic notice changes through
+  VoiceOver explicitly. The changing climb count remains readable but is never auto-announced per page.
+
 - **Per-connection ATTACH invariant (BOARDSESH-AA)**: expo-sqlite's
   `withExclusiveTransactionAsync` runs its task on a **new native connection**
   (`useNewConnection: true`), and SQLite `ATTACH`es are per-connection — anything attached on the
@@ -301,8 +314,8 @@ pre-import empty result set.
   on-device (see Rollout plan).
 - **Telemetry**:
   - `Offline Board Download Completed` (PostHog, `SHARED_EVENTS.OfflineBoardDownloadCompleted`) fires once
-    per scope's first-download completion (both board tables reached the tail), with method `snapshot` or
-    `paged` and `durationMs` measured from the start of the sync cycle's work on that scope (so a
+    per scope's first-download completion (climbs, stats, and grades all reached the tail), with method
+    `snapshot` or `paged` and `durationMs` measured from the start of the sync cycle's work on that scope (so a
     `'snapshot'` scope's duration includes its manifest/download/import time, not just the trailing delta
     pull — an apples-to-apples comparison against a full paged crawl).
   - Sentry handled errors, `tags: { source: 'offline-sync', kind: 'snapshot-bootstrap' }`, for every

@@ -9,7 +9,7 @@
 // id, so the headers are dropped rather than guessed) with the network affordances
 // hidden.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
@@ -19,6 +19,8 @@ type ManageRowProps = {
   board: UserBoard;
   readOnly?: boolean;
   downloadState?: string;
+  downloadCount?: number;
+  downloadNotice?: string | null;
   onDelete: (board: UserBoard) => void;
   onUnfollow: (board: UserBoard) => void;
 };
@@ -37,6 +39,29 @@ const state = vi.hoisted(() => ({
   offlineCards: [] as unknown[],
   enabledBoards: [] as string[],
   downloadedScopeKeys: [] as string[],
+  bootstrapMetadataByScope: new Map<
+    string,
+    {
+      attempts: number;
+      isBootstrapDone: boolean;
+      isPagedFallback: boolean;
+      hasBoardCheckpoint: boolean;
+      isScopeComplete: boolean;
+    }
+  >(),
+  bootstrapQueryAsync: false,
+  bootstrapMetadataRead: undefined as Promise<ReadonlyMap<string, unknown>> | undefined,
+  snapshotSourceAvailable: true,
+  syncStatus: {
+    isSyncing: false,
+    progress: null as {
+      phase: string;
+      currentTable: string | null;
+      currentTableProcessed?: number;
+    } | null,
+    bootstrapMetadataRevision: 0,
+    scopeCompletionRevision: 0,
+  },
   activeBoard: undefined as unknown,
   myBoards: {
     data: undefined as { boards: unknown[] } | undefined,
@@ -57,6 +82,16 @@ const board = (overrides: Partial<UserBoard> & { uuid: string; name: string }): 
     ownerId: 'me',
     ...overrides,
   }) as unknown as UserBoard;
+
+function deferred<Result>() {
+  let resolvePromise!: (result: Result) => void;
+  let rejectPromise!: (error: unknown) => void;
+  const promise = new Promise<Result>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+  return { promise, resolve: resolvePromise, reject: rejectPromise };
+}
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -118,15 +153,68 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('expo-sqlite', () => ({ useSQLiteContext: () => ({}) }));
 
-vi.mock('@tanstack/react-query', () => ({
-  useQuery: () => ({ data: state.downloadedScopeKeys, refetch: vi.fn() }),
-}));
+vi.mock('@tanstack/react-query', async () => {
+  const React = await vi.importActual<typeof import('react')>('react');
+  type QueryOptions = {
+    queryKey: readonly unknown[];
+    queryFn: () => unknown;
+    enabled?: boolean;
+  };
+
+  return {
+    useQuery: ({ queryKey, queryFn, enabled = true }: QueryOptions) => {
+      const serializedKey = JSON.stringify(queryKey);
+      const isBootstrapQuery = queryKey[0] === 'bootstrapMetadataByScope';
+      const queryFnRef = React.useRef(queryFn);
+      queryFnRef.current = queryFn;
+      const [asyncResult, setAsyncResult] = React.useState<{ key: string; data: unknown } | null>(null);
+
+      React.useEffect(() => {
+        if (!isBootstrapQuery || !state.bootstrapQueryAsync || !enabled) return;
+        let active = true;
+        void Promise.resolve(queryFnRef.current()).then(
+          (data) => {
+            if (active) setAsyncResult({ key: serializedKey, data });
+          },
+          () => {
+            // Match React Query's failed new-key read: keep any prior-key cache,
+            // which the screen must reject by revision instead of announcing.
+          },
+        );
+        return () => {
+          active = false;
+        };
+      }, [enabled, isBootstrapQuery, serializedKey]);
+
+      if (!isBootstrapQuery) {
+        return { data: state.downloadedScopeKeys, refetch: vi.fn() };
+      }
+      if (state.bootstrapQueryAsync) {
+        return {
+          data: asyncResult?.key === serializedKey ? asyncResult.data : undefined,
+          refetch: vi.fn(),
+        };
+      }
+      return {
+        data: {
+          revision: queryKey[1],
+          metadataByScope: state.bootstrapMetadataByScope,
+        },
+        refetch: vi.fn(),
+      };
+    },
+  };
+});
 
 vi.mock('@boardsesh/offline-sync', () => ({
+  MAX_BOOTSTRAP_ATTEMPTS: 2,
   getDownloadedScopeKeys: vi.fn(async () => state.downloadedScopeKeys),
   getCheckpoint: vi.fn(async () => null),
   getCheckpointKey: (table: string, key: string) => `${table}:${key}`,
   getBootstrapAttempts: vi.fn(async () => 0),
+  getBootstrapMetadataByScope: vi.fn(async () =>
+    state.bootstrapMetadataRead ? await state.bootstrapMetadataRead : state.bootstrapMetadataByScope,
+  ),
   estimateScopeDownload: () => ({ kind: 'unknown' }),
   offlineBoardKeyForBoard: (input: { boardType: string; layoutId: number; sizeId: number }) =>
     `${input.boardType}:${input.layoutId}:${input.sizeId}`,
@@ -173,7 +261,7 @@ vi.mock('../../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
 }));
 vi.mock('../../../src/hooks/use-is-offline', () => ({ useIsOffline: () => state.isOffline }));
-vi.mock('../../../src/sync', () => ({ useSyncStatus: () => ({ isSyncing: false, progress: null }) }));
+vi.mock('../../../src/sync', () => ({ useSyncStatus: () => state.syncStatus }));
 vi.mock('../../../src/offline/use-board-downloads', () => ({
   useBoardDownloads: () => ({ enableBoardsOffline: vi.fn() }),
 }));
@@ -181,6 +269,9 @@ vi.mock('../../../src/offline/use-remember-downloaded-boards', () => ({
   useRememberDownloadedBoards: vi.fn(),
 }));
 vi.mock('../../../src/offline/use-snapshot-manifest', () => ({ useSnapshotManifest: () => null }));
+vi.mock('../../../src/offline/use-snapshot-source', () => ({
+  useSnapshotSource: () => (state.snapshotSourceAvailable ? {} : undefined),
+}));
 vi.mock('../../../src/lib/format-bytes', () => ({ formatBytes: (bytes: number) => `${bytes} B` }));
 vi.mock('../../../src/lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../src/settings', () => ({
@@ -219,10 +310,24 @@ vi.mock('../../../src/components/ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'spinner' }),
 }));
 vi.mock('../../../src/components/board-discovery/BoardManageRow', () => ({
-  BoardManageRow: ({ board: rowBoard, readOnly, downloadState, onDelete, onUnfollow }: ManageRowProps) =>
+  BoardManageRow: ({
+    board: rowBoard,
+    readOnly,
+    downloadState,
+    downloadCount,
+    downloadNotice,
+    onDelete,
+    onUnfollow,
+  }: ManageRowProps) =>
     createElement(
       'div',
-      { 'data-board': rowBoard.uuid, 'data-readonly': String(!!readOnly), 'data-download-state': downloadState ?? '' },
+      {
+        'data-board': rowBoard.uuid,
+        'data-readonly': String(!!readOnly),
+        'data-download-state': downloadState ?? '',
+        'data-download-count': downloadCount ?? '',
+        'data-download-notice': downloadNotice ?? '',
+      },
       rowBoard.name,
       createElement('button', { type: 'button', onClick: () => onDelete(rowBoard) }, `delete ${rowBoard.uuid}`),
       createElement('button', { type: 'button', onClick: () => onUnfollow(rowBoard) }, `unfollow ${rowBoard.uuid}`),
@@ -242,11 +347,385 @@ beforeEach(() => {
   state.offlineCards = [];
   state.enabledBoards = [];
   state.downloadedScopeKeys = [];
+  state.bootstrapMetadataByScope = new Map();
+  state.bootstrapQueryAsync = false;
+  state.bootstrapMetadataRead = undefined;
+  state.snapshotSourceAvailable = true;
+  state.syncStatus = {
+    isSyncing: false,
+    progress: null,
+    bootstrapMetadataRevision: 0,
+    scopeCompletionRevision: 0,
+  };
   state.activeBoard = undefined;
   state.myBoards = { data: undefined, isLoading: false, isError: false, isRefetching: false };
 });
 
 describe('My Boards with no usable network list', () => {
+  it('passes a persisted snapshot retry notice to the matching board row', () => {
+    state.profileId = 'me';
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+    state.enabledBoards = ['kilter:8:17'];
+    state.bootstrapMetadataByScope = new Map([
+      [
+        'kilter:8:17',
+        {
+          attempts: 1,
+          isBootstrapDone: false,
+          isPagedFallback: false,
+          hasBoardCheckpoint: false,
+          isScopeComplete: false,
+        },
+      ],
+    ]);
+
+    render(createElement(ManageBoards));
+
+    expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-download-notice')).toBe(
+      'snapshot-retrying',
+    );
+  });
+
+  it('suppresses stale fallback markers when snapshot bootstrap is unavailable', () => {
+    state.profileId = 'me';
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+    state.enabledBoards = ['kilter:8:17'];
+    state.snapshotSourceAvailable = false;
+    state.bootstrapMetadataByScope = new Map([
+      [
+        'kilter:8:17',
+        {
+          attempts: 2,
+          isBootstrapDone: false,
+          isPagedFallback: true,
+          hasBoardCheckpoint: false,
+          isScopeComplete: false,
+        },
+      ],
+    ]);
+
+    render(createElement(ManageBoards));
+
+    expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-download-notice')).toBe('');
+  });
+
+  it('suppresses stale retry data while flag-off paging is unresolved, then shows the fresh fallback', async () => {
+    state.profileId = 'me';
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+    state.enabledBoards = ['kilter:8:17'];
+    const retryMetadata = new Map([
+      [
+        'kilter:8:17',
+        {
+          attempts: 1,
+          isBootstrapDone: false,
+          isPagedFallback: false,
+          hasBoardCheckpoint: false,
+          isScopeComplete: false,
+        },
+      ],
+    ]);
+    state.bootstrapMetadataByScope = retryMetadata;
+    state.bootstrapQueryAsync = true;
+    state.bootstrapMetadataRead = Promise.resolve(retryMetadata);
+
+    const { rerender } = render(createElement(ManageBoards));
+    await waitFor(() =>
+      expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-download-notice')).toBe(
+        'snapshot-retrying',
+      ),
+    );
+
+    state.snapshotSourceAvailable = false;
+    rerender(createElement(ManageBoards));
+    expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-download-notice')).toBe('');
+
+    // The ordinary downloader lands a partial page while the snapshot flag is
+    // off. Neither bootstrap nor scope-completion revision advances yet.
+    state.syncStatus = {
+      isSyncing: true,
+      progress: {
+        phase: 'board_data',
+        currentTable: 'board_climbs:kilter:8:17',
+        currentTableProcessed: 12,
+      },
+      bootstrapMetadataRevision: 0,
+      scopeCompletionRevision: 0,
+    };
+    const pagedMetadata = new Map([
+      [
+        'kilter:8:17',
+        {
+          attempts: 1,
+          isBootstrapDone: false,
+          isPagedFallback: false,
+          hasBoardCheckpoint: true,
+          isScopeComplete: false,
+        },
+      ],
+    ]);
+    const freshRead = deferred<ReadonlyMap<string, unknown>>();
+    state.bootstrapMetadataByScope = pagedMetadata;
+    state.bootstrapMetadataRead = freshRead.promise;
+    state.snapshotSourceAvailable = true;
+    rerender(createElement(ManageBoards));
+    // The old retry snapshot must not flash or announce while the new source
+    // generation's SQLite read is pending.
+    expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-download-notice')).toBe('');
+
+    await act(async () => freshRead.resolve(pagedMetadata));
+    await waitFor(() =>
+      expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-download-notice')).toBe(
+        'paged-fallback',
+      ),
+    );
+  });
+
+  it('keeps a prior fallback suppressed when the current revision read fails', async () => {
+    state.profileId = 'me';
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+    state.enabledBoards = ['kilter:8:17'];
+    const fallbackMetadata = new Map([
+      [
+        'kilter:8:17',
+        {
+          attempts: 2,
+          isBootstrapDone: false,
+          isPagedFallback: true,
+          hasBoardCheckpoint: false,
+          isScopeComplete: false,
+        },
+      ],
+    ]);
+    state.bootstrapQueryAsync = true;
+    state.bootstrapMetadataRead = Promise.resolve(fallbackMetadata);
+
+    const { rerender } = render(createElement(ManageBoards));
+    await waitFor(() =>
+      expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-download-notice')).toBe(
+        'paged-fallback',
+      ),
+    );
+
+    const failedRead = deferred<ReadonlyMap<string, unknown>>();
+    state.bootstrapMetadataRead = failedRead.promise;
+    state.syncStatus = {
+      ...state.syncStatus,
+      bootstrapMetadataRevision: 1,
+    };
+    rerender(createElement(ManageBoards));
+    expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-download-notice')).toBe('');
+
+    await act(async () => failedRead.reject(new Error('sqlite unavailable')));
+    expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-download-notice')).toBe('');
+  });
+
+  it('refreshes scope A metadata while scope B is still bootstrapping', async () => {
+    state.profileId = 'me';
+    state.myBoards = {
+      data: {
+        boards: [
+          board({ uuid: 'board-a', name: 'Board A' }),
+          board({ uuid: 'board-b', name: 'Board B', boardType: 'tension', layoutId: 2, sizeId: 10 }),
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+    state.enabledBoards = ['kilter:8:17', 'tension:2:10'];
+    const preRunFallback = {
+      attempts: 0,
+      isBootstrapDone: false,
+      isPagedFallback: true,
+      hasBoardCheckpoint: false,
+      isScopeComplete: false,
+    };
+    const initialMetadata = new Map([
+      ['kilter:8:17', preRunFallback],
+      ['tension:2:10', preRunFallback],
+    ]);
+    state.bootstrapQueryAsync = true;
+    state.bootstrapMetadataRead = Promise.resolve(initialMetadata);
+
+    const { rerender } = render(createElement(ManageBoards));
+    await waitFor(() =>
+      expect(document.querySelector('[data-board="board-a"]')?.getAttribute('data-download-notice')).toBe(
+        'paged-fallback',
+      ),
+    );
+
+    const freshMetadata = new Map([
+      [
+        'kilter:8:17',
+        {
+          ...preRunFallback,
+          attempts: 1,
+          isPagedFallback: false,
+        },
+      ],
+      ['tension:2:10', preRunFallback],
+    ]);
+    const freshRead = deferred<ReadonlyMap<string, unknown>>();
+    state.bootstrapMetadataRead = freshRead.promise;
+    state.syncStatus = {
+      isSyncing: true,
+      progress: {
+        phase: 'bootstrap',
+        currentTable: 'tension:2:10',
+      },
+      bootstrapMetadataRevision: 1,
+      scopeCompletionRevision: 0,
+    };
+    rerender(createElement(ManageBoards));
+
+    // Scope A's old fallback belongs to revision 0 and must not survive while
+    // revision 1 is reading A's just-settled outcome. Scope B remains visibly
+    // active from the independent progress frame.
+    expect(document.querySelector('[data-board="board-a"]')?.getAttribute('data-download-notice')).toBe('');
+    expect(document.querySelector('[data-board="board-b"]')?.getAttribute('data-download-state')).toBe('downloading');
+
+    await act(async () => freshRead.resolve(freshMetadata));
+    await waitFor(() =>
+      expect(document.querySelector('[data-board="board-a"]')?.getAttribute('data-download-notice')).toBe(
+        'snapshot-retrying',
+      ),
+    );
+    expect(document.querySelector('[data-board="board-b"]')?.getAttribute('data-download-state')).toBe('downloading');
+    expect(document.querySelector('[data-board="board-b"]')?.getAttribute('data-download-notice')).toBe('');
+  });
+
+  it('keeps fallback active with a live count while board_climb_grades downloads', () => {
+    state.profileId = 'me';
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+    state.enabledBoards = ['kilter:8:17'];
+    state.bootstrapMetadataByScope = new Map([
+      [
+        'kilter:8:17',
+        {
+          attempts: 2,
+          isBootstrapDone: false,
+          isPagedFallback: true,
+          hasBoardCheckpoint: true,
+          isScopeComplete: false,
+        },
+      ],
+    ]);
+    state.syncStatus = {
+      isSyncing: true,
+      progress: {
+        phase: 'board_data',
+        currentTable: 'board_climb_grades:kilter:8:17',
+        currentTableProcessed: 73,
+      },
+      bootstrapMetadataRevision: 1,
+      scopeCompletionRevision: 0,
+    };
+
+    render(createElement(ManageBoards));
+
+    const row = document.querySelector('[data-board="net-1"]');
+    expect(row?.getAttribute('data-download-state')).toBe('downloading');
+    expect(row?.getAttribute('data-download-notice')).toBe('paged-fallback');
+    expect(row?.getAttribute('data-download-count')).toBe('73');
+  });
+
+  it('clears the first scope on completion while a second scope keeps downloading', () => {
+    state.profileId = 'me';
+    state.myBoards = {
+      data: {
+        boards: [
+          board({ uuid: 'board-a', name: 'Board A' }),
+          board({ uuid: 'board-b', name: 'Board B', boardType: 'tension', layoutId: 2, sizeId: 10 }),
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+    state.enabledBoards = ['kilter:8:17', 'tension:2:10'];
+    const fallbackMetadata = {
+      attempts: 2,
+      isBootstrapDone: false,
+      isPagedFallback: true,
+      hasBoardCheckpoint: false,
+      isScopeComplete: false,
+    };
+    state.bootstrapMetadataByScope = new Map([
+      ['kilter:8:17', fallbackMetadata],
+      ['tension:2:10', fallbackMetadata],
+    ]);
+    state.syncStatus = {
+      isSyncing: true,
+      progress: {
+        phase: 'board_data',
+        currentTable: 'board_climbs:kilter:8:17',
+        currentTableProcessed: 42,
+      },
+      bootstrapMetadataRevision: 1,
+      scopeCompletionRevision: 0,
+    };
+
+    const { rerender } = render(createElement(ManageBoards));
+    expect(document.querySelector('[data-board="board-a"]')?.getAttribute('data-download-state')).toBe('downloading');
+    expect(document.querySelector('[data-board="board-b"]')?.getAttribute('data-download-notice')).toBe(
+      'paged-fallback',
+    );
+
+    // onScopeDownloadComplete has committed board A's marker and advanced the
+    // query revision even though board B is still mid-cycle.
+    // Deliberately leave the separate downloaded-scope query stale: the batch's
+    // committed scope-complete marker must still clear the row immediately.
+    state.downloadedScopeKeys = [];
+    state.bootstrapMetadataByScope = new Map([
+      ['kilter:8:17', { ...fallbackMetadata, hasBoardCheckpoint: true, isScopeComplete: true }],
+      ['tension:2:10', fallbackMetadata],
+    ]);
+    state.syncStatus = {
+      isSyncing: true,
+      progress: {
+        phase: 'board_data',
+        currentTable: 'board_climbs:tension:2:10',
+        currentTableProcessed: 7,
+      },
+      bootstrapMetadataRevision: 1,
+      scopeCompletionRevision: 1,
+    };
+    rerender(createElement(ManageBoards));
+
+    expect(document.querySelector('[data-board="board-a"]')?.getAttribute('data-download-state')).toBe('downloaded');
+    expect(document.querySelector('[data-board="board-a"]')?.getAttribute('data-download-notice')).toBe('');
+    expect(document.querySelector('[data-board="board-b"]')?.getAttribute('data-download-state')).toBe('downloading');
+    expect(document.querySelector('[data-board="board-b"]')?.getAttribute('data-download-notice')).toBe(
+      'paged-fallback',
+    );
+  });
+
   it('renders the downloaded boards instead of the hard error state when the profile is missing', () => {
     state.isOffline = true;
     state.offlineCards = [board({ uuid: 'board-a', name: 'Marco garage' })];

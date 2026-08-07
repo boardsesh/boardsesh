@@ -13,6 +13,8 @@ import {
   bootstrapScopeFromSnapshot,
   getBootstrapAttempts,
   recordBootstrapAttempt,
+  markBootstrapPagedFallback,
+  clearBootstrapPagedFallback,
   markBootstrapDone,
   isBootstrapDone,
   MAX_BOOTSTRAP_ATTEMPTS,
@@ -60,8 +62,8 @@ export type SyncProgress = {
 };
 
 /**
- * Fired once a board scope's initial download completes this cycle (both
- * board_climbs and board_climb_stats reached their tail — the same gate as
+ * Fired once a board scope's initial download completes this cycle (every
+ * BOARD_DATA_TABLES entry reached its tail — the same gate as
  * `markScopeDownloadComplete`). Lets the app compare the two download paths in
  * the field: `method` is `'snapshot'` when a bootstrap warm-up ever succeeded
  * for this scope (the persisted `isBootstrapDone` marker — the import and the
@@ -82,6 +84,16 @@ export type ScopeDownloadCompleteInfo = {
   durationMs: number;
 };
 export type ScopeDownloadCompleteReporter = (info: ScopeDownloadCompleteInfo) => void;
+
+/**
+ * Fired after one bootstrap scope reaches a coherent persisted decision (or is
+ * found ineligible because an existing checkpoint already made that decision).
+ * The callback runs before the next scope begins, so a UI can refresh scope A
+ * while a slower scope B is still in the bootstrap phase instead of reusing the
+ * cycle's pre-run metadata.
+ */
+export type BootstrapMetadataChangedInfo = { scopeKey: string };
+export type BootstrapMetadataChangedReporter = (info: BootstrapMetadataChangedInfo) => void;
 
 /**
  * Fired when the deletions-coverage guard forced a from-scratch user-data
@@ -117,6 +129,8 @@ export type SyncOptions = {
   snapshotSource?: SnapshotSource;
   /** Telemetry for a counted bootstrap failure (manifest/download/import). */
   onSnapshotBootstrapError?: SnapshotBootstrapErrorReporter;
+  /** UI invalidation after each scope's persisted bootstrap decision settles. */
+  onBootstrapMetadataChanged?: BootstrapMetadataChangedReporter;
   /** Telemetry for comparing the snapshot vs paged download paths. See ScopeDownloadCompleteInfo. */
   onScopeDownloadComplete?: ScopeDownloadCompleteReporter;
   /** Telemetry for a forced deletions-coverage resync. See CoverageResetInfo. */
@@ -490,6 +504,19 @@ type ManifestResolution =
   | { status: 'absent' }
   | { status: 'error'; cause: unknown };
 
+async function recordRetryableBootstrapFailure(db: OfflineDatabase, scopeKey: string): Promise<number> {
+  const attempt = await recordBootstrapAttempt(db, scopeKey);
+  if (attempt >= MAX_BOOTSTRAP_ATTEMPTS) {
+    await markBootstrapPagedFallback(db, scopeKey);
+  } else {
+    // Preserve the prior fallback marker until the new attempt has a durable
+    // outcome. Clearing it here avoids an abort window where the UI observes a
+    // transient decision that this run never finished making.
+    await clearBootstrapPagedFallback(db, scopeKey);
+  }
+  return attempt;
+}
+
 async function resolveManifestOnce(
   source: SnapshotSource,
   cache: { value?: ManifestResolution },
@@ -554,6 +581,7 @@ async function runBootstrapPhase(
   onProgress: ((progress: SyncProgress) => void) | undefined,
   onSchemaDrift: SchemaDriftReporter | undefined,
   onSnapshotBootstrapError: SnapshotBootstrapErrorReporter | undefined,
+  onBootstrapMetadataChanged: BootstrapMetadataChangedReporter | undefined,
 ): Promise<Set<string>> {
   const skipPagedPull = new Set<string>();
   const manifestCache: { value?: ManifestResolution } = {};
@@ -566,125 +594,165 @@ async function runBootstrapPhase(
 
   try {
     for (const scope of scopes) {
-      if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) break;
+      let metadataSettled = false;
+      try {
+        if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) break;
 
-      // Duration telemetry starts here — before the eligibility check — so a
-      // snapshot scope's durationMs covers its manifest/download/import work.
-      stampScopeStart(scope.scopeKey);
+        // Duration telemetry starts here — before the eligibility check — so a
+        // snapshot scope's durationMs covers its manifest/download/import work.
+        stampScopeStart(scope.scopeKey);
 
-      // Eligibility: FRESH on BOTH board tables and under the attempt cap.
-      const climbsCheckpoint = await getCheckpoint(db, getCheckpointKey('board_climbs', scope.scopeKey));
-      const statsCheckpoint = await getCheckpoint(db, getCheckpointKey('board_climb_stats', scope.scopeKey));
-      if (climbsCheckpoint || statsCheckpoint) continue;
-      if ((await getBootstrapAttempts(db, scope.scopeKey)) >= MAX_BOOTSTRAP_ATTEMPTS) continue;
-
-      onProgress?.({ phase: 'bootstrap', currentTable: scope.scopeKey, documentsProcessed: 0 });
-
-      const resolution = await resolveManifestOnce(source, manifestCache);
-      // Re-check after the manifest network await: every branch below either
-      // writes to SQLite (recordBootstrapAttempt) or leads to one further down.
-      if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) break;
-      if (resolution.status === 'absent') continue; // permanent miss, no attempt
-      if (resolution.status === 'error') {
-        const attempt = await recordBootstrapAttempt(db, scope.scopeKey);
-        onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'manifest', attempt, cause: resolution.cause });
-        skipPagedPull.add(scope.scopeKey);
-        continue;
-      }
-
-      // Shared with the pre-download size estimate (snapshot-estimate.ts) so the
-      // UI can never quote a number for an artifact this phase would skip.
-      const entry = findSnapshotEntry(resolution.manifest, scope.boardType, scope.layoutId);
-      if (!entry) continue; // layout not exported yet — permanent miss, no attempt
-      // Pre-check the manifest's schemaVersion so a schema-stale artifact is
-      // skipped BEFORE the multi-MB download; verifySnapshotMeta re-checks the
-      // authoritative value inside the file. Same permanent-miss semantics as
-      // SnapshotSchemaStaleError: no attempt, paged crawl runs this cycle, and
-      // tonight's export rebuilds at the new schema.
-      if (!isSnapshotEntryUsable(entry)) continue;
-
-      const layoutKey = `${scope.boardType}:${scope.layoutId}`;
-      // The failure cause is cached alongside the result so a second size of the
-      // same layout (which reuses this entry instead of re-downloading) still
-      // reports the real error, not null.
-      let cachedDownload = downloadByLayout.get(layoutKey);
-      if (!cachedDownload) {
-        cachedDownload = { file: null, cause: null, permanentMiss: false };
-        try {
-          cachedDownload.file = (await source.downloadArtifact(entry)) ?? null;
-        } catch (error) {
-          cachedDownload.cause = error;
-          cachedDownload.permanentMiss = error instanceof SnapshotPermanentMissError;
+        // Eligibility: FRESH on BOTH board tables and under the attempt cap.
+        const climbsCheckpoint = await getCheckpoint(db, getCheckpointKey('board_climbs', scope.scopeKey));
+        const statsCheckpoint = await getCheckpoint(db, getCheckpointKey('board_climb_stats', scope.scopeKey));
+        if (climbsCheckpoint || statsCheckpoint) {
+          // Checkpoints can be written by an ad-hoc pull while the scheduled
+          // snapshot source is disabled. Refresh this scope even though this
+          // run did not mutate its bootstrap markers.
+          metadataSettled = true;
+          continue;
         }
-        downloadByLayout.set(layoutKey, cachedDownload);
-        if (cachedDownload.file) downloadedPaths.add(cachedDownload.file.filePath);
-      }
-      // Re-check after the (potentially multi-MB) artifact download await, same
-      // reason as the manifest check above.
-      if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) break;
-      const download = cachedDownload.file;
-      if (!download) {
-        if (cachedDownload.permanentMiss) {
+        if ((await getBootstrapAttempts(db, scope.scopeKey)) >= MAX_BOOTSTRAP_ATTEMPTS) {
+          await markBootstrapPagedFallback(db, scope.scopeKey);
+          metadataSettled = true;
+          continue;
+        }
+
+        onProgress?.({ phase: 'bootstrap', currentTable: scope.scopeKey, documentsProcessed: 0 });
+
+        const resolution = await resolveManifestOnce(source, manifestCache);
+        // Re-check after the manifest network await: every branch below either
+        // writes to SQLite (recordBootstrapAttempt) or leads to one further down.
+        if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) break;
+        if (resolution.status === 'absent') {
+          await markBootstrapPagedFallback(db, scope.scopeKey);
+          metadataSettled = true;
+          continue; // permanent miss, no attempt
+        }
+        if (resolution.status === 'error') {
+          const attempt = await recordRetryableBootstrapFailure(db, scope.scopeKey);
+          metadataSettled = true;
+          onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'manifest', attempt, cause: resolution.cause });
+          skipPagedPull.add(scope.scopeKey);
+          continue;
+        }
+
+        // Shared with the pre-download size estimate (snapshot-estimate.ts) so the
+        // UI can never quote a number for an artifact this phase would skip.
+        const entry = findSnapshotEntry(resolution.manifest, scope.boardType, scope.layoutId);
+        if (!entry) {
+          await markBootstrapPagedFallback(db, scope.scopeKey);
+          metadataSettled = true;
+          continue; // layout not exported yet — permanent miss, no attempt
+        }
+        // Pre-check the manifest's schemaVersion so a schema-stale artifact is
+        // skipped BEFORE the multi-MB download; verifySnapshotMeta re-checks the
+        // authoritative value inside the file. Same permanent-miss semantics as
+        // SnapshotSchemaStaleError: no attempt, paged crawl runs this cycle, and
+        // tonight's export rebuilds at the new schema.
+        if (!isSnapshotEntryUsable(entry)) {
+          await markBootstrapPagedFallback(db, scope.scopeKey);
+          metadataSettled = true;
+          continue;
+        }
+
+        const layoutKey = `${scope.boardType}:${scope.layoutId}`;
+        // The failure cause is cached alongside the result so a second size of the
+        // same layout (which reuses this entry instead of re-downloading) still
+        // reports the real error, not null.
+        let cachedDownload = downloadByLayout.get(layoutKey);
+        if (!cachedDownload) {
+          cachedDownload = { file: null, cause: null, permanentMiss: false };
+          try {
+            cachedDownload.file = (await source.downloadArtifact(entry)) ?? null;
+          } catch (error) {
+            cachedDownload.cause = error;
+            cachedDownload.permanentMiss = error instanceof SnapshotPermanentMissError;
+          }
+          downloadByLayout.set(layoutKey, cachedDownload);
+          if (cachedDownload.file) downloadedPaths.add(cachedDownload.file.filePath);
+        }
+        // Re-check after the (potentially multi-MB) artifact download await, same
+        // reason as the manifest check above.
+        if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) break;
+        const download = cachedDownload.file;
+        if (!download) {
+          if (cachedDownload.permanentMiss) {
+            await markBootstrapPagedFallback(db, scope.scopeKey);
+            metadataSettled = true;
+            onSnapshotBootstrapError?.({
+              scopeKey: scope.scopeKey,
+              stage: 'download',
+              attempt: 0,
+              cause: cachedDownload.cause,
+            });
+            continue;
+          }
+          const attempt = await recordRetryableBootstrapFailure(db, scope.scopeKey);
+          metadataSettled = true;
           onSnapshotBootstrapError?.({
             scopeKey: scope.scopeKey,
             stage: 'download',
-            attempt: 0,
+            attempt,
             cause: cachedDownload.cause,
           });
+          skipPagedPull.add(scope.scopeKey);
           continue;
         }
-        const attempt = await recordBootstrapAttempt(db, scope.scopeKey);
-        onSnapshotBootstrapError?.({
-          scopeKey: scope.scopeKey,
-          stage: 'download',
-          attempt,
-          cause: cachedDownload.cause,
-        });
-        skipPagedPull.add(scope.scopeKey);
-        continue;
-      }
 
-      try {
-        // Imports the scope's rows, stamps both table checkpoints, and rewinds
-        // the global deletions cursor to the older table watermark — all in one
-        // transaction, so no crash point can separate the imported rows from
-        // the tombstone-replay window that must cover them.
-        await bootstrapScopeFromSnapshot({
-          db,
-          scope,
-          scopeKey: scope.scopeKey,
-          filePath: download.filePath,
-          onSchemaDrift,
-        });
-        await markBootstrapDone(db, scope.scopeKey);
-        // Bust the board-table query caches now: if the snapshot fully satisfies
-        // the scope, the delta pull returns zero documents and syncTable's
-        // arrivals-only invalidation never fires — an active search/detail query
-        // would keep serving the pre-import (empty) result set.
-        for (const tableName of ['board_climbs', 'board_climb_stats'] as const) {
-          for (const key of TABLE_CONFIGS[tableName].invalidateKeys) {
-            queryClient.invalidateQueries({ queryKey: key });
+        try {
+          // Imports the scope's rows, stamps both table checkpoints, and rewinds
+          // the global deletions cursor to the older table watermark — all in one
+          // transaction, so no crash point can separate the imported rows from
+          // the tombstone-replay window that must cover them.
+          await bootstrapScopeFromSnapshot({
+            db,
+            scope,
+            scopeKey: scope.scopeKey,
+            filePath: download.filePath,
+            onSchemaDrift,
+          });
+          await markBootstrapDone(db, scope.scopeKey);
+          metadataSettled = true;
+          // Bust the board-table query caches now: if the snapshot fully satisfies
+          // the scope, the delta pull returns zero documents and syncTable's
+          // arrivals-only invalidation never fires — an active search/detail query
+          // would keep serving the pre-import (empty) result set.
+          for (const tableName of ['board_climbs', 'board_climb_stats'] as const) {
+            for (const key of TABLE_CONFIGS[tableName].invalidateKeys) {
+              queryClient.invalidateQueries({ queryKey: key });
+            }
           }
+          // Not skipped: the board-data phase delta-pulls from the watermark
+          // checkpoints and fires markScopeDownloadComplete through the tail logic.
+        } catch (error) {
+          // A wipe mid-import rolls the transaction back and bails the phase — no
+          // attempt (the pull is being torn down, not failing).
+          if (
+            error instanceof SnapshotWipedError ||
+            isSigningOut() ||
+            getWipeEpoch() !== cycleEpoch ||
+            isBackgrounded()
+          )
+            break;
+          if (error instanceof SnapshotSchemaStaleError) {
+            // The artifact predates this client's schema — importing it would
+            // NULL-fill newer columns and stamp the cursor past them forever.
+            // Permanent miss for this run: no attempt burned, and the scope's
+            // paged pull runs NOW (always correct); tonight's export rebuilds the
+            // artifact at the new schema for future fresh scopes.
+            await markBootstrapPagedFallback(db, scope.scopeKey);
+            metadataSettled = true;
+            onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'import', attempt: 0, cause: error });
+            continue;
+          }
+          const attempt = await recordRetryableBootstrapFailure(db, scope.scopeKey);
+          metadataSettled = true;
+          onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'import', attempt, cause: error });
+          skipPagedPull.add(scope.scopeKey);
         }
-        // Not skipped: the board-data phase delta-pulls from the watermark
-        // checkpoints and fires markScopeDownloadComplete through the tail logic.
-      } catch (error) {
-        // A wipe mid-import rolls the transaction back and bails the phase — no
-        // attempt (the pull is being torn down, not failing).
-        if (error instanceof SnapshotWipedError || isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded())
-          break;
-        if (error instanceof SnapshotSchemaStaleError) {
-          // The artifact predates this client's schema — importing it would
-          // NULL-fill newer columns and stamp the cursor past them forever.
-          // Permanent miss for this run: no attempt burned, and the scope's
-          // paged pull runs NOW (always correct); tonight's export rebuilds the
-          // artifact at the new schema for future fresh scopes.
-          onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'import', attempt: 0, cause: error });
-          continue;
-        }
-        const attempt = await recordBootstrapAttempt(db, scope.scopeKey);
-        onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'import', attempt, cause: error });
-        skipPagedPull.add(scope.scopeKey);
+      } finally {
+        if (metadataSettled) onBootstrapMetadataChanged?.({ scopeKey: scope.scopeKey });
       }
     }
   } finally {
@@ -885,6 +953,7 @@ export async function pullSync(
       onProgress,
       options.onSchemaDrift,
       options.onSnapshotBootstrapError,
+      options.onBootstrapMetadataChanged,
     );
   }
 

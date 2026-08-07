@@ -101,6 +101,23 @@ describe('sync-scheduler', () => {
     );
   });
 
+  it('forwards per-scope bootstrap metadata settlement to pullSync', async () => {
+    const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+    const onBootstrapMetadataChanged = vi.fn();
+
+    triggerSync(mockDb, createMockQueryClient(), mockGraphqlFetch, getEnabledBoards, drainQueue, {
+      onBootstrapMetadataChanged,
+    });
+    await flush();
+
+    expect(mockPullSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.anything(),
+      mockGraphqlFetch,
+      expect.objectContaining({ onBootstrapMetadataChanged }),
+    );
+  });
+
   it('single-flights concurrent triggers into one run plus one follow-up', async () => {
     const drainGate = deferred();
     const drainQueue: DrainQueue = vi.fn(() => drainGate.promise);

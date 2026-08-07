@@ -17,6 +17,9 @@ import { pullSync } from '../pull-client';
 import {
   bootstrapScopeFromSnapshot,
   getBootstrapAttempts,
+  getBootstrapMetadataByScope,
+  BOOTSTRAP_METADATA_QUERY,
+  BOOTSTRAP_METADATA_PATTERNS,
   SnapshotPermanentMissError,
   SnapshotSchemaStaleError,
   type SnapshotSource,
@@ -198,6 +201,14 @@ function makeSnapshotSource(config: {
   return { fetchManifest, downloadArtifact, deleteArtifact } as never;
 }
 
+function deferred<Result>() {
+  let resolvePromise!: (result: Result) => void;
+  const promise = new Promise<Result>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return { promise, resolve: resolvePromise };
+}
+
 function noopQueryClient(): QueryInvalidator {
   return { invalidateQueries: vi.fn() } as unknown as QueryInvalidator;
 }
@@ -285,6 +296,76 @@ async function countRows(table: string): Promise<number> {
   const row = await db.getFirstAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table}`);
   return row?.n ?? 0;
 }
+
+describe('getBootstrapMetadataByScope', () => {
+  it('reads requested attempt and completion markers in one batch with O(1) scope lookups', async () => {
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-attempts:kilter:1:5', '1']);
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-done:kilter:1:5', '1']);
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['checkpoint:board_climbs:kilter:1:5', '{}']);
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['scope-complete:kilter:1:5', '1']);
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-attempts:tension:2:10', '2']);
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [
+      'bootstrap-paged-fallback:tension:2:10',
+      '1',
+    ]);
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-attempts:kilter:9:20', '1']);
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [
+      'checkpoint:board_climb_stats:kilter:9:20',
+      '{}',
+    ]);
+    // An unrequested scope must not become an accidental row in the returned map.
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-attempts:moonboard:3:7', '1']);
+
+    const metadataByScope = await getBootstrapMetadataByScope(db, [
+      'kilter:1:5',
+      'tension:2:10',
+      'kilter:9:20',
+      'missing:4:20',
+    ]);
+
+    expect(metadataByScope.get('kilter:1:5')).toEqual({
+      attempts: 1,
+      isBootstrapDone: true,
+      isPagedFallback: false,
+      hasBoardCheckpoint: true,
+      isScopeComplete: true,
+    });
+    expect(metadataByScope.get('tension:2:10')).toEqual({
+      attempts: 2,
+      isBootstrapDone: false,
+      isPagedFallback: true,
+      hasBoardCheckpoint: false,
+      isScopeComplete: false,
+    });
+    expect(metadataByScope.get('kilter:9:20')).toEqual({
+      attempts: 1,
+      isBootstrapDone: false,
+      isPagedFallback: false,
+      hasBoardCheckpoint: true,
+      isScopeComplete: false,
+    });
+    expect(metadataByScope.get('missing:4:20')).toBeUndefined();
+    expect(metadataByScope.has('moonboard:3:7')).toBe(false);
+  });
+
+  it('uses the sync_meta primary-key index for every metadata prefix', async () => {
+    const queryPlan = await db.getAllAsync<{ detail: string }>(`EXPLAIN QUERY PLAN ${BOOTSTRAP_METADATA_QUERY}`, [
+      ...BOOTSTRAP_METADATA_PATTERNS,
+    ]);
+    const details = queryPlan.map((row) => row.detail).join('\n');
+
+    expect(details).not.toMatch(/\bSCAN sync_meta\b/);
+    expect(details).toMatch(/SEARCH sync_meta USING (?:COVERING )?INDEX/);
+
+    const completeScopesPlan = await db.getAllAsync<{ detail: string }>(
+      'EXPLAIN QUERY PLAN SELECT key FROM sync_meta WHERE key GLOB ?',
+      ['scope-complete:*'],
+    );
+    const completeScopesDetails = completeScopesPlan.map((row) => row.detail).join('\n');
+    expect(completeScopesDetails).not.toMatch(/\bSCAN sync_meta\b/);
+    expect(completeScopesDetails).toMatch(/SEARCH sync_meta USING COVERING INDEX/);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // bootstrapScopeFromSnapshot — direct
@@ -645,6 +726,7 @@ describe('bootstrapScopeFromSnapshot', () => {
 
 describe('pullSync snapshot bootstrap', () => {
   it('warms a fresh scope, then the paged pull resumes from the watermark and marks the scope complete', async () => {
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-paged-fallback:kilter:1:5', '1']);
     const filePath = join(workDir, 'happy.db');
     buildArtifact({
       filePath,
@@ -661,10 +743,12 @@ describe('pullSync snapshot bootstrap', () => {
       fileForEntry: () => filePath,
     });
     const { fetch, capturedClimbCursors, capturedStatsCursors } = makeGraphqlFetch();
+    const onBootstrapMetadataChanged = vi.fn();
 
     await pullSync(db, noopQueryClient(), fetch, {
       enabledBoards: ['kilter:1:5'],
       snapshotSource: source,
+      onBootstrapMetadataChanged,
     });
 
     // Rows imported, size-filtered.
@@ -682,6 +766,11 @@ describe('pullSync snapshot bootstrap', () => {
     expect(
       await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-done:kilter:1:5']),
     ).not.toBeNull();
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-paged-fallback:kilter:1:5']),
+    ).toBeNull();
+    expect(onBootstrapMetadataChanged).toHaveBeenCalledOnce();
+    expect(onBootstrapMetadataChanged).toHaveBeenCalledWith({ scopeKey: 'kilter:1:5' });
     // Artifact cleaned up.
     expect(source.deleteArtifact).toHaveBeenCalledWith(filePath);
   });
@@ -879,6 +968,56 @@ describe('pullSync snapshot bootstrap', () => {
     expect(await db.getFirstAsync('SELECT uuid FROM board_climbs WHERE uuid = ?', ['c6'])).not.toBeNull();
   });
 
+  it('settles scope A metadata before scope B finishes its bootstrap download', async () => {
+    const secondDownload = deferred<{ filePath: string } | null>();
+    const secondDownloadStarted = deferred<void>();
+    const entries = [
+      makeEntry(),
+      makeEntry({
+        boardType: 'tension',
+        layoutId: 2,
+        key: 'board-snapshots/v1/tension/2/2026-06-01.db',
+        url: 'https://example.test/tension-2.db',
+      }),
+    ];
+    const source: SnapshotSource = {
+      fetchManifest: vi.fn(async () => makeManifest(entries)),
+      downloadArtifact: vi.fn(async (entry: SnapshotManifestEntry) => {
+        if (entry.boardType === 'kilter') return null;
+        secondDownloadStarted.resolve();
+        return secondDownload.promise;
+      }),
+      deleteArtifact: vi.fn(async () => {}),
+    };
+    const events: string[] = [];
+    const { fetch } = makeGraphqlFetch();
+
+    const syncPromise = pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5', 'tension:2:10'],
+      snapshotSource: source,
+      onProgress: (progress) => {
+        if (progress.phase === 'bootstrap' && progress.currentTable) events.push(`progress:${progress.currentTable}`);
+      },
+      onBootstrapMetadataChanged: ({ scopeKey }) => events.push(`settled:${scopeKey}`),
+    });
+
+    await secondDownloadStarted.promise;
+
+    expect(events).toEqual(['progress:kilter:1:5', 'settled:kilter:1:5', 'progress:tension:2:10']);
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(1);
+    expect(await getBootstrapAttempts(db, 'tension:2:10')).toBe(0);
+
+    secondDownload.resolve(null);
+    await syncPromise;
+
+    expect(events).toEqual([
+      'progress:kilter:1:5',
+      'settled:kilter:1:5',
+      'progress:tension:2:10',
+      'settled:tension:2:10',
+    ]);
+  });
+
   it('skips bootstrap for a scope that already has a board checkpoint (mid-crawl user)', async () => {
     await setCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5', { updatedAt: '2026-01-01T00:00:00Z', syncSeq: '5' });
     const source = makeSnapshotSource({
@@ -886,13 +1025,19 @@ describe('pullSync snapshot bootstrap', () => {
       fileForEntry: () => join(workDir, 'never.db'),
     });
     const { fetch } = makeGraphqlFetch();
+    const onBootstrapMetadataChanged = vi.fn();
 
-    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onBootstrapMetadataChanged,
+    });
 
     // Manifest never fetched, nothing downloaded — the paged pull just runs.
     expect(source.fetchManifest).not.toHaveBeenCalled();
     expect(source.downloadArtifact).not.toHaveBeenCalled();
     expect(await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-done:kilter:1:5'])).toBeNull();
+    expect(onBootstrapMetadataChanged).toHaveBeenCalledWith({ scopeKey: 'kilter:1:5' });
   });
 
   it('falls straight to the paged crawl (no attempt burned) when the manifest has no entry for the layout', async () => {
@@ -901,8 +1046,13 @@ describe('pullSync snapshot bootstrap', () => {
       fileForEntry: () => join(workDir, 'never.db'),
     });
     const { fetch, capturedClimbCursors } = makeGraphqlFetch();
+    const onBootstrapMetadataChanged = vi.fn();
 
-    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onBootstrapMetadataChanged,
+    });
 
     expect(source.downloadArtifact).not.toHaveBeenCalled();
     // Paged pull ran from scratch (no checkpoint → cursor undefined on first page).
@@ -911,6 +1061,7 @@ describe('pullSync snapshot bootstrap', () => {
     expect(
       await db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', ['bootstrap-attempts:kilter:1:5']),
     ).toBeNull();
+    expect(onBootstrapMetadataChanged).toHaveBeenCalledWith({ scopeKey: 'kilter:1:5' });
   });
 
   it('falls straight to the paged crawl (no attempt burned) when the manifest is absent', async () => {
@@ -948,12 +1099,14 @@ describe('pullSync snapshot bootstrap', () => {
   it('counts an attempt AND skips the paged pull when the manifest fetch fails (network)', async () => {
     const source = makeSnapshotSource({ manifestThrows: true });
     const onSnapshotBootstrapError = vi.fn();
+    const onBootstrapMetadataChanged = vi.fn();
     const { fetch } = makeGraphqlFetch();
 
     await pullSync(db, noopQueryClient(), fetch, {
       enabledBoards: ['kilter:1:5'],
       snapshotSource: source,
       onSnapshotBootstrapError,
+      onBootstrapMetadataChanged,
     });
 
     // Paged pull SKIPPED this cycle (a first-page checkpoint would disqualify bootstrap).
@@ -965,16 +1118,65 @@ describe('pullSync snapshot bootstrap', () => {
       value: '1',
     });
     expect(onSnapshotBootstrapError).toHaveBeenCalledWith(expect.objectContaining({ stage: 'manifest', attempt: 1 }));
+    expect(onBootstrapMetadataChanged).toHaveBeenCalledWith({ scopeKey: 'kilter:1:5' });
+  });
+
+  it('persists paged fallback after a transient failure is followed by a permanent miss', async () => {
+    const source = makeSnapshotSource({ manifestThrows: true });
+
+    const firstRun = makeGraphqlFetch();
+    await pullSync(db, noopQueryClient(), firstRun.fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+    });
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(1);
+
+    // The next cycle can reach the source but no usable manifest exists. Abort
+    // the paged crawl at its first board request so the explicit decision is
+    // tested before a checkpoint or scope-complete marker can mask it.
+    source.fetchManifest.mockResolvedValue(null);
+    const secondRun = makeGraphqlFetch();
+    const failPagedFetch = (async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
+      if (query.includes('syncClimbs')) throw new Error('stop after bootstrap outcome');
+      return secondRun.fetch<T>(query, variables);
+    }) as GraphqlFetchMock;
+
+    await expect(
+      pullSync(db, noopQueryClient(), failPagedFetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+      }),
+    ).rejects.toThrow('stop after bootstrap outcome');
+
+    expect(await getBootstrapMetadataByScope(db, ['kilter:1:5'])).toEqual(
+      new Map([
+        [
+          'kilter:1:5',
+          {
+            attempts: 1,
+            isBootstrapDone: false,
+            isPagedFallback: true,
+            hasBoardCheckpoint: false,
+            isScopeComplete: false,
+          },
+        ],
+      ]),
+    );
   });
 
   it('records two attempts on repeated corrupt artifacts, then the third run falls back to the paged crawl', async () => {
     const filePath = join(workDir, 'corrupt.db');
     writeFileSync(filePath, 'not a database');
     const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const onBootstrapMetadataChanged = vi.fn();
 
     // Run 1: import fails → attempt 1, paged pull skipped.
     const run1 = makeGraphqlFetch();
-    await pullSync(db, noopQueryClient(), run1.fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+    await pullSync(db, noopQueryClient(), run1.fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onBootstrapMetadataChanged,
+    });
     expect(run1.fetch.mock.calls.filter((a) => (a[0] as string).includes('syncClimbs'))).toHaveLength(0);
     expect(
       await db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', ['bootstrap-attempts:kilter:1:5']),
@@ -982,7 +1184,11 @@ describe('pullSync snapshot bootstrap', () => {
 
     // Run 2: import fails again → attempt 2, still skipped.
     const run2 = makeGraphqlFetch();
-    await pullSync(db, noopQueryClient(), run2.fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+    await pullSync(db, noopQueryClient(), run2.fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onBootstrapMetadataChanged,
+    });
     expect(run2.fetch.mock.calls.filter((a) => (a[0] as string).includes('syncClimbs'))).toHaveLength(0);
     expect(
       await db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', ['bootstrap-attempts:kilter:1:5']),
@@ -990,15 +1196,21 @@ describe('pullSync snapshot bootstrap', () => {
 
     // Run 3: attempts >= MAX → bootstrap not eligible → paged crawl runs from scratch.
     const run3 = makeGraphqlFetch();
-    await pullSync(db, noopQueryClient(), run3.fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+    await pullSync(db, noopQueryClient(), run3.fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onBootstrapMetadataChanged,
+    });
     const run3ClimbsCalls = run3.fetch.mock.calls.filter((a) => (a[0] as string).includes('syncClimbs'));
     expect(run3ClimbsCalls.length).toBeGreaterThan(0);
     expect(run3.capturedClimbCursors[0]).toBeUndefined();
     // downloadArtifact was NOT called on run 3 (bootstrap skipped entirely).
     expect(source.downloadArtifact).toHaveBeenCalledTimes(2);
+    expect(onBootstrapMetadataChanged).toHaveBeenCalledTimes(3);
   });
 
   it('Sentry BOARDSESH-AN: stops before the attempt-bookkeeping write when the app backgrounds during the manifest fetch', async () => {
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-paged-fallback:kilter:1:5', '1']);
     const source: SnapshotSource = {
       fetchManifest: async () => {
         setBackgrounded(true);
@@ -1008,9 +1220,14 @@ describe('pullSync snapshot bootstrap', () => {
       deleteArtifact: vi.fn(async () => {}),
     };
     const { fetch } = makeGraphqlFetch();
+    const onBootstrapMetadataChanged = vi.fn();
 
     try {
-      await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+      await pullSync(db, noopQueryClient(), fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+        onBootstrapMetadataChanged,
+      });
 
       // A manifest fetch failure normally counts a bootstrap attempt; backgrounding
       // mid-await must pre-empt that SQLite write, same as a sign-out/wipe caught
@@ -1018,6 +1235,10 @@ describe('pullSync snapshot bootstrap', () => {
       expect(
         await db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', ['bootstrap-attempts:kilter:1:5']),
       ).toBeNull();
+      expect(
+        await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-paged-fallback:kilter:1:5']),
+      ).not.toBeNull();
+      expect(onBootstrapMetadataChanged).not.toHaveBeenCalled();
       expect(fetch).not.toHaveBeenCalled();
     } finally {
       setBackgrounded(false);

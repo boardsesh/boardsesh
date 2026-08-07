@@ -3,6 +3,7 @@ import {
   pullSync,
   type SyncProgress,
   type SchemaDriftReporter,
+  type BootstrapMetadataChangedReporter,
   type ScopeDownloadCompleteReporter,
   type CoverageResetReporter,
 } from './pull-client';
@@ -57,6 +58,8 @@ export type SchedulerOptions = {
   snapshotSource?: SnapshotSource;
   /** Threaded through to pullSync's SyncOptions. */
   onSnapshotBootstrapError?: SnapshotBootstrapErrorReporter;
+  /** Threaded through to pullSync's SyncOptions. */
+  onBootstrapMetadataChanged?: BootstrapMetadataChangedReporter;
   /** Threaded through to pullSync's SyncOptions — see ScopeDownloadCompleteInfo. */
   onScopeDownloadComplete?: ScopeDownloadCompleteReporter;
   /** Threaded through to pullSync's SyncOptions — see CoverageResetInfo. */
@@ -98,6 +101,7 @@ async function runSync(
       onSchemaDrift: options?.onSchemaDrift,
       snapshotSource: options?.snapshotSource,
       onSnapshotBootstrapError: options?.onSnapshotBootstrapError,
+      onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
       onScopeDownloadComplete: options?.onScopeDownloadComplete,
       onCoverageReset: options?.onCoverageReset,
     });

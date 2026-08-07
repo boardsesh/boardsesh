@@ -234,6 +234,10 @@ describe('removeBoardScopeData — markers', () => {
       `bootstrap-done:${scopeKey}`,
       '1',
     ]);
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      `bootstrap-paged-fallback:${scopeKey}`,
+      '1',
+    ]);
   }
 
   // Rows and markers must die together. A surviving checkpoint means the strict `>`
@@ -286,15 +290,18 @@ describe('removeBoardScopeData — markers', () => {
   // what "a scope's downloaded state" consists of. Adding a marker here should mean
   // deliberately updating this list (and `seedMarkers` above, which proves the
   // teardown actually clears each one), not nudging a magic number.
-  it('is exactly the scope’s checkpoints plus its three markers', async () => {
+  it('is exactly the scope’s checkpoints plus its four markers', async () => {
     const keys = scopeSyncMetaKeys('kilter:1:5');
 
     expect(new Set(keys)).toEqual(
       new Set([
-        ...BOARD_DATA_TABLES.map((table) => `checkpoint:${table}:kilter:1:5`),
+        'checkpoint:board_climbs:kilter:1:5',
+        'checkpoint:board_climb_stats:kilter:1:5',
+        'checkpoint:board_climb_grades:kilter:1:5',
         'scope-complete:kilter:1:5',
         'bootstrap-attempts:kilter:1:5',
         'bootstrap-done:kilter:1:5',
+        'bootstrap-paged-fallback:kilter:1:5',
       ]),
     );
   });

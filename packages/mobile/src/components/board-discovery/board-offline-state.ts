@@ -2,13 +2,21 @@
 // sync status. Kept renderer-free so the My Boards screen can compute one state
 // per row without each row subscribing to the sync store, and so it can be tested.
 
-import type { SyncProgress } from '@boardsesh/offline-sync';
+import { MAX_BOOTSTRAP_ATTEMPTS, type SyncProgress } from '@boardsesh/offline-sync';
 
 export type BoardDownloadState =
   | 'off' // not made available offline
   | 'pending' // enabled but not yet pulled (e.g. enabled while offline)
   | 'downloading' // the pull is fetching this exact board right now
   | 'downloaded'; // a sync cycle has completed since it was enabled
+
+/**
+ * A persisted explanation for an in-progress offline download. This is kept
+ * separate from BoardDownloadState: the download still has the same pending /
+ * downloading lifecycle, but a failed snapshot bootstrap changes what the user
+ * should expect next.
+ */
+export type BoardDownloadNotice = 'snapshot-retrying' | 'paged-fallback' | null;
 
 export type BoardDownloadStateInput = {
   /** Encoded scope key of the board ("boardType:layoutId:sizeId"). */
@@ -48,7 +56,7 @@ function isBootstrappingThisScope(
 }
 
 /**
- * A board is "downloading" while the pull is on one of its two per-board
+ * A board is "downloading" while the pull is on one of its per-board data
  * tables (matched exactly so a sibling scope, e.g. kilter:1:50 vs kilter:1:5,
  * can't cross-trigger) OR while it's being warmed from a snapshot artifact.
  * "downloaded" is driven by this scope's own checkpoint, so a board enabled
@@ -61,7 +69,8 @@ export function boardDownloadState(input: BoardDownloadStateInput): BoardDownloa
   const isCurrentBoard =
     isBootstrappingThisScope(input) ||
     input.currentTable === `board_climbs:${input.scopeKey}` ||
-    input.currentTable === `board_climb_stats:${input.scopeKey}`;
+    input.currentTable === `board_climb_stats:${input.scopeKey}` ||
+    input.currentTable === `board_climb_grades:${input.scopeKey}`;
   if (input.isSyncing && isCurrentBoard) return 'downloading';
 
   if (input.downloaded) return 'downloaded';
@@ -76,4 +85,48 @@ export function boardDownloadState(input: BoardDownloadStateInput): BoardDownloa
  */
 export function boardIsBootstrapping(input: BoardDownloadStateInput): boolean {
   return input.isSyncing && isBootstrappingThisScope(input);
+}
+
+export type BoardDownloadNoticeInput = Pick<BoardDownloadStateInput, 'enabled' | 'downloaded'> & {
+  /** Snapshot I/O is actually injected for this build and feature-flag state. */
+  snapshotSourceAvailable: boolean;
+  /** Persisted count of transient snapshot-bootstrap failures for this scope. */
+  bootstrapAttempts: number;
+  /** Persisted once an artifact import succeeded for this scope. */
+  isBootstrapDone: boolean;
+  /** Persisted when the latest bootstrap decision selected the paged crawl. */
+  isPagedFallback: boolean;
+  /** A board-table checkpoint makes snapshot bootstrap ineligible after restart. */
+  hasBoardCheckpoint: boolean;
+  /** Durable per-scope completion, included in the same metadata batch. */
+  isScopeComplete: boolean;
+  /** Live snapshot import for this exact scope; it outranks any stale marker. */
+  isBootstrapping: boolean;
+  /** Live ordinary board-data pull for this exact scope. */
+  isPagedDownloadActive: boolean;
+};
+
+/**
+ * Explain a slow fresh download from durable SQLite facts, not transient progress
+ * frames. A prior failed attempt must not survive a later successful snapshot
+ * import or a completed paged download; likewise stale markers are irrelevant
+ * when this build has no snapshot source and always uses the ordinary crawl.
+ */
+export function boardDownloadNotice(input: BoardDownloadNoticeInput): BoardDownloadNotice {
+  if (
+    !input.enabled ||
+    input.downloaded ||
+    input.isScopeComplete ||
+    !input.snapshotSourceAvailable ||
+    input.isBootstrapDone ||
+    input.isBootstrapping
+  )
+    return null;
+  if (
+    input.isPagedFallback ||
+    input.bootstrapAttempts >= MAX_BOOTSTRAP_ATTEMPTS ||
+    ((input.hasBoardCheckpoint || input.isPagedDownloadActive) && input.bootstrapAttempts > 0)
+  )
+    return 'paged-fallback';
+  return input.bootstrapAttempts > 0 ? 'snapshot-retrying' : null;
 }

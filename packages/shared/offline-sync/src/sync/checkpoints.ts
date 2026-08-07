@@ -80,8 +80,8 @@ export async function rewindDeletionsCheckpoint(db: SqlExecutor, watermark: Sync
 // the FIRST page landed — a 40k-climb board pulls for minutes, and serving
 // local-first reads from a fraction of the catalog (with stats still empty)
 // silently truncates search results while fully online. The marker is written
-// once a scope's board_climbs AND board_climb_stats pulls have both reached
-// their tail; incremental re-syncs keep the data fresh from then on. It is
+// once every BOARD_DATA_TABLES pull (climbs, stats, and grades) has reached its
+// tail; incremental re-syncs keep the data fresh from then on. It is
 // deliberately NOT under the `checkpoint:` prefix so the sign-out checkpoint
 // wipe (deleteUserCheckpoints/deleteAllCheckpoints) leaves it alone, matching
 // the board rows it describes, which also survive as the shared cache.
@@ -111,8 +111,10 @@ export async function isScopeDownloadComplete(db: SqlExecutor, scopeKey: string)
  * checkpoint only proves the first page landed).
  */
 export async function getDownloadedScopeKeys(db: SqlExecutor): Promise<string[]> {
-  const rows = await db.getAllAsync<{ key: string }>('SELECT key FROM sync_meta WHERE key LIKE ?', [
-    `${SCOPE_COMPLETE_PREFIX}%`,
+  // GLOB preserves the literal-prefix range optimization on sync_meta's binary
+  // primary-key index; SQLite's default case-insensitive LIKE scans the table.
+  const rows = await db.getAllAsync<{ key: string }>('SELECT key FROM sync_meta WHERE key GLOB ?', [
+    `${SCOPE_COMPLETE_PREFIX}*`,
   ]);
   return rows.map((row) => row.key.slice(SCOPE_COMPLETE_PREFIX.length));
 }
