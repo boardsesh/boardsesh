@@ -32,19 +32,20 @@ import {
   assertValidBoardId,
   candidateToActiveBoard,
   canClaimSerialForBoard,
-  findSelectedBoardForConnect,
   defaultBoardName,
   findActiveBoardsBySerial,
   findChosenBoardForSerial,
   findOwnActiveBoardByConfig,
   findReachableActiveBoardByUuid,
+  findSelectedBoardForConnect,
+  hasSyncedGymBoardForSerial,
   isDuplicateBoardSerialError,
+  isSyncedGymListing,
   lastSentAtByBoardIds,
   rememberBoardForSerial,
   reserveBoardPresenceSeq,
   requireActiveBoardById,
   resolveSharedBoardForConfig,
-  selectionBeatsSerialMatch,
   serialAlreadyBoundError,
   throwIfDuplicateBoardSerial,
   toResolvedBoard,
@@ -414,11 +415,12 @@ async function resolveSelectedBoardForSerial(
        FOR UPDATE
     `);
     await lockBoardSerialWrite(tx, serial);
-    const [selected, selectionWins] = await Promise.all([
+    const [selected, gymListingCarriesSerial] = await Promise.all([
       findSelectedBoardForConnect(userId, selectedBoardUuid, config, tx),
-      selectionBeatsSerialMatch(serial, tx, advertisedBoardType),
+      hasSyncedGymBoardForSerial(serial, config, tx, advertisedBoardType),
     ]);
-    if (!selected || !selectionWins) return undefined;
+    if (!selected) return undefined;
+    if (gymListingCarriesSerial && !(selected.serialNumber === serial && isSyncedGymListing(selected))) return undefined;
     let board = selected;
     if (selected.serialNumber === null && canClaimSerialForBoard(selected, userId)) {
       try {
@@ -444,7 +446,12 @@ async function resolveSelectedBoardForSerial(
 
 /**
  * Decide which board a serial routes to for this user:
- *  - a previously-remembered choice wins (no prompt);
+ *  - a synced gym listing that carries the serial AND describes the connected
+ *    wall outranks everything else, including the caller's selection — unless
+ *    the selection IS that listing;
+ *  - otherwise the board the caller already had selected wins, when its config
+ *    matches the controller they just connected to (see below);
+ *  - otherwise a previously-remembered choice wins (no prompt);
  *  - no board carries the serial yet → bind/create the caller's own board;
  *  - exactly one board carries it → route there (and remember);
  *  - several boards carry it → return the candidates for the user to pick.
@@ -457,10 +464,11 @@ async function resolveSelectedBoardForSerial(
  * Claiming the serial onto the selected board makes the gym's own listing
  * discoverable by serial for everyone after.
  *
- * A selection only wins on `selectionBeatsSerialMatch`'s terms — a personal
- * board loses to a synced gym listing that already carries the serial, because
- * most personal boards are the auto-named onboarding template and travel with
- * the climber rather than describing a wall.
+ * The gym listing outranks a *personal* selection because most personal boards
+ * are the auto-named onboarding template and travel with the climber rather
+ * than describing a wall. It does not outrank the listing itself: a climber who
+ * picked that gym's wall on the map and connected to a controller with its
+ * serial has said everything there is to say about which wall they're on.
  */
 async function resolveSerialForUser(
   userId: string,
@@ -476,7 +484,7 @@ async function resolveSerialForUser(
     const selected = await resolveSelectedBoardForSerial(userId, serial, selectedBoardUuid, config, advertisedBoardType);
     if (selected) return { kind: 'board', board: selected };
   }
-  const chosen = await findChosenBoardForSerial(userId, serial, advertisedBoardType);
+  const chosen = await findChosenBoardForSerial(userId, serial, advertisedBoardType, config);
   if (chosen) {
     return { kind: 'board', board: chosen };
   }

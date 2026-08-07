@@ -548,20 +548,48 @@ export async function runMerge(argv: string[]): Promise<void> {
   const redis = new Redis(redisUrl);
 
   try {
-    const merged: number[] = [];
-    for (const pair of pairs) {
-      const counts = await db.transaction((tx) => mergeClonePair(pair, tx));
-      merged.push(pair.targetId);
-      logger.info(
-        `[merge-clone-boards] merged ${pair.cloneId} → ${pair.targetId}: ` +
-          `${counts.climbEvents} events, ${counts.ticks} ticks, ${counts.follows} follows ` +
-          `(+${counts.followsDropped} duplicate follows dropped), ${counts.serialLinks} serial links`,
-      );
-    }
-    await resetBoardCaches(redis, [...new Set(merged)]);
-    logger.info(`[merge-clone-boards] reset seq + stats caches for ${new Set(merged).size} boards`);
+    // Prove Redis is reachable BEFORE the first transaction commits. A bad
+    // REDIS_URL discovered halfway through would leave already-merged boards
+    // dropping sends with no way to reset them from here.
+    await redis.ping();
+    await mergeAllPairs(pairs, redis);
   } finally {
     await redis.quit();
+  }
+}
+
+/**
+ * Merge every pair, resetting each target board's caches as soon as its
+ * transaction commits.
+ *
+ * Per-pair, not once at the end: this is ~166 transactions against production,
+ * and a process that dies partway through would otherwise leave every board it
+ * already merged holding a stale `board:{id}:seq` counter below the new durable
+ * floor — `nextBoardSeq` hands out colliding seqs and `onConflictDoNothing`
+ * silently drops every new send on those live gym walls until the counter's
+ * 1-week TTL expires. A rerun can't repair it either: merged clones are
+ * soft-deleted, so `findClonePairs` no longer returns the pair.
+ */
+export async function mergeAllPairs(pairs: ClonePair[], redis: Redis): Promise<void> {
+  for (const pair of pairs) {
+    const counts = await db.transaction((tx) => mergeClonePair(pair, tx));
+    try {
+      await resetBoardCaches(redis, [pair.targetId]);
+    } catch (error) {
+      // The rows moved and the counter didn't. Name the board loudly — that id
+      // is all an operator needs to `DEL board:{id}:seq` by hand.
+      logger.error(
+        `[merge-clone-boards] merged ${pair.cloneId} → ${pair.targetId} but FAILED to reset its caches — ` +
+          `run: redis-cli DEL board:${pair.targetId}:seq boardsesh:board-stats:v1:${pair.targetId}`,
+      );
+      throw error;
+    }
+    logger.info(
+      `[merge-clone-boards] merged ${pair.cloneId} → ${pair.targetId}: ` +
+        `${counts.climbEvents} events, ${counts.ticks} ticks, ${counts.follows} follows ` +
+        `(+${counts.followsDropped} duplicate follows dropped), ${counts.serialLinks} serial links ` +
+        `(seq + stats caches reset)`,
+    );
   }
 }
 

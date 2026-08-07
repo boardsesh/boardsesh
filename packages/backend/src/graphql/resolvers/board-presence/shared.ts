@@ -164,12 +164,34 @@ export async function findActiveBoardsBySerial(
 }
 
 /** A board the caller had selected when they connected, plus what the serial claim needs. */
-export type SelectedConnectBoard = ActivePresenceBoard & { uuid: string; ownerId: string };
+export type SelectedConnectBoard = ActivePresenceBoard & { uuid: string; ownerId: string; gymId: number | null };
 
-/** Whether any synced gym listing already carries this serial. */
-export async function hasSyncedGymBoardForSerial(serial: string, readDb: BoardPresenceReadDb = db, advertisedBoardType?: string | null): Promise<boolean> {
-  const [board] = await readDb
-    .select({ id: dbSchema.userBoards.id })
+/** A synced gym listing: the system-owned mirror of a wall that belongs to a gym. */
+export function isSyncedGymListing(board: Pick<SelectedConnectBoard, 'ownerId' | 'gymId'>): boolean {
+  return board.ownerId === SYSTEM_BOARD_OWNER_ID && board.gymId !== null;
+}
+
+/**
+ * Whether a synced gym listing carries this serial *and* describes the wall
+ * that just connected.
+ *
+ * The config comparison is the half that keeps a reused serial local. The LED
+ * supplier hands the same serial to unrelated walls — 9 genuine cross-gym
+ * reuses in production, 4 km to 7,400 km apart — so a listing at some other gym
+ * with a different layout / size / hold sets says nothing about the controller
+ * in front of this climber, and must not outrank the board they picked. Only a
+ * listing that could actually BE this wall gets to. `normaliseSetIds` runs in
+ * JS because synced catalog rows keep the upstream set-id string verbatim while
+ * our own writers store the canonical form.
+ */
+export async function hasSyncedGymBoardForSerial(
+  serial: string,
+  config: { boardType: string; layoutId: number; sizeId: number; setIds: string },
+  readDb: BoardPresenceReadDb = db,
+  advertisedBoardType?: string | null,
+): Promise<boolean> {
+  const listings = await readDb
+    .select({ setIds: dbSchema.userBoards.setIds })
     .from(dbSchema.userBoards)
     .where(
       and(
@@ -178,10 +200,13 @@ export async function hasSyncedGymBoardForSerial(serial: string, readDb: BoardPr
         eq(dbSchema.userBoards.ownerId, SYSTEM_BOARD_OWNER_ID),
         isNotNull(dbSchema.userBoards.gymId),
         advertisedBoardType ? eq(dbSchema.userBoards.boardType, advertisedBoardType) : undefined,
+        eq(dbSchema.userBoards.boardType, config.boardType),
+        eq(dbSchema.userBoards.layoutId, config.layoutId),
+        eq(dbSchema.userBoards.sizeId, config.sizeId),
       ),
-    )
-    .limit(1);
-  return board !== undefined;
+    );
+  const connectedSetIds = normaliseSetIds(config.setIds);
+  return listings.some((listing) => normaliseSetIds(listing.setIds) === connectedSetIds);
 }
 
 /**
@@ -214,6 +239,7 @@ export async function findSelectedBoardForConnect(
       setIds: dbSchema.userBoards.setIds,
       serialNumber: dbSchema.userBoards.serialNumber,
       angle: dbSchema.userBoards.angle,
+      gymId: dbSchema.userBoards.gymId,
     })
     .from(dbSchema.userBoards)
     .where(
@@ -234,31 +260,13 @@ export async function findSelectedBoardForConnect(
   ) {
     return undefined;
   }
-  return { ...board, id: Number(board.id), layoutId: Number(board.layoutId), sizeId: Number(board.sizeId) };
-}
-
-/**
- * Whether the caller's selected board should beat serial matching.
- *
- * A gym's own listing always wins when it already carries the serial: that
- * listing IS the wall, whereas a selection is only a hint about it (most
- * personal boards are the auto-named onboarding template, which travels with
- * the climber between gyms). The selection therefore only decides when no gym
- * listing claims the serial — which is exactly the wrong-board case this
- * function exists for, since most synced gym boards carry no serial at all
- * until a connect claims one for them.
- *
- * Takes only the serial, deliberately: nothing about the selected board changes
- * the answer, not even it already carrying this serial. Serials are reused
- * across real gyms — 10 of them in production span 4 km to 7,400 km — and there
- * is no way to tell from a serial alone which of those walls someone is at.
- * Falling through hands those cases to `findActiveBoardsBySerial`, which returns
- * every match and lets the client prompt; the pick is then remembered per user,
- * so the prompt appears once. Guessing silently is how the wrong-board bug
- * looked to a climber.
- */
-export async function selectionBeatsSerialMatch(serial: string, readDb: BoardPresenceReadDb = db, advertisedBoardType?: string | null): Promise<boolean> {
-  return !(await hasSyncedGymBoardForSerial(serial, readDb, advertisedBoardType));
+  return {
+    ...board,
+    id: Number(board.id),
+    layoutId: Number(board.layoutId),
+    sizeId: Number(board.sizeId),
+    gymId: board.gymId === null ? null : Number(board.gymId),
+  };
 }
 
 /**
@@ -309,7 +317,10 @@ export async function claimSerialForBoard(board: SelectedConnectBoard, serial: s
   // Lost the `serial_number IS NULL` race — re-read what the winner wrote so
   // the caller reports the board's real serial. Same `deleted_at` guard as the
   // UPDATE: if the board was soft-deleted in between, reporting a serial read
-  // off a dead row would be worse than reporting none.
+  // off a dead row would be worse than reporting none. That degenerate case
+  // (the owner deleted the board mid-connect) reports no serial and binds this
+  // one connect to the just-deleted board; the next connect skips it, because
+  // findChosenBoardForSerial only joins rows with `deleted_at IS NULL`.
   const [current] = await db
     .select({ serialNumber: dbSchema.userBoards.serialNumber })
     .from(dbSchema.userBoards)
@@ -334,13 +345,19 @@ export async function findChosenBoardForSerial(
   userId: string,
   serial: string,
   advertisedBoardType?: string | null,
+  connectedConfig?: { boardType: string; layoutId: number; sizeId: number; setIds: string },
 ): Promise<ActivePresenceBoard | undefined> {
   // Keep the serial-first lookup read-only. Updating board_uuid would make the
   // FK acquire an implicit user_boards KEY SHARE lock after the serial lock,
   // inverting every row-changing writer's row→serial order.
   const lookup = await db.transaction(async (tx) => {
     await lockBoardSerialWrite(tx, serial);
-    return findChosenBoardForSerialLocked(tx, userId, serial, advertisedBoardType);
+    const chosen = await findChosenBoardForSerialLocked(tx, userId, serial, advertisedBoardType);
+    // Recheck gym precedence while the same serial is fenced. A claim between
+    // an earlier read and this pointer lookup must not revive an unbound hint.
+    if (chosen && connectedConfig && chosen.board.serialNumber !== serial &&
+      await hasSyncedGymBoardForSerial(serial, connectedConfig, tx, advertisedBoardType)) return undefined;
+    return chosen;
   });
 
   if (!lookup) return undefined;

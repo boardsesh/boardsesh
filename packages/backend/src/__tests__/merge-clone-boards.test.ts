@@ -2,7 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
-import { findClonePairs, findSerialBackfills, mergeClonePair, type ClonePair } from '../scripts/merge-clone-boards';
+import type Redis from 'ioredis';
+import {
+  findClonePairs,
+  findSerialBackfills,
+  mergeAllPairs,
+  mergeClonePair,
+  type ClonePair,
+} from '../scripts/merge-clone-boards';
 
 // One physical wall, split across a gym's synced listing and the private
 // duplicate an earlier climber's BLE connect minted. The script's job is to put
@@ -215,10 +222,25 @@ describe('merge-clone-boards', () => {
   });
 
   describe('mergeClonePair', () => {
-    async function seedPair(serial: string): Promise<{ pair: ClonePair; gymBoard: Board; clone: Board }> {
+    async function seedPair(
+      serial: string,
+      config: { layoutId?: number; sizeId?: number; setIds?: string } = {},
+    ): Promise<{ pair: ClonePair; gymBoard: Board; clone: Board }> {
       const gymId = await insertGym('Merge Gym');
-      const gymBoard = await insertBoard({ ownerId: SYSTEM_OWNER_ID, serial: null, gymId, name: 'Gym - Kilter' });
-      const clone = await insertBoard({ ownerId: CLONE_OWNER_ID, serial, gymId: null, name: 'Kilter Board' });
+      const gymBoard = await insertBoard({
+        ...config,
+        ownerId: SYSTEM_OWNER_ID,
+        serial: null,
+        gymId,
+        name: 'Gym - Kilter',
+      });
+      const clone = await insertBoard({
+        ...config,
+        ownerId: CLONE_OWNER_ID,
+        serial,
+        gymId: null,
+        name: 'Kilter Board',
+      });
       await linkSerial(OTHER_USER_ID, serial, gymBoard.uuid);
       await linkSerial(CLONE_OWNER_ID, serial, clone.uuid);
       const pair = (await findClonePairs()).find((candidate) => candidate.serialNumber === serial)!;
@@ -343,6 +365,36 @@ describe('merge-clone-boards', () => {
       // And nothing is left pointing at the merged-away clone.
       const stranded = await db.execute(sql`SELECT id FROM session_boards WHERE board_id = ${clone.id}`);
       expect(stranded as unknown as unknown[]).toEqual([]);
+    });
+
+    it('resets each board’s seq counter as its own transaction commits, not after the run', async () => {
+      // ~166 transactions against production. A process that died partway with
+      // one reset at the end would leave every already-merged board handing out
+      // seqs below its new durable floor, and `onConflictDoNothing` drops those
+      // sends silently — on live gym walls, for up to the counter's 1-week TTL.
+      // Rerunning can't repair it: the merged clones are soft-deleted, so
+      // findClonePairs no longer returns the pair.
+      const first = await seedPair(`MERGERESETA-${Date.now()}`);
+      const second = await seedPair(`MERGERESETB-${Date.now()}`, { layoutId: 2, sizeId: 20, setIds: '5,6' });
+
+      const deleted: { keys: string[]; secondCloneStillActive: boolean }[] = [];
+      const fakeRedis = {
+        del: async (...keys: string[]) => {
+          const [row] = await db.execute(sql`SELECT deleted_at FROM user_boards WHERE id = ${second.clone.id}`);
+          deleted.push({ keys, secondCloneStillActive: (row as { deleted_at: Date | null }).deleted_at === null });
+          return keys.length;
+        },
+      } as unknown as Redis;
+
+      await mergeAllPairs([first.pair, second.pair], fakeRedis);
+
+      expect(deleted).toHaveLength(2);
+      // The first board's counter was already cleared while the second merge
+      // had not started — which is exactly what a crash in between must leave.
+      expect(deleted[0].secondCloneStillActive).toBe(true);
+      expect(deleted[0].keys).toContain(`board:${first.pair.targetId}:seq`);
+      expect(deleted[1].secondCloneStillActive).toBe(false);
+      expect(deleted[1].keys).toContain(`board:${second.pair.targetId}:seq`);
     });
   });
 });
