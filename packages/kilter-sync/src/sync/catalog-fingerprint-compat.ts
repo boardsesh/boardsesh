@@ -75,19 +75,37 @@ export function enrichFingerprintOwnersWithLegacyCompatibility(
 }
 
 export type CatalogFingerprintDecision = {
-  fingerprint: string;
+  /** `null` when the climb projects to no holds — see `decideCatalogFingerprint`. */
+  fingerprint: string | null;
   canonicalUuid: string;
   canonicalToInsert: string | null;
   holdRowsToInsert: HoldTuple[];
 };
 
-/** Pure fingerprint decision used by the catalog's alias-vs-canonical branch. */
+/**
+ * Pure fingerprint decision used by the catalog's alias-vs-canonical branch.
+ *
+ * A climb that projects to no stored rows — every token an unknown role or a
+ * nonpositive placement — has no hold identity to dedup on. Hashing it anyway
+ * yields SHA256(''), the constant the repair script clears back to NULL, and
+ * would make the first hold-less climb the canonical for every later one. Such
+ * a climb is inserted as its own canonical with a NULL fingerprint and never
+ * enters the owner index, matching `enrichFingerprintOwnersWithLegacyCompatibility`.
+ */
 export function decideCatalogFingerprint(
   fingerprintOwners: ReadonlyMap<string, string>,
   incomingUuid: string,
   projectedRows: ReadonlyArray<HoldTuple>,
 ): CatalogFingerprintDecision {
   const holdRowsToInsert = [...projectedRows];
+  if (holdRowsToInsert.length === 0) {
+    return {
+      fingerprint: null,
+      canonicalUuid: incomingUuid,
+      canonicalToInsert: incomingUuid,
+      holdRowsToInsert,
+    };
+  }
   const fingerprint = fingerprintFromHolds(holdRowsToInsert);
   const existingCanonicalUuid = fingerprintOwners.get(fingerprint);
   if (existingCanonicalUuid) {

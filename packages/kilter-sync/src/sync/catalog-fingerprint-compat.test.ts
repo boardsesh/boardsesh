@@ -112,6 +112,37 @@ describe('legacy fingerprint compatibility index', () => {
     expect(enriched.get(projectedFingerprint(first.frames))).toBe(first.uuid);
   });
 
+  it('never dedups two hold-less climbs onto each other', () => {
+    const firstEmpty = decodeGripsClimbConcat('h10p999', new Map([[10, 100]]), 1);
+    const secondEmpty = decodeGripsClimbConcat('h20p999', new Map([[20, 200]]), 1);
+    if (!firstEmpty.ok || !secondEmpty.ok) throw new Error('unexpected decode failure');
+    expect(firstEmpty.holds).toEqual([]);
+    expect(secondEmpty.holds).toEqual([]);
+
+    const fingerprintOwners = new Map<string, string>();
+    const firstDecision = decideCatalogFingerprint(fingerprintOwners, 'first-empty', firstEmpty.holds);
+    expect(firstDecision.fingerprint).toBeNull();
+    expect(firstDecision.canonicalToInsert).toBe('first-empty');
+    if (firstDecision.fingerprint !== null) fingerprintOwners.set(firstDecision.fingerprint, 'first-empty');
+
+    const secondDecision = decideCatalogFingerprint(fingerprintOwners, 'second-empty', secondEmpty.holds);
+
+    expect(fingerprintOwners.has(fingerprintFromHolds([]))).toBe(false);
+    expect(secondDecision.fingerprint).toBeNull();
+    expect(secondDecision.canonicalUuid).toBe('second-empty');
+    expect(secondDecision.canonicalToInsert).toBe('second-empty');
+  });
+
+  it('ignores a stored SHA256(empty) owner instead of aliasing onto it', () => {
+    const strandedEmptyOwner = new Map([[fingerprintFromHolds([]), 'stranded-empty-canonical']]);
+
+    const decision = decideCatalogFingerprint(strandedEmptyOwner, 'incoming-empty', []);
+
+    expect(decision.fingerprint).toBeNull();
+    expect(decision.canonicalUuid).toBe('incoming-empty');
+    expect(decision.canonicalToInsert).toBe('incoming-empty');
+  });
+
   it('bridges a delayed-start animation using its original legacy frame ordinal', () => {
     const decoded = decodeGripsClimbConcat('h10p13s2', new Map([[10, 100]]), 2);
     if (!decoded.ok) throw new Error(`unexpected decode failure: ${decoded.reason}`);
