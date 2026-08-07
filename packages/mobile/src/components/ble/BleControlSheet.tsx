@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import { View, StyleSheet, Switch } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { ModalSheet } from '../ModalSheet';
@@ -54,10 +54,11 @@ function BleControlSheet({
     onClose();
   }, [onDisconnect, onClose]);
 
-  const snapPoints = useMemo(() => ['32%'], []);
-
   return (
-    <ModalSheet visible={visible} snapPoints={snapPoints} onClose={onClose} enablePanDownToClose>
+    // Size to content rather than a fixed snap point: with the auto-disconnect
+    // row added, a fixed '32%' clips the bottom Disconnect action on smaller
+    // screens and at larger accessibility text sizes.
+    <ModalSheet visible={visible} enableDynamicSizing onClose={onClose} enablePanDownToClose>
       <View style={styles.content}>
         <ListRow
           title={tSettings('ble.autoDisconnect.toggleTitle')}
