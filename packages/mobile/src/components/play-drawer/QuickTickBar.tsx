@@ -369,9 +369,10 @@ export const QuickTickBar = React.memo(function QuickTickBar({
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        // The note field lives inside this scroll view; without this the first
-        // tap on Attempt/Send while the keyboard is up dismisses the keyboard
-        // instead of firing the button.
+        // Every picker lives in here alongside the note field, so without this
+        // the first tap on the grade rail / stars / tries / date while the
+        // keyboard is up gets swallowed dismissing the keyboard. (The save
+        // buttons are outside the scroll view, so they're unaffected either way.)
         keyboardShouldPersistTaps="handled"
       >
         {/* Date and time on one row — two short, related values that don't each
@@ -383,10 +384,12 @@ export const QuickTickBar = React.memo(function QuickTickBar({
             {t('playView.tickBar.dateLabel')}
           </Text>
           <View style={styles.dateTimeRow}>
-            {/* `flexShrink` rather than `flex: 1`: iOS renders a compact
-                DateTimePicker that sizes to its own content and clips (rather
-                than wrapping) when squeezed, so an even split would cut the date
-                off on a 320pt-wide screen. */}
+            {/* Sized by content, not an even `flex: 1` split. The iOS compact
+                DateTimePicker takes a hard width from its shadow node, so it
+                overflows a wrapper narrower than itself instead of shrinking —
+                an even split would have the date draw on top of the time. Both
+                fit unsplit down to a 320pt screen; past that (large Dynamic
+                Type) the row wraps to a second line. */}
             <View style={styles.dateTimeField}>
               <ClimbedAtField
                 value={climbedAt}
@@ -459,10 +462,12 @@ export const QuickTickBar = React.memo(function QuickTickBar({
           <Text variant="footnote" color={iosSystemColors.systemGray} style={styles.rowLabel}>
             {t('playView.tickBar.noteLabel')}
           </Text>
-          {/* `BottomSheetTextInput` (vs the bare `TextInput`) is what makes
-              the host sheet auto-expand to its larger snap point when the
-              keyboard appears — otherwise the keyboard covers the comment
-              row and the save buttons. */}
+          {/* `BottomSheetTextInput` is a bare `TextInput` re-export on native
+              (@expo/ui) and the Gorhom input on web, where it drives the sheet
+              to its larger snap point on focus. Native sheets are supposed to
+              handle the keyboard themselves — `keyboardBehavior` is documented
+              as a no-op there — so keyboard-up reachability of this row and the
+              save buttons is a device-QA gate, not something the code asserts. */}
           <BottomSheetTextInput
             value={comment}
             onChangeText={setComment}
@@ -550,6 +555,9 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    // Wraps instead of overlapping when the pickers outgrow the row (large
+    // Dynamic Type) — the iOS compact picker won't shrink to fit.
+    flexWrap: 'wrap',
     gap: spacing[2],
   },
   dateTimeField: {

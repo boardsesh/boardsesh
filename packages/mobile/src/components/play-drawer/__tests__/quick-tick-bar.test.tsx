@@ -338,15 +338,17 @@ describe('QuickTickBar climbedAt', () => {
     });
   });
 
-  it('threads a picked time into saveTick — the time field commits like the date one', () => {
+  // A wiring guard, not a merge test: the stubbed ClimbedAtField ignores `mode`
+  // and hands back a whole Date, so `applyTimePart` never runs here — that's
+  // ClimbedAtField's own business. What this pins is that the time field is
+  // still connected to handleClimbedAtChange after date and time were folded
+  // onto one row, so touching only the time pins the timestamp.
+  it('threads a picked time into saveTick — the time field is wired to the same handler', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2025-06-01T08:00:00.000Z'));
     boardState.current = null;
     const { getByTestId, container } = renderBar();
 
-    // Date and time render on one row but are separate fields. Touching only
-    // the time must still pin the timestamp, otherwise the save falls back to a
-    // fresh save-time now and silently discards the pick.
     fireEvent.click(getByTestId('climbedat-time'));
 
     const sendButton = Array.from(container.querySelectorAll('button')).find(
