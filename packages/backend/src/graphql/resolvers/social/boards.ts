@@ -1525,14 +1525,24 @@ export const socialBoardMutations = {
     // what *this* connect observed. The explicit null keeps the row honest.
     const apiLevelValue = apiLevel ?? null;
 
-    // `boardUuid` is the one column this upsert must NOT blank out. The board
-    // presence resolver writes the same column (rememberBoardForSerial) and both
-    // fire on the same BLE connect, so a connect made from a surface with no
-    // board in hand — a background reconnect, a bare /play route — would
-    // otherwise wipe the link the resolver just established and send the next
-    // connect back to serial matching. Only overwrite when this connect
-    // actually resolved a board.
-    const boardLinkUpdate = linkedBoardUuid ? { boardUuid: linkedBoardUuid } : {};
+    // `boardUuid` is the one column this upsert must never overwrite. The board
+    // presence resolver writes the same column (rememberBoardForSerial) on the
+    // same BLE connect, and it is the writer that actually decides which wall
+    // the climber is on — this mutation only knows which board the route
+    // happened to be showing, which for most climbers is the auto-named
+    // onboarding template. Whichever landed last used to win, so a first
+    // connect could pin someone to that template permanently: the saved-board
+    // early return above means the link is then never rewritten.
+    //
+    // Fill-only-when-null settles it. The recording still establishes the link
+    // for a client that never reaches the resolver, and never fights the
+    // resolver when it does. The COALESCE reads the stored row, so the outcome
+    // is the same whichever of the two writers lands first. Omitted entirely
+    // when this connect resolved no board, so a bare reconnect can't blank the
+    // column either.
+    const boardLinkUpdate = linkedBoardUuid
+      ? { boardUuid: sql`coalesce(${dbSchema.userBoardSerials.boardUuid}, ${linkedBoardUuid})` }
+      : {};
 
     await db
       .insert(dbSchema.userBoardSerials)

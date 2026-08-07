@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { socialBoardQueries, socialBoardMutations } from '../graphql/resolvers/social/boards';
 
@@ -656,7 +658,7 @@ describe('recordBoardSerial', () => {
     expect(conflictSetOf(onConflictDoUpdate)).not.toHaveProperty('boardUuid');
   });
 
-  it('updates the board link when this connect did resolve a board', async () => {
+  it('fills the board link only when the stored one is still null', async () => {
     const { onConflictDoUpdate } = setupRecordSeq([
       [],
       [{ uuid: OWNED_UUID }],
@@ -679,7 +681,13 @@ describe('recordBoardSerial', () => {
       makeAuthCtx('user-1'),
     );
 
-    expect(conflictSetOf(onConflictDoUpdate).boardUuid).toBe(OWNED_UUID);
+    // This mutation knows only which board the route was showing; the presence
+    // resolver knows which wall the climber is on and writes the same column on
+    // the same connect. COALESCE against the stored row is what stops the
+    // recording overwriting it, whichever of the two lands second.
+    const rendered = new PgDialect().sqlToQuery(conflictSetOf(onConflictDoUpdate).boardUuid as SQL);
+    expect(rendered.sql.toLowerCase().replace(/\s+/g, ' ')).toContain('coalesce("user_board_serials"."board_uuid"');
+    expect(rendered.params).toContain(OWNED_UUID);
   });
 
   it('drops a forged boardUuid (not owned by the caller and not public) to null', async () => {

@@ -35,13 +35,14 @@ import {
   findOwnActiveBoardByConfig,
   findReachableActiveBoardByUuid,
   findSelectedBoardForConnect,
+  hasSyncedGymBoardForSerial,
   isDuplicateBoardSerialError,
+  isSyncedGymListing,
   lastSentAtByBoardIds,
   normalizeSetIds,
   rememberBoardForSerial,
   requireActiveBoardById,
   resolveSharedBoardForConfig,
-  selectionBeatsSerialMatch,
   serialAlreadyBoundError,
   throwIfDuplicateBoardSerial,
   toResolvedBoard,
@@ -195,8 +196,11 @@ async function bindOrCreateOwnBoardForSerial(
 
 /**
  * Decide which board a serial routes to for this user:
- *  - the board the caller already had selected wins, when its config matches
- *    the controller they just connected to (see below);
+ *  - a synced gym listing that carries the serial AND describes the connected
+ *    wall outranks everything else, including the caller's selection — unless
+ *    the selection IS that listing;
+ *  - otherwise the board the caller already had selected wins, when its config
+ *    matches the controller they just connected to (see below);
  *  - otherwise a previously-remembered choice wins (no prompt);
  *  - no board carries the serial yet → bind/create the caller's own board;
  *  - exactly one board carries it → route there (and remember);
@@ -210,10 +214,11 @@ async function bindOrCreateOwnBoardForSerial(
  * Claiming the serial onto the selected board makes the gym's own listing
  * discoverable by serial for everyone after.
  *
- * A selection only wins on `selectionBeatsSerialMatch`'s terms — a personal
- * board loses to a synced gym listing that already carries the serial, because
- * most personal boards are the auto-named onboarding template and travel with
- * the climber rather than describing a wall.
+ * The gym listing outranks a *personal* selection because most personal boards
+ * are the auto-named onboarding template and travel with the climber rather
+ * than describing a wall. It does not outrank the listing itself: a climber who
+ * picked that gym's wall on the map and connected to a controller with its
+ * serial has said everything there is to say about which wall they're on.
  */
 async function resolveSerialForUser(
   userId: string,
@@ -221,33 +226,47 @@ async function resolveSerialForUser(
   config: { boardType: string; layoutId: number; sizeId: number; setIds: string },
   selectedBoardUuid?: string | null,
 ): Promise<SerialResolution> {
-  if (selectedBoardUuid) {
-    // Both lookups are independent, and this runs on every BLE connect (and
-    // reconnect) that carries a selection — which is the common case now — so
-    // overlap them rather than paying two serial round-trips. The cost when the
-    // selection turns out stale is one wasted indexed lookup.
-    const [selected, selectionWins] = await Promise.all([
-      findSelectedBoardForConnect(userId, selectedBoardUuid, config),
-      selectionBeatsSerialMatch(serial),
-    ]);
-    if (selected && selectionWins) {
-      const board =
-        selected.serialNumber === null && canClaimSerialForBoard(selected, userId)
-          ? await claimSerialForBoard(selected, serial)
-          : selected;
-      // Remember it even when the claim was skipped: the per-user link is what
-      // keeps a later connect (one that no longer carries the selection, e.g. a
-      // background reconnect) on the same wall. Passes the post-claim `board`
-      // rather than `selected` purely so the two can't drift — the two differ
-      // only in `serialNumber`, which this never reads (it stores the `serial`
-      // argument).
-      await rememberBoardForSerial(userId, serial, board);
-      return { kind: 'board', board };
-    }
+  // Both lookups are independent and this runs on every BLE connect (and
+  // reconnect), so overlap them rather than paying two serial round-trips. The
+  // gym-listing answer is needed even without a selection — it's also what says
+  // whether a remembered link is still worth trusting.
+  const [selected, gymListingCarriesSerial] = await Promise.all([
+    selectedBoardUuid ? findSelectedBoardForConnect(userId, selectedBoardUuid, config) : undefined,
+    hasSyncedGymBoardForSerial(serial, config),
+  ]);
+
+  if (selected && !gymListingCarriesSerial) {
+    const board =
+      selected.serialNumber === null && canClaimSerialForBoard(selected, userId)
+        ? await claimSerialForBoard(selected, serial)
+        : selected;
+    // Remember it even when the claim was skipped: the per-user link is what
+    // keeps a later connect (one that no longer carries the selection, e.g. a
+    // background reconnect) on the same wall. Passes the post-claim `board`
+    // rather than `selected` purely so the two can't drift — the two differ
+    // only in `serialNumber`, which this never reads (it stores the `serial`
+    // argument).
+    await rememberBoardForSerial(userId, serial, board);
+    return { kind: 'board', board };
+  }
+
+  if (selected && selected.serialNumber === serial && isSyncedGymListing(selected)) {
+    // The climber picked this gym's wall and plugged into a controller carrying
+    // its serial. Nothing outranks that, and skipping the prompt here is the
+    // difference between "keep the picked board" and asking again at a gym
+    // whose serial some far-away wall happens to share.
+    await rememberBoardForSerial(userId, serial, selected);
+    return { kind: 'board', board: selected };
   }
 
   const chosen = await findChosenBoardForSerial(userId, serial);
-  if (chosen) {
+  // A remembered link is a hint from an earlier connect, and plenty of them are
+  // wrong: the pre-fix connect path wrote whatever board the route happened to
+  // be on, which for ~200 users is the onboarding template. Once a gym listing
+  // carries the serial, only a remembered board that carries it too is still a
+  // credible answer — anything else falls through, so the single listing routes
+  // or the prompt fires instead of pinning the climber to a stale board forever.
+  if (chosen && (!gymListingCarriesSerial || chosen.serialNumber === serial)) {
     return { kind: 'board', board: chosen };
   }
 

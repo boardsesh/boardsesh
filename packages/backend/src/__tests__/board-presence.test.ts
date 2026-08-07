@@ -22,7 +22,7 @@ import { roomManager } from '../services/room-manager';
 import { boardPresenceMutations } from '../graphql/resolvers/board-presence/mutations';
 import { boardPresenceQueries } from '../graphql/resolvers/board-presence/queries';
 import { boardPresenceSubscriptions } from '../graphql/resolvers/board-presence/subscription';
-import { socialBoardQueries } from '../graphql/resolvers/social/boards';
+import { socialBoardMutations, socialBoardQueries } from '../graphql/resolvers/social/boards';
 import {
   claimSerialForBoard,
   getBoardSeqFloor,
@@ -853,6 +853,22 @@ describe('board-presence resolvers', () => {
         return (row as { serial_number: string | null }).serial_number;
       }
 
+      /** The per-user (serial → board) link both the resolver and recordBoardSerial write. */
+      async function linkedBoardUuid(serial: string): Promise<string | null> {
+        const [row] = await db.execute(sql`
+          SELECT board_uuid FROM user_board_serials WHERE user_id = ${TEST_USER_ID} AND serial_number = ${serial}
+        `);
+        return (row as { board_uuid: string | null } | undefined)?.board_uuid ?? null;
+      }
+
+      async function rememberSerialLink(serial: string, boardUuid: string): Promise<void> {
+        await db.execute(sql`
+          INSERT INTO user_board_serials (user_id, serial_number, board_name, layout_id, size_id, set_ids, board_uuid)
+          VALUES (${TEST_USER_ID}, ${serial}, 'kilter', 1, 10, '1,2', ${boardUuid})
+          ON CONFLICT (user_id, serial_number) DO UPDATE SET board_uuid = EXCLUDED.board_uuid
+        `);
+      }
+
       it('keeps the connect on the picked gym board and claims the serial for it', async () => {
         const serial = `SEL-${Date.now()}`;
         // The duplicate an earlier climber minted, already carrying the serial.
@@ -1105,6 +1121,216 @@ describe('board-presence resolvers', () => {
         expect(result.board?.boardId).toBe(gymBoard.id);
       });
 
+      it('ignores a same-serial gym listing that describes a different wall', async () => {
+        // Nine production serials are carried by gym listings 4 km to 7,400 km
+        // apart. A listing whose layout/size/sets don't match the controller in
+        // front of this climber can't be the wall they're on, so it must not
+        // outrank the local listing they picked — or that listing never learns
+        // its serial and every climber there keeps falling through to the far
+        // gym's board.
+        const serial = `SELREUSED-${Date.now()}`;
+        const foreignGymBoard = await insertGymListing({
+          serial,
+          layoutId: 2,
+          sizeId: 20,
+          setIds: '5,6',
+          name: 'Gym 7,400 km Away',
+        });
+        const localGymBoard = await insertGymListing({
+          serial: null,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '2,12',
+          name: 'The Gym Round The Corner',
+        });
+
+        const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+          undefined,
+          {
+            serial,
+            boardType: 'kilter',
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '2,12',
+            selectedBoardUuid: localGymBoard.uuid,
+          },
+          authCtx(),
+        );
+
+        expect(result.candidates).toBeNull();
+        expect(result.board?.boardId).toBe(localGymBoard.id);
+        expect(result.board?.boardId).not.toBe(foreignGymBoard.id);
+        expect(await serialOf(localGymBoard.id)).toBe(serial);
+      });
+
+      it('skips a remembered link that no longer carries the serial a gym listing now owns', async () => {
+        // The pre-fix connect path wrote whatever board the route was showing,
+        // which for ~200 climbers is the onboarding template. Honouring that
+        // link once the gym's listing carries the serial pins them to the
+        // template forever, with no prompt and no way out.
+        const serial = `SELSTALELINK-${Date.now()}`;
+        const gymBoard = await insertGymListing({
+          serial,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '2,13',
+          name: 'Gym Wall That Owns The Serial',
+        });
+        const template = await insertRealUuidBoard({
+          ownerId: TEST_USER_ID,
+          serial: null,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '2,13',
+          name: 'Kilter Original 12×12 with kickboard',
+        });
+        await rememberSerialLink(serial, template.uuid);
+
+        const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+          undefined,
+          { serial, boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '2,13' },
+          authCtx(),
+        );
+
+        expect(result.candidates).toBeNull();
+        expect(result.board?.boardId).toBe(gymBoard.id);
+        expect(result.board?.boardId).not.toBe(template.id);
+        // And the stale link is repointed, so the next connect is a direct hit.
+        expect(await linkedBoardUuid(serial)).toBe(gymBoard.uuid);
+      });
+
+      it('prompts instead of honouring a stale remembered link when the serial is shared', async () => {
+        const serial = `SELSTALESHARED-${Date.now()}`;
+        const gymBoard = await insertGymListing({
+          serial,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '2,14',
+          name: 'Gym Wall',
+        });
+        const clone = await insertRealUuidBoard({
+          ownerId: SECOND_USER_ID,
+          serial,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '2,14',
+          name: 'Kilter Board',
+        });
+        const template = await insertRealUuidBoard({
+          ownerId: TEST_USER_ID,
+          serial: null,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '2,14',
+          name: 'Kilter Original 12×12 with kickboard',
+        });
+        await rememberSerialLink(serial, template.uuid);
+
+        const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+          undefined,
+          { serial, boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '2,14' },
+          authCtx(),
+        );
+
+        expect(result.board).toBeNull();
+        expect((result.candidates ?? []).map((candidate) => candidate.boardId).sort()).toEqual(
+          [gymBoard.id, clone.id].sort(),
+        );
+      });
+
+      it('keeps a freshly picked gym listing over a stale remembered link, with no prompt', async () => {
+        const serial = `SELFRESHPICK-${Date.now()}`;
+        const gymBoard = await insertGymListing({
+          serial,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '2,15',
+          name: 'The Gym The Climber Picked',
+        });
+        // A second board carries the serial, so falling through would prompt.
+        await insertRealUuidBoard({
+          ownerId: SECOND_USER_ID,
+          serial,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '2,15',
+          name: 'Kilter Board',
+        });
+        const template = await insertRealUuidBoard({
+          ownerId: TEST_USER_ID,
+          serial: null,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '2,15',
+          name: 'Kilter Original 12×12 with kickboard',
+        });
+        await rememberSerialLink(serial, template.uuid);
+
+        const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+          undefined,
+          { serial, boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '2,15', selectedBoardUuid: gymBoard.uuid },
+          authCtx(),
+        );
+
+        // Picking that gym's wall on the map and plugging into a controller
+        // carrying its serial says everything there is to say about which wall
+        // this is — asking again would be the "keep the picked board" bug.
+        expect(result.candidates).toBeNull();
+        expect(result.board?.boardId).toBe(gymBoard.id);
+        expect(await linkedBoardUuid(serial)).toBe(gymBoard.uuid);
+      });
+
+      it('recordBoardSerial fills the link but never overwrites what the resolver wrote', async () => {
+        // Both fire on the same BLE connect and both write
+        // user_board_serials.board_uuid: the recording knows only which board
+        // the route was showing, the resolver knows which wall this is. The
+        // resolver has to win in either arrival order.
+        const serial = `SELRECORD-${Date.now()}`;
+        const gymBoard = await insertGymListing({
+          serial: null,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '2,16',
+          name: 'Gym Wall The Climber Picked',
+        });
+        const template = await insertRealUuidBoard({
+          ownerId: TEST_USER_ID,
+          serial: null,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '2,16',
+          name: 'Kilter Original 12×12 with kickboard',
+        });
+        const recordInput = {
+          serialNumber: serial,
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '2,16',
+          apiLevel: 3,
+          boardUuid: template.uuid,
+        };
+
+        // Recording first: it establishes the link for a client that never
+        // reaches the resolver...
+        await socialBoardMutations.recordBoardSerial(null, { input: recordInput }, authCtx());
+        expect(await linkedBoardUuid(serial)).toBe(template.uuid);
+
+        // ...and the resolver still repoints it at the wall that was picked.
+        const resolved = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+          undefined,
+          { serial, boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '2,16', selectedBoardUuid: gymBoard.uuid },
+          authCtx(),
+        );
+        expect(resolved.board?.boardId).toBe(gymBoard.id);
+        expect(await linkedBoardUuid(serial)).toBe(gymBoard.uuid);
+
+        // The other order — a late recording landing after the resolver — must
+        // not drag the climber back onto the template.
+        await socialBoardMutations.recordBoardSerial(null, { input: recordInput }, authCtx());
+        expect(await linkedBoardUuid(serial)).toBe(gymBoard.uuid);
+      });
+
       it('binds a stranger-owned public selection but never brands it with the serial', async () => {
         const serial = `SELSTRANGER-${Date.now()}`;
         const strangersBoard = await insertRealUuidBoard({
@@ -1165,7 +1391,7 @@ describe('board-presence resolvers', () => {
       describe('claimSerialForBoard', () => {
         async function boardFor(id: number, uuid: string): Promise<SelectedConnectBoard> {
           const [row] = await db.execute(sql`
-            SELECT owner_id, board_type, layout_id, size_id, set_ids, serial_number, angle, name
+            SELECT owner_id, board_type, layout_id, size_id, set_ids, serial_number, angle, name, gym_id
               FROM user_boards WHERE id = ${id}
           `);
           const board = row as {
@@ -1177,6 +1403,7 @@ describe('board-presence resolvers', () => {
             serial_number: string | null;
             angle: number;
             name: string;
+            gym_id: number | null;
           };
           return {
             id,
@@ -1189,6 +1416,7 @@ describe('board-presence resolvers', () => {
             setIds: board.set_ids,
             serialNumber: board.serial_number,
             angle: Number(board.angle),
+            gymId: board.gym_id === null ? null : Number(board.gym_id),
           };
         }
 
