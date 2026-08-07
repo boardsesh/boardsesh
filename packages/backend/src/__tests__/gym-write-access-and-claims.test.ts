@@ -852,7 +852,7 @@ describe('requestGymClaim — the website must be owner-vouched to self-verify (
     // KNOWN RESIDUAL, documented rather than fixed in code: a token minted while
     // the gym was still vouched keeps redeeming for its 24h life, because
     // verifyGymClaimByToken re-checks only the hash, status and expiry. That is
-    // the in-flight window drizzle/0189_backfill_gym_website_vouched.sql closes
+    // the in-flight window drizzle/0192_backfill_gym_website_vouched.sql closes
     // at deploy time by expiring pending domain claims on un-vouched gyms. It
     // stays open in code on purpose: a flag re-check at redemption would also
     // reject the legitimate SYSTEM-owned catalog claim covered above.
