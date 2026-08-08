@@ -297,6 +297,41 @@ describe('buildDumbbellAxis', () => {
     expect(visibleLabels(both)[0]).toContain(' / ');
   });
 
+  it('never crowds past the gridline cap, for any pair of grades on the scale', () => {
+    // The step coarsens to at most 3 ids per line and then stretches the window
+    // down to a whole number of steps, which could in principle overshoot the
+    // cap. Sweep every low/high pair the real scale can produce instead of
+    // trusting one hand-picked span.
+    for (let low = MIN_DIFFICULTY_ID; low <= MAX_DIFFICULTY_ID; low++) {
+      for (let high = low; high <= MAX_DIFFICULTY_ID; high++) {
+        const rows = buildDumbbellByAngleModel(
+          [
+            bsRow({ angle: 20, universalGrade: low, gradeLow: low, gradeHigh: low }),
+            bsRow({ angle: 45, universalGrade: high, gradeLow: high, gradeHigh: high }),
+          ],
+          [],
+          'v-grade',
+        );
+        const axis = buildDumbbellAxis(rows, 'v-grade');
+        expect(axis.noOfSections).toBeLessThanOrEqual(12);
+        expect(axis.noOfSections).toBeGreaterThanOrEqual(1);
+        expect(Number.isInteger(axis.noOfSections)).toBe(true);
+        // The invariant every marker's y position depends on.
+        expect(axis.maxValue).toBe(axis.maxId - axis.minId);
+        expect(axis.yAxisLabelTexts).toHaveLength(axis.noOfSections + 1);
+        expect(axis.yAxisLabelTexts).not.toContain('');
+        // The bottom always clears the lowest marker — that's the #4164 fix.
+        expect(axis.minId).toBeLessThan(low);
+        // The top only clears it while there's a harder grade to climb to. A V16
+        // sits on the top line by design: the alternative is a top tick labelled
+        // with a grade that doesn't exist, and unlike the bottom there's no axis
+        // line or label row up there to collide with.
+        if (high < MAX_DIFFICULTY_ID) expect(axis.maxId).toBeGreaterThan(high);
+        else expect(axis.maxId).toBe(MAX_DIFFICULTY_ID);
+      }
+    }
+  });
+
   it('returns a safe default window for an empty model', () => {
     const axis = buildDumbbellAxis([], 'v-grade');
     expect(axis.noOfSections).toBeGreaterThanOrEqual(1);
