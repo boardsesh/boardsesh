@@ -404,6 +404,12 @@ jobs:
               - 'packages/db/src/testing/moonboard-angle-dedup-replay.ts'
               - 'packages/db/src/queries/climb-stats/__tests__/moonboard-snapped-angle-repair.integration.test.ts'
               - 'packages/db/src/queries/climb-stats/__tests__/moonboard-residual-dedup-replay.integration.test.ts'
+              # packages/db is a node:test package, not a vitest project, so
+              # nothing in it reaches test-default. The db-migrations job is
+              # where CI executes its suites; keep this gate in step with the
+              # `Run the legacy-timestamp audit unit suites` step below.
+              - 'packages/db/scripts/audit-legacy-tick-timestamps*'
+              - 'packages/db/scripts/legacy-timestamp-audit-core*'
               # Defines the test:migration-journal script this job's new step
               # invokes, so editing it has to run the job that depends on it.
               - 'packages/db/package.json'
@@ -716,6 +722,13 @@ jobs:
       # catalog counterpart runs in test-dev-db via scripts/dev-db-image-smoke.sh.
       - name: Every trigger function pins search_path
         run: vp test run --project scripts scripts/__tests__/db-trigger-search-path.test.ts
+      # packages/db runs on node:test, so its suites are invisible to
+      # test-default's vitest project list. Without this step the audit tooling
+      # in packages/db/scripts would have zero CI coverage. No database needed:
+      # these two suites are pure unit tests (the audit's own integration test
+      # self-skips without LEGACY_TIMESTAMP_AUDIT_DB_URL).
+      - name: Run the legacy-timestamp audit unit suites
+        run: vp run test:db:legacy-timestamp-audit
 
   codegen-drift:
     needs: [changes]

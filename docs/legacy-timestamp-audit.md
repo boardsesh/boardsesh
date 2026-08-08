@@ -12,6 +12,12 @@ not a backfill:
   verifies `TimeZone=UTC` and a five-minute statement timeout;
 - a failed scan leaves no file at the requested output path.
 
+That snapshot also decides where the audit runs: point `DB_URL` at the
+**primary**. PostgreSQL refuses serializable isolation on a hot standby
+(`cannot use serializable mode in a hot standby`), so a read-replica URL fails
+closed on `BEGIN`, before any row is read. Replicas are still the right place
+for the plain-`EXPLAIN` plan review in [Query-plan check](#query-plan-check).
+
 This phase does **not** repair historical rows or close #3909. Release notes for
 the audit-only PR are `none`.
 
@@ -295,6 +301,8 @@ It executes `EXPLAIN (FORMAT JSON, COSTS true)` for the exact exported query and
 asserts there is no modifying plan node, then exercises the real snapshot
 settings. On a production read replica, inspect the same plain `EXPLAIN` (never
 `EXPLAIN ANALYZE` on the full scan) for unexpected sequential scans, large disk
-sorts, or a row estimate that makes the 500-row cursor unsuitable. Record that
-review beside the deployment-policy evidence; do not alter session planner
+sorts, or a row estimate that makes the 500-row cursor unsuitable. That
+inspection is the only replica-side step: the audit run itself needs the
+primary, because its serializable snapshot cannot be taken on a standby. Record
+that review beside the deployment-policy evidence; do not alter session planner
 settings just to force a preferred-looking plan.
