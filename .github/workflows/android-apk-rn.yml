@@ -458,6 +458,13 @@ jobs:
 
           node node_modules/@sentry/react-native/scripts/copy-debugid.js "$packager_sourcemap_path" "$sourcemap_path"
 
+          # com.boardsesh.app is hardcoded here (as it is elsewhere in this
+          # workflow, e.g. the GitHub Release body below) rather than parsed
+          # from a generated file: it must track the production
+          # `androidPackage` in packages/mobile/app.config.ts. sentry.gradle
+          # instead derives it from the Gradle variant, so if android.package
+          # ever changes, update this literal to match or symbolication will
+          # silently break.
           ./node_modules/.bin/sentry-cli react-native gradle \
             --bundle "$bundle_path" \
             --sourcemap "$sourcemap_path" \
