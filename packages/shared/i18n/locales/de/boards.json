@@ -362,6 +362,7 @@
       "submit": "Board anlegen",
       "authRequired": "Du musst angemeldet sein, um ein Board anzulegen",
       "errorMessage": "Board konnte nicht angelegt werden. Vielleicht gibt es für diese Konfiguration schon eins.",
+      "limitReached": "Du hast die maximale Anzahl Boards für ein Konto erreicht. Lösch ein Board, das du nicht mehr nutzt, um ein neues anzulegen.",
       "goToExisting": "Zu deinem Board",
       "nameRequired": "Board-Name ist Pflicht",
       "createdNamed": "Board „{{name}}“ angelegt!",
@@ -405,6 +406,13 @@
       "location": "Standort",
       "setup": "Setup",
       "visibility": "Sichtbarkeit"
+    },
+    "edit": {
+      "duplicateTitle": "Dieses Setup hast du schon",
+      "duplicateBody": "Mit dieser Änderung ist das Board identisch mit „{{name}}“ — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",
+      "duplicateBodyGeneric": "Mit dieser Änderung ist das Board identisch mit einem anderen Board desselben Kontos.",
+      "saveAnyway": "Trotzdem speichern",
+      "keepEditing": "Abbrechen"
     }
   },
   "editBoard": {

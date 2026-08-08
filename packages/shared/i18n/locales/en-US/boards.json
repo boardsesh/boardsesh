@@ -362,6 +362,7 @@
       "submit": "Create Board",
       "authRequired": "You must be signed in to create a board",
       "errorMessage": "Failed to create board. It may already exist for this configuration.",
+      "limitReached": "You've reached the maximum number of boards for one account. Delete a board you no longer use to add another.",
       "goToExisting": "Go to your board",
       "nameRequired": "Board name is required",
       "createdNamed": "Board \"{{name}}\" created!",
@@ -405,6 +406,13 @@
       "location": "Location",
       "setup": "Setup",
       "visibility": "Visibility"
+    },
+    "edit": {
+      "duplicateTitle": "You already have this setup",
+      "duplicateBody": "This change makes the board match \"{{name}}\" — same layout, size and hold sets.",
+      "duplicateBodyGeneric": "This change matches a board setup the owner already has.",
+      "saveAnyway": "Save anyway",
+      "keepEditing": "Cancel"
     }
   },
   "editBoard": {

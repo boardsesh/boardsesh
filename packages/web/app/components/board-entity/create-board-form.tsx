@@ -15,7 +15,7 @@ import {
   type CreateBoardMutationVariables,
   type CreateBoardMutationResponse,
 } from '@boardsesh/graphql/operations';
-import { readDuplicateBoardError, type DuplicateBoardError } from '@boardsesh/graphql/errors';
+import { isBoardLimitError, readDuplicateBoardError, type DuplicateBoardError } from '@boardsesh/graphql/errors';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '@/app/lib/analytics';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
@@ -86,6 +86,18 @@ export default function CreateBoardForm({
       if (duplicateError) {
         track(SHARED_EVENTS.BoardDuplicatePrompted, { boardType, source: 'web_drawer' });
         setDuplicate(duplicateError);
+        return;
+      }
+      // The account cap gets its own copy: the server's message names the number,
+      // but what the climber needs is the way out — delete a board you don't use.
+      // Retrying will never clear this one, so it doesn't belong in 'exception'.
+      if (isBoardLimitError(error)) {
+        track(SHARED_EVENTS.BoardCreateFailed, {
+          boardType,
+          source: 'web_drawer',
+          error_reason: 'board_limit',
+        });
+        showMessage(t('boardForm.create.limitReached'), 'error');
         return;
       }
       track(SHARED_EVENTS.BoardCreateFailed, {

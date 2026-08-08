@@ -362,6 +362,7 @@
       "submit": "Crear plafón",
       "authRequired": "Debes iniciar sesión para crear un plafón",
       "errorMessage": "Error al crear el plafón. Puede que ya exista para esta configuración.",
+      "limitReached": "Has llegado al número máximo de plafones para una cuenta. Borra uno que ya no uses para añadir otro.",
       "goToExisting": "Ir a tu plafón",
       "nameRequired": "Se requiere el nombre del plafón",
       "createdNamed": "¡Plafón \"{{name}}\" creado!",
@@ -405,6 +406,13 @@
       "location": "Ubicación",
       "setup": "Configuración",
       "visibility": "Visibilidad"
+    },
+    "edit": {
+      "duplicateTitle": "Ya tienes esta configuración",
+      "duplicateBody": "Con este cambio el plafón queda igual que «{{name}}»: mismo layout, tamaño y sets de presas.",
+      "duplicateBodyGeneric": "Con este cambio el plafón queda igual que otro que su propietario ya tiene.",
+      "saveAnyway": "Guardar igualmente",
+      "keepEditing": "Cancelar"
     }
   },
   "editBoard": {

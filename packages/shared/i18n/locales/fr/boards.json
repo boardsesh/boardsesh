@@ -362,6 +362,7 @@
       "submit": "Créer la board",
       "authRequired": "Vous devez être connecté pour créer une board",
       "errorMessage": "Impossible de créer la board. Elle existe peut-être déjà pour cette configuration.",
+      "limitReached": "Vous avez atteint le nombre maximum de boards pour un compte. Supprimez une board que vous n'utilisez plus pour en ajouter une autre.",
       "goToExisting": "Aller à votre board",
       "nameRequired": "Le nom de la board est obligatoire",
       "createdNamed": "Board « {{name}} » créée !",
@@ -405,6 +406,13 @@
       "location": "Emplacement",
       "setup": "Configuration",
       "visibility": "Visibilité"
+    },
+    "edit": {
+      "duplicateTitle": "Vous avez déjà cette configuration",
+      "duplicateBody": "Avec ce changement, la board devient identique à « {{name}} » : même layout, même taille et mêmes sets de prises.",
+      "duplicateBodyGeneric": "Avec ce changement, la board devient identique à une autre que son propriétaire a déjà.",
+      "saveAnyway": "Enregistrer quand même",
+      "keepEditing": "Annuler"
     }
   },
   "editBoard": {
