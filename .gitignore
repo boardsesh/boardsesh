@@ -110,6 +110,7 @@ packages/mobile/android/
 # android/ source is tracked, but these generated dirs must not be).
 packages/mobile/modules/**/android/.cxx/
 packages/mobile/modules/**/android/build/
+packages/mobile/modules/**/android/.gradle/
 packages/mobile/dist/
 packages/mobile/.bundle-check-output/
 # Prebuilt simulator dev-client .app for the screenshots pipeline (CI-cached).
