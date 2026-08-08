@@ -5,7 +5,7 @@
 //
 // Uses `BottomSheetModal` (not the regular `BottomSheet`) so it presents as
 // a native modal above the play drawer's own modal.
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +16,7 @@ import { iosSystemColors } from '../theme/ios-colors';
 import { spacing } from '../theme/tokens';
 import { track } from '../lib/analytics';
 import { Icon } from './Icon';
+import { useSheetColumnStyle } from './use-sheet-column-style';
 import { QuickTickBar, type QuickTickDismissSnapshot } from './play-drawer/QuickTickBar';
 
 type LogAscentSheetProps = {
@@ -101,19 +102,49 @@ export function LogAscentSheet({
   // keeps the focused input and save buttons above the keyboard.
   const snapPoints = useMemo(() => ['60%', '92%'], []);
 
+  // The detent the sheet is resting at, tracked from the native onChange so the
+  // iOS column bound below follows a drag (or the keyboard extension) between
+  // 60% and 92% instead of leaving a dead gap under the save row.
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  // QuickTickBar is a scroll body with a pinned save row, which only works if
+  // this column is clamped to the detent. On iOS the @expo/ui SwiftUI sheet host
+  // can propose an UNBOUNDED height to its RN content, so a flex:1 column sizes
+  // to its CONTENT: the scroll body never gains an overflow (nothing scrolls)
+  // and the save row lands past the detent, unreachable — the exact #3330
+  // failure, and the one a re-present of this always-mounted host (PlayDrawer
+  // keeps it alive for the life of the player) is most prone to. The shared hook
+  // pins the column to the active detent's height JS-side; Android bounds it
+  // natively and keeps flex:1.
+  const columnStyle = useSheetColumnStyle(snapPoints, { activeIndex });
+
+  const handleChange = useCallback(
+    (index: number) => {
+      // -1 is a close. Reset to the shortest detent so the next present of this
+      // always-mounted host starts bounded — erring short beats a stale 92%
+      // column pushing the save row off-screen for a frame.
+      setActiveIndex(index >= 0 ? index : 0);
+      managed.onChange(index);
+    },
+    [managed],
+  );
+
   return (
     <BottomSheetModal
       ref={sheetRef}
       index={0}
       snapPoints={snapPoints}
       enablePanDownToClose
-      onChange={managed.onChange}
+      onChange={handleChange}
       onFullyDismissed={managed.onFullyDismissed}
       handleIndicatorStyle={styles.indicator}
       keyboardBehavior="extend"
       keyboardBlurBehavior="restore"
     >
-      <View style={styles.content}>
+      {/* The sheet's single in-flow child, carrying the detent bound. Handed
+          several children instead, the native sheet sizes to content and the
+          flex:1 scroll body inside QuickTickBar collapses. */}
+      <View style={columnStyle}>
         <View style={styles.closeButtonRow}>
           <Pressable
             onPress={handleClose}
@@ -156,9 +187,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 5,
     borderRadius: 3,
-  },
-  content: {
-    flex: 1,
   },
   closeButtonRow: {
     flexDirection: 'row',

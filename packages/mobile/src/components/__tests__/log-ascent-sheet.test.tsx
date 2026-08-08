@@ -10,8 +10,15 @@ import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
 // (simulated here through the mocked `BottomSheetModal`'s `onChange`), and a
 // successful save (simulated through the stubbed QuickTickBar).
 
+// Mutable so a test can flip the platform; reset in beforeEach. The iOS branch
+// is the one that pins a numeric column height (useSheetColumnStyle).
+const platformMock = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android', Version: '26.1' as string }));
+
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  Platform: platformMock,
+  // Serialised so a test can read the style the sheet's column child gets.
+  View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+    createElement('div', { 'data-style': JSON.stringify(style ?? null) }, children),
   Pressable: ({
     children,
     accessibilityLabel,
@@ -22,10 +29,16 @@ vi.mock('react-native', () => ({
     onPress?: () => void;
   }) => createElement('button', { 'data-label': accessibilityLabel, onClick: onPress }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+  useWindowDimensions: () => ({ width: 390, height: 844 }),
 }));
 
-// Stub BottomSheetModal: renders an extra button that invokes the `onChange`
-// prop with index -1, standing in for a native pan-down/backdrop dismiss.
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 44, bottom: 34, left: 0, right: 0 }),
+}));
+
+// Stub BottomSheetModal: renders extra buttons that invoke the `onChange` prop —
+// index -1 stands in for a native pan-down/backdrop dismiss, index 1 for the
+// sheet settling on its taller (keyboard-extended) detent.
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
   BottomSheetModal: forwardRef(
     ({ children, onChange }: { children?: ReactNode; onChange?: (index: number) => void }, _ref: Ref<unknown>) =>
@@ -34,6 +47,11 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
           key: 'pandown',
           'data-testid': 'simulate-pandown',
           onClick: () => onChange?.(-1),
+        }),
+        createElement('button', {
+          key: 'expand',
+          'data-testid': 'simulate-expand',
+          onClick: () => onChange?.(1),
         }),
         children,
       ]),
@@ -112,7 +130,16 @@ function renderSheet(overrides: Partial<Parameters<typeof LogAscentSheet>[0]> = 
   return { ...utils, onClose };
 }
 
+// The sheet's single in-flow child — the column QuickTickBar's scroll body and
+// pinned save row are laid out inside. First `View` rendered under the modal.
+function columnStyle(container: HTMLElement): Record<string, number> {
+  const column = container.querySelector('[data-style]');
+  return JSON.parse(column?.getAttribute('data-style') ?? 'null');
+}
+
 beforeEach(() => {
+  platformMock.OS = 'ios';
+  platformMock.Version = '26.1';
   vi.mocked(track).mockClear();
 });
 
@@ -211,5 +238,45 @@ describe('LogAscentSheet dismiss tracking', () => {
     // the first save.
     fireEvent.click(getByTestId('simulate-pandown'));
     expect(track).toHaveBeenCalledWith('Quick Tick Dismissed', expect.objectContaining({ climbUuid: 'climb-1' }));
+  });
+});
+
+// QuickTickBar is a scroll body with a pinned Attempt/Send row, which only holds
+// together if this column is clamped to the detent. On iOS the @expo/ui SwiftUI
+// sheet host can propose an unbounded height, so a flex:1 column would size to
+// its content: nothing scrolls and the save row lands off-screen (#3330). The
+// window here is 844 with a 44pt top inset, so the iOS 26 base is 844 − 44 − 24 =
+// 776; a detent is round(776 × fraction) − 20pt of chrome.
+describe('LogAscentSheet detent bound', () => {
+  it('pins the column to the 60% detent on iOS instead of letting it flex to content', () => {
+    const { container } = renderSheet();
+
+    expect(columnStyle(container)).toEqual({ height: 446 });
+  });
+
+  it('grows the column when the sheet settles on the taller 92% detent', () => {
+    const { container, getByTestId } = renderSheet();
+
+    fireEvent.click(getByTestId('simulate-expand'));
+
+    expect(columnStyle(container)).toEqual({ height: 694 });
+  });
+
+  it('drops back to the shortest detent on close, so the next present starts bounded', () => {
+    // PlayDrawer keeps this host mounted, so a stale 92% height would survive
+    // into the next present and push the save row past the 60% detent.
+    const { container, getByTestId } = renderSheet();
+
+    fireEvent.click(getByTestId('simulate-expand'));
+    fireEvent.click(getByTestId('simulate-pandown'));
+
+    expect(columnStyle(container)).toEqual({ height: 446 });
+  });
+
+  it('leaves the column flexing on Android, where the Material sheet bounds it natively', () => {
+    platformMock.OS = 'android';
+    const { container } = renderSheet();
+
+    expect(columnStyle(container)).toEqual({ flex: 1 });
   });
 });

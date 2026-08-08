@@ -540,8 +540,10 @@ export const QuickTickBar = React.memo(function QuickTickBar({
 
 const styles = StyleSheet.create({
   container: {
-    // Fills LogAscentSheet's content view so the scroll view below can take the
-    // leftover height and the save row stays pinned to the bottom.
+    // Fills LogAscentSheet's column view so the scroll view below can take the
+    // leftover height and the save row stays pinned to the bottom. That column
+    // is what bounds this to the detent — on iOS via useSheetColumnStyle, since
+    // the native sheet host can propose an unbounded height (#3330).
     flex: 1,
     paddingTop: spacing[1],
   },
