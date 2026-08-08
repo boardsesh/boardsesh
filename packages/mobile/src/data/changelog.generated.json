@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-07T22:13:09.141Z",
+  "generatedAt": "2026-08-08T22:55:27.071Z",
   "entries": [
+    {
+      "prNumber": 4216,
+      "category": "fixed",
+      "title": "Changing a board's setup no longer gets blocked just because you own the same setup somewhere else — the app asks you to confirm instead.",
+      "mergedAt": "2026-08-08T22:54:09Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4216",
+      "body": "Climbs logged from the classic board pages now land on the right board when you own more than one with the same setup — and if you're in a session, on the wall that session is running on.\nThe app now speaks German on the boards screens it was missing it on."
+    },
     {
       "prNumber": 3819,
       "category": "new",

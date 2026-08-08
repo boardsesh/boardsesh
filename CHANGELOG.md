@@ -4,6 +4,14 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-08
+
+### Fixed
+
+- Changing a board's setup no longer gets blocked just because you own the same setup somewhere else — the app asks you to confirm instead. ([#4216](https://github.com/boardsesh/boardsesh/pull/4216))
+  Climbs logged from the classic board pages now land on the right board when you own more than one with the same setup — and if you're in a session, on the wall that session is running on.
+  The app now speaks German on the boards screens it was missing it on.
+
 ## 2026-08-07
 
 ### New
