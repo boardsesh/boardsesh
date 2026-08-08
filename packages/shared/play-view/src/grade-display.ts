@@ -72,6 +72,9 @@ export function formatFontGrade(difficulty: string | null | undefined): string |
 export type GradeDisplayFormat = 'v-grade' | 'font' | 'both';
 export const DEFAULT_GRADE_DISPLAY_FORMAT: GradeDisplayFormat = 'v-grade';
 
+/** What `'both'` joins its two grades with (`"V5 / 6C"`). */
+const BOTH_FORMAT_SEPARATOR = ' / ';
+
 /**
  * Format a difficulty string according to the user's preference.
  * `'v-grade'` → V-style label (`"V5"`, `"V5+"`). `'font'` → Font label
@@ -82,10 +85,22 @@ export function formatGrade(difficulty: string | null | undefined, format: Grade
   if (format === 'both') {
     const vGrade = formatVGrade(difficulty);
     const fontGrade = formatFontGrade(difficulty);
-    if (vGrade && fontGrade) return `${vGrade} / ${fontGrade}`;
+    if (vGrade && fontGrade) return `${vGrade}${BOTH_FORMAT_SEPARATOR}${fontGrade}`;
     return vGrade ?? fontGrade;
   }
   return formatVGrade(difficulty);
+}
+
+/**
+ * A grade label broken back into the pieces `formatGrade` joined: `"V5 / 6C"`
+ * → `["V5", "6C"]`, any single-format label → a one-entry array. Lets a
+ * cramped surface (a chart's bar-top label, a narrow badge) stack the two
+ * grades on separate lines instead of clipping the joined string, without
+ * every caller hardcoding the separator.
+ */
+export function splitGradeLabel(label: string | null | undefined): string[] {
+  if (!label) return [];
+  return label.split(BOTH_FORMAT_SEPARATOR);
 }
 
 /**

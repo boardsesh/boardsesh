@@ -25,7 +25,7 @@ import {
   getStackedBarsMaxValue,
   type ChartTooltipModel,
 } from './chart-model';
-import { computeBarTopLabelLayout, longestBarValue } from './bar-top-label';
+import { computeBarTopLabelLayout, longestBarValue } from '../../lib/chart/bar-top-label';
 
 const MAX_X_LABELS = 12;
 const AXIS_LABEL_SIZE = 11;
@@ -534,7 +534,7 @@ export const GroupedBarChart = memo(function GroupedBarChart({
             // A count may spill into the gap beside its bar; past that it turns
             // vertical rather than getting clipped (#3779).
             const labelLayout = computeBarTopLabelLayout(
-              longestCount,
+              String(longestCount),
               barWidth,
               barWidth + zoomedInnerGap,
               labelFontScale,
