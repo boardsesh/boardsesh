@@ -366,6 +366,12 @@ jobs:
               - 'packages/db/scripts/migration-journal.ts'
               - 'packages/db/scripts/verify-migration-journal.ts'
               - 'packages/db/scripts/migration-journal-verification.integration.test.ts'
+              # packages/db is a node:test package, not a vitest project, so
+              # nothing in it reaches test-default. The db-migrations job is
+              # where CI executes its suites; keep this gate in step with the
+              # `Run the legacy-timestamp audit unit suites` step below.
+              - 'packages/db/scripts/audit-legacy-tick-timestamps*'
+              - 'packages/db/scripts/legacy-timestamp-audit-core*'
               # Defines the test:migration-journal script this job's new step
               # invokes, so editing it has to run the job that depends on it.
               - 'packages/db/package.json'
@@ -601,6 +607,13 @@ jobs:
         env:
           MIGRATION_JOURNAL_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: vp run test:db:migration-journal
+      # packages/db runs on node:test, so its suites are invisible to
+      # test-default's vitest project list. Without this step the audit tooling
+      # in packages/db/scripts would have zero CI coverage. No database needed:
+      # these two suites are pure unit tests (the audit's own integration test
+      # self-skips without LEGACY_TIMESTAMP_AUDIT_DB_URL).
+      - name: Run the legacy-timestamp audit unit suites
+        run: vp run test:db:legacy-timestamp-audit
 
   codegen-drift:
     needs: [changes]

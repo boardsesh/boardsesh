@@ -83,6 +83,7 @@
     "test": "tsx --test 'scripts/**/*.test.ts' 'src/**/*.test.ts'",
     "test:explain": "tsx --test src/queries/climbs/__tests__/search-climbs-explain.integration.test.ts",
     "test:migration-journal": "tsx --test scripts/migration-journal-verification.integration.test.ts",
+    "test:legacy-timestamp-audit": "tsx --test scripts/legacy-timestamp-audit-core.test.ts scripts/audit-legacy-tick-timestamps.test.ts",
     "db:verify-journal": "tsx scripts/verify-migration-journal.ts",
     "db:studio": "drizzle-kit studio",
     "db:import-moonboard": "tsx scripts/import-moonboard-problems.ts",
