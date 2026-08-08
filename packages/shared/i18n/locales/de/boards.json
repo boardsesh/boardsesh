@@ -37,7 +37,15 @@
       "notFound": "Dieses Board haben wir nicht gefunden",
       "noAccess": "Du darfst dieses Board nicht bearbeiten",
       "back": "Zurück",
-      "configLockedHint": "Du darfst Layout, Größe und Hold-Sets dieses Boards nicht ändern."
+      "configLockedHint": "Du darfst Layout, Größe und Hold-Sets dieses Boards nicht ändern.",
+      "duplicate": {
+        "title": "Dieses Setup hast du schon",
+        "body": "Mit dieser Änderung ist das Board identisch mit „{{name}}“ — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",
+        "bodyWithLocation": "Mit dieser Änderung ist das Board identisch mit „{{name}}“ in {{location}} — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",
+        "bodyGeneric": "Mit dieser Änderung ist das Board identisch mit einem anderen Board desselben Kontos.",
+        "saveAnyway": "Trotzdem speichern",
+        "keepEditing": "Weiter bearbeiten"
+      }
     },
     "gymEdit": {
       "screenTitle": "Halle bearbeiten",
@@ -118,18 +126,31 @@
       "location": "Standort",
       "locationPlaceholder": "Zuhause, Hallenname oder Stadt",
       "useMyLocation": "Meinen Standort nutzen",
-      "locationSet": "Standort gesetzt",
       "serial": "Controller-Seriennummer",
       "serialPlaceholder": "z. B. ABC-12345",
       "serialHint": "Optional — dein Controller verknüpft sich beim ersten Verbinden selbst.",
       "save": "Mein Board speichern",
       "createError": "Dieses Board ließ sich nicht anlegen. Versuch es nochmal.",
+      "limitReached": "Du hast die maximale Anzahl Boards für ein Konto erreicht. Lösch ein Board, das du nicht mehr nutzt, um ein neues anzulegen.",
       "timer": "Workout-Timer",
       "timerNone": "Kein Timer gekoppelt",
       "timerHint": "Koppel einen Rogue-Hallentimer mit diesem Board. Solange du die Wand steuerst, startet jeder beleuchtete Boulder die Stoppuhr.",
       "timerPairCta": "Timer koppeln",
       "timerChangeCta": "Timer wechseln",
-      "timerRemoveCta": "Entfernen"
+      "timerRemoveCta": "Entfernen",
+      "gym": "Halle",
+      "gymNone": "Nicht in einer Halle",
+      "clearLocation": "Standort löschen",
+      "duplicate": {
+        "title": "Dieses Setup hast du schon",
+        "body": "Du hast „{{name}}“ schon — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",
+        "bodyWithLocation": "Du hast „{{name}}“ schon in {{location}} — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",
+        "useExisting": "Dieses Board nutzen",
+        "addAnother": "Neues Board hier anlegen",
+        "addAnotherHint": "Nimm das, wenn es eine andere Wand ist — andere Halle, anderer Raum.",
+        "cancel": "Weiter bearbeiten",
+        "switchError": "Zu diesem Board konnte nicht gewechselt werden. Versuch es nochmal."
+      }
     },
     "custom": {
       "board": "Board",
@@ -264,6 +285,12 @@
       "available": "Offline verfügbar",
       "pending": "Wartet auf Download",
       "bootstrapping": "Board wird geladen…",
+      "snapshotRetrying": "Schnellerer Download unterbrochen — neuer Versuch beim nächsten Sync",
+      "snapshotRetryingAria": "Der schnellere Offline-Download für {{name}} wurde unterbrochen. Beim nächsten Sync folgt ein neuer Versuch.",
+      "pagedFallbackPending": "Schnellerer Download nicht verfügbar — langsamerer Download wartet",
+      "pagedFallbackPendingAria": "Der schnellere Offline-Download für {{name}} ist nicht verfügbar. Der langsamere Download wartet.",
+      "pagedFallbackActive": "Schnellerer Download nicht verfügbar — läuft über den langsameren",
+      "pagedFallbackActiveAria": "Der schnellere Offline-Download für {{name}} ist nicht verfügbar. Der langsamere Download läuft.",
       "downloadingCount_one": "{{count}} Boulder wird geladen",
       "downloadingCount_other": "{{count}} Boulder werden geladen",
       "makeAvailableAria": "{{name}} offline verfügbar machen",
@@ -276,6 +303,17 @@
       "pickerNoticeUnreachable": "Deine Boards sind gerade nicht erreichbar — hier sind die heruntergeladenen.",
       "pickerEmptyTitle": "Noch nichts heruntergeladen",
       "pickerEmptyBody": "Boards, die du offline verfügbar machst, tauchen hier auf. Hol dir eins, solange du Empfang hast."
+    },
+    "gymPicker": {
+      "title": "Wo steht dieses Board?",
+      "subtitle": "Wähl die Halle, in der es steht, damit Kletterer*innen es auf der Karte finden.",
+      "searchPlaceholder": "Hallen suchen",
+      "noGym": "Nicht in einer Halle",
+      "noGymHint": "Es erscheint trotzdem als eigener Pin auf der Karte.",
+      "addNew": "Meine Halle fehlt in der Liste",
+      "empty": "Keine Hallen in der Nähe",
+      "sharedEditHint": "Das Team dieser Halle kann die Details dieses Boards bearbeiten.",
+      "linkError": "Diese Halle ließ sich nicht verknüpfen. Vielleicht ist sie zu weit von deinem Board entfernt. Deine übrigen Änderungen wurden gespeichert."
     }
   },
   "boardEntity": {
@@ -324,12 +362,16 @@
       "submit": "Board anlegen",
       "authRequired": "Du musst angemeldet sein, um ein Board anzulegen",
       "errorMessage": "Board konnte nicht angelegt werden. Vielleicht gibt es für diese Konfiguration schon eins.",
-      "duplicateNamed": "Du hast mit diesem Setup schon ein Board namens „{{name}}“.",
+      "limitReached": "Du hast die maximale Anzahl Boards für ein Konto erreicht. Lösch ein Board, das du nicht mehr nutzt, um ein neues anzulegen.",
       "goToExisting": "Zu deinem Board",
       "nameRequired": "Board-Name ist Pflicht",
       "createdNamed": "Board „{{name}}“ angelegt!",
       "namePlaceholder": "z. B. Home Board, Hallenname",
-      "locationPlaceholder": "z. B. Stadt, Hallenname"
+      "locationPlaceholder": "z. B. Stadt, Hallenname",
+      "duplicateTitle": "Dieses Setup hast du schon",
+      "duplicateBody": "Du hast „{{name}}“ schon — gleiches Layout, gleiche Größe, gleiche Hold-Sets. Leg nur dann noch eins an, wenn es eine andere Wand ist.",
+      "addAnyway": "Trotzdem anlegen",
+      "keepEditing": "Abbrechen"
     },
     "fields": {
       "name": "Board-Name",
@@ -364,6 +406,14 @@
       "location": "Standort",
       "setup": "Setup",
       "visibility": "Sichtbarkeit"
+    },
+    "edit": {
+      "duplicateTitle": "Dieses Setup hast du schon",
+      "duplicateBody": "Mit dieser Änderung ist das Board identisch mit „{{name}}“ — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",
+      "duplicateBodyWithLocation": "Mit dieser Änderung ist das Board identisch mit „{{name}}“ in {{location}} — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",
+      "duplicateBodyGeneric": "Mit dieser Änderung ist das Board identisch mit einem anderen Board desselben Kontos.",
+      "saveAnyway": "Trotzdem speichern",
+      "cancel": "Abbrechen"
     }
   },
   "editBoard": {

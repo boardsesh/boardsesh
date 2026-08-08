@@ -37,7 +37,15 @@
       "notFound": "Board introuvable",
       "noAccess": "Vous n'avez pas la permission de modifier cette board",
       "back": "Retour",
-      "configLockedHint": "Vous n'avez pas la permission de modifier le layout, la taille ou les sets de cette board."
+      "configLockedHint": "Vous n'avez pas la permission de modifier le layout, la taille ou les sets de cette board.",
+      "duplicate": {
+        "title": "Vous avez déjà cette configuration",
+        "body": "Avec ce changement, la board devient identique à « {{name}} » : même layout, même taille et mêmes sets de prises.",
+        "bodyWithLocation": "Avec ce changement, la board devient identique à « {{name}} » à {{location}} : même layout, même taille et mêmes sets de prises.",
+        "bodyGeneric": "Avec ce changement, la board devient identique à une autre que son propriétaire a déjà.",
+        "saveAnyway": "Enregistrer quand même",
+        "keepEditing": "Continuer à modifier"
+      }
     },
     "gymEdit": {
       "screenTitle": "Modifier la salle",
@@ -123,6 +131,7 @@
       "serialHint": "Optionnel — ton contrôleur se lie tout seul à la première connexion.",
       "save": "Enregistrer ma board",
       "createError": "Impossible de créer cette board. Réessaie.",
+      "limitReached": "Tu as atteint le nombre maximum de boards pour un compte. Supprime une board que tu n'utilises plus pour en ajouter une autre.",
       "timer": "Minuteur d'entraînement",
       "timerNone": "Aucun minuteur associé",
       "timerHint": "Associe un minuteur Rogue à cette board. Quand tu pilotes le mur, chaque croix démarre son chronomètre.",
@@ -353,6 +362,7 @@
       "submit": "Créer la board",
       "authRequired": "Vous devez être connecté pour créer une board",
       "errorMessage": "Impossible de créer la board. Elle existe peut-être déjà pour cette configuration.",
+      "limitReached": "Vous avez atteint le nombre maximum de boards pour un compte. Supprimez une board que vous n'utilisez plus pour en ajouter une autre.",
       "goToExisting": "Aller à votre board",
       "nameRequired": "Le nom de la board est obligatoire",
       "createdNamed": "Board « {{name}} » créée !",
@@ -396,6 +406,14 @@
       "location": "Emplacement",
       "setup": "Configuration",
       "visibility": "Visibilité"
+    },
+    "edit": {
+      "duplicateTitle": "Vous avez déjà cette configuration",
+      "duplicateBody": "Avec ce changement, la board devient identique à « {{name}} » : même layout, même taille et mêmes sets de prises.",
+      "duplicateBodyWithLocation": "Avec ce changement, la board devient identique à « {{name}} » à {{location}} : même layout, même taille et mêmes sets de prises.",
+      "duplicateBodyGeneric": "Avec ce changement, la board devient identique à une autre que son propriétaire a déjà.",
+      "saveAnyway": "Enregistrer quand même",
+      "cancel": "Annuler"
     }
   },
   "editBoard": {

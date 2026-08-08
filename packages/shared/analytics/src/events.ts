@@ -258,15 +258,21 @@ export const SHARED_EVENTS = {
   //          hasLocationName, hasCoords, hasGym, source, allowedDuplicate }.
   BoardCreated: 'Board Created',
   // Props: { boardType, source, error_reason: 'duplicate_config' | 'rate_limited'
-  //          | 'auth' | 'exception' }.
+  //          | 'auth' | 'board_limit' | 'exception' }. 'board_limit' is the
+  //          per-account board cap: a refusal no retry can clear, so it is worth
+  //          keeping out of the 'exception' bucket.
   BoardCreateFailed: 'Board Create Failed',
   // The user already owned this board, so nothing was created and we activated
   // the existing one instead. Props: { boardType, source }.
   BoardCreateReusedExisting: 'Board Create Reused Existing',
-  // The duplicate choice sheet was shown. The watchdog for #4166 is that
+  // The duplicate choice prompt was shown. The watchdog for #4166 is that
   // Prompted >= ReusedExisting + Created{allowedDuplicate}: if prompts stop
   // converting, creation is silently dead-ending again.
-  // Props: { boardType, source, hasLocation }.
+  // Props: { boardType, source, hasLocation }. `source` names the surface AND the
+  // flow: 'popular_seed' / 'scratch' / 'web_drawer' are creates; 'mobile_edit' /
+  // 'web_edit_drawer' are edits, where the choice is save-anyway vs keep-editing
+  // (there is no existing board to switch to), so they never convert to
+  // ReusedExisting — split on `source` before reading that ratio.
   BoardDuplicatePrompted: 'Board Duplicate Prompted',
   // Board presence — "now on the wall" (board-level collaboration, keyed on the
   // shared board_id resolved from the BLE serial). `boardId` is attached as an

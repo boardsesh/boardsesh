@@ -69,6 +69,7 @@ const insertBoard = async (opts: {
   boardType?: string;
   name?: string;
   isPublic?: boolean;
+  locationName?: string | null;
 }): Promise<number> => {
   const {
     uuid,
@@ -80,11 +81,12 @@ const insertBoard = async (opts: {
     boardType = 'kilter',
     name = 'Board',
     isPublic = true,
+    locationName = null,
   } = opts;
   const result = await db.execute(sql`
     INSERT INTO user_boards
-      (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, gym_id, is_public, created_at, updated_at)
-    VALUES (${uuid}, ${uuid}, ${ownerId}, ${boardType}, ${layoutId}, ${sizeId}, ${setIds}, ${name}, ${gymId}, ${isPublic}, now(), now())
+      (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, gym_id, is_public, location_name, created_at, updated_at)
+    VALUES (${uuid}, ${uuid}, ${ownerId}, ${boardType}, ${layoutId}, ${sizeId}, ${setIds}, ${name}, ${gymId}, ${isPublic}, ${locationName}, now(), now())
     RETURNING id
   `);
   return Number(Array.from(result as Iterable<{ id: number }>)[0].id);
@@ -304,24 +306,81 @@ describe('updateBoard config change with existing ticks', () => {
 });
 
 describe('updateBoard duplicate-config uniqueness keys off the board owner', () => {
-  it('blocks a config change that collides with another board owned by the BOARD OWNER', async () => {
-    // The board's owner (SYS_OWNER) already has a second board with this config.
+  // A named place on the sibling, so the leak the masking closes is visible in
+  // the assertions: a location the non-owner editor must not be handed.
+  const OWNER_SIBLING_LOCATION = "Owner's garage";
+
+  /** Seeds a second SYS_OWNER board on the config the edits below move onto. */
+  const seedOwnerSibling = async (): Promise<string> => {
+    const ownerSecondBoardUuid = uuidv4();
     await insertBoard({
-      uuid: uuidv4(),
+      uuid: ownerSecondBoardUuid,
       ownerId: SYS_OWNER,
       layoutId: 2,
       sizeId: 11,
       setIds: '3,4',
       name: 'Owner second board',
+      locationName: OWNER_SIBLING_LOCATION,
     });
+    return ownerSecondBoardUuid;
+  };
 
-    await expect(
-      socialBoardMutations.updateBoard(
+  /** The edit that moves kilterBoard onto the sibling's config AND its place. */
+  const captureUpdateError = (userId: string) =>
+    socialBoardMutations
+      .updateBoard(
         null,
-        { input: { boardUuid: kilterBoardUuid, layoutId: 2, sizeId: 11, setIds: '3,4' } },
-        authCtx(GLOBAL_ADMIN),
-      ),
-    ).rejects.toThrow(/already has a board with this configuration/);
+        {
+          input: {
+            boardUuid: kilterBoardUuid,
+            layoutId: 2,
+            sizeId: 11,
+            setIds: '3,4',
+            locationName: OWNER_SIBLING_LOCATION,
+          },
+        },
+        authCtx(userId),
+      )
+      .then(
+        () => null,
+        (error: unknown) => error as { extensions?: Record<string, unknown> },
+      );
+
+  it('blocks a config change that collides with another board owned by the BOARD OWNER', async () => {
+    // The board's owner (SYS_OWNER) already has a second board with this config.
+    const ownerSecondBoardUuid = await seedOwnerSibling();
+
+    // The edit moves the board onto both the sibling's config and its place, so
+    // it collides. What the config-tuple rework changed is the SHAPE of the
+    // refusal: a typed BOARD_DUPLICATE_CONFIG naming the colliding board, which
+    // the client turns into a "save anyway?" prompt instead of a dead end.
+    const thrown = await captureUpdateError(SYS_OWNER);
+
+    expect(thrown?.extensions?.code).toBe('BOARD_DUPLICATE_CONFIG');
+    expect(thrown?.extensions?.existingBoardUuid).toBe(ownerSecondBoardUuid);
+    expect(thrown?.extensions?.existingBoardName).toBe('Owner second board');
+    expect(thrown?.extensions?.existingBoardLocationName).toBe(OWNER_SIBLING_LOCATION);
+  });
+
+  it('tells a NON-OWNER editor only that the config is taken, never which board', async () => {
+    // The probe searches the OWNER's boards, but updateBoard is reachable by gym
+    // admins and community moderators. Handing them the colliding board's name,
+    // slug and location would disclose a board they may have no read access to —
+    // a private home wall, or one whose location `hideLocation` masks. Same leak
+    // class as the private-gym probe finding in the #4174 round.
+    await seedOwnerSibling();
+
+    const thrown = await captureUpdateError(GLOBAL_ADMIN);
+
+    expect(thrown?.extensions?.code).toBe('BOARD_DUPLICATE_CONFIG');
+    expect(thrown?.extensions?.existingBoardUuid).toBeUndefined();
+    expect(thrown?.extensions?.existingBoardSlug).toBeUndefined();
+    expect(thrown?.extensions?.existingBoardName).toBeUndefined();
+    expect(thrown?.extensions?.existingBoardLocationName).toBeUndefined();
+    expect(thrown?.extensions?.existingBoardAngle).toBeUndefined();
+
+    // The edit is still refused — masking the identity must not weaken the guard.
+    expect(await boardConfig(kilterBoardUuid)).toMatchObject({ layoutId: 1, sizeId: 10, setIds: '1,2' });
   });
 
   it('does NOT block when only the editing admin owns a board with the target config', async () => {

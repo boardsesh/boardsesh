@@ -76,6 +76,11 @@ export const UpdateBoardInputSchema = z.object({
   setIds: NumericCsvSchema.optional(),
   serialNumber: NullableBoardSerialInputSchema,
   timerName: z.string().min(1).max(200, 'Timer name too long').optional().nullable(),
+  // Set only by a client that has shown the user the duplicate prompt and had
+  // them confirm the edited board is a different physical wall from the sibling
+  // it now matches. Skips the duplicate-config guard entirely — see
+  // board-duplicates.ts.
+  allowDuplicateConfig: z.boolean().optional(),
 });
 
 /**

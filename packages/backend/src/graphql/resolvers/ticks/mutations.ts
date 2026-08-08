@@ -566,8 +566,31 @@ export const tickMutations = {
       validatedInput.angle,
     );
 
-    // Resolve the tick's board_id. Two explicit-board inputs feed the same FK,
-    // each from a different surface:
+    // A stale/unknown sessionId (session ended, or never existed on this
+    // backend — e.g. an offline-replayed tick) would otherwise FK-violate the
+    // insert and lose the whole tick (#2386). Same best-effort drop-the-ref
+    // trade-off as the board resolution below; no ownership check, since
+    // party-mode ticks legitimately reference sessions other users made.
+    // Resolved BEFORE the board, so the session's own board can disambiguate a
+    // legacy config tick (rung 3).
+    let resolvedSessionId: string | null = null;
+    let sessionBoardId: number | null = null;
+    if (validatedInput.sessionId) {
+      const [session] = await db
+        .select({ id: dbSchema.boardSessions.id, boardId: dbSchema.boardSessions.boardId })
+        .from(dbSchema.boardSessions)
+        .where(eq(dbSchema.boardSessions.id, validatedInput.sessionId))
+        .limit(1);
+
+      if (session) {
+        resolvedSessionId = session.id;
+        sessionBoardId = session.boardId;
+      } else {
+        logger.warn(`[saveTick] Dropping stale sessionId ${validatedInput.sessionId} — session not found`);
+      }
+    }
+
+    // Resolve the tick's board_id. Four rungs, most specific first:
     //  1. boardUuid — a named-board route (`/b/<slug>/...`); attaches to that
     //     exact board entity even when the climber doesn't own it (e.g. a
     //     seeded gym board owned by the system user). Best-effort: a deleted or
@@ -576,7 +599,14 @@ export const tickMutations = {
     //  2. boardId — the board-presence connected wall (resolveBoardForSerial),
     //     flag-gated. On a stale/mismatched id we warn and fall back to the
     //     config lookup rather than surfacing a raw FK/type mismatch.
-    // Absent both, the legacy `/[board_name]/[layout_id]/...` config lookup runs.
+    //  3. the session's board — a session is held on one physical wall, so a
+    //     tick logged into it belongs to that wall. Config-gated exactly like
+    //     rung 2, and deliberately not ownership-gated: in party mode the
+    //     session names someone else's board, and that board is still the wall
+    //     the climber is standing at.
+    //  4. the legacy `/[board_name]/[layout_id]/...` config lookup, which names
+    //     a configuration rather than a board; it takes the owner's lowest-id
+    //     board with that config.
     let boardId: number | null = null;
     if (validatedInput.boardUuid) {
       const [board] = await db
@@ -619,10 +649,37 @@ export const tickMutations = {
       }
     }
 
-    // Legacy `/[board_name]/[layout_id]/...` route (no specific board entity),
-    // plus the fallback when a board-presence boardId didn't match. A
-    // best-effort boardUuid that resolved to nothing is intentionally left
-    // unassociated (handled above), so it does not fall through to here.
+    // Rung 3: the wall the session is being held on. This is what tells two
+    // same-config boards apart — since #4174 an owner can have the same wall at
+    // home and at a gym, and the config lookup below cannot see which one the
+    // climber is at, while the session can.
+    if (
+      boardId == null &&
+      !validatedInput.boardUuid &&
+      sessionBoardId != null &&
+      validatedInput.layoutId &&
+      validatedInput.sizeId &&
+      validatedInput.setIds
+    ) {
+      const sessionBoard = await findActiveBoardById(sessionBoardId);
+      // Same full-config gate as rung 2: a session left open on another wall
+      // must not stamp this tick onto it.
+      const configMatches =
+        sessionBoard != null &&
+        sessionBoard.boardType === validatedInput.boardType &&
+        sessionBoard.layoutId === validatedInput.layoutId &&
+        sessionBoard.sizeId === validatedInput.sizeId &&
+        normalizeSetIds(sessionBoard.setIds) === normalizeSetIds(validatedInput.setIds);
+      if (configMatches) {
+        boardId = sessionBoard.id;
+      }
+    }
+
+    // Rung 4: legacy `/[board_name]/[layout_id]/...` route (no specific board
+    // entity), plus the fallback when a board-presence boardId or the session's
+    // board didn't match. A best-effort boardUuid that resolved to nothing is
+    // intentionally left unassociated (handled above), so it does not fall
+    // through to here.
     if (
       boardId == null &&
       !validatedInput.boardUuid &&
@@ -637,26 +694,6 @@ export const tickMutations = {
         validatedInput.sizeId,
         validatedInput.setIds,
       );
-    }
-
-    // A stale/unknown sessionId (session ended, or never existed on this
-    // backend — e.g. an offline-replayed tick) would otherwise FK-violate the
-    // insert and lose the whole tick (#2386). Same best-effort drop-the-ref
-    // trade-off as the boardUuid/boardId resolution above; no ownership check,
-    // since party-mode ticks legitimately reference sessions other users made.
-    let resolvedSessionId: string | null = null;
-    if (validatedInput.sessionId) {
-      const [session] = await db
-        .select({ id: dbSchema.boardSessions.id })
-        .from(dbSchema.boardSessions)
-        .where(eq(dbSchema.boardSessions.id, validatedInput.sessionId))
-        .limit(1);
-
-      if (session) {
-        resolvedSessionId = session.id;
-      } else {
-        logger.warn(`[saveTick] Dropping stale sessionId ${validatedInput.sessionId} — session not found`);
-      }
     }
 
     // Run write-time beta-link validation before opening the transaction so a

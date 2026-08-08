@@ -225,6 +225,31 @@ describe('CreateBoard', () => {
     expect(createBoardMock).toHaveBeenCalledTimes(1);
   });
 
+  it('names the account cap instead of echoing the server message', async () => {
+    // 'board_limit' has to stay out of the 'exception' bucket: retrying will
+    // never clear it, and the way out (delete a board) belongs in our own copy.
+    createBoardMock.mockRejectedValueOnce({
+      response: {
+        errors: [
+          {
+            message: 'You have reached the maximum of 50 boards for one account',
+            extensions: { code: 'BOARD_LIMIT_REACHED', maxBoards: 50 },
+          },
+        ],
+      },
+    });
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
+    expect(screen.getByTestId('error').textContent).toBe('mobile.create.limitReached');
+    expect(trackMock).toHaveBeenCalledWith(
+      'Board Create Failed',
+      expect.objectContaining({ error_reason: 'board_limit' }),
+    );
+    expect(dismissToMock).not.toHaveBeenCalled();
+  });
+
   it('shows a non-duplicate failure inline rather than as an invisible toast', async () => {
     // This screen is a `presentation: 'modal'` route, and the toast overlay
     // renders behind those — a toast here would never be seen.

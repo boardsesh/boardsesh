@@ -7392,6 +7392,13 @@ export type UpdateAppFeedbackStatusInput = {
 
 /** Input for updating a board. */
 export type UpdateBoardInput = {
+  /**
+   * Save this edit even though the board's owner already has another board with
+   * the resulting configuration at the same place. Set only after the user has
+   * confirmed it is a physically different wall (another gym, another room) —
+   * never by default.
+   */
+  allowDuplicateConfig?: InputMaybe<Scalars['Boolean']['input']>;
   /** New default angle */
   angle?: InputMaybe<Scalars['Int']['input']>;
   /** Board UUID to update */

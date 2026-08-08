@@ -9,22 +9,31 @@ import { extractGraphQLErrorMessage } from '@/app/lib/graphql/extract-error-mess
 import type { TypedDocumentNode } from '@graphql-typed-document-node/core';
 import type { Variables } from 'graphql-request';
 
-type UseEntityMutationOptions = {
-  successMessage?: string;
-  errorMessage: string;
-  authRequiredMessage?: string;
-  // Called when the mutation throws. `serverMessage` is the resolver's
-  // user-facing message when the failure is a GraphQL error (e.g. "You already
-  // have a board with this configuration"), otherwise null. When provided, the
-  // caller owns the error toast; otherwise the hook shows `serverMessage` (when
-  // present) and falls back to the generic `errorMessage`.
-  onError?: (error: unknown, serverMessage: string | null) => void | Promise<void>;
-};
+// `errorMessage` is required unless `onError` is provided: without a
+// caller-owned handler the hook is the one showing the toast on failure, and
+// it needs a message to show. When `onError` is set, the caller owns the
+// error toast (and its own i18n fallback — see `handleUpdateError`-style
+// callbacks), so `errorMessage` becomes optional and is only used to label the
+// `console.error` on failure.
+type UseEntityMutationOptions =
+  | {
+      successMessage?: string;
+      errorMessage: string;
+      authRequiredMessage?: string;
+      onError?: undefined;
+    }
+  | {
+      successMessage?: string;
+      errorMessage?: string;
+      authRequiredMessage?: string;
+      onError: (error: unknown, serverMessage: string | null) => void | Promise<void>;
+    };
 
 export function useEntityMutation<TResponse, TVariables extends Variables = Variables>(
   mutation: TypedDocumentNode | string,
-  { successMessage, errorMessage, authRequiredMessage, onError }: UseEntityMutationOptions,
+  options: UseEntityMutationOptions,
 ) {
+  const { successMessage, errorMessage, authRequiredMessage, onError } = options;
   const { token } = useWsAuthToken();
   const { showMessage } = useSnackbar();
   const { t } = useTranslation('common');

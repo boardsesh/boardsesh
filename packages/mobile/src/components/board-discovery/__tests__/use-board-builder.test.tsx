@@ -185,4 +185,54 @@ describe('useBoardBuilder', () => {
     const { result } = renderHook(() => useBoardBuilder());
     expect(result.current.buildUpdateInput('board-uuid-1')).toBeNull();
   });
+
+  // Without this the form resent the board's own config on every save, the server
+  // read that as a config change and ran its duplicate guard — so an owner of two
+  // same-config boards could not even rename one of them.
+  it('omits the config from the update input when it matches the board on file', () => {
+    const { result } = renderHook(() =>
+      useBoardBuilder({ boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '20,1' }),
+    );
+    const input = result.current.buildUpdateInput('board-uuid-1', {
+      currentConfig: { layoutId: 1, sizeId: 10, setIds: '20,1' },
+    });
+    expect(input?.name).toBeDefined();
+    expect(input?.layoutId).toBeUndefined();
+    expect(input?.sizeId).toBeUndefined();
+    expect(input?.setIds).toBeUndefined();
+  });
+
+  it('treats a reordered stored setIds as unchanged', () => {
+    // Stored order is whatever the board was created with, so the comparison has
+    // to normalise both sides or every save of an old board looks like a change.
+    const { result } = renderHook(() =>
+      useBoardBuilder({ boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '20,1' }),
+    );
+    const input = result.current.buildUpdateInput('board-uuid-1', {
+      currentConfig: { layoutId: 1, sizeId: 10, setIds: '1,20' },
+    });
+    expect(input?.setIds).toBeUndefined();
+  });
+
+  it('includes the config when it differs from the board on file', () => {
+    const { result } = renderHook(() =>
+      useBoardBuilder({ boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '20,1' }),
+    );
+    const input = result.current.buildUpdateInput('board-uuid-1', {
+      currentConfig: { layoutId: 1, sizeId: 11, setIds: '20,1' },
+    });
+    expect(input?.layoutId).toBe(1);
+    expect(input?.sizeId).toBe(10);
+    expect(input?.setIds).toBe('1,20');
+  });
+
+  it('includes the config when no current config is supplied', () => {
+    const { result } = renderHook(() =>
+      useBoardBuilder({ boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '20,1' }),
+    );
+    const input = result.current.buildUpdateInput('board-uuid-1');
+    expect(input?.layoutId).toBe(1);
+    expect(input?.sizeId).toBe(10);
+    expect(input?.setIds).toBe('1,20');
+  });
 });

@@ -1,12 +1,19 @@
-import { useCallback, useMemo, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Alert, View, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useBoard, useProfile, useUpdateBoard, useLinkBoardToGym } from '../../src/lib/graphql/hooks';
 import { useActiveBoard, useSetActiveBoard } from '../../src/lib/graphql/use-active-board';
-import { extractGraphqlMessage } from '../../src/lib/graphql/extract-error-message';
+import {
+  extractGraphqlMessage,
+  isBoardLimitError,
+  isDuplicateBoardError,
+  readDuplicateBoardError,
+} from '../../src/lib/graphql/extract-error-message';
+import { track } from '../../src/lib/analytics';
 import { useAuth } from '../../src/providers/auth-provider';
 import { hapticSelection } from '../../src/lib/haptics';
 import { useBoardBuilder, type BoardBuilderSeed } from '../../src/components/board-discovery/use-board-builder';
@@ -143,63 +150,130 @@ function EditBoardForm({ board }: { board: UserBoard }) {
   const [submitting, setSubmitting] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
 
-  const handleUpdate = useCallback(async () => {
-    if (submitting) return;
-    const input = builder.buildUpdateInput(board.uuid, { lockedConfig, fallbackName: defaultName });
-    if (!input) return;
-    setSubmitting(true);
-    setUpdateError(null);
-    hapticSelection();
-    try {
-      const updated = await updateBoard.mutateAsync(input);
+  // `Alert.alert`'s confirm fires long after `handleUpdate` returns, so the
+  // "save anyway" retry can't call `handleUpdate` from inside its own body. The
+  // ref always points at the current one, and by the time the user taps,
+  // `submitting` has been cleared so the retry isn't swallowed by the guard.
+  const handleUpdateRef = useRef<((options?: { allowDuplicateConfig?: boolean }) => Promise<void>) | null>(null);
 
-      // `UpdateBoardInput` carries no gym, so a changed gym is its own mutation.
-      // It can be rejected on its own terms (too far from a gym the user doesn't
-      // run), so it's reported separately rather than failing the whole save.
-      const nextGymUuid = builder.selectedGym?.uuid ?? null;
-      let gymLinkError: string | null = null;
-      if (nextGymUuid !== (board.gymUuid ?? null)) {
-        try {
-          await linkBoardToGym.mutateAsync({ boardUuid: board.uuid, gymUuid: nextGymUuid });
-        } catch (error) {
-          gymLinkError = extractGraphqlMessage(error) ?? t('mobile.gymPicker.linkError');
+  const handleUpdate = useCallback(
+    async (options?: { allowDuplicateConfig?: boolean }) => {
+      if (submitting) return;
+      const input = builder.buildUpdateInput(board.uuid, {
+        lockedConfig,
+        fallbackName: defaultName,
+        currentConfig: { layoutId: board.layoutId, sizeId: board.sizeId, setIds: board.setIds },
+      });
+      if (!input) return;
+      setSubmitting(true);
+      setUpdateError(null);
+      hapticSelection();
+      try {
+        const updated = await updateBoard.mutateAsync({
+          ...input,
+          allowDuplicateConfig: options?.allowDuplicateConfig,
+        });
+
+        // `UpdateBoardInput` carries no gym, so a changed gym is its own mutation.
+        // It can be rejected on its own terms (too far from a gym the user doesn't
+        // run), so it's reported separately rather than failing the whole save.
+        const nextGymUuid = builder.selectedGym?.uuid ?? null;
+        let gymLinkError: string | null = null;
+        if (nextGymUuid !== (board.gymUuid ?? null)) {
+          try {
+            await linkBoardToGym.mutateAsync({ boardUuid: board.uuid, gymUuid: nextGymUuid });
+          } catch (error) {
+            gymLinkError = extractGraphqlMessage(error) ?? t('mobile.gymPicker.linkError');
+          }
         }
-      }
 
-      // The active board is a denormalised AsyncStorage copy — re-persist it so
-      // the rename / angle / visibility change reaches BLE + the play drawer.
-      // This runs even when the gym link failed: the rest of the edit DID save,
-      // and bailing early left the stored copy stale against the server.
-      if (activeBoard?.uuid === updated.uuid) await setActiveBoard(updated);
+        // The active board is a denormalised AsyncStorage copy — re-persist it so
+        // the rename / angle / visibility change reaches BLE + the play drawer.
+        // This runs even when the gym link failed: the rest of the edit DID save,
+        // and bailing early left the stored copy stale against the server.
+        if (activeBoard?.uuid === updated.uuid) await setActiveBoard(updated);
 
-      if (gymLinkError) {
-        setUpdateError(gymLinkError);
+        if (gymLinkError) {
+          setUpdateError(gymLinkError);
+          setSubmitting(false);
+          return;
+        }
+        router.back();
+        // Navigated away on success — leave `submitting` set (unmounting).
+      } catch (error) {
+        // A duplicate config is a question, not a failure: the same wall really
+        // can exist twice (home and gym), so ask before refusing the edit. Not
+        // BoardDuplicatePromptSheet — its "use that board instead" is a create
+        // -flow escape hatch, and there is nothing to switch to when the user is
+        // editing a board they already have open.
+        if (isDuplicateBoardError(error)) {
+          // Null whenever the editor is not the board's owner — the server
+          // withholds the colliding board's name and place from gym admins and
+          // moderators, so the prompt has to work without them.
+          const duplicate = readDuplicateBoardError(error);
+          track(SHARED_EVENTS.BoardDuplicatePrompted, {
+            boardType: board.boardType,
+            source: 'mobile_edit',
+            hasLocation: !!input.locationName,
+          });
+          setSubmitting(false);
+          Alert.alert(
+            t('mobile.edit.duplicate.title'),
+            duplicate?.boardName
+              ? duplicate.locationName
+                ? t('mobile.edit.duplicate.bodyWithLocation', {
+                    name: duplicate.boardName,
+                    location: duplicate.locationName,
+                  })
+                : t('mobile.edit.duplicate.body', { name: duplicate.boardName })
+              : t('mobile.edit.duplicate.bodyGeneric'),
+            [
+              { text: t('mobile.edit.duplicate.keepEditing'), style: 'cancel' },
+              {
+                text: t('mobile.edit.duplicate.saveAnyway'),
+                onPress: () => void handleUpdateRef.current?.({ allowDuplicateConfig: true }),
+              },
+            ],
+          );
+          return;
+        }
+        // Restoring a soft-deleted board while the owner is already at the
+        // 50-board cap adds a live board, so the server can reject an edit the
+        // same way it rejects a create. Same actionable copy as create's cap
+        // message — the fix is the same (delete one you don't use) — rather
+        // than the raw server message.
+        if (isBoardLimitError(error)) {
+          setUpdateError(t('mobile.create.limitReached'));
+          setSubmitting(false);
+          return;
+        }
+        // Covers the config-locked race and everything else the server enforces
+        // authoritatively. Inline, not a toast: this is a `presentation: 'modal'`
+        // route and the toast overlay draws behind it.
+        setUpdateError(extractGraphqlMessage(error) ?? t('mobile.edit.updateError'));
         setSubmitting(false);
-        return;
       }
-      router.back();
-      // Navigated away on success — leave `submitting` set (unmounting).
-    } catch (error) {
-      // Covers the config-locked race and the duplicate-config guard, both of
-      // which the server enforces authoritatively. Inline, not a toast: this is
-      // a `presentation: 'modal'` route and the toast overlay draws behind it.
-      setUpdateError(extractGraphqlMessage(error) ?? t('mobile.edit.updateError'));
-      setSubmitting(false);
-    }
-  }, [
-    submitting,
-    builder,
-    board.uuid,
-    board.gymUuid,
-    lockedConfig,
-    defaultName,
-    updateBoard,
-    linkBoardToGym,
-    activeBoard?.uuid,
-    setActiveBoard,
-    router,
-    t,
-  ]);
+    },
+    [
+      submitting,
+      builder,
+      board.uuid,
+      board.gymUuid,
+      board.boardType,
+      board.layoutId,
+      board.sizeId,
+      board.setIds,
+      lockedConfig,
+      defaultName,
+      updateBoard,
+      linkBoardToGym,
+      activeBoard?.uuid,
+      setActiveBoard,
+      router,
+      t,
+    ],
+  );
+  handleUpdateRef.current = handleUpdate;
 
   return (
     <BoardForm

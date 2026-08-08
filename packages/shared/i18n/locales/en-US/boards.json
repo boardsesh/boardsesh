@@ -37,7 +37,15 @@
       "notFound": "We couldn't find that board",
       "noAccess": "You don't have permission to edit this board",
       "back": "Go back",
-      "configLockedHint": "You don't have permission to change this board's layout, size, or hold sets."
+      "configLockedHint": "You don't have permission to change this board's layout, size, or hold sets.",
+      "duplicate": {
+        "title": "You already have this setup",
+        "body": "This change makes the board match \"{{name}}\" — same layout, size and hold sets.",
+        "bodyWithLocation": "This change makes the board match \"{{name}}\" at {{location}} — same layout, size and hold sets.",
+        "bodyGeneric": "This change matches a board setup the owner already has.",
+        "saveAnyway": "Save anyway",
+        "keepEditing": "Keep editing"
+      }
     },
     "gymEdit": {
       "screenTitle": "Edit gym",
@@ -123,6 +131,7 @@
       "serialHint": "Optional — your controller links itself the first time you connect.",
       "save": "Save my board",
       "createError": "Couldn't create that board. Try again.",
+      "limitReached": "You've reached the maximum number of boards for one account. Delete a board you no longer use to add another.",
       "timer": "Workout timer",
       "timerNone": "No timer paired",
       "timerHint": "Pair a Rogue gym timer to this board. While you're driving the wall, every send starts its stopwatch.",
@@ -353,6 +362,7 @@
       "submit": "Create Board",
       "authRequired": "You must be signed in to create a board",
       "errorMessage": "Failed to create board. It may already exist for this configuration.",
+      "limitReached": "You've reached the maximum number of boards for one account. Delete a board you no longer use to add another.",
       "goToExisting": "Go to your board",
       "nameRequired": "Board name is required",
       "createdNamed": "Board \"{{name}}\" created!",
@@ -396,6 +406,14 @@
       "location": "Location",
       "setup": "Setup",
       "visibility": "Visibility"
+    },
+    "edit": {
+      "duplicateTitle": "You already have this setup",
+      "duplicateBody": "This change makes the board match \"{{name}}\" — same layout, size and hold sets.",
+      "duplicateBodyWithLocation": "This change makes the board match \"{{name}}\" at {{location}} — same layout, size and hold sets.",
+      "duplicateBodyGeneric": "This change matches a board setup the owner already has.",
+      "saveAnyway": "Save anyway",
+      "cancel": "Cancel"
     }
   },
   "editBoard": {

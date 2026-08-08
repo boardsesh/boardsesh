@@ -189,6 +189,37 @@ describe('CreateBoardForm — handleCreateError', () => {
     expect(screen.queryByText('Add it anyway')).toBeNull();
   });
 
+  it('names the account cap instead of echoing the server message', async () => {
+    // 'board_limit' has to stay out of the 'exception' bucket: no retry clears
+    // it, and the way out (delete a board) belongs in our own copy.
+    const onError = renderAndGetOnError();
+
+    await act(async () => {
+      await onError(
+        {
+          response: {
+            errors: [
+              {
+                message: 'You have reached the maximum of 50 boards for one account',
+                extensions: { code: 'BOARD_LIMIT_REACHED', maxBoards: 50 },
+              },
+            ],
+          },
+        },
+        'You have reached the maximum of 50 boards for one account',
+      );
+    });
+
+    expect(mockShowMessage).toHaveBeenCalledWith(
+      "You've reached the maximum number of boards for one account. Delete a board you no longer use to add another.",
+      'error',
+    );
+    expect(mockTrack).toHaveBeenCalledWith(
+      'Board Create Failed',
+      expect.objectContaining({ error_reason: 'board_limit' }),
+    );
+  });
+
   it('ignores a malformed duplicate payload with no board uuid', async () => {
     const onError = renderAndGetOnError();
 
