@@ -171,7 +171,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       try {
         const updated = await updateBoard.mutateAsync({
           ...input,
-          allowDuplicateConfig: options?.allowDuplicateConfig || undefined,
+          allowDuplicateConfig: options?.allowDuplicateConfig,
         });
 
         // `UpdateBoardInput` carries no gym, so a changed gym is its own mutation.

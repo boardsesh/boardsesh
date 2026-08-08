@@ -15,7 +15,7 @@ import {
   type UpdateBoardMutationVariables,
   type UpdateBoardMutationResponse,
 } from '@boardsesh/graphql/operations';
-import { isDuplicateBoardError, readDuplicateBoardError } from '@boardsesh/graphql/errors';
+import { isBoardLimitError, isDuplicateBoardError, readDuplicateBoardError } from '@boardsesh/graphql/errors';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '@/app/lib/analytics';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -102,6 +102,13 @@ export default function EditBoardForm({ board, onSuccess, onCancel, formId, onSu
         });
         return;
       }
+      // Saving a soft-deleted board restores it, which can land the owner back
+      // at the 50-board cap. Same account-cap copy as board creation, since the
+      // way out (delete a board you don't use) is identical.
+      if (isBoardLimitError(error)) {
+        showMessage(t('boardForm.create.limitReached'), 'error');
+        return;
+      }
       showMessage(serverMessage ?? t('editBoard.snackbar.updateFailed'), 'error');
     },
     [board.boardType, showMessage, t],
@@ -149,7 +156,7 @@ export default function EditBoardForm({ board, onSuccess, onCancel, formId, onSu
                 }
               : {}),
             serialNumber: values.serialNumber,
-            allowDuplicateConfig: allowDuplicateConfig || undefined,
+            allowDuplicateConfig,
           },
         });
 

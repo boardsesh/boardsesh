@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -129,6 +129,14 @@ async function saveTick(overrides: Record<string, unknown> = {}, userId = USER_I
 describe('legacy tick board attribution', () => {
   beforeAll(async () => {
     await setupWorkerDatabase();
+  });
+
+  // Re-seeded per test, not once in beforeAll: sibling suites TRUNCATE these
+  // same shared tables in their own beforeEach, and this file's tests can
+  // interleave with theirs within a worker's shared DB. Seeding in beforeAll
+  // left a window where a cross-file TRUNCATE could strand this suite mid-run
+  // with its users/climb gone and no test left to put them back.
+  beforeEach(async () => {
     for (const id of [USER_ID, OTHER_USER_ID]) {
       await db.execute(sql`
         INSERT INTO users (id, email, name, created_at, updated_at)

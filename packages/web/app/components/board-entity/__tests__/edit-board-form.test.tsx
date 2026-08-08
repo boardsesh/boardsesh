@@ -281,6 +281,23 @@ describe('EditBoardForm — duplicate config', () => {
     expect(screen.queryByText('This change matches a board setup the owner already has.')).toBeNull();
   });
 
+  it('toasts the account-cap copy instead of the dialog when restoring a soft-deleted board hits the limit', async () => {
+    // Saving a soft-deleted board restores it, which can land the owner back at
+    // the 50-board cap. Same copy as board creation — retrying never clears it,
+    // deleting a board does.
+    const onError = renderAndGetOnError();
+
+    await act(async () => {
+      onError(duplicateError({ code: 'BOARD_LIMIT_REACHED' }), null);
+    });
+
+    expect(mockShowMessage).toHaveBeenCalledWith(
+      "You've reached the maximum number of boards for one account. Delete a board you no longer use to add another.",
+      'error',
+    );
+    expect(screen.queryByText('Save anyway')).toBeNull();
+  });
+
   it('still reports a non-duplicate failure through the snackbar', async () => {
     const onError = renderAndGetOnError();
 
