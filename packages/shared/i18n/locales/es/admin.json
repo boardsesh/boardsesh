@@ -195,8 +195,8 @@
   },
   "retention": {
     "heading": "Retención de usuarios",
-    "subheading": "De los usuarios que se registraron en la semana W, qué porcentaje estuvo activo el día N — retención Dn clásica. Calculada tanto para marcas (bloques registrados) como para cualquier actividad en la app.",
-    "definitions": "Cohorte = semana de registro (UTC). Dn cuenta a un usuario si tuvo actividad en la ventana de 24 horas que empieza N días después del registro (así D7 = activo exactamente el día 7, no en cualquier momento de los primeros 7 días). Marcas = al menos un bloque registrado en Boardsesh (las marcas importadas de Aurora no se cuentan). Cualquier actividad = una marca, anfitrión o participación en una sesión de fiesta, favorito, playlist (creada o fijada), seguimiento (de usuario, setter o playlist), suscripción a nuevos bloques, comentario, voto, voto en propuesta o envío de comentarios. Las cohortes más recientes que la ventana muestran —.",
+    "subheading": "De los usuarios que se registraron en la semana W, qué porcentaje estuvo activo el día N — retención Dn clásica. Calculada tanto para encadenes (bloques registrados) como para cualquier actividad en la app.",
+    "definitions": "Cohorte = semana de registro (UTC). Dn cuenta a un usuario si tuvo actividad en la ventana de 24 horas que empieza N días después del registro (así D7 = activo exactamente el día 7, no en cualquier momento de los primeros 7 días). Encadenes = al menos un bloque registrado en Boardsesh (los encadenes importados de Aurora no se cuentan). Cualquier actividad = un encadene, anfitrión o participación en una sesión de fiesta, favorito, playlist (creada o fijada), seguimiento (de usuario, setter o playlist), suscripción a nuevos bloques, comentario, voto, voto en propuesta o envío de comentarios. Las cohortes más recientes que la ventana muestran —.",
     "back": "Volver al panel de admin",
     "table": {
       "cohortWeek": "Semana de cohorte",
