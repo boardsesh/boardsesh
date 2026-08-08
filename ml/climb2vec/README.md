@@ -65,7 +65,14 @@ vp run db:extract-training-matrix -- \
   --out=ml/climb2vec/data/stage3-train.jsonl
 
 # Score inputs are label-free and retain every UUID so a passing model can map
-# pooled physical predictions back to aliases.
+# pooled physical predictions back to aliases. `--morphology` (like
+# `--target=stage2`) also keeps the zero-hold placement-mismatch rows, which
+# Stage 3 turns into explicit `supported: false` tombstones so the identified
+# artifact covers the catalog exactly. Add `--keep-unsupported` if you ever run
+# a Stage-3 extract without morphology. The incumbent climb2vec-v1 weekly
+# extract passes neither and keeps dropping those rows: it has no tombstone
+# record shape, so a zero-hold row would train and score as an all-zero climb
+# and the legacy upsert would persist that fabricated `content_prior`.
 vp run db:extract-training-matrix -- \
   --board=kilter --score \
   --morphology=ml/climb2vec/artifacts/hold-morphology-v1.jsonl \

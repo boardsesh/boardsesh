@@ -6,6 +6,7 @@ import numpy as np
 
 from similarity_export import (
     infer_legacy_board_type,
+    neighbor_score,
     physical_key,
     prepare_similarity_rows,
     rank_neighbor_indices,
@@ -67,6 +68,25 @@ class SimilarityExportTest(unittest.TestCase):
             records["layout-two-a"]["neighbours"],
             [["layout-two-b", 0.99388]],
         )
+
+    def test_float32_drift_never_escapes_the_loader_range(self):
+        # The TS loader rejects any neighbour score outside [-1, 1] and rolls
+        # the whole board rebuild back, so drift is clamped, not shipped.
+        self.assertEqual(neighbor_score(np.float32(1.00001)), 1.0)
+        self.assertEqual(neighbor_score(np.float32(-1.00001)), -1.0)
+        self.assertEqual(neighbor_score(np.float32(0.993877)), 0.99388)
+
+        duplicate = np.asarray([-0.468, -1.193], dtype=np.float32)
+        rows = prepare_similarity_rows(
+            [
+                self.row("original", "kilter", 1, duplicate.tolist()),
+                self.row("copy", "kilter", 1, duplicate.tolist()),
+            ]
+        )
+        for record in similarity_records(rows, k=1):
+            for _, score in record["neighbours"]:
+                self.assertLessEqual(score, 1.0)
+                self.assertGreaterEqual(score, -1.0)
 
     def test_group_key_contains_board_layout_and_angle(self):
         row = self.row("query", "kilter", 12, [1.0, 0.0])

@@ -11,7 +11,7 @@
  *        --board=kilter,tension --out=ml/climb2vec/data/stage3-train.jsonl`
  * Flags: --board=<name[,name...]> · --out=<path> · --min-ascents=<n> (20)
  *        · --target=crowd|stage2 · --coeff-version=<persisted snapshot>
- *        · --morphology=<hold-morphology JSONL> · --score
+ *        · --morphology=<hold-morphology JSONL> · --score · --keep-unsupported
  *        · --angle=<deg> · --limit=<n> (`--limit` is forbidden for Stage 2).
  */
 import { createHash } from 'node:crypto';
@@ -56,10 +56,15 @@ import {
   type TrainingRow,
 } from '../src/queries/hold-features/index.js';
 import { rowsOf } from '../src/queries/util/rows.js';
+import {
+  morphologyHoldIdField,
+  morphologyRecordError,
+  parseMorphologyRecord,
+  type MorphologyRecord,
+} from './extract-training-matrix-records.js';
 
 const DEFAULT_OUT = 'ml/climb2vec/data/kilter-train.jsonl';
 const DEFAULT_MIN_ASCENTS = 20;
-const MORPHOLOGY_VECTOR_LENGTH = 12;
 
 type Db = ReturnType<typeof createScriptDb>['db'];
 type ReadDb = Pick<Db, 'execute' | 'select'>;
@@ -76,16 +81,17 @@ interface Options {
   morphologyManifestPath: string | null;
   /** Score mode: emit EVERY listed (climb, angle) with holds — no ascent/label gate — for model scoring. */
   scoreAll: boolean;
-}
-
-interface MorphologyRecord {
-  morphologyVersion: string;
-  boardType: string;
-  layoutId: number;
-  placementId?: number;
-  gridCellId?: number;
-  normalizedCenterDistance: number;
-  vector: number[];
+  /**
+   * Emit (climb, angle) rows whose holds matched no placement instead of
+   * dropping them. Only the Stage-3 pipeline wants them: it turns a zero-hold
+   * row into an explicit `supported: false` tombstone so the identified
+   * artifact stays catalog-complete. The incumbent climb2vec-v1 weekly line has
+   * no tombstone concept — train_export.py would train and score an all-zero
+   * feature row as if it were a real climb, and the legacy upsert would persist
+   * that fabricated content_prior onto cold-tail cells that previously had no
+   * embedding row at all — so it keeps the original skip.
+   */
+  keepUnsupported: boolean;
 }
 
 interface MorphologyBundle {
@@ -108,22 +114,18 @@ async function loadMorphology(options: Options): Promise<MorphologyBundle | null
   const reader = createInterface({ input, crlfDelay: Infinity });
   const versions = new Set<string>();
   const byHold = new Map<string, MorphologyRecord>();
+  let lineNumber = 0;
   try {
     for await (const line of reader) {
+      lineNumber += 1;
       const trimmed = line.trim();
       if (!trimmed) continue;
-      const record = JSON.parse(trimmed) as MorphologyRecord;
+      const record = parseMorphologyRecord(trimmed, lineNumber);
       versions.add(record.morphologyVersion);
-      if (record.vector.length !== MORPHOLOGY_VECTOR_LENGTH || !record.vector.every(Number.isFinite)) {
-        throw new Error(
-          `Invalid morphology vector for ${record.boardType}:${record.layoutId}:` +
-            `${record.placementId ?? record.gridCellId}`,
-        );
-      }
-      const holdId = record.boardType === 'moonboard' ? record.gridCellId : record.placementId;
-      if (holdId === undefined) throw new Error('Morphology record is missing its hold identity.');
-      const key = morphologyKey(record.boardType, Number(record.layoutId), Number(holdId));
-      if (byHold.has(key)) throw new Error(`Duplicate morphology record ${key}.`);
+      const holdId = record[morphologyHoldIdField(record.boardType)];
+      if (holdId === undefined) throw morphologyRecordError(lineNumber, 'record is missing its hold identity');
+      const key = morphologyKey(record.boardType, record.layoutId, holdId);
+      if (byHold.has(key)) throw morphologyRecordError(lineNumber, `duplicate morphology record ${key}`);
       byHold.set(key, record);
     }
   } finally {
@@ -454,6 +456,10 @@ function parseArgs(argv: string[]): Options {
     morphologyPath,
     morphologyManifestPath: get('--morphology-manifest') ?? (morphologyPath ? `${morphologyPath}.failures.json` : null),
     scoreAll: argv.includes('--score'),
+    // Every Stage-3 extract carries the morphology artifact or the frozen
+    // Stage-2 target; the incumbent climb2vec-v1 weekly extract carries
+    // neither. `--keep-unsupported` is the explicit override.
+    keepUnsupported: argv.includes('--keep-unsupported') || morphologyPath !== null || targetArg === 'stage2',
   };
   if (targetArg !== undefined && targetArg !== 'crowd' && targetArg !== 'stage2') {
     throw new Error(`--target must be crowd or stage2, received ${targetArg}.`);
@@ -551,6 +557,7 @@ async function main(): Promise<void> {
         const evidence = coefficients ? await loadStage2Evidence(transaction, coefficients) : null;
         const assembledRows: TrainingRow[] = [];
         let placementFeatureCount = 0;
+        let droppedUnsupportedRows = 0;
 
         for (const board of options.boards) {
           const features = await loadFeatures(transaction, board, morphology);
@@ -569,6 +576,10 @@ async function main(): Promise<void> {
           for (const stat of stats) {
             const holds = holdsByClimb.get(stat.climb_uuid) ?? [];
             const row = buildTrainingRow(stat, holds, features);
+            if (row.holds.length === 0 && !options.keepUnsupported) {
+              droppedUnsupportedRows += 1;
+              continue;
+            }
             row.physicalKey = stat.physical_key;
             row.extractionSnapshot = snapshot.snapshot_id;
             row.extractedAt = snapshot.captured_at;
@@ -584,7 +595,7 @@ async function main(): Promise<void> {
             assembledRows.push(row);
           }
         }
-        return { assembledRows, placementFeatureCount, snapshot };
+        return { assembledRows, placementFeatureCount, droppedUnsupportedRows, snapshot };
       },
       { isolationLevel: 'repeatable read', accessMode: 'read only' },
     );
@@ -646,8 +657,12 @@ async function main(): Promise<void> {
       `[extract] wrote ${written} rows (${extracted.placementFeatureCount} placement features, avg ${
         written ? (holdTotal / written).toFixed(1) : 0
       } holds/row${morphology ? `, morphology coverage=${morphology.coverage ?? 'unknown'}` : ''}, ` +
-        `snapshot=${extracted.snapshot.snapshot_id}, rejected-benchmark-physical=${deduplication.rejectedPhysicalKeys.length}) ` +
-        `→ ${options.out}`,
+        `snapshot=${extracted.snapshot.snapshot_id}, rejected-benchmark-physical=${deduplication.rejectedPhysicalKeys.length}, ` +
+        `${
+          options.keepUnsupported
+            ? 'unsupported-rows=kept-as-tombstones'
+            : `dropped-unsupported=${extracted.droppedUnsupportedRows}`
+        }) → ${options.out}`,
     );
   } finally {
     await close();

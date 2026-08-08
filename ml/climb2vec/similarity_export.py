@@ -159,6 +159,17 @@ def rank_neighbor_indices(similarities, excluded_indices, k):
     return partition[np.argsort(-scores[partition])]
 
 
+def neighbor_score(similarity):
+    """Round one cosine into the [-1, 1] range the TS loader enforces.
+
+    A float32 dot product of renormalized unit vectors can land a hair past 1.0
+    for a near-duplicate pair, and the error grows with the embedding width.
+    load-similarity-records.ts rejects any score outside [-1, 1] and aborts the
+    whole atomic board rebuild, so clamp the drift instead of shipping it.
+    """
+    return round(float(np.clip(similarity, -1.0, 1.0)), 5)
+
+
 def similarity_records(rows, k, block=2000):
     """Yield production-like neighbors within one board/layout/angle space."""
     groups = defaultdict(list)
@@ -200,14 +211,8 @@ def similarity_records(rows, k, block=2000):
                 neighbours = [
                     [
                         rows[members[neighbor_index]]["climbUuid"],
-                        round(
-                            float(
-                                similarities[
-                                    block_index,
-                                    neighbor_index,
-                                ]
-                            ),
-                            5,
+                        neighbor_score(
+                            similarities[block_index, neighbor_index]
                         ),
                     ]
                     for neighbor_index in order

@@ -194,7 +194,12 @@ physical problems carry explicit null tombstones. `load-content-model.ts`
 validates exact selected-board catalog coverage before an atomic replacement,
 and `similarity_export.py` plus `load-similarity.ts` keep neighbours inside
 `(boardType, layoutId, angle)`. The legacy `climb2vec-v1` single-board artifact
-continues through its explicit upsert-only compatibility mode.
+continues through its explicit upsert-only compatibility mode: it has no
+tombstone record shape, so `extract-training-matrix.ts` keeps dropping zero-hold
+rows there and only retains them for a Stage-3 extract (`--morphology`,
+`--target=stage2`, or the explicit `--keep-unsupported`). Handing a zero-hold row
+to the incumbent line would score an all-zero climb and upsert that fabricated
+`content_prior` onto a cold-tail cell the grade job reads.
 
 The unchanged `vp run db:refresh-climb-grades -- --validate-only` and
 `--dry-run` commands remain required afterward as integration sanity checks.

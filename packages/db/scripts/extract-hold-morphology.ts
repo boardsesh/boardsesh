@@ -244,4 +244,7 @@ async function main(): Promise<void> {
   }
 }
 
-void main();
+main().catch((error: unknown) => {
+  console.error('[extract-hold-morphology] failed:', error);
+  process.exit(1);
+});
