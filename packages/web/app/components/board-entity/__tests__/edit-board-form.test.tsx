@@ -182,6 +182,29 @@ describe('EditBoardForm — duplicate config', () => {
     });
   });
 
+  it('guards against a double-click on "Save anyway" firing two mutations', async () => {
+    const onError = renderAndGetOnError();
+
+    await act(async () => {
+      screen.getByTestId('board-form').click();
+    });
+    expect(mockExecute).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      onError(ownerDuplicate, null);
+    });
+
+    // Two rapid clicks, fired before either retry has resolved — the
+    // in-flight guard should let only the first one through.
+    await act(async () => {
+      const saveAnyway = screen.getByText('Save anyway');
+      saveAnyway.click();
+      saveAnyway.click();
+    });
+
+    expect(mockExecute).toHaveBeenCalledTimes(2);
+  });
+
   it('leaves the edit alone when the user cancels', async () => {
     const onError = renderAndGetOnError();
 

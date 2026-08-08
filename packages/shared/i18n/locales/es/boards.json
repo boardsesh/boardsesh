@@ -412,7 +412,7 @@
       "duplicateBody": "Con este cambio el plafón queda igual que «{{name}}»: mismo layout, tamaño y sets de presas.",
       "duplicateBodyGeneric": "Con este cambio el plafón queda igual que otro que su propietario ya tiene.",
       "saveAnyway": "Guardar igualmente",
-      "keepEditing": "Cancelar"
+      "cancel": "Cancelar"
     }
   },
   "editBoard": {

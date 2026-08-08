@@ -39,7 +39,7 @@
       "back": "Retour",
       "configLockedHint": "Vous n'avez pas la permission de modifier le layout, la taille ou les sets de cette board.",
       "duplicate": {
-        "title": "Tu as déjà cette configuration",
+        "title": "Vous avez déjà cette configuration",
         "body": "Avec ce changement, la board devient identique à « {{name}} » : même layout, même taille et mêmes sets de prises.",
         "bodyWithLocation": "Avec ce changement, la board devient identique à « {{name}} » à {{location}} : même layout, même taille et mêmes sets de prises.",
         "bodyGeneric": "Avec ce changement, la board devient identique à une autre que son propriétaire a déjà.",
@@ -412,7 +412,7 @@
       "duplicateBody": "Avec ce changement, la board devient identique à « {{name}} » : même layout, même taille et mêmes sets de prises.",
       "duplicateBodyGeneric": "Avec ce changement, la board devient identique à une autre que son propriétaire a déjà.",
       "saveAnyway": "Enregistrer quand même",
-      "keepEditing": "Annuler"
+      "cancel": "Annuler"
     }
   },
   "editBoard": {

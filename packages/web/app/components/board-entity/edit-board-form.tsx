@@ -70,6 +70,13 @@ export default function EditBoardForm({ board, onSuccess, onCancel, formId, onSu
   // moderator), so the dialog has to work without a board to name.
   const [duplicate, setDuplicate] = useState<{ name: string | null } | null>(null);
   const lastValuesRef = useRef<EditBoardFormValues | null>(null);
+  // `runUpdate` fires from two places — the drawer's Save button and the
+  // duplicate dialog's "Save anyway" retry — and neither is disabled while the
+  // other is in flight. A double-click on "Save anyway" during the dialog's
+  // close transition, or a Save click while a retry is still pending, could
+  // fire two updateBoard mutations. Mirrors the inFlightRef idiom in
+  // packages/mobile/app/boards/create.tsx.
+  const inFlightRef = useRef(false);
 
   const handleUpdateError = useCallback(
     (error: unknown, serverMessage: string | null) => {
@@ -78,7 +85,11 @@ export default function EditBoardForm({ board, onSuccess, onCancel, formId, onSu
       // through on a second pass with the user's confirmation attached.
       if (isDuplicateBoardError(error)) {
         setDuplicate({ name: readDuplicateBoardError(error)?.boardName || null });
-        track(SHARED_EVENTS.BoardDuplicatePrompted, { boardType: board.boardType, source: 'web_edit_drawer' });
+        track(SHARED_EVENTS.BoardDuplicatePrompted, {
+          boardType: board.boardType,
+          source: 'web_edit_drawer',
+          hasLocation: !!lastValuesRef.current?.locationName,
+        });
         return;
       }
       showMessage(serverMessage ?? t('editBoard.snackbar.updateFailed'), 'error');
@@ -103,35 +114,41 @@ export default function EditBoardForm({ board, onSuccess, onCancel, formId, onSu
 
   const runUpdate = useCallback(
     async (values: EditBoardFormValues, allowDuplicateConfig?: boolean) => {
-      const data = await execute({
-        input: {
-          boardUuid: board.uuid,
-          name: values.name,
-          slug: values.slug || undefined,
-          description: values.description || undefined,
-          locationName: values.locationName || undefined,
-          latitude: values.latitude ?? undefined,
-          longitude: values.longitude ?? undefined,
-          isPublic: values.isPublic,
-          isUnlisted: values.isUnlisted,
-          hideLocation: values.hideLocation,
-          isOwned: values.isOwned,
-          angle: values.angle,
-          isAngleAdjustable: values.isAngleAdjustable,
-          ...(configEditable
-            ? {
-                layoutId: values.layoutId,
-                sizeId: values.sizeId,
-                setIds: values.setIds,
-              }
-            : {}),
-          serialNumber: values.serialNumber,
-          allowDuplicateConfig: allowDuplicateConfig || undefined,
-        },
-      });
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
+      try {
+        const data = await execute({
+          input: {
+            boardUuid: board.uuid,
+            name: values.name,
+            slug: values.slug || undefined,
+            description: values.description || undefined,
+            locationName: values.locationName || undefined,
+            latitude: values.latitude ?? undefined,
+            longitude: values.longitude ?? undefined,
+            isPublic: values.isPublic,
+            isUnlisted: values.isUnlisted,
+            hideLocation: values.hideLocation,
+            isOwned: values.isOwned,
+            angle: values.angle,
+            isAngleAdjustable: values.isAngleAdjustable,
+            ...(configEditable
+              ? {
+                  layoutId: values.layoutId,
+                  sizeId: values.sizeId,
+                  setIds: values.setIds,
+                }
+              : {}),
+            serialNumber: values.serialNumber,
+            allowDuplicateConfig: allowDuplicateConfig || undefined,
+          },
+        });
 
-      if (data) {
-        onSuccess?.(data.updateBoard);
+        if (data) {
+          onSuccess?.(data.updateBoard);
+        }
+      } finally {
+        inFlightRef.current = false;
       }
     },
     [execute, board.uuid, onSuccess, configEditable],
@@ -203,7 +220,7 @@ export default function EditBoardForm({ board, onSuccess, onCancel, formId, onSu
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDuplicate(null)}>{t('boardForm.edit.keepEditing')}</Button>
+          <Button onClick={() => setDuplicate(null)}>{t('boardForm.edit.cancel')}</Button>
           <Button onClick={() => void handleSaveAnyway()} variant="contained">
             {t('boardForm.edit.saveAnyway')}
           </Button>

@@ -412,7 +412,7 @@
       "duplicateBody": "Mit dieser Änderung ist das Board identisch mit „{{name}}“ — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",
       "duplicateBodyGeneric": "Mit dieser Änderung ist das Board identisch mit einem anderen Board desselben Kontos.",
       "saveAnyway": "Trotzdem speichern",
-      "keepEditing": "Abbrechen"
+      "cancel": "Abbrechen"
     }
   },
   "editBoard": {

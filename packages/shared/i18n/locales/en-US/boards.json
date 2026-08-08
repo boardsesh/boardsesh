@@ -412,7 +412,7 @@
       "duplicateBody": "This change makes the board match \"{{name}}\" — same layout, size and hold sets.",
       "duplicateBodyGeneric": "This change matches a board setup the owner already has.",
       "saveAnyway": "Save anyway",
-      "keepEditing": "Cancel"
+      "cancel": "Cancel"
     }
   },
   "editBoard": {
