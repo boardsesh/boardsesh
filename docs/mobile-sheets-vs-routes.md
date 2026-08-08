@@ -137,7 +137,14 @@ column sizes to its content instead of the detent and anything past the detent (
 lands off-screen (#3330). The `Sheet` / `ModalSheet` wrappers pin that single flex child to the
 active detent's height on iOS via `useSheetColumnStyle` (`src/components/use-sheet-column-style.ts`);
 Android bounds it natively and keeps `flex: 1`. A raw-`BottomSheet` surface with a pinned footer
-(e.g. `ClimbFilterSheet`) must apply the same hook itself.
+(`ClimbFilterSheet`, `LogAscentSheet`) must apply the same hook itself.
+
+The bound isn't optional the moment a surface gains a scroll body: without it the scroll view
+never gains an overflow, so nothing scrolls **and** the footer is off-screen. `LogAscentSheet`
+went years on a plain `flex: 1` column safely — it had no scroll body and no pinned footer, so
+neither failure mode had anything to bite. Adding either one makes the hook load-bearing. A sheet
+with more than one detent should also pass `activeIndex` from the native `onChange`, so the bound
+tracks the resting detent instead of leaving dead space under the footer at the taller one.
 
 ### Routes (`expo-router` `Stack.Screen`)
 

@@ -144,7 +144,7 @@ export function LogAscentSheet({
       {/* The sheet's single in-flow child, carrying the detent bound. Handed
           several children instead, the native sheet sizes to content and the
           flex:1 scroll body inside QuickTickBar collapses. */}
-      <View style={columnStyle}>
+      <View testID="log-ascent-column" style={columnStyle}>
         <View style={styles.closeButtonRow}>
           <Pressable
             onPress={handleClose}

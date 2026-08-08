@@ -17,8 +17,8 @@ const platformMock = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android', Version
 vi.mock('react-native', () => ({
   Platform: platformMock,
   // Serialised so a test can read the style the sheet's column child gets.
-  View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
-    createElement('div', { 'data-style': JSON.stringify(style ?? null) }, children),
+  View: ({ children, style, testID }: { children?: ReactNode; style?: unknown; testID?: string }) =>
+    createElement('div', { 'data-style': JSON.stringify(style ?? null), 'data-testid': testID }, children),
   Pressable: ({
     children,
     accessibilityLabel,
@@ -131,10 +131,13 @@ function renderSheet(overrides: Partial<Parameters<typeof LogAscentSheet>[0]> = 
 }
 
 // The sheet's single in-flow child — the column QuickTickBar's scroll body and
-// pinned save row are laid out inside. First `View` rendered under the modal.
+// pinned save row are laid out inside. Addressed by testID, not by position:
+// every mocked `View` carries `data-style`, so a positional lookup would
+// silently start measuring a wrapper if one were ever added above the column.
 function columnStyle(container: HTMLElement): Record<string, number> {
-  const column = container.querySelector('[data-style]');
-  return JSON.parse(column?.getAttribute('data-style') ?? 'null');
+  const column = container.querySelector('[data-testid="log-ascent-column"]');
+  if (!column) throw new Error('log-ascent-column not rendered');
+  return JSON.parse(column.getAttribute('data-style') ?? 'null');
 }
 
 beforeEach(() => {
