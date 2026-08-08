@@ -124,7 +124,7 @@
       "accountLabel": "Información de cuenta.",
       "accountBody": "Cuando creas una cuenta guardamos tu correo y tu nombre de usuario. El correo se usa para autenticación. El nombre de usuario aparece en tu perfil y es visible para otros usuarios en sesiones de Modo Fiesta y funciones sociales.",
       "activityLabel": "Actividad de escalada.",
-      "activityBody": "Cuando registras un envío o un intento guardamos los detalles del problema, el grado, la fecha y las notas que añadas. Esto alimenta tu logbook y el seguimiento de progresión.",
+      "activityBody": "Cuando registras un encadene o un intento guardamos los detalles del bloque, el grado, la fecha y las notas que añadas. Esto alimenta tu logbook y el seguimiento de progresión.",
       "locationLabel": "Ubicación.",
       "locationBody": "Si concedes permiso de ubicación, usamos tu ubicación aproximada para ayudarte a descubrir sesiones de Modo Fiesta cercanas. No rastreamos tu ubicación en segundo plano ni guardamos historial.",
       "productAnalyticsLabel": "Analítica de producto.",
