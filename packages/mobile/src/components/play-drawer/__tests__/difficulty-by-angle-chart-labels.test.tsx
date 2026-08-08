@@ -5,8 +5,9 @@
 // grade formats — "V6 / 7A" is nearly three times the width of "V6", and the
 // label used to sit in a fixed 60px box regardless of how much room the bar
 // owned. These tests hold the wiring between DifficultyByAngleChart and
-// computeBarTopLabelLayout: one line while it fits, stacked onto two when the
-// column is tighter than the joined grade, vertical only as a last resort.
+// buildGradeBarLabels: one line while it fits, stacked onto two when the column
+// is tighter than the joined grade, and thinned out on a crowded board rather
+// than rotated (rotation shipped first and was unreadable — see the PR).
 import { createElement, useEffect, type ReactElement, type ReactNode } from 'react';
 import { render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -141,17 +142,20 @@ describe('DifficultyByAngleChart grade labels (#4164)', () => {
     expect(left).toBe(Math.round(((props.barWidth ?? 0) - boxWidth) / 2));
   });
 
-  it('stands the grade vertical once even its halves will not fit', () => {
-    render(<DifficultyByAngleChart data={bars(15, 'V13 / 8B+')} />);
+  it('thins a crowded 15-angle row out instead of standing the grades on end', () => {
+    const rising = bars(15, 'V6').map((bar, index) => ({ ...bar, gradeName: `V${3 + Math.floor(index / 2)}` }));
+    render(<DifficultyByAngleChart data={rising} />);
     const props = chartProps;
     expect(props).not.toBeNull();
     if (!props) return;
 
-    expect(labelLines(props)).toEqual(['V13 / 8B+']);
-    const rotation = labelStyles(props).find((style) => 'transform' in style);
-    expect(rotation).toEqual({ transform: [{ rotate: '-90deg' }], marginBottom: expect.any(Number) });
-    // The standing label buys its height out of the plot, not the section above.
-    expect(props.height).toBeLessThan(CHART_HEIGHT);
+    // Nothing rotates any more — that was the unreadable first attempt.
+    expect(labelStyles(props).some((style) => 'transform' in style)).toBe(false);
+    // Some bars go bare, and the ones that speak say a whole grade.
+    const withLabels = (props.data ?? []).filter((bar) => bar.topLabelComponent !== undefined);
+    expect(withLabels.length).toBeGreaterThan(0);
+    expect(withLabels.length).toBeLessThan(15);
+    expect(labelLines(props)).toEqual(['V3']);
   });
 
   it('leaves a single-format grade exactly as it was', () => {

@@ -5,9 +5,7 @@ import { Text } from '../Text';
 import { buildAscentChartScale, type AngleGradeBar } from './community-utils';
 import { useTheme } from '../../providers/theme-provider';
 import { gradeChartColor } from '../you/profile-chart-colors';
-import { splitGradeLabel } from '@boardsesh/play-view';
-import { computeBarTopLabelLayout } from '../../lib/chart/bar-top-label';
-import { estimateLabelWidth } from '../../lib/chart/label-metrics';
+import { buildGradeBarLabels } from './grade-bar-labels';
 import { borderRadius, spacing } from '../../theme/tokens';
 
 type DifficultyByAngleChartProps = {
@@ -66,37 +64,22 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
   // and give each its own wider box so the angle reads in full instead of "…".
   const rotateLabels = plotWidth > 0 && barWidth + barSpacing < MIN_HORIZONTAL_LABEL_WIDTH;
 
-  // Size every grade off the widest one so the whole row reads the same way. A
-  // grade may spill into the gap beside its bar; past that a both-formats grade
-  // ("V13 / 8B+") stacks onto two lines, and past that it turns vertical —
-  // anything rather than overlapping its neighbours (#4164).
-  // Widest as the axis renders it, not as it counts characters: " / " is worth
-  // about half a digit, so "V6 / 7A" draws narrower than its seven characters
-  // suggest and could otherwise out-vote a genuinely wider grade.
-  const longestGrade = useMemo(
-    () =>
-      data.reduce(
-        (longest, bar) => (estimateLabelWidth(bar.gradeName) > estimateLabelWidth(longest) ? bar.gradeName : longest),
-        '',
-      ),
-    [data],
+  // Fifteen angles leave each bar about 14px, which is narrower than "V10".
+  // Rather than shrink or rotate the grades — a rotated 11pt label between dense
+  // bars is unreadable (#4164) — stack the both-formats ones and, when even that
+  // will not fit, print a label only where the grade changes.
+  const grades = useMemo(() => data.map((bar) => bar.gradeName), [data]);
+  const gradeLabels = useMemo(
+    () => buildGradeBarLabels(grades, barWidth, barWidth + barSpacing),
+    [grades, barWidth, barSpacing],
   );
-  const labelLayout = computeBarTopLabelLayout(
-    longestGrade,
-    barWidth,
-    barWidth + barSpacing,
-    1, // the label pins its font below, so accessibility scaling can't widen it
-    splitGradeLabel(longestGrade),
-  );
-  const { rotated: rotateGrades, marginBottom: gradeMarginBottom } = labelLayout;
-  const stackGrades = labelLayout.lines.length > 1;
   // gifted boxes the top label to exactly one bar width. Widen it to the room
   // the grade actually needs and re-centre it over its own bar, or a "V6 / 7A"
   // spills right, over the bar beside it. Memoized on the two numbers it holds
   // so a parent re-render doesn't hand BarChart a fresh style object.
   const gradeBoxStyle = useMemo(
-    () => ({ marginBottom: spacing[1], width: labelLayout.width, left: labelLayout.left }),
-    [labelLayout.width, labelLayout.left],
+    () => ({ marginBottom: spacing[1], width: gradeLabels.width, left: gradeLabels.left }),
+    [gradeLabels.width, gradeLabels.left],
   );
 
   // Bars + axis scale only depend on the data, scheme and the label treatment —
@@ -107,13 +90,13 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
     const scale = buildAscentChartScale(data.map((bar) => bar.sends));
     // The single hardest angle (first max wins on ties) gets the redundant cue.
     const hardestAngle = data.reduce((peak, bar) => (bar.difficulty > peak.difficulty ? bar : peak)).angle;
-    const barData = data.map((bar) => {
+    const barData = data.map((bar, barIndex) => {
       const fill = gradeChartColor(bar.gradeName, colorScheme);
       const isHardest = bar.angle === hardestAngle;
       const topRadius = isHardest ? PEAK_BAR_RADIUS : BAR_RADIUS;
-      // Every bar wears the treatment the widest grade needed, so the row stays
-      // uniform; a bar with a shorter grade just fills less of its box.
-      const lines = stackGrades ? splitGradeLabel(bar.gradeName) : [bar.gradeName];
+      // Empty on a bar the crowded-row rule skipped — its grade still reads off
+      // the bar's colour, and the labels that remain mark each grade band.
+      const lines = gradeLabels.linesByBar[barIndex] ?? [];
       return {
         value: scale.plot(bar.sends),
         frontColor: fill,
@@ -124,25 +107,25 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
         barBorderBottomRightRadius: 0,
         // The font is pinned (no Dynamic Type growth) so the measured layout
         // above stays true to what actually renders.
-        topLabelComponent: (): ReactNode => (
-          <View style={styles.topLabelWrap} pointerEvents="none">
-            {lines.map((line, lineIndex) => (
-              <Text
-                key={`${lineIndex}-${line}`}
-                variant="caption2"
-                color={fill}
-                style={[
-                  isHardest ? styles.topLabelPeak : styles.topLabel,
-                  rotateGrades ? { transform: [{ rotate: '-90deg' }], marginBottom: gradeMarginBottom } : null,
-                ]}
-                numberOfLines={1}
-                allowFontScaling={false}
-              >
-                {line}
-              </Text>
-            ))}
-          </View>
-        ),
+        topLabelComponent:
+          lines.length === 0
+            ? undefined
+            : (): ReactNode => (
+                <View style={styles.topLabelWrap} pointerEvents="none">
+                  {lines.map((line, lineIndex) => (
+                    <Text
+                      key={`${lineIndex}-${line}`}
+                      variant="caption2"
+                      color={fill}
+                      style={isHardest ? styles.topLabelPeak : styles.topLabel}
+                      numberOfLines={1}
+                      allowFontScaling={false}
+                    >
+                      {line}
+                    </Text>
+                  ))}
+                </View>
+              ),
       };
     });
     return {
@@ -152,7 +135,7 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
       yAxisLabelTexts: scale.yAxisLabelTexts,
       isLog: scale.isLog,
     };
-  }, [data, colorScheme, stackGrades, rotateGrades, gradeMarginBottom]);
+  }, [data, colorScheme, gradeLabels]);
 
   const onLayout = (event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width);
 
@@ -180,9 +163,9 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
         <BarChart
           data={model.barData}
           width={plotWidth - 8}
-          // Give a stacked or rotated grade its extra line(s) out of the plot,
-          // so the label grows into the chart instead of over the section above.
-          height={CHART_HEIGHT - labelLayout.headroom}
+          // A stacked grade takes its second line out of the plot, so the label
+          // grows into the chart instead of over the section above.
+          height={CHART_HEIGHT - gradeLabels.headroom}
           barWidth={barWidth}
           spacing={barSpacing}
           initialSpacing={initialSpacing}

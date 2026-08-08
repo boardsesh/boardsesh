@@ -3,12 +3,11 @@
 // about 13px wide, and gifted-charts boxes the top label to exactly one bar
 // width, so "128" lost its digits. These pin the sizing decisions.
 //
-// Issue #4164 reused the same maths for the play drawer's "Community" chart,
-// where the label is a grade rather than a count and a both-formats grade
-// ("V6 / 7A") is long enough to overlap its neighbours. Stacking cases below.
+// Grades are NOT layed out here: they repeat across neighbouring bars and read
+// better thinned out than rotated (#4164), which is `grade-bar-labels.ts`.
 import { describe, expect, it } from 'vitest';
 import { computeBarTopLabelLayout, longestBarValue } from '../bar-top-label';
-import { CHART_LABEL_LINE_HEIGHT, estimateLabelWidth } from '../label-metrics';
+import { estimateLabelWidth } from '../label-metrics';
 
 describe('longestBarValue', () => {
   it('picks the value with the most digits, not the largest', () => {
@@ -45,7 +44,6 @@ describe('computeBarTopLabelLayout', () => {
     expect(layout.width).toBe(13);
     expect(layout.left).toBe(0);
     expect(layout.headroom).toBe(0);
-    expect(layout.lines).toEqual(['7']);
   });
 
   it('borrows the gap beside the bar when that is enough room', () => {
@@ -79,35 +77,5 @@ describe('computeBarTopLabelLayout', () => {
   it('rotates at a bar width that was fine, once accessibility text scales up', () => {
     expect(computeBarTopLabelLayout('128', 24, 30, 1).rotated).toBe(false);
     expect(computeBarTopLabelLayout('128', 24, 30, 1.5).rotated).toBe(true);
-  });
-
-  it('keeps a both-formats grade on one line when the column can hold it', () => {
-    const layout = computeBarTopLabelLayout('V6 / 7A', 56, 62, 1, ['V6', '7A']);
-    expect(layout.rotated).toBe(false);
-    expect(layout.lines).toEqual(['V6 / 7A']);
-    expect(layout.headroom).toBe(0);
-  });
-
-  it('stacks a both-formats grade over a narrow bar instead of rotating it', () => {
-    // "V13 / 8B+" needs ~64px; a 30px column can still hold "V13" and "8B+".
-    const layout = computeBarTopLabelLayout('V13 / 8B+', 24, 30, 1, ['V13', '8B+']);
-    expect(layout.rotated).toBe(false);
-    expect(layout.lines).toEqual(['V13', '8B+']);
-    // Two lines of text, so the chart owes it exactly one extra line of room.
-    expect(layout.headroom).toBe(CHART_LABEL_LINE_HEIGHT);
-    expect(layout.width).toBeLessThanOrEqual(30);
-  });
-
-  it('rotates a both-formats grade once even its parts do not fit', () => {
-    const layout = computeBarTopLabelLayout('V13 / 8B+', 10, 12, 1, ['V13', '8B+']);
-    expect(layout.rotated).toBe(true);
-    expect(layout.lines).toEqual(['V13 / 8B+']);
-  });
-
-  it('rotates rather than stacks when the caller offers no split', () => {
-    // A count has no sane place to break, so it must never come back as lines.
-    const layout = computeBarTopLabelLayout('128', 13, 16);
-    expect(layout.rotated).toBe(true);
-    expect(layout.lines).toEqual(['128']);
   });
 });
