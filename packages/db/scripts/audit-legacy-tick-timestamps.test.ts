@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, readdir, stat, symlink, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -57,6 +57,15 @@ function createControlledTimeoutScheduler(): {
       },
     },
   };
+}
+
+// `validateOutputPath` refuses to write beneath a symlinked directory, and on
+// macOS `os.tmpdir()` is `/var/folders/...` — `/var` being a symlink to
+// `/private/var`. Without the realpath, every fixture below would trip that
+// guard instead of the behaviour it means to assert, so the suite would pass on
+// Linux/CI and fail on a Mac.
+async function createFixtureDirectory(prefix: string): Promise<string> {
+  return realpath(await mkdtemp(join(tmpdir(), prefix)));
 }
 
 function validArgs(outputPath: string): string[] {
@@ -252,7 +261,7 @@ void describe('JSONL output safety', () => {
   });
 
   void it('rejects existing and symlink output targets', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'boardsesh-tick-audit-output-'));
+    const directory = await createFixtureDirectory('boardsesh-tick-audit-output-');
     const existing = join(directory, 'existing.jsonl');
     const symlinkPath = join(directory, 'symlink.jsonl');
     await writeFile(existing, 'do not overwrite');
@@ -262,14 +271,14 @@ void describe('JSONL output safety', () => {
   });
 
   void it('rejects an invalid output before resolving any database configuration', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'boardsesh-tick-audit-preflight-'));
+    const directory = await createFixtureDirectory('boardsesh-tick-audit-preflight-');
     const existing = join(directory, 'existing.jsonl');
     await writeFile(existing, 'do not overwrite');
     await assert.rejects(runAuditCommand(parseArgs(validArgs(existing))), /existing output path/);
   });
 
   void it('rejects a tracked path even when the working-tree file is absent', async () => {
-    const repository = await mkdtemp(join(tmpdir(), 'boardsesh-tick-audit-repo-'));
+    const repository = await createFixtureDirectory('boardsesh-tick-audit-repo-');
     spawnSync('git', ['init', '-q'], { cwd: repository });
     const tracked = join(repository, 'report.jsonl');
     await writeFile(tracked, 'tracked');
@@ -279,8 +288,8 @@ void describe('JSONL output safety', () => {
   });
 
   void it('rejects a tracked output in the repository containing its parent even when cwd is another repository', async () => {
-    const callerRepository = await mkdtemp(join(tmpdir(), 'boardsesh-tick-audit-caller-repo-'));
-    const outputRepository = await mkdtemp(join(tmpdir(), 'boardsesh-tick-audit-output-repo-'));
+    const callerRepository = await createFixtureDirectory('boardsesh-tick-audit-caller-repo-');
+    const outputRepository = await createFixtureDirectory('boardsesh-tick-audit-output-repo-');
     spawnSync('git', ['init', '-q'], { cwd: callerRepository });
     spawnSync('git', ['init', '-q'], { cwd: outputRepository });
     const tracked = join(outputRepository, 'external-report.jsonl');
@@ -291,13 +300,13 @@ void describe('JSONL output safety', () => {
   });
 
   void it('fails closed when the output parent has an indeterminate Git repository probe', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'boardsesh-tick-audit-broken-repo-'));
+    const directory = await createFixtureDirectory('boardsesh-tick-audit-broken-repo-');
     await writeFile(join(directory, '.git'), 'gitdir: /definitely/missing/boardsesh-audit-gitdir\n');
     await assert.rejects(validateOutputPath(join(directory, 'report.jsonl'), directory), /Could not determine Git/);
   });
 
   void it('ignores an inherited Git ceiling that would hide the containing repository', async () => {
-    const repository = await mkdtemp(join(tmpdir(), 'boardsesh-tick-audit-ceiling-repo-'));
+    const repository = await createFixtureDirectory('boardsesh-tick-audit-ceiling-repo-');
     spawnSync('git', ['init', '-q'], { cwd: repository });
     const nestedDirectory = join(repository, 'nested');
     await mkdir(nestedDirectory);
@@ -311,7 +320,7 @@ void describe('JSONL output safety', () => {
   });
 
   void it('ignores an inherited alternate Git index that would hide a tracked output', async () => {
-    const repository = await mkdtemp(join(tmpdir(), 'boardsesh-tick-audit-index-repo-'));
+    const repository = await createFixtureDirectory('boardsesh-tick-audit-index-repo-');
     spawnSync('git', ['init', '-q'], { cwd: repository });
     const tracked = join(repository, 'report.jsonl');
     await writeFile(tracked, 'tracked');
@@ -323,7 +332,7 @@ void describe('JSONL output safety', () => {
   });
 
   void it('treats pathspec-magic output filenames literally', async () => {
-    const repository = await mkdtemp(join(tmpdir(), 'boardsesh-tick-audit-pathspec-repo-'));
+    const repository = await createFixtureDirectory('boardsesh-tick-audit-pathspec-repo-');
     spawnSync('git', ['init', '-q'], { cwd: repository });
     const filename = ':(literal)report.jsonl';
     const tracked = join(repository, filename);
@@ -334,13 +343,13 @@ void describe('JSONL output safety', () => {
   });
 
   void it('allows a real non-repository output only after conclusive repository discovery', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'boardsesh-tick-audit-non-repo-'));
+    const directory = await createFixtureDirectory('boardsesh-tick-audit-non-repo-');
     const output = join(directory, 'report.jsonl');
     assert.equal(await validateOutputPath(output, directory), output);
   });
 
   void it('publishes atomically, hashes canonical records, and excludes the runtime footer from the digest', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'boardsesh-tick-audit-artifact-'));
+    const directory = await createFixtureDirectory('boardsesh-tick-audit-artifact-');
     const first = join(directory, 'first.jsonl');
     const second = join(directory, 'second.jsonl');
     const firstResult = await writeAuditArtifact(
@@ -369,7 +378,7 @@ void describe('JSONL output safety', () => {
   });
 
   void it('leaves no requested output or partial file when production fails', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'boardsesh-tick-audit-failure-'));
+    const directory = await createFixtureDirectory('boardsesh-tick-audit-failure-');
     const output = join(directory, 'failed.jsonl');
     await assert.rejects(
       writeAuditArtifact(
@@ -386,7 +395,7 @@ void describe('JSONL output safety', () => {
   });
 
   void it('rejects unsafe fields before publication', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'boardsesh-tick-audit-privacy-'));
+    const directory = await createFixtureDirectory('boardsesh-tick-audit-privacy-');
     await assert.rejects(
       writeAuditArtifact(
         join(directory, 'unsafe.jsonl'),
