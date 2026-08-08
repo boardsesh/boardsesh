@@ -1,7 +1,8 @@
 /**
  * Layout maths for the label printed above a chart bar — the ascent count on
  * You -> Progress "Flash vs Redpoint" (#3779) and the grade on the play
- * drawer's "Community" ascents-by-angle chart (#4164).
+ * drawer's "Community" ascents-by-angle chart (#4164). Pure geometry: what a
+ * label may be broken into is the caller's business, passed in as `stackInto`.
  *
  * gifted-charts boxes a bar's top label in a container roughly one bar wide, so
  * on a phone — where seven or more bars squeeze each one down to about 13px — a
@@ -10,7 +11,6 @@
  * needs and, when the column can't hold it, stack it on two lines or stand it
  * on end so it reads vertically instead of being clipped.
  */
-import { splitGradeLabel } from '@boardsesh/play-view';
 import { CHART_LABEL_LINE_HEIGHT, estimateLabelWidth } from './label-metrics';
 
 /** Matches `styles.barTopLabel`: the gap between the label and the bar top. */
@@ -43,18 +43,23 @@ export type BarTopLabelLayout = {
  *
  * - Fits on one line in the column: leave it alone (the pre-#3779 behaviour).
  *   That covers borrowing the gap beside the bar — the box widens and re-centres.
- * - Too wide, but the label is two grades joined ("V6 / 7A"): stack the parts on
- *   two lines, which costs one line of height and keeps the text upright.
+ * - Too wide, but `stackInto` breaks it into pieces that do fit: stack them,
+ *   which costs a line of height and keeps the text upright.
  * - Still too wide: rotate it vertical, which costs height instead of width.
  *
  * `columnWidth` is the horizontal room a label may claim before it would collide
  * with the next label — one bar plus the gap to the bar beside it.
+ *
+ * `stackInto` is how the caller would break this label up if it had to — a
+ * both-formats grade passes `splitGradeLabel(label)` (`["V6", "7A"]`), a plain
+ * count passes nothing, because there is no sane place to split "128".
  */
 export function computeBarTopLabelLayout(
   label: string,
   barWidth: number,
   columnWidth: number,
   fontScale = 1,
+  stackInto: readonly string[] = [label],
 ): BarTopLabelLayout {
   const lineHeight = Math.ceil(CHART_LABEL_LINE_HEIGHT * fontScale);
   const textWidth = estimateLabelWidth(label, fontScale);
@@ -74,16 +79,15 @@ export function computeBarTopLabelLayout(
 
   // A "both formats" grade is two short labels wearing one long one — split it
   // back apart before resorting to rotation, which is slower to read.
-  const parts = splitGradeLabel(label);
-  if (parts.length > 1) {
-    const widestPart = parts.reduce((widest, part) => Math.max(widest, estimateLabelWidth(part, fontScale)), 0);
+  if (stackInto.length > 1) {
+    const widestPart = stackInto.reduce((widest, part) => Math.max(widest, estimateLabelWidth(part, fontScale)), 0);
     if (widestPart <= columnWidth) {
       const width = Math.max(barWidth, Math.min(columnWidth, widestPart));
-      const height = lineHeight * parts.length;
+      const height = lineHeight * stackInto.length;
       return {
         width,
         left: Math.round((barWidth - width) / 2),
-        lines: parts,
+        lines: [...stackInto],
         rotated: false,
         marginBottom: BASE_LABEL_GAP,
         headroom: height - lineHeight,

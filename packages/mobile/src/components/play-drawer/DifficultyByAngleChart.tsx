@@ -73,7 +73,13 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
     () => data.reduce((longest, bar) => (bar.gradeName.length > longest.length ? bar.gradeName : longest), ''),
     [data],
   );
-  const labelLayout = computeBarTopLabelLayout(longestGrade, barWidth, barWidth + barSpacing);
+  const labelLayout = computeBarTopLabelLayout(
+    longestGrade,
+    barWidth,
+    barWidth + barSpacing,
+    1, // the label pins its font below, so accessibility scaling can't widen it
+    splitGradeLabel(longestGrade),
+  );
   const { rotated: rotateGrades, marginBottom: gradeMarginBottom } = labelLayout;
   const stackGrades = labelLayout.lines.length > 1;
 

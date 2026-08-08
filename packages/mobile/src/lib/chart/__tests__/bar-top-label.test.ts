@@ -69,7 +69,7 @@ describe('computeBarTopLabelLayout', () => {
   });
 
   it('keeps a both-formats grade on one line when the column can hold it', () => {
-    const layout = computeBarTopLabelLayout('V6 / 7A', 56, 62);
+    const layout = computeBarTopLabelLayout('V6 / 7A', 56, 62, 1, ['V6', '7A']);
     expect(layout.rotated).toBe(false);
     expect(layout.lines).toEqual(['V6 / 7A']);
     expect(layout.headroom).toBe(0);
@@ -77,7 +77,7 @@ describe('computeBarTopLabelLayout', () => {
 
   it('stacks a both-formats grade over a narrow bar instead of rotating it', () => {
     // "V13 / 8B+" needs ~64px; a 30px column can still hold "V13" and "8B+".
-    const layout = computeBarTopLabelLayout('V13 / 8B+', 24, 30);
+    const layout = computeBarTopLabelLayout('V13 / 8B+', 24, 30, 1, ['V13', '8B+']);
     expect(layout.rotated).toBe(false);
     expect(layout.lines).toEqual(['V13', '8B+']);
     // Two lines of text, so the chart owes it one extra line of headroom.
@@ -86,12 +86,15 @@ describe('computeBarTopLabelLayout', () => {
   });
 
   it('rotates a both-formats grade once even its parts do not fit', () => {
-    const layout = computeBarTopLabelLayout('V13 / 8B+', 10, 12);
+    const layout = computeBarTopLabelLayout('V13 / 8B+', 10, 12, 1, ['V13', '8B+']);
     expect(layout.rotated).toBe(true);
     expect(layout.lines).toEqual(['V13 / 8B+']);
   });
 
-  it('never stacks a plain count — it has no parts to split', () => {
-    expect(computeBarTopLabelLayout('128', 13, 16).lines).toEqual(['128']);
+  it('rotates rather than stacks when the caller offers no split', () => {
+    // A count has no sane place to break, so it must never come back as lines.
+    const layout = computeBarTopLabelLayout('128', 13, 16);
+    expect(layout.rotated).toBe(true);
+    expect(layout.lines).toEqual(['128']);
   });
 });

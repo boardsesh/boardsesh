@@ -14,11 +14,13 @@ import type { AngleGradeBar } from '../community-utils';
 
 /** A phone-width play drawer. Only the width comes from onLayout. */
 const DRAWER_WIDTH = 320;
+/** DifficultyByAngleChart's own CHART_HEIGHT — the plot it draws at full size. */
+const CHART_HEIGHT = 150;
 
 vi.mock('react-native', () => ({
   View: ({ children, onLayout }: { children?: ReactNode; onLayout?: (event: unknown) => void }) => {
     useEffect(() => {
-      onLayout?.({ nativeEvent: { layout: { width: DRAWER_WIDTH, height: 150, x: 0, y: 0 } } });
+      onLayout?.({ nativeEvent: { layout: { width: DRAWER_WIDTH, height: CHART_HEIGHT, x: 0, y: 0 } } });
       // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once on mount, matching a real layout pass
     }, []);
     return createElement('div', null, children);
@@ -149,7 +151,7 @@ describe('DifficultyByAngleChart grade labels (#4164)', () => {
     const rotation = labelStyles(props).find((style) => 'transform' in style);
     expect(rotation).toEqual({ transform: [{ rotate: '-90deg' }], marginBottom: expect.any(Number) });
     // The standing label buys its height out of the plot, not the section above.
-    expect(props.height).toBeLessThan(150);
+    expect(props.height).toBeLessThan(CHART_HEIGHT);
   });
 
   it('leaves a single-format grade exactly as it was', () => {
@@ -160,6 +162,6 @@ describe('DifficultyByAngleChart grade labels (#4164)', () => {
 
     expect(labelLines(props)).toEqual(['V6']);
     expect(labelStyles(props).some((style) => 'transform' in style)).toBe(false);
-    expect(props.height).toBe(150);
+    expect(props.height).toBe(CHART_HEIGHT);
   });
 });
