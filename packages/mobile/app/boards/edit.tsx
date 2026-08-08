@@ -9,6 +9,7 @@ import { useBoard, useProfile, useUpdateBoard, useLinkBoardToGym } from '../../s
 import { useActiveBoard, useSetActiveBoard } from '../../src/lib/graphql/use-active-board';
 import {
   extractGraphqlMessage,
+  isBoardLimitError,
   isDuplicateBoardError,
   readDuplicateBoardError,
 } from '../../src/lib/graphql/extract-error-message';
@@ -234,6 +235,16 @@ function EditBoardForm({ board }: { board: UserBoard }) {
               },
             ],
           );
+          return;
+        }
+        // Restoring a soft-deleted board while the owner is already at the
+        // 50-board cap adds a live board, so the server can reject an edit the
+        // same way it rejects a create. Same actionable copy as create's cap
+        // message — the fix is the same (delete one you don't use) — rather
+        // than the raw server message.
+        if (isBoardLimitError(error)) {
+          setUpdateError(t('mobile.create.limitReached'));
+          setSubmitting(false);
           return;
         }
         // Covers the config-locked race and everything else the server enforces

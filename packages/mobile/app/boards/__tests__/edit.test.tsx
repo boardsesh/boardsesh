@@ -245,4 +245,27 @@ describe('EditBoard', () => {
     expect(alertMock).not.toHaveBeenCalled();
     expect(backMock).not.toHaveBeenCalled();
   });
+
+  it('names the account cap instead of echoing the server message', async () => {
+    // Restoring a soft-deleted board adds a live board, so an edit can hit the
+    // same 50-board cap a create does. Same actionable copy as create — not
+    // the raw server message, which never explains the fix.
+    updateBoardMock.mockRejectedValueOnce({
+      response: {
+        errors: [
+          {
+            message: 'You have reached the maximum of 50 boards for one account',
+            extensions: { code: 'BOARD_LIMIT_REACHED', maxBoards: 50 },
+          },
+        ],
+      },
+    });
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
+    expect(screen.getByTestId('error').textContent).toBe('mobile.create.limitReached');
+    expect(alertMock).not.toHaveBeenCalled();
+    expect(backMock).not.toHaveBeenCalled();
+  });
 });
