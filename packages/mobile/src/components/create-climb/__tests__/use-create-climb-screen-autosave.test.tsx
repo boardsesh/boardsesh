@@ -53,8 +53,15 @@ vi.mock('react-native', () => ({
   AppState: { addEventListener: appState.addEventListener },
 }));
 vi.mock('@boardsesh/shared-schema', () => ({
+  getMoonBoardMethod: () => null,
   isNoMatchClimb: () => false,
   withNoMatch: (description: string) => description,
+}));
+vi.mock('@boardsesh/board-config', () => ({
+  convertLitUpHoldsMapToMoonBoardHolds: () => ({ start: [], hand: [], finish: [] }),
+  encodeMoonBoardHoldsToFrames: () => '',
+  MOONBOARD_ANGLES: [25, 40],
+  MOONBOARD_GRADES: [],
 }));
 vi.mock('@boardsesh/create-climb-react', () => ({
   useCreateClimb: () => createClimb,
@@ -67,6 +74,8 @@ vi.mock('@boardsesh/board-react', () => ({
     isAuthenticated: true,
     saveClimb: vi.fn(),
     updateClimb: vi.fn(),
+    saveMoonBoardClimb: vi.fn(),
+    updateMoonBoardClimb: vi.fn(),
   }),
   isDuplicateClimbError: () => false,
 }));
@@ -79,6 +88,7 @@ vi.mock('../../../providers/auth-provider', () => ({
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: { displayName: 'Tester' } }),
   useClimb: () => ({ data: undefined }),
+  useMyRoles: () => ({ data: [] }),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => ({ setCurrentClimb: vi.fn() }),

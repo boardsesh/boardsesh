@@ -72,6 +72,9 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     searchClimbs(input: ClimbSearchInput!): ClimbSearchResult!
 
+    "Community hold usage for one board configuration."
+    holdHeatmap(input: HoldHeatmapInput!): [HoldStat!]!
+
     """
     Check whether MoonBoard climbs with exact hold-role selections already exist.
     Returns one result per submitted candidate.

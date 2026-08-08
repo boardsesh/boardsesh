@@ -55,7 +55,7 @@ export type {
   SettledOfflineTickAscent,
 } from './climb-stats-store';
 export { useUpdateTick, useDeleteTick } from './use-mutate-tick';
-export { useSaveClimb, useUpdateClimb } from './use-save-climb';
+export { useSaveClimb, useUpdateClimb, useSaveMoonBoardClimb, useUpdateMoonBoardClimb } from './use-save-climb';
 
 export {
   BoardProvider,

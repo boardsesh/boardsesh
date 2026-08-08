@@ -10,7 +10,9 @@ import {
   isNoMatchClimb,
   withCharacteristic,
   withNoMatch,
+  getMoonBoardMethod,
 } from '@boardsesh/shared-schema';
+import { holdIdToCoordinate } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/board-constants';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -22,9 +24,11 @@ import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/h
 import { requireAdminOrLeader } from '../social/roles';
 import {
   buildMoonBoardClimbHoldRows,
+  buildMoonBoardHoldSignature,
   buildMoonBoardDuplicateError,
   encodeMoonBoardHoldsToFrames,
   findMoonBoardDuplicateMatch,
+  normalizeMoonBoardHolds,
 } from './moonboard-duplicates';
 import {
   CLIMB_DUPLICATE_ERROR_CODE,
@@ -40,6 +44,7 @@ import {
   SaveClimbInputSchema,
   SaveMoonBoardClimbInputSchema,
   UpdateClimbInputSchema,
+  UpdateMoonBoardClimbInputSchema,
 } from '../../../validation/schemas';
 
 type SaveClimbArgs = { input: unknown };
@@ -268,15 +273,22 @@ export const climbMutations = {
     const validated = validateInput(SaveMoonBoardClimbInputSchema, input, 'input');
     const isDraft = validated.isDraft ?? false;
     const isListed = !isDraft;
+    const normalizedHolds = normalizeMoonBoardHolds(validated.holds);
 
     if (validated.boardType !== 'moonboard') {
       throw new Error('saveMoonBoardClimb is only supported for boardType=moonboard');
     }
 
-    // Benchmarks are a trusted, community-wide signal — only admins and
-    // community leaders can flag one at creation. (Changing benchmark status
-    // afterwards goes through the community proposals system.) Gate before any
-    // work so a non-privileged request is rejected cleanly.
+    if (
+      !isDraft &&
+      (!normalizedHolds.some((hold) => hold.holdState === 'STARTING') ||
+        !normalizedHolds.some((hold) => hold.holdState === 'FINISH'))
+    ) {
+      throw new Error('Published MoonBoard climbs require at least one starting hold and one finishing hold');
+    }
+    // Benchmarks are a trusted, community-wide signal. Only admins and
+    // community leaders can set one at creation or change its status later.
+    // Gate before any work so a non-privileged request is rejected cleanly.
     if (validated.isBenchmark) {
       await requireAdminOrLeader(ctx, 'moonboard');
     }
@@ -291,111 +303,105 @@ export const climbMutations = {
     const { displayName, name, avatarUrl } = await getUserProfile(ctx.userId!);
     const preferredSetter = validated.setter || displayName || name || null;
 
-    // The legacy MoonBoard-specific lookup also covers climbs that have no
-    // rows in board_climb_holds and live only as a `frames` text blob (Aurora
-    // imports from before the holds table was the authoritative store), so
-    // keep it as the gate for this board. Wrap the result in a GraphQLError
-    // with the unified CLIMB_IS_DUPLICATE extension so the frontend's
-    // duplicate-UX handler can react the same way across boards.
-    if (!isDraft) {
-      const duplicateMatch = await findMoonBoardDuplicateMatch(validated.layoutId, validated.angle, validated.holds);
-      if (duplicateMatch) {
-        throw new GraphQLError(buildMoonBoardDuplicateError(duplicateMatch.existingClimbName), {
-          extensions: {
-            code: CLIMB_DUPLICATE_ERROR_CODE,
-            existingClimbUuid: duplicateMatch.existingClimbUuid,
-            existingClimbName: duplicateMatch.existingClimbName,
-          },
-        });
-      }
-    }
-
     const frames = encodeMoonBoardHoldsToFrames(validated.holds);
-
-    await db.insert(UNIFIED_TABLES.climbs).values({
-      boardType: validated.boardType,
-      uuid,
-      layoutId: validated.layoutId,
-      userId: ctx.userId!,
-      setterId: null,
-      setterUsername: preferredSetter,
-      name: validated.name,
-      description: validated.description ?? '',
-      angle: validated.angle,
-      framesCount: 1,
-      framesPace: 0,
-      frames,
-      isDraft,
-      isListed,
-      createdAt: now,
-      publishedAt,
-      synced: false,
-      syncError: null,
-      characteristics,
-    });
-
-    const holdRows = buildMoonBoardClimbHoldRows(uuid, validated.holds);
-    if (holdRows.length > 0) {
-      await db.insert(dbSchema.boardClimbHolds).values(holdRows).onConflictDoNothing();
-    }
-
-    // Seed a stats row so the climb is visible to the global search, which
-    // uses an INNER JOIN against board_climb_stats.
-    //
-    // Drafts: search already filters by `is_draft = false` (create-climb-filters
-    // baseConditions), so a stats row on a draft is not directly search-visible.
-    // The seed is still important when the user supplied a grade — board_climb_stats
-    // is the only place we persist the resolved difficulty, and skipping the row
-    // would lose the grade through draft → publish (updateClimb's stats seed has
-    // no grade source to reconstruct it from). So:
-    //   - draft + grade  → seed the row (preserves grade; search filter masks the draft)
-    //   - draft + no grade → skip the seed (matches saveClimb's gate; updateClimb
-    //                        will create a barebones row at publish time)
-    //   - non-draft + grade → seed with grade (current behaviour)
-    //   - non-draft + no grade → seed barebones (current behaviour)
-    // The uuid is freshly generated per call, so the inserts can never conflict —
-    // both branches use `onConflictDoNothing` for consistency with saveClimb.
     const difficultyId = await resolveDifficultyId(validated.boardType, validated.userGrade);
-    if (difficultyId !== null) {
-      await db
-        .insert(dbSchema.boardClimbStats)
-        .values({
-          boardType: validated.boardType,
-          climbUuid: uuid,
-          angle: validated.angle,
-          displayDifficulty: difficultyId,
-          benchmarkDifficulty: validated.isBenchmark ? difficultyId : null,
-          ascensionistCount: 0,
-          difficultyAverage: difficultyId,
-          qualityAverage: null,
-          faUsername: validated.setter || null,
-          faAt: null,
-        })
-        .onConflictDoNothing({
-          target: [
-            dbSchema.boardClimbStats.boardType,
-            dbSchema.boardClimbStats.climbUuid,
-            dbSchema.boardClimbStats.angle,
-          ],
-        });
-    } else if (!isDraft) {
-      await db
-        .insert(dbSchema.boardClimbStats)
-        .values({
-          boardType: validated.boardType,
-          climbUuid: uuid,
-          angle: validated.angle,
-          ascensionistCount: 0,
-          faUsername: validated.setter || null,
-        })
-        .onConflictDoNothing({
-          target: [
-            dbSchema.boardClimbStats.boardType,
-            dbSchema.boardClimbStats.climbUuid,
-            dbSchema.boardClimbStats.angle,
-          ],
-        });
+    if (validated.isBenchmark && difficultyId === null) {
+      throw new Error('A benchmark MoonBoard climb requires a valid grade');
     }
+    const gateSignature = buildMoonBoardHoldSignature(normalizedHolds);
+
+    await db.transaction(async (tx) => {
+      if (!isDraft) {
+        await acquireDuplicateGateLock(tx, 'moonboard', validated.layoutId, gateSignature);
+        // This transaction-local lookup covers both normalized hold rows and
+        // legacy climbs that only have a frames blob.
+        const duplicateMatch = await findMoonBoardDuplicateMatch(
+          validated.layoutId,
+          validated.angle,
+          validated.holds,
+          undefined,
+          tx,
+        );
+        if (duplicateMatch) {
+          throw new GraphQLError(buildMoonBoardDuplicateError(duplicateMatch.existingClimbName), {
+            extensions: {
+              code: CLIMB_DUPLICATE_ERROR_CODE,
+              existingClimbUuid: duplicateMatch.existingClimbUuid,
+              existingClimbName: duplicateMatch.existingClimbName,
+            },
+          });
+        }
+      }
+
+      await tx.insert(UNIFIED_TABLES.climbs).values({
+        boardType: validated.boardType,
+        uuid,
+        layoutId: validated.layoutId,
+        userId: ctx.userId!,
+        setterId: null,
+        setterUsername: preferredSetter,
+        name: validated.name,
+        description: validated.description ?? '',
+        angle: validated.angle,
+        framesCount: 1,
+        framesPace: 0,
+        frames,
+        isDraft,
+        isListed,
+        createdAt: now,
+        publishedAt,
+        synced: false,
+        syncError: null,
+        characteristics,
+      });
+
+      const holdRows = buildMoonBoardClimbHoldRows(uuid, validated.holds);
+      if (holdRows.length > 0) {
+        await tx.insert(dbSchema.boardClimbHolds).values(holdRows).onConflictDoNothing();
+      }
+      await populateDenormalizedColumns(tx, 'moonboard', [uuid]);
+
+      if (difficultyId !== null) {
+        await tx
+          .insert(dbSchema.boardClimbStats)
+          .values({
+            boardType: validated.boardType,
+            climbUuid: uuid,
+            angle: validated.angle,
+            displayDifficulty: difficultyId,
+            benchmarkDifficulty: validated.isBenchmark ? difficultyId : null,
+            ascensionistCount: 0,
+            difficultyAverage: difficultyId,
+            qualityAverage: null,
+            faUsername: validated.setter || null,
+            faAt: null,
+          })
+          .onConflictDoNothing({
+            target: [
+              dbSchema.boardClimbStats.boardType,
+              dbSchema.boardClimbStats.climbUuid,
+              dbSchema.boardClimbStats.angle,
+            ],
+          });
+      } else if (!isDraft) {
+        await tx
+          .insert(dbSchema.boardClimbStats)
+          .values({
+            boardType: validated.boardType,
+            climbUuid: uuid,
+            angle: validated.angle,
+            ascensionistCount: 0,
+            faUsername: validated.setter || null,
+          })
+          .onConflictDoNothing({
+            target: [
+              dbSchema.boardClimbStats.boardType,
+              dbSchema.boardClimbStats.climbUuid,
+              dbSchema.boardClimbStats.angle,
+            ],
+          });
+      }
+    });
 
     if (!isDraft) {
       await publishSocialEvent({
@@ -420,6 +426,337 @@ export const climbMutations = {
     }
 
     return { uuid, synced: false, createdAt: now, publishedAt };
+  },
+
+  updateMoonBoardClimb: async (
+    _: unknown,
+    { input }: { input: unknown },
+    ctx: ConnectionContext,
+  ): Promise<UpdateClimbResult> => {
+    requireAuthenticated(ctx);
+    await applyRateLimit(ctx, 20, 'updateMoonBoardClimb');
+    const validated = validateInput(UpdateMoonBoardClimbInputSchema, input, 'input');
+
+    // Benchmark membership is curated in both directions. Otherwise any setter
+    // could remove the benchmark flag from a climb they originally created.
+    if (validated.isBenchmark !== undefined) {
+      await requireAdminOrLeader(ctx, 'moonboard');
+    }
+
+    const [existing] = await db
+      .select({
+        uuid: dbSchema.boardClimbs.uuid,
+        userId: dbSchema.boardClimbs.userId,
+        name: dbSchema.boardClimbs.name,
+        description: dbSchema.boardClimbs.description,
+        isDraft: dbSchema.boardClimbs.isDraft,
+        publishedAt: dbSchema.boardClimbs.publishedAt,
+        createdAt: dbSchema.boardClimbs.createdAt,
+        angle: dbSchema.boardClimbs.angle,
+        layoutId: dbSchema.boardClimbs.layoutId,
+        frames: dbSchema.boardClimbs.frames,
+        setterUsername: dbSchema.boardClimbs.setterUsername,
+        characteristics: dbSchema.boardClimbs.characteristics,
+      })
+      .from(dbSchema.boardClimbs)
+      .where(and(eq(dbSchema.boardClimbs.uuid, validated.uuid), eq(dbSchema.boardClimbs.boardType, 'moonboard')))
+      .limit(1);
+
+    if (!existing) throw new Error('Climb not found');
+    if (existing.userId !== ctx.userId) throw new Error('You can only update your own climbs');
+
+    const currentlyDraft = existing.isDraft === true;
+    if (!currentlyDraft) {
+      if (!existing.publishedAt) throw new Error('This climb can no longer be edited');
+      const publishedMs = Date.parse(existing.publishedAt);
+      if (!Number.isFinite(publishedMs) || Date.now() - publishedMs > 24 * 60 * 60 * 1000) {
+        throw new Error('The 24 hour edit window has expired');
+      }
+    }
+
+    // Only drafts may transition state. False or legacy NULL rows are already
+    // published and cannot be moved back to draft.
+    const nextIsDraft = currentlyDraft ? validated.isDraft !== false : false;
+    const transitioningToPublished = currentlyDraft && validated.isDraft === false;
+    const nextPublishedAt = transitioningToPublished ? new Date().toISOString() : existing.publishedAt;
+    const nextAngle = validated.angle ?? existing.angle;
+    if (nextAngle === null) throw new Error('Cannot save MoonBoard climb without an angle');
+
+    const existingHoldRows = await db
+      .select({ holdId: dbSchema.boardClimbHolds.holdId, holdState: dbSchema.boardClimbHolds.holdState })
+      .from(dbSchema.boardClimbHolds)
+      .where(
+        and(
+          eq(dbSchema.boardClimbHolds.boardType, 'moonboard'),
+          eq(dbSchema.boardClimbHolds.climbUuid, validated.uuid),
+        ),
+      );
+    const currentHolds = { start: [] as string[], hand: [] as string[], finish: [] as string[] };
+    for (const row of existingHoldRows) {
+      const coordinate = holdIdToCoordinate(row.holdId);
+      if (row.holdState === 'STARTING') currentHolds.start.push(coordinate);
+      else if (row.holdState === 'HAND') currentHolds.hand.push(coordinate);
+      else if (row.holdState === 'FINISH') currentHolds.finish.push(coordinate);
+    }
+    const nextHolds = validated.holds ?? currentHolds;
+    if (!nextIsDraft && (nextHolds.start.length === 0 || nextHolds.finish.length === 0)) {
+      throw new Error('Published MoonBoard climbs require at least one starting hold and one finishing hold');
+    }
+
+    const holdsChanged = validated.holds !== undefined;
+    const angleChanged = validated.angle !== undefined && validated.angle !== existing.angle;
+    const shouldGate = !nextIsDraft && (transitioningToPublished || holdsChanged || angleChanged);
+    const gateSignature = shouldGate ? buildMoonBoardHoldSignature(normalizeMoonBoardHolds(nextHolds)) : '';
+
+    const [existingStats] =
+      existing.angle === null
+        ? []
+        : await db
+            .select({
+              displayDifficulty: dbSchema.boardClimbStats.displayDifficulty,
+              benchmarkDifficulty: dbSchema.boardClimbStats.benchmarkDifficulty,
+            })
+            .from(dbSchema.boardClimbStats)
+            .where(
+              and(
+                eq(dbSchema.boardClimbStats.boardType, 'moonboard'),
+                eq(dbSchema.boardClimbStats.climbUuid, validated.uuid),
+                eq(dbSchema.boardClimbStats.angle, existing.angle),
+              ),
+            )
+            .limit(1);
+    const nextDifficulty =
+      validated.userGrade === undefined
+        ? (existingStats?.displayDifficulty ?? null)
+        : await resolveDifficultyId('moonboard', validated.userGrade);
+    const nextIsBenchmark =
+      validated.isBenchmark === undefined ? existingStats?.benchmarkDifficulty != null : validated.isBenchmark;
+    if (nextIsBenchmark && nextDifficulty === null) {
+      throw new Error('A benchmark MoonBoard climb requires a grade');
+    }
+
+    const nextFrames =
+      validated.holds === undefined ? (existing.frames ?? '') : encodeMoonBoardHoldsToFrames(nextHolds);
+    const nextMethod = validated.method === undefined ? getMoonBoardMethod(existing.characteristics) : validated.method;
+    const nextCharacteristics = nextMethod ? withCharacteristic(null, nextMethod, true) : null;
+    const nextSetter = validated.setter === undefined ? existing.setterUsername : validated.setter;
+
+    await db.transaction(async (tx) => {
+      // Serialize edits to this climb, then re-read every value used to derive
+      // the write. The preflight reads above keep validation errors cheap, but
+      // are not trusted once the transaction begins.
+      await tx.execute(sql`
+        SELECT 1 FROM ${dbSchema.boardClimbs}
+        WHERE ${dbSchema.boardClimbs.boardType} = 'moonboard'
+          AND ${dbSchema.boardClimbs.uuid} = ${validated.uuid}
+        FOR UPDATE
+      `);
+      const [lockedExisting] = await tx
+        .select({
+          userId: dbSchema.boardClimbs.userId,
+          name: dbSchema.boardClimbs.name,
+          description: dbSchema.boardClimbs.description,
+          isDraft: dbSchema.boardClimbs.isDraft,
+          publishedAt: dbSchema.boardClimbs.publishedAt,
+          angle: dbSchema.boardClimbs.angle,
+          frames: dbSchema.boardClimbs.frames,
+          setterUsername: dbSchema.boardClimbs.setterUsername,
+          characteristics: dbSchema.boardClimbs.characteristics,
+        })
+        .from(dbSchema.boardClimbs)
+        .where(and(eq(dbSchema.boardClimbs.uuid, validated.uuid), eq(dbSchema.boardClimbs.boardType, 'moonboard')))
+        .limit(1);
+      if (!lockedExisting) throw new Error('Climb not found');
+      if (lockedExisting.userId !== ctx.userId) throw new Error('You can only update your own climbs');
+
+      const lockedHoldRows = await tx
+        .select({ holdId: dbSchema.boardClimbHolds.holdId, holdState: dbSchema.boardClimbHolds.holdState })
+        .from(dbSchema.boardClimbHolds)
+        .where(
+          and(
+            eq(dbSchema.boardClimbHolds.boardType, 'moonboard'),
+            eq(dbSchema.boardClimbHolds.climbUuid, validated.uuid),
+          ),
+        );
+      const [lockedStats] =
+        lockedExisting.angle === null
+          ? []
+          : await tx
+              .select({
+                displayDifficulty: dbSchema.boardClimbStats.displayDifficulty,
+                benchmarkDifficulty: dbSchema.boardClimbStats.benchmarkDifficulty,
+              })
+              .from(dbSchema.boardClimbStats)
+              .where(
+                and(
+                  eq(dbSchema.boardClimbStats.boardType, 'moonboard'),
+                  eq(dbSchema.boardClimbStats.climbUuid, validated.uuid),
+                  eq(dbSchema.boardClimbStats.angle, lockedExisting.angle),
+                ),
+              )
+              .limit(1);
+      const preflightHoldSignature = buildMoonBoardHoldSignature(normalizeMoonBoardHolds(currentHolds));
+      const lockedHoldSignature = lockedHoldRows
+        .map((row) => `${row.holdId}:${row.holdState}`)
+        .sort((first, second) => Number(first.split(':')[0]) - Number(second.split(':')[0]))
+        .join(',');
+      const preflightChanged =
+        lockedExisting.name !== existing.name ||
+        lockedExisting.description !== existing.description ||
+        lockedExisting.isDraft !== existing.isDraft ||
+        lockedExisting.publishedAt !== existing.publishedAt ||
+        lockedExisting.angle !== existing.angle ||
+        lockedExisting.frames !== existing.frames ||
+        lockedExisting.setterUsername !== existing.setterUsername ||
+        JSON.stringify(lockedExisting.characteristics) !== JSON.stringify(existing.characteristics) ||
+        lockedHoldSignature !== preflightHoldSignature ||
+        lockedStats?.displayDifficulty !== existingStats?.displayDifficulty ||
+        lockedStats?.benchmarkDifficulty !== existingStats?.benchmarkDifficulty;
+      if (preflightChanged) {
+        throw new Error('This climb changed while it was being edited. Reload it and try again');
+      }
+
+      const lockedCurrentlyDraft = lockedExisting.isDraft === true;
+      if (!lockedCurrentlyDraft) {
+        const lockedPublishedMs = lockedExisting.publishedAt ? Date.parse(lockedExisting.publishedAt) : Number.NaN;
+        if (!Number.isFinite(lockedPublishedMs) || Date.now() - lockedPublishedMs > 24 * 60 * 60 * 1000) {
+          throw new Error('The 24 hour edit window has expired');
+        }
+      }
+
+      if (shouldGate) {
+        await acquireDuplicateGateLock(tx, 'moonboard', existing.layoutId, gateSignature);
+        const duplicate = await findMoonBoardDuplicateMatch(
+          existing.layoutId,
+          nextAngle,
+          nextHolds,
+          validated.uuid,
+          tx,
+        );
+        if (duplicate) {
+          throw new GraphQLError(buildMoonBoardDuplicateError(duplicate.existingClimbName), {
+            extensions: {
+              code: CLIMB_DUPLICATE_ERROR_CODE,
+              existingClimbUuid: duplicate.existingClimbUuid,
+              existingClimbName: duplicate.existingClimbName,
+            },
+          });
+        }
+      }
+
+      await tx
+        .update(dbSchema.boardClimbs)
+        .set({
+          name: validated.name ?? existing.name,
+          description: validated.description === undefined ? existing.description : (validated.description ?? ''),
+          frames: nextFrames,
+          angle: nextAngle,
+          isDraft: nextIsDraft,
+          isListed: !nextIsDraft,
+          publishedAt: nextPublishedAt,
+          characteristics: nextCharacteristics,
+          setterUsername: nextSetter,
+        })
+        .where(and(eq(dbSchema.boardClimbs.uuid, validated.uuid), eq(dbSchema.boardClimbs.boardType, 'moonboard')));
+
+      if (holdsChanged) {
+        await tx
+          .delete(dbSchema.boardClimbHolds)
+          .where(
+            and(
+              eq(dbSchema.boardClimbHolds.boardType, 'moonboard'),
+              eq(dbSchema.boardClimbHolds.climbUuid, validated.uuid),
+            ),
+          );
+        const holdRows = buildMoonBoardClimbHoldRows(validated.uuid, nextHolds);
+        if (holdRows.length > 0) await tx.insert(dbSchema.boardClimbHolds).values(holdRows);
+        await populateDenormalizedColumns(tx, 'moonboard', [validated.uuid]);
+      }
+
+      if (!nextIsDraft || existingStats || validated.userGrade !== undefined || validated.isBenchmark !== undefined) {
+        await tx
+          .insert(dbSchema.boardClimbStats)
+          .values({
+            boardType: 'moonboard',
+            climbUuid: validated.uuid,
+            angle: nextAngle,
+            displayDifficulty: nextDifficulty,
+            benchmarkDifficulty: nextIsBenchmark ? nextDifficulty : null,
+            difficultyAverage: nextDifficulty,
+            ascensionistCount: 0,
+            faUsername: nextSetter,
+          })
+          .onConflictDoUpdate({
+            target: [
+              dbSchema.boardClimbStats.boardType,
+              dbSchema.boardClimbStats.climbUuid,
+              dbSchema.boardClimbStats.angle,
+            ],
+            set: {
+              displayDifficulty: nextDifficulty,
+              benchmarkDifficulty: nextIsBenchmark ? nextDifficulty : null,
+              difficultyAverage: nextDifficulty,
+              faUsername: nextSetter,
+            },
+          });
+      }
+
+      if (angleChanged && existing.angle !== null) {
+        const [oldAngleTick] = await tx
+          .select({ id: dbSchema.boardseshTicks.uuid })
+          .from(dbSchema.boardseshTicks)
+          .where(
+            and(
+              eq(dbSchema.boardseshTicks.boardType, 'moonboard'),
+              eq(dbSchema.boardseshTicks.climbUuid, validated.uuid),
+              eq(dbSchema.boardseshTicks.angle, existing.angle),
+            ),
+          )
+          .limit(1);
+        if (!oldAngleTick) {
+          await tx
+            .delete(dbSchema.boardClimbStats)
+            .where(
+              and(
+                eq(dbSchema.boardClimbStats.boardType, 'moonboard'),
+                eq(dbSchema.boardClimbStats.climbUuid, validated.uuid),
+                eq(dbSchema.boardClimbStats.angle, existing.angle),
+              ),
+            );
+        }
+      }
+    });
+
+    void notifyClimbRevalidated(validated.uuid);
+    if (transitioningToPublished) {
+      const { displayName, name, avatarUrl } = await getUserProfile(ctx.userId);
+      await publishSocialEvent({
+        type: 'climb.created',
+        actorId: ctx.userId,
+        entityType: 'climb',
+        entityId: validated.uuid,
+        timestamp: Date.now(),
+        metadata: {
+          boardType: 'moonboard',
+          layoutId: String(existing.layoutId),
+          climbName: validated.name ?? existing.name ?? '',
+          climbUuid: validated.uuid,
+          angle: String(nextAngle),
+          frames: nextFrames,
+          setterUsername: nextSetter ?? '',
+          setterDisplayName: displayName || name || '',
+          setterAvatarUrl: avatarUrl || '',
+          difficultyName: validated.userGrade ?? '',
+        },
+      });
+    }
+
+    return {
+      uuid: validated.uuid,
+      createdAt: existing.createdAt,
+      publishedAt: nextPublishedAt,
+      isDraft: nextIsDraft,
+    };
   },
 
   /**

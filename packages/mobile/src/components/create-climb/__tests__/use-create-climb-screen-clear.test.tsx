@@ -48,12 +48,19 @@ vi.mock('@tanstack/react-query', () => ({
 // leaked-toggle bug is observable in the description sent to saveClimb.
 const NO_MATCH_PREFIX = 'No match\n';
 vi.mock('@boardsesh/shared-schema', () => ({
+  getMoonBoardMethod: () => null,
   isNoMatchClimb: (description: string | null | undefined) => /^no match/i.test(description ?? ''),
   withNoMatch: (description: string | null | undefined, enabled: boolean) => {
     const current = description ?? '';
     if (enabled) return /^no match/i.test(current) ? current : `${NO_MATCH_PREFIX}${current}`;
     return current.replace(/^no match(?:\r?\n|$)/i, '');
   },
+}));
+vi.mock('@boardsesh/board-config', () => ({
+  convertLitUpHoldsMapToMoonBoardHolds: () => ({ start: [], hand: [], finish: [] }),
+  encodeMoonBoardHoldsToFrames: () => '',
+  MOONBOARD_ANGLES: [25, 40],
+  MOONBOARD_GRADES: [],
 }));
 
 vi.mock('@boardsesh/create-climb-react', () => ({
@@ -68,6 +75,8 @@ vi.mock('@boardsesh/board-react', () => ({
     isAuthenticated: board.isAuthenticated,
     saveClimb: board.saveClimb,
     updateClimb: board.updateClimb,
+    saveMoonBoardClimb: vi.fn(),
+    updateMoonBoardClimb: vi.fn(),
   }),
   isDuplicateClimbError: () => false,
 }));
@@ -82,6 +91,7 @@ vi.mock('../../../providers/auth-provider', () => ({
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: { displayName: 'Tester' } }),
   useClimb: () => ({ data: undefined }),
+  useMyRoles: () => ({ data: [] }),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => ({ setCurrentClimb: queue.setCurrentClimb }),

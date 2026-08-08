@@ -305,11 +305,11 @@ describe('Climb Query Functions', () => {
       // we seed the column directly. Set 5 = Hold Set D (base), set 8 = Wooden
       // Holds. The size filter is skipped for MoonBoard, so edges/sizes are nominal.
       await db.execute(sql`
-        INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, frames_count, is_draft, is_listed, edge_left, edge_right, edge_bottom, edge_top, created_at, required_set_ids, compatible_size_ids)
+        INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, frames_count, is_draft, is_listed, edge_left, edge_right, edge_bottom, edge_top, created_at, required_set_ids, compatible_size_ids, angle)
         VALUES
-          (${SET_IDS_TEST_PREFIX + 'mb-base'}, 'moonboard', 3, 'test-setter', 'MB Base Only', 'p1r42p9r43', 1, false, true, 0, 11, 0, 18, '2024-01-01', ARRAY[5], ARRAY[1]),
-          (${SET_IDS_TEST_PREFIX + 'mb-wooden'}, 'moonboard', 3, 'test-setter', 'MB Needs Wooden', 'p1r42p2r43', 1, false, true, 0, 11, 0, 18, '2024-01-01', ARRAY[5, 8], ARRAY[1]),
-          (${SET_IDS_TEST_PREFIX + 'mb-null'}, 'moonboard', 3, 'test-setter', 'MB Not Backfilled', 'p1r42p9r43', 1, false, true, 0, 11, 0, 18, '2024-01-01', NULL, ARRAY[1])
+          (${SET_IDS_TEST_PREFIX + 'mb-base'}, 'moonboard', 3, 'test-setter', 'MB Base Only', 'p1r42p9r43', 1, false, true, 0, 11, 0, 18, '2024-01-01', ARRAY[5], ARRAY[1], 40),
+          (${SET_IDS_TEST_PREFIX + 'mb-wooden'}, 'moonboard', 3, 'test-setter', 'MB Needs Wooden', 'p1r42p2r43', 1, false, true, 0, 11, 0, 18, '2024-01-01', ARRAY[5, 8], ARRAY[1], 40),
+          (${SET_IDS_TEST_PREFIX + 'mb-null'}, 'moonboard', 3, 'test-setter', 'MB Not Backfilled', 'p1r42p9r43', 1, false, true, 0, 11, 0, 18, '2024-01-01', NULL, ARRAY[1], 40)
         ON CONFLICT DO NOTHING
       `);
 

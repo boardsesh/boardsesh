@@ -198,6 +198,25 @@ export type SetterStat = {
   climbCount: number;
 };
 
+export type HoldHeatmapInput = {
+  boardName: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  angle: number;
+};
+
+export type HoldStat = {
+  holdId: number;
+  totalUses: number;
+  startingUses: number;
+  handUses: number;
+  footUses: number;
+  finishUses: number;
+  totalAscents: number;
+  averageDifficulty?: number | null;
+};
+
 /** Complete canonical row emitted by the layout-scoped live-stats stream. */
 export type ClimbStatsEvent = {
   boardType: string;
@@ -270,6 +289,20 @@ export type UpdateClimbInput = {
   isDraft?: boolean | null;
   framesCount?: number | null;
   framesPace?: number | null;
+};
+
+export type UpdateMoonBoardClimbInput = {
+  uuid: string;
+  boardType: string;
+  name?: string | null;
+  description?: string | null;
+  holds?: MoonBoardHoldsInput | null;
+  angle?: number | null;
+  isDraft?: boolean | null;
+  userGrade?: string | null;
+  isBenchmark?: boolean | null;
+  method?: string | null;
+  setter?: string | null;
 };
 
 export type UpdateClimbResult = {

@@ -286,6 +286,23 @@ void describe('createClimbFilters: MoonBoard hold search', () => {
   });
 });
 
+void describe('createClimbFilters: native angle ownership', () => {
+  void it('filters MoonBoard climb rows to the requested angle', () => {
+    const filters = createClimbFilters(
+      { board_name: 'moonboard', layout_id: 3, size_id: 1, set_ids: [5], angle: 25 },
+      {},
+    );
+    const rendered = filters.baseConditions.map(sqlToString).join(' ');
+    assert.match(rendered, /board_climbs\.angle = 25/);
+  });
+
+  void it('does not constrain Aurora climb rows to one angle', () => {
+    const filters = createClimbFilters(params, {});
+    const rendered = filters.baseConditions.map(sqlToString).join(' ');
+    assert.doesNotMatch(rendered, /board_climbs\.angle/);
+  });
+});
+
 void describe('createClimbFilters: tall climbs', () => {
   const homewallTallParams: BoardRouteParams = {
     board_name: 'kilter',

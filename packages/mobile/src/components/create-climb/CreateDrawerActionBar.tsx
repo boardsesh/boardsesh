@@ -36,6 +36,9 @@ type CreateDrawerActionBarProps = {
   onSetActive: () => void;
   saveState: SaveButtonState;
   onSave: () => void;
+  heatmapActive: boolean;
+  heatmapLoading: boolean;
+  onToggleHeatmap: () => void;
 };
 
 /**
@@ -57,6 +60,9 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   onSetActive,
   saveState,
   onSave,
+  heatmapActive,
+  heatmapLoading,
+  onToggleHeatmap,
 }: CreateDrawerActionBarProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
@@ -122,38 +128,51 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
         </Pressable>
       </View>
 
-      <View style={drawerActionBarStyles.rowSecondary}>
-        <ActionButton
-          size="sm"
-          iconName="undo"
-          onPress={onUndo}
-          disabled={!canUndo}
-          accessibilityLabel={t('mobile.create.actions.undo')}
-        />
-        <ActionButton
-          size="sm"
-          iconName="redo"
-          onPress={onRedo}
-          disabled={!canRedo}
-          accessibilityLabel={t('mobile.create.actions.redo')}
-        />
-        <ActionButton
-          size="sm"
-          iconName="delete"
-          onPress={onClear}
-          accessibilityLabel={t('mobile.create.actions.clear')}
-        />
+      <View style={styles.actionRow}>
+        <View style={styles.actionCluster}>
+          <ActionButton
+            size="sm"
+            iconName="undo"
+            onPress={onUndo}
+            disabled={!canUndo}
+            accessibilityLabel={t('mobile.create.actions.undo')}
+          />
+          <ActionButton
+            size="sm"
+            iconName="redo"
+            onPress={onRedo}
+            disabled={!canRedo}
+            accessibilityLabel={t('mobile.create.actions.redo')}
+          />
+          <ActionButton
+            size="sm"
+            iconName="delete"
+            onPress={onClear}
+            accessibilityLabel={t('mobile.create.actions.clear')}
+          />
+        </View>
 
-        <View style={drawerActionBarStyles.spacer} />
-
-        <ActionButton
-          size="sm"
-          iconName="play.circle"
-          onPress={onSetActive}
-          disabled={!canSetActive}
-          accessibilityLabel={t('mobile.create.actions.setActive')}
-        />
-        <SaveButton saveState={saveState} onSave={onSave} />
+        <View style={[styles.actionCluster, styles.trailingCluster]}>
+          <ActionButton
+            size="sm"
+            iconName="flame"
+            onPress={onToggleHeatmap}
+            active={heatmapActive}
+            activeColor={brandColors.warning}
+            busy={heatmapLoading}
+            accessibilityLabel={
+              heatmapActive ? t('mobile.create.actions.hideHeatmap') : t('mobile.create.actions.showHeatmap')
+            }
+          />
+          <ActionButton
+            size="sm"
+            iconName="play.circle"
+            onPress={onSetActive}
+            disabled={!canSetActive}
+            accessibilityLabel={t('mobile.create.actions.setActive')}
+          />
+          <SaveButton saveState={saveState} onSave={onSave} />
+        </View>
       </View>
     </View>
   );
@@ -183,6 +202,24 @@ function SaveButton({ saveState, onSave }: { saveState: SaveButtonState; onSave:
 }
 
 const styles = StyleSheet.create({
+  actionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing[2],
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[2],
+    paddingBottom: spacing[3],
+  },
+  actionCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+  trailingCluster: {
+    marginLeft: 'auto',
+  },
   brushRow: {
     flexDirection: 'row',
     alignItems: 'stretch',

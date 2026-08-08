@@ -479,7 +479,8 @@
       "publishDuplicateUnnamed": "Cette configuration de prises correspond à un bloc existant. Activez Brouillon pour l'enregistrer sans le publier, ou changez une prise.",
       "viewMatchingClimb": "Voir le bloc correspondant",
       "identicalClimbDrawerTitle": "Bloc identique",
-      "saveFailedFallback": "Échec de l'enregistrement du bloc. Veuillez réessayer."
+      "saveFailedFallback": "Échec de l'enregistrement du bloc. Veuillez réessayer.",
+      "heatmapLoadFailed": "Impossible de charger la carte thermique des prises. Réessaie quand tu es en ligne."
     },
     "settings": {
       "tooltip": "Paramètres du bloc",
@@ -821,7 +822,9 @@
         "clear": "Effacer les prises",
         "setActive": "Définir comme voie active",
         "undo": "Annuler",
-        "redo": "Rétablir"
+        "redo": "Rétablir",
+        "showHeatmap": "Afficher la carte thermique des prises",
+        "hideHeatmap": "Masquer la carte thermique des prises"
       },
       "holdRole": {
         "title": "Définir le rôle de la prise",
@@ -833,7 +836,11 @@
         "showAllHoldsLabel": "Afficher toutes les prises",
         "showAllHoldsDescription": "Met en évidence chaque prise cliquable de la board.",
         "noMatchLabel": "Une main par prise",
-        "noMatchDescription": "Les mains ne peuvent pas se rejoindre sur la même prise"
+        "noMatchDescription": "Les mains ne peuvent pas se rejoindre sur la même prise",
+        "benchmarkDescription": "Marque ce bloc comme benchmark MoonBoard. Une cotation est requise."
+      },
+      "validation": {
+        "benchmarkRequiresGrade": "Choisis une cotation avant de marquer un benchmark."
       },
       "drafts": {
         "holds_one": "{{count}} prise",

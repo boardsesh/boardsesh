@@ -2,6 +2,7 @@
 // This file contains all MoonBoard-specific configuration that differs from Aurora boards
 
 import { MOONBOARD_GRID } from '@boardsesh/board-constants/moonboard';
+import type { LitUpHoldsMap, MoonBoardHoldsInput } from '@boardsesh/shared-schema';
 
 // Feature flag - enabled by default
 export const MOONBOARD_ENABLED = true;
@@ -390,4 +391,23 @@ export function encodeMoonBoardHoldsToFrames(holds: { start: string[]; hand: str
   });
 
   return parts.join('');
+}
+
+/** Convert the renderer's cell-id map to the coordinate payload expected by MoonBoard mutations. */
+export function convertLitUpHoldsMapToMoonBoardHolds(litUpHoldsMap: LitUpHoldsMap): MoonBoardHoldsInput {
+  const holds: MoonBoardHoldsInput = { start: [], hand: [], finish: [] };
+  const sortedEntries = Object.entries(litUpHoldsMap).sort(
+    ([firstId], [secondId]) => Number(firstId) - Number(secondId),
+  );
+
+  for (const [holdId, hold] of sortedEntries) {
+    const coordinate = holdIdToCoordinate(Number(holdId));
+    if (hold.state === 'STARTING') holds.start.push(coordinate);
+    else if (hold.state === 'HAND') holds.hand.push(coordinate);
+    else if (hold.state === 'FINISH') holds.finish.push(coordinate);
+    // MoonBoard problems do not have a FOOT role. A renderer map may contain
+    // one when it was initialized from another board family, so omit it from
+    // the MoonBoard mutation payload.
+  }
+  return holds;
 }

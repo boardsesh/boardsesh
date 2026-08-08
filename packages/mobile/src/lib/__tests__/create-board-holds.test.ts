@@ -40,7 +40,7 @@ describe('getCreateBoardHolds', () => {
         boardName: 'moonboard',
         layoutId: 3,
         sizeId: 1,
-        setIds: [8],
+        setIds: [5, 6],
       }),
     ).toEqual({
       holdTargets: [
@@ -55,6 +55,46 @@ describe('getCreateBoardHolds', () => {
       edgeTop: 18,
       family: 'moonboard',
     });
+  });
+
+  it('limits MoonBoard paint targets to active sets while preserving renderer cell IDs', () => {
+    mockedGetBoardRenderData.mockReturnValue({
+      boardWidth: 650,
+      boardHeight: 1000,
+      edgeLeft: 0,
+      edgeRight: 11,
+      edgeBottom: 0,
+      edgeTop: 18,
+      backgroundImageKeys: ['moonboard/moonboard-bg.webp'],
+      holdsData: [
+        { id: 18, mirroredHoldId: null, cx: 68, cy: 950, r: 12 },
+        { id: 26, mirroredHoldId: null, cx: 118, cy: 900, r: 12 },
+      ],
+    });
+
+    expect(getCreateBoardHolds({ boardName: 'moonboard', layoutId: 2, sizeId: 1, setIds: [2] })?.holdTargets).toEqual([
+      { id: 18, cx: 68, cy: 950, r: 12 },
+    ]);
+  });
+
+  it('keeps cell 26 and rejects a hardware placement id such as 1026', () => {
+    mockedGetBoardRenderData.mockReturnValue({
+      boardWidth: 650,
+      boardHeight: 1000,
+      edgeLeft: 0,
+      edgeRight: 11,
+      edgeBottom: 0,
+      edgeTop: 18,
+      backgroundImageKeys: ['moonboard/moonboard-bg.webp'],
+      holdsData: [
+        { id: 26, mirroredHoldId: null, cx: 68, cy: 950, r: 12 },
+        { id: 1026, mirroredHoldId: null, cx: 118, cy: 900, r: 12 },
+      ],
+    });
+
+    expect(getCreateBoardHolds({ boardName: 'moonboard', layoutId: 1, sizeId: 1, setIds: [1] })?.holdTargets).toEqual([
+      { id: 26, cx: 68, cy: 950, r: 12 },
+    ]);
   });
 
   it('returns null when render data is unavailable', () => {
@@ -86,7 +126,7 @@ describe('getCreateBoardHolds', () => {
       boardName: 'moonboard' as const,
       layoutId: 3,
       sizeId: 1,
-      setIds: [8],
+      setIds: [5],
     };
 
     prewarmCreateBoardHolds(config);

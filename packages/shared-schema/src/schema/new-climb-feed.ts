@@ -112,6 +112,39 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
     setter: String
   }
 
+  input UpdateMoonBoardClimbInput {
+    uuid: ID!
+    boardType: String!
+    name: String
+    description: String
+    holds: MoonBoardHoldsInput
+    angle: Int
+    isDraft: Boolean
+    userGrade: String
+    isBenchmark: Boolean
+    method: MoonBoardMethod
+    setter: String
+  }
+
+  input HoldHeatmapInput {
+    boardName: String!
+    layoutId: Int!
+    sizeId: Int!
+    setIds: String!
+    angle: Int!
+  }
+
+  type HoldStat {
+    holdId: Int!
+    totalUses: Int!
+    startingUses: Int!
+    handUses: Int!
+    footUses: Int!
+    finishUses: Int!
+    totalAscents: Int!
+    averageDifficulty: Float
+  }
+
   type SaveClimbResult {
     uuid: ID!
     synced: Boolean!

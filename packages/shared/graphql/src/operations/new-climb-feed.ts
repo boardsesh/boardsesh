@@ -10,6 +10,7 @@ import type {
   SaveClimbInput,
   SaveClimbResult,
   SaveMoonBoardClimbInput,
+  UpdateMoonBoardClimbInput,
   SimilarClimb,
   SimilarClimbsInput,
   UpdateClimbInput,
@@ -146,6 +147,17 @@ export const UPDATE_CLIMB_MUTATION = gql`
   }
 `;
 
+export const UPDATE_MOONBOARD_CLIMB_MUTATION = gql`
+  mutation UpdateMoonBoardClimb($input: UpdateMoonBoardClimbInput!) {
+    updateMoonBoardClimb(input: $input) {
+      uuid
+      createdAt
+      publishedAt
+      isDraft
+    }
+  }
+`;
+
 export const DELETE_DRAFT_CLIMB_MUTATION = gql`
   mutation DeleteDraftClimb($uuid: ID!, $boardType: String!) {
     deleteDraftClimb(uuid: $uuid, boardType: $boardType)
@@ -215,6 +227,9 @@ export type UpdateClimbMutationVariables = {
 export type UpdateClimbMutationResponse = {
   updateClimb: UpdateClimbResult;
 };
+
+export type UpdateMoonBoardClimbMutationVariables = { input: UpdateMoonBoardClimbInput };
+export type UpdateMoonBoardClimbMutationResponse = { updateMoonBoardClimb: UpdateClimbResult };
 
 export type DeleteDraftClimbMutationVariables = {
   uuid: string;

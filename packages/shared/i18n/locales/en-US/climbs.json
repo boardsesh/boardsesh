@@ -479,7 +479,8 @@
       "publishDuplicateUnnamed": "This hold pattern matches an existing climb. Toggle Draft to save it without publishing, or change a hold.",
       "viewMatchingClimb": "View matching climb",
       "identicalClimbDrawerTitle": "Identical climb",
-      "saveFailedFallback": "Failed to save climb. Please try again."
+      "saveFailedFallback": "Failed to save climb. Please try again.",
+      "heatmapLoadFailed": "Couldn't load the hold heatmap. Try again when you're online."
     },
     "settings": {
       "tooltip": "Climb settings",
@@ -821,7 +822,9 @@
         "clear": "Clear holds",
         "setActive": "Set as active climb",
         "undo": "Undo",
-        "redo": "Redo"
+        "redo": "Redo",
+        "showHeatmap": "Show hold heatmap",
+        "hideHeatmap": "Hide hold heatmap"
       },
       "holdRole": {
         "title": "Set hold role",
@@ -833,7 +836,11 @@
         "showAllHoldsLabel": "Show all holds",
         "showAllHoldsDescription": "Highlight every tappable hold on the board.",
         "noMatchLabel": "No matching",
-        "noMatchDescription": "Hands can't match on the same hold"
+        "noMatchDescription": "Hands can't match on the same hold",
+        "benchmarkDescription": "Mark this as a MoonBoard benchmark. A grade is required."
+      },
+      "validation": {
+        "benchmarkRequiresGrade": "Choose a grade before marking a benchmark."
       },
       "drafts": {
         "holds_one": "{{count}} hold",

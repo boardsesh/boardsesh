@@ -127,6 +127,9 @@ import {
   type ToggleFavoriteMutationVariables,
   type ToggleFavoriteMutationResponse,
 } from '../operations';
+import { GET_MY_ROLES, type GetMyRolesResponse } from '@boardsesh/graphql/operations/proposals';
+
+export { useHoldHeatmap, type HoldHeatmapParams } from './use-hold-heatmap';
 
 type ToggleFavoriteVariables = ToggleFavoriteMutationVariables & {
   currentlyFavorited?: boolean;
@@ -157,6 +160,16 @@ export function useProfile(options?: { enabled?: boolean }) {
     queryFn: () => getHttpClient().request<GetProfileQueryResponse>(GET_PROFILE),
     select: (data) => data.profile,
     enabled: options?.enabled ?? true,
+  });
+}
+
+export function useMyRoles(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['myRoles'],
+    queryFn: () => getHttpClient().request<GetMyRolesResponse>(GET_MY_ROLES),
+    select: (response) => response.myRoles,
+    enabled: options?.enabled ?? true,
+    staleTime: 5 * 60 * 1000,
   });
 }
 
