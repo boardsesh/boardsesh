@@ -135,8 +135,8 @@ describe('checkPatchesApplied', () => {
 // The @expo/ui shape: a SCOPED package, so the key carries two `@` and the
 // version is the one after the scope. Its patch is plain TS whose loss is
 // runtime-only — the sheet still typechecks and bundles, it just stops
-// swallowing the native expand()/partialExpand() rejection — so this rule is
-// the only thing between a forgotten re-key and a silent regression.
+// swallowing the native expand()/partialExpand()/hide() rejection — so this
+// rule is the only thing between a forgotten re-key and a silent regression.
 const SCOPED_PKG = '@expo/ui';
 const SCOPED_FILE = 'src/community/bottom-sheet/BottomSheet.android.tsx';
 const SCOPED_KEY = '@expo/ui@57.0.8';
@@ -193,6 +193,41 @@ describe('checkPatchesApplied on a scoped package', () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain('patch NOT applied');
     expect(result.errors[0]).toContain('swallowMissingNativeHandler');
+  });
+});
+
+// Mutation test on the shipped rule, not a synthetic one: the sentinel list has
+// to distinguish the current patch from the pre-#4108 patch, which guarded
+// expand()/partialExpand() (#3478) but left hide() — every programmatic dismiss
+// — bare. `swallowMissingNativeHandler` alone is satisfied by both, so a patch
+// regenerated for a version bump could reinstate only the #3478 half and keep
+// this check green while the dismiss guard silently disappeared.
+describe('the shipped @expo/ui Android rule', () => {
+  const androidRule = REAL_RULES.find((rule) => rule.package === SCOPED_PKG && rule.file === SCOPED_FILE);
+
+  const PRE_4108_SOURCE = `
+function swallowMissingNativeHandler(error: unknown): void { /* ... */ }
+sheetRef.current?.expand()?.catch(swallowMissingNativeHandler);
+sheetRef.current?.hide().then(() => { setIsOpen(false); fireCloseCallbacks(); });
+`;
+
+  it('is registered', () => {
+    expect(androidRule).toBeDefined();
+  });
+
+  it('goes red on the pre-#4108 patch that guarded only expand()/partialExpand()', () => {
+    if (!androidRule) throw new Error('no @expo/ui Android rule registered');
+    const env = makeEnv({
+      patchedDependencies: { [androidRule.patchedKey]: SCOPED_PATCH_PATH },
+      versions: { [androidRule.package]: versionFromKey(androidRule.patchedKey) },
+      files: { [`${androidRule.package}::${androidRule.file}`]: PRE_4108_SOURCE },
+    });
+
+    const result = checkPatchesApplied([androidRule], env);
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('patch NOT applied');
+    expect(result.errors[0]).toContain('hideSwallowingMissingNativeHandler');
   });
 });
 

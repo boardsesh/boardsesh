@@ -18,7 +18,7 @@ index 72fc6becbc414c318799e28103d15484ed86f703..d1cf11e93b0c0d8dc77abddaafc89e14
       * Whether the sheet can be dismissed by panning down.
       * @default false
 diff --git a/src/community/bottom-sheet/BottomSheet.android.tsx b/src/community/bottom-sheet/BottomSheet.android.tsx
-index f60ae61bf0c9023d41c55cdca2d9af0de7291a92..155afb2055b9e977f0651de67a4f1c812e87eef7 100644
+index f60ae61bf0c9023d41c55cdca2d9af0de7291a92..772f369cf121ca1a1fdd283f81f1326b8bfb4710 100644
 --- a/src/community/bottom-sheet/BottomSheet.android.tsx
 +++ b/src/community/bottom-sheet/BottomSheet.android.tsx
 @@ -11,6 +11,26 @@ import { RNHostView } from '../../jetpack-compose/RNHostView';
@@ -48,27 +48,37 @@ index f60ae61bf0c9023d41c55cdca2d9af0de7291a92..155afb2055b9e977f0651de67a4f1c81
  function extractBackgroundColor(
    backgroundStyle: BottomSheetProps['backgroundStyle']
  ): string | undefined {
-@@ -127,11 +147,14 @@ export function BottomSheet(props: BottomSheetProps) {
+@@ -125,13 +145,26 @@ export function BottomSheet(props: BottomSheetProps) {
+   }, [fireCloseCallbacks]);
+ 
    const methods: BottomSheetMethods = useMemo(() => {
-     const snapToIndex = (index: number) => {
-       if (index === -1) {
+-    const snapToIndex = (index: number) => {
+-      if (index === -1) {
 -        sheetRef.current?.hide().then(() => {
--          setIsOpen(false);
--          pendingIndexRef.current = null;
--          fireCloseCallbacks();
--        });
-+        sheetRef.current
-+          ?.hide()
-+          .catch(swallowMissingNativeHandler)
-+          .then(() => {
-+            setIsOpen(false);
-+            pendingIndexRef.current = null;
-+            fireCloseCallbacks();
-+          });
++    // Every programmatic dismiss funnels through here — snapToIndex(-1) and
++    // close(), which forceClose()/dismiss() alias. `.catch()` BEFORE `.then()`
++    // is load-bearing: it turns a missing-native-handler rejection into a
++    // resolved promise, so the JS-side cleanup below still runs and the sheet
++    // can't get stuck open on a store binary without the native hide().
++    // (boardsesh patch — see issue #4108.)
++    const hideSwallowingMissingNativeHandler = () => {
++      sheetRef.current
++        ?.hide()
++        .catch(swallowMissingNativeHandler)
++        .then(() => {
+           setIsOpen(false);
+           pendingIndexRef.current = null;
+           fireCloseCallbacks();
+         });
++    };
++
++    const snapToIndex = (index: number) => {
++      if (index === -1) {
++        hideSwallowingMissingNativeHandler();
          return;
        }
        const clampedIndex = clampIndex(index);
-@@ -143,9 +166,9 @@ export function BottomSheet(props: BottomSheetProps) {
+@@ -143,22 +176,16 @@ export function BottomSheet(props: BottomSheetProps) {
          // Native ModalBottomSheet has two states: partial (~50%) and expanded (full).
          // Map index 0 → partialExpand(), last index → expand().
          if (clampedIndex === maxIndex) {
@@ -80,26 +90,20 @@ index f60ae61bf0c9023d41c55cdca2d9af0de7291a92..155afb2055b9e977f0651de67a4f1c81
          }
          pendingIndexRef.current = null;
        }
-@@ -153,11 +176,14 @@ export function BottomSheet(props: BottomSheetProps) {
+       onChangeRef.current?.(clampedIndex);
      };
  
-     const close = () => {
+-    const close = () => {
 -      sheetRef.current?.hide().then(() => {
 -        setIsOpen(false);
 -        pendingIndexRef.current = null;
 -        fireCloseCallbacks();
 -      });
-+      sheetRef.current
-+        ?.hide()
-+        .catch(swallowMissingNativeHandler)
-+        .then(() => {
-+          setIsOpen(false);
-+          pendingIndexRef.current = null;
-+          fireCloseCallbacks();
-+        });
-     };
+-    };
++    const close = hideSwallowingMissingNativeHandler;
  
      return {
+       snapToIndex,
 diff --git a/src/community/bottom-sheet/BottomSheet.ios.tsx b/src/community/bottom-sheet/BottomSheet.ios.tsx
 index d9de442f1efd51749ff9a0e661e6979e7915fef1..5cd8c129ae199edc83733d7617d4b8c32611fc03 100644
 --- a/src/community/bottom-sheet/BottomSheet.ios.tsx
