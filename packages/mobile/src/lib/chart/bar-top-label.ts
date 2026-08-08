@@ -34,8 +34,6 @@ export type BarTopLabelLayout = {
   marginBottom: number;
   /** Extra vertical room the label needs above a plain one-line label. */
   headroom: number;
-  /** Total height of the label box (gifted's `topLabelComponentHeight`). */
-  height: number;
 };
 
 /**
@@ -73,7 +71,6 @@ export function computeBarTopLabelLayout(
       rotated: false,
       marginBottom: BASE_LABEL_GAP,
       headroom: 0,
-      height: lineHeight,
     };
   }
 
@@ -83,15 +80,14 @@ export function computeBarTopLabelLayout(
     const widestPart = stackInto.reduce((widest, part) => Math.max(widest, estimateLabelWidth(part, fontScale)), 0);
     if (widestPart <= columnWidth) {
       const width = Math.max(barWidth, Math.min(columnWidth, widestPart));
-      const height = lineHeight * stackInto.length;
       return {
         width,
         left: Math.round((barWidth - width) / 2),
         lines: [...stackInto],
         rotated: false,
         marginBottom: BASE_LABEL_GAP,
-        headroom: height - lineHeight,
-        height,
+        // Every line past the first is height the chart has to find.
+        headroom: lineHeight * (stackInto.length - 1),
       };
     }
   }
@@ -105,6 +101,5 @@ export function computeBarTopLabelLayout(
     // over the bar. Push the whole box up by that half before it turns.
     marginBottom: Math.round((textWidth - lineHeight) / 2) + BASE_LABEL_GAP,
     headroom: Math.max(0, textWidth - lineHeight),
-    height: textWidth,
   };
 }

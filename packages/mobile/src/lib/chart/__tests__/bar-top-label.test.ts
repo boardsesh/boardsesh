@@ -8,7 +8,7 @@
 // ("V6 / 7A") is long enough to overlap its neighbours. Stacking cases below.
 import { describe, expect, it } from 'vitest';
 import { computeBarTopLabelLayout, longestBarValue } from '../bar-top-label';
-import { estimateLabelWidth } from '../label-metrics';
+import { CHART_LABEL_LINE_HEIGHT, estimateLabelWidth } from '../label-metrics';
 
 describe('longestBarValue', () => {
   it('picks the value with the most digits, not the largest', () => {
@@ -86,8 +86,8 @@ describe('computeBarTopLabelLayout', () => {
     const layout = computeBarTopLabelLayout('V13 / 8B+', 24, 30, 1, ['V13', '8B+']);
     expect(layout.rotated).toBe(false);
     expect(layout.lines).toEqual(['V13', '8B+']);
-    // Two lines of text, so the chart owes it one extra line of headroom.
-    expect(layout.headroom).toBe(layout.height / 2);
+    // Two lines of text, so the chart owes it exactly one extra line of room.
+    expect(layout.headroom).toBe(CHART_LABEL_LINE_HEIGHT);
     expect(layout.width).toBeLessThanOrEqual(30);
   });
 
