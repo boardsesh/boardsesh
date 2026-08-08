@@ -253,13 +253,13 @@ export function buildDumbbellAxis(rows: DumbbellAngleRow[], gradeFormat: GradeDi
   const span = maxId - minId;
   const noOfSections = span / idsPerSection;
 
-  // index 0 = bottom (minId), index noOfSections = top (maxId).
+  // index 0 = bottom (minId), index noOfSections = top (maxId). Only the bottom
+  // can run off the scale — maxId is clamped to the hardest real grade above.
   const yAxisLabelTexts: string[] = [];
   let labelBelow = '';
   for (let index = 0; index <= noOfSections; index++) {
     const id = minId + index * idsPerSection;
-    const label =
-      id < MIN_DIFFICULTY_ID || id > MAX_DIFFICULTY_ID ? '' : (renderDifficulty(id, gradeFormat)?.label ?? '');
+    const label = id < MIN_DIFFICULTY_ID ? '' : (renderDifficulty(id, gradeFormat)?.label ?? '');
     yAxisLabelTexts.push(label && label !== labelBelow ? label : BLANK_TICK);
     if (label) labelBelow = label;
   }

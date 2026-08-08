@@ -7,6 +7,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { gradeChartColor } from '../you/profile-chart-colors';
 import { splitGradeLabel } from '@boardsesh/play-view';
 import { computeBarTopLabelLayout } from '../../lib/chart/bar-top-label';
+import { estimateLabelWidth } from '../../lib/chart/label-metrics';
 import { borderRadius, spacing } from '../../theme/tokens';
 
 type DifficultyByAngleChartProps = {
@@ -69,8 +70,15 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
   // grade may spill into the gap beside its bar; past that a both-formats grade
   // ("V13 / 8B+") stacks onto two lines, and past that it turns vertical —
   // anything rather than overlapping its neighbours (#4164).
+  // Widest as the axis renders it, not as it counts characters: " / " is worth
+  // about half a digit, so "V6 / 7A" draws narrower than its seven characters
+  // suggest and could otherwise out-vote a genuinely wider grade.
   const longestGrade = useMemo(
-    () => data.reduce((longest, bar) => (bar.gradeName.length > longest.length ? bar.gradeName : longest), ''),
+    () =>
+      data.reduce(
+        (longest, bar) => (estimateLabelWidth(bar.gradeName) > estimateLabelWidth(longest) ? bar.gradeName : longest),
+        '',
+      ),
     [data],
   );
   const labelLayout = computeBarTopLabelLayout(
@@ -82,6 +90,14 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
   );
   const { rotated: rotateGrades, marginBottom: gradeMarginBottom } = labelLayout;
   const stackGrades = labelLayout.lines.length > 1;
+  // gifted boxes the top label to exactly one bar width. Widen it to the room
+  // the grade actually needs and re-centre it over its own bar, or a "V6 / 7A"
+  // spills right, over the bar beside it. Memoized on the two numbers it holds
+  // so a parent re-render doesn't hand BarChart a fresh style object.
+  const gradeBoxStyle = useMemo(
+    () => ({ marginBottom: spacing[1], width: labelLayout.width, left: labelLayout.left }),
+    [labelLayout.width, labelLayout.left],
+  );
 
   // Bars + axis scale only depend on the data, scheme and the label treatment —
   // memoize so a parent re-render doesn't rebuild them (and their top-label
@@ -177,14 +193,7 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
           rotateLabel={rotateLabels}
           labelWidth={rotateLabels ? ROTATED_LABEL_WIDTH : undefined}
           labelsExtraHeight={rotateLabels ? ROTATED_LABEL_EXTRA_HEIGHT : undefined}
-          // gifted boxes the top label to exactly one bar width. Widen it to the
-          // room the grade actually needs and re-centre it over its own bar, or
-          // a "V6 / 7A" spills right, over the bar beside it.
-          topLabelContainerStyle={{
-            marginBottom: spacing[1],
-            width: labelLayout.width,
-            left: labelLayout.left,
-          }}
+          topLabelContainerStyle={gradeBoxStyle}
           rulesColor={chartColors.separator}
           rulesType="solid"
           yAxisThickness={0}
