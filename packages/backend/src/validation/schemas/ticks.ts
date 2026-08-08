@@ -3,10 +3,25 @@ import { BETA_VIDEO_URL_REGEX, BETA_VIDEO_URL_VALIDATION_MESSAGE } from '@boards
 import { ExternalUUIDSchema, BoardNameSchema, UUIDSchema } from './primitives';
 
 const CLIMBED_AT_FUTURE_TOLERANCE_MS = 60_000;
-const POSTGRES_TIMESTAMP_FRACTION_PATTERN = /[Tt ]\d{2}:\d{2}:\d{2}\.(\d+)(?:[Zz]|[+-]\d{2}:?\d{2})?$/;
+
+/**
+ * Fractional seconds of a client timestamp, capture group 1.
+ *
+ * The trailing zone alternatives cover every shape `new Date()` accepts
+ * alongside a fraction: bare, `Z`, and a `+hh` / `+hhmm` / `+hh:mm` offset that
+ * a space may precede. Missing one of those would let a timestamp through with
+ * its fraction unread — the precision refine below would pass vacuously and
+ * `normalizeClimbedAt` would store `.000`, so validator and normalizer share
+ * this one pattern rather than each keeping a copy.
+ */
+export const POSTGRES_TIMESTAMP_FRACTION_PATTERN = /[Tt ]\d{2}:\d{2}:\d{2}\.(\d+)\s*(?:[Zz]|[+-]\d{2}(?::?\d{2})?)?$/;
+
+export function readTimestampFractionalSeconds(value: string): string | undefined {
+  return POSTGRES_TIMESTAMP_FRACTION_PATTERN.exec(value)?.[1];
+}
 
 function hasSupportedPostgresTimestampPrecision(value: string): boolean {
-  const fractionalSeconds = POSTGRES_TIMESTAMP_FRACTION_PATTERN.exec(value)?.[1];
+  const fractionalSeconds = readTimestampFractionalSeconds(value);
   return fractionalSeconds === undefined || fractionalSeconds.length <= 6;
 }
 

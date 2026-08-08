@@ -28,7 +28,7 @@ vi.mock('../graphql/resolvers/beta-videos/queries', () => betaMocks);
 
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { UpdateTickInputSchema } from '../validation/schemas/ticks';
+import { UpdateTickInputSchema, readTimestampFractionalSeconds } from '../validation/schemas/ticks';
 import { tickMutations } from '../graphql/resolvers/ticks/mutations';
 
 const TEST_USER_ID = 'tick-validation-test-user';
@@ -186,6 +186,32 @@ describe('UpdateTickInputSchema', () => {
         angle: 27.5,
       }),
     ).toThrow();
+  });
+});
+
+describe('readTimestampFractionalSeconds', () => {
+  // One pattern feeds both the six-digit precision refine and the resolver's
+  // normalizeClimbedAt. A zone shape it fails to read passes the refine
+  // vacuously and then gets stored as `.000`, so every form `new Date()`
+  // accepts alongside a fraction has to match.
+  it.each([
+    ['2026-05-02T01:02:03.123456Z', '123456'],
+    ['2026-05-02T01:02:03.123456', '123456'],
+    ['2026-05-02T01:02:03.123456+07:00', '123456'],
+    ['2026-05-02T01:02:03.123456+0700', '123456'],
+    ['2026-05-02 01:02:03.123456+07', '123456'],
+    ['2026-05-02 01:02:03.123456 +07:00', '123456'],
+  ])('reads the fraction out of %s', (value, expected) => {
+    expect(Number.isNaN(new Date(value).getTime())).toBe(false);
+    expect(readTimestampFractionalSeconds(value)).toBe(expected);
+  });
+
+  it('rejects a seven-digit fraction sitting behind an hour-only offset', () => {
+    expect(() =>
+      UpdateTickInputSchema.parse({
+        climbedAt: '2026-05-02 01:02:03.1234567+07',
+      }),
+    ).toThrowError(/at most six fractional-second digits/);
   });
 });
 
