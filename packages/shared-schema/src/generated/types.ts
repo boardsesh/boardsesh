@@ -2728,6 +2728,26 @@ export type GymTopClimb = {
   name?: Maybe<Scalars['String']['output']>;
 };
 
+export type HoldHeatmapInput = {
+  angle: Scalars['Int']['input'];
+  boardName: Scalars['String']['input'];
+  layoutId: Scalars['Int']['input'];
+  setIds: Scalars['String']['input'];
+  sizeId: Scalars['Int']['input'];
+};
+
+export type HoldStat = {
+  __typename?: 'HoldStat';
+  averageDifficulty?: Maybe<Scalars['Float']['output']>;
+  finishUses: Scalars['Int']['output'];
+  footUses: Scalars['Int']['output'];
+  handUses: Scalars['Int']['output'];
+  holdId: Scalars['Int']['output'];
+  startingUses: Scalars['Int']['output'];
+  totalAscents: Scalars['Int']['output'];
+  totalUses: Scalars['Int']['output'];
+};
+
 /** A scanned post whose climb name matched multiple climbs — the user picks one. */
 export type InstagramBetaAmbiguous = {
   __typename?: 'InstagramBetaAmbiguous';
@@ -3428,6 +3448,8 @@ export type Mutation = {
    * and linked to this kiosk's gym.
    */
   updateGymKiosk: GymKiosk;
+  /** Update a MoonBoard climb, including its holds, grade, method, and benchmark metadata. */
+  updateMoonBoardClimb: UpdateClimbResult;
   /** Update playlist metadata. */
   updatePlaylist: Playlist;
   /** Update only lastAccessedAt for a playlist (does not update updatedAt). */
@@ -4021,6 +4043,11 @@ export type MutationUpdateGymArgs = {
 /** Root mutation type for all write operations. */
 export type MutationUpdateGymKioskArgs = {
   input: UpdateGymKioskInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationUpdateMoonBoardClimbArgs = {
+  input: UpdateMoonBoardClimbInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4836,6 +4863,8 @@ export type Query = {
    * bounded to the gym's linked boards and the time window.
    */
   gymStats: GymStats;
+  /** Community hold usage for one board configuration. */
+  holdHeatmap: Array<HoldStat>;
   /**
    * Resolve scraped Instagram posts against Boardsesh: which beta videos are
    * missing, already linked, ambiguous, or unmatched. Read-only — the client
@@ -5424,6 +5453,11 @@ export type QueryGymMembersArgs = {
 /** Root query type for all read operations. */
 export type QueryGymStatsArgs = {
   input: GymStatsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryHoldHeatmapArgs = {
+  input: HoldHeatmapInput;
 };
 
 /** Root query type for all read operations. */
@@ -7520,6 +7554,20 @@ export type UpdateGymKioskInput = {
   slug?: InputMaybe<Scalars['String']['input']>;
 };
 
+export type UpdateMoonBoardClimbInput = {
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  boardType: Scalars['String']['input'];
+  description?: InputMaybe<Scalars['String']['input']>;
+  holds?: InputMaybe<MoonBoardHoldsInput>;
+  isBenchmark?: InputMaybe<Scalars['Boolean']['input']>;
+  isDraft?: InputMaybe<Scalars['Boolean']['input']>;
+  method?: InputMaybe<MoonBoardMethod>;
+  name?: InputMaybe<Scalars['String']['input']>;
+  setter?: InputMaybe<Scalars['String']['input']>;
+  userGrade?: InputMaybe<Scalars['String']['input']>;
+  uuid: Scalars['ID']['input'];
+};
+
 /** Input for updating a playlist. */
 export type UpdatePlaylistInput = {
   /** New color */
@@ -8135,6 +8183,8 @@ export type ResolversTypes = ResolversObject<{
   GymStatsPeriod: GymStatsPeriod;
   GymStatsWindow: ResolverTypeWrapper<GymStatsWindow>;
   GymTopClimb: ResolverTypeWrapper<GymTopClimb>;
+  HoldHeatmapInput: HoldHeatmapInput;
+  HoldStat: ResolverTypeWrapper<HoldStat>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
   InstagramBetaAmbiguous: ResolverTypeWrapper<InstagramBetaAmbiguous>;
   InstagramBetaCandidate: ResolverTypeWrapper<InstagramBetaCandidate>;
@@ -8307,6 +8357,7 @@ export type ResolversTypes = ResolversObject<{
   UpdateCommentInput: UpdateCommentInput;
   UpdateGymInput: UpdateGymInput;
   UpdateGymKioskInput: UpdateGymKioskInput;
+  UpdateMoonBoardClimbInput: UpdateMoonBoardClimbInput;
   UpdatePlaylistInput: UpdatePlaylistInput;
   UpdateProfileInput: UpdateProfileInput;
   UpdateSessionInput: UpdateSessionInput;
@@ -8488,6 +8539,8 @@ export type ResolversParentTypes = ResolversObject<{
   GymStatsInput: GymStatsInput;
   GymStatsWindow: GymStatsWindow;
   GymTopClimb: GymTopClimb;
+  HoldHeatmapInput: HoldHeatmapInput;
+  HoldStat: HoldStat;
   ID: Scalars['ID']['output'];
   InstagramBetaAmbiguous: InstagramBetaAmbiguous;
   InstagramBetaCandidate: InstagramBetaCandidate;
@@ -8646,6 +8699,7 @@ export type ResolversParentTypes = ResolversObject<{
   UpdateCommentInput: UpdateCommentInput;
   UpdateGymInput: UpdateGymInput;
   UpdateGymKioskInput: UpdateGymKioskInput;
+  UpdateMoonBoardClimbInput: UpdateMoonBoardClimbInput;
   UpdatePlaylistInput: UpdatePlaylistInput;
   UpdateProfileInput: UpdateProfileInput;
   UpdateSessionInput: UpdateSessionInput;
@@ -9990,6 +10044,21 @@ export type GymTopClimbResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type HoldStatResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['HoldStat'] = ResolversParentTypes['HoldStat'],
+> = ResolversObject<{
+  averageDifficulty?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  finishUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  footUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  handUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  holdId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  startingUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  totalAscents?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  totalUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type InstagramBetaAmbiguousResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['InstagramBetaAmbiguous'] = ResolversParentTypes['InstagramBetaAmbiguous'],
@@ -10789,6 +10858,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationUpdateGymKioskArgs, 'input'>
   >;
+  updateMoonBoardClimb?: Resolver<
+    ResolversTypes['UpdateClimbResult'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationUpdateMoonBoardClimbArgs, 'input'>
+  >;
   updatePlaylist?: Resolver<
     ResolversTypes['Playlist'],
     ParentType,
@@ -11462,6 +11537,12 @@ export type QueryResolvers<
     RequireFields<QueryGymMembersArgs, 'input'>
   >;
   gymStats?: Resolver<ResolversTypes['GymStats'], ParentType, ContextType, RequireFields<QueryGymStatsArgs, 'input'>>;
+  holdHeatmap?: Resolver<
+    Array<ResolversTypes['HoldStat']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryHoldHeatmapArgs, 'input'>
+  >;
   instagramBetaScan?: Resolver<
     ResolversTypes['InstagramBetaScanResult'],
     ParentType,
@@ -12981,6 +13062,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GymStats?: GymStatsResolvers<ContextType>;
   GymStatsWindow?: GymStatsWindowResolvers<ContextType>;
   GymTopClimb?: GymTopClimbResolvers<ContextType>;
+  HoldStat?: HoldStatResolvers<ContextType>;
   InstagramBetaAmbiguous?: InstagramBetaAmbiguousResolvers<ContextType>;
   InstagramBetaCandidate?: InstagramBetaCandidateResolvers<ContextType>;
   InstagramBetaMatch?: InstagramBetaMatchResolvers<ContextType>;

@@ -45,6 +45,7 @@ type Documents = {
   '\n  mutation SubmitAppFeedback($input: SubmitAppFeedbackInput!) {\n    submitAppFeedback(input: $input)\n  }\n': typeof types.SubmitAppFeedbackDocument;
   '\n  query AdminAppFeedback($input: AdminAppFeedbackInput) {\n    adminAppFeedback(input: $input) {\n      reports {\n        id\n        source\n        rating\n        comment\n        platform\n        appVersion\n        boardName\n        angle\n        contactConsent\n        createdAt\n        status\n        resolvedAt\n        resolvedBy\n        githubIssueNumber\n        githubIssueUrl\n        reporter {\n          userId\n          email\n          name\n        }\n        context {\n          climbUuid\n          climbName\n          difficulty\n          sessionId\n          sessionName\n          url\n          userAgent\n        }\n      }\n      totalCount\n      hasMore\n      statusCounts {\n        new\n        inProgress\n        resolved\n        wontFix\n      }\n    }\n  }\n': typeof types.AdminAppFeedbackDocument;
   '\n  mutation UpdateAppFeedbackStatus($input: UpdateAppFeedbackStatusInput!) {\n    updateAppFeedbackStatus(input: $input) {\n      id\n      source\n      rating\n      comment\n      platform\n      appVersion\n      boardName\n      angle\n      contactConsent\n      createdAt\n      status\n      resolvedAt\n      resolvedBy\n      githubIssueNumber\n      githubIssueUrl\n      reporter {\n        userId\n        email\n        name\n      }\n      context {\n        climbUuid\n        climbName\n        difficulty\n        sessionId\n        sessionName\n        url\n        userAgent\n      }\n    }\n  }\n': typeof types.UpdateAppFeedbackStatusDocument;
+  '\n  query HoldHeatmap($input: HoldHeatmapInput!) {\n    holdHeatmap(input: $input) {\n      holdId\n      totalUses\n      startingUses\n      handUses\n      footUses\n      finishUses\n      totalAscents\n      averageDifficulty\n    }\n  }\n': typeof types.HoldHeatmapDocument;
   '\n  query GetNewClimbFeed($input: NewClimbFeedInput!) {\n    newClimbFeed(input: $input) {\n      items {\n        uuid\n        name\n        boardType\n        layoutId\n        setterDisplayName\n        setterAvatarUrl\n        angle\n        frames\n        difficultyName\n        isNoMatch\n        createdAt\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetNewClimbFeedDocument;
   '\n  query GetMyNewClimbSubscriptions {\n    myNewClimbSubscriptions {\n      id\n      boardType\n      layoutId\n      createdAt\n    }\n  }\n': typeof types.GetMyNewClimbSubscriptionsDocument;
   '\n  mutation SubscribeNewClimbs($input: NewClimbSubscriptionInput!) {\n    subscribeNewClimbs(input: $input)\n  }\n': typeof types.SubscribeNewClimbsDocument;
@@ -55,6 +56,7 @@ type Documents = {
   '\n  mutation SaveClimb($input: SaveClimbInput!) {\n    saveClimb(input: $input) {\n      uuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n': typeof types.SaveClimbDocument;
   '\n  mutation SaveMoonBoardClimb($input: SaveMoonBoardClimbInput!) {\n    saveMoonBoardClimb(input: $input) {\n      uuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n': typeof types.SaveMoonBoardClimbDocument;
   '\n  mutation UpdateClimb($input: UpdateClimbInput!) {\n    updateClimb(input: $input) {\n      uuid\n      createdAt\n      publishedAt\n      isDraft\n    }\n  }\n': typeof types.UpdateClimbDocument;
+  '\n  mutation UpdateMoonBoardClimb($input: UpdateMoonBoardClimbInput!) {\n    updateMoonBoardClimb(input: $input) {\n      uuid\n      createdAt\n      publishedAt\n      isDraft\n    }\n  }\n': typeof types.UpdateMoonBoardClimbDocument;
   '\n  mutation DeleteDraftClimb($uuid: ID!, $boardType: String!) {\n    deleteDraftClimb(uuid: $uuid, boardType: $boardType)\n  }\n': typeof types.DeleteDraftClimbDocument;
   '\n  query GetNotifications($unreadOnly: Boolean, $limit: Int, $offset: Int) {\n    notifications(unreadOnly: $unreadOnly, limit: $limit, offset: $offset) {\n      notifications {\n        uuid\n        type\n        actorId\n        actorDisplayName\n        actorAvatarUrl\n        entityType\n        entityId\n        commentBody\n        climbName\n        climbUuid\n        boardType\n        proposalUuid\n        isRead\n        createdAt\n      }\n      totalCount\n      unreadCount\n      hasMore\n    }\n  }\n': typeof types.GetNotificationsDocument;
   '\n  query GetGroupedNotifications($limit: Int, $offset: Int) {\n    groupedNotifications(limit: $limit, offset: $offset) {\n      groups {\n        uuid\n        type\n        entityType\n        entityId\n        actorCount\n        actors {\n          id\n          displayName\n          avatarUrl\n        }\n        commentBody\n        climbName\n        climbUuid\n        boardType\n        proposalUuid\n        setterUsername\n        gymName\n        isRead\n        createdAt\n      }\n      totalCount\n      unreadCount\n      hasMore\n    }\n  }\n': typeof types.GetGroupedNotificationsDocument;
@@ -197,6 +199,8 @@ const documents: Documents = {
     types.AdminAppFeedbackDocument,
   '\n  mutation UpdateAppFeedbackStatus($input: UpdateAppFeedbackStatusInput!) {\n    updateAppFeedbackStatus(input: $input) {\n      id\n      source\n      rating\n      comment\n      platform\n      appVersion\n      boardName\n      angle\n      contactConsent\n      createdAt\n      status\n      resolvedAt\n      resolvedBy\n      githubIssueNumber\n      githubIssueUrl\n      reporter {\n        userId\n        email\n        name\n      }\n      context {\n        climbUuid\n        climbName\n        difficulty\n        sessionId\n        sessionName\n        url\n        userAgent\n      }\n    }\n  }\n':
     types.UpdateAppFeedbackStatusDocument,
+  '\n  query HoldHeatmap($input: HoldHeatmapInput!) {\n    holdHeatmap(input: $input) {\n      holdId\n      totalUses\n      startingUses\n      handUses\n      footUses\n      finishUses\n      totalAscents\n      averageDifficulty\n    }\n  }\n':
+    types.HoldHeatmapDocument,
   '\n  query GetNewClimbFeed($input: NewClimbFeedInput!) {\n    newClimbFeed(input: $input) {\n      items {\n        uuid\n        name\n        boardType\n        layoutId\n        setterDisplayName\n        setterAvatarUrl\n        angle\n        frames\n        difficultyName\n        isNoMatch\n        createdAt\n      }\n      totalCount\n      hasMore\n    }\n  }\n':
     types.GetNewClimbFeedDocument,
   '\n  query GetMyNewClimbSubscriptions {\n    myNewClimbSubscriptions {\n      id\n      boardType\n      layoutId\n      createdAt\n    }\n  }\n':
@@ -217,6 +221,8 @@ const documents: Documents = {
     types.SaveMoonBoardClimbDocument,
   '\n  mutation UpdateClimb($input: UpdateClimbInput!) {\n    updateClimb(input: $input) {\n      uuid\n      createdAt\n      publishedAt\n      isDraft\n    }\n  }\n':
     types.UpdateClimbDocument,
+  '\n  mutation UpdateMoonBoardClimb($input: UpdateMoonBoardClimbInput!) {\n    updateMoonBoardClimb(input: $input) {\n      uuid\n      createdAt\n      publishedAt\n      isDraft\n    }\n  }\n':
+    types.UpdateMoonBoardClimbDocument,
   '\n  mutation DeleteDraftClimb($uuid: ID!, $boardType: String!) {\n    deleteDraftClimb(uuid: $uuid, boardType: $boardType)\n  }\n':
     types.DeleteDraftClimbDocument,
   '\n  query GetNotifications($unreadOnly: Boolean, $limit: Int, $offset: Int) {\n    notifications(unreadOnly: $unreadOnly, limit: $limit, offset: $offset) {\n      notifications {\n        uuid\n        type\n        actorId\n        actorDisplayName\n        actorAvatarUrl\n        entityType\n        entityId\n        commentBody\n        climbName\n        climbUuid\n        boardType\n        proposalUuid\n        isRead\n        createdAt\n      }\n      totalCount\n      unreadCount\n      hasMore\n    }\n  }\n':
@@ -577,6 +583,12 @@ export function graphql(
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
+  source: '\n  query HoldHeatmap($input: HoldHeatmapInput!) {\n    holdHeatmap(input: $input) {\n      holdId\n      totalUses\n      startingUses\n      handUses\n      footUses\n      finishUses\n      totalAscents\n      averageDifficulty\n    }\n  }\n',
+): (typeof documents)['\n  query HoldHeatmap($input: HoldHeatmapInput!) {\n    holdHeatmap(input: $input) {\n      holdId\n      totalUses\n      startingUses\n      handUses\n      footUses\n      finishUses\n      totalAscents\n      averageDifficulty\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
   source: '\n  query GetNewClimbFeed($input: NewClimbFeedInput!) {\n    newClimbFeed(input: $input) {\n      items {\n        uuid\n        name\n        boardType\n        layoutId\n        setterDisplayName\n        setterAvatarUrl\n        angle\n        frames\n        difficultyName\n        isNoMatch\n        createdAt\n      }\n      totalCount\n      hasMore\n    }\n  }\n',
 ): (typeof documents)['\n  query GetNewClimbFeed($input: NewClimbFeedInput!) {\n    newClimbFeed(input: $input) {\n      items {\n        uuid\n        name\n        boardType\n        layoutId\n        setterDisplayName\n        setterAvatarUrl\n        angle\n        frames\n        difficultyName\n        isNoMatch\n        createdAt\n      }\n      totalCount\n      hasMore\n    }\n  }\n'];
 /**
@@ -633,6 +645,12 @@ export function graphql(
 export function graphql(
   source: '\n  mutation UpdateClimb($input: UpdateClimbInput!) {\n    updateClimb(input: $input) {\n      uuid\n      createdAt\n      publishedAt\n      isDraft\n    }\n  }\n',
 ): (typeof documents)['\n  mutation UpdateClimb($input: UpdateClimbInput!) {\n    updateClimb(input: $input) {\n      uuid\n      createdAt\n      publishedAt\n      isDraft\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation UpdateMoonBoardClimb($input: UpdateMoonBoardClimbInput!) {\n    updateMoonBoardClimb(input: $input) {\n      uuid\n      createdAt\n      publishedAt\n      isDraft\n    }\n  }\n',
+): (typeof documents)['\n  mutation UpdateMoonBoardClimb($input: UpdateMoonBoardClimbInput!) {\n    updateMoonBoardClimb(input: $input) {\n      uuid\n      createdAt\n      publishedAt\n      isDraft\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

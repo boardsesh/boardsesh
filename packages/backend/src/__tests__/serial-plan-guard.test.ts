@@ -16,7 +16,7 @@
 import { describe, it, expect } from 'vite-plus/test';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { is, getTableName, Table, type SQL } from 'drizzle-orm';
-import { withSerialPlan, getSetterStats, type SerialPlanDb } from '@boardsesh/db/queries';
+import { withSerialPlan, getSetterStats, getHoldHeatmapData, type SerialPlanDb } from '@boardsesh/db/queries';
 import { boardClimbs } from '@boardsesh/db/schema';
 import type { DbInstance } from '@boardsesh/db/client';
 
@@ -167,6 +167,62 @@ describe('getSetterStats guard (#4105)', () => {
       { board_name: 'kilter', layout_id: 1, size_id: 10, set_ids: [1, 20], angle: 40 },
       'jack',
     );
+
+    expect(callOrder).toEqual(['execute', 'select']);
+    expect(renderedGuards(executedStatements)[0]).toMatch(GUARD_PATTERN);
+  });
+});
+
+/** True while every recorded SELECT is preceded by an unmatched guard statement. */
+function guardsLeadSelects(callOrder: string[]): boolean {
+  let openGuards = 0;
+  for (const call of callOrder) {
+    if (call === 'execute') openGuards += 1;
+    else if (call === 'select') {
+      if (openGuards === 0) return false;
+      openGuards -= 1;
+    }
+  }
+  return true;
+}
+
+describe('getHoldHeatmapData guard (#2378)', () => {
+  const kilter = { board_name: 'kilter' as const, layout_id: 1, size_id: 10, set_ids: [1, 20], angle: 40 };
+
+  it('guards the community aggregate and both tick roll-ups', async () => {
+    // The aggregate groups board_climb_holds (millions of rows) and hash-joins
+    // board_climb_stats — the plan shape that exhausted /dev/shm in #2378. The
+    // per-user roll-ups drag boardsesh_ticks into the same join, so all three
+    // run behind the guard.
+    const { fakeDb, callOrder, executedStatements, queries } = createFakeDb();
+
+    await getHoldHeatmapData(fakeDb as unknown as DbInstance, kilter, {}, 'user-1');
+
+    // The two tick roll-ups run concurrently, so the exact interleaving isn't
+    // fixed — what must hold is that no SELECT ever outruns a guard.
+    expect(guardsLeadSelects(callOrder)).toBe(true);
+    expect(executedStatements).toHaveLength(3);
+    expect(queries.map((query) => query.table)).toEqual(['board_climb_holds', 'boardsesh_ticks', 'boardsesh_ticks']);
+    for (const rendered of renderedGuards(executedStatements)) {
+      expect(rendered).toMatch(GUARD_PATTERN);
+    }
+  });
+
+  it('guards the single personal aggregate too', async () => {
+    // Personal-progress filters collapse the three queries into one; the guard
+    // has to survive that branch.
+    const { fakeDb, callOrder, executedStatements } = createFakeDb();
+
+    await getHoldHeatmapData(fakeDb as unknown as DbInstance, kilter, { showOnlyAttempted: true }, 'user-1');
+
+    expect(callOrder).toEqual(['execute', 'select']);
+    expect(renderedGuards(executedStatements)[0]).toMatch(GUARD_PATTERN);
+  });
+
+  it('guards the anonymous (no userId) aggregate', async () => {
+    const { fakeDb, callOrder, executedStatements } = createFakeDb();
+
+    await getHoldHeatmapData(fakeDb as unknown as DbInstance, kilter, {});
 
     expect(callOrder).toEqual(['execute', 'select']);
     expect(renderedGuards(executedStatements)[0]).toMatch(GUARD_PATTERN);

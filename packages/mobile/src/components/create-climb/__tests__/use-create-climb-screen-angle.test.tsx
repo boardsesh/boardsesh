@@ -53,8 +53,17 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 vi.mock('@boardsesh/shared-schema', () => ({
+  getMoonBoardMethod: () => null,
   isNoMatchClimb: () => false,
   withNoMatch: (description: string) => description,
+}));
+// The controller imports the MoonBoard encoders unconditionally; stub them so
+// this Kilter-only suite doesn't pull in the board-config data module.
+vi.mock('@boardsesh/board-config', () => ({
+  convertLitUpHoldsMapToMoonBoardHolds: () => ({ start: [], hand: [], finish: [] }),
+  encodeMoonBoardHoldsToFrames: () => '',
+  MOONBOARD_ANGLES: [25, 40],
+  MOONBOARD_GRADES: [],
 }));
 vi.mock('@boardsesh/create-climb-react', () => ({
   useCreateClimb: () => createClimb,
@@ -79,6 +88,7 @@ vi.mock('../../../providers/auth-provider', () => ({
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: { displayName: 'Tester' } }),
   useClimb: () => ({ data: editClimb.data }),
+  useMyRoles: () => ({ data: [] }),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => ({ setCurrentClimb: queue.setCurrentClimb }),

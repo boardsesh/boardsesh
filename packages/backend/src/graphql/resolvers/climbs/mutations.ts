@@ -673,7 +673,13 @@ export const climbMutations = {
         await populateDenormalizedColumns(tx, 'moonboard', [validated.uuid]);
       }
 
-      if (!nextIsDraft || existingStats || validated.userGrade !== undefined || validated.isBenchmark !== undefined) {
+      // Mirror saveMoonBoardClimb's seeding rule: a draft with no grade gets no
+      // stats row. Gating on `validated.userGrade !== undefined` would not do —
+      // mobile always sends `userGrade`, `null` when the picker is empty, so
+      // every draft autosave would seed a junk row (null difficulty, 0 ascents)
+      // that then shows up in grade aggregates and the heatmap's AVG.
+      const shouldWriteStats = !nextIsDraft || existingStats != null || nextDifficulty !== null || nextIsBenchmark;
+      if (shouldWriteStats) {
         await tx
           .insert(dbSchema.boardClimbStats)
           .values({

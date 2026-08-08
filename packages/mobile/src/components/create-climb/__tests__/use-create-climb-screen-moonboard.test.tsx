@@ -182,3 +182,50 @@ describe('useCreateClimbScreen MoonBoard saves', () => {
     expect(boardActions.updateClimb).not.toHaveBeenCalled();
   });
 });
+
+// The #3738 working-angle effect detaches savedClimb + the preview uuid when the
+// route angle changes, because for Kilter/Tension the route angle IS the climb's
+// angle. MoonBoard breaks that assumption twice over: the climb's angle lives in
+// the editor (the 25°/40° picker), and updateMoonBoardClimb re-angles the same
+// uuid on purpose. Both directions must leave the saved row attached.
+describe('useCreateClimbScreen MoonBoard angle vs the #3738 reset', () => {
+  it('re-angles the same climb when the in-editor picker flips 40 -> 25', async () => {
+    boardActions.saveMoonBoardClimb.mockResolvedValue({ uuid: 'moon-new', isDraft: true, publishedAt: null });
+    boardActions.updateMoonBoardClimb.mockResolvedValue({ uuid: 'moon-new', isDraft: true, publishedAt: null });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: MOON_BOARD }));
+
+    act(() => result.current.setName('Waxing'));
+    await act(async () => result.current.handleSave());
+    expect(boardActions.saveMoonBoardClimb).toHaveBeenCalledTimes(1);
+
+    act(() => result.current.setMoonboardAngle(25));
+    await act(async () => result.current.handleSave());
+
+    // Same row, new angle — not a second climb.
+    expect(boardActions.saveMoonBoardClimb).toHaveBeenCalledTimes(1);
+    expect(boardActions.updateMoonBoardClimb).toHaveBeenCalledWith(
+      expect.objectContaining({ uuid: 'moon-new', angle: 25 }),
+    );
+  });
+
+  it('keeps the saved row when the route angle changes underneath the editor', async () => {
+    boardActions.saveMoonBoardClimb.mockResolvedValue({ uuid: 'moon-new', isDraft: true, publishedAt: null });
+    boardActions.updateMoonBoardClimb.mockResolvedValue({ uuid: 'moon-new', isDraft: true, publishedAt: null });
+    const { result, rerender } = renderHook((props: { board: typeof MOON_BOARD }) => useCreateClimbScreen(props), {
+      initialProps: { board: MOON_BOARD },
+    });
+
+    act(() => result.current.setName('Waning'));
+    await act(async () => result.current.handleSave());
+
+    // The board-config angle moves; the editor's picker (and the climb) do not.
+    rerender({ board: { ...MOON_BOARD, angle: 25 } });
+    expect(result.current.moonboardAngle).toBe(40);
+
+    await act(async () => result.current.handleSave());
+    expect(boardActions.saveMoonBoardClimb).toHaveBeenCalledTimes(1);
+    expect(boardActions.updateMoonBoardClimb).toHaveBeenCalledWith(
+      expect.objectContaining({ uuid: 'moon-new', angle: 40 }),
+    );
+  });
+});

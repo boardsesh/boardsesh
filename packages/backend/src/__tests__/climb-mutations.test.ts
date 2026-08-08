@@ -598,6 +598,102 @@ describe('climb mutations', () => {
     expect(mockDb.update).not.toHaveBeenCalled();
   });
 
+  it('does not seed a stats row when a MoonBoard draft is saved without a grade', async () => {
+    // Mobile always sends userGrade (null when the picker is empty), so gating
+    // on `userGrade !== undefined` would upsert a null-difficulty, zero-ascent
+    // row on every draft autosave. saveMoonBoardClimb skips the seed for a
+    // grade-less draft; the update path has to match.
+    const existing = {
+      uuid: 'climb-1',
+      userId: 'user-123',
+      name: 'Draft',
+      description: '',
+      isDraft: true,
+      publishedAt: null,
+      createdAt: '2026-07-16T00:00:00.000Z',
+      angle: 40,
+      layoutId: 3,
+      frames: 'p1r42p13r43p25r44',
+      setterUsername: 'Alice',
+      characteristics: null,
+    };
+    const holds = [
+      { holdId: 1, holdState: 'STARTING' },
+      { holdId: 13, holdState: 'HAND' },
+      { holdId: 25, holdState: 'FINISH' },
+    ];
+    mockDb.execute.mockResolvedValueOnce([]);
+    mockDb.select
+      .mockReturnValueOnce(createMockChain([existing]))
+      .mockReturnValueOnce(createMockChain(holds))
+      .mockReturnValueOnce(createMockChain([]))
+      .mockReturnValueOnce(createMockChain([existing]))
+      .mockReturnValueOnce(createMockChain(holds))
+      .mockReturnValueOnce(createMockChain([]));
+    mockDb.update.mockReturnValue(createMockChain());
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.updateMoonBoardClimb(
+      {},
+      { input: { uuid: 'climb-1', boardType: 'moonboard', name: 'Draft', isDraft: true, userGrade: null } },
+      makeCtx(),
+    );
+
+    expect(mockDb.update).toHaveBeenCalledTimes(1);
+    expect(insertCalls).toHaveLength(0);
+  });
+
+  it('still writes stats for a grade-less draft that already has a stats row', async () => {
+    // An existing row must keep being updated (that's how a grade gets cleared)
+    // — the skip only covers the "nothing to write yet" case.
+    const existing = {
+      uuid: 'climb-1',
+      userId: 'user-123',
+      name: 'Draft',
+      description: '',
+      isDraft: true,
+      publishedAt: null,
+      createdAt: '2026-07-16T00:00:00.000Z',
+      angle: 40,
+      layoutId: 3,
+      frames: 'p1r42p13r43p25r44',
+      setterUsername: 'Alice',
+      characteristics: null,
+    };
+    const holds = [
+      { holdId: 1, holdState: 'STARTING' },
+      { holdId: 13, holdState: 'HAND' },
+      { holdId: 25, holdState: 'FINISH' },
+    ];
+    const stats = [{ displayDifficulty: 17, benchmarkDifficulty: null }];
+    mockDb.execute.mockResolvedValueOnce([]);
+    mockDb.select
+      .mockReturnValueOnce(createMockChain([existing]))
+      .mockReturnValueOnce(createMockChain(holds))
+      .mockReturnValueOnce(createMockChain(stats))
+      .mockReturnValueOnce(createMockChain([existing]))
+      .mockReturnValueOnce(createMockChain(holds))
+      .mockReturnValueOnce(createMockChain(stats));
+    mockDb.update.mockReturnValue(createMockChain());
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.updateMoonBoardClimb(
+      {},
+      { input: { uuid: 'climb-1', boardType: 'moonboard', name: 'Draft', isDraft: true, userGrade: null } },
+      makeCtx(),
+    );
+
+    expect(insertCalls).toContainEqual(
+      expect.objectContaining({
+        values: expect.objectContaining({ climbUuid: 'climb-1', displayDifficulty: null }),
+      }),
+    );
+  });
+
   it('removes old-angle setter stats when an angle edit has no tick history', async () => {
     const publishedAt = new Date().toISOString();
     const existing = {

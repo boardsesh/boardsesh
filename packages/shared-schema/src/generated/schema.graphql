@@ -4578,6 +4578,39 @@ input SaveMoonBoardClimbInput {
   setter: String
 }
 
+input UpdateMoonBoardClimbInput {
+  uuid: ID!
+  boardType: String!
+  name: String
+  description: String
+  holds: MoonBoardHoldsInput
+  angle: Int
+  isDraft: Boolean
+  userGrade: String
+  isBenchmark: Boolean
+  method: MoonBoardMethod
+  setter: String
+}
+
+input HoldHeatmapInput {
+  boardName: String!
+  layoutId: Int!
+  sizeId: Int!
+  setIds: String!
+  angle: Int!
+}
+
+type HoldStat {
+  holdId: Int!
+  totalUses: Int!
+  startingUses: Int!
+  handUses: Int!
+  footUses: Int!
+  finishUses: Int!
+  totalAscents: Int!
+  averageDifficulty: Float
+}
+
 type SaveClimbResult {
   uuid: ID!
   synced: Boolean!
@@ -4984,6 +5017,9 @@ type Query {
   Supports filtering by difficulty, setter, holds, and more.
   """
   searchClimbs(input: ClimbSearchInput!): ClimbSearchResult!
+
+  "Community hold usage for one board configuration."
+  holdHeatmap(input: HoldHeatmapInput!): [HoldStat!]!
 
   """
   Check whether MoonBoard climbs with exact hold-role selections already exist.
@@ -6118,6 +6154,9 @@ type Mutation {
   Save a new MoonBoard climb.
   """
   saveMoonBoardClimb(input: SaveMoonBoardClimbInput!): SaveClimbResult!
+
+  "Update a MoonBoard climb, including its holds, grade, method, and benchmark metadata."
+  updateMoonBoardClimb(input: UpdateMoonBoardClimbInput!): UpdateClimbResult!
 
   """
   Update an existing climb. The caller must own the climb, and the climb

@@ -211,18 +211,26 @@ export function useCreateClimbScreen({
   // so an angle change remounts the form and resets `savedClimb` to null. This
   // mirrors that reset without wiping the paint. Skipped in edit mode, whose
   // identity is `editClimbUuid` (you're editing one row across any angle).
+  //
+  // MoonBoard is exempt on both sides. Its working angle is in-editor state
+  // (`moonboardAngle`, the 25°/40° picker), not the route param, so the route
+  // angle changing underneath doesn't change the climb being authored — a reset
+  // there would silently orphan the saved row and duplicate it on the next Save.
+  // And a 25° <-> 40° switch inside the editor deliberately does NOT reset:
+  // `updateMoonBoardClimb` re-angles the same uuid (moving its stats row), which
+  // is exactly the edit a setter means when they flip the picker.
   const lastAngleRef = useRef(board.angle);
   useEffect(() => {
     if (lastAngleRef.current === board.angle) return;
     lastAngleRef.current = board.angle;
-    if (isEditing) return;
+    if (isEditing || isMoonBoard) return;
     // Fresh authoring context at the new angle: drop the saved-row link so the
     // next Save creates a new climb, clear any stale duplicate banner, and mint
     // a new preview uuid so Set Active pushes an independent queue item.
     setSavedClimb(null);
     setPublishDuplicateError(null);
     previewUuidRef.current = randomUUID();
-  }, [board.angle, isEditing]);
+  }, [board.angle, isEditing, isMoonBoard]);
 
   // ---- Edit mode: fetch the climb and seed the editor once. ----
   const editVariables = useMemo(
