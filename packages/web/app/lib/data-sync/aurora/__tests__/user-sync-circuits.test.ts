@@ -25,7 +25,11 @@ import { upsertTableData } from '../user-sync';
  * exists because without it, deleting the guard block here passes every other
  * test in the repo.
  */
-type DbCall = { kind: 'select' | 'insert' | 'delete' | 'conflict' | 'execute'; table?: unknown; args: unknown[] };
+type DbCall = {
+  kind: 'select' | 'insert' | 'delete' | 'conflict' | 'execute' | 'transaction';
+  table?: unknown;
+  args: unknown[];
+};
 
 function createDbShim(opts: {
   owners?: Array<Record<string, unknown>>;
@@ -35,6 +39,14 @@ function createDbShim(opts: {
   const calls: DbCall[] = [];
   let selectIndex = 0;
   const db = {
+    // The circuits branch opens its own transaction so the advisory locks are
+    // always held by one. The shim records the call (a test asserts the locks
+    // run inside it) and hands the same handle back, standing in for the
+    // savepoint a real nested `db.transaction` would open.
+    transaction<T>(run: (tx: unknown) => Promise<T>) {
+      calls.push({ kind: 'transaction', args: [] });
+      return run(db);
+    },
     execute(statement: unknown) {
       calls.push({ kind: 'execute', args: [statement] });
       return Promise.resolve([]);
@@ -182,6 +194,19 @@ describe('web aurora proxy — circuits foreign-owner guard (#3526)', () => {
     expect(warn.mock.calls[0]?.[0]).toContain('"reason":"foreign"');
   });
 
+  it('opens its own transaction before taking any advisory lock', async () => {
+    const { db, calls } = createDbShim({ owners: [] });
+
+    await upsertTableData(db as never, 'tension', 'circuits', 144574, 'user-1', [circuit] as never);
+
+    // pg_advisory_xact_lock protects nothing outside an explicit transaction —
+    // the statement commits on its own and the lock drops immediately. The
+    // branch must make the handle transactional itself rather than trusting
+    // every caller to have done it.
+    expect(calls[0]).toEqual({ kind: 'transaction', args: [] });
+    expect(calls[1]?.kind).toBe('execute');
+  });
+
   it('takes the shared advisory locks in sorted UUID order before every source write', async () => {
     const { db, calls } = createDbShim({ owners: [], returning: [{ id: BigInt(1) }] });
     const laterCircuit = { ...circuit, uuid: 'z-circuit', name: 'later' };
@@ -195,7 +220,8 @@ describe('web aurora proxy — circuits foreign-owner guard (#3526)', () => {
     const executeCalls = calls.filter((call) => call.kind === 'execute');
     const firstInsertIndex = calls.findIndex((call) => call.kind === 'insert');
     expect(executeCalls).toHaveLength(2);
-    expect(calls.slice(0, firstInsertIndex).every((call) => call.kind === 'execute')).toBe(true);
+    expect(calls[0]?.kind).toBe('transaction');
+    expect(calls.slice(1, firstInsertIndex).every((call) => call.kind === 'execute')).toBe(true);
     const sourceWrites = calls
       .filter((call) => call.kind === 'insert' && call.table === boardCircuits)
       .map((call) => call.args[0] as { uuid?: string })
@@ -220,7 +246,7 @@ describe('web aurora proxy — circuits foreign-owner guard (#3526)', () => {
       { warn: vi.fn(), error },
     );
 
-    expect(calls).toHaveLength(0);
+    expect(calls.filter((call) => call.kind !== 'transaction')).toHaveLength(0);
     expect(error).toHaveBeenCalledTimes(1);
     const logLine = error.mock.calls[0]?.[0] ?? '';
     expect(JSON.parse(logLine)).toEqual({

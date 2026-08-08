@@ -275,163 +275,172 @@ export async function upsertTableData(
     }
 
     case 'circuits': {
-      const circuitsSchema = UNIFIED_TABLES.circuits;
-      const { items: circuitItems, rejectedCount } = normalizeAuroraCircuitItems(data);
-      if (rejectedCount > 0) {
-        logger.error(
-          JSON.stringify({
-            level: 'error',
-            event: 'aurora_circuit_playlist_malformed_payload',
-            boardType: boardName,
-            rejectedCount,
-          }),
-        );
-      }
+      // `pg_advisory_xact_lock` only holds for the life of an explicit
+      // transaction: run outside one, every statement commits on its own and
+      // drops the lock immediately, so arbitration would be a no-op. The
+      // daemon defends itself by opening its own transaction; do the same here
+      // (a savepoint when the caller already supplied one, as `syncUserData`
+      // does) so a future direct caller passing a plain handle cannot silently
+      // void it.
+      await db.transaction(async (circuitsTx) => {
+        const circuitsSchema = UNIFIED_TABLES.circuits;
+        const { items: circuitItems, rejectedCount } = normalizeAuroraCircuitItems(data);
+        if (rejectedCount > 0) {
+          logger.error(
+            JSON.stringify({
+              level: 'error',
+              event: 'aurora_circuit_playlist_malformed_payload',
+              boardType: boardName,
+              rejectedCount,
+            }),
+          );
+        }
 
-      // This function is called with the route's transaction handle. Take the
-      // exact same complete, sorted lock set as the daemon before ANY source or
-      // playlist write. That serializes daemon↔web as well as web↔web claims.
-      for (const item of circuitItems) {
-        await db.execute(auroraCircuitAdvisoryLockStatement(boardName, item.uuid));
-      }
+        // Take the exact same complete, sorted lock set as the daemon before ANY
+        // source or playlist write. That serializes daemon↔web as well as
+        // web↔web claims.
+        for (const item of circuitItems) {
+          await circuitsTx.execute(auroraCircuitAdvisoryLockStatement(boardName, item.uuid));
+        }
 
-      // Write source rows only after every lock is held. Keeping source writes
-      // in the same normalized order avoids row/advisory lock inversions across
-      // multi-circuit payloads.
-      for (const item of circuitItems) {
-        await db
-          .insert(circuitsSchema)
-          .values({
-            boardType: boardName,
-            uuid: item.uuid,
-            name: item.name,
-            description: item.description,
-            color: item.color,
-            userId: Number(auroraUserId),
-            isPublic: Boolean(item.is_public),
-            createdAt: item.created_at,
-            updatedAt: item.updated_at,
-          })
-          .onConflictDoUpdate({
-            target: [circuitsSchema.boardType, circuitsSchema.uuid],
-            set: {
+        // Write source rows only after every lock is held. Keeping source writes
+        // in the same normalized order avoids row/advisory lock inversions across
+        // multi-circuit payloads.
+        for (const item of circuitItems) {
+          await circuitsTx
+            .insert(circuitsSchema)
+            .values({
+              boardType: boardName,
+              uuid: item.uuid,
               name: item.name,
               description: item.description,
               color: item.color,
+              userId: Number(auroraUserId),
               isPublic: Boolean(item.is_public),
+              createdAt: item.created_at,
               updatedAt: item.updated_at,
-            },
-          });
-      }
-
-      if (!nextAuthUserId) break;
-
-      // The lock set makes this single fresh owner query stable for the rest of
-      // the transaction. A second query is reserved for the unexpected SQL
-      // guard suppression path, where it explains why `.returning()` was empty.
-      const ownersByAuroraId = await selectUpstreamPlaylistOwners(
-        db,
-        playlists.auroraId,
-        circuitItems.map((item) => item.uuid),
-      );
-
-      for (const item of circuitItems) {
-        const decision = resolveUpstreamPlaylistWrite(ownersByAuroraId.get(item.uuid) ?? [], nextAuthUserId);
-        if (decision === 'foreign' || decision === 'ambiguous') {
-          // Refuse the whole dual-write — upsert, ownership grant AND the
-          // playlist_climbs replace below. Skipping only the upsert would still
-          // wipe the other user's climbs further down.
-          logCircuitPlaylistRefusal(logger, {
-            boardName,
-            circuitUuid: item.uuid,
-            syncingUserId: nextAuthUserId,
-            stage: 'ownership-check',
-            reason: decision,
-          });
-          continue;
+            })
+            .onConflictDoUpdate({
+              target: [circuitsSchema.boardType, circuitsSchema.uuid],
+              set: {
+                name: item.name,
+                description: item.description,
+                color: item.color,
+                isPublic: Boolean(item.is_public),
+                updatedAt: item.updated_at,
+              },
+            });
         }
 
-        // Aurora may omit the hash and legacy payloads may use shorthand;
-        // persist one canonical representation for every downstream client.
-        const formattedColor = normalizePlaylistColor(item.color);
+        if (!nextAuthUserId) return;
 
-        const [playlist] = await db
-          .insert(playlists)
-          .values({
-            uuid: item.uuid,
-            boardType: boardName,
-            layoutId: null,
-            name: item.name || 'Untitled Circuit',
-            description: item.description || null,
-            isPublic: Boolean(item.is_public),
-            color: formattedColor,
-            auroraType: 'circuits',
-            auroraId: item.uuid,
-            auroraSyncedAt: new Date(),
-            createdAt: item.created_at ? new Date(item.created_at) : new Date(),
-            updatedAt: item.updated_at ? new Date(item.updated_at) : new Date(),
-          })
-          .onConflictDoUpdate({
-            target: playlists.auroraId,
-            set: {
+        // The lock set makes this single fresh owner query stable for the rest of
+        // the transaction. A second query is reserved for the unexpected SQL
+        // guard suppression path, where it explains why `.returning()` was empty.
+        const ownersByAuroraId = await selectUpstreamPlaylistOwners(
+          circuitsTx,
+          playlists.auroraId,
+          circuitItems.map((item) => item.uuid),
+        );
+
+        for (const item of circuitItems) {
+          const decision = resolveUpstreamPlaylistWrite(ownersByAuroraId.get(item.uuid) ?? [], nextAuthUserId);
+          if (decision === 'foreign' || decision === 'ambiguous') {
+            // Refuse the whole dual-write — upsert, ownership grant AND the
+            // playlist_climbs replace below. Skipping only the upsert would still
+            // wipe the other user's climbs further down.
+            logCircuitPlaylistRefusal(logger, {
+              boardName,
+              circuitUuid: item.uuid,
+              syncingUserId: nextAuthUserId,
+              stage: 'ownership-check',
+              reason: decision,
+            });
+            continue;
+          }
+
+          // Aurora may omit the hash and legacy payloads may use shorthand;
+          // persist one canonical representation for every downstream client.
+          const formattedColor = normalizePlaylistColor(item.color);
+
+          const [playlist] = await circuitsTx
+            .insert(playlists)
+            .values({
+              uuid: item.uuid,
+              boardType: boardName,
+              layoutId: null,
               name: item.name || 'Untitled Circuit',
               description: item.description || null,
               isPublic: Boolean(item.is_public),
               color: formattedColor,
-              updatedAt: item.updated_at ? new Date(item.updated_at) : new Date(),
+              auroraType: 'circuits',
+              auroraId: item.uuid,
               auroraSyncedAt: new Date(),
-            },
-            // Defence in depth: the advisory lock is primary; this correlated
-            // predicate still refuses a caller that bypasses the protocol.
-            setWhere: foreignPlaylistOwnerGuard(nextAuthUserId),
-          })
-          .returning({ id: playlists.id });
+              createdAt: item.created_at ? new Date(item.created_at) : new Date(),
+              updatedAt: item.updated_at ? new Date(item.updated_at) : new Date(),
+            })
+            .onConflictDoUpdate({
+              target: playlists.auroraId,
+              set: {
+                name: item.name || 'Untitled Circuit',
+                description: item.description || null,
+                isPublic: Boolean(item.is_public),
+                color: formattedColor,
+                updatedAt: item.updated_at ? new Date(item.updated_at) : new Date(),
+                auroraSyncedAt: new Date(),
+              },
+              // Defence in depth: the advisory lock is primary; this correlated
+              // predicate still refuses a caller that bypasses the protocol.
+              setWhere: foreignPlaylistOwnerGuard(nextAuthUserId),
+            })
+            .returning({ id: playlists.id });
 
-        if (!playlist) {
-          const freshOwners = await selectUpstreamPlaylistOwners(db, playlists.auroraId, [item.uuid]);
-          const suppressedDecision = resolveUpstreamPlaylistWrite(freshOwners.get(item.uuid) ?? [], nextAuthUserId);
-          logCircuitPlaylistRefusal(logger, {
-            boardName,
-            circuitUuid: item.uuid,
-            syncingUserId: nextAuthUserId,
-            stage: 'suppressed-upsert',
-            reason: suppressedDecision === 'adopt' ? 'no-owner' : suppressedDecision,
-          });
-          continue;
-        }
+          if (!playlist) {
+            const freshOwners = await selectUpstreamPlaylistOwners(circuitsTx, playlists.auroraId, [item.uuid]);
+            const suppressedDecision = resolveUpstreamPlaylistWrite(freshOwners.get(item.uuid) ?? [], nextAuthUserId);
+            logCircuitPlaylistRefusal(logger, {
+              boardName,
+              circuitUuid: item.uuid,
+              syncingUserId: nextAuthUserId,
+              stage: 'suppressed-upsert',
+              reason: suppressedDecision === 'adopt' ? 'no-owner' : suppressedDecision,
+            });
+            continue;
+          }
 
-        await db
-          .insert(playlistOwnership)
-          .values({
-            playlistId: playlist.id,
-            userId: nextAuthUserId,
-            role: 'owner',
-          })
-          .onConflictDoUpdate({
-            target: [playlistOwnership.playlistId, playlistOwnership.userId],
-            set: { role: 'owner' },
-          });
+          await circuitsTx
+            .insert(playlistOwnership)
+            .values({
+              playlistId: playlist.id,
+              userId: nextAuthUserId,
+              role: 'owner',
+            })
+            .onConflictDoUpdate({
+              target: [playlistOwnership.playlistId, playlistOwnership.userId],
+              set: { role: 'owner' },
+            });
 
-        if (item.climbs && Array.isArray(item.climbs)) {
-          await db.delete(playlistClimbs).where(eq(playlistClimbs.playlistId, playlist.id));
+          if (item.climbs && Array.isArray(item.climbs)) {
+            await circuitsTx.delete(playlistClimbs).where(eq(playlistClimbs.playlistId, playlist.id));
 
-          for (let i = 0; i < item.climbs.length; i++) {
-            const climb = item.climbs[i];
-            const climbUuid = climb.climb_uuid || climb.uuid || climb;
-            const climbAngle = climb.angle ?? null;
-            const climbPosition = climb.position ?? i;
+            for (let i = 0; i < item.climbs.length; i++) {
+              const climb = item.climbs[i];
+              const climbUuid = climb.climb_uuid || climb.uuid || climb;
+              const climbAngle = climb.angle ?? null;
+              const climbPosition = climb.position ?? i;
 
-            if (typeof climbUuid === 'string') {
-              await db.insert(playlistClimbs).values({
-                playlistId: playlist.id,
-                climbUuid,
-                angle: climbAngle,
-                position: climbPosition,
-              });
+              if (typeof climbUuid === 'string') {
+                await circuitsTx.insert(playlistClimbs).values({
+                  playlistId: playlist.id,
+                  climbUuid,
+                  angle: climbAngle,
+                  position: climbPosition,
+                });
+              }
             }
           }
         }
-      }
+      });
       break;
     }
 
