@@ -161,8 +161,8 @@
       },
       "snackbar": {
         "boardsLinkMissing": "No se encontró el plafón enlazado — mostrando todas tus entradas.",
-        "deleteFailed": "No se pudo eliminar la marca",
-        "tickDeleted": "Marca eliminada",
+        "deleteFailed": "No se pudo eliminar el encadene",
+        "tickDeleted": "Encadene eliminado",
         "undo": "Deshacer"
       }
     },

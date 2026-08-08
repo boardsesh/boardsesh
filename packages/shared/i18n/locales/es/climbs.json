@@ -153,8 +153,8 @@
       "only": "Solo {{filters}}",
       "holds_one": "{{count}} presa",
       "holds_other": "{{count}} presas",
-      "routesOnly": "Solo rutas",
-      "bouldersAndRoutes": "Bloques y rutas",
+      "routesOnly": "Solo vías",
+      "bouldersAndRoutes": "Bloques y vías",
       "more": "+{{count}} más"
     },
     "status": {
@@ -276,7 +276,7 @@
         "signInToRecord": "Inicia sesión para registrar tu progreso",
         "createAccountBlurb": "Crea una cuenta de Boardsesh para registrar tus bloques y seguir tu progreso.",
         "signIn": "Iniciar sesión",
-        "orLogInOfficialApp": "O registra tu marca en la app oficial:",
+        "orLogInOfficialApp": "O registra tu encadene en la app oficial:",
         "openInApp": "Abrir en la app",
         "alwaysOpenInApp": "Abrir siempre en la app",
         "authModalTitle": "Inicia sesión para registrar tu progreso",
@@ -333,7 +333,7 @@
     },
     "list": {
       "moreActions": "Más acciones",
-      "tickError": "No se pudo guardar tu marca — se guardó como borrador"
+      "tickError": "No se pudo guardar tu encadene — se guardó como borrador"
     },
     "detailHeader": {
       "project": "proyecto"
@@ -641,7 +641,7 @@
     "logAscent": {
       "attempt": "Intento",
       "errorMessage": "No se pudo guardar tu ascenso. Inténtalo de nuevo.",
-      "savedToast": "Tick guardado"
+      "savedToast": "Encadene guardado"
     },
     "filter": {
       "climbType": "Tipo",
@@ -797,7 +797,7 @@
       "nameCopied": "Nombre copiado",
       "copyNameError": "No se pudo copiar el nombre",
       "copyNameHint": "Mantén pulsado para copiar el nombre",
-      "tick": "Registrar un envío",
+      "tick": "Registrar un encadene",
       "addBetaVideo": "Añadir vídeo de beta",
       "openInApp": "Abrir en la app Aurora",
       "fork": "Remix this climb",
