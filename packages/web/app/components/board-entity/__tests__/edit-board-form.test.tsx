@@ -249,6 +249,38 @@ describe('EditBoardForm — duplicate config', () => {
     expect(mockExecute).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the specific body on screen through the close transition instead of flashing the generic one', async () => {
+    // MUI's Dialog fade-out re-renders the still-mounted body while closing, so
+    // clearing the duplicate data on the same tick as the click used to swap
+    // the specific copy for the generic fallback for the ~300ms of the
+    // transition. The data now only clears on `onExited`, once the transition
+    // has actually finished, so it has to still be there right after the click.
+    const onError = renderAndGetOnError();
+
+    await act(async () => {
+      onError(ownerDuplicate, null);
+    });
+    expect(
+      screen.getByText(
+        'This change makes the board match "Garage Kilter" at My Garage — same layout, size and hold sets.',
+      ),
+    ).toBeTruthy();
+
+    await act(async () => {
+      screen.getByText('Cancel').click();
+    });
+
+    // The transition's `onExited` hasn't fired yet (it needs a real transition
+    // end, not just the click), so the specific body should still be showing —
+    // not the generic fallback the bug flashed instead.
+    expect(
+      screen.getByText(
+        'This change makes the board match "Garage Kilter" at My Garage — same layout, size and hold sets.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText('This change matches a board setup the owner already has.')).toBeNull();
+  });
+
   it('still reports a non-duplicate failure through the snackbar', async () => {
     const onError = renderAndGetOnError();
 

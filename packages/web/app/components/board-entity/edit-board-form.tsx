@@ -68,7 +68,15 @@ export default function EditBoardForm({ board, onSuccess, onCancel, formId, onSu
   // fields are null when the server withheld the colliding board's identity —
   // it does that whenever the editor is not the board's owner (a gym admin, a
   // community moderator), so the dialog has to work without a board to name.
+  //
+  // `duplicate` and `duplicateDialogOpen` are split so the dialog's ~300ms fade
+  // -out transition still has content to render: closing sets only `open` to
+  // false, and `duplicate` itself is cleared from `TransitionProps.onExited`,
+  // once the exit animation actually finishes. Clearing both at once (the
+  // original approach) let MUI re-render the closing dialog's body against
+  // `duplicate === null` mid-fade, flashing the generic fallback copy.
   const [duplicate, setDuplicate] = useState<{ name: string | null; locationName: string | null } | null>(null);
+  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
   const lastValuesRef = useRef<EditBoardFormValues | null>(null);
   // `runUpdate` fires from two places — the drawer's Save button and the
   // duplicate dialog's "Save anyway" retry — and neither is disabled while the
@@ -86,6 +94,7 @@ export default function EditBoardForm({ board, onSuccess, onCancel, formId, onSu
       if (isDuplicateBoardError(error)) {
         const duplicateError = readDuplicateBoardError(error);
         setDuplicate({ name: duplicateError?.boardName || null, locationName: duplicateError?.locationName || null });
+        setDuplicateDialogOpen(true);
         track(SHARED_EVENTS.BoardDuplicatePrompted, {
           boardType: board.boardType,
           source: 'web_edit_drawer',
@@ -169,7 +178,7 @@ export default function EditBoardForm({ board, onSuccess, onCancel, formId, onSu
 
   const handleSaveAnyway = useCallback(async () => {
     const values = lastValuesRef.current;
-    setDuplicate(null);
+    setDuplicateDialogOpen(false);
     if (!values) return;
     await runUpdate(values, true);
   }, [runUpdate]);
@@ -210,7 +219,13 @@ export default function EditBoardForm({ board, onSuccess, onCancel, formId, onSu
       {/* A dialog, not a snackbar: this is a choice, and the snackbar's single
           action slot can't carry one. Before this the guard was a flat
           "Failed to update board" with no way past it. */}
-      <Dialog open={duplicate !== null} onClose={() => setDuplicate(null)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={duplicateDialogOpen}
+        onClose={() => setDuplicateDialogOpen(false)}
+        TransitionProps={{ onExited: () => setDuplicate(null) }}
+        maxWidth="xs"
+        fullWidth
+      >
         <DialogTitle>{t('boardForm.edit.duplicateTitle')}</DialogTitle>
         <DialogContent>
           <DialogContentText>
@@ -225,7 +240,7 @@ export default function EditBoardForm({ board, onSuccess, onCancel, formId, onSu
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDuplicate(null)}>{t('boardForm.edit.cancel')}</Button>
+          <Button onClick={() => setDuplicateDialogOpen(false)}>{t('boardForm.edit.cancel')}</Button>
           <Button onClick={() => void handleSaveAnyway()} variant="contained">
             {t('boardForm.edit.saveAnyway')}
           </Button>
