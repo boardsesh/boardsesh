@@ -102,8 +102,10 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
   const rawSpacing = count > 1 ? (plotWidth - INITIAL_SPACING - END_SPACING) / (count - 1) : 0;
   const slotWidth = Math.min(rawSpacing, MAX_SLOT_WIDTH);
   // Once the angles crowd together, a horizontal "70°" clips to "…" — turn the
-  // labels diagonal the way the Community chart below already does.
-  const rotateLabels = plotWidth > 0 && rawSpacing < MIN_HORIZONTAL_LABEL_WIDTH;
+  // labels diagonal the way the Community chart below already does. A lone angle
+  // has no spacing to measure (and renders as a sentence, not a chart) — opt out
+  // rather than let its rawSpacing of 0 read as "crowded".
+  const rotateLabels = count > 1 && plotWidth > 0 && rawSpacing < MIN_HORIZONTAL_LABEL_WIDTH;
 
   const neutralStroke = chartColors.secondaryLabel;
   const diamondEdge = chartColors.label;

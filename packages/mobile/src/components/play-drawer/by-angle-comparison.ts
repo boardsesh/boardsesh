@@ -264,9 +264,12 @@ export function buildDumbbellAxis(rows: DumbbellAngleRow[], gradeFormat: GradeDi
     if (label) labelBelow = label;
   }
 
-  // Blank ticks print nothing, so only the real grade labels can claim gutter.
+  // Blank ticks print nothing, so only the real grade labels can claim gutter,
+  // and they're compared as rendered rather than by character count — " / " is
+  // worth about half a digit, so the longest string isn't always the widest.
   const longestLabel = yAxisLabelTexts.reduce(
-    (longest, label) => (label !== BLANK_TICK && label.length > longest.length ? label : longest),
+    (longest, label) =>
+      label !== BLANK_TICK && estimateLabelWidth(label) > estimateLabelWidth(longest) ? label : longest,
     '',
   );
 

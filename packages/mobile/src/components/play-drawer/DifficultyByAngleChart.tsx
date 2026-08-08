@@ -126,9 +126,9 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
         // above stays true to what actually renders.
         topLabelComponent: (): ReactNode => (
           <View style={styles.topLabelWrap} pointerEvents="none">
-            {lines.map((line) => (
+            {lines.map((line, lineIndex) => (
               <Text
-                key={line}
+                key={`${lineIndex}-${line}`}
                 variant="caption2"
                 color={fill}
                 style={[
