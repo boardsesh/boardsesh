@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
-import { sql, eq } from 'drizzle-orm';
+import { sql, eq, is, SQL } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
@@ -99,7 +99,7 @@ const insertGym = async (opts: {
   websiteVouchedByOwner?: boolean;
 }): Promise<{ id: number; uuid: string }> => {
   const { ownerId, name, uuid = uuidv4(), website = null, isPublic = true } = opts;
-  // Default to the same rule the 0189 backfill encodes: a seeded website counts
+  // Default to the same rule the 0192 backfill encodes: a seeded website counts
   // as owner-vouched only on a user-owned gym. A SYSTEM-owned gym can never be
   // vouched in production (its owner is the never-logged-in import user), so the
   // helper must not seed that fiction. Pass the flag explicitly to force a value.
@@ -174,6 +174,11 @@ const gymWebsiteVouched = async (gymId: number): Promise<boolean> => {
   return Array.from(result as Iterable<{ website_vouched_by_owner: boolean }>)[0].website_vouched_by_owner;
 };
 
+const gymWebsite = async (gymId: number): Promise<string | null> => {
+  const result = await db.execute(sql`SELECT website FROM gyms WHERE id = ${gymId} LIMIT 1`);
+  return Array.from(result as Iterable<{ website: string | null }>)[0].website;
+};
+
 const claimRowCount = async (gymId: number): Promise<number> => {
   const [countRow] = Array.from(
     (await db.execute(sql`SELECT count(*)::int AS c FROM gym_claims WHERE gym_id = ${gymId}`)) as Iterable<{
@@ -181,6 +186,62 @@ const claimRowCount = async (gymId: number): Promise<number> => {
     }>,
   );
   return Number(countRow.c);
+};
+
+/**
+ * Run `body()` with `db.update(gyms)` intercepted, for the two things a #3431
+ * TOCTOU test needs and cannot get any other way:
+ *
+ * 1. It records the SET payload the resolver hands Drizzle, so an assertion can
+ *    read the predicate the resolver ACTUALLY built rather than a rebuilt copy
+ *    (a rebuilt predicate asserts nothing).
+ * 2. `interleave` runs after the resolver has read its gym snapshot and before
+ *    its UPDATE reaches Postgres — the exact window a concurrent owner write
+ *    lands in. That makes the race deterministic instead of unpinnable.
+ *
+ * The stand-in only implements the exact `.set().where().returning()` chain
+ * updateGym uses, then delegates to the real builder. If that chain ever
+ * changes, this throws rather than quietly skipping the interleave.
+ */
+const withInterceptedGymUpdate = async <T>(
+  body: () => Promise<T>,
+  interleave?: () => Promise<void>,
+): Promise<{ result: T; setPayloads: Record<string, unknown>[] }> => {
+  const setPayloads: Record<string, unknown>[] = [];
+  const realUpdate = db.update.bind(db);
+  const spy = vi.spyOn(db, 'update') as unknown as {
+    mockImplementation: (fn: (table: unknown) => unknown) => void;
+    mockRestore: () => void;
+  };
+
+  spy.mockImplementation((table: unknown) => {
+    if (table !== dbSchema.gyms) return realUpdate(table as typeof dbSchema.gyms);
+    let captured: Record<string, unknown> = {};
+    let condition: SQL | undefined;
+    const standIn = {
+      set(values: Record<string, unknown>) {
+        captured = values;
+        setPayloads.push(values);
+        return standIn;
+      },
+      where(cond: SQL | undefined) {
+        condition = cond;
+        return standIn;
+      },
+      async returning() {
+        if (interleave) await interleave();
+        return realUpdate(dbSchema.gyms).set(captured).where(condition).returning();
+      },
+    };
+    return standIn;
+  });
+
+  try {
+    const result = await body();
+    return { result, setPayloads };
+  } finally {
+    spy.mockRestore();
+  }
 };
 
 const gymOwnerId = async (gymUuid: string): Promise<string> => {
@@ -913,6 +974,87 @@ describe('requestGymClaim — the website must be owner-vouched to self-verify (
       ),
     ).rejects.toThrow(/hasn't been confirmed by the gym's owner/);
     expect(sendGymClaimVerificationEmail).not.toHaveBeenCalled();
+  });
+
+  it('un-vouches on a stale-snapshot save, so a concurrent owner vouch cannot be inherited', async () => {
+    // TOCTOU. The "did the website change?" test used to run in JS against the
+    // snapshot requireGymEditAccess read, while the flag was written by an
+    // unconditional UPDATE. Interleave an owner commit between those two points
+    // and the editor's save re-lands its own URL while the comparison says
+    // "unchanged" — leaving the attacker's website flagged owner-vouched.
+    const claimGym = await insertGym({ ownerId: OWNER, name: 'Bonsist Race', website: null });
+    await socialGymMutations.grantGymWriteAccess(
+      null,
+      { input: { gymUuid: claimGym.uuid, userId: EDITOR_TARGET } },
+      authCtx(OWNER),
+    );
+    await socialGymMutations.updateGym(
+      null,
+      { input: { gymUuid: claimGym.uuid, website: 'https://attacker-owned.example' } },
+      authCtx(EDITOR_TARGET),
+    );
+    expect(await gymWebsiteVouched(claimGym.id)).toBe(false);
+
+    // The editor saves the manage form again (posting the attacker URL it just
+    // read back) while the owner sets and vouches the gym's real website in the
+    // window between that read and the editor's write.
+    await withInterceptedGymUpdate(
+      () =>
+        socialGymMutations.updateGym(
+          null,
+          { input: { gymUuid: claimGym.uuid, description: 'New hours', website: 'https://attacker-owned.example' } },
+          authCtx(EDITOR_TARGET),
+        ),
+      async () => {
+        await db.execute(
+          sql`UPDATE gyms SET website = 'https://bonsist.bg', website_vouched_by_owner = true WHERE id = ${claimGym.id}`,
+        );
+      },
+    );
+
+    // Last writer still wins on the value itself — but it cannot inherit the
+    // vouch, because the CASE compares against the row as the statement finds
+    // it, not against the snapshot.
+    expect(await gymWebsite(claimGym.id)).toBe('https://attacker-owned.example');
+    expect(await gymWebsiteVouched(claimGym.id)).toBe(false);
+
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, claimEmail: 'boss@attacker-owned.example' } },
+        authCtx(SECOND_TARGET),
+      ),
+    ).rejects.toThrow(/hasn't been confirmed by the gym's owner/);
+    expect(await claimRowCount(claimGym.id)).toBe(0);
+    expect(sendGymClaimVerificationEmail).not.toHaveBeenCalled();
+  });
+
+  it('writes the website and its vouch in one statement, deciding the change in SQL', async () => {
+    // The invariant migration 0192 and the column comment both state: website and
+    // website_vouched_by_owner are always written together, in the same statement.
+    // Asserted on the payload the resolver actually handed Drizzle — a rebuilt
+    // predicate would pass no matter what the resolver does.
+    const claimGym = await insertGym({ ownerId: OWNER, name: 'Bonsist Same Statement', website: 'https://bonsist.bg' });
+    const { setPayloads } = await withInterceptedGymUpdate(() =>
+      socialGymMutations.updateGym(
+        null,
+        { input: { gymUuid: claimGym.uuid, website: 'https://bonsist.bg' } },
+        authCtx(OWNER),
+      ),
+    );
+
+    expect(setPayloads).toHaveLength(1);
+    const [payload] = setPayloads;
+    expect(Object.keys(payload)).toContain('website');
+    // Not a JS-side boolean and not absent: a CASE evaluated against the row.
+    expect(is(payload.websiteVouchedByOwner, SQL)).toBe(true);
+
+    const rendered = db.update(dbSchema.gyms).set(payload).toSQL().sql.toLowerCase().replace(/\s+/g, ' ');
+    // The comparison reads the row's own website, and the untouched branch keeps
+    // the row's own flag — neither side can come from the resolver's snapshot.
+    expect(rendered).toMatch(
+      /"website_vouched_by_owner" = case when "gyms"\."website" is distinct from \$\d+::text then \$\d+::boolean else "gyms"\."website_vouched_by_owner" end/,
+    );
   });
 
   it('re-vouches when the owner deliberately retypes a different website', async () => {

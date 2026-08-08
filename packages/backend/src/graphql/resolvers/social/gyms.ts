@@ -1016,16 +1016,27 @@ export const socialGymMutations = {
     if (validatedInput.description !== undefined) updateValues.description = validatedInput.description;
     if (validatedInput.address !== undefined) updateValues.address = validatedInput.address;
     if (validatedInput.website !== undefined) {
-      updateValues.website = validatedInput.website;
+      const nextWebsite = validatedInput.website;
+      updateValues.website = nextWebsite;
       // Provenance for the domain-claim path (#3431): only an actual write of the
       // website re-evaluates the vouch, and only the owner's own write vouches.
       // An unchanged website leaves the flag alone in both directions — the manage
       // form posts every field on every save, so an editor fixing the description
       // must not silently disable the owner's claim path, and an owner saving the
       // form must not silently re-vouch a URL an editor put there.
-      if (validatedInput.website !== gym.website) {
-        updateValues.websiteVouchedByOwner = callerIsGymOwner && validatedInput.website != null;
-      }
+      //
+      // "Changed?" is decided by the UPDATE itself, against the row as it stands
+      // when the statement runs — NOT against the snapshot requireGymEditAccess
+      // read above. Comparing in JS is a TOCTOU hole: an editor reads website=A
+      // (their own attacker URL), the owner concurrently commits website=B and
+      // vouches it, then the editor's write lands A while "A === snapshot A"
+      // decides the flag is untouched — leaving the attacker's URL flagged as
+      // owner-vouched. Inside one statement the CASE sees B, calls it a change,
+      // and un-vouches. This is also the invariant the column's doc comment and
+      // migration 0192 state: website and website_vouched_by_owner are always
+      // written together, in the same statement.
+      const vouchesOnChange = callerIsGymOwner && nextWebsite != null;
+      updateValues.websiteVouchedByOwner = sql`CASE WHEN ${dbSchema.gyms.website} IS DISTINCT FROM ${nextWebsite}::text THEN ${vouchesOnChange}::boolean ELSE ${dbSchema.gyms.websiteVouchedByOwner} END`;
     }
     if (validatedInput.contactEmail !== undefined) updateValues.contactEmail = validatedInput.contactEmail;
     if (validatedInput.contactPhone !== undefined) updateValues.contactPhone = validatedInput.contactPhone;
