@@ -107,6 +107,15 @@ const ownerDuplicate = duplicateError({
   existingBoardLocationName: 'My Garage',
 });
 
+// Same collision, but the sibling board has no location on file — the dialog
+// falls back to the name-only body instead of naming a place.
+const ownerDuplicateNoLocation = duplicateError({
+  code: 'BOARD_DUPLICATE_CONFIG',
+  existingBoardUuid: 'sibling-uuid',
+  existingBoardName: 'Garage Kilter',
+  existingBoardSlug: 'garage-kilter',
+});
+
 function renderAndGetOnError() {
   render(React.createElement(EditBoardForm, { board }));
   return errorHolder.onError!;
@@ -129,19 +138,36 @@ describe('EditBoardForm — duplicate config', () => {
     expect(mockExecute.mock.calls[0][0].input.allowDuplicateConfig).toBeUndefined();
   });
 
-  it('opens a dialog naming the colliding board instead of a failure toast', async () => {
+  it('names both the colliding board and its location instead of a failure toast', async () => {
     const onError = renderAndGetOnError();
 
     await act(async () => {
       onError(ownerDuplicate, 'You already have this board at this location');
     });
 
-    expect(screen.getByText(/Garage Kilter/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        'This change makes the board match "Garage Kilter" at My Garage — same layout, size and hold sets.',
+      ),
+    ).toBeTruthy();
     expect(mockShowMessage).not.toHaveBeenCalled();
     expect(mockTrack).toHaveBeenCalledWith(
       'Board Duplicate Prompted',
       expect.objectContaining({ source: 'web_edit_drawer', boardType: 'kilter' }),
     );
+  });
+
+  it('falls back to the name-only body when the colliding board has no location on file', async () => {
+    const onError = renderAndGetOnError();
+
+    await act(async () => {
+      onError(ownerDuplicateNoLocation, null);
+    });
+
+    expect(
+      screen.getByText('This change makes the board match "Garage Kilter" — same layout, size and hold sets.'),
+    ).toBeTruthy();
+    expect(mockShowMessage).not.toHaveBeenCalled();
   });
 
   it('falls back to a generic body when the server stripped the board identity', async () => {

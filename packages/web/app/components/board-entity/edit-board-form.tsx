@@ -64,11 +64,11 @@ export default function EditBoardForm({ board, onSuccess, onCancel, formId, onSu
 
   const availableAngles = ANGLES[board.boardType as BoardName] ?? [];
 
-  // The pending duplicate, if the last save was refused for that reason. `name`
-  // is null when the server withheld the colliding board's identity — it does
-  // that whenever the editor is not the board's owner (a gym admin, a community
-  // moderator), so the dialog has to work without a board to name.
-  const [duplicate, setDuplicate] = useState<{ name: string | null } | null>(null);
+  // The pending duplicate, if the last save was refused for that reason. Both
+  // fields are null when the server withheld the colliding board's identity —
+  // it does that whenever the editor is not the board's owner (a gym admin, a
+  // community moderator), so the dialog has to work without a board to name.
+  const [duplicate, setDuplicate] = useState<{ name: string | null; locationName: string | null } | null>(null);
   const lastValuesRef = useRef<EditBoardFormValues | null>(null);
   // `runUpdate` fires from two places — the drawer's Save button and the
   // duplicate dialog's "Save anyway" retry — and neither is disabled while the
@@ -84,7 +84,8 @@ export default function EditBoardForm({ board, onSuccess, onCancel, formId, onSu
       // wall can legitimately exist twice (home and gym), and the save goes
       // through on a second pass with the user's confirmation attached.
       if (isDuplicateBoardError(error)) {
-        setDuplicate({ name: readDuplicateBoardError(error)?.boardName || null });
+        const duplicateError = readDuplicateBoardError(error);
+        setDuplicate({ name: duplicateError?.boardName || null, locationName: duplicateError?.locationName || null });
         track(SHARED_EVENTS.BoardDuplicatePrompted, {
           boardType: board.boardType,
           source: 'web_edit_drawer',
@@ -99,7 +100,6 @@ export default function EditBoardForm({ board, onSuccess, onCancel, formId, onSu
 
   const { execute } = useEntityMutation<UpdateBoardMutationResponse, UpdateBoardMutationVariables>(UPDATE_BOARD, {
     successMessage: t('editBoard.snackbar.updated'),
-    errorMessage: t('editBoard.snackbar.updateFailed'),
     onError: handleUpdateError,
   });
 
@@ -214,9 +214,14 @@ export default function EditBoardForm({ board, onSuccess, onCancel, formId, onSu
         <DialogTitle>{t('boardForm.edit.duplicateTitle')}</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            {duplicate?.name
-              ? t('boardForm.edit.duplicateBody', { name: duplicate.name })
-              : t('boardForm.edit.duplicateBodyGeneric')}
+            {duplicate?.name && duplicate.locationName
+              ? t('boardForm.edit.duplicateBodyWithLocation', {
+                  name: duplicate.name,
+                  location: duplicate.locationName,
+                })
+              : duplicate?.name
+                ? t('boardForm.edit.duplicateBody', { name: duplicate.name })
+                : t('boardForm.edit.duplicateBodyGeneric')}
           </DialogContentText>
         </DialogContent>
         <DialogActions>

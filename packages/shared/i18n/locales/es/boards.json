@@ -410,6 +410,7 @@
     "edit": {
       "duplicateTitle": "Ya tienes esta configuración",
       "duplicateBody": "Con este cambio el plafón queda igual que «{{name}}»: mismo layout, tamaño y sets de presas.",
+      "duplicateBodyWithLocation": "Con este cambio el plafón queda igual que «{{name}}» en {{location}}: mismo layout, tamaño y sets de presas.",
       "duplicateBodyGeneric": "Con este cambio el plafón queda igual que otro que su propietario ya tiene.",
       "saveAnyway": "Guardar igualmente",
       "cancel": "Cancelar"

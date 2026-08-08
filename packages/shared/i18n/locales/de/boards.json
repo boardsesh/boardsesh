@@ -410,6 +410,7 @@
     "edit": {
       "duplicateTitle": "Dieses Setup hast du schon",
       "duplicateBody": "Mit dieser Änderung ist das Board identisch mit „{{name}}“ — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",
+      "duplicateBodyWithLocation": "Mit dieser Änderung ist das Board identisch mit „{{name}}“ in {{location}} — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",
       "duplicateBodyGeneric": "Mit dieser Änderung ist das Board identisch mit einem anderen Board desselben Kontos.",
       "saveAnyway": "Trotzdem speichern",
       "cancel": "Abbrechen"
