@@ -578,19 +578,28 @@ async function upsertClimbStats(db: DrizzleDb, board: AuroraBoardName, data: Cli
     // Boardsesh-owned counts and quality votes are preserved by the conflict
     // SET below.
     const mappedValues = batch.map((item) => mapClimbStat(board, item));
-    const candidateClimbUuids = [...new Set(mappedValues.map((value) => value.climbUuid))];
-    const candidateAngles = [...new Set(mappedValues.map((value) => value.angle))];
-    const existingRows = await db
-      .select({ climbUuid: climbStatsSchema.climbUuid, angle: climbStatsSchema.angle })
-      .from(climbStatsSchema)
-      .where(
-        and(
-          eq(climbStatsSchema.boardType, board),
-          inArray(climbStatsSchema.climbUuid, candidateClimbUuids),
-          inArray(climbStatsSchema.angle, candidateAngles),
-        ),
-      );
-    const existingKeys = new Set(existingRows.map((row) => climbStatKey(row.climbUuid, row.angle)));
+    // existingKeys is only consulted below for empty payloads (the filter's
+    // first disjunct short-circuits for non-empty rows), so bound the
+    // pre-read to just the empty candidates and skip the SELECT entirely
+    // when there are none — in a real catalog sync almost every stats row is
+    // non-empty, so this keeps the common case free of a batch-wide pre-read.
+    const emptyMappedValues = mappedValues.filter((value) => isEmptyUpstreamClimbStat(value));
+    const existingKeys = new Set<string>();
+    if (emptyMappedValues.length > 0) {
+      const candidateClimbUuids = [...new Set(emptyMappedValues.map((value) => value.climbUuid))];
+      const candidateAngles = [...new Set(emptyMappedValues.map((value) => value.angle))];
+      const existingRows = await db
+        .select({ climbUuid: climbStatsSchema.climbUuid, angle: climbStatsSchema.angle })
+        .from(climbStatsSchema)
+        .where(
+          and(
+            eq(climbStatsSchema.boardType, board),
+            inArray(climbStatsSchema.climbUuid, candidateClimbUuids),
+            inArray(climbStatsSchema.angle, candidateAngles),
+          ),
+        );
+      for (const row of existingRows) existingKeys.add(climbStatKey(row.climbUuid, row.angle));
+    }
     const values = mappedValues.filter(
       (value) => !isEmptyUpstreamClimbStat(value) || existingKeys.has(climbStatKey(value.climbUuid, value.angle)),
     );

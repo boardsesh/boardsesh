@@ -909,6 +909,19 @@ describe('board_climb_stats empty-row guard (issue #4068)', () => {
     expect(predicateQuery.params).toEqual(['decoy', 'ANGLE-40', 'ANGLE-50', 40, 50]);
   });
 
+  it('skips the existing-row pre-read entirely when every payload in the batch is non-empty', async () => {
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        climb_stats: [stat({ climb_uuid: 'GRADED-40', angle: 40, difficulty_average: 18 })],
+      }),
+    );
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    expect(shimClimbStatSelectPredicates).toHaveLength(0);
+    expect(writtenStatsRows()).toHaveLength(1);
+  });
+
   it('sanitizes invalid FA data before deciding a NEW row is empty', async () => {
     mockSharedSync.mockResolvedValueOnce(
       complete({
