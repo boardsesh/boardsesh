@@ -284,6 +284,36 @@ export function catalogAliasRows(args: {
   return rows;
 }
 
+/**
+ * The UUIDs this problem would already own from an earlier import: the
+ * angle-agnostic id-based one, plus every legacy `moonboard:{id}:{angle}` one
+ * for its graded angles. Returns only those that are already climb ROWS.
+ *
+ * A hold-match miss (`matched: false`) normally means "new problem, insert it".
+ * But if any of these UUIDs already exists as a climb, the miss instead means
+ * the problem's holds drifted — an upstream hold edit, or a change to
+ * parseMovesString/fingerprintFromHolds — and inserting would be destructive:
+ * the fresh `moonboard:{id}` row lands alongside the still-listed old rows,
+ * and then `catalogAliasRows` writes `moonboard:{id}:{angle}` aliases whose
+ * alias_uuid IS one of those old rows. `catalogAliasConflictUpdate` overwrites
+ * canonical_uuid unconditionally, so their self-aliases get repointed at the
+ * empty new row and their ticks start redirecting there while both rows stay
+ * listed. Callers should treat a non-empty result as "skip this problem
+ * loudly" — same policy as `ambiguous` above.
+ */
+export function existingClimbUuidsForProblem(args: {
+  problemId: number;
+  angles: number[];
+  existingClimbUuids: ReadonlySet<string>;
+}): string[] {
+  const { problemId, angles, existingClimbUuids } = args;
+  const candidateUuids = new Set([
+    catalogClimbUuid({ id: problemId }),
+    ...angles.map((angle) => legacyCatalogClimbUuid({ id: problemId, angle })),
+  ]);
+  return [...candidateUuids].filter((uuid) => existingClimbUuids.has(uuid));
+}
+
 /** A problem is importable if it isn't soft-deleted and has holds + configs. */
 export function isImportableProblem(problem: MoonBoardCatalogProblem): boolean {
   if (problem.dateDeleted) return false;

@@ -13,6 +13,7 @@ import {
   catalogAliasConflictUpdate,
   catalogAliasRows,
   catalogProblemToClimbs,
+  existingClimbUuidsForProblem,
   resolveIncumbentReplacement,
   resolveCatalogClimbUuid,
   type MoonBoardCatalogFile,
@@ -37,7 +38,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // existing one by (layout_id, hold_fingerprint), tie-breaking on
 // case-insensitive name. A match reuses the existing UUID (so the upsert updates
 // it in place, backfilling the 2024 quality/ascensionist gap); a miss mints a
-// stable id-based UUID and inserts. Stat upserts are monotonic — they never
+// stable id-based UUID and inserts — unless the problem already owns climb rows
+// from an earlier import, which means its holds drifted rather than that it's
+// new, and it's skipped loudly instead. Stat upserts are monotonic — they never
 // overwrite an existing grade/quality with null or drop an ascent count.
 //
 // The ~390 MB of catalog files are NOT committed. Point the script at a local
@@ -58,11 +61,15 @@ const BATCH_SIZE = 2000;
  * Existing MoonBoard climbs predate the fingerprint column (only layout 3 has
  * it populated in prod), so we recompute every fingerprint from board_climb_holds.
  * Holds are streamed with a cursor and folded per-climb so memory stays bounded.
+ *
+ * Also returns every existing MoonBoard climb uuid (listed or not) so the
+ * caller can spot a problem this importer already owns whose holds have since
+ * drifted — see `existingClimbUuidsForProblem`.
  */
 async function buildExistingIndex(
   client: postgres.Sql,
   db: ReturnType<typeof drizzle>,
-): Promise<ReturnType<typeof buildExistingCatalogMatchIndex>> {
+): Promise<{ index: ReturnType<typeof buildExistingCatalogMatchIndex>; climbUuids: Set<string> }> {
   console.info('   Building match index from existing MoonBoard climbs...');
   const fingerprintByUuid = new Map<string, string>();
   let currentUuid: string | null = null;
@@ -111,7 +118,7 @@ async function buildExistingIndex(
   const index = buildExistingCatalogMatchIndex(climbRows, fingerprintByUuid, canonicalByAlias);
   fingerprintByUuid.clear();
   console.info(`   Indexed ${climbRows.length} existing climbs (${index.size} hold groups)`);
-  return index;
+  return { index, climbUuids: new Set(climbRows.map((row) => row.uuid)) };
 }
 
 function parseFlag(name: string): string | undefined {
@@ -147,10 +154,19 @@ async function importMoonBoardCatalog() {
   const client = postgres(databaseUrl, { max: 1 });
   const db = drizzle(client);
 
-  const totals = { matched: 0, inserted: 0, climbs: 0, stats: 0, holds: 0, skippedProblems: 0, skippedAmbiguous: 0 };
+  const totals = {
+    matched: 0,
+    inserted: 0,
+    climbs: 0,
+    stats: 0,
+    holds: 0,
+    skippedProblems: 0,
+    skippedAmbiguous: 0,
+    skippedDrifted: 0,
+  };
 
   try {
-    const existingIndex = await buildExistingIndex(client, db);
+    const { index: existingIndex, climbUuids: existingClimbUuids } = await buildExistingIndex(client, db);
 
     for (const file of files) {
       const raw = fs.readFileSync(path.join(catalogDir, file), 'utf-8');
@@ -173,13 +189,15 @@ async function importMoonBoardCatalog() {
       // clobber a real benchmark's ascent count and benchmark flag.
       const bestByUuid = new Map<string, MappedCatalogClimb>();
       const climbByUuid = new Map<string, typeof boardClimbs.$inferInsert>();
-      const statsByUuid = new Map<string, typeof boardClimbStats.$inferInsert>();
+      // Keyed `${uuid}:${angle}` — one entry per graded angle of a climb.
+      const statsByUuidAngle = new Map<string, typeof boardClimbStats.$inferInsert>();
       const holdsByKey = new Map<string, typeof boardClimbHolds.$inferInsert>();
       const aliasByUuid = new Map<string, typeof boardClimbAliases.$inferInsert>();
       let matched = 0;
       let inserted = 0;
       let skippedProblems = 0;
       let skippedAmbiguous = 0;
+      let skippedDrifted = 0;
 
       for (const problem of dump.problems) {
         const mapped = catalogProblemToClimbs(problem, layoutId);
@@ -189,21 +207,50 @@ async function importMoonBoardCatalog() {
         }
         const { uuid, matched: matchedExisting, ambiguous } = resolveCatalogClimbUuid(mapped, existingIndex);
 
-        // Multiple DISTINCT listed rows share this problem's holds — the
-        // expected shape when migration 0185 (moonboard angle-dedup) hasn't
-        // run against this database yet, so both angle-rows of the problem
-        // are still separately listed. Writing through this state would
-        // double-count ascents across two listed rows and point a legacy
-        // alias at whichever row the name tie-break happened to land on.
-        // Loud skip, not a silent guess: run 0185 first, then re-import.
+        // Multiple DISTINCT listed rows share this problem's holds. Two causes:
+        //   1. Migration 0185 (moonboard angle-dedup) hasn't run against this
+        //      database yet, so both angle-rows of the problem are still
+        //      separately listed. Running it fixes this one.
+        //   2. The database IS migrated, but 0185 deliberately left this group
+        //      alone: it only collapses a same-signature group whose members
+        //      all sit at DISTINCT angles, so a cross-problem duplicate class
+        //      (the real "birthday cake trail mix" vs the junk problem named
+        //      "name", four listed rows on one signature) survives for manual
+        //      follow-up. Running migrations again changes nothing here.
+        // Either way, writing through would double-count ascents across two
+        // listed rows and point a legacy alias at whichever row the name
+        // tie-break happened to land on. Loud skip, not a silent guess.
         if (ambiguous) {
           skippedAmbiguous++;
           console.error(
             `   ⚠️  Skipping problem ${problem.id} ("${problem.name}"): multiple listed rows already share its holds ` +
-              `at layout ${layoutId} — this database likely predates migration 0185 (moonboard angle-dedup). ` +
-              `Run that migration, then re-run this import.`,
+              `at layout ${layoutId} — either this database predates migration 0185 (moonboard angle-dedup), or 0185 ` +
+              `ran and left a cross-problem duplicate group for manual follow-up. Check migrations first; if they're ` +
+              `up to date, these rows need deduping by hand.`,
           );
           continue;
+        }
+
+        // No hold match, but this problem already owns climb rows from an
+        // earlier import — its holds drifted rather than it being new. See
+        // existingClimbUuidsForProblem: inserting here would mint a duplicate
+        // and repoint the old rows' self-aliases (and therefore their ticks)
+        // at the empty new row. Loud skip.
+        if (!matchedExisting) {
+          const driftedUuids = existingClimbUuidsForProblem({
+            problemId: problem.id,
+            angles: mapped.stats.map((stat) => stat.angle),
+            existingClimbUuids,
+          });
+          if (driftedUuids.length > 0) {
+            skippedDrifted++;
+            console.error(
+              `   ⚠️  Skipping problem ${problem.id} ("${problem.name}"): its holds no longer match the climb rows it ` +
+                `already owns (${driftedUuids.join(', ')}) at layout ${layoutId}. Inserting would duplicate the climb ` +
+                `and redirect the existing rows' ticks. Reconcile those rows by hand, then re-run this import.`,
+            );
+            continue;
+          }
         }
 
         // Record the aliases before the dedupe below: when two problems collapse
@@ -249,15 +296,14 @@ async function importMoonBoardCatalog() {
           edgeBottom: null,
           edgeTop: null,
           // Angle-agnostic identity (see module header) — but KNOWN GAP,
-          // deliberately deferred: three backend paths (new-climb-subscriptions.ts,
-          // notification-worker.ts, feed-fanout.ts) resolve difficultyName via
-          // `LEFT JOIN board_climb_stats ON stats.angle = climbs.angle`, which
-          // never matches when climbs.angle is null — so a newly-imported
-          // MoonBoard problem shows ungraded in the new-climb feed and
-          // notifications until those three queries learn a MoonBoard fallback
-          // (e.g. pick the min-angle stats row when climbs.angle is null).
-          // Nothing fails; the grade just doesn't show. Track before relying on
-          // those surfaces for MoonBoard.
+          // deliberately deferred, tracked in #4220: three backend paths
+          // (new-climb-subscriptions.ts, notification-worker.ts, feed-fanout.ts)
+          // resolve difficultyName via `LEFT JOIN board_climb_stats ON
+          // stats.angle = climbs.angle`, which never matches when climbs.angle
+          // is null — so a newly-imported MoonBoard problem shows ungraded in
+          // the new-climb feed and notifications until those queries learn a
+          // fallback (e.g. pick the min-angle stats row when climbs.angle is
+          // null). Nothing fails; the grade just doesn't show.
           angle: null,
           framesCount: 1,
           framesPace: 0,
@@ -275,14 +321,14 @@ async function importMoonBoardCatalog() {
         // Clear the beaten incumbent's stale batch-map entries (see
         // resolveIncumbentReplacement's doc comment for why this is needed).
         for (const key of decision.staleStatKeys) {
-          statsByUuid.delete(key);
+          statsByUuidAngle.delete(key);
         }
         for (const key of decision.staleHoldKeys) {
           holdsByKey.delete(key);
         }
 
         for (const stat of mapped.stats) {
-          statsByUuid.set(`${uuid}:${stat.angle}`, {
+          statsByUuidAngle.set(`${uuid}:${stat.angle}`, {
             boardType: 'moonboard',
             climbUuid: uuid,
             angle: stat.angle,
@@ -319,13 +365,14 @@ async function importMoonBoardCatalog() {
       }
 
       const climbRecords = [...climbByUuid.values()];
-      const statsRecords = [...statsByUuid.values()];
+      const statsRecords = [...statsByUuidAngle.values()];
       const holdsRecords = [...holdsByKey.values()];
       const aliasRecords = [...aliasByUuid.values()];
 
       console.info(
         `   ${matched} matched existing, ${inserted} new; ${skippedProblems} problems skipped, ` +
-          `${skippedAmbiguous} skipped as ambiguous (pre-0185 duplicate rows)`,
+          `${skippedAmbiguous} skipped as ambiguous (duplicate listed rows), ` +
+          `${skippedDrifted} skipped as drifted (holds changed under an imported climb)`,
       );
 
       // One transaction per board: a crash mid-file never leaves a climb without
@@ -415,6 +462,7 @@ async function importMoonBoardCatalog() {
       totals.holds += holdsRecords.length;
       totals.skippedProblems += skippedProblems;
       totals.skippedAmbiguous += skippedAmbiguous;
+      totals.skippedDrifted += skippedDrifted;
     }
 
     console.info('\n✅ Import completed!');
@@ -426,8 +474,17 @@ async function importMoonBoardCatalog() {
     console.info(`   Problems skipped: ${totals.skippedProblems}`);
     if (totals.skippedAmbiguous > 0) {
       console.error(
-        `   ⚠️  Problems skipped as ambiguous: ${totals.skippedAmbiguous} — this database likely predates ` +
-          `migration 0185 (moonboard angle-dedup). Run it, then re-run this import to pick these up.`,
+        `   ⚠️  Problems skipped as ambiguous: ${totals.skippedAmbiguous} — several listed rows share their holds. ` +
+          `If this database predates migration 0185 (moonboard angle-dedup), run it and re-run this import to pick ` +
+          `these up. If it's already migrated, these are cross-problem duplicate groups 0185 left alone on purpose ` +
+          `and they need deduping by hand.`,
+      );
+    }
+    if (totals.skippedDrifted > 0) {
+      console.error(
+        `   ⚠️  Problems skipped as drifted: ${totals.skippedDrifted} — their holds no longer match the climb rows ` +
+          `they already own, so inserting would duplicate the climb and redirect the old rows' ticks. Reconcile ` +
+          `those rows by hand, then re-run this import.`,
       );
     }
 

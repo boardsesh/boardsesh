@@ -21,6 +21,7 @@ import {
   mapCatalogConfigStats,
   catalogProblemToClimbs,
   isBetterCatalogClimb,
+  existingClimbUuidsForProblem,
   resolveIncumbentReplacement,
   type MoonBoardCatalogProblem,
   type MappedCatalogClimb,
@@ -442,4 +443,43 @@ void test("resolveIncumbentReplacement: stronger candidate wins and reports the 
   if (!decision.accept) return;
   assert.deepEqual(decision.staleStatKeys.sort(), ['uuid-1:25', 'uuid-1:40']);
   assert.deepEqual(decision.staleHoldKeys.sort(), ['uuid-1:1', 'uuid-1:2']);
+});
+
+void test('existingClimbUuidsForProblem: nothing imported yet — no conflict, the insert is safe', () => {
+  assert.deepEqual(
+    existingClimbUuidsForProblem({
+      problemId: 541453,
+      angles: [25, 40],
+      existingClimbUuids: new Set(['some-unrelated-uuid']),
+    }),
+    [],
+  );
+});
+
+void test('existingClimbUuidsForProblem: drifted holds under legacy per-angle rows are reported', () => {
+  // The pre-rewrite importer wrote one row per angle. If the holds drift, the
+  // fingerprint match misses and the importer would otherwise insert a fresh
+  // moonboard:{id} row *and* repoint these rows' self-aliases at it.
+  const legacy25 = legacyCatalogClimbUuid({ id: 541453, angle: 25 });
+  const legacy40 = legacyCatalogClimbUuid({ id: 541453, angle: 40 });
+  assert.deepEqual(
+    existingClimbUuidsForProblem({
+      problemId: 541453,
+      angles: [25, 40],
+      existingClimbUuids: new Set([legacy25, legacy40, 'unrelated']),
+    }).sort(),
+    [legacy25, legacy40].sort(),
+  );
+});
+
+void test('existingClimbUuidsForProblem: an existing id-based row counts too, and dedupes', () => {
+  const idBased = catalogClimbUuid({ id: 541453 });
+  assert.deepEqual(
+    existingClimbUuidsForProblem({
+      problemId: 541453,
+      angles: [40, 40],
+      existingClimbUuids: new Set([idBased]),
+    }),
+    [idBased],
+  );
 });
