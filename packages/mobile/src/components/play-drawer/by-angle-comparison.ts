@@ -264,7 +264,11 @@ export function buildDumbbellAxis(rows: DumbbellAngleRow[], gradeFormat: GradeDi
     if (label) labelBelow = label;
   }
 
-  const longestLabel = yAxisLabelTexts.reduce((longest, label) => (label.length > longest.length ? label : longest));
+  // Blank ticks print nothing, so only the real grade labels can claim gutter.
+  const longestLabel = yAxisLabelTexts.reduce(
+    (longest, label) => (label !== BLANK_TICK && label.length > longest.length ? label : longest),
+    '',
+  );
 
   return {
     minId,

@@ -14,10 +14,17 @@ export const CHART_LABEL_FONT_SIZE = 11;
 export const CHART_LABEL_LINE_HEIGHT = 16;
 /** Semibold digits and caps measure ~0.62em wide in both SF and Roboto. */
 const GLYPH_WIDTH_EM = 0.62;
+// Punctuation and whitespace are much narrower than a digit. Charging them the
+// full digit width matters: it puts a both-formats grade ("V6 / 7A", three of
+// its seven characters narrow) ~15% over its real width, which would stack the
+// label on bars wide enough to hold it on one line.
+const NARROW_GLYPH_WIDTH_EM: Record<string, number> = { ' ': 0.28, '/': 0.32, '.': 0.28, ',': 0.28 };
 /** A hair of breathing room on each side so glyphs never touch the box edge. */
 const LABEL_SIDE_PADDING = 2;
 
 /** Rendered width of a label, in px, at the given accessibility font scale. */
 export function estimateLabelWidth(text: string, fontScale = 1): number {
-  return Math.ceil(text.length * CHART_LABEL_FONT_SIZE * GLYPH_WIDTH_EM * fontScale) + LABEL_SIDE_PADDING * 2;
+  let ems = 0;
+  for (const glyph of text) ems += NARROW_GLYPH_WIDTH_EM[glyph] ?? GLYPH_WIDTH_EM;
+  return Math.ceil(ems * CHART_LABEL_FONT_SIZE * fontScale) + LABEL_SIDE_PADDING * 2;
 }

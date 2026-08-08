@@ -23,6 +23,12 @@ describe('estimateLabelWidth', () => {
     expect(estimateLabelWidth('82')).toBeLessThan(estimateLabelWidth('128'));
     expect(estimateLabelWidth('128', 1.5)).toBeGreaterThan(estimateLabelWidth('128'));
   });
+
+  it('charges the " / " separator less than three digits, which it is nowhere near', () => {
+    // Overcharging it stacks a both-formats grade on bars wide enough to hold it.
+    expect(estimateLabelWidth('V6 / 7A')).toBeLessThan(estimateLabelWidth('V6X7AXX'));
+    expect(estimateLabelWidth('V6 / 7A')).toBeGreaterThan(estimateLabelWidth('V67A'));
+  });
 });
 
 describe('computeBarTopLabelLayout', () => {
