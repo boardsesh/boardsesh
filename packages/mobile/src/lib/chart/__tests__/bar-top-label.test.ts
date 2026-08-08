@@ -15,6 +15,13 @@ describe('longestBarValue', () => {
     expect(longestBarValue([9, 128, 82])).toBe(128);
     expect(longestBarValue([])).toBe(0);
   });
+
+  it('returns a count that is actually in the chart when every bar is one digit', () => {
+    // Seeding the reduce with 0 used to hand back 0 here — same width, but a
+    // number no bar was showing.
+    expect(longestBarValue([9, 5, 3])).toBe(9);
+    expect(longestBarValue([7])).toBe(7);
+  });
 });
 
 describe('estimateLabelWidth', () => {

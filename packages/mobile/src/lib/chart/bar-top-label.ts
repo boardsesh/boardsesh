@@ -16,9 +16,16 @@ import { CHART_LABEL_LINE_HEIGHT, estimateLabelWidth } from './label-metrics';
 /** Matches `styles.barTopLabel`: the gap between the label and the bar top. */
 const BASE_LABEL_GAP = 2;
 
-/** Widest count label in the chart, so every bar gets the same treatment. */
+/**
+ * Widest count label in the chart, so every bar gets the same treatment.
+ * Seeded with the first value, not 0 — seeding with 0 handed back a count that
+ * was never in the chart whenever every bar had a single digit.
+ */
 export function longestBarValue(values: readonly number[]): number {
-  return values.reduce((widest, value) => (String(value).length > String(widest).length ? value : widest), 0);
+  return values.reduce(
+    (widest, value) => (String(value).length > String(widest).length ? value : widest),
+    values[0] ?? 0,
+  );
 }
 
 export type BarTopLabelLayout = {
