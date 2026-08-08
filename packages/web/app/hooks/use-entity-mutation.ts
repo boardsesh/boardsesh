@@ -33,7 +33,7 @@ export function useEntityMutation<TResponse, TVariables extends Variables = Vari
   mutation: TypedDocumentNode | string,
   options: UseEntityMutationOptions,
 ) {
-  const { successMessage, authRequiredMessage } = options;
+  const { successMessage, errorMessage, authRequiredMessage, onError } = options;
   const { token } = useWsAuthToken();
   const { showMessage } = useSnackbar();
   const { t } = useTranslation('common');
@@ -54,17 +54,17 @@ export function useEntityMutation<TResponse, TVariables extends Variables = Vari
         }
         return data;
       } catch (error) {
-        console.error(options.errorMessage, error);
+        console.error(errorMessage, error);
         const serverMessage = extractGraphQLErrorMessage(error);
-        if (options.onError) {
-          await options.onError(error, serverMessage);
+        if (onError) {
+          await onError(error, serverMessage);
         } else {
-          showMessage(serverMessage ?? options.errorMessage, 'error');
+          showMessage(serverMessage ?? errorMessage, 'error');
         }
         return null;
       }
     },
-    [token, mutation, successMessage, options.errorMessage, resolvedAuthRequiredMessage, options.onError, showMessage],
+    [token, mutation, successMessage, errorMessage, resolvedAuthRequiredMessage, onError, showMessage],
   );
 
   return { execute, token };
