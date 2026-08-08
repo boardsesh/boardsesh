@@ -119,7 +119,10 @@ export function requireLocalDatabaseUrl(databaseUrl: string | undefined): string
   return databaseUrl;
 }
 
-export function requireCompatibilityOptIn(environment: NodeJS.ProcessEnv): void {
+// Reads one variable, so take the widest shape `process.env` satisfies rather
+// than `NodeJS.ProcessEnv` — the repo augments that type with a required
+// NODE_ENV, which the full-repo lint pass rejects for a bare test literal.
+export function requireCompatibilityOptIn(environment: Record<string, string | undefined>): void {
   if (environment.ALLOW_AURORA_CIRCUIT_SCHEMA_COMPAT !== '1') {
     throw new Error('Set ALLOW_AURORA_CIRCUIT_SCHEMA_COMPAT=1 to allow the local CI schema compatibility gate.');
   }
