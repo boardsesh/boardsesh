@@ -59,20 +59,33 @@ function useAdoptedBoard(
   target: BoardRouteTarget | null,
   enabled: boolean,
 ): { board: UserBoard | null; error: boolean } {
-  const { isAuthenticated } = useAuth();
-  const myBoards = useMyBoards(undefined, { enabled: isAuthenticated });
+  const { isAuthenticated, isLoading: authIsLoading } = useAuth();
+  // `enabled` first: in `in-app` mode nothing here ever resolves a board, so the
+  // owned list would be fetched on every mount (a tick tap through the legacy
+  // redirector) and thrown away. The query has no staleTime, so that's a real
+  // round-trip each time.
+  const myBoards = useMyBoards(undefined, { enabled: enabled && isAuthenticated });
   const createBoard = useCreateBoard();
   const setActiveBoard = useSetActiveBoard();
 
   const [board, setBoard] = useState<UserBoard | null>(null);
   const [error, setError] = useState(false);
 
-  // Key the effect on the resolved path rather than the target object so a
-  // re-render with an equivalent target doesn't re-run board creation.
-  const boardPath = enabled && target ? toBoardPath(target) : null;
   // Only the tuple form can mint a board, and only that path reads the owned
   // list; a `/b/{slug}` URL resolves server-side.
   const needsOwnedBoards = target?.kind === 'list' || target?.kind === 'climb';
+  // Resolution must not start on an unsettled session. A signed-in state that
+  // hasn't resolved yet reads as signed-out, which skips the owned-boards wait
+  // below and mints a duplicate of a board the user already has (or fails
+  // outright when the create needs auth). Today `AuthProvider` holds the whole
+  // route tree behind a splash until the session lands, so this never fires —
+  // but that's the provider's invariant, not this hook's, and a cold deep-link
+  // open is exactly where it would bite. The `/b/{slug}` form needs no session
+  // at all (public `boardBySlug`, local `setActiveBoard`), so it stays eager.
+  const waitingForAuth = needsOwnedBoards && authIsLoading;
+  // Key the effect on the resolved path rather than the target object so a
+  // re-render with an equivalent target doesn't re-run board creation.
+  const boardPath = enabled && target && !waitingForAuth ? toBoardPath(target) : null;
   const resolvedPathRef = useRef<string | null>(null);
 
   // The resolve effect deliberately runs once per path, so it must not close
@@ -210,7 +223,23 @@ export function useBoardRouteTarget(
     // preview:true so a deep-linked climb doesn't disturb the queue — in a
     // session it would change the shared current climb for everyone. The drawer
     // shows a "Preview" badge with "Set active" to opt into playing it.
-    openClimbInPlayDrawer({ kind: 'climb', climb, boardConfig }, { openPlayDrawer, router }, { preview: true });
+    const openDrawer = () =>
+      openClimbInPlayDrawer({ kind: 'climb', climb, boardConfig }, { openPlayDrawer, router }, { preview: true });
+
+    // Order matters, and it's opposite for the two modes. `openPlayDrawer`
+    // navigates to `/play`, so on a deep link (which leaves by *replacing* the
+    // redirector — there's nothing behind it on a cold open) opening first would
+    // put `/play` on top and then replace `/play` itself: the drawer never
+    // appears and the user lands on a bare Climbs tab. Replace first, then push
+    // the drawer over the tab. The in-app mode pops instead of replacing, and
+    // popping before the push would take the screen the drawer is meant to
+    // return to with it, so it keeps opening first.
+    if (adoptsBoard) {
+      leave();
+      openDrawer();
+      return;
+    }
+    openDrawer();
     leave();
   }, [adoptsBoard, board, boardConfig, climb, openPlayDrawer, router, target, targetKey, wantsClimb]);
 

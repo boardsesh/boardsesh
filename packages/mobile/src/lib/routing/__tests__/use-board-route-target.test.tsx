@@ -25,17 +25,25 @@ const myBoardsQuery = vi.hoisted(() => ({
     refetch: typeof refetchMyBoards;
   },
 }));
+// Mirrors AuthProvider: `isLoading` starts true and the session resolves async.
+const authState = vi.hoisted(() => ({ current: { isAuthenticated: true, isLoading: false } }));
+// What `useMyBoards` was last asked for, so the in-app mode's skipped fetch is
+// assertable rather than assumed.
+const myBoardsEnabled = vi.hoisted(() => ({ current: undefined as boolean | undefined }));
 
 vi.mock('expo-router', () => ({ useRouter: () => router }));
 vi.mock('../../graphql/hooks', () => ({
   useClimb: (variables: unknown) =>
     variables ? climbQuery.current : { data: undefined, isError: false, isSuccess: false },
-  useMyBoards: () => myBoardsQuery.current,
+  useMyBoards: (_input: unknown, options?: { enabled?: boolean }) => {
+    myBoardsEnabled.current = options?.enabled;
+    return myBoardsQuery.current;
+  },
   useCreateBoard: () => ({ mutateAsync: vi.fn() }),
   fetchBoardBySlug: vi.fn(),
 }));
 vi.mock('../../graphql/use-active-board', () => ({ useSetActiveBoard: () => setActiveBoard }));
-vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
+vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => authState.current }));
 vi.mock('../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => ({ openPlayDrawer }) }));
 vi.mock('../../board-path-to-user-board', () => ({ resolveBoardForSession }));
 vi.mock('../../open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer }));
@@ -68,6 +76,8 @@ beforeEach(() => {
   resolveBoardForSession.mockResolvedValue(RESOLVED_BOARD);
   climbQuery.current = { data: undefined, isError: false, isSuccess: false };
   myBoardsQuery.current = { data: { boards: [] }, refetch: refetchMyBoards };
+  authState.current = { isAuthenticated: true, isLoading: false };
+  myBoardsEnabled.current = undefined;
 });
 
 describe('useBoardRouteTarget', () => {
@@ -97,6 +107,43 @@ describe('useBoardRouteTarget', () => {
       expect.anything(),
       { preview: true },
     );
+  });
+
+  // Opening the drawer navigates to `/play`. A deep link has nothing behind it,
+  // so it leaves by replacing the current route — do that after the open and the
+  // replace lands on `/play` itself, dropping the drawer and leaving the user on
+  // a bare climbs tab.
+  it('replaces the redirector before opening the drawer on a deep link', async () => {
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
+    const [replaceOrder] = router.replace.mock.invocationCallOrder;
+    const [openOrder] = openClimbInPlayDrawer.mock.invocationCallOrder;
+    expect(replaceOrder).toBeLessThan(openOrder);
+  });
+
+  // The in-app pop is the mirror image: popping first would take the screen the
+  // drawer is supposed to return to with it.
+  it('opens the drawer before popping back for an in-app target', async () => {
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+        mode: 'in-app',
+      }),
+    );
+
+    await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
+    const [openOrder] = openClimbInPlayDrawer.mock.invocationCallOrder;
+    const [backOrder] = router.back.mock.invocationCallOrder;
+    expect(openOrder).toBeLessThan(backOrder);
   });
 
   // A second URL through the same mounted screen is what the web build does when
@@ -178,6 +225,56 @@ describe('useBoardRouteTarget', () => {
     expect(resolveBoardForSession).not.toHaveBeenCalled();
     expect(setActiveBoard).not.toHaveBeenCalled();
     expect(router.back).toHaveBeenCalled();
+  });
+
+  // A cold deep-link open lands while the session round-trip is still in flight.
+  // Reading that as "signed out" skips the owned-boards wait below and mints a
+  // duplicate of a board the user already has.
+  it('waits for the session to settle before resolving a tuple URL', async () => {
+    authState.current = { isAuthenticated: false, isLoading: true };
+    myBoardsQuery.current = { data: undefined, refetch: refetchMyBoards };
+    refetchMyBoards.mockResolvedValue({ data: { boards: [RESOLVED_BOARD] } });
+
+    const { container, rerender } = render(
+      createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }),
+    );
+
+    expect(statusOf(container)).toBe('resolving');
+    expect(resolveBoardForSession).not.toHaveBeenCalled();
+
+    authState.current = { isAuthenticated: true, isLoading: false };
+    rerender(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
+
+    await waitFor(() => expect(resolveBoardForSession).toHaveBeenCalledTimes(1));
+    expect(resolveBoardForSession).toHaveBeenCalledWith(
+      'kilter/1/10/1,20/40',
+      expect.objectContaining({ ownedBoards: [RESOLVED_BOARD] }),
+    );
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs'));
+  });
+
+  // `/b/{slug}` resolves through the public boardBySlug query and never mints a
+  // board, so it must not sit behind the session round-trip.
+  it('resolves a slug URL without waiting for the session', async () => {
+    authState.current = { isAuthenticated: false, isLoading: true };
+
+    render(createElement(Harness, { target: { kind: 'slug-list', slug: 'the-gym', angle: 40 } as BoardRouteTarget }));
+
+    await waitFor(() => expect(resolveBoardForSession).toHaveBeenCalledTimes(1));
+  });
+
+  it('skips the owned-board fetch entirely in in-app mode', async () => {
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+        mode: 'in-app',
+      }),
+    );
+
+    await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
+    expect(myBoardsEnabled.current).toBe(false);
   });
 
   it('does not mint a duplicate board when the owned-board list could not be loaded', async () => {

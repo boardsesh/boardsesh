@@ -16,6 +16,8 @@
 // against a warm bundle.
 
 import { expect, test, type Page } from '@playwright/test';
+import { and, asc, eq, sql } from 'drizzle-orm';
+import { boardClimbs, boardClimbStats, closePool, createDb, userBoards } from '@boardsesh/db';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -236,5 +238,161 @@ test.describe('expo-web smoke', () => {
     const response = await page.goto('/app', { timeout: COLD_LOAD_TIMEOUT_MS });
     expect(response).not.toBeNull();
     expect(response?.headers()['x-robots-tag']).toContain('noindex');
+  });
+
+  // The canonical board URLs the Next app hands out, served by the SPA. Every
+  // one of these is a *cold* navigation: a full page load restores the session
+  // asynchronously, so board resolution has to wait for it or it reads
+  // "signed out", skips the owned-board reuse, and mints a duplicate of a board
+  // the user already has. Unit tests can only mock that transition — this is
+  // the flow against a real session round-trip.
+  test.describe('canonical board URLs', () => {
+    // The seeded default test board (see e2e/SEED_CONTRACT.md), in both the
+    // named-slug form the app emits and the numeric-id form.
+    const BOARD_SLUG_PATH = 'kilter/original/12x12-square/screw_bolt/40';
+    const BOARD_TUPLE_PATH = 'kilter/1/10/1,20/40';
+    const SEEDED_BOARD = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: [1, 20], angle: 40 } as const;
+    /** The shared board entity behind the `/b/{slug}` URL family. */
+    const SEEDED_BOARD_NAME = 'Dyno Den';
+
+    /**
+     * A climb that really is listed on the seeded board at this angle. Picked
+     * the same way global-setup picks its grid-badge fixture (lowest uuid among
+     * the matching climbs) so the URL under test is deterministic per dev-DB
+     * image without pinning a uuid the image is free to drop.
+     */
+    /** The seeded shared board the suite already binds through the board sheet. */
+    async function findSeededBoardSlug(): Promise<string> {
+      process.env.DATABASE_URL ??= 'postgres://postgres:password@localhost:5432/main';
+      const db = createDb();
+      try {
+        const [board] = await db
+          .select({ slug: userBoards.slug })
+          .from(userBoards)
+          .where(eq(userBoards.name, SEEDED_BOARD_NAME))
+          .limit(1);
+        if (!board) {
+          throw new Error(
+            `No board named "${SEEDED_BOARD_NAME}" in the e2e database — the dev DB image is stale ` +
+              '(docker compose down -v && vp run db:up).',
+          );
+        }
+        return board.slug;
+      } finally {
+        await closePool();
+      }
+    }
+
+    async function findSeededClimbUuid(): Promise<string> {
+      process.env.DATABASE_URL ??= 'postgres://postgres:password@localhost:5432/main';
+      const db = createDb();
+      try {
+        const setIdLiterals = sql.join(
+          SEEDED_BOARD.setIds.map((setId) => sql`${setId}`),
+          sql`, `,
+        );
+        const [climb] = await db
+          .select({ uuid: boardClimbs.uuid })
+          .from(boardClimbs)
+          .innerJoin(
+            boardClimbStats,
+            and(eq(boardClimbs.uuid, boardClimbStats.climbUuid), eq(boardClimbs.boardType, boardClimbStats.boardType)),
+          )
+          .where(
+            and(
+              eq(boardClimbs.boardType, SEEDED_BOARD.boardType),
+              eq(boardClimbs.layoutId, SEEDED_BOARD.layoutId),
+              eq(boardClimbs.isListed, true),
+              eq(boardClimbs.isDraft, false),
+              eq(boardClimbStats.angle, SEEDED_BOARD.angle),
+              sql`${SEEDED_BOARD.sizeId} = ANY(${boardClimbs.compatibleSizeIds})`,
+              sql`${boardClimbs.requiredSetIds} <@ ARRAY[${setIdLiterals}]::int[]`,
+            ),
+          )
+          .orderBy(asc(boardClimbs.uuid))
+          .limit(1);
+        if (!climb) {
+          throw new Error(
+            'No listed Kilter original 12x12 screw/bolt climb with stats at 40 degrees in the e2e database — ' +
+              'the dev DB image is stale (docker compose down -v && vp run db:up).',
+          );
+        }
+        return climb.uuid;
+      } finally {
+        await closePool();
+      }
+    }
+
+    let seededClimbUuid = '';
+    let seededBoardSlug = '';
+
+    test.beforeAll(async () => {
+      seededClimbUuid = await findSeededClimbUuid();
+      seededBoardSlug = await findSeededBoardSlug();
+    });
+
+    /** The board's climbs, whichever board is active, render WASM thumbnails. */
+    function climbThumbnails(page: Page) {
+      return page.locator('img[src^="blob:"]');
+    }
+
+    test('a cold list URL adopts its board and lands on the climbs tab', async ({ page }) => {
+      const fatalErrors = collectFatalConsoleErrors(page);
+      await ensureSignedIn(page);
+
+      await page.goto(`/app/${BOARD_SLUG_PATH}/list`, { timeout: COLD_LOAD_TIMEOUT_MS });
+
+      await expect(tabButton(page, 'Climbs')).toBeVisible({ timeout: COLD_LOAD_TIMEOUT_MS });
+      // The board resolved and was adopted: its climbs render. A not-found
+      // (the failure mode when resolution races the session) never gets here.
+      await expect(climbThumbnails(page).first()).toBeVisible({ timeout: 60_000 });
+      expect(fatalErrors).toEqual([]);
+    });
+
+    test('a cold climb URL opens the play drawer as a preview, and survives a hard refresh', async ({ page }) => {
+      const fatalErrors = collectFatalConsoleErrors(page);
+      await ensureSignedIn(page);
+
+      const climbUrl = `/app/${BOARD_TUPLE_PATH}/view/${seededClimbUuid}`;
+      await page.goto(climbUrl, { timeout: COLD_LOAD_TIMEOUT_MS });
+
+      // preview:true — a deep link must not take over the queue's current climb,
+      // which in a party session is everyone's climb.
+      await expect(page.getByRole('button', { name: 'Log ascent' })).toBeVisible({ timeout: COLD_LOAD_TIMEOUT_MS });
+      await expect(page.getByRole('button', { name: 'Set active' })).toBeVisible({ timeout: WARM_TIMEOUT_MS });
+
+      // Second cold load of the same URL — a `reload()` would not do it, since
+      // handing off rewrites the address bar to the drawer's own route. This is
+      // the run that matters: the board is owned by now, so a resolve that
+      // starts before the session settles mints a duplicate instead of reusing
+      // it, and the create is rejected → "not found" on a URL that just worked.
+      await page.goto(climbUrl, { timeout: COLD_LOAD_TIMEOUT_MS });
+      await expect(page.getByRole('button', { name: 'Log ascent' })).toBeVisible({ timeout: COLD_LOAD_TIMEOUT_MS });
+      expect(fatalErrors).toEqual([]);
+    });
+
+    // `/b/{slug}` is the other URL family, and a different resolution path: the
+    // board is a server entity fetched by slug, not a config tuple, so nothing
+    // is minted and no owned-board list is read.
+    test('a cold /b/{slug} URL adopts the board it names', async ({ page }) => {
+      const fatalErrors = collectFatalConsoleErrors(page);
+      await ensureSignedIn(page);
+
+      await page.goto(`/app/b/${seededBoardSlug}/40/list`, { timeout: COLD_LOAD_TIMEOUT_MS });
+
+      await expect(tabButton(page, 'Climbs')).toBeVisible({ timeout: COLD_LOAD_TIMEOUT_MS });
+      await expect(climbThumbnails(page).first()).toBeVisible({ timeout: 60_000 });
+      expect(fatalErrors).toEqual([]);
+    });
+
+    test('the named-slug climb URL resolves the same climb as the numeric one', async ({ page }) => {
+      const fatalErrors = collectFatalConsoleErrors(page);
+      await ensureSignedIn(page);
+
+      await page.goto(`/app/${BOARD_SLUG_PATH}/view/${seededClimbUuid}`, { timeout: COLD_LOAD_TIMEOUT_MS });
+
+      await expect(page.getByRole('button', { name: 'Log ascent' })).toBeVisible({ timeout: COLD_LOAD_TIMEOUT_MS });
+      expect(fatalErrors).toEqual([]);
+    });
   });
 });
