@@ -1082,33 +1082,44 @@ describe('#3535 Aurora-side duplicate ascents', () => {
     expect(await visibleAuroraIds()).toEqual(['aur-a']);
   });
 
-  it('waits on the legacy advisory key before taking the extended rollout key', async () => {
-    let releaseLegacyLock!: () => void;
-    const legacyLockRelease = new Promise<void>((resolve) => {
-      releaseLegacyLock = resolve;
+  it('blocks a second holder of the same user key while letting another user through', async () => {
+    let releaseHolder!: () => void;
+    const holderRelease = new Promise<void>((resolve) => {
+      releaseHolder = resolve;
     });
-    let signalLegacyLockHeld!: (backendPid: number) => void;
-    const legacyLockHeld = new Promise<number>((resolve) => {
-      signalLegacyLockHeld = resolve;
+    let signalHolderReady!: (backendPid: number) => void;
+    const holderReady = new Promise<number>((resolve) => {
+      signalHolderReady = resolve;
     });
-    const legacyLockTransaction = db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${0x5449434b}, hashtext(${USER_ID}))`);
+    const holderTransaction = db.transaction(async (tx) => {
+      await acquireUserTickMutationLock(tx as unknown as Parameters<typeof acquireUserTickMutationLock>[0], USER_ID);
       const [{ backendPid }] = rowsOf<{ backendPid: number }>(
         await tx.execute(sql`SELECT pg_backend_pid() AS "backendPid"`),
       );
-      signalLegacyLockHeld(backendPid);
-      await legacyLockRelease;
+      signalHolderReady(backendPid);
+      await holderRelease;
       return backendPid;
     });
-    const legacyBackendPid = await legacyLockHeld;
-    const compatibleAcquisition = db.transaction(async (tx) => {
+    const holderBackendPid = await holderReady;
+
+    // The key is per user, not a global logbook gate: a second climber's
+    // mutation must not queue behind this one. If the seed/hash ever stopped
+    // depending on the user id, this acquisition would hang here instead.
+    await db.transaction(async (tx) => {
+      await acquireUserTickMutationLock(
+        tx as unknown as Parameters<typeof acquireUserTickMutationLock>[0],
+        `${USER_ID}-other`,
+      );
+    });
+
+    const contender = db.transaction(async (tx) => {
       await acquireUserTickMutationLock(tx as unknown as Parameters<typeof acquireUserTickMutationLock>[0], USER_ID);
     });
     await verifyContentionAndRelease({
-      holderBackendPid: legacyBackendPid,
-      holder: legacyLockTransaction,
-      contender: compatibleAcquisition,
-      releaseHolder: releaseLegacyLock,
+      holderBackendPid,
+      holder: holderTransaction,
+      contender,
+      releaseHolder,
     });
   });
 

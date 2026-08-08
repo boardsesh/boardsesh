@@ -8,7 +8,12 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { sessions } from '../../../db/schema';
 import { applyRateLimit, requireAuthenticated, validateInput, isNoMatchClimb } from '../shared/helpers';
 import { getConsensusDifficultyName } from '../shared/sql-expressions';
-import { SaveTickInputSchema, UpdateTickInputSchema, AttachBetaLinkInputSchema } from '../../../validation/schemas';
+import {
+  SaveTickInputSchema,
+  UpdateTickInputSchema,
+  AttachBetaLinkInputSchema,
+  readTimestampFractionalSeconds,
+} from '../../../validation/schemas';
 import { resolveBoardFromPath } from '../social/boards';
 import { findActiveBoardById, normalizeSetIds } from '../board-presence/shared';
 import { queueBoardStatsPublish } from '../board-presence/stats';
@@ -429,6 +434,12 @@ type TickMutationTransaction = Parameters<Parameters<typeof db.transaction>[0]>[
  * JavaScript Dates retain milliseconds only.  They are still useful for
  * resolving a numeric UTC offset, but their formatted fraction must never be
  * used here: a client is allowed to supply PostgreSQL's full six digits.
+ *
+ * The fraction is read with the same pattern the validator uses, so a shape it
+ * fails to recognise can't be one that already passed the six-digit refine.
+ * Callers must validate first; the slice is belt-and-braces against a caller
+ * that forgets and would otherwise hand PostgreSQL a fraction it silently
+ * rounds.
  */
 function normalizeClimbedAt(value: string): string {
   const parsed = new Date(value);
@@ -443,7 +454,7 @@ function normalizeClimbedAt(value: string): string {
     String(parsed.getUTCSeconds()).padStart(2, '0'),
   ].join(':');
   const utcSecond = `${utcDate}T${utcTime}`;
-  const fractionalSeconds = /[Tt ]\d{2}:\d{2}:\d{2}\.(\d{1,6})(?:[Zz]|[+-]\d{2}:?\d{2})?$/.exec(value)?.[1];
+  const fractionalSeconds = readTimestampFractionalSeconds(value)?.slice(0, 6);
 
   return fractionalSeconds ? `${utcSecond}.${fractionalSeconds}Z` : `${utcSecond}.000Z`;
 }
