@@ -317,8 +317,8 @@ export default defineConfig({
       // db-migrations job. They need no database and no db:up. Scoped rather
       // than the whole `test:db` suite because packages/db has never run in CI
       // and three create-climb-filters MoonBoard assertions are already failing
-      // on main (float formatting: `16.92` vs `16.919999999999998`); widening
-      // this to `test:db` has to come with fixing those first.
+      // on main (float formatting: `16.92` vs `16.919999999999998`, tracked in
+      // #4049); widening this to `test:db` has to come with fixing those first.
       'test:db:legacy-timestamp-audit': {
         command: 'bun run --filter=@boardsesh/db test:legacy-timestamp-audit',
       },
