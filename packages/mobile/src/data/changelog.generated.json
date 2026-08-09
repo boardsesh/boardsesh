@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-08T22:55:27.071Z",
+  "generatedAt": "2026-08-09T22:41:45.514Z",
   "entries": [
+    {
+      "prNumber": 4222,
+      "category": "fixed",
+      "title": "Grade charts on a climb now read properly on a phone: angles no longer clip, low-graded climbs sit clear of the axis, and every French grade gets its own line",
+      "mergedAt": "2026-08-09T22:40:34Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4222",
+      "body": "Turning on both grade formats no longer smears the grades over each other"
+    },
     {
       "prNumber": 4216,
       "category": "fixed",

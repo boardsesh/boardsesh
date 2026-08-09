@@ -4,6 +4,13 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-09
+
+### Fixed
+
+- Grade charts on a climb now read properly on a phone: angles no longer clip, low-graded climbs sit clear of the axis, and every French grade gets its own line ([#4222](https://github.com/boardsesh/boardsesh/pull/4222))
+  Turning on both grade formats no longer smears the grades over each other
+
 ## 2026-08-08
 
 ### Fixed
