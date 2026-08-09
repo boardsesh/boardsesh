@@ -26,9 +26,20 @@ type DumbbellByAngleChartProps = {
 
 const CHART_HEIGHT = 168;
 const AXIS_LABEL_SIZE = 11;
-const Y_AXIS_LABEL_WIDTH = 30;
+// Slightly smaller x-axis labels once they rotate, so the diagonal stack stays
+// tight — matching DifficultyByAngleChart, the chart directly below this one.
+const ROTATED_AXIS_LABEL_SIZE = 10;
 const INITIAL_SPACING = 26;
 const END_SPACING = 16;
+// A horizontal angle label ("70°") needs ~22px; once a marker's slot is tighter
+// than this the label clips to "…", so we rotate the labels instead (#4164).
+const MIN_HORIZONTAL_LABEL_WIDTH = 22;
+// Room below the plot for the rotated diagonal labels. gifted's LineChart sizes
+// the label box `spacing + labelsExtraHeight` and never drops it for the 60°
+// turn the way its BarChart does, so this one number does all three jobs: it
+// widens the box, lifts the plot off the labels, and grows the chart's own
+// container to match (`actualContainerHeight` in gifted-charts-core).
+const ROTATED_LABEL_EXTRA_HEIGHT = 28;
 // Cap the per-angle tap column so a two-angle climb doesn't give each marker
 // half the screen. There is deliberately NO lower floor: a column wider than the
 // marker spacing overlaps its neighbour, and RN hands the overlap to the later
@@ -86,10 +97,15 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
 
   const onLayout = (event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width);
 
-  const plotWidth = Math.max(0, width - Y_AXIS_LABEL_WIDTH);
+  const plotWidth = Math.max(0, width - axis.yAxisLabelWidth);
   const count = rows.length;
   const rawSpacing = count > 1 ? (plotWidth - INITIAL_SPACING - END_SPACING) / (count - 1) : 0;
   const slotWidth = Math.min(rawSpacing, MAX_SLOT_WIDTH);
+  // Once the angles crowd together, a horizontal "70°" clips to "…" — turn the
+  // labels diagonal the way the Community chart below already does. A lone angle
+  // has no spacing to measure (and renders as a sentence, not a chart) — opt out
+  // rather than let its rawSpacing of 0 read as "crowded".
+  const rotateLabels = count > 1 && plotWidth > 0 && rawSpacing < MIN_HORIZONTAL_LABEL_WIDTH;
 
   const neutralStroke = chartColors.secondaryLabel;
   const diamondEdge = chartColors.label;
@@ -276,7 +292,7 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
             maxValue={axis.maxValue}
             noOfSections={axis.noOfSections}
             yAxisLabelTexts={axis.yAxisLabelTexts}
-            yAxisLabelWidth={Y_AXIS_LABEL_WIDTH}
+            yAxisLabelWidth={axis.yAxisLabelWidth}
             dataPointsWidth={slotWidth}
             dataPointsHeight={CHART_HEIGHT}
             customDataPoint={(_item: unknown, index: number) => renderMarker(rows[index])}
@@ -295,7 +311,12 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
             xAxisColor={chartColors.separator}
             yAxisTextStyle={{ color: chartColors.secondaryLabel, fontSize: AXIS_LABEL_SIZE }}
             xAxisLabelTexts={rows.map((row) => `${row.angle}°`)}
-            xAxisLabelTextStyle={{ color: chartColors.secondaryLabel, fontSize: AXIS_LABEL_SIZE }}
+            xAxisLabelTextStyle={{
+              color: chartColors.secondaryLabel,
+              fontSize: rotateLabels ? ROTATED_AXIS_LABEL_SIZE : AXIS_LABEL_SIZE,
+            }}
+            rotateLabel={rotateLabels}
+            labelsExtraHeight={rotateLabels ? ROTATED_LABEL_EXTRA_HEIGHT : undefined}
             // gifted's entry animation collapses points to 0 inside the drawer's
             // FadeIn on Android — render statically like every other chart here.
             isAnimated={false}

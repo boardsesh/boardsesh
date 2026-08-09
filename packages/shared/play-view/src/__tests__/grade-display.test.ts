@@ -15,6 +15,7 @@ import {
   getSoftFontGradeColor,
   getSoftGradeColorByFormat,
   DEFAULT_GRADE_DISPLAY_FORMAT,
+  splitGradeLabel,
 } from '../grade-display';
 
 describe('getGradeColorWithOpacity', () => {
@@ -220,6 +221,24 @@ describe('formatGrade', () => {
   it('falls back to whichever scale can be parsed when formatting both', () => {
     expect(formatGrade('V10', 'both')).toBe('V10');
     expect(formatGrade('7b+', 'both')).toBe('7B+');
+  });
+});
+
+describe('splitGradeLabel', () => {
+  it('undoes the join a both-formats label made, so a cramped surface can stack it', () => {
+    expect(splitGradeLabel(formatGrade('6c+/V5', 'both'))).toEqual(['V5+', '6C+']);
+    expect(splitGradeLabel(formatGrade('8b/V13', 'both'))).toEqual(['V13', '8B']);
+  });
+
+  it('leaves a single-format label as one piece', () => {
+    expect(splitGradeLabel('V5+')).toEqual(['V5+']);
+    expect(splitGradeLabel('6C+')).toEqual(['6C+']);
+  });
+
+  it('has nothing to split when there is no label', () => {
+    expect(splitGradeLabel(null)).toEqual([]);
+    expect(splitGradeLabel(undefined)).toEqual([]);
+    expect(splitGradeLabel('')).toEqual([]);
   });
 });
 

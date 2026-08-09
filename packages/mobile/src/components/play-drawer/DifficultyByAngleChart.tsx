@@ -5,6 +5,7 @@ import { Text } from '../Text';
 import { buildAscentChartScale, type AngleGradeBar } from './community-utils';
 import { useTheme } from '../../providers/theme-provider';
 import { gradeChartColor } from '../you/profile-chart-colors';
+import { buildGradeBarLabels } from './grade-bar-labels';
 import { borderRadius, spacing } from '../../theme/tokens';
 
 type DifficultyByAngleChartProps = {
@@ -22,11 +23,6 @@ const ROTATED_AXIS_LABEL_SIZE = 10;
 // Default top-corner radius for bars; the hardest angle gets a softer, larger cap.
 const BAR_RADIUS = borderRadius.sm;
 const PEAK_BAR_RADIUS = borderRadius.md;
-const TOP_LABEL_HEIGHT = 16;
-// Measurement box for the grade label above each bar — wide enough that even a
-// long combined grade ("V13 / 8B") never clips to "…", while a short grade stays
-// centred over the bar.
-const GRADE_LABEL_WIDTH = 60;
 const MIN_BAR_WIDTH = 10;
 // Width reserved for the y-axis ascent-count labels (e.g. "120", "1.2k").
 const Y_AXIS_LABEL_WIDTH = 32;
@@ -55,18 +51,52 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
   const { chartColors, colorScheme } = useTheme();
   const [width, setWidth] = useState(0);
 
-  // Bars + axis scale only depend on the data + scheme — memoize so a parent
-  // re-render (or a width change) doesn't rebuild them (and their top-label
+  const count = data.length;
+  const barSpacing = count > 8 ? 6 : 12;
+  const initialSpacing = 10;
+  // Reserve space for the y-axis labels so the bars + axis fit the measured width.
+  const plotWidth = Math.max(0, width - Y_AXIS_LABEL_WIDTH);
+  const barWidth =
+    plotWidth > 0 && count > 0
+      ? Math.max(MIN_BAR_WIDTH, Math.floor((plotWidth - initialSpacing * 2 - barSpacing * count) / count))
+      : MIN_BAR_WIDTH;
+  // Once the bars get too narrow for a horizontal angle label, rotate the labels
+  // and give each its own wider box so the angle reads in full instead of "…".
+  const rotateLabels = plotWidth > 0 && barWidth + barSpacing < MIN_HORIZONTAL_LABEL_WIDTH;
+
+  // Fifteen angles leave each bar about 14px, which is narrower than "V10".
+  // Rather than shrink or rotate the grades — a rotated 11pt label between dense
+  // bars is unreadable (#4164) — stack the both-formats ones and, when even that
+  // will not fit, print a label only where the grade changes.
+  const grades = useMemo(() => data.map((bar) => bar.gradeName), [data]);
+  const gradeLabels = useMemo(
+    () => buildGradeBarLabels(grades, barWidth, barWidth + barSpacing),
+    [grades, barWidth, barSpacing],
+  );
+  // gifted boxes the top label to exactly one bar width. Widen it to the room
+  // the grade actually needs and re-centre it over its own bar, or a "V6 / 7A"
+  // spills right, over the bar beside it. Memoized on the two numbers it holds
+  // so a parent re-render doesn't hand BarChart a fresh style object.
+  const gradeBoxStyle = useMemo(
+    () => ({ marginBottom: spacing[1], width: gradeLabels.width, left: gradeLabels.left }),
+    [gradeLabels.width, gradeLabels.left],
+  );
+
+  // Bars + axis scale only depend on the data, scheme and the label treatment —
+  // memoize so a parent re-render doesn't rebuild them (and their top-label
   // closures) every time.
   const model = useMemo(() => {
     if (data.length === 0) return null;
     const scale = buildAscentChartScale(data.map((bar) => bar.sends));
     // The single hardest angle (first max wins on ties) gets the redundant cue.
     const hardestAngle = data.reduce((peak, bar) => (bar.difficulty > peak.difficulty ? bar : peak)).angle;
-    const barData = data.map((bar) => {
+    const barData = data.map((bar, barIndex) => {
       const fill = gradeChartColor(bar.gradeName, colorScheme);
       const isHardest = bar.angle === hardestAngle;
       const topRadius = isHardest ? PEAK_BAR_RADIUS : BAR_RADIUS;
+      // Empty on a bar the crowded-row rule skipped — its grade still reads off
+      // the bar's colour, and the labels that remain mark each grade band.
+      const lines = gradeLabels.linesByBar[barIndex] ?? [];
       return {
         value: scale.plot(bar.sends),
         frontColor: fill,
@@ -75,24 +105,27 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
         barBorderTopRightRadius: topRadius,
         barBorderBottomLeftRadius: 0,
         barBorderBottomRightRadius: 0,
-        topLabelComponentHeight: TOP_LABEL_HEIGHT,
-        // gifted sizes the top-label box to ~1.5× the bar, so on a narrow bar
-        // the grade clips to "V…". Wrap it in a fixed, wider centred box and pin
-        // the font (no Dynamic Type growth) so the grade always reads in full —
-        // the short label still sits centred over the bar without overlapping.
-        topLabelComponent: (): ReactNode => (
-          <View style={styles.topLabelWrap} pointerEvents="none">
-            <Text
-              variant="caption2"
-              color={fill}
-              style={isHardest ? styles.topLabelPeak : styles.topLabel}
-              numberOfLines={1}
-              allowFontScaling={false}
-            >
-              {bar.gradeName}
-            </Text>
-          </View>
-        ),
+        // The font is pinned (no Dynamic Type growth) so the measured layout
+        // above stays true to what actually renders.
+        topLabelComponent:
+          lines.length === 0
+            ? undefined
+            : (): ReactNode => (
+                <View style={styles.topLabelWrap} pointerEvents="none">
+                  {lines.map((line, lineIndex) => (
+                    <Text
+                      key={`${lineIndex}-${line}`}
+                      variant="caption2"
+                      color={fill}
+                      style={isHardest ? styles.topLabelPeak : styles.topLabel}
+                      numberOfLines={1}
+                      allowFontScaling={false}
+                    >
+                      {line}
+                    </Text>
+                  ))}
+                </View>
+              ),
       };
     });
     return {
@@ -102,24 +135,11 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
       yAxisLabelTexts: scale.yAxisLabelTexts,
       isLog: scale.isLog,
     };
-  }, [data, colorScheme]);
+  }, [data, colorScheme, gradeLabels]);
 
   const onLayout = (event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width);
 
   if (!model) return null;
-
-  const count = data.length;
-  const barSpacing = count > 8 ? 6 : 12;
-  const initialSpacing = 10;
-  // Reserve space for the y-axis labels so the bars + axis fit the measured width.
-  const plotWidth = Math.max(0, width - Y_AXIS_LABEL_WIDTH);
-  const barWidth =
-    plotWidth > 0
-      ? Math.max(MIN_BAR_WIDTH, Math.floor((plotWidth - initialSpacing * 2 - barSpacing * count) / count))
-      : MIN_BAR_WIDTH;
-  // Once the bars get too narrow for a horizontal angle label, rotate the labels
-  // and give each its own wider box so the angle reads in full instead of "…".
-  const rotateLabels = plotWidth > 0 && barWidth + barSpacing < MIN_HORIZONTAL_LABEL_WIDTH;
   // Flag the log axis in the caption + a11y label so a bar twice as tall isn't
   // misread as twice the ascents (it's 10× per section on a log scale).
   const showLogScale = model.isLog && !!logScaleLabel;
@@ -143,7 +163,9 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
         <BarChart
           data={model.barData}
           width={plotWidth - 8}
-          height={CHART_HEIGHT}
+          // A stacked grade takes its second line out of the plot, so the label
+          // grows into the chart instead of over the section above.
+          height={CHART_HEIGHT - gradeLabels.headroom}
           barWidth={barWidth}
           spacing={barSpacing}
           initialSpacing={initialSpacing}
@@ -154,7 +176,7 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
           rotateLabel={rotateLabels}
           labelWidth={rotateLabels ? ROTATED_LABEL_WIDTH : undefined}
           labelsExtraHeight={rotateLabels ? ROTATED_LABEL_EXTRA_HEIGHT : undefined}
-          topLabelContainerStyle={styles.topLabelContainer}
+          topLabelContainerStyle={gradeBoxStyle}
           rulesColor={chartColors.separator}
           rulesType="solid"
           yAxisThickness={0}
@@ -190,11 +212,8 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     marginBottom: spacing[1],
   },
-  topLabelContainer: {
-    marginBottom: spacing[1],
-  },
   topLabelWrap: {
-    width: GRADE_LABEL_WIDTH,
+    width: '100%',
     alignItems: 'center',
   },
   topLabel: {

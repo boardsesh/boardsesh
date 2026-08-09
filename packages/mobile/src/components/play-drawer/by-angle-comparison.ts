@@ -16,6 +16,7 @@ import {
   MIN_DIFFICULTY_ID,
   MAX_DIFFICULTY_ID,
 } from '../../lib/boardsesh-grade-display';
+import { estimateLabelWidth } from '../../lib/chart/label-metrics';
 import type { AngleGradeBar } from './community-utils';
 
 /** Boardsesh confidence at an angle. Mirrors the grade resolver's tiers. */
@@ -159,45 +160,67 @@ export function hasAnyBoardseshDiamond(rows: DumbbellAngleRow[]): boolean {
 /**
  * The standardized-grade Y axis for the dumbbell: an integer grade window that
  * covers every plotted value (both markers + whisker bounds) with ~1 grade of
- * padding on each side, plus the V-grade tick labels. Values are plotted after
- * shifting by `minId` (so the axis can start above V0 instead of wasting the
- * lower half of the plot).
+ * padding on each side, plus its tick labels. Values are plotted after shifting
+ * by `minId` (so a V12 project's axis can start near V10 instead of wasting the
+ * lower two thirds of the plot on grades nobody is looking at).
  */
 export type DumbbellAxis = {
-  /** Integer grade id at the axis bottom. */
+  /** Integer grade id at the axis bottom. May sit below MIN_DIFFICULTY_ID —
+   *  that padding is what keeps a V0 climb's markers off the x-axis. */
   minId: number;
   /** Integer grade id at the axis top. */
   maxId: number;
-  /** Number of gridline sections (one per grade id: `maxId - minId`). */
+  /** Number of gridline sections. */
   noOfSections: number;
   /** Plotted-unit span (a grade float shifted by `minId` never exceeds this). */
   maxValue: number;
-  /** Tick labels bottom→top, one per gridline (`noOfSections + 1`). Every tick
-   *  is labelled with the grade at its height — gifted renders a blank y label
-   *  as "0", so we never emit blanks. */
+  /** Tick labels bottom→top, one per gridline (`noOfSections + 1`). Ticks that
+   *  would repeat the label below them (or sit off the real grade scale) carry
+   *  BLANK_TICK, so the gridline draws without a label. */
   yAxisLabelTexts: string[];
+  /** Width the y-axis label gutter needs for the longest label it emits. */
+  yAxisLabelWidth: number;
 };
 
-// Grade gridlines are coarse and fully labelled (see buildDumbbellAxis): aim for
-// ~one line per this many ids (≈2 grades), capped at MAX_AXIS_SECTIONS so the
-// axis text stays sparse and even rather than crowded.
-const IDS_PER_AXIS_SECTION = 4;
-const MAX_AXIS_SECTIONS = 6;
+/**
+ * An unlabelled gridline. It has to be a SPACE, not an empty string: gifted
+ * treats `''` as "no label given" and prints its numeric fallback, so a blank
+ * tick would read "0" (see `getLabelTextUtil` in gifted-charts-core). A single
+ * space is truthy there and is passed through to the axis verbatim.
+ */
+export const BLANK_TICK = ' ';
+
+/** ~One grade of headroom on each side of the plotted values (two Font steps). */
+const AXIS_PADDING_IDS = 2;
+// One gridline per grade id is the goal — that puts a line on every Font grade,
+// which is what a climber reading French grades expects. Past this many lines
+// the 11px labels start colliding on a 168px-tall plot, so the step coarsens to
+// 2 then 3 ids per line for a climb whose grade swings wildly across angles.
+const MAX_GRIDLINES = 12;
+const MAX_IDS_PER_SECTION = 3;
+// Widest y-axis gutter we'll hand over. Only the "both formats" preference on a
+// double-digit V grade ("V13 / 8B+") gets near it; a single-format label needs
+// about 30, so the plot keeps the width it has today.
+const MAX_Y_AXIS_LABEL_WIDTH = 72;
+/** Breathing room between the tick label and the plot's left edge. */
+const Y_AXIS_GUTTER = 4;
 
 /**
  * Build the shared Y axis from the dumbbell rows. Falls back to a small window
  * around V0 when there are no plottable values (an empty/degenerate model).
  *
- * Coarse, fully-labelled gridlines. gifted renders a blank y-axis tick as "0"
- * (there is no per-tick "no label"), so we must label EVERY gridline. V-grades
- * span a variable number of ids, so we can't drop an evenly-spaced line on every
- * whole grade; instead we grid evenly in id space (~one line per
- * IDS_PER_AXIS_SECTION ids) and label each line with the grade at its height.
- * Markers still land on their own grade line via the shared value scale
- * (`maxValue === maxId - minId`, so a grade float plots at `grade - minId`);
- * off-grade markers sit between lines. We pick the finest section count whose
- * labels don't repeat — a coarse step keeps neighbouring ticks on distinct
- * grades even though one grade can cover up to three ids.
+ * One gridline per grade id, so every marker lands ON a line rather than
+ * floating between two. Difficulty ids map 1:1 to Font grades and 1:3 to
+ * V-grades, so the labelling rule is simply "label a tick unless it repeats the
+ * tick below it": Font format labels every line, V-grade format labels the line
+ * where each new V starts and leaves the in-between lines bare.
+ *
+ * The window is padded by AXIS_PADDING_IDS on each side so markers and whiskers
+ * never sit on the axis edge. At the bottom that padding may run past the
+ * easiest real grade (V0) — those ticks go unlabelled rather than being clamped
+ * away, because clamping is what used to drop a V0 climb's markers straight onto
+ * the x-axis labels. The top stays clamped to the hardest real grade so the top
+ * tick always reads truthfully.
  */
 export function buildDumbbellAxis(rows: DumbbellAngleRow[], gradeFormat: GradeDisplayFormat): DumbbellAxis {
   const values: number[] = [];
@@ -209,48 +232,55 @@ export function buildDumbbellAxis(rows: DumbbellAngleRow[], gradeFormat: GradeDi
   }
 
   const lowValue = values.length ? Math.min(...values) : MIN_DIFFICULTY_ID;
-  const highValue = values.length ? Math.max(...values) : MIN_DIFFICULTY_ID + 2;
+  const highValue = values.length ? Math.max(...values) : MIN_DIFFICULTY_ID + AXIS_PADDING_IDS;
 
-  // ~One grade of headroom on each side (two Font steps on the id scale),
-  // clamped to the scale, so markers + whiskers never sit on the axis edge.
-  let minId = Math.max(MIN_DIFFICULTY_ID, clampDifficultyId(lowValue) - 2);
-  let maxId = Math.min(MAX_DIFFICULTY_ID, clampDifficultyId(highValue) + 2);
-  // Guarantee at least a two-grade window so markers never sit on the edge.
-  if (maxId - minId < 2) {
-    maxId = Math.min(MAX_DIFFICULTY_ID, minId + 2);
-    minId = Math.max(MIN_DIFFICULTY_ID, maxId - 2);
+  let minId = clampDifficultyId(lowValue) - AXIS_PADDING_IDS;
+  const maxId = Math.max(
+    minId + AXIS_PADDING_IDS, // a window even when every value rounds to the hardest grade
+    Math.min(MAX_DIFFICULTY_ID, clampDifficultyId(highValue) + AXIS_PADDING_IDS),
+  );
+
+  // Coarsen the step until the gridlines stop crowding, then stretch the window
+  // to a whole number of steps. That stretch goes DOWNWARD: the bottom already
+  // runs past the easiest grade as padding, whereas dropping the top tick off
+  // the scale would cost the axis its hardest, most-read label.
+  let idsPerSection = 1;
+  while (idsPerSection < MAX_IDS_PER_SECTION && (maxId - minId) / idsPerSection > MAX_GRIDLINES) {
+    idsPerSection += 1;
   }
-  // maxId is already clamped to the hardest real grade, so the top tick renders
-  // a truthful label — no overflow correction needed at step 1.
+  minId -= (idsPerSection - ((maxId - minId) % idsPerSection)) % idsPerSection;
 
   const span = maxId - minId;
-  // Keep the plotted-unit span equal to the id span so `localY` (which divides
-  // by maxValue) lands a grade float at `grade - minId`.
-  const maxValue = span;
+  const noOfSections = span / idsPerSection;
 
-  // Evenly-spaced ticks in id space, each labelled with the grade at its
-  // height. index 0 = bottom (minId), index N = top (maxId); every entry is a
-  // real grade label so gifted never falls back to a "0" tick.
-  const labelsForSections = (sections: number): string[] => {
-    const labels: string[] = [];
-    for (let index = 0; index <= sections; index++) {
-      const id = Math.round(minId + (span * index) / sections);
-      labels.push(renderDifficulty(id, gradeFormat)?.label ?? '');
-    }
-    return labels;
-  };
-  const hasAdjacentDuplicate = (labels: string[]): boolean =>
-    labels.some((label, index) => index > 0 && label === labels[index - 1]);
-
-  // Start from the target density, then coarsen until neighbouring ticks stop
-  // repeating (a single V-grade can cover up to three ids). Floors at 1 section
-  // = just the bottom + top grade for a tiny window.
-  let noOfSections = Math.min(MAX_AXIS_SECTIONS, Math.max(1, Math.round(span / IDS_PER_AXIS_SECTION)));
-  let yAxisLabelTexts = labelsForSections(noOfSections);
-  while (noOfSections > 1 && hasAdjacentDuplicate(yAxisLabelTexts)) {
-    noOfSections -= 1;
-    yAxisLabelTexts = labelsForSections(noOfSections);
+  // index 0 = bottom (minId), index noOfSections = top (maxId). Only the bottom
+  // can run off the scale — maxId is clamped to the hardest real grade above.
+  const yAxisLabelTexts: string[] = [];
+  let labelBelow = '';
+  for (let index = 0; index <= noOfSections; index++) {
+    const id = minId + index * idsPerSection;
+    const label = id < MIN_DIFFICULTY_ID ? '' : (renderDifficulty(id, gradeFormat)?.label ?? '');
+    yAxisLabelTexts.push(label && label !== labelBelow ? label : BLANK_TICK);
+    if (label) labelBelow = label;
   }
 
-  return { minId, maxId, noOfSections, maxValue, yAxisLabelTexts };
+  // Blank ticks print nothing, so only the real grade labels can claim gutter,
+  // and they're compared as rendered rather than by character count — " / " is
+  // worth about half a digit, so the longest string isn't always the widest.
+  const longestLabel = yAxisLabelTexts.reduce(
+    (longest, label) =>
+      label !== BLANK_TICK && estimateLabelWidth(label) > estimateLabelWidth(longest) ? label : longest,
+    '',
+  );
+
+  return {
+    minId,
+    maxId,
+    noOfSections,
+    // Keep the plotted-unit span equal to the id span so `localY` (which divides
+    // by maxValue) lands a grade float at `grade - minId`.
+    maxValue: span,
+    yAxisLabelTexts,
+    yAxisLabelWidth: Math.min(MAX_Y_AXIS_LABEL_WIDTH, estimateLabelWidth(longestLabel) + Y_AXIS_GUTTER),
+  };
 }

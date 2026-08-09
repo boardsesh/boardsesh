@@ -8,28 +8,26 @@
  * helpers decide how much room the count really needs and, when the column is
  * hopeless, stand the count on end so it reads vertically instead of being
  * clipped.
+ *
+ * Rotation is right for a count, where every bar's number is its own fact. It
+ * is NOT right for a row of grades, which repeat across neighbouring bars and
+ * are better thinned out than turned sideways — see `grade-bar-labels.ts`.
  */
+import { CHART_LABEL_LINE_HEIGHT, estimateLabelWidth } from './label-metrics';
 
-/** The count renders at the `caption2` ramp: 11px on both UI variants. */
-export const BAR_TOP_LABEL_FONT_SIZE = 11;
-/** Tallest `caption2` line height across the two variants (Material's 16). */
-export const BAR_TOP_LABEL_LINE_HEIGHT = 16;
-/** Semibold digits measure ~0.62em wide in both SF and Roboto. */
-const DIGIT_WIDTH_EM = 0.62;
-/** A hair of breathing room on each side so glyphs never touch the box edge. */
-const LABEL_SIDE_PADDING = 2;
-/** Matches `styles.barTopLabel`: the gap between the count and the bar top. */
+/** Matches `styles.barTopLabel`: the gap between the label and the bar top. */
 const BASE_LABEL_GAP = 2;
 
-/** Widest count label in the chart, so every bar gets the same treatment. */
+/**
+ * Widest count label in the chart, so every bar gets the same treatment.
+ * Seeded with the first value, not 0 — seeding with 0 handed back a count that
+ * was never in the chart whenever every bar had a single digit.
+ */
 export function longestBarValue(values: readonly number[]): number {
-  return values.reduce((widest, value) => (String(value).length > String(widest).length ? value : widest), 0);
-}
-
-/** Rendered width of a count label, in px, at the given accessibility font scale. */
-export function estimateBarTopLabelWidth(value: number, fontScale = 1): number {
-  const digits = String(Math.round(value)).length;
-  return Math.ceil(digits * BAR_TOP_LABEL_FONT_SIZE * DIGIT_WIDTH_EM * fontScale) + LABEL_SIDE_PADDING * 2;
+  return values.reduce(
+    (widest, value) => (String(value).length > String(widest).length ? value : widest),
+    values[0] ?? 0,
+  );
 }
 
 export type BarTopLabelLayout = {
@@ -37,11 +35,11 @@ export type BarTopLabelLayout = {
   width: number;
   /** Left offset that keeps a wider-than-bar box centred over its own bar. */
   left: number;
-  /** True when the count is rotated to read bottom-to-top. */
+  /** True when the label is rotated to read bottom-to-top. */
   rotated: boolean;
   /** Bottom margin that lifts the label clear of the bar it belongs to. */
   marginBottom: number;
-  /** Extra vertical room a rotated label needs above the tallest bar. */
+  /** Extra vertical room the label needs above a plain one-line label. */
   headroom: number;
 };
 
@@ -56,12 +54,14 @@ export type BarTopLabelLayout = {
  * with the next label — one bar plus the gap to the bar beside it.
  */
 export function computeBarTopLabelLayout(
-  longestValue: number,
+  label: string,
   barWidth: number,
   columnWidth: number,
   fontScale = 1,
 ): BarTopLabelLayout {
-  const textWidth = estimateBarTopLabelWidth(longestValue, fontScale);
+  const lineHeight = Math.ceil(CHART_LABEL_LINE_HEIGHT * fontScale);
+  const textWidth = estimateLabelWidth(label, fontScale);
+
   if (textWidth <= columnWidth) {
     const width = Math.max(barWidth, Math.min(columnWidth, textWidth));
     return {
@@ -72,7 +72,7 @@ export function computeBarTopLabelLayout(
       headroom: 0,
     };
   }
-  const lineHeight = Math.ceil(BAR_TOP_LABEL_LINE_HEIGHT * fontScale);
+
   return {
     width: textWidth,
     left: Math.round((barWidth - textWidth) / 2),
