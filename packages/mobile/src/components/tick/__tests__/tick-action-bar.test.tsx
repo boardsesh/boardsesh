@@ -61,7 +61,7 @@ vi.mock('../../../providers/theme-provider', async () => {
 });
 
 import { TickActionBar } from '../TickActionBar';
-import { TICK_ERROR_SLOT_HEIGHT } from '../tick-sheet-metrics';
+import { TICK_ACTION_HEIGHT, TICK_ERROR_SLOT_HEIGHT } from '../tick-sheet-metrics';
 import { brandColors } from '../../../theme/colors';
 
 function renderBar(props: Partial<Parameters<typeof TickActionBar>[0]> = {}) {
@@ -110,6 +110,34 @@ describe('TickActionBar', () => {
     const failed = renderBar({ error: "Couldn't save your tick" });
     expect(styleOf(failed.container, 'tick-action-error-slot')).toEqual(restSlot);
     expect(styleOf(failed.container, 'tick-action-row')).toEqual(restRow);
+  });
+
+  it('holds its shape when the keyboard squeezes the column', () => {
+    // The sheet's column is a fixed height on iOS (the #3330 detent bound) and
+    // ModalSheet's KeyboardAvoidingView pads the bottom by the keyboard height,
+    // so everything inside is competing for what's left. This row must not be
+    // what gives: a shrunk row stretches the native button hosts to whatever
+    // height is left over and the two buttons stop lining up.
+    const { container } = renderBar();
+    const row = styleOf(container, 'tick-action-row');
+
+    expect(row.flexShrink).toBe(0);
+    expect(row.alignItems).toBe('center');
+    expect(row.minHeight).toBe(TICK_ACTION_HEIGHT);
+  });
+
+  it('gives both buttons the same explicit height, not whatever their labels measure', () => {
+    // `alignItems: 'center'` sizes each child to its own content, and a native
+    // button host measures from its label — the filled primary also carries an
+    // icon and a spinner, so the two would settle at different heights.
+    const paired = renderBar({ secondary: { title: 'Attempt', onPress: vi.fn() } });
+    const [secondary, primary] = buttonCalls.props;
+    expect(flattenStyle(secondary.style).height).toBe(TICK_ACTION_HEIGHT);
+    expect(flattenStyle(primary.style).height).toBe(TICK_ACTION_HEIGHT);
+    paired.unmount();
+
+    renderBar();
+    expect(flattenStyle(buttonCalls.props[0].style).height).toBe(TICK_ACTION_HEIGHT);
   });
 
   it('announces a failure: these used to go through showToast, which announced', () => {

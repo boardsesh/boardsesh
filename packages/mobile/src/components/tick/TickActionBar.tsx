@@ -109,15 +109,31 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
+    // Both matter once the keyboard is up. The sheet's column is a FIXED height
+    // on iOS (the #3330 detent bound) and ModalSheet's KeyboardAvoidingView pads
+    // the bottom by the keyboard height, so everything inside gets squeezed into
+    // what's left. Without `flexShrink: 0` this row is a candidate for that
+    // squeeze; without `alignItems: 'center'` the default `stretch` then hands
+    // each native button host whatever odd height the squeezed row ended up
+    // with, and the two buttons stop lining up.
+    alignItems: 'center',
+    flexShrink: 0,
     minHeight: TICK_ACTION_HEIGHT,
   },
+  // Explicit height rather than relying on the row: `alignItems: 'center'` sizes
+  // each child to its own content, and a SwiftUI/Compose button host measures
+  // from its label, so the tonal Attempt and the filled Send (which also carries
+  // an icon and a spinner) would otherwise settle at slightly different heights.
   secondaryButton: {
     flex: 1,
+    height: TICK_ACTION_HEIGHT,
   },
   primaryButtonPaired: {
     flex: 2,
+    height: TICK_ACTION_HEIGHT,
   },
   primaryButtonAlone: {
     flex: 1,
+    height: TICK_ACTION_HEIGHT,
   },
 });
