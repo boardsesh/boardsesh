@@ -71,6 +71,7 @@ import { reportError, reportHandledError } from '../src/lib/error-reporting';
 import { track, getAnalyticsClient } from '../src/lib/analytics';
 import { performOtaRecovery, type OtaRecoveryPhase } from '../src/lib/ota-recovery';
 import { loadRequiredFonts } from '../src/lib/required-fonts';
+import { loadSectionExpandState } from '../src/lib/section-expand-store';
 import { useImageCacheMemoryManagement } from '../src/hooks/use-image-cache-memory-management';
 import { AnalyticsProvider } from '../src/components/analytics/AnalyticsProvider';
 import { AnalyticsScreenTracker } from '../src/components/analytics/AnalyticsScreenTracker';
@@ -441,6 +442,17 @@ function RootLayout() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Warm the collapsed-section map before the first tab paints. Without this it
+  // loads lazily on the first section's mount, so a climber who folded the home
+  // beta shelf away would watch it render open and then snap shut on every cold
+  // start (#4229). Nothing waits on it — the splash is already held for auth and
+  // fonts, both far slower than one AsyncStorage read.
+  useEffect(() => {
+    void loadSectionExpandState().catch((error: unknown) => {
+      reportError(error);
+    });
   }, []);
 
   const onAuthReady = useCallback(() => {

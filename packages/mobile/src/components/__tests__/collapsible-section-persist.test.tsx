@@ -108,7 +108,7 @@ describe('CollapsibleSection persistence', () => {
     // This is the signal the play drawer keys its scroll-into-view off, so it
     // must fire on the tap (and NOT on mount / persisted reconciliation).
     const onToggle = vi.fn();
-    const { getByRole } = render(
+    const { getAllByRole } = render(
       createElement(CollapsibleSection, {
         title: 'Logbook',
         defaultExpanded: false,
@@ -117,10 +117,13 @@ describe('CollapsibleSection persistence', () => {
       }),
     );
 
+    // Two toggle targets: the title cluster and the chevron (the header action,
+    // when present, sits between them and owns its own taps).
+    const title = () => getAllByRole('button')[0];
     expect(onToggle).not.toHaveBeenCalled();
-    fireEvent.click(getByRole('button'));
+    fireEvent.click(title());
     expect(onToggle).toHaveBeenLastCalledWith(true);
-    fireEvent.click(getByRole('button'));
+    fireEvent.click(title());
     expect(onToggle).toHaveBeenLastCalledWith(false);
   });
 });
@@ -137,7 +140,7 @@ describe('CollapsibleSection body rendering', () => {
   // this change fixes — that is verified on-device. It does pin that the body
   // renders when expanded and unmounts when collapsed.
   it('renders the body only while expanded, toggling on header tap', () => {
-    const { getByRole, queryByText } = render(
+    const { getAllByRole, queryByText } = render(
       createElement(CollapsibleSection, {
         title: 'Logbook',
         defaultExpanded: false,
@@ -145,13 +148,46 @@ describe('CollapsibleSection body rendering', () => {
       }),
     );
 
+    const title = () => getAllByRole('button')[0];
     // Collapsed by default → body absent.
     expect(queryByText(BODY)).toBeNull();
     // Tap to expand → body present (plain View, no FadeIn gate).
-    fireEvent.click(getByRole('button'));
+    fireEvent.click(title());
     expect(queryByText(BODY)).toBeTruthy();
     // Tap again to collapse → body removed.
-    fireEvent.click(getByRole('button'));
+    fireEvent.click(title());
     expect(queryByText(BODY)).toBeNull();
+  });
+
+  it('toggles from the chevron as well as the title', () => {
+    const { getAllByRole, queryByText } = render(
+      createElement(CollapsibleSection, {
+        title: 'Logbook',
+        defaultExpanded: false,
+        children: createElement('span', null, BODY),
+      }),
+    );
+
+    fireEvent.click(getAllByRole('button')[1]);
+    expect(queryByText(BODY)).toBeTruthy();
+  });
+
+  it('lets a headerAction press through without folding the section', () => {
+    // The Beta Videos "+" lives in this slot. It must add a video, not collapse
+    // the section out from under the user (#4229).
+    const onActionPress = vi.fn();
+    const { getAllByRole, queryByText } = render(
+      createElement(CollapsibleSection, {
+        title: 'Beta Videos',
+        defaultExpanded: true,
+        headerAction: createElement('button', { onClick: onActionPress }, 'add'),
+        children: createElement('span', null, BODY),
+      }),
+    );
+
+    expect(queryByText(BODY)).toBeTruthy();
+    fireEvent.click(getAllByRole('button')[1]); // the action, between title and chevron
+    expect(onActionPress).toHaveBeenCalledTimes(1);
+    expect(queryByText(BODY)).toBeTruthy();
   });
 });

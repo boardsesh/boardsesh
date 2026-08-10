@@ -22,6 +22,10 @@ vi.mock('../Icon', () => ({ Icon: () => createElement('i', null) }));
 vi.mock('../PressableSurface', () => ({
   PressableSurface: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
+// Stubbed so this file doesn't drag in react-native-reanimated (its ESM entry
+// isn't resolvable under vitest). The chevron's own behaviour is covered in
+// `section-header-disclosure.test.tsx`.
+vi.mock('../SectionDisclosureChevron', () => ({ SectionDisclosureChevron: () => createElement('i', null) }));
 vi.mock('../../providers/theme-provider', () => ({
   useTheme: () => ({
     variant: ctrl.variant,

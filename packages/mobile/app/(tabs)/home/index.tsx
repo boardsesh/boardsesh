@@ -12,6 +12,7 @@ import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
 import type { IconName } from '../../../src/components/icon-map';
 import { Card } from '../../../src/components/Card';
+import { SectionDisclosureChevron } from '../../../src/components/SectionDisclosureChevron';
 import { Button } from '../../../src/components/Button';
 import { SessionFeedCard } from '../../../src/components/you/SessionFeedCard';
 import { CommentSheet } from '../../../src/components/you/CommentSheet';
@@ -35,6 +36,7 @@ import { buildVoteSummaryMap, voteSummaryKey, type VoteSummary } from '../../../
 import { openClimbInPlayDrawer } from '../../../src/lib/open-climb-in-play-drawer';
 import { openValidatedUrl } from '../../../src/lib/open-external-link';
 import { hapticLight } from '../../../src/lib/haptics';
+import { useBetaShelfCollapse } from '../../../src/lib/beta-shelf-collapse';
 import { navigateToSessionFeedItem } from '../../../src/lib/session-feed-navigation';
 import { iosSystemColors } from '../../../src/theme/ios-colors';
 import { borderRadius, spacing } from '../../../src/theme/tokens';
@@ -112,7 +114,10 @@ export default function HomeTab() {
   // fires the unscoped global feed first (initial state is gym + no board) and
   // then refetches the scoped/crew query — that double-fetch flickered the feed.
   const scopeReady = !isResolvingHomeBoard;
-  const betaVideos = useRecentBetaLinks(RECENT_BETA_LIMIT, betaBoardType, betaLayoutId, scopeReady);
+  // A folded-away shelf costs no request: the header renders unconditionally, so
+  // gating the fetch can't strand the user with no way to unfold it (#4229).
+  const { expanded: betaExpanded, toggle: toggleBetaShelf } = useBetaShelfCollapse();
+  const betaVideos = useRecentBetaLinks(RECENT_BETA_LIMIT, betaBoardType, betaLayoutId, scopeReady && betaExpanded);
   const feed = useSessionGroupedFeed(feedInput, isAuthenticated && scopeReady);
 
   const sessions = useMemo(
@@ -334,6 +339,8 @@ export default function HomeTab() {
           isError={betaVideos.isError}
           onRetry={() => void betaVideos.refetch()}
           onOpenClimb={handleBetaOpenClimb}
+          expanded={betaExpanded}
+          onToggleExpanded={toggleBetaShelf}
         />
         <Text variant="title3" style={styles.feedHeading}>
           {sessionsHeading}
@@ -348,6 +355,8 @@ export default function HomeTab() {
       betaVideos.refetch,
       handleBetaOpenClimb,
       sessionsHeading,
+      betaExpanded,
+      toggleBetaShelf,
     ],
   );
 
@@ -513,6 +522,8 @@ function RecentBetaShelf({
   isError,
   onRetry,
   onOpenClimb,
+  expanded,
+  onToggleExpanded,
 }: {
   heading: string;
   videos: RecentBetaVideo[];
@@ -520,6 +531,8 @@ function RecentBetaShelf({
   isError: boolean;
   onRetry: () => void;
   onOpenClimb: (video: RecentBetaVideo) => void;
+  expanded: boolean;
+  onToggleExpanded: () => void;
 }) {
   const { t } = useTranslation('feed');
   const { t: tCommon } = useTranslation('common');
@@ -527,10 +540,20 @@ function RecentBetaShelf({
 
   return (
     <View style={styles.shelfSection}>
-      <View style={styles.sectionHeaderRow}>
+      {/* Keeps the home screen's own `title3` heading rather than adopting
+          `SectionHeader`, which would restyle the row to the group caption. */}
+      <Pressable
+        onPress={onToggleExpanded}
+        accessibilityRole="button"
+        accessibilityLabel={heading}
+        accessibilityState={{ expanded }}
+        hitSlop={8}
+        style={styles.sectionHeaderRow}
+      >
         <Text variant="title3">{heading}</Text>
-      </View>
-      {isLoading ? (
+        <SectionDisclosureChevron expanded={expanded} size={18} />
+      </Pressable>
+      {!expanded ? null : isLoading ? (
         <FlatList
           horizontal
           data={BETA_SKELETON_KEYS}
@@ -690,6 +713,10 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[5],
   },
   sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: spacing[2],
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[2],
   },

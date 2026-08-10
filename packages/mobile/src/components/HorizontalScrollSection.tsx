@@ -20,6 +20,11 @@ export type HorizontalScrollSectionProps = {
   /** Height of the loading row / minimum shelf height, sized to the cards the
    *  shelf holds (120-tall playlist cards vs 192-tall beta cards). */
   minHeight?: number;
+  /** Disclosure state. When paired with `onToggleExpanded` the header becomes
+   *  tappable and a collapsed shelf renders the header alone — the scroller is
+   *  unmounted, so `onEndReached` pagination can't fire while it's folded. */
+  expanded?: boolean;
+  onToggleExpanded?: () => void;
 };
 
 // Right-edge slop (px) at which onEndReached fires, so the next page starts
@@ -43,11 +48,21 @@ export function HorizontalScrollSection({
   actionLabel,
   onActionPress,
   minHeight = DEFAULT_MIN_HEIGHT,
+  expanded,
+  onToggleExpanded,
 }: HorizontalScrollSectionProps) {
+  const collapsed = expanded === false && !!onToggleExpanded;
+
   return (
     <View style={styles.section}>
-      <SectionHeader title={title} actionLabel={actionLabel} onActionPress={onActionPress} />
-      {loading ? (
+      <SectionHeader
+        title={title}
+        actionLabel={actionLabel}
+        onActionPress={onActionPress}
+        expanded={expanded}
+        onToggleExpanded={onToggleExpanded}
+      />
+      {collapsed ? null : loading ? (
         <View style={[styles.loadingRow, { height: minHeight }]}>
           <ActivityIndicator size="small" />
         </View>
