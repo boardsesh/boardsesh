@@ -58,7 +58,7 @@ import { runMigrations } from '@boardsesh/offline-sync';
 import { createTestDatabase, __resetDrainerStateForTests, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 
 type Row = Record<string, unknown>;
-type ToggleVariables = { input: { boardName: string; climbUuid: string; angle: number }; currentlyFavorited?: boolean };
+type ToggleVariables = { input: { climbUuid: string }; currentlyFavorited?: boolean };
 type ConfigOf<TVariables> = {
   mutationFn: (variables: TVariables) => Promise<unknown>;
   onSuccess?: (_data: unknown, variables: TVariables) => void;
@@ -90,31 +90,28 @@ describe('useToggleFavorite dual-write', () => {
     const { mutationFn } = asConfig<ToggleVariables>(useToggleFavorite());
 
     await mutationFn({
-      input: { boardName: 'kilter', climbUuid: 'climb-fav-1', angle: 40 },
+      input: { climbUuid: 'climb-fav-1' },
       currentlyFavorited: false,
     });
 
-    const favorite = await db.getFirstAsync<Row>(
-      'SELECT * FROM user_favorites WHERE board_name = ? AND climb_uuid = ? AND angle = ?',
-      ['kilter', 'climb-fav-1', 40],
-    );
+    const favorite = await db.getFirstAsync<Row>('SELECT * FROM user_favorites WHERE climb_uuid = ?', ['climb-fav-1']);
     expect(favorite).not.toBeNull();
 
     const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations');
     expect(queued).toHaveLength(1);
     expect(queued[0].operation).toBe('create');
-    expect(queued[0].idempotency_key).toBe('add:user_favorites:kilter:climb-fav-1:40');
+    expect(queued[0].idempotency_key).toBe('add:user_favorites:climb-fav-1');
   });
 
   it('currentlyFavorited=true with a DB handle: removes locally + enqueues delete', async () => {
     request.mockImplementation(parkedRequest);
     await db.runAsync(
-      "INSERT INTO user_favorites (board_name, climb_uuid, angle, created_at, updated_at) VALUES ('kilter', 'climb-fav-2', 40, 'now', 'now')",
+      "INSERT INTO user_favorites (climb_uuid, created_at, updated_at) VALUES ('climb-fav-2', 'now', 'now')",
     );
     const { mutationFn } = asConfig<ToggleVariables>(useToggleFavorite());
 
     await mutationFn({
-      input: { boardName: 'kilter', climbUuid: 'climb-fav-2', angle: 40 },
+      input: { climbUuid: 'climb-fav-2' },
       currentlyFavorited: true,
     });
 
@@ -124,7 +121,7 @@ describe('useToggleFavorite dual-write', () => {
     const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations');
     expect(queued).toHaveLength(1);
     expect(queued[0].operation).toBe('delete');
-    expect(queued[0].idempotency_key).toBe('del:user_favorites:kilter:climb-fav-2:40');
+    expect(queued[0].idempotency_key).toBe('del:user_favorites:climb-fav-2');
   });
 
   it('without a DB handle: falls back to the online TOGGLE_FAVORITE request', async () => {
@@ -133,14 +130,14 @@ describe('useToggleFavorite dual-write', () => {
     const { mutationFn } = asConfig<ToggleVariables>(useToggleFavorite());
 
     await mutationFn({
-      input: { boardName: 'kilter', climbUuid: 'climb-online-fav', angle: 40 },
+      input: { climbUuid: 'climb-online-fav' },
       currentlyFavorited: false,
     });
 
     expect(request).toHaveBeenCalledTimes(1);
     expect(request.mock.calls[0][0]).toContain('toggleFavorite');
     expect(request.mock.calls[0][1]).toEqual({
-      input: { boardName: 'kilter', climbUuid: 'climb-online-fav', angle: 40 },
+      input: { climbUuid: 'climb-online-fav' },
     });
 
     const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations');
@@ -152,12 +149,12 @@ describe('useToggleFavorite dual-write', () => {
     const { mutationFn } = asConfig<ToggleVariables>(useToggleFavorite());
 
     await mutationFn({
-      input: { boardName: 'kilter', climbUuid: 'climb-online-toggle', angle: 40 },
+      input: { climbUuid: 'climb-online-toggle' },
     });
 
     expect(request).toHaveBeenCalledTimes(1);
     expect(request.mock.calls[0][1]).toEqual({
-      input: { boardName: 'kilter', climbUuid: 'climb-online-toggle', angle: 40 },
+      input: { climbUuid: 'climb-online-toggle' },
     });
     expect(await db.getAllAsync<Row>('SELECT * FROM pending_mutations')).toHaveLength(0);
   });
@@ -168,7 +165,7 @@ describe('useToggleFavorite dual-write', () => {
     const { mutationFn } = asConfig<ToggleVariables>(useToggleFavorite());
 
     await mutationFn({
-      input: { boardName: 'kilter', climbUuid: 'climb-gated-fav', angle: 40 },
+      input: { climbUuid: 'climb-gated-fav' },
       currentlyFavorited: false,
     });
 
@@ -188,7 +185,7 @@ describe('useToggleFavorite onSuccess invalidation', () => {
     request.mockResolvedValue({ toggleFavorite: { favorited: true } });
     const { mutationFn, onSuccess } = asConfig<ToggleVariables>(useToggleFavorite());
     const variables: ToggleVariables = {
-      input: { boardName: 'kilter', climbUuid: 'climb-online-fav', angle: 40 },
+      input: { climbUuid: 'climb-online-fav' },
       currentlyFavorited: false,
     };
 
@@ -198,7 +195,7 @@ describe('useToggleFavorite onSuccess invalidation', () => {
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['infiniteSearchClimbs'] });
     expect(invalidateQueries).toHaveBeenCalledWith({
-      queryKey: ['favoriteStatus', 'kilter', 'climb-online-fav', 40],
+      queryKey: ['favoriteStatus', 'climb-online-fav'],
     });
   });
 
@@ -206,7 +203,7 @@ describe('useToggleFavorite onSuccess invalidation', () => {
     request.mockImplementation(parkedRequest);
     const { mutationFn, onSuccess } = asConfig<ToggleVariables>(useToggleFavorite());
     const variables: ToggleVariables = {
-      input: { boardName: 'kilter', climbUuid: 'climb-fav-queued', angle: 40 },
+      input: { climbUuid: 'climb-fav-queued' },
       currentlyFavorited: false,
     };
 
@@ -218,7 +215,7 @@ describe('useToggleFavorite onSuccess invalidation', () => {
     // The server doesn't know about the toggle yet on the local-queue path — the
     // optimistic setQueryData holds until the drainer's post-landing invalidation.
     expect(invalidateQueries).not.toHaveBeenCalledWith({
-      queryKey: ['favoriteStatus', 'kilter', 'climb-fav-queued', 40],
+      queryKey: ['favoriteStatus', 'climb-fav-queued'],
     });
   });
 });
