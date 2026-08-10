@@ -462,19 +462,22 @@ export default function PlaylistDetail() {
               {
                 text: t('edit.conflict.keepTheirs'),
                 onPress: () => {
-                  queryClient.setQueryData<Playlist | null>(['playlist', playlistUuid], (prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          name: conflict.serverName,
-                          description: conflict.serverDescription ?? undefined,
-                          isPublic: conflict.serverIsPublic,
-                          color: conflict.serverColor ?? undefined,
-                          icon: conflict.serverIcon ?? undefined,
-                          updatedAt: conflict.serverUpdatedAt,
-                        }
-                      : prev,
-                  );
+                  // Adopting theirs has to land in BOTH caches, same as a
+                  // successful save — patching only the detail hero would leave
+                  // the library list and Add-to-Playlist picker on the old name.
+                  // Read the cache at press time rather than reusing the row
+                  // captured at submit, so a climb added while the prompt was up
+                  // isn't rolled back.
+                  const current = queryClient.getQueryData<Playlist>(['playlist', playlistUuid]) ?? playlist;
+                  cacheUpdatedPlaylist({
+                    ...current,
+                    name: conflict.serverName,
+                    description: conflict.serverDescription ?? undefined,
+                    isPublic: conflict.serverIsPublic,
+                    color: conflict.serverColor ?? undefined,
+                    icon: conflict.serverIcon ?? undefined,
+                    updatedAt: conflict.serverUpdatedAt,
+                  });
                   setEditVisible(false);
                 },
               },
@@ -505,6 +508,9 @@ export default function PlaylistDetail() {
               },
             ],
           );
+          // The `finally` below still runs on this return, so the submit button
+          // stops spinning while the prompt is up: dismissing the alert leaves an
+          // editable sheet with the edit intact, not a frozen one.
           return;
         }
         console.error('Failed to update playlist:', err);
