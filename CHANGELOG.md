@@ -4,6 +4,13 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-10
+
+### Fixed
+
+- The tick sheet is laid out for your thumb now — tries and stars sit where your hand already is, and date and time share one line up top ([#4215](https://github.com/boardsesh/boardsesh/pull/4215))
+  Fixed the Send button being cut off on smaller phones
+
 ## 2026-08-09
 
 ### Fixed
