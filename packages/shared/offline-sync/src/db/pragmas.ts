@@ -2,8 +2,12 @@
 //
 // The engine runs many connections against one `boardsesh.db`: the app's main
 // connection (react-query reads, VACUUM, wal_checkpoint) plus a fresh native
-// connection per `withExclusiveTransactionAsync` task (`useNewConnection: true`),
-// which opens `BEGIN EXCLUSIVE`. Two settings keep those from colliding:
+// connection per `withExclusiveTransactionAsync` task (`useNewConnection: true`).
+// That task connection opens a plain deferred `BEGIN` — expo-sqlite's "exclusive"
+// means one JS task owns the connection, NOT SQLite's `BEGIN EXCLUSIVE` — so it
+// takes no lock until its first real statement, which is why applying the timeout
+// as the task's first statement is early enough. Two settings keep these from
+// colliding:
 //
 // - `journal_mode = WAL` PERSISTS in the database file header, so it is set ONCE
 //   on the main connection (configureMainConnection) and every later connection —
@@ -27,6 +31,21 @@ import type { SqlExecutor } from '../database';
 export const OFFLINE_DB_BUSY_TIMEOUT_MS = 5000;
 
 /**
+ * The `busy_timeout` in force *only* while the one-shot WAL switch is attempted.
+ *
+ * Switching a rollback-journal file to WAL needs a lock no other connection holds,
+ * and SQLite's behaviour under contention is asymmetric (measured against real
+ * SQLite for #4104):
+ *   - a contending WRITER makes the switch fail INSTANTLY — `busy_timeout` is never
+ *     consulted, so a longer timeout buys exactly nothing;
+ *   - a contending READER makes it wait out the whole `busy_timeout` and THEN fail.
+ * Running the switch under the full 5s would therefore add a five-second stall to
+ * app launch (`SQLiteProvider` renders nothing until `onInit` resolves) and still
+ * fail. A quarter second absorbs a brief blip without a visibly slow launch.
+ */
+export const OFFLINE_DB_WAL_SWITCH_TIMEOUT_MS = 250;
+
+/**
  * Set `busy_timeout` on a connection. Call as the first statement of every
  * `withExclusiveTransactionAsync` task — the task runs on its own native
  * connection, which starts at `busy_timeout = 0`.
@@ -41,17 +60,39 @@ export async function applyBusyTimeout(db: SqlExecutor): Promise<void> {
  * `busy_timeout`. Must run in autocommit — `journal_mode` cannot change inside a
  * transaction — so call it before any table creation or migration.
  *
- * WAL should always succeed on the local app-sandbox filesystem; a device that
- * refuses it (returns something other than `wal`) still works, just without the
- * reader/writer concurrency win, so this reads the result back and warns in dev
- * rather than throwing.
+ * Never throws. The WAL switch is an OPTIMISATION, not a prerequisite: a database
+ * still in rollback-journal mode works correctly, it just serialises readers against
+ * the writer. Letting a contended switch abort startup is what took the whole of
+ * `initializeDatabase` down with it and left offline storage disabled for the entire
+ * session (#4104), so a refused switch is logged in dev and stepped over.
+ *
+ * Note the switch is genuinely one-shot in practice: on a file ALREADY in WAL the
+ * pragma is a free no-op that takes no lock and cannot fail, even with another
+ * connection mid-write. Only the first launch after install/upgrade can contend.
  */
 export async function configureMainConnection(db: SqlExecutor): Promise<void> {
-  const result = await db.getFirstAsync<{ journal_mode: string }>('PRAGMA journal_mode = WAL');
-  // NODE_ENV is the platform-free stand-in for RN's __DEV__ — this package carries
-  // no react-native globals, and Metro inlines it the same way.
-  if (process.env.NODE_ENV !== 'production' && result?.journal_mode?.toLowerCase() !== 'wal') {
-    console.warn(`[SQLite] journal_mode is "${result?.journal_mode}", expected "wal" — reads may contend with writes`);
+  // busy_timeout FIRST — every statement below wants it, and the pragma itself is a
+  // connection-local setting that takes no lock and cannot fail. The short window is
+  // deliberate: see OFFLINE_DB_WAL_SWITCH_TIMEOUT_MS for why a longer one is worse.
+  await db.execAsync(`PRAGMA busy_timeout = ${OFFLINE_DB_WAL_SWITCH_TIMEOUT_MS}`);
+
+  try {
+    const result = await db.getFirstAsync<{ journal_mode: string }>('PRAGMA journal_mode = WAL');
+    // NODE_ENV is the platform-free stand-in for RN's __DEV__ — this package carries
+    // no react-native globals, and Metro inlines it the same way.
+    if (process.env.NODE_ENV !== 'production' && result?.journal_mode?.toLowerCase() !== 'wal') {
+      console.warn(
+        `[SQLite] journal_mode is "${result?.journal_mode}", expected "wal" — reads may contend with writes`,
+      );
+    }
+  } catch (error) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        '[SQLite] could not switch to WAL (another connection holds the file); continuing without it:',
+        error,
+      );
+    }
   }
+
   await applyBusyTimeout(db);
 }

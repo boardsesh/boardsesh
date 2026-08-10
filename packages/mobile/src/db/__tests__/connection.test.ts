@@ -5,14 +5,23 @@
 // Also guards the #3646 retirement: no bundled-seed machinery may come back into
 // the DB lifecycle.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const reportErrorMock = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/error-reporting', () => ({ reportError: reportErrorMock }));
+
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { clearUserData, initializeDatabase } from '../connection';
+import {
+  clearUserData,
+  getDatabaseHandle,
+  initializeDatabase,
+  resetDatabaseInitializationForTests,
+  setDatabaseHandle,
+} from '../connection';
 import {
   runMigrations,
   setCheckpoint,
@@ -122,6 +131,11 @@ describe('initializeDatabase connection PRAGMAs', () => {
   let dbPath: string;
 
   beforeEach(() => {
+    // initializeDatabase is single-flight for the process (see activeInitialization),
+    // so each test has to start from a clean lifecycle.
+    resetDatabaseInitializationForTests();
+    setDatabaseHandle(null);
+    reportErrorMock.mockClear();
     dbDir = mkdtempSync(join(tmpdir(), 'bs-conn-'));
     dbPath = join(dbDir, 'boardsesh.db');
     fileDb = createTestDatabase(dbPath) as unknown as TestSqliteDb & SQLiteDatabase;
@@ -151,5 +165,153 @@ describe('initializeDatabase connection PRAGMAs', () => {
     expect(journal?.journal_mode?.toLowerCase()).toBe('wal');
     const busy = await other.getFirstAsync<{ timeout: number }>('PRAGMA busy_timeout');
     expect(busy?.timeout).toBe(0);
+  });
+});
+
+// #4104: startup DDL needs SQLite's single write lock, so a long writer already
+// holding the file (a VACUUM, a snapshot import, a teardown still draining across a
+// remount or OTA reload) made initializeDatabase throw. It swallowed the error, never
+// published the handle, and never tried again — one transient collision disabled
+// offline storage for the whole session. These drive that exact interleaving.
+describe('initializeDatabase lock contention (#4104)', () => {
+  let dbDir: string;
+  let realDb: TestSqliteDb;
+
+  // Stands in for the contended connection: the mutation-queue DDL — the first write
+  // initializeDatabase issues — fails with the real Sentry message until `unlock()`.
+  function createContendedDatabase(options: { error?: Error } = {}) {
+    const failure =
+      options.error ?? new Error("Calling the 'execAsync' function has failed → Error code 5: database is locked");
+    let locked = true;
+    let failures = 0;
+
+    const wrapper = {
+      execAsync: async (source: string): Promise<void> => {
+        if (locked && /pending_mutations/i.test(source)) {
+          failures += 1;
+          throw failure;
+        }
+        await realDb.execAsync(source);
+      },
+      getFirstAsync: <T>(source: string, ...params: unknown[]): Promise<T | null> =>
+        realDb.getFirstAsync<T>(source, ...(params as never[])),
+      runAsync: (source: string, ...params: unknown[]) => realDb.runAsync(source, ...(params as never[])),
+      withExclusiveTransactionAsync: (task: (txn: unknown) => Promise<void>) =>
+        realDb.withExclusiveTransactionAsync(task as never),
+    };
+
+    return {
+      db: wrapper as unknown as SQLiteDatabase,
+      unlock: () => {
+        locked = false;
+      },
+      failures: () => failures,
+    };
+  }
+
+  beforeEach(() => {
+    resetDatabaseInitializationForTests();
+    setDatabaseHandle(null);
+    reportErrorMock.mockClear();
+    dbDir = mkdtempSync(join(tmpdir(), 'bs-lock-'));
+    realDb = createTestDatabase(join(dbDir, 'boardsesh.db'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    rmSync(dbDir, { recursive: true, force: true });
+  });
+
+  it('does not block app launch on the retry, leaving the handle unpublished for now', async () => {
+    const contended = createContendedDatabase();
+
+    // Resolves as soon as the FIRST attempt settles — SQLiteProvider renders nothing
+    // until onInit resolves, so waiting for retries here would be a black screen.
+    await expect(initializeDatabase(contended.db)).resolves.toBeUndefined();
+
+    expect(contended.failures()).toBe(1);
+    expect(getDatabaseHandle()).toBeNull();
+    // A launch that is still retrying is not yet newsworthy.
+    expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('publishes the handle once a retry wins, instead of staying dead for the session', async () => {
+    const contended = createContendedDatabase();
+
+    await initializeDatabase(contended.db);
+    expect(getDatabaseHandle()).toBeNull();
+
+    // The contending writer finishes (VACUUM done, import committed).
+    contended.unlock();
+    await new Promise((resolve) => setTimeout(resolve, 750));
+
+    expect(getDatabaseHandle()).toBe(contended.db);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('shares one lifecycle across a remount mid-retry rather than starting a second chain', async () => {
+    const first = createContendedDatabase();
+    const second = createContendedDatabase();
+
+    const initial = initializeDatabase(first.db);
+    await initial;
+
+    // A remount lands while the retry chain is still pending. SQLiteProvider has no
+    // re-entrancy guard, so without the single-flight this would run a second chain —
+    // two migration transactions against the one file, i.e. more of the contention
+    // being fixed.
+    const remount = initializeDatabase(second.db);
+    expect(remount).toBe(initial);
+
+    first.unlock();
+    await new Promise((resolve) => setTimeout(resolve, 750));
+
+    expect(getDatabaseHandle()).toBe(first.db);
+    // The second database was never touched.
+    expect(second.failures()).toBe(0);
+  });
+
+  it('gives up after the bounded attempt window and reports once, tagged with the phase', async () => {
+    vi.useFakeTimers();
+    const contended = createContendedDatabase();
+
+    await initializeDatabase(contended.db);
+    // Drive the whole backoff chain (500 + 2000 + 5000 + 10000 = 17.5s, inside the 30s ceiling).
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(contended.failures()).toBe(5);
+    expect(getDatabaseHandle()).toBeNull();
+    expect(reportErrorMock).toHaveBeenCalledTimes(1);
+    const [, context] = reportErrorMock.mock.calls[0];
+    expect(context.tags).toMatchObject({ source: 'offline-sync', kind: 'sqlite-init', phase: 'queue-table' });
+    expect(context.extra).toMatchObject({ attempts: 5, retryable: true });
+  });
+
+  it('does not retry a failure that is not lock contention', async () => {
+    // A full disk or a corrupt file fails identically forever; burning the window on
+    // it would just delay the report.
+    const contended = createContendedDatabase({ error: new Error('disk I/O error') });
+
+    await initializeDatabase(contended.db);
+
+    expect(contended.failures()).toBe(1);
+    expect(reportErrorMock).toHaveBeenCalledTimes(1);
+    const [, context] = reportErrorMock.mock.calls[0];
+    expect(context.extra).toMatchObject({ attempts: 1, retryable: false });
+  });
+
+  it('lets a later mount try again after the window is exhausted', async () => {
+    const exhausted = createContendedDatabase({ error: new Error('disk I/O error') });
+    const initial = initializeDatabase(exhausted.db);
+    await initial;
+
+    // The chain is over, so the guard must not pin a dead lifecycle for the process.
+    const healthy = createContendedDatabase();
+    healthy.unlock();
+    const retryMount = initializeDatabase(healthy.db);
+    expect(retryMount).not.toBe(initial);
+    await retryMount;
+
+    expect(getDatabaseHandle()).toBe(healthy.db);
   });
 });
