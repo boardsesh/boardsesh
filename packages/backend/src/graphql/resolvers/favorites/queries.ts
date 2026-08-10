@@ -1,8 +1,8 @@
-import { eq, and, inArray, sql } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { requireAuthenticated, validateInput } from '../shared/helpers';
+import { validateInput } from '../shared/helpers';
 import { FavoritesQueryClimbUuidsSchema } from '../../../validation/schemas';
 
 export const favoriteQueries = {
@@ -30,60 +30,5 @@ export const favoriteQueries = {
       .where(and(eq(dbSchema.userFavorites.userId, ctx.userId), inArray(dbSchema.userFavorites.climbUuid, climbUuids)));
 
     return favorites.map((favorite) => favorite.climbUuid);
-  },
-
-  /**
-   * Get count of favorited climbs per board for the current user
-   */
-  userFavoritesCounts: async (
-    _: unknown,
-    __: unknown,
-    ctx: ConnectionContext,
-  ): Promise<Array<{ boardName: string; count: number }>> => {
-    requireAuthenticated(ctx);
-
-    const results = await db
-      .select({
-        boardName: dbSchema.userFavorites.boardName,
-        count: sql<number>`COUNT(DISTINCT ${dbSchema.userFavorites.climbUuid})::int`,
-      })
-      .from(dbSchema.userFavorites)
-      .where(eq(dbSchema.userFavorites.userId, ctx.userId!))
-      .groupBy(dbSchema.userFavorites.boardName);
-
-    return results;
-  },
-
-  /**
-   * Get board names where the current user has playlists or favorites
-   */
-  userActiveBoards: async (_: unknown, __: unknown, ctx: ConnectionContext): Promise<string[]> => {
-    requireAuthenticated(ctx);
-
-    const userId = ctx.userId!;
-
-    // Get distinct board names from playlists
-    const playlistBoards = await db
-      .selectDistinct({ boardName: dbSchema.playlists.boardType })
-      .from(dbSchema.playlists)
-      .innerJoin(dbSchema.playlistOwnership, eq(dbSchema.playlistOwnership.playlistId, dbSchema.playlists.id))
-      .where(eq(dbSchema.playlistOwnership.userId, userId));
-
-    // Get distinct board names from favorites
-    const favoriteBoards = await db
-      .selectDistinct({ boardName: dbSchema.userFavorites.boardName })
-      .from(dbSchema.userFavorites)
-      .where(eq(dbSchema.userFavorites.userId, userId));
-
-    // Combine and deduplicate
-    const boardSet = new Set<string>();
-    for (const row of playlistBoards) {
-      boardSet.add(row.boardName);
-    }
-    for (const row of favoriteBoards) {
-      boardSet.add(row.boardName);
-    }
-
-    return Array.from(boardSet).sort();
   },
 };
