@@ -21,12 +21,14 @@ const DISCORD_MENTION_PATTERN = /<(@[!&]?|#)(\d{15,25})>/g;
 /**
  * Strip obvious PII from free text.
  *
- * Handles emails, macOS home paths, `name:`/`tester=`-style labelled fields, and
- * self-introductions ("my name is ...").
+ * Handles emails, macOS and Linux home paths, `name:`/`tester=`-style labelled
+ * fields, and self-introductions ("my name is ...").
  */
 export function redactSensitiveText(text: string): string {
   let redactedText = text.replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[redacted email]');
-  redactedText = redactedText.replace(/\/Users\/[^/\s]+/g, '/Users/[redacted]');
+  // Both home layouts: macOS crash logs carry /Users/<name>, and Linux paths
+  // reach us from CI logs and from Linux users pasting stack traces.
+  redactedText = redactedText.replace(/\/(Users|home)\/[^/\s]+/g, '/$1/[redacted]');
   redactedText = redactedText.replace(
     /\b((?:first|last|full)\s+name|name|tester|email)\s*[:=]\s*([^\n\r,;]+)/gi,
     (_match: string, label: string) => `${label}: [redacted]`,

@@ -21,6 +21,16 @@ describe('redactSensitiveText', () => {
     expect(redactSensitiveText('crash in /Users/marco/app')).toContain('/Users/[redacted]');
   });
 
+  it('redacts Linux home paths as well as macOS ones', () => {
+    const redacted = redactSensitiveText('stack trace at /home/marco/projects/boardsesh/index.ts');
+    expect(redacted).toContain('/home/[redacted]/projects');
+    expect(redacted).not.toContain('/home/marco');
+  });
+
+  it('leaves non-home absolute paths alone', () => {
+    expect(redactSensitiveText('config at /etc/hosts')).toBe('config at /etc/hosts');
+  });
+
   it('leaves text without PII untouched', () => {
     const clean = 'The queue empties when I background the app on Android.';
     expect(redactSensitiveText(clean)).toBe(clean);

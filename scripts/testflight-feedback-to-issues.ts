@@ -3,10 +3,11 @@
 import { createSign } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 
+import { redactSensitiveText } from '@boardsesh/text-redaction';
+
 // Re-exported so this module's public surface (and its test) is unchanged by the
 // move to the shared package.
-export { redactSensitiveText } from '@boardsesh/text-redaction';
-import { redactSensitiveText } from '@boardsesh/text-redaction';
+export { redactSensitiveText };
 
 const APP_STORE_CONNECT_API_BASE = 'https://api.appstoreconnect.apple.com';
 const GITHUB_API_BASE = 'https://api.github.com';
