@@ -93,7 +93,11 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
     cursorColumn: UPDATED_AT_CURSOR,
     operationKey: 'SYNC_FAVORITES',
     isPerBoard: false,
-    primaryKeyColumns: ['board_name', 'climb_uuid', 'angle'],
+    // Keyed by climb UUID alone — a climb is the same climb on any board at any
+    // angle. `board_name`/`angle` stay in localColumns (and in the local table,
+    // see migration v5) purely so the server's still-emitted values land instead
+    // of firing an onSchemaDrift report on every launch. Nothing reads them.
+    primaryKeyColumns: ['climb_uuid'],
     localColumns: ['board_name', 'climb_uuid', 'angle', 'user_id', 'created_at', 'updated_at'],
   },
   user_follows: {
