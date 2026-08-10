@@ -16,4 +16,5 @@ export { PlaylistEditDoneButton } from './PlaylistEditDoneButton';
 export { PlaylistOwnerToolbar } from './PlaylistOwnerToolbar';
 export { PlaylistActionsMenu } from './PlaylistActionsMenu';
 export { PlaylistQueueReplaceSheet } from './PlaylistQueueReplaceSheet';
+export { PlaylistDiscussionRow } from './PlaylistDiscussionRow';
 export { PLAYLIST_COLORS, isValidPlaylistColor, normalizePlaylistColor } from './playlist-colors';
