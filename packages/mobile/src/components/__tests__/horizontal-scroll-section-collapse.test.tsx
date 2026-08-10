@@ -12,10 +12,13 @@ vi.mock('react-native', () => ({
   PlatformColor: (name: string) => name,
 }));
 vi.mock('../SectionHeader', () => ({
-  SectionHeader: ({ title, expanded }: { title: string; expanded?: boolean }) =>
+  SectionHeader: ({ title, disclosure }: { title: string; disclosure?: { expanded: boolean } }) =>
     createElement(
       'div',
-      { 'data-testid': 'section-header', 'data-expanded': expanded === undefined ? undefined : String(expanded) },
+      {
+        'data-testid': 'section-header',
+        'data-expanded': disclosure === undefined ? undefined : String(disclosure.expanded),
+      },
       title,
     ),
 }));
@@ -45,15 +48,14 @@ describe('HorizontalScrollSection collapse', () => {
   });
 
   it('renders the scroller while expanded', () => {
-    const { getByTestId } = renderShelf({ expanded: true, onToggleExpanded: vi.fn() });
+    const { getByTestId } = renderShelf({ disclosure: { expanded: true, onToggle: vi.fn() } });
     expect(getByTestId('shelf-scroll')).toBeTruthy();
   });
 
   it('drops the scroller but keeps the header when collapsed', () => {
     // The header is the only way back — it must outlive the collapse (#4229).
     const { queryByTestId, getByTestId, queryByText } = renderShelf({
-      expanded: false,
-      onToggleExpanded: vi.fn(),
+      disclosure: { expanded: false, onToggle: vi.fn() },
     });
 
     expect(getByTestId('section-header')).toBeTruthy();
@@ -63,12 +65,12 @@ describe('HorizontalScrollSection collapse', () => {
 
   it('suppresses the loading spinner while collapsed', () => {
     // A folded shelf that still spins would advertise work the user opted out of.
-    const { queryByTestId } = renderShelf({ expanded: false, onToggleExpanded: vi.fn(), loading: true });
+    const { queryByTestId } = renderShelf({ disclosure: { expanded: false, onToggle: vi.fn() }, loading: true });
     expect(queryByTestId('spinner')).toBeNull();
   });
 
   it('forwards the disclosure state to the header', () => {
-    const { getByTestId } = renderShelf({ expanded: false, onToggleExpanded: vi.fn() });
+    const { getByTestId } = renderShelf({ disclosure: { expanded: false, onToggle: vi.fn() } });
     expect(getByTestId('section-header').getAttribute('data-expanded')).toBe('false');
   });
 });

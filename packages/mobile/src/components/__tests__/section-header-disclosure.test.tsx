@@ -59,7 +59,7 @@ describe('SectionHeader disclosure', () => {
 
   it('renders a chevron and exposes the expanded state to screen readers', () => {
     const { getByTestId, getByLabelText } = render(
-      createElement(SectionHeader, { title: 'Fresh beta', expanded: false, onToggleExpanded: vi.fn() }),
+      createElement(SectionHeader, { title: 'Fresh beta', disclosure: { expanded: false, onToggle: vi.fn() } }),
     );
 
     expect(getByTestId('chevron').getAttribute('data-expanded')).toBe('false');
@@ -68,25 +68,24 @@ describe('SectionHeader disclosure', () => {
   });
 
   it('toggles when the title is tapped', () => {
-    const onToggleExpanded = vi.fn();
+    const onToggle = vi.fn();
     const { getByLabelText } = render(
-      createElement(SectionHeader, { title: 'Fresh beta', expanded: true, onToggleExpanded }),
+      createElement(SectionHeader, { title: 'Fresh beta', disclosure: { expanded: true, onToggle } }),
     );
 
     fireEvent.click(getByLabelText('Fresh beta'));
-    expect(onToggleExpanded).toHaveBeenCalledTimes(1);
+    expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
   it('keeps "See all" independent of the disclosure', () => {
     // The action is a sibling of the disclosure, not nested inside it — pressing
     // it must navigate without also folding the shelf away.
-    const onToggleExpanded = vi.fn();
+    const onToggle = vi.fn();
     const onActionPress = vi.fn();
     const { getByLabelText } = render(
       createElement(SectionHeader, {
         title: 'Fresh beta',
-        expanded: true,
-        onToggleExpanded,
+        disclosure: { expanded: true, onToggle },
         actionLabel: 'See all',
         onActionPress,
       }),
@@ -94,6 +93,6 @@ describe('SectionHeader disclosure', () => {
 
     fireEvent.click(getByLabelText('See all'));
     expect(onActionPress).toHaveBeenCalledTimes(1);
-    expect(onToggleExpanded).not.toHaveBeenCalled();
+    expect(onToggle).not.toHaveBeenCalled();
   });
 });

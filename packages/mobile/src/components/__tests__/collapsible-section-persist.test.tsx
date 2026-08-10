@@ -29,8 +29,25 @@ vi.mock('@react-native-async-storage/async-storage', () => {
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
-    createElement('button', { onClick: () => onPress?.() }, children),
+  // Forwards accessibilityLabel so tests can target the title vs the chevron by
+  // name instead of by position — adding a headerAction would otherwise shift
+  // indices and turn these into false passes.
+  Pressable: ({
+    children,
+    onPress,
+    accessibilityLabel,
+    testID,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+    testID?: string;
+  }) =>
+    createElement(
+      'button',
+      { onClick: () => onPress?.(), 'aria-label': accessibilityLabel, 'data-testid': testID },
+      children,
+    ),
   StyleSheet: { create: (styles: unknown) => styles },
   Platform: { OS: 'ios' },
   PlatformColor: (name: string) => name,
@@ -108,7 +125,7 @@ describe('CollapsibleSection persistence', () => {
     // This is the signal the play drawer keys its scroll-into-view off, so it
     // must fire on the tap (and NOT on mount / persisted reconciliation).
     const onToggle = vi.fn();
-    const { getAllByRole } = render(
+    const { getByRole } = render(
       createElement(CollapsibleSection, {
         title: 'Logbook',
         defaultExpanded: false,
@@ -119,7 +136,7 @@ describe('CollapsibleSection persistence', () => {
 
     // Two toggle targets: the title cluster and the chevron (the header action,
     // when present, sits between them and owns its own taps).
-    const title = () => getAllByRole('button')[0];
+    const title = () => getByRole('button', { name: 'Logbook' });
     expect(onToggle).not.toHaveBeenCalled();
     fireEvent.click(title());
     expect(onToggle).toHaveBeenLastCalledWith(true);
@@ -140,7 +157,7 @@ describe('CollapsibleSection body rendering', () => {
   // this change fixes — that is verified on-device. It does pin that the body
   // renders when expanded and unmounts when collapsed.
   it('renders the body only while expanded, toggling on header tap', () => {
-    const { getAllByRole, queryByText } = render(
+    const { getByRole, queryByText } = render(
       createElement(CollapsibleSection, {
         title: 'Logbook',
         defaultExpanded: false,
@@ -148,7 +165,7 @@ describe('CollapsibleSection body rendering', () => {
       }),
     );
 
-    const title = () => getAllByRole('button')[0];
+    const title = () => getByRole('button', { name: 'Logbook' });
     // Collapsed by default → body absent.
     expect(queryByText(BODY)).toBeNull();
     // Tap to expand → body present (plain View, no FadeIn gate).
@@ -160,7 +177,7 @@ describe('CollapsibleSection body rendering', () => {
   });
 
   it('toggles from the chevron as well as the title', () => {
-    const { getAllByRole, queryByText } = render(
+    const { getByTestId, queryByText } = render(
       createElement(CollapsibleSection, {
         title: 'Logbook',
         defaultExpanded: false,
@@ -168,7 +185,7 @@ describe('CollapsibleSection body rendering', () => {
       }),
     );
 
-    fireEvent.click(getAllByRole('button')[1]);
+    fireEvent.click(getByTestId('collapsible-section-chevron'));
     expect(queryByText(BODY)).toBeTruthy();
   });
 

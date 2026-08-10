@@ -47,8 +47,7 @@ export const ProfileBetaShelf = memo(function ProfileBetaShelf({ userId }: Profi
       isLoadingMore={isLoadingMore}
       onEndReached={loadMore}
       minHeight={BETA_CARD_COMPACT_HEIGHT}
-      expanded={expanded}
-      onToggleExpanded={toggle}
+      disclosure={{ expanded, onToggle: toggle }}
     >
       {videos.map((video) => (
         <BetaVideoCard key={betaLinkIdentity(video.betaLink.link)} link={video.betaLink} size="compact" />
