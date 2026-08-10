@@ -42,7 +42,7 @@ describe('database test seam', () => {
       if (source.includes('resetDatabaseInitializationForTests')) return true;
       // Also the `import * as` / re-export forms that never spell the name out —
       // src/db/index.ts, the production barrel, is one of the files scanned here.
-      return [...source.matchAll(/from\s+'([^']+)'/g)].some(
+      return [...source.matchAll(/from\s+['"]([^'"]+)['"]/g)].some(
         ([, specifier]) => resolveSpecifier(file, specifier) === TESTING_BARREL,
       );
     });
