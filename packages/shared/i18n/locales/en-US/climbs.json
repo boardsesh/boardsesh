@@ -683,6 +683,10 @@
       "anyAscents": "Any",
       "minRating": "Min rating",
       "anyRating": "Any",
+      "myRating": "My rating",
+      "myRatingDescription": "Stars you gave at this angle",
+      "onlyRatedByMe": "Only climbs I've rated",
+      "ratedByMeShort": "Rated by me",
       "apply": "Apply filters",
       "reset": "Reset",
       "section": {
@@ -764,6 +768,7 @@
       "gradeMax": "≤{{grade}}",
       "ascents": "{{count}}+ 🧗",
       "rating": "{{count}}+ ⭐",
+      "myRating": "My {{count}}+ ⭐",
       "more": "+{{count}} more",
       "setterName": "By {{setter}}",
       "settersCount_one": "{{count}} setter",

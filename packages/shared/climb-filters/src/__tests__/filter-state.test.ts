@@ -301,3 +301,27 @@ describe('applyStatusChange', () => {
     expect(input.minAscents).toBe(2);
   });
 });
+
+describe('personal rating filters (#2645)', () => {
+  it('counts a star minimum and the rated-by-me switch as active filters', () => {
+    expect(hasActiveClimbFilters({ ...DEFAULT_CLIMB_FILTER_STATE, minUserRating: 4 })).toBe(true);
+    expect(hasActiveClimbFilters({ ...DEFAULT_CLIMB_FILTER_STATE, onlyRatedByMe: true })).toBe(true);
+  });
+
+  it('forwards both to the search input', () => {
+    const state: ClimbFilterState = { ...DEFAULT_CLIMB_FILTER_STATE, minUserRating: 4, onlyRatedByMe: true };
+    const input = toClimbSearchInput(state, board, pagination);
+
+    expect(input.minUserRating).toBe(4);
+    expect(input.onlyRatedByMe).toBe(true);
+  });
+
+  it('omits both when unset, so an unfiltered search stays anonymous and cacheable', () => {
+    const input = toClimbSearchInput(DEFAULT_CLIMB_FILTER_STATE, board, pagination);
+
+    expect(input.minUserRating).toBeUndefined();
+    expect(input.onlyRatedByMe).toBeUndefined();
+    expect('minUserRating' in input).toBe(false);
+    expect('onlyRatedByMe' in input).toBe(false);
+  });
+});

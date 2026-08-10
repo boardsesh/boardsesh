@@ -63,6 +63,11 @@ export type ClimbFilterState = {
   hideCompleted?: boolean;
   showOnlyAttempted?: boolean;
   showOnlyCompleted?: boolean;
+  // The user's own star rating, read from their ticks at the browsed angle.
+  // `minUserRating` (1-5) keeps climbs they never rated; `onlyRatedByMe` drops
+  // those. Both are auth-gated backend-side, like the four tick flags above.
+  minUserRating?: number;
+  onlyRatedByMe?: boolean;
 };
 
 export const DEFAULT_CLIMB_FILTER_STATE: ClimbFilterState = {
@@ -94,6 +99,8 @@ export function hasActiveClimbFilters(state: ClimbFilterState): boolean {
   if (state.hideCompleted) return true;
   if (state.showOnlyAttempted) return true;
   if (state.showOnlyCompleted) return true;
+  if (state.minUserRating != null) return true;
+  if (state.onlyRatedByMe) return true;
   // Default is boulders-only, so "active" means routes turned on or boulders off.
   if ((state.boulders ?? true) !== true) return true;
   if ((state.routes ?? false) !== false) return true;
@@ -192,6 +199,8 @@ export function toClimbSearchInput(
   if (state.hideCompleted) input.hideCompleted = true;
   if (state.showOnlyAttempted) input.showOnlyAttempted = true;
   if (state.showOnlyCompleted) input.showOnlyCompleted = true;
+  if (state.minUserRating != null) input.minUserRating = state.minUserRating;
+  if (state.onlyRatedByMe) input.onlyRatedByMe = true;
 
   // Climb-type filter. Both-on ("All") and both-off mean "no preference" for
   // the frames_count constraint, but they must NOT be handled the same way:

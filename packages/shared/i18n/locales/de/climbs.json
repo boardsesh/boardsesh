@@ -683,6 +683,10 @@
       "anyAscents": "Beliebig",
       "minRating": "Min. Bewertung",
       "anyRating": "Beliebig",
+      "myRating": "Meine Bewertung",
+      "myRatingDescription": "Sterne, die du in diesem Winkel vergeben hast",
+      "onlyRatedByMe": "Nur Boulder, die ich bewertet habe",
+      "ratedByMeShort": "Von mir bewertet",
       "apply": "Filter anwenden",
       "reset": "Zurücksetzen",
       "section": {
@@ -764,6 +768,7 @@
       "gradeMax": "≤{{grade}}",
       "ascents": "{{count}}+ 🧗",
       "rating": "{{count}}+ ⭐",
+      "myRating": "Meine {{count}}+ ⭐",
       "more": "+{{count}} weitere",
       "setterName": "Von {{setter}}",
       "settersCount_one": "{{count}} Routenbauer*in",

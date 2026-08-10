@@ -683,6 +683,10 @@
       "anyAscents": "Todos",
       "minRating": "Mín valoración",
       "anyRating": "Todos",
+      "myRating": "Mi valoración",
+      "myRatingDescription": "Las estrellas que diste en este ángulo",
+      "onlyRatedByMe": "Solo los bloques que valoré",
+      "ratedByMeShort": "Valorados por mí",
       "apply": "Aplicar filtros",
       "reset": "Restablecer",
       "section": {
@@ -764,6 +768,7 @@
       "gradeMax": "≤{{grade}}",
       "ascents": "{{count}}+ 🧗",
       "rating": "{{count}}+ ⭐",
+      "myRating": "Mis {{count}}+ ⭐",
       "more": "+{{count}} más",
       "setterName": "Por {{setter}}",
       "settersCount_one": "{{count}} equipador",

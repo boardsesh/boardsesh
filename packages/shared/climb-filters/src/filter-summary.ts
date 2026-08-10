@@ -25,6 +25,10 @@ export type FilterSummaryLabels = {
   // part (e.g. "Projects") instead of one part per flag. Callers on the old
   // four-switch model omit this and keep the per-flag parts above.
   progress?: (value: Exclude<ProgressFilter, 'all'>) => string;
+  // The user's own rating (auth-gated). Optional like the fields above — only
+  // callers that expose the personal-rating controls supply these.
+  myRating?: (count: number) => string;
+  onlyRatedByMe?: () => string;
 };
 
 export type BaseFilters = {
@@ -45,6 +49,8 @@ export type BaseFilters = {
   hideCompleted?: boolean;
   showOnlyAttempted?: boolean;
   showOnlyCompleted?: boolean;
+  minUserRating?: number;
+  onlyRatedByMe?: boolean;
 };
 
 // Web suppresses minAscents >= 2 when the "Established" status chip is active
@@ -89,6 +95,14 @@ export function getBaseFilterParts(
 
   if (filters.minRating != null) {
     parts.push(labels.rating(filters.minRating));
+  }
+
+  if (filters.minUserRating != null && labels.myRating) {
+    parts.push(labels.myRating(filters.minUserRating));
+  }
+
+  if (filters.onlyRatedByMe && labels.onlyRatedByMe) {
+    parts.push(labels.onlyRatedByMe());
   }
 
   if (filters.setter != null && filters.setter.length > 0 && labels.setters) {
