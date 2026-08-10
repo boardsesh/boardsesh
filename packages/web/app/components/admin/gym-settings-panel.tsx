@@ -25,6 +25,10 @@ const AUTO_APPROVE_KEY = 'gym_claim_auto_approve';
 
 const settingsQueryKey = ['communitySettings', SCOPE, SCOPE_KEY] as const;
 
+// Stands in for the server-assigned id on an optimistic first write. Never sent
+// anywhere and never read — the refetch replaces the row.
+const OPTIMISTIC_ROW_ID = -1;
+
 const isOn = (value: string | undefined) => value === '1' || value === 'true';
 
 export default function GymSettingsPanel() {
@@ -70,9 +74,24 @@ export default function GymSettingsPanel() {
       queryClient.setQueryData<CommunitySettingType[]>(settingsQueryKey, (current) => {
         const rows = current ?? [];
         const value = next ? '1' : '0';
-        return rows.some((setting) => setting.key === AUTO_APPROVE_KEY)
-          ? rows.map((setting) => (setting.key === AUTO_APPROVE_KEY ? { ...setting, value } : setting))
-          : [...rows, { key: AUTO_APPROVE_KEY, value, scope: SCOPE, scopeKey: SCOPE_KEY } as CommunitySettingType];
+        if (rows.some((setting) => setting.key === AUTO_APPROVE_KEY)) {
+          return rows.map((setting) => (setting.key === AUTO_APPROVE_KEY ? { ...setting, value } : setting));
+        }
+        // First-ever write: no row exists server-side yet. Build a complete
+        // placeholder rather than casting a partial one — only `key` and
+        // `value` are read here, and `onSettled`'s refetch replaces the whole
+        // row with the persisted one moments later.
+        const placeholder: CommunitySettingType = {
+          id: OPTIMISTIC_ROW_ID,
+          scope: SCOPE,
+          scopeKey: SCOPE_KEY,
+          key: AUTO_APPROVE_KEY,
+          value,
+          setBy: null,
+          createdAt: '',
+          updatedAt: '',
+        };
+        return [...rows, placeholder];
       });
       return { previous };
     },
