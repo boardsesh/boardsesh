@@ -181,6 +181,34 @@ export const MIGRATIONS: Migration[] = [
     version: 10,
     statements: [HOLDS_INDEX_CLIMBS, BOARD_CLIMB_HOLD_SETS, BOARD_CLIMB_HOLD_POSTINGS, INDEX_CLIMBS_SYNC_SEQ],
   },
+  {
+    // Re-key local favorites after the shipped v6–v10 migrations. A climb is
+    // the same favorite regardless of board config or angle, so SQLite rebuilds
+    // the table with climb_uuid as its key and keeps the server's legacy fields
+    // nullable for clients that still send them during rollout.
+    //
+    // Copy oldest-first so INSERT OR REPLACE retains the newest duplicate row.
+    // Clear only this table's checkpoint so the device re-pulls favorites under
+    // the new shape; unrelated sync and holds-index state remains untouched.
+    version: 11,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS user_favorites_new (
+  climb_uuid TEXT NOT NULL PRIMARY KEY,
+  board_name TEXT,
+  angle INTEGER,
+  user_id TEXT,
+  created_at TEXT,
+  updated_at TEXT
+);`,
+      `INSERT OR REPLACE INTO user_favorites_new (climb_uuid, board_name, angle, user_id, created_at, updated_at)
+  SELECT climb_uuid, board_name, angle, user_id, created_at, updated_at
+  FROM user_favorites
+  ORDER BY created_at;`,
+      'DROP TABLE user_favorites;',
+      'ALTER TABLE user_favorites_new RENAME TO user_favorites;',
+      `DELETE FROM sync_meta WHERE key = 'checkpoint:user_favorites';`,
+    ],
+  },
 ];
 
 const SCHEMA_VERSION_TABLE = `

@@ -34,7 +34,7 @@ const EXPECTED_PRIMARY_KEYS: Record<string, string[]> = {
   boardsesh_ticks: ['uuid'],
   playlists: ['uuid'],
   playlist_climbs: ['playlist_uuid', 'climb_uuid'],
-  user_favorites: ['board_name', 'climb_uuid', 'angle'],
+  user_favorites: ['climb_uuid'],
   user_follows: ['following_id'],
   setter_follows: ['setter_username'],
   playlist_follows: ['playlist_uuid'],
@@ -333,6 +333,86 @@ describe('runMigrations', () => {
     expect(
       (await upgradedDb.getFirstAsync<{ version: number }>('SELECT version FROM schema_version WHERE id = 1'))?.version,
     ).toBe(10);
+  });
+
+  it('v11 re-keys favorites on v10 installs without dropping unrelated offline state', async () => {
+    const database = createTestDatabase();
+    await database.execAsync(
+      'CREATE TABLE schema_version (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)',
+    );
+
+    // Build the exact v10 shape by applying only migrations already shipped on
+    // current main. The favorites table remains in its old composite-key form.
+    for (const migration of MIGRATIONS.filter((entry) => entry.version <= 10)) {
+      for (const statement of migration.statements) await database.execAsync(statement);
+      await migration.run?.(database);
+      await database.runAsync('INSERT OR REPLACE INTO schema_version (id, version) VALUES (1, ?)', [migration.version]);
+    }
+
+    await database.runAsync(
+      `INSERT INTO user_favorites (board_name, climb_uuid, angle, user_id, created_at, updated_at)
+       VALUES ('kilter', 'climb-1', 40, 'user-1', '2024-01-01T00:00:00.000Z', '2024-01-01T00:00:00.000Z'),
+              ('kilter', 'climb-1', 50, 'user-1', '2024-03-01T00:00:00.000Z', '2024-03-01T00:00:00.000Z'),
+              ('tension', 'climb-2', 40, 'user-1', '2024-02-01T00:00:00.000Z', '2024-02-01T00:00:00.000Z')`,
+    );
+    await database.runAsync("INSERT INTO sync_meta (key, value) VALUES ('checkpoint:user_favorites', '{}')");
+    await database.runAsync("INSERT INTO sync_meta (key, value) VALUES ('checkpoint:boardsesh_ticks', '{}')");
+    await database.runAsync("INSERT INTO sync_meta (key, value) VALUES ('holds-index:kilter:1:1', '42')");
+    await database.runAsync(
+      "INSERT INTO board_climbs (uuid, board_type, layout_id, frames, sync_seq, missing_hold_count) VALUES ('kept-climb', 'kilter', 1, 'p1r12', 3, 2)",
+    );
+    await database.runAsync("INSERT INTO spray_walls (layout_id, name) VALUES (991, 'kept wall')");
+    await database.runAsync("INSERT INTO holds_index_climbs (id, uuid) VALUES (41, 'kept-climb')");
+    await database.runAsync("INSERT INTO board_climb_hold_sets (climb_id, holds) VALUES (41, X'0102')");
+    await database.runAsync(
+      "INSERT INTO board_climb_hold_postings (board_type, layout_id, hold_id, climb_ids) VALUES ('kilter', 1, 12, X'0102')",
+    );
+    await database.runAsync(
+      `INSERT INTO pending_mutations (table_name, operation, payload, idempotency_key, retry_count, max_retries, last_error, status)
+       VALUES ('boardsesh_ticks', 'create', '{}', 'keep-dead-letter', 1, 10, 'network timeout', 'dead_letter')`,
+    );
+
+    await runMigrations(database);
+
+    expect(await primaryKeyColumns(database, 'user_favorites')).toEqual(['climb_uuid']);
+    const favoriteRows = await database.getAllAsync<{ climb_uuid: string; created_at: string }>(
+      'SELECT climb_uuid, created_at FROM user_favorites ORDER BY climb_uuid',
+    );
+    expect(favoriteRows).toEqual([
+      { climb_uuid: 'climb-1', created_at: '2024-03-01T00:00:00.000Z' },
+      { climb_uuid: 'climb-2', created_at: '2024-02-01T00:00:00.000Z' },
+    ]);
+    expect(await tableColumns(database, 'user_favorites')).toEqual(
+      expect.arrayContaining(['board_name', 'angle', 'user_id', 'created_at', 'updated_at']),
+    );
+    expect(await database.getFirstAsync("SELECT key FROM sync_meta WHERE key = 'checkpoint:user_favorites'")).toBeNull();
+    expect(await database.getFirstAsync("SELECT key FROM sync_meta WHERE key = 'checkpoint:boardsesh_ticks'")).toEqual({
+      key: 'checkpoint:boardsesh_ticks',
+    });
+    expect(await database.getFirstAsync("SELECT value FROM sync_meta WHERE key = 'holds-index:kilter:1:1'")).toEqual({
+      value: '42',
+    });
+    expect(
+      await database.getFirstAsync("SELECT missing_hold_count FROM board_climbs WHERE uuid = 'kept-climb'"),
+    ).toEqual({ missing_hold_count: 2 });
+    expect(await database.getFirstAsync("SELECT name FROM spray_walls WHERE layout_id = 991")).toEqual({
+      name: 'kept wall',
+    });
+    expect(await database.getFirstAsync("SELECT uuid FROM holds_index_climbs WHERE id = 41")).toEqual({
+      uuid: 'kept-climb',
+    });
+    expect(await database.getFirstAsync('SELECT climb_id FROM board_climb_hold_sets WHERE climb_id = 41')).toEqual({
+      climb_id: 41,
+    });
+    expect(
+      await database.getFirstAsync("SELECT hold_id FROM board_climb_hold_postings WHERE layout_id = 1 AND hold_id = 12"),
+    ).toEqual({ hold_id: 12 });
+    expect(await database.getFirstAsync("SELECT status FROM pending_mutations WHERE idempotency_key = 'keep-dead-letter'")).toEqual({
+      status: 'dead_letter',
+    });
+    expect(
+      (await database.getFirstAsync<{ version: number }>('SELECT version FROM schema_version WHERE id = 1'))?.version,
+    ).toBe(11);
   });
 
   it('keeps the device-only holds index tables out of SCHEMA_STATEMENTS', () => {
