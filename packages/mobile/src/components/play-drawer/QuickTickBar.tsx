@@ -30,6 +30,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({ form }: QuickTick
   const { t: tClimbs } = useTranslation('climbs');
 
   const {
+    climbUuid,
     tickState,
     comment,
     climbedAt,
@@ -115,6 +116,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({ form }: QuickTick
         <TickCountRail
           value={tickState.attemptCount}
           onSelect={onTriesSelect}
+          resetKey={climbUuid}
           accessibilityLabel={tClimbs('mobile.tick.triesLabel')}
         />
       </TickFormRow>

@@ -71,8 +71,11 @@ export function GradeChip({
     textColor = systemColors.label;
     if (selected) {
       backgroundColor = brandColors.primaryFill;
+      // The ring stays 1pt and matches the fill, so it is invisible but keeps the
+      // box geometry identical to the neutral tone. React Native is border-box:
+      // dropping to 0 here grew the inner content box by 2pt and nudged the label
+      // every time a chip went from unselected to selected.
       borderColor = brandColors.primaryFill;
-      borderWidth = 0;
       textColor = brandColors.onPrimary;
     } else if (consensus) {
       borderColor = brandColors.warning;

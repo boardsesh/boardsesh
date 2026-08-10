@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { getGradeColor } from '@boardsesh/board-constants/grade-colors';
+import type { TickStatus } from '@boardsesh/play-view';
 import { track } from '../lib/analytics';
 import { ModalSheet } from './ModalSheet';
 import { TickActionBar, TickSheetHeader, CREATE_TICK_SNAP_POINTS } from './tick';
@@ -116,6 +117,19 @@ export function LogAscentSheet({
     [form.resolvedGradeName, consensusGradeName],
   );
 
+  // `logAscentAria` interpolates a *noun*, so the status has to be resolved to
+  // localised copy first — interpolating the raw `'send'` / `'flash'` enum left
+  // Spanish, French and German screen-reader users hearing English.
+  // Spelled out per key because the i18n linter rejects `t(variable)`.
+  const statusNouns: Record<TickStatus, string> = useMemo(
+    () => ({
+      flash: t('mobile.tick.status.flash'),
+      send: t('mobile.tick.status.send'),
+      attempt: t('mobile.tick.status.attempt'),
+    }),
+    [t],
+  );
+
   const subtitle = consensusGradeName
     ? t('mobile.tick.consensusMeta', { grade: consensusGradeName, angle })
     : t('mobile.tick.angleMeta', { angle });
@@ -145,14 +159,14 @@ export function LogAscentSheet({
             title: t('mobile.tick.attempt'),
             onPress: form.onAttempt,
             disabled: form.isPending,
-            accessibilityLabel: t('mobile.tick.logAscentAria', { status: 'attempt' }),
+            accessibilityLabel: t('mobile.tick.logAscentAria', { status: statusNouns.attempt }),
           }}
           primary={{
             title: form.saveLabel,
             onPress: form.onSave,
             loading: form.isPending,
             icon: SAVE_ICON,
-            accessibilityLabel: t('mobile.tick.logAscentAria', { status: form.ascentType }),
+            accessibilityLabel: t('mobile.tick.logAscentAria', { status: statusNouns[form.ascentType] }),
           }}
         />
       }

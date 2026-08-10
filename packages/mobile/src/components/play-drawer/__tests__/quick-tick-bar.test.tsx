@@ -123,6 +123,7 @@ import type { QuickTickForm } from '../use-quick-tick-form';
 
 function makeForm(overrides: Partial<QuickTickForm> = {}): QuickTickForm {
   return {
+    climbUuid: 'climb-1',
     tickState: { quality: null, difficulty: undefined, attemptCount: 1 },
     comment: '',
     climbedAt: new Date('2025-06-01T08:00:00.000Z'),

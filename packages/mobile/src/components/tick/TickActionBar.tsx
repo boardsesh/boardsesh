@@ -47,7 +47,17 @@ export const TickActionBar = React.memo(function TickActionBar({ primary, second
 
   return (
     <View>
-      <View style={[styles.errorSlot, { gap: spacing[1] }]} testID="tick-action-error-slot">
+      {/* The live region sits on the ALWAYS-mounted slot, not on the message:
+          a region that mounts with its content is announced inconsistently, and
+          moving it would give up the reserved height that keeps the buttons
+          still on a failed save. Same pair Toast.tsx uses, because these
+          failures used to go through showToast and were announced. */}
+      <View
+        style={[styles.errorSlot, { gap: spacing[1] }]}
+        testID="tick-action-error-slot"
+        accessibilityRole="alert"
+        accessibilityLiveRegion="assertive"
+      >
         {error ? (
           <>
             <Icon name="warning" size={ERROR_ICON_SIZE} color={brandColors.error} />

@@ -36,11 +36,15 @@ describe('railSnapOffsets', () => {
 });
 
 describe('railRestOffset', () => {
+  // Snapping is opt-in: only a rail that snaps *while scrolling* should also come
+  // to rest on a chip start. These cases describe that rail (the tick sheets');
+  // the plain-centring default every other rail uses is covered separately below.
   const baseArgs = {
     layouts: buildLayouts(),
     railWidth: RAIL_WIDTH,
     contentWidth: CONTENT_WIDTH,
     leadIn: LEAD_IN,
+    snapToChipStart: true,
   };
 
   it('rests at 0 on the first chip rather than scrolling negative', () => {
@@ -90,5 +94,27 @@ describe('railRestOffset', () => {
 
   it('rests at 0 when the content is shorter than the rail', () => {
     expect(railRestOffset({ ...baseArgs, focusId: CHIP_COUNT - 1, contentWidth: RAIL_WIDTH - 40 })).toBe(0);
+  });
+
+  // Every rail outside the tick sheets — the generator picker, the filter rails —
+  // centres its focus chip and always has. Snapping arrived with the tick
+  // redesign, so it must not reach screens that never opted in.
+  describe('without snapToChipStart (the default)', () => {
+    const centringArgs = { ...baseArgs, snapToChipStart: false };
+
+    it('centres the focus chip instead of snapping it to a chip start', () => {
+      const focusId = 3;
+      const layout = buildLayouts()[focusId];
+      const centred = layout.x + layout.width / 2 - RAIL_WIDTH / 2;
+
+      expect(railRestOffset({ ...centringArgs, focusId })).toBe(centred);
+      // …and that centred value is deliberately NOT a chip start.
+      expect(railSnapOffsets(buildLayouts(), LEAD_IN)).not.toContain(centred);
+    });
+
+    it('still clamps to the scrollable range at both ends', () => {
+      expect(railRestOffset({ ...centringArgs, focusId: 0 })).toBe(0);
+      expect(railRestOffset({ ...centringArgs, focusId: CHIP_COUNT - 1 })).toBe(CONTENT_WIDTH - RAIL_WIDTH);
+    });
   });
 });

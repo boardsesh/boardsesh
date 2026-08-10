@@ -10,8 +10,29 @@ const buttonCalls = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
   PlatformColor: (name: string) => name,
-  View: ({ children, style, testID }: { children?: ReactNode; style?: unknown; testID?: string }) =>
-    createElement('div', { 'data-style': JSON.stringify(style ?? null), 'data-testid': testID }, children),
+  View: ({
+    children,
+    style,
+    testID,
+    accessibilityRole,
+    accessibilityLiveRegion,
+  }: {
+    children?: ReactNode;
+    style?: unknown;
+    testID?: string;
+    accessibilityRole?: string;
+    accessibilityLiveRegion?: string;
+  }) =>
+    createElement(
+      'div',
+      {
+        'data-style': JSON.stringify(style ?? null),
+        'data-testid': testID,
+        'data-a11y-role': accessibilityRole,
+        'data-a11y-live': accessibilityLiveRegion,
+      },
+      children,
+    ),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
@@ -89,6 +110,18 @@ describe('TickActionBar', () => {
     const failed = renderBar({ error: "Couldn't save your tick" });
     expect(styleOf(failed.container, 'tick-action-error-slot')).toEqual(restSlot);
     expect(styleOf(failed.container, 'tick-action-row')).toEqual(restRow);
+  });
+
+  it('announces a failure: these used to go through showToast, which announced', () => {
+    // On the ALWAYS-mounted slot, not on the message — a live region that mounts
+    // with its content is announced inconsistently, and moving it would give up
+    // the reserved height that keeps the buttons still on a failed save.
+    for (const props of [{}, { error: "Couldn't save your tick" }]) {
+      const { container } = renderBar(props);
+      const slot = container.querySelector('[data-testid="tick-action-error-slot"]');
+      expect(slot?.getAttribute('data-a11y-role')).toBe('alert');
+      expect(slot?.getAttribute('data-a11y-live')).toBe('assertive');
+    }
   });
 
   it('prints the failure in the brand error colour', () => {

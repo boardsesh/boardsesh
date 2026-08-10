@@ -73,6 +73,10 @@ export type QuickTickFormInput = {
 };
 
 export type QuickTickForm = {
+  /** The climb this form is bound to. Surfaced so presentational children can
+   *  tell "a new climb loaded" from "the climber changed a field" — the hosting
+   *  sheet stays mounted across climbs, so no value change is a reliable signal. */
+  climbUuid: string;
   tickState: QuickTickState;
   comment: string;
   climbedAt: Date;
@@ -369,6 +373,7 @@ export function useQuickTickForm({
   const saveLabel = ascentType === 'flash' ? t('playView.tickBar.flashSaveLabel') : t('playView.tickBar.sendSaveLabel');
 
   return {
+    climbUuid,
     tickState,
     comment,
     climbedAt,

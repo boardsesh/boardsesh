@@ -305,6 +305,7 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
         <TickCountRail
           value={isFlash ? 1 : attemptCount}
           onSelect={setAttemptCount}
+          resetKey={ascent?.uuid}
           disabled={isFlash}
           accessibilityLabel={tTick('mobile.tick.triesLabel')}
         />

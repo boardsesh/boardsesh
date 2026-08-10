@@ -661,7 +661,12 @@
       "consensusMeta": "{{grade}} consensus · {{angle}}°",
       "angleMeta": "{{angle}}°",
       "fallbackTitle": "Enregistrer la croix",
-      "logAscentAria": "Enregistrer {{status}}",
+      "status": {
+        "flash": "Flash",
+        "send": "Enchaîné",
+        "attempt": "Essai"
+      },
+      "logAscentAria": "Enregistrer : {{status}}",
       "setTriesAria_one": "Mettre {{count}} essai",
       "setTriesAria_other": "Mettre {{count}} essais",
       "moreTriesAria": "Un essai de plus"

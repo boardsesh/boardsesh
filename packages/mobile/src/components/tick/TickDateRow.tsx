@@ -44,7 +44,18 @@ export const TickDateRow = React.memo(function TickDateRow({
           accessibilityLabel={dateAccessibilityLabel}
         />
       </View>
-      <Text variant="body" color={systemColors.tertiaryLabel}>
+      {/* Punctuation between two pickers, not content: hidden from the
+          accessibility tree so VoiceOver doesn't stop on a meaningless "at"
+          between the date and time fields. `secondaryLabel` rather than
+          `tertiaryLabel` because the iOS tertiary label composites to 1.73:1
+          (light) / 2.46:1 (dark) on the sheet ground — below the 3:1 floor;
+          secondary reads 3.44:1 / 6.14:1. */}
+      <Text
+        variant="body"
+        color={systemColors.secondaryLabel}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
         {TIMESTAMP_SEPARATOR}
       </Text>
       <View style={styles.field}>

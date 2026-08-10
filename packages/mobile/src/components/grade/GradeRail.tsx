@@ -425,35 +425,64 @@ export function GradeSingleSelectRail({
   // layout ref without every chip's onLayout forcing a render of its own.
   const [layoutVersion, setLayoutVersion] = useState(0);
   const didCenterRef = useRef(false);
+  // Latched by the first tap or drag: after the climber has touched the rail it
+  // must never scroll itself out from under their thumb. Reset only when the rail
+  // takes on a new identity (below) — never on `focusId`, since a tap moves the
+  // focus and re-centring there IS the yank.
+  const userInteractedRef = useRef(false);
   const grades = useMemo(() => sortedGrades(unsortedGrades), [unsortedGrades]);
   const focusId = selectedDifficultyId ?? consensusDifficultyId ?? undefined;
+
+  // Snapping is a tick-sheet behaviour. Every other consumer (the generator
+  // picker) opened this rail before the tick redesign and expects a free scroll
+  // that just rests on the focus chip, so gate the three snap props on colorway.
+  const snapsToChips = colorway === 'selection';
 
   const snapOffsets = useMemo(() => {
     void layoutVersion;
     return railSnapOffsets(chipLayoutsRef.current, contentInsetLeft);
   }, [layoutVersion, contentInsetLeft]);
 
+  // What makes this a DIFFERENT rail rather than the same one with a new pick:
+  // the grade set it renders, and whose consensus grade it is pointing at. Both
+  // change when the sheet is reused for another climb or board while staying
+  // mounted; neither changes when the climber taps a chip.
+  const railIdentity = useMemo(
+    () => `${consensusDifficultyId ?? ''}|${grades.map((grade) => grade.difficultyId).join(',')}`,
+    [consensusDifficultyId, grades],
+  );
+
   // Rest with the focus chip readable and flush to a chip start. `railRestOffset`
   // clamps to the scrollable range and snaps DOWN to a chip boundary, so the rail
   // can neither overscroll past its content nor come to rest mid-chip.
   const maybeCenter = useCallback(() => {
-    if (didCenterRef.current) return;
+    if (userInteractedRef.current || didCenterRef.current) return;
     const offset = railRestOffset({
       layouts: chipLayoutsRef.current,
       focusId,
       railWidth,
       contentWidth,
       leadIn: contentInsetLeft,
+      snapToChipStart: snapsToChips,
     });
     if (offset == null) return;
     didCenterRef.current = true;
     scrollRef.current?.scrollTo({ x: offset, animated: false });
-  }, [focusId, railWidth, contentWidth, contentInsetLeft]);
+  }, [focusId, railWidth, contentWidth, contentInsetLeft, snapsToChips]);
 
+  // A new rail starts fresh: drop both latches so it rests on its own focus chip
+  // even if the previous climb's rail had been dragged. One effect (rather than a
+  // reset effect plus a centring effect) so the reset can never land in a commit
+  // where the centring pass has already run.
+  const railIdentityRef = useRef(railIdentity);
   useEffect(() => {
-    didCenterRef.current = false;
+    if (railIdentityRef.current !== railIdentity) {
+      railIdentityRef.current = railIdentity;
+      userInteractedRef.current = false;
+      didCenterRef.current = false;
+    }
     maybeCenter();
-  }, [focusId, maybeCenter]);
+  }, [railIdentity, maybeCenter]);
 
   const handleChipLayout = useCallback(
     (difficultyId: number, layout: ChipLayout) => {
@@ -477,6 +506,7 @@ export function GradeSingleSelectRail({
 
   const handleSelect = useCallback(
     (difficultyId: number) => {
+      userInteractedRef.current = true;
       hapticSelection();
       onSelect(allowClear && selectedDifficultyId === difficultyId ? undefined : difficultyId);
     },
@@ -489,9 +519,12 @@ export function GradeSingleSelectRail({
       horizontal
       showsHorizontalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
-      snapToOffsets={snapOffsets.length > 0 ? snapOffsets : undefined}
-      snapToAlignment="start"
-      decelerationRate="fast"
+      snapToOffsets={snapsToChips && snapOffsets.length > 0 ? snapOffsets : undefined}
+      snapToAlignment={snapsToChips ? 'start' : undefined}
+      decelerationRate={snapsToChips ? 'fast' : undefined}
+      onScrollBeginDrag={() => {
+        userInteractedRef.current = true;
+      }}
       contentContainerStyle={[
         styles.singleSelectContent,
         style,

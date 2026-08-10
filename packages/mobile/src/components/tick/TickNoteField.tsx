@@ -50,7 +50,11 @@ export const TickNoteField = React.memo(function TickNoteField({
         onFocus={handleFocus}
         onBlur={handleBlur}
         placeholder={placeholder}
-        placeholderTextColor={systemColors.tertiaryLabel}
+        // `secondaryLabel`, not `tertiaryLabel`: on iOS the tertiary label is a
+        // ~30%-alpha PlatformColor, which composites to 1.73:1 against the opaque
+        // sheet ground these rows now sit on — under the 3:1 floor. It was fine
+        // over the old glass.
+        placeholderTextColor={systemColors.secondaryLabel}
         accessibilityLabel={accessibilityLabel}
         style={[textStyles.subheadline, styles.input, { color: systemColors.label }]}
       />

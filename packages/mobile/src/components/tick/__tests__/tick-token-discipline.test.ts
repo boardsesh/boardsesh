@@ -26,12 +26,16 @@ function tickFamilyFiles(): string[] {
     .map((entry) => `${TICK_DIR}${entry.name}`);
 }
 
-/** The three sheets assembled from the tick family. They are the surfaces the
- *  offending values actually shipped on, so the guard has to reach them too. */
+/** The sheets assembled from the tick family, plus the two shared controls the
+ *  tick rows render INTO. `StarRating` shipped the #FFB800 / #C7C7CC pair and
+ *  `GradeChip` paints the tries rail, so a scheme-blind value reintroduced in
+ *  either lands straight back on a tick sheet — the guard has to reach them. */
 const CONSUMER_FILES = [
   `${COMPONENTS_DIR}play-drawer/QuickTickBar.tsx`,
   `${COMPONENTS_DIR}LogAscentSheet.tsx`,
   `${COMPONENTS_DIR}you/LogbookEditSheet.tsx`,
+  `${COMPONENTS_DIR}StarRating.tsx`,
+  `${COMPONENTS_DIR}grade/GradeChip.tsx`,
 ];
 
 const GUARDED_FILES = [...tickFamilyFiles(), ...CONSUMER_FILES];
@@ -51,13 +55,32 @@ const IOS_COLORS_IMPORT = /from\s+['"][^'"]*theme\/ios-colors['"]/;
  *  than bare so an issue reference in a comment (`#3922`) is not a finding. */
 const HEX_COLOR_LITERAL = /(['"`])#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\1/g;
 
-/** A whole `import { ... } from '<anything>/theme/colors'` statement. */
-const THEME_COLORS_IMPORT = /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+['"][^'"]*theme\/colors['"]/g;
+/** A whole `import { ... }` from either colour source: the app's
+ *  `<anything>/theme/colors`, or `@boardsesh/velvet-tokens`, which is where the
+ *  brand palette itself now lives and which `theme/colors` merely re-exports —
+ *  so the guard cannot be walked around by importing one step upstream. */
+const THEME_COLORS_IMPORT =
+  /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+['"](?:[^'"]*theme\/colors|@boardsesh\/velvet-tokens)['"]/g;
 
 /** Palettes that must arrive resolved from the provider, never as a module-scope
  *  constant: both have a light and a dark set, and a static import always picks
  *  the light one. */
 const SCHEME_BOUND_PALETTES = ['brandColors', 'brandColorsDark', 'systemColors'];
+
+/** `systemColors.tertiaryLabel` used as a colour. On iOS it is a ~30%-alpha
+ *  PlatformColor, which composites to 1.73:1 light / 2.46:1 dark against the
+ *  opaque `theme.sheetSurface` these sheets now sit on — under the 3:1 non-text
+ *  floor. It was legible over the old glass; it is not over an opaque ground.
+ *  `secondaryLabel` (60%) is the floor-clearing replacement. */
+const TERTIARY_LABEL_USE = /\.tertiaryLabel\b/g;
+
+/** Line and block comments, so a rule that bans a token by name does not also
+ *  ban the comment explaining why it is banned. */
+const COMMENTS = /\/\*[\s\S]*?\*\/|\/\/[^\n]*/g;
+
+function withoutComments(source: string): string {
+  return source.replace(COMMENTS, '');
+}
 
 describe('tick token discipline', () => {
   it('guards the whole tick family and its three consumer sheets', () => {
@@ -94,6 +117,16 @@ describe('tick token discipline', () => {
           )
           .filter((binding) => SCHEME_BOUND_PALETTES.includes(binding))
           .map((binding) => `${relative(filePath)}: ${binding}`),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('never paints with tertiaryLabel, which fails contrast on the opaque sheet ground', () => {
+    const offenders = GUARDED_FILES.flatMap((filePath) =>
+      [...withoutComments(read(filePath)).matchAll(TERTIARY_LABEL_USE)].map(
+        () => `${relative(filePath)}: .tertiaryLabel`,
       ),
     );
 

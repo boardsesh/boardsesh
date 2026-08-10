@@ -48,11 +48,16 @@ type RailRestOffsetArgs = {
   railWidth: number;
   contentWidth: number;
   leadIn: number;
+  /** Rails that snap while scrolling should also come to rest on a chip start.
+   * Defaults false, which is plain centring — what every rail did before the
+   * tick sheets introduced snapping. */
+  snapToChipStart?: boolean;
 };
 
 /**
- * Where the rail should sit so the focus chip is readable: centre it, clamp to
- * the range the content can actually scroll, then snap DOWN to a chip start.
+ * Where the rail should sit so the focus chip is readable: centre it and clamp
+ * to the range the content can actually scroll. A snapping rail additionally
+ * snaps DOWN to a chip start so it cannot rest mid-chip.
  *
  * Returns `null` when there is nothing to compute from — no focus chip, an
  * unmeasured focus chip, or a rail that has not been laid out yet — so the
@@ -64,6 +69,7 @@ export function railRestOffset({
   railWidth,
   contentWidth,
   leadIn,
+  snapToChipStart = false,
 }: RailRestOffsetArgs): number | null {
   if (focusId == null || railWidth <= 0) return null;
   const focusLayout = layouts[focusId];
@@ -75,6 +81,13 @@ export function railRestOffset({
 
   const centred = focusLayout.x + focusLayout.width / 2 - railWidth / 2;
   const clamped = Math.min(Math.max(centred, 0), maxOffset);
+
+  // Plain centring is what every rail did before the tick redesign, and it is
+  // still what the non-tick consumers (the generator picker, the filter rails)
+  // expect. Only a rail that also snaps while scrolling should come to rest on a
+  // chip boundary — otherwise the redesign silently re-positions screens that
+  // never opted into it.
+  if (!snapToChipStart) return clamped;
 
   let rest = 0;
   for (const offset of railSnapOffsets(layouts, leadIn)) {

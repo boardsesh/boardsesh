@@ -7,7 +7,7 @@
 // visible count is one tap, and a screen-reader user can jump straight to '7'
 // instead of swiping an adjustable six times.
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
+import { ScrollView, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { MIN_ATTEMPT_COUNT } from '@boardsesh/play-view';
 import { TickChip } from './TickChip';
@@ -24,6 +24,54 @@ const RAIL_LEAD_IN = 0;
  *  identical in every locale; its meaning is carried by `moreTriesAria`. */
 const MORE_CHIP_LABEL = '+';
 
+type TickCountChipProps = {
+  count: number;
+  selected: boolean;
+  disabled: boolean;
+  /** Translated outside the chip — a plain string, so it stays memo-stable. */
+  accessibilityLabel: string;
+  onSelect: (count: number) => void;
+  onMeasure: (count: number, layout: RailChipLayout) => void;
+};
+
+/**
+ * One chip, bound to its own count.
+ *
+ * It exists so the rail's `.map` hands `TickChip` the SAME `onPress` and
+ * `onLayout` identities on every render. Inline arrows in the map defeat
+ * `TickChip`'s `React.memo` outright: every count change re-rendered all 16
+ * chips (and their `PressableSurface` + `Text` subtrees) instead of the two that
+ * actually changed tone. See docs/react-native-performance.md.
+ */
+const TickCountChip = React.memo(function TickCountChip({
+  count,
+  selected,
+  disabled,
+  accessibilityLabel,
+  onSelect,
+  onMeasure,
+}: TickCountChipProps) {
+  const handlePress = useCallback(() => onSelect(count), [onSelect, count]);
+  const handleLayout = useCallback(
+    ({ nativeEvent }: LayoutChangeEvent) => onMeasure(count, nativeEvent.layout),
+    [onMeasure, count],
+  );
+
+  return (
+    <TickChip
+      label={String(count)}
+      tone={selected ? 'selected' : 'neutral'}
+      onPress={handlePress}
+      accessibilityLabel={accessibilityLabel}
+      // `disabled` travels with `selected`: under a flash the edit sheet's Tries
+      // row is inert, and without this the rail still offers ~15 focusable
+      // "Set to N tries" buttons that do nothing when activated.
+      accessibilityState={{ selected, disabled }}
+      onLayout={handleLayout}
+    />
+  );
+});
+
 type TickCountRailProps = {
   value: number;
   /** Floor of the rendered range. Defaults to the same floor the save path
@@ -32,6 +80,12 @@ type TickCountRailProps = {
   onSelect: (next: number) => void;
   disabled?: boolean;
   accessibilityLabel: string;
+  /** Identity of the thing being counted — the climb uuid in practice. Both host
+   *  sheets stay mounted between climbs, so a value change alone cannot tell a
+   *  new climb from the climber tapping a chip: loading a different climb that
+   *  happens to have the same try count would leave the rail parked where the
+   *  previous one was dragged. Changing this drops the scroll latches. */
+  resetKey?: string;
 };
 
 export const TickCountRail = React.memo(function TickCountRail({
@@ -40,6 +94,7 @@ export const TickCountRail = React.memo(function TickCountRail({
   onSelect,
   disabled = false,
   accessibilityLabel,
+  resetKey,
 }: TickCountRailProps) {
   const { t } = useTranslation('climbs');
   const { spacing } = useTheme();
@@ -54,6 +109,12 @@ export const TickCountRail = React.memo(function TickCountRail({
   // Latched by the first tap or drag: after the climber has touched the rail it
   // must never scroll itself out from under their thumb.
   const userInteractedRef = useRef(false);
+  // The last count the rail ITSELF put on the wire. Anything else arriving in
+  // `value` came from outside — a new climb loaded into a still-mounted sheet —
+  // and has to clear the latch. PlayDrawer keeps LogAscentSheet mounted for the
+  // life of the player, so without this the second climb's rail opens parked on
+  // the first climb's scroll position.
+  const railSelectedRef = useRef(value);
 
   const counts = useMemo(() => {
     const last = Math.max(TICK_COUNT_RAIL_MIN_CHIPS, value);
@@ -78,17 +139,34 @@ export const TickCountRail = React.memo(function TickCountRail({
       railWidth,
       contentWidth,
       leadIn: RAIL_LEAD_IN,
+      // This rail snaps while scrolling, so it must also come to rest on a chip
+      // start rather than mid-chip.
+      snapToChipStart: true,
     });
     if (offset == null) return;
     didCenterRef.current = true;
     scrollRef.current?.scrollTo({ x: offset, animated: false });
   }, [value, railWidth, contentWidth]);
 
+  const resetKeyRef = useRef(resetKey);
   useEffect(() => {
+    // Reset BEFORE the bail-out: the latch is what makes the rail hold still
+    // for the climber, but it must not outlive the climb it was set on.
+    //
+    // A new climb is the authoritative signal, because a value change alone
+    // cannot distinguish one from a chip tap — and a different climb carrying
+    // the same try count changes no value at all.
+    const climbChanged = resetKeyRef.current !== resetKey;
+    if (climbChanged) resetKeyRef.current = resetKey;
+    if (climbChanged || railSelectedRef.current !== value) {
+      railSelectedRef.current = value;
+      userInteractedRef.current = false;
+      didCenterRef.current = false;
+    }
     if (userInteractedRef.current) return;
     didCenterRef.current = false;
     maybeCenter();
-  }, [maybeCenter]);
+  }, [value, resetKey, maybeCenter]);
 
   const handleChipLayout = useCallback(
     (count: number, layout: RailChipLayout) => {
@@ -106,11 +184,14 @@ export const TickCountRail = React.memo(function TickCountRail({
     (next: number) => {
       if (disabled) return;
       userInteractedRef.current = true;
+      railSelectedRef.current = next;
       hapticSelection();
       onSelect(next);
     },
     [disabled, onSelect],
   );
+
+  const handleMore = useCallback(() => handleSelect(value + 1), [handleSelect, value]);
 
   const handleContentSizeChange = useCallback(
     (width: number) => {
@@ -141,24 +222,22 @@ export const TickCountRail = React.memo(function TickCountRail({
         maybeCenter();
       }}
     >
-      {counts.map((count) => {
-        const selected = count === value;
-        return (
-          <TickChip
-            key={count}
-            label={String(count)}
-            tone={selected ? 'selected' : 'neutral'}
-            onPress={() => handleSelect(count)}
-            accessibilityLabel={t('mobile.tick.setTriesAria', { count })}
-            accessibilityState={{ selected }}
-            onLayout={({ nativeEvent }) => handleChipLayout(count, nativeEvent.layout)}
-          />
-        );
-      })}
+      {counts.map((count) => (
+        <TickCountChip
+          key={count}
+          count={count}
+          selected={count === value}
+          disabled={disabled}
+          accessibilityLabel={t('mobile.tick.setTriesAria', { count })}
+          onSelect={handleSelect}
+          onMeasure={handleChipLayout}
+        />
+      ))}
       <TickChip
         label={MORE_CHIP_LABEL}
-        onPress={() => handleSelect(value + 1)}
+        onPress={handleMore}
         accessibilityLabel={t('mobile.tick.moreTriesAria')}
+        accessibilityState={{ disabled }}
       />
     </ScrollView>
   );

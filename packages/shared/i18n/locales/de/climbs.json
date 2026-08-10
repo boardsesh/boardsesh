@@ -661,6 +661,11 @@
       "consensusMeta": "{{grade}} Konsens · {{angle}}°",
       "angleMeta": "{{angle}}°",
       "fallbackTitle": "Begehung eintragen",
+      "status": {
+        "flash": "Flash",
+        "send": "Getoppt",
+        "attempt": "Versuch"
+      },
       "logAscentAria": "{{status}} eintragen",
       "setTriesAria_one": "Auf {{count}} Versuch setzen",
       "setTriesAria_other": "Auf {{count}} Versuche setzen",

@@ -78,7 +78,20 @@ export const TickFormRow = React.memo(function TickFormRow({
           {children}
         </View>
       </View>
-      {showSeparator ? <View style={[styles.separator, { borderBottomColor: systemColors.separator }]} /> : null}
+      {showSeparator ? (
+        <View
+          style={[
+            styles.separator,
+            {
+              borderBottomColor: systemColors.separator,
+              // Stacked, the control no longer starts at the seam — it starts at
+              // the gutter — so a seam-inset hairline would float detached under
+              // it. Same flag drives both.
+              marginLeft: stacked ? TICK_GUTTER : TICK_CONTROL_ORIGIN,
+            },
+          ]}
+        />
+      ) : null}
     </View>
   );
 });
@@ -113,6 +126,5 @@ const styles = StyleSheet.create({
   },
   separator: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    marginLeft: TICK_CONTROL_ORIGIN,
   },
 });

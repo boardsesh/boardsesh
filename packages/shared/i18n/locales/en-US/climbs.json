@@ -661,6 +661,11 @@
       "consensusMeta": "{{grade}} consensus · {{angle}}°",
       "angleMeta": "{{angle}}°",
       "fallbackTitle": "Log ascent",
+      "status": {
+        "flash": "Flash",
+        "send": "Send",
+        "attempt": "Attempt"
+      },
       "logAscentAria": "Log {{status}}",
       "setTriesAria_one": "Set to {{count}} try",
       "setTriesAria_other": "Set to {{count}} tries",
