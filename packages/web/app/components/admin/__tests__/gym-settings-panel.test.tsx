@@ -84,6 +84,17 @@ describe('GymSettingsPanel', () => {
     expect(getSwitch().checked).toBe(false);
   });
 
+  it('surfaces a load failure and leaves the switch disabled', async () => {
+    mockRequest.mockRejectedValueOnce(new Error('network down'));
+
+    render(<GymSettingsPanel />);
+
+    await screen.findByText("Couldn't load gym settings.");
+    // Never let a failed read look like "auto-approval is off" — the switch
+    // stays disabled so an admin can't act on a value we never received.
+    expect(getSwitch().disabled).toBe(true);
+  });
+
   it('rolls the toggle back when the write is rejected', async () => {
     mockRequest.mockResolvedValueOnce({ communitySettings: [] });
     render(<GymSettingsPanel />);

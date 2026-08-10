@@ -150,32 +150,17 @@ export const socialCommunitySettingsMutations = {
 
     const userId = ctx.userId!;
 
-    // UPSERT
-    const [existing] = await db
-      .select()
-      .from(dbSchema.communitySettings)
-      .where(
-        and(
-          eq(dbSchema.communitySettings.scope, scope),
-          eq(dbSchema.communitySettings.scopeKey, scopeKey),
-          eq(dbSchema.communitySettings.key, key),
-        ),
-      )
-      .limit(1);
-
-    let result;
-    if (existing) {
-      [result] = await db
-        .update(dbSchema.communitySettings)
-        .set({ value, setBy: userId, updatedAt: new Date() })
-        .where(eq(dbSchema.communitySettings.id, existing.id))
-        .returning();
-    } else {
-      [result] = await db
-        .insert(dbSchema.communitySettings)
-        .values({ scope, scopeKey, key, value, setBy: userId })
-        .returning();
-    }
+    // Single-statement upsert against the (scope, scope_key, key) unique index.
+    // A SELECT-then-INSERT/UPDATE would let two concurrent admin writes to the
+    // same key race, with the loser hitting the unique constraint and erroring.
+    const [result] = await db
+      .insert(dbSchema.communitySettings)
+      .values({ scope, scopeKey, key, value, setBy: userId })
+      .onConflictDoUpdate({
+        target: [dbSchema.communitySettings.scope, dbSchema.communitySettings.scopeKey, dbSchema.communitySettings.key],
+        set: { value, setBy: userId, updatedAt: new Date() },
+      })
+      .returning();
 
     return {
       id: result.id,

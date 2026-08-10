@@ -235,9 +235,15 @@ async function findPendingClaim(
   return existing;
 }
 
-/** Atomically replace this user's pending claim on this gym with a fresh row. */
-async function replacePendingClaim(values: typeof dbSchema.gymClaims.$inferInsert): Promise<void> {
-  await db.transaction(async (tx) => {
+/**
+ * Atomically replace this user's pending claim on this gym with a fresh row, and
+ * hand the inserted row back so a caller (auto-approval) can act on it without a
+ * second round-trip — and without a window where the row could already be gone.
+ */
+async function replacePendingClaim(
+  values: typeof dbSchema.gymClaims.$inferInsert,
+): Promise<typeof dbSchema.gymClaims.$inferSelect> {
+  return db.transaction(async (tx) => {
     await tx
       .delete(dbSchema.gymClaims)
       .where(
@@ -247,7 +253,8 @@ async function replacePendingClaim(values: typeof dbSchema.gymClaims.$inferInser
           eq(dbSchema.gymClaims.status, 'pending'),
         ),
       );
-    await tx.insert(dbSchema.gymClaims).values(values);
+    const [inserted] = await tx.insert(dbSchema.gymClaims).values(values).returning();
+    return inserted;
   });
 }
 
@@ -411,7 +418,7 @@ export const socialGymClaimMutations = {
       return { status: 'admin_review' };
     }
 
-    await replacePendingClaim({
+    const queuedClaim = await replacePendingClaim({
       gymId: gym.id,
       claimantUserId: userId,
       method: 'admin',
@@ -419,13 +426,10 @@ export const socialGymClaimMutations = {
       message: validatedInput.message ?? null,
     });
 
-    const queuedClaim = await findPendingClaim(gym.id, userId);
-    if (queuedClaim) {
-      const autoApplied = await tryAutoApproveAdminClaim(ctx, gym, queuedClaim);
-      if (autoApplied) {
-        await notifyClaimApplied(autoApplied);
-        return { status: 'approved' };
-      }
+    const autoApplied = await tryAutoApproveAdminClaim(ctx, gym, queuedClaim);
+    if (autoApplied) {
+      await notifyClaimApplied(autoApplied);
+      return { status: 'approved' };
     }
 
     // Best-effort: the claim is already queued and visible in /admin/gym-claims,
