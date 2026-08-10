@@ -65,7 +65,8 @@ const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 /** Text channel types worth scanning: GUILD_TEXT (0) and GUILD_ANNOUNCEMENT (5). */
 const SCANNABLE_CHANNEL_TYPES: ReadonlySet<number> = new Set([0, 5]);
 
-type Fetcher = (input: string | URL, init?: RequestInit) => Promise<Response>;
+/** Exported so tests can type an injected fake without restating the shape. */
+export type Fetcher = (input: string | URL, init?: RequestInit) => Promise<Response>;
 type Logger = Pick<Console, 'error' | 'log' | 'warn'>;
 type Sleep = (ms: number) => Promise<void>;
 
@@ -297,8 +298,26 @@ export class DiscordClient implements DiscordSource, DiscordWriter {
 
 // --- GitHub ----------------------------------------------------------------
 
+/**
+ * Carries the HTTP status as a field.
+ *
+ * Callers branch on specific codes (404 "create it", 422 "already exists"), and
+ * sniffing the digits out of a message string breaks the moment the wording
+ * changes — or matches a 404 that happened to appear in a response body.
+ */
+export class GitHubApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'GitHubApiError';
+    this.status = status;
+  }
+}
+
 export class GitHubIssueClient implements IssueSink {
   private readonly fetcher: Fetcher;
+  private readonly sleep: Sleep;
   private readonly owner: string;
   private readonly repository: string;
   private readonly token: string;
@@ -314,12 +333,14 @@ export class GitHubIssueClient implements IssueSink {
     apiBase?: string;
     logger?: Logger;
     attachmentReleaseTag?: string;
+    sleep?: Sleep;
   }) {
     const [owner, repository] = args.repositoryFullName.split('/');
     if (!owner || !repository) {
       throw new Error(`Invalid GitHub repository "${args.repositoryFullName}". Expected owner/name.`);
     }
     this.fetcher = args.fetcher ?? fetch;
+    this.sleep = args.sleep ?? sleepReal;
     this.owner = owner;
     this.repository = repository;
     this.token = args.token;
@@ -339,14 +360,32 @@ export class GitHubIssueClient implements IssueSink {
     };
   }
 
-  private async githubFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  /**
+   * Retries transient failures, like the Discord client does.
+   *
+   * The search API used by `findIssueByMarker` allows only 30 requests a
+   * minute. A search that dies un-retried after an issue was already filed
+   * would leave the marker guard unable to fire next run, which is exactly the
+   * path that produces a duplicate issue.
+   */
+  private async githubFetch(path: string, init: RequestInit = {}, attempt = 0): Promise<Response> {
     const response = await this.fetcher(`${this.apiBase}${path}`, {
       ...init,
       headers: { ...this.headers(), ...init.headers },
     });
+
+    const retriable = response.status === 429 || (response.status >= 500 && response.status < 600);
+    if (retriable && attempt < 3) {
+      const retryAfter = Number(response.headers.get('retry-after') ?? '0');
+      const waitMs = retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** attempt;
+      this.logger.warn(`[discord-feedback] GitHub ${response.status} on ${path}, retrying in ${waitMs}ms`);
+      await this.sleep(waitMs);
+      return this.githubFetch(path, init, attempt + 1);
+    }
+
     if (!response.ok) {
       const detail = await response.text().catch(() => '<unreadable>');
-      throw new Error(`GitHub ${response.status} for ${path}: ${detail}`);
+      throw new GitHubApiError(response.status, `GitHub ${response.status} for ${path}: ${detail}`);
     }
     return response;
   }
@@ -372,7 +411,7 @@ export class GitHubIssueClient implements IssueSink {
         });
       } catch (error) {
         // 422 is "already exists", the common case. Never block issue creation on this.
-        if (!String(error).includes('422')) {
+        if (!(error instanceof GitHubApiError && error.status === 422)) {
           this.logger.warn(`[discord-feedback] ensureLabel ${label}: ${String(error)}`);
         }
       }
@@ -432,7 +471,7 @@ export class GitHubIssueClient implements IssueSink {
     } catch (error) {
       // Only "it isn't there yet" means create it. A 5xx or an auth failure must
       // surface as itself rather than being reported as a freshly created release.
-      if (!String(error).includes('404')) throw error;
+      if (!(error instanceof GitHubApiError && error.status === 404)) throw error;
 
       const response = await this.githubFetch(`/repos/${this.owner}/${this.repository}/releases`, {
         method: 'POST',

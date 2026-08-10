@@ -4,7 +4,10 @@ import {
   applyTriage,
   collectFeedback,
   DiscordClient,
+  GitHubApiError,
+  GitHubIssueClient,
   parseCliOptions,
+  type Fetcher,
   type ApplyOptions,
   type CollectBundle,
   type CollectOptions,
@@ -544,6 +547,57 @@ describe('DiscordClient.discordFetch', () => {
 
     const [, init] = fetcher.mock.calls[0] as [string, RequestInit];
     expect((init.headers as Record<string, string>).Authorization).toBe('Bot secret');
+  });
+});
+
+describe('GitHubIssueClient.githubFetch', () => {
+  function response(status: number, body: unknown, headers: Record<string, string> = {}): Response {
+    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } });
+  }
+
+  function client(fetcher: Fetcher, sleep = vi.fn(async () => undefined)) {
+    return new GitHubIssueClient({
+      fetcher,
+      repositoryFullName: 'boardsesh/boardsesh',
+      token: 't',
+      sleep,
+      logger: { ...console, warn: vi.fn() },
+    });
+  }
+
+  it('retries a rate-limited search so the dedup guard is not lost', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(response(429, { message: 'rate limited' }, { 'retry-after': '1' }))
+      .mockResolvedValueOnce(response(200, { total_count: 1, items: [{ number: 7, html_url: 'u' }] }));
+    const sleep = vi.fn(async () => undefined);
+
+    await expect(client(fetcher, sleep).findIssueByMarker('<!-- m -->')).resolves.toEqual({ number: 7, htmlUrl: 'u' });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(1000);
+  });
+
+  it('retries a 5xx with backoff', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(response(502, {}))
+      .mockResolvedValueOnce(response(200, { total_count: 0, items: [] }));
+    await expect(client(fetcher).findIssueByMarker('<!-- m -->')).resolves.toBeNull();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('throws a typed error carrying the status, not a string to sniff', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response(404, { message: 'Not Found' }));
+    await expect(client(fetcher).findIssueByMarker('<!-- m -->')).rejects.toMatchObject({
+      name: 'GitHubApiError',
+      status: 404,
+    });
+  });
+
+  it('does not retry a 4xx that is not a rate limit', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response(422, { message: 'already exists' }));
+    await expect(client(fetcher).findIssueByMarker('<!-- m -->')).rejects.toBeInstanceOf(GitHubApiError);
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -461,6 +461,13 @@ export default defineConfig({
       },
 
       // --- Typecheck (depends on build for type declarations) ---
+      // Repo-root scripts/ had no typecheck at all, so type errors there only
+      // surfaced when a scheduled workflow failed at runtime. Scoped to the
+      // Discord feedback pipeline via scripts/tsconfig.json; widen its
+      // `include` as other scripts are made type-clean.
+      'typecheck:scripts': {
+        command: 'tsc -p scripts/tsconfig.json',
+      },
       'typecheck:shared': {
         command: 'bun run --filter=@boardsesh/shared-schema typecheck',
         dependsOn: ['build:shared'],
@@ -592,6 +599,7 @@ export default defineConfig({
       typecheck: {
         command: 'true',
         dependsOn: [
+          'typecheck:scripts',
           'typecheck:shared',
           'typecheck:db',
           'typecheck:backend',

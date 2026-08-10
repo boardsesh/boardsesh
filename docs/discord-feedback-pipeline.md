@@ -31,6 +31,9 @@ The file→react→reply ordering lives in tested TypeScript rather than in the 
 | `scripts/lib/discord-feedback-issue.ts` | Pure: marker, decision validation, issue body, replies |
 | `.claude/skills/discord-feedback-triage/` | The classifier prompt + output schema |
 | `.github/workflows/discord-feedback-issues.yml` | The scheduled job |
+| `scripts/tsconfig.json` | Typechecks these files — repo-root `scripts/` had no CI typecheck before |
+
+Root `scripts/` was never typechecked, so a broken type here would only have surfaced when the scheduled workflow failed at runtime. `vp run typecheck:scripts` now covers this pipeline and runs as part of the `typecheck` aggregate; widen its `include` as other scripts are made type-clean.
 
 ## One-time setup
 
