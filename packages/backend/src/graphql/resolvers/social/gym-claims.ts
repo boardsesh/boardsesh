@@ -195,6 +195,18 @@ export async function verifyGymClaimByToken(
  * off, gym owned by someone, or the claim was resolved concurrently) — in which
  * case the caller falls through to the normal review queue.
  *
+ * Auto-approval is an optimisation over that queue, never a precondition for it,
+ * so a failure to apply must not fail the request: the claim row is already
+ * committed as `pending` by the time we get here. `applyGymClaim` throws when a
+ * concurrent request transferred the gym out from under our read — that rolls
+ * its own transaction back (leaving the claim `pending`, which is correct), and
+ * swallowing it here degrades to `admin_review` instead of handing the user a
+ * server error for a claim that is in fact safely queued.
+ *
+ * The rate limit above is deliberately outside that catch: hitting it is a
+ * client-facing condition the caller should see, matching how requestGymClaim's
+ * own limit behaves.
+ *
  * Auto-approved rows are recognisable as `method='admin' AND status='approved'
  * AND reviewed_by IS NULL`; there's no dedicated column, so no migration.
  */
@@ -207,7 +219,17 @@ async function tryAutoApproveAdminClaim(
   // Tighter than requestGymClaim's own limit: each pass here can hand over a gym.
   await applyRateLimit(ctx, 3, 'gymClaimAutoApprove');
 
-  const result = await applyGymClaim(claim, { requireCurrentOwnerId: SYSTEM_BOARD_OWNER_ID });
+  let result: ClaimApplied | null;
+  try {
+    result = await applyGymClaim(claim, { requireCurrentOwnerId: SYSTEM_BOARD_OWNER_ID });
+  } catch (error) {
+    logger.warn(
+      `[GymClaim] Auto-approval of claim ${claim.id} on gym ${gym.uuid} failed; leaving it queued for review:`,
+      error instanceof Error ? error.message : error,
+    );
+    return null;
+  }
+
   if (result) {
     logger.info(
       `[GymClaim] Auto-approved claim ${claim.id} on gym ${gym.uuid} for user ${claim.claimantUserId} (unclaimed listing)`,

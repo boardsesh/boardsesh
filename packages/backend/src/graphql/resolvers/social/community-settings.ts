@@ -116,7 +116,11 @@ export const socialCommunitySettingsQueries = {
 
     // Gym settings are admin-only config; don't leak them (e.g. whether claim
     // auto-approval is live) to every signed-in user reading this query.
-    const visible = (await hasAdmin(ctx.userId!)) ? settings : settings.filter((row) => !isGymSettingKey(row.key));
+    // `requireAuthenticated` above only asserts the flag, not that userId is
+    // populated, so a missing id redacts rather than throwing — a redaction
+    // decision should fail closed.
+    const isAdminReader = ctx.userId ? await hasAdmin(ctx.userId) : false;
+    const visible = isAdminReader ? settings : settings.filter((row) => !isGymSettingKey(row.key));
 
     return visible.map((s) => ({
       id: s.id,

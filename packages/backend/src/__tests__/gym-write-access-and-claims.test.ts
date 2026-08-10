@@ -1304,6 +1304,45 @@ describe('requestGymClaim — auto-approval', () => {
     ]);
   });
 
+  it('survives two users racing for the same unclaimed gym — one wins, neither errors', async () => {
+    await setAutoApprove(true);
+    const claimGym = await insertGym({ ownerId: SYSTEM_OWNER, name: 'Contested Listing' });
+
+    // Real concurrency, so the loser can take either degradation path inside
+    // applyGymClaim: it may see the new owner at the SELECT (owner-guard returns
+    // null), or pass the SELECT and lose the guarded UPDATE (throws, rolls back).
+    // Which one it takes is timing-dependent; the invariant below is not.
+    const outcomes = await Promise.allSettled([
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, message: 'mine' } },
+        authCtx(CLAIMANT),
+      ),
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, message: 'no, mine' } },
+        authCtx(PLAIN_USER),
+      ),
+    ]);
+
+    // Neither caller gets a server error — a claim that ends up queued must be
+    // reported as queued, not as a failure.
+    expect(outcomes.map((outcome) => outcome.status)).toEqual(['fulfilled', 'fulfilled']);
+
+    const statuses = outcomes
+      .map((outcome) => (outcome.status === 'fulfilled' ? (outcome.value as { status: string }).status : 'rejected'))
+      .sort();
+    expect(statuses).toEqual(['admin_review', 'approved']);
+
+    // Exactly one transfer happened, and the winner is whoever got 'approved'.
+    const owner = await gymOwnerId(claimGym.uuid);
+    expect([CLAIMANT, PLAIN_USER]).toContain(owner);
+
+    const rows = await claimRows(claimGym.id);
+    expect(rows.filter((row) => row.status === 'approved')).toHaveLength(1);
+    expect(rows.filter((row) => row.status === 'pending')).toHaveLength(1);
+  });
+
   it('does not auto-approve a domain claim — it still has to prove the domain', async () => {
     await setAutoApprove(true);
     const claimGym = await insertGym({
