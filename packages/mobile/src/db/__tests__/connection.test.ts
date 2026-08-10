@@ -15,13 +15,8 @@ const reportErrorMock = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/error-reporting', () => ({ reportError: reportErrorMock }));
 
 import type { SQLiteDatabase } from 'expo-sqlite';
-import {
-  clearUserData,
-  getDatabaseHandle,
-  initializeDatabase,
-  resetDatabaseInitializationForTests,
-  setDatabaseHandle,
-} from '../connection';
+import { clearUserData, getDatabaseHandle, initializeDatabase, setDatabaseHandle } from '../connection';
+import { resetDatabaseInitializationForTests } from '../testing';
 import {
   runMigrations,
   setCheckpoint,
@@ -174,6 +169,11 @@ describe('initializeDatabase connection PRAGMAs', () => {
 // published the handle, and never tried again — one transient collision disabled
 // offline storage for the whole session. These drive that exact interleaving.
 describe('initializeDatabase lock contention (#4104)', () => {
+  // Mirrors INIT_RETRY_DELAYS_MS[0] in connection.ts — the gap before the first retry.
+  // Advancing the fake clock by exactly this much runs attempt 2 and nothing else; if
+  // the production backoff changes, these tests fail loudly instead of flaking.
+  const FIRST_RETRY_DELAY_MS = 500;
+
   let dbDir: string;
   let realDb: TestSqliteDb;
 
@@ -223,6 +223,10 @@ describe('initializeDatabase lock contention (#4104)', () => {
   });
 
   it('does not block app launch on the retry, leaving the handle unpublished for now', async () => {
+    // This test deliberately walks away mid-chain, so the retry it leaves pending must
+    // sit on the fake clock: afterEach's useRealTimers() discards it, instead of a real
+    // timer firing into a later test and publishing a handle or reporting an error there.
+    vi.useFakeTimers();
     const contended = createContendedDatabase();
 
     // Resolves as soon as the FIRST attempt settles — SQLiteProvider renders nothing
@@ -236,6 +240,9 @@ describe('initializeDatabase lock contention (#4104)', () => {
   });
 
   it('publishes the handle once a retry wins, instead of staying dead for the session', async () => {
+    // Fake timers, not a real sleep: the gap before the first retry is exactly
+    // FIRST_RETRY_DELAY_MS, and a real wait would race the attempt itself under CI load.
+    vi.useFakeTimers();
     const contended = createContendedDatabase();
 
     await initializeDatabase(contended.db);
@@ -243,13 +250,14 @@ describe('initializeDatabase lock contention (#4104)', () => {
 
     // The contending writer finishes (VACUUM done, import committed).
     contended.unlock();
-    await new Promise((resolve) => setTimeout(resolve, 750));
+    await vi.advanceTimersByTimeAsync(FIRST_RETRY_DELAY_MS);
 
     expect(getDatabaseHandle()).toBe(contended.db);
     expect(reportErrorMock).not.toHaveBeenCalled();
   });
 
   it('shares one lifecycle across a remount mid-retry rather than starting a second chain', async () => {
+    vi.useFakeTimers();
     const first = createContendedDatabase();
     const second = createContendedDatabase();
 
@@ -264,7 +272,7 @@ describe('initializeDatabase lock contention (#4104)', () => {
     expect(remount).toBe(initial);
 
     first.unlock();
-    await new Promise((resolve) => setTimeout(resolve, 750));
+    await vi.advanceTimersByTimeAsync(FIRST_RETRY_DELAY_MS);
 
     expect(getDatabaseHandle()).toBe(first.db);
     // The second database was never touched.

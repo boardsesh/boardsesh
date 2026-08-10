@@ -211,6 +211,10 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
 /**
  * Test-only: drops the single-flight guard so each test can drive a fresh
  * initialization. Production has exactly one database for the process lifetime.
+ *
+ * It is defined here because the guard's state is module-local, but the sanctioned
+ * import path is `./testing`; neither this name nor that module may be reached from
+ * application code, which `connection-test-seam.test.ts` enforces.
  */
 export function resetDatabaseInitializationForTests(): void {
   activeInitialization = null;
