@@ -10,6 +10,7 @@ import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput, isNoMatchClimb } from '../shared/helpers';
 import { NewClimbFeedInputSchema, NewClimbSubscriptionInputSchema } from '../../../validation/schemas';
+import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../../../db/queries/util/climb-stats-join';
 
 export const newClimbSubscriptionResolvers = {
   Query: {
@@ -29,7 +30,7 @@ export const newClimbSubscriptionResolvers = {
           description: dbSchema.boardClimbs.description,
           boardType: dbSchema.boardClimbs.boardType,
           layoutId: dbSchema.boardClimbs.layoutId,
-          angle: dbSchema.boardClimbs.angle,
+          angle: resolvedClimbAngleSql,
           frames: dbSchema.boardClimbs.frames,
           createdAt: dbSchema.boardClimbs.createdAt,
           setterDisplayName: sql<
@@ -41,14 +42,7 @@ export const newClimbSubscriptionResolvers = {
         .from(dbSchema.boardClimbs)
         .leftJoin(dbSchema.users, eq(dbSchema.boardClimbs.userId, dbSchema.users.id))
         .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
-        .leftJoin(
-          dbSchema.boardClimbStats,
-          and(
-            eq(dbSchema.boardClimbStats.boardType, dbSchema.boardClimbs.boardType),
-            eq(dbSchema.boardClimbStats.climbUuid, dbSchema.boardClimbs.uuid),
-            eq(dbSchema.boardClimbStats.angle, dbSchema.boardClimbs.angle),
-          ),
-        )
+        .leftJoin(dbSchema.boardClimbStats, and(...climbStatsJoinConditions()))
         .leftJoin(
           dbSchema.boardDifficultyGrades,
           and(

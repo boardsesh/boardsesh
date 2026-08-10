@@ -18,6 +18,7 @@ import {
   resolveClimbCreatedSubscriptionRecipients,
 } from './recipient-resolution';
 import { logger } from '../utils/logger';
+import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../db/queries/util/climb-stats-join';
 import {
   fanoutCommentFeedItems,
   fanoutFeedItems,
@@ -263,7 +264,7 @@ export class NotificationWorker {
         name: dbSchema.boardClimbs.name,
         description: dbSchema.boardClimbs.description,
         layoutId: dbSchema.boardClimbs.layoutId,
-        angle: dbSchema.boardClimbs.angle,
+        angle: resolvedClimbAngleSql,
         frames: dbSchema.boardClimbs.frames,
         createdAt: dbSchema.boardClimbs.createdAt,
         isDraft: dbSchema.boardClimbs.isDraft,
@@ -275,14 +276,7 @@ export class NotificationWorker {
       .from(dbSchema.boardClimbs)
       .leftJoin(dbSchema.users, eq(dbSchema.boardClimbs.userId, dbSchema.users.id))
       .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
-      .leftJoin(
-        dbSchema.boardClimbStats,
-        and(
-          eq(dbSchema.boardClimbStats.boardType, dbSchema.boardClimbs.boardType),
-          eq(dbSchema.boardClimbStats.climbUuid, dbSchema.boardClimbs.uuid),
-          eq(dbSchema.boardClimbStats.angle, dbSchema.boardClimbs.angle),
-        ),
-      )
+      .leftJoin(dbSchema.boardClimbStats, and(...climbStatsJoinConditions()))
       .leftJoin(
         dbSchema.boardDifficultyGrades,
         and(
