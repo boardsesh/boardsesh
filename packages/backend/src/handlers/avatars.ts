@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import Busboy from 'busboy';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { mkdir, writeFile, unlink, access } from 'fs/promises';
+import { mkdir, writeFile, unlink } from 'fs/promises';
 import { applyCorsHeaders } from './cors';
 import { validateToken } from '../middleware/auth';
 import { isS3Configured, uploadToS3, deleteUserAvatarsFromS3 } from '../storage/s3';
@@ -25,6 +25,25 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 function validateUserId(userId: string): boolean {
   return UUID_REGEX.test(userId);
+}
+
+// Serialize save-and-clean per user: two overlapping replacements at different
+// extensions would otherwise each write their own file and then delete the
+// other request's fresh one — both 200, both files gone. In-process only, which
+// covers the realistic double-fire from a single client; cross-instance races
+// would need a distributed lock and aren't worth it for avatars.
+const userUploadChains = new Map<string, Promise<unknown>>();
+
+function serializePerUser<T>(userId: string, task: () => Promise<T>): Promise<T> {
+  const previous = userUploadChains.get(userId) ?? Promise.resolve();
+  const run = previous.then(task, task);
+  const chainEntry: Promise<unknown> = run
+    .catch(() => {})
+    .finally(() => {
+      if (userUploadChains.get(userId) === chainEntry) userUploadChains.delete(userId);
+    });
+  userUploadChains.set(userId, chainEntry);
+  return run;
 }
 
 // Track if directory has been initialized
@@ -62,17 +81,22 @@ function extractAuthTokenFromHeader(req: IncomingMessage): string | null {
 }
 
 /**
- * Helper to delete existing avatars for a user (all extensions)
+ * Delete a user's stale avatar files from local storage. Called AFTER the new
+ * avatar is written, with `keepExt` set to the new file's extension, so a
+ * failed replacement never destroys the existing avatar (write-first,
+ * clean-after — same contract as deleteUserAvatarsFromS3).
  */
-async function deleteExistingAvatars(userId: string): Promise<void> {
-  const extensions = ['jpg', 'png', 'gif', 'webp'];
+async function deleteExistingAvatars(userId: string, keepExt?: string): Promise<void> {
+  const extensions = ['jpg', 'png', 'gif', 'webp'].filter((ext) => ext !== keepExt);
   for (const ext of extensions) {
     const filePath = path.join(AVATARS_DIR, `${userId}.${ext}`);
     try {
-      await access(filePath);
       await unlink(filePath);
-    } catch {
-      // File doesn't exist, ignore
+    } catch (deleteError) {
+      if ((deleteError as NodeJS.ErrnoException).code === 'ENOENT') continue; // Nothing to clean up
+      // The new avatar is already saved; a leftover stale-ext file is
+      // unreferenced, so log for observability and carry on.
+      logger.warn(`Failed to delete stale avatar ${filePath}:`, deleteError);
     }
   }
 }
@@ -232,31 +256,35 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
         return;
       }
 
+      // Capture the narrowed values so the serialized closure below keeps
+      // their non-null types.
+      const uploadBuffer = fileBuffer;
+      const uploadMimeType = mimeType;
+      const uploadUserId = userId;
+
       // Determine file extension
-      const ext = MIME_TO_EXT[mimeType] || 'jpg';
+      const ext = MIME_TO_EXT[uploadMimeType] || 'jpg';
       const avatarFileName = `${userId}.${ext}`;
       let avatarUrl: string;
 
       try {
-        if (useS3) {
-          // Delete existing avatars from S3
-          await deleteUserAvatarsFromS3(userId);
-
-          // Upload to S3
-          const s3Key = `avatars/${avatarFileName}`;
-          await uploadToS3(fileBuffer, s3Key, mimeType);
-          // Return backend-relative URL instead of direct S3 URL
-          // This allows the backend to proxy the image, avoiding S3 public access requirements
-          avatarUrl = buildStaticAvatarUrl(avatarFileName, randomUUID());
-        } else {
-          // Delete any existing avatars for this user (all extensions) from local storage
-          await deleteExistingAvatars(userId);
-
-          // Save to local file system
-          const filePath = path.join(AVATARS_DIR, avatarFileName);
-          await writeFile(filePath, fileBuffer);
-          avatarUrl = buildStaticAvatarUrl(avatarFileName, randomUUID());
-        }
+        // Write-first, clean-after: the new avatar must be saved before any
+        // stale file is deleted, so a failed upload can never destroy the
+        // avatar the user's stored avatarUrl still points at.
+        avatarUrl = await serializePerUser(uploadUserId, async () => {
+          if (useS3) {
+            const s3Key = `avatars/${avatarFileName}`;
+            await uploadToS3(uploadBuffer, s3Key, uploadMimeType);
+            await deleteUserAvatarsFromS3(uploadUserId, ext);
+          } else {
+            const filePath = path.join(AVATARS_DIR, avatarFileName);
+            await writeFile(filePath, uploadBuffer);
+            await deleteExistingAvatars(uploadUserId, ext);
+          }
+          // Backend-relative URL instead of a direct S3 URL, so the backend
+          // proxies the image and S3 public access isn't needed.
+          return buildStaticAvatarUrl(avatarFileName, randomUUID());
+        });
       } catch (saveErr) {
         logger.error('Failed to save avatar:', saveErr);
         res.writeHead(500, { 'Content-Type': 'application/json' });

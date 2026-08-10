@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { View, Image, StyleSheet, PixelRatio } from 'react-native';
 import { snapToAllowedImageSize } from '@boardsesh/shared-schema';
 import { Text } from './Text';
@@ -32,7 +33,13 @@ export function Avatar({ uri, name, size = 40, accessibilityLabel: accessibility
 
   const accessibilityLabel = accessibilityLabelProp ?? name ?? undefined;
 
-  if (uri) {
+  // Fall back to initials when the image fails to load (404/unreachable host —
+  // e.g. a stored avatarUrl whose backing file is gone). Tracking the failed
+  // uri (rather than a boolean) auto-retries when a re-upload produces a new
+  // `?v=`-versioned URL.
+  const [failedUri, setFailedUri] = useState<string | null>(null);
+
+  if (uri && uri !== failedUri) {
     return (
       // Uses react-native's core <Image> (not expo-image), so there's no
       // allowDownscaling prop — but none is needed: RCTImageLoader decodes
@@ -42,6 +49,7 @@ export function Avatar({ uri, name, size = 40, accessibilityLabel: accessibility
       <Image
         source={{ uri: sizedAvatarUri(uri, size) }}
         accessibilityLabel={accessibilityLabel}
+        onError={() => setFailedUri(uri)}
         style={[styles.image, { width: size, height: size, borderRadius }]}
       />
     );
