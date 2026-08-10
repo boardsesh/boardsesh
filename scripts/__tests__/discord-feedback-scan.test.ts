@@ -255,6 +255,22 @@ describe('buildIssueDraft', () => {
     expect(buildIssueDraft(decision, collected()).body).not.toContain('climber@example.com');
   });
 
+  it('re-redacts the model title, not just the body', () => {
+    const leaky = { ...decision, title: 'Crash reported by climber@example.com' };
+    const draft = buildIssueDraft(leaky, collected());
+    expect(draft.title).not.toContain('climber@example.com');
+    expect(draft.title).toContain('[redacted email]');
+  });
+
+  it('truncates prose without cutting through the attachment markdown', () => {
+    const huge = { ...decision, body: 'x'.repeat(80_000) };
+    const draft = buildIssueDraft(huge, collected(), ['https://github.com/a/b/releases/download/x/shot.png']);
+
+    expect(draft.body.length).toBeLessThanOrEqual(60_000);
+    expect(draft.body).toContain('![attachment 1](https://github.com/a/b/releases/download/x/shot.png)');
+    expect(draft.body.endsWith(')')).toBe(true);
+  });
+
   it('refuses to file without a jump link', () => {
     expect(() => buildIssueDraft(decision, collected({ jumpUrl: '' }))).toThrow(/jump link/);
   });

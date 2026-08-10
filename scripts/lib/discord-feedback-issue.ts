@@ -250,19 +250,24 @@ export function buildIssueDraft(
     sourceLines.push('', `Thread: ${`https://discord.com/channels/${message.guildId}/${message.threadId}`}`);
   }
 
-  const parts = [marker, redactSensitiveText(decision.body), '', sourceLines.join('\n')];
+  const attachmentBlock =
+    attachmentUrls.length > 0
+      ? `\n\n## Attachments\n\n${attachmentUrls.map((url, index) => `![attachment ${index + 1}](${url})`).join('\n')}`
+      : '';
 
-  if (attachmentUrls.length > 0) {
-    parts.push('', '## Attachments', '', ...attachmentUrls.map((url, index) => `![attachment ${index + 1}](${url})`));
-  }
-
-  const body = parts.join('\n');
+  // Truncate the prose only. Slicing after the attachments were appended could
+  // cut through an image tag and leave broken markdown at the end of the issue.
+  const prose = [marker, redactSensitiveText(decision.body), '', sourceLines.join('\n')].join('\n');
+  const proseBudget = ISSUE_BODY_LIMIT - attachmentBlock.length;
+  const clampedProse = prose.length > proseBudget ? `${prose.slice(0, Math.max(0, proseBudget - 3))}...` : prose;
 
   return {
     messageId: message.messageId,
     marker,
-    title: decision.title,
-    body: body.length > ISSUE_BODY_LIMIT ? `${body.slice(0, ISSUE_BODY_LIMIT - 3)}...` : body,
+    // Redacted like the body: the model can echo input into the title, and the
+    // title is the most visible part of a public issue.
+    title: redactSensitiveText(decision.title),
+    body: `${clampedProse}${attachmentBlock}`,
     labels: decision.labels,
   };
 }

@@ -9,7 +9,10 @@ name: Discord Feedback Issues
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    # Hourly, not every 30 min: the count gate skips the Claude step on a quiet
+    # server but not checkout, install, and the Discord read, so each tick costs
+    # runner minutes regardless. Feedback triage is not latency-sensitive.
+    - cron: '7 * * * *'
   workflow_dispatch:
     inputs:
       dry_run:

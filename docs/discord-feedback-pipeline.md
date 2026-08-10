@@ -1,6 +1,6 @@
 # Discord feedback → GitHub issues
 
-Reads user feedback out of the Boardsesh Discord and files it as deduplicated, labelled GitHub issues. Runs every 30 minutes in CI.
+Reads user feedback out of the Boardsesh Discord and files it as deduplicated, labelled GitHub issues. Runs hourly in CI.
 
 The third of three feedback→issue pipelines, alongside TestFlight (`scripts/testflight-feedback-to-issues.ts`) and in-app bug reports (`packages/backend/src/services/github-feedback.ts`). All three share `redactSensitiveText` from `@boardsesh/text-redaction` and the same marker-based dedup.
 
