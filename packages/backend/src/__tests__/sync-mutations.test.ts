@@ -54,6 +54,9 @@ beforeEach(async () => {
 });
 
 describe('addFavorite / removeFavorite idempotency', () => {
+  // Deliberately still carries boardName + angle: this is the payload shape a
+  // pre-re-keying binary (or a favorite already queued in its offline outbox)
+  // sends. The server must accept and ignore both.
   const fav = { boardName: 'kilter', climbUuid: 'fav-climb-1', angle: 40 };
 
   it('addFavorite is idempotent: double-add yields exactly one row', async () => {
@@ -65,8 +68,7 @@ describe('addFavorite / removeFavorite idempotency', () => {
 
     const rows = await db.execute(sql`
       SELECT count(*)::int AS count FROM user_favorites
-      WHERE user_id = ${USER_ID} AND board_name = ${fav.boardName}
-        AND climb_uuid = ${fav.climbUuid} AND angle = ${fav.angle}
+      WHERE user_id = ${USER_ID} AND climb_uuid = ${fav.climbUuid}
     `);
     expect(Number((rows as unknown as Array<{ count: number }>)[0].count)).toBe(1);
   });
@@ -78,6 +80,34 @@ describe('addFavorite / removeFavorite idempotency', () => {
       ctx(),
     );
     expect(result).toBe(true);
+  });
+
+  it('the same climb favorited from two different board+angle contexts is ONE row', async () => {
+    // The headline behaviour of the re-keying: heart a climb on Kilter at 40,
+    // switch to another board/angle, and it is still the same single favorite.
+    await favoriteMutations.addFavorite(undefined, { input: fav }, ctx());
+    await favoriteMutations.addFavorite(
+      undefined,
+      { input: { boardName: 'tension', climbUuid: fav.climbUuid, angle: 25 } },
+      ctx(),
+    );
+
+    const rows = await db.execute(sql`
+      SELECT count(*)::int AS count FROM user_favorites
+      WHERE user_id = ${USER_ID} AND climb_uuid = ${fav.climbUuid}
+    `);
+    expect(Number((rows as unknown as Array<{ count: number }>)[0].count)).toBe(1);
+  });
+
+  it('addFavorite works with no boardName and no angle at all', async () => {
+    const result = await favoriteMutations.addFavorite(undefined, { input: { climbUuid: 'boardless-climb' } }, ctx());
+    expect(result).toBe(true);
+
+    const rows = await db.execute(sql`
+      SELECT count(*)::int AS count FROM user_favorites
+      WHERE user_id = ${USER_ID} AND climb_uuid = 'boardless-climb'
+    `);
+    expect(Number((rows as unknown as Array<{ count: number }>)[0].count)).toBe(1);
   });
 
   it('add then remove leaves zero rows; a second remove is still a no-op', async () => {
@@ -98,8 +128,7 @@ describe('toggleFavorite insert-first upsert', () => {
   async function favoriteCount(): Promise<number> {
     const rows = await db.execute(sql`
       SELECT count(*)::int AS count FROM user_favorites
-      WHERE user_id = ${USER_ID} AND board_name = ${fav.boardName}
-        AND climb_uuid = ${fav.climbUuid} AND angle = ${fav.angle}
+      WHERE user_id = ${USER_ID} AND climb_uuid = ${fav.climbUuid}
     `);
     return Number((rows as unknown as Array<{ count: number }>)[0].count);
   }
@@ -111,6 +140,19 @@ describe('toggleFavorite insert-first upsert', () => {
 
     const off = await favoriteMutations.toggleFavorite(undefined, { input: fav }, ctx());
     expect(off).toEqual({ favorited: false });
+    expect(await favoriteCount()).toBe(0);
+  });
+
+  it('toggles OFF a favorite added from a different board context (board-independent key)', async () => {
+    await favoriteMutations.addFavorite(
+      undefined,
+      { input: { boardName: 'tension', climbUuid: fav.climbUuid, angle: 25 } },
+      ctx(),
+    );
+
+    // Same climb, different board + angle on the wire — still the same favorite.
+    const result = await favoriteMutations.toggleFavorite(undefined, { input: fav }, ctx());
+    expect(result).toEqual({ favorited: false });
     expect(await favoriteCount()).toBe(0);
   });
 

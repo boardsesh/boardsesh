@@ -15,6 +15,11 @@ import {
   RemoveFavoriteInputSchema,
 } from '../../../validation/schemas';
 
+// `boardName` and `angle` still arrive on the inputs from binaries that shipped
+// before favorites were re-keyed. They are accepted and ignored — a favorite is
+// keyed by (user_id, climb_uuid) alone. The fields come off the schema entirely
+// once the store fleet has rolled past this release.
+
 export const favoriteMutations = {
   /**
    * Toggle favorite status for a climb
@@ -37,17 +42,10 @@ export const favoriteMutations = {
       .insert(dbSchema.userFavorites)
       .values({
         userId,
-        boardName: input.boardName,
         climbUuid: input.climbUuid,
-        angle: input.angle,
       })
       .onConflictDoNothing({
-        target: [
-          dbSchema.userFavorites.userId,
-          dbSchema.userFavorites.boardName,
-          dbSchema.userFavorites.climbUuid,
-          dbSchema.userFavorites.angle,
-        ],
+        target: [dbSchema.userFavorites.userId, dbSchema.userFavorites.climbUuid],
       })
       .returning({ id: dbSchema.userFavorites.id });
 
@@ -57,22 +55,15 @@ export const favoriteMutations = {
 
     await db
       .delete(dbSchema.userFavorites)
-      .where(
-        and(
-          eq(dbSchema.userFavorites.userId, userId),
-          eq(dbSchema.userFavorites.boardName, input.boardName),
-          eq(dbSchema.userFavorites.climbUuid, input.climbUuid),
-          eq(dbSchema.userFavorites.angle, input.angle),
-        ),
-      );
+      .where(and(eq(dbSchema.userFavorites.userId, userId), eq(dbSchema.userFavorites.climbUuid, input.climbUuid)));
     return { favorited: false };
   },
 
   /**
-   * Add a climb to favorites. Idempotent: ON CONFLICT (user_id, board_name,
-   * climb_uuid, angle) DO NOTHING. Safe for the mobile offline mutation queue to
-   * replay — a second add for the same (user, board, climb, angle) is a no-op,
-   * never a duplicate row. Always returns true.
+   * Add a climb to favorites. Idempotent: ON CONFLICT (user_id, climb_uuid) DO
+   * NOTHING. Safe for the mobile offline mutation queue to replay — a second add
+   * for the same (user, climb) is a no-op, never a duplicate row. Always returns
+   * true.
    */
   addFavorite: async (_: unknown, { input }: { input: AddFavoriteInput }, ctx: ConnectionContext): Promise<boolean> => {
     requireAuthenticated(ctx);
@@ -84,17 +75,10 @@ export const favoriteMutations = {
       .insert(dbSchema.userFavorites)
       .values({
         userId,
-        boardName: input.boardName,
         climbUuid: input.climbUuid,
-        angle: input.angle,
       })
       .onConflictDoNothing({
-        target: [
-          dbSchema.userFavorites.userId,
-          dbSchema.userFavorites.boardName,
-          dbSchema.userFavorites.climbUuid,
-          dbSchema.userFavorites.angle,
-        ],
+        target: [dbSchema.userFavorites.userId, dbSchema.userFavorites.climbUuid],
       });
 
     return true;
@@ -117,14 +101,7 @@ export const favoriteMutations = {
 
     await db
       .delete(dbSchema.userFavorites)
-      .where(
-        and(
-          eq(dbSchema.userFavorites.userId, userId),
-          eq(dbSchema.userFavorites.boardName, input.boardName),
-          eq(dbSchema.userFavorites.climbUuid, input.climbUuid),
-          eq(dbSchema.userFavorites.angle, input.angle),
-        ),
-      );
+      .where(and(eq(dbSchema.userFavorites.userId, userId), eq(dbSchema.userFavorites.climbUuid, input.climbUuid)));
 
     return true;
   },
