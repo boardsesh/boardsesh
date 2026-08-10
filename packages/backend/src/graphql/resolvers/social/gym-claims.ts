@@ -231,10 +231,8 @@ async function tryAutoApproveAdminClaim(
     }
     return result;
   } catch (error) {
-    logger.warn(
-      `[GymClaim] Auto-approval of claim ${claim.id} on gym ${gym.uuid} failed; leaving it queued for review:`,
-      error instanceof Error ? error.message : error,
-    );
+    // Pass the Error itself, not `.message` — winston serializes the stack.
+    logger.warn(`[GymClaim] Auto-approval of claim ${claim.id} on gym ${gym.uuid} failed; leaving it queued:`, error);
     return null;
   }
 }
@@ -522,10 +520,7 @@ export const socialGymClaimMutations = {
     try {
       result = await applyGymClaim(claim, { reviewerId: adminUserId });
     } catch (error) {
-      logger.warn(
-        `[GymClaim] Manual approval of claim ${claim.id} lost an ownership race:`,
-        error instanceof Error ? error.message : error,
-      );
+      logger.warn(`[GymClaim] Manual approval of claim ${claim.id} lost an ownership race:`, error);
       result = null;
     }
 

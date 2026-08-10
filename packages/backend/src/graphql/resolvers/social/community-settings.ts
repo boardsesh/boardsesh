@@ -21,7 +21,13 @@ export function isGymSettingKey(key: string): boolean {
   return key.startsWith(GYM_SETTING_PREFIX);
 }
 
-// Default community settings
+// Default community settings.
+//
+// NOTE: any key added here starting with `gym_` is automatically admin-only to
+// write AND hidden from non-admin reads (see GYM_SETTING_PREFIX above). That is
+// deliberate for claim auto-approval, but it means a harmless gym setting —
+// `gym_display_order`, say — would silently inherit the same access control.
+// Name it outside the prefix if it doesn't need admin gating.
 export const DEFAULTS: Record<string, string> = {
   approval_threshold: '5',
   outlier_min_ascents: '10',
