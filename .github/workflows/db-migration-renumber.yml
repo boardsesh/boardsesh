@@ -41,7 +41,7 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
+  pull-requests: read
 
 concurrency:
   # NOT cancel-in-progress: being killed between the push and the comment would
@@ -60,12 +60,13 @@ jobs:
       head_sha: ${{ steps.decide.outputs.head_sha }}
       skip_reason: ${{ steps.decide.outputs.skip_reason }}
     steps:
-      # Fail loudly rather than skipping. Without this the whole `renumber` job —
-      # including its comment step — is skipped by the `vars.OTA_PUSH_APP_ID` guard,
-      # so a missing or expired App credential looks exactly like "nothing to do":
-      # the dispatch fires, the gate passes, and stranded PRs get no explanation.
-      # This is operator misconfiguration, not a per-PR condition, so a red run is
-      # the right signal.
+      # Fail loudly rather than skipping. Without this the `renumber` job is skipped
+      # by its `vars.OTA_PUSH_APP_ID` guard, so a missing or expired App credential
+      # looks exactly like "nothing to do": the dispatch fires, the gate passes, and
+      # stranded PRs get no explanation. Failing here also stops the `comment` job,
+      # which needs a successful gate — otherwise it would post a "renumbering was
+      # held" comment blaming the PR for an operator misconfiguration. A red run is
+      # the right signal for that.
       - name: Require the push credential
         if: vars.OTA_PUSH_APP_ID == ''
         run: |
@@ -108,6 +109,16 @@ jobs:
     if: needs.gate.outputs.run == 'true' && vars.OTA_PUSH_APP_ID != ''
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      renumber_status: ${{ steps.renumber.outputs.status }}
+      comment_b64: ${{ steps.renumber.outputs.comment_b64 }}
+      validation_outcome: ${{ steps.validate.outcome }}
+      apply_outcome: ${{ steps.apply.outcome }}
+      reapply_outcome: ${{ steps.reapply.outcome }}
+      recheck_outcome: ${{ steps.recheck.outcome }}
+      recheck_ok: ${{ steps.recheck.outputs.ok }}
+      recheck_reason: ${{ steps.recheck.outputs.reason }}
+      push_outcome: ${{ steps.push.outcome }}
     services:
       # The only viable verification target. A from-scratch `drizzle-kit migrate` on
       # a bare Postgres cannot work: 0000_*.sql ALTERs kilter_climbs/tension_climbs,
@@ -160,10 +171,12 @@ jobs:
       # its own. Kept out of the workspace root would be tidier, but actions/checkout
       # requires a path inside it; the script stages explicitly rather than
       # `git add -A`, so this directory can never end up in the commit.
-      - name: Check out the renumber tooling from main
+      - name: Check out the trusted renumber tooling
         uses: actions/checkout@v4
         with:
-          ref: main
+          # Pin tooling to the immutable commit whose workflow is executing.
+          # A moving `main` ref could otherwise change the program mid-run.
+          ref: ${{ github.workflow_sha }}
           path: .renumber-tooling
           persist-credentials: false
 
@@ -188,6 +201,7 @@ jobs:
             --strategy "${{ github.event.inputs.strategy || 'rebase' }}"
 
       - name: Validate the resulting migration folder
+        id: validate
         if: steps.renumber.outputs.status == 'renumbered'
         run: |
           bun .renumber-tooling/scripts/check-db-migrations.ts \
@@ -198,12 +212,14 @@ jobs:
       # the journal tail actually landed — which is what catches a migration whose
       # `when` would make it silently skipped forever.
       - name: Verify the migrations apply
+        id: apply
         if: steps.renumber.outputs.status == 'renumbered'
         env:
           VERIFY_MIGRATION_JOURNAL: '1'
         run: bun run --filter=@boardsesh/db db:migrate
 
       - name: Verify re-applying is a no-op
+        id: reapply
         if: steps.renumber.outputs.status == 'renumbered'
         run: bun run --filter=@boardsesh/db db:migrate
 
@@ -217,14 +233,21 @@ jobs:
               owner: context.repo.owner, repo: context.repo.repo,
               pull_number: Number(process.env.PR_NUMBER),
             });
-            const ok =
-              pr.state === 'open' &&
-              pr.head.sha === process.env.HEAD_SHA &&
-              !pr.labels.some((label) => label.name === 'renumber:skip');
+            const reasons = [];
+            if (pr.state !== 'open') reasons.push(`The PR is ${pr.state}.`);
+            if (pr.head.sha !== process.env.HEAD_SHA) {
+              reasons.push(`The branch moved during the final re-check (head is now ${pr.head.sha}).`);
+            }
+            if (pr.labels.some((label) => label.name === 'renumber:skip')) {
+              reasons.push('The `renumber:skip` label appeared during the final re-check.');
+            }
+            const ok = reasons.length === 0;
             core.setOutput('ok', String(ok));
-            if (!ok) core.warning(`#${process.env.PR_NUMBER} moved during the run (head is now ${pr.head.sha}) — not pushing.`);
+            core.setOutput('reason', reasons.join(' '));
+            if (!ok) core.warning(`#${process.env.PR_NUMBER}: ${reasons.join(' ')} Not pushing.`);
 
       - name: Force-push the renumbered branch
+        id: push
         if: steps.renumber.outputs.status == 'renumbered' && steps.recheck.outputs.ok == 'true'
         env:
           GH_APP_TOKEN: ${{ steps.push_token.outputs.token }}
@@ -237,28 +260,81 @@ jobs:
             "https://x-access-token:${GH_APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             "HEAD:refs/heads/$BRANCH"
 
+  # PR-controlled install/build/migration code ran in `renumber`. Never load a
+  # helper from that writable runner inside a token-bearing action: a postinstall
+  # could replace it. This fresh runner checks out only the immutable workflow
+  # commit, then renders and upserts the sticky comment with the narrow PR token.
+  comment:
+    needs: [gate, renumber]
+    if: >-
+      always() &&
+      needs.gate.result == 'success' &&
+      needs.gate.outputs.run == 'true' &&
+      needs.renumber.outputs.renumber_status != 'no-op'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      PR_NUMBER: ${{ github.event.inputs.pr }}
+    steps:
+      - name: Check out trusted comment tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          sparse-checkout: scripts/lib/db-renumber-comment.cjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: Comment the outcome
-        if: always() && steps.renumber.outputs.status != 'no-op'
         uses: actions/github-script@v7
         env:
-          COMMENT_B64: ${{ steps.renumber.outputs.comment_b64 }}
-          PUSHED: ${{ steps.recheck.outputs.ok }}
+          COMMENT_B64: ${{ needs.renumber.outputs.comment_b64 }}
+          RENUMBER_STATUS: ${{ needs.renumber.outputs.renumber_status }}
+          VALIDATION_OUTCOME: ${{ needs.renumber.outputs.validation_outcome }}
+          APPLY_OUTCOME: ${{ needs.renumber.outputs.apply_outcome }}
+          REAPPLY_OUTCOME: ${{ needs.renumber.outputs.reapply_outcome }}
+          RECHECK_OUTCOME: ${{ needs.renumber.outputs.recheck_outcome }}
+          RECHECK_OK: ${{ needs.renumber.outputs.recheck_ok }}
+          RECHECK_REASON: ${{ needs.renumber.outputs.recheck_reason }}
+          PUSH_OUTCOME: ${{ needs.renumber.outputs.push_outcome }}
         with:
           script: |
-            const marker = '<!-- db-renumber -->';
-            let body = process.env.COMMENT_B64
+            // This dependency-free module comes from the immutable workflow
+            // commit on a fresh runner that never executed PR-controlled code.
+            // Take the sticky marker from it too — a second copy here would drift
+            // and turn every upsert into a duplicate comment.
+            const { STICKY_MARKER, renderRenumberWorkflowComment } = require(
+              `${process.env.GITHUB_WORKSPACE}/scripts/lib/db-renumber-comment.cjs`,
+            );
+            const commentBody = process.env.COMMENT_B64
               ? Buffer.from(process.env.COMMENT_B64, 'base64').toString('utf8')
-              : `${marker}\n\n### 🚧 The renumber job failed\n\nSee the [run log](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}). Nothing was pushed.`;
-            if (process.env.PUSHED === 'false') {
-              body += '\n\n> ⚠️ The branch moved while this ran, so nothing was pushed. It will retry on the next migration merge.';
-            }
+              : '';
+            const body = renderRenumberWorkflowComment({
+              renumberStatus: process.env.RENUMBER_STATUS,
+              commentBody,
+              validationOutcome: process.env.VALIDATION_OUTCOME,
+              applyOutcome: process.env.APPLY_OUTCOME,
+              reapplyOutcome: process.env.REAPPLY_OUTCOME,
+              recheckOutcome: process.env.RECHECK_OUTCOME,
+              recheckOk: process.env.RECHECK_OK,
+              recheckReason: process.env.RECHECK_REASON,
+              pushOutcome: process.env.PUSH_OUTCOME,
+              context: {
+                serverUrl: context.serverUrl,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                runId: context.runId,
+              },
+            });
 
             // Paginated: an unpaginated first-100 lookup would miss the marker on a
             // long PR and post a duplicate comment every run instead of updating.
             const comments = await github.paginate(github.rest.issues.listComments, {
               ...context.repo, issue_number: Number(process.env.PR_NUMBER), per_page: 100,
             });
-            const existing = comments.find((comment) => comment.body?.includes(marker));
+            const existing = comments.find((comment) => comment.body?.includes(STICKY_MARKER));
             if (existing) {
               await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
             } else {
