@@ -156,9 +156,9 @@ describe('collectionChipLabel', () => {
 
 describe('climbTypeChipLabel / isClimbType', () => {
   it('labels each climb-type value', () => {
-    expect(climbTypeChipLabel('boulders', mockT)).toBe('mobile.filter.boulders');
-    expect(climbTypeChipLabel('routes', mockT)).toBe('mobile.filter.routes');
-    expect(climbTypeChipLabel('both', mockT)).toBe('mobile.filter.both');
+    expect(climbTypeChipLabel('boulders', mockT)).toBe('mobile.filter.climbType.boulders');
+    expect(climbTypeChipLabel('routes', mockT)).toBe('mobile.filter.climbType.routes');
+    expect(climbTypeChipLabel('both', mockT)).toBe('mobile.filter.climbType.all');
   });
 
   it('accepts the three values and rejects others', () => {

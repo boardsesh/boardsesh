@@ -672,10 +672,12 @@
       "moreTriesAria": "Un intento más"
     },
     "filter": {
-      "climbType": "Tipo",
-      "boulders": "Bloques",
-      "routes": "Rutas",
-      "both": "Ambos",
+      "climbType": {
+        "label": "Tipo",
+        "all": "Ambos",
+        "boulders": "Bloques",
+        "routes": "Rutas"
+      },
       "title": "Filtros",
       "sortBy": "Ordenar por",
       "grade": "Grado",

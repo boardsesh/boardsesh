@@ -672,10 +672,12 @@
       "moreTriesAria": "One more try"
     },
     "filter": {
-      "climbType": "Climb Type",
-      "boulders": "Boulders",
-      "routes": "Routes",
-      "both": "Both",
+      "climbType": {
+        "label": "Climb Type",
+        "all": "Both",
+        "boulders": "Boulders",
+        "routes": "Routes"
+      },
       "title": "Filters",
       "sortBy": "Sort by",
       "grade": "Grade",
