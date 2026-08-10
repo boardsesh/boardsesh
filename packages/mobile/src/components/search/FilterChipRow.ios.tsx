@@ -254,7 +254,7 @@ function FilterChipRowComponent({
               boulders-only, so the resting chip reads "Climb type" and is inactive. */}
           {pinnedChips.includes('climbType') ? (
             <Menu
-              label={climbType === 'boulders' ? t('mobile.filter.climbType') : climbTypeChipLabel(climbType, t)}
+              label={climbType === 'boulders' ? t('mobile.filter.climbType.label') : climbTypeChipLabel(climbType, t)}
               modifiers={chipModifiers(climbType !== 'boulders')}
             >
               <Picker

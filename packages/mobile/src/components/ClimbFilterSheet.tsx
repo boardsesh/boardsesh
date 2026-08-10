@@ -495,9 +495,9 @@ export function ClimbFilterSheet({
   );
   const climbTypeOptions = useMemo(
     () => [
-      { key: 'boulders', label: t('mobile.filter.boulders') },
-      { key: 'routes', label: t('mobile.filter.routes') },
-      { key: 'both', label: t('mobile.filter.both') },
+      { key: 'boulders', label: t('mobile.filter.climbType.boulders') },
+      { key: 'routes', label: t('mobile.filter.climbType.routes') },
+      { key: 'both', label: t('mobile.filter.climbType.all') },
     ],
     [t],
   );
@@ -942,7 +942,7 @@ export function ClimbFilterSheet({
               </Text>
               <View style={styles.pinnableLabelRow}>
                 <Text variant="footnote" style={styles.subsectionLabel}>
-                  {t('mobile.filter.climbType')}
+                  {t('mobile.filter.climbType.label')}
                 </Text>
                 <PinToggle kind="climbType" />
               </View>

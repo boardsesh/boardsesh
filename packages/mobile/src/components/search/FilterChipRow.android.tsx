@@ -382,7 +382,7 @@ function FilterChipRowComponent({
               boulders-only, so the resting chip reads "Climb type". Opt-in. */}
           {pinnedChips.includes('climbType') ? (
             <MenuChip
-              label={climbType === 'boulders' ? t('mobile.filter.climbType') : climbTypeChipLabel(climbType, t)}
+              label={climbType === 'boulders' ? t('mobile.filter.climbType.label') : climbTypeChipLabel(climbType, t)}
               selected={climbType !== 'boulders'}
               colors={chipColors}
               renderItems={(close) => (

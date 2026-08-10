@@ -69,11 +69,11 @@ export function isAccuracyTag(value: string): value is GradeAccuracyValue | 'off
 export function climbTypeChipLabel(value: ClimbTypeFilter, t: TFunction<'climbs'>): string {
   switch (value) {
     case 'boulders':
-      return t('mobile.filter.boulders');
+      return t('mobile.filter.climbType.boulders');
     case 'routes':
-      return t('mobile.filter.routes');
+      return t('mobile.filter.climbType.routes');
     case 'both':
-      return t('mobile.filter.both');
+      return t('mobile.filter.climbType.all');
   }
 }
 
