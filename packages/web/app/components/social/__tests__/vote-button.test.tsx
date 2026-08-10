@@ -233,6 +233,16 @@ describe('VoteButton', () => {
       });
     }
 
+    // The vote buttons are `disabled={isLoading}`, so a second click fired while
+    // the first mutation is still in flight lands on a disabled button and is
+    // silently dropped. Waiting only for the request to have been *made* isn't
+    // enough — wait for the button to come back before clicking again.
+    async function clickWhenEnabled(label: string) {
+      const button = screen.getByLabelText(label) as HTMLButtonElement;
+      await waitFor(() => expect(button.disabled).toBe(false));
+      fireEvent.click(button);
+    }
+
     it('sends value: 1 on first upvote, then value: 1 again to un-vote (never 0)', async () => {
       renderVoteButton({ initialUserVote: 0, initialUpvotes: 0, initialDownvotes: 0 });
 
@@ -245,7 +255,7 @@ describe('VoteButton', () => {
       );
 
       mockVoteResponse({ upvotes: 0, downvotes: 0, voteScore: 0, userVote: 0 });
-      fireEvent.click(screen.getByLabelText('Upvote'));
+      await clickWhenEnabled('Upvote');
       await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(2));
       expect(mockRequest).toHaveBeenLastCalledWith('VOTE', {
         input: { entityType: 'climb', entityId: 'climb-1', value: 1 },
@@ -264,7 +274,7 @@ describe('VoteButton', () => {
       );
 
       mockVoteResponse({ upvotes: 0, downvotes: 0, voteScore: 0, userVote: 0 });
-      fireEvent.click(screen.getByLabelText('Downvote'));
+      await clickWhenEnabled('Downvote');
       await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(2));
       expect(mockRequest).toHaveBeenLastCalledWith('VOTE', {
         input: { entityType: 'climb', entityId: 'climb-1', value: -1 },
