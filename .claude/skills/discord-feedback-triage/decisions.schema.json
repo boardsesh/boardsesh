@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Discord feedback triage decisions",
+  "description": "Output contract for the discord-feedback-triage skill. Consumed by `vp run discord:feedback-scan -- --mode apply`, which re-validates every field against the collected bundle before anything is filed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["decisions"],
+  "properties": {
+    "decisions": {
+      "type": "array",
+      "description": "Exactly one entry per message in the bundle.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["messageId", "verdict", "title", "body"],
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": "Must match a messageId present in the bundle. Anything else is dropped."
+          },
+          "verdict": {
+            "enum": ["bug", "feature", "question", "noise", "duplicate"],
+            "description": "Only bug and feature become issues."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Symptom in plain words. Required (min 8 chars) for bug/feature."
+          },
+          "body": {
+            "type": "string",
+            "description": "Markdown issue body. No HTML comments — they are stripped. Do not add a source/provenance section; the apply step adds it. Required for bug/feature."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "android",
+                "bug",
+                "enhancement",
+                "from-discord",
+                "ios",
+                "mobile",
+                "priority:P0",
+                "priority:P1",
+                "priority:P2",
+                "priority:P3",
+                "user-feedback",
+                "web"
+              ]
+            },
+            "description": "Labels outside this list are dropped. bug/enhancement, from-discord and user-feedback are applied automatically."
+          },
+          "duplicateOf": {
+            "type": ["string", "null"],
+            "description": "For verdict=duplicate: a bundle messageId (in-bundle duplicate) or an existing issue URL. Null otherwise."
+          },
+          "rationale": {
+            "type": "string",
+            "description": "One line for the run log. Never reaches the issue."
+          }
+        }
+      }
+    }
+  }
+}

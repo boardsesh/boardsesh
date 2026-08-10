@@ -793,6 +793,10 @@ export default defineConfig({
         command: 'tsx scripts/testflight-feedback-to-issues.ts',
         cache: false,
       },
+      'discord:feedback-scan': {
+        command: 'tsx scripts/discord-feedback-scan.ts',
+        cache: false,
+      },
 
       // --- Dev servers ---
       'dev:mobile': {
