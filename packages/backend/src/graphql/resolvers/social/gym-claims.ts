@@ -508,7 +508,22 @@ export const socialGymClaimMutations = {
       return true;
     }
 
-    const result = await applyGymClaim(claim, { reviewerId: adminUserId });
+    // Both ways this can fail mean the same thing to the reviewer — the claim
+    // wasn't applied — so fold them into one message. `applyGymClaim` returns
+    // null when the gym is gone or the claim was already resolved, and throws
+    // when a concurrent transfer beat us to the guarded UPDATE; letting that
+    // throw escape would hand the admin an internal message instead.
+    let result: ClaimApplied | null;
+    try {
+      result = await applyGymClaim(claim, { reviewerId: adminUserId });
+    } catch (error) {
+      logger.warn(
+        `[GymClaim] Manual approval of claim ${claim.id} lost an ownership race:`,
+        error instanceof Error ? error.message : error,
+      );
+      result = null;
+    }
+
     if (!result) {
       // The gym was removed, or the claim was resolved concurrently — don't
       // report a success the admin panel would show as "approved".

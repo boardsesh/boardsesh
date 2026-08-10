@@ -1343,6 +1343,41 @@ describe('requestGymClaim — auto-approval', () => {
     expect(rows.filter((row) => row.status === 'pending')).toHaveLength(1);
   });
 
+  it('never leaks the internal race message out of a manual approve', async () => {
+    // Two admin-method claims on one gym, both approved at once. Whichever way
+    // the transfers interleave, the reviewer must only ever see the curated
+    // message — applyGymClaim's internal "ownership changed" throw is an
+    // implementation detail and must not reach the admin panel.
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Double Reviewed' });
+    const firstClaim = await insertClaim({ gymId: claimGym.id, claimantUserId: CLAIMANT, method: 'admin' });
+    const secondClaim = await insertClaim({ gymId: claimGym.id, claimantUserId: PLAIN_USER, method: 'admin' });
+
+    const outcomes = await Promise.allSettled([
+      socialGymClaimMutations.reviewGymClaim(
+        null,
+        { input: { claimId: firstClaim, decision: 'approve' } },
+        authCtx(GLOBAL_ADMIN),
+      ),
+      socialGymClaimMutations.reviewGymClaim(
+        null,
+        { input: { claimId: secondClaim, decision: 'approve' } },
+        authCtx(GLOBAL_ADMIN),
+      ),
+    ]);
+
+    for (const outcome of outcomes) {
+      if (outcome.status === 'rejected') {
+        expect(String(outcome.reason?.message)).toBe(
+          'Could not approve this claim — the gym may have been removed or it was already resolved',
+        );
+      }
+    }
+
+    // At least one approval landed, and the gym belongs to a claimant.
+    expect(outcomes.some((outcome) => outcome.status === 'fulfilled')).toBe(true);
+    expect([CLAIMANT, PLAIN_USER]).toContain(await gymOwnerId(claimGym.uuid));
+  });
+
   it('does not auto-approve a domain claim — it still has to prove the domain', async () => {
     await setAutoApprove(true);
     const claimGym = await insertGym({

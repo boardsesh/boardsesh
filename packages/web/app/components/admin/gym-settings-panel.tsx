@@ -50,7 +50,11 @@ export default function GymSettingsPanel() {
 
   const setAutoApprove = useMutation({
     mutationFn: async (next: boolean) => {
-      const client = createGraphQLHttpClient(token!);
+      // The query is gated on `enabled: !!token`, but a mutation has no such
+      // gate — a toggle fired after the session expired would otherwise hand a
+      // null token to the client. Fail loudly into the error path instead.
+      if (!token) throw new Error('Not authenticated');
+      const client = createGraphQLHttpClient(token);
       await client.request(SET_COMMUNITY_SETTING, {
         input: { scope: SCOPE, scopeKey: SCOPE_KEY, key: AUTO_APPROVE_KEY, value: next ? '1' : '0' },
       });
@@ -103,7 +107,7 @@ export default function GymSettingsPanel() {
               checked={autoApprove}
               // Never let a failed or in-flight read look like "off" — an admin
               // shouldn't act on a value we haven't actually received.
-              disabled={!settingsQuery.isSuccess || setAutoApprove.isPending}
+              disabled={!token || !settingsQuery.isSuccess || setAutoApprove.isPending}
               onChange={(event) => setAutoApprove.mutate(event.target.checked)}
             />
           }
