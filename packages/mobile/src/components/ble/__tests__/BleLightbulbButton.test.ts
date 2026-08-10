@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getBleLightbulbAccessibilityHint,
   getBleLightbulbDisplayMode,
+  getBleLightbulbSpinnerSize,
   getBleLightbulbVisualState,
 } from '../ble-lightbulb-button-state';
 
@@ -76,5 +77,15 @@ describe('BleLightbulbButton state helpers', () => {
     expect(getBleLightbulbDisplayMode(true, true)).toBe('scanning');
     expect(getBleLightbulbDisplayMode(false, true)).toBe('writing');
     expect(getBleLightbulbDisplayMode(false, false)).toBe('idle');
+  });
+
+  it('scales the spinner with the icon size instead of pinning it small', () => {
+    // Both shipping call sites pass 24 and keep the 20pt spinner.
+    expect(getBleLightbulbSpinnerSize(24)).toBe('small');
+    expect(getBleLightbulbSpinnerSize(31)).toBe('small');
+    // A larger icon swaps to the 36pt spinner so the control doesn't visibly
+    // shrink mid-write.
+    expect(getBleLightbulbSpinnerSize(32)).toBe('large');
+    expect(getBleLightbulbSpinnerSize(48)).toBe('large');
   });
 });

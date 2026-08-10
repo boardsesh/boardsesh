@@ -16,6 +16,7 @@ import { timing } from '../../theme/animations';
 import {
   getBleLightbulbAccessibilityHint,
   getBleLightbulbDisplayMode,
+  getBleLightbulbSpinnerSize,
   getBleLightbulbVisualState,
 } from './ble-lightbulb-button-state';
 
@@ -153,7 +154,7 @@ export function BleLightbulbButton({
       ]}
     >
       {displayMode === 'writing' ? (
-        <ActivityIndicator accessible={false} size="small" color={brandColors.warning} />
+        <ActivityIndicator accessible={false} size={getBleLightbulbSpinnerSize(size)} color={brandColors.warning} />
       ) : (
         <Icon name={visualState.iconName} size={size} color={visualState.iconColor} />
       )}
