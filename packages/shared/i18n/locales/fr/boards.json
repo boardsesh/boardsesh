@@ -279,6 +279,9 @@
         "messagePlaceholder": "Tout ce qui nous aide à vérifier que tu gères cette salle",
         "submit": "Demander une vérification",
         "sent": "Nous avons prévenu notre équipe. Elle te contactera bientôt."
+      },
+      "approved": {
+        "sent": "{{gym}} est à toi."
       }
     },
     "offline": {
@@ -657,6 +660,10 @@
       "messagePlaceholder": "Tout ce qui nous aide à vérifier que vous gérez cette salle",
       "submit": "Demander une vérification",
       "sent": "Nous avons prévenu notre équipe. Elle vous contactera bientôt."
+    },
+    "approved": {
+      "body": "{{gym}} est à vous. Configurez-la quand vous voulez.",
+      "manageCta": "Configurer votre salle"
     }
   },
   "claimLanding": {

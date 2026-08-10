@@ -12,6 +12,10 @@ import {
   verifyGymClaimByToken,
   hashClaimToken,
 } from '../graphql/resolvers/social/gym-claims';
+import {
+  socialCommunitySettingsMutations,
+  socialCommunitySettingsQueries,
+} from '../graphql/resolvers/social/community-settings';
 
 /**
  * Real-DB coverage for the gym write-access (editor) role + grant/revoke
@@ -195,7 +199,7 @@ let gymUuid: string;
 beforeEach(async () => {
   await db.execute(sql`
     TRUNCATE TABLE
-      "community_roles", "gym_members", "gym_follows", "gym_claims",
+      "community_roles", "community_settings", "gym_members", "gym_follows", "gym_claims",
       "board_follows", "boardsesh_ticks", "user_boards", "gyms", "notifications"
     RESTART IDENTITY CASCADE
   `);
@@ -1178,5 +1182,347 @@ describe('claim security hardening', () => {
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ status: 'pending', method: 'admin' });
+  });
+});
+
+// ============================================================================
+// Auto-approval of admin-review claims (gym_claim_auto_approve)
+// ============================================================================
+
+/** Turn the global auto-approve setting on/off by writing the row directly. */
+const setAutoApprove = (on: boolean) =>
+  db.execute(sql`
+    INSERT INTO community_settings (scope, scope_key, key, value, created_at, updated_at)
+    VALUES ('global', '', 'gym_claim_auto_approve', ${on ? '1' : '0'}, now(), now())
+    ON CONFLICT (scope, scope_key, key) DO UPDATE SET value = EXCLUDED.value
+  `);
+
+const claimRows = async (gymId: number) =>
+  Array.from(
+    (await db.execute(sql`
+      SELECT method, status, reviewed_by FROM gym_claims WHERE gym_id = ${gymId}
+    `)) as Iterable<{ method: string; status: string; reviewed_by: string | null }>,
+  );
+
+const gymSyncFrozenAt = async (gymUuid: string): Promise<Date | null> => {
+  const result = await db.execute(sql`SELECT sync_frozen_at FROM gyms WHERE uuid = ${gymUuid} LIMIT 1`);
+  return Array.from(result as Iterable<{ sync_frozen_at: Date | null }>)[0].sync_frozen_at;
+};
+
+describe('requestGymClaim — auto-approval', () => {
+  it('leaves the claim queued when the setting is off (default)', async () => {
+    const claimGym = await insertGym({ ownerId: SYSTEM_OWNER, name: 'Unclaimed Listing' });
+
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, message: 'mine' } },
+        authCtx(CLAIMANT),
+      ),
+    ).resolves.toEqual({ status: 'admin_review' });
+
+    expect(await gymOwnerId(claimGym.uuid)).toBe(SYSTEM_OWNER);
+    expect(await claimRows(claimGym.id)).toEqual([expect.objectContaining({ method: 'admin', status: 'pending' })]);
+    expect(sendGymClaimAdminNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands over an unclaimed (system-owned) listing on the spot when the setting is on', async () => {
+    await setAutoApprove(true);
+    const claimGym = await insertGym({ ownerId: SYSTEM_OWNER, name: 'Auto Listing' });
+
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, message: 'I run this' } },
+        authCtx(CLAIMANT),
+      ),
+    ).resolves.toEqual({ status: 'approved' });
+
+    expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
+    // Taking ownership freezes the listing against location-sync clobber.
+    expect(await gymSyncFrozenAt(claimGym.uuid)).not.toBeNull();
+
+    // Auto-approved rows carry no reviewer — that's how they're told apart.
+    expect(await claimRows(claimGym.id)).toEqual([
+      expect.objectContaining({ method: 'admin', status: 'approved', reviewed_by: null }),
+    ]);
+
+    // No human was asked to look at it.
+    expect(sendGymClaimAdminNotification).not.toHaveBeenCalled();
+
+    // The claimant is told they now manage the gym.
+    const notifications = await claimApprovedNotifications(CLAIMANT);
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0].entity_id).toBe(claimGym.uuid);
+  });
+
+  it('still queues a claim on a gym a real person owns, even with the setting on', async () => {
+    await setAutoApprove(true);
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Someone Elses Gym' });
+
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, message: 'let me in' } },
+        authCtx(CLAIMANT),
+      ),
+    ).resolves.toEqual({ status: 'admin_review' });
+
+    // The whole point of the scope limit: no silent takeover.
+    expect(await gymOwnerId(claimGym.uuid)).toBe(PRIOR_OWNER);
+    expect(await claimRows(claimGym.id)).toEqual([expect.objectContaining({ method: 'admin', status: 'pending' })]);
+    expect(sendGymClaimAdminNotification).toHaveBeenCalledTimes(1);
+    expect(sendGymClaimOwnershipLostEmail).not.toHaveBeenCalled();
+  });
+
+  it('approves a claim that was already queued before the setting was turned on', async () => {
+    const claimGym = await insertGym({ ownerId: SYSTEM_OWNER, name: 'Queued Then Enabled' });
+
+    // Queued while auto-approval was still off.
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, message: 'mine' } },
+        authCtx(CLAIMANT),
+      ),
+    ).resolves.toEqual({ status: 'admin_review' });
+
+    await setAutoApprove(true);
+
+    // Re-requesting now goes through instead of hitting the dedup early return.
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, message: 'mine' } },
+        authCtx(CLAIMANT),
+      ),
+    ).resolves.toEqual({ status: 'approved' });
+
+    expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
+    expect(await claimRows(claimGym.id)).toEqual([
+      expect.objectContaining({ method: 'admin', status: 'approved', reviewed_by: null }),
+    ]);
+  });
+
+  it('survives two users racing for the same unclaimed gym — one wins, neither errors', async () => {
+    await setAutoApprove(true);
+    const claimGym = await insertGym({ ownerId: SYSTEM_OWNER, name: 'Contested Listing' });
+
+    // Real concurrency, so the loser can take either degradation path inside
+    // applyGymClaim: it may see the new owner at the SELECT (owner-guard returns
+    // null), or pass the SELECT and lose the guarded UPDATE (throws, rolls back).
+    // Which one it takes is timing-dependent; the invariant below is not.
+    const outcomes = await Promise.allSettled([
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, message: 'mine' } },
+        authCtx(CLAIMANT),
+      ),
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, message: 'no, mine' } },
+        authCtx(PLAIN_USER),
+      ),
+    ]);
+
+    // Neither caller gets a server error — a claim that ends up queued must be
+    // reported as queued, not as a failure.
+    expect(outcomes.map((outcome) => outcome.status)).toEqual(['fulfilled', 'fulfilled']);
+
+    const statuses = outcomes
+      .map((outcome) => (outcome.status === 'fulfilled' ? (outcome.value as { status: string }).status : 'rejected'))
+      .sort();
+    expect(statuses).toEqual(['admin_review', 'approved']);
+
+    // Exactly one transfer happened, and the winner is whoever got 'approved'.
+    const owner = await gymOwnerId(claimGym.uuid);
+    expect([CLAIMANT, PLAIN_USER]).toContain(owner);
+
+    const rows = await claimRows(claimGym.id);
+    expect(rows.filter((row) => row.status === 'approved')).toHaveLength(1);
+    expect(rows.filter((row) => row.status === 'pending')).toHaveLength(1);
+  });
+
+  it('queues instead of erroring once the auto-approve rate limit is spent', async () => {
+    await setAutoApprove(true);
+
+    // Every bucket `applyRateLimit` keeps is keyed `${userId}:${operation}`, and
+    // its tier-1 in-process bucket is NOT reset between tests. Claiming as a
+    // brand-new user each run guarantees an empty budget no matter what ran
+    // first — pinning this to a shared fixture account would make the expected
+    // sequence order-dependent.
+    //
+    // Tier 1 being per-process is a test-isolation concern only: authenticated
+    // callers also pass through tier 2, a shared Redis bucket on the same key
+    // (`shared/helpers.ts`), so the production cap is global across instances.
+    const claimant = `gw-rate-limited-${uuidv4()}`;
+    await insertUser(claimant);
+
+    const gyms = await Promise.all(
+      [1, 2, 3, 4].map((index) => insertGym({ ownerId: SYSTEM_OWNER, name: `Rate Limited ${index}` })),
+    );
+
+    const results: string[] = [];
+    for (const gym of gyms) {
+      const result = (await socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: gym.uuid, message: 'mine' } },
+        authCtx(claimant),
+      )) as { status: string };
+      results.push(result.status);
+    }
+
+    // The limit caps instant hand-overs at 3; the 4th must fall back to the
+    // queue rather than reject — its claim row is already committed, so an
+    // error would tell the user their request failed when it didn't.
+    expect(results).toEqual(['approved', 'approved', 'approved', 'admin_review']);
+
+    expect(await gymOwnerId(gyms[3].uuid)).toBe(SYSTEM_OWNER);
+    expect(await claimRows(gyms[3].id)).toEqual([expect.objectContaining({ method: 'admin', status: 'pending' })]);
+  });
+
+  it('never leaks the internal race message out of a manual approve', async () => {
+    // Two admin-method claims on one gym, both approved at once. Whichever way
+    // the transfers interleave, the reviewer must only ever see the curated
+    // message — applyGymClaim's internal "ownership changed" throw is an
+    // implementation detail and must not reach the admin panel.
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Double Reviewed' });
+    const firstClaim = await insertClaim({ gymId: claimGym.id, claimantUserId: CLAIMANT, method: 'admin' });
+    const secondClaim = await insertClaim({ gymId: claimGym.id, claimantUserId: PLAIN_USER, method: 'admin' });
+
+    const outcomes = await Promise.allSettled([
+      socialGymClaimMutations.reviewGymClaim(
+        null,
+        { input: { claimId: firstClaim, decision: 'approve' } },
+        authCtx(GLOBAL_ADMIN),
+      ),
+      socialGymClaimMutations.reviewGymClaim(
+        null,
+        { input: { claimId: secondClaim, decision: 'approve' } },
+        authCtx(GLOBAL_ADMIN),
+      ),
+    ]);
+
+    for (const outcome of outcomes) {
+      if (outcome.status === 'rejected') {
+        expect(String(outcome.reason?.message)).toBe(
+          'Could not approve this claim — the gym may have been removed or it was already resolved',
+        );
+      }
+    }
+
+    // At least one approval landed, and the gym belongs to a claimant.
+    expect(outcomes.some((outcome) => outcome.status === 'fulfilled')).toBe(true);
+    expect([CLAIMANT, PLAIN_USER]).toContain(await gymOwnerId(claimGym.uuid));
+  });
+
+  it('does not auto-approve a domain claim — it still has to prove the domain', async () => {
+    await setAutoApprove(true);
+    const claimGym = await insertGym({
+      ownerId: SYSTEM_OWNER,
+      name: 'Domain Listing',
+      website: 'https://www.domainlisting.com',
+    });
+
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, claimEmail: 'boss@domainlisting.com' } },
+        authCtx(CLAIMANT),
+      ),
+    ).resolves.toEqual({ status: 'email_sent', email: 'boss@domainlisting.com' });
+
+    expect(await gymOwnerId(claimGym.uuid)).toBe(SYSTEM_OWNER);
+    expect(await claimRows(claimGym.id)).toEqual([expect.objectContaining({ method: 'domain', status: 'pending' })]);
+    expect(sendGymClaimVerificationEmail).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('gym community settings — admin-only', () => {
+  const setInput = (value: string) => ({
+    input: { scope: 'global', scopeKey: '', key: 'gym_claim_auto_approve', value },
+  });
+
+  // A GLOBAL community_leader — the board-scoped KILTER_LEADER can't write a
+  // global-scope setting at all, so it would pass the gym test for the wrong
+  // reason. This user can write the non-gym keys, which is what makes the gym
+  // rejection below meaningful.
+  const insertGlobalLeader = () => insertRole(PLAIN_USER, 'community_leader', null);
+
+  it('rejects a global community_leader writing a gym setting', async () => {
+    await insertGlobalLeader();
+
+    await expect(
+      socialCommunitySettingsMutations.setCommunitySettings(null, setInput('1'), authCtx(PLAIN_USER)),
+    ).rejects.toThrow(/admin/i);
+
+    const rows = Array.from(
+      (await db.execute(sql`SELECT value FROM community_settings WHERE key = 'gym_claim_auto_approve'`)) as Iterable<{
+        value: string;
+      }>,
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it('lets a global admin write a gym setting', async () => {
+    const result = await socialCommunitySettingsMutations.setCommunitySettings(
+      null,
+      setInput('1'),
+      authCtx(GLOBAL_ADMIN),
+    );
+    expect(result).toMatchObject({ key: 'gym_claim_auto_approve', value: '1' });
+  });
+
+  it('rejects a board-scoped admin and hides gym settings from them', async () => {
+    // `admin` scoped to a single board type. Gym settings are global config and
+    // both gates resolve them without a board type, so this role must not
+    // qualify — which is exactly why the /admin Gyms tab is hidden from it.
+    await insertRole(PLAIN_USER, 'admin', 'kilter');
+    await setAutoApprove(true);
+
+    await expect(
+      socialCommunitySettingsMutations.setCommunitySettings(null, setInput('0'), authCtx(PLAIN_USER)),
+    ).rejects.toThrow(/admin/i);
+
+    const visible = await socialCommunitySettingsQueries.communitySettings(
+      null,
+      { scope: 'global', scopeKey: '' },
+      authCtx(PLAIN_USER),
+    );
+    expect(visible.map((setting) => setting.key)).not.toContain('gym_claim_auto_approve');
+  });
+
+  it('still lets a global community_leader write a non-gym setting', async () => {
+    await insertGlobalLeader();
+
+    const result = await socialCommunitySettingsMutations.setCommunitySettings(
+      null,
+      { input: { scope: 'global', scopeKey: '', key: 'approval_threshold', value: '7' } },
+      authCtx(PLAIN_USER),
+    );
+    expect(result).toMatchObject({ key: 'approval_threshold', value: '7' });
+  });
+
+  it('hides gym settings from a non-admin reader but shows them to an admin', async () => {
+    await setAutoApprove(true);
+    await socialCommunitySettingsMutations.setCommunitySettings(
+      null,
+      { input: { scope: 'global', scopeKey: '', key: 'approval_threshold', value: '7' } },
+      authCtx(GLOBAL_ADMIN),
+    );
+
+    const asPlainUser = await socialCommunitySettingsQueries.communitySettings(
+      null,
+      { scope: 'global', scopeKey: '' },
+      authCtx(PLAIN_USER),
+    );
+    expect(asPlainUser.map((setting) => setting.key)).toEqual(['approval_threshold']);
+
+    const asAdmin = await socialCommunitySettingsQueries.communitySettings(
+      null,
+      { scope: 'global', scopeKey: '' },
+      authCtx(GLOBAL_ADMIN),
+    );
+    expect(asAdmin.map((setting) => setting.key).sort()).toEqual(['approval_threshold', 'gym_claim_auto_approve']);
   });
 });

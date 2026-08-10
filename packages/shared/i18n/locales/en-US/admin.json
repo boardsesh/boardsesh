@@ -16,7 +16,8 @@
   },
   "tabs": {
     "roles": "Roles",
-    "settings": "Settings"
+    "settings": "Settings",
+    "gyms": "Gyms"
   },
   "nav": {
     "retention": "Retention dashboard",
@@ -215,6 +216,20 @@
       "saved_one": "Saved {{count}} setting",
       "saved_other": "Saved {{count}} settings",
       "saveFailed": "Failed to save settings"
+    }
+  },
+  "gymSettings": {
+    "heading": "Gym Settings",
+    "autoApprove": {
+      "label": "Auto-approve ownership claims",
+      "description": "Hand unclaimed gym listings straight to whoever claims them. Claims on a gym someone already owns still come to you.",
+      "queueNote": "Claims already waiting in the queue stay there."
+    },
+    "snackbar": {
+      "enabled": "Auto-approval is on.",
+      "disabled": "Auto-approval is off.",
+      "saveFailed": "Couldn't save that. Try again.",
+      "loadFailed": "Couldn't load gym settings."
     }
   },
   "gymClaims": {

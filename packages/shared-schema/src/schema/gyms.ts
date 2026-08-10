@@ -32,6 +32,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     email_sent
     "The claim was queued for admin review and our team was notified."
     admin_review
+    "The claim was approved on the spot — the gym was an unclaimed listing and auto-approval is on. The claimant already manages the gym."
+    approved
   }
 
   """

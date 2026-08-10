@@ -279,6 +279,9 @@
         "messagePlaceholder": "Anything that helps us verify you run this gym",
         "submit": "Request review",
         "sent": "We've emailed our team. They'll be in touch soon."
+      },
+      "approved": {
+        "sent": "{{gym}} is yours to manage."
       }
     },
     "offline": {
@@ -657,6 +660,10 @@
       "messagePlaceholder": "Anything that helps us verify you run this gym",
       "submit": "Request review",
       "sent": "We've emailed our team. They'll be in touch soon."
+    },
+    "approved": {
+      "body": "{{gym}} is yours. Set it up whenever you're ready.",
+      "manageCta": "Set up your gym"
     }
   },
   "claimLanding": {

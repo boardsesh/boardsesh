@@ -28,7 +28,9 @@ type ClaimGymSheetProps = {
 /**
  * The ownership-claim flow, shown from the gym-edit screen when `gym.canClaim`.
  * With a work email at the gym's website domain the backend emails a verification
- * link (`email_sent`); otherwise the claim goes to admin review (`admin_review`).
+ * link (`email_sent`); otherwise the claim goes to admin review (`admin_review`),
+ * or lands straight away (`approved`) when an admin has turned on auto-approval
+ * and the gym is an unclaimed listing.
  * A domain mismatch rejects with a GraphQL error surfaced inline. Feedback stays
  * INSIDE the sheet — toasts render behind a native modal sheet — and the emailed
  * link is opened in the browser and handled by the backend, so the app does
@@ -118,7 +120,9 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
           <Text variant="headline" style={styles.confirmationTitle}>
             {confirmation.status === 'email_sent'
               ? t('mobile.gymClaim.domain.sent', { email: confirmation.email ?? trimmedEmail })
-              : t('mobile.gymClaim.admin.sent')}
+              : confirmation.status === 'approved'
+                ? t('mobile.gymClaim.approved.sent', { gym: gym.name })
+                : t('mobile.gymClaim.admin.sent')}
           </Text>
           <Button title={t('mobile.gymClaim.done')} onPress={dismiss} variant="filled" size="large" />
         </View>

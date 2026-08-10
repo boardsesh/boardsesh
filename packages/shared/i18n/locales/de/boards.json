@@ -279,6 +279,9 @@
         "messagePlaceholder": "Alles, was uns hilft zu prüfen, dass du diese Halle leitest",
         "submit": "Prüfung anfragen",
         "sent": "Wir haben unser Team benachrichtigt. Wir melden uns bald."
+      },
+      "approved": {
+        "sent": "{{gym}} gehört jetzt dir."
       }
     },
     "offline": {
@@ -657,6 +660,10 @@
       "messagePlaceholder": "Alles, was uns hilft zu prüfen, dass du diese Halle leitest",
       "submit": "Prüfung anfragen",
       "sent": "Wir haben unser Team benachrichtigt. Wir melden uns bald."
+    },
+    "approved": {
+      "body": "{{gym}} gehört jetzt dir. Richte sie ein, wann du willst.",
+      "manageCta": "Halle einrichten"
     }
   },
   "claimLanding": {

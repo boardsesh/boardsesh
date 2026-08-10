@@ -1010,6 +1010,24 @@ export const schemaSQL = `
   );
   CREATE INDEX IF NOT EXISTS "community_roles_board_type_idx" ON "community_roles" ("board_type");
 
+  -- Scoped key/value config (scope: global | board | climb). Holds the grade
+  -- proposal thresholds and the gym_ operational settings, including
+  -- gym_claim_auto_approve, which requestGymClaim reads to decide whether an
+  -- unclaimed listing can be handed over without a human reviewing it.
+  DROP TABLE IF EXISTS "community_settings" CASCADE;
+  CREATE TABLE IF NOT EXISTS "community_settings" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "scope" text NOT NULL,
+    "scope_key" text NOT NULL,
+    "key" text NOT NULL,
+    "value" text NOT NULL,
+    "set_by" text REFERENCES "users"("id") ON DELETE SET NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "community_settings_scope_key_idx"
+    ON "community_settings" ("scope", "scope_key", "key");
+
   -- gym_members is created once, earlier (alongside the follow/member enrichment
   -- tables). The duplicate DROP+CREATE that used to sit here has been removed.
 

@@ -593,15 +593,28 @@ export function useRevokeGymWriteAccess() {
 /**
  * Start an ownership claim for a gym. With a `claimEmail` matching the gym's
  * website domain the server sends a verification email (`email_sent`); otherwise
- * the claim goes to admin review (`admin_review`). A domain mismatch rejects with
- * a GraphQL error the caller surfaces inline. No cache invalidation — ownership
- * only transfers once the emailed link is followed in the browser.
+ * the claim goes to admin review (`admin_review`), or lands immediately
+ * (`approved`) when auto-approval is on and the gym is an unclaimed listing.
+ * A domain mismatch rejects with a GraphQL error the caller surfaces inline.
+ *
+ * Only `approved` transfers ownership here, so that's the only status that
+ * invalidates: the other two resolve later (emailed link, admin queue) and leave
+ * the cached gym correct. Mirrors the `updateGym` invalidation set, since the
+ * claimant's `canClaim` / edit access and gym membership all just changed.
  */
 export function useRequestGymClaim() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: RequestGymClaimInput) => {
       const response = await getHttpClient().request<RequestGymClaimMutationResponse>(REQUEST_GYM_CLAIM, { input });
       return response.requestGymClaim;
+    },
+    onSuccess: (result, input) => {
+      if (result.status !== 'approved') return;
+      void queryClient.invalidateQueries({ queryKey: ['gym', input.gymUuid] });
+      void queryClient.invalidateQueries({ queryKey: ['gymMembers', input.gymUuid] });
+      void queryClient.invalidateQueries({ queryKey: ['myGyms'] });
+      void queryClient.invalidateQueries({ queryKey: ['nearbyGyms'] });
     },
   });
 }

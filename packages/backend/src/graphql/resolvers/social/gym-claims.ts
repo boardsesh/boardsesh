@@ -6,6 +6,7 @@ import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { requireAdmin } from './roles';
+import { gymClaimAutoApproveEnabled } from './community-settings';
 import { userCanEditGym } from './gyms';
 import { createGymManageAccessNotification } from './gym-notifications';
 import {
@@ -46,11 +47,18 @@ type ClaimApplied = {
  * returns null and does nothing, so the transfer + emails happen exactly once.
  * A real prior owner (not the system/import user) is kept on as a gym admin and
  * reported back so they can be notified. Returns null if the gym vanished.
+ *
+ * `requireCurrentOwnerId` narrows the apply to a gym still owned by that user —
+ * the auto-approval path passes the system import user so it can only ever hand
+ * over an unclaimed listing. The gym is re-checked here, inside the transaction
+ * and before the claim row is flipped, so a rejected apply leaves the claim
+ * `pending` for a human to review.
  */
 export async function applyGymClaim(
   claim: typeof dbSchema.gymClaims.$inferSelect,
-  reviewerId?: string,
+  opts: { reviewerId?: string; requireCurrentOwnerId?: string } = {},
 ): Promise<ClaimApplied | null> {
+  const { reviewerId, requireCurrentOwnerId } = opts;
   return db.transaction(async (tx) => {
     const [gym] = await tx
       .select()
@@ -58,6 +66,7 @@ export async function applyGymClaim(
       .where(and(eq(dbSchema.gyms.id, claim.gymId), isNull(dbSchema.gyms.deletedAt)))
       .limit(1);
     if (!gym) return null;
+    if (requireCurrentOwnerId !== undefined && gym.ownerId !== requireCurrentOwnerId) return null;
 
     // Claim the pending row atomically; 0 rows means someone else already resolved it.
     const flipped = await tx
@@ -72,12 +81,20 @@ export async function applyGymClaim(
     let notifyPriorOwnerId: string | null = null;
 
     if (priorOwnerId !== claimantId) {
-      await tx
+      const transferred = await tx
         .update(dbSchema.gyms)
         // Taking ownership is a strong human-curation signal — freeze the gym so
         // the location sync stops reshaping the listing the new owner now controls.
         .set({ ownerId: claimantId, syncFrozenAt: new Date(), updatedAt: new Date() })
-        .where(eq(dbSchema.gyms.id, gym.id));
+        // The gym was read above without a row lock, so re-assert the owner we
+        // based this decision on. A concurrent transfer means our read is stale:
+        // throw to roll the whole transaction back (claim flip included) rather
+        // than overwrite the winner.
+        .where(and(eq(dbSchema.gyms.id, gym.id), eq(dbSchema.gyms.ownerId, priorOwnerId)))
+        .returning({ id: dbSchema.gyms.id });
+      if (transferred.length === 0) {
+        throw new Error('Gym ownership changed while this claim was being applied');
+      }
 
       // Keep a real prior owner on as a gym admin (never the system import user).
       // Upsert to admin so an existing lower-role membership row is upgraded, not left behind.
@@ -167,6 +184,63 @@ export async function verifyGymClaimByToken(
   return { ok: true, gymName: result.gymName, gymSlug: result.gymSlug, gymUuid: result.gymUuid };
 }
 
+/**
+ * Auto-approve an admin-review claim when the admin setting is on AND the gym is
+ * still owned by the system import user — an unclaimed location-sync listing
+ * nobody has taken. Claims that would displace a real person are deliberately
+ * left in the queue for a human, so turning the setting on can't be used to take
+ * a gym away from its owner.
+ *
+ * Returns the applied claim, or null when auto-approval didn't happen (setting
+ * off, gym owned by someone, or the claim was resolved concurrently) — in which
+ * case the caller falls through to the normal review queue.
+ *
+ * Auto-approval is an optimisation over that queue, never a precondition for it,
+ * so a failure to apply must not fail the request: the claim row is already
+ * committed as `pending` by the time we get here. `applyGymClaim` throws when a
+ * concurrent request transferred the gym out from under our read — that rolls
+ * its own transaction back (leaving the claim `pending`, which is correct), and
+ * swallowing it here degrades to `admin_review` instead of handing the user a
+ * server error for a claim that is in fact safely queued.
+ *
+ * That includes the rate limit, which bounds how many gyms one account can be
+ * handed instantly. Unlike requestGymClaim's own limit — which runs before
+ * anything is written, so throwing leaves nothing behind — this one runs after
+ * the claim row is committed. Exhausting it therefore means "don't auto-approve
+ * this one", not "reject the request": the claim stays queued for a human.
+ *
+ * Auto-approved rows are recognisable as `method='admin' AND status='approved'
+ * AND reviewed_by IS NULL`; there's no dedicated column, so no migration.
+ */
+async function tryAutoApproveAdminClaim(
+  ctx: ConnectionContext,
+  gym: typeof dbSchema.gyms.$inferSelect,
+  claim: typeof dbSchema.gymClaims.$inferSelect,
+): Promise<ClaimApplied | null> {
+  if (!(await gymClaimAutoApproveEnabled())) return null;
+
+  try {
+    // Tighter than requestGymClaim's own limit: each pass here can hand over a
+    // gym. The cap is global rather than per-instance — the caller is always
+    // authenticated (requestGymClaim requires it), so applyRateLimit's tier-2
+    // Redis bucket on `${userId}:gymClaimAutoApprove` applies on top of the
+    // tier-1 in-process one.
+    await applyRateLimit(ctx, 3, 'gymClaimAutoApprove');
+
+    const result = await applyGymClaim(claim, { requireCurrentOwnerId: SYSTEM_BOARD_OWNER_ID });
+    if (result) {
+      logger.info(
+        `[GymClaim] Auto-approved claim ${claim.id} on gym ${gym.uuid} for user ${claim.claimantUserId} (unclaimed listing)`,
+      );
+    }
+    return result;
+  } catch (error) {
+    // Pass the Error itself, not `.message` — winston serializes the stack.
+    logger.warn(`[GymClaim] Auto-approval of claim ${claim.id} on gym ${gym.uuid} failed; leaving it queued:`, error);
+    return null;
+  }
+}
+
 /** The single pending claim (if any) this user has on this gym. */
 async function findPendingClaim(
   gymId: number,
@@ -186,9 +260,15 @@ async function findPendingClaim(
   return existing;
 }
 
-/** Atomically replace this user's pending claim on this gym with a fresh row. */
-async function replacePendingClaim(values: typeof dbSchema.gymClaims.$inferInsert): Promise<void> {
-  await db.transaction(async (tx) => {
+/**
+ * Atomically replace this user's pending claim on this gym with a fresh row, and
+ * hand the inserted row back so a caller (auto-approval) can act on it without a
+ * second round-trip — and without a window where the row could already be gone.
+ */
+async function replacePendingClaim(
+  values: typeof dbSchema.gymClaims.$inferInsert,
+): Promise<typeof dbSchema.gymClaims.$inferSelect> {
+  return db.transaction(async (tx) => {
     await tx
       .delete(dbSchema.gymClaims)
       .where(
@@ -198,7 +278,12 @@ async function replacePendingClaim(values: typeof dbSchema.gymClaims.$inferInser
           eq(dbSchema.gymClaims.status, 'pending'),
         ),
       );
-    await tx.insert(dbSchema.gymClaims).values(values);
+    const [inserted] = await tx.insert(dbSchema.gymClaims).values(values).returning();
+    // A successful INSERT ... RETURNING always yields a row, but the destructure
+    // is typed as possibly-undefined and the caller feeds this straight into
+    // applyGymClaim. Fail here rather than forward an undefined claim.
+    if (!inserted) throw new Error('Failed to create gym claim: insert returned no rows');
+    return inserted;
   });
 }
 
@@ -350,18 +435,31 @@ export const socialGymClaimMutations = {
     }
 
     // Admin-review path: no usable email, queue for a human. Don't re-notify if a
-    // pending admin claim already exists for this (gym, user).
+    // pending admin claim already exists for this (gym, user) — but do retry
+    // auto-approval, so a claim queued before the setting was turned on can still
+    // go through when the claimant asks again.
     if (existingPending?.method === 'admin') {
+      const autoApplied = await tryAutoApproveAdminClaim(ctx, gym, existingPending);
+      if (autoApplied) {
+        await notifyClaimApplied(autoApplied);
+        return { status: 'approved' };
+      }
       return { status: 'admin_review' };
     }
 
-    await replacePendingClaim({
+    const queuedClaim = await replacePendingClaim({
       gymId: gym.id,
       claimantUserId: userId,
       method: 'admin',
       status: 'pending',
       message: validatedInput.message ?? null,
     });
+
+    const autoApplied = await tryAutoApproveAdminClaim(ctx, gym, queuedClaim);
+    if (autoApplied) {
+      await notifyClaimApplied(autoApplied);
+      return { status: 'approved' };
+    }
 
     // Best-effort: the claim is already queued and visible in /admin/gym-claims,
     // so a failed notification (SMTP down) must not throw — that would roll the
@@ -417,7 +515,19 @@ export const socialGymClaimMutations = {
       return true;
     }
 
-    const result = await applyGymClaim(claim, adminUserId);
+    // Both ways this can fail mean the same thing to the reviewer — the claim
+    // wasn't applied — so fold them into one message. `applyGymClaim` returns
+    // null when the gym is gone or the claim was already resolved, and throws
+    // when a concurrent transfer beat us to the guarded UPDATE; letting that
+    // throw escape would hand the admin an internal message instead.
+    let result: ClaimApplied | null;
+    try {
+      result = await applyGymClaim(claim, { reviewerId: adminUserId });
+    } catch (error) {
+      logger.warn(`[GymClaim] Manual approval of claim ${claim.id} lost an ownership race:`, error);
+      result = null;
+    }
+
     if (!result) {
       // The gym was removed, or the claim was resolved concurrently — don't
       // report a success the admin panel would show as "approved".
