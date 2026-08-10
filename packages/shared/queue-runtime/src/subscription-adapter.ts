@@ -53,6 +53,8 @@ export type SubscriptionWireEnvelope<TWireItem> =
       sequence?: number | null;
       stateHash?: string | null;
       stateHashOrdered?: string | null;
+      /** Connection id of the adding client; read by analytics to suppress self-echoes (#4042). */
+      clientId?: string | null;
     }
   | {
       __typename: 'QueueItemRemoved';

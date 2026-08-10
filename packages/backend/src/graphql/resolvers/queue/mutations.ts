@@ -112,6 +112,10 @@ export const queueMutations = {
         stateHashOrdered: resultStateHashOrdered,
         item: item,
         position: actualPosition,
+        // Same coercion as removeQueueItem/setCurrentClimb: an empty-string connectionId must
+        // become null, because peers compare defensively and two anonymous clients would otherwise
+        // echo-suppress each other's adds.
+        clientId: ctx.connectionId || null,
       });
     }
 
