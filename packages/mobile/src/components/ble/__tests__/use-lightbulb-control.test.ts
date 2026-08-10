@@ -63,7 +63,7 @@ const wrapper = ({ children }: { children: ReactNode }) =>
   createElement(BoardPresenceCurrentContext.Provider, { value: ctrl.presence }, children);
 
 function renderControl() {
-  return renderHook(() => useLightbulbControl({}), { wrapper });
+  return renderHook(() => useLightbulbControl(), { wrapper });
 }
 
 beforeEach(() => {

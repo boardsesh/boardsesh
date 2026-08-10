@@ -50,7 +50,7 @@ export type LightbulbControl = {
  * (`useOptionalBluetoothContext`, the raw board-presence context); the session
  * controls and board-presence controls are always present under the tab tree.
  */
-export function useLightbulbControl(options: UseLightbulbControlOptions): LightbulbControl {
+export function useLightbulbControl(options: UseLightbulbControlOptions = {}): LightbulbControl {
   const { onOpenControls } = options;
   // Ownership/lit derivation is shared with the Live Activity bridge via this
   // hook so the in-app bulb and the lock-screen bulb can never disagree.

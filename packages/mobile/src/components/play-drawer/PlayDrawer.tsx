@@ -388,7 +388,7 @@ export function PlayDrawer({
     localConnected: bluetoothConnected,
     pending: lightbulbPending,
     onPress: handleLightbulb,
-  } = useLightbulbControl({});
+  } = useLightbulbControl();
   const navigationSuggestionSource = drawerPreviewSuggestionSource ?? playlistSuggestionSource;
   const navigationState = useMemo(
     () => computeNavigationStateWithSuggestions(queue, displayedQueueItem, navigationSuggestionSource),
