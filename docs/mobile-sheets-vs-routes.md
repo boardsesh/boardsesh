@@ -103,7 +103,8 @@ in a higher window, not native sheets.
 
 **How a dismiss "settles."** The coordinator needs to know when a dismiss animation has
 really finished before it starts the next transition. On **iOS** that's the accurate native
-signal: our `@expo/ui` patch (`patches/@expo%2Fui@57.0.3.patch`) forwards SwiftUI's
+signal: our `@expo/ui` patch (`patches/@expo%2Fui@57.0.8.patch` — the version is baked into the
+filename, so it moves on every bump) forwards SwiftUI's
 post-animation `.sheet(onDismiss:)` out of the community wrapper as `onFullyDismissed`, which
 `useManagedSheet` routes into `coordinator.notifyFullyDismissed`. So a surface that renders the
 raw `BottomSheetModal`/`BottomSheet` must pass `onFullyDismissed={managed.onFullyDismissed}` (the
@@ -358,6 +359,46 @@ bottom tab (e.g. `/wall`, the "On the Wall" tab — `app/(tabs)/wall/`):
 - Add a `SidebarDestination` in `IpadSidebar.tsx`; `tabsActiveSegment` (route-segments.ts) already
   highlights it. Suppress any ambient duplicate of the same content (e.g. the wall column) while
   the destination is the focused segment.
+
+## Bumping `react-native-screens` (the bottom-accessory patch)
+
+`patches/react-native-screens@4.26.2.patch` carries the iOS 26 bottom-accessory fix: UIKit lays
+an accessory in for free when it's set during the tab controller's initial setup, but not when
+it's attached after the tab bar has appeared — which is exactly our case, since the accessory
+only mounts once a current climb exists. The patch nudges a layout pass on that attach.
+
+**The nudge must never run synchronously.** `applyBottomAccessoryVisibility` is called from
+`updateContainer`, inside a React Native mounting transaction. The first version of the patch
+called `-layoutIfNeeded` right there, and that layout got pulled into a feedback loop between a
+presenting/dismissing `UISheetPresentationController` and the tab bar's minimize machinery
+(our layout → `-[UITabBar layoutSubviews]` → `_minimizeBehavior` → a sheet alongside-animation
+property set → `_sheetLayoutInfoLayout` → tab bar again). On iOS 27 that trips an AnimationKit
+assertion over a stack overflow: 6 users, 27 crashes, one session looping 13 times (Sentry
+BOARDSESH-9K, fixed in #4198 / 2.3.1). The shipped shape hops out of the transaction with one
+coalesced `dispatch_async`, and hands the work to the transition coordinator's completion block
+if a transition is in flight.
+
+Bun keys patches by exact version, so a bump means re-keying. The runbook:
+
+1. `bun patch react-native-screens` against the new version, re-apply the hunks, and check that
+   upstream still hasn't added its own relayout to `applyBottomAccessoryVisibility` (4.27.0 has
+   none — the patch is still required).
+2. Re-key `patchedDependencies` in the root `package.json`, rename the file under `patches/`,
+   and **delete the old file** — Bun ignores unreferenced patches without a word.
+3. Update `patchedKey` on both `react-native-screens` rules in `scripts/mobile-patches-check.ts`,
+   and the `overrides` pin in the root `package.json`.
+4. `vp run check:mobile-patches`.
+
+That check is the backstop, and it asserts shape, not just symbols: the deferral sentinels
+(`rnscreens_layoutBottomAccessoryOutsideTransition`, `_rnscreens_bottomAccessoryRelayoutScheduled`,
+`animateAlongsideTransition`) plus a negative assertion that no synchronous layout sits inside
+`applyBottomAccessoryVisibility`. A re-keyed patch that kept the entry-point symbol but restored
+the crashing line would otherwise pass green. If it reports it can't locate the anchor method,
+upstream reshaped it — re-verify the patch by hand and update the rule. Don't delete the
+assertion to get green.
+
+A `react-native-screens` bump is a native-fingerprint change: it goes through a `[native-train]`
+draft, not straight to `main` (see `docs/mobile-ota-updates.md`).
 
 ## See also
 
