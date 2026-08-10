@@ -83,6 +83,19 @@ describe('resolveRenderBoard', () => {
     expect(result?.sizeId).toBe(COMMERCIAL_12X14);
   });
 
+  it('still prefers the owned board when the followed one comes first', () => {
+    // The other side of the ownership branch: reduce starts on the followed
+    // board, so the owned one has to win by replacing the accumulator.
+    const result = resolveRenderBoard({
+      boardType: 'kilter',
+      climbLayoutId: KILTER_LAYOUT,
+      compatibleSizeIds: [COMMERCIAL_12X14, SMALL_7X10],
+      ownerBoards: [ownedBoard(SMALL_7X10, { isOwned: false }), ownedBoard(COMMERCIAL_12X14)],
+    });
+
+    expect(result?.sizeId).toBe(COMMERCIAL_12X14);
+  });
+
   it('breaks a same-size tie on caller order (lowest user_boards.id first)', () => {
     const first = ownedBoard(SQUARE_12X12, { setIds: KILTER_SETS });
     const second = ownedBoard(SQUARE_12X12, { setIds: [...KILTER_SETS].reverse() });

@@ -34,17 +34,19 @@ import {
 } from '@boardsesh/board-constants/product-sizes';
 import { getSizeRank } from '@boardsesh/board-constants/size-comparison';
 import type { ProductSizeData } from '@boardsesh/board-constants';
-import type { BoardName } from '@boardsesh/shared-schema';
+import type { BoardName, RenderBoardConfig } from '@boardsesh/shared-schema';
 
 import { toBoardName } from './board-name';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE, type MoonBoardLayoutKey } from './moonboard-config';
 
-/** The layout / size / hold sets a climb should be rendered with. */
-export type RenderBoardConfig = {
-  layoutId: number;
-  sizeId: number;
-  setIds: number[];
-};
+/**
+ * The layout / size / hold sets a climb should be rendered with — the GraphQL
+ * `RenderBoardConfig`, owned by `@boardsesh/shared-schema` so the wire type and
+ * the resolver's return type can't drift. Re-exported here because this is where
+ * callers reach for it. (The dependency only runs this way: `shared-schema` is
+ * the base package and must not import back into `board-config`.)
+ */
+export type { RenderBoardConfig };
 
 /** One of the climber's boards, or the board a tick is associated with. */
 export type RenderBoardCandidate = RenderBoardConfig & {
