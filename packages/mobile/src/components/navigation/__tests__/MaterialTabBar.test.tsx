@@ -98,7 +98,7 @@ vi.mock('../../../providers/theme-provider', () => ({
     },
     // MaterialTabBar now reads the scheme-aware brand from the theme (lifted
     // tint in dark) rather than the static import.
-    brandColors: { primary: '#FF3B30', success: '#6B9080' },
+    brandColors: { primary: '#FF3B30', success: '#6B9080', live: '#FBBF24' },
     // M3 navigation-bar roles: active icon on a secondaryContainer pill, active
     // label onSurface, inactive icon+label onSurfaceVariant.
     m3: {
@@ -111,7 +111,7 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 
 vi.mock('../../../theme/colors', () => ({
-  brandColors: { primary: '#FF3B30', success: '#6B9080' },
+  brandColors: { primary: '#FF3B30', success: '#6B9080', live: '#FBBF24' },
 }));
 
 vi.mock('../../../theme/tokens', () => ({
@@ -203,6 +203,26 @@ describe('MaterialTabBar', () => {
         <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
       );
       expect(queryByTestId('badge')).toBeNull();
+    });
+
+    it('uses the live color when tabBarBadge is the "live" sentinel', () => {
+      const props = makeProps({ tabBarBadge: 'live' });
+      const { queryByTestId } = render(
+        <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
+      );
+      const style = queryByTestId('badge')?.getAttribute('data-style');
+      expect(style).toContain('#FBBF24');
+      expect(style).not.toContain('#6B9080');
+    });
+
+    it('keeps the standard (success) color when tabBarBadge is a non-"live" value', () => {
+      const props = makeProps({ tabBarBadge: 'connected' });
+      const { queryByTestId } = render(
+        <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
+      );
+      const style = queryByTestId('badge')?.getAttribute('data-style');
+      expect(style).toContain('#6B9080');
+      expect(style).not.toContain('#FBBF24');
     });
   });
 

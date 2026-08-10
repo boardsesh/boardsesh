@@ -11,7 +11,6 @@ import { QueueBottomAccessory } from '../../src/components/queue-control/QueueBo
 import { MaterialTabBar } from '../../src/components/navigation/MaterialTabBar';
 import { useTheme } from '../../src/providers/theme-provider';
 import { selectByVariant } from '../../src/theme/variants/select-by-variant';
-import { brandColors } from '../../src/theme/colors';
 import { useNativeAccessoryActive, useNativeTabBar } from '../../src/hooks/use-bottom-accessory';
 import { useOnAccessorySurface } from '../../src/hooks/use-on-accessory-surface';
 import { useDeviceLayout } from '../../src/hooks/use-device-layout';
@@ -70,7 +69,7 @@ export default function TabLayout() {
   const { t } = useTranslation('common');
   const { t: tPlaylists } = useTranslation('playlists');
   const { t: tSession } = useTranslation('session');
-  const { systemColors, variant, m3 } = useTheme();
+  const { systemColors, variant, m3, brandColors } = useTheme();
   const nativeTabBar = useNativeTabBar();
   // Shell column separators: an M3 faint divider (outlineVariant) on Material, the
   // system hairline on Liquid Glass — so the panes read as M3 depth on Android.
@@ -104,7 +103,8 @@ export default function TabLayout() {
   // native tab-bar height; see `isAccessorySurfaceRoute`. Bottom-chrome arbitration
   // mirrors this surface, so the real mount matches the reserved metrics.
   const onAccessorySurface = useOnAccessorySurface();
-  const showRecordBadge = isBluetoothConnected || sessionId !== null;
+  const hasLiveSession = sessionId !== null;
+  const showRecordBadge = isBluetoothConnected || hasLiveSession;
   const eagerMountRecord = Platform.OS === 'android';
   // Keep blurred tabs' native (Fabric) trees resident on Android so a tab switch is a
   // re-attach, not a createNode/completeRoot rebuild (#3153). Android-only: on iOS < 26
@@ -201,7 +201,9 @@ export default function TabLayout() {
       options={{
         title: tSession('mobile.session.recordTab'),
         tabBarIcon: materialTabIcon('record-circle', 'record-circle-outline'),
-        tabBarBadge: showRecordBadge ? '' : undefined,
+        // Semantic marker string, not display text — MaterialTabBar's badge is a
+        // color dot with no text; it branches its dot color on this value.
+        tabBarBadge: showRecordBadge ? (hasLiveSession ? 'live' : 'connected') : undefined,
         // Android can stall the first lazy mount of this nested stack,
         // leaving the Record tab blank until another tab forces a remount.
         lazy: eagerMountRecord ? false : undefined,
@@ -340,7 +342,9 @@ export default function TabLayout() {
         <NativeTabs.Trigger.Icon sf="record.circle" md="radio_button_checked" />
         <NativeTabs.Trigger.Label>{tSession('mobile.session.recordTab')}</NativeTabs.Trigger.Label>
         {showRecordBadge ? (
-          <NativeTabs.Trigger.Badge selectedBackgroundColor={brandColors.success}> </NativeTabs.Trigger.Badge>
+          <NativeTabs.Trigger.Badge selectedBackgroundColor={hasLiveSession ? brandColors.live : brandColors.success}>
+            {' '}
+          </NativeTabs.Trigger.Badge>
         ) : null}
       </NativeTabs.Trigger>
 

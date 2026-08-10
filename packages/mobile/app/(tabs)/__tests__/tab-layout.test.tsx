@@ -125,10 +125,6 @@ vi.mock('../../../src/components/queue-control/QueueBottomAccessory', () => ({
   QueueBottomAccessory: () => createElement('div', { 'data-accessory': 'true' }),
 }));
 
-vi.mock('../../../src/theme/colors', () => ({
-  brandColors: { success: '#047857' },
-}));
-
 vi.mock('../../../src/providers/theme-provider', () => ({
   useTheme: () => ({
     variant: cfg.variant,
@@ -138,6 +134,10 @@ vi.mock('../../../src/providers/theme-provider', () => ({
       separator: 'rgba(60,55,75,0.18)',
     },
     m3: { outlineVariant: '#49454F' },
+    // Record badge color: green for board-connected-only, amber 'live' for a
+    // live session — read from the theme now (not a static import) so it
+    // resolves per scheme.
+    brandColors: { success: '#047857', live: '#FBBF24' },
   }),
 }));
 
@@ -210,7 +210,12 @@ vi.mock('expo-router/unstable-native-tabs', () => {
     {
       Icon: () => createElement('span', { 'data-icon': 'true' }),
       Label: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
-      Badge: ({ children }: { children?: ReactNode }) => createElement('span', { 'data-badge': 'true' }, children),
+      Badge: ({ children, selectedBackgroundColor }: { children?: ReactNode; selectedBackgroundColor?: string }) =>
+        createElement(
+          'span',
+          { 'data-badge': 'true', 'data-selected-background-color': selectedBackgroundColor ?? '' },
+          children,
+        ),
     },
   );
 
@@ -689,6 +694,28 @@ describe('TabLayout', () => {
     expect(cfg.materialScreens.find((screen) => screen.name === 'record')?.options).toMatchObject({ lazy: false });
   });
 
+  it('sets the JS-Tabs Record badge to the "live" sentinel when a session is active', () => {
+    cfg.variant = 'material';
+    cfg.sessionId = 'session-1';
+
+    render(<TabLayout />);
+
+    expect(cfg.materialScreens.find((screen) => screen.name === 'record')?.options).toMatchObject({
+      tabBarBadge: 'live',
+    });
+  });
+
+  it('sets the JS-Tabs Record badge to "connected" when only Bluetooth is connected', () => {
+    cfg.variant = 'material';
+    cfg.bluetoothConnected = true;
+
+    render(<TabLayout />);
+
+    expect(cfg.materialScreens.find((screen) => screen.name === 'record')?.options).toMatchObject({
+      tabBarBadge: 'connected',
+    });
+  });
+
   // #3153: Android/iPad keep blurred tabs' native trees resident (detach off) so a
   // switch is a re-attach, not a Fabric rebuild; iOS < 26 iPhones stay on default
   // detach where freezeOnBlur actually takes effect.
@@ -736,19 +763,34 @@ describe('TabLayout', () => {
     expect(container.querySelector('[data-tabs-material="true"]')).toBeNull();
   });
 
-  it('renders the Record badge when a session is active', () => {
+  it('renders the Record badge when a session is active, in the live color', () => {
     cfg.sessionId = 'session-1';
     const { container } = render(<TabLayout />);
     const recordTrigger = container.querySelector('[data-trigger="record"]') as HTMLElement;
+    const badge = recordTrigger.querySelector('[data-badge="true"]');
 
-    expect(recordTrigger.querySelector('[data-badge="true"]')).not.toBeNull();
+    expect(badge).not.toBeNull();
+    expect(badge?.getAttribute('data-selected-background-color')).toBe('#FBBF24');
   });
 
-  it('renders the Record badge when Bluetooth is connected', () => {
+  it('renders the Record badge when Bluetooth is connected, in the standard (success) color', () => {
     cfg.bluetoothConnected = true;
     const { container } = render(<TabLayout />);
     const recordTrigger = container.querySelector('[data-trigger="record"]') as HTMLElement;
+    const badge = recordTrigger.querySelector('[data-badge="true"]');
 
-    expect(recordTrigger.querySelector('[data-badge="true"]')).not.toBeNull();
+    expect(badge).not.toBeNull();
+    expect(badge?.getAttribute('data-selected-background-color')).toBe('#047857');
+  });
+
+  it('shows the live badge color when both Bluetooth is connected and a session is active — live takes priority', () => {
+    cfg.bluetoothConnected = true;
+    cfg.sessionId = 'session-1';
+    const { container } = render(<TabLayout />);
+    const recordTrigger = container.querySelector('[data-trigger="record"]') as HTMLElement;
+    const badge = recordTrigger.querySelector('[data-badge="true"]');
+
+    expect(badge).not.toBeNull();
+    expect(badge?.getAttribute('data-selected-background-color')).toBe('#FBBF24');
   });
 });
