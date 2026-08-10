@@ -202,8 +202,11 @@ function CollapsibleSectionInternal({
           onPress={toggleExpanded}
           // The title pressable above already announces the section and its
           // expanded state; a second identical button would just be noise.
+          // Hidden from a11y means it has no accessible name, so tests reach it
+          // by testID rather than by role+name.
           accessibilityElementsHidden
           importantForAccessibility="no"
+          testID="collapsible-section-chevron"
           hitSlop={8}
         >
           <Animated.View style={chevronStyle}>

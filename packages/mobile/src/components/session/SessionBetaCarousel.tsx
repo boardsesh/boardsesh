@@ -56,7 +56,7 @@ export function SessionBetaCarousel({ ticks, participantById, isMultiUser }: Ses
 
   return (
     <View>
-      <SectionHeader title={t('mobile.betaVideos.crewTitle')} expanded={expanded} onToggleExpanded={toggle} />
+      <SectionHeader title={t('mobile.betaVideos.crewTitle')} disclosure={{ expanded, onToggle: toggle }} />
       {!expanded ? null : (
         <ScrollView
           horizontal

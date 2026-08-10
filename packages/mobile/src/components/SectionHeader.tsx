@@ -8,20 +8,28 @@ import { selectByVariant } from '../theme/variants';
 import { applySectionCaption } from '../theme/variants/variant-tokens';
 import { spacing } from '../theme/tokens';
 
+/**
+ * Makes a section header a disclosure. One object rather than two loose props:
+ * `expanded` without a toggle renders a section nobody can open, and a toggle
+ * without `expanded` has nothing to drive the chevron — bundling them makes
+ * that half-specified state unrepresentable instead of silently wrong.
+ */
+export type SectionDisclosure = {
+  expanded: boolean;
+  onToggle: () => void;
+};
+
 type SectionHeaderProps = {
   title: string;
   /** Trailing affordance label (e.g. "See all"). Renders a tappable action on
    *  the right of the header when paired with `onActionPress`. */
   actionLabel?: string;
   onActionPress?: () => void;
-  /** Current disclosure state. Paired with `onToggleExpanded`, turns the title
-   *  into a tappable disclosure with a rotating chevron. The action (if any)
-   *  stays a separate sibling target, so "See all" never toggles the section. */
-  expanded?: boolean;
-  onToggleExpanded?: () => void;
+  /** Omit for a plain, non-collapsible header. */
+  disclosure?: SectionDisclosure;
 };
 
-export function SectionHeader({ title, actionLabel, onActionPress, expanded, onToggleExpanded }: SectionHeaderProps) {
+export function SectionHeader({ title, actionLabel, onActionPress, disclosure }: SectionHeaderProps) {
   const { brandColors, variant, m3, sectionCaption } = useTheme();
   // M3 list/section headers are sentence-case titleSmall in onSurfaceVariant — not
   // the iOS group caption (uppercased, dimmed, tracked-out footnote). The uppercase
@@ -33,7 +41,7 @@ export function SectionHeader({ title, actionLabel, onActionPress, expanded, onT
   const textColor = selectByVariant(variant, { liquidGlass: undefined, material: m3.onSurfaceVariant });
   const weightStyle = selectByVariant(variant, { liquidGlass: undefined, material: styles.materialText });
   const showAction = !!actionLabel && !!onActionPress;
-  const collapsible = expanded !== undefined && !!onToggleExpanded;
+  const collapsible = disclosure !== undefined;
 
   const titleText = (
     <Text variant={textVariant} color={textColor} style={[caption.style, weightStyle]}>
@@ -48,18 +56,18 @@ export function SectionHeader({ title, actionLabel, onActionPress, expanded, onT
         // sibling rather than nesting it inside this pressable avoids the
         // nested-touch ambiguity that bites on Android.
         <PressableSurface
-          onPress={onToggleExpanded}
+          onPress={disclosure.onToggle}
           feedback="opacity"
           hitSlop={8}
           accessibilityRole="button"
           // The raw title, not the uppercased caption, so VoiceOver/TalkBack
           // don't spell it out letter by letter.
           accessibilityLabel={title}
-          accessibilityState={{ expanded }}
+          accessibilityState={{ expanded: disclosure.expanded }}
           style={styles.disclosure}
         >
           {titleText}
-          <SectionDisclosureChevron expanded={expanded} size={14} />
+          <SectionDisclosureChevron expanded={disclosure.expanded} size={14} />
         </PressableSurface>
       ) : (
         titleText

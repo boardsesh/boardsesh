@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 import { View, ScrollView, StyleSheet } from 'react-native';
-import { SectionHeader } from './SectionHeader';
+import { SectionHeader, type SectionDisclosure } from './SectionHeader';
 import { ActivityIndicator } from './ActivityIndicator';
 import { spacing } from '../theme/tokens';
 
@@ -20,11 +20,9 @@ export type HorizontalScrollSectionProps = {
   /** Height of the loading row / minimum shelf height, sized to the cards the
    *  shelf holds (120-tall playlist cards vs 192-tall beta cards). */
   minHeight?: number;
-  /** Disclosure state. When paired with `onToggleExpanded` the header becomes
-   *  tappable and a collapsed shelf renders the header alone — the scroller is
-   *  unmounted, so `onEndReached` pagination can't fire while it's folded. */
-  expanded?: boolean;
-  onToggleExpanded?: () => void;
+  /** Makes the shelf collapsible. A collapsed shelf renders the header alone —
+   *  the scroller is unmounted, so `onEndReached` pagination can't fire. */
+  disclosure?: SectionDisclosure;
 };
 
 // Right-edge slop (px) at which onEndReached fires, so the next page starts
@@ -48,20 +46,13 @@ export function HorizontalScrollSection({
   actionLabel,
   onActionPress,
   minHeight = DEFAULT_MIN_HEIGHT,
-  expanded,
-  onToggleExpanded,
+  disclosure,
 }: HorizontalScrollSectionProps) {
-  const collapsed = expanded === false && !!onToggleExpanded;
+  const collapsed = disclosure?.expanded === false;
 
   return (
     <View style={styles.section}>
-      <SectionHeader
-        title={title}
-        actionLabel={actionLabel}
-        onActionPress={onActionPress}
-        expanded={expanded}
-        onToggleExpanded={onToggleExpanded}
-      />
+      <SectionHeader title={title} actionLabel={actionLabel} onActionPress={onActionPress} disclosure={disclosure} />
       {collapsed ? null : loading ? (
         <View style={[styles.loadingRow, { height: minHeight }]}>
           <ActivityIndicator size="small" />

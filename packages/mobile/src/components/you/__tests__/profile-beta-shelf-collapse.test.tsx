@@ -38,19 +38,19 @@ vi.mock('../../HorizontalScrollSection', () => ({
   HorizontalScrollSection: ({
     title,
     children,
-    expanded,
+    disclosure,
     actionLabel,
   }: {
     title: string;
     children?: ReactNode;
-    expanded?: boolean;
+    disclosure?: { expanded: boolean };
     actionLabel?: string;
   }) =>
     createElement(
       'div',
       null,
       createElement('div', { 'data-testid': 'section-header', 'data-action': actionLabel }, title),
-      expanded === false ? null : createElement('div', { 'data-testid': 'shelf-scroll' }, children),
+      disclosure?.expanded === false ? null : createElement('div', { 'data-testid': 'shelf-scroll' }, children),
     ),
 }));
 
