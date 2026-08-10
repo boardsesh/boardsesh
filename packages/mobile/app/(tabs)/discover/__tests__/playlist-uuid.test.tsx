@@ -148,14 +148,16 @@ vi.mock('../../../../src/components/playlist', () => ({
   // without the real gorhom sheet.
   PlaylistFormSheet: ({
     submitError,
+    submitting,
     onSubmit,
   }: {
     submitError?: string | null;
+    submitting?: boolean;
     onSubmit?: (values: unknown) => void;
   }) =>
     createElement(
       'div',
-      null,
+      { 'data-form-sheet': 'true', 'data-submitting': submitting ? 'true' : 'false' },
       submitError ? createElement('span', { 'data-edit-error': 'true' }, submitError) : null,
       createElement(
         'button',
@@ -480,6 +482,60 @@ describe('PlaylistDetail edit conflict (#1934)', () => {
       expect(cached?.color).toBe('#1F2937');
     });
     // Adopting theirs is a local decision — nothing more is sent.
+    expect(updatePlaylistMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('"Use theirs" also refreshes the library list, not just the detail hero', async () => {
+    requestMock.mockResolvedValue({ playlist: cachedPlaylist });
+    updatePlaylistMock.mockRejectedValue(conflictError);
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // The library / Add-to-Playlist cache still holds the pre-conflict row.
+    queryClient.setQueryData(['userPlaylists'], [{ uuid: 'p-1', id: 'p-1', name: 'Old name', color: '#6D28D9' }]);
+
+    const { findByText } = renderDetail(queryClient);
+    fireEvent.click(await findByText('form-submit'));
+
+    await waitFor(() => expect(alertMock).toHaveBeenCalledTimes(1));
+    const buttons = alertMock.mock.calls[0][2] as Array<{ text: string; onPress?: () => void }>;
+    buttons.find((button) => button.text === 'edit.conflict.keepTheirs')?.onPress?.();
+
+    await waitFor(() => {
+      const cached = queryClient.getQueryData<Array<{ name: string; color: string }>>(['userPlaylists']);
+      expect(cached?.[0].name).toBe('Renamed on the other phone');
+      expect(cached?.[0].color).toBe('#1F2937');
+    });
+    // Only the metadata the server reported moves; the rest of the row survives.
+    expect(queryClient.getQueryData<{ climbCount: number }>(['playlist', 'p-1'])?.climbCount).toBe(3);
+  });
+
+  it('leaves an editable sheet — not one stuck mid-save — when the prompt is dismissed', async () => {
+    requestMock.mockResolvedValue({ playlist: cachedPlaylist });
+    let rejectUpdate: (reason: unknown) => void = () => {};
+    updatePlaylistMock.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectUpdate = reject;
+      }),
+    );
+
+    const { findByText, container } = renderDetail();
+    const submitting = () => container.querySelector('[data-form-sheet]')?.getAttribute('data-submitting');
+
+    fireEvent.click(await findByText('form-submit'));
+    // In flight: the sheet's submit button spins.
+    await waitFor(() => expect(submitting()).toBe('true'));
+
+    rejectUpdate(conflictError);
+
+    await waitFor(() => expect(alertMock).toHaveBeenCalledTimes(1));
+    const buttons = alertMock.mock.calls[0][2] as Array<{ text: string; style?: string; onPress?: () => void }>;
+    const cancel = buttons.find((button) => button.text === 'edit.conflict.cancel');
+    expect(cancel?.style).toBe('cancel');
+    cancel?.onPress?.();
+
+    // Dismissed with the edit intact and the button live again, ready to retry.
+    await waitFor(() => expect(submitting()).toBe('false'));
+    expect(container.querySelector('[data-edit-error="true"]')).toBeNull();
     expect(updatePlaylistMock).toHaveBeenCalledTimes(1);
   });
 });
