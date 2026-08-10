@@ -1346,10 +1346,15 @@ describe('requestGymClaim — auto-approval', () => {
   it('queues instead of erroring once the auto-approve rate limit is spent', async () => {
     await setAutoApprove(true);
 
-    // The limiter is keyed `${userId}:${operation}`, lives in process memory,
-    // and is NOT reset between tests. Claiming as a brand-new user each run
-    // guarantees an empty budget no matter what ran first — pinning this to a
-    // shared fixture account would make the expected sequence order-dependent.
+    // Every bucket `applyRateLimit` keeps is keyed `${userId}:${operation}`, and
+    // its tier-1 in-process bucket is NOT reset between tests. Claiming as a
+    // brand-new user each run guarantees an empty budget no matter what ran
+    // first — pinning this to a shared fixture account would make the expected
+    // sequence order-dependent.
+    //
+    // Tier 1 being per-process is a test-isolation concern only: authenticated
+    // callers also pass through tier 2, a shared Redis bucket on the same key
+    // (`shared/helpers.ts`), so the production cap is global across instances.
     const claimant = `gw-rate-limited-${uuidv4()}`;
     await insertUser(claimant);
 

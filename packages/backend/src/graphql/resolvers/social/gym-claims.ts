@@ -220,7 +220,11 @@ async function tryAutoApproveAdminClaim(
   if (!(await gymClaimAutoApproveEnabled())) return null;
 
   try {
-    // Tighter than requestGymClaim's own limit: each pass here can hand over a gym.
+    // Tighter than requestGymClaim's own limit: each pass here can hand over a
+    // gym. The cap is global rather than per-instance — the caller is always
+    // authenticated (requestGymClaim requires it), so applyRateLimit's tier-2
+    // Redis bucket on `${userId}:gymClaimAutoApprove` applies on top of the
+    // tier-1 in-process one.
     await applyRateLimit(ctx, 3, 'gymClaimAutoApprove');
 
     const result = await applyGymClaim(claim, { requireCurrentOwnerId: SYSTEM_BOARD_OWNER_ID });
