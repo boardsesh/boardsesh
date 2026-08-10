@@ -66,7 +66,7 @@ jobs:
           # commands are absent from the allowlist entirely, so dry-run is
           # enforced by the permission layer, not just the prompt.
           claude_args: >-
-            --allowed-tools "Bash(bash .github/scripts/sentry-api.sh:*),Bash(jq:*),Bash(echo:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh search issues:*),Bash(git log:*),Bash(git show:*),Read,Grep,Glob${{ inputs.dry_run != true && ',Bash(gh issue create:*),Bash(gh issue comment:*)' || '' }}"
+            --allowed-tools "Bash(bash .github/scripts/sentry-api.sh:*),Bash(bash .github/scripts/append-summary.sh:*),Bash(jq:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh search issues:*),Bash(git log:*),Bash(git show:*),Read,Grep,Glob${{ inputs.dry_run != true && ',Bash(gh issue create:*),Bash(gh issue comment:*)' || '' }}"
           prompt: |
             You are running the weekly Sentry triage sweep for boardsesh/boardsesh.
             The repo is checked out at the current directory.
@@ -128,6 +128,7 @@ jobs:
 
             ## Report
 
-            Finish by appending a summary to $GITHUB_STEP_SUMMARY: clusters seen,
+            Finish by writing a summary via
+            `bash .github/scripts/append-summary.sh <<'EOF' ... EOF`: clusters seen,
             issues filed (numbers + titles), comments posted (issue numbers), clusters
             skipped as noise/fleet-lag and why. Keep it under a screenful.

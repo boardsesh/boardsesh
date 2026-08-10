@@ -8,6 +8,10 @@ set -euo pipefail
 
 path="${1:?usage: sentry-api.sh </api/0/...> [--with-headers]}"
 case "$path" in
+  *..*)
+    echo "sentry-api.sh: path traversal is not allowed" >&2
+    exit 2
+    ;;
   /api/0/*) ;;
   *)
     echo "sentry-api.sh: path must start with /api/0/" >&2
