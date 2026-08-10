@@ -42,12 +42,13 @@ async function getMockStorage() {
 // Stands in for any of the four shelves: renders its expand state and a header
 // tap target, exactly like the real surfaces do.
 function Shelf({ name }: { name: string }) {
-  const { expanded, toggle } = useBetaShelfCollapse();
+  const { expanded, toggle, loaded } = useBetaShelfCollapse();
   return createElement(
     'div',
     null,
     createElement('button', { onClick: toggle }, `toggle-${name}`),
     createElement('span', null, `${name}:${expanded ? 'expanded' : 'collapsed'}`),
+    createElement('span', null, `${name}-loaded:${loaded ? 'yes' : 'no'}`),
   );
 }
 
@@ -104,6 +105,18 @@ describe('useBetaShelfCollapse', () => {
     });
 
     expect(getByText('home:collapsed')).toBeTruthy();
+  });
+
+  it('reports loaded:false until the store has been read', async () => {
+    // The home shelf renders nothing while this is false — that flag is what
+    // keeps a stored "collapsed" from flashing open on a cold start, without
+    // putting an AsyncStorage read on the splash's critical path.
+    (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify({ [BETA_SHELF_SECTION_KEY]: false }));
+
+    const { getByText } = render(createElement(Shelf, { name: 'home' }));
+
+    expect(getByText('home-loaded:no')).toBeTruthy();
+    await waitFor(() => expect(getByText('home-loaded:yes')).toBeTruthy());
   });
 
   it('reconciles to a collapsed value stored before launch', async () => {

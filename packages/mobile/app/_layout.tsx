@@ -426,7 +426,6 @@ function ThemedNavigation({ children }: { children: ReactNode }) {
 function RootLayout() {
   const [authReady, setAuthReady] = useState(false);
   const [fontsReady, setFontsReady] = useState(false);
-  const [prefsReady, setPrefsReady] = useState(false);
 
   // Flush decoded board-art bitmaps on background / memory warning (#3479).
   useImageCacheMemoryManagement();
@@ -445,25 +444,17 @@ function RootLayout() {
     };
   }, []);
 
-  // Warm the collapsed-section map before the first tab paints. Without this it
-  // loads lazily on the first section's mount, so a climber who folded the home
-  // beta shelf away would watch it render open and then snap shut on every cold
-  // start (#4229). Gated into the splash rather than left to race it: auth and
-  // fonts are normally far slower than one AsyncStorage read, but "normally"
-  // isn't a guarantee, and losing that race is exactly the flash this prevents.
-  // `.finally` mirrors the fonts path so a failed or missing read still releases.
+  // Warm the collapsed-section map early so the sections a climber navigates to
+  // later (play drawer, profile, session detail) mount against a loaded store
+  // instead of each triggering the lazy read (#4229). Deliberately NOT a splash
+  // gate: startup must not wait on a preference read. The one surface that
+  // paints before this can resolve — the home beta shelf — waits on the store's
+  // own `loaded` flag instead, so it renders nothing rather than guessing
+  // expanded and visibly correcting itself.
   useEffect(() => {
-    let cancelled = false;
-    void loadSectionExpandState()
-      .catch((error: unknown) => {
-        reportError(error);
-      })
-      .finally(() => {
-        if (!cancelled) setPrefsReady(true);
-      });
-    return () => {
-      cancelled = true;
-    };
+    void loadSectionExpandState().catch((error: unknown) => {
+      reportError(error);
+    });
   }, []);
 
   const onAuthReady = useCallback(() => {
@@ -471,9 +462,9 @@ function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (!authReady || !fontsReady || !prefsReady) return;
+    if (!authReady || !fontsReady) return;
     void SplashScreen.hideAsync();
-  }, [authReady, fontsReady, prefsReady]);
+  }, [authReady, fontsReady]);
 
   return (
     <GestureHandlerRootView style={layoutStyles.root}>

@@ -116,8 +116,16 @@ export default function HomeTab() {
   const scopeReady = !isResolvingHomeBoard;
   // A folded-away shelf costs no request: the header renders unconditionally, so
   // gating the fetch can't strand the user with no way to unfold it (#4229).
-  const { expanded: betaExpanded, toggle: toggleBetaShelf } = useBetaShelfCollapse();
-  const betaVideos = useRecentBetaLinks(RECENT_BETA_LIMIT, betaBoardType, betaLayoutId, scopeReady && betaExpanded);
+  // `betaReady` is the persisted-store read; until it lands `betaExpanded` is
+  // only the default guess, so this is the one surface that paints before the
+  // store can load and must not act on a guess it may have to visibly undo.
+  const { expanded: betaExpanded, toggle: toggleBetaShelf, loaded: betaReady } = useBetaShelfCollapse();
+  const betaVideos = useRecentBetaLinks(
+    RECENT_BETA_LIMIT,
+    betaBoardType,
+    betaLayoutId,
+    scopeReady && betaReady && betaExpanded,
+  );
   const feed = useSessionGroupedFeed(feedInput, isAuthenticated && scopeReady);
 
   const sessions = useMemo(
@@ -341,6 +349,7 @@ export default function HomeTab() {
           onOpenClimb={handleBetaOpenClimb}
           expanded={betaExpanded}
           onToggleExpanded={toggleBetaShelf}
+          ready={betaReady}
         />
         <Text variant="title3" style={styles.feedHeading}>
           {sessionsHeading}
@@ -357,6 +366,7 @@ export default function HomeTab() {
       sessionsHeading,
       betaExpanded,
       toggleBetaShelf,
+      betaReady,
     ],
   );
 
@@ -524,6 +534,7 @@ function RecentBetaShelf({
   onOpenClimb,
   expanded,
   onToggleExpanded,
+  ready,
 }: {
   heading: string;
   videos: RecentBetaVideo[];
@@ -533,6 +544,7 @@ function RecentBetaShelf({
   onOpenClimb: (video: RecentBetaVideo) => void;
   expanded: boolean;
   onToggleExpanded: () => void;
+  ready: boolean;
 }) {
   const { t } = useTranslation('feed');
   const { t: tCommon } = useTranslation('common');
@@ -553,7 +565,11 @@ function RecentBetaShelf({
         <Text variant="title3">{heading}</Text>
         <SectionDisclosureChevron expanded={expanded} size={18} />
       </Pressable>
-      {!expanded ? null : isLoading ? (
+      {/* Nothing until the stored state lands: rendering the default and then
+          correcting it is the cold-start flash this avoids. One AsyncStorage
+          read, so the gap is imperceptible — and it keeps startup off the
+          splash's critical path. */}
+      {!ready || !expanded ? null : isLoading ? (
         <FlatList
           horizontal
           data={BETA_SKELETON_KEYS}
@@ -715,7 +731,8 @@ const styles = StyleSheet.create({
   sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
+    // Full row, not `alignSelf: 'flex-start'` — the whole heading is the tap
+    // target here, matching the disclosure in SectionHeader.
     gap: spacing[2],
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[2],

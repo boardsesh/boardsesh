@@ -22,6 +22,10 @@ export const BETA_SHELF_DEFAULT_EXPANDED = true;
 export type BetaShelfCollapse = {
   expanded: boolean;
   toggle: () => void;
+  /** False until the stored value has been read. `expanded` is only a default
+   *  guess before then, so a first-paint surface should render neither state
+   *  rather than guess and correct itself visibly. */
+  loaded: boolean;
 };
 
 /**
@@ -34,7 +38,7 @@ export type BetaShelfCollapse = {
  * Reanimated shared value from the reconciliation.)
  */
 export function useBetaShelfCollapse(): BetaShelfCollapse {
-  const { expanded: persisted } = useSectionExpanded(BETA_SHELF_SECTION_KEY);
+  const { expanded: persisted, loaded } = useSectionExpanded(BETA_SHELF_SECTION_KEY);
   const expanded = persisted ?? BETA_SHELF_DEFAULT_EXPANDED;
 
   const toggle = useCallback(() => {
@@ -42,5 +46,5 @@ export function useBetaShelfCollapse(): BetaShelfCollapse {
     setSectionExpanded(BETA_SHELF_SECTION_KEY, !expanded);
   }, [expanded]);
 
-  return { expanded, toggle };
+  return { expanded, toggle, loaded };
 }
