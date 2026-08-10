@@ -62,8 +62,8 @@ const holderPresenceFor = (userId: string): BoardPresenceCurrentState =>
 const wrapper = ({ children }: { children: ReactNode }) =>
   createElement(BoardPresenceCurrentContext.Provider, { value: ctrl.presence }, children);
 
-function renderControl(source: 'lightbulb_toolbar' | 'lightbulb_drawer' = 'lightbulb_toolbar') {
-  return renderHook(() => useLightbulbControl({ source }), { wrapper });
+function renderControl() {
+  return renderHook(() => useLightbulbControl(), { wrapper });
 }
 
 beforeEach(() => {
@@ -175,17 +175,16 @@ describe('useLightbulbControl lit state', () => {
 });
 
 describe('useLightbulbControl press action', () => {
-  it('connects, arms the undo toast, and tracks when disconnected', () => {
+  it('connects and arms the undo toast when disconnected', () => {
     ctrl.bluetooth = makeBluetooth({ isConnected: false, reconnectSerialForCurrentBoard: 'serial-1' });
     const { result } = renderControl();
     result.current.onPress();
     expect(ctrl.bluetooth?.armUndoWallChangeToast).toHaveBeenCalledOnce();
     expect(ctrl.bluetooth?.connect).toHaveBeenCalledWith(undefined, undefined, 'serial-1', undefined);
     expect(ctrl.bluetooth?.disconnect).not.toHaveBeenCalled();
-    expect(trackMock).toHaveBeenCalledWith(
-      'Board Lightbulb Connect',
-      expect.objectContaining({ source: 'lightbulb_toolbar' }),
-    );
+    // The connect ATTEMPT is deliberately untracked — Bluetooth Connection
+    // Success / Failed carry the outcome.
+    expect(trackMock).not.toHaveBeenCalled();
   });
 
   it('reconnects a MoonBoard by its remembered device id (no serial)', () => {
@@ -197,7 +196,7 @@ describe('useLightbulbControl press action', () => {
     expect(ctrl.bluetooth?.connect).toHaveBeenCalledWith(undefined, undefined, undefined, 'moon-abc');
   });
 
-  it('disconnects (no connect, no track) when already connected', () => {
+  it('disconnects (no connect) when already connected', () => {
     ctrl.bluetooth = makeBluetooth({ isConnected: true });
     const { result } = renderControl();
     result.current.onPress();

@@ -18,9 +18,6 @@ export function useOpenWallPreview(): (wallClimb: Climb) => void {
       openPlayDrawer(wallClimb, {
         previewQueueItem: climbToQueueItem(wallClimb),
         previewIsWallClimb: true,
-        // Distinct from a queue-item open — this is a peek at what's lit on the
-        // wall (often a teammate's), opened from the "On the wall" capsule.
-        source: 'board_presence',
       });
     },
     [openPlayDrawer],

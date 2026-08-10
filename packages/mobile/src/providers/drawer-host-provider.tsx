@@ -118,13 +118,6 @@ export type OpenPlayDrawerOptions = PlayDrawerOpenOptions & {
    *  default). The override is applied via state, so the actual open happens
    *  after the new boardConfig has propagated to PlayDrawer's props. */
   boardConfig?: BoardConfig;
-  /** Analytics-only tag for the `Play Drawer Opened` event's `source`. Lets a
-   *  real climb-view (feed/session/beta/playlist) be distinguished from a
-   *  queue-nav / accessory tap — the latter open `committedExternally` or with a
-   *  `previewQueueItem`, so the default `current_queue_item`/`mobile` heuristic
-   *  can't tell them apart. Pulled out before the rest of the options reach
-   *  `PlayDrawer.open`, so it never leaks into the drawer itself. */
-  source?: 'climb_view' | 'current_queue_item' | 'mobile' | 'board_presence';
 };
 
 /** Props the iPad right-column PlayDrawer pane consumes (regular width). Mirrors
@@ -425,18 +418,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   myBoardsRef.current = myBoardsConn;
 
   const openPlayDrawer = useCallback((climb: Climb, options?: OpenPlayDrawerOptions) => {
-    // Pull `source` out alongside `boardConfig` so neither reaches the open target
-    // — `source` is analytics-only and would otherwise leak into the drawer.
-    const { boardConfig: override, source: openSource, ...openOptions } = options ?? {};
-    const boardConfig = override ?? storedActiveBoardConfigRef.current;
-    track(SHARED_EVENTS.PlayDrawerOpened, {
-      climbUuid: climb.uuid,
-      boardName: boardConfig?.boardName,
-      layoutId: boardConfig?.layoutId,
-      source:
-        openSource ??
-        (openOptions.committedExternally || openOptions.previewQueueItem != null ? 'current_queue_item' : 'mobile'),
-    });
+    // Pull `boardConfig` out so it doesn't reach the open target.
+    const { boardConfig: override, ...openOptions } = options ?? {};
     // Set the board override BEFORE navigating so the route reads the right board
     // from `activeBoardConfig` (reactive) on mount — no requestAnimationFrame /
     // pending-replay dance. Only set an override that genuinely differs from the

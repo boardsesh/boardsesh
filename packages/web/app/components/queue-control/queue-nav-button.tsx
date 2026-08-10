@@ -42,24 +42,18 @@ export default function QueueNavButton({ direction, boardDetails }: QueueNavButt
     if (!target || viewOnlyMode) return;
     setCurrentClimbQueueItem(target);
     const boardLayout = boardDetails?.layout_name || '';
+    // Every successful broadcast advance. Always-live model: any participant can
+    // advance the wall climb.
+    //
+    // Fired BEFORE the mutation acks, so a transient network failure can produce
+    // an event without a corresponding wall change. Consistent with other queue
+    // analytics and intentional: we'd rather count user intent than gate on
+    // round-trip success. Watch the ratio against `Wall Confirmed` if this
+    // becomes a misleading signal.
     track('Queue Navigation', {
       direction,
       method: 'button',
-      boardLayout,
-    });
-    // Wall Advance fires on every successful broadcast advance. Always-live
-    // model: any participant can advance the wall climb.
-    //
-    // Fired BEFORE the mutation acks — matches the existing `Queue Navigation`
-    // fire-on-call pattern (above). Means a transient network failure can
-    // produce a `Wall Advance` event without a corresponding wall change.
-    // Consistent with other queue analytics and intentional: we'd rather
-    // count user intent than gate on round-trip success. Watch the ratio of
-    // `Wall Advance` to `Wall Confirmed` if this becomes a misleading signal.
-    track('Wall Advance', {
-      source: 'bar_button',
-      direction,
-      mode: isPersistentSessionActive ? 'party' : 'solo',
+      sessionMode: isPersistentSessionActive ? 'party' : 'solo',
       boardLayout,
     });
   }, [target, viewOnlyMode, setCurrentClimbQueueItem, boardDetails?.layout_name, direction, isPersistentSessionActive]);

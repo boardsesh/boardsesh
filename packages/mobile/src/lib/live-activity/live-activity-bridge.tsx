@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
-import { track } from '../../lib/analytics';
 import { useQueue } from '../../providers/queue-provider';
 import { useBoardConnectionState } from '../../components/ble/use-board-connection-state';
 import { useNativeClimbRender } from '../../hooks/use-native-climb-render';
@@ -146,25 +145,14 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
   // changes when a board is (de)selected).
   const bluetoothRef = useRef(bluetooth);
   bluetoothRef.current = bluetooth;
-  // Refs so the once-subscribed listener reads the latest session/climb for the
-  // reconnect analytics without re-registering.
-  const sessionIdRef = useRef(sessionId);
-  sessionIdRef.current = sessionId;
-  const climbUuidRef = useRef(displayClimb?.uuid);
-  climbUuidRef.current = displayClimb?.uuid;
-
   useEffect(() => {
     const unsubscribe = addBoardControlListener((event) => {
       const bluetoothCtx = bluetoothRef.current;
       if (!bluetoothCtx) return;
       if (event.action === 'reconnect') {
-        // Measure the lock-screen reconnect like the in-app bulb (source-tagged).
-        track('Board Lightbulb Connect', {
-          source: 'notification',
-          mode: sessionIdRef.current !== null ? 'party' : 'solo',
-          boardLayout: null,
-          climbUuid: climbUuidRef.current ?? null,
-        });
+        // The connect ATTEMPT is not tracked — Bluetooth Connection Success /
+        // Failed record the outcome a few hundred ms later, which is the question
+        // the BLE health dashboard actually asks.
         bluetoothCtx.armUndoWallChangeToast();
         // By serial (Aurora) or device id (MoonBoard); neither → adapter picker.
         void bluetoothCtx.connect(

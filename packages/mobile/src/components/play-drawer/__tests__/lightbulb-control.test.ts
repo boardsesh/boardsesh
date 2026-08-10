@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildPlayDrawerBoardLayout,
-  deriveBoardConnection,
-  deriveLightbulbLit,
-  derivePlayDrawerLightbulbPressAction,
-} from '../lightbulb-control';
+import { deriveBoardConnection, deriveLightbulbLit, derivePlayDrawerLightbulbPressAction } from '../lightbulb-control';
 
 describe('play drawer lightbulb control', () => {
   it('derives the connect/disconnect tap action', () => {
@@ -43,10 +38,6 @@ describe('play drawer lightbulb control', () => {
         isBluetoothLoading: false,
       }),
     ).toBe('disconnect');
-  });
-
-  it('builds the analytics board-layout key', () => {
-    expect(buildPlayDrawerBoardLayout({ boardName: 'kilter', layoutId: 1, sizeId: 10 })).toBe('kilter:1:10');
   });
 });
 

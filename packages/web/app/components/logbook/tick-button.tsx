@@ -14,6 +14,7 @@ import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
 import LoginOutlined from '@mui/icons-material/LoginOutlined';
 import AppsOutlined from '@mui/icons-material/AppsOutlined';
 import { track } from '@/app/lib/analytics';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { LogAscentDrawer } from './log-ascent-drawer';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { constructClimbInfoUrl } from '@/app/lib/url-utils';
@@ -60,9 +61,13 @@ export const TickButton: React.FC<TickButtonProps> = ({
   );
 
   const showDrawer = (e?: React.MouseEvent<HTMLButtonElement>) => {
-    track('Tick Button Clicked', {
+    // Fires on OPEN, matching mobile's Quick Tick Opened (this used to be web's
+    // separately-named `Tick Button Clicked`). See tick-action.tsx.
+    track(SHARED_EVENTS.QuickTickOpened, {
+      climbUuid: currentClimb?.uuid ?? null,
       boardLayout: boardDetails.layout_name || '',
       existingAscentCount: badgeCount,
+      source: 'logbook_tick_button',
     });
 
     // When tick mode is already active, save the tick

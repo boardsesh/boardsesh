@@ -2,7 +2,6 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 
@@ -809,41 +808,8 @@ describe('DrawerHostProvider climb actions', () => {
   });
 });
 
-describe('DrawerHostProvider play drawer open analytics source', () => {
-  it('tags a climb-view open with source:climb_view', async () => {
-    const hosts: Array<HostValue> = [];
-    renderHost((host) => hosts.push(host));
-    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
-
-    const climb = makeQueueItem('queue-x', 'climb-view-1').climb as unknown as Climb;
-    const previewItem = makeQueueItem('queue-preview-1', 'climb-view-1');
-    act(() => {
-      hosts.at(-1)?.openPlayDrawer(climb, { previewQueueItem: previewItem, source: 'climb_view' });
-    });
-
-    expect(analytics.track).toHaveBeenCalledWith(
-      SHARED_EVENTS.PlayDrawerOpened,
-      expect.objectContaining({ climbUuid: 'climb-view-1', source: 'climb_view' }),
-    );
-  });
-
-  it('defaults a queue-nav open (committedExternally, no source) to current_queue_item', async () => {
-    const hosts: Array<HostValue> = [];
-    renderHost((host) => hosts.push(host));
-    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
-
-    const climb = makeQueueItem('queue-x', 'queue-nav-1').climb as unknown as Climb;
-    act(() => {
-      hosts.at(-1)?.openPlayDrawer(climb, { committedExternally: true });
-    });
-
-    expect(analytics.track).toHaveBeenCalledWith(
-      SHARED_EVENTS.PlayDrawerOpened,
-      expect.objectContaining({ climbUuid: 'queue-nav-1', source: 'current_queue_item' }),
-    );
-  });
-
-  it('does not leak source (or boardConfig) into the open target', async () => {
+describe('DrawerHostProvider play drawer open target', () => {
+  it('does not leak boardConfig into the open target', async () => {
     const hosts: Array<HostValue> = [];
     const routes: Array<RouteValue> = [];
     renderHost(
@@ -854,11 +820,11 @@ describe('DrawerHostProvider play drawer open analytics source', () => {
 
     const climb = makeQueueItem('queue-x', 'climb-view-2').climb as unknown as Climb;
     act(() => {
-      hosts.at(-1)?.openPlayDrawer(climb, { committedExternally: true, source: 'climb_view' });
+      hosts.at(-1)?.openPlayDrawer(climb, { committedExternally: true });
     });
 
-    // No board override → no override set; `source` was pulled out and must not
-    // reach the open target the route applies.
+    // No board override → no override set, and `boardConfig` must not reach the
+    // open target the route applies.
     await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(climb));
     expect(routes.at(-1)?.playTarget?.options).toEqual({ committedExternally: true });
   });
@@ -1087,7 +1053,7 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     act(() => {
       // Feed / beta / climb-view preview: show it in the pane; PlayDrawer decides
       // whether to commit from openTarget.options (the host doesn't).
-      hosts.at(-1)?.openPlayDrawer(climb, { previewQueueItem: previewItem, source: 'climb_view' });
+      hosts.at(-1)?.openPlayDrawer(climb, { previewQueueItem: previewItem });
     });
 
     await waitFor(() => {
@@ -1119,7 +1085,6 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
       hosts.at(-1)?.openPlayDrawer(previewItem.climb as unknown as Climb, {
         previewQueueItem: previewItem,
         playlistSuggestionSource,
-        source: 'climb_view',
       });
     });
 

@@ -26,7 +26,7 @@ const gradesState = vi.hoisted(() => ({
 }));
 
 // Stable save mock so a test can assert on the input passed to saveTick.mutate.
-// Invokes onSuccess by default (so the QuickTickSaved track call and the
+// Invokes onSuccess by default (so the TickLogged track call and the
 // savedRef/onDismiss wiring fire the way the real mutation would); flip
 // `failure` to drive the onError path instead.
 const saveMock = vi.hoisted(() => {
@@ -57,8 +57,6 @@ vi.mock('@boardsesh/board-config', async (importOriginal) => {
 });
 vi.mock('@boardsesh/analytics', () => ({
   SHARED_EVENTS: {
-    TickButtonClicked: 'Tick Button Clicked',
-    QuickTickSaved: 'Quick Tick Saved',
     QuickTickFailed: 'Quick Tick Failed',
     TickLogged: 'Tick Logged',
   },
@@ -306,7 +304,7 @@ describe('useQuickTickForm climbedAt', () => {
   });
 });
 
-describe('useQuickTickForm grade value on Quick Tick Saved', () => {
+describe('useQuickTickForm grade value on Tick Logged', () => {
   it('resolves the picked numeric difficulty id to a human grade label', () => {
     boardState.current = null;
     gradesState.current = [{ difficultyId: 5, name: 'V5' }];
@@ -316,7 +314,7 @@ describe('useQuickTickForm grade value on Quick Tick Saved', () => {
     fireEvent.click(getByTestId('save'));
 
     expect(track).toHaveBeenCalledWith(
-      'Quick Tick Saved',
+      'Tick Logged',
       expect.objectContaining({ difficulty: 5, grade: 'V5', hasDifficulty: true }),
     );
   });
@@ -327,7 +325,7 @@ describe('useQuickTickForm grade value on Quick Tick Saved', () => {
 
     fireEvent.click(getByTestId('save'));
 
-    expect(track).toHaveBeenCalledWith('Quick Tick Saved', expect.objectContaining({ grade: null, difficulty: null }));
+    expect(track).toHaveBeenCalledWith('Tick Logged', expect.objectContaining({ grade: null, difficulty: null }));
   });
 });
 
@@ -376,20 +374,19 @@ describe('useQuickTickForm dismiss-analytics plumbing (savedRef / fieldSnapshotR
 });
 
 describe('useQuickTickForm analytics', () => {
-  it('fires the canonical TickLogged event alongside QuickTickSaved on a successful save', () => {
+  it('fires exactly one event per committed tick — the canonical TickLogged', () => {
     boardState.current = null;
     const { getByTestId } = renderForm();
 
     fireEvent.click(getByTestId('save'));
 
     expect(track).toHaveBeenCalledWith(
-      SHARED_EVENTS.QuickTickSaved,
-      expect.objectContaining({ climbUuid: CLIMB_UUID }),
-    );
-    expect(track).toHaveBeenCalledWith(
       SHARED_EVENTS.TickLogged,
       expect.objectContaining({ climbUuid: CLIMB_UUID, platform: 'mobile', surface: 'mobile_quick_tick' }),
     );
+    // The old Tick Button Clicked (save-intent) and Quick Tick Saved
+    // (same onSuccess as TickLogged) companions are gone.
+    expect(vi.mocked(track).mock.calls.map(([eventName]) => eventName)).toEqual(['Tick Logged']);
   });
 });
 
@@ -456,7 +453,7 @@ describe('useQuickTickForm tries count', () => {
     fireEvent.click(getByTestId('save'));
 
     expect(track).toHaveBeenCalledWith(
-      SHARED_EVENTS.QuickTickSaved,
+      SHARED_EVENTS.TickLogged,
       expect.objectContaining({ status: 'send', attemptCount: 1 }),
     );
   });

@@ -50,7 +50,6 @@ describe('openClimbInPlayDrawer', () => {
     openClimbInPlayDrawer({ kind: 'climb', climb, boardConfig }, deps);
     expect(deps.openPlayDrawer).toHaveBeenCalledWith(climb, {
       boardConfig,
-      source: 'climb_view',
     });
     expect(deps.router.push).not.toHaveBeenCalled();
   });
@@ -63,7 +62,6 @@ describe('openClimbInPlayDrawer', () => {
     expect(deps.openPlayDrawer).toHaveBeenCalledWith(climb, {
       previewQueueItem: expect.objectContaining({ climb: expect.objectContaining({ uuid: 'c-1' }) }),
       boardConfig,
-      source: 'climb_view',
     });
   });
 
@@ -75,7 +73,6 @@ describe('openClimbInPlayDrawer', () => {
     const [, options] = deps.openPlayDrawer.mock.calls[0];
     expect(options).toMatchObject({
       boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20,33', angle: 50 },
-      source: 'climb_view',
     });
     expect(options.previewQueueItem).toBeUndefined();
     expect(deps.router.push).not.toHaveBeenCalled();

@@ -190,6 +190,15 @@ describe('LogAscentForm — 0° regression', () => {
         expect.objectContaining({ climbUuid: 'climb-1', platform: 'web', surface: 'web_full_form' }),
       ),
     );
+
+    // Tick Logged is the single commit event across all three tick surfaces, so
+    // a `surface` breakdown is only comparable if each one reports the same
+    // fields — this form used to omit these four.
+    const [, properties] = mockTrack.mock.calls.find(([eventName]) => eventName === SHARED_EVENTS.TickLogged) ?? [];
+    expect(properties).toHaveProperty('attemptCount');
+    expect(properties).toHaveProperty('hasQuality');
+    expect(properties).toHaveProperty('grade');
+    expect(properties).toHaveProperty('hasComment');
   });
 
   it('disables submit when no angle resolved (null), with the helper text spelled out', () => {

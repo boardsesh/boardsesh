@@ -47,7 +47,6 @@ describe('useOpenWallPreview', () => {
       expect.objectContaining({
         previewIsWallClimb: true,
         previewQueueItem: expect.objectContaining({ climb: expect.objectContaining({ uuid: 'wall-1' }) }),
-        source: 'board_presence',
       }),
     );
   });

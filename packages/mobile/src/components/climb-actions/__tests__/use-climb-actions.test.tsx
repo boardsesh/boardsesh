@@ -256,7 +256,7 @@ describe('useClimbActions colours and dispatch', () => {
     const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: false });
     result.current.find((action) => action.id === 'preview')?.run();
     expect(openers.openPlayDrawer).toHaveBeenCalledTimes(1);
-    expect(openers.openPlayDrawer).toHaveBeenCalledWith(climb, expect.objectContaining({ source: 'climb_view' }));
+    expect(openers.openPlayDrawer).toHaveBeenCalledWith(climb, expect.any(Object));
   });
 });
 

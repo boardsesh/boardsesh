@@ -65,7 +65,7 @@ export function LogAscentSheet({
   const { t } = useTranslation('climbs');
 
   // Tracks whether the open tick got saved, so handleClose below can tell a
-  // completed save (QuickTickSaved already covers it) apart from a genuine
+  // completed save (TickLogged already covers it) apart from a genuine
   // abandon via the close button / pan-down / backdrop tap (none of which call
   // back into the form, so it can't distinguish these itself).
   const savedRef = useRef(false);

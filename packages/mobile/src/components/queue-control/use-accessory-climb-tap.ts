@@ -33,7 +33,7 @@ export function useAccessoryClimbTap(): AccessoryClimbTap {
     if (!accessoryClimb) return;
     hapticLight();
     // It already IS current, so openDrawer won't re-append it.
-    openPlayDrawer(accessoryClimb, { source: 'current_queue_item' });
+    openPlayDrawer(accessoryClimb, {});
   }, [openPlayDrawer, accessoryClimb]);
 
   const openGesture = useMemo(

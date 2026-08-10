@@ -319,25 +319,6 @@ describe('LiveActivityBridge lightbulb (boardControl)', () => {
     expect(bt.connect).toHaveBeenCalledTimes(1);
     expect(bt.connect).toHaveBeenCalledWith(undefined, undefined, 'serial-123', undefined);
     expect(bt.reassertWall).not.toHaveBeenCalled();
-    // The lock-screen reconnect is measured like the in-app bulb.
-    expect(analytics.track).toHaveBeenCalledWith(
-      'Board Lightbulb Connect',
-      expect.objectContaining({ source: 'notification', mode: 'party' }),
-    );
-  });
-
-  it('reconnect: tags the analytics mode as solo when not in a party session', () => {
-    queue.sessionId = null;
-    renderBridge();
-
-    act(() => {
-      widget.boardControlListener?.({ action: 'reconnect', correlationId: 'bulb-solo' });
-    });
-
-    expect(analytics.track).toHaveBeenCalledWith(
-      'Board Lightbulb Connect',
-      expect.objectContaining({ source: 'notification', mode: 'solo' }),
-    );
   });
 
   it('reconnect: falls back to undefined serial (board picker) when none is remembered', () => {

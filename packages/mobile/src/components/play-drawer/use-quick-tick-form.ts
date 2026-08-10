@@ -265,7 +265,6 @@ export function useQuickTickForm({
   const handleSaveWithStatus = useCallback(
     (status: TickStatus) => {
       if (saveTick.isPending) return;
-      track(SHARED_EVENTS.TickButtonClicked, { climbUuid, layoutId: layoutId ?? null });
       setLastError(null);
 
       // Mirrors the server's flash-is-one-try rule; a no-op for every value the picker can show.
@@ -294,23 +293,23 @@ export function useQuickTickForm({
         },
         {
           onSuccess: () => {
-            track(SHARED_EVENTS.QuickTickSaved, {
-              climbUuid,
-              layoutId: layoutId ?? null,
-              status,
-              attemptCount: finalAttempts,
-              hasQuality: tickState.quality != null && tickState.quality > 0,
-              hasDifficulty: tickState.difficulty != null,
-              difficulty: tickState.difficulty ?? null,
-              grade: resolvedGradeName ?? null,
-              hasComment: comment.length > 0,
-            });
+            // One event per committed tick. This used to fire QuickTickSaved and
+            // TickLogged back to back with the same climb/status, plus a
+            // TickButtonClicked on the way in — four events per tick once
+            // QuickTickOpened is counted. TickLogged is the canonical
+            // cross-platform join event, so it absorbed QuickTickSaved's payload.
             track(SHARED_EVENTS.TickLogged, {
               climbUuid,
               layoutId: layoutId ?? null,
               status,
               platform: 'mobile',
               surface: 'mobile_quick_tick',
+              attemptCount: finalAttempts,
+              hasQuality: tickState.quality != null && tickState.quality > 0,
+              hasDifficulty: tickState.difficulty != null,
+              difficulty: tickState.difficulty ?? null,
+              grade: resolvedGradeName ?? null,
+              hasComment: comment.length > 0,
             });
             hapticSuccess();
             // Kick off the paired gym timer's stopwatch. No-op unless a Rogue

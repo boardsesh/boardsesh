@@ -77,11 +77,11 @@ const sampleItem: ClimbQueueItem = {
 
 const boardDetails = { layout_name: 'Original' } as Parameters<typeof QueueNavButton>[0]['boardDetails'];
 
-function findWallAdvanceCall() {
-  return mockTrack.mock.calls.find((args) => args[0] === 'Wall Advance');
+function findQueueNavigationCall() {
+  return mockTrack.mock.calls.find((args) => args[0] === 'Queue Navigation');
 }
 
-describe('QueueNavButton Wall Advance event', () => {
+describe('QueueNavButton advance event', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetNextClimbQueueItem.mockReturnValue(sampleItem);
@@ -89,50 +89,48 @@ describe('QueueNavButton Wall Advance event', () => {
     sessionDataMock = { viewOnlyMode: false, isPersistentSessionActive: false };
   });
 
-  it('fires Wall Advance with bar_button source in solo mode', () => {
+  it('fires Queue Navigation with sessionMode=solo outside a party session', () => {
     render(<QueueNavButton direction="next" boardDetails={boardDetails} />);
 
     fireEvent.click(screen.getByRole('button'));
 
-    const call = findWallAdvanceCall();
+    const call = findQueueNavigationCall();
     expect(call).toBeTruthy();
     // Always-live model: no pressedByRole — every press is an unqualified
     // broadcast advance.
     expect(call?.[1]).toMatchObject({
-      source: 'bar_button',
+      method: 'button',
       direction: 'next',
-      mode: 'solo',
+      sessionMode: 'solo',
       boardLayout: 'Original',
     });
     expect(call?.[1]).not.toHaveProperty('pressedByRole');
   });
 
-  it('fires Wall Advance with mode=party when any participant presses in a party session', () => {
+  it('fires sessionMode=party when any participant presses in a party session', () => {
     sessionDataMock = { viewOnlyMode: false, isPersistentSessionActive: true };
     render(<QueueNavButton direction="previous" boardDetails={boardDetails} />);
 
     fireEvent.click(screen.getByRole('button'));
 
-    const call = findWallAdvanceCall();
+    const call = findQueueNavigationCall();
     expect(call).toBeTruthy();
     expect(call?.[1]).toMatchObject({
-      source: 'bar_button',
+      method: 'button',
       direction: 'previous',
-      mode: 'party',
+      sessionMode: 'party',
       boardLayout: 'Original',
     });
     expect(call?.[1]).not.toHaveProperty('pressedByRole');
   });
 
-  it('still fires Queue Navigation alongside Wall Advance (analytics continuity)', () => {
+  it('fires exactly one advance event — the separate Wall Advance was folded in', () => {
     render(<QueueNavButton direction="next" boardDetails={boardDetails} />);
 
     fireEvent.click(screen.getByRole('button'));
 
-    const queueNavCall = mockTrack.mock.calls.find((args) => args[0] === 'Queue Navigation');
-    const wallAdvanceCall = findWallAdvanceCall();
-    expect(queueNavCall).toBeTruthy();
-    expect(wallAdvanceCall).toBeTruthy();
+    expect(mockTrack.mock.calls.filter((args) => args[0] === 'Queue Navigation')).toHaveLength(1);
+    expect(mockTrack.mock.calls.find((args) => args[0] === 'Wall Advance')).toBeUndefined();
   });
 
   it('disables the button when there is no advance target', () => {
@@ -142,6 +140,6 @@ describe('QueueNavButton Wall Advance event', () => {
     const button = screen.getByRole('button') as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     fireEvent.click(button);
-    expect(findWallAdvanceCall()).toBeUndefined();
+    expect(findQueueNavigationCall()).toBeUndefined();
   });
 });

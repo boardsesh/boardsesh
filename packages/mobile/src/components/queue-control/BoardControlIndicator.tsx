@@ -48,9 +48,10 @@ export function BoardControlIndicator({
   const { systemColors, brandColors } = useTheme();
   const { boardConnection, holderDisplayName, bluetooth } = useBoardConnectionState();
   const { open: openBoardControls } = useBleControlSheet();
-  // Shared connect/disconnect path so analytics + undo-arming match the drawer +
-  // toolbar lightbulbs: connectedByMe → disconnect, disconnected → connect.
-  const { onPress: lightbulbPress } = useLightbulbControl({ source: 'lightbulb_toolbar' });
+  // Shared connect/disconnect path so undo-arming and the press semantics match
+  // the drawer + toolbar lightbulbs: connectedByMe → disconnect, disconnected →
+  // connect. (Connect outcome telemetry is emitted inside bluetooth.connect().)
+  const { onPress: lightbulbPress } = useLightbulbControl();
   const { openPlay } = useAccessoryClimbTap();
 
   const handlePress = useCallback(() => {

@@ -83,9 +83,14 @@ function getPosthog(): PostHog | null {
 }
 
 type PosthogProperties = Record<string, string | number | boolean | null>;
+// `sendEvent: false` suppresses the SDK's `$feature_flag_called` capture. Verified
+// in @posthog/core 1.46.1 (shared by posthog-js-lite and posthog-react-native):
+// `_getFeatureFlagResult` gates the capture on it, and both `getFeatureFlag` and
+// `isFeatureEnabled` forward it. Flag VALUES are unaffected.
+type FeatureFlagReadOptions = { sendEvent?: boolean };
 type PosthogFeatureFlagClient = {
-  getFeatureFlag?: (key: string) => unknown;
-  isFeatureEnabled?: (key: string) => unknown;
+  getFeatureFlag?: (key: string, options?: FeatureFlagReadOptions) => unknown;
+  isFeatureEnabled?: (key: string, options?: FeatureFlagReadOptions) => unknown;
   reloadFeatureFlags?: () => unknown;
   onFeatureFlags?: (callback: () => void) => unknown;
 };
@@ -195,6 +200,14 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   return typeof thenValue === 'function';
 }
 
+// This provider re-reads the WHOLE flag catalog on every flags-changed tick, so
+// leaving exposure events on cost ~173k events / 30 days across web + mobile —
+// 13% of the project's entire volume — for a signal nothing consumed: the project
+// runs no experiments, and the only insights referencing `$feature_flag_called`
+// are PostHog's auto-generated "<flag> Usage" boilerplate. Drop the option at a
+// specific call site if that flag ever needs real exposure analysis.
+const READ_WITHOUT_EXPOSURE_EVENT: FeatureFlagReadOptions = { sendEvent: false };
+
 export function readPosthogFeatureFlags(keys: readonly string[]): Record<string, boolean> {
   const posthog = getPosthog();
   if (!posthog) return {};
@@ -204,9 +217,9 @@ export function readPosthogFeatureFlags(keys: readonly string[]): Record<string,
   for (const key of keys) {
     let rawFlagValue: unknown;
     if (typeof featureFlagClient.getFeatureFlag === 'function') {
-      rawFlagValue = featureFlagClient.getFeatureFlag(key);
+      rawFlagValue = featureFlagClient.getFeatureFlag(key, READ_WITHOUT_EXPOSURE_EVENT);
     } else if (typeof featureFlagClient.isFeatureEnabled === 'function') {
-      rawFlagValue = featureFlagClient.isFeatureEnabled(key);
+      rawFlagValue = featureFlagClient.isFeatureEnabled(key, READ_WITHOUT_EXPOSURE_EVENT);
     }
     const flagValue = coerceFeatureFlagBoolean(rawFlagValue);
     if (flagValue !== undefined) {

@@ -357,7 +357,7 @@ describe('useTickSave', () => {
     expect(call.status).toBe('send');
   });
 
-  it('save() fires the canonical TickLogged event alongside Quick Tick Saved on success', async () => {
+  it('save() fires exactly one commit event — the canonical TickLogged', async () => {
     const opts = makeOptions({
       tickTarget: {
         climb: makeClimb(),
@@ -371,13 +371,15 @@ describe('useTickSave', () => {
 
     await act(async () => {
       result.current.save();
-      await vi.waitFor(() => expect(mockTrack).toHaveBeenCalledWith(SHARED_EVENTS.QuickTickSaved, expect.anything()));
+      await vi.waitFor(() => expect(mockTrack).toHaveBeenCalledWith(SHARED_EVENTS.TickLogged, expect.anything()));
     });
 
     expect(mockTrack).toHaveBeenCalledWith(
       SHARED_EVENTS.TickLogged,
       expect.objectContaining({ climbUuid: 'climb-1', status: 'send', platform: 'web', surface: 'web_quick_modal' }),
     );
+    // The old Quick Tick Saved companion fired from this same .then() block.
+    expect(mockTrack).not.toHaveBeenCalledWith('Quick Tick Saved', expect.anything());
   });
 
   it('save() sends status send when attemptCount > 1', () => {
@@ -422,7 +424,7 @@ describe('useTickSave', () => {
     expect(call.status).toBe('attempt');
   });
 
-  it('save() sends the resolved grade label alongside the numeric difficulty on Quick Tick Saved', async () => {
+  it('save() sends the resolved grade label alongside the numeric difficulty on Tick Logged', async () => {
     const opts = makeOptions({
       difficulty: 5,
       gradeName: 'V5',
@@ -438,11 +440,11 @@ describe('useTickSave', () => {
 
     await act(async () => {
       result.current.save();
-      await vi.waitFor(() => expect(track).toHaveBeenCalledWith('Quick Tick Saved', expect.anything()));
+      await vi.waitFor(() => expect(track).toHaveBeenCalledWith('Tick Logged', expect.anything()));
     });
 
     expect(track).toHaveBeenCalledWith(
-      'Quick Tick Saved',
+      'Tick Logged',
       expect.objectContaining({ difficulty: 5, grade: 'V5', hasDifficulty: true }),
     );
   });
@@ -461,10 +463,10 @@ describe('useTickSave', () => {
 
     await act(async () => {
       result.current.save();
-      await vi.waitFor(() => expect(track).toHaveBeenCalledWith('Quick Tick Saved', expect.anything()));
+      await vi.waitFor(() => expect(track).toHaveBeenCalledWith('Tick Logged', expect.anything()));
     });
 
-    expect(track).toHaveBeenCalledWith('Quick Tick Saved', expect.objectContaining({ grade: null }));
+    expect(track).toHaveBeenCalledWith('Tick Logged', expect.objectContaining({ grade: null }));
   });
 
   describe('confetti variant selection', () => {

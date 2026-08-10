@@ -237,14 +237,23 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({
         videoUrl: logType === 'ascent' && trimmedVideoUrl ? trimmedVideoUrl : undefined,
       });
 
+      // Carries the same payload as the other two tick surfaces (web quick modal,
+      // mobile quick tick) — Tick Logged is the single commit event since the
+      // analytics cull, so a surface breakdown is only comparable if every
+      // surface reports the same fields.
+      const loggedDifficulty = logType === 'ascent' ? (values.difficulty ?? null) : null;
       track(SHARED_EVENTS.TickLogged, {
         climbUuid: currentClimb.uuid,
         boardLayout: boardDetails.layout_name || '',
         status,
-        hasDifficulty: logType === 'ascent' && values.difficulty !== undefined,
-        difficulty: logType === 'ascent' ? (values.difficulty ?? null) : null,
         platform: 'web',
         surface: 'web_full_form',
+        attemptCount: values.attempts,
+        hasQuality: logType === 'ascent' && !!values.quality,
+        hasDifficulty: logType === 'ascent' && values.difficulty !== undefined,
+        difficulty: loggedDifficulty,
+        grade: grades.find((grade) => grade.difficulty_id === loggedDifficulty)?.difficulty_name ?? null,
+        hasComment: (values.notes ?? '').length > 0,
       });
 
       setFormValues(getInitialValues());

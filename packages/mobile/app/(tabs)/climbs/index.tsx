@@ -12,7 +12,6 @@ import {
   mergeBoardFilters,
   countActiveFilters,
   hasActiveBoardFilters,
-  describeGradeFilter,
   flagsToProgress,
   progressToFlags,
   applyStatusChange,
@@ -20,7 +19,6 @@ import {
   DEFAULT_CLIMB_FILTER_STATE,
   DEFAULT_CLIMB_BOARD_FILTER_STATE,
   type ClimbBoardFilterState,
-  type GradeTapMeta,
   type ProgressFilter,
   type SortOption,
   type GradeAccuracyValue,
@@ -456,12 +454,6 @@ function ClimbListInner() {
   const gradesRef = useRef(gradesData);
   gradesRef.current = gradesData;
   const grades = useMemo(() => gradesData ?? [], [gradesData]);
-  // Ascending difficulty ids — feeds describeGradeFilter so the `Grade Filter
-  // Changed` event reports a range's size the same way web does.
-  const gradeIds = useMemo(
-    () => grades.map((grade) => grade.difficultyId).sort((first, second) => first - second),
-    [grades],
-  );
   const { formatGradeByDifficultyId } = useGradeFormat();
 
   const boardConfig = useMemo(
@@ -616,24 +608,19 @@ function ClimbListInner() {
   } = useInfiniteSearchClimbs(searchInput, searchReady);
   const isLoadingMoreRef = useRef(false);
 
-  // climbRankByUuid is built in the same pass as the dedup so a row's rank (its
-  // position in the loaded/deduped list) is a cheap Map lookup at press time —
-  // avoids threading an `index` prop through renderClimbItem's row chain, which
-  // would mean a fresh onPress closure per row (see the mobile perf rule against
-  // inline closures in renderItem, docs/react-native-performance.md).
-  const { visibleClimbs, climbRankByUuid } = useMemo(() => {
+  // Dedup across pages: the same climb can repeat when a page boundary shifts
+  // between fetches.
+  const visibleClimbs = useMemo(() => {
     const seenUuids = new Set<string>();
     const climbs: Climb[] = [];
-    const rankByUuid = new Map<string, number>();
     for (const page of searchPages?.pages ?? []) {
       for (const climb of page.climbs) {
         if (seenUuids.has(climb.uuid)) continue;
         seenUuids.add(climb.uuid);
-        rankByUuid.set(climb.uuid, climbs.length);
         climbs.push(climb);
       }
     }
-    return { visibleClimbs: climbs, climbRankByUuid: rankByUuid };
+    return climbs;
   }, [searchPages?.pages]);
 
   const firstSearchPage = searchPages?.pages[0];
@@ -783,59 +770,9 @@ function ClimbListInner() {
     refreshErrorMessage: 'Failed to refresh climb-list suggestions:',
   });
 
-  // Latest search context for the SearchResultSelected press handler, read via
-  // ref rather than useCallback deps so handleClimbPress keeps the stable
-  // identity it had before (activateClimbListClimb + blurSearchInputs only) —
-  // putting climbRankByUuid/visibleClimbs.length in the deps would recreate the
-  // callback (and therefore every row's onPress prop) on every page load,
-  // against the renderItem-chain stability rule in
-  // docs/react-native-performance.md.
-  const searchTrackingContextRef = useRef({
-    climbRankByUuid,
-    visibleResultCount: visibleClimbs.length,
-    boardName,
-    angle,
-    name,
-    filters,
-    boardFilters,
-  });
-  searchTrackingContextRef.current = {
-    climbRankByUuid,
-    visibleResultCount: visibleClimbs.length,
-    boardName,
-    angle,
-    name,
-    filters,
-    boardFilters,
-  };
-
   const handleClimbPress = useCallback(
     (climb: Climb) => {
       blurSearchInputs();
-      const {
-        climbRankByUuid: currentClimbRankByUuid,
-        visibleResultCount,
-        boardName: currentBoardName,
-        angle: currentAngle,
-        name: currentName,
-        filters: currentFilters,
-        boardFilters: currentBoardFilters,
-      } = searchTrackingContextRef.current;
-      // Rank/position in the loaded result list (undefined only if the climb
-      // isn't in the current search results at all, which shouldn't happen for
-      // a row-driven press).
-      const rank = currentClimbRankByUuid.get(climb.uuid);
-      if (rank !== undefined) {
-        track(SHARED_EVENTS.SearchResultSelected, {
-          rank,
-          loadedResultCount: visibleResultCount,
-          boardName: currentBoardName,
-          angle: currentAngle,
-          hasQuery: currentName.length > 0,
-          queryLengthBucket: queryLengthBucket(currentName),
-          activeFilterCount: countActiveFilters(currentFilters, currentBoardFilters),
-        });
-      }
       void activateClimbListClimb.activate(toQueueClimb(climb));
     },
     [activateClimbListClimb, blurSearchInputs],
@@ -917,41 +854,8 @@ function ClimbListInner() {
     [addToQueue],
   );
 
-  // Mirror web's `Grade Filter Changed` payload (snake_case so both platforms
-  // land in one PostHog funnel — issue #3290) and add a mobile-only `source` so
-  // we can split the discoverable chrome rail from the buried filter sheet
-  // (the #3281 discoverability question).
-  const trackGradeFilterChanged = useCallback(
-    (previous: GradeBound, next: GradeBound, source: 'chrome_rail' | 'filter_sheet', meta?: GradeTapMeta) => {
-      const previousShape = describeGradeFilter(previous, gradeIds);
-      const nextShape = describeGradeFilter(next, gradeIds);
-      track(SHARED_EVENTS.GradeFilterChanged, {
-        filter_kind: nextShape.kind,
-        min_grade_id: next.minGradeId ?? null,
-        max_grade_id: next.maxGradeId ?? null,
-        range_size: nextShape.size,
-        previous_filter_kind: previousShape.kind,
-        previous_min_grade_id: previous.minGradeId ?? null,
-        previous_max_grade_id: previous.maxGradeId ?? null,
-        extended_range_within_window: meta?.extendedRangeWithinWindow ?? null,
-        board_name: boardName,
-        source,
-      });
-    },
-    [gradeIds, boardName],
-  );
-
   const handleApplyFilters = useCallback(
     (newFilters: ClimbFilters, newBoardFilters: ClimbBoardFilterState) => {
-      // Fire one grade event if the sheet's Apply actually changed the bound
-      // (the sheet is a draft batch-apply, so no per-tap meta to carry).
-      if (newFilters.minGrade !== filters.minGrade || newFilters.maxGrade !== filters.maxGrade) {
-        trackGradeFilterChanged(
-          { minGradeId: filters.minGrade, maxGradeId: filters.maxGrade },
-          { minGradeId: newFilters.minGrade, maxGradeId: newFilters.maxGrade },
-          'filter_sheet',
-        );
-      }
       setFilters(newFilters);
       setBoardFilters(newBoardFilters);
       setShowFilters(false);
@@ -967,16 +871,7 @@ function ClimbListInner() {
           .catch(() => {});
       }
     },
-    [
-      t,
-      isAuthenticated,
-      name,
-      setFilters,
-      setBoardFilters,
-      trackGradeFilterChanged,
-      filters.minGrade,
-      filters.maxGrade,
-    ],
+    [t, isAuthenticated, name, setFilters, setBoardFilters],
   );
 
   const handleApplyRecentFilter = useCallback(
@@ -1014,13 +909,10 @@ function ClimbListInner() {
   }, [replaceSearch, name, filters.minGrade, filters.maxGrade]);
 
   const handleGradeChange = useCallback(
-    (next: GradeBound, meta?: GradeTapMeta) => {
-      // Capture the committed bound before setGrade() kicks off the re-render.
-      const previous: GradeBound = { minGradeId: filters.minGrade, maxGradeId: filters.maxGrade };
+    (next: GradeBound) => {
       setGrade(next);
-      trackGradeFilterChanged(previous, next, 'chrome_rail', meta);
     },
-    [setGrade, trackGradeFilterChanged, filters.minGrade, filters.maxGrade],
+    [setGrade],
   );
 
   // Remember the grade the climber filters by (from any path — the chip rail,
