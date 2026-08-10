@@ -1468,6 +1468,25 @@ describe('gym community settings — admin-only', () => {
     expect(result).toMatchObject({ key: 'gym_claim_auto_approve', value: '1' });
   });
 
+  it('rejects a board-scoped admin and hides gym settings from them', async () => {
+    // `admin` scoped to a single board type. Gym settings are global config and
+    // both gates resolve them without a board type, so this role must not
+    // qualify — which is exactly why the /admin Gyms tab is hidden from it.
+    await insertRole(PLAIN_USER, 'admin', 'kilter');
+    await setAutoApprove(true);
+
+    await expect(
+      socialCommunitySettingsMutations.setCommunitySettings(null, setInput('0'), authCtx(PLAIN_USER)),
+    ).rejects.toThrow(/admin/i);
+
+    const visible = await socialCommunitySettingsQueries.communitySettings(
+      null,
+      { scope: 'global', scopeKey: '' },
+      authCtx(PLAIN_USER),
+    );
+    expect(visible.map((setting) => setting.key)).not.toContain('gym_claim_auto_approve');
+  });
+
   it('still lets a global community_leader write a non-gym setting', async () => {
     await insertGlobalLeader();
 

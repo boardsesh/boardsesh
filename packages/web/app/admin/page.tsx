@@ -24,6 +24,7 @@ export default function AdminPage() {
   const { token } = useWsAuthToken();
   const [tab, setTab] = useState(0);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -35,10 +36,16 @@ export default function AdminPage() {
       try {
         const client = createGraphQLHttpClient(token);
         const result = await client.request<{ myRoles: CommunityRoleAssignment[] }>(GET_MY_ROLES);
-        const hasAdmin = result.myRoles.some((r) => r.role === 'admin');
-        setIsAdmin(hasAdmin);
+        setIsAdmin(result.myRoles.some((role) => role.role === 'admin'));
+        // Gym settings are global config, and the backend gates them with
+        // `requireAdmin(ctx)` / `hasAdmin(userId)` — no board type — which a
+        // board-scoped admin fails. Without this narrower check they'd see the
+        // tab, read the toggle as off whatever its real value, and hit an
+        // authorization error on every change.
+        setIsGlobalAdmin(result.myRoles.some((role) => role.role === 'admin' && role.boardType == null));
       } catch {
         setIsAdmin(false);
+        setIsGlobalAdmin(false);
       } finally {
         setLoading(false);
       }
@@ -103,13 +110,13 @@ export default function AdminPage() {
         <Tabs value={tab} onChange={(_, v) => setTab(v)}>
           <Tab label={t('tabs.roles')} sx={{ textTransform: 'none' }} />
           <Tab label={t('tabs.settings')} sx={{ textTransform: 'none' }} />
-          <Tab label={t('tabs.gyms')} sx={{ textTransform: 'none' }} />
+          {isGlobalAdmin && <Tab label={t('tabs.gyms')} sx={{ textTransform: 'none' }} />}
         </Tabs>
       </Box>
 
       {tab === 0 && <RoleManagement />}
       {tab === 1 && <CommunitySettingsPanel />}
-      {tab === 2 && <GymSettingsPanel />}
+      {tab === 2 && isGlobalAdmin && <GymSettingsPanel />}
     </Container>
   );
 }
