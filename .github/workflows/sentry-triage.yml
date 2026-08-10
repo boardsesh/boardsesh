@@ -42,6 +42,17 @@ jobs:
         with:
           fetch-depth: 1
 
+      # choice inputs are only enforced by the UI; gh workflow run / the REST
+      # API can pass arbitrary strings, and this value reaches the prompt.
+      - name: Validate stats period
+        env:
+          STATS_PERIOD: ${{ inputs.stats_period || '14d' }}
+        run: |
+          case "$STATS_PERIOD" in
+            7d|14d|30d) ;;
+            *) echo "invalid stats_period: $STATS_PERIOD" >&2; exit 1 ;;
+          esac
+
       - name: Run Sentry triage
         uses: anthropics/claude-code-action@v1.0.99
         env:
@@ -50,7 +61,12 @@ jobs:
           STATS_PERIOD: ${{ inputs.stats_period || '14d' }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: '--allowed-tools "Bash(curl:*),Bash(jq:*),Bash(echo:*),Bash(gh issue create:*),Bash(gh issue comment:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh search issues:*),Bash(git log:*),Bash(git show:*),Read,Grep,Glob"'
+          # No bare curl: all Sentry access goes through the read-only,
+          # host-locked helper script. In dry-run mode the write-capable gh
+          # commands are absent from the allowlist entirely, so dry-run is
+          # enforced by the permission layer, not just the prompt.
+          claude_args: >-
+            --allowed-tools "Bash(bash .github/scripts/sentry-api.sh:*),Bash(jq:*),Bash(echo:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh search issues:*),Bash(git log:*),Bash(git show:*),Read,Grep,Glob${{ inputs.dry_run != true && ',Bash(gh issue create:*),Bash(gh issue comment:*)' || '' }}"
           prompt: |
             You are running the weekly Sentry triage sweep for boardsesh/boardsesh.
             The repo is checked out at the current directory.
@@ -65,12 +81,15 @@ jobs:
 
             ## Pull the data
 
-            Sentry read access: bearer token in $SENTRY_TRIAGE_TOKEN (never print it).
-            Org `boardsesh`, region us.sentry.io, one project for all SDKs.
-            - List unresolved issues, both sorts, paginate via Link headers:
-              `curl -s -H "Authorization: Bearer $SENTRY_TRIAGE_TOKEN" "https://us.sentry.io/api/0/organizations/boardsesh/issues/?query=is%3Aunresolved&sort=freq&statsPeriod=$STATS_PERIOD&limit=100"` (and sort=user).
-            - Per-issue detail: `.../issues/<numeric_id>/events/latest/` (stacktrace + tags)
-              and `.../issues/<numeric_id>/tags/release/?statsPeriod=$STATS_PERIOD`.
+            Sentry read access: run `bash .github/scripts/sentry-api.sh <path>`
+            — a read-only helper locked to us.sentry.io (org `boardsesh`, one
+            project for all SDKs). It is the ONLY way you can reach Sentry;
+            invoke it exactly in that form. Append `--with-headers` when you
+            need the Link header for pagination.
+            - List unresolved issues, both sorts:
+              `bash .github/scripts/sentry-api.sh "/api/0/organizations/boardsesh/issues/?query=is%3Aunresolved&sort=freq&statsPeriod=$STATS_PERIOD&limit=100"` (and sort=user).
+            - Per-issue detail: `/api/0/organizations/boardsesh/issues/<numeric_id>/events/latest/`
+              (stacktrace + tags) and `.../tags/release/?statsPeriod=$STATS_PERIOD`.
             - Only trust events with `environment` of `production` or `production-web`;
               preview/localhost/e2e events leak into this project and do not count.
 
