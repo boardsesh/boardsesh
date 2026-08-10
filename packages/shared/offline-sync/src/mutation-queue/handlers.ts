@@ -114,6 +114,22 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
             mutationName: 'CreatePlaylist',
             variables: { input: { uuid: mutation.idempotency_key, ...payload } },
           };
+        // ⚠️ The ONLY queued mutation that cannot be auto-merged (#1934).
+        //
+        // Everything else this file dispatches is idempotent (uuid-keyed tick
+        // and playlist creates, favourite toggles) or commutative (climb
+        // add/remove/reorder). A playlist rename is neither: two devices editing
+        // the name produce two intents and replaying blind destroys one.
+        //
+        // So the payload must carry `basedOn` — the playlist as the enqueuing
+        // device saw it — and the server answers a genuine collision with
+        // PLAYLIST_UPDATE_CONFLICT. That error resolves to no HTTP/GraphQL
+        // numeric status, so `isRetryable` returns false and the drainer
+        // dead-letters the row for the UI to resolve instead of burning retries.
+        //
+        // Adding another whole-record edit here? Give it the same treatment
+        // rather than a new error shape — see PLAYLIST_UPDATE_CONFLICT_CODE's
+        // doc block in @boardsesh/shared-schema.
         case 'update':
           return {
             mutationName: 'UpdatePlaylist',
