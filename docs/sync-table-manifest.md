@@ -101,15 +101,17 @@ type Query {
   syncDeletions(cursor: SyncCursorInput, limit: Int! = 500): SyncDeletionsResult!
 }
 
+# boardName/angle are deprecated no-ops, kept optional so binaries that shipped
+# before favorites were re-keyed to (user_id, climb_uuid) keep validating.
 input AddFavoriteInput {
-  boardName: String!
+  boardName: String
   climbUuid: String!
-  angle: Int!
+  angle: Int
 }
 input RemoveFavoriteInput {
-  boardName: String!
+  boardName: String
   climbUuid: String!
-  angle: Int!
+  angle: Int
 }
 
 type Mutation {
@@ -149,8 +151,8 @@ via `SET LOCAL boardsesh.suppress_sync_tombstones = 'on'` (see `clearBoardData`)
   `INSERT ... ON CONFLICT (uuid) DO NOTHING`; if no row returned, `SELECT` the existing row by `uuid` and return it.
   (Preserves the original on replay.) When absent (existing web callers): generate `uuidv4()` as today. `uuid` is
   already a UNIQUE column on both `boardsesh_ticks` and `playlists`.
-- `addFavorite`: `INSERT INTO user_favorites (...) ON CONFLICT (user_id, board_name, climb_uuid, angle) DO NOTHING`.
-- `removeFavorite`: `DELETE FROM user_favorites WHERE user_id=$u AND board_name=$b AND climb_uuid=$c AND angle=$a`
+- `addFavorite`: `INSERT INTO user_favorites (...) ON CONFLICT (user_id, climb_uuid) DO NOTHING`.
+- `removeFavorite`: `DELETE FROM user_favorites WHERE user_id=$u AND climb_uuid=$c`
   (deleting a nonexistent row is a no-op — idempotent). Both return `Boolean!` (`true`). Reuse `ToggleFavoriteInputSchema`'s
   field validation for the Zod schemas.
 
@@ -215,12 +217,14 @@ composite-keyed sync table must keep this true (or version the encoding).
 ### `user_favorites` — `syncFavorites` (user data)
 
 - Scope: `user_id = $userId`. Seq: `id`. updated_at: **added by Phase 2**. Hook: **yes** (`addFavorite`/`removeFavorite`).
-- Local PK: **`(board_name, climb_uuid, angle)`** — note the column is **`board_name`**, not `board_type`.
-  table-config: change `['user_id','climb_uuid','angle']` → **`['board_name','climb_uuid','angle']`** (B8).
-- Del: trigger emits `record_id = <board_name>:<climb_uuid>:<angle>` (3 segs). **Overrides** the doc's `OLD.id::text`.
-- Columns: `board_name`, `climb_uuid`, `angle`, `user_id`, `created_at`, `updated_at`.
-- Offline hook: insert `(board_name, climb_uuid, angle, created_at, updated_at)` — **remove the synthetic `id` column**
-  (B8). `user_id` may be NULL offline (filled on next sync).
+- Local PK: **`(climb_uuid)`** — a favorite is keyed by the climb alone; the server key is `(user_id, climb_uuid)`.
+- Del: trigger emits `record_id = <climb_uuid>` (1 seg). **Overrides** the doc's `OLD.id::text`.
+- Columns: `board_name`, `climb_uuid`, `angle`, `user_id`, `created_at`, `updated_at`. `board_name` and `angle` are
+  **vestigial**: nothing reads them, but the resolver keeps emitting them for one release because a device on
+  pre-re-keying JS declares both NOT NULL locally and would fail its whole pull cycle without them. The local table
+  keeps them as nullable columns (migration v5) so they land instead of firing `onSchemaDrift` every launch.
+- Offline hook: insert `(climb_uuid, created_at, updated_at)` — **no synthetic `id` column** (B8). `user_id` may be
+  NULL offline (filled on next sync).
 
 ### `user_follows` — `syncUserFollows` (user data)
 
