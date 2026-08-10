@@ -1853,6 +1853,29 @@ input CreatePlaylistInput {
 }
 
 """
+The playlist as the client last saw it, sent alongside an edit so the server
+can refuse to silently overwrite someone else's change.
+
+Carries the metadata values as well as the timestamp on purpose: adding,
+removing or reordering a climb also bumps `updatedAt`, so a bare timestamp
+comparison would report a conflict for edits that don't actually collide.
+"""
+input PlaylistRevisionInput {
+  "The playlist's updatedAt when the client read it (ISO 8601)"
+  updatedAt: String!
+  "Name the client saw"
+  name: String
+  "Description the client saw"
+  description: String
+  "Visibility the client saw"
+  isPublic: Boolean
+  "Color the client saw"
+  color: String
+  "Icon the client saw"
+  icon: String
+}
+
+"""
 Input for updating a playlist.
 """
 input UpdatePlaylistInput {
@@ -1868,6 +1891,12 @@ input UpdatePlaylistInput {
   color: String
   "New icon"
   icon: String
+  """
+  Omit for blind last-write-wins (what pre-#1934 clients and web send).
+  Supply it to get a PLAYLIST_UPDATE_CONFLICT error instead of a silent
+  overwrite when the playlist changed somewhere else.
+  """
+  basedOn: PlaylistRevisionInput
 }
 
 """

@@ -1,6 +1,8 @@
 import { eq, and, asc, inArray, sql } from 'drizzle-orm';
+import { GraphQLError } from 'graphql';
 import { v4 as uuidv4 } from 'uuid';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { PLAYLIST_UPDATE_CONFLICT_CODE } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
@@ -16,6 +18,7 @@ import {
 import { getPlaylistFollowStats } from './queries';
 import { verifyPlaylistAccess } from './helpers/enrichment';
 import { computePlaylistReorderWrites } from './helpers/reorder';
+import { detectPlaylistUpdateConflict } from './helpers/update-conflict';
 
 function playlistResult(playlist: dbSchema.Playlist, climbCount: number): Record<string, unknown> {
   return {
@@ -149,26 +152,6 @@ export const playlistMutations = {
 
     const userId = ctx.userId!;
 
-    // Check ownership
-    const ownership = await db
-      .select()
-      .from(dbSchema.playlistOwnership)
-      .innerJoin(dbSchema.playlists, eq(dbSchema.playlists.id, dbSchema.playlistOwnership.playlistId))
-      .where(
-        and(
-          eq(dbSchema.playlists.uuid, validatedInput.playlistId),
-          eq(dbSchema.playlistOwnership.userId, userId),
-          eq(dbSchema.playlistOwnership.role, 'owner'),
-        ),
-      )
-      .limit(1);
-
-    if (ownership.length === 0) {
-      throw new Error('Playlist not found or you do not have permission to edit it');
-    }
-
-    const playlistId = ownership[0].playlists.id;
-
     // Build update object (only update provided fields)
     const updateData: Record<string, unknown> = {
       updatedAt: new Date(),
@@ -183,14 +166,74 @@ export const playlistMutations = {
     if (validatedInput.color !== undefined) updateData.color = validatedInput.color || null;
     if (validatedInput.icon !== undefined) updateData.icon = validatedInput.icon || null;
 
-    // Update playlist
-    const [updated] = await db
-      .update(dbSchema.playlists)
-      .set(updateData)
-      .where(eq(dbSchema.playlists.id, playlistId))
-      .returning();
+    // Ownership check, conflict check and the write all happen inside one
+    // transaction with the playlist row locked (#1934). Splitting them would
+    // leave a read-then-write window in which the very edit the client is being
+    // compared against could land, which is exactly the race the check exists to
+    // catch. Same `for('update')` pattern as reorderPlaylistClimb below.
+    const updated = await db.transaction(async (tx) => {
+      const ownership = await tx
+        .select({ playlistId: dbSchema.playlists.id })
+        .from(dbSchema.playlistOwnership)
+        .innerJoin(dbSchema.playlists, eq(dbSchema.playlists.id, dbSchema.playlistOwnership.playlistId))
+        .where(
+          and(
+            eq(dbSchema.playlists.uuid, validatedInput.playlistId),
+            eq(dbSchema.playlistOwnership.userId, userId),
+            eq(dbSchema.playlistOwnership.role, 'owner'),
+          ),
+        )
+        .limit(1);
 
-    // Get climb count and follow stats
+      if (ownership.length === 0) {
+        throw new Error('Playlist not found or you do not have permission to edit it');
+      }
+
+      const lockedPlaylistId = ownership[0].playlistId;
+
+      const [stored] = await tx
+        .select()
+        .from(dbSchema.playlists)
+        .where(eq(dbSchema.playlists.id, lockedPlaylistId))
+        .for('update')
+        .limit(1);
+
+      if (!stored) {
+        throw new Error('Playlist not found or you do not have permission to edit it');
+      }
+
+      if (detectPlaylistUpdateConflict({ stored, incoming: validatedInput, basedOn: validatedInput.basedOn })) {
+        // The extensions carry the server's current values so the client can name
+        // both versions in its prompt and rebuild `basedOn` for a "keep mine"
+        // retry without a refetch. GraphQLError extensions survive yoga's
+        // maskError untouched (mask-error.ts only rewrites DB/driver leaks).
+        throw new GraphQLError('This playlist changed somewhere else', {
+          extensions: {
+            code: PLAYLIST_UPDATE_CONFLICT_CODE,
+            playlistUuid: stored.uuid,
+            serverUpdatedAt: stored.updatedAt.toISOString(),
+            serverName: stored.name,
+            serverDescription: stored.description,
+            serverIsPublic: stored.isPublic,
+            serverColor: stored.color,
+            serverIcon: stored.icon,
+          },
+        });
+      }
+
+      const [updatedRow] = await tx
+        .update(dbSchema.playlists)
+        .set(updateData)
+        .where(eq(dbSchema.playlists.id, lockedPlaylistId))
+        .returning();
+
+      return updatedRow;
+    });
+
+    const playlistId = updated.id;
+
+    // Climb count, follow stats and the pin lookup stay OUTSIDE the transaction
+    // so the row lock is held for the compare-and-swap only.
     const climbCount = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(dbSchema.playlistClimbs)

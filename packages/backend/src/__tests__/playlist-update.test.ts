@@ -1,15 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
-const { mockDb } = vi.hoisted(() => {
+const { mockDb, mockTx } = vi.hoisted(() => {
+  // The compare-and-swap added in #1934 runs the ownership check, the locked
+  // read and the write inside one transaction, so the mock needs a `tx` of its
+  // own; everything after the commit still goes through `db`.
+  const mockTx = {
+    select: vi.fn(),
+    update: vi.fn(),
+  };
   const mockDb = {
     execute: vi.fn(),
     select: vi.fn(),
     insert: vi.fn(),
     delete: vi.fn(),
     update: vi.fn(),
+    transaction: vi.fn(async (callback: (tx: typeof mockTx) => unknown) => callback(mockTx)),
   };
-  return { mockDb };
+  return { mockDb, mockTx };
 });
 
 vi.mock('../db/client', () => ({ db: mockDb }));
@@ -38,7 +46,7 @@ function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext 
 
 function createMockChain(resolveValue: unknown = []): Record<string, unknown> {
   const chain: Record<string, unknown> = {};
-  const methods = ['select', 'from', 'where', 'innerJoin', 'limit', 'set', 'update', 'returning'];
+  const methods = ['select', 'from', 'where', 'innerJoin', 'limit', 'set', 'update', 'returning', 'for'];
   chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resolveValue).then(resolve);
   for (const method of methods) chain[method] = vi.fn((..._args: unknown[]) => chain);
   return chain;
@@ -58,11 +66,16 @@ const updatedRow = {
   updatedAt: new Date(),
 };
 
-/** Mock the resolver's db sequence: ownership select → update → climbCount select → pin select. */
+/**
+ * Mock the resolver's db sequence: inside the transaction, ownership select →
+ * locked playlist select → update; after it commits, climbCount select → pin
+ * select.
+ */
 function primeDb() {
-  mockDb.select.mockReturnValueOnce(createMockChain([{ playlists: { id: 1 } }])); // ownership
+  mockTx.select.mockReturnValueOnce(createMockChain([{ playlistId: 1 }])); // ownership
+  mockTx.select.mockReturnValueOnce(createMockChain([updatedRow])); // locked read
   const updateChain = createMockChain([updatedRow]);
-  mockDb.update.mockReturnValueOnce(updateChain);
+  mockTx.update.mockReturnValueOnce(updateChain);
   mockDb.select.mockReturnValueOnce(createMockChain([{ count: 0 }])); // climbCount
   mockDb.select.mockReturnValueOnce(createMockChain([])); // pin lookup
   return updateChain;
