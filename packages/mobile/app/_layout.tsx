@@ -426,6 +426,7 @@ function ThemedNavigation({ children }: { children: ReactNode }) {
 function RootLayout() {
   const [authReady, setAuthReady] = useState(false);
   const [fontsReady, setFontsReady] = useState(false);
+  const [prefsReady, setPrefsReady] = useState(false);
 
   // Flush decoded board-art bitmaps on background / memory warning (#3479).
   useImageCacheMemoryManagement();
@@ -447,12 +448,22 @@ function RootLayout() {
   // Warm the collapsed-section map before the first tab paints. Without this it
   // loads lazily on the first section's mount, so a climber who folded the home
   // beta shelf away would watch it render open and then snap shut on every cold
-  // start (#4229). Nothing waits on it — the splash is already held for auth and
-  // fonts, both far slower than one AsyncStorage read.
+  // start (#4229). Gated into the splash rather than left to race it: auth and
+  // fonts are normally far slower than one AsyncStorage read, but "normally"
+  // isn't a guarantee, and losing that race is exactly the flash this prevents.
+  // `.finally` mirrors the fonts path so a failed or missing read still releases.
   useEffect(() => {
-    void loadSectionExpandState().catch((error: unknown) => {
-      reportError(error);
-    });
+    let cancelled = false;
+    void loadSectionExpandState()
+      .catch((error: unknown) => {
+        reportError(error);
+      })
+      .finally(() => {
+        if (!cancelled) setPrefsReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const onAuthReady = useCallback(() => {
@@ -460,9 +471,9 @@ function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (!authReady || !fontsReady) return;
+    if (!authReady || !fontsReady || !prefsReady) return;
     void SplashScreen.hideAsync();
-  }, [authReady, fontsReady]);
+  }, [authReady, fontsReady, prefsReady]);
 
   return (
     <GestureHandlerRootView style={layoutStyles.root}>
