@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Tuck the beta-video row away when you don't want it — tap the heading on the home feed, a climb, a session, or a profile and it folds. Fold it once and it stays folded everywhere until you open it back up. ([#4233](https://github.com/boardsesh/boardsesh/pull/4233))
 - Added optional auto-disconnect setting: ([#4130](https://github.com/boardsesh/boardsesh/pull/4130))
   - Let other climbers take over your board automatically after a configurable idle period.
   - Keep the last climb lit while you browse, then reconnect when you’re ready.

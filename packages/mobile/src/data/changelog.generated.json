@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-10T20:51:30.672Z",
+  "generatedAt": "2026-08-10T21:53:38.027Z",
   "entries": [
+    {
+      "prNumber": 4233,
+      "category": "new",
+      "title": "Tuck the beta-video row away when you don't want it — tap the heading on the home feed, a climb, a session, or a profile and it folds. Fold it once and it stays folded everywhere until you open it back up.",
+      "mergedAt": "2026-08-10T21:52:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4233"
+    },
     {
       "prNumber": 4156,
       "category": "fixed",
