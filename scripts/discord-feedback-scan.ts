@@ -23,6 +23,7 @@
  * DISCORD_TRIGGER_KEYWORDS, GITHUB_TOKEN, GITHUB_REPOSITORY.
  */
 
+import { createHash } from 'node:crypto';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
@@ -61,6 +62,8 @@ const DEFAULT_MAX_ISSUES = 5;
 const DEFAULT_MAX_PAGES = 5;
 const PAGE_LIMIT = 100;
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+/** How much of a thread we read for context. Hitting it is logged, not silent. */
+const THREAD_MESSAGE_LIMIT = 50;
 
 /** Text channel types worth scanning: GUILD_TEXT (0) and GUILD_ANNOUNCEMENT (5). */
 const SCANNABLE_CHANNEL_TYPES: ReadonlySet<number> = new Set([0, 5]);
@@ -106,6 +109,14 @@ export type IssueSink = {
 };
 
 const sleepReal: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Digest of the collected bundle, used to prove it was not edited between the
+ * collect step and the apply step — the window in which the triage agent runs.
+ */
+export function bundleDigest(serializedBundle: string): string {
+  return createHash('sha256').update(serializedBundle).digest('hex');
+}
 
 function readJsonSafely(text: string): unknown {
   try {
@@ -578,13 +589,24 @@ export async function collectFeedback(
     const threadId = message.thread?.id ?? null;
     if (!threadId) return { threadId: null, messages: [] };
     try {
-      return { threadId, messages: await source.listThreadMessages(threadId, 50) };
+      const messages = await source.listThreadMessages(threadId, THREAD_MESSAGE_LIMIT);
+      if (messages.length >= THREAD_MESSAGE_LIMIT) {
+        logger.warn(
+          `[discord-feedback] thread ${threadId} hit the ${THREAD_MESSAGE_LIMIT}-message cap; older replies not read`,
+        );
+      }
+      return { threadId, messages };
     } catch {
       return { threadId, messages: [] };
     }
   };
 
   // Pass A — the always-feedback channels.
+  if (options.feedbackChannelIds.length === 0) {
+    logger.warn(
+      '[discord-feedback] DISCORD_FEEDBACK_CHANNEL_IDS is empty — only reaction and thread triggers will be picked up.',
+    );
+  }
   for (const channelId of options.feedbackChannelIds) {
     if (excluded.has(channelId)) continue;
     const messages = await source.listChannelMessages(
@@ -637,7 +659,10 @@ export async function collectFeedback(
     if (!thread.parent_id || excluded.has(thread.parent_id)) continue;
     let threadMessages: DiscordMessage[];
     try {
-      threadMessages = await source.listThreadMessages(thread.id, 50);
+      threadMessages = await source.listThreadMessages(thread.id, THREAD_MESSAGE_LIMIT);
+      if (threadMessages.length >= THREAD_MESSAGE_LIMIT) {
+        logger.warn(`[discord-feedback] thread ${thread.id} hit the ${THREAD_MESSAGE_LIMIT}-message cap`);
+      }
     } catch {
       continue;
     }
@@ -857,6 +882,7 @@ export function parseCliOptions(argv: string[], env: NodeJS.ProcessEnv) {
     out: flagValue(argv, 'out') ?? 'discord-bundle.json',
     bundlePath: flagValue(argv, 'bundle') ?? 'discord-bundle.json',
     decisionsPath: flagValue(argv, 'decisions') ?? 'discord-decisions.json',
+    bundleSha256: flagValue(argv, 'bundle-sha256') ?? '',
     guildId: env.DISCORD_GUILD_ID ?? '',
     discordToken: env.DISCORD_BOT_TOKEN ?? '',
     githubToken: env.GITHUB_TOKEN ?? '',
@@ -890,10 +916,13 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv, logger: Log
 
   if (options.mode === 'collect') {
     const bundle = await collectFeedback(options, { source: discord, logger });
-    writeFileSync(options.out, JSON.stringify(bundle, null, 2));
+    const serialized = JSON.stringify(bundle, null, 2);
+    writeFileSync(options.out, serialized);
     logger.log(
       `[discord-feedback] collected ${bundle.messages.length} message(s), deferred ${bundle.deferredCount} -> ${options.out}`,
     );
+    // The caller pins this and hands it back to `apply` — see bundleDigest.
+    logger.log(`[discord-feedback] bundle-sha256=${bundleDigest(serialized)}`);
     return 0;
   }
 
@@ -902,7 +931,27 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv, logger: Log
     return 1;
   }
 
-  const bundle = JSON.parse(readFileSync(options.bundlePath, 'utf8')) as CollectBundle;
+  const bundleRaw = readFileSync(options.bundlePath, 'utf8');
+
+  // The triage agent runs between collect and apply with a Write tool. Without
+  // this check, an injected prompt could rewrite the bundle *and* the decisions
+  // to match, and validateTriageResult — which cross-checks one against the
+  // other — would happily pass fabricated issues through. The digest is pinned
+  // by the workflow before the agent runs, somewhere it cannot write.
+  if (options.bundleSha256) {
+    const actual = bundleDigest(bundleRaw);
+    if (actual !== options.bundleSha256) {
+      logger.error(
+        `[discord-feedback] bundle digest mismatch: expected ${options.bundleSha256}, got ${actual}. ` +
+          'The bundle changed after collection — refusing to file anything.',
+      );
+      return 1;
+    }
+  } else {
+    logger.warn('[discord-feedback] no --bundle-sha256 given; skipping the bundle tamper check.');
+  }
+
+  const bundle = JSON.parse(bundleRaw) as CollectBundle;
   const decisions = JSON.parse(readFileSync(options.decisionsPath, 'utf8')) as unknown;
 
   const result = await applyTriage(

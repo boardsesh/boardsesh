@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   applyTriage,
+  bundleDigest,
   collectFeedback,
   DiscordClient,
   GitHubApiError,
@@ -617,7 +618,30 @@ describe('GitHubIssueClient.githubFetch', () => {
   });
 });
 
+describe('bundleDigest', () => {
+  it('is stable for identical content and changes on any edit', () => {
+    const bundle = JSON.stringify({ messages: [{ messageId: '1' }] });
+    expect(bundleDigest(bundle)).toBe(bundleDigest(bundle));
+    expect(bundleDigest(bundle)).not.toBe(bundleDigest(JSON.stringify({ messages: [{ messageId: '2' }] })));
+    expect(bundleDigest(bundle)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('detects a bundle swapped between collect and apply', () => {
+    // The attack the digest exists to stop: the agent rewrites the bundle AND
+    // the decisions so they agree, and validateTriageResult sees nothing wrong.
+    const collectedBundle = JSON.stringify({ messages: [{ messageId: 'real' }] });
+    const pinned = bundleDigest(collectedBundle);
+    const tampered = JSON.stringify({ messages: [{ messageId: 'fabricated' }] });
+    expect(bundleDigest(tampered)).not.toBe(pinned);
+  });
+});
+
 describe('parseCliOptions', () => {
+  it('reads the bundle digest flag', () => {
+    expect(parseCliOptions(['--bundle-sha256', 'abc123'], {} as NodeJS.ProcessEnv).bundleSha256).toBe('abc123');
+    expect(parseCliOptions([], {} as NodeJS.ProcessEnv).bundleSha256).toBe('');
+  });
+
   it('defaults the emoji, keywords, and windows', () => {
     const options = parseCliOptions([], { DISCORD_GUILD_ID: GUILD } as NodeJS.ProcessEnv);
     expect(options.triggerEmoji).toBe('🐛');

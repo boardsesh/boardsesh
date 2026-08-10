@@ -24,6 +24,8 @@ The split is deliberate. The triage step reads text typed by anyone who can clic
 
 The file→react→reply ordering lives in tested TypeScript rather than in the skill prompt for the same reason: it is the correctness core, and agents skip steps.
 
+**The bundle is digest-pinned across the triage step.** Cross-validating decisions against the bundle only helps if the bundle itself is trustworthy — an agent holding an unscoped `Write` could rewrite *both* files to agree and walk fabricated issues straight through. So the workflow records the bundle's sha256 in a step output before the agent runs, somewhere the agent cannot write, and `apply` refuses to file anything if the bundle no longer matches. The `Write` tool is also path-scoped to the decisions file; the digest check is what makes that a guarantee rather than a hope.
+
 | File | Role |
 |---|---|
 | `scripts/discord-feedback-scan.ts` | All Discord/GitHub I/O, retries, secrets, CLI |
