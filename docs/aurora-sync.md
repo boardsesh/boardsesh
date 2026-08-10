@@ -193,9 +193,30 @@ same Boardsesh-owned rule. Aurora's upsert clobbers them on every sync from
 the much larger Aurora ascent population. `recomputeClimbStats` only writes
 these columns for Boardsesh-originated climbs (where Aurora never syncs);
 on Aurora climbs it leaves them untouched so Aurora's averages stay
-authoritative. `display_difficulty` mirrors `difficulty_average` in both
-writers (Aurora: `Number(item.display_difficulty || item.difficulty_average)`;
-Boardsesh: the same `AVG(bt.difficulty)` value used for `difficulty_average`).
+authoritative. Aurora accepts a valid `display_difficulty` independently and
+otherwise falls back to `difficulty_average`; the Boardsesh writer uses the
+same guarded tick average for both columns.
+
+Every Aurora difficulty field (average, display, and benchmark) is accepted
+only when it is finite and greater than 1; an invalid or missing display value
+falls back to a valid average. New zero-ascent stats payloads with no valid
+difficulty, quality, or first-ascent data are skipped. The same empty payload
+for an existing key is still applied authoritatively, clearing upstream-owned
+fields without deleting the row or changing Boardsesh counts and quality votes.
+Only a non-negative safe-integer `ascensionist_count` is authoritative; an
+explicit numeric zero clears the stored upstream count, while an omitted, null,
+negative, fractional, non-finite, or wrong-type value is preserved as `NULL` so
+an existing count and its quality-blend weight survive the conflict update. The
+new-row emptiness check alone treats that `NULL` as zero: a fully empty new row
+is skipped, while a new row with other meaningful stats is inserted with a null
+upstream count.
+
+Tick-driven recomputation seeds a new stats row only when the climb exists and
+the exact key has a non-detached flash/send tick. Tick existence gates INSERT
+only: existing rows are always recomputed, so deleting or detaching the last
+send clears Boardsesh-owned aggregates while retaining upstream data. Owned
+climb averages accept difficulty values greater than 1 and quality values from
+1 through 5; the latest-native quality-vote path uses the same 1–5 bounds.
 
 Aurora reports `quality_average` on a 1–3 scale, but Kilter Grips / MoonBoard
 use 1–5. Aurora's upsert normalises to 1–5 (`normalizeQualityTo5`, affine
@@ -203,6 +224,19 @@ use 1–5. Aurora's upsert normalises to 1–5 (`normalizeQualityTo5`, affine
 `board_climb_stats.quality_average` is one scale across every board. The
 one-time re-backfill of previously `×5/3`-scaled rows ships with the
 star-scale repair (migration 0149; see kilter-sync.md).
+
+The two providers deliberately handle sub-one positive noise differently:
+Aurora clamps a value in `(0, 1)` to its valid one-star floor before converting
+the 1–3 scale, while Kilter rejects it because Kilter's input is already on the
+1–5 scale. Zero, negative, and non-finite values remain unrated on both paths.
+
+Migration 0151 repaired only Aurora `difficulty_average = 0`; it did not cover
+the `= 1` sentinel or `display_difficulty` / `benchmark_difficulty` sentinels.
+Cursored shared syncs now overwrite those values with guarded fields as each row
+returns, so the remaining production tail self-heals without a broad cleanup
+write. Operators can quantify that lag with a read-only grouped count over those
+three predicates before deciding whether a separate cleanup migration is worth
+the write risk.
 
 If you add a new writer to `board_climb_stats`, decide which side it owns and
 recompute `ascensionist_count` in the same statement that updates that side.

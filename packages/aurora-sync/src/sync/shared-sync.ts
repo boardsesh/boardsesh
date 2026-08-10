@@ -142,7 +142,7 @@ export function climbStatsUpstreamConflictSet() {
  * Conflict policy for board_climb_stats.fa_username / fa_at on the Aurora
  * shared sync. Deliberately a bare `excluded.*` — the incoming value is
  * already sanitized once at INSERT-value construction time (sanitizeFirstAscent,
- * applied in upsertClimbStats' values.map), so `excluded.*` in this same
+ * applied in upsertClimbStats' mappedValues construction), so `excluded.*` in this same
  * statement reflects that sanitized value; no SQL-side range check is needed
  * or wanted here (see @boardsesh/sync-runtime's sanitizeFirstAscent docs for
  * why duplicating the range logic in SQL would risk drifting out of sync).
@@ -473,22 +473,85 @@ async function upsertAttempts(db: DrizzleDb, board: AuroraBoardName, data: Attem
   });
 }
 
-// Preserve NULL difficulty instead of coercing it to 0. `Number(null)` is 0,
-// and difficulty id 0 doesn't exist (valid ids are ~10-33), so coercing stamps
-// a bogus 0 grade whenever Aurora omits the field — legacy rows are cleaned up
-// by the sentinel migration. display_difficulty falls back to the average when
-// Aurora omits it, mirroring how Aurora derives display FROM the average.
-// Exported for unit tests.
-// The ClimbStats type declares these fields as plain `number`, but Aurora
-// really does send null (that's the bug this guards against), so the parameter
-// is typed to reality rather than to the wire type.
-export function parseDifficultyFields(item: { difficulty_average: number | null; display_difficulty: number | null }): {
+// Aurora uses 0/1 as missing-difficulty sentinels; neither is a real difficulty
+// id. Apply one guard to every upstream difficulty field so average, display,
+// and benchmark cannot drift. Non-finite values are rejected before they reach
+// Postgres. display_difficulty falls back to a valid normalized average when
+// Aurora omits it or sends an invalid sentinel.
+export function normalizeDifficulty(difficulty: number | null): number | null {
+  if (difficulty == null) return null;
+  const numericDifficulty = Number(difficulty);
+  return Number.isFinite(numericDifficulty) && numericDifficulty > 1 ? numericDifficulty : null;
+}
+
+export function parseDifficultyFields(
+  item: Pick<ClimbStats, 'difficulty_average' | 'display_difficulty' | 'benchmark_difficulty'>,
+): {
   difficultyAverage: number | null;
   displayDifficulty: number | null;
+  benchmarkDifficulty: number | null;
 } {
-  const difficultyAverage = item.difficulty_average != null ? Number(item.difficulty_average) : null;
-  const displayDifficulty = item.display_difficulty != null ? Number(item.display_difficulty) : difficultyAverage;
-  return { difficultyAverage, displayDifficulty };
+  const difficultyAverage = normalizeDifficulty(item.difficulty_average);
+  const displayDifficulty = normalizeDifficulty(item.display_difficulty) ?? difficultyAverage;
+  const benchmarkDifficulty = normalizeDifficulty(item.benchmark_difficulty);
+  return { difficultyAverage, displayDifficulty, benchmarkDifficulty };
+}
+
+type MappedClimbStat = {
+  boardType: AuroraBoardName;
+  climbUuid: string;
+  angle: number;
+  displayDifficulty: number | null;
+  benchmarkDifficulty: number | null;
+  ascensionistCount: number | null;
+  upstreamAscensionistCount: number | null;
+  difficultyAverage: number | null;
+  qualityAverage: number | null;
+  qualityNormalized: true;
+  faUsername: string | null;
+  faAt: string | null;
+};
+
+function normalizeAscensionistCount(count: unknown): number | null {
+  return typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? count : null;
+}
+
+function mapClimbStat(board: AuroraBoardName, item: ClimbStats): MappedClimbStat {
+  // Some Aurora rows omit this field or carry malformed values. Preserve that
+  // distinction as NULL: ON CONFLICT treats it as "no count update", while an
+  // explicit numeric 0 remains an authoritative reset.
+  const upstreamAscensionistCount = normalizeAscensionistCount(item.ascensionist_count);
+  const { difficultyAverage, displayDifficulty, benchmarkDifficulty } = parseDifficultyFields(item);
+  return {
+    boardType: board,
+    climbUuid: item.climb_uuid,
+    angle: Number(item.angle),
+    displayDifficulty,
+    benchmarkDifficulty,
+    ascensionistCount: upstreamAscensionistCount,
+    upstreamAscensionistCount,
+    difficultyAverage,
+    // Keep normalizeQualityTo5's established clamp semantics unchanged.
+    qualityAverage: normalizeQualityTo5(item.quality_average),
+    qualityNormalized: true,
+    ...sanitizeFirstAscent({ faUsername: item.fa_username, faAt: item.fa_at }),
+  };
+}
+
+function climbStatKey(climbUuid: string, angle: number): string {
+  return JSON.stringify([climbUuid, angle]);
+}
+
+function isEmptyUpstreamClimbStat(value: MappedClimbStat): boolean {
+  return (
+    (value.upstreamAscensionistCount ?? 0) === 0 &&
+    value.difficultyAverage == null &&
+    value.displayDifficulty == null &&
+    value.benchmarkDifficulty == null &&
+    value.qualityAverage == null &&
+    value.faUsername == null &&
+    value.faAt == null
+  );
 }
 
 async function upsertClimbStats(db: DrizzleDb, board: AuroraBoardName, data: ClimbStats[]) {
@@ -507,34 +570,41 @@ async function upsertClimbStats(db: DrizzleDb, board: AuroraBoardName, data: Cli
     // Boardsesh-supplied FA on those climbs cannot be clobbered here.
     // recomputeClimbStats is the one that handles the ownership branch
     // explicitly for ticks-driven updates.
-    const values = batch.map((item) => {
-      const auroraCount = Number(item.ascensionist_count);
-      const { difficultyAverage, displayDifficulty } = parseDifficultyFields(item);
-      return {
-        boardType: board,
-        climbUuid: item.climb_uuid,
-        angle: Number(item.angle),
-        displayDifficulty,
-        benchmarkDifficulty: item.benchmark_difficulty != null ? Number(item.benchmark_difficulty) : null,
-        ascensionistCount: auroraCount,
-        upstreamAscensionistCount: auroraCount,
-        difficultyAverage,
-        // Aurora reports quality on a 1–3 scale; Kilter Grips and MoonBoard use
-        // 1–5. Normalise every board to 1–5 with the affine map 2q−1 (1→1, 2→3,
-        // 3→5) so board_climb_stats.quality_average is one scale the UI renders
-        // uniformly. Because AVG is linear, 2·avg−1 is the correct rescale of an
-        // average (the old ×5/3 inflated low-rated climbs). quality_average is a
-        // stored average (double), so it stays continuous rather than rounded.
-        qualityAverage: normalizeQualityTo5(item.quality_average),
-        // We just normalised quality_average to 1-5, so the row is on the
-        // canonical scale — the one-time 1-3→1-5 backfill must skip it.
-        qualityNormalized: true,
-        // Guard against impossible upstream fa_at values (future/pre-2016
-        // dates) before they reach the INSERT/ON CONFLICT — see
-        // sanitizeFirstAscent for why nulling (not clamping) is correct here.
-        ...sanitizeFirstAscent({ faUsername: item.fa_username, faAt: item.fa_at }),
-      };
-    });
+    // Normalize and sanitize the whole payload before deciding whether it has
+    // meaningful upstream data. An empty payload is skipped only for a NEW
+    // key: for an existing key it must reach ON CONFLICT to apply the other
+    // upstream-owned fields. An explicit count 0 clears the stored upstream
+    // count; a missing or malformed count maps to NULL and preserves it.
+    // Boardsesh-owned counts and quality votes are preserved by the conflict
+    // SET below.
+    const mappedValues = batch.map((item) => mapClimbStat(board, item));
+    // existingKeys is only consulted below for empty payloads (the filter's
+    // first disjunct short-circuits for non-empty rows), so bound the
+    // pre-read to just the empty candidates and skip the SELECT entirely
+    // when there are none — in a real catalog sync almost every stats row is
+    // non-empty, so this keeps the common case free of a batch-wide pre-read.
+    const emptyMappedValues = mappedValues.filter((value) => isEmptyUpstreamClimbStat(value));
+    const existingKeys = new Set<string>();
+    if (emptyMappedValues.length > 0) {
+      const candidateClimbUuids = [...new Set(emptyMappedValues.map((value) => value.climbUuid))];
+      const candidateAngles = [...new Set(emptyMappedValues.map((value) => value.angle))];
+      const existingRows = await db
+        .select({ climbUuid: climbStatsSchema.climbUuid, angle: climbStatsSchema.angle })
+        .from(climbStatsSchema)
+        .where(
+          and(
+            eq(climbStatsSchema.boardType, board),
+            inArray(climbStatsSchema.climbUuid, candidateClimbUuids),
+            inArray(climbStatsSchema.angle, candidateAngles),
+          ),
+        );
+      for (const row of existingRows) existingKeys.add(climbStatKey(row.climbUuid, row.angle));
+    }
+    const values = mappedValues.filter(
+      (value) => !isEmptyUpstreamClimbStat(value) || existingKeys.has(climbStatKey(value.climbUuid, value.angle)),
+    );
+
+    if (values.length === 0) return;
 
     // Stamp upstream_synced_at on the stats row (records that a manufacturer
     // sync just touched it). upstream_quality_average carries the normalized
@@ -552,8 +622,8 @@ async function upsertClimbStats(db: DrizzleDb, board: AuroraBoardName, data: Cli
     }));
 
     // The upstream conflict policy (climbStatsUpstreamConflictSet): take the
-    // incoming cursored count verbatim so a legitimate decrease propagates; a
-    // NULL incoming preserves the stored count. Resolved ONCE and reused for the
+    // incoming cursored count verbatim so a legitimate decrease propagates.
+    // Resolved ONCE and reused for the
     // count SET, the total, AND the blend weight, because a Postgres SET
     // expression sees the OLD row value of a bare column — the blend must weight
     // by this NEW upstream count, not the stale stored one. Single source keeps

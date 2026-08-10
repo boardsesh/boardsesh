@@ -697,9 +697,9 @@ export const boardClimbStats = pgTable(
     upstreamQualityAverage: doublePrecision('upstream_quality_average'),
     // The blend's Boardsesh numerator: SUM of one vote per climber — each
     // climber's LATEST rated native flash/send tick (max climbed_at, tie-break
-    // max id) with quality >= 1 and origin = 'native'. double so the sum stays
-    // fractional-safe (ratings are integers 1-5 today, but the vote basis may
-    // change). Owned by recomputeClimbStats; upstream writers never touch it.
+    // max id) with quality in 1..5 and origin = 'native'. double so the sum
+    // stays fractional-safe (ratings are integers 1-5 today, but the vote basis
+    // may change). Owned by recomputeClimbStats; upstream writers never touch it.
     boardseshQualitySum: doublePrecision('boardsesh_quality_sum'),
     // The blend's Boardsesh weight: COUNT of the distinct climbers feeding
     // boardsesh_quality_sum (one vote per climber). Owned by recomputeClimbStats.

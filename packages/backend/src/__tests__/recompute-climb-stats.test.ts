@@ -33,10 +33,10 @@ describe('recomputeClimbStats', () => {
   // The seed's behaviour is asserted end to end against real Postgres in the
   // provenance-matrix block below (a phantom key seeds nothing; a real climb at
   // a new angle still does; quality_normalized). What this one pins is the
-  // SHAPE: the seed must stay an INSERT ... SELECT FROM board_climbs so the
-  // catalog lookup IS the guard (#3528). A regression to a plain VALUES insert
-  // — which cannot carry a WHERE — silently un-guards it.
-  it('seeds via INSERT ... SELECT FROM board_climbs so the catalog lookup guards it', async () => {
+  // SHAPE: the seed must stay an INSERT ... SELECT FROM board_climbs with the
+  // correlated qualifying-tick EXISTS. A regression to a plain VALUES insert
+  // — which cannot carry either guard — silently reintroduces phantom rows.
+  it('seeds only through a real climb with a matching non-detached send/flash tick', async () => {
     const executed: unknown[] = [];
     mockDb.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
       const tx = {
@@ -59,6 +59,9 @@ describe('recomputeClimbStats', () => {
     expect(seedSql).toMatch(/SELECT[\s\S]*FROM board_climbs bc/);
     expect(seedSql).toMatch(/WHERE bc\.uuid =/);
     expect(seedSql).toMatch(/AND bc\.board_type =/);
+    expect(seedSql).toContain('FROM boardsesh_ticks seed_tick');
+    expect(seedSql).toContain("seed_tick.status IN ('flash','send')");
+    expect(seedSql).toContain('seed_tick.kilter_detached_at IS NULL');
     expect(seedSql).toContain('quality_normalized');
   });
 
@@ -158,11 +161,10 @@ describe('recomputeClimbStats', () => {
 
     const sql = sqlText(capturedQuery);
 
-    // The agg CTE must compute the averages — Postgres AVG skips NULL inputs,
-    // so a single rated tick is enough to populate the column. quality = 0 is a
-    // legacy sentinel, excluded via NULLIF so it never drags the average down.
-    expect(sql).toMatch(/AVG\(NULLIF\(bt\.quality, 0\)\)\s+AS avg_quality/);
-    expect(sql).toMatch(/AVG\(bt\.difficulty\)\s+AS avg_difficulty/);
+    // The aggregate rejects sentinel/impossible values instead of letting them
+    // drag an owned climb's averages out of range.
+    expect(sql).toMatch(/AVG\(bt\.quality\) FILTER \(WHERE bt\.quality BETWEEN 1 AND 5\)\s+AS avg_quality/);
+    expect(sql).toMatch(/AVG\(bt\.difficulty\) FILTER \(WHERE bt\.difficulty > 1\)\s+AS avg_difficulty/);
 
     // difficulty/display stay ownership-CASE-guarded so Aurora's averages
     // survive untouched on Aurora-synced climbs.
@@ -180,6 +182,8 @@ describe('recomputeClimbStats', () => {
     expect(sql).toMatch(/boardsesh_quality_count\s*=\s*CASE[\s\S]+?NULLIF\(bq\.bs_quality_count, 0\)/);
     expect(sql).toMatch(/DISTINCT ON \(bt\.user_id\)/);
     expect(sql).toContain("bt.origin     = 'native'");
+    expect(sql).toContain('bt.quality <= 5');
+    expect(sql).toMatch(/bs_quality AS \([\s\S]*?bt\.quality <= 5\s+AND bt\.kilter_detached_at IS NULL\s+ORDER BY/);
     expect(sql).toMatch(/ORDER BY bt\.user_id, bt\.climbed_at DESC, bt\.id DESC/);
   });
 
@@ -335,23 +339,27 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     climbedAt: string;
     kilterId?: string | null;
     kilterSyncedAt?: string | null;
+    kilterDetachedAt?: string | null;
   };
 
   async function seedTick(t: SeedTick) {
     await db.execute(sql`
-      INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status, origin, attempt_count, quality, difficulty, climbed_at, created_at, updated_at, kilter_id, kilter_synced_at)
-      VALUES (gen_random_uuid()::text, ${t.userId}, ${t.boardType}, ${t.climbUuid}, ${t.angle}, ${t.status}::tick_status, ${t.origin}::tick_origin, 1, ${t.quality ?? null}, ${t.difficulty ?? null}, ${t.climbedAt}, now(), now(), ${t.kilterId ?? null}, ${t.kilterSyncedAt ?? null})
+      INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status, origin, attempt_count, quality, difficulty, climbed_at, created_at, updated_at, kilter_id, kilter_synced_at, kilter_detached_at)
+      VALUES (gen_random_uuid()::text, ${t.userId}, ${t.boardType}, ${t.climbUuid}, ${t.angle}, ${t.status}::tick_status, ${t.origin}::tick_origin, 1, ${t.quality ?? null}, ${t.difficulty ?? null}, ${t.climbedAt}, now(), now(), ${t.kilterId ?? null}, ${t.kilterSyncedAt ?? null}, ${t.kilterDetachedAt ?? null})
     `);
   }
 
   async function statsRow(boardType: string, uuid: string, angle: number) {
     const rows = (await db.execute(sql`
-      SELECT boardsesh_ascensionist_count AS bs, ascensionist_count AS total, fa_username AS fa, fa_at AS fa_at,
+      SELECT upstream_ascensionist_count AS upstream, boardsesh_ascensionist_count AS bs,
+             ascensionist_count AS total, fa_username AS fa, fa_at AS fa_at,
              quality_average AS quality, upstream_quality_average AS upstream_quality,
-             boardsesh_quality_sum AS bs_quality_sum, boardsesh_quality_count AS bs_quality_count
+             boardsesh_quality_sum AS bs_quality_sum, boardsesh_quality_count AS bs_quality_count,
+             difficulty_average AS difficulty, display_difficulty AS display_difficulty
         FROM board_climb_stats
        WHERE board_type = ${boardType} AND climb_uuid = ${uuid} AND angle = ${angle}
     `)) as unknown as Array<{
+      upstream: number | string | null;
       bs: number | string | null;
       total: number | string | null;
       fa: string | null;
@@ -360,6 +368,8 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
       upstream_quality: number | string | null;
       bs_quality_sum: number | string | null;
       bs_quality_count: number | string | null;
+      difficulty: number | string | null;
+      display_difficulty: number | string | null;
     }>;
     const [row] = Array.isArray(rows) ? rows : (rows as { rows: typeof rows }).rows;
     return row;
@@ -946,6 +956,163 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     expect(Number(bulk.bs_quality_count)).toBe(Number(single.bs_quality_count));
   });
 
+  it('single + bulk: deleting the last send clears Boardsesh stats but retains upstream count/quality', async () => {
+    await seedUser('u-last-send', 'Lena');
+    for (const uuid of ['CLIMB-LAST-SINGLE', 'CLIMB-LAST-BULK']) {
+      await seedClimb(KEY.boardType, uuid, null);
+      await seedStats(KEY.boardType, uuid, KEY.angle, { upstream: 7, upstreamQuality: 4 });
+      await seedTick({
+        boardType: KEY.boardType,
+        climbUuid: uuid,
+        angle: KEY.angle,
+        userId: 'u-last-send',
+        status: 'send',
+        origin: 'native',
+        quality: 5,
+        climbedAt: '2026-03-01 00:00:00',
+      });
+    }
+
+    await recomputeClimbStatsCore(db, KEY.boardType, 'CLIMB-LAST-SINGLE', KEY.angle);
+    await recomputeClimbStatsBulk(db, [{ boardType: KEY.boardType, climbUuid: 'CLIMB-LAST-BULK', angle: KEY.angle }]);
+    await db.execute(sql`
+      DELETE FROM boardsesh_ticks
+       WHERE board_type = ${KEY.boardType}
+         AND climb_uuid IN ('CLIMB-LAST-SINGLE', 'CLIMB-LAST-BULK')
+         AND angle = ${KEY.angle}
+    `);
+
+    await recomputeClimbStatsCore(db, KEY.boardType, 'CLIMB-LAST-SINGLE', KEY.angle);
+    await recomputeClimbStatsBulk(db, [{ boardType: KEY.boardType, climbUuid: 'CLIMB-LAST-BULK', angle: KEY.angle }]);
+
+    for (const uuid of ['CLIMB-LAST-SINGLE', 'CLIMB-LAST-BULK']) {
+      const row = await statsRow(KEY.boardType, uuid, KEY.angle);
+      expect(Number(row.upstream)).toBe(7);
+      expect(Number(row.bs)).toBe(0);
+      expect(Number(row.total)).toBe(7);
+      expect(Number(row.upstream_quality)).toBe(4);
+      expect(Number(row.quality)).toBe(4);
+      expect(row.bs_quality_sum).toBe(null);
+      expect(row.bs_quality_count).toBe(null);
+    }
+  });
+
+  it('single + bulk: detaching the last rated send clears Boardsesh stats but retains upstream terms', async () => {
+    await seedUser('u-last-attached', 'Della');
+    for (const uuid of ['CLIMB-DETACH-SINGLE', 'CLIMB-DETACH-BULK']) {
+      await seedClimb(KEY.boardType, uuid, null);
+      await seedStats(KEY.boardType, uuid, KEY.angle, { upstream: 7, upstreamQuality: 4 });
+      await seedTick({
+        boardType: KEY.boardType,
+        climbUuid: uuid,
+        angle: KEY.angle,
+        userId: 'u-last-attached',
+        status: 'send',
+        origin: 'native',
+        quality: 5,
+        climbedAt: '2026-03-01 00:00:00',
+      });
+    }
+
+    await recomputeClimbStatsCore(db, KEY.boardType, 'CLIMB-DETACH-SINGLE', KEY.angle);
+    await recomputeClimbStatsBulk(db, [{ boardType: KEY.boardType, climbUuid: 'CLIMB-DETACH-BULK', angle: KEY.angle }]);
+
+    for (const uuid of ['CLIMB-DETACH-SINGLE', 'CLIMB-DETACH-BULK']) {
+      const attached = await statsRow(KEY.boardType, uuid, KEY.angle);
+      expect(Number(attached.upstream)).toBe(7);
+      expect(Number(attached.bs)).toBe(1);
+      expect(Number(attached.total)).toBe(8);
+      expect(Number(attached.bs_quality_sum)).toBe(5);
+      expect(Number(attached.bs_quality_count)).toBe(1);
+      expect(Number(attached.quality)).toBeCloseTo(33 / 8, 6);
+    }
+
+    await db.execute(sql`
+      UPDATE boardsesh_ticks
+         SET kilter_detached_at = '2026-03-02 00:00:00'
+       WHERE board_type = ${KEY.boardType}
+         AND climb_uuid IN ('CLIMB-DETACH-SINGLE', 'CLIMB-DETACH-BULK')
+         AND angle = ${KEY.angle}
+    `);
+
+    await recomputeClimbStatsCore(db, KEY.boardType, 'CLIMB-DETACH-SINGLE', KEY.angle);
+    await recomputeClimbStatsBulk(db, [{ boardType: KEY.boardType, climbUuid: 'CLIMB-DETACH-BULK', angle: KEY.angle }]);
+
+    for (const uuid of ['CLIMB-DETACH-SINGLE', 'CLIMB-DETACH-BULK']) {
+      const detached = await statsRow(KEY.boardType, uuid, KEY.angle);
+      expect(Number(detached.upstream)).toBe(7);
+      expect(Number(detached.bs)).toBe(0);
+      expect(Number(detached.total)).toBe(7);
+      expect(Number(detached.upstream_quality)).toBe(4);
+      expect(Number(detached.quality)).toBe(4);
+      expect(detached.bs_quality_sum).toBe(null);
+      expect(detached.bs_quality_count).toBe(null);
+    }
+  });
+
+  it('single + bulk: owned averages defensively exclude legacy/impossible rating sentinels', async () => {
+    await seedUser('u-valid-rating', 'Val');
+    await seedUser('u-low-rating', 'Lo');
+    await seedUser('u-high-rating', 'Hi');
+
+    async function seedInvalidAverageFixture(uuid: string) {
+      await seedClimb(KEY.boardType, uuid, 'u-valid-rating');
+      await seedStats(KEY.boardType, uuid, KEY.angle, { upstream: 0 });
+      // The production CHECK rejects quality 6. This intentionally reduced test
+      // schema omits that constraint so the query-level defence stays covered for
+      // legacy rows or fixtures loaded with constraints disabled.
+      await seedTick({
+        boardType: KEY.boardType,
+        climbUuid: uuid,
+        angle: KEY.angle,
+        userId: 'u-valid-rating',
+        status: 'send',
+        origin: 'native',
+        quality: 3,
+        difficulty: 10,
+        climbedAt: '2026-01-01 00:00:00',
+      });
+      await seedTick({
+        boardType: KEY.boardType,
+        climbUuid: uuid,
+        angle: KEY.angle,
+        userId: 'u-low-rating',
+        status: 'send',
+        origin: 'native',
+        quality: 0,
+        difficulty: 0,
+        climbedAt: '2026-01-02 00:00:00',
+      });
+      await seedTick({
+        boardType: KEY.boardType,
+        climbUuid: uuid,
+        angle: KEY.angle,
+        userId: 'u-high-rating',
+        status: 'send',
+        origin: 'native',
+        quality: 6,
+        difficulty: 1,
+        climbedAt: '2026-01-03 00:00:00',
+      });
+    }
+
+    await seedInvalidAverageFixture('CLIMB-GUARD-SINGLE');
+    await seedInvalidAverageFixture('CLIMB-GUARD-BULK');
+    await recomputeClimbStatsCore(db, KEY.boardType, 'CLIMB-GUARD-SINGLE', KEY.angle);
+    await recomputeClimbStatsBulk(db, [{ boardType: KEY.boardType, climbUuid: 'CLIMB-GUARD-BULK', angle: KEY.angle }]);
+
+    const single = await statsRow(KEY.boardType, 'CLIMB-GUARD-SINGLE', KEY.angle);
+    const bulk = await statsRow(KEY.boardType, 'CLIMB-GUARD-BULK', KEY.angle);
+    for (const row of [single, bulk]) {
+      expect(Number(row.difficulty)).toBe(10);
+      expect(Number(row.display_difficulty)).toBe(10);
+      expect(Number(row.quality)).toBe(3);
+    }
+    expect(Number(bulk.difficulty)).toBe(Number(single.difficulty));
+    expect(Number(bulk.display_difficulty)).toBe(Number(single.display_difficulty));
+    expect(Number(bulk.quality)).toBe(Number(single.quality));
+  });
+
   it('single-key recompute produces the same counting result and returns a diff', async () => {
     await seedUser('u-native', 'Nadia');
     await seedUser('u-pull', 'Pedro');
@@ -1072,6 +1239,46 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     return Number(row.n);
   }
 
+  it('single + bulk: a valid climb with no tick does not seed a stats row', async () => {
+    await seedClimb('kilter', 'CLIMB-NO-TICK-SINGLE', null);
+    await seedClimb('kilter', 'CLIMB-NO-TICK-BULK', null);
+
+    await recomputeClimbStatsCore(db, 'kilter', 'CLIMB-NO-TICK-SINGLE', 40);
+    await recomputeClimbStatsBulk(db, [{ boardType: 'kilter', climbUuid: 'CLIMB-NO-TICK-BULK', angle: 40 }]);
+
+    expect(await statsRowCount('kilter', 'CLIMB-NO-TICK-SINGLE', 40)).toBe(0);
+    expect(await statsRowCount('kilter', 'CLIMB-NO-TICK-BULK', 40)).toBe(0);
+  });
+
+  it('single + bulk: attempt-only and detached-only keys do not seed stats rows', async () => {
+    await seedUser('u-no-seed', 'Nora');
+    const fixtures = [
+      { uuid: 'CLIMB-ATTEMPT-SINGLE', mode: 'single' as const, status: 'attempt' as const },
+      { uuid: 'CLIMB-ATTEMPT-BULK', mode: 'bulk' as const, status: 'attempt' as const },
+      { uuid: 'CLIMB-DETACHED-SINGLE', mode: 'single' as const, status: 'send' as const },
+      { uuid: 'CLIMB-DETACHED-BULK', mode: 'bulk' as const, status: 'send' as const },
+    ];
+    for (const fixture of fixtures) {
+      await seedClimb('kilter', fixture.uuid, null);
+      await seedTick({
+        boardType: 'kilter',
+        climbUuid: fixture.uuid,
+        angle: 40,
+        userId: 'u-no-seed',
+        status: fixture.status,
+        origin: 'native',
+        climbedAt: '2026-01-01 00:00:00',
+        kilterDetachedAt: fixture.uuid.includes('DETACHED') ? '2026-01-02 00:00:00' : null,
+      });
+      if (fixture.mode === 'single') {
+        await recomputeClimbStatsCore(db, 'kilter', fixture.uuid, 40);
+      } else {
+        await recomputeClimbStatsBulk(db, [{ boardType: 'kilter', climbUuid: fixture.uuid, angle: 40 }]);
+      }
+      expect(await statsRowCount('kilter', fixture.uuid, 40)).toBe(0);
+    }
+  });
+
   it('single-key: a tick on a climb missing from board_climbs seeds NO stats row', async () => {
     await seedUser('u-ghost', 'Gia');
     // Deliberately no seedClimb — this is the phantom-UUID case.
@@ -1135,25 +1342,30 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
   // at an angle the catalog has no stats row for still gets one. Anyone who
   // "hardens" the guard from (climb) to (climb, angle) breaks real ticks, and
   // this is the test that tells them.
-  it('a real climb ticked at an angle with no stats row STILL seeds one', async () => {
+  it('single + bulk: a real climb sent at an angle with no stats row STILL seeds one', async () => {
     await seedUser('u-newangle', 'Nia');
-    await seedClimb('kilter', 'CLIMB-ANGLES', null);
-    await seedStats('kilter', 'CLIMB-ANGLES', 40, { upstream: 5 });
-    await seedTick({
-      boardType: 'kilter',
-      climbUuid: 'CLIMB-ANGLES',
-      angle: 25,
-      userId: 'u-newangle',
-      status: 'send',
-      origin: 'native',
-      climbedAt: '2026-01-01 00:00:00',
-    });
+    for (const uuid of ['CLIMB-ANGLES-SINGLE', 'CLIMB-ANGLES-BULK']) {
+      await seedClimb('kilter', uuid, null);
+      await seedStats('kilter', uuid, 40, { upstream: 5 });
+      await seedTick({
+        boardType: 'kilter',
+        climbUuid: uuid,
+        angle: 25,
+        userId: 'u-newangle',
+        status: 'send',
+        origin: 'native',
+        climbedAt: '2026-01-01 00:00:00',
+      });
+    }
 
-    await recomputeClimbStatsCore(db, 'kilter', 'CLIMB-ANGLES', 25);
+    await recomputeClimbStatsCore(db, 'kilter', 'CLIMB-ANGLES-SINGLE', 25);
+    await recomputeClimbStatsBulk(db, [{ boardType: 'kilter', climbUuid: 'CLIMB-ANGLES-BULK', angle: 25 }]);
 
-    const seeded = await statsRow('kilter', 'CLIMB-ANGLES', 25);
-    expect(Number(seeded.bs)).toBe(1);
-    expect(Number(seeded.total)).toBe(1); // no upstream at 25° — 0 + 1 native
+    for (const uuid of ['CLIMB-ANGLES-SINGLE', 'CLIMB-ANGLES-BULK']) {
+      const seeded = await statsRow('kilter', uuid, 25);
+      expect(Number(seeded.bs)).toBe(1);
+      expect(Number(seeded.total)).toBe(1); // no upstream at 25° — 0 + 1 native
+    }
   });
 
   it('seeded rows are marked quality_normalized (the #3529 seed half)', async () => {

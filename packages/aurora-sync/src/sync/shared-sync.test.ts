@@ -1,23 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { notifications, setterFollows, userBoardMappings, userFollows } from '@boardsesh/db/schema';
-import type { SyncData } from '../api/sync-api-types';
+import type { ClimbStats, SyncData } from '../api/sync-api-types';
 import type { SyncOptions } from '../api/types';
 
-const {
-  mockSharedSync,
-  mockPopulateDenormalizedColumns,
-  mockConvertLitUpHolds,
-  mockBlendedQualityAverageSql,
-  mockSnapshotHistory,
-} = vi.hoisted(() => ({
-  mockSharedSync: vi.fn(),
-  mockPopulateDenormalizedColumns: vi.fn().mockResolvedValue(undefined),
-  mockConvertLitUpHolds: vi.fn().mockReturnValue({}),
-  // Never invoked here (these tests process no climb_stats); stubbed only so
-  // the shared-sync import of blendedQualityAverageSql resolves.
-  mockBlendedQualityAverageSql: vi.fn(),
-  mockSnapshotHistory: vi.fn().mockResolvedValue({ written: 0, skipped: true }),
-}));
+const { mockSharedSync, mockPopulateDenormalizedColumns, mockConvertLitUpHolds, mockSnapshotHistory } = vi.hoisted(
+  () => ({
+    mockSharedSync: vi.fn(),
+    mockPopulateDenormalizedColumns: vi.fn().mockResolvedValue(undefined),
+    mockConvertLitUpHolds: vi.fn().mockReturnValue({}),
+    mockSnapshotHistory: vi.fn().mockResolvedValue({ written: 0, skipped: true }),
+  }),
+);
 
 vi.mock('../api/shared-sync-api', () => ({
   sharedSync: mockSharedSync,
@@ -31,7 +24,6 @@ vi.mock('@boardsesh/db/queries', async (importOriginal) => {
     // moment shared-sync.ts reaches for one.
     ...actual,
     populateDenormalizedColumns: mockPopulateDenormalizedColumns,
-    blendedQualityAverageSql: mockBlendedQualityAverageSql,
     snapshotClimbStatsHistoryIfDue: mockSnapshotHistory,
     // setterSyncNotificationUuid deliberately NOT stubbed: the deterministic
     // uuid IS the duplicate-notification backstop, so a stub would stop
@@ -94,6 +86,8 @@ const shimInsertedRows: Array<Record<string, unknown>> = [];
  * even if the write path stops using the helper.
  */
 const shimConflictSets: Array<Record<string, unknown>> = [];
+const shimExistingClimbStatRows: Array<{ climbUuid: string; angle: number }> = [];
+const shimClimbStatSelectPredicates: SQL[] = [];
 
 function createDbShim() {
   const fluent: Record<string, unknown> = {};
@@ -105,6 +99,23 @@ function createDbShim() {
         return async (cb: (tx: typeof shim) => Promise<void>) => cb(shim);
       }
       if (prop === 'execute') return async () => undefined;
+      if (prop === 'select') {
+        return (selectedColumns: Record<string, unknown>) => {
+          const isClimbStatKeySelect = 'climbUuid' in selectedColumns && 'angle' in selectedColumns;
+          const rows = isClimbStatKeySelect ? [...shimExistingClimbStatRows] : [];
+          const terminal = Object.assign(Promise.resolve(rows), {
+            limit: () => Promise.resolve(rows),
+          });
+          return {
+            from: () => ({
+              where: (predicate: SQL) => {
+                if (isClimbStatKeySelect) shimClimbStatSelectPredicates.push(predicate);
+                return terminal;
+              },
+            }),
+          };
+        };
+      }
       // Every method (insert, select, values, where, onConflictDoUpdate, etc.)
       // returns the same fluent object, so chains keep flowing. The terminal
       // `await` resolves to whatever the proxy is — fine for INSERTs (we don't
@@ -589,31 +600,392 @@ describe('createSetterSyncNotifications', () => {
 
 describe('parseDifficultyFields', () => {
   it('passes through numeric difficulty and display values', () => {
-    expect(parseDifficultyFields({ difficulty_average: 15.4, display_difficulty: 16 })).toEqual({
+    expect(
+      parseDifficultyFields({ difficulty_average: 15.4, display_difficulty: 16, benchmark_difficulty: 17 }),
+    ).toEqual({
       difficultyAverage: 15.4,
       displayDifficulty: 16,
+      benchmarkDifficulty: 17,
     });
   });
+
+  it.each([0, 1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    'rejects invalid average/display/benchmark difficulty %s',
+    (difficulty) => {
+      expect(
+        parseDifficultyFields({
+          difficulty_average: difficulty,
+          display_difficulty: difficulty,
+          benchmark_difficulty: difficulty,
+        }),
+      ).toEqual({ difficultyAverage: null, displayDifficulty: null, benchmarkDifficulty: null });
+    },
+  );
 
   it('preserves NULL difficulty instead of coercing to grade 0', () => {
-    expect(parseDifficultyFields({ difficulty_average: null, display_difficulty: null })).toEqual({
+    expect(
+      parseDifficultyFields({ difficulty_average: null, display_difficulty: null, benchmark_difficulty: null }),
+    ).toEqual({
       difficultyAverage: null,
       displayDifficulty: null,
+      benchmarkDifficulty: null,
     });
   });
 
-  it('falls back display_difficulty to the average when Aurora omits it', () => {
-    expect(parseDifficultyFields({ difficulty_average: 22.1, display_difficulty: null })).toEqual({
+  it.each([null, 0, 1, Number.NaN])('falls back display_difficulty %s to the valid average', (displayDifficulty) => {
+    expect(
+      parseDifficultyFields({
+        difficulty_average: 22.1,
+        display_difficulty: displayDifficulty,
+        benchmark_difficulty: null,
+      }),
+    ).toEqual({
       difficultyAverage: 22.1,
       displayDifficulty: 22.1,
+      benchmarkDifficulty: null,
     });
   });
 
   it('keeps an explicit display value when the average is null', () => {
-    expect(parseDifficultyFields({ difficulty_average: null, display_difficulty: 18 })).toEqual({
+    expect(
+      parseDifficultyFields({ difficulty_average: null, display_difficulty: 18, benchmark_difficulty: 1 }),
+    ).toEqual({
       difficultyAverage: null,
       displayDifficulty: 18,
+      benchmarkDifficulty: null,
     });
+  });
+});
+
+describe('board_climb_stats empty-row guard (issue #4068)', () => {
+  const dialect = new PgDialect();
+  const render = (fragment: Parameters<typeof dialect.sqlToQuery>[0]) => dialect.sqlToQuery(fragment).sql.toLowerCase();
+
+  type RecordedStatsConflictSet = {
+    upstreamAscensionistCount: SQL;
+    ascensionistCount: SQL;
+    qualityAverage: SQL;
+  };
+
+  type RecordedStatsPolicyInput = {
+    incomingUpstreamCount: number | null;
+    storedUpstreamCount: number | null;
+    boardseshAscensionistCount: number;
+    upstreamQualityAverage: number | null;
+    boardseshQualitySum: number;
+    boardseshQualityCount: number;
+  };
+
+  function normalizeSql(fragment: SQL): string {
+    return render(fragment).replace(/\s+/g, ' ').trim();
+  }
+
+  function recordedStatsConflictSet(): RecordedStatsConflictSet {
+    const statsConflictSets = shimConflictSets.filter((set) => 'upstreamQualityAverage' in set);
+    expect(statsConflictSets).toHaveLength(1);
+    return statsConflictSets[0] as unknown as RecordedStatsConflictSet;
+  }
+
+  function evaluateRenderedUpstreamCount(
+    rendered: string,
+    incomingUpstreamCount: number | null,
+    storedUpstreamCount: number | null,
+  ): number {
+    const coalesceMatch = rendered.match(/^coalesce\(([^()]*)\)$/);
+    if (!coalesceMatch) throw new Error(`not a bare COALESCE expression: ${rendered}`);
+
+    for (const argument of coalesceMatch[1].split(',').map((part) => part.trim())) {
+      if (argument === 'excluded.upstream_ascensionist_count') {
+        if (incomingUpstreamCount != null) return incomingUpstreamCount;
+      } else if (argument === '"board_climb_stats"."upstream_ascensionist_count"') {
+        if (storedUpstreamCount != null) return storedUpstreamCount;
+      } else {
+        return Number(argument);
+      }
+    }
+
+    throw new Error(`no COALESCE argument resolved in: ${rendered}`);
+  }
+
+  function evaluateRecordedStatsPolicy(
+    conflictSet: RecordedStatsConflictSet,
+    input: RecordedStatsPolicyInput,
+  ): { upstreamCount: number; totalCount: number; blendedQualityAverage: number | null } {
+    const effectiveCountSql = normalizeSql(conflictSet.upstreamAscensionistCount);
+    const totalCountSql = normalizeSql(conflictSet.ascensionistCount);
+    const blendSql = normalizeSql(conflictSet.qualityAverage);
+
+    // The total and BOTH upstream-weight positions in the recorded blend must
+    // reuse the exact incoming-first COALESCE emitted for the count update.
+    // That ties these behavioral assertions to the query builder path that ran,
+    // rather than to a separately reconstructed helper expression.
+    expect(totalCountSql).toBe(
+      `${effectiveCountSql} + coalesce("board_climb_stats"."boardsesh_ascensionist_count", 0)`,
+    );
+    expect(blendSql.split(effectiveCountSql)).toHaveLength(3);
+    expect(blendSql).toContain('coalesce("board_climb_stats"."boardsesh_quality_sum", 0)');
+    expect(blendSql).toContain('coalesce("board_climb_stats"."boardsesh_quality_count", 0)');
+
+    const upstreamCount = evaluateRenderedUpstreamCount(
+      effectiveCountSql,
+      input.incomingUpstreamCount,
+      input.storedUpstreamCount,
+    );
+    const totalCount = upstreamCount + input.boardseshAscensionistCount;
+    const upstreamWeight = input.upstreamQualityAverage == null ? 0 : upstreamCount;
+    const blendWeight = upstreamWeight + input.boardseshQualityCount;
+    const weightedQualitySum =
+      (input.upstreamQualityAverage == null ? 0 : input.upstreamQualityAverage * upstreamCount) +
+      input.boardseshQualitySum;
+    const blendedQualityAverage = blendWeight === 0 ? input.upstreamQualityAverage : weightedQualitySum / blendWeight;
+
+    return { upstreamCount, totalCount, blendedQualityAverage };
+  }
+
+  beforeEach(() => {
+    mockSharedSync.mockReset();
+    mockPopulateDenormalizedColumns.mockReset();
+    mockPopulateDenormalizedColumns.mockResolvedValue(undefined);
+    shimInsertedRows.length = 0;
+    shimConflictSets.length = 0;
+    shimExistingClimbStatRows.length = 0;
+    shimClimbStatSelectPredicates.length = 0;
+  });
+
+  function stat(overrides: Partial<ClimbStats> = {}) {
+    return { ...emptyStat(), ...overrides };
+  }
+
+  function statWithRawCount(rawCount: unknown, overrides: Partial<ClimbStats> = {}): ClimbStats {
+    return { ...stat(overrides), ascensionist_count: rawCount } as unknown as ClimbStats;
+  }
+
+  function emptyStat(): ClimbStats {
+    return {
+      climb_uuid: 'EMPTY-STAT',
+      angle: 40,
+      display_difficulty: null,
+      benchmark_difficulty: null,
+      ascensionist_count: 0,
+      difficulty_average: null,
+      quality_average: null,
+      fa_username: null,
+      fa_at: null,
+    };
+  }
+
+  function writtenStatsRows() {
+    return shimInsertedRows.filter((row) => 'upstreamQualityAverage' in row);
+  }
+
+  it('skips a fully empty NEW stats key', async () => {
+    mockSharedSync.mockResolvedValueOnce(complete({ climb_stats: [emptyStat()] }));
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    expect(writtenStatsRows()).toHaveLength(0);
+    expect(shimConflictSets.filter((set) => 'upstreamQualityAverage' in set)).toHaveLength(0);
+  });
+
+  it('treats an omitted count as zero only when deciding a fully empty NEW row is empty', async () => {
+    const statWithoutCount = emptyStat();
+    delete statWithoutCount.ascensionist_count;
+    mockSharedSync.mockResolvedValueOnce(complete({ climb_stats: [statWithoutCount] }));
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    expect(writtenStatsRows()).toHaveLength(0);
+  });
+
+  it('inserts NULL counts when a NEW row omits its count but has other meaningful stats', async () => {
+    const meaningfulStatWithoutCount = stat({ difficulty_average: 18 });
+    delete meaningfulStatWithoutCount.ascensionist_count;
+    mockSharedSync.mockResolvedValueOnce(complete({ climb_stats: [meaningfulStatWithoutCount] }));
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    expect(writtenStatsRows()).toEqual([
+      expect.objectContaining({
+        climbUuid: 'EMPTY-STAT',
+        difficultyAverage: 18,
+        upstreamAscensionistCount: null,
+        ascensionistCount: null,
+      }),
+    ]);
+  });
+
+  it.each([
+    { label: 'omitted', rawCount: undefined, omitCount: true },
+    { label: 'undefined', rawCount: undefined },
+    { label: 'null', rawCount: null },
+    { label: 'negative', rawCount: -1 },
+    { label: 'fractional', rawCount: 1.5 },
+    { label: 'NaN', rawCount: Number.NaN },
+    { label: 'positive infinity', rawCount: Number.POSITIVE_INFINITY },
+    { label: 'negative infinity', rawCount: Number.NEGATIVE_INFINITY },
+    { label: 'unsafe integer', rawCount: Number.MAX_SAFE_INTEGER + 1 },
+    { label: 'numeric string', rawCount: '7' },
+    { label: 'boolean', rawCount: true },
+  ])(
+    "maps an EXISTING row's $label count to NULL so stored count and blend weight survive",
+    async ({ rawCount, omitCount }) => {
+      shimExistingClimbStatRows.push({ climbUuid: 'EMPTY-STAT', angle: 40 });
+      const incomingStat = statWithRawCount(rawCount, { quality_average: 2 });
+      if (omitCount) delete incomingStat.ascensionist_count;
+      mockSharedSync.mockResolvedValueOnce(complete({ climb_stats: [incomingStat] }));
+
+      await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+      expect(writtenStatsRows()).toEqual([
+        expect.objectContaining({
+          upstreamAscensionistCount: null,
+          ascensionistCount: null,
+          upstreamQualityAverage: 3,
+        }),
+      ]);
+      expect(
+        evaluateRecordedStatsPolicy(recordedStatsConflictSet(), {
+          incomingUpstreamCount: null,
+          storedUpstreamCount: 8,
+          boardseshAscensionistCount: 2,
+          upstreamQualityAverage: 3,
+          boardseshQualitySum: 10,
+          boardseshQualityCount: 2,
+        }),
+      ).toEqual({ upstreamCount: 8, totalCount: 10, blendedQualityAverage: 3.4 });
+    },
+  );
+
+  it.each([
+    ['explicit zero', 0, 0, 2, 5],
+    ['positive safe integer', 4, 4, 6, 22 / 6],
+  ] as const)(
+    'keeps %s authoritative for an EXISTING row and its blend weight',
+    async (_label, incomingCount, expectedUpstreamCount, expectedTotalCount, expectedBlend) => {
+      shimExistingClimbStatRows.push({ climbUuid: 'EMPTY-STAT', angle: 40 });
+      mockSharedSync.mockResolvedValueOnce(
+        complete({ climb_stats: [stat({ ascensionist_count: incomingCount, quality_average: 2 })] }),
+      );
+
+      await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+      expect(writtenStatsRows()).toEqual([
+        expect.objectContaining({
+          upstreamAscensionistCount: incomingCount,
+          ascensionistCount: incomingCount,
+          upstreamQualityAverage: 3,
+        }),
+      ]);
+      expect(
+        evaluateRecordedStatsPolicy(recordedStatsConflictSet(), {
+          incomingUpstreamCount: incomingCount,
+          storedUpstreamCount: 8,
+          boardseshAscensionistCount: 2,
+          upstreamQualityAverage: 3,
+          boardseshQualitySum: 10,
+          boardseshQualityCount: 2,
+        }),
+      ).toEqual({
+        upstreamCount: expectedUpstreamCount,
+        totalCount: expectedTotalCount,
+        blendedQualityAverage: expectedBlend,
+      });
+    },
+  );
+
+  it('bounds the existing-row pre-read by both candidate UUID and angle', async () => {
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        climb_stats: [stat({ climb_uuid: 'ANGLE-40', angle: 40 }), stat({ climb_uuid: 'ANGLE-50', angle: 50 })],
+      }),
+    );
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    expect(shimClimbStatSelectPredicates).toHaveLength(1);
+    const predicateQuery = dialect.sqlToQuery(shimClimbStatSelectPredicates[0]);
+    expect(predicateQuery.sql).toContain('"climb_uuid" in');
+    expect(predicateQuery.sql).toContain('"angle" in');
+    expect(predicateQuery.params).toEqual(['decoy', 'ANGLE-40', 'ANGLE-50', 40, 50]);
+  });
+
+  it('skips the existing-row pre-read entirely when every payload in the batch is non-empty', async () => {
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        climb_stats: [stat({ climb_uuid: 'GRADED-40', angle: 40, difficulty_average: 18 })],
+      }),
+    );
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    expect(shimClimbStatSelectPredicates).toHaveLength(0);
+    expect(writtenStatsRows()).toHaveLength(1);
+  });
+
+  it('sanitizes invalid FA data before deciding a NEW row is empty', async () => {
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        climb_stats: [stat({ fa_username: 'Garbage', fa_at: '2033-01-01T00:00:00.000Z' })],
+      }),
+    );
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    expect(writtenStatsRows()).toHaveLength(0);
+  });
+
+  it.each([
+    ['grade', { difficulty_average: 18 }],
+    ['benchmark', { benchmark_difficulty: 20 }],
+    ['quality', { quality_average: 2 }],
+    ['first ascent', { fa_username: 'Ari', fa_at: '2024-01-01T00:00:00.000Z' }],
+  ])('retains a zero-count NEW row with %s data', async (_label, overrides) => {
+    mockSharedSync.mockResolvedValueOnce(complete({ climb_stats: [stat(overrides)] }));
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    expect(writtenStatsRows()).toHaveLength(1);
+  });
+
+  it('retains every positive-count NEW row even when display fields are empty', async () => {
+    mockSharedSync.mockResolvedValueOnce(complete({ climb_stats: [stat({ ascensionist_count: 1 })] }));
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    expect(writtenStatsRows()).toHaveLength(1);
+  });
+
+  it('sends an empty EXISTING row through conflict update and preserves Boardsesh-owned terms', async () => {
+    shimExistingClimbStatRows.push({ climbUuid: 'EMPTY-STAT', angle: 40 });
+    mockSharedSync.mockResolvedValueOnce(complete({ climb_stats: [emptyStat()] }));
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    expect(writtenStatsRows()).toEqual([
+      expect.objectContaining({
+        climbUuid: 'EMPTY-STAT',
+        upstreamAscensionistCount: 0,
+        ascensionistCount: 0,
+        difficultyAverage: null,
+        displayDifficulty: null,
+        benchmarkDifficulty: null,
+        qualityAverage: null,
+        upstreamQualityAverage: null,
+        faUsername: null,
+        faAt: null,
+      }),
+    ]);
+
+    const [statsConflictSet] = shimConflictSets.filter((set) => 'upstreamQualityAverage' in set) as Array<
+      Record<string, SQL>
+    >;
+    expect(statsConflictSet).toBeDefined();
+    expect(render(statsConflictSet.ascensionistCount)).toContain('boardsesh_ascensionist_count');
+    expect(render(statsConflictSet.qualityAverage)).toContain('boardsesh_quality_sum');
+    expect(render(statsConflictSet.qualityAverage)).toContain('boardsesh_quality_count');
+    expect(statsConflictSet).not.toHaveProperty('boardseshAscensionistCount');
+    expect(statsConflictSet).not.toHaveProperty('boardseshQualitySum');
+    expect(statsConflictSet).not.toHaveProperty('boardseshQualityCount');
   });
 });
 

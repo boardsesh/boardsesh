@@ -61,22 +61,24 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
  * Boardsesh's native ratings (blendedQualityAverageSql, quality-blend.ts) — the
  * mirror of how ascensionist_count blends upstream + Boardsesh counts:
  *   - OWNED climbs (board_climbs.user_id NOT NULL): no upstream side, so
- *     quality_average stays a plain AVG(NULLIF(quality, 0)) over ALL flash/send
- *     ticks of any origin. quality = 0 is a legacy sentinel excluded via NULLIF.
+ *     quality_average stays a plain AVG(quality) FILTER (WHERE quality BETWEEN
+ *     1 AND 5) over ALL flash/send ticks of any origin.
  *   - NON-owned climbs: quality_average = blend(upstream_quality_average,
  *     upstream_ascensionist_count, boardsesh_quality_sum, boardsesh_quality_count),
  *     rewritten in the SAME statement that recomputes the Boardsesh terms.
  *
  * The recompute OWNS boardsesh_quality_sum / boardsesh_quality_count (the blend's
  * Boardsesh side), computed as one vote per climber: each climber's LATEST rated
- * native flash/send tick (max climbed_at, tie-break max id) with quality >= 1 and
- * origin = 'native'. A climber re-ticking the same climb does NOT multiply their
- * vote — only their latest rating counts. Imported ratings (aurora_pull /
- * kilter_pull / json_import) are already reflected in upstream_quality_average and
- * are deliberately excluded here so they are not double-counted. The recompute
- * never writes upstream_quality_average (the upstream syncs own it).
+ * native flash/send tick (max climbed_at, tie-break max id) with quality 1..5 and
+ * origin = 'native', excluding detached ticks. A climber re-ticking the same
+ * climb does NOT multiply their vote — only their latest attached rating counts.
+ * Imported ratings (aurora_pull / kilter_pull / json_import) are already reflected
+ * in upstream_quality_average and are deliberately excluded here so they are not
+ * double-counted. The recompute never writes upstream_quality_average (the upstream
+ * syncs own it).
  *
- * The defensive seed is GUARDED on the climb existing in board_climbs (#3528).
+ * The defensive seed is GUARDED on the climb existing in board_climbs (#3528)
+ * AND a matching non-detached flash/send tick still existing at the key.
  * A tick can carry any string as its climb_uuid — saveTick's Zod schema is
  * shape-only and boardsesh_ticks has no FK to board_climbs — so an unguarded
  * seed minted a permanent board_climb_stats row for whatever key a tick landed
@@ -84,11 +86,10 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
  * orphan rows in prod). Both seeds now insert only when board_climbs has a row
  * for (board_type, climb_uuid); the lookup rides board_climbs_pkey.
  *
- * Deliberately guarded on the CLIMB, not on (climb, angle): a tick at an angle
- * the catalog has no stats row for is legitimate and must still seed — that is
- * the whole reason the seed exists. Tightening this to (climb, angle) would
- * break real ticks. (MoonBoard's wrong-angle rows, #3529, are an identity
- * problem, not an existence one; they belong to the angle-dedup work.)
+ * The tick-existence guard applies ONLY to INSERT. The UPDATE always receives
+ * every requested key so deleting/detaching/downgrading the final send clears
+ * an existing row's Boardsesh-owned aggregates while preserving its upstream
+ * fields. A matching send at a new angle remains legitimate and seeds a row.
  *
  * Seeded rows carry quality_normalized = TRUE. Every value the row can ever
  * hold is on the canonical 1-5 scale: the Boardsesh blend is built from native
@@ -146,12 +147,12 @@ export async function recomputeClimbStats(
     // Defensive seed: set upstream/boardsesh counts to 0 explicitly so the
     // recompute and any later upstream sync both see a sensible baseline.
     //
-    // INSERT ... SELECT FROM board_climbs makes the catalog lookup the guard
-    // itself: board_climbs.uuid is the primary key, so the SELECT yields
-    // exactly one row for a real climb and zero rows for a phantom one, and a
-    // phantom key seeds nothing. When nothing is seeded the UPDATE below simply
-    // matches no row and this function returns undefined — the documented
-    // "UPDATE matched no row" path.
+    // INSERT ... SELECT FROM board_climbs makes the catalog lookup one guard;
+    // the correlated tick EXISTS is the second. The SELECT yields exactly one
+    // row only for a real climb with a matching attached flash/send. When
+    // nothing is seeded the UPDATE below still runs, so an existing row can be
+    // cleared after its final send disappears; a never-seeded key simply
+    // matches no row and this function returns undefined.
     //
     // Raw SQL rather than the drizzle insert builder, and not for lack of
     // trying: `.values()` cannot carry a WHERE at all, and `.insert().select()`
@@ -168,6 +169,15 @@ export async function recomputeClimbStats(
         FROM board_climbs bc
        WHERE bc.uuid = ${climbUuid}
          AND bc.board_type = ${boardType}
+         AND EXISTS (
+           SELECT 1
+             FROM boardsesh_ticks seed_tick
+            WHERE seed_tick.board_type = ${boardType}
+              AND seed_tick.climb_uuid = ${climbUuid}
+              AND seed_tick.angle = ${angle}
+              AND seed_tick.status IN ('flash','send')
+              AND seed_tick.kilter_detached_at IS NULL
+         )
       ON CONFLICT (board_type, climb_uuid, angle) DO NOTHING;
     `);
 
@@ -230,8 +240,8 @@ export async function recomputeClimbStats(
           -- written to boardsesh-OWNED climbs (see the ownership CASE below),
           -- which have no upstream average to double-count against — so every
           -- rating on the climb contributes, wherever the tick later synced.
-          AVG(NULLIF(bt.quality, 0))   AS avg_quality,
-          AVG(bt.difficulty)           AS avg_difficulty,
+          AVG(bt.quality) FILTER (WHERE bt.quality BETWEEN 1 AND 5) AS avg_quality,
+          AVG(bt.difficulty) FILTER (WHERE bt.difficulty > 1)       AS avg_difficulty,
           (SELECT COALESCE(up.display_name, u.name)
              FROM boardsesh_ticks bt2
              JOIN users            u  ON u.id      = bt2.user_id
@@ -267,6 +277,8 @@ export async function recomputeClimbStats(
                AND bt.status IN ('flash','send')
                AND bt.quality IS NOT NULL
                AND bt.quality >= 1
+               AND bt.quality <= 5
+               AND bt.kilter_detached_at IS NULL
              ORDER BY bt.user_id, bt.climbed_at DESC, bt.id DESC
           ) latest
       ),
@@ -360,8 +372,9 @@ function dedupeKeys(keys: ClimbStatsKey[]): ClimbStatsKey[] {
  * noise. Callers pass the DISTINCT keys of the flash/send ticks they wrote.
  *
  * Idempotent: safe to call on a passed transaction (the writer's tx) or a
- * top-level db. Does not open its own transaction — the seed + update are
- * individually idempotent, so a re-run repairs any partial state.
+ * top-level db. Does not open its own transaction. With a top-level db the seed
+ * and update are not atomic; an interruption can leave an empty seed until the
+ * next call, whose individually idempotent statements repair that partial state.
  *
  * Offline propagation: the UPDATE below is a plain SQL UPDATE, so every row
  * whose values actually change fires the BEFORE UPDATE trigger
@@ -395,9 +408,10 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
     );
 
     // Defensive seed for keys whose stats row doesn't exist yet (ticks can
-    // arrive at angles the saveClimb seed didn't cover). Guarded on the climb
-    // existing in board_climbs (#3528) — see the module doc. The EXISTS rides
-    // board_climbs_pkey, one probe per key.
+    // arrive at angles the saveClimb seed didn't cover). Guarded on both the
+    // climb existing in board_climbs (#3528) and a matching attached flash/send
+    // tick — see the module doc. Existing keys still reach the UPDATE below
+    // even when that tick guard is now false.
     await db.execute(sql`
       INSERT INTO board_climb_stats (board_type, climb_uuid, angle,
                                      ascensionist_count, upstream_ascensionist_count, boardsesh_ascensionist_count,
@@ -410,6 +424,15 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
           WHERE bc.uuid = k.climb_uuid
             AND bc.board_type = k.board_type
        )
+         AND EXISTS (
+           SELECT 1
+             FROM boardsesh_ticks seed_tick
+            WHERE seed_tick.board_type = k.board_type
+              AND seed_tick.climb_uuid = k.climb_uuid
+              AND seed_tick.angle = k.angle
+              AND seed_tick.status IN ('flash','send')
+              AND seed_tick.kilter_detached_at IS NULL
+         )
       ON CONFLICT (board_type, climb_uuid, angle) DO NOTHING;
     `);
 
@@ -467,8 +490,8 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
       sends AS (
         SELECT bt.board_type, bt.climb_uuid, bt.angle,
                MIN(bt.climbed_at)                                     AS first_at,
-               AVG(NULLIF(bt.quality, 0))                             AS avg_quality,
-               AVG(bt.difficulty)                                     AS avg_difficulty
+               AVG(bt.quality) FILTER (WHERE bt.quality BETWEEN 1 AND 5) AS avg_quality,
+               AVG(bt.difficulty) FILTER (WHERE bt.difficulty > 1)       AS avg_difficulty
           FROM boardsesh_ticks bt
           JOIN keys k
             ON k.board_type = bt.board_type AND k.climb_uuid = bt.climb_uuid AND k.angle = bt.angle
@@ -506,6 +529,8 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
                AND bt.status IN ('flash','send')
                AND bt.quality IS NOT NULL
                AND bt.quality >= 1
+               AND bt.quality <= 5
+               AND bt.kilter_detached_at IS NULL
              ORDER BY bt.board_type, bt.climb_uuid, bt.angle, bt.user_id, bt.climbed_at DESC, bt.id DESC
           ) latest
          GROUP BY latest.board_type, latest.climb_uuid, latest.angle
