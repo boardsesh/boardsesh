@@ -2,14 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SessionDetailTick } from '@boardsesh/shared-schema';
 
 vi.mock('../playlists/board-details-for-playlist', () => ({
-  getBoardConfigForPlaylist: vi.fn(),
+  renderBoardToPlaylistConfig: vi.fn(),
 }));
 
-import { getBoardConfigForPlaylist } from '../playlists/board-details-for-playlist';
+import { renderBoardToPlaylistConfig } from '../playlists/board-details-for-playlist';
 import { sessionTickToClimb, navigateToSessionClimb } from '../session-tick-mapping';
 import { resolveDisplayGrade } from '../boardsesh-grade-display';
 
-const mockedGetBoardConfig = vi.mocked(getBoardConfigForPlaylist);
+const mockedGetBoardConfig = vi.mocked(renderBoardToPlaylistConfig);
 
 function makeTick(overrides: Partial<SessionDetailTick> = {}): SessionDetailTick {
   return {

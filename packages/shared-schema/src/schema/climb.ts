@@ -58,6 +58,8 @@ export const climbTypeDefs = /* GraphQL */ `
     boardseshDifficulty: Float
     "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only'. Null when no grade row exists. The UI keeps the Aurora grade when this is null or 'setter_only'."
     boardseshConfidence: String
+    "Board configuration to draw this climb on, resolved against its setter's boards. Populated by userClimbs; null wherever the board is already known from the route."
+    renderBoard: RenderBoardConfig
   }
 
   """

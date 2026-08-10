@@ -4,6 +4,24 @@ export const activityFeedTypeDefs = /* GraphQL */ `
   # ============================================
 
   """
+  The board configuration a logged climb should be drawn on, resolved server-side
+  against the climber's own boards: the board the ascent was logged against when
+  it has one, else the smallest board of theirs the climb fits on, else the size
+  closest to their biggest board of that type.
+
+  Null on feeds that don't resolve it — clients then fall back to the layout's
+  default configuration (its biggest size with every set installed).
+  """
+  type RenderBoardConfig {
+    "Layout to render with — the climb's layout unless the climber's board says otherwise"
+    layoutId: Int!
+    "Product size to render at"
+    sizeId: Int!
+    "Hold sets installed on that board"
+    setIds: [Int!]!
+  }
+
+  """
   A climb ascent with enriched data for activity feeds.
   """
   type AscentFeedItem {
@@ -23,6 +41,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     boardDisplayName: String
     "Layout ID"
     layoutId: Int
+    "Board configuration to draw this ascent on. Populated by userAscentsFeed and userGroupedAscentsFeed."
+    renderBoard: RenderBoardConfig
     "Board angle"
     angle: Int!
     "Whether climb was mirrored"
@@ -98,6 +118,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     boardType: String!
     "Layout ID"
     layoutId: Int
+    "Board configuration to draw this group's climb on. Populated by userGroupedAscentsFeed."
+    renderBoard: RenderBoardConfig
     "Board angle"
     angle: Int!
     "Whether climb was mirrored"
@@ -437,6 +459,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     climbName: String
     boardType: String!
     layoutId: Int
+    "Board configuration to draw this tick on. Populated by the session feed."
+    renderBoard: RenderBoardConfig
     angle: Int!
     status: String!
     attemptCount: Int!
@@ -514,6 +538,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     climbName: String
     boardType: String!
     layoutId: Int
+    "Board configuration to draw this tick on. Populated by the session detail query."
+    renderBoard: RenderBoardConfig
     angle: Int!
     status: String!
     attemptCount: Int!

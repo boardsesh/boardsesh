@@ -365,6 +365,8 @@ export type AscentFeedItem = {
   quality?: Maybe<Scalars['Int']['output']>;
   /** Average quality rating from all users */
   qualityAverage?: Maybe<Scalars['Float']['output']>;
+  /** Board configuration to draw this ascent on. Populated by userAscentsFeed and userGroupedAscentsFeed. */
+  renderBoard?: Maybe<RenderBoardConfig>;
   /** Username of the setter */
   setterUsername?: Maybe<Scalars['String']['output']>;
   /** Result of the attempt */
@@ -928,6 +930,8 @@ export type Climb = {
   published_at?: Maybe<Scalars['String']['output']>;
   /** Average quality rating from users */
   quality_average: Scalars['String']['output'];
+  /** Board configuration to draw this climb on, resolved against its setter's boards. Populated by userClimbs; null wherever the board is already known from the route. */
+  renderBoard?: Maybe<RenderBoardConfig>;
   /** Username of the person who created this climb */
   setter_username: Scalars['String']['output'];
   /** Star rating (0-5), rounded from quality_average */
@@ -2256,6 +2260,8 @@ export type GroupedAscentFeedItem = {
   latestComment?: Maybe<Scalars['String']['output']>;
   /** Layout ID */
   layoutId?: Maybe<Scalars['Int']['output']>;
+  /** Board configuration to draw this group's climb on. Populated by userGroupedAscentsFeed. */
+  renderBoard?: Maybe<RenderBoardConfig>;
   /** Number of regular sends */
   sendCount: Scalars['Int']['output'];
   /** Username of the setter */
@@ -5951,6 +5957,25 @@ export type RemoveGymMemberInput = {
   userId: Scalars['ID']['input'];
 };
 
+/**
+ * The board configuration a logged climb should be drawn on, resolved server-side
+ * against the climber's own boards: the board the ascent was logged against when
+ * it has one, else the smallest board of theirs the climb fits on, else the size
+ * closest to their biggest board of that type.
+ *
+ * Null on feeds that don't resolve it — clients then fall back to the layout's
+ * default configuration (its biggest size with every set installed).
+ */
+export type RenderBoardConfig = {
+  __typename?: 'RenderBoardConfig';
+  /** Layout to render with — the climb's layout unless the climber's board says otherwise */
+  layoutId: Scalars['Int']['output'];
+  /** Hold sets installed on that board */
+  setIds: Array<Scalars['Int']['output']>;
+  /** Product size to render at */
+  sizeId: Scalars['Int']['output'];
+};
+
 /** Input for reordering a climb within a playlist (single move). */
 export type ReorderPlaylistClimbInput = {
   /** Climb UUID to move */
@@ -6371,6 +6396,8 @@ export type SessionDetailTick = {
   isNoMatch: Scalars['Boolean']['output'];
   layoutId?: Maybe<Scalars['Int']['output']>;
   quality?: Maybe<Scalars['Int']['output']>;
+  /** Board configuration to draw this tick on. Populated by the session detail query. */
+  renderBoard?: Maybe<RenderBoardConfig>;
   setterUsername?: Maybe<Scalars['String']['output']>;
   status: Scalars['String']['output'];
   /** Total attempts (sum of attemptCount) since last successful ascent by this user on this climb */
@@ -6483,6 +6510,8 @@ export type SessionFeedTickHighlight = {
   isNoMatch: Scalars['Boolean']['output'];
   layoutId?: Maybe<Scalars['Int']['output']>;
   quality?: Maybe<Scalars['Int']['output']>;
+  /** Board configuration to draw this tick on. Populated by the session feed. */
+  renderBoard?: Maybe<RenderBoardConfig>;
   setterUsername?: Maybe<Scalars['String']['output']>;
   status: Scalars['String']['output'];
   userId: Scalars['String']['output'];
@@ -6533,6 +6562,8 @@ export type SessionHardestClimb = {
   isMirror?: Maybe<Scalars['Boolean']['output']>;
   /** Board layout id, needed to render the thumbnail */
   layoutId?: Maybe<Scalars['Int']['output']>;
+  /** Board configuration to draw the thumbnail on. Populated by sessionSummary. */
+  renderBoard?: Maybe<RenderBoardConfig>;
 };
 
 /**
@@ -10058,6 +10089,12 @@ export type GetUserClimbsQuery = {
       benchmark_difficulty?: string | null;
       boardseshDifficulty?: number | null;
       boardseshConfidence?: string | null;
+      renderBoard?: {
+        __typename?: 'RenderBoardConfig';
+        layoutId: number;
+        sizeId: number;
+        setIds: Array<number>;
+      } | null;
     }>;
   };
 };
@@ -10222,6 +10259,12 @@ export type GetUserAscentsFeedQuery = {
       climbedAt: string;
       frames?: string | null;
       hasBetaVideo?: boolean | null;
+      renderBoard?: {
+        __typename?: 'RenderBoardConfig';
+        layoutId: number;
+        sizeId: number;
+        setIds: Array<number>;
+      } | null;
     }>;
   };
 };
@@ -10296,6 +10339,12 @@ export type GetUserGroupedAscentsFeedQuery = {
       attemptCount: number;
       bestQuality?: number | null;
       latestComment?: string | null;
+      renderBoard?: {
+        __typename?: 'RenderBoardConfig';
+        layoutId: number;
+        sizeId: number;
+        setIds: Array<number>;
+      } | null;
       items: Array<{
         __typename?: 'AscentFeedItem';
         uuid: string;
@@ -10325,6 +10374,12 @@ export type GetUserGroupedAscentsFeedQuery = {
         climbedAt: string;
         frames?: string | null;
         hasBetaVideo?: boolean | null;
+        renderBoard?: {
+          __typename?: 'RenderBoardConfig';
+          layoutId: number;
+          sizeId: number;
+          setIds: Array<number>;
+        } | null;
       }>;
     }>;
   };
@@ -16137,6 +16192,18 @@ export const GetUserClimbsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'benchmark_difficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'renderBoard' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+                          ],
+                        },
+                      },
                     ],
                   },
                 },
@@ -16517,6 +16584,18 @@ export const GetUserAscentsFeedDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'boardId' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardDisplayName' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'renderBoard' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+                          ],
+                        },
+                      },
                       { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'status' } },
@@ -16676,6 +16755,18 @@ export const GetUserGroupedAscentsFeedDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'renderBoard' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+                          ],
+                        },
+                      },
                       { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
@@ -16702,6 +16793,18 @@ export const GetUserGroupedAscentsFeedDocument = {
                             { kind: 'Field', name: { kind: 'Name', value: 'boardId' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'boardDisplayName' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'renderBoard' },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+                                ],
+                              },
+                            },
                             { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'status' } },

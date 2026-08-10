@@ -1,5 +1,7 @@
 // Session types
 
+import type { RenderBoardConfig } from './activity-feed';
+
 export type SessionConnectionState = 'CONNECTED' | 'RECONNECTING';
 
 export type SessionUser = {
@@ -31,6 +33,8 @@ export type SessionHardestClimb = {
   layoutId?: number | null;
   /** Board type the send was logged on (e.g. 'kilter', 'tension'). */
   boardType?: string | null;
+  /** Board to draw the thumbnail on — see `AscentFeedItem.renderBoard`. */
+  renderBoard?: RenderBoardConfig | null;
   /** Whether the send was on the mirrored climb. */
   isMirror?: boolean | null;
 };

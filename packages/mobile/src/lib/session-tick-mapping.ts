@@ -1,7 +1,7 @@
 import { type useRouter } from 'expo-router';
 import type { SessionDetailTick } from '@boardsesh/shared-schema';
 import type { ClimbListItemClimb } from '../components/ClimbListItemContent';
-import { getBoardConfigForPlaylist } from './playlists/board-details-for-playlist';
+import { renderBoardToPlaylistConfig } from './playlists/board-details-for-playlist';
 
 type Router = ReturnType<typeof useRouter>;
 
@@ -50,12 +50,12 @@ export function sessionTickToClimb(tick: SessionDetailTick): ClimbListItemClimb 
 /**
  * Navigate to the climb-detail route for a session tick. `SessionDetailTick`
  * only carries `boardType` + `layoutId`, so we resolve the renderable size/sets
- * via `getBoardConfigForPlaylist` (same path the playlist tiles use). Returns
+ * from the tick's resolved `renderBoard`, else the layout default. Returns
  * early — without navigating — for boards the bundled config can't resolve
  * (e.g. MoonBoard), matching the playlist behaviour of falling back cleanly.
  */
 export function navigateToSessionClimb(router: Router, tick: SessionDetailTick): void {
-  const config = getBoardConfigForPlaylist(tick.boardType, tick.layoutId);
+  const config = renderBoardToPlaylistConfig(tick.boardType, tick.layoutId, tick.renderBoard);
   if (!config) return;
   router.push({
     pathname: '/(tabs)/climbs/[climbUuid]',

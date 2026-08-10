@@ -2,7 +2,7 @@ import { type useRouter } from 'expo-router';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { BoardConfig, OpenPlayDrawerOptions } from '../providers/drawer-host-provider';
 import { climbToQueueItem } from './climb-to-queue-item';
-import { getBoardConfigForPlaylist } from './playlists/board-details-for-playlist';
+import { getBoardConfigForPlaylist, renderBoardToPlaylistConfig } from './playlists/board-details-for-playlist';
 import { tickToClimb, type TickLike } from './tick-to-climb';
 
 type Router = ReturnType<typeof useRouter>;
@@ -81,7 +81,8 @@ export function openClimbInPlayDrawer(args: OpenClimbArgs, deps: OpenClimbDeps, 
 
   if (args.kind === 'tick') {
     const climb = tickToClimb(args.tick);
-    const config = getBoardConfigForPlaylist(args.tick.boardType, args.tick.layoutId);
+    // Draw the ascent on the board it was climbed on when the feed resolved one.
+    const config = renderBoardToPlaylistConfig(args.tick.boardType, args.tick.layoutId, args.tick.renderBoard);
     if (climb && config) {
       openPlayDrawer(climb, {
         ...openModeOptions(climb, preview),
@@ -105,8 +106,10 @@ export function openClimbInPlayDrawer(args: OpenClimbArgs, deps: OpenClimbDeps, 
         kind: 'ref',
         climbUuid: args.tick.climbUuid,
         boardType: args.tick.boardType,
-        layoutId: args.tick.layoutId,
+        layoutId: config?.layoutId ?? args.tick.layoutId,
         angle: args.tick.angle,
+        sizeId: config?.sizeId,
+        setIds: config?.setIds.join(','),
       },
       deps,
     );

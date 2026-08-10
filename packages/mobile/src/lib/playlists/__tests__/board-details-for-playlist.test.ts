@@ -1,21 +1,23 @@
 import { describe, it, expect } from 'vitest';
 import { getAllLayouts, getSizesForLayoutId } from '@boardsesh/board-constants/product-sizes';
+import { getSizeRank } from '@boardsesh/board-constants/size-comparison';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE } from '@boardsesh/board-config';
 import { getBoardConfigForPlaylist } from '../board-details-for-playlist';
 import { getBoardRenderData } from '../../board-details';
 
-function largestSizeId(layoutId: number): number {
+// "Biggest" = tallest, widest breaking ties — the shared `getSizeRank` order, so
+// the Kilter default is the 12x14 Commercial rather than the wider-but-shorter
+// 16x12 Super Wide that a raw area comparison picks.
+function biggestSizeId(layoutId: number): number {
   const sizes = getSizesForLayoutId('kilter', layoutId);
-  const largest = sizes.reduce((best, size) => {
-    const area = (size.edgeRight - size.edgeLeft) * (size.edgeTop - size.edgeBottom);
-    const bestArea = (best.edgeRight - best.edgeLeft) * (best.edgeTop - best.edgeBottom);
-    return area > bestArea ? size : best;
-  });
-  return largest.id;
+  const biggest = sizes.reduce((best, size) =>
+    getSizeRank('kilter', size.id) > getSizeRank('kilter', best.id) ? size : best,
+  );
+  return biggest.id;
 }
 
 describe('getBoardConfigForPlaylist', () => {
-  it('returns the largest-area size and all its sets for a real kilter layout', () => {
+  it('returns the biggest size and all its sets for a real kilter layout', () => {
     const layouts = getAllLayouts('kilter');
     expect(layouts.length).toBeGreaterThan(0);
     const layoutId = layouts[0].id;
@@ -25,7 +27,7 @@ describe('getBoardConfigForPlaylist', () => {
     expect(config?.boardName).toBe('kilter');
     expect(config?.layoutId).toBe(layoutId);
     expect(config?.setIds.length).toBeGreaterThan(0);
-    expect(config?.sizeId).toBe(largestSizeId(layoutId));
+    expect(config?.sizeId).toBe(biggestSizeId(layoutId));
   });
 
   it('falls back to a default layout when layoutId is null', () => {

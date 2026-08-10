@@ -4,6 +4,18 @@ import type { BetaLinksGqlRow } from '../beta-video-url';
 
 import type { SocialEntityType } from './comments';
 
+/**
+ * The board configuration a logged climb should be drawn on (GraphQL
+ * `RenderBoardConfig`). Resolved server-side against the climber's own boards —
+ * see `resolveRenderBoard` in `@boardsesh/board-config` for the ladder. Null on
+ * payloads that don't resolve it; clients then fall back to the layout default.
+ */
+export type RenderBoardConfig = {
+  layoutId: number;
+  sizeId: number;
+  setIds: number[];
+};
+
 export type FollowingAscentFeedItem = {
   uuid: string;
   userId: string;
@@ -43,6 +55,7 @@ export type AscentFeedItem = {
   boardId?: number | null;
   boardDisplayName?: string | null;
   layoutId?: number | null;
+  renderBoard?: RenderBoardConfig | null;
   angle: number;
   isMirror: boolean;
   status: 'flash' | 'send' | 'attempt';
@@ -195,6 +208,7 @@ export type SessionFeedTickHighlight = {
   climbName?: string | null;
   boardType: string;
   layoutId?: number | null;
+  renderBoard?: RenderBoardConfig | null;
   angle: number;
   status: string;
   attemptCount: number;
@@ -260,6 +274,7 @@ export type SessionDetailTick = {
   climbName?: string | null;
   boardType: string;
   layoutId?: number | null;
+  renderBoard?: RenderBoardConfig | null;
   angle: number;
   status: string;
   attemptCount: number;

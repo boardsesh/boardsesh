@@ -1,4 +1,4 @@
-import type { Climb } from '@boardsesh/shared-schema';
+import type { Climb, RenderBoardConfig } from '@boardsesh/shared-schema';
 
 /**
  * The subset of fields shared by `SessionDetailTick` and
@@ -19,6 +19,12 @@ export type TickLike = {
   isNoMatch: boolean;
   boardType: string;
   layoutId?: number | null;
+  /**
+   * The board this tick should be drawn on, resolved server-side. Absent on
+   * payloads that don't carry it (older servers, feeds that don't resolve it) —
+   * callers fall back to the layout default.
+   */
+  renderBoard?: RenderBoardConfig | null;
 };
 
 /**

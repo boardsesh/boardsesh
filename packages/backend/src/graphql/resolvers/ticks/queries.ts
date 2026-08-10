@@ -2,6 +2,7 @@ import { eq, ne, and, or, desc, inArray, isNull, sql, count, ilike, gte, lte } f
 import {
   type ConnectionContext,
   type BoardName,
+  type RenderBoardConfig,
   SUPPORTED_BOARDS,
   matchClimbsToCaption,
   extractQuotedClimbNames,
@@ -10,6 +11,8 @@ import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { toConfidenceTier, notAuroraTwinDuplicate, withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, applyRateLimit, validateInput, isNoMatchClimb } from '../shared/helpers';
+import { fetchOwnerBoards, toTickBoardCandidate } from '../shared/render-board';
+import { resolveRenderBoard } from '@boardsesh/board-config';
 import {
   consensusDifficultyNameExpr,
   consensusDifficultyExpr,
@@ -204,6 +207,7 @@ type AscentFeedRow = {
   boardId: number | null;
   boardDisplayName: string | null;
   layoutId: number | null;
+  renderBoard: RenderBoardConfig | null;
   angle: number;
   isMirror: boolean;
   status: string;
@@ -544,9 +548,16 @@ export const tickQueries = {
         setterUsername: dbSchema.boardClimbs.setterUsername,
         layoutId: dbSchema.boardClimbs.layoutId,
         frames: dbSchema.boardClimbs.frames,
+        // Which sizes/sets the climb physically fits — drives renderBoard below.
+        compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
+        requiredSetIds: dbSchema.boardClimbs.requiredSetIds,
         boardName: dbSchema.userBoards.name,
         boardIsPublic: dbSchema.userBoards.isPublic,
         boardIsUnlisted: dbSchema.userBoards.isUnlisted,
+        // The board the tick was logged against, for renderBoard's first rung.
+        boardLayoutId: dbSchema.userBoards.layoutId,
+        boardSizeId: dbSchema.userBoards.sizeId,
+        boardSetIds: dbSchema.userBoards.setIds,
         difficultyName: dbSchema.boardDifficultyGrades.boulderName,
         consensusDifficulty: consensusDifficultyExpr,
         consensusDifficultyName: consensusDifficultyNameExpr,
@@ -702,11 +713,17 @@ export const tickQueries = {
 
     // Which of this page's CLIMBS carry a beta video of this user's — shared
     // helper (ownership mirrors the profile beta shelf), batched per page.
-    const climbsWithBeta = await fetchUserBetaClimbKeys(
-      userId,
-      Array.from(new Set(results.map(({ tick }) => tick.climbUuid))),
-      results.map(({ tick }) => tick.uuid),
-    );
+    // The climber's own boards decide which wall each ascent is drawn on, so
+    // load them alongside (one query for the whole page).
+    const [climbsWithBeta, ownerBoardsByUserId] = await Promise.all([
+      fetchUserBetaClimbKeys(
+        userId,
+        Array.from(new Set(results.map(({ tick }) => tick.climbUuid))),
+        results.map(({ tick }) => tick.uuid),
+      ),
+      fetchOwnerBoards([userId]),
+    ]);
+    const ownerBoards = ownerBoardsByUserId.get(userId) ?? [];
 
     // Map results to response format
     const items = results.map(
@@ -717,9 +734,14 @@ export const tickQueries = {
         setterUsername,
         layoutId,
         frames,
+        compatibleSizeIds,
+        requiredSetIds,
         boardName,
         boardIsPublic,
         boardIsUnlisted,
+        boardLayoutId,
+        boardSizeId,
+        boardSetIds,
         difficultyName,
         consensusDifficulty,
         consensusDifficultyName,
@@ -740,6 +762,22 @@ export const tickQueries = {
           boardId: canShowBoard ? tick.boardId : null,
           boardDisplayName: canShowBoard ? boardName : null,
           layoutId,
+          // Deliberately NOT behind `canShowBoard`: this is wall geometry, not
+          // board identity — it never reveals that a named board exists, and
+          // gating it would send other viewers back to the wrong-size render.
+          renderBoard: resolveRenderBoard({
+            boardType: tick.boardType,
+            climbLayoutId: layoutId,
+            compatibleSizeIds,
+            requiredSetIds,
+            tickBoard: toTickBoardCandidate({
+              boardType: tick.boardType,
+              layoutId: boardLayoutId,
+              sizeId: boardSizeId,
+              setIds: boardSetIds,
+            }),
+            ownerBoards,
+          }),
           angle: tick.angle,
           // is_mirror is nullable (default false, no NOT NULL); GraphQL exposes it
           // as Boolean!, so coerce a null to false here.
@@ -948,10 +986,17 @@ export const tickQueries = {
         setterUsername: dbSchema.boardClimbs.setterUsername,
         layoutId: dbSchema.boardClimbs.layoutId,
         frames: dbSchema.boardClimbs.frames,
+        // Which sizes/sets the climb physically fits — drives renderBoard below.
+        compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
+        requiredSetIds: dbSchema.boardClimbs.requiredSetIds,
         difficultyName: difficultyNameWithFallbackExpr,
         boardName: dbSchema.userBoards.name,
         boardIsPublic: dbSchema.userBoards.isPublic,
         boardIsUnlisted: dbSchema.userBoards.isUnlisted,
+        // The board the tick was logged against, for renderBoard's first rung.
+        boardLayoutId: dbSchema.userBoards.layoutId,
+        boardSizeId: dbSchema.userBoards.sizeId,
+        boardSetIds: dbSchema.userBoards.setIds,
         consensusDifficulty: consensusDifficultyExpr,
         consensusDifficultyName: consensusDifficultyNameExpr,
         boardseshDifficulty: boardseshDifficultyExpr,
@@ -1022,6 +1067,7 @@ export const tickQueries = {
       boardId: number | null;
       boardDisplayName: string | null;
       layoutId: number | null;
+      renderBoard: RenderBoardConfig | null;
       angle: number;
       isMirror: boolean;
       status: string;
@@ -1050,6 +1096,7 @@ export const tickQueries = {
       setterUsername: string | null;
       boardType: string;
       layoutId: number | null;
+      renderBoard: RenderBoardConfig | null;
       angle: number;
       isMirror: boolean;
       frames: string | null;
@@ -1066,12 +1113,17 @@ export const tickQueries = {
     };
 
     // Beta ownership for the page's climbs — same helper + semantics as the
-    // flat feed, so a group item and its flat-feed twin can never disagree.
-    const climbsWithBeta = await fetchUserBetaClimbKeys(
-      userId,
-      climbUuidsInPage,
-      tickRows.map(({ tick }) => tick.uuid),
-    );
+    // flat feed, so a group item and its flat-feed twin can never disagree. The
+    // climber's boards decide which wall each ascent is drawn on; same deal.
+    const [climbsWithBeta, ownerBoardsByUserId] = await Promise.all([
+      fetchUserBetaClimbKeys(
+        userId,
+        climbUuidsInPage,
+        tickRows.map(({ tick }) => tick.uuid),
+      ),
+      fetchOwnerBoards([userId]),
+    ]);
+    const ownerBoards = ownerBoardsByUserId.get(userId) ?? [];
 
     const groupMap = new Map<string, GroupedAscent>();
 
@@ -1082,10 +1134,15 @@ export const tickQueries = {
       setterUsername,
       layoutId,
       frames,
+      compatibleSizeIds,
+      requiredSetIds,
       difficultyName,
       boardName,
       boardIsPublic,
       boardIsUnlisted,
+      boardLayoutId,
+      boardSizeId,
+      boardSetIds,
       consensusDifficulty,
       consensusDifficultyName,
       boardseshDifficulty,
@@ -1103,6 +1160,21 @@ export const tickQueries = {
 
       const canShowBoard =
         tick.boardId != null && (ctx?.userId === userId || (boardIsPublic === true && boardIsUnlisted !== true));
+      // Wall geometry, not board identity — see the flat feed for why this is
+      // not behind `canShowBoard`.
+      const renderBoard = resolveRenderBoard({
+        boardType: tick.boardType,
+        climbLayoutId: layoutId,
+        compatibleSizeIds,
+        requiredSetIds,
+        tickBoard: toTickBoardCandidate({
+          boardType: tick.boardType,
+          layoutId: boardLayoutId,
+          sizeId: boardSizeId,
+          setIds: boardSetIds,
+        }),
+        ownerBoards,
+      });
       const item: AscentItem = {
         uuid: tick.uuid,
         climbUuid: tick.climbUuid,
@@ -1112,6 +1184,7 @@ export const tickQueries = {
         boardId: canShowBoard ? tick.boardId : null,
         boardDisplayName: canShowBoard ? boardName : null,
         layoutId,
+        renderBoard,
         angle: tick.angle,
         isMirror: tick.isMirror ?? false,
         status: tick.status,
@@ -1143,6 +1216,9 @@ export const tickQueries = {
           setterUsername,
           boardType: tick.boardType,
           layoutId,
+          // Every tick in a group is the same climb on the same day, so the
+          // group header can carry the first item's resolved board.
+          renderBoard,
           angle: tick.angle,
           isMirror: tick.isMirror ?? false,
           frames,

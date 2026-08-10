@@ -1,5 +1,5 @@
 import { gql } from 'graphql-request';
-import type { Tick, SaveTickInput, GetTicksInput } from '@boardsesh/shared-schema';
+import type { Tick, SaveTickInput, GetTicksInput, RenderBoardConfig } from '@boardsesh/shared-schema';
 import type { UpdateTickInput as GeneratedUpdateTickInput } from '../generated/graphql';
 
 export const GET_TICKS = gql`
@@ -186,6 +186,11 @@ export const GET_USER_ASCENTS_FEED = gql`
         boardId
         boardDisplayName
         layoutId
+        renderBoard {
+          layoutId
+          sizeId
+          setIds
+        }
         angle
         isMirror
         status
@@ -222,6 +227,12 @@ export type AscentFeedItem = {
   boardId: number | null;
   boardDisplayName: string | null;
   layoutId: number | null;
+  /**
+   * Board to draw this ascent on — the one it was climbed on, or the closest of
+   * the climber's own. Optional so fixtures and non-feed producers of this shape
+   * stay valid; consumers fall back to the layout default when it's absent.
+   */
+  renderBoard?: RenderBoardConfig | null;
   angle: number;
   isMirror: boolean;
   status: 'flash' | 'send' | 'attempt';
@@ -362,6 +373,11 @@ export const GET_USER_GROUPED_ASCENTS_FEED = gql`
         setterUsername
         boardType
         layoutId
+        renderBoard {
+          layoutId
+          sizeId
+          setIds
+        }
         angle
         isMirror
         frames
@@ -383,6 +399,11 @@ export const GET_USER_GROUPED_ASCENTS_FEED = gql`
           boardId
           boardDisplayName
           layoutId
+          renderBoard {
+            layoutId
+            sizeId
+            setIds
+          }
           angle
           isMirror
           status
@@ -418,6 +439,8 @@ export type GroupedAscentFeedItem = {
   setterUsername: string | null;
   boardType: string;
   layoutId: number | null;
+  /** Board to draw this group's climb on — see `AscentFeedItem.renderBoard`. */
+  renderBoard?: RenderBoardConfig | null;
   angle: number;
   isMirror: boolean;
   frames: string | null;

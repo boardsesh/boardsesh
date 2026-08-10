@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { BoardName } from '@boardsesh/shared-schema';
 import type { Climb } from '@boardsesh/queue';
 import { getProductSize, getSizesForLayoutId } from '@boardsesh/board-constants/product-sizes';
+import { getSizeRank } from '@boardsesh/board-constants/size-comparison';
 import { getBoardConfigForPlaylist } from '../board-details-for-playlist';
 import type { PlaylistRenderBoard } from '../use-playlist-render-board';
 import { getPlaylistRenderBoardTarget, resolvePlaylistClimbRenderBoard } from '../playlist-climb-render-board';
@@ -57,17 +58,20 @@ describe('resolvePlaylistClimbRenderBoard', () => {
       throw new Error('Expected kilter layout 1 to expose renderable holds');
     }
 
+    // The default board is the layout's top-ranked size (height first, width to
+    // break ties) — the 12x14 Commercial, not the wider-but-shorter Super Wide.
     const activeSize = getProductSize(activeBoard.boardName as BoardName, activeBoard.sizeId);
     if (!activeSize) {
       throw new Error('Expected kilter layout 1 active size to resolve');
     }
-    const activeArea = (activeSize.edgeRight - activeSize.edgeLeft) * (activeSize.edgeTop - activeSize.edgeBottom);
-    const largerSizes = getSizesForLayoutId(activeBoard.boardName as BoardName, activeBoard.layoutId).filter((size) => {
-      const sizeArea = (size.edgeRight - size.edgeLeft) * (size.edgeTop - size.edgeBottom);
-      return sizeArea > activeArea;
-    });
-    expect(largerSizes).toHaveLength(0);
+    const activeRank = getSizeRank(activeBoard.boardName as BoardName, activeBoard.sizeId);
+    const higherRanked = getSizesForLayoutId(activeBoard.boardName as BoardName, activeBoard.layoutId).filter(
+      (size) => getSizeRank(activeBoard.boardName as BoardName, size.id) > activeRank,
+    );
+    expect(higherRanked).toHaveLength(0);
 
+    // The hold exists on the active board, so the exact-fit branch answers
+    // before the upsize search ever runs.
     const climb = makeClimb({ frames: `p${firstHoldId}r42` });
     const resultWithActualTarget = resolvePlaylistClimbRenderBoard(climb, activeBoard, actualTarget);
     expect(resultWithActualTarget).toEqual({
@@ -82,7 +86,10 @@ describe('resolvePlaylistClimbRenderBoard', () => {
       holdsData: [{ id: -1 }],
     });
 
-    expect(resultWithPrecomputedTarget?.fit).toBe('incompatible');
+    // Anything but 'exact' proves the precomputed target was used rather than
+    // the real one; whether it lands on 'upsized' or 'incompatible' depends on
+    // whether a bigger size in the layout could take the climb.
+    expect(resultWithPrecomputedTarget?.fit).not.toBe('exact');
     expect(resultWithPrecomputedTarget?.incompatible).toBe(true);
   });
 

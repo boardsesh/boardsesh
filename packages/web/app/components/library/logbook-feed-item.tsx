@@ -472,19 +472,19 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
     const boardDetails = useMemo<BoardDetails | null>(() => {
       if (!item.layoutId) return null;
       const boardName = item.boardType as BoardName;
-      const config = getDefaultBoardConfig(boardName, item.layoutId);
+      const config = item.renderBoard ?? getDefaultBoardConfig(boardName, item.layoutId);
       if (!config) return null;
       try {
         return getBoardDetailsForBoard({
           board_name: boardName,
-          layout_id: item.layoutId,
+          layout_id: item.renderBoard?.layoutId ?? item.layoutId,
           size_id: config.sizeId,
           set_ids: config.setIds,
         });
       } catch {
         return null;
       }
-    }, [item.boardType, item.layoutId]);
+    }, [item.boardType, item.layoutId, item.renderBoard]);
 
     const excludeActions = useMemo(
       () => (boardDetails ? getExcludedClimbActions(boardDetails.board_name, 'list') : []),
@@ -639,6 +639,7 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
                     climbName={item.climbName}
                     frames={item.frames}
                     isMirror={item.isMirror}
+                    renderBoard={item.renderBoard}
                     onClick={queueActions && !isEditing ? handleThumbnailClick : undefined}
                   />
                 )}

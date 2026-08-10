@@ -173,6 +173,7 @@ const GroupedFeedItem: React.FC<{
               climbName={group.climbName}
               frames={group.frames}
               isMirror={group.isMirror}
+              renderBoard={group.renderBoard}
             />
           )}
 

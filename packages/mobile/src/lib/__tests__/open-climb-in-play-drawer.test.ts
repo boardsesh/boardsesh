@@ -4,14 +4,18 @@ import type { Climb } from '@boardsesh/shared-schema';
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'preview-uuid' }));
 
 vi.mock('../playlists/board-details-for-playlist', () => ({
+  renderBoardToPlaylistConfig: vi.fn(),
+  // The `ref` branch has no resolved renderBoard to prefer, so it still calls
+  // the layout-default helper directly.
   getBoardConfigForPlaylist: vi.fn(),
 }));
 
-import { getBoardConfigForPlaylist } from '../playlists/board-details-for-playlist';
+import { renderBoardToPlaylistConfig, getBoardConfigForPlaylist } from '../playlists/board-details-for-playlist';
 import { openClimbInPlayDrawer } from '../open-climb-in-play-drawer';
 import type { TickLike } from '../tick-to-climb';
 
-const mockedGetBoardConfig = vi.mocked(getBoardConfigForPlaylist);
+const mockedGetBoardConfig = vi.mocked(renderBoardToPlaylistConfig);
+const mockedGetDefaultBoardConfig = vi.mocked(getBoardConfigForPlaylist);
 
 const KILTER_CONFIG = { boardName: 'kilter' as const, layoutId: 1, sizeId: 10, setIds: [1, 20, 33] };
 
@@ -114,7 +118,7 @@ describe('openClimbInPlayDrawer', () => {
       { kind: 'ref', climbUuid: 'c-3', boardType: 'kilter', layoutId: 1, angle: 40, sizeId: 12, setIds: '1,2' },
       deps,
     );
-    expect(mockedGetBoardConfig).not.toHaveBeenCalled();
+    expect(mockedGetDefaultBoardConfig).not.toHaveBeenCalled();
     expect(deps.router.push).toHaveBeenCalledWith({
       pathname: '/(tabs)/climbs/[climbUuid]',
       params: { climbUuid: 'c-3', boardName: 'kilter', layoutId: '1', sizeId: '12', setIds: '1,2', angle: '40' },
@@ -122,7 +126,7 @@ describe('openClimbInPlayDrawer', () => {
   });
 
   it('kind:ref without size/sets resolves the board config then pushes', () => {
-    mockedGetBoardConfig.mockReturnValue(KILTER_CONFIG);
+    mockedGetDefaultBoardConfig.mockReturnValue(KILTER_CONFIG);
     const deps = makeDeps();
     openClimbInPlayDrawer({ kind: 'ref', climbUuid: 'c-4', boardType: 'kilter', layoutId: 1, angle: 35 }, deps);
     expect(deps.router.push).toHaveBeenCalledWith({
@@ -132,7 +136,7 @@ describe('openClimbInPlayDrawer', () => {
   });
 
   it('kind:ref is a no-op when the board cannot resolve', () => {
-    mockedGetBoardConfig.mockReturnValue(null);
+    mockedGetDefaultBoardConfig.mockReturnValue(null);
     const deps = makeDeps();
     openClimbInPlayDrawer({ kind: 'ref', climbUuid: 'c-5', boardType: 'moonboard', layoutId: 1, angle: 40 }, deps);
     expect(deps.router.push).not.toHaveBeenCalled();

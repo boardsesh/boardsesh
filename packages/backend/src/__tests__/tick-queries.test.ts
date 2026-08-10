@@ -167,6 +167,37 @@ const insertPrivateBoard = async (name: string): Promise<number> => {
   return Number(rows[0].id);
 };
 
+/** A board the test user owns, with a real Kilter layout-1 size/set combo. */
+const insertOwnedBoard = async (params: {
+  name: string;
+  sizeId: number;
+  setIds?: string;
+  isPublic?: boolean;
+}): Promise<number> => {
+  const rows = (await db.execute(sql`
+    INSERT INTO user_boards (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, is_public)
+    VALUES (
+      ${`${CLIMB_PREFIX}board-${params.name}`}, ${`${CLIMB_PREFIX}slug-${params.name}`}, ${TEST_USER_ID},
+      'kilter', 1, ${params.sizeId}, ${params.setIds ?? '1,20'}, ${params.name}, ${params.isPublic ?? true}
+    )
+    RETURNING id
+  `)) as unknown as Array<{ id: number }>;
+  return Number(rows[0].id);
+};
+
+/** A climb whose denormalised fit columns say which sizes can display it. */
+const insertClimbWithFit = async (uuid: string, name: string, compatibleSizeIds: number[]) => {
+  await insertClimb(uuid, name);
+  await db.execute(sql`
+    UPDATE board_climbs
+    SET compatible_size_ids = ${sql`ARRAY[${sql.join(
+      compatibleSizeIds.map((sizeId) => sql`${sizeId}`),
+      sql`, `,
+    )}]::int[]`}, required_set_ids = ARRAY[1, 20]::int[]
+    WHERE uuid = ${uuid}
+  `);
+};
+
 const insertAlias = async (params: {
   aliasUuid: string;
   canonicalUuid: string;
@@ -257,6 +288,92 @@ describe('tickQueries — behavior fixes', () => {
 
   afterEach(async () => {
     await cleanup();
+  });
+
+  // Kilter layout 1, biggest first by getSizeRank: 7 = 12x14 Commercial,
+  // 10 = 12x12 with kickboard, 14 = 7x10 Small.
+  describe('userAscentsFeed — renderBoard (#4221)', () => {
+    type RenderBoardItem = {
+      climbUuid: string;
+      boardDisplayName: string | null;
+      renderBoard: { layoutId: number; sizeId: number; setIds: number[] } | null;
+    };
+
+    const feedRenderBoard = async (climbUuid: string, viewerId?: string): Promise<RenderBoardItem | undefined> => {
+      const result = (await tickQueries.userAscentsFeed(
+        undefined,
+        { userId: TEST_USER_ID, input: {} },
+        viewerId
+          ? {
+              connectionId: 'render-board-conn',
+              isAuthenticated: true,
+              userId: viewerId,
+              sessionId: undefined,
+              controllerId: undefined,
+              controllerApiKey: undefined,
+            }
+          : undefined,
+      )) as { items: RenderBoardItem[] };
+      return result.items.find((item) => item.climbUuid === climbUuid);
+    };
+
+    it('draws an ascent on the board it was logged against', async () => {
+      const climbUuid = `${CLIMB_PREFIX}rb-associated`;
+      await insertClimbWithFit(climbUuid, 'Associated', [7, 10]);
+      // A bigger board they also own must not win over the one on the tick.
+      await insertOwnedBoard({ name: 'Commercial', sizeId: 7 });
+      const homeWallId = await insertOwnedBoard({ name: 'Home Wall', sizeId: 10 });
+      await insertTick({
+        uuid: 'rb-1',
+        climbUuid,
+        climbedAt: '2026-06-21T10:00:00',
+        status: 'send',
+        boardId: homeWallId,
+      });
+
+      expect((await feedRenderBoard(climbUuid))?.renderBoard).toEqual({ layoutId: 1, sizeId: 10, setIds: [1, 20] });
+    });
+
+    it("draws an unassociated ascent on the smallest of the climber's boards it fits", async () => {
+      const climbUuid = `${CLIMB_PREFIX}rb-unassociated`;
+      await insertClimbWithFit(climbUuid, 'Unassociated', [7, 10]);
+      await insertOwnedBoard({ name: 'Commercial', sizeId: 7 });
+      await insertOwnedBoard({ name: 'Home Wall', sizeId: 10 });
+      await insertTick({ uuid: 'rb-2', climbUuid, climbedAt: '2026-06-21T10:00:00', status: 'send' });
+
+      expect((await feedRenderBoard(climbUuid))?.renderBoard?.sizeId).toBe(10);
+    });
+
+    it('falls back to the size closest to their biggest board when none of theirs fits', async () => {
+      const climbUuid = `${CLIMB_PREFIX}rb-toobig`;
+      // Needs at least a 12x12; their only wall is the 7x10.
+      await insertClimbWithFit(climbUuid, 'Too Big', [7, 10]);
+      await insertOwnedBoard({ name: 'Small', sizeId: 14 });
+      await insertTick({ uuid: 'rb-3', climbUuid, climbedAt: '2026-06-21T10:00:00', status: 'send' });
+
+      expect((await feedRenderBoard(climbUuid))?.renderBoard?.sizeId).toBe(10);
+    });
+
+    it("uses the layout's biggest size for a climber with no boards", async () => {
+      const climbUuid = `${CLIMB_PREFIX}rb-noboards`;
+      await insertClimbWithFit(climbUuid, 'No Boards', [7, 10]);
+      await insertTick({ uuid: 'rb-4', climbUuid, climbedAt: '2026-06-21T10:00:00', status: 'send' });
+
+      expect((await feedRenderBoard(climbUuid))?.renderBoard?.sizeId).toBe(7);
+    });
+
+    it('still resolves the board geometry for a viewer who cannot see its name', async () => {
+      const climbUuid = `${CLIMB_PREFIX}rb-private`;
+      await insertClimbWithFit(climbUuid, 'Private Board', [7, 10]);
+      const boardId = await insertOwnedBoard({ name: 'Secret Garage', sizeId: 10, isPublic: false });
+      await insertTick({ uuid: 'rb-5', climbUuid, climbedAt: '2026-06-21T10:00:00', status: 'send', boardId });
+
+      // The board's NAME stays gated; its size does not — it is wall geometry,
+      // and hiding it would send other viewers back to the wrong-size render.
+      const asPublic = await feedRenderBoard(climbUuid);
+      expect(asPublic?.boardDisplayName).toBeNull();
+      expect(asPublic?.renderBoard?.sizeId).toBe(10);
+    });
   });
 
   describe('userAscentsFeed — hardest sort', () => {

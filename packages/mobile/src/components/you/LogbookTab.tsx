@@ -40,7 +40,7 @@ import { useUserAscentsFeed, useUserGroupedAscentsFeed, useGrades } from '../../
 import type { Grade } from '@boardsesh/shared-schema';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { tickToClimb } from '../../lib/tick-to-climb';
-import { getBoardConfigForPlaylist } from '../../lib/playlists/board-details-for-playlist';
+import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
 import { getLayoutDisplayName } from '@boardsesh/profile-stats';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
@@ -490,7 +490,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
         ...ascent,
         difficultyName: ascent.difficultyName ?? ascent.consensusDifficultyName,
       });
-      const config = getBoardConfigForPlaylist(ascent.boardType, ascent.layoutId);
+      const config = renderBoardToPlaylistConfig(ascent.boardType, ascent.layoutId, ascent.renderBoard);
       if (!climb || !config) return;
       openClimbActions(
         climb,

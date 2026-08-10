@@ -5,6 +5,8 @@ import { eq, and, inArray, sql, desc, isNotNull } from 'drizzle-orm';
 import type { SessionHealthExport, SessionSummary } from '@boardsesh/shared-schema';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { getSessionHealthExport } from '@boardsesh/db/queries';
+import { resolveRenderBoard } from '@boardsesh/board-config';
+import { fetchOwnerBoards, toTickBoardCandidate } from '../shared/render-board';
 import { logger } from '../../../utils/logger';
 
 /**
@@ -71,8 +73,17 @@ export async function generateSessionSummary(sessionId: string): Promise<Session
         frames: dbSchema.boardClimbs.frames,
         layoutId: dbSchema.boardClimbs.layoutId,
         isMirror: dbSchema.boardseshTicks.isMirror,
+        // Board identity + fit, so the thumbnail is drawn on the wall the send
+        // happened on rather than the biggest size the layout comes in.
+        userId: dbSchema.boardseshTicks.userId,
+        compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
+        requiredSetIds: dbSchema.boardClimbs.requiredSetIds,
+        boardLayoutId: dbSchema.userBoards.layoutId,
+        boardSizeId: dbSchema.userBoards.sizeId,
+        boardSetIds: dbSchema.userBoards.setIds,
       })
       .from(dbSchema.boardseshTicks)
+      .leftJoin(dbSchema.userBoards, eq(dbSchema.boardseshTicks.boardId, dbSchema.userBoards.id))
       .leftJoin(
         dbSchema.boardDifficultyGrades,
         and(
@@ -149,6 +160,7 @@ export async function generateSessionSummary(sessionId: string): Promise<Session
   let hardestClimb = null;
   if (hardestRows.length > 0) {
     const h = hardestRows[0];
+    const ownerBoards = h.userId ? ((await fetchOwnerBoards([h.userId])).get(h.userId) ?? []) : [];
     hardestClimb = {
       climbUuid: h.climbUuid,
       climbName: h.climbName || 'Unknown climb',
@@ -156,6 +168,19 @@ export async function generateSessionSummary(sessionId: string): Promise<Session
       frames: h.frames ?? null,
       layoutId: h.layoutId ?? null,
       boardType: h.boardType,
+      renderBoard: resolveRenderBoard({
+        boardType: h.boardType,
+        climbLayoutId: h.layoutId,
+        compatibleSizeIds: h.compatibleSizeIds,
+        requiredSetIds: h.requiredSetIds,
+        tickBoard: toTickBoardCandidate({
+          boardType: h.boardType,
+          layoutId: h.boardLayoutId,
+          sizeId: h.boardSizeId,
+          setIds: h.boardSetIds,
+        }),
+        ownerBoards,
+      }),
       isMirror: h.isMirror ?? false,
     };
   }

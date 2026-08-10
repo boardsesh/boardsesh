@@ -55,6 +55,21 @@ export function getSizeFullnessTiers(boardName: BoardName, targetSizeId: number)
   };
 }
 
+/**
+ * Order key for "which of these board sizes is bigger". Height dominates, width
+ * breaks ties — the same axis priority the fullness tiers above use, so "biggest
+ * board" means the same thing everywhere. Returns -1 for an unknown size id,
+ * which sorts below every real size.
+ *
+ * Only meaningful within one `productId`: home and commercial walls use
+ * different coordinate origins, so ranks across products aren't comparable.
+ */
+export function getSizeRank(boardName: BoardName, sizeId: number): number {
+  const size = PRODUCT_SIZES[boardName]?.[sizeId];
+  if (!size) return -1;
+  return sizeHeight(size) * 100000 + sizeWidth(size);
+}
+
 export const FULLNESS_FULL = 1.0;
 export const FULLNESS_NARROWER = 0.6;
 export const FULLNESS_SHORTER = 0.3;

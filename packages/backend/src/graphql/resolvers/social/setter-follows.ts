@@ -1,11 +1,12 @@
 import { eq, and, count, sql, ilike, inArray } from 'drizzle-orm';
-import { isSizeScopedBoard } from '@boardsesh/board-config';
+import { isSizeScopedBoard, resolveRenderBoard } from '@boardsesh/board-config';
 import { type ConnectionContext, type Climb, type BoardName, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { executeRows } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { getClimbStars, getGradeLabel, toConfidenceTier } from '@boardsesh/db/queries';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
+import { fetchOwnerBoards } from '../shared/render-board';
 import {
   FollowSetterInputSchema,
   SetterProfileInputSchema,
@@ -532,6 +533,8 @@ export const setterFollowQueries = {
       frames: string | null;
       frames_count: number | null;
       frames_pace: number | null;
+      compatible_size_ids: number[] | null;
+      required_set_ids: number[] | null;
       stats_angle: number | null;
       ascensionist_count: number | null;
       difficulty_id: number | null;
@@ -556,6 +559,8 @@ export const setterFollowQueries = {
           c.frames,
           c.frames_count,
           c.frames_pace,
+          c.compatible_size_ids,
+          c.required_set_ids,
           c.created_at
         FROM board_climbs c
         WHERE ${ownershipSql} AND c.is_draft = false
@@ -586,6 +591,8 @@ export const setterFollowQueries = {
         owned_climbs.frames,
         owned_climbs.frames_count,
         owned_climbs.frames_pace,
+        owned_climbs.compatible_size_ids,
+        owned_climbs.required_set_ids,
         best.angle AS stats_angle,
         best.ascensionist_count,
         ROUND(best.display_difficulty::numeric, 0)::int AS difficulty_id,
@@ -611,6 +618,10 @@ export const setterFollowQueries = {
     const hasMore = rawRows.length > limit;
     const trimmedResults = hasMore ? rawRows.slice(0, limit) : rawRows;
 
+    // Draw a setter's climbs on their own wall rather than on the biggest size
+    // the layout comes in — the profile Climbs tab has no board in its route.
+    const ownerBoards = (await fetchOwnerBoards([userId])).get(userId) ?? [];
+
     const climbs: Climb[] = trimmedResults.map((result) => {
       const boardName = (result.board_type || 'kilter') as BoardName;
       return {
@@ -635,6 +646,13 @@ export const setterFollowQueries = {
         boardType: boardName,
         boardseshDifficulty: result.boardsesh_difficulty == null ? null : Number(result.boardsesh_difficulty),
         boardseshConfidence: toConfidenceTier(result.boardsesh_confidence),
+        renderBoard: resolveRenderBoard({
+          boardType: boardName,
+          climbLayoutId: result.layout_id,
+          compatibleSizeIds: result.compatible_size_ids,
+          requiredSetIds: result.required_set_ids,
+          ownerBoards,
+        }),
       };
     });
 

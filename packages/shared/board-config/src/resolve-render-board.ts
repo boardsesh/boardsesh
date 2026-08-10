@@ -1,0 +1,222 @@
+/**
+ * Which board configuration should a logged climb be *drawn* on?
+ *
+ * A tick carries a board type, the climb's layout and an angle — never a size or
+ * a hold-set list. Every surface that renders a logged climb (logbook rows, the
+ * play drawer, session recaps, profile climb tiles) therefore has to resolve one,
+ * and the historical answer on both platforms was "the biggest size this layout
+ * comes in". A climber on a 10x12 home wall saw every one of their ascents drawn
+ * on a 12x14 commercial board (issue #4221).
+ *
+ * The ladder below prefers real information over guesses, in order:
+ *
+ *   1. The board the tick is associated with (`boardsesh_ticks.board_id`). This is
+ *      the board it was climbed on — no inference needed.
+ *   2. The smallest of the climber's own boards the climb actually fits on. A
+ *      climb that fits a small wall fits every bigger one, so the smallest fitting
+ *      board is the tightest — and for home-wall climbers, usually the real one.
+ *   3. No board of theirs fits: the size closest to their biggest board of that
+ *      type, out of the sizes the climb does fit.
+ *   4. They have no boards of that type: the layout's biggest size, which is the
+ *      pre-#4221 behaviour and the only sensible answer with nothing to go on.
+ *
+ * Pure and synchronous — the backend resolves it per feed row against the ascent
+ * owner's boards (so it is correct for every viewer, not just for yourself), and
+ * the clients call the rung-4 wrapper when a payload carries no resolved config.
+ */
+import {
+  getSizesForLayoutId,
+  getSetsForLayoutAndSize,
+  getAllLayouts,
+  ORPHANED_KILTER_LAYOUT_DEFAULTS,
+} from '@boardsesh/board-constants/product-sizes';
+import { getSizeRank } from '@boardsesh/board-constants/size-comparison';
+import type { ProductSizeData } from '@boardsesh/board-constants';
+import type { BoardName } from '@boardsesh/shared-schema';
+
+import { toBoardName } from './board-name';
+import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE, type MoonBoardLayoutKey } from './moonboard-config';
+
+/** The layout / size / hold sets a climb should be rendered with. */
+export type RenderBoardConfig = {
+  layoutId: number;
+  sizeId: number;
+  setIds: number[];
+};
+
+/** One of the climber's boards, or the board a tick is associated with. */
+export type RenderBoardCandidate = RenderBoardConfig & {
+  boardType: string;
+  /** Owned boards beat followed ones when several fit equally well. */
+  isOwned: boolean;
+};
+
+export type ResolveRenderBoardArgs = {
+  boardType: string;
+  /** The layout the climb was set on (`board_climbs.layout_id`). */
+  climbLayoutId: number | null | undefined;
+  /**
+   * `board_climbs.compatible_size_ids` — every size whose edge box encloses the
+   * climb. Null/undefined means "unknown" (MoonBoard, or a climb whose
+   * denormalised columns haven't been populated), which imposes no constraint.
+   */
+  compatibleSizeIds?: readonly number[] | null;
+  /** `board_climbs.required_set_ids`; null/undefined imposes no constraint. */
+  requiredSetIds?: readonly number[] | null;
+  /** The board this tick was logged against, when it has one. */
+  tickBoard?: RenderBoardCandidate | null;
+  /** Every board the climb's owner has — owned and followed, any type or layout. */
+  ownerBoards?: readonly RenderBoardCandidate[];
+};
+
+/** Whether a climb fits a board, given whatever denormalised columns we have. */
+function climbFitsBoard(
+  board: RenderBoardConfig,
+  compatibleSizeIds: readonly number[] | null | undefined,
+  requiredSetIds: readonly number[] | null | undefined,
+): boolean {
+  if (compatibleSizeIds != null && !compatibleSizeIds.includes(board.sizeId)) return false;
+  if (requiredSetIds != null && requiredSetIds.length > 0) {
+    const installed = new Set(board.setIds);
+    if (!requiredSetIds.every((setId) => installed.has(setId))) return false;
+  }
+  return true;
+}
+
+/**
+ * The sizes of `layoutId` the climb can be drawn on. `compatible_size_ids` is
+ * computed across a whole board type, so it can name sizes from another product
+ * family (home vs commercial coordinate frames) — intersecting with the layout's
+ * own sizes is what keeps a Homewall size out of a Commercial layout's answer.
+ * Falls back to every size of the layout when nothing matches, so an unpopulated
+ * or cross-frame `compatible_size_ids` degrades to the old guess rather than to
+ * no thumbnail at all.
+ */
+function candidateSizesForLayout(
+  boardName: BoardName,
+  layoutId: number,
+  compatibleSizeIds: readonly number[] | null | undefined,
+): ProductSizeData[] {
+  const sizes = getSizesForLayoutId(boardName, layoutId);
+  if (sizes.length === 0 || compatibleSizeIds == null) return sizes;
+  const fitting = sizes.filter((size) => compatibleSizeIds.includes(size.id));
+  return fitting.length > 0 ? fitting : sizes;
+}
+
+function configForSize(boardName: BoardName, layoutId: number, sizeId: number): RenderBoardConfig | null {
+  const sets = getSetsForLayoutAndSize(boardName, layoutId, sizeId);
+  if (sets.length === 0) return null;
+  return { layoutId, sizeId, setIds: sets.map((set) => set.id) };
+}
+
+/**
+ * Rung 4 — the no-information default: the layout's biggest size with every set
+ * installed. Covers MoonBoard (one fixed size, sets per layout) and the orphaned
+ * Kilter layouts 2-7, which have real product-size associations but aren't in the
+ * layout tables, so `getSizesForLayoutId` returns nothing for them.
+ */
+export function getDefaultRenderBoard(
+  boardType: string,
+  climbLayoutId: number | null | undefined,
+): RenderBoardConfig | null {
+  const boardName = toBoardName(boardType);
+  if (!boardName) return null;
+
+  if (boardName === 'moonboard') {
+    const layoutId = climbLayoutId ?? MOONBOARD_LAYOUTS['moonboard-2024'].id;
+    const layoutKey = (Object.keys(MOONBOARD_LAYOUTS) as MoonBoardLayoutKey[]).find(
+      (key) => MOONBOARD_LAYOUTS[key].id === layoutId,
+    );
+    if (!layoutKey) return null;
+    const sets = MOONBOARD_SETS[layoutKey] ?? [];
+    if (sets.length === 0) return null;
+    return { layoutId, sizeId: MOONBOARD_SIZE.id, setIds: sets.map((set) => set.id) };
+  }
+
+  const layoutId = climbLayoutId ?? getAllLayouts(boardName)[0]?.id;
+  if (!layoutId) return null;
+
+  const sizes = getSizesForLayoutId(boardName, layoutId);
+  if (sizes.length === 0) {
+    // Layouts that no longer appear in the product-size tables but still show up
+    // in historical ticks — the reason web used to render no thumbnail at all.
+    const orphaned = boardName === 'kilter' ? ORPHANED_KILTER_LAYOUT_DEFAULTS[layoutId] : undefined;
+    if (!orphaned) return null;
+    const setIds = orphaned.setIds
+      .split(',')
+      .map((part) => Number(part.trim()))
+      .filter((setId) => Number.isInteger(setId));
+    return setIds.length > 0 ? { layoutId, sizeId: orphaned.sizeId, setIds } : null;
+  }
+
+  const biggest = sizes.reduce((best, size) =>
+    getSizeRank(boardName, size.id) > getSizeRank(boardName, best.id) ? size : best,
+  );
+  return configForSize(boardName, layoutId, biggest.id);
+}
+
+/**
+ * Resolve the board configuration a logged climb should be drawn on. See the
+ * module comment for the ladder. Returns null only when the board type or layout
+ * can't be resolved at all, which callers render as a plain tile.
+ */
+export function resolveRenderBoard(args: ResolveRenderBoardArgs): RenderBoardConfig | null {
+  const { boardType, climbLayoutId, compatibleSizeIds, requiredSetIds, tickBoard, ownerBoards } = args;
+  const boardName = toBoardName(boardType);
+  if (!boardName) return null;
+
+  // 1. The board it was actually climbed on. A layout mismatch means the tick's
+  //    board association is stale or cross-layout, and drawing the climb on it
+  //    would place holds that don't exist — fall through instead.
+  if (tickBoard && tickBoard.boardType === boardType && tickBoard.setIds.length > 0) {
+    if (climbLayoutId == null || tickBoard.layoutId === climbLayoutId) {
+      return { layoutId: tickBoard.layoutId, sizeId: tickBoard.sizeId, setIds: tickBoard.setIds };
+    }
+  }
+
+  const sameLayoutBoards =
+    climbLayoutId == null
+      ? []
+      : (ownerBoards ?? []).filter(
+          (board) => board.boardType === boardType && board.layoutId === climbLayoutId && board.setIds.length > 0,
+        );
+
+  // 2. The smallest of their own boards the climb fits on. Owned beats followed;
+  //    the caller's order (lowest user_boards.id first) breaks remaining ties.
+  const fitting = sameLayoutBoards.filter((board) => climbFitsBoard(board, compatibleSizeIds, requiredSetIds));
+  if (fitting.length > 0) {
+    const best = fitting.reduce((smallest, board) => {
+      if (board.isOwned !== smallest.isOwned) return board.isOwned ? board : smallest;
+      return getSizeRank(boardName, board.sizeId) < getSizeRank(boardName, smallest.sizeId) ? board : smallest;
+    });
+    return { layoutId: best.layoutId, sizeId: best.sizeId, setIds: best.setIds };
+  }
+
+  // 3. Nothing of theirs fits, but they do climb on this board type: draw it at
+  //    the size closest to their biggest board, out of the sizes it fits.
+  const boardsOfType = (ownerBoards ?? []).filter((board) => board.boardType === boardType);
+  if (climbLayoutId != null && boardsOfType.length > 0) {
+    const biggestOwnedRank = boardsOfType.reduce(
+      (rank, board) => Math.max(rank, getSizeRank(boardName, board.sizeId)),
+      -1,
+    );
+    const candidates = candidateSizesForLayout(boardName, climbLayoutId, compatibleSizeIds);
+    if (biggestOwnedRank >= 0 && candidates.length > 0) {
+      const closest = candidates.reduce((best, size) => {
+        const rank = getSizeRank(boardName, size.id);
+        const bestRank = getSizeRank(boardName, best.id);
+        const delta = Math.abs(rank - biggestOwnedRank);
+        const bestDelta = Math.abs(bestRank - biggestOwnedRank);
+        // Equally close above and below their biggest — take the bigger size, so
+        // the climb is never cropped by a wall it demonstrably doesn't fit.
+        if (delta !== bestDelta) return delta < bestDelta ? size : best;
+        return rank > bestRank ? size : best;
+      });
+      const config = configForSize(boardName, climbLayoutId, closest.id);
+      if (config) return config;
+    }
+  }
+
+  // 4. No boards to reason from.
+  return getDefaultRenderBoard(boardType, climbLayoutId);
+}
