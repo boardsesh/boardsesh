@@ -6,6 +6,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-08-10
 
+### New
+
+- Claim an unclaimed gym and it's yours on the spot, no waiting for a review ([#4230](https://github.com/boardsesh/boardsesh/pull/4230))
+
 ### Fixed
 
 - The tick sheet is laid out for your thumb now — tries and stars sit where your hand already is, and date and time share one line up top ([#4215](https://github.com/boardsesh/boardsesh/pull/4215))

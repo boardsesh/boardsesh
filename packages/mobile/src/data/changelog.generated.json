@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-10T10:14:59.416Z",
+  "generatedAt": "2026-08-10T20:12:13.726Z",
   "entries": [
+    {
+      "prNumber": 4230,
+      "category": "new",
+      "title": "Claim an unclaimed gym and it's yours on the spot, no waiting for a review",
+      "mergedAt": "2026-08-10T20:11:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4230"
+    },
     {
       "prNumber": 4215,
       "category": "fixed",
