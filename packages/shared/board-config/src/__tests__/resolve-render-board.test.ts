@@ -68,7 +68,7 @@ describe('resolveRenderBoard', () => {
     expect(result?.sizeId).toBe(SQUARE_12X12);
   });
 
-  it('prefers an owned board over a followed one of the same size', () => {
+  it('prefers an owned board over a followed one, even when the followed one is smaller', () => {
     const followedSmall = ownedBoard(SMALL_7X10, { isOwned: false });
     const ownedBig = ownedBoard(COMMERCIAL_12X14);
 
@@ -76,11 +76,25 @@ describe('resolveRenderBoard', () => {
       boardType: 'kilter',
       climbLayoutId: KILTER_LAYOUT,
       compatibleSizeIds: [COMMERCIAL_12X14, SMALL_7X10],
-      // Caller order is owned-first; the tie-break must not re-sort by size.
+      // Caller order is owned-first; ownership outranks the smallest-fits rule.
       ownerBoards: [ownedBig, followedSmall],
     });
 
     expect(result?.sizeId).toBe(COMMERCIAL_12X14);
+  });
+
+  it('breaks a same-size tie on caller order (lowest user_boards.id first)', () => {
+    const first = ownedBoard(SQUARE_12X12, { setIds: KILTER_SETS });
+    const second = ownedBoard(SQUARE_12X12, { setIds: [...KILTER_SETS].reverse() });
+
+    const result = resolveRenderBoard({
+      boardType: 'kilter',
+      climbLayoutId: KILTER_LAYOUT,
+      compatibleSizeIds: [SQUARE_12X12],
+      ownerBoards: [first, second],
+    });
+
+    expect(result?.setIds).toEqual(first.setIds);
   });
 
   it('skips a board of theirs that is missing a set the climb needs', () => {
