@@ -22,6 +22,15 @@ export function getBleLightbulbDisplayMode(isScanning: boolean, isWriting: boole
   return 'idle';
 }
 
+// Maps the icon `size` prop onto a spinner size. We can't hand the raw number
+// to ActivityIndicator: on iOS a numeric size only resizes the wrapper box and
+// leaves the 20pt glyph unscaled, so a large caller would get a small spinner
+// floating in a big square. RN's two native sizes are 20pt and 36pt; 32 is the
+// midpoint above which 'large' is the closer match to the icon it replaces.
+export function getBleLightbulbSpinnerSize(size: number): 'small' | 'large' {
+  return size >= 32 ? 'large' : 'small';
+}
+
 export function getBleLightbulbVisualState({
   isConnected,
   connectedColor,
