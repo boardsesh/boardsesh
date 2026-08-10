@@ -1,22 +1,24 @@
-// Bottom-sheet wrapper around QuickTickBar. Used by every ticking entry
-// point — the play drawer's tick button, the persistent queue bar, the
-// climb detail screen — so the form, dismissal model (handle + pan-down +
-// native scrim tap), and keyboard handling stay identical across surfaces.
+// Bottom-sheet wrapper around the create-tick form. Used by every ticking entry
+// point — the play drawer's tick button, the persistent queue bar, the climb
+// detail screen — so the form, dismissal model (handle + pan-down + native
+// scrim tap), and keyboard handling stay identical across surfaces.
 //
-// Uses `BottomSheetModal` (not the regular `BottomSheet`) so it presents as
-// a native modal above the play drawer's own modal.
+// The chrome is `ModalSheet`: it presents as a native modal above the play
+// drawer's own modal, supplies the scroll body (`scrollable`), pins the action
+// bar (`footer`), and clamps its single column to the active detent via the
+// same `useSheetColumnStyle` this file used to wire by hand (#3330).
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
-import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { useManagedSheet } from '../providers/sheet-presentation-provider';
-import { useTheme } from '../providers/theme-provider';
-import { iosSystemColors } from '../theme/ios-colors';
-import { spacing } from '../theme/tokens';
+import { getGradeColor } from '@boardsesh/board-constants/grade-colors';
+import type { TickStatus } from '@boardsesh/play-view';
 import { track } from '../lib/analytics';
-import { Icon } from './Icon';
-import { QuickTickBar, type QuickTickDismissSnapshot } from './play-drawer/QuickTickBar';
+import { ModalSheet } from './ModalSheet';
+import { TickActionBar, TickSheetHeader, CREATE_TICK_SNAP_POINTS } from './tick';
+import { QuickTickBar } from './play-drawer/QuickTickBar';
+import { useQuickTickForm, type QuickTickDismissSnapshot } from './play-drawer/use-quick-tick-form';
+
+const SAVE_ICON = 'tick.outline' as const;
 
 type LogAscentSheetProps = {
   visible: boolean;
@@ -29,6 +31,8 @@ type LogAscentSheetProps = {
    * Optional: always-mounted hosts (PlayDrawer) don't unmount, so they omit it. */
   onFullyDismissed?: () => void;
   climbUuid: string;
+  /** Shown in the sheet header so the climber sees what they are logging. */
+  climbName?: string;
   boardName: string;
   angle: number;
   isMirror: boolean;
@@ -46,6 +50,7 @@ export function LogAscentSheet({
   onClose,
   onFullyDismissed,
   climbUuid,
+  climbName,
   boardName,
   angle,
   isMirror,
@@ -57,14 +62,12 @@ export function LogAscentSheet({
   sessionId,
   consensusGradeName,
 }: LogAscentSheetProps) {
-  const sheetRef = useRef<BottomSheetModal>(null);
-  const { systemColors } = useTheme();
-  const { t } = useTranslation('session');
+  const { t } = useTranslation('climbs');
 
   // Tracks whether the open tick got saved, so handleClose below can tell a
   // completed save (QuickTickSaved already covers it) apart from a genuine
-  // abandon via the X-button / pan-down / backdrop tap (none of which call
-  // back into QuickTickBar, so it can't distinguish these itself).
+  // abandon via the close button / pan-down / backdrop tap (none of which call
+  // back into the form, so it can't distinguish these itself).
   const savedRef = useRef(false);
   const fieldSnapshotRef = useRef<QuickTickDismissSnapshot>({
     hasQuality: false,
@@ -90,90 +93,85 @@ export function LogAscentSheet({
     onClose();
   }, [climbUuid, layoutId, onClose]);
 
-  // Present/dismiss go through the coordinator (serialized, no overlapping
-  // transitions); `onClose` fires on a user pan-down, `onFullyDismissed` after
-  // the animation settles.
-  const managed = useManagedSheet({ open: visible, sheetRef, onClose: handleClose, onFullyDismissed });
+  const form = useQuickTickForm({
+    climbUuid,
+    boardName,
+    angle,
+    isMirror,
+    isBenchmark,
+    baseAscensionistCount,
+    layoutId,
+    sizeId,
+    setIds,
+    sessionId,
+    consensusGradeName,
+    onDismiss: handleClose,
+    savedRef,
+    fieldSnapshotRef,
+  });
 
-  // Default to 60% so the climb image stays visible above the sheet (the
-  // UX review flagged full-cover + carousel-disabled as the wrong
-  // tradeoff). The 92% snap is the keyboard-extended state; the native sheet
-  // keeps the focused input and save buttons above the keyboard.
-  const snapPoints = useMemo(() => ['60%', '92%'], []);
+  // The identity bar follows the picked grade the moment the climber picks one,
+  // and falls back to the community consensus before that.
+  const gradeColor = useMemo(
+    () => getGradeColor(form.resolvedGradeName ?? consensusGradeName ?? ''),
+    [form.resolvedGradeName, consensusGradeName],
+  );
+
+  // `logAscentAria` interpolates a *noun*, so the status has to be resolved to
+  // localised copy first — interpolating the raw `'send'` / `'flash'` enum left
+  // Spanish, French and German screen-reader users hearing English.
+  // Spelled out per key because the i18n linter rejects `t(variable)`.
+  const statusNouns: Record<TickStatus, string> = useMemo(
+    () => ({
+      flash: t('mobile.tick.status.flash'),
+      send: t('mobile.tick.status.send'),
+      attempt: t('mobile.tick.status.attempt'),
+    }),
+    [t],
+  );
+
+  const subtitle = consensusGradeName
+    ? t('mobile.tick.consensusMeta', { grade: consensusGradeName, angle })
+    : t('mobile.tick.angleMeta', { angle });
 
   return (
-    <BottomSheetModal
-      ref={sheetRef}
-      index={0}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      onChange={managed.onChange}
-      onFullyDismissed={managed.onFullyDismissed}
-      handleIndicatorStyle={styles.indicator}
-      keyboardBehavior="extend"
-      keyboardBlurBehavior="restore"
-    >
-      <View style={styles.content}>
-        <View style={styles.closeButtonRow}>
-          <Pressable
-            onPress={handleClose}
-            accessibilityRole="button"
-            accessibilityLabel={t('playView.tickBar.closeAria')}
-            hitSlop={8}
-            style={({ pressed }) => [
-              styles.closeButton,
-              { backgroundColor: systemColors.fill },
-              pressed && styles.closeButtonPressed,
-            ]}
-          >
-            <Icon name="chevron.down" size={18} color={systemColors.secondaryLabel} />
-          </Pressable>
-        </View>
-        <QuickTickBar
-          climbUuid={climbUuid}
-          boardName={boardName}
-          angle={angle}
-          isMirror={isMirror}
-          isBenchmark={isBenchmark}
-          baseAscensionistCount={baseAscensionistCount}
-          layoutId={layoutId}
-          sizeId={sizeId}
-          setIds={setIds}
-          sessionId={sessionId}
-          consensusGradeName={consensusGradeName}
-          onDismiss={handleClose}
-          savedRef={savedRef}
-          fieldSnapshotRef={fieldSnapshotRef}
+    <ModalSheet
+      visible={visible}
+      onClose={handleClose}
+      onFullyDismissed={onFullyDismissed}
+      snapPoints={CREATE_TICK_SNAP_POINTS}
+      scrollable
+      surface="solid"
+      footerSurface="flush"
+      header={
+        <TickSheetHeader
+          title={climbName ?? t('mobile.tick.fallbackTitle')}
+          subtitle={subtitle}
+          gradeColor={gradeColor}
+          onClose={handleClose}
+          closeAccessibilityLabel={t('mobile.tick.closeAria')}
         />
-      </View>
-    </BottomSheetModal>
+      }
+      footer={
+        <TickActionBar
+          error={form.lastError}
+          secondary={{
+            title: t('mobile.tick.attempt'),
+            onPress: form.onAttempt,
+            disabled: form.isPending,
+            accessibilityLabel: t('mobile.tick.logAscentAria', { status: statusNouns.attempt }),
+          }}
+          primary={{
+            title: form.saveLabel,
+            onPress: form.onSave,
+            loading: form.isPending,
+            icon: SAVE_ICON,
+            accessibilityLabel: t('mobile.tick.logAscentAria', { status: statusNouns[form.ascentType] }),
+          }}
+        />
+      }
+    >
+      <QuickTickBar form={form} />
+    </ModalSheet>
   );
 }
-
-const styles = StyleSheet.create({
-  indicator: {
-    backgroundColor: iosSystemColors.separator,
-    width: 36,
-    height: 5,
-    borderRadius: 3,
-  },
-  content: {
-    flex: 1,
-  },
-  closeButtonRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[1],
-  },
-  closeButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeButtonPressed: {
-    opacity: 0.7,
-  },
-});

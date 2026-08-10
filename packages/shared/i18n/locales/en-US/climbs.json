@@ -639,9 +639,37 @@
       "notFound": "Climb not found"
     },
     "logAscent": {
-      "attempt": "Attempt",
       "errorMessage": "Could not save your ascent. Please try again.",
       "savedToast": "Tick saved"
+    },
+    "tick": {
+      "dateLabel": "Date",
+      "timeLabel": "Time",
+      "gradeLabel": "Grade",
+      "starsLabel": "Stars",
+      "triesLabel": "Tries",
+      "noteLabel": "Note",
+      "notePlaceholder": "How did it go?",
+      "noteAria": "Tick note",
+      "statusLabel": "Status",
+      "angleLabel": "Angle",
+      "attempt": "Attempt",
+      "save": "Save",
+      "deleteRow": "Delete this ascent",
+      "closeAria": "Close",
+      "futureTimeAdjusted": "Future time adjusted to now.",
+      "consensusMeta": "{{grade}} consensus · {{angle}}°",
+      "angleMeta": "{{angle}}°",
+      "fallbackTitle": "Log ascent",
+      "status": {
+        "flash": "Flash",
+        "send": "Send",
+        "attempt": "Attempt"
+      },
+      "logAscentAria": "Log {{status}}",
+      "setTriesAria_one": "Set to {{count}} try",
+      "setTriesAria_other": "Set to {{count}} tries",
+      "moreTriesAria": "One more try"
     },
     "filter": {
       "climbType": "Climb Type",

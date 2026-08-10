@@ -1114,6 +1114,7 @@ export function PlayDrawer({
               visible={isTickBarActive}
               onClose={handleTickBarDismiss}
               climbUuid={tickClimb.uuid}
+              climbName={tickClimb.name}
               boardName={tickTarget?.boardConfig.boardName ?? boardName}
               angle={tickTarget?.boardConfig.angle ?? angle}
               isMirror={isMirrored}

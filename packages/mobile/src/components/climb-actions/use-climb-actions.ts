@@ -254,6 +254,7 @@ export function useClimbActions({
         } else {
           openLogAscent({
             climbUuid: climb.uuid,
+            climbName: climb.name,
             boardName,
             angle,
             isMirror: false,

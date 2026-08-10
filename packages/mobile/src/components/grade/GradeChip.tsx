@@ -16,9 +16,22 @@ import { readableTextColor } from './grade-chip-colors';
 
 export type GradeChipTone = 'neutral' | 'selected' | 'range' | 'consensus';
 
-type GradeChipProps = {
+/**
+ * Which palette the chip paints itself from.
+ *
+ * - `grade` (the default, and what every filter rail uses): the chip carries the
+ *   grade ramp, so a selected V6 is the same red it is everywhere else in the app.
+ * - `selection`: the chip carries SELECTION state instead of grade identity —
+ *   violet for "your choice", an amber ring for "the crowd's". Used by the tick
+ *   sheets, where the grade ramp lives in the header's identity bar and the rail
+ *   only has to answer "which one did I pick?".
+ */
+export type GradeChipColorway = 'grade' | 'selection';
+
+export type GradeChipProps = {
   label: string;
   tone?: GradeChipTone;
+  colorway?: GradeChipColorway;
   gradeColor?: string;
   onPress: () => void;
   accessibilityLabel: string;
@@ -31,6 +44,7 @@ type GradeChipProps = {
 export function GradeChip({
   label,
   tone = 'neutral',
+  colorway = 'grade',
   gradeColor,
   onPress,
   accessibilityLabel,
@@ -45,11 +59,29 @@ export function GradeChip({
   const ranged = tone === 'range';
   const consensus = tone === 'consensus';
 
+  // Neutral, in both colorways: a filled pill with no live edge. The border is
+  // transparent rather than the fill colour so a 1pt ring can't read as an
+  // affordance the chip doesn't have.
   let backgroundColor: ColorValue = systemColors.fill;
-  let borderColor: ColorValue = systemColors.fill;
+  let borderColor: ColorValue = 'transparent';
+  let borderWidth = 1;
   let textColor: ColorValue | undefined;
 
-  if (selected) {
+  if (colorway === 'selection') {
+    textColor = systemColors.label;
+    if (selected) {
+      backgroundColor = brandColors.primaryFill;
+      // The ring stays 1pt and matches the fill, so it is invisible but keeps the
+      // box geometry identical to the neutral tone. React Native is border-box:
+      // dropping to 0 here grew the inner content box by 2pt and nudged the label
+      // every time a chip went from unselected to selected.
+      borderColor = brandColors.primaryFill;
+      textColor = brandColors.onPrimary;
+    } else if (consensus) {
+      borderColor = brandColors.warning;
+      borderWidth = 2;
+    }
+  } else if (selected) {
     backgroundColor = accentColor;
     borderColor = accentColor;
     textColor = readableTextColor(accentColor);
@@ -71,9 +103,9 @@ export function GradeChip({
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
       accessibilityState={accessibilityState}
-      rippleColor={accentColor}
+      rippleColor={colorway === 'selection' ? brandColors.primary : accentColor}
       onLayout={onLayout}
-      style={[styles.pressable, { backgroundColor, borderColor }, style]}
+      style={[styles.pressable, { backgroundColor, borderColor, borderWidth }, style]}
     >
       <View style={styles.content}>
         <Text variant="footnote" color={textColor} numberOfLines={1} style={styles.label}>
@@ -89,7 +121,6 @@ const styles = StyleSheet.create({
     minHeight: 44,
     minWidth: 52,
     borderRadius: 22,
-    borderWidth: 1,
     justifyContent: 'center',
   },
   content: {

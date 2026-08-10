@@ -26,7 +26,8 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 import { gradeRailCenter } from '../../lib/grade-seed';
 import { hapticSelection } from '../../lib/haptics';
 import { spacing } from '../../theme/tokens';
-import { GradeChip } from './GradeChip';
+import { GradeChip, type GradeChipColorway } from './GradeChip';
+import { railRestOffset, railSnapOffsets } from './grade-rail-offset';
 
 const CLEAR_DISMISS_MS = 300;
 // How many frames to re-assert the centring scroll. One scrollTo can be dropped
@@ -387,6 +388,19 @@ type GradeSingleSelectRailProps = {
   consensusDifficultyId?: number | null;
   onSelect: (difficultyId: number | undefined) => void;
   allowClear?: boolean;
+  /**
+   * Which palette the chips paint from. `grade` (the default) keeps the grade
+   * ramp; the tick sheets pass `selection` so the rail reads as "which one did I
+   * pick?" against the sheet's single violet-and-amber budget.
+   */
+  colorway?: GradeChipColorway;
+  /** Left padding inside the rail's content. A rail rendered inside a row that
+   *  already owns the gutter passes 0 so its first chip sits on the row's
+   *  control seam. */
+  contentInsetLeft?: number;
+  /** Right padding inside the rail's content — the trailing inset that keeps the
+   *  last chip short of the screen edge so the rail reads as scrollable. */
+  contentInsetRight?: number;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -396,6 +410,9 @@ export function GradeSingleSelectRail({
   consensusDifficultyId,
   onSelect,
   allowClear = true,
+  colorway = 'grade',
+  contentInsetLeft = spacing[4],
+  contentInsetRight = spacing[4],
   style,
 }: GradeSingleSelectRailProps) {
   const { t } = useTranslation('climbs');
@@ -403,26 +420,93 @@ export function GradeSingleSelectRail({
   const scrollRef = useRef<ElementRef<typeof ScrollView>>(null);
   const chipLayoutsRef = useRef<Record<number, ChipLayout>>({});
   const [railWidth, setRailWidth] = useState(0);
+  const [contentWidth, setContentWidth] = useState(0);
+  // Bumped whenever a chip re-measures, so the snap table recomputes off the
+  // layout ref without every chip's onLayout forcing a render of its own.
+  const [layoutVersion, setLayoutVersion] = useState(0);
   const didCenterRef = useRef(false);
+  // Latched by the first tap or drag: after the climber has touched the rail it
+  // must never scroll itself out from under their thumb. Reset only when the rail
+  // takes on a new identity (below) — never on `focusId`, since a tap moves the
+  // focus and re-centring there IS the yank.
+  const userInteractedRef = useRef(false);
   const grades = useMemo(() => sortedGrades(unsortedGrades), [unsortedGrades]);
   const focusId = selectedDifficultyId ?? consensusDifficultyId ?? undefined;
 
-  const maybeCenter = useCallback(() => {
-    if (didCenterRef.current || railWidth === 0 || focusId == null) return;
-    const chipLayout = chipLayoutsRef.current[focusId];
-    if (!chipLayout) return;
-    didCenterRef.current = true;
-    const offset = Math.max(0, chipLayout.x + chipLayout.width / 2 - railWidth / 2);
-    scrollRef.current?.scrollTo({ x: offset, animated: false });
-  }, [focusId, railWidth]);
+  // Snapping is a tick-sheet behaviour. Every other consumer (the generator
+  // picker) opened this rail before the tick redesign and expects a free scroll
+  // that just rests on the focus chip, so gate the three snap props on colorway.
+  const snapsToChips = colorway === 'selection';
 
+  const snapOffsets = useMemo(() => {
+    void layoutVersion;
+    return railSnapOffsets(chipLayoutsRef.current, contentInsetLeft);
+  }, [layoutVersion, contentInsetLeft]);
+
+  // What makes this a DIFFERENT rail rather than the same one with a new pick:
+  // the grade set it renders, and whose consensus grade it is pointing at. Both
+  // change when the sheet is reused for another climb or board while staying
+  // mounted; neither changes when the climber taps a chip.
+  const railIdentity = useMemo(
+    () => `${consensusDifficultyId ?? ''}|${grades.map((grade) => grade.difficultyId).join(',')}`,
+    [consensusDifficultyId, grades],
+  );
+
+  // Rest with the focus chip readable and flush to a chip start. `railRestOffset`
+  // clamps to the scrollable range and snaps DOWN to a chip boundary, so the rail
+  // can neither overscroll past its content nor come to rest mid-chip.
+  const maybeCenter = useCallback(() => {
+    if (userInteractedRef.current || didCenterRef.current) return;
+    const offset = railRestOffset({
+      layouts: chipLayoutsRef.current,
+      focusId,
+      railWidth,
+      contentWidth,
+      leadIn: contentInsetLeft,
+      snapToChipStart: snapsToChips,
+    });
+    if (offset == null) return;
+    didCenterRef.current = true;
+    scrollRef.current?.scrollTo({ x: offset, animated: false });
+  }, [focusId, railWidth, contentWidth, contentInsetLeft, snapsToChips]);
+
+  // A new rail starts fresh: drop both latches so it rests on its own focus chip
+  // even if the previous climb's rail had been dragged. One effect (rather than a
+  // reset effect plus a centring effect) so the reset can never land in a commit
+  // where the centring pass has already run.
+  const railIdentityRef = useRef(railIdentity);
   useEffect(() => {
-    didCenterRef.current = false;
+    if (railIdentityRef.current !== railIdentity) {
+      railIdentityRef.current = railIdentity;
+      userInteractedRef.current = false;
+      didCenterRef.current = false;
+    }
     maybeCenter();
-  }, [focusId, maybeCenter]);
+  }, [railIdentity, maybeCenter]);
+
+  const handleChipLayout = useCallback(
+    (difficultyId: number, layout: ChipLayout) => {
+      const previous = chipLayoutsRef.current[difficultyId];
+      chipLayoutsRef.current[difficultyId] = layout;
+      if (previous?.x !== layout.x || previous?.width !== layout.width) {
+        setLayoutVersion((version) => version + 1);
+      }
+      maybeCenter();
+    },
+    [maybeCenter],
+  );
+
+  const handleContentSizeChange = useCallback(
+    (width: number) => {
+      setContentWidth(width);
+      maybeCenter();
+    },
+    [maybeCenter],
+  );
 
   const handleSelect = useCallback(
     (difficultyId: number) => {
+      userInteractedRef.current = true;
       hapticSelection();
       onSelect(allowClear && selectedDifficultyId === difficultyId ? undefined : difficultyId);
     },
@@ -435,7 +519,18 @@ export function GradeSingleSelectRail({
       horizontal
       showsHorizontalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
-      contentContainerStyle={[styles.singleSelectContent, style]}
+      snapToOffsets={snapsToChips && snapOffsets.length > 0 ? snapOffsets : undefined}
+      snapToAlignment={snapsToChips ? 'start' : undefined}
+      decelerationRate={snapsToChips ? 'fast' : undefined}
+      onScrollBeginDrag={() => {
+        userInteractedRef.current = true;
+      }}
+      contentContainerStyle={[
+        styles.singleSelectContent,
+        style,
+        { paddingLeft: contentInsetLeft, paddingRight: contentInsetRight },
+      ]}
+      onContentSizeChange={handleContentSizeChange}
       onLayout={(event) => {
         setRailWidth(event.nativeEvent.layout.width);
         maybeCenter();
@@ -451,6 +546,7 @@ export function GradeSingleSelectRail({
             key={grade.difficultyId}
             label={label}
             tone={selected ? 'selected' : consensus ? 'consensus' : 'neutral'}
+            colorway={colorway}
             gradeColor={gradeColor}
             onPress={() => handleSelect(grade.difficultyId)}
             accessibilityLabel={
@@ -461,10 +557,7 @@ export function GradeSingleSelectRail({
                   : t('mobile.gradeRail.setLogGradeAria', { grade: label })
             }
             accessibilityState={{ selected }}
-            onLayout={({ nativeEvent }) => {
-              chipLayoutsRef.current[grade.difficultyId] = nativeEvent.layout;
-              maybeCenter();
-            }}
+            onLayout={({ nativeEvent }) => handleChipLayout(grade.difficultyId, nativeEvent.layout)}
           />
         );
       })}
@@ -516,7 +609,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[2],
-    paddingHorizontal: spacing[4],
+    // Horizontal padding is NOT set here: it comes from contentInsetLeft /
+    // contentInsetRight so `railRestOffset` can subtract the exact lead-in and
+    // land each chip flush against the rail's left edge.
     paddingVertical: spacing[2],
   },
 });

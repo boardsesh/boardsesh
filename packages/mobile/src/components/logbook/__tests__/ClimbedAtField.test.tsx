@@ -39,11 +39,17 @@ vi.mock('../../Text', () => ({
 }));
 vi.mock('../../Icon', () => ({ Icon: () => createElement('span') }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { fill: '#eee', label: '#111', secondaryLabel: '#666' } }),
+  useTheme: () => ({
+    systemColors: { fill: '#eee', label: '#111', secondaryLabel: '#666' },
+    // The iOS picker is tinted with the brand primary and told which scheme to
+    // resolve its own chrome for.
+    brandColors: { primary: '#6D28D9' },
+    colorScheme: 'light',
+  }),
 }));
 vi.mock('../../../theme/tokens', () => ({
   spacing: new Proxy({}, { get: () => 0 }),
-  borderRadius: { lg: 12 },
+  borderRadius: { lg: 12, full: 9999 },
 }));
 
 import { ClimbedAtField } from '../ClimbedAtField';

@@ -639,9 +639,37 @@
       "notFound": "Boulder nicht gefunden"
     },
     "logAscent": {
-      "attempt": "Versuch",
       "errorMessage": "Deine Begehung konnte nicht gespeichert werden. Versuch es nochmal.",
       "savedToast": "Eintrag gespeichert"
+    },
+    "tick": {
+      "dateLabel": "Datum",
+      "timeLabel": "Zeit",
+      "gradeLabel": "Grad",
+      "starsLabel": "Sterne",
+      "triesLabel": "Versuche",
+      "noteLabel": "Notiz",
+      "notePlaceholder": "Wie lief's?",
+      "noteAria": "Notiz zum Eintrag",
+      "statusLabel": "Status",
+      "angleLabel": "Winkel",
+      "attempt": "Versuch",
+      "save": "Speichern",
+      "deleteRow": "Diese Begehung löschen",
+      "closeAria": "Schließen",
+      "futureTimeAdjusted": "Zeit in der Zukunft auf jetzt gesetzt.",
+      "consensusMeta": "{{grade}} Konsens · {{angle}}°",
+      "angleMeta": "{{angle}}°",
+      "fallbackTitle": "Begehung eintragen",
+      "status": {
+        "flash": "Flash",
+        "send": "Getoppt",
+        "attempt": "Versuch"
+      },
+      "logAscentAria": "{{status}} eintragen",
+      "setTriesAria_one": "Auf {{count}} Versuch setzen",
+      "setTriesAria_other": "Auf {{count}} Versuche setzen",
+      "moreTriesAria": "Ein Versuch mehr"
     },
     "filter": {
       "climbType": "Typ",

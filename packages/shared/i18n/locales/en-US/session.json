@@ -653,20 +653,10 @@
       "tickLabel": "tick",
       "logAttemptAria": "Log attempt",
       "saveTickAria": "Save tick",
-      "gradeLabel": "Grade",
-      "triesLabel": "Tries",
-      "starsLabel": "Stars",
-      "noteLabel": "Note",
       "flashSaveLabel": "Flash",
       "sendSaveLabel": "Send",
-      "logAscentAria": "Log {{status}}",
-      "decreaseTriesAria": "Decrease attempts",
-      "increaseTriesAria": "Increase attempts",
       "starRating_one": "{{count}} star",
-      "starRating_other": "{{count}} stars",
-      "dateLabel": "Date",
-      "timeLabel": "Time",
-      "futureTimeAdjusted": "Future time adjusted to now."
+      "starRating_other": "{{count}} stars"
     }
   },
   "mobileDetail": {

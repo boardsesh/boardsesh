@@ -639,9 +639,37 @@
       "notFound": "Bloc introuvable"
     },
     "logAscent": {
-      "attempt": "Essai",
       "errorMessage": "Impossible de sauvegarder votre ascension. Veuillez réessayer.",
       "savedToast": "Tick enregistré"
+    },
+    "tick": {
+      "dateLabel": "Date",
+      "timeLabel": "Heure",
+      "gradeLabel": "Cotation",
+      "starsLabel": "Étoiles",
+      "triesLabel": "Essais",
+      "noteLabel": "Note",
+      "notePlaceholder": "Comment ça s'est passé ?",
+      "noteAria": "Note de la croix",
+      "statusLabel": "Statut",
+      "angleLabel": "Angle",
+      "attempt": "Essai",
+      "save": "Enregistrer",
+      "deleteRow": "Supprimer cette croix",
+      "closeAria": "Fermer",
+      "futureTimeAdjusted": "Heure future ajustée à maintenant.",
+      "consensusMeta": "{{grade}} consensus · {{angle}}°",
+      "angleMeta": "{{angle}}°",
+      "fallbackTitle": "Enregistrer la croix",
+      "status": {
+        "flash": "Flash",
+        "send": "Enchaîné",
+        "attempt": "Essai"
+      },
+      "logAscentAria": "Enregistrer : {{status}}",
+      "setTriesAria_one": "Mettre {{count}} essai",
+      "setTriesAria_other": "Mettre {{count}} essais",
+      "moreTriesAria": "Un essai de plus"
     },
     "filter": {
       "climbType": "Type",

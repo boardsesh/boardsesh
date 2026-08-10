@@ -80,6 +80,10 @@ export type OpenClimbActionsOptions = {
 
 export type LogAscentInput = {
   climbUuid: string;
+  /** Shown in the tick sheet header so the climber sees what they are logging —
+   *  the queue-bar entry point can open this on a climb they are no longer
+   *  looking at. */
+  climbName?: string;
   boardName: string;
   angle: number;
   isMirror: boolean;
@@ -875,6 +879,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             onClose={closeLogAscentSheet}
             onFullyDismissed={clearLogAscentSheet}
             climbUuid={logAscentData.climbUuid}
+            climbName={logAscentData.climbName}
             boardName={logAscentData.boardName}
             angle={logAscentData.angle}
             isMirror={logAscentData.isMirror}
