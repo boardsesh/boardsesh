@@ -92,3 +92,30 @@ describe('boardsesh_ticks update dispatch', () => {
     expect(variables).toEqual({ uuid: 'tick-uuid-3', input: { angle: 25 } });
   });
 });
+
+describe('playlists update dispatch', () => {
+  it('carries the basedOn snapshot through to UpdatePlaylistInput (#1934)', async () => {
+    const graphqlFetch = vi.fn().mockResolvedValue({});
+    const basedOn = {
+      updatedAt: '2026-08-10T11:00:00.000Z',
+      name: 'Crimps',
+      description: null,
+      isPublic: false,
+      color: '#6D28D9',
+      icon: '🔥',
+    };
+    const mutation = pendingMutation({
+      table_name: 'playlists',
+      operation: 'update',
+      payload: JSON.stringify({ playlistId: 'pl-1', name: 'Renamed offline', basedOn }),
+    });
+
+    await processMutation(mutation, graphqlFetch);
+
+    const [query, variables] = graphqlFetch.mock.calls[0];
+    expect(query).toContain('UpdatePlaylist');
+    // A rename is the one replay the server can't auto-merge, so the snapshot
+    // must survive the queue round-trip intact.
+    expect(variables).toEqual({ input: { playlistId: 'pl-1', name: 'Renamed offline', basedOn } });
+  });
+});

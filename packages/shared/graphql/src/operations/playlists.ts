@@ -331,6 +331,25 @@ export type CreatePlaylistMutationResponse = {
   createPlaylist: Playlist;
 };
 
+/**
+ * The playlist as the client last saw it. Send it with an edit to get a
+ * PLAYLIST_UPDATE_CONFLICT error (read it with `readPlaylistUpdateConflict`)
+ * instead of silently overwriting a change made somewhere else (#1934).
+ *
+ * Every field the edit writes should be included, not just `updatedAt`: adding
+ * or reordering a climb bumps the playlist's `updatedAt` too, so the server
+ * compares values as well as the timestamp to avoid crying conflict over an
+ * edit that doesn't actually collide.
+ */
+export type PlaylistRevision = {
+  updatedAt: string;
+  name?: string | null;
+  description?: string | null;
+  isPublic?: boolean | null;
+  color?: string | null;
+  icon?: string | null;
+};
+
 export type UpdatePlaylistInput = {
   playlistId: string;
   name?: string;
@@ -338,6 +357,8 @@ export type UpdatePlaylistInput = {
   isPublic?: boolean;
   color?: string;
   icon?: string;
+  /** Omit for blind last-write-wins (what web still does). */
+  basedOn?: PlaylistRevision;
 };
 
 export type UpdatePlaylistMutationVariables = {

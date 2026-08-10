@@ -3,6 +3,8 @@
 // errors carrying `response.errors[]`; some call sites re-throw with
 // `graphqlErrors`, so both shapes are accepted.
 
+import { PLAYLIST_UPDATE_CONFLICT_CODE } from '@boardsesh/shared-schema';
+
 type GraphqlErrorLike = {
   message?: string;
   extensions?: {
@@ -85,4 +87,57 @@ export function readDuplicateBoardError(error: unknown): DuplicateBoardError | n
  */
 export function isBoardLimitError(error: unknown): boolean {
   return getGraphqlErrors(error).some((graphqlError) => graphqlError.extensions?.code === 'BOARD_LIMIT_REACHED');
+}
+
+/** The playlist as it stands on the server, per a rejected edit. */
+export type PlaylistUpdateConflict = {
+  playlistUuid: string;
+  /** The stored `updatedAt` — feed it back as `basedOn.updatedAt` to retry. */
+  serverUpdatedAt: string;
+  serverName: string;
+  serverDescription: string | null;
+  serverIsPublic: boolean;
+  serverColor: string | null;
+  serverIcon: string | null;
+};
+
+/**
+ * The server refusing a playlist edit because the playlist changed somewhere
+ * else since the client read it (#1934). Only raised for clients that opt in by
+ * sending `UpdatePlaylistInput.basedOn`.
+ *
+ * Expected and user-resolvable, not a fault to report: the climber picks a
+ * version. Use `readPlaylistUpdateConflict` to get the values to show them.
+ */
+export function isPlaylistUpdateConflictError(error: unknown): boolean {
+  return getGraphqlErrors(error).some(
+    (graphqlError) => graphqlError.extensions?.code === PLAYLIST_UPDATE_CONFLICT_CODE,
+  );
+}
+
+/**
+ * The server's current version of the playlist whose edit was refused, or null
+ * when the error is something else — or is a conflict whose identity extensions
+ * didn't survive (a proxy that strips them, an older server). Callers that only
+ * need to decide whether to prompt should use `isPlaylistUpdateConflictError`.
+ */
+export function readPlaylistUpdateConflict(error: unknown): PlaylistUpdateConflict | null {
+  for (const graphqlError of getGraphqlErrors(error)) {
+    if (graphqlError.extensions?.code !== PLAYLIST_UPDATE_CONFLICT_CODE) continue;
+    const playlistUuid = asString(graphqlError.extensions.playlistUuid);
+    const serverUpdatedAt = asString(graphqlError.extensions.serverUpdatedAt);
+    const serverName = asString(graphqlError.extensions.serverName);
+    // Without these three there is nothing to show and nothing to retry against.
+    if (!playlistUuid || !serverUpdatedAt || !serverName) continue;
+    return {
+      playlistUuid,
+      serverUpdatedAt,
+      serverName,
+      serverDescription: asString(graphqlError.extensions.serverDescription),
+      serverIsPublic: graphqlError.extensions.serverIsPublic === true,
+      serverColor: asString(graphqlError.extensions.serverColor),
+      serverIcon: asString(graphqlError.extensions.serverIcon),
+    };
+  }
+  return null;
 }

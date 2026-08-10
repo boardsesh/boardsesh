@@ -348,3 +348,31 @@ describe('isNetworkError / isRetryable — resolved status beats the English-pro
     expect(isRetryable(error)).toBe(true);
   });
 });
+
+describe('PLAYLIST_UPDATE_CONFLICT (#1934)', () => {
+  // A rename the server refused is a decision for the climber, not something to
+  // replay. It must dead-letter so the UI can surface it, rather than looping.
+  const conflictError = {
+    response: {
+      errors: [
+        {
+          message: 'This playlist changed somewhere else',
+          extensions: {
+            code: 'PLAYLIST_UPDATE_CONFLICT',
+            playlistUuid: 'pl-1',
+            serverUpdatedAt: '2026-08-10T12:00:00.000Z',
+            serverName: 'Renamed on the other phone',
+          },
+        },
+      ],
+    },
+  };
+
+  it('is not a network error and not retryable, so the drainer dead-letters it', () => {
+    // The string code resolves no numeric status, which is exactly what routes
+    // it to the dead-letter branch instead of the retry budget.
+    expect(getErrorStatus(conflictError)).toBeNull();
+    expect(isNetworkError(conflictError)).toBe(false);
+    expect(isRetryable(conflictError)).toBe(false);
+  });
+});
