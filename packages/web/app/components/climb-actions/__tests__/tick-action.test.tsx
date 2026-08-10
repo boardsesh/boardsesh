@@ -809,7 +809,7 @@ describe('TickAction', () => {
   });
 
   describe('analytics tracking', () => {
-    it('tracks tick button click with board layout info', async () => {
+    it('tracks the tick sheet opening with board layout info', async () => {
       setupMocks({ hasBoardProvider: true, isAuthenticated: true });
       render(<TestTickAction {...defaultProps} />);
 
@@ -817,10 +817,14 @@ describe('TickAction', () => {
         screen.getByRole('button', { name: /log ascent/i }).click();
       });
 
-      expect(mockTrack).toHaveBeenCalledWith('Tick Button Clicked', {
-        boardLayout: 'Original',
-        existingAscentCount: 0,
-      });
+      expect(mockTrack).toHaveBeenCalledWith(
+        'Quick Tick Opened',
+        expect.objectContaining({
+          boardLayout: 'Original',
+          existingAscentCount: 0,
+          source: 'climb_actions',
+        }),
+      );
     });
 
     it('calls onComplete callback when drawer is closed', async () => {

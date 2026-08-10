@@ -367,27 +367,17 @@ describe('ClimbList keyboard handling', () => {
   });
 });
 
-describe('ClimbList search result selection tracking', () => {
-  it('tracks the rank of the first result when it is pressed', async () => {
-    const { findByText } = render(<ClimbList />);
-
-    fireEvent.click(await findByText('Moonage'));
-
-    expect(mocks.track).toHaveBeenCalledWith(
-      'Search Result Selected',
-      expect.objectContaining({ rank: 0, loadedResultCount: 2, boardName: 'kilter', angle: 40 }),
-    );
-  });
-
-  it('tracks the rank of a later result when it is pressed', async () => {
+describe('ClimbList search result selection', () => {
+  // Pressing a row activates the climb but emits NO per-press analytics event.
+  // `Search Result Selected` fired here on every tap (53.8k events / 30 days)
+  // and no insight ever read it; `Climb Search Performed` still covers search.
+  it('activates a pressed result without firing a per-result event', async () => {
     const { findByText } = render(<ClimbList />);
 
     fireEvent.click(await findByText('Zenith'));
 
-    expect(mocks.track).toHaveBeenCalledWith(
-      'Search Result Selected',
-      expect.objectContaining({ rank: 1, loadedResultCount: 2, boardName: 'kilter', angle: 40 }),
-    );
+    expect(mocks.activateClimb).toHaveBeenCalled();
+    expect(mocks.track).not.toHaveBeenCalledWith('Search Result Selected', expect.anything());
   });
 });
 

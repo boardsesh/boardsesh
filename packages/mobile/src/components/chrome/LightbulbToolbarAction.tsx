@@ -24,7 +24,6 @@ export function LightbulbToolbarAction() {
   const { t: tSettings } = useTranslation('settings');
   const { open: openControls } = useBleControlSheet();
   const { bluetooth, lit, localConnected, onPress, onLongPress } = useLightbulbControl({
-    source: 'lightbulb_toolbar',
     onOpenControls: openControls,
   });
 

@@ -74,7 +74,6 @@ export function openClimbInPlayDrawer(args: OpenClimbArgs, deps: OpenClimbDeps, 
     openPlayDrawer(args.climb, {
       ...openModeOptions(args.climb, preview),
       boardConfig: args.boardConfig,
-      source: 'climb_view',
     });
     return;
   }
@@ -92,7 +91,6 @@ export function openClimbInPlayDrawer(args: OpenClimbArgs, deps: OpenClimbDeps, 
           setIds: config.setIds.join(','),
           angle: args.tick.angle,
         },
-        source: 'climb_view',
       });
       return;
     }

@@ -189,7 +189,6 @@ export function useClimbActions({
         openPlayDrawer(climb, {
           previewQueueItem: climbToQueueItem(climb),
           boardConfig: override,
-          source: 'climb_view',
         });
         after();
       },

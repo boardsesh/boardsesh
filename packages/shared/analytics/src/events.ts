@@ -30,10 +30,14 @@ export const SHARED_EVENTS = {
   ClimbRemovedFromQueue: 'Climb Removed from Queue',
   QueueReordered: 'Queue Reordered',
   QueueCleared: 'Queue Cleared',
+  // Fired on every queue advance, including the broadcast advances that used to
+  // ALSO fire a separate `Wall Advance`. That pair fired back-to-back from the
+  // same handler at all four web call sites with overlapping props, so it was
+  // folded in here: `sessionMode: 'party' | 'solo'` carries what `Wall Advance`
+  // added, and `method` already encoded what its `source` re-encoded. Round-trip
+  // success stays a separate question — see `Wall Confirmed` / `Wall Confirm Timeout`.
   QueueNavigation: 'Queue Navigation',
-  WallAdvance: 'Wall Advance',
   SetActiveClimb: 'Set Active Climb',
-  PlayDrawerOpened: 'Play Drawer Opened',
   SessionStarted: 'Session Started',
   SessionEnded: 'Session Ended',
   // A climber dropped out of a session WITHOUT ending it for everyone else —
@@ -114,23 +118,31 @@ export const SHARED_EVENTS = {
   LogbookEntryEdited: 'Logbook Entry Edited',
   LogbookEntryDeleted: 'Logbook Entry Deleted',
   // Ticks / logbook
-  // Mobile-only: fired at every explicit tick-sheet open (play-drawer FAB,
-  // climb-actions menu, queue bar), with a `source` prop. Gives the invariant
-  // Dismissed + Saved <= Opened; a violation means the sheet presented without
-  // user intent (the phantom-reopen bug this event was added to watchdog).
+  //
+  // The funnel is deliberately TWO events per platform: open, then outcome. It
+  // used to be four (Opened + TickButtonClicked + QuickTickSaved + TickLogged on
+  // mobile), where TickButtonClicked fired on save-intent immediately before the
+  // mutation and QuickTickSaved fired in the same onSuccess callback as
+  // TickLogged. Web fired the same TickButtonClicked name for a DIFFERENT moment
+  // — the sheet opening — so one name covered two meanings across platforms.
+  //
+  // Fired at every explicit tick-sheet open, with a `source` prop: mobile
+  // 'play_fab' | 'climb_actions' | 'queue_bar', web 'climb_actions' |
+  // 'logbook_tick_button'. Gives the invariant Dismissed + Logged <= Opened; a
+  // violation means the sheet presented without user intent (the phantom-reopen
+  // bug this event was added to watchdog).
   QuickTickOpened: 'Quick Tick Opened',
-  TickButtonClicked: 'Tick Button Clicked',
-  QuickTickSaved: 'Quick Tick Saved',
   QuickTickFailed: 'Quick Tick Failed',
   // Mobile-only for now: fired when the tick sheet is closed (X button,
   // pan-down, backdrop tap) without a save completing. Props include a
   // field-completeness snapshot so abandonment can be measured directly
-  // instead of inferred from TickButtonClicked - QuickTickSaved - QuickTickFailed.
+  // instead of inferred from QuickTickOpened - TickLogged - QuickTickFailed.
   QuickTickDismissed: 'Quick Tick Dismissed',
-  // Canonical "a climb was logged" join event, fired on every successful tick
-  // save on both platforms alongside each flow's own event above. Required
-  // props: { climbUuid, status, platform: 'web' | 'mobile', surface:
-  // 'web_full_form' | 'web_quick_modal' | 'mobile_quick_tick' }.
+  // Canonical "a climb was logged" join event and the single commit event on both
+  // platforms — it absorbed QuickTickSaved's payload. Required props: { climbUuid,
+  // status, platform: 'web' | 'mobile', surface: 'web_full_form' |
+  // 'web_quick_modal' | 'mobile_quick_tick' }, plus the tick detail
+  // (attemptCount, hasQuality, hasDifficulty, difficulty, grade, hasComment).
   TickLogged: 'Tick Logged',
   // Bluetooth / hardware
   BluetoothConnectionSuccess: 'Bluetooth Connection Success',
@@ -209,15 +221,11 @@ export const SHARED_EVENTS = {
   BleBoardConfigMismatchShown: 'BLE Board Config Mismatch Shown',
   BleBoardConfigMismatchResolved: 'BLE Board Config Mismatch Resolved',
   // Search
+  // Fired once per resolved search/filter result set, keyed on the search text +
+  // filter signature (not per keystroke, not per page). Carries hasQuery,
+  // queryLengthBucket, activeFilterCount and the result count, so search coverage
+  // and zero-result rate stay measurable without a per-tap companion event.
   ClimbSearchPerformed: 'Climb Search Performed',
-  // Fired when a user opens a climb from the search result list. Carries the
-  // tapped result's rank/position so the App Success dashboard can measure
-  // search relevance, not just coverage.
-  SearchResultSelected: 'Search Result Selected',
-  // Grade-range control changed (web's GradeRangePicker / mobile's GradeRangeRail).
-  // Shared so the native event lands in the same PostHog funnel as web's — the
-  // gap #3290 closed: web fired this 10,933× on the legacy webview, native 0×.
-  GradeFilterChanged: 'Grade Filter Changed',
   SearchHoldFilterChanged: 'Search Hold Filter Changed',
   SearchHoldFilterCleared: 'Search Hold Filter Cleared',
   SearchZoneEnabled: 'Search Zone Enabled',

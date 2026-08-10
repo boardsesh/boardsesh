@@ -300,17 +300,12 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
 
     setCurrentClimbQueueItem(nextClimb);
     const boardLayout = boardDetails?.layout_name || '';
+    // Bar swipe is a broadcast advance just like the bar button. Always-live
+    // model: anyone in the session can swipe to advance the wall climb.
     track('Queue Navigation', {
       direction: 'next',
       method: 'swipeQueueBar',
-      boardLayout,
-    });
-    // Bar swipe is a broadcast advance just like the bar button. Always-live
-    // model: anyone in the session can swipe to advance the wall climb.
-    track('Wall Advance', {
-      source: 'bar_swipe',
-      direction: 'next',
-      mode: isPersistentSessionActive ? 'party' : 'solo',
+      sessionMode: isPersistentSessionActive ? 'party' : 'solo',
       boardLayout,
     });
   }, [nextClimb, viewOnlyMode, setCurrentClimbQueueItem, boardDetails, isPersistentSessionActive]);
@@ -323,12 +318,7 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
     track('Queue Navigation', {
       direction: 'previous',
       method: 'swipeQueueBar',
-      boardLayout,
-    });
-    track('Wall Advance', {
-      source: 'bar_swipe',
-      direction: 'previous',
-      mode: isPersistentSessionActive ? 'party' : 'solo',
+      sessionMode: isPersistentSessionActive ? 'party' : 'solo',
       boardLayout,
     });
   }, [previousClimb, viewOnlyMode, setCurrentClimbQueueItem, boardDetails, isPersistentSessionActive]);
@@ -586,11 +576,7 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
     // opens in browse mode on the wall climb; the bar's ON WALL chip stays
     // visible behind it so wall-climb identity is never hidden.
     dispatchOpenPlayDrawer();
-    track('Play Drawer Opened', {
-      boardLayout: boardDetails.layout_name || '',
-      source: 'bar_tap',
-    });
-  }, [currentClimb, viewOnlyMode, boardDetails.layout_name]);
+  }, [currentClimb, viewOnlyMode]);
 
   // Transition style shared by current and peek text
   const getTextTransitionStyle = () => {

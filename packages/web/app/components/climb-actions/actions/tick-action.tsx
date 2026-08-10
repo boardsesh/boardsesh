@@ -16,6 +16,7 @@ import { useOptionalBoardProvider, BoardProvider } from '../../board-provider/bo
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { LogAscentForm } from '../../logbook/logascent-form';
 import { track } from '@/app/lib/analytics';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { constructClimbInfoUrl } from '@/app/lib/url-utils';
 import { openExternalUrl } from '@/app/lib/open-external-url';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -95,9 +96,14 @@ export function TickAction({
       e?.stopPropagation();
       e?.preventDefault();
 
-      track('Tick Button Clicked', {
+      // Web's old `Tick Button Clicked` fired here, on OPEN — the same moment
+      // mobile reports as Quick Tick Opened, under a different name. Unified so
+      // one funnel covers both platforms: open → Tick Logged / Quick Tick Failed.
+      track(SHARED_EVENTS.QuickTickOpened, {
+        climbUuid: climb.uuid,
         boardLayout: boardDetails.layout_name || '',
         existingAscentCount: badgeCount,
+        source: 'climb_actions',
       });
 
       if (onTickAction) {

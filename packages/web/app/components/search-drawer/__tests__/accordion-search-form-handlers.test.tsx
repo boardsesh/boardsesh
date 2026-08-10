@@ -310,57 +310,6 @@ describe('AccordionSearchForm — quality filter controls', () => {
       expect(mockUpdateFilters.mock.calls.at(-1)?.[0]).toEqual({ minGrade: 24, maxGrade: 24 });
     });
 
-    it('fires "Grade Filter Changed" analytics with single-grade properties on a one-tap collapse', () => {
-      render(<AccordionSearchForm boardDetails={boardDetails} />);
-      tapChip('V6');
-      expect(mockTrack).toHaveBeenCalledWith('Grade Filter Changed', {
-        filter_kind: 'single',
-        min_grade_id: 22,
-        max_grade_id: 22,
-        range_size: 1,
-        previous_filter_kind: 'any',
-        previous_min_grade_id: null,
-        previous_max_grade_id: null,
-        extended_range_within_window: null,
-        board_name: 'kilter',
-      });
-    });
-
-    it('fires "Grade Filter Changed" with filter_kind="range" + extended_range_within_window=true when extending within window', () => {
-      mockUISearchParams = { ...DEFAULT_SEARCH_PARAMS, minGrade: 22, maxGrade: 22 };
-      render(<AccordionSearchForm boardDetails={boardDetails} />);
-      tapChip('V11');
-      // V6..V11 spans difficulty_ids 22..28 → indices 12..18 in Kilter → 7 grades.
-      expect(mockTrack).toHaveBeenCalledWith('Grade Filter Changed', {
-        filter_kind: 'range',
-        min_grade_id: 22,
-        max_grade_id: 28,
-        range_size: 7,
-        previous_filter_kind: 'single',
-        previous_min_grade_id: 22,
-        previous_max_grade_id: 22,
-        extended_range_within_window: true,
-        board_name: 'kilter',
-      });
-    });
-
-    it('fires "Grade Filter Changed" with filter_kind="any" + previous_filter_kind="range" on clear', () => {
-      mockUISearchParams = { ...DEFAULT_SEARCH_PARAMS, minGrade: 22, maxGrade: 28 };
-      render(<AccordionSearchForm boardDetails={boardDetails} />);
-      tapChip('Any');
-      expect(mockTrack).toHaveBeenCalledWith('Grade Filter Changed', {
-        filter_kind: 'any',
-        min_grade_id: null,
-        max_grade_id: null,
-        range_size: null,
-        previous_filter_kind: 'range',
-        previous_min_grade_id: 22,
-        previous_max_grade_id: 28,
-        extended_range_within_window: null,
-        board_name: 'kilter',
-      });
-    });
-
     it('does not persist a "last used grade" — the URL params already capture the range', () => {
       render(<AccordionSearchForm boardDetails={boardDetails} />);
       tapChip('V6');

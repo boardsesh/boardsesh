@@ -1,18 +1,9 @@
 import { useCallback } from 'react';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
-import { track } from '../../lib/analytics';
 import { derivePlayDrawerLightbulbPressAction } from '../play-drawer/lightbulb-control';
 import { useBoardConnectionState } from './use-board-connection-state';
 
-type LightbulbControlSource = 'lightbulb_toolbar' | 'lightbulb_drawer';
-
 type UseLightbulbControlOptions = {
-  /** Where the tap originated, for the connect analytics event. */
-  source: LightbulbControlSource;
-  /** Board layout key for analytics (the drawer has it; the toolbar doesn't). */
-  boardLayout?: string;
-  /** Climb the bulb is acting on, for analytics. Null when none is in view. */
-  climbUuid?: string | null;
   /**
    * Opens the BLE controls sheet (Re-light / Turn off all lights / Disconnect).
    * Wired to the returned `onLongPress` so every lightbulb shares one gesture
@@ -60,10 +51,10 @@ export type LightbulbControl = {
  * controls and board-presence controls are always present under the tab tree.
  */
 export function useLightbulbControl(options: UseLightbulbControlOptions): LightbulbControl {
-  const { source, boardLayout, climbUuid, onOpenControls } = options;
+  const { onOpenControls } = options;
   // Ownership/lit derivation is shared with the Live Activity bridge via this
   // hook so the in-app bulb and the lock-screen bulb can never disagree.
-  const { bluetooth, lit, localConnected, pending, sessionId } = useBoardConnectionState();
+  const { bluetooth, lit, localConnected, pending } = useBoardConnectionState();
 
   const onPress = useCallback(() => {
     if (!bluetooth) return;
@@ -84,12 +75,9 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     // auto-pushes the displayed climb on connect, which reports to board presence
     // and makes this device the holder; on disconnect the bluetooth provider
     // fires the release itself, so we don't report here.
-    track('Board Lightbulb Connect', {
-      source,
-      mode: sessionId !== null ? 'party' : 'solo',
-      boardLayout: boardLayout ?? null,
-      climbUuid: climbUuid ?? null,
-    });
+    // The connect ATTEMPT is not tracked — Bluetooth Connection Success / Failed
+    // record the outcome a few hundred ms later, which is the question the BLE
+    // health dashboard actually asks.
     bluetooth.armUndoWallChangeToast();
     // Reconnect straight to the same board — by serial (Aurora) or device id
     // (MoonBoard). With neither remembered, the adapter opens the picker.
@@ -99,7 +87,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
       bluetooth.reconnectSerialForCurrentBoard ?? undefined,
       bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined,
     );
-  }, [bluetooth, source, sessionId, boardLayout, climbUuid]);
+  }, [bluetooth]);
 
   const onLongPress = useCallback(() => {
     // Long-press is a power-user shortcut into the controls sheet; only meaningful

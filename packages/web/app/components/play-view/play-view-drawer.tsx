@@ -295,11 +295,11 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     (item: ClimbQueueItem, method: 'swipePlayViewDrawer' | 'playViewDrawer', direction: 'next' | 'previous') => {
       setDrawerDisplayedItem?.(null);
       setCurrentClimbQueueItem(item);
-      track('Queue Navigation', { direction, method, mode: 'broadcast' });
-      track('Wall Advance', {
-        source: method === 'swipePlayViewDrawer' ? 'drawer_swipe' : 'drawer_button',
+      track('Queue Navigation', {
         direction,
-        mode: isPersistentSessionActive ? 'party' : 'solo',
+        method,
+        mode: 'broadcast',
+        sessionMode: isPersistentSessionActive ? 'party' : 'solo',
         boardLayout: boardDetails.layout_name ?? '',
       });
     },

@@ -29,7 +29,7 @@ export type UseTickSaveOptions = {
   /** Explicit ascent type. When provided, overrides the inferred status logic. */
   ascentType?: TickStatus;
   /** Human-readable grade label (e.g. "V5") resolved by the caller from its own
-   * loaded grades list, for the Quick Tick Saved analytics event. */
+   * loaded grades list, for the Tick Logged analytics event. */
   gradeName?: string;
   onSave: () => void;
   onError?: () => void;
@@ -163,22 +163,21 @@ export function useTickSave(options: UseTickSaveOptions): {
         ...(presenceBoardId !== null ? { boardId: presenceBoardId } : {}),
       })
         .then(() => {
-          track('Quick Tick Saved', {
-            boardLayout: targetBoard.layout_name || '',
-            status,
-            attemptCount,
-            hasQuality: quality !== null,
-            hasDifficulty: difficulty !== undefined,
-            difficulty: difficulty ?? null,
-            grade: gradeName ?? null,
-            hasComment: comment.length > 0,
-          });
+          // One event per committed tick. This used to fire Quick Tick Saved and
+          // TickLogged back to back with the same climb/status; TickLogged is the
+          // canonical cross-platform join event, so it absorbed the other's payload.
           track(SHARED_EVENTS.TickLogged, {
             climbUuid: climb.uuid,
             boardLayout: targetBoard.layout_name || '',
             status,
             platform: 'web',
             surface: 'web_quick_modal',
+            attemptCount,
+            hasQuality: quality !== null,
+            hasDifficulty: difficulty !== undefined,
+            difficulty: difficulty ?? null,
+            grade: gradeName ?? null,
+            hasComment: comment.length > 0,
           });
           void clearTickDraft(climb.uuid, Number(targetAngle));
           saving.current = false;

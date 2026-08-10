@@ -50,7 +50,7 @@ export function BoardControlIndicator({
   const { open: openBoardControls } = useBleControlSheet();
   // Shared connect/disconnect path so analytics + undo-arming match the drawer +
   // toolbar lightbulbs: connectedByMe → disconnect, disconnected → connect.
-  const { onPress: lightbulbPress } = useLightbulbControl({ source: 'lightbulb_toolbar' });
+  const { onPress: lightbulbPress } = useLightbulbControl({});
   const { openPlay } = useAccessoryClimbTap();
 
   const handlePress = useCallback(() => {

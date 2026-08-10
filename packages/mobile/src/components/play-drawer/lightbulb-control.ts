@@ -86,7 +86,3 @@ export function deriveLightbulbLit(args: {
 }): boolean {
   return deriveBoardConnection(args) !== 'disconnected';
 }
-
-export function buildPlayDrawerBoardLayout(args: { boardName: string; layoutId: number; sizeId: number }): string {
-  return `${args.boardName}:${args.layoutId}:${args.sizeId}`;
-}

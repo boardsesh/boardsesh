@@ -69,7 +69,6 @@ import { getBoardRenderData } from '../../lib/board-details';
 import { hapticSuccess } from '../../lib/haptics';
 import { usePlayDrawerWakeLock } from './use-play-drawer-wake-lock';
 import { resolveFavoriteRollback } from './favorite-rollback';
-import { buildPlayDrawerBoardLayout } from './lightbulb-control';
 import { getViewOnlyPreviewNavigationTarget } from './play-drawer-navigation';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { track } from '../../lib/analytics';
@@ -352,11 +351,6 @@ export function PlayDrawer({
 
   usePlayDrawerWakeLock(isSheetOpen);
 
-  const boardLayout = useMemo(
-    () => buildPlayDrawerBoardLayout({ boardName, layoutId, sizeId }),
-    [boardName, layoutId, sizeId],
-  );
-
   const boardRenderData = useMemo(() => {
     const parsedSetIds = setIds.split(',').map(Number);
     return getBoardRenderData({
@@ -394,11 +388,7 @@ export function PlayDrawer({
     localConnected: bluetoothConnected,
     pending: lightbulbPending,
     onPress: handleLightbulb,
-  } = useLightbulbControl({
-    source: 'lightbulb_drawer',
-    boardLayout,
-    climbUuid: displayedClimb?.uuid ?? null,
-  });
+  } = useLightbulbControl({});
   const navigationSuggestionSource = drawerPreviewSuggestionSource ?? playlistSuggestionSource;
   const navigationState = useMemo(
     () => computeNavigationStateWithSuggestions(queue, displayedQueueItem, navigationSuggestionSource),

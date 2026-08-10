@@ -155,7 +155,15 @@ export function trackLiveActivityWidgetNavigationAttributionGap(
   });
 }
 
+// Only deliveries that actually went wrong are captured. Every push used to fire
+// one of these — 26.6k events across 191 users in a 30-day window, of which 34
+// carried a failure, and a third were `source: 'heartbeat'` keep-alives. Nothing
+// read the clean rows: no insight, dashboard, or alert referenced this event.
+// The failure/stale rate is the question this event exists to answer, so the
+// denominator lives in the APNs logs rather than in PostHog's event budget.
 export function trackLiveActivityPushDelivery(event: LiveActivityPushDeliveryEvent): void {
+  if (event.failedCount === 0 && event.staleCount === 0) return;
+
   captureBackendEvent('Live Activity Push Delivery', {
     distinctId: event.userId,
     properties: {

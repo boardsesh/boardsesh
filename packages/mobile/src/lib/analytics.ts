@@ -2,9 +2,14 @@ import type { PostHog } from 'posthog-react-native';
 import { createAnalytics } from '@boardsesh/analytics';
 import { getPostHogClient, registerAppSuperProperties } from './posthog-client';
 
+// `sendEvent: false` suppresses the SDK's `$feature_flag_called` capture. Verified
+// in @posthog/core 1.46.1 (shared by posthog-react-native and posthog-js-lite):
+// `_getFeatureFlagResult` gates the capture on it, and both `getFeatureFlag` and
+// `isFeatureEnabled` forward it. Flag VALUES are unaffected.
+type FeatureFlagReadOptions = { sendEvent?: boolean };
 type PosthogFeatureFlagClient = {
-  getFeatureFlag?: (key: string) => unknown;
-  isFeatureEnabled?: (key: string) => unknown;
+  getFeatureFlag?: (key: string, options?: FeatureFlagReadOptions) => unknown;
+  isFeatureEnabled?: (key: string, options?: FeatureFlagReadOptions) => unknown;
   reloadFeatureFlags?: () => unknown;
   onFeatureFlags?: (callback: () => void) => unknown;
 };
@@ -71,6 +76,15 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   return typeof thenValue === 'function';
 }
 
+// FeatureFlagsProvider re-reads the WHOLE flag catalog on every flags-changed
+// tick, so leaving exposure events on cost ~173k events / 30 days across mobile +
+// web — 13% of the project's entire volume — for a signal nothing consumed: the
+// project runs no experiments, and the only insights referencing
+// `$feature_flag_called` are PostHog's auto-generated "<flag> Usage" boilerplate.
+// Drop the option at a specific call site if that flag ever needs real exposure
+// analysis (an experiment reads these events to assign variants to outcomes).
+const READ_WITHOUT_EXPOSURE_EVENT: FeatureFlagReadOptions = { sendEvent: false };
+
 export function readPosthogFeatureFlags(keys: readonly string[]): Record<string, boolean> {
   const posthog = getClient();
   if (!posthog) return {};
@@ -80,9 +94,9 @@ export function readPosthogFeatureFlags(keys: readonly string[]): Record<string,
   for (const key of keys) {
     let rawFlagValue: unknown;
     if (typeof featureFlagClient.getFeatureFlag === 'function') {
-      rawFlagValue = featureFlagClient.getFeatureFlag(key);
+      rawFlagValue = featureFlagClient.getFeatureFlag(key, READ_WITHOUT_EXPOSURE_EVENT);
     } else if (typeof featureFlagClient.isFeatureEnabled === 'function') {
-      rawFlagValue = featureFlagClient.isFeatureEnabled(key);
+      rawFlagValue = featureFlagClient.isFeatureEnabled(key, READ_WITHOUT_EXPOSURE_EVENT);
     }
     const flagValue = coerceFeatureFlagBoolean(rawFlagValue);
     if (flagValue !== undefined) {
