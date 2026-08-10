@@ -15,6 +15,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- The lightbulb now spins while Boardsesh writes a climb to your wall, so you know your tap landed. ([#4156](https://github.com/boardsesh/boardsesh/pull/4156))
 - Logging climbs offline no longer goes quiet for the rest of the session when the app starts up mid-cleanup. Offline storage now recovers on its own instead of staying switched off until you restart. ([#4121](https://github.com/boardsesh/boardsesh/pull/4121))
   Closes #4104
 - Fixed the play drawer on Android opening to an empty purple screen — your climb, the board, and the ([#4210](https://github.com/boardsesh/boardsesh/pull/4210))

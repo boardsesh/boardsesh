@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-10T20:36:09.183Z",
+  "generatedAt": "2026-08-10T20:51:30.672Z",
   "entries": [
+    {
+      "prNumber": 4156,
+      "category": "fixed",
+      "title": "The lightbulb now spins while Boardsesh writes a climb to your wall, so you know your tap landed.",
+      "mergedAt": "2026-08-10T20:47:28Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4156"
+    },
     {
       "prNumber": 4121,
       "category": "fixed",
