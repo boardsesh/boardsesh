@@ -112,6 +112,12 @@ describe('getListPageCacheTTL', () => {
       ['showOnlyCompleted', '1'],
       ['onlyDrafts', 'true'],
       ['onlyDrafts', '1'],
+      ['onlyRatedByMe', 'true'],
+      ['onlyRatedByMe', '1'],
+      // Numeric param — a flag-only 'true'/'1' test reads this as absent and
+      // would let personalized HTML share the anonymous CDN entry for 24h.
+      ['minUserRating', '4'],
+      ['minUserRating', '1'],
     ])('skips cache for %s=%s (legacy format)', (param, value) => {
       expect(getListPageCacheTTL(LEGACY_LIST, sp({ [param]: value }))).toBeNull();
     });
@@ -139,7 +145,20 @@ describe('getListPageCacheTTL', () => {
       ['showOnlyCompleted', '0'],
       ['onlyDrafts', 'false'],
       ['onlyDrafts', '0'],
+      ['onlyRatedByMe', 'false'],
+      ['minUserRating', '0'],
+      ['minUserRating', ''],
     ])('caches for %s=%s', (param, value) => {
+      expect(getListPageCacheTTL(LEGACY_LIST, sp({ [param]: value }))).toBe(TTL_24H);
+    });
+
+    // Per-type parsing, not "any non-empty value is user-specific": a crawler
+    // appending junk must not turn every list page into a CDN miss.
+    it.each([
+      ['onlyDrafts', 'x'],
+      ['hideAttempted', 'yes'],
+      ['minUserRating', 'abc'],
+    ])('caches for junk value %s=%s instead of bypassing the CDN', (param, value) => {
       expect(getListPageCacheTTL(LEGACY_LIST, sp({ [param]: value }))).toBe(TTL_24H);
     });
   });

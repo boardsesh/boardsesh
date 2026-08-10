@@ -142,6 +142,11 @@ export type SearchRequest = {
   hideCompleted: boolean;
   showOnlyAttempted: boolean;
   showOnlyCompleted: boolean;
+  // Personal rating filters. Optional and never parsed out of the URL — the
+  // controls are mobile-only (see #3122) — but present so the shared
+  // USER_SPECIFIC_SEARCH_PARAMS list stays assignable to this shape.
+  minUserRating?: number;
+  onlyRatedByMe?: boolean;
   onlyDrafts: boolean;
   projectsOnly: boolean;
   // Climb-type filter (defaults: boulders=true, routes=false). Both true → no
