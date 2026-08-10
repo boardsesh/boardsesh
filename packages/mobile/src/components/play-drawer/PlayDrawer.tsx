@@ -992,6 +992,7 @@ export function PlayDrawer({
                         lightbulbActive={lightbulbActive}
                         lightbulbConnected={bluetoothConnected}
                         lightbulbPending={lightbulbPending}
+                        autoDisconnectWarning={bluetooth?.autoDisconnectWarning ?? false}
                         lightbulbLongPressEnabled={bluetoothConnected}
                         showLightbulb={bluetooth !== null}
                         // The on-wall banner owns the driver's face in the header

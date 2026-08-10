@@ -493,6 +493,26 @@
     "cancel": "Annuler",
     "connectBoard": "Connecter la board",
     "relightBoard": "Rallumer la board",
+    "autoDisconnect": {
+      "title": "Déconnexion automatique",
+      "description": "Se déconnecter de la board après la durée choisie sans nouveau bloc affiché.",
+      "enabledLabel": "Déconnexion automatique",
+      "enabledDescription": "Laisser les autres grimpeurs se connecter à l'expiration du délai.",
+      "timeoutLabel": "Déconnecter après",
+      "toggleTitle": "Déconnexion automatique",
+      "toggleSubtitle": "Déconnexion après {{timeout}} d'inactivité",
+      "toggleAccessibility": "Activer ou désactiver la déconnexion automatique",
+      "timeoutOptions": {
+        "10": "10 secondes",
+        "15": "15 secondes",
+        "30": "30 secondes",
+        "45": "45 secondes",
+        "60": "1 minute",
+        "120": "2 minutes",
+        "300": "5 minutes",
+        "600": "10 minutes"
+      }
+    },
     "turnOff": "Éteindre la board",
     "holdForControls": "Maintenir pour les commandes",
     "sendFailedTitle": "Impossible d'allumer la board",

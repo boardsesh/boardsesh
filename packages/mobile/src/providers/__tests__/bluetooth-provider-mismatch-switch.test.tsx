@@ -90,6 +90,11 @@ const blePermissions = vi.hoisted(() => ({
 
 vi.mock('react-native', () => ({
   Alert: { alert: alert.alert },
+  AppState: { addEventListener: () => ({ remove: vi.fn() }) },
+}));
+
+vi.mock('../../settings', () => ({
+  useSetting: (key: string) => (key === 'autoDisconnectBle' ? [false, vi.fn()] : [30, vi.fn()]),
 }));
 
 vi.mock('@boardsesh/play-view', () => ({

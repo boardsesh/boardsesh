@@ -6,6 +6,7 @@ import { createElement, type ReactNode, type Ref } from 'react';
 // Capture each ListRow's title + onPress so we can fire the matching row.
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  Switch: () => null,
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 
@@ -41,6 +42,9 @@ const baseProps = {
   onReassert: vi.fn(),
   onClearLights: vi.fn(),
   onDisconnect: vi.fn(),
+  autoDisconnectEnabled: false,
+  autoDisconnectTimeoutLabel: '30 seconds',
+  onToggleAutoDisconnect: vi.fn(),
   onClose: vi.fn(),
 };
 
@@ -48,6 +52,7 @@ beforeEach(() => {
   baseProps.onReassert.mockClear();
   baseProps.onClearLights.mockClear();
   baseProps.onDisconnect.mockClear();
+  baseProps.onToggleAutoDisconnect.mockClear();
   baseProps.onClose.mockClear();
 });
 
@@ -82,6 +87,13 @@ describe('BleControlSheet', () => {
     expect(baseProps.onDisconnect).toHaveBeenCalledTimes(1);
     expect(baseProps.onClearLights).not.toHaveBeenCalled();
     expect(baseProps.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('toggles auto-disconnect once from the long-press row', () => {
+    const { getByText } = render(<BleControlSheet {...baseProps} />);
+    fireEvent.click(getByText('ble.autoDisconnect.toggleTitle'));
+    expect(baseProps.onToggleAutoDisconnect).toHaveBeenCalledTimes(1);
+    expect(baseProps.onToggleAutoDisconnect).toHaveBeenCalledWith(true);
   });
 
   it('always renders the turn-off row (every board now has a clear-all, incl. MoonBoard)', () => {

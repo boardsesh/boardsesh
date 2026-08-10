@@ -109,6 +109,11 @@ vi.mock('react-native', () => ({
   // branches on Platform.OS; 'ios' short-circuits it to null without needing a
   // PermissionsAndroid stub here.
   Platform: { OS: 'ios', Version: 0 },
+  AppState: { addEventListener: () => ({ remove: vi.fn() }) },
+}));
+
+vi.mock('../../settings', () => ({
+  useSetting: (key: string) => (key === 'autoDisconnectBle' ? [false, vi.fn()] : [30, vi.fn()]),
 }));
 
 vi.mock('@boardsesh/play-view', () => ({

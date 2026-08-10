@@ -34,6 +34,8 @@ describe('settings', () => {
   describe('getSetting', () => {
     it('returns default when no value is stored', () => {
       expect(getSetting('autoConnectBle')).toBe(true);
+      expect(getSetting('autoDisconnectBle')).toBe(false);
+      expect(getSetting('autoDisconnectTimeoutSeconds')).toBe(30);
       expect(getSetting('theme')).toBe('system');
       expect(getSetting('defaultBoardUuid')).toBeNull();
       expect(getSetting('syncEnabledBoards')).toEqual([]);

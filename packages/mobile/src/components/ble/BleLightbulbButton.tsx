@@ -31,6 +31,8 @@ type BleLightbulbButtonProps = {
    * VoiceOver reflects what tapping does, not just the filled look.
    */
   accessibilitySelected?: boolean;
+  /** Subtle visual warning that auto-disconnect is in its final ten seconds. */
+  autoDisconnectWarning?: boolean;
   scanningAccessibilityHint?: string;
   /** Hint describing the long-press action (e.g. "Hold to disconnect"). */
   longPressAccessibilityHint?: string;
@@ -53,6 +55,7 @@ export function BleLightbulbButton({
   onLongPress,
   accessibilityLabel,
   accessibilitySelected,
+  autoDisconnectWarning = false,
   scanningAccessibilityHint,
   longPressAccessibilityHint,
   haptic = 'light',
@@ -61,6 +64,7 @@ export function BleLightbulbButton({
 }: BleLightbulbButtonProps) {
   const { systemColors, brandColors } = useTheme();
   const pulseOpacity = useSharedValue(1);
+  const warningPulse = useSharedValue(0);
 
   useEffect(() => {
     if (isScanning) {
@@ -71,8 +75,19 @@ export function BleLightbulbButton({
     }
   }, [isScanning, pulseOpacity]);
 
+  useEffect(() => {
+    if (autoDisconnectWarning) {
+      warningPulse.value = withRepeat(withTiming(1, { duration: timing.slow }), -1, true);
+    } else {
+      cancelAnimation(warningPulse);
+      warningPulse.value = withTiming(0, { duration: timing.fast });
+    }
+  }, [autoDisconnectWarning, warningPulse]);
+
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: pulseOpacity.value,
+    borderWidth: warningPulse.value * 2,
+    borderColor: brandColors.warning,
   }));
 
   const handlePress = () => {

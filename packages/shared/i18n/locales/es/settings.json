@@ -493,6 +493,26 @@
     "cancel": "Cancelar",
     "connectBoard": "Conectar plafón",
     "relightBoard": "Reiluminar plafón",
+    "autoDisconnect": {
+      "title": "Desconexión automática",
+      "description": "Desconecta del plafón cuando no se ha mostrado ningún bloque durante el tiempo elegido.",
+      "enabledLabel": "Desconexión automática",
+      "enabledDescription": "Permite que otros escaladores se conecten cuando termine el temporizador.",
+      "timeoutLabel": "Desconectar después de",
+      "toggleTitle": "Desconexión automática",
+      "toggleSubtitle": "Desconectar después de {{timeout}} de inactividad",
+      "toggleAccessibility": "Activar o desactivar la desconexión automática",
+      "timeoutOptions": {
+        "10": "10 segundos",
+        "15": "15 segundos",
+        "30": "30 segundos",
+        "45": "45 segundos",
+        "60": "1 minuto",
+        "120": "2 minutos",
+        "300": "5 minutos",
+        "600": "10 minutos"
+      }
+    },
     "turnOff": "Apagar el plafón",
     "holdForControls": "Mantén pulsado para los controles",
     "sendFailedTitle": "No se pudo iluminar el plafón",
