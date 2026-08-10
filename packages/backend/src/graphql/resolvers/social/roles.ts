@@ -6,20 +6,27 @@ import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/h
 import { GrantRoleInputSchema, RevokeRoleInputSchema } from '../../../validation/schemas';
 
 /**
- * Check if a user has admin role (global or for a specific board type).
+ * Non-throwing check: does the user hold an admin role that is global or scoped
+ * to the given board type? Mirrors `requireAdmin` for callers that need a
+ * boolean rather than a throw (e.g. deciding whether to redact admin-only rows
+ * from a query result).
  */
-export async function requireAdmin(ctx: ConnectionContext, boardType?: string | null): Promise<void> {
-  requireAuthenticated(ctx);
-  const userId = ctx.userId!;
-
+export async function hasAdmin(userId: string, boardType?: string | null): Promise<boolean> {
   const roles = await db
     .select({ role: dbSchema.communityRoles.role, boardType: dbSchema.communityRoles.boardType })
     .from(dbSchema.communityRoles)
     .where(eq(dbSchema.communityRoles.userId, userId));
 
-  const isAdmin = roles.some((r) => r.role === 'admin' && (r.boardType === null || r.boardType === boardType));
+  return roles.some((entry) => entry.role === 'admin' && (entry.boardType === null || entry.boardType === boardType));
+}
 
-  if (!isAdmin) {
+/**
+ * Check if a user has admin role (global or for a specific board type).
+ */
+export async function requireAdmin(ctx: ConnectionContext, boardType?: string | null): Promise<void> {
+  requireAuthenticated(ctx);
+
+  if (!(await hasAdmin(ctx.userId!, boardType))) {
     throw new Error('Admin role required for this operation');
   }
 }

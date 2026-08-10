@@ -6,7 +6,7 @@ export type GymClaimMethod = 'domain' | 'admin';
 
 export type GymClaimStatus = 'pending' | 'approved' | 'denied' | 'expired';
 
-export type GymClaimRequestStatus = 'email_sent' | 'admin_review';
+export type GymClaimRequestStatus = 'email_sent' | 'admin_review' | 'approved';
 
 export type GymClaimDecision = 'approve' | 'deny';
 

@@ -22,6 +22,7 @@ import {
 } from '@boardsesh/gym-claim';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import LocaleLink from '@/app/components/i18n/locale-link';
 import {
   REQUEST_GYM_CLAIM,
   type RequestGymClaimMutationResponse,
@@ -56,6 +57,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
   const [error, setError] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [adminSent, setAdminSent] = useState(false);
+  const [approved, setApproved] = useState(false);
 
   const reset = useCallback(() => {
     setMode(canUseDomain ? 'domain' : 'admin');
@@ -65,6 +67,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
     setError(null);
     setSentTo(null);
     setAdminSent(false);
+    setApproved(false);
   }, [canUseDomain]);
 
   // A single GymDetail/ClaimGymDialog instance is reused across gyms, so re-init
@@ -90,6 +93,8 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
       );
       if (data.requestGymClaim.status === 'email_sent') {
         setSentTo(data.requestGymClaim.email ?? email);
+      } else if (data.requestGymClaim.status === 'approved') {
+        setApproved(true);
       } else {
         setAdminSent(true);
       }
@@ -111,10 +116,22 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
     void submit({ input: { gymUuid, claimEmail: trimmed } });
   };
 
-  const succeeded = sentTo !== null || adminSent;
+  const succeeded = sentTo !== null || adminSent || approved;
 
   let body: React.ReactNode;
-  if (sentTo) {
+  if (approved) {
+    body = (
+      <Box
+        sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5, py: 2, textAlign: 'center' }}
+      >
+        <CheckCircleOutlined color="success" sx={{ fontSize: 40 }} />
+        <DialogContentText>{t('claimGym.approved.body', { gym: gymName })}</DialogContentText>
+        <MuiButton component={LocaleLink} href={`/gym/${gymUuid}/manage`} variant="contained" sx={{ mt: 1 }}>
+          {t('claimGym.approved.manageCta')}
+        </MuiButton>
+      </Box>
+    );
+  } else if (sentTo) {
     body = (
       <Box
         sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5, py: 2, textAlign: 'center' }}

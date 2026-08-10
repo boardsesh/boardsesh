@@ -16,7 +16,8 @@
   },
   "tabs": {
     "roles": "Rôles",
-    "settings": "Paramètres"
+    "settings": "Paramètres",
+    "gyms": "Salles"
   },
   "nav": {
     "retention": "Tableau de rétention",
@@ -215,6 +216,20 @@
       "saved_one": "{{count}} paramètre enregistré",
       "saved_other": "{{count}} paramètres enregistrés",
       "saveFailed": "Impossible d'enregistrer les paramètres"
+    }
+  },
+  "gymSettings": {
+    "heading": "Paramètres des salles",
+    "autoApprove": {
+      "label": "Approuver automatiquement les revendications",
+      "description": "Confiez les salles sans propriétaire à la personne qui les revendique. Les revendications sur une salle déjà détenue vous reviennent toujours.",
+      "queueNote": "Les revendications déjà en file d'attente y restent."
+    },
+    "snackbar": {
+      "enabled": "Approbation automatique activée.",
+      "disabled": "Approbation automatique désactivée.",
+      "saveFailed": "Enregistrement impossible. Réessayez.",
+      "loadFailed": "Impossible de charger les paramètres des salles."
     }
   },
   "gymClaims": {

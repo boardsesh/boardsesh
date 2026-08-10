@@ -16,6 +16,7 @@ import { GET_MY_ROLES } from '@boardsesh/graphql/operations/proposals';
 import type { CommunityRoleAssignment } from '@boardsesh/shared-schema';
 import RoleManagement from '@/app/components/admin/role-management';
 import CommunitySettingsPanel from '@/app/components/admin/community-settings-panel';
+import GymSettingsPanel from '@/app/components/admin/gym-settings-panel';
 import LocaleLink from '@/app/components/i18n/locale-link';
 
 export default function AdminPage() {
@@ -102,11 +103,13 @@ export default function AdminPage() {
         <Tabs value={tab} onChange={(_, v) => setTab(v)}>
           <Tab label={t('tabs.roles')} sx={{ textTransform: 'none' }} />
           <Tab label={t('tabs.settings')} sx={{ textTransform: 'none' }} />
+          <Tab label={t('tabs.gyms')} sx={{ textTransform: 'none' }} />
         </Tabs>
       </Box>
 
       {tab === 0 && <RoleManagement />}
       {tab === 1 && <CommunitySettingsPanel />}
+      {tab === 2 && <GymSettingsPanel />}
     </Container>
   );
 }

@@ -279,6 +279,9 @@
         "messagePlaceholder": "Cualquier cosa que nos ayude a verificar que gestionas este gimnasio",
         "submit": "Solicitar revisión",
         "sent": "Hemos avisado a nuestro equipo. Se pondrán en contacto pronto."
+      },
+      "approved": {
+        "sent": "{{gym}} ya es tuyo."
       }
     },
     "offline": {
@@ -657,6 +660,10 @@
       "messagePlaceholder": "Cualquier cosa que nos ayude a verificar que gestionas este gimnasio",
       "submit": "Solicitar revisión",
       "sent": "Hemos avisado a nuestro equipo. Se pondrán en contacto pronto."
+    },
+    "approved": {
+      "body": "{{gym}} es tuyo. Configúralo cuando quieras.",
+      "manageCta": "Configura tu gimnasio"
     }
   },
   "claimLanding": {

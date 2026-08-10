@@ -16,7 +16,8 @@
   },
   "tabs": {
     "roles": "Rollen",
-    "settings": "Einstellungen"
+    "settings": "Einstellungen",
+    "gyms": "Hallen"
   },
   "nav": {
     "retention": "Retention-Dashboard",
@@ -215,6 +216,20 @@
       "saved_one": "{{count}} Einstellung gespeichert",
       "saved_other": "{{count}} Einstellungen gespeichert",
       "saveFailed": "Die Einstellungen ließen sich nicht speichern"
+    }
+  },
+  "gymSettings": {
+    "heading": "Hallen-Einstellungen",
+    "autoApprove": {
+      "label": "Ansprüche automatisch bestätigen",
+      "description": "Übergib Hallen ohne Besitzer direkt an die Person, die sie beansprucht. Ansprüche auf eine Halle, die schon jemandem gehört, landen weiterhin bei dir.",
+      "queueNote": "Ansprüche, die schon in der Liste stehen, bleiben dort."
+    },
+    "snackbar": {
+      "enabled": "Automatische Bestätigung ist an.",
+      "disabled": "Automatische Bestätigung ist aus.",
+      "saveFailed": "Konnte nicht gespeichert werden. Versuch es nochmal.",
+      "loadFailed": "Hallen-Einstellungen konnten nicht geladen werden."
     }
   },
   "gymClaims": {

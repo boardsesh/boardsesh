@@ -4,7 +4,22 @@ import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { SetCommunitySettingInputSchema } from '../../../validation/schemas';
-import { requireAdminOrLeader } from './roles';
+import { requireAdmin, requireAdminOrLeader, hasAdmin } from './roles';
+
+/**
+ * Settings under this prefix configure gym operations rather than climb-grade
+ * moderation, and they gate actions (`requireAdmin`) that community leaders
+ * cannot perform themselves. They are therefore admin-only to write and hidden
+ * from non-admin reads — otherwise a leader could flip `gym_claim_auto_approve`
+ * on and then claim a gym, escalating straight past the gym-claim admin gate.
+ */
+export const GYM_SETTING_PREFIX = 'gym_';
+
+export const GYM_CLAIM_AUTO_APPROVE_KEY = 'gym_claim_auto_approve';
+
+export function isGymSettingKey(key: string): boolean {
+  return key.startsWith(GYM_SETTING_PREFIX);
+}
 
 // Default community settings
 export const DEFAULTS: Record<string, string> = {
@@ -13,6 +28,8 @@ export const DEFAULTS: Record<string, string> = {
   outlier_grade_diff: '2',
   admin_vote_weight: '3',
   leader_vote_weight: '2',
+  // Off until an admin turns it on — auto-approval transfers gym ownership.
+  [GYM_CLAIM_AUTO_APPROVE_KEY]: '0',
 };
 
 /**
@@ -74,6 +91,16 @@ export async function resolveCommunitySetting(
   return DEFAULTS[key] || '0';
 }
 
+/**
+ * Is auto-approval of gym ownership claims turned on? Global-scope only — a gym
+ * claim isn't tied to a climb or a board type, so the cascade falls straight
+ * through to the global row and then the (off) default.
+ */
+export async function gymClaimAutoApproveEnabled(): Promise<boolean> {
+  const value = await resolveCommunitySetting(GYM_CLAIM_AUTO_APPROVE_KEY);
+  return value === '1' || value === 'true';
+}
+
 export const socialCommunitySettingsQueries = {
   communitySettings: async (
     _: unknown,
@@ -87,7 +114,11 @@ export const socialCommunitySettingsQueries = {
       .from(dbSchema.communitySettings)
       .where(and(eq(dbSchema.communitySettings.scope, scope), eq(dbSchema.communitySettings.scopeKey, scopeKey)));
 
-    return settings.map((s) => ({
+    // Gym settings are admin-only config; don't leak them (e.g. whether claim
+    // auto-approval is live) to every signed-in user reading this query.
+    const visible = (await hasAdmin(ctx.userId!)) ? settings : settings.filter((row) => !isGymSettingKey(row.key));
+
+    return visible.map((s) => ({
       id: s.id,
       scope: s.scope,
       scopeKey: s.scopeKey,
@@ -102,11 +133,21 @@ export const socialCommunitySettingsQueries = {
 
 export const socialCommunitySettingsMutations = {
   setCommunitySettings: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
-    await requireAdminOrLeader(ctx);
-    await applyRateLimit(ctx, 10, 'setCommunitySettings');
+    requireAuthenticated(ctx);
 
+    // Validate before the role check so the gate can branch on the key. Gym
+    // settings need full admin: they gate actions a community leader can't
+    // perform, so letting a leader write them would be an escalation.
     const validated = validateInput(SetCommunitySettingInputSchema, input, 'input');
     const { scope, scopeKey, key, value } = validated;
+
+    if (isGymSettingKey(key)) {
+      await requireAdmin(ctx);
+    } else {
+      await requireAdminOrLeader(ctx);
+    }
+    await applyRateLimit(ctx, 10, 'setCommunitySettings');
+
     const userId = ctx.userId!;
 
     // UPSERT

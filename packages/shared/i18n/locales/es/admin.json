@@ -16,7 +16,8 @@
   },
   "tabs": {
     "roles": "Roles",
-    "settings": "Ajustes"
+    "settings": "Ajustes",
+    "gyms": "Gimnasios"
   },
   "roles": {
     "heading": "Roles de la comunidad",
@@ -115,6 +116,20 @@
       "saved_one": "Se guardó {{count}} ajuste",
       "saved_other": "Se guardaron {{count}} ajustes",
       "saveFailed": "No se pudieron guardar los ajustes"
+    }
+  },
+  "gymSettings": {
+    "heading": "Ajustes de gimnasios",
+    "autoApprove": {
+      "label": "Aprobar reclamaciones automáticamente",
+      "description": "Entrega los gimnasios sin dueño a quien los reclame. Las reclamaciones sobre un gimnasio que ya tiene dueño te siguen llegando a ti.",
+      "queueNote": "Las reclamaciones que ya están en la cola se quedan ahí."
+    },
+    "snackbar": {
+      "enabled": "Aprobación automática activada.",
+      "disabled": "Aprobación automática desactivada.",
+      "saveFailed": "No se pudo guardar. Inténtalo de nuevo.",
+      "loadFailed": "No se pudieron cargar los ajustes de gimnasios."
     }
   },
   "nav": {
