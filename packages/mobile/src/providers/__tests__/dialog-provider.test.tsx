@@ -12,14 +12,16 @@ const alertMock = vi.hoisted(() => ({
   calls: [] as Array<{ title: string; message?: string; buttons: AlertButton[]; onDismiss?: () => void }>,
 }));
 
-// The provider needs Alert + Platform from react-native; mock both (Platform.OS is
-// controllable because the Paper dialog is Android-Material-only — iOS uses Alert).
+// The provider needs Alert + Platform + StyleSheet from react-native; mock them
+// (Platform.OS is controllable because the Paper dialog is Android-Material-only
+// — iOS uses Alert).
 vi.mock('react-native', () => ({
   Platform: {
     get OS() {
       return ctrl.os;
     },
   },
+  StyleSheet: { create: (sheet: Record<string, unknown>) => sheet },
   Alert: {
     alert: (
       title: string,
@@ -52,13 +54,27 @@ vi.mock('../theme-provider', () => ({
   useTheme: () => ({ variant: ctrl.variant, m3: { error: '#B00020' } }),
 }));
 
-import { DialogProvider, useConfirm } from '../dialog-provider';
+import { DialogProvider, useChoose, useConfirm, type ChooseOptions } from '../dialog-provider';
 
 let confirmFn: ReturnType<typeof useConfirm>;
+let chooseFn: ReturnType<typeof useChoose>;
 function Consumer() {
   confirmFn = useConfirm();
+  chooseFn = useChoose();
   return null;
 }
+
+type CrossBoardValue = 'add' | 'switch' | 'cancel';
+const CROSS_BOARD: ChooseOptions<CrossBoardValue> = {
+  title: 'Climb from another board',
+  message: 'This one is set on Tension.',
+  options: [
+    { value: 'add', label: 'Add anyway' },
+    { value: 'switch', label: 'Switch board' },
+    { value: 'cancel', label: 'Cancel', cancel: true },
+  ],
+  cancelValue: 'cancel',
+};
 
 function setup() {
   return render(createElement(DialogProvider, null, createElement(Consumer)));
@@ -191,5 +207,91 @@ describe('useConfirm — Liquid Glass (native Alert)', () => {
     });
     act(() => alertMock.calls[1].onDismiss?.());
     await expect(dismissed).resolves.toBe(false);
+  });
+});
+
+describe('useChoose — three actions on Android Material (Paper Dialog)', () => {
+  it('resolves the picked action, not a boolean', async () => {
+    const { container } = setup();
+    let promise!: Promise<CrossBoardValue>;
+    act(() => {
+      promise = chooseFn(CROSS_BOARD);
+    });
+    // All three actions are rendered, in the order given.
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).toEqual([
+      'Add anyway',
+      'Switch board',
+      'Cancel',
+    ]);
+    act(() => materialButton(container, 'Switch board').click());
+    await expect(promise).resolves.toBe('switch');
+  });
+
+  it('settles three concurrent prompts each with their OWN value', async () => {
+    const { container } = setup();
+    let first!: Promise<CrossBoardValue>;
+    let second!: Promise<CrossBoardValue>;
+    let third!: Promise<CrossBoardValue>;
+    act(() => {
+      first = chooseFn({ ...CROSS_BOARD, title: 'First' });
+      second = chooseFn({ ...CROSS_BOARD, title: 'Second' });
+      third = chooseFn({ ...CROSS_BOARD, title: 'Third' });
+    });
+    act(() => materialButton(container, 'Add anyway').click());
+    await expect(first).resolves.toBe('add');
+    act(() => materialButton(container, 'Switch board').click());
+    await expect(second).resolves.toBe('switch');
+    act(() => materialButton(container, 'Cancel').click());
+    await expect(third).resolves.toBe('cancel');
+  });
+
+  it('settles once per prompt — a double-tap cannot answer the next one too', async () => {
+    const { container } = setup();
+    let first!: Promise<CrossBoardValue>;
+    let second!: Promise<CrossBoardValue>;
+    act(() => {
+      first = chooseFn({ ...CROSS_BOARD, title: 'First' });
+      second = chooseFn({ ...CROSS_BOARD, title: 'Second' });
+    });
+    const addButton = materialButton(container, 'Add anyway');
+    act(() => {
+      addButton.click();
+      addButton.click();
+    });
+    await expect(first).resolves.toBe('add');
+    // The second prompt survived the double-tap and answers independently.
+    act(() => materialButton(container, 'Switch board').click());
+    await expect(second).resolves.toBe('switch');
+  });
+});
+
+describe('useChoose — three actions on the native Alert', () => {
+  beforeEach(() => {
+    ctrl.variant = 'liquidGlass';
+  });
+
+  it('hands Alert all three buttons with cancel styled last', async () => {
+    setup();
+    let promise!: Promise<CrossBoardValue>;
+    act(() => {
+      promise = chooseFn(CROSS_BOARD);
+    });
+    expect(alertMock.calls).toHaveLength(1);
+    const { buttons } = alertMock.calls[0];
+    expect(buttons.map((button) => button.text)).toEqual(['Add anyway', 'Switch board', 'Cancel']);
+    expect(buttons[0].style).toBeUndefined();
+    expect(buttons[2].style).toBe('cancel');
+    act(() => buttons[0].onPress?.());
+    await expect(promise).resolves.toBe('add');
+  });
+
+  it('resolves cancelValue on scrim / back dismiss', async () => {
+    setup();
+    let promise!: Promise<CrossBoardValue>;
+    act(() => {
+      promise = chooseFn(CROSS_BOARD);
+    });
+    act(() => alertMock.calls[0].onDismiss?.());
+    await expect(promise).resolves.toBe('cancel');
   });
 });
