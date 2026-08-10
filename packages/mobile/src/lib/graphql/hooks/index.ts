@@ -1063,10 +1063,9 @@ export function useToggleFavorite() {
         // PRE-toggle state for 5 minutes. The drainer invalidates
         // ['favoriteStatus'] once the queued write actually lands. The cached
         // shape is the RAW GET_FAVORITES response (select runs on read).
-        queryClient.setQueryData(
-          ['favoriteStatus', variables.input.boardName, variables.input.climbUuid, variables.input.angle],
-          { favorites: favorited ? [variables.input.climbUuid] : [] },
-        );
+        queryClient.setQueryData(['favoriteStatus', variables.input.climbUuid], {
+          favorites: favorited ? [variables.input.climbUuid] : [],
+        });
 
         scheduleDrain(db, queryClient);
 
@@ -1121,7 +1120,7 @@ export function useToggleFavorite() {
       // post-landing invalidation.
       if (!('viaLocalQueue' in data)) {
         void queryClient.invalidateQueries({
-          queryKey: ['favoriteStatus', variables.input.boardName, variables.input.climbUuid, variables.input.angle],
+          queryKey: ['favoriteStatus', variables.input.climbUuid],
         });
       }
     },
@@ -1129,11 +1128,10 @@ export function useToggleFavorite() {
 }
 
 /**
- * Server-side favorite status for a single climb at the given angle. The
- * favorite key is (userId, boardName, climbUuid, angle) on the backend, so the
- * angle matters — favoriting at 40° is distinct from 25°. Disabled until a
- * `climbUuid` is supplied (and via `enabled`, so callers can gate it on a sheet
- * being open). Returns `true` when the climb is favorited at this angle.
+ * Server-side favorite status for a single climb. The favorite key is
+ * (userId, climbUuid) on the backend, so the heart follows the climb across
+ * board and angle switches. Disabled until a `climbUuid` is supplied (and via
+ * `enabled`, so callers can gate it on a sheet being open).
  *
  * The session is part of the gate, not just the caller's `enabled`. `favorites`
  * is `requireAuthenticated` server-side, so for a signed-out reader this query
@@ -1149,20 +1147,13 @@ export function useToggleFavorite() {
  * `BoardAdapterProvider` — mounted app-wide in `app/_layout.tsx` — and throws at
  * the hook rather than at query time outside one.
  */
-export function useFavoriteStatus(
-  boardName: string,
-  climbUuid: string | null,
-  angle: number,
-  options?: { enabled?: boolean },
-) {
+export function useFavoriteStatus(climbUuid: string | null, options?: { enabled?: boolean }) {
   const { isAuthenticated } = useBoardAdapter();
   return useQuery({
-    queryKey: ['favoriteStatus', boardName, climbUuid, angle],
+    queryKey: ['favoriteStatus', climbUuid],
     queryFn: () =>
       getHttpClient().request<FavoritesQueryResponse, FavoritesQueryVariables>(GET_FAVORITES, {
-        boardName,
         climbUuids: [climbUuid!],
-        angle,
       }),
     select: (data) => data.favorites.includes(climbUuid!),
     enabled: (options?.enabled ?? true) && !!climbUuid && isAuthenticated,
