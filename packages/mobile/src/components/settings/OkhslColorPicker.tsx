@@ -1,4 +1,4 @@
-import { useCallback, useId, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   PanResponder,
   StyleSheet,
@@ -23,6 +23,7 @@ const ERROR_COLOR = iosSystemColors.systemRed;
 
 const HUE_STOPS = 13;
 const SL_STOPS = 12;
+const GRADIENT_UPDATE_INTERVAL_MS = 1000 / 30;
 const DEFAULT_OKHSL: Okhsl = { h: 0, s: 0, l: 0.5 };
 
 function sampleGradient(count: number, at: (t: number) => string): { offset: number; color: string }[] {
@@ -44,23 +45,45 @@ type ChannelSliderProps = {
   ratio: number;
   stops: { offset: number; color: string }[];
   onChangeRatio: (ratio: number) => void;
+  /** Mutable epoch shared by all three sliders to invalidate stale gestures. */
+  gestureEpochRef: { current: number };
+  onDragStart: () => number;
+  onDragEnd: (gestureEpoch: number) => void;
   /** Keyboard / screen-reader step as a fraction of the full range. */
   step: number;
 };
 
-function ChannelSlider({
+type PendingSliderCoordinate = {
+  gestureGeneration: number;
+  pickerGestureEpoch: number;
+  pageX: number;
+  shouldEndGesture: boolean;
+};
+
+const ChannelSlider = memo(function ChannelSlider({
   label,
   valueText,
   accessibilityLabel,
   ratio,
   stops,
   onChangeRatio,
+  gestureEpochRef,
+  onDragStart,
+  onDragEnd,
   step,
 }: ChannelSliderProps) {
   const { systemColors } = useTheme();
   const gradientId = `okhsl-${useId().replace(/:/g, '_')}`;
   const trackRef = useRef<View>(null);
   const trackLayoutRef = useRef<{ pageLeft: number; width: number } | null>(null);
+  const mountedRef = useRef(true);
+  const gestureGenerationRef = useRef(0);
+  const activePickerGestureEpochRef = useRef(-1);
+  const finishedGestureGenerationRef = useRef(-1);
+  const layoutGenerationRef = useRef(0);
+  const measurementInFlightRef = useRef(false);
+  const pendingCoordinateRef = useRef<PendingSliderCoordinate | null>(null);
+  const measurePendingCoordinateRef = useRef<() => void>(() => undefined);
   const clamped = Math.max(0, Math.min(1, ratio));
 
   // Mirror the latest props into refs so the gesture handlers below can stay
@@ -68,6 +91,10 @@ function ChannelSlider({
   // matches the MarkerMultiplierSlider pattern + the repo's RN perf rules.
   const onChangeRatioRef = useRef(onChangeRatio);
   onChangeRatioRef.current = onChangeRatio;
+  const onDragStartRef = useRef(onDragStart);
+  onDragStartRef.current = onDragStart;
+  const onDragEndRef = useRef(onDragEnd);
+  onDragEndRef.current = onDragEnd;
   const ratioRef = useRef(clamped);
   ratioRef.current = clamped;
   const stepRef = useRef(step);
@@ -78,41 +105,169 @@ function ChannelSlider({
     onChangeRatioRef.current(Math.max(0, Math.min(1, (pageX - layout.pageLeft) / layout.width)));
   }, []);
 
-  const measureAndApply = useCallback(
-    (pageX: number) => {
-      trackRef.current?.measure((_x, _y, width, _height, pageLeft) => {
-        if (width <= 0) return;
-        const layout = { pageLeft, width };
-        trackLayoutRef.current = layout;
-        applyPageX(pageX, layout);
-      });
+  const finishGesture = useCallback(
+    (gestureGeneration: number, pickerGestureEpoch: number) => {
+      if (
+        !mountedRef.current ||
+        gestureGeneration !== gestureGenerationRef.current ||
+        pickerGestureEpoch !== gestureEpochRef.current ||
+        finishedGestureGenerationRef.current === gestureGeneration
+      ) {
+        return;
+      }
+
+      finishedGestureGenerationRef.current = gestureGeneration;
+      onDragEndRef.current(pickerGestureEpoch);
     },
-    [applyPageX],
+    [gestureEpochRef],
   );
 
-  const setFromPageX = useCallback(
-    (pageX: number) => {
-      const layout = trackLayoutRef.current;
-      if (layout) applyPageX(pageX, layout);
-      else measureAndApply(pageX);
+  const applyCoordinate = useCallback(
+    (coordinate: PendingSliderCoordinate, layout: { pageLeft: number; width: number }) => {
+      if (
+        !mountedRef.current ||
+        coordinate.gestureGeneration !== gestureGenerationRef.current ||
+        coordinate.pickerGestureEpoch !== gestureEpochRef.current ||
+        finishedGestureGenerationRef.current === coordinate.gestureGeneration
+      ) {
+        return;
+      }
+
+      applyPageX(coordinate.pageX, layout);
+      if (coordinate.shouldEndGesture) {
+        finishGesture(coordinate.gestureGeneration, coordinate.pickerGestureEpoch);
+      }
     },
-    [applyPageX, measureAndApply],
+    [applyPageX, finishGesture, gestureEpochRef],
   );
+
+  const measurePendingCoordinate = useCallback(() => {
+    const coordinate = pendingCoordinateRef.current;
+    const track = trackRef.current;
+    if (!mountedRef.current || !coordinate || !track || measurementInFlightRef.current) return;
+
+    const measuredGestureGeneration = coordinate.gestureGeneration;
+    const measuredLayoutGeneration = layoutGenerationRef.current;
+    measurementInFlightRef.current = true;
+    track.measure((_x, _y, width, _height, pageLeft) => {
+      measurementInFlightRef.current = false;
+      if (!mountedRef.current) return;
+
+      if (
+        measuredGestureGeneration !== gestureGenerationRef.current ||
+        measuredLayoutGeneration !== layoutGenerationRef.current
+      ) {
+        measurePendingCoordinateRef.current();
+        return;
+      }
+
+      const latestCoordinate = pendingCoordinateRef.current;
+      if (!latestCoordinate || latestCoordinate.gestureGeneration !== measuredGestureGeneration) {
+        measurePendingCoordinateRef.current();
+        return;
+      }
+
+      pendingCoordinateRef.current = null;
+      if (width <= 0) {
+        if (latestCoordinate.shouldEndGesture) {
+          finishGesture(latestCoordinate.gestureGeneration, latestCoordinate.pickerGestureEpoch);
+        }
+        return;
+      }
+
+      const layout = { pageLeft, width };
+      trackLayoutRef.current = layout;
+      applyCoordinate(latestCoordinate, layout);
+    });
+  }, [applyCoordinate, finishGesture]);
+  useLayoutEffect(() => {
+    // Keep the latest callback available to its own deferred measurement
+    // completions without rebuilding the gesture responder mid-drag. Install
+    // it before passive effects can deliver queued touch events on a busy frame.
+    measurePendingCoordinateRef.current = measurePendingCoordinate;
+    return () => {
+      // Layout cleanup precedes the passive mountedRef cleanup, so prevent an
+      // in-flight stale result from scheduling another measurement in that gap.
+      measurePendingCoordinateRef.current = () => undefined;
+    };
+  }, [measurePendingCoordinate]);
+
+  const requestCoordinate = useCallback(
+    (pageX: number, shouldEndGesture: boolean) => {
+      if (!mountedRef.current) return;
+
+      const gestureGeneration = gestureGenerationRef.current;
+      const pickerGestureEpoch = activePickerGestureEpochRef.current;
+      if (pickerGestureEpoch !== gestureEpochRef.current) return;
+      if (finishedGestureGenerationRef.current === gestureGeneration) return;
+
+      const pendingCoordinate = pendingCoordinateRef.current;
+      const coordinate = {
+        gestureGeneration,
+        pickerGestureEpoch,
+        pageX,
+        shouldEndGesture:
+          shouldEndGesture ||
+          (pendingCoordinate?.gestureGeneration === gestureGeneration && pendingCoordinate.shouldEndGesture),
+      };
+      const layout = trackLayoutRef.current;
+      if (layout) {
+        pendingCoordinateRef.current = null;
+        applyCoordinate(coordinate, layout);
+        return;
+      }
+
+      pendingCoordinateRef.current = coordinate;
+      measurePendingCoordinateRef.current();
+    },
+    [applyCoordinate, gestureEpochRef],
+  );
+
+  useEffect(() => {
+    // React Strict Mode replays effect cleanup + setup without recreating refs,
+    // so restore the mounted flag after its development-only cleanup pass.
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      gestureGenerationRef.current += 1;
+      activePickerGestureEpochRef.current = -1;
+      measurementInFlightRef.current = false;
+      pendingCoordinateRef.current = null;
+    };
+  }, []);
 
   const panResponder = useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: (event: GestureResponderEvent) => measureAndApply(event.nativeEvent.pageX),
-        onPanResponderMove: (_event, gestureState) => setFromPageX(gestureState.moveX),
+        onPanResponderGrant: (event: GestureResponderEvent) => {
+          if (!mountedRef.current) return;
+          gestureGenerationRef.current += 1;
+          pendingCoordinateRef.current = null;
+          activePickerGestureEpochRef.current = onDragStartRef.current();
+          requestCoordinate(event.nativeEvent.pageX, false);
+        },
+        onPanResponderMove: (_event, gestureState) => requestCoordinate(gestureState.moveX, false),
+        onPanResponderRelease: (event: GestureResponderEvent) => {
+          requestCoordinate(event.nativeEvent.pageX, true);
+        },
+        onPanResponderTerminate: (event: GestureResponderEvent) => {
+          requestCoordinate(event.nativeEvent.pageX, true);
+        },
       }),
-    [measureAndApply, setFromPageX],
+    [requestCoordinate],
   );
 
   const handleAccessibilityAction = useCallback((event: { nativeEvent: { actionName: string } }) => {
     const delta = event.nativeEvent.actionName === 'increment' ? stepRef.current : -stepRef.current;
     onChangeRatioRef.current(Math.max(0, Math.min(1, ratioRef.current + delta)));
+  }, []);
+
+  const handleTrackLayout = useCallback(() => {
+    layoutGenerationRef.current += 1;
+    trackLayoutRef.current = null;
+    measurePendingCoordinateRef.current();
   }, []);
 
   return (
@@ -135,13 +290,7 @@ function ChannelSlider({
         style={styles.sliderTouchArea}
         {...panResponder.panHandlers}
       >
-        <View
-          ref={trackRef}
-          onLayout={() => {
-            trackLayoutRef.current = null;
-          }}
-          style={styles.trackContainer}
-        >
+        <View ref={trackRef} onLayout={handleTrackLayout} style={styles.trackContainer}>
           <Svg width="100%" height={TRACK_HEIGHT} style={styles.trackSvg}>
             <Defs>
               <LinearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
@@ -173,13 +322,91 @@ function ChannelSlider({
       </View>
     </View>
   );
+});
+
+function useGradientSnapshot(initialOkhsl: Okhsl) {
+  const [gradientOkhsl, setGradientOkhsl] = useState(initialOkhsl);
+  const latestOkhslRef = useRef(initialOkhsl);
+  const gestureEpochRef = useRef(0);
+  const dragActiveRef = useRef(false);
+  const lastGradientUpdateAtRef = useRef(0);
+  const pendingGradientUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelPendingGradientUpdate = useCallback(() => {
+    if (pendingGradientUpdateRef.current === null) return;
+    clearTimeout(pendingGradientUpdateRef.current);
+    pendingGradientUpdateRef.current = null;
+  }, []);
+
+  const applyGradientSnapshot = useCallback(
+    (nextOkhsl: Okhsl) => {
+      cancelPendingGradientUpdate();
+      lastGradientUpdateAtRef.current = Date.now();
+      setGradientOkhsl(nextOkhsl);
+    },
+    [cancelPendingGradientUpdate],
+  );
+
+  const updateGradientSnapshot = useCallback(
+    (nextOkhsl: Okhsl) => {
+      latestOkhslRef.current = nextOkhsl;
+      if (!dragActiveRef.current) {
+        applyGradientSnapshot(nextOkhsl);
+        return;
+      }
+
+      const elapsedMs = Math.max(0, Date.now() - lastGradientUpdateAtRef.current);
+      if (elapsedMs >= GRADIENT_UPDATE_INTERVAL_MS) {
+        applyGradientSnapshot(nextOkhsl);
+        return;
+      }
+
+      if (pendingGradientUpdateRef.current !== null) return;
+      pendingGradientUpdateRef.current = setTimeout(() => {
+        pendingGradientUpdateRef.current = null;
+        lastGradientUpdateAtRef.current = Date.now();
+        setGradientOkhsl(latestOkhslRef.current);
+      }, GRADIENT_UPDATE_INTERVAL_MS - elapsedMs);
+    },
+    [applyGradientSnapshot],
+  );
+
+  const beginGradientDrag = useCallback(() => {
+    gestureEpochRef.current += 1;
+    cancelPendingGradientUpdate();
+    dragActiveRef.current = true;
+    lastGradientUpdateAtRef.current = Date.now();
+    setGradientOkhsl(latestOkhslRef.current);
+    return gestureEpochRef.current;
+  }, [cancelPendingGradientUpdate]);
+
+  const finishGradientDrag = useCallback(
+    (gestureEpoch: number) => {
+      if (gestureEpoch !== gestureEpochRef.current) return;
+      dragActiveRef.current = false;
+      applyGradientSnapshot(latestOkhslRef.current);
+    },
+    [applyGradientSnapshot],
+  );
+
+  useEffect(
+    () => () => {
+      gestureEpochRef.current += 1;
+      dragActiveRef.current = false;
+      cancelPendingGradientUpdate();
+    },
+    [cancelPendingGradientUpdate],
+  );
+
+  return { gradientOkhsl, gestureEpochRef, updateGradientSnapshot, beginGradientDrag, finishGradientDrag };
 }
 
 type OkhslColorPickerProps = {
   /**
    * Initial colour as #rrggbb. Read only on mount — OKHSL is the source of
    * truth thereafter, so the caller re-seeds by remounting via a React `key`
-   * (e.g. key per opened role) rather than pushing new values in.
+   * (e.g. key per opened role) rather than pushing new values in. This also
+   * makes a parent prop change during an active drag intentionally inert.
    */
   value: string;
   onChange: (hex: string) => void;
@@ -197,32 +424,57 @@ export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
   const [okhsl, setOkhsl] = useState<Okhsl>(() => hexToOkhsl(value) ?? DEFAULT_OKHSL);
+  const latestOkhslRef = useRef(okhsl);
+  const { gradientOkhsl, gestureEpochRef, updateGradientSnapshot, beginGradientDrag, finishGradientDrag } =
+    useGradientSnapshot(okhsl);
   // Show the caller's literal hex when valid (the OKHSL round-trip can be ±1 off).
   const [hexDraft, setHexDraft] = useState<string>(
     () => normalizeHexColor(value) ?? okhslToHex(hexToOkhsl(value) ?? DEFAULT_OKHSL),
   );
 
+  const applyOkhsl = useCallback(
+    (next: Okhsl) => {
+      latestOkhslRef.current = next;
+      setOkhsl(next);
+      updateGradientSnapshot(next);
+    },
+    [updateGradientSnapshot],
+  );
+
   const commit = useCallback(
     (next: Okhsl) => {
-      setOkhsl(next);
+      applyOkhsl(next);
       const hex = okhslToHex(next);
       setHexDraft(hex);
       onChange(hex);
     },
-    [onChange],
+    [applyOkhsl, onChange],
   );
 
   const lightnessStops = useMemo(
-    () => sampleGradient(SL_STOPS, (t) => okhslToHex({ h: okhsl.h, s: okhsl.s, l: t })),
-    [okhsl.h, okhsl.s],
+    () => sampleGradient(SL_STOPS, (t) => okhslToHex({ h: gradientOkhsl.h, s: gradientOkhsl.s, l: t })),
+    [gradientOkhsl.h, gradientOkhsl.s],
   );
   const saturationStops = useMemo(
-    () => sampleGradient(SL_STOPS, (t) => okhslToHex({ h: okhsl.h, s: t, l: okhsl.l })),
-    [okhsl.h, okhsl.l],
+    () => sampleGradient(SL_STOPS, (t) => okhslToHex({ h: gradientOkhsl.h, s: t, l: gradientOkhsl.l })),
+    [gradientOkhsl.h, gradientOkhsl.l],
   );
   const hueStops = useMemo(
-    () => sampleGradient(HUE_STOPS, (t) => okhslToHex({ h: t * 360, s: okhsl.s, l: okhsl.l })),
-    [okhsl.s, okhsl.l],
+    () => sampleGradient(HUE_STOPS, (t) => okhslToHex({ h: t * 360, s: gradientOkhsl.s, l: gradientOkhsl.l })),
+    [gradientOkhsl.s, gradientOkhsl.l],
+  );
+
+  const handleLightnessChange = useCallback(
+    (ratio: number) => commit({ ...latestOkhslRef.current, l: ratio }),
+    [commit],
+  );
+  const handleSaturationChange = useCallback(
+    (ratio: number) => commit({ ...latestOkhslRef.current, s: ratio }),
+    [commit],
+  );
+  const handleHueChange = useCallback(
+    (ratio: number) => commit({ ...latestOkhslRef.current, h: ratio * 360 }),
+    [commit],
   );
 
   const handleHexChange = useCallback(
@@ -232,12 +484,12 @@ export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
       if (normalized) {
         const parsed = hexToOkhsl(normalized);
         if (parsed) {
-          setOkhsl(parsed);
+          applyOkhsl(parsed);
           onChange(normalized);
         }
       }
     },
-    [onChange],
+    [applyOkhsl, onChange],
   );
 
   const hexValid = normalizeHexColor(hexDraft) !== null;
@@ -260,7 +512,10 @@ export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
         ratio={okhsl.l}
         stops={lightnessStops}
         step={0.05}
-        onChangeRatio={(ratio) => commit({ ...okhsl, l: ratio })}
+        onChangeRatio={handleLightnessChange}
+        gestureEpochRef={gestureEpochRef}
+        onDragStart={beginGradientDrag}
+        onDragEnd={finishGradientDrag}
       />
       <ChannelSlider
         label={t('mobile.more.accessibility.sliders.saturation')}
@@ -269,7 +524,10 @@ export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
         ratio={okhsl.s}
         stops={saturationStops}
         step={0.05}
-        onChangeRatio={(ratio) => commit({ ...okhsl, s: ratio })}
+        onChangeRatio={handleSaturationChange}
+        gestureEpochRef={gestureEpochRef}
+        onDragStart={beginGradientDrag}
+        onDragEnd={finishGradientDrag}
       />
       <ChannelSlider
         label={t('mobile.more.accessibility.sliders.hue')}
@@ -278,7 +536,10 @@ export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
         ratio={okhsl.h / 360}
         stops={hueStops}
         step={1 / 36}
-        onChangeRatio={(ratio) => commit({ ...okhsl, h: ratio * 360 })}
+        onChangeRatio={handleHueChange}
+        gestureEpochRef={gestureEpochRef}
+        onDragStart={beginGradientDrag}
+        onDragEnd={finishGradientDrag}
       />
       <View style={styles.hexRow}>
         <Text variant="subheadline" color={systemColors.secondaryLabel}>
