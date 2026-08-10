@@ -653,20 +653,10 @@
       "tickLabel": "encadene",
       "logAttemptAria": "Registrar intento",
       "saveTickAria": "Guardar encadene",
-      "gradeLabel": "Grado",
-      "triesLabel": "Intentos",
-      "starsLabel": "Estrellas",
-      "noteLabel": "Nota",
       "flashSaveLabel": "Flash",
       "sendSaveLabel": "Envío",
-      "logAscentAria": "Registrar {{status}}",
-      "decreaseTriesAria": "Disminuir intentos",
-      "increaseTriesAria": "Aumentar intentos",
       "starRating_one": "{{count}} estrella",
-      "starRating_other": "{{count}} estrellas",
-      "dateLabel": "Fecha",
-      "timeLabel": "Hora",
-      "futureTimeAdjusted": "Hora futura ajustada a ahora."
+      "starRating_other": "{{count}} estrellas"
     }
   },
   "mobileDetail": {

@@ -148,6 +148,12 @@ type Theme = {
    * PlatformColor. Mirrors `systemColors` but is always hex/rgba.
    */
   chartColors: ChartColors;
+  /**
+   * Opaque ground for form sheets (`surface="solid"`). MUST be a plain string —
+   * @expo/ui reads `backgroundStyle.backgroundColor` with `typeof === 'string'`
+   * and silently drops a PlatformColor, handing you glass back with no error.
+   */
+  sheetSurface: string;
   /** Section-caption treatment (uppercase / opacity / letter-spacing), per variant. */
   sectionCaption: SectionCaption;
   /** Per-variant feature / content-layout flags (what shows, and where), resolved once. */
@@ -354,6 +360,10 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   const theme = useMemo<Theme>(() => {
     const resolvedSystemColors = resolveSystemColors(colorScheme, variant);
     const resolvedBrandColors = resolveBrandColors(colorScheme);
+    // Hoisted because `sheetSurface` reads from the same resolved palette: the
+    // chart palette is the app's plain-string mirror of systemColors, which is
+    // exactly what @expo/ui's sheet background needs.
+    const resolvedChartColors = resolveChartColors(variant, colorScheme);
 
     return {
       colorScheme,
@@ -383,7 +393,8 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
         brandSuccess: resolvedBrandColors.success,
         brandPrimary: resolvedBrandColors.primary,
       }),
-      chartColors: resolveChartColors(variant, colorScheme),
+      chartColors: resolvedChartColors,
+      sheetSurface: resolvedChartColors.secondaryBackground,
       sectionCaption: sectionCaptionByVariant[variant],
       features: variantFeatures[variant],
     };

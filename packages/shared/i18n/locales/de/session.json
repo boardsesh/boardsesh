@@ -653,20 +653,10 @@
       "tickLabel": "Eintrag",
       "logAttemptAria": "Versuch eintragen",
       "saveTickAria": "Eintrag speichern",
-      "gradeLabel": "Grad",
-      "triesLabel": "Versuche",
-      "starsLabel": "Sterne",
-      "noteLabel": "Notiz",
       "flashSaveLabel": "Flash",
       "sendSaveLabel": "Getoppt",
-      "logAscentAria": "{{status}} eintragen",
-      "decreaseTriesAria": "Versuche verringern",
-      "increaseTriesAria": "Versuche erhöhen",
       "starRating_one": "{{count}} Stern",
-      "starRating_other": "{{count}} Sterne",
-      "dateLabel": "Datum",
-      "timeLabel": "Zeit",
-      "futureTimeAdjusted": "Zeit in der Zukunft auf jetzt gesetzt."
+      "starRating_other": "{{count}} Sterne"
     }
   },
   "mobileDetail": {

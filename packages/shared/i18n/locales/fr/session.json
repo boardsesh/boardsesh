@@ -653,20 +653,10 @@
       "tickLabel": "tick",
       "logAttemptAria": "Enregistrer un essai",
       "saveTickAria": "Enregistrer le tick",
-      "gradeLabel": "Cotation",
-      "triesLabel": "Essais",
-      "starsLabel": "Étoiles",
-      "noteLabel": "Note",
       "flashSaveLabel": "Flash",
       "sendSaveLabel": "Enchaîné",
-      "logAscentAria": "Enregistrer {{status}}",
-      "decreaseTriesAria": "Diminuer les essais",
-      "increaseTriesAria": "Augmenter les essais",
       "starRating_one": "{{count}} étoile",
-      "starRating_other": "{{count}} étoiles",
-      "dateLabel": "Date",
-      "timeLabel": "Heure",
-      "futureTimeAdjusted": "Heure future ajustée à maintenant."
+      "starRating_other": "{{count}} étoiles"
     }
   },
   "mobileDetail": {

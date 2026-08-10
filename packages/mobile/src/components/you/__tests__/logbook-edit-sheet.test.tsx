@@ -31,7 +31,9 @@ const dateTimePickerAndroid = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
+    createElement('div', { 'data-testid': testID }, children),
+  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Pressable: ({
     children,
     onPress,
@@ -45,7 +47,14 @@ vi.mock('react-native', () => ({
   }) => createElement('button', { 'aria-label': accessibilityLabel, disabled, onClick: () => onPress?.() }, children),
   Alert: { alert: vi.fn() },
   Platform: nativePlatform,
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    create: (styles: Record<string, unknown>) => styles,
+    flatten: (style: unknown) => style,
+    hairlineWidth: 1,
+  },
+  // The tick rows read the OS text scale to decide whether to stack. Held at 1
+  // so the two-seam layout is what these tests exercise.
+  useWindowDimensions: () => ({ width: 393, height: 852, scale: 3, fontScale: 1 }),
 }));
 
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
@@ -53,13 +62,16 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     value,
     onChangeText,
     placeholder,
+    accessibilityLabel,
   }: {
     value: string;
     onChangeText: (value: string) => void;
     placeholder?: string;
+    accessibilityLabel?: string;
   }) =>
     createElement('textarea', {
       placeholder,
+      'aria-label': accessibilityLabel,
       value,
       onChange: (event: { target: { value: string } }) => onChangeText(event.target.value),
     }),
@@ -87,8 +99,8 @@ vi.mock('../../../providers/dialog-provider', () => ({
   useConfirm: () => () => Promise.resolve(true),
 }));
 vi.mock('../../Sheet', () => ({
-  Sheet: ({ children, footer }: { children?: ReactNode; footer?: ReactNode }) =>
-    createElement('div', null, children, footer),
+  Sheet: ({ children, header, footer }: { children?: ReactNode; header?: ReactNode; footer?: ReactNode }) =>
+    createElement('div', null, header, children, footer),
 }));
 vi.mock('../../Button', () => ({
   Button: ({ title, onPress, disabled }: { title: string; onPress: () => void; disabled?: boolean }) =>
@@ -98,6 +110,19 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => createElement('span') }));
+vi.mock('../../PressableSurface', () => ({
+  PressableSurface: ({
+    children,
+    onPress,
+    accessibilityLabel,
+    disabled,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+    disabled?: boolean;
+  }) => createElement('button', { 'aria-label': accessibilityLabel, disabled, onClick: () => onPress?.() }, children),
+}));
 vi.mock('../../StarRating', () => ({ StarRating: () => null }));
 vi.mock('../../SegmentedControl', () => ({
   SegmentedControl: ({
@@ -119,8 +144,12 @@ vi.mock('../../SegmentedControl', () => ({
       ),
     ),
 }));
-vi.mock('../../SectionHeader', () => ({
-  SectionHeader: ({ title }: { title: string }) => createElement('h2', null, title),
+// The tries rail's chip. Kept as a stand-in so the rail's own geometry (layout
+// measurement, snap offsets) stays out of a jsdom tree while its selection
+// behaviour still runs for real.
+vi.mock('../../grade/GradeChip', () => ({
+  GradeChip: ({ label, onPress }: { label: string; onPress: () => void }) =>
+    createElement('button', { 'data-testid': `tries-${label}`, onClick: onPress }, label),
 }));
 vi.mock('../../grade', () => ({ GradeSingleSelectRail: () => null }));
 vi.mock('@boardsesh/board-config', async (importOriginal) => {
@@ -145,22 +174,39 @@ vi.mock('../../play-drawer/AngleSlider', () => ({
     ),
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({ useGrades: () => ({ data: [] }) }));
-vi.mock('../../../lib/haptics', () => ({ hapticSuccess: vi.fn(), hapticError: vi.fn() }));
+vi.mock('../../../lib/haptics', () => ({
+  hapticSuccess: vi.fn(),
+  hapticError: vi.fn(),
+  hapticSelection: vi.fn(),
+}));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
+    colorScheme: 'light',
     systemColors: {
       fill: '#eee',
       label: '#111',
       secondaryLabel: '#666',
       tertiaryLabel: '#999',
+      separator: '#ddd',
+      secondaryBackground: '#fff',
     },
-    brandColors: { primary: '#6D28D9', error: '#C81E1E' },
+    brandColors: {
+      primary: '#6D28D9',
+      primaryFill: '#6D28D9',
+      onPrimary: '#FFFFFF',
+      warning: '#B45309',
+      error: '#C81E1E',
+    },
+    spacing: new Proxy({}, { get: () => 0 }),
+    borderRadius: new Proxy({}, { get: () => 0 }),
+    opacity: { disabled: 0.4 },
+    textStyles: { subheadline: {} },
   }),
 }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => toast }));
 vi.mock('../../../theme/tokens', () => ({
   spacing: new Proxy({}, { get: () => 0 }),
-  borderRadius: { lg: 12 },
+  borderRadius: new Proxy({}, { get: () => 0 }),
 }));
 
 import { LogbookEditSheet } from '../LogbookEditSheet';
@@ -208,6 +254,10 @@ function renderSheet(ascent = makeAscent()) {
   );
 }
 
+function save() {
+  fireEvent.click(screen.getByText('mobile.tick.save'));
+}
+
 function firstUpdateVariables(): { uuid: string; input: UpdateTickInput } {
   const [variables] = mutations.updateMutate.mock.calls[0] as [{ uuid: string; input: UpdateTickInput }, unknown];
   return variables;
@@ -230,8 +280,8 @@ beforeEach(() => {
   pickerSelections.date = new Date(2026, 0, 9, 0, 0, 0, 0);
   pickerSelections.time = new Date(2026, 0, 9, 20, 15, 0, 0);
   dateTimePickerAndroid.open.mockClear();
-  mutations.updateMutate.mockClear();
-  mutations.deleteMutate.mockClear();
+  mutations.updateMutate.mockReset();
+  mutations.deleteMutate.mockReset();
   toast.showToast.mockClear();
 });
 
@@ -245,7 +295,7 @@ describe('LogbookEditSheet', () => {
 
     fireEvent.click(screen.getByTestId('picker-date'));
     fireEvent.click(screen.getByTestId('picker-time'));
-    fireEvent.click(screen.getByText('mobile.logbook.save'));
+    save();
 
     const variables = firstUpdateVariables();
 
@@ -257,9 +307,9 @@ describe('LogbookEditSheet', () => {
     nativePlatform.OS = 'android';
     renderSheet();
 
-    fireEvent.click(screen.getByLabelText('mobile.logbook.dateLabel'));
-    fireEvent.click(screen.getByLabelText('mobile.logbook.timeLabel'));
-    fireEvent.click(screen.getByText('mobile.logbook.save'));
+    fireEvent.click(screen.getByLabelText('mobile.tick.dateLabel'));
+    fireEvent.click(screen.getByLabelText('mobile.tick.timeLabel'));
+    save();
 
     expect(dateTimePickerAndroid.open).toHaveBeenCalledWith(expect.objectContaining({ mode: 'date' }));
     expect(dateTimePickerAndroid.open).toHaveBeenCalledWith(expect.objectContaining({ mode: 'time' }));
@@ -281,10 +331,10 @@ describe('LogbookEditSheet', () => {
       }),
     );
 
-    fireEvent.click(screen.getByLabelText('mobile.logbook.timeLabel'));
+    fireEvent.click(screen.getByLabelText('mobile.tick.timeLabel'));
 
-    expect(toast.showToast).toHaveBeenCalledWith('mobile.logbook.futureTimeAdjusted', 'warning');
-    fireEvent.click(screen.getByText('mobile.logbook.save'));
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.tick.futureTimeAdjusted', 'warning');
+    save();
 
     const variables = firstUpdateVariables();
 
@@ -303,10 +353,10 @@ describe('LogbookEditSheet', () => {
       }),
     );
 
-    fireEvent.click(screen.getByLabelText('mobile.logbook.dateLabel'));
+    fireEvent.click(screen.getByLabelText('mobile.tick.dateLabel'));
 
-    expect(toast.showToast).toHaveBeenCalledWith('mobile.logbook.futureTimeAdjusted', 'warning');
-    fireEvent.click(screen.getByText('mobile.logbook.save'));
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.tick.futureTimeAdjusted', 'warning');
+    save();
 
     const variables = firstUpdateVariables();
 
@@ -325,8 +375,8 @@ describe('LogbookEditSheet', () => {
 
     fireEvent.click(screen.getByTestId('picker-time'));
 
-    expect(toast.showToast).toHaveBeenCalledWith('mobile.logbook.futureTimeAdjusted', 'warning');
-    fireEvent.click(screen.getByText('mobile.logbook.save'));
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.tick.futureTimeAdjusted', 'warning');
+    save();
 
     const variables = firstUpdateVariables();
 
@@ -363,7 +413,7 @@ describe('LogbookEditSheet', () => {
   it('does not send climbed-at when the date and time were not edited', () => {
     renderSheet();
 
-    fireEvent.click(screen.getByText('mobile.logbook.save'));
+    save();
 
     const variables = firstUpdateVariables();
 
@@ -371,14 +421,18 @@ describe('LogbookEditSheet', () => {
     expect(variables.input).not.toHaveProperty('climbedAt');
   });
 
-  it('hides tries and saves one attempt when flash is selected', () => {
+  it('keeps the tries row mounted but inert when flash is selected', () => {
     renderSheet(makeAscent({ status: 'send', attemptCount: 5 }));
-    expect(screen.getByText('mobile.logbook.triesLabel')).toBeTruthy();
+    expect(screen.getByText('mobile.tick.triesLabel')).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('status-flash'));
 
-    expect(screen.queryByText('mobile.logbook.triesLabel')).toBeNull();
-    fireEvent.click(screen.getByText('mobile.logbook.save'));
+    // The row stays put — ~92pt no longer disappears from under the climber's
+    // finger — and the flash-is-one-try clamp is shown rather than implied.
+    expect(screen.getByText('mobile.tick.triesLabel')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('tries-7'));
+
+    save();
 
     expect(mutations.updateMutate).toHaveBeenCalledWith(
       {
@@ -392,12 +446,21 @@ describe('LogbookEditSheet', () => {
     );
   });
 
+  it('sets any visible try count in a single tap', () => {
+    renderSheet(makeAscent({ status: 'send', attemptCount: 3 }));
+
+    fireEvent.click(screen.getByTestId('tries-9'));
+    save();
+
+    expect(firstUpdateVariables().input.attemptCount).toBe(9);
+  });
+
   it('preserves attempts when flash selection is reverted before saving', () => {
     renderSheet(makeAscent({ status: 'send', attemptCount: 5 }));
 
     fireEvent.click(screen.getByTestId('status-flash'));
     fireEvent.click(screen.getByTestId('status-send'));
-    fireEvent.click(screen.getByText('mobile.logbook.save'));
+    save();
 
     expect(mutations.updateMutate).toHaveBeenCalledWith(
       {
@@ -414,7 +477,7 @@ describe('LogbookEditSheet', () => {
   it('includes the ascent angle unchanged in the save payload', () => {
     renderSheet(makeAscent({ angle: 40 }));
 
-    fireEvent.click(screen.getByText('mobile.logbook.save'));
+    save();
 
     const variables = firstUpdateVariables();
     expect(variables.input.angle).toBe(40);
@@ -424,7 +487,7 @@ describe('LogbookEditSheet', () => {
     renderSheet(makeAscent({ angle: 40 }));
 
     fireEvent.click(screen.getByTestId('angle-option-25'));
-    fireEvent.click(screen.getByText('mobile.logbook.save'));
+    save();
 
     const variables = firstUpdateVariables();
     expect(variables.input.angle).toBe(25);
@@ -435,7 +498,7 @@ describe('LogbookEditSheet', () => {
     const secondAscent = makeAscent({ uuid: 'tick-2', angle: 25 });
     const { rerender } = renderSheet(firstAscent);
 
-    fireEvent.click(screen.getByText('mobile.logbook.save'));
+    save();
     expect(firstUpdateVariables().input.angle).toBe(40);
     mutations.updateMutate.mockClear();
 
@@ -447,7 +510,30 @@ describe('LogbookEditSheet', () => {
       }),
     );
 
-    fireEvent.click(screen.getByText('mobile.logbook.save'));
+    save();
     expect(firstUpdateVariables().input.angle).toBe(25);
+  });
+
+  it('prints a failed save in the action bar instead of a toast the sheet covers', () => {
+    mutations.updateMutate.mockImplementation((_variables: unknown, handlers: { onError: () => void }) =>
+      handlers.onError(),
+    );
+    renderSheet();
+
+    save();
+
+    expect(screen.getByText('mobile.logbook.saveError')).toBeTruthy();
+    expect(toast.showToast).not.toHaveBeenCalled();
+  });
+
+  it('prints a failed delete in the same slot', async () => {
+    mutations.deleteMutate.mockImplementation((_uuid: string, handlers: { onError: () => void }) => handlers.onError());
+    renderSheet();
+
+    fireEvent.click(screen.getByLabelText('mobile.tick.deleteRow'));
+    await Promise.resolve();
+
+    expect(await screen.findByText('mobile.logbook.deleteError')).toBeTruthy();
+    expect(toast.showToast).not.toHaveBeenCalled();
   });
 });

@@ -77,6 +77,7 @@ export function useLogAscentAction(climb: Climb) {
     });
     openLogAscent({
       climbUuid: climb.uuid,
+      climbName: climb.name,
       boardName: boardConfig.boardName,
       angle,
       isMirror,

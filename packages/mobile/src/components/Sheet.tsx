@@ -54,6 +54,21 @@ type SheetProps = {
   // resize itself when the keyboard opens (emulator-verified), so Android needs
   // the JS-side padding just like iOS.
   footer?: ReactNode;
+  /** Sheet ground. `glass` (default) keeps the native material — right for chrome
+   * and short pickers. `solid` paints an opaque `theme.sheetSurface` so a
+   * data-entry form isn't read through the content behind it.
+   *
+   * The colour MUST stay a plain string: @expo/ui's `extractBackgroundColor`
+   * checks `typeof color === 'string'` and silently falls back to glass for a
+   * `PlatformColor`, with no error. */
+  surface?: 'glass' | 'solid';
+  /** Pinned-footer ground. `plate` (default) keeps the raised
+   * `secondaryBackground` plate. `flush` makes it transparent so it reads as part
+   * of a `surface="solid"` sheet; the hairline top border stays either way. */
+  footerSurface?: 'plate' | 'flush';
+  /** Optional fixed header, rendered above the body and outside its scroll — so a
+   * title and close affordance stay put while the body scrolls. */
+  header?: ReactNode;
 };
 
 export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
@@ -70,12 +85,17 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
     scrollable = false,
     contentContainerStyle,
     footer,
+    surface = 'glass',
+    footerSurface = 'plate',
+    header,
   },
   ref,
 ) {
-  const { systemColors, sheet: sheetChrome } = useTheme();
+  const { systemColors, sheet: sheetChrome, sheetSurface } = useTheme();
   const windowInsetBottom = useWindowBottomInset();
   const snapPoints = useMemo(() => customSnapPoints ?? ['50%', '90%'], [customSnapPoints]);
+  // Plain string, never a PlatformColor — see the `surface` prop doc.
+  const solidBackground = useMemo(() => ({ backgroundColor: sheetSurface }), [sheetSurface]);
 
   const sheetRef = useRef<BottomSheetMethods>(null);
   const managed = useManagedSheet({
@@ -114,23 +134,30 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
     [managed],
   );
 
+  // A fixed header or a pinned footer both need a wrapper around the body, and
+  // the native sheet takes exactly one in-flow child — so either one puts us in
+  // the KeyboardAvoidingView branch below.
+  const hasChrome = Boolean(footer || header);
   // The sheet's single child must carry the iOS detent bound (see
-  // useSheetColumnStyle): with a footer the KeyboardAvoidingView below is that
-  // child and the body just fills it (flex:1); without one the body itself is
-  // the child, so it carries the bound directly — otherwise an iOS scrollable
-  // sheet sizes to its content and anything past the detent is clipped and
-  // unreachable instead of scrolling.
-  const bodyStyle = footer ? styles.content : columnStyle;
+  // useSheetColumnStyle): with a header or footer the KeyboardAvoidingView below
+  // is that child and the body just fills it (flex:1); without either the body
+  // itself is the child, so it carries the bound directly — otherwise an iOS
+  // scrollable sheet sizes to its content and anything past the detent is
+  // clipped and unreachable instead of scrolling.
+  const bodyStyle = hasChrome ? styles.content : columnStyle;
   // Without a pinned footer the body sits against the bottom edge, so it has to
   // clear the Android edge-to-edge navigation bar itself — the native sheet does
   // not pad content for it. With a footer the body scrolls above the footer, which
   // already carries the window inset. The WINDOW inset, not the mount point's:
   // a sheet docks over the tab bar, and a tab-mounted sheet's local inset folds
   // in iOS 26 tab chrome the sheet covers (see use-window-bottom-inset).
+  // Keyed on the FOOTER alone, not `hasChrome`: a header sits above the body and
+  // leaves it against the bottom edge, so a header-only sheet still owes the
+  // window inset.
   const bodyContentContainerStyle = useSheetBodyContentStyle(Boolean(footer), contentContainerStyle, windowInsetBottom);
   // #3922: measure whichever view actually carries columnStyle — the body when
-  // there is no footer, the KeyboardAvoidingView below when there is.
-  const bodyLayout = footer ? undefined : onColumnLayout;
+  // there is no header or footer, the KeyboardAvoidingView below when there is.
+  const bodyLayout = hasChrome ? undefined : onColumnLayout;
   const body = scrollable ? (
     <BottomSheetScrollView
       style={bodyStyle}
@@ -142,7 +169,7 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
     >
       {children}
     </BottomSheetScrollView>
-  ) : enableDynamicSizing && !footer && Platform.OS === 'web' ? (
+  ) : enableDynamicSizing && !hasChrome && Platform.OS === 'web' ? (
     // Web + dynamic sizing only, where the column is never bounded and the
     // #3922 probe stays idle — so there is nothing to measure here.
     <BottomSheetView style={[bodyStyle, bodyContentContainerStyle]}>{children}</BottomSheetView>
@@ -157,7 +184,7 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
       style={[
         styles.footer,
         {
-          backgroundColor: systemColors.secondaryBackground,
+          backgroundColor: footerSurface === 'flush' ? 'transparent' : systemColors.secondaryBackground,
           borderTopColor: systemColors.separator,
           paddingBottom: windowInsetBottom + spacing[3],
         },
@@ -177,6 +204,7 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
       onChange={handleChange}
       onFullyDismissed={managed.onFullyDismissed}
       handleIndicatorStyle={sheetChrome.handleStyle}
+      backgroundStyle={surface === 'solid' ? solidBackground : undefined}
       style={styles.sheet}
     >
       {/* #3922 instrumentation, dev builds only. The sentinel is in-flow but
@@ -185,13 +213,14 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
           branches — the "single flex child" rule below still holds. */}
       {sentinelProps ? <View {...sentinelProps} /> : null}
       {probeProps ? <View {...probeProps} /> : null}
-      {footer ? (
+      {hasChrome ? (
         // The single flex child of the native sheet: bound to the detent height on
         // iOS (see useSheetColumnStyle) so the pinned footer can't fall off-screen
         // (#3330); flex:1 on Android / fitToContents. `padding` on both platforms:
         // the Android Compose dialog window does not resize for the keyboard, so
         // without it the keyboard covers the footer's input (emulator-verified).
         <KeyboardAvoidingView style={columnStyle} behavior="padding" onLayout={onColumnLayout}>
+          {header}
           {body}
           {footerBar}
         </KeyboardAvoidingView>

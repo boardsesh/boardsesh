@@ -34,7 +34,7 @@ export const ClimbedAtField = React.memo(function ClimbedAtField({
   onFutureAdjusted,
   accessibilityLabel,
 }: ClimbedAtFieldProps) {
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors, colorScheme } = useTheme();
 
   const commitPicked = useCallback(
     (picked: Date) => {
@@ -62,12 +62,19 @@ export const ClimbedAtField = React.memo(function ClimbedAtField({
   }, [value, mode, maximumDate, commitPicked]);
 
   if (Platform.OS === 'ios') {
+    // The compact UIKit picker keeps its own fill and ~8pt corner — these two
+    // props are the only levers we have on it. `accentColor` takes a plain hex
+    // (which brandColors.primary is) and pulls the picker's selection off Apple
+    // blue onto the sheet's violet; `themeVariant` stops it resolving light
+    // chrome when the app is running its own dark theme on a light-mode phone.
     return (
       <DateTimePicker
         value={value}
         mode={mode}
         display="compact"
         maximumDate={maximumDate}
+        accentColor={brandColors.primary}
+        themeVariant={colorScheme}
         accessibilityLabel={accessibilityLabel}
         onChange={handleIosChange}
       />
@@ -90,12 +97,17 @@ export const ClimbedAtField = React.memo(function ClimbedAtField({
 });
 
 const styles = StyleSheet.create({
+  // A pill that hugs its content, so the Android trigger reads as the same kind
+  // of object as the chips on the rows above and below it, instead of a full-
+  // width box with its label and glyph pushed to opposite edges.
   trigger: {
     minHeight: 44,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.full,
     paddingHorizontal: spacing[3],
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+    gap: spacing[2],
   },
 });

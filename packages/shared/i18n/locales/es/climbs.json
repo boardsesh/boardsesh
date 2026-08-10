@@ -639,9 +639,32 @@
       "notFound": "Bloque no encontrado"
     },
     "logAscent": {
-      "attempt": "Intento",
       "errorMessage": "No se pudo guardar tu ascenso. Inténtalo de nuevo.",
       "savedToast": "Encadene guardado"
+    },
+    "tick": {
+      "dateLabel": "Fecha",
+      "timeLabel": "Hora",
+      "gradeLabel": "Grado",
+      "starsLabel": "Estrellas",
+      "triesLabel": "Intentos",
+      "noteLabel": "Nota",
+      "notePlaceholder": "¿Cómo fue?",
+      "noteAria": "Nota de la marca",
+      "statusLabel": "Estado",
+      "angleLabel": "Ángulo",
+      "attempt": "Intento",
+      "save": "Guardar",
+      "deleteRow": "Eliminar este ascenso",
+      "closeAria": "Cerrar",
+      "futureTimeAdjusted": "Hora futura ajustada a ahora.",
+      "consensusMeta": "{{grade}} de consenso · {{angle}}°",
+      "angleMeta": "{{angle}}°",
+      "fallbackTitle": "Registrar ascenso",
+      "logAscentAria": "Registrar {{status}}",
+      "setTriesAria_one": "Marcar {{count}} intento",
+      "setTriesAria_other": "Marcar {{count}} intentos",
+      "moreTriesAria": "Un intento más"
     },
     "filter": {
       "climbType": "Tipo",

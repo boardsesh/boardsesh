@@ -40,6 +40,9 @@ export function makeThemeMock(overrides: Partial<Theme> = {}): Theme {
   const systemColors =
     overrides.systemColors ??
     (variant === 'material' ? materialSurfaces[colorScheme] : androidFallbackColors[colorScheme]);
+  // Hoisted for the same reason as the provider: `sheetSurface` is the plain-string
+  // ground the @expo/ui sheet background needs, taken from the chart palette.
+  const resolvedChartColors = resolveChartColors(variant, colorScheme);
 
   const base: Theme = {
     colorScheme,
@@ -69,7 +72,8 @@ export function makeThemeMock(overrides: Partial<Theme> = {}): Theme {
       brandSuccess: brand.success,
       brandPrimary: brand.primary,
     }),
-    chartColors: resolveChartColors(variant, colorScheme),
+    chartColors: resolvedChartColors,
+    sheetSurface: resolvedChartColors.secondaryBackground,
     sectionCaption: sectionCaptionByVariant[variant],
     features: variantFeatures[variant],
   };

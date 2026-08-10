@@ -98,6 +98,7 @@ export function useQueueSheetHandlers({
       if (!storedBoardConfig) return;
       openLogAscent({
         climbUuid: item.climb.uuid,
+        climbName: item.climb.name,
         boardName: storedBoardConfig.boardName,
         angle: storedBoardConfig.angle,
         isMirror: item.climb.mirrored === true,
