@@ -17,7 +17,7 @@ const cards = vi.hoisted(() => ({
 // itself is covered in `src/lib/__tests__/beta-shelf-collapse.test.tsx`.
 const collapse = vi.hoisted(() => ({ expanded: true }));
 vi.mock('../../../lib/beta-shelf-collapse', () => ({
-  useBetaShelfCollapse: () => ({ expanded: collapse.expanded, toggle: vi.fn() }),
+  useBetaShelfCollapse: () => ({ expanded: collapse.expanded, toggle: vi.fn(), loaded: true }),
 }));
 
 vi.mock('react-native', () => ({

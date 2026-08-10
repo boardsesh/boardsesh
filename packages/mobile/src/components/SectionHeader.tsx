@@ -104,7 +104,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[1],
-    flexShrink: 1,
+    // Takes the row's spare width so the whole heading toggles, not just the
+    // glyphs. Any action ("See all") still keeps its own space on the right.
+    flex: 1,
   },
   action: {
     flexDirection: 'row',

@@ -20,7 +20,7 @@ vi.mock('react-native', () => ({
 vi.mock('expo-router', () => ({ router: { push: vi.fn() } }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../lib/beta-shelf-collapse', () => ({
-  useBetaShelfCollapse: () => ({ expanded: collapse.expanded, toggle: vi.fn() }),
+  useBetaShelfCollapse: () => ({ expanded: collapse.expanded, toggle: vi.fn(), loaded: true }),
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useUserBetaLinks: () => {
