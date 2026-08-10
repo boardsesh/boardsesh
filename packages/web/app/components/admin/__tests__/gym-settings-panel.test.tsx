@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import React from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { createTestQueryClient } from '@/app/test-utils/test-providers';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import GymSettingsPanel from '../gym-settings-panel';
 
@@ -26,6 +28,14 @@ const AUTO_APPROVE_KEY = 'gym_claim_auto_approve';
 /** The panel's only control. MUI's Switch renders its input with role="switch". */
 const getSwitch = () => screen.getByRole('switch') as HTMLInputElement;
 
+/** The panel reads and writes through React Query, so it needs a client. */
+const renderPanel = () =>
+  render(
+    <QueryClientProvider client={createTestQueryClient()}>
+      <GymSettingsPanel />
+    </QueryClientProvider>,
+  );
+
 beforeEach(() => {
   mockRequest.mockReset();
 });
@@ -34,7 +44,7 @@ describe('GymSettingsPanel', () => {
   it('reads the saved value — an unset setting shows as off', async () => {
     mockRequest.mockResolvedValueOnce({ communitySettings: [] });
 
-    render(<GymSettingsPanel />);
+    renderPanel();
 
     await waitFor(() => expect(getSwitch().disabled).toBe(false));
     expect(getSwitch().checked).toBe(false);
@@ -45,21 +55,22 @@ describe('GymSettingsPanel', () => {
       communitySettings: [{ id: '1', scope: 'global', scopeKey: '', key: AUTO_APPROVE_KEY, value: '1' }],
     });
 
-    render(<GymSettingsPanel />);
+    renderPanel();
 
     await waitFor(() => expect(getSwitch().checked).toBe(true));
   });
 
   it('writes the global setting when toggled on', async () => {
     mockRequest.mockResolvedValueOnce({ communitySettings: [] });
-    render(<GymSettingsPanel />);
+    renderPanel();
     await waitFor(() => expect(getSwitch().disabled).toBe(false));
 
     mockRequest.mockResolvedValueOnce({ setCommunitySettings: { id: '1', key: AUTO_APPROVE_KEY, value: '1' } });
     fireEvent.click(getSwitch());
 
+    // onSettled refetches, so the write is not necessarily the last call.
     await waitFor(() =>
-      expect(mockRequest).toHaveBeenLastCalledWith(expect.anything(), {
+      expect(mockRequest).toHaveBeenCalledWith(expect.anything(), {
         input: { scope: 'global', scopeKey: '', key: AUTO_APPROVE_KEY, value: '1' },
       }),
     );
@@ -70,14 +81,15 @@ describe('GymSettingsPanel', () => {
     mockRequest.mockResolvedValueOnce({
       communitySettings: [{ id: '1', scope: 'global', scopeKey: '', key: AUTO_APPROVE_KEY, value: '1' }],
     });
-    render(<GymSettingsPanel />);
+    renderPanel();
     await waitFor(() => expect(getSwitch().checked).toBe(true));
 
     mockRequest.mockResolvedValueOnce({ setCommunitySettings: { id: '1', key: AUTO_APPROVE_KEY, value: '0' } });
     fireEvent.click(getSwitch());
 
+    // onSettled refetches, so the write is not necessarily the last call.
     await waitFor(() =>
-      expect(mockRequest).toHaveBeenLastCalledWith(expect.anything(), {
+      expect(mockRequest).toHaveBeenCalledWith(expect.anything(), {
         input: { scope: 'global', scopeKey: '', key: AUTO_APPROVE_KEY, value: '0' },
       }),
     );
@@ -87,7 +99,7 @@ describe('GymSettingsPanel', () => {
   it('surfaces a load failure and leaves the switch disabled', async () => {
     mockRequest.mockRejectedValueOnce(new Error('network down'));
 
-    render(<GymSettingsPanel />);
+    renderPanel();
 
     await screen.findByText("Couldn't load gym settings.");
     // Never let a failed read look like "auto-approval is off" — the switch
@@ -97,7 +109,7 @@ describe('GymSettingsPanel', () => {
 
   it('rolls the toggle back when the write is rejected', async () => {
     mockRequest.mockResolvedValueOnce({ communitySettings: [] });
-    render(<GymSettingsPanel />);
+    renderPanel();
     await waitFor(() => expect(getSwitch().disabled).toBe(false));
 
     // A community leader hitting the admin-only gate looks exactly like this.

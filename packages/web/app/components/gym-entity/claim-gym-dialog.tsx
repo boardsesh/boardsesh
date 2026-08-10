@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
@@ -47,6 +49,8 @@ function graphqlErrorMessage(error: unknown): string | null {
 export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClose }: ClaimGymDialogProps) {
   const { t } = useTranslation('boards');
   const { token } = useWsAuthToken();
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const domain = extractDomain(website);
   const canUseDomain = isClaimableDomain(website);
 
@@ -95,6 +99,13 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
         setSentTo(data.requestGymClaim.email ?? email);
       } else if (data.requestGymClaim.status === 'approved') {
         setApproved(true);
+        // Ownership just moved, so everything the viewer sees about this gym is
+        // stale. `canClaim` is computed server-side on the gym page, so a cache
+        // invalidation alone wouldn't clear the claim CTA — refresh the server
+        // component. `myGyms` is the one React Query key on web that this
+        // affects (there is no per-gym key here, unlike mobile).
+        router.refresh();
+        void queryClient.invalidateQueries({ queryKey: ['myGyms'] });
       } else {
         setAdminSent(true);
       }
