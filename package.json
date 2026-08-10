@@ -33,6 +33,7 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@boardsesh/text-redaction": "*",
     "@expo/cli": "^57.0.11",
     "@graphql-codegen/add": "^5.0.3",
     "@graphql-codegen/cli": "^5.0.7",
