@@ -21,10 +21,10 @@ import type { SaveTickMutationVariables } from '../lib/graphql/operations';
 
 export type SaveTickInput = SaveTickMutationVariables['input'];
 
+// Favorites are keyed by climb UUID alone — a climb is the same climb whichever
+// board config or angle you hearted it on.
 export type FavoriteInput = {
-  boardName: string;
   climbUuid: string;
-  angle: number;
 };
 
 function scheduleDrain(
@@ -177,11 +177,11 @@ export async function enqueueTickOutboxOnly(
 }
 
 export function favoriteAddKey(input: FavoriteInput): string {
-  return `add:user_favorites:${input.boardName}:${input.climbUuid}:${input.angle}`;
+  return `add:user_favorites:${input.climbUuid}`;
 }
 
 export function favoriteRemoveKey(input: FavoriteInput): string {
-  return `del:user_favorites:${input.boardName}:${input.climbUuid}:${input.angle}`;
+  return `del:user_favorites:${input.climbUuid}`;
 }
 
 export async function addFavoriteLocal(db: OfflineDatabase, input: FavoriteInput): Promise<void> {
@@ -196,10 +196,12 @@ export async function addFavoriteLocal(db: OfflineDatabase, input: FavoriteInput
     // Same owner stamp as writeTickLocal — user_favorites has a user_id column
     // the dual-write never filled.
     const ownerUserId = await getLocalUserId(txn);
+    // board_name/angle are vestigial and left NULL; the server re-populates them
+    // on the next pull for as long as it still emits them.
     await txn.runAsync(
-      `INSERT OR IGNORE INTO user_favorites (board_name, climb_uuid, angle, user_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [input.boardName, input.climbUuid, input.angle, ownerUserId, now, now],
+      `INSERT OR IGNORE INTO user_favorites (climb_uuid, user_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?)`,
+      [input.climbUuid, ownerUserId, now, now],
     );
 
     await txn.runAsync(`DELETE FROM pending_mutations WHERE idempotency_key = ? AND status = 'pending'`, [
@@ -236,11 +238,7 @@ export async function removeFavoriteLocal(db: OfflineDatabase, input: FavoriteIn
   const enqueueOutcome = newEnqueueOutcome();
 
   await runLocalWrite(db, 'user_favorites', 'delete', async (txn) => {
-    await txn.runAsync(`DELETE FROM user_favorites WHERE board_name = ? AND climb_uuid = ? AND angle = ?`, [
-      input.boardName,
-      input.climbUuid,
-      input.angle,
-    ]);
+    await txn.runAsync(`DELETE FROM user_favorites WHERE climb_uuid = ?`, [input.climbUuid]);
 
     // Cancel a not-yet-drained add so an offline add->remove nets to no server
     // call — but ALWAYS enqueue the remove: the drainer doesn't mark rows

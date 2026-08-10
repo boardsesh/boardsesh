@@ -368,13 +368,14 @@ export function PlayDrawer({
   // (workout builder, logbook/cross-board, the peer-driven accessory wall climb).
   const isPreview = drawerPreviewItem != null;
 
-  // Real favorite status for the heart, keyed on (boardName, climbUuid, angle).
+  // Real favorite status for the heart, keyed on climbUuid alone — the heart
+  // survives a board or angle switch.
   // Gated on the sheet being open so it doesn't fetch while the drawer is closed.
   // The displayed state is the local optimistic override when set, otherwise the
   // server's truth — so the heart reflects whether the climb is already a favorite
   // on open, and a single tap can't invert reality (the previous always-false
   // local state silently un-favorited already-favorited climbs).
-  const { data: serverFavorited } = useFavoriteStatus(boardName, displayedClimb?.uuid ?? null, angle, {
+  const { data: serverFavorited } = useFavoriteStatus(displayedClimb?.uuid ?? null, {
     enabled: isSheetOpen,
   });
   const isFavorited = favoriteOverride ?? serverFavorited ?? false;
@@ -620,11 +621,7 @@ export function PlayDrawer({
     });
     toggleFavoriteMutate(
       {
-        input: {
-          boardName,
-          climbUuid: displayedClimb.uuid,
-          angle,
-        },
+        input: { climbUuid: displayedClimb.uuid },
         currentlyFavorited: isFavorited,
       },
       {
@@ -645,7 +642,7 @@ export function PlayDrawer({
         },
       },
     );
-  }, [displayedClimb, isFavorited, favoriteOverride, boardName, layoutId, angle, toggleFavoriteMutate, showToast, t]);
+  }, [displayedClimb, isFavorited, favoriteOverride, boardName, layoutId, toggleFavoriteMutate, showToast, t]);
 
   const handleLightbulbLongPress = useCallback(() => {
     if (!bluetooth?.isConnected) return;
