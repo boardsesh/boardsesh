@@ -15,7 +15,13 @@ const reportErrorMock = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/error-reporting', () => ({ reportError: reportErrorMock }));
 
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { clearUserData, getDatabaseHandle, initializeDatabase, setDatabaseHandle } from '../connection';
+import {
+  clearUserData,
+  getDatabaseHandle,
+  initializeDatabase,
+  INIT_RETRY_DELAYS_MS,
+  setDatabaseHandle,
+} from '../connection';
 import { resetDatabaseInitializationForTests } from '../testing';
 import {
   runMigrations,
@@ -169,10 +175,10 @@ describe('initializeDatabase connection PRAGMAs', () => {
 // published the handle, and never tried again — one transient collision disabled
 // offline storage for the whole session. These drive that exact interleaving.
 describe('initializeDatabase lock contention (#4104)', () => {
-  // Mirrors INIT_RETRY_DELAYS_MS[0] in connection.ts — the gap before the first retry.
-  // Advancing the fake clock by exactly this much runs attempt 2 and nothing else; if
-  // the production backoff changes, these tests fail loudly instead of flaking.
-  const FIRST_RETRY_DELAY_MS = 500;
+  // The real gap before the first retry, read from the production backoff rather than
+  // mirrored as a literal. Advancing the fake clock by exactly this much runs attempt 2
+  // and nothing else, and it keeps tracking if the backoff is ever retuned.
+  const FIRST_RETRY_DELAY_MS = INIT_RETRY_DELAYS_MS[0];
 
   let dbDir: string;
   let realDb: TestSqliteDb;
