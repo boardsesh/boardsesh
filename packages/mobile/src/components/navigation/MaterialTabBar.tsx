@@ -94,8 +94,16 @@ export function MaterialTabBar({ state, descriptors, navigation, insets }: Botto
                   style={[
                     styles.badge,
                     // Badge dot is a FILL (no text on it) → static light brand
-                    // success, not the scheme-lifted theme value.
-                    { backgroundColor: staticBrandColors.success, borderColor: systemColors.elevatedSurface },
+                    // colors, not the scheme-lifted theme value. Record's screen
+                    // options set the 'live' sentinel string (not display text) to
+                    // distinguish a live session from a merely-connected board;
+                    // any other truthy badge value (e.g. 'connected') keeps the
+                    // existing green.
+                    {
+                      backgroundColor:
+                        options.tabBarBadge === 'live' ? staticBrandColors.live : staticBrandColors.success,
+                      borderColor: systemColors.elevatedSurface,
+                    },
                   ]}
                 />
               ) : null}
