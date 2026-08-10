@@ -137,10 +137,10 @@ export type AddCommentInput = {
 
 /** Input for adding a climb to favorites (idempotent, sync-safe). */
 export type AddFavoriteInput = {
-  /** Board angle */
-  angle: Scalars['Int']['input'];
-  /** Board type */
-  boardName: Scalars['String']['input'];
+  /** Deprecated, ignored. Kept so binaries that shipped before favorites were re-keyed keep validating. */
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  /** Deprecated, ignored. Kept so binaries that shipped before favorites were re-keyed keep validating. */
+  boardName?: InputMaybe<Scalars['String']['input']>;
   /** Climb UUID to favorite */
   climbUuid: Scalars['String']['input'];
 };
@@ -1869,15 +1869,6 @@ export type EventsReplayResponse = {
   currentSequence: Scalars['Int']['output'];
   /** List of events since the requested sequence */
   events: Array<QueueEvent>;
-};
-
-/** Count of favorited climbs per board. */
-export type FavoritesCount = {
-  __typename?: 'FavoritesCount';
-  /** Board name */
-  boardName: Scalars['String']['output'];
-  /** Number of favorited climbs */
-  count: Scalars['Int']['output'];
 };
 
 /**
@@ -4862,7 +4853,9 @@ export type Query = {
   eventsReplay: EventsReplayResponse;
   /**
    * Check which climbs from a list are favorited by the current user.
-   * Returns array of favorited climb UUIDs.
+   * Returns array of favorited climb UUIDs. Favorites are keyed by climb UUID,
+   * so the answer is board- and angle-independent; boardName and angle are
+   * accepted and ignored so older binaries keep validating.
    */
   favorites: Array<Scalars['String']['output']>;
   /**
@@ -5194,11 +5187,6 @@ export type Query = {
   /** Get unread notification count for the current user. */
   unreadNotificationCount: Scalars['Int']['output'];
   /**
-   * Get board names where the current user has playlists or favorites.
-   * Requires authentication.
-   */
-  userActiveBoards: Array<Scalars['String']['output']>;
-  /**
    * Suggest the user's logged ascents that a shared reel caption is about, by
    * matching the caption against their whole logbook's climb names. Returns full
    * ascent rows (with board art) for the matched climbs, strongest match first.
@@ -5231,11 +5219,6 @@ export type Query = {
    * Requires authentication.
    */
   userFavoriteClimbs: PlaylistClimbsResult;
-  /**
-   * Get count of favorited climbs per board for the current user.
-   * Requires authentication.
-   */
-  userFavoritesCounts: Array<FavoritesCount>;
   /**
    * Get public ascent feed grouped by climb and day.
    * Useful for summary displays.
@@ -5459,8 +5442,8 @@ export type QueryEventsReplayArgs = {
 
 /** Root query type for all read operations. */
 export type QueryFavoritesArgs = {
-  angle: Scalars['Int']['input'];
-  boardName: Scalars['String']['input'];
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  boardName?: InputMaybe<Scalars['String']['input']>;
   climbUuids: Array<Scalars['String']['input']>;
 };
 
@@ -6063,10 +6046,10 @@ export type RemoveClimbFromPlaylistInput = {
 
 /** Input for removing a climb from favorites (idempotent, sync-safe). */
 export type RemoveFavoriteInput = {
-  /** Board angle */
-  angle: Scalars['Int']['input'];
-  /** Board type */
-  boardName: Scalars['String']['input'];
+  /** Deprecated, ignored. Kept so binaries that shipped before favorites were re-keyed keep validating. */
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  /** Deprecated, ignored. Kept so binaries that shipped before favorites were re-keyed keep validating. */
+  boardName?: InputMaybe<Scalars['String']['input']>;
   /** Climb UUID to unfavorite */
   climbUuid: Scalars['String']['input'];
 };
@@ -7503,12 +7486,15 @@ export type TickStatus =
 
 export type TimePeriod = 'all' | 'day' | 'hour' | 'month' | 'week' | 'year';
 
-/** Input for toggling a climb as favorite. */
+/**
+ * Input for toggling a climb as favorite. Favorites are keyed by climb UUID —
+ * a climb stays hearted whichever board config or angle you switch to.
+ */
 export type ToggleFavoriteInput = {
-  /** Board angle */
-  angle: Scalars['Int']['input'];
-  /** Board type */
-  boardName: Scalars['String']['input'];
+  /** Deprecated, ignored. Kept so binaries that shipped before favorites were re-keyed keep validating. */
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  /** Deprecated, ignored. Kept so binaries that shipped before favorites were re-keyed keep validating. */
+  boardName?: InputMaybe<Scalars['String']['input']>;
   /** Climb UUID to favorite/unfavorite */
   climbUuid: Scalars['String']['input'];
 };
@@ -8242,7 +8228,6 @@ export type ResolversTypes = ResolversObject<{
   EventsReplayResponse: ResolverTypeWrapper<
     Omit<EventsReplayResponse, 'events'> & { events: Array<ResolversTypes['QueueEvent']> }
   >;
-  FavoritesCount: ResolverTypeWrapper<FavoritesCount>;
   FeedbackContextInput: FeedbackContextInput;
   FindSimilarGymsInput: FindSimilarGymsInput;
   Float: ResolverTypeWrapper<Scalars['Float']['output']>;
@@ -8610,7 +8595,6 @@ export type ResolversParentTypes = ResolversObject<{
   DuplicateGymClustersInput: DuplicateGymClustersInput;
   DuplicateGymMember: DuplicateGymMember;
   EventsReplayResponse: Omit<EventsReplayResponse, 'events'> & { events: Array<ResolversParentTypes['QueueEvent']> };
-  FavoritesCount: FavoritesCount;
   FeedbackContextInput: FeedbackContextInput;
   FindSimilarGymsInput: FindSimilarGymsInput;
   Float: Scalars['Float']['output'];
@@ -9807,15 +9791,6 @@ export type EventsReplayResponseResolvers<
 > = ResolversObject<{
   currentSequence?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   events?: Resolver<Array<ResolversTypes['QueueEvent']>, ParentType, ContextType>;
-  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
-}>;
-
-export type FavoritesCountResolvers<
-  ContextType = ConnectionContext,
-  ParentType extends ResolversParentTypes['FavoritesCount'] = ResolversParentTypes['FavoritesCount'],
-> = ResolversObject<{
-  boardName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  count?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -11610,7 +11585,7 @@ export type QueryResolvers<
     Array<ResolversTypes['String']>,
     ParentType,
     ContextType,
-    RequireFields<QueryFavoritesArgs, 'angle' | 'boardName' | 'climbUuids'>
+    RequireFields<QueryFavoritesArgs, 'climbUuids'>
   >;
   findSimilarGyms?: Resolver<
     Array<ResolversTypes['SimilarGym']>,
@@ -11999,7 +11974,6 @@ export type QueryResolvers<
     Partial<QueryTrendingFeedArgs>
   >;
   unreadNotificationCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
-  userActiveBoards?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
   userAscentCaptionMatches?: Resolver<
     Array<ResolversTypes['AscentFeedItem']>,
     ParentType,
@@ -12036,7 +12010,6 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryUserFavoriteClimbsArgs, 'input'>
   >;
-  userFavoritesCounts?: Resolver<Array<ResolversTypes['FavoritesCount']>, ParentType, ContextType>;
   userGroupedAscentsFeed?: Resolver<
     ResolversTypes['GroupedAscentFeedResult'],
     ParentType,
@@ -13212,7 +13185,6 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   DuplicateGymClusterConnection?: DuplicateGymClusterConnectionResolvers<ContextType>;
   DuplicateGymMember?: DuplicateGymMemberResolvers<ContextType>;
   EventsReplayResponse?: EventsReplayResponseResolvers<ContextType>;
-  FavoritesCount?: FavoritesCountResolvers<ContextType>;
   FollowConnection?: FollowConnectionResolvers<ContextType>;
   FollowingAscentFeedItem?: FollowingAscentFeedItemResolvers<ContextType>;
   FollowingAscentsFeedResult?: FollowingAscentsFeedResultResolvers<ContextType>;
