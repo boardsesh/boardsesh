@@ -101,6 +101,8 @@ describe('createAppStoreConnectJwt', () => {
 describe('redactSensitiveText re-export', () => {
   it('redacts through to the shared helper', () => {
     expect(redactSensitiveText('marco@example.com')).toContain('[redacted email]');
+    expect(redactSensitiveText('crash in /Users/marco/app')).toContain('/Users/[redacted]');
+    expect(redactSensitiveText('trace at /home/marco/app')).toContain('/home/[redacted]');
   });
 });
 
