@@ -15,7 +15,6 @@ type FavoriteButtonProps = {
   boardName: BoardName;
   climbUuid: string;
   climbName?: string;
-  angle: number;
   className?: string;
   showLabel?: boolean;
   size?: 'small' | 'default';
@@ -25,7 +24,6 @@ export default function FavoriteButton({
   boardName,
   climbUuid,
   climbName,
-  angle,
   className,
   showLabel = false,
   size = 'default',
@@ -72,11 +70,7 @@ export default function FavoriteButton({
       const response = await fetch('/api/internal/favorites', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          boardName,
-          climbUuid,
-          angle,
-        }),
+        body: JSON.stringify({ climbUuid }),
       });
       if (response.ok) {
         track('Favorite Toggle', {
