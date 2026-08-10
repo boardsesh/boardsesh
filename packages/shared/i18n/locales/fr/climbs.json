@@ -924,6 +924,13 @@
         "bottomRight": "Coin inférieur droit",
         "hint": "Balayez vers le haut ou le bas pour agrandir ou réduire la zone depuis ce coin."
       }
+    },
+    "crossBoardAdd": {
+      "title": "Ce bloc est sur {{board}}",
+      "message": "Ta file d'attente est sur une autre board. Ajoute-le quand même et il t'attendra jusqu'à ce que tu sois sur {{board}}, ou change de board maintenant.",
+      "addAnyway": "Ajouter quand même",
+      "switchBoard": "Passer sur {{board}}",
+      "cancel": "Annuler"
     }
   }
 }

@@ -707,7 +707,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
 
   const handleBoardSheetAddToQueue = useCallback(
     (action: BoardSheetClimbAction) => {
-      addToQueue(climbToQueueItem(action.climb));
+      void addToQueue(climbToQueueItem(action.climb));
     },
     [addToQueue],
   );

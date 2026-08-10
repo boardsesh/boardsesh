@@ -912,7 +912,7 @@ function ClimbListInner() {
 
   const handleAddToQueue = useCallback(
     (climb: Climb) => {
-      addToQueue({ uuid: randomUUID(), climb });
+      void addToQueue({ uuid: randomUUID(), climb });
     },
     [addToQueue],
   );

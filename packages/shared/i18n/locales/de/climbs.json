@@ -924,6 +924,13 @@
         "bottomRight": "Ecke unten rechts",
         "hint": "Wisch nach oben oder unten, um den Bereich von dieser Ecke aus zu vergrößern oder zu verkleinern."
       }
+    },
+    "crossBoardAdd": {
+      "title": "Dieser Boulder ist auf {{board}}",
+      "message": "Deine Warteschlange läuft auf einem anderen Board. Füge ihn trotzdem hinzu, dann wartet er dort, bis du auf {{board}} bist, oder wechsle jetzt.",
+      "addAnyway": "Trotzdem hinzufügen",
+      "switchBoard": "Zu {{board}} wechseln",
+      "cancel": "Abbrechen"
     }
   }
 }
