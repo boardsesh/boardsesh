@@ -1359,6 +1359,13 @@
       "when": 1786140012823,
       "tag": "0193_backfill_moonboard_ascensionist_invariant",
       "breakpoints": true
+    },
+    {
+      "idx": 194,
+      "version": "7",
+      "when": 1786392877688,
+      "tag": "0194_moonboard_wrong_angle_stats_cleanup",
+      "breakpoints": true
     }
   ]
 }

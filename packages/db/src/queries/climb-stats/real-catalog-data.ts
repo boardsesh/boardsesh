@@ -44,7 +44,7 @@ import { boardClimbStats } from '../../schema/boards/unified';
  * Reused verbatim by:
  *   - resolveMoonBoardTickAngle (queries/climbs/moonboard-tick-angle.ts)
  *   - both recompute seed guards (climb-stats/recompute.ts)
- *   - migration 0188_moonboard_wrong_angle_stats_cleanup.sql (statements A and B
+ *   - migration 0194_moonboard_wrong_angle_stats_cleanup.sql (statements A and B
  *     share it, so A can never strand a row B then refuses to delete)
  *
  * Keep the three copies in step. Adding a column that an upstream catalog owns
