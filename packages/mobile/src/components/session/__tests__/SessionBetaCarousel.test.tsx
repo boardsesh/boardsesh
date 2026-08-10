@@ -12,6 +12,14 @@ const cards = vi.hoisted(() => ({
   rendered: [] as Array<{ link: string; uploaderName: string | null | undefined }>,
 }));
 
+// Shared beta-shelf collapse state (#4229). Stubbed rather than driven through
+// the real store so this file stays about selection/attribution; the store
+// itself is covered in `src/lib/__tests__/beta-shelf-collapse.test.tsx`.
+const collapse = vi.hoisted(() => ({ expanded: true }));
+vi.mock('../../../lib/beta-shelf-collapse', () => ({
+  useBetaShelfCollapse: () => ({ expanded: collapse.expanded, toggle: vi.fn() }),
+}));
+
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   ScrollView: ({ children }: { children?: ReactNode }) =>
@@ -84,6 +92,7 @@ const SOLO = { participantById: new Map<string, SessionFeedParticipant>(), isMul
 
 beforeEach(() => {
   cards.rendered = [];
+  collapse.expanded = true;
 });
 
 describe('SessionBetaCarousel', () => {
@@ -163,5 +172,21 @@ describe('SessionBetaCarousel', () => {
       }),
     );
     expect(cards.rendered).toEqual([{ link: 'https://www.instagram.com/reel/aaa/', uploaderName: null }]);
+  });
+
+  it('drops the scroller but keeps the header when the shared shelf is collapsed', () => {
+    // The header has to survive, otherwise there is nothing left to tap to
+    // unfold the crew beta again (#4229).
+    collapse.expanded = false;
+    const { queryByTestId, getByTestId } = render(
+      createElement(SessionBetaCarousel, {
+        ...SOLO,
+        ticks: [tick([betaRow({ link: 'https://www.instagram.com/reel/aaa/' })])],
+      }),
+    );
+
+    expect(getByTestId('section-header')).toBeTruthy();
+    expect(queryByTestId('beta-scroll')).toBeNull();
+    expect(cards.rendered).toEqual([]);
   });
 });

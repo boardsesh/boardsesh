@@ -21,6 +21,7 @@ import { useBoardseshGrade, useClimbStatsHistory } from '../../lib/graphql/hooks
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useDeferredAfterInteractions } from '../../hooks/use-deferred-after-interactions';
+import { BETA_SHELF_SECTION_KEY } from '../../lib/beta-shelf-collapse';
 
 type DeferredSectionsProps = {
   climb: Climb;
@@ -203,7 +204,8 @@ export const DeferredSections = memo(function DeferredSections({
         <>
           <CollapsibleSection
             title={t('mobile.betaVideos.title')}
-            keepExpanded
+            defaultExpanded
+            persistKey={BETA_SHELF_SECTION_KEY}
             headerAction={
               isAuthenticated && onAddBetaVideo ? (
                 <Pressable

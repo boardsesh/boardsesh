@@ -5,6 +5,7 @@ import { betaLinkIdentity } from '@boardsesh/shared-schema';
 import { HorizontalScrollSection } from '../HorizontalScrollSection';
 import { BetaVideoCard, BETA_CARD_COMPACT_HEIGHT } from '../play-drawer/BetaVideoCard';
 import { useUserBetaLinks } from '../../lib/graphql/hooks';
+import { useBetaShelfCollapse } from '../../lib/beta-shelf-collapse';
 
 type ProfileBetaShelfProps = {
   /** The climber whose beta videos to show (own id on the You tab). */
@@ -19,7 +20,11 @@ type ProfileBetaShelfProps = {
  */
 export const ProfileBetaShelf = memo(function ProfileBetaShelf({ userId }: ProfileBetaShelfProps) {
   const { t } = useTranslation('you');
+  // Deliberately not gated on `expanded`: this shelf hides itself entirely when
+  // the climber has no beta, so skipping the query while collapsed would strip
+  // the header too and leave no way to unfold it again.
   const { videos, isLoading, isLoadingMore, loadMore } = useUserBetaLinks(userId);
+  const { expanded, toggle } = useBetaShelfCollapse();
 
   const handleSeeAll = useCallback(() => {
     router.push({ pathname: '/users/[userId]/beta', params: { userId } });
@@ -39,6 +44,8 @@ export const ProfileBetaShelf = memo(function ProfileBetaShelf({ userId }: Profi
       isLoadingMore={isLoadingMore}
       onEndReached={loadMore}
       minHeight={BETA_CARD_COMPACT_HEIGHT}
+      expanded={expanded}
+      onToggleExpanded={toggle}
     >
       {videos.map((video) => (
         <BetaVideoCard key={betaLinkIdentity(video.betaLink.link)} link={video.betaLink} size="compact" />

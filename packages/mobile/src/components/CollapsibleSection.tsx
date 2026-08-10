@@ -175,27 +175,42 @@ function CollapsibleSectionInternal({
 
   return (
     <View style={styles.container}>
-      <Pressable
-        onPress={toggleExpanded}
-        accessibilityRole="button"
-        accessibilityLabel={title}
-        accessibilityState={{ expanded }}
-        style={styles.header}
-        onLayout={onHeaderLayoutEvent}
-      >
-        <Text variant="headline" style={styles.title}>
-          {title}
-        </Text>
-        {!expanded && summary ? (
-          <Text variant="footnote" style={styles.summary} numberOfLines={1}>
-            {summary}
+      {/* `headerAction` sits BETWEEN two toggle targets rather than inside one.
+          Nesting it in the header pressable would leave its taps arbitrated by
+          the responder system; as a sibling it simply owns them, so the Beta
+          Videos "+" can never fold the section by accident. Visual order (title
+          … action, chevron) is unchanged. */}
+      <View style={styles.header} onLayout={onHeaderLayoutEvent}>
+        <Pressable
+          onPress={toggleExpanded}
+          accessibilityRole="button"
+          accessibilityLabel={title}
+          accessibilityState={{ expanded }}
+          style={styles.headerPress}
+        >
+          <Text variant="headline" style={styles.title}>
+            {title}
           </Text>
-        ) : null}
+          {!expanded && summary ? (
+            <Text variant="footnote" style={styles.summary} numberOfLines={1}>
+              {summary}
+            </Text>
+          ) : null}
+        </Pressable>
         {headerAction}
-        <Animated.View style={chevronStyle}>
-          <Icon name="chevron.down" size={16} color={iosSystemColors.systemGray} />
-        </Animated.View>
-      </Pressable>
+        <Pressable
+          onPress={toggleExpanded}
+          // The title pressable above already announces the section and its
+          // expanded state; a second identical button would just be noise.
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+          hitSlop={8}
+        >
+          <Animated.View style={chevronStyle}>
+            <Icon name="chevron.down" size={16} color={iosSystemColors.systemGray} />
+          </Animated.View>
+        </Pressable>
+      </View>
 
       {/* Plain View, not a FadeIn/FadeOut Animated.View: inside a FlashList header
           the iOS entering animation settles at ~0 height and paints the body blank. */}
@@ -216,6 +231,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[3],
+  },
+  // Takes the row's spare width so the title, the summary, and the dead space
+  // between them all toggle the section — only the action is carved out.
+  headerPress: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   title: {
     flex: 1,

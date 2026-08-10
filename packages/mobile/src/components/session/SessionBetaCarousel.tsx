@@ -6,6 +6,7 @@ import { SectionHeader } from '../SectionHeader';
 import { betaLinkIdentity, isBetaVideoUrl, mapBetaLink } from '../../lib/beta-video-url';
 import { spacing } from '../../theme/tokens';
 import { BetaVideoCard, BETA_CARD_WIDTH } from '../play-drawer/BetaVideoCard';
+import { useBetaShelfCollapse } from '../../lib/beta-shelf-collapse';
 
 type CrewBetaItem = { betaLink: BetaLink; uploaderName: string | null; uploaderAvatarUrl: string | null };
 
@@ -28,6 +29,7 @@ const CARD_GAP = spacing[3];
  */
 export function SessionBetaCarousel({ ticks, participantById, isMultiUser }: SessionBetaCarouselProps) {
   const { t } = useTranslation('session');
+  const { expanded, toggle } = useBetaShelfCollapse();
 
   const items = useMemo<CrewBetaItem[]>(() => {
     const result: CrewBetaItem[] = [];
@@ -54,24 +56,26 @@ export function SessionBetaCarousel({ ticks, participantById, isMultiUser }: Ses
 
   return (
     <View>
-      <SectionHeader title={t('mobile.betaVideos.crewTitle')} />
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        snapToInterval={BETA_CARD_WIDTH + CARD_GAP}
-        decelerationRate="fast"
-        snapToAlignment="start"
-      >
-        {items.map((item) => (
-          <BetaVideoCard
-            key={betaLinkIdentity(item.betaLink.link)}
-            link={item.betaLink}
-            uploaderName={item.uploaderName}
-            uploaderAvatarUrl={item.uploaderAvatarUrl}
-          />
-        ))}
-      </ScrollView>
+      <SectionHeader title={t('mobile.betaVideos.crewTitle')} expanded={expanded} onToggleExpanded={toggle} />
+      {!expanded ? null : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          snapToInterval={BETA_CARD_WIDTH + CARD_GAP}
+          decelerationRate="fast"
+          snapToAlignment="start"
+        >
+          {items.map((item) => (
+            <BetaVideoCard
+              key={betaLinkIdentity(item.betaLink.link)}
+              link={item.betaLink}
+              uploaderName={item.uploaderName}
+              uploaderAvatarUrl={item.uploaderAvatarUrl}
+            />
+          ))}
+        </ScrollView>
+      )}
     </View>
   );
 }
