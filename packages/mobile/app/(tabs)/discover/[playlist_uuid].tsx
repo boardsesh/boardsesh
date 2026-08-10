@@ -18,6 +18,7 @@ import {
   type GetPlaylistClimbsInput,
   type GetPlaylistClimbsQueryResponse,
   type Playlist,
+  type PlaylistRevision,
 } from '@boardsesh/graphql/operations/playlists';
 import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
@@ -42,6 +43,7 @@ import { usePlaylistRenderBoard } from '../../../src/lib/playlists/use-playlist-
 import { resolvePlaylistClimbRenderBoard } from '../../../src/lib/playlists/playlist-climb-render-board';
 import { recordPlaylistOpen } from '../../../src/lib/playlists/recents-store';
 import { reportHandledError } from '../../../src/lib/error-reporting';
+import { readPlaylistUpdateConflict } from '../../../src/lib/graphql/extract-error-message';
 import { toQueueClimbs } from '../../../src/lib/climb-types';
 import { hapticSelection } from '../../../src/lib/haptics';
 import { useAuth } from '../../../src/providers/auth-provider';
@@ -370,12 +372,26 @@ export default function PlaylistDetail() {
     }
   }, [playlist, isFollowing, followPlaylist, unfollowPlaylist, queryClient, playlistUuid, showToast, t]);
 
+  // Both caches that hold this playlist: the detail hero, and the
+  // Add-to-Playlist picker's list (the shelves refetch on focus, but that cache
+  // wouldn't until its staleTime lapses).
+  const cacheUpdatedPlaylist = useCallback(
+    (updated: Playlist) => {
+      queryClient.setQueryData(['playlist', playlistUuid], updated);
+      queryClient.setQueryData<Playlist[]>(['userPlaylists'], (prev) =>
+        prev?.map((entry) => (entry.uuid === updated.uuid || entry.id === updated.id ? updated : entry)),
+      );
+    },
+    [queryClient, playlistUuid],
+  );
+
   const handleEditSubmit = useCallback(
     async (values: PlaylistFormValues) => {
       if (!playlist) return;
       setSavingEdit(true);
       setEditError(null);
-      try {
+
+      const saveEdit = async (basedOn: PlaylistRevision | undefined) => {
         const updated = await updatePlaylist({
           playlistId: playlist.uuid,
           name: values.name,
@@ -385,16 +401,89 @@ export default function PlaylistDetail() {
           color: values.color,
           icon: values.icon,
           isPublic: values.isPublic,
+          basedOn,
         });
-        queryClient.setQueryData(['playlist', playlistUuid], updated);
-        // Also patch the Add-to-Playlist picker's react-query list (the shelves
-        // refetch on focus, but this cache wouldn't until its staleTime lapses).
-        queryClient.setQueryData<Playlist[]>(['userPlaylists'], (prev) =>
-          prev?.map((entry) => (entry.uuid === updated.uuid || entry.id === updated.id ? updated : entry)),
-        );
+        cacheUpdatedPlaylist(updated);
         setEditVisible(false);
         showToast(t('edit.messages.updated'), 'success');
+      };
+
+      try {
+        // What this edit is based on. The server compares it against the stored
+        // row and refuses rather than silently overwriting a rename made on
+        // another device (#1934). A cached row from before this field shipped
+        // has no updatedAt, and falls back to last-write-wins.
+        await saveEdit(
+          playlist.updatedAt
+            ? {
+                updatedAt: playlist.updatedAt,
+                name: playlist.name,
+                description: playlist.description ?? null,
+                isPublic: playlist.isPublic,
+                color: playlist.color ?? null,
+                icon: playlist.icon ?? null,
+              }
+            : undefined,
+        );
       } catch (err) {
+        // Checked BEFORE reporting: a conflict is an expected outcome the
+        // climber resolves, not a fault (same treatment as the beta-link
+        // validation rejections).
+        const conflict = readPlaylistUpdateConflict(err);
+        if (conflict) {
+          Alert.alert(
+            t('edit.conflict.title'),
+            t('edit.conflict.message', { serverName: conflict.serverName, yourName: values.name }),
+            [
+              { text: t('edit.conflict.cancel'), style: 'cancel' },
+              {
+                text: t('edit.conflict.keepTheirs'),
+                onPress: () => {
+                  queryClient.setQueryData<Playlist | null>(['playlist', playlistUuid], (prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          name: conflict.serverName,
+                          description: conflict.serverDescription ?? undefined,
+                          isPublic: conflict.serverIsPublic,
+                          color: conflict.serverColor ?? undefined,
+                          icon: conflict.serverIcon ?? undefined,
+                          updatedAt: conflict.serverUpdatedAt,
+                        }
+                      : prev,
+                  );
+                  setEditVisible(false);
+                },
+              },
+              {
+                text: t('edit.conflict.keepMine'),
+                style: 'destructive',
+                onPress: async () => {
+                  setSavingEdit(true);
+                  try {
+                    // Re-based on the server's own values, so the retry compares
+                    // clean and overwrites deliberately rather than by accident.
+                    await saveEdit({
+                      updatedAt: conflict.serverUpdatedAt,
+                      name: conflict.serverName,
+                      description: conflict.serverDescription,
+                      isPublic: conflict.serverIsPublic,
+                      color: conflict.serverColor,
+                      icon: conflict.serverIcon,
+                    });
+                  } catch (retryError) {
+                    console.error('Failed to update playlist:', retryError);
+                    reportHandledError(retryError, { tags: { source: 'playlist', op: 'update-keep-mine' } });
+                    setEditError(t('edit.messages.updateFailed'));
+                  } finally {
+                    setSavingEdit(false);
+                  }
+                },
+              },
+            ],
+          );
+          return;
+        }
         console.error('Failed to update playlist:', err);
         reportHandledError(err, { tags: { source: 'playlist', op: 'update' } });
         // Inline, not a toast: the sheet is still open, so a root toast would be
@@ -404,7 +493,7 @@ export default function PlaylistDetail() {
         setSavingEdit(false);
       }
     },
-    [playlist, updatePlaylist, queryClient, playlistUuid, showToast, t],
+    [playlist, updatePlaylist, cacheUpdatedPlaylist, queryClient, playlistUuid, showToast, t],
   );
 
   const handleDelete = useCallback(() => {
