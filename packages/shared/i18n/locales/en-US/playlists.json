@@ -200,6 +200,13 @@
     "messages": {
       "updated": "Playlist updated successfully",
       "updateFailed": "Failed to update playlist"
+    },
+    "conflict": {
+      "title": "Changed somewhere else",
+      "message": "This playlist is saved as “{{serverName}}” now. Your edit says “{{yourName}}”.",
+      "keepMine": "Keep mine",
+      "keepTheirs": "Use theirs",
+      "cancel": "Cancel"
     }
   },
   "create": {
