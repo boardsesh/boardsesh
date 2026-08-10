@@ -276,6 +276,10 @@ async function replacePendingClaim(
         ),
       );
     const [inserted] = await tx.insert(dbSchema.gymClaims).values(values).returning();
+    // A successful INSERT ... RETURNING always yields a row, but the destructure
+    // is typed as possibly-undefined and the caller feeds this straight into
+    // applyGymClaim. Fail here rather than forward an undefined claim.
+    if (!inserted) throw new Error('Failed to create gym claim: insert returned no rows');
     return inserted;
   });
 }
