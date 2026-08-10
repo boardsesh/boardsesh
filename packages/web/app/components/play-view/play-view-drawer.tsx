@@ -298,7 +298,6 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
       track('Queue Navigation', {
         direction,
         method,
-        mode: 'broadcast',
         sessionMode: isPersistentSessionActive ? 'party' : 'solo',
         boardLayout: boardDetails.layout_name ?? '',
       });
