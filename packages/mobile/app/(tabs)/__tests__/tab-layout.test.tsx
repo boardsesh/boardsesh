@@ -226,12 +226,14 @@ vi.mock('expo-router/unstable-native-tabs', () => {
       iconColor,
       labelStyle,
       tintColor,
+      badgeBackgroundColor,
     }: {
       children?: ReactNode;
       minimizeBehavior?: string;
       iconColor?: unknown;
       labelStyle?: unknown;
       tintColor?: unknown;
+      badgeBackgroundColor?: string;
     }) =>
       createElement(
         'nav',
@@ -241,6 +243,7 @@ vi.mock('expo-router/unstable-native-tabs', () => {
           'data-icon-color': JSON.stringify(iconColor),
           'data-label-style': JSON.stringify(labelStyle),
           'data-tint-color': typeof tintColor === 'string' ? tintColor : '',
+          'data-badge-background-color': badgeBackgroundColor ?? '',
         },
         children,
       ),
@@ -792,5 +795,27 @@ describe('TabLayout', () => {
 
     expect(badge).not.toBeNull();
     expect(badge?.getAttribute('data-selected-background-color')).toBe('#FBBF24');
+  });
+
+  // `NativeTabs.Trigger.Badge`'s `selectedBackgroundColor` only reaches
+  // options.selectedBadgeBackgroundColor, which expo-router applies solely to the
+  // ['selected','focused'] item states — so it's a no-op for the badge tint while
+  // Record is NOT the focused tab (the exact moment a live-session badge needs to
+  // be visible from another tab). The normal-state tint must ride the
+  // navigator-level `badgeBackgroundColor` prop instead.
+  it('sets the navigator-level badgeBackgroundColor to the live color so the unfocused badge tint is correct', () => {
+    cfg.sessionId = 'session-1';
+    const { container } = render(<TabLayout />);
+    const tabs = container.querySelector('[data-tabs="true"]');
+
+    expect(tabs?.getAttribute('data-badge-background-color')).toBe('#FBBF24');
+  });
+
+  it('sets the navigator-level badgeBackgroundColor to the standard (success) color when only Bluetooth is connected', () => {
+    cfg.bluetoothConnected = true;
+    const { container } = render(<TabLayout />);
+    const tabs = container.querySelector('[data-tabs="true"]');
+
+    expect(tabs?.getAttribute('data-badge-background-color')).toBe('#047857');
   });
 });

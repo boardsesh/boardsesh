@@ -321,6 +321,17 @@ export default function TabLayout() {
       iconColor={{ default: systemColors.secondaryLabel, selected: systemColors.label }}
       labelStyle={{ default: { color: systemColors.secondaryLabel }, selected: { color: systemColors.label } }}
       tintColor={systemColors.label}
+      // `NativeTabs.Trigger.Badge`'s `selectedBackgroundColor` only reaches
+      // `options.selectedBadgeBackgroundColor`, which react-navigation-native-tabs
+      // applies solely to the ['selected','focused'] item states
+      // (appearance.ios.js `appendSelectedStyleToAppearance`). The Record badge is
+      // most useful precisely when Record ISN'T focused (a session is live while
+      // the user browses another tab), so the normal-state tint must come from the
+      // navigator-level `badgeBackgroundColor` prop, which seeds
+      // `options.badgeBackgroundColor` — applied to normal/focused/selected alike
+      // (appearance.ios.js `createStandardAppearanceFromOptions`). Safe as a
+      // navigator-wide default: Record is the only trigger that renders a badge.
+      badgeBackgroundColor={hasLiveSession ? brandColors.live : brandColors.success}
     >
       {onAccessorySurface && nativeAccessoryActive && hasCurrentClimb ? (
         <NativeTabs.BottomAccessory key="queue-bottom-accessory">
