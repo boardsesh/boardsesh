@@ -61,6 +61,11 @@ export type ClimbSearchParams = {
   hideCompleted?: boolean;
   showOnlyAttempted?: boolean;
   showOnlyCompleted?: boolean;
+  // Personal rating filters over the user's own ticks at the browsed angle.
+  // `minUserRating` (1-5) hides climbs whose latest rating is below it while
+  // keeping never-rated climbs; `onlyRatedByMe` keeps only rated climbs.
+  minUserRating?: number;
+  onlyRatedByMe?: boolean;
   onlyDrafts?: boolean;
   projectsOnly?: boolean;
   // Climb-type toggles. Default to undefined (treated as both selected → no
@@ -107,6 +112,8 @@ export type ClimbSearchInputLike = {
   hideCompleted?: boolean | null;
   showOnlyAttempted?: boolean | null;
   showOnlyCompleted?: boolean | null;
+  minUserRating?: number | null;
+  onlyRatedByMe?: boolean | null;
   onlyDrafts?: boolean | null;
   projectsOnly?: boolean | null;
   boulders?: boolean | null;
@@ -176,6 +183,10 @@ export function mapSearchInputToParams(input: ClimbSearchInputLike): ClimbSearch
     hideCompleted: input.hideCompleted ?? undefined,
     showOnlyAttempted: input.showOnlyAttempted ?? undefined,
     showOnlyCompleted: input.showOnlyCompleted ?? undefined,
+    // An explicit 0 means "no minimum" (the same idiom as the community
+    // minRating above), so collapse it rather than emitting `>= 0`.
+    minUserRating: input.minUserRating || undefined,
+    onlyRatedByMe: input.onlyRatedByMe ?? undefined,
     onlyDrafts: input.onlyDrafts ?? undefined,
     projectsOnly: input.projectsOnly ?? undefined,
     boulders: input.boulders ?? undefined,

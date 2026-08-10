@@ -42,3 +42,30 @@ describe('ClimbSearchInputSchema holdsFilter cap', () => {
     }
   });
 });
+
+describe('ClimbSearchInputSchema personal rating filters (#2645)', () => {
+  it('accepts a 1-5 star minimum, matching the boardsesh_ticks quality range', () => {
+    for (const minUserRating of [1, 2, 3, 4, 5]) {
+      expect(ClimbSearchInputSchema.safeParse({ ...base, minUserRating }).success).toBe(true);
+    }
+  });
+
+  it('accepts 0 as "no minimum" so a client sending the default cannot 400 the search', () => {
+    expect(ClimbSearchInputSchema.safeParse({ ...base, minUserRating: 0 }).success).toBe(true);
+  });
+
+  it('rejects out-of-range and fractional star minimums', () => {
+    expect(ClimbSearchInputSchema.safeParse({ ...base, minUserRating: 6 }).success).toBe(false);
+    expect(ClimbSearchInputSchema.safeParse({ ...base, minUserRating: -1 }).success).toBe(false);
+    expect(ClimbSearchInputSchema.safeParse({ ...base, minUserRating: 3.5 }).success).toBe(false);
+  });
+
+  it('accepts onlyRatedByMe as a boolean only', () => {
+    expect(ClimbSearchInputSchema.safeParse({ ...base, onlyRatedByMe: true }).success).toBe(true);
+    expect(ClimbSearchInputSchema.safeParse({ ...base, onlyRatedByMe: 'true' }).success).toBe(false);
+  });
+
+  it('leaves both filters optional', () => {
+    expect(ClimbSearchInputSchema.safeParse(base).success).toBe(true);
+  });
+});

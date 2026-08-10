@@ -195,6 +195,10 @@ input ClimbSearchInput {
   showOnlyAttempted: Boolean
   "Only show climbs the user has completed (requires auth)"
   showOnlyCompleted: Boolean
+  "Hide climbs whose latest rating from the user, at this angle, is below this many stars. Climbs the user never rated stay visible unless onlyRatedByMe is also set. 0 means no minimum. (requires auth)"
+  minUserRating: Int
+  "Only show climbs the user has rated at this angle (requires auth)"
+  onlyRatedByMe: Boolean
   "Show only the user's draft climbs (requires auth)"
   onlyDrafts: Boolean
   "Show only unclimbed projects (climbs with 0 ascents)"

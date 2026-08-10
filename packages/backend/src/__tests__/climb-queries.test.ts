@@ -855,4 +855,146 @@ describe('Climb Query Functions', () => {
       expect(await countClimbs(boundaryParams, statsFiltered)).toBe(2);
     });
   });
+
+  // Personal rating filters (#2645): "min stars I gave" + "only climbs I rated",
+  // read straight off boardsesh_ticks at the browsed angle. Latest rating wins,
+  // never-rated climbs stay visible unless onlyRatedByMe is on.
+  describe('personal rating filters (#2645)', () => {
+    const PREFIX = 'user-rating-';
+    const id = (suffix: string) => PREFIX + suffix;
+    const USER_ID = 'user-rating-tester';
+    const OTHER_USER_ID = 'user-rating-bystander';
+
+    const ratingParams: ParsedBoardRouteParameters = {
+      board_name: 'kilter',
+      layout_id: 1,
+      // Isolated on a size/set key no real catalog climb carries, so the
+      // assertions can enumerate the fixtures exactly (same trick as F4 above).
+      size_id: 98,
+      set_ids: [98],
+      angle: 40,
+    };
+
+    const search = (overrides: Partial<ClimbSearchParams> = {}): ClimbSearchParams => ({
+      page: 0,
+      pageSize: 100,
+      sortBy: 'creation',
+      sortOrder: 'desc',
+      ...overrides,
+    });
+
+    // Only the seeded climbs — the shared dev DB carries plenty of others at this key.
+    const seededUuids = async (searchParams: ClimbSearchParams, userId?: string): Promise<string[]> => {
+      const result = await searchClimbs(ratingParams, searchParams, userId);
+      return result.climbs
+        .map((climb) => climb.uuid)
+        .filter((uuid) => uuid.startsWith(PREFIX))
+        .sort();
+    };
+
+    const ALL_SEEDED = [
+      id('rated-5'),
+      id('rated-2'),
+      id('re-rated-up'),
+      id('re-rated-down'),
+      id('sent-unrated'),
+      id('untouched'),
+      id('other-angle'),
+      id('other-user'),
+    ].sort();
+
+    beforeAll(async () => {
+      await db.execute(sql`
+        INSERT INTO users (id, email, name, created_at, updated_at)
+        VALUES
+          (${USER_ID}, ${USER_ID + '@test.com'}, 'Rating Tester', now(), now()),
+          (${OTHER_USER_ID}, ${OTHER_USER_ID + '@test.com'}, 'Rating Bystander', now(), now())
+        ON CONFLICT (id) DO NOTHING
+      `);
+
+      await db.execute(sql`
+        INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, frames_count, is_draft, is_listed, edge_left, edge_right, edge_bottom, edge_top, created_at, required_set_ids, compatible_size_ids)
+        VALUES
+          (${id('rated-5')}, 'kilter', 1, 'ur', 'Rated 5', 'p600r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[98], ARRAY[98]),
+          (${id('rated-2')}, 'kilter', 1, 'ur', 'Rated 2', 'p601r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[98], ARRAY[98]),
+          (${id('re-rated-up')}, 'kilter', 1, 'ur', 'Re-rated Up', 'p602r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[98], ARRAY[98]),
+          (${id('re-rated-down')}, 'kilter', 1, 'ur', 'Re-rated Down', 'p603r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[98], ARRAY[98]),
+          (${id('sent-unrated')}, 'kilter', 1, 'ur', 'Sent Unrated', 'p604r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[98], ARRAY[98]),
+          (${id('untouched')}, 'kilter', 1, 'ur', 'Untouched', 'p605r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[98], ARRAY[98]),
+          (${id('other-angle')}, 'kilter', 1, 'ur', 'Other Angle', 'p606r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[98], ARRAY[98]),
+          (${id('other-user')}, 'kilter', 1, 'ur', 'Other User', 'p607r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[98], ARRAY[98])
+        ON CONFLICT DO NOTHING
+      `);
+
+      // Ratings the filter reads. `re-rated-*` carry two ticks apiece so the
+      // latest-wins rule is exercised in both directions.
+      await db.execute(sql`
+        INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status, attempt_count, quality, climbed_at)
+        VALUES
+          (${id('tick-rated-5')}, ${USER_ID}, 'kilter', ${id('rated-5')}, 40, 'send', 1, 5, '2024-03-01'),
+          (${id('tick-rated-2')}, ${USER_ID}, 'kilter', ${id('rated-2')}, 40, 'send', 1, 2, '2024-03-01'),
+          (${id('tick-up-old')}, ${USER_ID}, 'kilter', ${id('re-rated-up')}, 40, 'send', 1, 2, '2024-01-01'),
+          (${id('tick-up-new')}, ${USER_ID}, 'kilter', ${id('re-rated-up')}, 40, 'send', 1, 5, '2024-03-01'),
+          (${id('tick-down-old')}, ${USER_ID}, 'kilter', ${id('re-rated-down')}, 40, 'send', 1, 5, '2024-01-01'),
+          (${id('tick-down-new')}, ${USER_ID}, 'kilter', ${id('re-rated-down')}, 40, 'send', 1, 2, '2024-03-01'),
+          (${id('tick-unrated')}, ${USER_ID}, 'kilter', ${id('sent-unrated')}, 40, 'send', 1, NULL, '2024-03-01'),
+          (${id('tick-other-angle')}, ${USER_ID}, 'kilter', ${id('other-angle')}, 20, 'send', 1, 5, '2024-03-01'),
+          (${id('tick-other-user')}, ${OTHER_USER_ID}, 'kilter', ${id('other-user')}, 40, 'send', 1, 5, '2024-03-01')
+        ON CONFLICT DO NOTHING
+      `);
+    });
+
+    afterAll(async () => {
+      await db.execute(sql`DELETE FROM boardsesh_ticks WHERE uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM users WHERE id IN (${USER_ID}, ${OTHER_USER_ID})`);
+    });
+
+    it('seeds every fixture climb when no rating filter is applied', async () => {
+      expect(await seededUuids(search(), USER_ID)).toEqual(ALL_SEEDED);
+    });
+
+    it('minUserRating keeps unrated climbs and drops only the ones rated below it', async () => {
+      const uuids = await seededUuids(search({ minUserRating: 4 }), USER_ID);
+
+      expect(uuids).toEqual(
+        [
+          id('rated-5'),
+          id('re-rated-up'), // 2 → 5: the newer rating wins, so it's back in
+          id('sent-unrated'), // ticked but never rated
+          id('untouched'),
+          id('other-angle'), // rated 5 at 20°, unrated at the browsed 40°
+          id('other-user'), // someone else's 5 is not mine
+        ].sort(),
+      );
+      expect(uuids).not.toContain(id('rated-2'));
+      expect(uuids).not.toContain(id('re-rated-down')); // 5 → 2: latest rating is below 4
+    });
+
+    it('onlyRatedByMe keeps every climb I rated at this angle, whatever the stars', async () => {
+      const uuids = await seededUuids(search({ onlyRatedByMe: true }), USER_ID);
+
+      expect(uuids).toEqual([id('rated-5'), id('rated-2'), id('re-rated-up'), id('re-rated-down')].sort());
+    });
+
+    it('minUserRating with onlyRatedByMe drops the unrated climbs too', async () => {
+      const searchParams = search({ minUserRating: 4, onlyRatedByMe: true });
+
+      expect(await seededUuids(searchParams, USER_ID)).toEqual([id('rated-5'), id('re-rated-up')].sort());
+    });
+
+    it('countClimbs agrees with the list for the combined filter', async () => {
+      const searchParams = search({ minUserRating: 4, onlyRatedByMe: true });
+      const listed = await seededUuids(searchParams, USER_ID);
+
+      // Nothing but the fixtures can match — no other user rates as this test user.
+      expect(await countClimbs(ratingParams, searchParams, USER_ID)).toBe(listed.length);
+    });
+
+    it('is a no-op without a userId, so an anonymous search stays unfiltered', async () => {
+      const searchParams = search({ minUserRating: 5, onlyRatedByMe: true });
+
+      expect(await seededUuids(searchParams)).toEqual(ALL_SEEDED);
+    });
+  });
 });

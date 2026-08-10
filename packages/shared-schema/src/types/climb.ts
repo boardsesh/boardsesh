@@ -151,6 +151,11 @@ export type ClimbSearchInput = {
   hideCompleted?: boolean;
   showOnlyAttempted?: boolean;
   showOnlyCompleted?: boolean;
+  // Personal rating filters, read from the user's own ticks at the browsed
+  // angle. `minUserRating` keeps unrated climbs visible (0 = no minimum);
+  // `onlyRatedByMe` drops them.
+  minUserRating?: number;
+  onlyRatedByMe?: boolean;
   onlyDrafts?: boolean;
   projectsOnly?: boolean;
   // Climb-type toggles. Both undefined / both true → no frames_count filter.
@@ -175,6 +180,8 @@ export const USER_SPECIFIC_SEARCH_PARAMS = [
   'hideCompleted',
   'showOnlyAttempted',
   'showOnlyCompleted',
+  'minUserRating',
+  'onlyRatedByMe',
   'onlyDrafts',
 ] as const satisfies ReadonlyArray<keyof ClimbSearchInput>;
 
