@@ -19,6 +19,8 @@ const cfg = vi.hoisted(() => ({
   nativeTabBar: false,
   widthClass: 'compact' as 'compact' | 'regular',
   windowWidth: 430,
+  sessionId: null as string | null,
+  activeSegment: null as string | null,
 }));
 
 // useAccessoryClimbTap builds a preview queue item via climbToQueueItem, which
@@ -59,6 +61,7 @@ vi.mock('../../../lib/route-segments', () => ({
   // The bar's own route gate (top-level tab only) and the bottom-chrome surface gate.
   isTopLevelTabRoute: () => cfg.onTopLevelTab,
   isAccessorySurfaceRoute: () => cfg.onAccessorySurface,
+  tabsActiveSegment: () => cfg.activeSegment,
 }));
 // useBottomChromeMetrics now reads the device layout; in jsdom this test runs as
 // a compact phone (no sidebar), so the bottom-chrome arithmetic is unchanged.
@@ -68,6 +71,7 @@ vi.mock('../../../hooks/use-device-layout', () => ({
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem } }),
   useHasActiveClimb: () => cfg.currentClimbQueueItem?.climb != null,
+  useQueueSessionId: () => ({ sessionId: cfg.sessionId }),
 }));
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => true }));
 vi.mock('../../../theme/animations', () => ({ timing: { fast: 150, normal: 250 } }));
@@ -115,11 +119,13 @@ vi.mock('../ClimbCapsule', () => ({
     height,
     surfaceTreatment,
     endAction,
+    endActionSize,
   }: {
     fillWidth?: boolean;
     height?: number;
     surfaceTreatment?: string;
     endAction?: ReactNode;
+    endActionSize?: number;
   }) =>
     createElement(
       'div',
@@ -128,6 +134,7 @@ vi.mock('../ClimbCapsule', () => ({
         'data-fill-width': fillWidth ? 'true' : 'false',
         'data-height': height == null ? '' : String(height),
         'data-surface-treatment': surfaceTreatment ?? '',
+        'data-end-action-size': endActionSize == null ? '' : String(endActionSize),
       },
       endAction,
     ),
@@ -139,6 +146,9 @@ vi.mock('../LogAscentFab', () => ({
 vi.mock('../LogAscentToolbarButton', () => ({
   LogAscentToolbarButton: ({ climb }: { climb: { uuid: string } }) =>
     createElement('div', { 'data-tick-inline': 'true', 'data-climb-uuid': climb.uuid }),
+}));
+vi.mock('../ReturnToSessionButton', () => ({
+  ReturnToSessionButton: () => createElement('div', { 'data-return-to-session': 'true' }),
 }));
 
 import { PersistentQueueBar } from '../persistent-queue-bar';
@@ -167,6 +177,8 @@ describe('PersistentQueueBar', () => {
     cfg.nativeTabBar = false;
     cfg.widthClass = 'compact';
     cfg.windowWidth = 430;
+    cfg.sessionId = null;
+    cfg.activeSegment = null;
   });
 
   it('renders nothing when no climb is current', () => {
@@ -325,5 +337,42 @@ describe('PersistentQueueBar', () => {
 
     expect(container.querySelector('[data-capsule]')).toBeNull();
     expect(container.querySelector('[data-tick]')).toBeNull();
+  });
+
+  describe('return-to-session affordance (#2563)', () => {
+    it('shows the return-to-session button in the capsule endAction when a session is live and not on Record', () => {
+      cfg.sessionId = 'session-1';
+      cfg.activeSegment = 'home';
+      const { container } = renderBar();
+      const capsule = container.querySelector('[data-capsule]');
+      expect(capsule?.querySelector('[data-return-to-session]')).not.toBeNull();
+      expect(capsule?.getAttribute('data-end-action-size')).toBe('44');
+    });
+
+    it('omits the return-to-session button when no session is live', () => {
+      cfg.sessionId = null;
+      cfg.activeSegment = 'home';
+      const { container } = renderBar();
+      const capsule = container.querySelector('[data-capsule]');
+      expect(capsule?.querySelector('[data-return-to-session]')).toBeNull();
+    });
+
+    it('omits the return-to-session button while already on the Record tab', () => {
+      cfg.sessionId = 'session-1';
+      cfg.activeSegment = 'record';
+      const { container } = renderBar();
+      const capsule = container.querySelector('[data-capsule]');
+      expect(capsule?.querySelector('[data-return-to-session]')).toBeNull();
+    });
+
+    it('keeps the Material docked bar on the inline log-ascent tick regardless of session state', () => {
+      cfg.variant = 'material';
+      cfg.sessionId = 'session-1';
+      cfg.activeSegment = 'home';
+      const { container } = renderBar();
+      const capsule = container.querySelector('[data-capsule]');
+      expect(capsule?.querySelector('[data-tick-inline]')).not.toBeNull();
+      expect(capsule?.querySelector('[data-return-to-session]')).toBeNull();
+    });
   });
 });

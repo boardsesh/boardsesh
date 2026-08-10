@@ -26,16 +26,17 @@ import {
   glassSize,
 } from '../../theme/layout';
 import { resolveDetailPaneSurface } from '../../theme/size-class';
-import { useQueue } from '../../providers/queue-provider';
+import { useQueue, useQueueSessionId } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
-import { isTopLevelTabRoute } from '../../lib/route-segments';
+import { isTopLevelTabRoute, tabsActiveSegment } from '../../lib/route-segments';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { ActiveContextBar } from './ActiveContextBar';
 import { ClimbCapsule } from './ClimbCapsule';
 import { LogAscentFab } from './LogAscentFab';
 import { LogAscentToolbarButton } from './LogAscentToolbarButton';
+import { ReturnToSessionButton } from './ReturnToSessionButton';
 
 // Re-export so layout consumers that already import toolbar metrics from this
 // module don't need to know which file owns them. Source of truth: theme/layout.
@@ -48,6 +49,10 @@ export function PersistentQueueBar() {
   const bottomChrome = useBottomChromeMetrics();
   const { widthClass } = useDeviceLayout();
   const { width } = useWindowDimensions();
+  // sessionId-only subscription (mirrors the tab layout's own read) — a "return to
+  // session" affordance while a session is live and the user isn't already on the
+  // Record tab.
+  const { sessionId } = useQueueSessionId();
 
   // Queue head only — the wall's lit climb lives in the top "On the wall" strip.
   const currentClimb = state.currentClimbQueueItem?.climb ?? null;
@@ -85,5 +90,21 @@ export function PersistentQueueBar() {
     );
   }
 
-  return <ActiveContextBar primary={<ClimbCapsule />} trailing={<LogAscentFab climb={currentClimb} />} />;
+  // Excludes the Record tab itself — this bar renders on every top-level tab page
+  // including Record's own index, so without this guard the button would point at
+  // the screen it's already on.
+  const onRecordTab = tabsActiveSegment(segments) === 'record';
+  const showReturnToSession = sessionId !== null && !onRecordTab;
+
+  return (
+    <ActiveContextBar
+      primary={
+        <ClimbCapsule
+          endAction={showReturnToSession ? <ReturnToSessionButton /> : undefined}
+          endActionSize={showReturnToSession ? glassSize.inline : undefined}
+        />
+      }
+      trailing={<LogAscentFab climb={currentClimb} />}
+    />
+  );
 }
