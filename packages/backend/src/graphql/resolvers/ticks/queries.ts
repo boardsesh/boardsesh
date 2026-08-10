@@ -1216,8 +1216,12 @@ export const tickQueries = {
           setterUsername,
           boardType: tick.boardType,
           layoutId,
-          // Every tick in a group is the same climb on the same day, so the
-          // group header can carry the first item's resolved board.
+          // A group is one climb on one day, so its ticks share a layout — but
+          // not necessarily a board: climb it on two walls in a day and they
+          // resolve differently. The header takes the first tick's board (ticks
+          // are ordered climbed_at DESC, so that's the latest one). Consumers
+          // that care read the per-item `renderBoard` instead — mobile's grouped
+          // logbook already does, since it re-buckets from `group.items`.
           renderBoard,
           angle: tick.angle,
           isMirror: tick.isMirror ?? false,
