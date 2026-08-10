@@ -1346,9 +1346,13 @@ describe('requestGymClaim — auto-approval', () => {
   it('queues instead of erroring once the auto-approve rate limit is spent', async () => {
     await setAutoApprove(true);
 
-    // SECOND_TARGET is used by no other auto-approval test, so this account's
-    // in-memory `gymClaimAutoApprove` budget starts fresh (the limiter is
-    // per-user and is NOT reset between tests in a worker).
+    // The limiter is keyed `${userId}:${operation}`, lives in process memory,
+    // and is NOT reset between tests. Claiming as a brand-new user each run
+    // guarantees an empty budget no matter what ran first — pinning this to a
+    // shared fixture account would make the expected sequence order-dependent.
+    const claimant = `gw-rate-limited-${uuidv4()}`;
+    await insertUser(claimant);
+
     const gyms = await Promise.all(
       [1, 2, 3, 4].map((index) => insertGym({ ownerId: SYSTEM_OWNER, name: `Rate Limited ${index}` })),
     );
@@ -1358,7 +1362,7 @@ describe('requestGymClaim — auto-approval', () => {
       const result = (await socialGymClaimMutations.requestGymClaim(
         null,
         { input: { gymUuid: gym.uuid, message: 'mine' } },
-        authCtx(SECOND_TARGET),
+        authCtx(claimant),
       )) as { status: string };
       results.push(result.status);
     }
