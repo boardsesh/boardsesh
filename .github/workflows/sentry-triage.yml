@@ -15,8 +15,10 @@ on:
         type: boolean
         default: false
       stats_period:
-        description: 'Sentry statsPeriod to sweep (e.g. 7d, 14d)'
+        description: 'Sentry statsPeriod to sweep'
         required: false
+        type: choice
+        options: ['7d', '14d', '30d']
         default: '14d'
 
 concurrency:
@@ -31,6 +33,8 @@ jobs:
     permissions:
       contents: read
       issues: write
+      # Required by claude-code-action's token exchange (same as claude.yml),
+      # not by anything else in this workflow.
       id-token: write
     steps:
       - name: Checkout repository
@@ -46,7 +50,7 @@ jobs:
           STATS_PERIOD: ${{ inputs.stats_period || '14d' }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: '--allowed-tools "Bash(curl:*),Bash(jq:*),Bash(python3:*),Bash(echo:*),Bash(gh issue:*),Bash(gh search issues:*),Bash(gh api:*),Bash(git log:*),Bash(git show:*),Read,Grep,Glob"'
+          claude_args: '--allowed-tools "Bash(curl:*),Bash(jq:*),Bash(echo:*),Bash(gh issue create:*),Bash(gh issue comment:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh search issues:*),Bash(git log:*),Bash(git show:*),Read,Grep,Glob"'
           prompt: |
             You are running the weekly Sentry triage sweep for boardsesh/boardsesh.
             The repo is checked out at the current directory.
