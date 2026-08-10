@@ -1,6 +1,43 @@
 {
-  "generatedAt": "2026-08-10T20:18:20.254Z",
+  "generatedAt": "2026-08-10T20:36:09.183Z",
   "entries": [
+    {
+      "prNumber": 4121,
+      "category": "fixed",
+      "title": "Logging climbs offline no longer goes quiet for the rest of the session when the app starts up mid-cleanup. Offline storage now recovers on its own instead of staying switched off until you restart.",
+      "mergedAt": "2026-08-10T20:35:44Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4121",
+      "body": "Closes #4104"
+    },
+    {
+      "prNumber": 4210,
+      "category": "fixed",
+      "title": "Fixed the play drawer on Android opening to an empty purple screen — your climb, the board, and the",
+      "mergedAt": "2026-08-10T20:34:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4210",
+      "body": "controls are back."
+    },
+    {
+      "prNumber": 4157,
+      "category": "fixed",
+      "title": "Custom hold colours now keep up with your finger on Android.",
+      "mergedAt": "2026-08-10T20:33:58Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4157"
+    },
+    {
+      "prNumber": 4115,
+      "category": "fixed",
+      "title": "Editing or deleting an ascent imported more than once now sticks instead of revealing hidden copies.",
+      "mergedAt": "2026-08-10T20:31:04Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4115"
+    },
+    {
+      "prNumber": 4095,
+      "category": "fixed",
+      "title": "Climb grades and ratings stay accurate when an upstream board sends empty, invalid, or detached stats.",
+      "mergedAt": "2026-08-10T20:30:20Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4095"
+    },
     {
       "prNumber": 4130,
       "category": "new",

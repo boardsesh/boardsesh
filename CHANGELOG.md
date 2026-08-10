@@ -15,6 +15,13 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Logging climbs offline no longer goes quiet for the rest of the session when the app starts up mid-cleanup. Offline storage now recovers on its own instead of staying switched off until you restart. ([#4121](https://github.com/boardsesh/boardsesh/pull/4121))
+  Closes #4104
+- Fixed the play drawer on Android opening to an empty purple screen — your climb, the board, and the ([#4210](https://github.com/boardsesh/boardsesh/pull/4210))
+  controls are back.
+- Custom hold colours now keep up with your finger on Android. ([#4157](https://github.com/boardsesh/boardsesh/pull/4157))
+- Editing or deleting an ascent imported more than once now sticks instead of revealing hidden copies. ([#4115](https://github.com/boardsesh/boardsesh/pull/4115))
+- Climb grades and ratings stay accurate when an upstream board sends empty, invalid, or detached stats. ([#4095](https://github.com/boardsesh/boardsesh/pull/4095))
 - Fixed a bug where a failed avatar upload could wipe your profile picture for good — your old picture now stays put until the new one is safely saved. ([#4212](https://github.com/boardsesh/boardsesh/pull/4212))
   If your profile picture ever can't load, you'll see your initials instead of a blank gray circle.
 - The tick sheet is laid out for your thumb now — tries and stars sit where your hand already is, and date and time share one line up top ([#4215](https://github.com/boardsesh/boardsesh/pull/4215))
