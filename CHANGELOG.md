@@ -8,10 +8,15 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Added optional auto-disconnect setting: ([#4130](https://github.com/boardsesh/boardsesh/pull/4130))
+  - Let other climbers take over your board automatically after a configurable idle period.
+  - Keep the last climb lit while you browse, then reconnect when you’re ready.
 - Claim an unclaimed gym and it's yours on the spot, no waiting for a review ([#4230](https://github.com/boardsesh/boardsesh/pull/4230))
 
 ### Fixed
 
+- Fixed a bug where a failed avatar upload could wipe your profile picture for good — your old picture now stays put until the new one is safely saved. ([#4212](https://github.com/boardsesh/boardsesh/pull/4212))
+  If your profile picture ever can't load, you'll see your initials instead of a blank gray circle.
 - The tick sheet is laid out for your thumb now — tries and stars sit where your hand already is, and date and time share one line up top ([#4215](https://github.com/boardsesh/boardsesh/pull/4215))
   Fixed the Send button being cut off on smaller phones
 

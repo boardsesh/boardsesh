@@ -1,6 +1,22 @@
 {
-  "generatedAt": "2026-08-10T20:12:13.726Z",
+  "generatedAt": "2026-08-10T20:18:20.254Z",
   "entries": [
+    {
+      "prNumber": 4130,
+      "category": "new",
+      "title": "Added optional auto-disconnect setting:",
+      "mergedAt": "2026-08-10T20:15:33Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4130",
+      "body": "- Let other climbers take over your board automatically after a configurable idle period.\n- Keep the last climb lit while you browse, then reconnect when you’re ready."
+    },
+    {
+      "prNumber": 4212,
+      "category": "fixed",
+      "title": "Fixed a bug where a failed avatar upload could wipe your profile picture for good — your old picture now stays put until the new one is safely saved.",
+      "mergedAt": "2026-08-10T20:12:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4212",
+      "body": "If your profile picture ever can't load, you'll see your initials instead of a blank gray circle."
+    },
     {
       "prNumber": 4230,
       "category": "new",
