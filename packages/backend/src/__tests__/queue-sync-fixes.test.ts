@@ -682,6 +682,38 @@ describe('order-sensitive dual-hash (stateHashOrdered)', () => {
     expect(removedCall).toBeDefined();
     expect((removedCall![1] as { clientId: string | null }).clientId).toBeNull();
   });
+
+  // Issue #4042 — the add side of the same bug: QueueItemAdded must carry the
+  // adding connection's id so subscribers can drop echoes of their own adds
+  // instead of tagging them `addedFromTab: 'peer_broadcast'` (a double count,
+  // since the local add already tracked itself with its real source tab).
+  it('publishes the adding connection id on QueueItemAdded', async () => {
+    const sessionId = uuidv4();
+    await registerAndJoinSession('client-1', sessionId, '/kilter/1/2/3/40', 'User1');
+    publishSpy.mockClear();
+
+    await queueMutations.addQueueItem({}, { item: createTestClimb() }, ctxFor(sessionId));
+    const addedCall = publishSpy.mock.calls.find(
+      (call: unknown[]) => (call[1] as { __typename: string }).__typename === 'QueueItemAdded',
+    );
+    expect(addedCall).toBeDefined();
+    expect((addedCall![1] as { clientId: string | null }).clientId).toBe('client-1');
+  });
+
+  // An anonymous publisher must send null, NOT '': peers compare defensively,
+  // and two empty-string clients would echo-suppress each other's adds.
+  it('coerces a missing connection id to null on QueueItemAdded', async () => {
+    const sessionId = uuidv4();
+    await registerAndJoinSession('client-1', sessionId, '/kilter/1/2/3/40', 'User1');
+    publishSpy.mockClear();
+
+    await queueMutations.addQueueItem({}, { item: createTestClimb() }, { ...ctxFor(sessionId), connectionId: '' });
+    const addedCall = publishSpy.mock.calls.find(
+      (call: unknown[]) => (call[1] as { __typename: string }).__typename === 'QueueItemAdded',
+    );
+    expect(addedCall).toBeDefined();
+    expect((addedCall![1] as { clientId: string | null }).clientId).toBeNull();
+  });
 });
 
 // Issue #2387 — the setQueue "redundant resync" warning must be order-aware.

@@ -206,6 +206,7 @@ type Snapshot = {
   sessionId: string | null;
   subscribeToPlaybackEvents: ReturnType<typeof useQueue>['subscribeToPlaybackEvents'];
   removeFromQueue: ReturnType<typeof useQueue>['removeFromQueue'];
+  addToQueue: ReturnType<typeof useQueue>['addToQueue'];
 };
 
 const user = (overrides: Partial<SessionUser> = {}): SessionUser => ({
@@ -275,13 +276,22 @@ function wireFullSync(
   };
 }
 
-function wireQueueItemAdded(sequence: number, stateHash: string, item: ReturnType<typeof wireItem>) {
+// `clientId` is the adding connection's id (#4042); it is nullable on the wire,
+// so a pre-#4042 server sends null — hence the optional trailing param, which
+// keeps every existing caller unchanged.
+function wireQueueItemAdded(
+  sequence: number,
+  stateHash: string,
+  item: ReturnType<typeof wireItem>,
+  clientId: string | null = null,
+) {
   return {
     __typename: 'QueueItemAdded',
     sequence,
     stateHash,
     addedItem: item,
     position: null,
+    clientId,
   };
 }
 
@@ -362,8 +372,16 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       sessionId: queue.sessionId,
       subscribeToPlaybackEvents: queue.subscribeToPlaybackEvents,
       removeFromQueue: queue.removeFromQueue,
+      addToQueue: queue.addToQueue,
     });
-  }, [queue.state, queue.sessionId, queue.subscribeToPlaybackEvents, queue.removeFromQueue, onSnapshot]);
+  }, [
+    queue.state,
+    queue.sessionId,
+    queue.subscribeToPlaybackEvents,
+    queue.removeFromQueue,
+    queue.addToQueue,
+    onSnapshot,
+  ]);
   return null;
 }
 
@@ -990,6 +1008,139 @@ describe('QueueItemRemoved self-echo attribution (issue #3382)', () => {
     expect(analytics.track).toHaveBeenCalledWith(
       'Climb Removed from Queue',
       expect.objectContaining({ removedBy: 'self', partyMode: false }),
+    );
+  });
+});
+
+// Issue #4042 — the add side of #3382. An add echoed back to the client that
+// issued it must NOT be tracked again: the local add already fired
+// `Climb Added to Queue` with `addedFromTab: 'mobile'` at the mutation site
+// (queue-provider.tsx), so the echo handler firing a second, peer-attributed
+// copy double counted every party-session self-add. joinSession returns
+// clientId 'client-self' in this harness, which is exactly what the backend
+// stamps onto the event — comparing against the locally generated
+// coordinator.clientId instead would compile but suppress nothing.
+describe('QueueItemAdded self-echo attribution (issue #4042)', () => {
+  const addTrackCalls = () => analytics.track.mock.calls.filter(([eventName]) => eventName === 'Climb Added to Queue');
+
+  const seedAndAdd = async (clientId: string | null) => {
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(ws.getQueueUpdatesSink()).not.toBeNull();
+    });
+    const queueUpdatesSink = ws.getQueueUpdatesSink();
+    if (!queueUpdatesSink) throw new Error('queue updates sink was not captured');
+
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireFullSync(1, 'hash-1') } });
+    });
+    analytics.track.mockClear();
+    act(() => {
+      queueUpdatesSink.next({
+        data: { queueUpdates: wireQueueItemAdded(2, 'hash-2', wireItem('q1', 'c1'), clientId) },
+      });
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['q1']);
+    });
+    return snapshots;
+  };
+
+  beforeEach(() => {
+    ws.reset();
+    ws.client.on.mockClear();
+    ws.client.subscribe.mockClear();
+    activeBoard.getStoredActiveBoard.mockReset();
+    activeBoard.getStoredActiveBoard.mockResolvedValue(activeBoard.stored);
+    toast.showToast.mockClear();
+    analytics.track.mockClear();
+    for (const mutation of Object.values(queueMutations) as Array<ReturnType<typeof vi.fn>>) {
+      mutation.mockReset();
+      mutation.mockResolvedValue(undefined);
+    }
+    sessionStore.getStoredSessionId.mockReset();
+    sessionStore.getStoredSessionId.mockResolvedValue('session-1');
+    graph.execute.mockReset();
+    graph.execute.mockResolvedValue(createJoinSessionResponse());
+    http.request.mockReset();
+    routeHttpRequest(queueStateResponse([]));
+  });
+
+  it('does not track an add echoed back from this client', async () => {
+    await seedAndAdd('client-self');
+    expect(addTrackCalls()).toHaveLength(0);
+  });
+
+  it("still tracks a peer's add as addedFromTab: 'peer_broadcast'", async () => {
+    await seedAndAdd('client-peer');
+    expect(addTrackCalls()).toHaveLength(1);
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Climb Added to Queue',
+      expect.objectContaining({ addedFromTab: 'peer_broadcast', partyMode: true }),
+    );
+  });
+
+  it("falls back to 'peer_broadcast' when a pre-#4042 server sends no clientId", async () => {
+    await seedAndAdd(null);
+    expect(addTrackCalls()).toHaveLength(1);
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Climb Added to Queue',
+      expect.objectContaining({ addedFromTab: 'peer_broadcast' }),
+    );
+  });
+
+  // The suppressed echo used to be the only mobile add carrying `partyMode`,
+  // so the surviving self-track has to compute it or a PostHog breakdown on
+  // partyMode loses every mobile self-add.
+  const addLocally = async () => {
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(ws.getQueueUpdatesSink()).not.toBeNull();
+    });
+    const queueUpdatesSink = ws.getQueueUpdatesSink();
+    if (!queueUpdatesSink) throw new Error('queue updates sink was not captured');
+
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireFullSync(1, 'hash-1') } });
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    analytics.track.mockClear();
+    act(() => {
+      snapshots.at(-1)?.addToQueue(makeQueueItem('q-local', 'c-local'));
+    });
+    await waitFor(() => {
+      expect(addTrackCalls()).toHaveLength(1);
+    });
+  };
+
+  it('tracks a local add with partyMode: true when the crew has more than one climber', async () => {
+    const joined = createJoinSessionResponse();
+    graph.execute.mockResolvedValue({
+      joinSession: {
+        ...joined.joinSession,
+        users: [...joined.joinSession.users, user({ id: 'participant-peer', username: 'Sam', userId: 'db-peer' })],
+      },
+    });
+
+    await addLocally();
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Climb Added to Queue',
+      expect.objectContaining({ addedFromTab: 'mobile', partyMode: true }),
+    );
+  });
+
+  it('tracks a solo add with partyMode: false', async () => {
+    await addLocally();
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Climb Added to Queue',
+      expect.objectContaining({ addedFromTab: 'mobile', partyMode: false }),
     );
   });
 });

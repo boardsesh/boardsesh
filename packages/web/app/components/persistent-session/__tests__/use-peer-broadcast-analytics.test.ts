@@ -298,4 +298,77 @@ describe('usePeerBroadcastAnalytics', () => {
       expect.objectContaining({ removedBy: 'peer' }),
     );
   });
+
+  // Issue #4042 — the same double count on the add side. The local add already
+  // tracked itself with its real source tab in QueueContext.tsx, so tracking
+  // the echoed-back copy inflated every party-session self-add.
+  it('skips a QueueItemAdded echoed back from this client', () => {
+    const { subscribeToQueueEvents, emit } = createSubscribeToQueueEvents();
+    renderHook(() =>
+      usePeerBroadcastAnalytics({
+        subscribeToQueueEvents,
+        isOnBoardRoute: true,
+        boardLayoutName: 'Original',
+        queueRef: { current: new Array(2) },
+        clientId: 'conn-self',
+      }),
+    );
+
+    emit({ ...addedEvent, clientId: 'conn-self' });
+
+    expect(mockTrack).not.toHaveBeenCalled();
+  });
+
+  it("still fires 'peer_broadcast' for a QueueItemAdded from another client", () => {
+    const { subscribeToQueueEvents, emit } = createSubscribeToQueueEvents();
+    renderHook(() =>
+      usePeerBroadcastAnalytics({
+        subscribeToQueueEvents,
+        isOnBoardRoute: true,
+        boardLayoutName: 'Original',
+        queueRef: { current: new Array(2) },
+        clientId: 'conn-self',
+      }),
+    );
+
+    emit({ ...addedEvent, clientId: 'conn-peer' });
+
+    expect(mockTrack).toHaveBeenCalledTimes(1);
+    expect(mockTrack).toHaveBeenCalledWith('Climb Added to Queue', {
+      boardLayout: 'Original',
+      addedFromTab: 'peer_broadcast',
+      currentQueueLength: 3,
+      partyMode: true,
+    });
+  });
+
+  // A pre-#4042 server sends no clientId; a solo/unjoined client has none of
+  // its own. Both fall back to the historical 'peer_broadcast' attribution.
+  it("falls back to 'peer_broadcast' when either side has no clientId", () => {
+    const { subscribeToQueueEvents, emit } = createSubscribeToQueueEvents();
+    const { rerender } = renderHook(
+      (props: { clientId: string | null }) =>
+        usePeerBroadcastAnalytics({
+          subscribeToQueueEvents,
+          isOnBoardRoute: true,
+          boardLayoutName: 'Original',
+          queueRef: { current: new Array(2) },
+          clientId: props.clientId,
+        }),
+      { initialProps: { clientId: 'conn-self' } as { clientId: string | null } },
+    );
+
+    // Legacy server: event carries no clientId.
+    emit({ ...addedEvent, clientId: null });
+    expect(mockTrack).toHaveBeenCalledTimes(1);
+
+    // Unjoined client: we have no clientId of our own.
+    rerender({ clientId: null });
+    emit({ ...addedEvent, clientId: 'conn-peer' });
+    expect(mockTrack).toHaveBeenCalledTimes(2);
+    expect(mockTrack).toHaveBeenLastCalledWith(
+      'Climb Added to Queue',
+      expect.objectContaining({ addedFromTab: 'peer_broadcast' }),
+    );
+  });
 });
