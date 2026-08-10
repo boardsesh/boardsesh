@@ -12,7 +12,7 @@ import { sql } from 'drizzle-orm';
  * exactly as the mobile local PK so the client can split it back into columns —
  * see docs/sync-table-manifest.md "Del:" lines per table. Examples:
  *   boardsesh_ticks  -> OLD.uuid
- *   user_favorites   -> board_name:climb_uuid:angle
+ *   user_favorites   -> climb_uuid
  *   board_climb_stats-> board_type:climb_uuid:angle
  *
  * `user_id` scopes user-owned deletions for privacy; it is NULL for reference
