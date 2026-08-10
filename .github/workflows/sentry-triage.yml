@@ -1,0 +1,102 @@
+name: Sentry Triage
+
+# Weekly Claude-driven sweep of unresolved Sentry issues: dedupe against
+# existing GitHub issues, comment fresh evidence on known ones, file new
+# prioritised issues for genuinely untracked bugs.
+
+on:
+  schedule:
+    - cron: '0 5 * * 1' # Mondays 05:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Report what would be filed without writing to GitHub'
+        required: false
+        type: boolean
+        default: false
+      stats_period:
+        description: 'Sentry statsPeriod to sweep (e.g. 7d, 14d)'
+        required: false
+        default: '14d'
+
+concurrency:
+  group: sentry-triage
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Run Sentry triage
+        uses: anthropics/claude-code-action@v1.0.99
+        env:
+          SENTRY_TRIAGE_TOKEN: ${{ secrets.SENTRY_TRIAGE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+          STATS_PERIOD: ${{ inputs.stats_period || '14d' }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: '--allowed-tools "Bash(curl:*),Bash(gh issue:*),Bash(gh search:*),Bash(gh api:*),Bash(git log:*),Bash(git show:*),Read,Grep,Glob"'
+          prompt: |
+            You are running the weekly Sentry triage sweep for boardsesh/boardsesh.
+            The repo is checked out at the current directory. DRY_RUN=$DRY_RUN.
+
+            ## Pull the data
+
+            Sentry read access: bearer token in $SENTRY_TRIAGE_TOKEN (never print it).
+            Org `boardsesh`, region us.sentry.io, one project for all SDKs.
+            - List unresolved issues, both sorts, paginate via Link headers:
+              `curl -s -H "Authorization: Bearer $SENTRY_TRIAGE_TOKEN" "https://us.sentry.io/api/0/organizations/boardsesh/issues/?query=is%3Aunresolved&sort=freq&statsPeriod=$STATS_PERIOD&limit=100"` (and sort=user).
+            - Per-issue detail: `.../issues/<numeric_id>/events/latest/` (stacktrace + tags)
+              and `.../issues/<numeric_id>/tags/release/?statsPeriod=$STATS_PERIOD`.
+            - Only trust events with `environment` of `production` or `production-web`;
+              preview/localhost/e2e events leak into this project and do not count.
+
+            ## Triage rules
+
+            1. Cluster the issues by root cause, not by title. Check the release tag
+               distribution before judging severity: events dominated by old app
+               binaries (fleet lag behind an already-shipped fix) are not regressions.
+            2. Dedupe hard. For every cluster, search existing issues open AND closed:
+               `gh issue list --repo boardsesh/boardsesh --state all --search "<keywords>"`,
+               plus a search for the Sentry short id (e.g. BOARDSESH-XX) which past
+               sweeps embed in issue bodies and comments. The `from-sentry` label marks
+               previously filed sweeps.
+            3. Known noise you must not re-file: the hygiene inventory in issue #3088
+               (expected network failures, user-cancel, BLE range/power errors,
+               join-session timeouts, sign-in races). At most, add ONE comment to #3088
+               if a genuinely new noise signature appeared.
+            4. Comment instead of filing when an issue already covers the cluster, and
+               only when you add real information: a >2x volume change, a new release
+               line affected, a new error signature, or evidence that contradicts the
+               issue. Quote Sentry short ids and event/user counts.
+            5. File a new issue only for a genuinely untracked, real code defect. Cap:
+               5 new issues per run. Before claiming a root cause, verify it against the
+               checked-out code (Read/Grep) — if you cannot confirm the cause in code,
+               say so in the issue and add the `needs-analysis` label instead of guessing.
+               Labels: `bug`, `from-sentry`, and one of `priority:P1|P2|P3` (P1: broken
+               core flow or data loss on current builds; P2: real defect with daily user
+               impact; P3: low-volume, monitor, or polish). Title states the defect, not
+               the exception text. Body must include: Sentry short id(s), event/user
+               counts with the stats period, first/last seen, release distribution,
+               affected file:line refs, and a suggested fix if the code supports one.
+            6. Never close, reopen, edit, or label existing issues; never edit other
+               comments. Your only writes are `gh issue create` and `gh issue comment`.
+            7. If DRY_RUN=true, make no writes at all: print every would-be issue and
+               comment in full in your final output instead.
+
+            ## Report
+
+            Finish by appending a summary to $GITHUB_STEP_SUMMARY: clusters seen,
+            issues filed (numbers + titles), comments posted (issue numbers), clusters
+            skipped as noise/fleet-lag and why. Keep it under a screenful.
