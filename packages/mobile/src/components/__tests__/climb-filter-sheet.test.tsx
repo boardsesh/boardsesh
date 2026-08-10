@@ -749,6 +749,32 @@ describe('ClimbFilterSheet flat sections', () => {
     expect(queryByTestId('segment-drafts')).toBeNull();
   });
 
+  // Personal rating filters (#2645) live inside the auth-gated Your progress
+  // section, so they must disappear with it when signed out.
+  it('renders the My rating controls inside the auth-gated progress section', () => {
+    const { getByText, getByTestId } = renderFilterSheet();
+    expect(getByText('mobile.filter.myRating')).not.toBeNull();
+    expect(getByTestId('switch-mobile.filter.onlyRatedByMe')).not.toBeNull();
+  });
+
+  it('hides the My rating controls when signed out', () => {
+    authMock.isAuthenticated = false;
+    const { queryByText, queryByTestId } = renderFilterSheet();
+    expect(queryByText('mobile.filter.myRating')).toBeNull();
+    expect(queryByTestId('switch-mobile.filter.onlyRatedByMe')).toBeNull();
+  });
+
+  it('applies onlyRatedByMe when the rated-by-me switch is turned on', () => {
+    const onApply = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({ onApply });
+
+    fireEvent.click(getByTestId('switch-mobile.filter.onlyRatedByMe'));
+    fireEvent.click(getByText('mobile.filter.showCount12'));
+
+    const applied = onApply.mock.calls.at(-1)?.[0] as ClimbFilters;
+    expect(applied.onlyRatedByMe).toBe(true);
+  });
+
   it('selecting the "Unrepeated" popularity bucket sets status to projects', () => {
     const onApply = vi.fn();
     const { getByLabelText, getByText } = renderFilterSheet({ onApply });

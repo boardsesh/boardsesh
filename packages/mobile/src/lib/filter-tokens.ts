@@ -122,6 +122,24 @@ export function getActiveFilterTokens({
     });
   }
 
+  // Personal rating (auth-gated). Both levers get their own token so either can
+  // be cleared without losing the other.
+  if (filters.minUserRating != null) {
+    tokens.push({
+      key: 'minUserRating',
+      label: labels.myRating(filters.minUserRating),
+      clear: () => patchFilters({ minUserRating: undefined }),
+    });
+  }
+
+  if (filters.onlyRatedByMe) {
+    tokens.push({
+      key: 'onlyRatedByMe',
+      label: labels.onlyRatedByMe(),
+      clear: () => patchFilters({ onlyRatedByMe: undefined }),
+    });
+  }
+
   if (filters.setter != null && filters.setter.length > 0) {
     tokens.push({
       key: 'setter',

@@ -49,6 +49,10 @@ export function buildFilterLabels(t: TFunction<'climbs'>): ClimbFilterLabels {
     gradeMax: (grade) => t('mobile.search.gradeMax', { grade }),
     ascents: (count) => t('mobile.search.ascents', { count }),
     rating: (count) => t('mobile.search.rating', { count }),
+    // The user's own stars. Prefixed ("My 4+ ⭐") so a receipt row carrying both
+    // rating filters can't be read as two community thresholds.
+    myRating: (count) => t('mobile.search.myRating', { count }),
+    onlyRatedByMe: () => t('mobile.filter.ratedByMeShort'),
     more: (count) => t('mobile.search.more', { count }),
     // i18n-keep mobile.search.settersCount
     setters: (count) => t('mobile.search.settersCount', { count }),

@@ -42,4 +42,18 @@ describe('statusForAuth', () => {
     const filters: ClimbFilters = { ...DEFAULT_FILTERS, showOnlyCompleted: true };
     expect(statusForAuth(filters, true)).toBe(filters);
   });
+
+  // The personal rating filters live in the same auth-gated section (#2645), so
+  // signed out they'd filter the list with no visible control to clear them.
+  it('clears the personal rating filters when signed out', () => {
+    const filters: ClimbFilters = { ...DEFAULT_FILTERS, minUserRating: 4, onlyRatedByMe: true };
+    const result = statusForAuth(filters, false);
+    expect(result.minUserRating).toBeUndefined();
+    expect(result.onlyRatedByMe).toBeUndefined();
+  });
+
+  it('leaves the personal rating filters alone when signed in (same reference)', () => {
+    const filters: ClimbFilters = { ...DEFAULT_FILTERS, minUserRating: 4 };
+    expect(statusForAuth(filters, true)).toBe(filters);
+  });
 });

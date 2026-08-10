@@ -21,6 +21,8 @@ const mockT = ((key: string, options?: Record<string, unknown>) => {
   if (key === 'mobile.search.gradeMax') return `≤${text(options?.grade)}`;
   if (key === 'mobile.search.ascents') return `${text(options?.count)}+ 🧗`;
   if (key === 'mobile.search.rating') return `${text(options?.count)}+ ⭐`;
+  if (key === 'mobile.search.myRating') return `My ${text(options?.count)}+ ⭐`;
+  if (key === 'mobile.filter.ratedByMeShort') return 'Rated by me';
   if (key === 'mobile.search.setterName') return `By ${text(options?.setter)}`;
   if (key === 'mobile.search.settersCount') return `${text(options?.count)} setters`;
   if (key === 'search.summary.routesOnly') return 'Routes only';
@@ -158,6 +160,20 @@ describe('getActiveFilterTokens', () => {
     expect(status?.label).toBe('Unrepeated');
     status?.clear();
     expect(patchFilters).toHaveBeenCalledWith({ status: 'any', minAscents: undefined });
+  });
+
+  it('gives each personal rating lever its own clearable token', () => {
+    const { tokens, patchFilters } = build({ ...DEFAULT_FILTERS, minUserRating: 4, onlyRatedByMe: true });
+
+    const myRating = tokens.find((token) => token.key === 'minUserRating');
+    expect(myRating?.label).toBe('My 4+ ⭐');
+    myRating?.clear();
+    expect(patchFilters).toHaveBeenCalledWith({ minUserRating: undefined });
+
+    const ratedByMe = tokens.find((token) => token.key === 'onlyRatedByMe');
+    expect(ratedByMe?.label).toBe('Rated by me');
+    ratedByMe?.clear();
+    expect(patchFilters).toHaveBeenCalledWith({ onlyRatedByMe: undefined });
   });
 
   it('orders grade first, then refinements in summary order', () => {

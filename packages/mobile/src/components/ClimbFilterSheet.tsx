@@ -862,6 +862,33 @@ export function ClimbFilterSheet({
                     />
                   ))}
                 </View>
+
+                {/* My rating — the stars you gave, at the angle you're browsing.
+                    The star row keeps climbs you never rated; the switch drops them. */}
+                <View style={styles.subsectionGap} />
+                <Text variant="footnote" style={styles.subsectionLabel}>
+                  {t('mobile.filter.myRating')}
+                </Text>
+                <Text variant="footnote" style={styles.subsectionDescription}>
+                  {t('mobile.filter.myRatingDescription')}
+                </Text>
+                <View style={styles.ratingRow}>
+                  <Chip
+                    label={t('mobile.filter.anyRating')}
+                    selected={localFilters.minUserRating == null}
+                    onPress={() => setFiltersPatch({ minUserRating: undefined })}
+                  />
+                  <StarRating
+                    value={localFilters.minUserRating}
+                    onChange={(value) => setFiltersPatch({ minUserRating: value })}
+                    clearValue={undefined}
+                  />
+                </View>
+                <SwitchRow
+                  label={t('mobile.filter.onlyRatedByMe')}
+                  value={!!localFilters.onlyRatedByMe}
+                  onValueChange={(value) => setFiltersPatch({ onlyRatedByMe: value || undefined })}
+                />
               </View>
             ) : null}
 
