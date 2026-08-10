@@ -19,14 +19,17 @@ case "$path" in
     ;;
 esac
 
+# Headers go to stderr so stdout stays clean JSON for jq.
 header_args=()
 if [ "${2:-}" = "--with-headers" ]; then
-  header_args=(-D -)
+  header_args=(-D /dev/stderr)
 elif [ -n "${2:-}" ]; then
   echo "sentry-api.sh: unknown option '${2}'" >&2
   exit 2
 fi
 
-exec curl -sS --get "${header_args[@]}" \
+exec curl -sS --get --fail-with-body \
+  --connect-timeout 10 --max-time 60 \
+  "${header_args[@]}" \
   -H "Authorization: Bearer ${SENTRY_TRIAGE_TOKEN:?SENTRY_TRIAGE_TOKEN unset}" \
   "https://us.sentry.io${path}"
