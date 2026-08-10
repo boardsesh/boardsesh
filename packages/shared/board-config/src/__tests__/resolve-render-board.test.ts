@@ -123,6 +123,21 @@ describe('resolveRenderBoard', () => {
     expect(getSizeRank('kilter', SQUARE_12X12)).toBeLessThan(getSizeRank('kilter', COMMERCIAL_12X14));
   });
 
+  it('ignores a board from another product family when sizing the fallback', () => {
+    // A Kilter Homewall (layout 8) size lives in a different coordinate frame,
+    // so its rank says nothing about how big a Commercial wall they climb on.
+    const homewall = ownedBoard(25, { layoutId: 8 });
+
+    const result = resolveRenderBoard({
+      boardType: 'kilter',
+      climbLayoutId: KILTER_LAYOUT,
+      compatibleSizeIds: [COMMERCIAL_12X14, SQUARE_12X12],
+      ownerBoards: [homewall],
+    });
+
+    expect(result).toEqual(getDefaultRenderBoard('kilter', KILTER_LAYOUT));
+  });
+
   it('falls back to the layout default when the climber has no boards at all', () => {
     const result = resolveRenderBoard({
       boardType: 'kilter',

@@ -28,6 +28,8 @@ import {
   getSizesForLayoutId,
   getSetsForLayoutAndSize,
   getAllLayouts,
+  getLayout,
+  getProductSize,
   ORPHANED_KILTER_LAYOUT_DEFAULTS,
 } from '@boardsesh/board-constants/product-sizes';
 import { getSizeRank } from '@boardsesh/board-constants/size-comparison';
@@ -194,8 +196,13 @@ export function resolveRenderBoard(args: ResolveRenderBoardArgs): RenderBoardCon
 
   // 3. Nothing of theirs fits, but they do climb on this board type: draw it at
   //    the size closest to their biggest board, out of the sizes it fits.
-  const boardsOfType = (ownerBoards ?? []).filter((board) => board.boardType === boardType);
-  if (climbLayoutId != null && boardsOfType.length > 0) {
+  //    Scoped to the climb layout's product family — home and commercial walls
+  //    use different coordinate origins, so their size ranks aren't comparable.
+  const climbProductId = climbLayoutId == null ? undefined : getLayout(boardName, climbLayoutId)?.productId;
+  const boardsOfType = (ownerBoards ?? []).filter(
+    (board) => board.boardType === boardType && getProductSize(boardName, board.sizeId)?.productId === climbProductId,
+  );
+  if (climbLayoutId != null && climbProductId != null && boardsOfType.length > 0) {
     const biggestOwnedRank = boardsOfType.reduce(
       (rank, board) => Math.max(rank, getSizeRank(boardName, board.sizeId)),
       -1,
