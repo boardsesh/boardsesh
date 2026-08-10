@@ -21,12 +21,23 @@ type CommentSheetProps = {
   entityId: string | null;
   /** Defaults to `'session'` so existing session call sites stay unchanged. */
   entityType?: SocialEntityType;
+  /** When false the composer is swapped for a sign-in prompt. Defaults to true
+   *  so the session/tick call sites keep their composer untouched. Playlist
+   *  threads are readable while logged out, hence the read-only state. */
+  canComment?: boolean;
   onClose: () => void;
 };
 
-/** Comment thread for a social entity (session or tick), with an inline composer. */
-export function CommentSheet({ sheetRef, entityId, entityType = 'session', onClose }: CommentSheetProps) {
+/** Comment thread for a social entity (session, tick or playlist), with an inline composer. */
+export function CommentSheet({
+  sheetRef,
+  entityId,
+  entityType = 'session',
+  canComment = true,
+  onClose,
+}: CommentSheetProps) {
   const { t } = useTranslation('you');
+  const { t: tCommon } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
   const [draft, setDraft] = useState('');
@@ -58,28 +69,34 @@ export function CommentSheet({ sheetRef, entityId, entityType = 'session', onClo
       scrollable
       onClose={onClose}
       footer={
-        <View style={styles.composer}>
-          <BottomSheetTextInput
-            style={[styles.input, { backgroundColor: systemColors.fill, color: systemColors.label }]}
-            placeholder={t('mobile.comments.placeholder')}
-            placeholderTextColor={systemColors.tertiaryLabel}
-            value={draft}
-            onChangeText={setDraft}
-            multiline
-          />
-          <Pressable
-            onPress={submit}
-            disabled={draft.trim().length === 0 || addComment.isPending}
-            style={styles.send}
-            accessibilityRole="button"
-          >
-            <Icon
-              name="send"
-              size={22}
-              color={draft.trim().length > 0 ? brandColors.primary : systemColors.tertiaryLabel}
+        canComment ? (
+          <View style={styles.composer}>
+            <BottomSheetTextInput
+              style={[styles.input, { backgroundColor: systemColors.fill, color: systemColors.label }]}
+              placeholder={t('mobile.comments.placeholder')}
+              placeholderTextColor={systemColors.tertiaryLabel}
+              value={draft}
+              onChangeText={setDraft}
+              multiline
             />
-          </Pressable>
-        </View>
+            <Pressable
+              onPress={submit}
+              disabled={draft.trim().length === 0 || addComment.isPending}
+              style={styles.send}
+              accessibilityRole="button"
+            >
+              <Icon
+                name="send"
+                size={22}
+                color={draft.trim().length > 0 ? brandColors.primary : systemColors.tertiaryLabel}
+              />
+            </Pressable>
+          </View>
+        ) : (
+          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.signInPrompt}>
+            {tCommon('comment.signInPrompt')}
+          </Text>
+        )
       }
     >
       <Text variant="title3" style={styles.title}>
@@ -144,4 +161,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   send: { paddingBottom: spacing[2] },
+  signInPrompt: { paddingVertical: spacing[2], textAlign: 'center' },
 });
