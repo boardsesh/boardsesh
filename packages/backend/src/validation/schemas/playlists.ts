@@ -26,6 +26,30 @@ export const CreatePlaylistInputSchema = z.object({
   icon: PlaylistIconSchema,
 });
 
+// The snapshot the client based its edit on (#1934). `updatedAt` must parse as a
+// date: an unparseable string would make every comparison read "stored is newer"
+// and turn every edit into a conflict, so reject it at the door.
+//
+// Every metadata field is nullish, not optional — a client mirroring what it read
+// sends `description: null` for a playlist that has none, and that null is
+// meaningful ("I saw no description"). An ABSENT field is the conservative case:
+// the comparison can't prove the client saw the stored value, so it counts as
+// divergent.
+export const PlaylistRevisionInputSchema = z.object({
+  updatedAt: z
+    .string()
+    .min(1)
+    .refine((updatedAt) => !Number.isNaN(Date.parse(updatedAt)), 'basedOn.updatedAt must be a parseable date'),
+  name: PlaylistNameSchema.nullish(),
+  description: z.string().max(500, 'Playlist description too long').nullish(),
+  isPublic: z.boolean().nullish(),
+  color: z
+    .string()
+    .refine((color) => color === '' || isValidPlaylistColor(color), 'Invalid color format (must be hex)')
+    .nullish(),
+  icon: z.string().max(50, 'Icon name too long').nullish(),
+});
+
 export const UpdatePlaylistInputSchema = z.object({
   playlistId: z.string().min(1),
   name: PlaylistNameSchema.optional(),
@@ -33,6 +57,7 @@ export const UpdatePlaylistInputSchema = z.object({
   isPublic: z.boolean().optional(),
   color: PlaylistColorSchema,
   icon: PlaylistIconSchema,
+  basedOn: PlaylistRevisionInputSchema.optional(),
 });
 
 export const AddClimbToPlaylistInputSchema = z.object({
