@@ -1343,6 +1343,35 @@ describe('requestGymClaim — auto-approval', () => {
     expect(rows.filter((row) => row.status === 'pending')).toHaveLength(1);
   });
 
+  it('queues instead of erroring once the auto-approve rate limit is spent', async () => {
+    await setAutoApprove(true);
+
+    // SECOND_TARGET is used by no other auto-approval test, so this account's
+    // in-memory `gymClaimAutoApprove` budget starts fresh (the limiter is
+    // per-user and is NOT reset between tests in a worker).
+    const gyms = await Promise.all(
+      [1, 2, 3, 4].map((index) => insertGym({ ownerId: SYSTEM_OWNER, name: `Rate Limited ${index}` })),
+    );
+
+    const results: string[] = [];
+    for (const gym of gyms) {
+      const result = (await socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: gym.uuid, message: 'mine' } },
+        authCtx(SECOND_TARGET),
+      )) as { status: string };
+      results.push(result.status);
+    }
+
+    // The limit caps instant hand-overs at 3; the 4th must fall back to the
+    // queue rather than reject — its claim row is already committed, so an
+    // error would tell the user their request failed when it didn't.
+    expect(results).toEqual(['approved', 'approved', 'approved', 'admin_review']);
+
+    expect(await gymOwnerId(gyms[3].uuid)).toBe(SYSTEM_OWNER);
+    expect(await claimRows(gyms[3].id)).toEqual([expect.objectContaining({ method: 'admin', status: 'pending' })]);
+  });
+
   it('never leaks the internal race message out of a manual approve', async () => {
     // Two admin-method claims on one gym, both approved at once. Whichever way
     // the transfers interleave, the reviewer must only ever see the curated

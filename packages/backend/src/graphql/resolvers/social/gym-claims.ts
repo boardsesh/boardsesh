@@ -203,9 +203,11 @@ export async function verifyGymClaimByToken(
  * swallowing it here degrades to `admin_review` instead of handing the user a
  * server error for a claim that is in fact safely queued.
  *
- * The rate limit above is deliberately outside that catch: hitting it is a
- * client-facing condition the caller should see, matching how requestGymClaim's
- * own limit behaves.
+ * That includes the rate limit, which bounds how many gyms one account can be
+ * handed instantly. Unlike requestGymClaim's own limit — which runs before
+ * anything is written, so throwing leaves nothing behind — this one runs after
+ * the claim row is committed. Exhausting it therefore means "don't auto-approve
+ * this one", not "reject the request": the claim stays queued for a human.
  *
  * Auto-approved rows are recognisable as `method='admin' AND status='approved'
  * AND reviewed_by IS NULL`; there's no dedicated column, so no migration.
@@ -216,12 +218,18 @@ async function tryAutoApproveAdminClaim(
   claim: typeof dbSchema.gymClaims.$inferSelect,
 ): Promise<ClaimApplied | null> {
   if (!(await gymClaimAutoApproveEnabled())) return null;
-  // Tighter than requestGymClaim's own limit: each pass here can hand over a gym.
-  await applyRateLimit(ctx, 3, 'gymClaimAutoApprove');
 
-  let result: ClaimApplied | null;
   try {
-    result = await applyGymClaim(claim, { requireCurrentOwnerId: SYSTEM_BOARD_OWNER_ID });
+    // Tighter than requestGymClaim's own limit: each pass here can hand over a gym.
+    await applyRateLimit(ctx, 3, 'gymClaimAutoApprove');
+
+    const result = await applyGymClaim(claim, { requireCurrentOwnerId: SYSTEM_BOARD_OWNER_ID });
+    if (result) {
+      logger.info(
+        `[GymClaim] Auto-approved claim ${claim.id} on gym ${gym.uuid} for user ${claim.claimantUserId} (unclaimed listing)`,
+      );
+    }
+    return result;
   } catch (error) {
     logger.warn(
       `[GymClaim] Auto-approval of claim ${claim.id} on gym ${gym.uuid} failed; leaving it queued for review:`,
@@ -229,13 +237,6 @@ async function tryAutoApproveAdminClaim(
     );
     return null;
   }
-
-  if (result) {
-    logger.info(
-      `[GymClaim] Auto-approved claim ${claim.id} on gym ${gym.uuid} for user ${claim.claimantUserId} (unclaimed listing)`,
-    );
-  }
-  return result;
 }
 
 /** The single pending claim (if any) this user has on this gym. */
