@@ -360,6 +360,34 @@ describe('collectFeedback', () => {
     expect(bundle.deferredCount).toBe(3);
   });
 
+  it('still reads the configured feedback channels when the guild channel list is denied', async () => {
+    const source = stubSource({
+      listGuildChannels: vi.fn(async () => {
+        throw new Error('Discord 403 for /guilds/x/channels');
+      }),
+      listChannelMessages: vi.fn(async (channelId: string) =>
+        channelId === CHANNEL ? [message({ id: '930', timestamp: recent() })] : [],
+      ),
+    });
+
+    const bundle = await collectFeedback(collectOptions, { source, logger: { ...console, warn: vi.fn() } });
+    expect(bundle.messages.map((entry) => entry.messageId)).toContain('930');
+  });
+
+  it('survives a denied active-threads listing', async () => {
+    const source = stubSource({
+      listActiveThreads: vi.fn(async () => {
+        throw new Error('Discord 403 for /guilds/x/threads/active');
+      }),
+      listChannelMessages: vi.fn(async (channelId: string) =>
+        channelId === CHANNEL ? [message({ id: '931', timestamp: recent() })] : [],
+      ),
+    });
+
+    const bundle = await collectFeedback(collectOptions, { source, logger: { ...console, warn: vi.fn() } });
+    expect(bundle.messages.map((entry) => entry.messageId)).toContain('931');
+  });
+
   it('fails loudly when message content comes back empty (intent disabled)', async () => {
     const source = stubSource({
       listChannelMessages: vi.fn(async (channelId: string) =>

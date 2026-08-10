@@ -25,7 +25,7 @@
           "title": {
             "type": "string",
             "maxLength": 120,
-            "description": "Symptom in plain words. Required (min 8 chars) for bug/feature."
+            "description": "Symptom in plain words. Must be at least 8 characters for bug/feature; may be empty for question/noise/duplicate."
           },
           "body": {
             "type": "string",
@@ -59,7 +59,19 @@
             "type": "string",
             "description": "One line for the run log. Never reaches the issue."
           }
-        }
+        },
+        "allOf": [
+          {
+            "$comment": "Mirrors validateTriageResult: only filing verdicts need a usable title and a non-empty body.",
+            "if": { "properties": { "verdict": { "enum": ["bug", "feature"] } }, "required": ["verdict"] },
+            "then": {
+              "properties": {
+                "title": { "minLength": 8 },
+                "body": { "minLength": 1 }
+              }
+            }
+          }
+        ]
       }
     }
   }

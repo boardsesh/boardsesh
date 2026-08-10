@@ -429,7 +429,11 @@ export class GitHubIssueClient implements IssueSink {
       const release = (await response.json()) as { id: number };
       this.releaseId = release.id;
       return release.id;
-    } catch {
+    } catch (error) {
+      // Only "it isn't there yet" means create it. A 5xx or an auth failure must
+      // surface as itself rather than being reported as a freshly created release.
+      if (!String(error).includes('404')) throw error;
+
       const response = await this.githubFetch(`/repos/${this.owner}/${this.repository}/releases`, {
         method: 'POST',
         body: JSON.stringify({
@@ -479,7 +483,14 @@ export async function collectFeedback(
   const feedbackCutoff = now - options.lookbackHours * 3600_000;
   const reactionCutoff = now - options.reactionLookbackDays * 86_400_000;
 
-  const channels = await source.listGuildChannels(options.guildId);
+  // Losing the channel list costs us the reaction pass, not the run: the
+  // explicitly-configured feedback channels are still readable by id.
+  let channels: Array<{ id: string; name: string; type: number }> = [];
+  try {
+    channels = await source.listGuildChannels(options.guildId);
+  } catch (error) {
+    logger.warn(`[discord-feedback] could not list guild channels, skipping the reaction pass: ${String(error)}`);
+  }
   const channelNames = new Map(channels.map((channel) => [channel.id, channel.name]));
   const excluded = new Set(options.excludeChannelIds);
   const feedbackChannels = new Set(options.feedbackChannelIds);
@@ -577,7 +588,12 @@ export async function collectFeedback(
 
   // Pass C — keyword threads. A public thread started from a message shares the
   // message's id, so the parent resolves directly with no search.
-  const threads = await source.listActiveThreads(options.guildId);
+  let threads: Array<{ id: string; parent_id?: string; name?: string }> = [];
+  try {
+    threads = await source.listActiveThreads(options.guildId);
+  } catch (error) {
+    logger.warn(`[discord-feedback] could not list active threads, skipping the thread pass: ${String(error)}`);
+  }
   for (const thread of threads) {
     if (!thread.parent_id || excluded.has(thread.parent_id)) continue;
     let threadMessages: DiscordMessage[];
