@@ -176,17 +176,19 @@ describe('CollapsibleSection body rendering', () => {
     // The Beta Videos "+" lives in this slot. It must add a video, not collapse
     // the section out from under the user (#4229).
     const onActionPress = vi.fn();
-    const { getAllByRole, queryByText } = render(
+    // Anchored by its own label rather than a positional index, so restructuring
+    // the header can't silently retarget this at the wrong button.
+    const { getByText, queryByText } = render(
       createElement(CollapsibleSection, {
         title: 'Beta Videos',
         defaultExpanded: true,
-        headerAction: createElement('button', { onClick: onActionPress }, 'add'),
+        headerAction: createElement('button', { onClick: onActionPress }, 'ADD_BETA'),
         children: createElement('span', null, BODY),
       }),
     );
 
     expect(queryByText(BODY)).toBeTruthy();
-    fireEvent.click(getAllByRole('button')[1]); // the action, between title and chevron
+    fireEvent.click(getByText('ADD_BETA'));
     expect(onActionPress).toHaveBeenCalledTimes(1);
     expect(queryByText(BODY)).toBeTruthy();
   });

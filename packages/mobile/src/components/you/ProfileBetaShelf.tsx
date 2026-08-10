@@ -22,7 +22,10 @@ export const ProfileBetaShelf = memo(function ProfileBetaShelf({ userId }: Profi
   const { t } = useTranslation('you');
   // Deliberately not gated on `expanded`: this shelf hides itself entirely when
   // the climber has no beta, so skipping the query while collapsed would strip
-  // the header too and leave no way to unfold it again.
+  // the header too and leave no way to unfold it again. That protection leans on
+  // the empty-state guard below staying keyed to *real* results — if
+  // `useUserBetaLinks` ever returns placeholder rows while loading, revisit both
+  // together. Covered by `__tests__/profile-beta-shelf-collapse.test.tsx`.
   const { videos, isLoading, isLoadingMore, loadMore } = useUserBetaLinks(userId);
   const { expanded, toggle } = useBetaShelfCollapse();
 
