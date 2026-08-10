@@ -21,11 +21,15 @@ function listApplicationFiles(root: string): string[] {
     .filter((entry) => !entry.split(sep).includes('__tests__') && !ALLOWED_FILES.includes(entry));
 }
 
-/** Resolves a relative or `@/`-aliased specifier (see tsconfig paths) to an absolute path. */
+/**
+ * Resolves a relative or `@/`-aliased specifier (see tsconfig paths) to an absolute path,
+ * extensionless so `'../db/testing'` and `'../db/testing.ts'` compare equal.
+ */
 function resolveSpecifier(file: string, specifier: string): string {
-  if (specifier.startsWith('@/')) return join(packageRoot, 'src', specifier.slice(2));
-  if (specifier.startsWith('.')) return resolve(dirname(join(packageRoot, file)), specifier);
-  return specifier;
+  const target = specifier.replace(/\.tsx?$/, '');
+  if (target.startsWith('@/')) return join(packageRoot, 'src', target.slice(2));
+  if (target.startsWith('.')) return resolve(dirname(join(packageRoot, file)), target);
+  return target;
 }
 
 describe('database test seam', () => {
