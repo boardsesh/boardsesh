@@ -153,6 +153,26 @@ describe('PlaylistsProvider', () => {
     expect(createPlaylist).toHaveBeenCalledWith('Projects', 'Moon projects', '#ff00ff', 'star', boardContext);
   });
 
+  // #4014: the data hook used to pass a freshly built empty Map on every render,
+  // which busted `getPlaylistsForClimb`'s memo and, through it, the whole context
+  // value — re-rendering every consumer on every parent render. With the prop
+  // omitted it falls back to a module-level constant and stays stable.
+  it('keeps the context value stable across re-renders when playlistMemberships is omitted', () => {
+    const playlists = [mkPlaylist('p-1', 'Hard sends')];
+    const addToPlaylist = vi.fn(async (_playlistId: string, _climbUuid: string, _angle: number) => undefined);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <PlaylistsProvider playlists={playlists} addToPlaylist={addToPlaylist}>
+        {children}
+      </PlaylistsProvider>
+    );
+    const { result, rerender } = renderHook(() => usePlaylistsContext(), { wrapper });
+    const first = result.current;
+    rerender();
+    rerender();
+    expect(result.current).toBe(first);
+    expect(result.current.getPlaylistsForClimb).toBe(first.getPlaylistsForClimb);
+  });
+
   it('usePlaylistsContext throws when called outside a provider', () => {
     expect(() => renderHook(() => usePlaylistsContext())).toThrow(/must be used within a PlaylistsProvider/);
   });

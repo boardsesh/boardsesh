@@ -135,6 +135,7 @@ export const ADD_CLIMB_TO_PLAYLIST = gql`
       angle
       position
       addedAt
+      wasAlreadyInPlaylist
     }
   }
 `;
@@ -374,6 +375,9 @@ export type AddClimbToPlaylistMutationResponse = {
     angle: number;
     position: number;
     addedAt: string;
+    // True when the climb was already in the playlist and the add was an
+    // idempotent no-op. Null/undefined against a server that predates the field.
+    wasAlreadyInPlaylist: boolean | null;
   };
 };
 

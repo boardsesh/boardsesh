@@ -74,7 +74,7 @@ type Documents = {
   '\n  \n  mutation CreatePlaylist($input: CreatePlaylistInput!) {\n    createPlaylist(input: $input) {\n      ...PlaylistFields\n    }\n  }\n': typeof types.CreatePlaylistDocument;
   '\n  \n  mutation UpdatePlaylist($input: UpdatePlaylistInput!) {\n    updatePlaylist(input: $input) {\n      ...PlaylistFields\n    }\n  }\n': typeof types.UpdatePlaylistDocument;
   '\n  mutation DeletePlaylist($playlistId: ID!) {\n    deletePlaylist(playlistId: $playlistId)\n  }\n': typeof types.DeletePlaylistDocument;
-  '\n  mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) {\n    addClimbToPlaylist(input: $input) {\n      id\n      playlistId\n      climbUuid\n      angle\n      position\n      addedAt\n    }\n  }\n': typeof types.AddClimbToPlaylistDocument;
+  '\n  mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) {\n    addClimbToPlaylist(input: $input) {\n      id\n      playlistId\n      climbUuid\n      angle\n      position\n      addedAt\n      wasAlreadyInPlaylist\n    }\n  }\n': typeof types.AddClimbToPlaylistDocument;
   '\n  mutation RemoveClimbFromPlaylist($input: RemoveClimbFromPlaylistInput!) {\n    removeClimbFromPlaylist(input: $input)\n  }\n': typeof types.RemoveClimbFromPlaylistDocument;
   '\n  mutation ReorderPlaylistClimb($input: ReorderPlaylistClimbInput!) {\n    reorderPlaylistClimb(input: $input)\n  }\n': typeof types.ReorderPlaylistClimbDocument;
   '\n  query GetPlaylistClimbs($input: GetPlaylistClimbsInput!) {\n    playlistClimbs(input: $input) {\n      climbs {\n        uuid\n        layoutId\n        boardType\n        setter_username\n        name\n        description\n        frames\n        framesCount\n        framesPace\n        angle\n        ascensionist_count\n        difficulty\n        quality_average\n        stars\n        difficulty_error\n        benchmark_difficulty\n        boardseshDifficulty\n        boardseshConfidence\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetPlaylistClimbsDocument;
@@ -255,7 +255,7 @@ const documents: Documents = {
     types.UpdatePlaylistDocument,
   '\n  mutation DeletePlaylist($playlistId: ID!) {\n    deletePlaylist(playlistId: $playlistId)\n  }\n':
     types.DeletePlaylistDocument,
-  '\n  mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) {\n    addClimbToPlaylist(input: $input) {\n      id\n      playlistId\n      climbUuid\n      angle\n      position\n      addedAt\n    }\n  }\n':
+  '\n  mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) {\n    addClimbToPlaylist(input: $input) {\n      id\n      playlistId\n      climbUuid\n      angle\n      position\n      addedAt\n      wasAlreadyInPlaylist\n    }\n  }\n':
     types.AddClimbToPlaylistDocument,
   '\n  mutation RemoveClimbFromPlaylist($input: RemoveClimbFromPlaylistInput!) {\n    removeClimbFromPlaylist(input: $input)\n  }\n':
     types.RemoveClimbFromPlaylistDocument,
@@ -751,8 +751,8 @@ export function graphql(
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
-  source: '\n  mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) {\n    addClimbToPlaylist(input: $input) {\n      id\n      playlistId\n      climbUuid\n      angle\n      position\n      addedAt\n    }\n  }\n',
-): (typeof documents)['\n  mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) {\n    addClimbToPlaylist(input: $input) {\n      id\n      playlistId\n      climbUuid\n      angle\n      position\n      addedAt\n    }\n  }\n'];
+  source: '\n  mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) {\n    addClimbToPlaylist(input: $input) {\n      id\n      playlistId\n      climbUuid\n      angle\n      position\n      addedAt\n      wasAlreadyInPlaylist\n    }\n  }\n',
+): (typeof documents)['\n  mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) {\n    addClimbToPlaylist(input: $input) {\n      id\n      playlistId\n      climbUuid\n      angle\n      position\n      addedAt\n      wasAlreadyInPlaylist\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

@@ -1864,6 +1864,13 @@ type PlaylistClimb {
   position: Int!
   "When added (ISO 8601)"
   addedAt: String!
+  """
+  Populated only by addClimbToPlaylist: true when the climb was already in the
+  playlist and the add was an idempotent no-op, false when this call inserted
+  the row. Null everywhere else (list/detail reads never set it). Clients read
+  it to skip the optimistic climb-count bump on a duplicate add.
+  """
+  wasAlreadyInPlaylist: Boolean
 }
 
 """
