@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { once } from 'node:events';
-import { access, mkdir, readdir, rm } from 'node:fs/promises';
+import { access, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const validateTokenMock = vi.hoisted(() => vi.fn());
@@ -155,6 +155,45 @@ describe('avatar upload routes', () => {
       const { avatarUrl } = survivorBody as { avatarUrl: string };
       const staticResponse = await fetch(`${baseUrl}${avatarUrl}`);
       expect(staticResponse.status).toBe(200);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('rejects an empty file part and leaves the existing avatar alone', async () => {
+    validateTokenMock.mockResolvedValue({ userId: USER_ID });
+    const { baseUrl, server } = await startAvatarServer();
+    try {
+      const jpegResponse = await uploadAvatar(baseUrl, new Blob([JPEG_BYTES], { type: 'image/jpeg' }), 'avatar.jpg');
+      expect(jpegResponse.status).toBe(200);
+      const jpegBody = (await jpegResponse.json()) as { avatarUrl?: string };
+
+      const emptyResponse = await uploadAvatar(baseUrl, new Blob([], { type: 'image/png' }), 'avatar.png');
+
+      expect(emptyResponse.status).toBe(400);
+      expect((await emptyResponse.json()) as { error?: string }).toEqual({ error: 'Uploaded file is empty' });
+
+      // Nothing new written, and the avatar the stored URL points at survives.
+      await expect(access(path.join(getAvatarsDir(), `${USER_ID}.png`))).rejects.toThrow();
+      const staticResponse = await fetch(`${baseUrl}${jpegBody.avatarUrl}`);
+      expect(staticResponse.status).toBe(200);
+      expect(Buffer.from(await staticResponse.arrayBuffer())).toEqual(JPEG_BYTES);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('serves 404 (uncacheable) for a zero-byte avatar file instead of an empty 200', async () => {
+    validateTokenMock.mockResolvedValue({ userId: USER_ID });
+    const { baseUrl, server } = await startAvatarServer();
+    try {
+      await mkdir(getAvatarsDir(), { recursive: true });
+      await writeFile(path.join(getAvatarsDir(), `${USER_ID}.jpg`), Buffer.alloc(0));
+
+      const staticResponse = await fetch(`${baseUrl}/static/avatars/${USER_ID}.jpg`);
+
+      expect(staticResponse.status).toBe(404);
+      expect(staticResponse.headers.get('cache-control')).toBe('no-store');
     } finally {
       await closeServer(server);
     }

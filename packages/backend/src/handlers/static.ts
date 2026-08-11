@@ -17,6 +17,20 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 /**
+ * Write a 404. `noStore` is used by the avatar / gym-logo handlers: a stored
+ * object can be replaced by a re-upload at the same key, so an edge cache
+ * holding onto the 404 would pin the broken state for a day. Missing images
+ * are rare enough that the extra origin hits don't matter.
+ */
+function sendNotFound(res: ServerResponse, options: { noStore?: boolean } = {}): void {
+  res.writeHead(404, {
+    'Content-Type': 'application/json',
+    ...(options.noStore && { 'Cache-Control': 'no-store' }),
+  });
+  res.end(JSON.stringify({ error: 'Not found' }));
+}
+
+/**
  * Serve a resized (size×size, JPEG) version of an S3 object. Returns false
  * when the base object doesn't exist (caller should 404); true once it has
  * written a response.
@@ -36,7 +50,11 @@ async function serveResizedImageFromS3(
 ): Promise<boolean> {
   if (options.cacheVariant) {
     const cached = await getFromS3(resizedVariantKey(baseKey, size));
-    if (cached) {
+    if (cached && cached.contentLength === 0) {
+      // A zero-byte cached variant would be served as an "OK" empty image.
+      // Drop it and fall through to resizing the original.
+      cached.stream.destroy();
+    } else if (cached) {
       res.writeHead(200, {
         'Content-Type': cached.contentType || 'image/jpeg',
         ...(cached.contentLength && { 'Content-Length': cached.contentLength }),
@@ -51,6 +69,12 @@ async function serveResizedImageFromS3(
   if (!original) return false;
 
   const originalBuffer = await streamToBuffer(original.stream);
+  // A zero-byte stored object is corrupt, not an image: sharp throws, the
+  // catch below falls back to "the original bytes", and we'd answer 200 with
+  // an empty body — which image clients treat as a successful load and paint
+  // as nothing. Treat it as a miss so the caller 404s and the client's
+  // fallback (initials) kicks in.
+  if (originalBuffer.length === 0) return false;
   let body = originalBuffer;
   let contentType = original.contentType || 'application/octet-stream';
   try {
@@ -117,8 +141,7 @@ export async function handleStaticAvatar(
         cacheControl: 'public, max-age=86400',
       });
       if (!served) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Not found' }));
+        sendNotFound(res, { noStore: true });
       }
       return;
     }
@@ -126,8 +149,17 @@ export async function handleStaticAvatar(
     const s3Object = await getFromS3(s3Key);
 
     if (!s3Object) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Not found' }));
+      sendNotFound(res, { noStore: true });
+      return;
+    }
+
+    // A zero-byte object serves as `200 image/jpeg` with an empty body, which
+    // <Image>/<img> report as a successful load — so the client paints an
+    // empty circle and never runs its error fallback. 404 instead, strictly on
+    // 0: an unknown (undefined) length must keep streaming as before.
+    if (s3Object.contentLength === 0) {
+      s3Object.stream.destroy();
+      sendNotFound(res, { noStore: true });
       return;
     }
 
@@ -153,6 +185,12 @@ export async function handleStaticAvatar(
 
   try {
     const fileStat = await stat(filePath);
+    if (fileStat.size === 0) {
+      // Same reasoning as the S3 branch: an empty file is a broken avatar, and
+      // serving it as 200 hides that from the client.
+      sendNotFound(res, { noStore: true });
+      return;
+    }
     const ext = extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 
@@ -186,8 +224,7 @@ export async function handleStaticAvatar(
 
     createReadStream(filePath).pipe(res);
   } catch {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not found' }));
+    sendNotFound(res, { noStore: true });
   }
 }
 
@@ -232,8 +269,7 @@ export async function handleStaticGymLogo(
         cacheControl: 'public, max-age=86400',
       });
       if (!served) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Not found' }));
+        sendNotFound(res, { noStore: true });
       }
       return;
     }
@@ -241,8 +277,15 @@ export async function handleStaticGymLogo(
     const s3Object = await getFromS3(s3Key);
 
     if (!s3Object) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Not found' }));
+      sendNotFound(res, { noStore: true });
+      return;
+    }
+
+    // Mirrors the avatar handler: a zero-byte object is a broken upload, and
+    // serving it as a 200 makes the client believe the image loaded.
+    if (s3Object.contentLength === 0) {
+      s3Object.stream.destroy();
+      sendNotFound(res, { noStore: true });
       return;
     }
 
@@ -266,6 +309,10 @@ export async function handleStaticGymLogo(
 
   try {
     const fileStat = await stat(filePath);
+    if (fileStat.size === 0) {
+      sendNotFound(res, { noStore: true });
+      return;
+    }
     const ext = extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 
@@ -297,8 +344,7 @@ export async function handleStaticGymLogo(
 
     createReadStream(filePath).pipe(res);
   } catch {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not found' }));
+    sendNotFound(res, { noStore: true });
   }
 }
 
