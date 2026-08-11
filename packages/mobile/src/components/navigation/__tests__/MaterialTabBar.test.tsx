@@ -96,9 +96,10 @@ vi.mock('../../../providers/theme-provider', () => ({
       separator: '#3A3A3C',
       secondaryLabel: '#8E8E93',
     },
-    // MaterialTabBar now reads the scheme-aware brand from the theme (lifted
-    // tint in dark) rather than the static import.
-    brandColors: { primary: '#FF3B30', success: '#6B9080', live: '#FBBF24' },
+    // Scheme-aware brand from the theme — MaterialTabBar uses it for the press
+    // ripple. Seeded with the DARK-scheme values so the badge assertions below
+    // prove the dot fill comes from the static (light) brand instead.
+    brandColors: { primary: '#A78BFA', success: '#34D399', live: '#FBBF24' },
     // M3 navigation-bar roles: active icon on a secondaryContainer pill, active
     // label onSurface, inactive icon+label onSurfaceVariant.
     m3: {
@@ -110,8 +111,10 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 
+// The real static (light-scheme) brand fills from @boardsesh/velvet-tokens — the
+// badge dot is a FILL, so it stays on these in both schemes.
 vi.mock('../../../theme/colors', () => ({
-  brandColors: { primary: '#FF3B30', success: '#6B9080', live: '#FBBF24' },
+  brandColors: { primary: '#6D28D9', success: '#047857', live: '#B45309' },
 }));
 
 vi.mock('../../../theme/tokens', () => ({
@@ -130,6 +133,7 @@ vi.mock('../../../theme/layout', () => ({
 }));
 
 import { MaterialTabBar } from '../MaterialTabBar';
+import { TAB_BADGE_CONNECTED, TAB_BADGE_LIVE } from '../tab-badge';
 
 function makeProps(overrides: {
   activeIndex?: number;
@@ -205,24 +209,37 @@ describe('MaterialTabBar', () => {
       expect(queryByTestId('badge')).toBeNull();
     });
 
-    it('uses the live color when tabBarBadge is the "live" sentinel', () => {
-      const props = makeProps({ tabBarBadge: 'live' });
+    it('uses the live color when tabBarBadge carries the live marker', () => {
+      const props = makeProps({ tabBarBadge: TAB_BADGE_LIVE });
       const { queryByTestId } = render(
         <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
       );
       const style = queryByTestId('badge')?.getAttribute('data-style');
-      expect(style).toContain('#FBBF24');
-      expect(style).not.toContain('#6B9080');
+      expect(style).toContain('#B45309');
+      expect(style).not.toContain('#047857');
     });
 
-    it('keeps the standard (success) color when tabBarBadge is a non-"live" value', () => {
-      const props = makeProps({ tabBarBadge: 'connected' });
+    it('keeps the standard (success) color for the connected marker', () => {
+      const props = makeProps({ tabBarBadge: TAB_BADGE_CONNECTED });
       const { queryByTestId } = render(
         <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
       );
       const style = queryByTestId('badge')?.getAttribute('data-style');
-      expect(style).toContain('#6B9080');
-      expect(style).not.toContain('#FBBF24');
+      expect(style).toContain('#047857');
+      expect(style).not.toContain('#B45309');
+    });
+
+    // Any badge value that isn't the live marker keeps the standard color — the
+    // dot never renders text, so a future count badge degrades to a plain dot
+    // rather than picking up the live tint.
+    it('keeps the standard color for an unrelated badge value', () => {
+      const props = makeProps({ tabBarBadge: 3 });
+      const { queryByTestId } = render(
+        <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
+      );
+      const style = queryByTestId('badge')?.getAttribute('data-style');
+      expect(style).toContain('#047857');
+      expect(style).not.toContain('#B45309');
     });
   });
 

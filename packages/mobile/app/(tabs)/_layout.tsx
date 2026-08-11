@@ -9,6 +9,7 @@ import { useQueueSessionId } from '../../src/providers/queue-provider';
 import { useStickyAccessoryPresence } from '../../src/hooks/use-sticky-accessory-presence';
 import { QueueBottomAccessory } from '../../src/components/queue-control/QueueBottomAccessory';
 import { MaterialTabBar } from '../../src/components/navigation/MaterialTabBar';
+import { TAB_BADGE_CONNECTED, TAB_BADGE_LIVE } from '../../src/components/navigation/tab-badge';
 import { useTheme } from '../../src/providers/theme-provider';
 import { selectByVariant } from '../../src/theme/variants/select-by-variant';
 import { useNativeAccessoryActive, useNativeTabBar } from '../../src/hooks/use-bottom-accessory';
@@ -201,9 +202,10 @@ export default function TabLayout() {
       options={{
         title: tSession('mobile.session.recordTab'),
         tabBarIcon: materialTabIcon('record-circle', 'record-circle-outline'),
-        // Semantic marker string, not display text — MaterialTabBar's badge is a
-        // color dot with no text; it branches its dot color on this value.
-        tabBarBadge: showRecordBadge ? (hasLiveSession ? 'live' : 'connected') : undefined,
+        // State marker, not display text — MaterialTabBar's badge is a color dot
+        // with no text and branches its dot color on this value. Both ends of that
+        // contract go through src/components/navigation/tab-badge.
+        tabBarBadge: showRecordBadge ? (hasLiveSession ? TAB_BADGE_LIVE : TAB_BADGE_CONNECTED) : undefined,
         // Android can stall the first lazy mount of this nested stack,
         // leaving the Record tab blank until another tab forces a remount.
         lazy: eagerMountRecord ? false : undefined,
@@ -329,8 +331,14 @@ export default function TabLayout() {
       // the user browses another tab), so the normal-state tint must come from the
       // navigator-level `badgeBackgroundColor` prop, which seeds
       // `options.badgeBackgroundColor` — applied to normal/focused/selected alike
-      // (appearance.ios.js `createStandardAppearanceFromOptions`). Safe as a
-      // navigator-wide default: Record is the only trigger that renders a badge.
+      // (appearance.ios.js `createStandardAppearanceFromOptions`).
+      //
+      // CAUTION: this is a navigator-wide DEFAULT — it tints every
+      // `NativeTabs.Trigger.Badge` here, not just Record's. It's only correct
+      // because Record owns the sole badge (locked by the "keeps Record as the
+      // only badged trigger" test in __tests__/tab-layout.test.tsx). If another
+      // tab ever gains a badge, drop this prop and move the session color onto
+      // per-trigger styling instead of letting the new badge inherit it.
       badgeBackgroundColor={hasLiveSession ? brandColors.live : brandColors.success}
     >
       {onAccessorySurface && nativeAccessoryActive && hasCurrentClimb ? (

@@ -258,6 +258,7 @@ vi.mock('expo-router/unstable-native-tabs', () => {
 });
 
 import TabLayout, { unstable_settings } from '../_layout';
+import { TAB_BADGE_CONNECTED, TAB_BADGE_LIVE } from '../../../src/components/navigation/tab-badge';
 
 describe('TabLayout', () => {
   beforeEach(() => {
@@ -697,25 +698,30 @@ describe('TabLayout', () => {
     expect(cfg.materialScreens.find((screen) => screen.name === 'record')?.options).toMatchObject({ lazy: false });
   });
 
-  it('sets the JS-Tabs Record badge to the "live" sentinel when a session is active', () => {
+  // The JS-Tabs badge value is a state marker MaterialTabBar branches its dot
+  // color on — assert the shared constants (tab-badge) so producer and consumer
+  // can't drift apart, and pin the wire values so a rename stays deliberate.
+  it('sets the JS-Tabs Record badge to the live marker when a session is active', () => {
     cfg.variant = 'material';
     cfg.sessionId = 'session-1';
 
     render(<TabLayout />);
 
+    expect(TAB_BADGE_LIVE).toBe('live');
     expect(cfg.materialScreens.find((screen) => screen.name === 'record')?.options).toMatchObject({
-      tabBarBadge: 'live',
+      tabBarBadge: TAB_BADGE_LIVE,
     });
   });
 
-  it('sets the JS-Tabs Record badge to "connected" when only Bluetooth is connected', () => {
+  it('sets the JS-Tabs Record badge to the connected marker when only Bluetooth is connected', () => {
     cfg.variant = 'material';
     cfg.bluetoothConnected = true;
 
     render(<TabLayout />);
 
+    expect(TAB_BADGE_CONNECTED).toBe('connected');
     expect(cfg.materialScreens.find((screen) => screen.name === 'record')?.options).toMatchObject({
-      tabBarBadge: 'connected',
+      tabBarBadge: TAB_BADGE_CONNECTED,
     });
   });
 
@@ -817,5 +823,20 @@ describe('TabLayout', () => {
     const tabs = container.querySelector('[data-tabs="true"]');
 
     expect(tabs?.getAttribute('data-badge-background-color')).toBe('#047857');
+  });
+
+  // `badgeBackgroundColor` above is a navigator-wide DEFAULT: it tints every
+  // trigger's badge. That's only correct while Record owns the sole badge, so lock
+  // the invariant here — a second badged trigger would silently inherit Record's
+  // session color, and this failing test is the signal to move the color onto
+  // per-trigger styling instead.
+  it('keeps Record as the only badged trigger (the navigator badge color is a shared default)', () => {
+    cfg.bluetoothConnected = true;
+    cfg.sessionId = 'session-1';
+    const { container } = render(<TabLayout />);
+    const badges = container.querySelectorAll('[data-badge="true"]');
+
+    expect(badges).toHaveLength(1);
+    expect(badges[0].closest('[data-trigger]')?.getAttribute('data-trigger')).toBe('record');
   });
 });
