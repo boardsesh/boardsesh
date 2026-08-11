@@ -282,7 +282,7 @@
       },
       "approved": {
         "sent": "{{gym}} est à toi.",
-        "manageCta": "Configurer votre salle",
+        "manageCta": "Configurer ta salle",
         "manageError": "Impossible d'ouvrir la configuration de la salle. Ouvre-la dans un navigateur."
       }
     },

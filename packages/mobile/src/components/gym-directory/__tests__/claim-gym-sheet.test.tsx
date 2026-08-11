@@ -73,7 +73,8 @@ const gym = { uuid: 'gym-uuid-1', slug: null, name: 'Bonsist', website: null } a
 const dismissMock = vi.fn();
 const sheetRef = { current: { dismiss: dismissMock } } as unknown as RefObject<ManagedSheetHandle | null>;
 
-const renderSheet = () => render(<ClaimGymSheet sheetRef={sheetRef} gym={gym} />);
+const renderSheet = (overrides?: Partial<Gym>) =>
+  render(<ClaimGymSheet sheetRef={sheetRef} gym={{ ...gym, ...overrides } as Gym} />);
 
 const submit = () => fireEvent.click(screen.getByText('mobile.gymClaim.admin.submit'));
 
@@ -120,6 +121,21 @@ describe('ClaimGymSheet — claim outcome', () => {
       expect.any(Function),
     );
     await waitFor(() => expect(dismissMock).toHaveBeenCalled());
+  });
+
+  it('prefers the gym slug over the uuid in the hand-off URL', async () => {
+    mockMutateAsync.mockResolvedValueOnce({ status: 'approved', email: null });
+
+    renderSheet({ slug: 'bonsist-amsterdam' });
+    submit();
+    await waitFor(() => expect(screen.getByText('mobile.gymClaim.approved.sent')).toBeTruthy());
+
+    fireEvent.click(screen.getByText('mobile.gymClaim.approved.manageCta'));
+
+    expect(openUrl.openValidatedUrl).toHaveBeenCalledWith(
+      'https://www.boardsesh.com/gym/bonsist-amsterdam/manage',
+      expect.any(Function),
+    );
   });
 
   it('shows an inline error and keeps the sheet open when the hand-off fails to open', async () => {
