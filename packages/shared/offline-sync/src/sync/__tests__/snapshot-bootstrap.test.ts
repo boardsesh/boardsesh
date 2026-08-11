@@ -1548,6 +1548,36 @@ describe('pullSync bootstrap: one-shot heal for an over-cap scope', () => {
     ).not.toBeNull();
   });
 
+  it('drops the paged-fallback marker before the download so My Boards stops saying "slower download"', async () => {
+    await seedExhaustedScope();
+    const filePath = join(workDir, 'heal-marker.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c-in', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c-in', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    // A snapshot download can run for 18 minutes; the row must not claim the slow
+    // path for the whole of it once the scope is back on the fast one.
+    let fallbackDuringDownload: unknown = 'never read';
+    const source: SnapshotSource = {
+      fetchManifest: vi.fn(async () => makeManifest([makeEntry()])),
+      downloadArtifact: vi.fn(async () => {
+        fallbackDuringDownload = await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', [
+          'bootstrap-paged-fallback:kilter:1:5',
+        ]);
+        return { filePath };
+      }),
+      deleteArtifact: vi.fn(async () => {}),
+    };
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+
+    expect(fallbackDuringDownload).toBeNull();
+  });
+
   it('does not heal a second time — the marker is what bounds the re-download', async () => {
     await seedExhaustedScope();
     await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [

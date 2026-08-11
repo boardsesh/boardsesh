@@ -726,6 +726,17 @@ async function runBootstrapPhase(
           }
           await resetBootstrapAttempts(db, scope.scopeKey);
           await markBootstrapAttemptsHealed(db, scope.scopeKey);
+          // The scope reached the cap, so it is carrying a paged-fallback marker
+          // that My Boards renders as "using the slower download". It is back on
+          // the snapshot path as of this line, and the download below can run for
+          // 18 minutes — leaving the marker up would tell the climber the wrong
+          // story for the whole of it. A later failure re-stamps it.
+          await clearBootstrapPagedFallback(db, scope.scopeKey);
+          // The scope reached the cap, so it is carrying a paged-fallback marker
+          // that My Boards renders as "using the slower download". It is back on
+          // the snapshot path as of this line, and the download below can run for
+          // 18 minutes — leaving the marker up would tell the climber the wrong
+          // story for the whole of it. A later failure re-stamps it.
         }
 
         if (resolution.status === 'absent') {
