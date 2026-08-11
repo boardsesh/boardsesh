@@ -201,9 +201,9 @@ export const climbTypeDefs = /* GraphQL */ `
     onlyDrafts: Boolean
     "Show only unclimbed projects (climbs with 0 ascents)"
     projectsOnly: Boolean
-    "Include single-frame climbs (boulders). Default true. Set to false (paired with routes=true) to filter to routes only."
+    "Include single-frame climbs (boulders). Omitting both boulders and routes matches all climb types; set boulders=true with routes=false (or omit routes) to filter to boulders only."
     boulders: Boolean
-    "Include multi-frame climbs (routes). Default false. Set to true to include or filter to routes."
+    "Include multi-frame climbs (routes). Omitting both boulders and routes matches all climb types; set routes=true with boulders=false (or omit boulders) to filter to routes only."
     routes: Boolean
     "Restrict results using this drawn zone"
     zoneBox: ZoneBoxInput

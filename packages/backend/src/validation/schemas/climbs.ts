@@ -206,22 +206,19 @@ export const ClimbSearchInputSchema = z.object({
   onlyRatedByMe: z.boolean().optional(),
   onlyDrafts: z.boolean().optional(),
   projectsOnly: z.boolean().optional(),
-  // Intended to default to boulders-only so non-web GraphQL callers (mobile,
-  // scripts) get the same shape as the web UI when the field is omitted. This
-  // default is currently DEAD CODE: searchClimbs (see
-  // packages/backend/src/graphql/resolvers/climbs/queries.ts) calls
-  // validateInput(ClimbSearchInputSchema, input, 'input') only for its
-  // throw-on-invalid side effect and discards the parsed/defaulted return
-  // value, so every downstream consumer (mapSearchInputToParams) reads the
-  // raw, un-defaulted input — an omitted boulders/routes stays undefined, not
-  // true/false (see #2636). Do not "fix" this by wiring the parsed result
-  // into use without auditing every caller of @boardsesh/climb-filters'
-  // toClimbSearchInput first: its both-selected ("All") case now sends
-  // explicit boulders: true, routes: true (hardened by #2636) so it's safe,
-  // but its both-off case still relies on omission staying undefined, and
-  // reactivating this default would flip that to boulders-only.
-  boulders: z.boolean().optional().default(true),
-  routes: z.boolean().optional().default(false),
+  // No default here on purpose: omitted means "no climb-type constraint"
+  // (both boulders and routes match), not "boulders-only". searchClimbs (see
+  // packages/backend/src/graphql/resolvers/climbs/queries.ts) now uses the
+  // parsed/defaulted return of validateInput(ClimbSearchInputSchema, ...),
+  // so a `.default()` here would actually apply — a boulders-only default
+  // would silently narrow every caller that omits these fields, and
+  // @boardsesh/climb-filters' toClimbSearchInput relies on the both-off case
+  // staying undefined (hardened by #2636, which closed #3975's original
+  // symptom by always sending explicit values for the "All" case). If a
+  // future change wants a real default, audit every caller of
+  // toClimbSearchInput first, not just the web client.
+  boulders: z.boolean().optional(),
+  routes: z.boolean().optional(),
   zoneBox: z
     .object({
       edgeLeft: z.number().int(),

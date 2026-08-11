@@ -577,7 +577,13 @@ export const sessionMutations = {
     // Session identity from the WebSocket context (WS-implicit pattern); no
     // sessionId argument.
     const sessionId = requireSession(ctx);
-    validateInput(BoardSerialSchema, serial, 'serial');
+    // Capture the parsed/normalized value (BoardSerialSchema trims +
+    // uppercases via normalizeSerial) — resolveBoardForSerial and the other
+    // BoardSerialSchema call sites in board-presence/mutations.ts already do
+    // this, so discarding it here (as before #3975) would let this one path
+    // store/broadcast a differently-cased serial than every other caller,
+    // breaking string-equality comparisons against it downstream.
+    const validSerial = validateInput(BoardSerialSchema, serial, 'serial');
     await requireSessionMember(ctx, sessionId);
 
     // Hard-error when ctx.participantId is missing — same reasoning as
@@ -590,11 +596,11 @@ export const sessionMutations = {
     }
     const participantId = ctx.participantId;
 
-    const previousSerial = await roomManager.setSessionBoardSerialAndReturnPrevious(sessionId, serial);
-    if (previousSerial !== serial) {
+    const previousSerial = await roomManager.setSessionBoardSerialAndReturnPrevious(sessionId, validSerial);
+    if (previousSerial !== validSerial) {
       pubsub.publishSessionEvent(sessionId, {
         __typename: 'SessionBoardSerialChanged',
-        lastConnectedBoardSerial: serial,
+        lastConnectedBoardSerial: validSerial,
       });
     }
 

@@ -36,11 +36,12 @@ describe('climb-type (boulders/routes) filter', () => {
   });
 
   it('sends explicit boulders=true, routes=true when both are selected (no frames_count constraint)', () => {
-    // Regression guard for #2636: omission here is currently equivalent to
-    // explicit true/true (both parse to "no constraint" downstream), but
-    // omission relies on the backend's Zod default(true)/default(false) for
-    // these fields staying dead code (see filter-state.ts comment above the
-    // both-on branch). Sending explicit true/true removes that footgun.
+    // Regression guard for #2636: omission here is equivalent to explicit
+    // true/true (both parse to "no constraint" downstream) because the
+    // backend's ClimbSearchInputSchema has no `.default()` on these fields
+    // (see filter-state.ts comment above the both-on branch). Sending
+    // explicit true/true keeps that contract independent of the backend
+    // schema either way.
     const input = inputFor({ boulders: true, routes: true });
     expect(input.boulders).toBe(true);
     expect(input.routes).toBe(true);

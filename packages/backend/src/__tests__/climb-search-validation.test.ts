@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { MAX_SEARCH_PAGE } from '@boardsesh/db/queries';
+import { MAX_SEARCH_PAGE, mapSearchInputToParams } from '@boardsesh/db/queries';
 import { ClimbSearchInputSchema } from '../validation/schemas';
 
 const base = {
@@ -67,5 +67,26 @@ describe('ClimbSearchInputSchema personal rating filters (#2645)', () => {
 
   it('leaves both filters optional', () => {
     expect(ClimbSearchInputSchema.safeParse(base).success).toBe(true);
+  });
+});
+
+describe('ClimbSearchInputSchema boulders/routes have no default (#3975)', () => {
+  it('leaves omitted boulders/routes undefined after parsing, not defaulted to boulders-only', () => {
+    const result = ClimbSearchInputSchema.parse(base);
+    expect(result.boulders).toBeUndefined();
+    expect(result.routes).toBeUndefined();
+  });
+
+  it('produces identical search params whether boulders/routes are omitted or explicitly true/true', () => {
+    // This is the no-behavior-change proof for removing the dead .default(true)/
+    // .default(false): now that searchClimbs uses validateInput's parsed return
+    // (see queries.ts), a live default here would have flipped omitted callers
+    // to boulders-only. Confirm omission and explicit true/true stay equivalent
+    // (both mean "no frames_count constraint"), mirroring #3976's repro.
+    const omitted = mapSearchInputToParams(ClimbSearchInputSchema.parse(base));
+    const explicit = mapSearchInputToParams(ClimbSearchInputSchema.parse({ ...base, boulders: true, routes: true }));
+    expect(omitted.boulders).toBeUndefined();
+    expect(omitted.routes).toBeUndefined();
+    expect(explicit).toEqual(omitted);
   });
 });
