@@ -123,6 +123,7 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/board-render-analytics.md` — the classic-vs-Boardsesh / glow-falloff A/B event contract (issue #2202): the seven events (incl. the paired board-look step events), the common-props builder, the `climb-view-session.ts` state machine, the stratification rule (never pool across `board_name` or `glow_falloff_source`), and the PostHog experiment setup steps
 - `docs/logging.md` — backend structured logger (winston)
 - `docs/crowdsourced-qa.md` — the PR test-plan + risk gate (`@boardsesh/pr-body`, `pr-test-plan.yml`), and the tester loop that turns it into `qa-approved` / `qa-declined` labels
+- `docs/scheduler.md` — the Railway cron scheduler (`packages/scheduler`): which job runs on Vercel vs the scheduler, env vars, Railway setup, cutover order and runbook
 - `docs/db-connectivity.md` — Postgres connect retries (what is retried and why it can't double-execute a write), the retry budgets, and the `/health` vs `/health/db` split
 - `docs/og-climb.md` — backend-served climb OG share cards (`GET /og/climb`: caches, env vars, timings)
 - `docs/cloudflare.md` — the boardsesh.com Cloudflare zone: config-as-code (`vp run cf:apply`), token scopes/secrets, CI auto-apply, og edge caching

@@ -1523,7 +1523,8 @@ Backend-affecting paths are defined in two places that must stay in sync:
 | `packages/kilter-sync/`                       | Kilter Grips user/catalog sync and public location sync                       |
 | `packages/location-sync/`                     | Shared public `gyms` / `user_boards` location writer                          |
 | `packages/moonboard-sync/`                    | MoonBoard public location sync CLI                                            |
-| `packages/web/vercel.json`                    | Build command (migration skip), cron definitions                              |
+| `packages/scheduler/`                         | Cron jobs moved off Vercel — see `docs/scheduler.md`                          |
+| `packages/web/vercel.json`                    | Build command (migration skip), remaining Vercel cron definitions             |
 | `.github/workflows/branch-deploy.yml`         | Build images + trigger Ansible deploy on PR open/sync                         |
 | `.github/workflows/branch-deploy-cleanup.yml` | Trigger Ansible cleanup + GHCR delete on PR close                             |
 | `.github/workflows/branch-deploy-sweep.yml`   | Trigger Ansible sweep on push to main / daily                                 |
