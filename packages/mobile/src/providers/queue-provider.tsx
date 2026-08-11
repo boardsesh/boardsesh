@@ -496,8 +496,18 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     // queue-adds) must not alarm: the local reducer already applied the change
     // and the WS subscription reconciles. Dev-log only — a user-facing "Action
     // failed" on a swipe-to-queue or a rapid current-climb change is noise.
+    //
+    // `setSessionBoardPath` is the exception. Nothing reconciles it: a dropped
+    // board-path broadcast leaves this climber on one wall and the rest of the
+    // party on another, indefinitely and invisibly. Report it (still no toast —
+    // the local move already succeeded and there is nothing to retry by hand).
+    // It only fires on an angle change or a board switch, so the Sentry volume
+    // stays tiny next to the per-swipe actions above.
     onBestEffortError: (action, error) => {
       if (__DEV__) console.warn(`[queue] best-effort ${action} failed`, error);
+      if (action === 'setSessionBoardPath') {
+        reportHandledError(error, { tags: { source: 'queue-sync', op: 'set-board-path' } });
+      }
     },
   });
 
@@ -877,8 +887,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           // local-only switch would leave the session's board path (and every
           // peer's wall) pointing at the board we just left.
           const { boardType, layoutId, sizeId, setIds, angle } = result.board;
+          // The shared mutation swallows its own transport errors into
+          // `onBestEffortError` (which reports them), so what lands here is the
+          // rarer pre-send failure — ensureJoined rejecting. Report that too
+          // rather than dropping it, or a party that silently never followed
+          // the switch leaves no trace at all.
           void setSessionBoardPath(buildBoardPath(boardType, layoutId, sizeId, setIds, angle)).catch((error) => {
             if (__DEV__) console.warn('[queue] setSessionBoardPath after board switch failed', error);
+            reportHandledError(error, { tags: { source: 'queue-sync', op: 'set-board-path-switch' } });
           });
         }
       }

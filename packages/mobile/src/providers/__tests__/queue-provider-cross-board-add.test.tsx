@@ -64,6 +64,8 @@ const boards = vi.hoisted(() => {
   };
 });
 
+const errorReporting = vi.hoisted(() => ({ reportError: vi.fn(), reportHandledError: vi.fn() }));
+
 const roster = vi.hoisted(() => ({ boards: [] as unknown[] }));
 const setActiveBoard = vi.hoisted(() => vi.fn(async (_board: unknown) => {}));
 const routerPush = vi.hoisted(() => vi.fn());
@@ -151,7 +153,7 @@ vi.mock('../../lib/graphql/use-active-board', () => ({
 }));
 vi.mock('../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: http.request }) }));
 vi.mock('../../lib/analytics', () => ({ track: analytics.track }));
-vi.mock('../../lib/error-reporting', () => ({ reportError: vi.fn(), reportHandledError: vi.fn() }));
+vi.mock('../../lib/error-reporting', () => errorReporting);
 vi.mock('../toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../queue-snackbar-provider', () => ({
   useQueueSnackbar: () => ({ showQueueAddedSnackbar: snackbar.showQueueAddedSnackbar }),
@@ -234,6 +236,8 @@ describe('QueueProvider cross-board add gate', () => {
     roster.boards = [boards.kilter, boards.tension];
     setActiveBoard.mockClear();
     routerPush.mockClear();
+    errorReporting.reportHandledError.mockClear();
+    queueMutations.setSessionBoardPath.mockImplementation(async () => {});
     analytics.track.mockClear();
     snackbar.showQueueAddedSnackbar.mockClear();
     for (const mutation of Object.values(queueMutations) as Array<ReturnType<typeof vi.fn>>) {
@@ -321,6 +325,29 @@ describe('QueueProvider cross-board add gate', () => {
     // The add is the SAME synced body, not a local-only dispatch.
     expect(queueUuids(provider.latest())).toEqual(['foreign']);
     expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a failed peer broadcast instead of splitting the party in silence', async () => {
+    queueMutations.setSessionBoardPath.mockImplementation(async () => {
+      throw new Error('join failed');
+    });
+    const provider = await mountProvider();
+
+    let pending!: Promise<'added' | 'cancelled'>;
+    act(() => {
+      pending = provider.latest().addToQueue(tensionItem('foreign'));
+    });
+    await answerPrompt(0, 'switch');
+    // The local add still succeeds — only the peers' follow is lost.
+    await expect(pending).resolves.toBe('added');
+    expect(queueUuids(provider.latest())).toEqual(['foreign']);
+
+    await waitFor(() => {
+      expect(errorReporting.reportHandledError).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({ tags: expect.objectContaining({ op: 'set-board-path-switch' }) }),
+      );
+    });
   });
 
   it('routes to the board picker and cancels the add when they do not own that board', async () => {

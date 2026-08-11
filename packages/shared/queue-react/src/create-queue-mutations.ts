@@ -57,6 +57,22 @@ export type PublishPlaybackStateInput = {
 
 const NOT_CONNECTED = 'Not connected to session';
 
+/**
+ * Every action whose transport error is swallowed here and handed to
+ * `onBestEffortError`. A union rather than `string` because callers legitimately
+ * branch on it — mobile reports `setSessionBoardPath` failures and dev-logs the
+ * rest — and a bare `string` would let a rename here silently turn such a branch
+ * into dead code.
+ */
+export type BestEffortAction =
+  | 'setCurrentClimb'
+  | 'addQueueItem'
+  | 'publishPlaybackState'
+  | 'confirmClimbOnWall'
+  | 'reportWallDisconnect'
+  | 'setSessionBoardSerial'
+  | 'setSessionBoardPath';
+
 export type QueueMutationsDeps<TItem> = {
   /** Live GraphQL client getter (web: clientRef.current; mobile: getWsClient()). */
   getClient: () => Client | null;
@@ -94,7 +110,7 @@ export type QueueMutationsDeps<TItem> = {
    */
   ensureReady?: (capturedSessionId: string | null) => Promise<string | null>;
   /** Sink for swallowed transport errors (best-effort actions + coalescer drains). */
-  onBestEffortError?: (action: string, error: unknown) => void;
+  onBestEffortError?: (action: BestEffortAction, error: unknown) => void;
   /**
    * Notified when a queue mutation is throttled and `execute` is backing off to
    * retry it (not on the final give-up). Web wires a debounced "catching up"
