@@ -21,6 +21,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- MoonBoard setter search now shows setters and counts, matching Kilter/Tension. ([#4286](https://github.com/boardsesh/boardsesh/pull/4286))
+- Android phones on version 11 or older now get a clear "Location is switched off" message with a one-tap fix when Bluetooth scanning finds nothing, instead of being told to check their board. ([#4283](https://github.com/boardsesh/boardsesh/pull/4283))
 - Grasshopper climbs now light up on the browser app instead of showing a blank board. Outlines draw at the standard thickness for now. ([#4261](https://github.com/boardsesh/boardsesh/pull/4261))
 - Admin access scoped to a single board no longer opens the site-wide admin tools; those pages now say plainly that they need full admin access instead of loading a page where nothing works. ([#4266](https://github.com/boardsesh/boardsesh/pull/4266))
 - Open the app offline and your board downloads stay on the fast path — two launches without signal no longer drop a board to the slow catalog crawl. ([#4259](https://github.com/boardsesh/boardsesh/pull/4259))
