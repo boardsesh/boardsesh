@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
+import { readJournalMigrations, selectPendingMigrations } from './lib/dev-db-pending-migrations.js';
+import type { ExpectedMigrationWithWhen } from './lib/migration-ledger.js';
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDirectory, '..');
@@ -58,17 +59,8 @@ type TailscaleStatus = {
   Peer?: Record<string, TailscaleNode>;
 };
 
-type MigrationJournalEntry = {
-  tag: string;
-  when: number;
-};
-
-type MigrationJournal = {
-  entries: MigrationJournalEntry[];
-};
-
-type MigrationTrackerRow = {
-  created_at: number | string | null;
+type LedgerHashRow = {
+  hash: string;
 };
 
 type BoardseshShapeRow = {
@@ -328,16 +320,6 @@ async function ensureMigrationTracker(client: postgres.Sql): Promise<void> {
   `;
 }
 
-export function loadMigrationJournal(): MigrationJournal {
-  const journalPath = join(drizzleDirectory, 'meta', '_journal.json');
-  const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as MigrationJournal;
-  return {
-    entries: journal.entries.filter(
-      (entry): entry is MigrationJournalEntry => typeof entry.tag === 'string' && typeof entry.when === 'number',
-    ),
-  };
-}
-
 export type MigrationTargetDecision =
   | { action: 'use' }
   | { action: 'migrate' }
@@ -375,23 +357,20 @@ function createMigrationClient(connectionString: string): postgres.Sql {
   });
 }
 
-async function readTrackerCreatedAt(client: postgres.Sql, trackerSchema: 'drizzle' | 'public'): Promise<number> {
-  const trackerRows =
+async function readTrackerHashes(client: postgres.Sql, trackerSchema: 'drizzle' | 'public'): Promise<string[]> {
+  const ledgerRows =
     trackerSchema === 'drizzle'
-      ? await client<MigrationTrackerRow[]>`
-          SELECT COALESCE((SELECT created_at FROM drizzle."__drizzle_migrations" ORDER BY created_at DESC LIMIT 1), 0) AS created_at
-        `
-      : await client<MigrationTrackerRow[]>`
-          SELECT COALESCE((SELECT created_at FROM public."__drizzle_migrations" ORDER BY created_at DESC LIMIT 1), 0) AS created_at
-        `;
-  return Number(trackerRows[0]?.created_at ?? 0);
+      ? await client<LedgerHashRow[]>`SELECT hash FROM drizzle."__drizzle_migrations" ORDER BY id`
+      : await client<LedgerHashRow[]>`SELECT hash FROM public."__drizzle_migrations" ORDER BY id`;
+  return ledgerRows.map((row) => row.hash);
 }
 
 // Read-only: unlike ensureMigrationTracker this never creates the tracker, so
 // it is safe to point at a database that is not ours. The drizzle tracker only
 // counts when it has rows: an empty one beside a populated public tracker is
-// the state ensureMigrationTracker is about to fill from public.
-async function readLastMigrationCreatedAt(client: postgres.Sql): Promise<number> {
+// the state ensureMigrationTracker is about to fill from public, so this reads
+// the same ledger the apply loop will see once the tracker is ensured.
+async function readLedgerHashes(client: postgres.Sql): Promise<string[]> {
   const existenceRows = await client<{ has_drizzle: boolean; has_public: boolean }[]>`
     SELECT
       to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS has_drizzle,
@@ -401,24 +380,29 @@ async function readLastMigrationCreatedAt(client: postgres.Sql): Promise<number>
     has_drizzle: false,
     has_public: false,
   };
-  const drizzleCreatedAt = hasDrizzle ? await readTrackerCreatedAt(client, 'drizzle') : 0;
-  if (drizzleCreatedAt > 0) return drizzleCreatedAt;
-  return hasPublic ? await readTrackerCreatedAt(client, 'public') : 0;
+  const drizzleHashes = hasDrizzle ? await readTrackerHashes(client, 'drizzle') : [];
+  if (drizzleHashes.length > 0) return drizzleHashes;
+  return hasPublic ? await readTrackerHashes(client, 'public') : [];
 }
 
-async function listPendingMigrations(client: postgres.Sql): Promise<MigrationJournalEntry[]> {
-  const lastMigrationCreatedAt = await readLastMigrationCreatedAt(client);
-  return loadMigrationJournal().entries.filter((entry) => entry.when > lastMigrationCreatedAt);
+// Per-entry and hash-keyed, not `when > max(created_at)` (#3979). The old
+// high-water mark only ever moved up, so a migration landing at or below it
+// — renumbered by a rebase, collapsed with another branch's, or simply older
+// than the peer's image build — was skipped here on every run, for good.
+// Throws, before any SQL runs, when the ledger is not a verified journal prefix.
+async function listPendingMigrations(client: postgres.Sql): Promise<ExpectedMigrationWithWhen[]> {
+  return selectPendingMigrations(readJournalMigrations(drizzleDirectory), await readLedgerHashes(client));
 }
 
-async function applyPendingMigrations(client: postgres.Sql, pendingMigrations: MigrationJournalEntry[]): Promise<void> {
+async function applyPendingMigrations(
+  client: postgres.Sql,
+  pendingMigrations: ExpectedMigrationWithWhen[],
+): Promise<void> {
   await ensureMigrationTracker(client);
 
   console.info(`  Applying ${pendingMigrations.length} pending migration(s) from ${drizzleDirectory}...`);
   for (const migration of pendingMigrations) {
-    const migrationFile = join(drizzleDirectory, `${migration.tag}.sql`);
-    const migrationSql = readFileSync(migrationFile, 'utf8');
-    const migrationHash = createHash('sha256').update(migrationSql).digest('hex');
+    const migrationSql = readFileSync(join(drizzleDirectory, `${migration.tag}.sql`), 'utf8');
     console.info(`    -> ${migration.tag}`);
 
     await client.unsafe('BEGIN');
@@ -426,7 +410,7 @@ async function applyPendingMigrations(client: postgres.Sql, pendingMigrations: M
       await client.unsafe(migrationSql);
       await client`
         INSERT INTO drizzle."__drizzle_migrations" (hash, created_at)
-        VALUES (${migrationHash}, ${migration.when})
+        VALUES (${migration.hash}, ${migration.when})
       `;
       await client.unsafe('COMMIT');
     } catch (migrationError) {
@@ -465,8 +449,10 @@ export type PrepareMigrationsOptions = {
   installCutoffHelper?: () => void;
 };
 
-// Returns false when the database is another machine's and is behind: the
-// caller must not use it.
+// Returns false when the database is another machine's and is behind, or its
+// ledger cannot be verified: the caller must not use it. On a database on this
+// machine an unverifiable ledger throws instead, since there is nothing to
+// fall back to and the owner has to look at it.
 export async function prepareMigrations(
   selection: Pick<DatabaseSelection, 'source' | 'host' | 'label' | 'connectionString'>,
   options: PrepareMigrationsOptions = {},
@@ -475,7 +461,18 @@ export async function prepareMigrations(
   const installCutoffHelper = options.installCutoffHelper ?? installSyncDeletionsCutoffHelper;
 
   try {
-    const pendingMigrations = await listPendingMigrations(client);
+    let pendingMigrations: ExpectedMigrationWithWhen[];
+    try {
+      pendingMigrations = await listPendingMigrations(client);
+    } catch (selectionError) {
+      if (selection.source === 'local-standalone') throw selectionError;
+      const reason = selectionError instanceof Error ? selectionError.message : String(selectionError);
+      console.warn(
+        `[dev-db] Skipping ${selection.label} (${selection.host}:${postgresPort}): ${reason} ` +
+          'Falling back to local Docker, which must be installed.',
+      );
+      return false;
+    }
     const decision = decideMigrationTarget(
       selection,
       pendingMigrations.map((migration) => migration.tag),
