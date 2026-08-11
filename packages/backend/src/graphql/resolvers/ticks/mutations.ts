@@ -768,8 +768,15 @@ export const tickMutations = {
       if (board && boardConfigMatchesTick(board, validatedInput)) {
         boardId = board.id;
       } else if (board) {
+        // Two different reasons to land here, and they mean different things in
+        // production triage: a client that sends no config at all is a client
+        // to go fix, a real mismatch is a stale uuid or a pollution attempt.
+        const hasConfig =
+          validatedInput.layoutId != null && validatedInput.sizeId != null && Boolean(validatedInput.setIds);
         logger.warn(
-          `[saveTick] Ignoring tick boardUuid ${validatedInput.boardUuid} — config mismatch for ${validatedInput.boardType}/${validatedInput.layoutId}/${validatedInput.sizeId}/${validatedInput.setIds}`,
+          hasConfig
+            ? `[saveTick] Ignoring tick boardUuid ${validatedInput.boardUuid} — config mismatch for ${validatedInput.boardType}/${validatedInput.layoutId}/${validatedInput.sizeId}/${validatedInput.setIds}`
+            : `[saveTick] Ignoring tick boardUuid ${validatedInput.boardUuid} — input carries no layout/size/set to match against`,
         );
       }
     } else if (validatedInput.boardId != null) {

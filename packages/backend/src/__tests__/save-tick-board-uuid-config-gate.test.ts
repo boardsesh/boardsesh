@@ -123,6 +123,10 @@ describe('saveTick boardUuid config gate', () => {
   });
 
   afterAll(async () => {
+    // Belt and braces: afterEach already clears these, but a run killed between
+    // tests would otherwise strand boards in the shared worker DB.
+    await db.execute(sql`DELETE FROM boardsesh_ticks WHERE user_id = ${USER_ID}`);
+    await db.execute(sql`DELETE FROM user_boards WHERE owner_id IN (${USER_ID}, ${OTHER_USER_ID})`);
     await db.execute(sql`DELETE FROM board_climbs WHERE uuid = ${CLIMB_UUID}`);
     await db.execute(sql`DELETE FROM users WHERE id IN (${USER_ID}, ${OTHER_USER_ID})`);
   });
