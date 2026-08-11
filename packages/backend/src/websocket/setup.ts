@@ -12,6 +12,7 @@ import { pubsub } from '../pubsub/index';
 import { validateToken, extractAuthToken, extractControllerApiKey, validateControllerApiKey } from '../middleware/auth';
 import { isOriginAllowed, isSameOriginUpgrade } from '../handlers/cors';
 import { resolveWebSocketClientIp, resolveWebSocketSocketPeerIp } from './client-ip';
+import { tryAcquireAnonConnectionSlot, releaseAnonConnectionSlot } from './connection-cap';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { logger } from '../utils/logger';
 
@@ -24,6 +25,23 @@ const WS_PING_INTERVAL_MS = 30_000;
 type AliveWebSocket = {
   isAlive: boolean;
 } & WebSocket;
+
+/**
+ * Close code sent to a connection rejected by the anonymous concurrency cap.
+ *
+ * Deliberately NOT the 4403 Forbidden that `return false` would emit: graphql-ws
+ * excludes 4403 from its client-side fatal list ("might grant access out after
+ * retry"), and our shared client (`packages/shared/graphql-client`) sets
+ * `retryAttempts: 10` with `shouldRetry: () => true`, so a capped client would
+ * hammer the server ten times over. Mobile additionally overloads 4403 as its
+ * auth-refresh retry signal (`packages/mobile/src/lib/graphql/ws-close-codes.ts`),
+ * which would feed cap rejections into the credential-refresh loop.
+ *
+ * 4429 (TooManyInitialisationRequests) *is* in the graphql-ws fatal list, so the
+ * client gives up instead of storming. Cost: a legitimately capped client stays
+ * down until it reconnects deliberately (page reload / app foreground).
+ */
+const ANON_CONNECTION_CAP_CLOSE_CODE = 4429;
 
 // Extend Extra type with our custom context
 type CustomExtra = {
@@ -152,6 +170,67 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           clientIp,
           socketPeerIp,
         });
+
+        // Bound the COUNT of concurrent anonymous sockets per IP (issue #4035).
+        // Authenticated users and validated API-key controllers are exempt —
+        // controllers never set isAuthenticated, so a gym's wall controller
+        // would otherwise compete with phones browsing on the same NAT.
+        const isExemptFromAnonCap = isAuthenticated || controllerId !== undefined;
+        if (!isExemptFromAnonCap) {
+          // No await between this decision and the acquisition, or interleaved
+          // onConnect runs would over-admit past the cap.
+          const capResult = tryAcquireAnonConnectionSlot({
+            connectionId: context.connectionId,
+            clientIp,
+            socketPeerIp,
+          });
+
+          if (!capResult.allowed) {
+            const { tier, key, active, limit } = capResult.rejection;
+            // Not throttled: 4429 is fatal for graphql-ws clients, so a rejected
+            // caller does not retry into a log flood, and the attribution is
+            // what makes a mis-set cap observable before users report it.
+            logger.warn('[WebSocket] Rejected anonymous connection over concurrency cap', {
+              tier,
+              capKey: key,
+              active,
+              limit,
+              clientIp,
+              socketPeerIp,
+              userAgent: upgradeRequest?.headers['user-agent'],
+            });
+            removeContext(context.connectionId);
+            ctx.extra.socket.close(ANON_CONNECTION_CAP_CLOSE_CODE, 'Too many anonymous connections');
+            return false;
+          }
+
+          if (capResult.warning) {
+            const { tier, key, active, limit } = capResult.warning;
+            logger.warn('[WebSocket] Anonymous connection over warn-only concurrency cap', {
+              tier,
+              capKey: key,
+              active,
+              limit,
+              clientIp,
+              socketPeerIp,
+            });
+          }
+
+          // Release on the raw socket, not onDisconnect: graphql-ws only runs
+          // onDisconnect once `ctx.acknowledged` is set, which happens *after*
+          // onConnect resolves. A socket that dies mid-handshake — or an
+          // onConnect that throws below in registerClient — would otherwise
+          // strand its slot forever, permanently shrinking that IP's budget.
+          ctx.extra.socket.once('close', () => releaseAnonConnectionSlot(context.connectionId));
+          // ...and the 'close' event may already have fired before that listener
+          // was attached, in which case it will never fire again.
+          if (ctx.extra.socket.readyState > ctx.extra.socket.OPEN) {
+            releaseAnonConnectionSlot(context.connectionId);
+            removeContext(context.connectionId);
+            return false;
+          }
+        }
+
         await roomManager.registerClient(context.connectionId, undefined, authenticatedUserId);
         // Attribution for connectionId → client identity: a subscription-auth
         // denial (see requireSessionMember) only carries the connectionId, so
@@ -246,6 +325,10 @@ export function setupWebSocketServer(httpServer: HttpServer): {
             await roomManager.removeClient(context.connectionId);
           }
           removeContext(context.connectionId);
+          // Belt-and-braces: the raw-socket 'close' listener attached in
+          // onConnect is the load-bearing release (it also covers connections
+          // that never got acknowledged). This is idempotent.
+          releaseAnonConnectionSlot(context.connectionId);
         }
       },
       onSubscribe: (_ctx: ServerContext, _id: string, payload) => {
