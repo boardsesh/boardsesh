@@ -152,6 +152,8 @@ export type ClimbSearchInputVariables = {
     hideCompleted?: boolean;
     showOnlyAttempted?: boolean;
     showOnlyCompleted?: boolean;
+    minUserRating?: number;
+    onlyRatedByMe?: boolean;
     onlyDrafts?: boolean;
     projectsOnly?: boolean;
     boulders?: boolean;

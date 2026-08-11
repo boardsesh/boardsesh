@@ -683,6 +683,10 @@
       "anyAscents": "Tous",
       "minRating": "Min note",
       "anyRating": "Tous",
+      "myRating": "Ma note",
+      "myRatingDescription": "Les étoiles que tu as données à cet angle",
+      "onlyRatedByMe": "Seulement les blocs que j'ai notés",
+      "ratedByMeShort": "Notés par moi",
       "apply": "Appliquer les filtres",
       "reset": "Réinitialiser",
       "section": {
@@ -764,6 +768,7 @@
       "gradeMax": "≤{{grade}}",
       "ascents": "{{count}}+ 🧗",
       "rating": "{{count}}+ ⭐",
+      "myRating": "Mes {{count}}+ ⭐",
       "more": "+{{count}} de plus",
       "setterName": "Par {{setter}}",
       "settersCount_one": "{{count}} ouvreur",

@@ -1094,12 +1094,16 @@ export type ClimbSearchInput = {
   minGrade?: InputMaybe<Scalars['Int']['input']>;
   /** Minimum quality rating */
   minRating?: InputMaybe<Scalars['Float']['input']>;
+  /** Hide climbs whose latest rating from the user, at this angle, is below this many stars. Climbs the user never rated stay visible unless onlyRatedByMe is also set. 0 means no minimum. (requires auth) */
+  minUserRating?: InputMaybe<Scalars['Int']['input']>;
   /** Filter by climb name (partial match) */
   name?: InputMaybe<Scalars['String']['input']>;
   /** Only show benchmark climbs */
   onlyBenchmarks?: InputMaybe<Scalars['Boolean']['input']>;
   /** Show only the user's draft climbs (requires auth) */
   onlyDrafts?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Only show climbs the user has rated at this angle (requires auth) */
+  onlyRatedByMe?: InputMaybe<Scalars['Boolean']['input']>;
   /** Only show tall/steep climbs */
   onlyTallClimbs?: InputMaybe<Scalars['Boolean']['input']>;
   /** Only show Kilter Homewall climbs that use the 10x10 side expansion */

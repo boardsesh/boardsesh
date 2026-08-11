@@ -198,6 +198,12 @@ export const ClimbSearchInputSchema = z.object({
   hideCompleted: z.boolean().optional(),
   showOnlyAttempted: z.boolean().optional(),
   showOnlyCompleted: z.boolean().optional(),
+  // 1-5 matches the boardsesh_ticks_quality_range CHECK. 0 is accepted and
+  // means "no minimum" (mapSearchInputToParams collapses it), mirroring the
+  // community minRating whose default is 0 — a client sending the default
+  // must not 400 the whole search.
+  minUserRating: z.number().int().min(0).max(5).optional(),
+  onlyRatedByMe: z.boolean().optional(),
   onlyDrafts: z.boolean().optional(),
   projectsOnly: z.boolean().optional(),
   // Intended to default to boulders-only so non-web GraphQL callers (mobile,

@@ -21,6 +21,10 @@ export function countActiveFiltersBeyondGrade(filters: ClimbFilterState, boardFi
   // The four tick flags are one conceptual axis (the "Your progress" selector),
   // so they contribute at most one — "Not tried" sets two flags but is one choice.
   if (isProgressFilterActive(filters)) count += 1;
+  // Personal rating: the star minimum and the "only climbs I've rated" switch
+  // are independent levers, each clearable on its own from the receipt row.
+  if (filters.minUserRating != null) count += 1;
+  if (filters.onlyRatedByMe) count += 1;
   // Climb-type defaults to boulders-only; "active" = routes on or boulders off.
   if ((filters.boulders ?? true) !== true || (filters.routes ?? false) !== false) count += 1;
   if (

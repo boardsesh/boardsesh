@@ -484,6 +484,59 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
         )`,
       );
     }
+
+    // Personal rating filters, read straight off the user's ticks at the
+    // browsed angle (same scope as the four flags above, and the same scope the
+    // community quality_average is stored at).
+    //
+    // Both cases are written as EXISTS / NOT EXISTS on purpose. A scalar
+    // `(SELECT quality … ORDER BY climbed_at DESC LIMIT 1)` correlated
+    // subquery cannot be unnested, so Postgres runs it once per candidate
+    // climb — measured at 2-3x the unfiltered baseline on the dev DB
+    // (220k candidates). These forms unnest into semi/anti joins that the
+    // planner can drive from boardsesh_ticks instead, landing at or below
+    // baseline.
+    if (searchParams.onlyRatedByMe) {
+      personalProgressConditions.push(
+        sql`EXISTS (
+          SELECT 1 FROM ${boardseshTicks}
+          WHERE ${boardseshTicks.climbUuid} = ${boardClimbs.uuid}
+          AND ${boardseshTicks.userId} = ${userId}
+          AND ${boardseshTicks.boardType} = ${params.board_name}
+          AND ${boardseshTicks.angle} = ${params.angle}
+          AND ${boardseshTicks.quality} IS NOT NULL
+        )`,
+      );
+    }
+
+    if (searchParams.minUserRating) {
+      // "The user's LATEST rating is not below N", expressed as an anti-join:
+      // exclude the climb when a rated tick below N exists that no newer rated
+      // tick supersedes. Re-rating a climb upward therefore lets it back in,
+      // and a climb the user never rated has no offending tick, so it stays
+      // visible (pair with onlyRatedByMe to drop those too). The (climbed_at,
+      // id) row comparison breaks same-timestamp ties by insertion order.
+      personalProgressConditions.push(
+        sql`NOT EXISTS (
+          SELECT 1 FROM ${boardseshTicks} AS rating_below
+          WHERE rating_below.climb_uuid = ${boardClimbs.uuid}
+          AND rating_below.user_id = ${userId}
+          AND rating_below.board_type = ${params.board_name}
+          AND rating_below.angle = ${params.angle}
+          AND rating_below.quality IS NOT NULL
+          AND rating_below.quality < ${searchParams.minUserRating}
+          AND NOT EXISTS (
+            SELECT 1 FROM ${boardseshTicks} AS rating_newer
+            WHERE rating_newer.climb_uuid = rating_below.climb_uuid
+            AND rating_newer.user_id = rating_below.user_id
+            AND rating_newer.board_type = rating_below.board_type
+            AND rating_newer.angle = rating_below.angle
+            AND rating_newer.quality IS NOT NULL
+            AND (rating_newer.climbed_at, rating_newer.id) > (rating_below.climbed_at, rating_below.id)
+          )
+        )`,
+      );
+    }
   }
 
   // User-specific logbook data selectors using boardsesh_ticks

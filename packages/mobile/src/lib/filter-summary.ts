@@ -39,6 +39,11 @@ export function getFilterSummary(
       hideCompleted: filters.hideCompleted,
       showOnlyAttempted: filters.showOnlyAttempted,
       showOnlyCompleted: filters.showOnlyCompleted,
+      // Personal rating (#2645). Without these a rating-only search saves its
+      // recent pill under the generic "Filters" title, and two different star
+      // minimums become indistinguishable pills.
+      minUserRating: filters.minUserRating,
+      onlyRatedByMe: filters.onlyRatedByMe,
     },
     grades ?? [],
     labels,

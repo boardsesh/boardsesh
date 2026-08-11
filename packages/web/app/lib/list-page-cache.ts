@@ -21,14 +21,24 @@ export function hasUserSpecificFilters(searchParams: SearchRequestPagination): b
   return USER_SPECIFIC_SEARCH_PARAMS.some((param) => !!searchParams[param]);
 }
 
+// User-specific params carrying a number rather than a flag. A flag test
+// (`'true' | '1'`) would read `?minUserRating=4` as absent and let personalized
+// HTML share the anonymous CDN entry.
+const NUMERIC_USER_SPECIFIC_PARAMS: ReadonlySet<string> = new Set(['minUserRating']);
+
 /**
  * True when the query string carries a user-specific filter that would make the
  * server render personalized HTML. Such a request must never share a CDN cache
  * entry with the anonymous version, so it is not cached.
+ *
+ * Parsed per type on purpose: treating any non-empty value as user-specific
+ * would turn `?onlyDrafts=x` from a crawler into a CDN bypass on every list page.
  */
 function hasUserSpecificQueryParams(searchParams: URLSearchParams): boolean {
   return USER_SPECIFIC_SEARCH_PARAMS.some((param) => {
     const value = searchParams.get(param);
+    if (value == null) return false;
+    if (NUMERIC_USER_SPECIFIC_PARAMS.has(param)) return Number(value) > 0;
     return value === 'true' || value === '1';
   });
 }

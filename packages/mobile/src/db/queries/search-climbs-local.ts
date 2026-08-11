@@ -125,7 +125,8 @@ function parseHoldsFilter(holdsFilter: unknown): HoldFilters {
 export function isOfflineSearchSupported(input: ClimbSearchInput): boolean {
   // projectsOnly, boulders/routes, benchmarks, name, setter, grade range, min
   // ascents/rating, present-hold, tall/wide (via the synced compatible_size_ids,
-  // see buildJoinAndWhere), and personal-progress filters are all supported.
+  // see buildJoinAndWhere), and personal progress/rating filters are all
+  // supported (synced ticks carry quality + climbed_at).
   // These need tables we don't sync (or the drafts owner path), so fall back:
   if (input.onlyDrafts) return false;
   if (input.onlyWithBetaVideos) return false;
@@ -298,6 +299,31 @@ function buildJoinAndWhere(input: ClimbSearchInput): JoinAndWhere {
   if (input.hideCompleted) push(ticksExists(true, `t.status IN ${COMPLETED_STATUSES}`), boardType, angle);
   if (input.showOnlyAttempted) push(ticksExists(false, "t.status = 'attempt'"), boardType, angle);
   if (input.showOnlyCompleted) push(ticksExists(false, `t.status IN ${COMPLETED_STATUSES}`), boardType, angle);
+
+  // Personal rating, mirroring create-climb-filters.ts case for case so an
+  // offline search returns the same rows as an online one. The local ticks
+  // table has no bigserial id, so the latest-rating tie-break falls back to
+  // updated_at where the server uses id — only reachable when two ratings of
+  // one climb share a climbed_at.
+  if (input.onlyRatedByMe) push(ticksExists(false, 't.quality IS NOT NULL'), boardType, angle);
+  if (input.minUserRating) {
+    push(
+      `NOT EXISTS (SELECT 1 FROM boardsesh_ticks rating_below
+        WHERE rating_below.climb_uuid = c.uuid AND rating_below.board_type = ? AND rating_below.angle = ?
+        AND rating_below.quality IS NOT NULL AND rating_below.quality < ?
+        AND NOT EXISTS (SELECT 1 FROM boardsesh_ticks rating_newer
+          WHERE rating_newer.climb_uuid = rating_below.climb_uuid
+          AND rating_newer.board_type = rating_below.board_type
+          AND rating_newer.angle = rating_below.angle
+          AND rating_newer.quality IS NOT NULL
+          AND (rating_newer.climbed_at > rating_below.climbed_at
+            OR (rating_newer.climbed_at = rating_below.climbed_at
+              AND rating_newer.updated_at > rating_below.updated_at))))`,
+      boardType,
+      angle,
+      input.minUserRating,
+    );
+  }
 
   return { joinSql, whereSql: conditions.join(' AND '), joinBinds, whereBinds };
 }

@@ -26,6 +26,8 @@ export const AUTH_GATED_FIELDS = [
   'hideCompleted',
   'showOnlyAttempted',
   'showOnlyCompleted',
+  'minUserRating',
+  'onlyRatedByMe',
 ] as const satisfies ReadonlyArray<keyof ClimbFilters>;
 
 function isValidEntry(entry: unknown): entry is RecentFilter {

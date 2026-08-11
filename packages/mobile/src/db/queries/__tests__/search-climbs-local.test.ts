@@ -137,11 +137,22 @@ async function insertGrade(db: TestSqliteDb, fixture: GradeFixture): Promise<voi
 
 async function insertTick(
   db: TestSqliteDb,
-  opts: { uuid: string; climbUuid: string; boardType?: string; angle?: number; status: string },
+  opts: {
+    uuid: string;
+    climbUuid: string;
+    boardType?: string;
+    angle?: number;
+    status: string;
+    // Star rating and when it was given — the personal-rating filter reads both
+    // (latest rating wins).
+    quality?: number | null;
+    climbedAt?: string;
+  },
 ): Promise<void> {
+  const timestamp = opts.climbedAt ?? '2026-02-01T00:00:00Z';
   await db.runAsync(
-    `INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, is_mirror, status, attempt_count, is_benchmark, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 0, ?, 1, 0, ?, ?)`,
+    `INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, is_mirror, status, attempt_count, quality, is_benchmark, climbed_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 0, ?, 1, ?, 0, ?, ?, ?)`,
     [
       opts.uuid,
       'me',
@@ -149,8 +160,10 @@ async function insertTick(
       opts.climbUuid,
       opts.angle ?? 40,
       opts.status,
-      '2026-02-01T00:00:00Z',
-      '2026-02-01T00:00:00Z',
+      opts.quality ?? null,
+      timestamp,
+      timestamp,
+      timestamp,
     ],
   );
 }
@@ -270,6 +283,75 @@ describe('searchClimbsLocal', () => {
     const sent = withCounts.climbs.find((c) => c.uuid === 'sent');
     expect(sent?.userAscents).toBe(1);
     expect(sent?.userAttempts).toBe(0);
+  });
+
+  // Same three-case matrix the server test asserts (packages/backend
+  // src/__tests__/climb-queries.test.ts), so an offline search returns the same
+  // rows as an online one.
+  describe('personal rating filters (#2645)', () => {
+    beforeEach(async () => {
+      for (const uuid of ['rated5', 'rated2', 'reratedUp', 'reratedDown', 'sentUnrated', 'untouched', 'otherAngle']) {
+        await insertClimb(db, { uuid });
+        await insertStat(db, { climbUuid: uuid, ascensionistCount: 3 });
+      }
+      await insertTick(db, { uuid: 'r5', climbUuid: 'rated5', status: 'send', quality: 5 });
+      await insertTick(db, { uuid: 'r2', climbUuid: 'rated2', status: 'send', quality: 2 });
+      // Re-rated in both directions: the later climbed_at is the opinion that counts.
+      await insertTick(db, {
+        uuid: 'up-old',
+        climbUuid: 'reratedUp',
+        status: 'send',
+        quality: 2,
+        climbedAt: '2026-01-01T00:00:00Z',
+      });
+      await insertTick(db, {
+        uuid: 'up-new',
+        climbUuid: 'reratedUp',
+        status: 'send',
+        quality: 5,
+        climbedAt: '2026-03-01T00:00:00Z',
+      });
+      await insertTick(db, {
+        uuid: 'down-old',
+        climbUuid: 'reratedDown',
+        status: 'send',
+        quality: 5,
+        climbedAt: '2026-01-01T00:00:00Z',
+      });
+      await insertTick(db, {
+        uuid: 'down-new',
+        climbUuid: 'reratedDown',
+        status: 'send',
+        quality: 2,
+        climbedAt: '2026-03-01T00:00:00Z',
+      });
+      await insertTick(db, { uuid: 'unrated', climbUuid: 'sentUnrated', status: 'send', quality: null });
+      await insertTick(db, { uuid: 'other', climbUuid: 'otherAngle', status: 'send', quality: 5, angle: 20 });
+    });
+
+    it('minUserRating keeps unrated climbs and drops only the ones rated below it', async () => {
+      const result = await searchClimbsLocal(db, makeInput({ minUserRating: 4, pageSize: 50 }));
+
+      expect(uuids(result).sort()).toEqual(['otherAngle', 'rated5', 'reratedUp', 'sentUnrated', 'untouched']);
+      expect(await countClimbsLocal(db, makeInput({ minUserRating: 4 }))).toBe(5);
+    });
+
+    it('onlyRatedByMe keeps every climb rated at this angle, whatever the stars', async () => {
+      const result = await searchClimbsLocal(db, makeInput({ onlyRatedByMe: true, pageSize: 50 }));
+
+      expect(uuids(result).sort()).toEqual(['rated2', 'rated5', 'reratedDown', 'reratedUp']);
+    });
+
+    it('both together drop the unrated climbs too', async () => {
+      const result = await searchClimbsLocal(db, makeInput({ minUserRating: 4, onlyRatedByMe: true, pageSize: 50 }));
+
+      expect(uuids(result).sort()).toEqual(['rated5', 'reratedUp']);
+      expect(await countClimbsLocal(db, makeInput({ minUserRating: 4, onlyRatedByMe: true }))).toBe(2);
+    });
+
+    it('stays offline-expressible so the search does not fall back to the network', () => {
+      expect(isOfflineSearchSupported(makeInput({ minUserRating: 4, onlyRatedByMe: true }))).toBe(true);
+    });
   });
 
   it('maps difficulty label, stars, and is_no_match from local columns', async () => {

@@ -121,6 +121,8 @@ describe('getRecentFilters sanitizer', () => {
           status: 'any',
           hideAttempted: true,
           showOnlyCompleted: true,
+          minUserRating: 4,
+          onlyRatedByMe: true,
           minGrade: 10,
         },
         searchText: '',
@@ -130,6 +132,10 @@ describe('getRecentFilters sanitizer', () => {
     const result = await getRecentFilters({ isAuthenticated: false });
     expect(result[0]?.filters).not.toHaveProperty('hideAttempted');
     expect(result[0]?.filters).not.toHaveProperty('showOnlyCompleted');
+    // The personal rating filters are auth-gated too — a replayed pill would
+    // otherwise render as active while the backend ignores it.
+    expect(result[0]?.filters).not.toHaveProperty('minUserRating');
+    expect(result[0]?.filters).not.toHaveProperty('onlyRatedByMe');
     expect(result[0]?.filters.minGrade).toBe(10);
   });
 
