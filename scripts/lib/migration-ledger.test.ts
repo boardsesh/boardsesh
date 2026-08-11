@@ -5,8 +5,10 @@ import {
   formatBaselinedGapWarning,
   formatEditedBaselineNote,
   formatMigrationGapError,
+  isMigrationJournalGateArmed,
   partitionMissingMigrations,
   planLedgerTimestampRepairs,
+  VERIFY_MIGRATION_JOURNAL_ENV,
   type ExpectedMigration,
   type ExpectedMigrationWithWhen,
   type LedgerTimestampRow,
@@ -262,5 +264,28 @@ describe('formatMigrationGapError', () => {
   it('reads correctly for a single missing migration', () => {
     const message = formatMigrationGapError(['0129_numerous_star_brand'], 131, 130);
     expect(message).toContain('1 of 131 journal migration has no row');
+  });
+});
+
+describe('isMigrationJournalGateArmed', () => {
+  it('runs the check when nothing is set (#3978)', () => {
+    // The flip. Opt-in left the check off on the one machine where a gap is
+    // created — the branch author's — and the dev-db image that forced the
+    // opt-in now carries every journal entry's ledger row.
+    expect(isMigrationJournalGateArmed({})).toBe(true);
+  });
+
+  it('keeps running for the literal 1 the workflows already pass', () => {
+    // ci.yml, production-deploy.yml and db-migration-renumber.yml all set '1'.
+    // Those must stay armed without an edit, or the flip silently disarms the
+    // production deploy gate.
+    expect(isMigrationJournalGateArmed({ [VERIFY_MIGRATION_JOURNAL_ENV]: '1' })).toBe(true);
+  });
+
+  it('only stands down for the exact escape hatch', () => {
+    expect(isMigrationJournalGateArmed({ [VERIFY_MIGRATION_JOURNAL_ENV]: '0' })).toBe(false);
+    for (const value of ['', 'false', 'no', 'off', '00', ' 0']) {
+      expect(isMigrationJournalGateArmed({ [VERIFY_MIGRATION_JOURNAL_ENV]: value })).toBe(true);
+    }
   });
 });
