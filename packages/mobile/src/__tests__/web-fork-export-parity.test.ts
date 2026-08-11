@@ -56,7 +56,16 @@
  * `export default`/`export *`/`export class`/destructuring export, and no
  * mixed `import Default, { … }` import, appears in any of them).
  */
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -293,11 +302,16 @@ function resolveSpecifier(specifier: string, importerAbsolutePath: string, mobil
 type Violation = { importer: string; line: number; name: string; nativePath: string; webPath: string };
 
 /**
- * Discovers fork pairs under `roots` (default: real `src` + `modules`), then
- * walks every platform-neutral module under `importerRoots` (default: real
- * `src` + `app` — `modules` is fork-pair source material, not itself scanned
- * for importers) for named imports / re-exports that reach into a fork
- * pair's native side for a name the web fork lacks.
+ * Discovers fork pairs under `forkPairRoots`, then walks every
+ * platform-neutral module under `importerRoots` for named imports /
+ * re-exports that reach into a fork pair's native side for a name the web
+ * fork lacks. Against the real repo both roots are the same three trees
+ * (`src`, `app`, `modules`): Metro applies the `.web` platform extension in
+ * all of them, so a fork pair can live in any one, and a module in any one
+ * can be the neutral importer that falls into the gap. Keeping the two root
+ * lists identical also keeps the "is this importer itself a fork native
+ * side?" exclusion honest — a pair discovered in one list but not the other
+ * would make its native side look neutral.
  */
 function findViolations(
   mobileRoot: string,
@@ -364,11 +378,8 @@ function describeViolation(violation: Violation): string {
 // ---------------------------------------------------------------------------
 
 describe('web-fork export parity: neutral importers never reach a gap in a .web fork', () => {
-  const realRoots = {
-    mobileRoot: MOBILE_ROOT,
-    forkPairRoots: [join(MOBILE_ROOT, 'src'), join(MOBILE_ROOT, 'modules')],
-    importerRoots: [join(MOBILE_ROOT, 'src'), join(MOBILE_ROOT, 'app')],
-  };
+  const realTrees = [join(MOBILE_ROOT, 'src'), join(MOBILE_ROOT, 'app'), join(MOBILE_ROOT, 'modules')];
+  const realRoots = { mobileRoot: MOBILE_ROOT, forkPairRoots: realTrees, importerRoots: realTrees };
 
   it('has no unallowed gap across the real repo', () => {
     const { violations, forkPairs } = findViolations(
@@ -452,6 +463,45 @@ describe('web-fork export parity: neutral importers never reach a gap in a .web 
       const { violations } = findViolations(fixtureDir, [fixtureDir], [fixtureDir]);
 
       expect(violations).toEqual([]);
+    } finally {
+      rmSync(fixtureDir, { recursive: true, force: true });
+    }
+  });
+
+  it('spans trees: a fork pair in one root is checked against an importer in another', () => {
+    // The real run scans `src`, `app` and `modules` as both fork-pair source
+    // and importer source. Dropping a tree from either list silently loses
+    // coverage — a pair in an unscanned tree is invisible, and its native
+    // side then looks like a neutral importer. This locks that in.
+    const fixtureDir = mkdtempSync(join(tmpdir(), 'web-fork-export-parity-cross-tree-'));
+    try {
+      const treeWithPair = join(fixtureDir, 'src');
+      const treeWithImporter = join(fixtureDir, 'app');
+      mkdirSync(treeWithPair);
+      mkdirSync(treeWithImporter);
+
+      writeFileSync(join(treeWithPair, 'store.ts'), [`export function onlyNative(): void {}`, ``].join('\n'));
+      writeFileSync(join(treeWithPair, 'store.web.ts'), [`export {};`, ``].join('\n'));
+      writeFileSync(
+        join(treeWithImporter, 'screen.ts'),
+        [`import { onlyNative } from '../src/store';`, ``, `onlyNative();`, ``].join('\n'),
+      );
+
+      const { violations } = findViolations(
+        fixtureDir,
+        [treeWithPair, treeWithImporter],
+        [treeWithPair, treeWithImporter],
+      );
+
+      expect(violations).toEqual([
+        {
+          importer: 'app/screen.ts',
+          line: 1,
+          name: 'onlyNative',
+          nativePath: 'src/store.ts',
+          webPath: 'src/store.web.ts',
+        },
+      ]);
     } finally {
       rmSync(fixtureDir, { recursive: true, force: true });
     }
