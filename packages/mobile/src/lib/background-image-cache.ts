@@ -209,8 +209,12 @@ type BackgroundParams = {
   /**
    * Colour scheme the art will be composited into. Defaults to `light`, which
    * resolves exactly what every caller resolved before dark variants existed —
-   * so the callers that don't pass it (PlaylistBoardBackdrop, the climbs-tab
-   * prefetch, the Live Activity thumbnail builder) keep their current output.
+   * so the one remaining caller that doesn't pass it (the Live Activity
+   * thumbnail builder, out of scope per issue #3962: Android composites
+   * natively with no ColorFilter and iOS uses a server-rendered thumbnail,
+   * so neither is reachable by this parameter) keeps its current output.
+   * PlaylistBoardBackdrop and the climbs-tab prefetch now thread the live
+   * app colour scheme through (see #3962).
    */
   colorScheme?: BackgroundColorScheme;
 };

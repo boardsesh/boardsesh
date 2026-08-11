@@ -46,7 +46,7 @@ import { FilterTokenRow } from '../../../src/components/search/FilterTokenRow';
 import { GradeRangeRail } from '../../../src/components/grade';
 import { applyPopularityBucket } from '../../../src/lib/filter-chip-menus';
 import { useDrawerHost } from '../../../src/providers/drawer-host-provider';
-import { useTheme } from '../../../src/providers/theme-provider';
+import { useTheme, useAppColorScheme } from '../../../src/providers/theme-provider';
 import { selectByVariant } from '../../../src/theme/variants';
 import { useActiveClimbUuid, useQueueActions } from '../../../src/providers/queue-provider';
 import { ClimbSearchProvider, useClimbSearch, type GradeBound } from '../../../src/providers/climb-search-provider';
@@ -188,6 +188,7 @@ function ClimbListInner() {
     setRevealTipVisible(false);
   }, [openBoardSheet]);
   const { systemColors, variant, brandColors, features } = useTheme();
+  const colorScheme = useAppColorScheme();
   // The ⋮ quick-actions button is a user setting that defaults on (More → Display
   // lets climbers turn it off).
   const { enabled: quickActionsButtonEnabled } = useClimbQuickActionsButton();
@@ -576,12 +577,13 @@ function ClimbListInner() {
         layoutId: activeBoard.layoutId,
         sizeId: activeBoard.sizeId,
         setIds: parsedSetIds,
+        colorScheme,
       });
     });
     return () => {
       task.cancel();
     };
-  }, [activeBoard]);
+  }, [activeBoard, colorScheme]);
 
   const searchInput = useMemo(
     () =>

@@ -214,6 +214,7 @@ vi.mock('../../../../src/providers/theme-provider', () => ({
     brandColors: { primary: '#6D28D9' },
     features: { filtersInTopChrome: false, summaryExcludesGradeFilter: false },
   }),
+  useAppColorScheme: () => 'light',
 }));
 
 vi.mock('../../../../src/theme/variants', () => ({
@@ -439,6 +440,7 @@ describe('ClimbList board-art pre-warm (#3191 regression guard)', () => {
         layoutId: 1,
         sizeId: 10,
         setIds: [1],
+        colorScheme: 'light',
       }),
     );
 
