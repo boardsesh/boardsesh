@@ -45,13 +45,34 @@ function parseAbsoluteHttpUrl(value: string | undefined): URL | undefined {
   return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed : undefined;
 }
 
+// The value verbatim (trailing slash and all) when it parses as an http(s) URL
+// on a real host, otherwise undefined. Operators expect the value they set to be
+// the value that is used, and the redirect callback compares origins rather than
+// raw strings, so no normalisation happens here.
+function nonLoopbackOrigin(value: string | undefined): string | undefined {
+  const parsed = parseAbsoluteHttpUrl(value);
+  if (!parsed || isLoopbackHostname(parsed.hostname)) return undefined;
+  return value?.trim();
+}
+
+// Vercel sets VERCEL_ENV to 'production' | 'preview' | 'development'. Only the
+// first two are deployments — and the tracked `packages/web/.env.local` sets
+// `development` on every developer machine, so treating a bare VERCEL_ENV as
+// hosting would make local dev look like a misconfigured deployment.
+const HOSTED_VERCEL_ENVS = new Set(['production', 'preview']);
+
 // True when the deployment is clearly running on hosting rather than on a
 // developer's machine. Only in that case is a loopback NEXTAUTH_URL treated as
-// a misconfiguration to be ignored — local dev keeps next-auth's localhost
-// default untouched.
+// a misconfiguration to be ignored — local dev keeps its own localhost value
+// (which may be on a non-3000 port, e.g. `PORT=3095 vp run dev`) untouched.
 function isHostedDeployment(env: AuthEnv): boolean {
   return Boolean(
-    env.VERCEL || env.VERCEL_ENV || env.VERCEL_URL || env.BASE_URL?.trim() || env.AUTH_COOKIE_DOMAIN?.trim(),
+    env.VERCEL ||
+    HOSTED_VERCEL_ENVS.has(env.VERCEL_ENV?.trim() ?? '') ||
+    env.VERCEL_URL?.trim() ||
+    // A loopback BASE_URL is the dev default, not a hosting signal.
+    nonLoopbackOrigin(env.BASE_URL) ||
+    env.AUTH_COOKIE_DOMAIN?.trim(),
   );
 }
 
@@ -63,26 +84,30 @@ function isHostedDeployment(env: AuthEnv): boolean {
  * Pure: reads only the passed env, mutates nothing.
  */
 export function resolveCanonicalAuthUrl(env: AuthEnv = process.env): string | undefined {
-  const explicit = parseAbsoluteHttpUrl(env.NEXTAUTH_URL);
-  if (explicit && !isLoopbackHostname(explicit.hostname)) {
-    // Returned verbatim (trailing slash and all): the redirect callback already
-    // compares origins rather than raw strings, and operators expect the value
-    // they set to be the value that is used.
-    return env.NEXTAUTH_URL?.trim();
-  }
+  const explicit = nonLoopbackOrigin(env.NEXTAUTH_URL);
+  if (explicit) return explicit;
 
   // Past this point NEXTAUTH_URL is unset, unparseable, or loopback. A loopback
   // value on a developer machine is correct, so only override when hosted.
-  if (explicit && !isHostedDeployment(env)) return undefined;
+  if (parseAbsoluteHttpUrl(env.NEXTAUTH_URL) && !isHostedDeployment(env)) return undefined;
 
-  const baseUrl = parseAbsoluteHttpUrl(env.BASE_URL);
-  if (baseUrl && !isLoopbackHostname(baseUrl.hostname)) {
-    return env.BASE_URL?.trim();
-  }
-
-  if (env.VERCEL_ENV === 'production') return SITE_URL;
-
+  const vercelEnv = env.VERCEL_ENV?.trim();
   const vercelUrl = env.VERCEL_URL?.trim();
+
+  // A Vercel preview uses its own deployment URL ahead of BASE_URL. BASE_URL is
+  // the email base URL and is commonly set once for every Vercel environment, so
+  // honouring it here would hand a preview the production origin — which sends
+  // preview OAuth back to prod AND makes sessionCookieDomain() emit
+  // `Domain=.boardsesh.com` on a `*.vercel.app` response, where the browser
+  // rejects it and the preview login silently never stores a cookie (the exact
+  // failure secure-cookies.ts is written to prevent).
+  if (vercelEnv === 'preview' && vercelUrl) return `https://${vercelUrl}`;
+
+  const baseUrl = nonLoopbackOrigin(env.BASE_URL);
+  if (baseUrl) return baseUrl;
+
+  if (vercelEnv === 'production') return SITE_URL;
+
   if (vercelUrl) return `https://${vercelUrl}`;
 
   return undefined;

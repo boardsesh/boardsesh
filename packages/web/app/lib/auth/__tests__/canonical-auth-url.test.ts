@@ -14,7 +14,16 @@ const HOSTED_ENVS: AuthEnv[] = [
   { NEXTAUTH_URL: 'http://localhost:3000', AUTH_COOKIE_DOMAIN: '.boardsesh.com', VERCEL_ENV: 'production' },
   { BASE_URL: PROD_ORIGIN },
   { VERCEL_ENV: 'preview', VERCEL_URL: 'boardsesh-abc.vercel.app' },
+  { VERCEL_ENV: 'preview', VERCEL_URL: 'boardsesh-abc.vercel.app', BASE_URL: PROD_ORIGIN },
 ];
+
+// The tracked `packages/web/.env.local` that every developer runs with. Nothing
+// in it may be read as a hosting signal.
+const LOCAL_DEV_ENV: AuthEnv = {
+  VERCEL_ENV: 'development',
+  BASE_URL: 'http://localhost:3000',
+  NEXTAUTH_URL: 'http://localhost:3000',
+};
 
 function expectNotLoopback(origin: string, env: AuthEnv): void {
   const { hostname } = new URL(origin);
@@ -75,6 +84,38 @@ describe('resolveCanonicalAuthUrl', () => {
 
   it('leaves a loopback NEXTAUTH_URL alone when nothing says the deployment is hosted', () => {
     expect(resolveCanonicalAuthUrl({ NEXTAUTH_URL: 'http://localhost:3000' })).toBeUndefined();
+  });
+
+  it('does not treat the tracked local dev env as a hosted deployment', () => {
+    // `VERCEL_ENV=development` and a loopback `BASE_URL` are both in the tracked
+    // packages/web/.env.local. Reading either as hosting would strip a developer's
+    // NEXTAUTH_URL on every boot.
+    expect(resolveCanonicalAuthUrl(LOCAL_DEV_ENV)).toBeUndefined();
+  });
+
+  it('keeps a non-3000 local dev port', () => {
+    // `PORT=3095 vp run dev` is a supported workflow. Dropping NEXTAUTH_URL here
+    // would send next-auth back to its :3000 default and break local sign-in.
+    expect(resolveCanonicalAuthUrl({ ...LOCAL_DEV_ENV, NEXTAUTH_URL: 'http://localhost:3095' })).toBeUndefined();
+  });
+
+  it('prefers the preview deployment URL over a BASE_URL set for every Vercel environment', () => {
+    // A preview inheriting the production origin would make sessionCookieDomain()
+    // emit Domain=.boardsesh.com from a *.vercel.app response, which the browser
+    // rejects — the preview login would silently never store a cookie.
+    expect(
+      resolveCanonicalAuthUrl({
+        VERCEL_ENV: 'preview',
+        VERCEL_URL: 'boardsesh-abc.vercel.app',
+        BASE_URL: PROD_ORIGIN,
+      }),
+    ).toBe('https://boardsesh-abc.vercel.app');
+  });
+
+  it('still uses BASE_URL on a Vercel production deployment', () => {
+    expect(
+      resolveCanonicalAuthUrl({ VERCEL_ENV: 'production', VERCEL_URL: 'x.vercel.app', BASE_URL: PROD_ORIGIN }),
+    ).toBe(PROD_ORIGIN);
   });
 
   it('falls through instead of throwing on an unparseable NEXTAUTH_URL', () => {
@@ -141,6 +182,15 @@ describe('applyCanonicalAuthUrl', () => {
     const env: AuthEnv = {};
     expect(applyCanonicalAuthUrl(env)).toBeUndefined();
     expect(env.NEXTAUTH_URL).toBeUndefined();
+  });
+
+  it('leaves the tracked local dev env untouched and stays quiet', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const env: AuthEnv = { ...LOCAL_DEV_ENV };
+
+    expect(applyCanonicalAuthUrl(env)).toBeUndefined();
+    expect(env.NEXTAUTH_URL).toBe('http://localhost:3000');
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('drops a loopback NEXTAUTH_URL when hosted but no canonical origin is derivable', () => {
