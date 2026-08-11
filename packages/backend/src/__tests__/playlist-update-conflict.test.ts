@@ -155,6 +155,17 @@ describe('detectPlaylistUpdateConflict', () => {
         basedOn: { updatedAt: olderSnapshot, name: 'Crimps' },
       }),
     ).toBe(true);
+
+    // An unknown snapshot value can't manufacture a conflict on its own: if the
+    // stored visibility already equals what this edit sends, there is nothing to
+    // decide between.
+    expect(
+      detectPlaylistUpdateConflict({
+        stored: stored({ isPublic: true }),
+        incoming: { isPublic: true },
+        basedOn: { updatedAt: olderSnapshot, isPublic: null },
+      }),
+    ).toBe(false);
   });
 });
 
