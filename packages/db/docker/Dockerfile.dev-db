@@ -243,20 +243,29 @@ RUN set -e && \
     gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -c "CREATE TABLE IF NOT EXISTS \"__drizzle_migrations\" (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint)" && \
     gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -c "CREATE SCHEMA IF NOT EXISTS drizzle" && \
     gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -c "CREATE TABLE IF NOT EXISTS drizzle.\"__drizzle_migrations\" (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint)" && \
+    # created_at is the journal entry's own `when`, never the build clock (#4211). \
+    # drizzle's migrate() reads max(created_at) once and applies only entries \
+    # whose `when` is strictly greater, so a build timestamp would become a \
+    # high-water mark no later migration can clear — every migration added after \
+    # the image was built would be skipped on that database forever. `when` is \
+    # exactly what drizzle writes itself (it inserts folderMillis, which it copies \
+    # from the journal's `when`). \
     applied=0 && \
-    for tag in $(jq -r '.entries[].tag' /drizzle/meta/_journal.json); do \
+    jq -r '.entries[] | "\(.tag) \(.when)"' /drizzle/meta/_journal.json > /tmp/journal_entries.txt && \
+    while read -r tag when; do \
       sql_file="/drizzle/${tag}.sql"; \
       if [ -f "$sql_file" ]; then \
         hash=$(sha256sum "$sql_file" | cut -d' ' -f1); \
         applied=$((applied + 1)); \
         echo "  [$applied/$migration_count] Applying: $tag"; \
         gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -f "$sql_file" || { echo "  WARNING: migration $tag had errors, continuing..."; true; }; \
-        gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -c "INSERT INTO \"__drizzle_migrations\" (hash, created_at) VALUES ('$hash', $(date +%s)000)" && \
-        gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -c "INSERT INTO drizzle.\"__drizzle_migrations\" (hash, created_at) VALUES ('$hash', $(date +%s)000)"; \
+        gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -c "INSERT INTO \"__drizzle_migrations\" (hash, created_at) VALUES ('$hash', $when)" && \
+        gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -c "INSERT INTO drizzle.\"__drizzle_migrations\" (hash, created_at) VALUES ('$hash', $when)"; \
       else \
         echo "  ERROR: Migration file not found: $sql_file" && false; \
       fi; \
-    done && \
+    done < /tmp/journal_entries.txt && \
+    rm -f /tmp/journal_entries.txt && \
     echo ">>> All $applied migrations applied successfully." && \
     \
     # ── Verify database state ────────────────────────────────────────── \
@@ -267,6 +276,16 @@ RUN set -e && \
     echo "  Public tables: $table_count" && \
     if [ "$recorded" -ne "$migration_count" ]; then \
       echo "ERROR: Migration count mismatch! Expected $migration_count, got $recorded" && false; \
+    fi && \
+    \
+    # The ledger's high-water mark must equal the journal's newest `when`, or \
+    # this image ships a database that silently skips the next migration anyone \
+    # writes (#4211). One psql call, and it makes that regression unshippable. \
+    ledger_max=$(gosu postgres psql -h /var/run/postgresql main -t -A -c "SELECT COALESCE(max(created_at), 0) FROM drizzle.\"__drizzle_migrations\"") && \
+    journal_max=$(jq -r '[.entries[].when] | max' /drizzle/meta/_journal.json) && \
+    echo "  Ledger high-water mark: $ledger_max (journal newest when: $journal_max)" && \
+    if [ "$ledger_max" != "$journal_max" ]; then \
+      echo "ERROR: ledger created_at high-water mark $ledger_max != journal newest when $journal_max — drizzle would skip later migrations" && false; \
     fi && \
     \
     # ── Import direct Aurora boards into unified tables ──────────────── \
