@@ -1,0 +1,31 @@
+{
+  "name": "@boardsesh/scheduler",
+  "version": "1.0.0",
+  "description": "Long-lived cron scheduler that triggers Boardsesh's scheduled web jobs",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "dev": "tsx watch src/cli/index.ts start",
+    "build": "tsc",
+    "start": "node dist/cli/index.js start",
+    "test": "vp test",
+    "typecheck": "tsc --noEmit",
+    "lint": "vp lint",
+    "lint-fix": "vp lint --fix"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^25.9.5",
+    "tsx": "^4.23.1",
+    "typescript": "~7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
