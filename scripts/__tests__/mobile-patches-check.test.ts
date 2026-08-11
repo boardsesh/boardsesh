@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   RULES as REAL_RULES,
@@ -630,5 +632,25 @@ describe('the shipped RULES', () => {
     for (const [key, reason] of Object.entries(UNGUARDED_PATCHES)) {
       expect(reason.length, `${key} needs a reason`).toBeGreaterThan(20);
     }
+  });
+
+  // Guards against the #3928 fix silently dropping on the next expo-image
+  // bump: `patchedDependencies` is keyed by an EXACT version, so a bump that
+  // forgets to re-key the patch installs expo-image UNPATCHED and this rule
+  // would keep asserting against a key nothing resolves to. Pinning it to
+  // packages/mobile/package.json's declared version turns that drift into a
+  // failing test instead of a silent no-op.
+  it('keeps the expo-image local-asset patch keyed to the pinned mobile version', () => {
+    const expoImageRule = REAL_RULES.find((rule) => rule.package === 'expo-image');
+    expect(expoImageRule).toBeDefined();
+
+    const mobilePackageJson = JSON.parse(
+      readFileSync(resolve(import.meta.dirname, '../../packages/mobile/package.json'), 'utf8'),
+    ) as { dependencies?: Record<string, string> };
+    const pinnedVersion = mobilePackageJson.dependencies?.['expo-image'];
+
+    expect(pinnedVersion, 'expo-image must stay a direct packages/mobile dependency').toBeDefined();
+    expect(versionFromKey(expoImageRule?.patchedKey ?? '')).toBe(pinnedVersion);
+    expect(expoImageRule?.sentinels).toEqual(expect.arrayContaining(['boardsesh/boardsesh#3928']));
   });
 });

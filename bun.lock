@@ -908,6 +908,7 @@
     "@expo/ui@57.0.8": "patches/@expo%2Fui@57.0.8.patch",
     "expo-dev-launcher@57.0.10": "patches/expo-dev-launcher@57.0.10.patch",
     "@expo/fingerprint@0.20.6": "patches/@expo%2Ffingerprint@0.20.6.patch",
+    "expo-image@57.0.1": "patches/expo-image@57.0.1.patch",
     "react-native-screens@4.26.2": "patches/react-native-screens@4.26.2.patch",
   },
   "overrides": {
