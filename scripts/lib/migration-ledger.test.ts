@@ -6,7 +6,10 @@ import {
   formatEditedBaselineNote,
   formatMigrationGapError,
   partitionMissingMigrations,
+  planLedgerTimestampRepairs,
   type ExpectedMigration,
+  type ExpectedMigrationWithWhen,
+  type LedgerTimestampRow,
 } from './migration-ledger';
 
 function expectedFrom(...tags: string[]): ExpectedMigration[] {
@@ -65,6 +68,85 @@ describe('findUnappliedMigrations', () => {
 
   it('returns nothing for an empty journal', () => {
     expect(findUnappliedMigrations([], hashesFor('0000_a'))).toEqual([]);
+  });
+});
+
+describe('planLedgerTimestampRepairs', () => {
+  // The dev-db image's shape: every row stamped with one build-time value,
+  // ~13 orders of magnitude of wall clock above every journal `when`.
+  const BUILD_CLOCK = 1_800_000_000_000;
+
+  function journal(...entries: [tag: string, when: number][]): ExpectedMigrationWithWhen[] {
+    return entries.map(([tag, when]) => ({ tag, hash: `hash-of-${tag}`, when }));
+  }
+
+  function ledgerRows(...rows: [tag: string, createdAt: number][]): LedgerTimestampRow[] {
+    return rows.map(([tag, createdAt], index) => ({ id: index + 1, hash: `hash-of-${tag}`, createdAt }));
+  }
+
+  it('plans nothing when every row already carries its journal `when`', () => {
+    // The no-op case is the important one: this runs on every `vp run db:up`
+    // and on a drizzle-managed database there is nothing to write.
+    const expected = journal(['0000_a', 1000], ['0001_b', 2000]);
+    expect(planLedgerTimestampRepairs(expected, ledgerRows(['0000_a', 1000], ['0001_b', 2000]))).toEqual([]);
+  });
+
+  it('rewrites a uniformly build-stamped ledger to the journal when of each entry', () => {
+    const expected = journal(['0000_a', 1000], ['0001_b', 2000], ['0002_c', 3000]);
+    const rows = ledgerRows(['0000_a', BUILD_CLOCK], ['0001_b', BUILD_CLOCK], ['0002_c', BUILD_CLOCK]);
+    expect(planLedgerTimestampRepairs(expected, rows)).toEqual([
+      { id: 1, tag: '0000_a', from: BUILD_CLOCK, to: 1000 },
+      { id: 2, tag: '0001_b', from: BUILD_CLOCK, to: 2000 },
+      { id: 3, tag: '0002_c', from: BUILD_CLOCK, to: 3000 },
+    ]);
+  });
+
+  it('gives byte-identical migrations distinct `when`s, in id order', () => {
+    // A Map<hash, when> would stamp both rows with the first entry's `when`,
+    // leaving the second migration's row wrong and the high-water mark short.
+    const duplicateHash = 'identical-sql-body';
+    const expected: ExpectedMigrationWithWhen[] = [
+      { tag: '0000_original', hash: duplicateHash, when: 1000 },
+      { tag: '0001_copy', hash: duplicateHash, when: 2000 },
+    ];
+    const rows: LedgerTimestampRow[] = [
+      { id: 7, hash: duplicateHash, createdAt: BUILD_CLOCK },
+      { id: 3, hash: duplicateHash, createdAt: BUILD_CLOCK },
+    ];
+    // Sorted by id, so the row inserted first (id 3) pairs with the first entry.
+    expect(planLedgerTimestampRepairs(expected, rows)).toEqual([
+      { id: 3, tag: '0000_original', from: BUILD_CLOCK, to: 1000 },
+      { id: 7, tag: '0001_copy', from: BUILD_CLOCK, to: 2000 },
+    ]);
+  });
+
+  it('leaves a ledger row whose hash is in no journal entry alone', () => {
+    // Renumber residue. Inventing a timestamp for it would be a guess.
+    const expected = journal(['0000_a', 1000]);
+    const rows: LedgerTimestampRow[] = [
+      { id: 1, hash: 'hash-of-0000_a', createdAt: BUILD_CLOCK },
+      { id: 2, hash: 'hash-of-a-renumbered-away-migration', createdAt: BUILD_CLOCK },
+    ];
+    expect(planLedgerTimestampRepairs(expected, rows)).toEqual([{ id: 1, tag: '0000_a', from: BUILD_CLOCK, to: 1000 }]);
+  });
+
+  it('repairs only the rows a short ledger actually has', () => {
+    // The normal state right after a new migration lands: the image predates it,
+    // so it has no row yet — and must not gain a bogus one from this repair.
+    const expected = journal(['0000_a', 1000], ['0001_b', 2000], ['0002_new', 3000]);
+    const rows = ledgerRows(['0000_a', BUILD_CLOCK], ['0001_b', BUILD_CLOCK]);
+    expect(planLedgerTimestampRepairs(expected, rows).map((repair) => repair.tag)).toEqual(['0000_a', '0001_b']);
+  });
+
+  it('repairs a duplicate-hash row only as far as the journal has entries for it', () => {
+    // Three rows, two entries: the third is residue of a copy that was removed.
+    const duplicateHash = 'identical-sql-body';
+    const expected: ExpectedMigrationWithWhen[] = [
+      { tag: '0000_original', hash: duplicateHash, when: 1000 },
+      { tag: '0001_copy', hash: duplicateHash, when: 2000 },
+    ];
+    const rows: LedgerTimestampRow[] = [1, 2, 3].map((id) => ({ id, hash: duplicateHash, createdAt: BUILD_CLOCK }));
+    expect(planLedgerTimestampRepairs(expected, rows).map((repair) => repair.id)).toEqual([1, 2]);
   });
 });
 
