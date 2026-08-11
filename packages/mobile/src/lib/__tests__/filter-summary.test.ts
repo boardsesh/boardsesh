@@ -30,6 +30,8 @@ const mockT = ((key: string, options?: Record<string, unknown>) => {
   if (key === 'mobile.search.gradeMax') return `≤${text(options?.grade)}`;
   if (key === 'mobile.search.ascents') return `${text(options?.count)}+ 🧗`;
   if (key === 'mobile.search.rating') return `${text(options?.count)}+ ⭐`;
+  if (key === 'mobile.search.myRating') return `My ${text(options?.count)}+ ⭐`;
+  if (key === 'mobile.filter.ratedByMeShort') return 'Rated by me';
   if (key === 'mobile.search.more') return `+${text(options?.count)} more`;
   if (key === 'mobile.search.setterName') return `By ${text(options?.setter)}`;
   if (key === 'mobile.search.settersCount') return `${text(options?.count)} setters`;
@@ -116,6 +118,25 @@ describe('getFilterSummary', () => {
   it('shows the setter count when multiple setters are selected', () => {
     const filters: ClimbFilters = { ...DEFAULT_FILTERS, setter: ['marco', 'jules'] };
     expect(getFilterSummary(filters, '', mockGrades, mockT)).toBe('2 setters');
+  });
+
+  // The summary is the recent-filter pill's label (climbs/index.tsx), so a
+  // rating-only search must not save under the generic "Filters" fallback, and
+  // "my 4 stars" has to read differently from the community "4+ stars".
+  it('names the personal star minimum, distinctly from the community rating', () => {
+    const filters: ClimbFilters = { ...DEFAULT_FILTERS, minUserRating: 4 };
+    expect(getFilterSummary(filters, '', mockGrades, mockT)).toBe('My 4+ ⭐');
+    expect(getFilterSummary({ ...DEFAULT_FILTERS, minRating: 4 }, '', mockGrades, mockT)).toBe('4+ ⭐');
+  });
+
+  it('names the rated-by-me switch', () => {
+    const filters: ClimbFilters = { ...DEFAULT_FILTERS, onlyRatedByMe: true };
+    expect(getFilterSummary(filters, '', mockGrades, mockT)).toBe('Rated by me');
+  });
+
+  it('shows both personal rating levers together', () => {
+    const filters: ClimbFilters = { ...DEFAULT_FILTERS, minUserRating: 4, onlyRatedByMe: true };
+    expect(getFilterSummary(filters, '', mockGrades, mockT)).toBe('My 4+ ⭐ · Rated by me');
   });
 });
 
