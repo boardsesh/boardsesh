@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import type { Logger, SQLWrapper } from 'drizzle-orm';
 import postgres from 'postgres';
 import { getConnectionConfig, isLocalDevelopment } from './config';
+import { withConnectRetry } from './connect-retry';
 import * as schema from '../schema/index';
 import * as relations from '../relations/index';
 
@@ -81,7 +82,13 @@ export function createDb() {
   if (!cache.db) {
     const { connectionString } = getConnectionConfig();
     cache.client = postgres(connectionString, buildPoolOptions(connectionString));
-    cache.db = drizzle(cache.client, { schema: fullSchema, logger: sqlLogger });
+    // drizzle gets a retry-wrapped view of the pool: every statement it issues
+    // goes through `unsafe()`, and a statement that dies before it was
+    // dispatched (DNS/TCP connect failure) is retried instead of surfacing as a
+    // 500. See connect-retry.ts for why that is write-safe. drizzle mutates
+    // `client.options.parsers` on construction; the proxy forwards `options` to
+    // the real pool object, so the parser GUARANTEE below still holds.
+    cache.db = drizzle(withConnectRetry(cache.client), { schema: fullSchema, logger: sqlLogger });
   }
   return cache.db;
 }
@@ -94,6 +101,11 @@ export function createDb() {
  * Dates. Consumers that stream raw rows and expect resolver-shaped values (e.g.
  * the board-snapshot export) rely on this — never return a pool from here
  * without constructing drizzle over it first.
+ *
+ * This is the raw pool, without the connect-retry wrapper drizzle gets: tagged
+ * templates and cursors compose in ways a re-runnable single statement does
+ * not. Raw callers that want the retry can wrap one statement in
+ * `withDbConnectRetry`.
  */
 export function createPool() {
   if (!cache.client) {
@@ -116,7 +128,7 @@ export async function closePool(): Promise<void> {
 function ensureReadConnection(readReplicaUrl: string) {
   if (!cache.readClient || !cache.readDb) {
     cache.readClient = postgres(readReplicaUrl, buildPoolOptions(readReplicaUrl));
-    cache.readDb = drizzle(cache.readClient, { schema: fullSchema, logger: sqlLogger });
+    cache.readDb = drizzle(withConnectRetry(cache.readClient), { schema: fullSchema, logger: sqlLogger });
   }
   return { readClient: cache.readClient, readDb: cache.readDb };
 }
