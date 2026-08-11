@@ -7,12 +7,12 @@ retry, and where to point a monitor.
 
 postgres.js attaches the first query of a fresh connection to the connect
 attempt itself (`handler()` → `connect(closed.shift(), query)`,
-`postgres/src/index.js:336`). When that connect fails — Railway internal DNS
+`postgres/src/index.js:337`). When that connect fails — Railway internal DNS
 hiccup, refused TCP connect during a Postgres restart — the query is rejected
 outright. One blip, one user-visible 500, even though the statement never
-reached the server. postgres.js's own `backoff()` only paces _reconnecting an
-already-dropped_ connection; it never re-runs the query that triggered the
-connect.
+reached the server. postgres.js's own `backoff()` only _paces_ the next connect
+attempt (see "postgres.js paces its own connects" below); it never re-runs the
+query that the failed connect rejected.
 
 ## What is retried
 
@@ -29,7 +29,7 @@ single statement when it fails with one of:
 
 postgres.js starts `connectTimer` at `connection.js:343` and cancels it at
 `connection.js:552`, inside the ReadyForQuery handler — _before_
-`execute(initial)` at `connection.js:568`. DNS and TCP errors come from the
+`execute(initial)` at `connection.js:567`. DNS and TCP errors come from the
 socket before a single protocol byte is written. So an error carrying one of
 those codes proves the server never saw the statement: re-running it cannot
 double-execute a write. The safety argument is structural, not a judgement call
@@ -66,16 +66,44 @@ reconnecting after a blip does not hit the database in lockstep.
 The budget is what stops the retry from amplifying a real outage. `connect_timeout`
 is 30s, so a `CONNECT_TIMEOUT` has already blown the 10s budget by the time it
 surfaces: it is rethrown immediately instead of doubling the user's wait and
-holding a second pool slot. Fast failures — DNS `EAI_AGAIN`, `ECONNREFUSED`
-during a restart — land well inside the budget and do get retried. In other
-words this shrinks blips; it does not survive outages. The 2026-08-10 burst
-(Sentry BOARDSESH-D8, 03:11–03:54Z) would still have produced errors.
+holding a second pool slot. During a blip — a DNS `EAI_AGAIN`, an `ECONNREFUSED`
+while Postgres restarts — the attempts are milliseconds apart and the retry does
+its job. In other words this shrinks blips; it does not survive outages. The
+2026-08-10 burst (Sentry BOARDSESH-D8, 03:11–03:54Z) would still have produced
+errors.
+
+### postgres.js paces its own connects, and that is what the budget bounds
+
+`ECONNREFUSED` is only cheap for the first few failures. postgres.js gates every
+connect on a pool-wide backoff of its own: `options.shared.retries` increments on
+each errored close (`connection.js:455`), `backoff(retries)` is
+`(0.5 + rand/2) * min(3^retries/100, 20)` seconds (`index.js:511`), and
+`connection.connect()` waits that long before it even opens a socket
+(`connection.js:113-116` → `reconnect()` at `:362`). The counter is shared across
+the pool and only resets on a successful connect (`connection.js:568`).
+
+Measured against a dead port with **stock postgres.js and no wrapper at all**,
+nine sequential connects take 7, 2, 17, 43, 131, 637, 1305, 2540, 14204 ms. Deep
+into an outage a single connect already costs seconds today.
+
+What the retry changes is that one statement spends up to `DB_CONNECT_ATTEMPTS`
+connects instead of one, so that counter ramps roughly three times faster and one
+request can span two attempts of a ramping delay. The wall-clock budget is the
+bound: it is checked after each attempt returns, so once a single attempt costs
+more than `DB_CONNECT_RETRY_BUDGET_MS` the loop stops there. It cannot preempt an
+attempt already in flight, so worst case a request absorbs about two attempts
+instead of one. If an incident ever shows that trade going the wrong way, lower
+`DB_CONNECT_RETRY_BUDGET_MS` (or set `DB_CONNECT_ATTEMPTS=1` to turn the retry
+off) rather than reaching into postgres.js's backoff.
+
+The connect-retry tests pin their pools to `backoff: () => 0` so they measure this
+wrapper's loop rather than that ramp.
 
 ## Where the retry is wired
 
 `createDb()` / `createReadDb()` hand drizzle a retry-wrapped view of the pool
 (`withConnectRetry`). drizzle issues every statement through `client.unsafe()`
-(`drizzle-orm/postgres-js/session.js:103,106,33`), so all drizzle traffic is
+(`drizzle-orm/postgres-js/session.js:33,43,65,103,106`), so all drizzle traffic is
 covered — backend resolvers, the Next.js app, scripts.
 
 Not covered:
@@ -109,7 +137,7 @@ Not covered:
 The probe (`packages/backend/src/services/db-health.ts`) runs `select 1` with a
 5s result cache, single-flight dedupe, and a 2s deadline. When the deadline
 wins it calls `query.cancel()`: postgres.js queues a query with no timeout of
-its own (`postgres/src/index.js:340`), so walking away would leave a zombie
+its own (`postgres/src/index.js:341`), so walking away would leave a zombie
 `select 1` that fires whenever the pool recovers, and probes would pile up
 through an outage.
 

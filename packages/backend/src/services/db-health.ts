@@ -114,7 +114,7 @@ async function runProbe(options: ProbeOptions): Promise<DatabaseHealth> {
 
     if (outcome === 'timeout') {
       // postgres.js queues a query with no timeout of its own
-      // (postgres/src/index.js:340). Walking away from the promise would leave
+      // (postgres/src/index.js:341). Walking away from the promise would leave
       // a zombie `select 1` in the queue that fires whenever the pool
       // recovers, so probes would pile up through an outage. cancel() takes it
       // back out of the queue (index.js:350-360).

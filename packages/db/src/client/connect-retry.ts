@@ -5,14 +5,14 @@ import type postgres from 'postgres';
  *
  * postgres.js attaches the first query of a fresh connection to the connect
  * attempt itself (`handler()` -> `connect(closed.shift(), query)`,
- * postgres/src/index.js:336). If that connect fails, the query is rejected
+ * postgres/src/index.js:337). If that connect fails, the query is rejected
  * outright, so a single DNS blip or refused TCP connect turns into one
  * user-visible 500 even though the statement never reached the server.
  *
  * WRITE SAFETY. We retry only the error codes that are structurally impossible
  * once a statement has been dispatched. postgres.js starts `connectTimer` at
  * connection.js:343 and cancels it at connection.js:552, inside the
- * ReadyForQuery handler, *before* `execute(initial)` at connection.js:568. DNS
+ * ReadyForQuery handler, *before* `execute(initial)` at connection.js:567. DNS
  * and TCP errors (ECONNREFUSED / EAI_AGAIN / EAI_NODATA / ENOTFOUND) come from
  * the socket before any protocol byte is written. So an error carrying one of
  * these codes proves the server never saw the statement, and re-running it
@@ -39,8 +39,19 @@ const DEFAULT_MAX_DELAY_MS = 600;
  * another attempt. This is what stops the retry from amplifying a real outage:
  * `connect_timeout` is 30s, so a CONNECT_TIMEOUT already burned 30s and blew
  * the budget — it is rethrown immediately instead of doubling the user's wait
- * and holding a second pool slot. Fast failures (DNS EAI_AGAIN, ECONNREFUSED
- * during a Postgres restart) land well inside the budget and do get retried.
+ * and holding a second pool slot. During a blip the DNS/TCP codes fail in
+ * milliseconds and the retry does its job.
+ *
+ * The budget also bounds a second, less obvious cost. postgres.js paces its own
+ * connect attempts with a pool-wide backoff: `options.shared.retries` increments
+ * on every errored close (connection.js:455) and `connection.connect()` waits
+ * `backoff(retries)` seconds — capped at 20 — before opening a socket
+ * (connection.js:113-116 -> reconnect() at :362), resetting only on a success
+ * (connection.js:568). So deep into an outage even an ECONNREFUSED costs
+ * seconds, and issuing three connects per statement ramps that counter faster.
+ * The budget check after each attempt is what keeps a single request from
+ * absorbing more than roughly two of those. Details and measurements:
+ * docs/db-connectivity.md.
  */
 const DEFAULT_BUDGET_MS = 10_000;
 
@@ -239,7 +250,7 @@ function createRetryingUnsafe(client: Pool, options?: DbConnectRetryOptions) {
 /**
  * Wraps a postgres.js pool so that every *single statement* issued through
  * `unsafe()` retries pre-dispatch connect failures. `unsafe()` is the only path
- * drizzle uses for statements (drizzle-orm/postgres-js/session.js:103,106,33),
+ * drizzle uses for statements (drizzle-orm/postgres-js/session.js:33,43,65,103,106),
  * so wrapping it covers all drizzle traffic.
  *
  * Deliberately NOT wrapped:

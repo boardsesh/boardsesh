@@ -1,6 +1,8 @@
 import { describe, expect, it, afterEach } from 'vite-plus/test';
 import net from 'node:net';
 import postgres from 'postgres';
+import { sql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import {
   backoffDelayMs,
   connectErrorCode,
@@ -130,6 +132,33 @@ describe('withDbConnectRetry', () => {
     expect(calls).toBe(1);
   });
 
+  it('stops retrying a fast code once postgres.js has slowed the attempts down', async () => {
+    // ECONNREFUSED is only cheap for the first few failures of an outage:
+    // postgres.js paces its own connect attempts with a pool-wide backoff that
+    // ramps to a 20s cap (index.js:511, connection.js:455), so deep into an
+    // outage one attempt costs seconds. The budget is the only thing bounding
+    // how much of that a single user request absorbs, so pin it for the
+    // allowlisted code the docs describe as "fast", not just CONNECT_TIMEOUT.
+    let calls = 0;
+    let clock = 0;
+    const failure = connectError('ECONNREFUSED');
+
+    await expect(
+      withDbConnectRetry(
+        () => {
+          calls += 1;
+          clock += 6_000;
+          return Promise.reject(failure);
+        },
+        { attempts: 3, budgetMs: 10_000, sleep: noSleep, now: () => clock },
+      ),
+    ).rejects.toBe(failure);
+
+    // One retry (6s elapsed, inside the budget), then the second attempt puts
+    // elapsed at 12s and the loop stops instead of running to `attempts`.
+    expect(calls).toBe(2);
+  });
+
   it('keeps a misbehaving observer from breaking the retry', async () => {
     setDbConnectObserver(() => {
       throw new Error('observer blew up');
@@ -245,30 +274,58 @@ describe('withConnectRetry (pool wrapper)', () => {
   });
 });
 
+async function reserveDeadPort(): Promise<number> {
+  const probe = net.createServer();
+  const port = await new Promise<number>((resolve, reject) => {
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const address = probe.address();
+      resolve(typeof address === 'object' && address ? address.port : 0);
+    });
+  });
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  return port;
+}
+
+function deadPool(port: number, max: number) {
+  return postgres(`postgresql://boardsesh:boardsesh@127.0.0.1:${port}/boardsesh`, {
+    max,
+    connect_timeout: 2,
+    idle_timeout: 1,
+    prepare: false,
+    onnotice: () => {},
+    // postgres.js paces its OWN connect attempts with a pool-wide backoff
+    // (`options.shared.retries` at connection.js:455, `backoff()` at
+    // index.js:511), which ramps to a 20s cap after ~8 failed connects and only
+    // resets on a success. Measured on a dead port with stock postgres.js and
+    // no wrapper at all, nine sequential connects take 7, 2, 17, 43, 131, 637,
+    // 1305, 2540, 14204 ms. Pinning it to 0 keeps these tests measuring OUR
+    // retry loop instead of that ramp. The production consequence is real and
+    // documented in docs/db-connectivity.md — it is what the wall-clock budget
+    // exists to bound, and it is why an ECONNREFUSED is only "fast" for the
+    // first few failures of an outage.
+    backoff: () => 0,
+  });
+}
+
+// Fast, deterministic backoff: these tests are about the retry loop driving a
+// real postgres.js pool, not about the jitter envelope (covered above).
+const FAST_BACKOFF = { baseDelayMs: 5, maxDelayMs: 10 } as const;
+
 describe('pool recovery after repeated connect failures', () => {
   // The regression this whole PR is fenced against: a retry that leaves
-  // postgres.js's connection bookkeeping wedged. After `max` consecutive
-  // connect failures, the next query must still reject promptly (not hang), and
-  // the pool must still be willing to open a socket afterwards.
-  it('keeps rejecting promptly and still reconnects once the port comes back', async () => {
-    const probe = net.createServer();
-    const port = await new Promise<number>((resolve, reject) => {
-      probe.once('error', reject);
-      probe.listen(0, '127.0.0.1', () => {
-        const address = probe.address();
-        resolve(typeof address === 'object' && address ? address.port : 0);
-      });
-    });
-    await new Promise<void>((resolve) => probe.close(() => resolve()));
+  // postgres.js's connection bookkeeping wedged. The refuted `options.socket`
+  // design stranded connections in the `connecting` queue, so after `max`
+  // failures every query hung forever. This drives the retry loop — attempts
+  // greater than 1, so the wrapper really re-enters the pool — against a real
+  // pool on a dead port, then proves the pool still opens a socket afterwards.
+  it('retries through a real pool, keeps rejecting promptly, and still reconnects', async () => {
+    const port = await reserveDeadPort();
+    const pool = deadPool(port, 2);
+    const events: DbConnectRetryEvent[] = [];
+    setDbConnectObserver((event) => events.push(event));
 
-    const pool = postgres(`postgresql://boardsesh:boardsesh@127.0.0.1:${port}/boardsesh`, {
-      max: 2,
-      connect_timeout: 2,
-      idle_timeout: 1,
-      prepare: false,
-      onnotice: () => {},
-    });
-    const retrying = withConnectRetry(pool, { attempts: 1 });
+    const retrying = withConnectRetry(pool, { attempts: 3, ...FAST_BACKOFF });
     const accepted: net.Socket[] = [];
     let connectionsSeen = 0;
     // Accepts the TCP connection and then says nothing, so postgres.js reaches
@@ -282,26 +339,66 @@ describe('pool recovery after repeated connect failures', () => {
     });
 
     try {
-      // max + 1 statements against a dead port: every one rejects, none hangs.
+      // max + 1 statements against a dead port: every one exhausts its attempts,
+      // rejects, and none hangs.
       for (let index = 0; index < 3; index += 1) {
         const startedAt = Date.now();
         await expect(retrying.unsafe('select 1')).rejects.toMatchObject({ code: 'ECONNREFUSED' });
-        expect(Date.now() - startedAt).toBeLessThan(4_000);
+        expect(Date.now() - startedAt).toBeLessThan(2_000);
       }
+
+      // Non-vacuous: 3 statements x (3 attempts - 1) retries, all against the
+      // real pool. A wrapper that silently stopped retrying would report none.
+      expect(events).toHaveLength(6);
+      expect(events.every((event) => event.code === 'ECONNREFUSED')).toBe(true);
+      expect(events.map((event) => event.attempt)).toEqual([1, 2, 1, 2, 1, 2]);
 
       await new Promise<void>((resolve, reject) => {
         revived.once('error', reject);
         revived.listen(port, '127.0.0.1', () => resolve());
       });
 
-      // The statement still fails, but the pool proves it is not wedged: it
-      // opened a socket again instead of queueing the query forever.
-      await expect(retrying.unsafe('select 1')).rejects.toMatchObject({ code: 'CONNECT_TIMEOUT' });
+      // 9 failed connects later the pool is not wedged: it opens a socket
+      // again instead of queueing the query forever. attempts:1 here so the
+      // assertion costs one connect_timeout, not three.
+      const once = withConnectRetry(pool, { attempts: 1 });
+      await expect(once.unsafe('select 1')).rejects.toMatchObject({ code: 'CONNECT_TIMEOUT' });
       expect(connectionsSeen).toBeGreaterThan(0);
     } finally {
       await pool.end({ timeout: 1 });
       for (const socket of accepted) socket.destroy();
       await new Promise<void>((resolve) => revived.close(() => resolve()));
+    }
+  }, 20_000);
+});
+
+describe('drizzle traffic through the wrapped pool', () => {
+  // The PR's coverage claim is "drizzle issues every statement through
+  // unsafe(), so all drizzle traffic is retried". Read off drizzle's source it
+  // is an assertion about a vendored file; here it is exercised end to end, so
+  // a drizzle upgrade that adds another statement path fails this test.
+  it('retries a drizzle statement and leaves transaction bodies alone', async () => {
+    const port = await reserveDeadPort();
+    const pool = deadPool(port, 1);
+    const events: DbConnectRetryEvent[] = [];
+    setDbConnectObserver((event) => events.push(event));
+
+    const db = drizzle(withConnectRetry(pool, { attempts: 3, ...FAST_BACKOFF }));
+
+    try {
+      await expect(db.execute(sql`select 1`)).rejects.toThrow();
+      expect(events).toHaveLength(2);
+      expect(events.every((event) => event.code === 'ECONNREFUSED')).toBe(true);
+
+      // A transaction must fail as a whole rather than replay half its
+      // statements: postgres.js runs `begin` and the whole body against the
+      // scoped client it builds internally (index.js:242, 252), which never
+      // passes through the wrapper. Zero retries proves it.
+      events.length = 0;
+      await expect(db.transaction(async (tx) => tx.execute(sql`select 1`))).rejects.toThrow();
+      expect(events).toEqual([]);
+    } finally {
+      await pool.end({ timeout: 1 });
     }
   }, 20_000);
 });
