@@ -13,6 +13,9 @@ import {
   bootstrapScopeFromSnapshot,
   getBootstrapAttempts,
   recordBootstrapAttempt,
+  resetBootstrapAttempts,
+  hasHealedBootstrapAttempts,
+  markBootstrapAttemptsHealed,
   markBootstrapPagedFallback,
   clearBootstrapPagedFallback,
   markBootstrapDone,
@@ -34,6 +37,7 @@ import {
 } from './deletions-coverage';
 import { applyBusyTimeout } from '../db/pragmas';
 import { getPendingCount } from '../mutation-queue/queue';
+import { isNetworkError } from '../mutation-queue/error-classification';
 import { isSigningOut, getWipeEpoch, isBackgrounded } from '../mutation-queue/drainer';
 import { parseOfflineBoardKey, type OfflineBoardScope } from '../offline-board-key';
 
@@ -119,6 +123,17 @@ export type CoverageResetReporter = (info: CoverageResetInfo) => void;
 export type SyncOptions = {
   /** Encoded board scope keys ("boardType:layoutId:sizeId") to download offline. */
   enabledBoards?: string[];
+  /**
+   * Connectivity probe, mirroring `DrainOptions.isOnline` (drainer.ts). A pull
+   * that starts with no connection can only fail every request it makes, and
+   * the snapshot bootstrap phase would report each enabled-but-undownloaded
+   * scope's manifest failure as telemetry on the way (issue #4238).
+   *
+   * DEFAULTS TO `() => true`, so every existing caller — web included — behaves
+   * exactly as it did before this seam existed. Only the mobile adapter injects
+   * a real probe (React Query's onlineManager, wired to NetInfo).
+   */
+  isOnline?: () => boolean;
   onProgress?: (progress: SyncProgress) => void;
   onSchemaDrift?: SchemaDriftReporter;
   /**
@@ -517,6 +532,34 @@ async function recordRetryableBootstrapFailure(db: OfflineDatabase, scopeKey: st
   return attempt;
 }
 
+/**
+ * Settle one retryable manifest/download failure.
+ *
+ * A TRANSPORT-shaped cause (offline, DNS, TLS, timeout — `isNetworkError`, the
+ * same predicate the drainer uses to decide a mutation must not advance toward
+ * the dead-letter) burns NO attempt and writes nothing at all: the artifact is
+ * fine, the phone just isn't on a network, and counting it meant two launches in
+ * airplane mode permanently dropped a board to the paged crawl (issue #4238).
+ * The scope's paged pull is still skipped by the caller so no first-page
+ * checkpoint disqualifies the snapshot path.
+ *
+ * Anything else — a 500 from the CDN, a short artifact, a disk-full device — is
+ * a real failure and counts exactly as it always did.
+ *
+ * Returns the attempt number to report and whether the failure was expected
+ * (i.e. transport-shaped), which the mobile reporter uses to downgrade severity.
+ */
+async function settleRetryableBootstrapFailure(
+  db: OfflineDatabase,
+  scopeKey: string,
+  cause: unknown,
+): Promise<{ attempt: number; expected: boolean }> {
+  if (isNetworkError(cause)) {
+    return { attempt: await getBootstrapAttempts(db, scopeKey), expected: true };
+  }
+  return { attempt: await recordRetryableBootstrapFailure(db, scopeKey), expected: false };
+}
+
 async function resolveManifestOnce(
   source: SnapshotSource,
   cache: { value?: ManifestResolution },
@@ -549,18 +592,36 @@ async function resolveManifestOnce(
  *
  * Eligibility + failure matrix (per scope):
  *   - checkpoint exists on either board table → NOT eligible → normal paged pull.
- *   - attempts ≥ MAX → gave up → normal paged pull.
+ *   - attempts ≥ MAX → gave up → normal paged pull, EXCEPT for the one-shot heal
+ *     below.
  *   - manifest `absent` (missing/unparseable) → permanent miss, NO attempt →
  *     normal paged pull.
- *   - manifest `error` (network) → counted attempt → SKIP paged pull this cycle.
+ *   - manifest `error`, TRANSPORT-shaped (offline/DNS/TLS/timeout) → NO attempt,
+ *     nothing persisted → SKIP paged pull this cycle, reported as `expected`.
+ *   - manifest `error`, anything else (a 500 from the CDN, a parse blow-up) →
+ *     counted attempt → SKIP paged pull this cycle.
  *   - manifest `ok` but no entry for (boardType, layoutId) → permanent miss, NO
  *     attempt → normal paged pull (layout not exported yet).
- *   - download fails/returns null → counted attempt → SKIP paged pull this cycle.
+ *   - download fails transport-shaped → NO attempt → SKIP paged pull this cycle,
+ *     reported as `expected`.
+ *   - download fails/returns null otherwise → counted attempt → SKIP paged pull.
  *   - download throws SnapshotPermanentMissError → NO attempt → normal paged pull.
  *   - import throws (corrupt/short artifact, row-count/format mismatch) → counted
- *     attempt → SKIP paged pull this cycle.
+ *     attempt → SKIP paged pull this cycle. Import failures ALWAYS count: an
+ *     artifact that downloaded but won't import is a real defect, and the cap is
+ *     what stops the client re-downloading it forever.
  *   - success → mark done, rewind deletions to min(watermarks); paged pull runs
  *     normally, now a ~1-day delta from the scoped watermark checkpoints.
+ *
+ * ONE-SHOT HEAL (issue #4238): the attempt cap is evaluated AFTER the manifest
+ * resolves, so an over-cap scope that turns out to have a usable artifact
+ * waiting gets its counter cleared exactly once (`bootstrap-attempts-healed:`)
+ * and takes the snapshot path again. A device that spent both attempts offline
+ * therefore recovers on its first online launch, while a genuinely broken
+ * artifact costs two more attempts and then settles into the paged crawl for
+ * good. Cost: an over-cap scope consults the manifest each cycle — cached per
+ * pullSync run by `resolveManifestOnce`, so it adds a request only on cycles
+ * where EVERY scope is over the cap.
  * A wipe detected mid-phase bails the whole phase with no attempt (mirrors
  * syncTable). One artifact is downloaded per (boardType, layoutId) and reused
  * across that layout's sizes; all downloads are deleted in a finally.
@@ -612,11 +673,7 @@ async function runBootstrapPhase(
           metadataSettled = true;
           continue;
         }
-        if ((await getBootstrapAttempts(db, scope.scopeKey)) >= MAX_BOOTSTRAP_ATTEMPTS) {
-          await markBootstrapPagedFallback(db, scope.scopeKey);
-          metadataSettled = true;
-          continue;
-        }
+        const isOverAttemptCap = (await getBootstrapAttempts(db, scope.scopeKey)) >= MAX_BOOTSTRAP_ATTEMPTS;
 
         onProgress?.({ phase: 'bootstrap', currentTable: scope.scopeKey, documentsProcessed: 0 });
 
@@ -624,33 +681,59 @@ async function runBootstrapPhase(
         // Re-check after the manifest network await: every branch below either
         // writes to SQLite (recordBootstrapAttempt) or leads to one further down.
         if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) break;
+
+        // Shared with the pre-download size estimate (snapshot-estimate.ts) so the
+        // UI can never quote a number for an artifact this phase would skip.
+        const entry =
+          resolution.status === 'ok' ? findSnapshotEntry(resolution.manifest, scope.boardType, scope.layoutId) : null;
+        // Pre-check the manifest's schemaVersion so a schema-stale artifact is
+        // skipped BEFORE the multi-MB download; verifySnapshotMeta re-checks the
+        // authoritative value inside the file. Same permanent-miss semantics as
+        // SnapshotSchemaStaleError: no attempt, paged crawl runs this cycle, and
+        // tonight's export rebuilds at the new schema.
+        const isEntryUsable = entry !== null && isSnapshotEntryUsable(entry);
+
+        // The attempt cap is decided HERE, below the manifest resolution, so it
+        // can tell "we gave up because the artifact is broken" from "we gave up
+        // because the phone was in a tunnel twice". See the ONE-SHOT HEAL note
+        // in this function's doc comment.
+        if (isOverAttemptCap) {
+          const canHeal = isEntryUsable && !(await hasHealedBootstrapAttempts(db, scope.scopeKey));
+          if (!canHeal) {
+            await markBootstrapPagedFallback(db, scope.scopeKey);
+            metadataSettled = true;
+            continue;
+          }
+          await resetBootstrapAttempts(db, scope.scopeKey);
+          await markBootstrapAttemptsHealed(db, scope.scopeKey);
+        }
+
         if (resolution.status === 'absent') {
           await markBootstrapPagedFallback(db, scope.scopeKey);
           metadataSettled = true;
           continue; // permanent miss, no attempt
         }
         if (resolution.status === 'error') {
-          const attempt = await recordRetryableBootstrapFailure(db, scope.scopeKey);
-          metadataSettled = true;
-          onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'manifest', attempt, cause: resolution.cause });
+          const { attempt, expected } = await settleRetryableBootstrapFailure(db, scope.scopeKey, resolution.cause);
+          // A transport failure persists nothing, so there is no settled decision
+          // for the UI to re-read — only a counted one changed sync_meta.
+          metadataSettled = !expected;
+          onSnapshotBootstrapError?.({
+            scopeKey: scope.scopeKey,
+            stage: 'manifest',
+            attempt,
+            cause: resolution.cause,
+            expected,
+          });
           skipPagedPull.add(scope.scopeKey);
           continue;
         }
-
-        // Shared with the pre-download size estimate (snapshot-estimate.ts) so the
-        // UI can never quote a number for an artifact this phase would skip.
-        const entry = findSnapshotEntry(resolution.manifest, scope.boardType, scope.layoutId);
         if (!entry) {
           await markBootstrapPagedFallback(db, scope.scopeKey);
           metadataSettled = true;
           continue; // layout not exported yet — permanent miss, no attempt
         }
-        // Pre-check the manifest's schemaVersion so a schema-stale artifact is
-        // skipped BEFORE the multi-MB download; verifySnapshotMeta re-checks the
-        // authoritative value inside the file. Same permanent-miss semantics as
-        // SnapshotSchemaStaleError: no attempt, paged crawl runs this cycle, and
-        // tonight's export rebuilds at the new schema.
-        if (!isSnapshotEntryUsable(entry)) {
+        if (!isEntryUsable) {
           await markBootstrapPagedFallback(db, scope.scopeKey);
           metadataSettled = true;
           continue;
@@ -685,16 +768,18 @@ async function runBootstrapPhase(
               stage: 'download',
               attempt: 0,
               cause: cachedDownload.cause,
+              expected: false,
             });
             continue;
           }
-          const attempt = await recordRetryableBootstrapFailure(db, scope.scopeKey);
-          metadataSettled = true;
+          const { attempt, expected } = await settleRetryableBootstrapFailure(db, scope.scopeKey, cachedDownload.cause);
+          metadataSettled = !expected;
           onSnapshotBootstrapError?.({
             scopeKey: scope.scopeKey,
             stage: 'download',
             attempt,
             cause: cachedDownload.cause,
+            expected,
           });
           skipPagedPull.add(scope.scopeKey);
           continue;
@@ -743,12 +828,26 @@ async function runBootstrapPhase(
             // artifact at the new schema for future fresh scopes.
             await markBootstrapPagedFallback(db, scope.scopeKey);
             metadataSettled = true;
-            onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'import', attempt: 0, cause: error });
+            onSnapshotBootstrapError?.({
+              scopeKey: scope.scopeKey,
+              stage: 'import',
+              attempt: 0,
+              cause: error,
+              expected: false,
+            });
             continue;
           }
+          // Import failures always count, transport-shaped or not: the bytes are
+          // already on disk, so nothing about this failure is a network problem.
           const attempt = await recordRetryableBootstrapFailure(db, scope.scopeKey);
           metadataSettled = true;
-          onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'import', attempt, cause: error });
+          onSnapshotBootstrapError?.({
+            scopeKey: scope.scopeKey,
+            stage: 'import',
+            attempt,
+            cause: error,
+            expected: false,
+          });
           skipPagedPull.add(scope.scopeKey);
         }
       } finally {
@@ -882,6 +981,14 @@ export async function pullSync(
   // when the app is already backgrounded.
   if (isBackgrounded()) return;
 
+  // Offline: every request this cycle would make is already lost, and the
+  // bootstrap phase would spend a Sentry event per enabled-but-undownloaded
+  // scope announcing it (issue #4238). Skip; the scheduler's offline→online
+  // edge and the next foreground both retrigger a cycle. Same posture as
+  // drainMutationQueue's `if (!options.isOnline()) return`.
+  const isOnline = options?.isOnline ?? (() => true);
+  if (!isOnline()) return;
+
   // Captured ONCE for the whole cycle and threaded into every phase, so a wipe or a
   // local purge aborts the entire pull rather than just whichever table is mid-flight.
   //
@@ -901,9 +1008,14 @@ export async function pullSync(
   // purge landing inside that window must read as "not my epoch" rather than be
   // adopted as this cycle's own baseline.
   const cycleEpoch = getWipeEpoch();
-  // Unlike the other two checks, isBackgrounded() is live, not latched — a background
-  // dip that clears before the next check runs won't abort a cycle it can no longer affect.
-  const cycleAborted = (): boolean => isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded();
+  // Unlike the other two checks, isBackgrounded() and isOnline() are live, not latched —
+  // a background dip (or a connectivity blip) that clears before the next check runs
+  // won't abort a cycle it can no longer affect. Connectivity is checked between phases
+  // rather than inside the bootstrap phase deliberately: an artifact that finished
+  // downloading must still get imported, and re-downloading 272 MB because NetInfo
+  // flapped during the import would be the worse failure.
+  const cycleAborted = (): boolean =>
+    isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded() || !isOnline();
 
   // Phase -1: deletions-coverage guard (issue #3474). Runs BEFORE the bootstrap
   // phase, so the reset and the rebuild that follows belong to the same cycle.

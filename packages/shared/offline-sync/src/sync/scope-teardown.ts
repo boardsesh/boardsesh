@@ -33,6 +33,7 @@ import type { OfflineBoardScope } from '../offline-board-key';
 import { climbsScopeFilter, isSizeScopedBoard, sizeMembershipClause } from './board-scope-sql';
 import { getCheckpointKey, SCOPE_COMPLETE_PREFIX } from './checkpoints';
 import {
+  BOOTSTRAP_ATTEMPTS_HEALED_PREFIX,
   BOOTSTRAP_ATTEMPTS_PREFIX,
   BOOTSTRAP_DONE_PREFIX,
   BOOTSTRAP_PAGED_FALLBACK_PREFIX,
@@ -68,6 +69,10 @@ export function scopeSyncMetaKeys(scopeKey: string): string[] {
     ...BOARD_DATA_TABLES.map((tableName) => getCheckpointKey(tableName, scopeKey)),
     `${SCOPE_COMPLETE_PREFIX}${scopeKey}`,
     `${BOOTSTRAP_ATTEMPTS_PREFIX}${scopeKey}`,
+    // Belongs with the attempts row it bounds: re-adding the board must give the
+    // scope a clean counter AND a fresh heal budget, not one that was spent
+    // before the user removed it.
+    `${BOOTSTRAP_ATTEMPTS_HEALED_PREFIX}${scopeKey}`,
     `${BOOTSTRAP_DONE_PREFIX}${scopeKey}`,
     `${BOOTSTRAP_PAGED_FALLBACK_PREFIX}${scopeKey}`,
   ];

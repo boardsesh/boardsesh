@@ -118,6 +118,31 @@ describe('sync-scheduler', () => {
     );
   });
 
+  it('threads the connectivity probe into pullSync, and omits it when the caller has none (#4238)', async () => {
+    const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+    const isOnline = () => false;
+
+    triggerSync(mockDb, createMockQueryClient(), mockGraphqlFetch, getEnabledBoards, drainQueue, { isOnline });
+    await flush();
+
+    expect(mockPullSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.anything(),
+      mockGraphqlFetch,
+      expect.objectContaining({ isOnline }),
+    );
+
+    // No probe supplied → pullSync gets `undefined` and keeps its assume-online
+    // default, so today's callers are unchanged.
+    vi.clearAllMocks();
+    __resetSyncSchedulerStateForTests();
+    triggerSync(mockDb, createMockQueryClient(), mockGraphqlFetch, getEnabledBoards, drainQueue);
+    await flush();
+
+    const options = mockPullSync.mock.calls[0][3] as { isOnline?: () => boolean };
+    expect(options.isOnline).toBeUndefined();
+  });
+
   it('single-flights concurrent triggers into one run plus one follow-up', async () => {
     const drainGate = deferred();
     const drainQueue: DrainQueue = vi.fn(() => drainGate.promise);

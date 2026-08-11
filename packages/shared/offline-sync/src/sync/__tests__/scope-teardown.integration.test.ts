@@ -148,6 +148,12 @@ describe('re-downloading a removed board', () => {
       `bootstrap-paged-fallback:${SCOPE_KEY}`,
       '1',
     ]);
+    // The one-shot attempt heal was already spent before the user removed the
+    // board; re-adding it must hand back a fresh heal budget too (issue #4238).
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      `bootstrap-attempts-healed:${SCOPE_KEY}`,
+      '1',
+    ]);
 
     await removeBoardScopeData({ db, scope: SCOPE, scopeKey: SCOPE_KEY, retainedScopes: [] });
 
@@ -159,6 +165,9 @@ describe('re-downloading a removed board', () => {
     expect(await getCheckpoint(db, `checkpoint:board_climb_grades:${SCOPE_KEY}`)).toBeNull();
     expect(
       await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', [`bootstrap-paged-fallback:${SCOPE_KEY}`]),
+    ).toBeNull();
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', [`bootstrap-attempts-healed:${SCOPE_KEY}`]),
     ).toBeNull();
   });
 });
