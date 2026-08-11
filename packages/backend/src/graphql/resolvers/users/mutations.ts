@@ -28,6 +28,7 @@ import {
   type AuroraCredentialStatus as RestAuroraCredentialStatus,
 } from '../../../services/aurora-credentials';
 import type { AuroraBoardName } from '@boardsesh/shared-schema';
+import { deleteClimbDependentRows, groupClimbUuidsByBoardType } from '../climbs/climb-cleanup';
 
 function mapAuroraCredentialStatus(credential: RestAuroraCredentialStatus): AuroraCredentialStatus {
   return {
@@ -206,6 +207,25 @@ export const userMutations = {
     const userId = ctx.userId!;
 
     await db.transaction(async (tx) => {
+      // Find this user's draft climbs first — the dependent-row cleanup below
+      // needs the (boardType, uuid) pairs, and it must run before the drafts
+      // themselves are deleted or the rows it targets would already be gone.
+      const draftClimbs = await tx
+        .select({ uuid: dbSchema.boardClimbs.uuid, boardType: dbSchema.boardClimbs.boardType })
+        .from(dbSchema.boardClimbs)
+        .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, true)));
+
+      // board_climb_stats/_history/board_beta_links have no FK back to
+      // board_climbs (stats can legitimately arrive before their climb during
+      // upstream sync), so deleting a draft here without also clearing these
+      // strands an orphan row (issue #3943). Only the user's OWN drafts are
+      // touched — published climbs survive account deletion with userId set
+      // to null, and their stats must remain untouched.
+      const draftsByBoardType = groupClimbUuidsByBoardType(draftClimbs);
+      for (const [draftBoardType, uuids] of draftsByBoardType) {
+        await deleteClimbDependentRows(tx, draftBoardType, uuids);
+      }
+
       // Delete draft climbs created by this user
       await tx
         .delete(dbSchema.boardClimbs)
