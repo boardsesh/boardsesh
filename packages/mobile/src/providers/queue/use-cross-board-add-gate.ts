@@ -7,6 +7,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { boardLooselyMatches } from '../../lib/boards/board-matches';
 import { useSetActiveBoard } from '../../lib/graphql/use-active-board';
+import { myBoardsQueryKey } from '../../lib/graphql/query-keys';
 import type { GetMyBoardsQueryResponse } from '../../lib/graphql/operations';
 import { track } from '../../lib/analytics';
 import { useChoose } from '../dialog-provider';
@@ -31,10 +32,11 @@ export type CrossBoardAddRequest = {
 
 type ChoiceValue = 'add' | 'switch' | 'cancel';
 
-// `useMyBoards()` caches under ['myBoards', input] with input undefined for the
-// roster fetch drawer-host-provider keeps warm. Read it at tap time rather than
-// subscribing, so QueueProvider doesn't re-render on roster churn.
-const MY_BOARDS_QUERY_KEY = ['myBoards', undefined] as const;
+// The roster drawer-host-provider keeps warm is `useMyBoards()` — no input. Key
+// it through the same helper that hook keys its query with, so the two can't
+// drift. Read at tap time rather than subscribed, so QueueProvider doesn't
+// re-render on roster churn.
+const MY_BOARDS_QUERY_KEY = myBoardsQueryKey();
 
 /**
  * The prompt behind a cross-board queue add: "this climb is on another board —
