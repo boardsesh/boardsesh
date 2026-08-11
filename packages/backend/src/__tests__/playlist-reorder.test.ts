@@ -53,10 +53,14 @@ type ClimbRow = { id: number; climbUuid: string; position: number };
  */
 function primeTransaction(rows: ClimbRow[], resolvableClimbUuids: string[] = rows.map((row) => row.climbUuid)) {
   const setCalls: Array<Record<string, unknown>> = [];
-  const selectResults = [rows, resolvableClimbUuids.map((uuid) => ({ uuid }))];
-  let selectCall = 0;
   const tx = {
-    select: vi.fn(() => createMockChain(selectResults[selectCall++] ?? [])),
+    // Dispatch on the projection, not on call order: a third select added later
+    // throws here instead of quietly being served another query's rows.
+    select: vi.fn((projection: Record<string, unknown>) => {
+      if ('uuid' in projection) return createMockChain(resolvableClimbUuids.map((uuid) => ({ uuid })));
+      if ('climbUuid' in projection) return createMockChain(rows);
+      throw new Error(`Unexpected select in reorder transaction: ${Object.keys(projection).join(', ')}`);
+    }),
     update: vi.fn(() => {
       const chain: Record<string, unknown> = {};
       chain.set = vi.fn((arg: Record<string, unknown>) => {

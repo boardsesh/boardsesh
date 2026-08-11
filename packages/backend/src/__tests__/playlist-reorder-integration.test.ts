@@ -55,16 +55,20 @@ describe('reorderPlaylistClimb — real DB (#3607)', () => {
     `);
     // The resolver reads which refs resolve to a catalogued climb (#4012), so the
     // catalog rows have to exist for these moves to run in visible-index space.
-    await db.execute(sql`TRUNCATE TABLE board_climbs CASCADE`);
+    // Seeded and cleaned by uuid rather than by truncating board_climbs: the
+    // worker database is shared with every other backend suite, and an
+    // AccessExclusiveLock on the catalog is both wider than this test needs and
+    // a deadlock magnet.
     await db.execute(sql`
       INSERT INTO board_climbs (uuid, board_type, layout_id, name)
       VALUES ('climb-a', 'kilter', 1, 'A'), ('climb-b', 'kilter', 1, 'B'), ('climb-c', 'kilter', 1, 'C')
+      ON CONFLICT (uuid) DO NOTHING
     `);
   });
 
   afterAll(async () => {
     await db.execute(sql`TRUNCATE TABLE playlist_climbs, playlist_ownership, playlists RESTART IDENTITY CASCADE`);
-    await db.execute(sql`TRUNCATE TABLE board_climbs CASCADE`);
+    await db.execute(sql`DELETE FROM board_climbs WHERE uuid IN ('climb-a', 'climb-b', 'climb-c')`);
   });
 
   it('persists a move to the front (the batched CASE update that threw 42804)', async () => {
@@ -135,16 +139,18 @@ describe('reorderPlaylistClimb with an orphaned ref — real DB (#4012)', () => 
       INSERT INTO playlist_climbs (playlist_id, climb_uuid, angle, position)
       VALUES (1, 'ghost-climb', 40, 0), (1, 'climb-a', 40, 1), (1, 'climb-b', 40, 2), (1, 'climb-c', 40, 3)
     `);
-    await db.execute(sql`TRUNCATE TABLE board_climbs CASCADE`);
     await db.execute(sql`
       INSERT INTO board_climbs (uuid, board_type, layout_id, name)
       VALUES ('climb-a', 'kilter', 1, 'A'), ('climb-b', 'kilter', 1, 'B'), ('climb-c', 'kilter', 1, 'C')
+      ON CONFLICT (uuid) DO NOTHING
     `);
+    // Whatever else the shared worker database holds, this uuid must not resolve.
+    await db.execute(sql`DELETE FROM board_climbs WHERE uuid = 'ghost-climb'`);
   });
 
   afterAll(async () => {
     await db.execute(sql`TRUNCATE TABLE playlist_climbs, playlist_ownership, playlists RESTART IDENTITY CASCADE`);
-    await db.execute(sql`TRUNCATE TABLE board_climbs CASCADE`);
+    await db.execute(sql`DELETE FROM board_climbs WHERE uuid IN ('climb-a', 'climb-b', 'climb-c')`);
   });
 
   it('honours the index the client rendered when dragging to the end', async () => {
