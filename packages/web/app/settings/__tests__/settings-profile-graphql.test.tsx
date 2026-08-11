@@ -125,9 +125,19 @@ describe('settings profile read over GraphQL', () => {
 
     render(<SettingsPageContent />);
 
-    await waitFor(() => {
-      expect(mocks.showMessage).toHaveBeenCalledWith('loading.profileError', 'error');
-    });
+    await waitFor(() => expect(screen.getByTestId('set-password-section')).toBeTruthy());
+    expect(mocks.graphqlRequest).not.toHaveBeenCalled();
+    expect(mocks.showMessage).toHaveBeenCalledWith('loading.profileError', 'error');
+  });
+
+  it('waits while the NextAuth session is still loading', async () => {
+    mocks.session.status = 'loading';
+    mocks.wsAuthToken.token = null;
+    mocks.wsAuthToken.isLoading = false;
+
+    render(<SettingsPageContent />);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     expect(mocks.graphqlRequest).not.toHaveBeenCalled();
   });
 });

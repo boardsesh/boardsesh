@@ -18,7 +18,7 @@ import {
 import type { PublicUserProfile } from '@boardsesh/shared-schema';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
-import { useWsAuthToken } from '@/app/hooks/use-ws-auth-authToken';
+import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import {
   type UserProfile,
   type LogbookEntry,
