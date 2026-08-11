@@ -13,11 +13,6 @@ export async function GET(
   try {
     const parsedParams = await parseBoardRouteParamsWithSlugs(params);
 
-    // MoonBoard doesn't have database tables for setter stats - return empty results
-    if (parsedParams.board_name === 'moonboard') {
-      return NextResponse.json([]);
-    }
-
     // Extract search query parameter
     const url = new URL(req.url);
     const searchQuery = url.searchParams.get('search') || undefined;
