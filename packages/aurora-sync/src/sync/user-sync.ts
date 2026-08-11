@@ -415,20 +415,48 @@ export async function upsertTableData(
           if (item.climbs && Array.isArray(item.climbs)) {
             await db.delete(playlistClimbs).where(eq(playlistClimbs.playlistId, playlist.id));
 
+            // Build the full row set first and dedupe by climb_uuid before
+            // inserting: `unique_playlist_climb` is (playlist_id, climb_uuid)
+            // only — it doesn't know about angle — so an Aurora circuit that
+            // repeats the same climb at two angles collides on insert.
+            // First occurrence wins, matching what onConflictDoNothing below
+            // would keep anyway. #4023.
+            const seenClimbUuids = new Set<string>();
+            const climbRows: Array<{
+              playlistId: typeof playlist.id;
+              climbUuid: string;
+              angle: number | null;
+              position: number;
+            }> = [];
             for (let i = 0; i < item.climbs.length; i++) {
               const climb = item.climbs[i];
               const climbUuid = climb.climb_uuid || climb.uuid || climb;
               const climbAngle = climb.angle ?? null;
               const climbPosition = climb.position ?? i;
 
-              if (typeof climbUuid === 'string') {
-                await db.insert(playlistClimbs).values({
+              if (typeof climbUuid === 'string' && !seenClimbUuids.has(climbUuid)) {
+                seenClimbUuids.add(climbUuid);
+                climbRows.push({
                   playlistId: playlist.id,
-                  climbUuid: climbUuid,
+                  climbUuid,
                   angle: climbAngle,
                   position: climbPosition,
                 });
               }
+            }
+
+            if (climbRows.length > 0) {
+              // Chunked batch insert with onConflictDoNothing: a concurrent
+              // addClimbToPlaylist landing mid-transaction (both run under
+              // READ COMMITTED) no-ops instead of aborting the whole sync
+              // batch with a raw 23505. Same pattern as kilter-sync's
+              // applyCircuits.
+              await processBatches(climbRows, BATCH_SIZE, async (batch) => {
+                await db
+                  .insert(playlistClimbs)
+                  .values(batch)
+                  .onConflictDoNothing({ target: [playlistClimbs.playlistId, playlistClimbs.climbUuid] });
+              });
             }
           }
         }
