@@ -8,11 +8,17 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Talk beta on public playlists — every playlist now has a discussion thread, shared with the web app. ([#4245](https://github.com/boardsesh/boardsesh/pull/4245))
+  Signed out? You can still read the thread; sign in to join it.
 - Queue climbs from more than one board in the same session. Tap a climb that's set on ([#4250](https://github.com/boardsesh/boardsesh/pull/4250))
   another board and you get the choice: add it anyway, switch over to that board, or
   back out.
 - Filter the climb list by the stars you gave: set a minimum, or show only the climbs you've rated ([#4255](https://github.com/boardsesh/boardsesh/pull/4255))
   Works offline on a downloaded board, and re-rating a climb updates what the filter shows
+
+### Fixed
+
+- Analytics correctness only — no user-visible behaviour change. ([#4254](https://github.com/boardsesh/boardsesh/pull/4254))
 
 ## 2026-08-10
 

@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-08-11T02:55:23.199Z",
+  "generatedAt": "2026-08-11T03:01:21.127Z",
   "entries": [
+    {
+      "prNumber": 4245,
+      "category": "new",
+      "title": "Talk beta on public playlists — every playlist now has a discussion thread, shared with the web app.",
+      "mergedAt": "2026-08-11T02:55:56Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4245",
+      "body": "Signed out? You can still read the thread; sign in to join it."
+    },
+    {
+      "prNumber": 4254,
+      "category": "fixed",
+      "title": "Analytics correctness only — no user-visible behaviour change.",
+      "mergedAt": "2026-08-11T02:55:28Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4254"
+    },
     {
       "prNumber": 4250,
       "category": "new",
