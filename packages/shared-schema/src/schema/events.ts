@@ -26,7 +26,13 @@ export const eventsTypeDefs = /* GraphQL */ `
   member's crew list until they fully rejoin. This snapshot re-baselines the
   roster on every (re)subscribe, closing the JOIN-to-subscribe race and giving
   reconnects a fresh authoritative crew list. Clients apply it as a REPLACE
-  (preserving their own connection identity + re-deriving their leadership).
+  (preserving their own connection identity). Its roster rows carry NO
+  connection-scoped leadership — each \`SessionUser.isLeader\` is
+  participant-scoped (OR'd sticky-true across a signed-in user's devices), so
+  only an anonymous connection (whose participant id IS its connection id) may
+  re-derive its own top-level leadership from this snapshot; an authenticated
+  connection keeps relying on its JOIN response and \`LeaderChanged\`, both of
+  which are genuinely connection-scoped.
   Additive: a stale client whose \`sessionUpdates\` document lacks the
   \`... on SessionRosterSnapshot\` fragment drops it via its mapper's
   unknown-\`__typename\` default and keeps using the JOIN roster.
