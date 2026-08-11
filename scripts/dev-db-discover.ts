@@ -320,6 +320,31 @@ async function ensureMigrationTracker(client: postgres.Sql): Promise<void> {
   `;
 }
 
+/**
+ * The one apply failure a developer cannot read off the raw psql error: the
+ * database carries a superseded branch version of the migration's objects but
+ * not its ledger row, so the first `CREATE` dies on "already exists". Nothing
+ * repairs that in place — the two versions can differ in which objects they
+ * created, so no probe can tell what is already there. `scripts/dev-db-up.sh`
+ * prints the same thing for the local-container path.
+ *
+ * Only a database on this machine is ever migrated here (#6497), but a
+ * standalone Postgres can still be shared by other worktrees, so the reset is
+ * its owner's call rather than a command to run.
+ */
+function explainMigrationFailure(tag: string): string {
+  return [
+    '',
+    `[dev-db] Could not apply ${tag} to the local dev database.`,
+    '         If postgres reported "already exists", that database carries this',
+    "         migration's objects without its ledger row — it ran a superseded version",
+    '         on another branch, before the migration was renumbered or collapsed (#3978).',
+    '         Whoever owns it has to reset it (docker compose down -v && vp run db:up)',
+    '         or repair the ledger by hand; see docs/db-migrations.md.',
+    '',
+  ].join('\n');
+}
+
 export type MigrationTargetDecision =
   | { action: 'use' }
   | { action: 'migrate' }
@@ -415,6 +440,7 @@ async function applyPendingMigrations(
       await client.unsafe('COMMIT');
     } catch (migrationError) {
       await client.unsafe('ROLLBACK').catch(() => undefined);
+      console.error(explainMigrationFailure(migration.tag));
       throw migrationError;
     }
   }
