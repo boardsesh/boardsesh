@@ -45,6 +45,7 @@ import {
   buildIssueDraft,
   buildReplyMessage,
   discordFeedbackMarker,
+  isGitHubIssueUrl,
   LABEL_COLORS,
   validateTriageResult,
   type IssueDraft,
@@ -335,6 +336,7 @@ export class GitHubIssueClient implements IssueSink {
   private readonly apiBase: string;
   private readonly logger: Logger;
   private readonly attachmentReleaseTag: string;
+  private readonly ensuredLabels = new Set<string>();
   private releaseId: number | null = null;
 
   constructor(args: {
@@ -413,8 +415,16 @@ export class GitHubIssueClient implements IssueSink {
     return { number: hit.number, htmlUrl: hit.html_url };
   }
 
+  /**
+   * Create any labels that don't exist yet.
+   *
+   * Memoized per run: labels repeat across almost every issue, and without this
+   * each one costs a POST per issue that only ever returns "already exists".
+   */
   async ensureLabels(labels: string[]): Promise<void> {
     for (const label of labels) {
+      if (this.ensuredLabels.has(label)) continue;
+      this.ensuredLabels.add(label);
       try {
         await this.githubFetch(`/repos/${this.owner}/${this.repository}/labels`, {
           method: 'POST',
@@ -675,6 +685,10 @@ export async function collectFeedback(
     if (!parent) continue;
     if (!isCollectableMessage(parent, selfUserId)) continue;
     if (hasReactionFromMe(parent, options.processedEmoji)) continue;
+    // No isLikelyNoise() on the parent here, deliberately. In a keyword thread
+    // the report usually lives in the replies — the parent is often a screenshot
+    // or a one-liner — so filtering on the parent would drop the very reports
+    // this pass exists to catch. The thread text goes to the model as context.
     add(parent, 'thread-keyword', thread.id, threadMessages);
   }
 
@@ -816,7 +830,9 @@ async function applyOne(
     const target = decision.duplicateOf && filedUrlByMessageId.get(decision.duplicateOf);
     const issueUrl = target ?? decision.duplicateOf ?? '';
     await react();
-    if (issueUrl.startsWith('http')) await reply(buildReplyMessage({ kind: 'duplicate', issueUrl }));
+    // Belt to validateTriageResult's braces: this string becomes a clickable
+    // link the bot posts into Discord, so it must be a GitHub issue or nothing.
+    if (isGitHubIssueUrl(issueUrl)) await reply(buildReplyMessage({ kind: 'duplicate', issueUrl }));
     result.duplicates += 1;
     return null;
   }

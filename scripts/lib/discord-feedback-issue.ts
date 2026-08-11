@@ -129,6 +129,26 @@ function normalizeLabels(rawLabels: unknown, verdict: TriageVerdict): string[] {
   return [...new Set([...allowed, kind, ...REQUIRED_LABELS])].sort();
 }
 
+/** `https://github.com/<owner>/<repo>/issues/<n>` and nothing else. */
+const GITHUB_ISSUE_URL = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+$/;
+
+export function isGitHubIssueUrl(value: string): boolean {
+  return GITHUB_ISSUE_URL.test(value);
+}
+
+/**
+ * A `duplicateOf` is either a message in this bundle or a GitHub issue URL.
+ *
+ * It ends up in a message the bot posts to Discord, so an unvalidated string
+ * here is a way for an injected prompt to get our bot to hand members a
+ * clickable link to anywhere. Anything that is neither becomes null.
+ */
+function normalizeDuplicateOf(raw: unknown, knownIds: ReadonlySet<string>): string | null {
+  if (typeof raw !== 'string' || !raw) return null;
+  if (knownIds.has(raw)) return raw;
+  return isGitHubIssueUrl(raw) ? raw : null;
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
@@ -205,7 +225,7 @@ export function validateTriageResult(
       title,
       body,
       labels: normalizeLabels(decision.labels, typedVerdict),
-      duplicateOf: typeof decision.duplicateOf === 'string' ? decision.duplicateOf : null,
+      duplicateOf: normalizeDuplicateOf(decision.duplicateOf, knownIds),
       rationale: typeof decision.rationale === 'string' ? decision.rationale : '',
     });
   }

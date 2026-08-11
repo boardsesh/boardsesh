@@ -228,6 +228,26 @@ describe('validateTriageResult', () => {
     expect(accepted[0].body).toContain('real text');
   });
 
+  it('drops a duplicateOf pointing anywhere other than GitHub or the bundle', () => {
+    // The bot posts this as a clickable link in Discord, so an injected prompt
+    // must not be able to aim it at an attacker's page.
+    const phishing = { ...good, verdict: 'duplicate', duplicateOf: 'http://attacker.example/phishing' };
+    expect(validateTriageResult({ decisions: [phishing] }, bundle).accepted[0].duplicateOf).toBeNull();
+
+    const lookalike = { ...good, verdict: 'duplicate', duplicateOf: 'https://github.com.evil.example/a/b/issues/1' };
+    expect(validateTriageResult({ decisions: [lookalike] }, bundle).accepted[0].duplicateOf).toBeNull();
+  });
+
+  it('keeps a real GitHub issue url or a sibling message id', () => {
+    const url = { ...good, verdict: 'duplicate', duplicateOf: 'https://github.com/boardsesh/boardsesh/issues/42' };
+    expect(validateTriageResult({ decisions: [url] }, bundle).accepted[0].duplicateOf).toBe(
+      'https://github.com/boardsesh/boardsesh/issues/42',
+    );
+
+    const sibling = { ...good, verdict: 'duplicate', duplicateOf: '900000000000000001' };
+    expect(validateTriageResult({ decisions: [sibling] }, bundle).accepted[0].duplicateOf).toBe('900000000000000001');
+  });
+
   it('rejects a non-array decisions payload', () => {
     expect(validateTriageResult({ decisions: 'everything is a bug' }, bundle).accepted).toHaveLength(0);
     expect(validateTriageResult(null, bundle).rejected).toHaveLength(1);
