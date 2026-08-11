@@ -6,7 +6,7 @@ import {
   getSetsForLayoutAndSize,
 } from '@boardsesh/board-constants/product-sizes';
 import type { BoardName } from '@boardsesh/shared-schema';
-import { rowsOf, type BoardTarget } from '@boardsesh/db/queries';
+import { rowsOf, withSerialPlan, type BoardTarget, type SerialPlanDb } from '@boardsesh/db/queries';
 import { db } from '../../../../db/client';
 
 /** Recommendations target Kilter & Tension boards (MoonBoard is single-size;
@@ -32,8 +32,8 @@ function sizeRank(boardType: string, sizeId: number): number {
 }
 
 /** The user's biggest registered Kilter/Tension board, or null. Precise. */
-async function resolveRegisteredTarget(userId: string): Promise<BoardTarget | null> {
-  const boards = await db
+async function resolveRegisteredTarget(userId: string, executor: SerialPlanDb): Promise<BoardTarget | null> {
+  const boards = await executor
     .select({
       boardType: dbSchema.userBoards.boardType,
       layoutId: dbSchema.userBoards.layoutId,
@@ -73,11 +73,11 @@ async function resolveRegisteredTarget(userId: string): Promise<BoardTarget | nu
  * their send history, the dominant layout of the climbs they've ticked, and that
  * layout's canonical default size/sets. Approximate — registered boards win.
  */
-async function resolveInferredTarget(userId: string): Promise<BoardTarget | null> {
+async function resolveInferredTarget(userId: string, executor: SerialPlanDb): Promise<BoardTarget | null> {
   // Deterministic tie-breakers (board_type / angle / layout_id ASC) so identical
   // activity always resolves to the same inferred board across requests.
   const boardRows = rowsOf<{ board_type: string }>(
-    await db.execute(sql`
+    await executor.execute(sql`
       SELECT board_type FROM boardsesh_ticks
       WHERE user_id = ${userId} AND status IN ('flash', 'send') AND board_type IN ('kilter', 'tension')
       GROUP BY board_type ORDER BY COUNT(*) DESC, board_type ASC LIMIT 1
@@ -88,12 +88,12 @@ async function resolveInferredTarget(userId: string): Promise<BoardTarget | null
 
   // Angle and dominant layout are independent given the board type — run together.
   const [angleRows, layoutRows] = await Promise.all([
-    db.execute(sql`
+    executor.execute(sql`
       SELECT angle FROM boardsesh_ticks
       WHERE user_id = ${userId} AND status IN ('flash', 'send') AND board_type = ${boardType}
       GROUP BY angle ORDER BY COUNT(*) DESC, angle ASC LIMIT 1
     `),
-    db.execute(sql`
+    executor.execute(sql`
       SELECT bc.layout_id FROM boardsesh_ticks t
       JOIN board_climbs bc ON bc.board_type = t.board_type AND bc.uuid = t.climb_uuid
       WHERE t.user_id = ${userId} AND t.board_type = ${boardType}
@@ -113,8 +113,12 @@ async function resolveInferredTarget(userId: string): Promise<BoardTarget | null
 
 /** A specific board the user owns (uuid), validated against ownership. Null if
  * it isn't theirs, is deleted, or isn't a recommendable board type. */
-async function resolveOwnedBoardByUuid(userId: string, boardUuid: string): Promise<BoardTarget | null> {
-  const [board] = await db
+async function resolveOwnedBoardByUuid(
+  userId: string,
+  boardUuid: string,
+  executor: SerialPlanDb,
+): Promise<BoardTarget | null> {
+  const [board] = await executor
     .select({
       boardType: dbSchema.userBoards.boardType,
       layoutId: dbSchema.userBoards.layoutId,
@@ -162,16 +166,30 @@ export type BoardTargetOverride = {
 export async function resolveRecommendationBoardTarget(
   userId: string,
   override?: BoardTargetOverride,
+  /**
+   * An already-guarded transaction to run on. Callers that resolve a target and
+   * then immediately count or rank recommendations pass their handle down so the
+   * whole fan-out shares one connection with per-gather parallelism off (#4235).
+   * Omit it and this opens its own guarded transaction.
+   */
+  executor?: SerialPlanDb,
 ): Promise<BoardTarget | null> {
-  const base =
-    (override?.boardUuid ? await resolveOwnedBoardByUuid(userId, override.boardUuid) : null) ??
-    (await resolveRegisteredTarget(userId)) ??
-    (await resolveInferredTarget(userId));
-  if (!base) return null;
+  const resolve = async (tx: SerialPlanDb): Promise<BoardTarget | null> => {
+    const base =
+      (override?.boardUuid ? await resolveOwnedBoardByUuid(userId, override.boardUuid, tx) : null) ??
+      (await resolveRegisteredTarget(userId, tx)) ??
+      (await resolveInferredTarget(userId, tx));
+    if (!base) return null;
 
-  return {
-    ...base,
-    sizeId: override?.sizeId ?? base.sizeId,
-    angle: override?.angle ?? base.angle,
+    return {
+      ...base,
+      sizeId: override?.sizeId ?? base.sizeId,
+      angle: override?.angle ?? base.angle,
+    };
   };
+
+  // The inferred-target path joins boardsesh_ticks against board_climbs for the
+  // dominant layout — the hash join that exhausts /dev/shm (#4235). Never hand an
+  // open transaction to withSerialPlan: it would open a savepoint just to set a GUC.
+  return executor ? resolve(executor) : withSerialPlan(db, resolve);
 }

@@ -1,6 +1,11 @@
 import { eq, and, desc, sql, inArray, max, type SQL } from 'drizzle-orm';
 import { type ConnectionContext, type Climb } from '@boardsesh/shared-schema';
-import { isRecommendationType, RECOMMENDATION_TYPES, type RecommendationType } from '@boardsesh/db/queries';
+import {
+  isRecommendationType,
+  RECOMMENDATION_TYPES,
+  withSerialPlan,
+  type RecommendationType,
+} from '@boardsesh/db/queries';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../../shared/helpers';
@@ -287,21 +292,36 @@ export const smartPlaylist = async (
     if (!ctx.userId || ctx.userId !== input.userId) {
       return { meta: emptyMeta, climbs: [], totalCount: 0, hasMore: false };
     }
-    const target = await resolveRecommendationBoardTarget(input.userId, {
-      boardUuid: input.boardUuid,
-      sizeId: input.sizeId,
-      angle: input.angle,
-    });
-    if (!target) {
-      return { meta: emptyMeta, climbs: [], totalCount: 0, hasMore: false };
-    }
     const maxRecPage = Math.floor(MAX_RECOMMENDATION_OFFSET / pageSize);
     const recPage = Math.min(page, maxRecPage);
+    // Pin the narrowed type in a const: TypeScript drops the isRecommendationType
+    // narrowing of `input.type` inside the callback below.
+    const recommendationType = input.type;
+
+    // Board resolution, the ranked page and the total all hash-join
+    // board_climbs against board_climb_stats. Run them on one connection with
+    // per-gather parallelism off so a burst of these can't exhaust Postgres's
+    // dynamic shared memory (#4235, Sentry BOARDSESH-AK). fetchUserMeta and the
+    // hydrator stay outside — they're PK/IN-list lookups, and keeping them out
+    // shortens how long this holds a pooled connection.
+    const recommendation = await withSerialPlan(db, async (tx) => {
+      const target = await resolveRecommendationBoardTarget(
+        input.userId,
+        { boardUuid: input.boardUuid, sizeId: input.sizeId, angle: input.angle },
+        tx,
+      );
+      if (!target) return null;
+      const [pageRefs, totalCount] = await Promise.all([
+        selectRecommendationClimbRefs(recommendationType, target, input.userId, recPage, pageSize, tx),
+        countRecommendationClimbRefs(recommendationType, target, input.userId, tx),
+      ]);
+      return { target, pageRefs, totalCount };
+    });
+    if (!recommendation) {
+      return { meta: emptyMeta, climbs: [], totalCount: 0, hasMore: false };
+    }
+    const { target, pageRefs, totalCount } = recommendation;
     const owner = await fetchUserMeta(input.userId);
-    const [pageRefs, totalCount] = await Promise.all([
-      selectRecommendationClimbRefs(input.type, target, input.userId, recPage, pageSize),
-      countRecommendationClimbRefs(input.type, target, input.userId),
-    ]);
     // Hydrate at the board's angle, not the most-ascended angle.
     const angleOverrides = new Map<string, number>(
       pageRefs.map((ref) => [`${ref.boardType}:${ref.climbUuid}`, target.angle]),
@@ -367,88 +387,97 @@ export const mySmartPlaylistCounts = async (
   requireAuthenticated(ctx);
   const userId = ctx.userId!;
 
-  const result = await db.execute<{ type: SmartPlaylistType; count: number }>(sql`
-    WITH base AS (
-      SELECT climb_uuid, board_type, quality, attempt_count, status
-      FROM ${dbSchema.boardseshTicks}
-      WHERE user_id = ${userId}
-    ),
-    sent AS (
-      SELECT DISTINCT climb_uuid, board_type
-      FROM base
-      WHERE status IN ('flash', 'send')
-    ),
-    five_stars AS (
-      SELECT COUNT(DISTINCT (board_type, climb_uuid))::int AS count
-      FROM base
-      WHERE quality = 5
-    ),
-    most_repeated AS (
-      SELECT COUNT(*)::int AS count
-      FROM (
-        SELECT climb_uuid, board_type
+  // One transaction for the whole library-card fan-out: the counts CTE, board
+  // resolution and all four recommendation counts. Serially on one connection
+  // with per-gather parallelism off, instead of up to nine concurrent parallel
+  // hash joins that exhaust Postgres's dynamic shared memory (#4235, Sentry
+  // BOARDSESH-AK).
+  return withSerialPlan(db, async (tx) => {
+    const result = await tx.execute<{ type: SmartPlaylistType; count: number }>(sql`
+      WITH base AS (
+        SELECT climb_uuid, board_type, quality, attempt_count, status
+        FROM ${dbSchema.boardseshTicks}
+        WHERE user_id = ${userId}
+      ),
+      sent AS (
+        SELECT DISTINCT climb_uuid, board_type
         FROM base
-        GROUP BY climb_uuid, board_type
-        HAVING SUM(attempt_count) > 1
-      ) r
-    ),
-    projects AS (
-      -- Match sent on (climb_uuid, board_type) so a Kilter send doesn't
-      -- exclude a Tension climb sharing the same UUID; mirrors the
-      -- per-page paged-query semantics in selectSmartClimbRefs.
-      SELECT COUNT(DISTINCT (board_type, climb_uuid))::int AS count
-      FROM base
-      WHERE NOT EXISTS (
-        SELECT 1 FROM sent
-        WHERE sent.climb_uuid = base.climb_uuid
-          AND sent.board_type = base.board_type
+        WHERE status IN ('flash', 'send')
+      ),
+      five_stars AS (
+        SELECT COUNT(DISTINCT (board_type, climb_uuid))::int AS count
+        FROM base
+        WHERE quality = 5
+      ),
+      most_repeated AS (
+        SELECT COUNT(*)::int AS count
+        FROM (
+          SELECT climb_uuid, board_type
+          FROM base
+          GROUP BY climb_uuid, board_type
+          HAVING SUM(attempt_count) > 1
+        ) r
+      ),
+      projects AS (
+        -- Match sent on (climb_uuid, board_type) so a Kilter send doesn't
+        -- exclude a Tension climb sharing the same UUID; mirrors the
+        -- per-page paged-query semantics in selectSmartClimbRefs.
+        SELECT COUNT(DISTINCT (board_type, climb_uuid))::int AS count
+        FROM base
+        WHERE NOT EXISTS (
+          SELECT 1 FROM sent
+          WHERE sent.climb_uuid = base.climb_uuid
+            AND sent.board_type = base.board_type
+        )
+      ),
+      liked_climbs AS (
+        SELECT COUNT(DISTINCT (board_name, climb_uuid))::int AS count
+        FROM ${dbSchema.userFavorites}
+        WHERE user_id = ${userId}
       )
-    ),
-    liked_climbs AS (
-      SELECT COUNT(DISTINCT (board_name, climb_uuid))::int AS count
-      FROM ${dbSchema.userFavorites}
-      WHERE user_id = ${userId}
-    )
-    SELECT 'FIVE_STARS'::text AS type, count FROM five_stars
-    UNION ALL
-    SELECT 'MOST_REPEATED'::text, count FROM most_repeated
-    UNION ALL
-    SELECT 'PROJECTS'::text, count FROM projects
-    UNION ALL
-    SELECT 'LIKED_CLIMBS'::text, count FROM liked_climbs
-  `);
+      SELECT 'FIVE_STARS'::text AS type, count FROM five_stars
+      UNION ALL
+      SELECT 'MOST_REPEATED'::text, count FROM most_repeated
+      UNION ALL
+      SELECT 'PROJECTS'::text, count FROM projects
+      UNION ALL
+      SELECT 'LIKED_CLIMBS'::text, count FROM liked_climbs
+    `);
 
-  // db.execute returns either an iterable of rows directly or `{ rows }`
-  // depending on the underlying postgres client; normalise here.
-  const rows = (Array.isArray(result) ? result : (result as { rows?: unknown[] }).rows) as
-    | Array<{ type: SmartPlaylistType; count: number }>
-    | undefined;
-  if (!rows) return [];
+    // db.execute returns either an iterable of rows directly or `{ rows }`
+    // depending on the underlying postgres client; normalise here.
+    const rows = (Array.isArray(result) ? result : (result as { rows?: unknown[] }).rows) as
+      | Array<{ type: SmartPlaylistType; count: number }>
+      | undefined;
+    if (!rows) return [];
 
-  const byType = new Map<SmartPlaylistType, number>();
-  for (const row of rows) {
-    byType.set(row.type, Number(row.count ?? 0));
-  }
+    const byType = new Map<SmartPlaylistType, number>();
+    for (const row of rows) {
+      byType.set(row.type, Number(row.count ?? 0));
+    }
 
-  const counts: Array<{ type: SmartPlaylistType; count: number }> = [
-    { type: 'FIVE_STARS', count: byType.get('FIVE_STARS') ?? 0 },
-    { type: 'MOST_REPEATED', count: byType.get('MOST_REPEATED') ?? 0 },
-    { type: 'PROJECTS', count: byType.get('PROJECTS') ?? 0 },
-    { type: 'LIKED_CLIMBS', count: byType.get('LIKED_CLIMBS') ?? 0 },
-  ];
+    const counts: Array<{ type: SmartPlaylistType; count: number }> = [
+      { type: 'FIVE_STARS', count: byType.get('FIVE_STARS') ?? 0 },
+      { type: 'MOST_REPEATED', count: byType.get('MOST_REPEATED') ?? 0 },
+      { type: 'PROJECTS', count: byType.get('PROJECTS') ?? 0 },
+      { type: 'LIKED_CLIMBS', count: byType.get('LIKED_CLIMBS') ?? 0 },
+    ];
 
-  // Recommendation cards: scoped to the user's resolved board. Counted in
-  // parallel; all zero (cards hidden) when no board can be determined.
-  const target = await resolveRecommendationBoardTarget(userId);
-  if (target) {
-    const recCounts = await Promise.all(
-      RECOMMENDATION_TYPES.map(async (type) => ({
-        type,
-        count: await countRecommendationClimbRefs(type, target, userId),
-      })),
-    );
-    counts.push(...recCounts);
-  }
+    // Recommendation cards: scoped to the user's resolved board. All zero
+    // (cards hidden) when no board can be determined. The transaction handle
+    // goes down so the four counts share this connection and its guard rather
+    // than opening four more.
+    const target = await resolveRecommendationBoardTarget(userId, undefined, tx);
+    if (target) {
+      const recCounts = await Promise.all(
+        RECOMMENDATION_TYPES.map(async (type) => ({
+          type,
+          count: await countRecommendationClimbRefs(type, target, userId, tx),
+        })),
+      );
+      counts.push(...recCounts);
+    }
 
-  return counts;
+    return counts;
+  });
 };
