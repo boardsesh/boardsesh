@@ -57,7 +57,9 @@ export function getDatabaseHandle(): SQLiteDatabase | null {
  */
 const MAX_INIT_ATTEMPTS = 5;
 const MAX_INIT_WINDOW_MS = 30_000;
-const INIT_RETRY_DELAYS_MS = [500, 2_000, 5_000, 10_000];
+// Exported so the retry tests advance their fake clock by the real gap rather than
+// mirroring these numbers in a literal that silently drifts from them.
+export const INIT_RETRY_DELAYS_MS = [500, 2_000, 5_000, 10_000];
 
 /**
  * Single-flight guard spanning the ENTIRE init lifecycle, background retries
@@ -211,6 +213,10 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
 /**
  * Test-only: drops the single-flight guard so each test can drive a fresh
  * initialization. Production has exactly one database for the process lifetime.
+ *
+ * It is defined here because the guard's state is module-local, but the sanctioned
+ * import path is `./testing`; neither this name nor that module may be reached from
+ * application code, which `connection-test-seam.test.ts` enforces.
  */
 export function resetDatabaseInitializationForTests(): void {
   activeInitialization = null;
