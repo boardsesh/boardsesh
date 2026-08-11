@@ -16,15 +16,19 @@
  *   - `renderHoldsOverlay(configJson, cacheKey)` — resolves to an image URL.
  *   - `MARKER_RENDERER_UNAVAILABLE_MESSAGE` — for contract parity.
  *
- * Marker overrides (custom hold shapes, brush thickness, shape size) are NOT
- * supported by the committed WASM artifact: it is the overlay-only core
- * (8-field RenderConfig, no `stroke_width_multiplier` / `shape_size_multiplier`
- * / per-hold `shape`). serde silently ignores those extra fields, so a marker
- * config would render as plain circles — the exact silent-wrong-output failure
- * the native shim guards against for old binaries. We therefore mirror the
- * shim: detect a marker config and throw MARKER_RENDERER_UNAVAILABLE_MESSAGE so
- * the hook adds the signature to its unsupported set and falls back to default
- * rendering, instead of showing wrong markers.
+ * Two marker overrides — shape size and per-hold `shape` — are NOT supported by
+ * the committed WASM artifact: it is the overlay-only core (8-field
+ * RenderConfig, no `shape_size_multiplier` and no per-hold `shape`). serde
+ * silently ignores those extra fields, so such a config would render as plain
+ * default-sized circles — the exact silent-wrong-output failure the native shim
+ * guards against for old binaries. We therefore mirror the shim: detect those
+ * two and throw MARKER_RENDERER_UNAVAILABLE_MESSAGE so the hook records the
+ * signature as unsupported and falls back to default rendering, instead of
+ * showing wrong markers.
+ *
+ * `stroke_width_multiplier` is deliberately NOT part of that guard — see
+ * configRequiresModernRenderer below. It degrades to the renderer's built-in
+ * default thickness rather than being refused.
  */
 
 import {
@@ -119,7 +123,7 @@ function isNonDefaultMultiplier(value: unknown): boolean {
 }
 
 // Mirrors index.ts's configRequiresModernRenderer: a config needs the
-// marker-aware renderer when it sets a non-default brush/size multiplier or any
+// marker-aware renderer when it sets a non-default shape-size multiplier or any
 // non-circle hold shape. The committed WASM core cannot honour those.
 function configRequiresModernRenderer(configJson: string): boolean {
   let parsedConfig: unknown;
@@ -129,7 +133,16 @@ function configRequiresModernRenderer(configJson: string): boolean {
     return false;
   }
   if (!isRecord(parsedConfig)) return false;
-  if (isNonDefaultMultiplier(parsedConfig.stroke_width_multiplier)) return true;
+  // stroke_width_multiplier is deliberately NOT a gate here, matching native
+  // (index.ts) — see issue #2202 and #4240. The committed WASM's RenderConfig
+  // has 8 fields and no `deny_unknown_fields` on the struct (see
+  // packages/board-renderer/core/src/types.rs), so serde ignores the
+  // unrecognised key and the overlay renders at the built-in default
+  // thickness — never a parse failure, never wrong geometry. Gating on it
+  // would instead throw MARKER_RENDERER_UNAVAILABLE_MESSAGE unconditionally
+  // for Grasshopper, whose board-level stroke default is 1.35 with zero user
+  // overrides (packages/board-constants/src/hold-states.ts), leaving the
+  // overlay permanently blank on Expo web. Slightly thin beats invisible.
   if (isNonDefaultMultiplier(parsedConfig.shape_size_multiplier)) return true;
 
   const holdStateMap = parsedConfig.hold_state_map;
@@ -346,6 +359,7 @@ export async function renderHoldsOverlay(configJson: string, cacheKey: string): 
 }
 
 type WebRendererTestApi = {
+  configRequiresModernRenderer: typeof configRequiresModernRenderer;
   decodeRenderOutput: typeof decodeRenderOutput;
   rememberObjectUrl: typeof rememberObjectUrl;
   releaseAllObjectUrls: typeof releaseAllObjectUrls;
@@ -362,6 +376,7 @@ type WebRendererTestApi = {
 export const _webRendererForTests: WebRendererTestApi = (
   __DEV__
     ? {
+        configRequiresModernRenderer,
         decodeRenderOutput,
         rememberObjectUrl,
         releaseAllObjectUrls,

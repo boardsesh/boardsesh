@@ -358,6 +358,8 @@ export const _renderedOverlaysForTests = renderedOverlays;
 export const _cacheRenderedOverlayForTests = cacheRenderedOverlay;
 export const _getRenderedOverlayForTests = getRenderedOverlay;
 export const _invalidateRenderedOverlayForTests = invalidateRenderedOverlay;
+export const _unsupportedRenderSignaturesForTests = unsupportedRenderSignatures;
+export const _MARKER_RENDERER_UNAVAILABLE_MESSAGE_FOR_TESTS = MARKER_RENDERER_UNAVAILABLE_MESSAGE;
 
 /**
  * Test-only: inject a fake native module. The real one loads via a literal
@@ -912,10 +914,14 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
-        if (
-          holdRenderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE &&
-          message.includes(MARKER_RENDERER_UNAVAILABLE_MESSAGE)
-        ) {
+        // A renderer that cannot honour this config's marker overrides is a
+        // designed capability fallback (old native binary, or the overlay-only
+        // WASM core on web), not a defect: the overlay falls back to default
+        // rendering. Record the signature so we stop retrying it, but never
+        // record DEFAULT_HOLD_COLOR_SIGNATURE — that key is consulted for every
+        // render above, so poisoning it would blank the overlay on every board.
+        const isCapabilityFallback = message.includes(MARKER_RENDERER_UNAVAILABLE_MESSAGE);
+        if (isCapabilityFallback && holdRenderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE) {
           unsupportedRenderSignatures.add(holdRenderSignature);
         }
         // Native render failed -- overlay stays null, backgrounds still show.
@@ -924,6 +930,10 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         // overlay layer.
         // eslint-disable-next-line no-console
         console.warn(`[useNativeClimbRender] render failed for ${currentCacheKey}:`, message);
+        // Don't page on the capability fallback — it re-fires once per climb
+        // whenever the signature stays default (issue #4240: 29 Sentry events
+        // in 60s from one session).
+        if (isCapabilityFallback) return;
         reportError(error, {
           tags: {
             feature: 'mobile_board_renderer',
