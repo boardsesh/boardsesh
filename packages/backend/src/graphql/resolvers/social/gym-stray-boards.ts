@@ -52,9 +52,10 @@ type StrayBoardCandidate = {
   distanceMeters: number | null;
   reason: StrayBoardReason;
   /**
-   * True when this is the only live board left on its current listing, so
-   * attaching it empties that listing (and retires it — see
-   * {@link retireEmptiedSourceGym}). Always false for an unlinked board.
+   * True when attaching this board empties the auto-synced listing it sits on,
+   * which {@link retireEmptiedSourceGym} then folds into the target gym. False
+   * for an unlinked board, and for a listing that never folds — see
+   * {@link markLastBoardAtCurrentGym}.
    */
   isLastBoardAtCurrentGym: boolean;
 };
@@ -243,6 +244,16 @@ export async function findStrayBoardCandidates(gym: GymRow, viewerUserId: string
  * Fills in `isLastBoardAtCurrentGym` for every candidate that sits on a listing,
  * with ONE grouped count over the distinct listings involved (never a query per
  * row). Mutates in place — the candidates are freshly built above.
+ *
+ * The flag is a promise that attaching this board folds its listing away, so it
+ * is only ever set for a listing {@link retireEmptiedSourceGym} would actually
+ * fold: live, not already merged, and SYSTEM-owned. Without those gates every
+ * MERGED_TWIN leftover would be flagged (a twin is already merged, and one
+ * leftover board is the usual shape), putting a merge confirm in front of a
+ * merge that never runs. The fold's other refusals — a claim, a member or a
+ * kiosk on the listing — are deliberately NOT mirrored here: any of them can
+ * appear between this read and the tap, and a warning about a fold that then
+ * gets refused is cheaper than silence about one that runs.
  */
 async function markLastBoardAtCurrentGym(candidates: StrayBoardCandidate[]): Promise<void> {
   const listingIds = [
@@ -257,7 +268,16 @@ async function markLastBoardAtCurrentGym(candidates: StrayBoardCandidate[]): Pro
   const counts = await db
     .select({ gymId: dbSchema.userBoards.gymId, boardCount: sql<number>`count(*)::int` })
     .from(dbSchema.userBoards)
-    .where(and(inArray(dbSchema.userBoards.gymId, listingIds), isNull(dbSchema.userBoards.deletedAt)))
+    .innerJoin(dbSchema.gyms, eq(dbSchema.userBoards.gymId, dbSchema.gyms.id))
+    .where(
+      and(
+        inArray(dbSchema.userBoards.gymId, listingIds),
+        isNull(dbSchema.userBoards.deletedAt),
+        isNull(dbSchema.gyms.deletedAt),
+        isNull(dbSchema.gyms.mergedIntoGymId),
+        eq(dbSchema.gyms.ownerId, SYSTEM_BOARD_OWNER_ID),
+      ),
+    )
     .groupBy(dbSchema.userBoards.gymId);
 
   const boardCountByGymId = new Map(counts.map((row) => [Number(row.gymId), Number(row.boardCount)]));
@@ -330,10 +350,20 @@ async function loadRetireGateRows(tx: TransactionDb, gymIds: number[]): Promise<
       g.longitude AS "longitude",
       g.created_at AS "createdAt",
       g.owner_id AS "ownerId",
-      COALESCE(board_counts.count, 0)::int AS "boardCount",
-      COALESCE(member_counts.count, 0)::int AS "memberCount",
-      COALESCE(follower_counts.count, 0)::int AS "followerCount",
-      COALESCE(comment_counts.count, 0)::int AS "commentCount",
+      -- Per-gym scalar subqueries rather than grouped joins: at most two gyms are
+      -- locked here, so these are index lookups, where a GROUP BY gym_id subquery
+      -- would aggregate the whole of user_boards/gym_follows/comments on every
+      -- attach — while holding the row locks above.
+      (
+        SELECT count(*)::int FROM user_boards
+         WHERE gym_id = g.id AND deleted_at IS NULL
+      ) AS "boardCount",
+      (SELECT count(*)::int FROM gym_members WHERE gym_id = g.id) AS "memberCount",
+      (SELECT count(*)::int FROM gym_follows WHERE gym_id = g.id) AS "followerCount",
+      (
+        SELECT count(*)::int FROM comments
+         WHERE entity_type = 'gym' AND entity_id = g.uuid AND deleted_at IS NULL
+      ) AS "commentCount",
       (
         SELECT count(*)::int FROM gym_claims
          WHERE gym_id = g.id AND status IN ('pending', 'approved')
@@ -343,19 +373,6 @@ async function loadRetireGateRows(tx: TransactionDb, gymIds: number[]): Promise<
          WHERE gym_id = g.id AND deleted_at IS NULL
       ) AS "liveKioskCount"
     FROM locked_gym g
-    LEFT JOIN (
-      SELECT gym_id, count(*) AS count FROM user_boards WHERE deleted_at IS NULL GROUP BY gym_id
-    ) board_counts ON board_counts.gym_id = g.id
-    LEFT JOIN (
-      SELECT gym_id, count(*) AS count FROM gym_members GROUP BY gym_id
-    ) member_counts ON member_counts.gym_id = g.id
-    LEFT JOIN (
-      SELECT gym_id, count(*) AS count FROM gym_follows GROUP BY gym_id
-    ) follower_counts ON follower_counts.gym_id = g.id
-    LEFT JOIN (
-      SELECT entity_id, count(*) AS count FROM comments
-      WHERE entity_type = 'gym' AND deleted_at IS NULL GROUP BY entity_id
-    ) comment_counts ON comment_counts.entity_id = g.uuid
   `,
   );
   return new Map(rows.map((row) => [Number(row.id), { ...row, id: Number(row.id) }]));

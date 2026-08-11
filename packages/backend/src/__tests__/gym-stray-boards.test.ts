@@ -685,4 +685,55 @@ describe('strayBoardsForGym — isLastBoardAtCurrentGym', () => {
 
     expect(results.find((candidate) => candidate.uuid === loose.uuid)?.isLastBoardAtCurrentGym).toBe(false);
   });
+
+  it('never flags a leftover board on an already-merged twin listing', async () => {
+    // The flag promises that attaching folds the listing away. A twin is already
+    // folded, so retireEmptiedSourceGym refuses it — flagging it here would put
+    // a merge confirm in front of a merge that never happens.
+    const target = await seedTargetGym();
+    const twin = await insertGym({
+      ownerId: SYSTEM_OWNER,
+      name: 'Already Folded',
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+      mergedIntoGymId: target.id,
+    });
+    const leftover = await insertBoard({
+      ownerId: SYSTEM_OWNER,
+      name: 'Leftover Wall',
+      gymId: twin.id,
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+    });
+
+    const results = await strayBoardsForGym(target.uuid, authCtx(OWNER));
+
+    const candidate = results.find((stray) => stray.uuid === leftover.uuid);
+    expect(candidate?.reason).toBe('MERGED_TWIN');
+    expect(candidate?.isLastBoardAtCurrentGym).toBe(false);
+  });
+
+  it('never flags a board sitting on a listing a real person owns', async () => {
+    // Only a SYSTEM listing is ever folded, so a user-owned listing must not
+    // carry the promise either.
+    const target = await seedTargetGym();
+    const ownedListing = await insertGym({
+      ownerId: OTHER,
+      name: 'Someone Elses Listing',
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+      mergedIntoGymId: target.id,
+    });
+    const board = await insertBoard({
+      ownerId: OWNER,
+      name: 'My Wall On Their Listing',
+      gymId: ownedListing.id,
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+    });
+
+    const results = await strayBoardsForGym(target.uuid, authCtx(OWNER));
+
+    expect(results.find((stray) => stray.uuid === board.uuid)?.isLastBoardAtCurrentGym).toBe(false);
+  });
 });

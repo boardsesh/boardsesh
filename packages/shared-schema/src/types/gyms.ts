@@ -107,8 +107,9 @@ export type StrayBoard = {
   distanceMeters?: number | null;
   reason: StrayBoardReason;
   /**
-   * True when this is the only board left on its current listing — attaching it
-   * retires that listing into this gym. Always false for an unlinked board.
+   * True when attaching this board empties the auto-synced listing it sits on,
+   * which then folds into this gym. False for an unlinked board, and for a
+   * listing that never folds (already merged, or owned by a person).
    */
   isLastBoardAtCurrentGym: boolean;
 };
