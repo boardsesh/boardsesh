@@ -27,13 +27,16 @@
  * `packages/db` reads its hashes from drizzle's own `readMigrationFiles`, which
  * is the only way to be certain they match. Root `scripts/` cannot: `drizzle-orm`
  * is a `packages/db` dependency and Bun's isolated linker gives the repo root no
- * hoisted copy. So the sha256 is derived here from the raw `.sql` bytes — which
- * is exactly what drizzle 0.45's `readMigrationFiles` does, what
- * `packages/db/docker/Dockerfile.dev-db` writes with `sha256sum`, and what the
- * `bun --eval` block this replaces already computed. A drizzle bump that changed
- * the derivation would break the parity; `packages/db`'s journal-verification
- * integration test runs against drizzle's real hashes and is where that would
- * surface.
+ * hoisted copy. So the sha256 is re-derived here — the same derivation drizzle
+ * 0.45 uses and the same one the `bun --eval` block this replaces already
+ * computed: `readFileSync(file, 'utf8')`, then `sha256` of that string. Note that
+ * this is the file decoded as UTF-8 and re-encoded, not the bytes on disk;
+ * `Dockerfile.dev-db` writes `sha256sum` of the raw bytes and agrees with it only
+ * because every migration is UTF-8 with no BOM (`check:db-migrations` reads the
+ * folder the same way, and a BOM would break drizzle's own hash first). A drizzle
+ * bump that changed the derivation would break the parity; `packages/db`'s
+ * journal-verification integration test runs against drizzle's real hashes and is
+ * where that would surface.
  */
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -80,7 +83,7 @@ export function readJournalMigrations(drizzleDir: string): ExpectedMigrationWith
   }));
 }
 
-/** sha256 over the raw file bytes — see the hash-parity note in the module header. */
+/** sha256 of the file read as UTF-8 — see the hash-parity note in the module header. */
 export function hashMigrationFile(migrationFilePath: string): string {
   return createHash('sha256').update(readFileSync(migrationFilePath, 'utf8')).digest('hex');
 }
