@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     capture: vi.fn(),
     flush: vi.fn(async () => {}),
     identify: vi.fn(),
+    register: vi.fn().mockResolvedValue(undefined),
     reset: vi.fn(),
     setPersonProperties: vi.fn(),
   },
@@ -76,6 +77,55 @@ describe('analytics wrapper', () => {
       }),
     );
     expect(mocks.posthog.capture).toHaveBeenCalledWith('Climb Opened', { kept: 'yes', count: 2 });
+  });
+
+  // #3945: web PostHog events carried no `environment` property, so a
+  // dashboard filter of `environment = 'production'` silently dropped 100% of
+  // web volume. Registering it as a super property at client construction
+  // (mirroring mobile's registerAppEnvironment) fixes that.
+  it('registers the environment super property on first PostHog client init', async () => {
+    const { track } = await import('../analytics');
+
+    track('Climb Opened');
+
+    expect(mocks.posthog.register).toHaveBeenCalledWith({ environment: 'production' });
+  });
+
+  it('never registers an environment super property on a preview hostname', async () => {
+    setWindowLocation('https://boardsesh-preview.vercel.app/b/kilter');
+    const { track } = await import('../analytics');
+
+    track('Preview Event');
+
+    expect(mocks.PostHog).not.toHaveBeenCalled();
+    expect(mocks.posthog.register).not.toHaveBeenCalled();
+  });
+
+  it('re-registers the environment super property after reset()', async () => {
+    const { reset, track } = await import('../analytics');
+
+    // Constructs the client (and registers environment once).
+    track('Climb Opened');
+    expect(mocks.posthog.register).toHaveBeenCalledTimes(1);
+
+    expect(reset()).toBe(true);
+
+    expect(mocks.posthog.reset).toHaveBeenCalledTimes(1);
+    expect(mocks.posthog.register).toHaveBeenCalledTimes(2);
+    expect(mocks.posthog.register).toHaveBeenNthCalledWith(2, { environment: 'production' });
+  });
+
+  it('does not throw or block capture when register() rejects', async () => {
+    mocks.posthog.register.mockRejectedValueOnce(new Error('storage unavailable'));
+    const { track } = await import('../analytics');
+
+    expect(() => track('Climb Opened')).not.toThrow();
+    // The rejection is asynchronous; flush microtasks so the swallowed
+    // rejection is observed before the test ends.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.posthog.capture).toHaveBeenCalledWith('Climb Opened', undefined);
   });
 
   it('fails loud once when the PostHog key is missing on a production host', async () => {
