@@ -594,6 +594,27 @@ describe('PlaylistDetail edit conflict (#1934)', () => {
     expect(updatePlaylistMock).toHaveBeenCalledTimes(1);
   });
 
+  it('"Keep mine" losing a second race says so inline instead of reporting a fault', async () => {
+    requestMock.mockResolvedValue({ playlist: cachedPlaylist });
+    // A third device lands between the prompt and the retry.
+    updatePlaylistMock.mockRejectedValue(conflictError);
+
+    const { findByText, container } = renderDetail();
+    fireEvent.click(await findByText('form-submit'));
+
+    await waitFor(() => expect(alertMock).toHaveBeenCalledTimes(1));
+    const buttons = alertMock.mock.calls[0][2] as Array<{ text: string; onPress?: () => void }>;
+    buttons.find((button) => button.text === 'edit.conflict.keepMine')?.onPress?.();
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-edit-error="true"]')?.textContent).toBe('edit.conflict.changedAgain');
+    });
+    // Still an expected outcome, not a fault — and no second prompt, which would
+    // have no natural end.
+    expect(reportHandledErrorMock).not.toHaveBeenCalled();
+    expect(alertMock).toHaveBeenCalledTimes(1);
+  });
+
   it('"Use theirs" also refreshes the library list, not just the detail hero', async () => {
     requestMock.mockResolvedValue({ playlist: cachedPlaylist });
     updatePlaylistMock.mockRejectedValue(conflictError);

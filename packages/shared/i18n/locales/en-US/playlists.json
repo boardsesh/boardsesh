@@ -204,6 +204,7 @@
     "conflict": {
       "title": "Changed somewhere else",
       "message": "This playlist is saved as “{{serverName}}” now. Your edit says “{{yourName}}”.",
+      "changedAgain": "It changed again while you were deciding. Save again to pick it up.",
       "keepMine": "Keep mine",
       "keepTheirs": "Use theirs",
       "cancel": "Cancel"

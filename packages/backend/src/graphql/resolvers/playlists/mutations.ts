@@ -240,7 +240,11 @@ export const playlistMutations = {
     // transaction with the playlist row locked (#1934). Splitting them would
     // leave a read-then-write window in which the very edit the client is being
     // compared against could land, which is exactly the race the check exists to
-    // catch. Same `for('update')` pattern as reorderPlaylistClimb below.
+    // catch. Same `for('update')` pattern as reorderPlaylistClimb below, which
+    // runs its ownership check outside the transaction entirely. To be precise
+    // about what the lock covers: the playlist row, not the ownership row. An
+    // ownership revoke committing mid-edit races this check exactly as it races
+    // every other playlist mutation; closing that is a separate job.
     const updated = await db.transaction(async (tx) => {
       const ownership = await tx
         .select({ playlistId: dbSchema.playlists.id })
