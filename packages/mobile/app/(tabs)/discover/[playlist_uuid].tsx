@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, Alert, Pressable } from 'react-native';
 import { useLocalSearchParams, useNavigation } from 'expo-router';
+import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -32,10 +33,13 @@ import {
   PlaylistOwnerToolbar,
   PlaylistBackFab,
   PlaylistQueueReplaceSheet,
+  PlaylistDiscussionRow,
   type PlaylistFormValues,
 } from '../../../src/components/playlist';
+import { CommentSheet } from '../../../src/components/you/CommentSheet';
 import { GlassIconButton } from '../../../src/components/GlassIconButton';
 import { getHttpClient } from '../../../src/lib/graphql/client';
+import { useComments } from '../../../src/lib/graphql/hooks';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { usePlaylistActivation } from '../../../src/lib/playlists/use-playlist-activation';
 import { usePlaylistRenderBoard } from '../../../src/lib/playlists/use-playlist-render-board';
@@ -166,6 +170,25 @@ export default function PlaylistDetail() {
 
   const isOwner = playlist?.userRole === 'owner';
   const isFollowable = !!playlist?.isPublic && !isOwner;
+
+  // General playlist discussion — the same `<uuid>:_all` entity web's
+  // CommentSection uses, and only on public playlists (web gates the same way).
+  const discussionEntityId = playlist?.isPublic ? `${playlistUuid}:_all` : null;
+  const commentSheetRef = useRef<BottomSheet | null>(null);
+  const [discussionOpen, setDiscussionOpen] = useState(false);
+  // Shares its react-query key with the sheet's own useComments, so opening the
+  // sheet reads the cache instead of firing a second request.
+  const discussionQuery = useComments('playlist_climb', discussionEntityId ?? undefined, !!discussionEntityId);
+  const commentCount = discussionQuery.data?.totalCount ?? 0;
+
+  const openDiscussion = useCallback(() => {
+    setDiscussionOpen(true);
+    // Stacked native sheets must be presented imperatively; a `visible`-prop
+    // effect is a silent no-op here.
+    commentSheetRef.current?.snapToIndex(0);
+  }, []);
+
+  const closeDiscussion = useCallback(() => setDiscussionOpen(false), []);
 
   // Interactive state seeded from the loaded playlist, updated optimistically.
   const [isPinned, setIsPinned] = useState(false);
@@ -635,6 +658,11 @@ export default function PlaylistDetail() {
         onReorderClimb={handleReorderClimb}
         onRemoveClimb={handleRemoveClimb}
         onEditDetails={openEditDetails}
+        headerSlot={
+          discussionEntityId && !editMode ? (
+            <PlaylistDiscussionRow commentCount={commentCount} onPress={openDiscussion} />
+          ) : null
+        }
       />
 
       <PlaylistActionsMenu
@@ -660,6 +688,14 @@ export default function PlaylistDetail() {
       />
 
       <PlaylistQueueReplaceSheet {...playlistActivation.queueReplaceSheet} />
+
+      <CommentSheet
+        sheetRef={commentSheetRef}
+        entityType="playlist_climb"
+        entityId={discussionOpen ? discussionEntityId : null}
+        canComment={isAuthenticated}
+        onClose={closeDiscussion}
+      />
     </>
   );
 }

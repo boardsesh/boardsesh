@@ -39,6 +39,40 @@ vi.mock('../../../../src/lib/graphql/client', () => ({
   getHttpClient: () => ({ request: requestMock }),
 }));
 
+// Discussion thread: capture the useComments args so the private-playlist case
+// can prove the query never runs.
+const commentsMock = vi.hoisted(() => ({
+  calls: [] as Array<{ entityType: string; entityId: string | undefined; enabled: boolean }>,
+  totalCount: 0,
+}));
+vi.mock('../../../../src/lib/graphql/hooks', () => ({
+  useComments: (entityType: string, entityId: string | undefined, enabled = true) => {
+    commentsMock.calls.push({ entityType, entityId, enabled });
+    return { data: enabled && entityId ? { comments: [], totalCount: commentsMock.totalCount } : undefined };
+  },
+}));
+
+const commentSheetProps = vi.hoisted(() => ({
+  current: null as { entityType?: string; entityId: string | null; canComment?: boolean } | null,
+}));
+const snapToIndex = vi.hoisted(() => vi.fn());
+vi.mock('../../../../src/components/you/CommentSheet', () => ({
+  CommentSheet: (props: {
+    sheetRef: { current: { snapToIndex: (index: number) => void } | null };
+    entityType?: string;
+    entityId: string | null;
+    canComment?: boolean;
+  }) => {
+    commentSheetProps.current = {
+      entityType: props.entityType,
+      entityId: props.entityId,
+      canComment: props.canComment,
+    };
+    props.sheetRef.current = { snapToIndex };
+    return createElement('div', { 'data-comment-sheet': 'true', 'data-entity-id': props.entityId ?? '' });
+  },
+}));
+
 // usePlaylistClimbs: the climbs infinite query. The detail screen only reads
 // query.refetch (for the retry) and allClimbs here.
 const climbsRefetch = vi.hoisted(() => vi.fn());
@@ -97,7 +131,8 @@ vi.mock('../../../../src/theme/ios-colors', () => ({
 vi.mock('../../../../src/providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { label: '#000', fill: '#eee' }, brandColors: { primary: '#6D28D9' } }),
 }));
-vi.mock('../../../../src/providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
+const authMock = vi.hoisted(() => ({ isAuthenticated: true }));
+vi.mock('../../../../src/providers/auth-provider', () => ({ useAuth: () => authMock }));
 vi.mock('../../../../src/providers/toast-provider', () => ({ useToast: () => toast }));
 vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
   usePlaylistActivation: (options: CapturedActivationOptions) => {
@@ -136,8 +171,21 @@ vi.mock('../../../../src/components/GlassIconButton', () => ({
 // PlaylistDetailView surfaces the hero title so we can prove the error branch
 // renders *instead of* a fallback-titled hero.
 vi.mock('../../../../src/components/playlist', () => ({
-  PlaylistDetailView: ({ hero }: { hero: { name: string } }) =>
-    createElement('div', { 'data-detail-view': 'true', 'data-hero-name': hero.name }),
+  PlaylistDetailView: ({
+    hero,
+    headerSlot,
+    actions,
+  }: {
+    hero: { name: string };
+    headerSlot?: ReactNode;
+    actions?: (collapsed: boolean) => ReactNode;
+  }) => createElement('div', { 'data-detail-view': 'true', 'data-hero-name': hero.name }, actions?.(false), headerSlot),
+  PlaylistDiscussionRow: ({ commentCount, onPress }: { commentCount: number; onPress: () => void }) =>
+    createElement(
+      'button',
+      { 'data-discussion-row': 'true', 'data-comment-count': String(commentCount), onClick: onPress },
+      'discussion',
+    ),
   SKELETON_PLACEHOLDERS: ['a', 'b'],
   // Surface the edit submit so the cache-patch test can drive handleEditSubmit
   // without the real gorhom sheet.
@@ -165,7 +213,10 @@ vi.mock('../../../../src/components/playlist', () => ({
   PlaylistActionsMenu: () => null,
   PlaylistFollowButton: () => null,
   PlaylistEditDoneButton: () => null,
-  PlaylistOwnerToolbar: () => null,
+  // Surfaces onEdit so a test can enter the climbs edit mode without the real
+  // glass toolbar.
+  PlaylistOwnerToolbar: ({ onEdit }: { onEdit?: () => void }) =>
+    createElement('button', { 'data-owner-edit': 'true', onClick: onEdit }, 'edit-climbs'),
   PlaylistBackFab: () => createElement('div', { 'data-back-fab': 'true' }),
   PlaylistQueueReplaceSheet: () => null,
 }));
@@ -191,6 +242,11 @@ beforeEach(() => {
   playlistMocks.allClimbs = [];
   playlistMocks.activationOptions = null;
   playlistMocks.renderBoardResult = { renderBoard: null, banner: null };
+  commentsMock.calls = [];
+  commentsMock.totalCount = 0;
+  commentSheetProps.current = null;
+  snapToIndex.mockClear();
+  authMock.isAuthenticated = true;
 });
 
 function makePlaylist(overrides: Record<string, unknown> = {}) {
@@ -347,5 +403,58 @@ describe('PlaylistDetail edit cache propagation', () => {
     });
     // A root toast would render behind the native sheet and be invisible.
     expect(toast.showToast).not.toHaveBeenCalledWith('edit.messages.updateFailed', 'error');
+  });
+});
+
+describe('PlaylistDetail discussion thread', () => {
+  it('renders the discussion row and wires the sheet to the `<uuid>:_all` entity on a public playlist', async () => {
+    commentsMock.totalCount = 4;
+    requestMock.mockResolvedValue({ playlist: makePlaylist({ isPublic: true }) });
+
+    const { container } = renderDetail();
+
+    await waitFor(() => expect(container.querySelector('[data-discussion-row="true"]')).not.toBeNull());
+    expect(container.querySelector('[data-discussion-row="true"]')?.getAttribute('data-comment-count')).toBe('4');
+    expect(commentsMock.calls.some((call) => call.entityType === 'playlist_climb' && call.enabled)).toBe(true);
+    // Closed until tapped, but already pointed at the right entity type.
+    expect(commentSheetProps.current?.entityType).toBe('playlist_climb');
+    expect(commentSheetProps.current?.entityId).toBeNull();
+
+    fireEvent.click(container.querySelector('[data-discussion-row="true"]') as HTMLButtonElement);
+
+    // Stacked native sheets are opened imperatively, not via a `visible` prop.
+    await waitFor(() => expect(snapToIndex).toHaveBeenCalledWith(0));
+    await waitFor(() => expect(commentSheetProps.current?.entityId).toBe('p-1:_all'));
+  });
+
+  it('renders no discussion row and never enables the comments query on a private playlist', async () => {
+    requestMock.mockResolvedValue({ playlist: makePlaylist({ isPublic: false }) });
+
+    const { container } = renderDetail();
+
+    await waitFor(() => expect(container.querySelector('[data-detail-view="true"]')).not.toBeNull());
+    expect(container.querySelector('[data-discussion-row="true"]')).toBeNull();
+    expect(commentsMock.calls.every((call) => call.enabled === false)).toBe(true);
+    expect(commentSheetProps.current?.entityId).toBeNull();
+  });
+
+  it('passes canComment=false through when the viewer is logged out', async () => {
+    requestMock.mockResolvedValue({ playlist: makePlaylist({ isPublic: true }) });
+    authMock.isAuthenticated = false;
+
+    renderDetail();
+
+    await waitFor(() => expect(commentSheetProps.current?.canComment).toBe(false));
+  });
+
+  it('hides the discussion row while the climbs edit mode is open', async () => {
+    requestMock.mockResolvedValue({ playlist: makePlaylist({ isPublic: true, userRole: 'owner' }) });
+
+    const { container } = renderDetail();
+
+    await waitFor(() => expect(container.querySelector('[data-discussion-row="true"]')).not.toBeNull());
+    fireEvent.click(container.querySelector('[data-owner-edit="true"]') as HTMLButtonElement);
+
+    await waitFor(() => expect(container.querySelector('[data-discussion-row="true"]')).toBeNull());
   });
 });

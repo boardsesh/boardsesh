@@ -135,6 +135,10 @@ export type PlaylistDetailViewProps = {
   onRemoveClimb?: (climbUuid: string) => void;
   /** In edit mode, a cog next to the playlist name opens the edit-details sheet. */
   onEditDetails?: () => void;
+  /** Extra content rendered inside `ListHeaderComponent`, below the hero and the
+   *  board-mismatch banner. Stays inside the existing FlashList header so no
+   *  second scroll container is introduced. */
+  headerSlot?: ReactNode;
 };
 
 const noopReorder = (_climbUuid: string, _newIndex: number) => {};
@@ -183,6 +187,7 @@ export function PlaylistDetailView({
   onReorderClimb,
   onRemoveClimb,
   onEditDetails,
+  headerSlot,
 }: PlaylistDetailViewProps) {
   const { t } = useTranslation('playlists');
   const { t: tCommon } = useTranslation('common');
@@ -466,6 +471,7 @@ export function PlaylistDetailView({
                 ) : null}
               </View>
               {bannerNode}
+              {headerSlot}
             </>
           }
           ListFooterComponent={listFooterComponent}
@@ -621,6 +627,7 @@ export function PlaylistDetailView({
           <>
             {header}
             {bannerNode}
+            {headerSlot}
           </>
         }
         ListFooterComponent={listFooterComponent}
