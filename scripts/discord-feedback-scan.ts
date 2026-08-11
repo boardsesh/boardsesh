@@ -550,9 +550,11 @@ export async function collectFeedback(
   // Losing the channel list costs us the reaction pass, not the run: the
   // explicitly-configured feedback channels are still readable by id.
   let channels: Array<{ id: string; name: string; type: number }> = [];
+  const passErrors: string[] = [];
   try {
     channels = await source.listGuildChannels(options.guildId);
   } catch (error) {
+    passErrors.push(`guild channels: ${String(error)}`);
     logger.warn(`[discord-feedback] could not list guild channels, skipping the reaction pass: ${String(error)}`);
   }
   const channelNames = new Map(channels.map((channel) => [channel.id, channel.name]));
@@ -667,6 +669,7 @@ export async function collectFeedback(
   try {
     threads = await source.listActiveThreads(options.guildId);
   } catch (error) {
+    passErrors.push(`active threads: ${String(error)}`);
     logger.warn(`[discord-feedback] could not list active threads, skipping the thread pass: ${String(error)}`);
   }
   for (const thread of threads) {
@@ -702,6 +705,17 @@ export async function collectFeedback(
     throw new Error(
       `[discord-feedback] ${emptyContentCount}/${seenCount} messages came back with no content. ` +
         'The MESSAGE CONTENT privileged intent is almost certainly disabled for this bot.',
+    );
+  }
+
+  // Losing one pass is survivable. Reading nothing at all, because every pass we
+  // attempted errored, is a misconfigured bot — and reporting that as a clean
+  // "0 messages" run is how a silently dead pipeline goes unnoticed for weeks.
+  if (collected.size === 0 && seenCount === 0 && passErrors.length > 0) {
+    throw new Error(
+      `[discord-feedback] every scan pass failed and nothing was read. ` +
+        `Check the bot is in guild ${options.guildId} and has View Channels + Read Message History. ` +
+        `Errors: ${passErrors.join(' | ')}`,
     );
   }
 

@@ -151,9 +151,11 @@ vp run discord:feedback-scan -- --mode apply --bundle /tmp/bundle.json --decisio
 | Symptom | Cause |
 |---|---|
 | Run fails with "MESSAGE CONTENT ... disabled" | The privileged intent is off in the Developer Portal |
+| Run fails with "every scan pass failed" | The bot isn't in the guild, or lacks View Channels / Read Message History. `403 Missing Access` on `/guilds/{id}/channels` means **not a member** — inviting it is a browser flow you have to complete, editing the `permissions=` number in the URL does nothing on its own |
 | Collect finds nothing on a busy server | Bot can't see the channels — check role and category overrides |
 | `Discord 403` for one channel | Normal for channels the bot isn't allowed in; it's logged and skipped |
 | `Discord 401` | Bad or rotated token. Fails fast on purpose — repeated 401s get the runner IP Cloudflare-banned |
+| Triage step green but "did not write ... decisions" | A tool the agent needed was denied. Read `claude-execution-output.json` in the run artifact and check `permission_denials_count`. Note Claude Code only consults path rules for `Read`/`Edit` — a `Write(<path>)` rule is accepted and silently never checked |
 | Issues filed but no ✅ | Crash between filing and reacting; the next run recovers via the marker |
 | Same issue filed twice | Should be impossible — check the marker is the body's first line and that search isn't lagging |
 | Nothing runs at all | `DISCORD_FEEDBACK_ENABLED` is not `true` |
