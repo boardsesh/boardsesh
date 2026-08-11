@@ -434,6 +434,17 @@ export async function handleStaticBetaThumbnail(
     return;
   }
 
+  // Same guard as the avatar / gym-logo handlers, and as the `?size=` branch
+  // above: a zero-byte object is served as a "successful" empty image. Here it
+  // matters more, not less — the 200 path is `immutable, max-age=1y`, so an
+  // empty body would be pinned in browser and CDN caches. `no-store` on the
+  // 404 keeps a re-cache at the same key able to repair it.
+  if (s3Object.contentLength === 0) {
+    s3Object.stream.destroy();
+    sendNotFound(res, { noStore: true });
+    return;
+  }
+
   res.writeHead(200, {
     'Content-Type': s3Object.contentType || 'image/jpeg',
     ...(s3Object.contentLength && { 'Content-Length': s3Object.contentLength }),

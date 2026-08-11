@@ -110,6 +110,15 @@ describe('cacheInstagramThumbnail', () => {
     expect(uploadToS3).not.toHaveBeenCalled();
   });
 
+  it('returns null when the source responds 200 with an empty body', async () => {
+    // A zero-byte upload would be stored under an immutable key and served as
+    // a "successful" empty image for a year, with no way to repair it.
+    mockFetchImageOnce({ body: new Uint8Array([]) });
+    const url = await cacheInstagramThumbnail('ABC123', 'https://scontent.cdninstagram.com/photo.jpg');
+    expect(url).toBeNull();
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
   it('returns null when fetch throws (network error)', async () => {
     const fetchMock = vi.fn().mockRejectedValueOnce(new Error('boom'));
     vi.stubGlobal('fetch', fetchMock);
