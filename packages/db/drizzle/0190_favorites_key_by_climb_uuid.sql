@@ -16,6 +16,16 @@
 -- board_name / angle are kept as vestigial defaulted columns for one release:
 -- syncFavorites still emits them, and a pre-OTA device's local SQLite declares
 -- them NOT NULL. They get dropped in the follow-up release.
+--
+-- unique_user_favorite_legacy exists for the deploy window only. Migrations run
+-- in their own gated job BEFORE the new backend image goes live
+-- (.github/workflows/production-deploy.yml), so for the minutes it takes Railway
+-- to roll, the old backend is still serving against this schema — and its
+-- `ON CONFLICT (user_id, board_name, climb_uuid, angle)` fails with 42P10 the
+-- moment no index carries that column set, turning EVERY favorite tap into a
+-- 500. Keeping a unique index on the four old columns keeps that inference
+-- resolving. It is deliberately NOT in the Drizzle schema (nothing generates
+-- against it); Release 2 drops it alongside the columns.
 DROP INDEX "unique_user_favorite";--> statement-breakpoint
 DROP INDEX "user_favorites_climb_idx";--> statement-breakpoint
 ALTER TABLE "user_favorites" ALTER COLUMN "board_name" SET DEFAULT '';--> statement-breakpoint
@@ -61,6 +71,7 @@ BEGIN
   END IF;
 END $$;--> statement-breakpoint
 CREATE UNIQUE INDEX "unique_user_favorite" ON "user_favorites" USING btree ("user_id","climb_uuid");--> statement-breakpoint
+CREATE UNIQUE INDEX "unique_user_favorite_legacy" ON "user_favorites" USING btree ("user_id","board_name","climb_uuid","angle");--> statement-breakpoint
 CREATE INDEX "user_favorites_climb_idx" ON "user_favorites" USING btree ("climb_uuid");--> statement-breakpoint
 CREATE OR REPLACE FUNCTION log_deletion_favorites() RETURNS TRIGGER AS $$
 BEGIN
