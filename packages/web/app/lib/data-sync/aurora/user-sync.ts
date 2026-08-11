@@ -337,7 +337,19 @@ export async function upsertTableData(
             // Delete existing climbs for this playlist to handle removals
             await db.delete(playlistClimbs).where(eq(playlistClimbs.playlistId, playlist.id));
 
-            // Insert new climbs
+            // Build the full row set first and dedupe by climb_uuid before
+            // inserting: `unique_playlist_climb` is (playlist_id, climb_uuid)
+            // only — it doesn't know about angle — so an Aurora circuit that
+            // repeats the same climb at two angles collides on insert.
+            // First occurrence wins, matching what onConflictDoNothing below
+            // would keep anyway. #4023.
+            const seenClimbUuids = new Set<string>();
+            const climbRows: Array<{
+              playlistId: typeof playlist.id;
+              climbUuid: string;
+              angle: number | null;
+              position: number;
+            }> = [];
             for (let i = 0; i < item.climbs.length; i++) {
               const climb = item.climbs[i];
               // Handle different possible structures of climb data
@@ -345,13 +357,29 @@ export async function upsertTableData(
               const climbAngle = climb.angle ?? null;
               const climbPosition = climb.position ?? i;
 
-              if (typeof climbUuid === 'string') {
-                await db.insert(playlistClimbs).values({
+              if (typeof climbUuid === 'string' && !seenClimbUuids.has(climbUuid)) {
+                seenClimbUuids.add(climbUuid);
+                climbRows.push({
                   playlistId: playlist.id,
-                  climbUuid: climbUuid,
+                  climbUuid,
                   angle: climbAngle,
                   position: climbPosition,
                 });
+              }
+            }
+
+            if (climbRows.length > 0) {
+              // Chunked insert with onConflictDoNothing: a concurrent
+              // addClimbToPlaylist landing mid-transaction (both run under
+              // READ COMMITTED) no-ops instead of aborting the whole sync
+              // batch with a raw 23505. Same pattern as kilter-sync's
+              // applyCircuits and the aurora-sync daemon's mirror of this fix.
+              const CLIMB_INSERT_CHUNK_SIZE = 500;
+              for (let i = 0; i < climbRows.length; i += CLIMB_INSERT_CHUNK_SIZE) {
+                await db
+                  .insert(playlistClimbs)
+                  .values(climbRows.slice(i, i + CLIMB_INSERT_CHUNK_SIZE))
+                  .onConflictDoNothing({ target: [playlistClimbs.playlistId, playlistClimbs.climbUuid] });
               }
             }
           }

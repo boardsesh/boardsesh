@@ -56,10 +56,15 @@ function createDbShim(
                 Promise.resolve(returningQueue[returningIdx++] ?? [{ id: BigInt(1) }]);
               return Object.assign(Promise.resolve(), { returning });
             },
-            onConflictDoNothing: () => Promise.resolve(),
+            onConflictDoNothing: (conflictArgs: unknown) => {
+              calls.push({ kind: 'conflict', table, args: [conflictArgs] });
+              return Promise.resolve();
+            },
           };
-          // playlist_climbs inserts are awaited straight off .values(), with no
-          // conflict clause — so the chain object has to be thenable too.
+          // Both the playlists upsert (.onConflictDoUpdate) and the
+          // playlist_climbs batch insert (.onConflictDoNothing) chain off
+          // .values() directly, so the chain object has to be thenable too —
+          // some callers await .values(...) with no conflict clause at all.
           return Object.assign(Promise.resolve(), chain);
         },
       };
@@ -294,6 +299,116 @@ describe('upsertTableData circuits — foreign-owner guard (#3526)', () => {
     expect(rendered.sql).toContain('"playlist_ownership"."user_id" <>');
     expect(rendered.params).toContain('owner');
     expect(rendered.params).toContain('user-b');
+  });
+});
+
+/**
+ * #4023: `unique_playlist_climb` is (playlist_id, climb_uuid) only — it
+ * doesn't know about angle — so a bare per-row insert throws a raw 23505
+ * whenever a circuit repeats a climb (e.g. the same climb at two angles) or a
+ * concurrent addClimbToPlaylist lands between the delete and the inserts.
+ * kilter-sync's applyCircuits already does diff + chunked batch insert +
+ * onConflictDoNothing for the same table; this mirrors that pattern.
+ */
+describe('upsertTableData circuits — playlist_climbs idempotency (#4023)', () => {
+  it('dedupes a repeated climb_uuid within one circuit, keeping the first occurrence', async () => {
+    const { db, calls } = createDbShim({
+      selectResults: [[{ upstreamId: 'circuit-1', ownerUserId: 'user-1' }]],
+      returningRows: [[{ id: BigInt(7) }]],
+    });
+
+    await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [
+        circuit('circuit-1', 'Mine', [
+          { climb_uuid: 'climb-A', angle: 40, position: 0 },
+          { climb_uuid: 'climb-A', angle: 55, position: 1 },
+          { climb_uuid: 'climb-B', angle: 40, position: 2 },
+        ] as never),
+      ],
+      () => {},
+    );
+
+    const climbInsert = calls.find((call) => call.kind === 'insert' && call.table === playlistClimbs);
+    const rows = climbInsert?.args[0] as Array<{ climbUuid: string; angle: number | null; position: number }>;
+    expect(rows).toHaveLength(2);
+    // First occurrence (angle 40, position 0) wins over the angle-55 duplicate.
+    expect(rows).toEqual([
+      { playlistId: BigInt(7), climbUuid: 'climb-A', angle: 40, position: 0 },
+      { playlistId: BigInt(7), climbUuid: 'climb-B', angle: 40, position: 2 },
+    ]);
+  });
+
+  it('carries onConflictDoNothing targeting (playlist_id, climb_uuid) on the playlist_climbs insert', async () => {
+    const { db, calls } = createDbShim({
+      selectResults: [[{ upstreamId: 'circuit-1', ownerUserId: 'user-1' }]],
+      returningRows: [[{ id: BigInt(7) }]],
+    });
+
+    await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [circuit('circuit-1', 'Mine', [{ climb_uuid: 'climb-A' }])],
+      () => {},
+    );
+
+    const conflictClause = calls.find((call) => call.kind === 'conflict' && call.table === playlistClimbs)?.args[0] as
+      | { target?: unknown[] }
+      | undefined;
+    expect(conflictClause?.target).toEqual([playlistClimbs.playlistId, playlistClimbs.climbUuid]);
+  });
+
+  it('deletes playlist_climbs before inserting the new rows', async () => {
+    const { db, calls } = createDbShim({
+      selectResults: [[{ upstreamId: 'circuit-1', ownerUserId: 'user-1' }]],
+      returningRows: [[{ id: BigInt(7) }]],
+    });
+
+    await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [circuit('circuit-1', 'Mine', [{ climb_uuid: 'climb-A' }])],
+      () => {},
+    );
+
+    const deleteIdx = calls.findIndex((call) => call.kind === 'delete' && call.table === playlistClimbs);
+    const insertIdx = calls.findIndex((call) => call.kind === 'insert' && call.table === playlistClimbs);
+    expect(deleteIdx).toBeGreaterThanOrEqual(0);
+    expect(insertIdx).toBeGreaterThan(deleteIdx);
+  });
+
+  it('skips non-string climb entries and issues no insert when nothing survives', async () => {
+    const { db, insertsInto } = createDbShim({
+      selectResults: [[{ upstreamId: 'circuit-1', ownerUserId: 'user-1' }]],
+      returningRows: [[{ id: BigInt(7) }]],
+    });
+
+    await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [
+        circuit('circuit-1', 'Mine', [
+          { climb_uuid: 42 as unknown as string },
+          { climb_uuid: null as unknown as string },
+        ]),
+      ],
+      () => {},
+    );
+
+    expect(insertsInto(playlistClimbs)).toHaveLength(0);
   });
 });
 
