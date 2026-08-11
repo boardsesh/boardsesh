@@ -38,6 +38,7 @@ import {
   type FavoritesQueryResponse,
 } from '@boardsesh/graphql/operations/favorites';
 import { BOULDER_GRADES } from '@boardsesh/board-config';
+import { myBoardsQueryKey } from '../query-keys';
 import { getDatabaseHandle } from '../../../db';
 import { offlineAwareRequest } from '../offline-request';
 import { useOfflineDownloadsEnabled } from '../../../providers/feature-flags-provider';
@@ -215,9 +216,14 @@ export function useUpdateProfile() {
 // Board Queries
 // ============================================
 
+// The key lives in `../query-keys` because `useCrossBoardAddGate` reads this
+// roster imperatively out of the cache; both sides import the one helper so the
+// shape can't drift apart. Re-exported here for callers already on this barrel.
+export { myBoardsQueryKey };
+
 export function useMyBoards(input?: MyBoardsInput, options?: { enabled?: boolean }) {
   return useQuery({
-    queryKey: ['myBoards', input],
+    queryKey: myBoardsQueryKey(input),
     queryFn: () => getHttpClient().request<GetMyBoardsQueryResponse>(GET_MY_BOARDS, { input }),
     select: (data) => data.myBoards,
     enabled: options?.enabled ?? true,

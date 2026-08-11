@@ -10,7 +10,7 @@ import DialogActions from '@mui/material/DialogActions';
 import Button from '@mui/material/Button';
 import type { BoardDetails, BoardRouteIdentity } from '@/app/lib/types';
 import type { BoardLockReason } from './use-active-board-lock';
-import { capitalizeFirst } from '@/app/lib/string-utils';
+import { formatBoardDisplayName } from '@/app/lib/string-utils';
 
 type ConfirmArgs = {
   reason: BoardLockReason;
@@ -37,7 +37,7 @@ export function useBoardSwitchConfirm(): BoardSwitchConfirmContextValue | null {
 }
 
 function formatBoardLabel(board: BoardDetails | BoardRouteIdentity): string {
-  const parts = [capitalizeFirst(board.board_name)];
+  const parts = [formatBoardDisplayName(board.board_name)];
   if (board.layout_name) parts.push(board.layout_name);
   if (board.size_name) parts.push(board.size_name);
   return parts.join(' · ');

@@ -929,6 +929,14 @@
         "bottomRight": "Esquina inferior derecha",
         "hint": "Desliza hacia arriba o abajo para agrandar o reducir la zona desde esta esquina."
       }
+    },
+    "crossBoardAdd": {
+      "title": "Este bloque es de {{board}}",
+      "message": "Tu cola está en otro plafón. Añádelo igual y se queda esperando hasta que estés en {{board}}, o cámbiate ahora.",
+      "addAnyway": "Añadir igual",
+      "switchBoard": "Cambiar a {{board}}",
+      "switchFailed": "No se pudo cambiar a {{board}}. Inténtalo de nuevo.",
+      "cancel": "Cancelar"
     }
   }
 }

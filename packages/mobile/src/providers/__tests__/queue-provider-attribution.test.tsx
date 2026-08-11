@@ -152,6 +152,12 @@ vi.mock('../toast-provider', () => ({ useToast: () => ({ showToast: toast.showTo
 vi.mock('../queue-snackbar-provider', () => ({ useQueueSnackbar: () => ({ showQueueAddedSnackbar: vi.fn() }) }));
 // A signed-in climber with a resolved party profile — the only state in which
 // this device stamps identity at all.
+// The cross-board add gate calls useChoose()/useQueryClient()/expo-router, none of
+// which this harness mounts. Pass every add straight through — the gate's own
+// behaviour is covered by queue-provider-cross-board-add.test.tsx.
+vi.mock('../queue/use-cross-board-add-gate', () => ({
+  useCrossBoardAddGate: () => async () => ({ outcome: 'add' }),
+}));
 vi.mock('../party-profile-provider', () => ({
   usePartyProfile: () => ({
     profile: { id: 'party-uuid-1' },

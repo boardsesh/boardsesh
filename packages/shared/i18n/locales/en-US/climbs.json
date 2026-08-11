@@ -929,6 +929,14 @@
         "bottomRight": "Bottom-right corner",
         "hint": "Swipe up or down to grow or shrink the region from this corner."
       }
+    },
+    "crossBoardAdd": {
+      "title": "This climb is on {{board}}",
+      "message": "Your queue is on a different board. Add it anyway and it waits there until you're on {{board}}, or switch over now.",
+      "addAnyway": "Add anyway",
+      "switchBoard": "Switch to {{board}}",
+      "switchFailed": "Couldn't switch to {{board}}. Try again.",
+      "cancel": "Cancel"
     }
   }
 }

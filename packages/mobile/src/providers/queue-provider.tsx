@@ -7,6 +7,8 @@ import {
   generateClientId,
   isPlaylistPeekQueueItemUuid,
   playlistSuggestionSourceMatches,
+  decideAdd,
+  deriveAcceptedConfigs,
 } from '@boardsesh/queue';
 import type {
   QueueSearchParams,
@@ -19,7 +21,7 @@ import { useQueueMutations, type PublishPlaybackStateInput } from '@boardsesh/qu
 import type { QueueItemAttribution } from '@boardsesh/queue-react/queue-item-input';
 import type { PlaybackStateChangedEvent, SessionUser } from '@boardsesh/shared-schema';
 import { execute, isRateLimitedError } from '@boardsesh/graphql-client';
-import { buildBoardPath } from '@boardsesh/board-config';
+import { buildBoardPath, classifyClimbBoardCompatibility, toBoardName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { JOIN_SESSION, UPDATE_USERNAME } from '@boardsesh/graphql/operations/queue-session';
 import { getWsClient } from '../lib/graphql/ws-client';
@@ -60,6 +62,7 @@ import {
   type QueueActionsContextValue,
   type QueuePlaylistSuggestionContextValue,
 } from './queue/queue-contexts';
+import { useCrossBoardAddGate } from './queue/use-cross-board-add-gate';
 import { useQueueRegrade } from './queue/use-queue-regrade';
 import { useQueueResolveClimbs } from './queue/use-queue-resolve-climbs';
 import { useQueuePersistence } from './queue/use-queue-persistence';
@@ -302,6 +305,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const activeBoardRef = useRef(activeBoard);
   activeBoardRef.current = activeBoard;
 
+  // "This climb is on another board — add anyway / switch / cancel". Stable
+  // identity, so `addToQueue` (and the memoized actions context) never churns.
+  const requestCrossBoardAdd = useCrossBoardAddGate();
+
   // JOIN_SESSION cache, keyed by (sessionId, connection epoch). Built once
   // per mount so its inFlight state survives re-renders. Web has a separate
   // implementation inside `persistent-session/hooks/use-session-lifecycle.ts`;
@@ -489,8 +496,18 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     // queue-adds) must not alarm: the local reducer already applied the change
     // and the WS subscription reconciles. Dev-log only — a user-facing "Action
     // failed" on a swipe-to-queue or a rapid current-climb change is noise.
+    //
+    // `setSessionBoardPath` is the exception. Nothing reconciles it: a dropped
+    // board-path broadcast leaves this climber on one wall and the rest of the
+    // party on another, indefinitely and invisibly. Report it (still no toast —
+    // the local move already succeeded and there is nothing to retry by hand).
+    // It only fires on an angle change or a board switch, so the Sentry volume
+    // stays tiny next to the per-swipe actions above.
     onBestEffortError: (action, error) => {
       if (__DEV__) console.warn(`[queue] best-effort ${action} failed`, error);
+      if (action === 'setSessionBoardPath') {
+        reportHandledError(error, { tags: { source: 'queue-sync', op: 'set-board-path' } });
+      }
     },
   });
 
@@ -796,7 +813,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     void resyncQueueFromServerRef.current();
   }, [state.needsResync]);
 
-  const addToQueue = useCallback(
+  // The committed half of an add. Everything here re-reads live state, so it is
+  // safe to run after an await on the cross-board prompt.
+  const commitQueueAdd = useCallback(
     (rawItem: ClimbQueueItem) => {
       // Whoever tapped "add" owns this climb — stamp identity before the dispatch
       // so the local queue and the broadcast carry the same object (#3995).
@@ -831,6 +850,68 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       showQueueAddedSnackbar();
     },
     [attributeNewItem, mutations, reconcileFailedContentMutation, showQueueAddedSnackbar],
+  );
+
+  /**
+   * Add a climb to the queue, asking first when it belongs to a board the queue
+   * isn't on (see `decideAdd` in @boardsesh/queue). This is the ONE seam every
+   * add path goes through — search rows, the climb-action sheet, the play drawer,
+   * the board sheet — so a new call site can't skip the gate.
+   *
+   * Resolves `'cancelled'` only when the climber backed out of that prompt; the
+   * same-board path never awaits anything, so a normal add costs nothing extra.
+   */
+  const addToQueue = useCallback(
+    async (rawItem: ClimbQueueItem): Promise<'added' | 'cancelled'> => {
+      const activeBoard = activeBoardRef.current;
+      const activeBoardName = activeBoard ? toBoardName(activeBoard.boardType) : null;
+      const activeConfig =
+        activeBoardName && activeBoard ? { boardName: activeBoardName, layoutId: activeBoard.layoutId } : undefined;
+      // `stateRef.current` is reassigned during render, so between a dispatch
+      // and its commit this reads the pre-add queue — a second add from the
+      // same foreign board inside that sub-frame window would prompt twice.
+      // Left as is on purpose: the burst case that can actually fire that fast
+      // (several taps before anyone answers) is already collapsed to one prompt
+      // by the gate's in-flight dedup, the remaining window needs a second tap
+      // within a frame of answering the dialog, and the cost if it ever lands
+      // is one extra dialog. Shadowing the accepted set in a ref would trade
+      // that for a hand-maintained mirror of reducer state that can drift.
+      const decision = decideAdd({
+        climb: rawItem.climb,
+        activeConfig,
+        acceptedConfigKeys: deriveAcceptedConfigs(stateRef.current.queue, activeConfig),
+        classify: classifyClimbBoardCompatibility,
+      });
+
+      if (decision.kind === 'confirm') {
+        const result = await requestCrossBoardAdd({
+          climbConfigKey: decision.climbConfigKey,
+          climbBoardName: decision.climbBoardName,
+          climbLayoutId: decision.climbLayoutId,
+          activeBoardName: activeBoard?.boardType,
+        });
+        if (result.outcome === 'cancel') return 'cancelled';
+        if (result.outcome === 'switch') {
+          // The queue followed them onto the new board, so peers must too — a
+          // local-only switch would leave the session's board path (and every
+          // peer's wall) pointing at the board we just left.
+          const { boardType, layoutId, sizeId, setIds, angle } = result.board;
+          // The shared mutation swallows its own transport errors into
+          // `onBestEffortError` (which reports them), so what lands here is the
+          // rarer pre-send failure — ensureJoined rejecting. Report that too
+          // rather than dropping it, or a party that silently never followed
+          // the switch leaves no trace at all.
+          void setSessionBoardPath(buildBoardPath(boardType, layoutId, sizeId, setIds, angle)).catch((error) => {
+            if (__DEV__) console.warn('[queue] setSessionBoardPath after board switch failed', error);
+            reportHandledError(error, { tags: { source: 'queue-sync', op: 'set-board-path-switch' } });
+          });
+        }
+      }
+
+      commitQueueAdd(rawItem);
+      return 'added';
+    },
+    [commitQueueAdd, requestCrossBoardAdd, setSessionBoardPath],
   );
 
   const removeFromQueue = useCallback(

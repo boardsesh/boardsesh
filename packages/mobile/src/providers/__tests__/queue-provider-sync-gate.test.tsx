@@ -190,6 +190,12 @@ vi.mock('../queue-snackbar-provider', () => ({
   useQueueSnackbar: () => ({ showQueueAddedSnackbar: vi.fn() }),
 }));
 
+// The cross-board add gate calls useChoose()/useQueryClient()/expo-router, none of
+// which this harness mounts. Pass every add straight through — the gate's own
+// behaviour is covered by queue-provider-cross-board-add.test.tsx.
+vi.mock('../queue/use-cross-board-add-gate', () => ({
+  useCrossBoardAddGate: () => async () => ({ outcome: 'add' }),
+}));
 vi.mock('../party-profile-provider', () => ({
   usePartyProfile: () => ({ username: undefined, avatarUrl: undefined }),
 }));

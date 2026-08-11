@@ -27,6 +27,12 @@ export const SHARED_EVENTS = {
   // Queue / session
   AddToQueue: 'Add to Queue',
   ClimbAddedToQueue: 'Climb Added to Queue',
+  // A climb from a DIFFERENT board than the queue is on was tapped, so the
+  // cross-board prompt was raised. Props: { outcome: 'add' | 'switch' | 'cancel',
+  // activeBoardName?, climbBoardName, climbLayoutId }. The outcome split is the
+  // signal: mostly `switch` means people keep landing on the wrong board first;
+  // mostly `cancel` means the prompt is firing where it isn't wanted.
+  CrossBoardQueueAddPrompted: 'Cross Board Queue Add Prompted',
   ClimbRemovedFromQueue: 'Climb Removed from Queue',
   QueueReordered: 'Queue Reordered',
   QueueCleared: 'Queue Cleared',

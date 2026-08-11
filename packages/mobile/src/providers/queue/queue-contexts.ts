@@ -34,7 +34,13 @@ type QueueContextValue = {
    * the lightbulb's lit indicator; the current climb is never cleared by either.
    */
   isSessionWallLit: boolean;
-  addToQueue: (item: ClimbQueueItem) => void;
+  /**
+   * Queue a climb. Resolves `'cancelled'` when the climb belongs to another
+   * board and the climber backed out of the cross-board prompt — callers that
+   * sequence something on the add (activating the climb, closing a sheet)
+   * should await it; fire-and-forget callers can `void` it.
+   */
+  addToQueue: (item: ClimbQueueItem) => Promise<'added' | 'cancelled'>;
   removeFromQueue: (uuid: string) => void;
   reorderQueue: (uuid: string, oldIndex: number, newIndex: number) => void;
   clearQueue: () => void;

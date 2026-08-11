@@ -200,7 +200,9 @@ export function useClimbActions({
       icon: 'add',
       color: successColor,
       run: () => {
-        addToQueue({ uuid: randomUUID(), climb });
+        // Fire-and-forget: the cross-board prompt (when it fires) sits above
+        // the dismissed sheet, so `after()` must not wait on it.
+        void addToQueue({ uuid: randomUUID(), climb });
         after();
       },
     });

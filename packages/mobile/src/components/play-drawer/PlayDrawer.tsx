@@ -753,8 +753,13 @@ export function PlayDrawer({
   }, []);
 
   const handleSimilarClimbPress = useCallback(
-    (similarClimb: Climb) => {
+    async (similarClimb: Climb) => {
       const queueItem = climbToQueueItem(similarClimb);
+      // A similar climb can be set on another board, so this add may raise the
+      // cross-board prompt. Wait for it: backing out has to leave the drawer on
+      // the climb they were already looking at, not activate the one they just
+      // declined to queue.
+      if ((await addToQueue(queueItem)) === 'cancelled') return;
       // Tapping a similar climb activates it (commit), so it's never a preview —
       // clear any preview that was showing.
       setDrawerPreviewItem(null);
@@ -762,7 +767,6 @@ export function PlayDrawer({
       setIsMirrored(false);
       // The favorite override is cleared by the climb-change effect.
       setIsTickBarActive(false);
-      addToQueue(queueItem);
       setCurrentClimb(queueItem, { playlistSuggestionSource: null });
     },
     [addToQueue, setCurrentClimb],
@@ -1049,7 +1053,7 @@ export function PlayDrawer({
           angle={angle}
           onAddToQueue={() => {
             if (displayedClimb) {
-              addToQueue({
+              void addToQueue({
                 uuid: randomUUID(),
                 climb: displayedClimb,
               });
