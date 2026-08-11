@@ -101,11 +101,16 @@ export type SnapshotBootstrapErrorReporter = (report: {
   /**
    * True when the failure is a transport/reachability one — the device was
    * offline or the connection dropped, which is the normal state of a phone on
-   * a plane, not a defect in the artifact or the client. These burn NO attempt
-   * (see `runBootstrapPhase`) and the mobile reporter downgrades them to a
-   * warning instead of an error (issue #4238). False for everything an engineer
-   * would actually want to look at: a corrupt artifact, a row-count mismatch, a
-   * schema-stale import, a permanent miss.
+   * a plane, not a defect in the artifact or the client. The mobile reporter
+   * downgrades these to a warning instead of an error (issue #4238). False for
+   * everything an engineer would actually want to look at: a corrupt artifact, a
+   * row-count mismatch, a schema-stale import, a permanent miss.
+   *
+   * SEVERITY ONLY. Whether the failure burns a bootstrap attempt is a separate,
+   * per-stage decision in `settleRetryableBootstrapFailure`: a transport-shaped
+   * MANIFEST failure is free, a transport-shaped DOWNLOAD failure still counts
+   * (the manifest already proved the device was online, and an unresumable
+   * 272 MB retry loop is worse than the paged crawl).
    */
   expected: boolean;
 }) => void;

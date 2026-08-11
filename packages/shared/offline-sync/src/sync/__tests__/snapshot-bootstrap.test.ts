@@ -1345,7 +1345,7 @@ describe('pullSync connectivity gate', () => {
   });
 });
 
-describe('pullSync bootstrap: transport failures do not burn an attempt', () => {
+describe('pullSync bootstrap: transport failures at the manifest stage do not burn an attempt', () => {
   it('reports a transport manifest failure as expected, keeps the counter at 0, and still skips the paged pull', async () => {
     const cause = new TypeError('Network request failed');
     const source = makeSnapshotSource({ manifestError: cause });
@@ -1405,7 +1405,12 @@ describe('pullSync bootstrap: transport failures do not burn an attempt', () => 
     ).not.toBeNull();
   });
 
-  it('counts a NON-transport download failure but not a transport one', async () => {
+  it('counts a download failure even when it is transport-shaped — only the severity differs', async () => {
+    // The manifest resolved over this same connection moments earlier, so the
+    // device is provably online. Exempting this from the cap would let an
+    // unresumable 272 MB GET that always times out restart on every foreground
+    // forever, and — because a download failure also skips the paged pull — the
+    // board would never get an offline catalog by any route.
     const transportSource = makeSnapshotSource({
       manifest: makeManifest([makeEntry()]),
       downloadError: new Error('snapshot download: File.downloadFileAsync failed', {
@@ -1420,12 +1425,14 @@ describe('pullSync bootstrap: transport failures do not burn an attempt', () => 
       onSnapshotBootstrapError: transportReports,
     });
 
-    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(1);
+    // Still reported as expected, so Sentry sees a warning rather than an error.
     expect(transportReports).toHaveBeenCalledWith(
-      expect.objectContaining({ stage: 'download', attempt: 0, expected: true }),
+      expect.objectContaining({ stage: 'download', attempt: 1, expected: true }),
     );
 
-    // A disk-full device is a real failure the user can act on — that still counts.
+    // A disk-full device is a real failure the user can act on — that counts too,
+    // and reports at full severity.
     const diskFullSource = makeSnapshotSource({
       manifest: makeManifest([makeEntry()]),
       downloadError: new Error('snapshot download: insufficient disk space for kilter:1'),
@@ -1438,10 +1445,49 @@ describe('pullSync bootstrap: transport failures do not burn an attempt', () => 
       onSnapshotBootstrapError: diskReports,
     });
 
-    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(1);
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(2);
     expect(diskReports).toHaveBeenCalledWith(
-      expect.objectContaining({ stage: 'download', attempt: 1, expected: false }),
+      expect.objectContaining({ stage: 'download', attempt: 2, expected: false }),
     );
+  });
+
+  it('settles a board whose huge artifact always times out onto the paged crawl instead of re-downloading forever', async () => {
+    // Regression guard for the download-stage cap exemption: an unresumable
+    // multi-hundred-MB GET that times out every cycle must not restart on every
+    // foreground. Two counted attempts (+ the one-shot heal's second round) and
+    // the scope takes the slow-but-working paged path.
+    const timeoutSource = makeSnapshotSource({
+      manifest: makeManifest([makeEntry()]),
+      downloadError: new Error('snapshot download: File.downloadFileAsync failed for kilter:1', {
+        // The exact shape the issue's Sentry sample carries on iOS.
+        cause: new Error('UnableToDownloadException: The request timed out.'),
+      }),
+    });
+
+    // Four launches: two burn the initial budget, the third heals it once, the
+    // fourth exhausts the healed budget.
+    for (let launch = 0; launch < 4; launch += 1) {
+      const run = makeGraphqlFetch();
+      await pullSync(db, noopQueryClient(), run.fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: timeoutSource,
+      });
+    }
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(2);
+    expect(timeoutSource.downloadArtifact).toHaveBeenCalledTimes(4);
+
+    // Fifth launch: over the cap with the heal spent, so the artifact is not
+    // fetched again and the paged crawl finally runs for this scope.
+    const settled = makeGraphqlFetch();
+    await pullSync(db, noopQueryClient(), settled.fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: timeoutSource,
+    });
+    expect(timeoutSource.downloadArtifact).toHaveBeenCalledTimes(4);
+    expect(settled.capturedClimbCursors).toHaveLength(1);
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-paged-fallback:kilter:1:5']),
+    ).not.toBeNull();
   });
 
   it('still counts an import failure — a corrupt artifact is never an offline problem', async () => {

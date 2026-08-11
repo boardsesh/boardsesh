@@ -533,31 +533,49 @@ async function recordRetryableBootstrapFailure(db: OfflineDatabase, scopeKey: st
 }
 
 /**
- * Settle one retryable manifest/download failure.
+ * Settle one retryable manifest/download failure into the two INDEPENDENT
+ * decisions it drives: how loudly to report it (`expected`) and whether it burns
+ * an attempt.
  *
- * A TRANSPORT-shaped cause (offline, DNS, TLS, timeout — `isNetworkError`, the
- * same predicate the drainer uses to decide a mutation must not advance toward
- * the dead-letter) burns NO attempt and writes nothing at all: the artifact is
- * fine, the phone just isn't on a network, and counting it meant two launches in
- * airplane mode permanently dropped a board to the paged crawl (issue #4238).
- * The scope's paged pull is still skipped by the caller so no first-page
- * checkpoint disqualifies the snapshot path.
+ * `expected` is purely a severity signal — a TRANSPORT-shaped cause (offline,
+ * DNS, TLS, timeout; `isNetworkError`, the same predicate the drainer uses to
+ * decide a mutation must not advance toward the dead-letter) is routine on a
+ * phone and the mobile reporter downgrades it to a warning. It says nothing
+ * about the retry budget.
  *
- * Anything else — a 500 from the CDN, a short artifact, a disk-full device — is
- * a real failure and counts exactly as it always did.
+ * `exemptTransportFromCap` is the retry-budget decision, and it is TRUE for the
+ * manifest stage ONLY:
  *
- * Returns the attempt number to report and whether the failure was expected
- * (i.e. transport-shaped), which the mobile reporter uses to downgrade severity.
+ *  - MANIFEST: the request is a few KB of JSON and it is the stage an offline
+ *    launch dies at, which is exactly what made two launches in airplane mode
+ *    permanently drop a board to the paged crawl (issue #4238). Retrying it for
+ *    free costs nothing. The caller still skips the paged pull so no first-page
+ *    checkpoint disqualifies the snapshot path.
+ *  - DOWNLOAD: the manifest already resolved over the same connection seconds
+ *    earlier, so the device is provably online — a failure here is a slow or
+ *    flaky link, not a plane. Exempting it would let an unresumable 272 MB GET
+ *    that always times out (the download failure the issue's own Sentry sample
+ *    actually shows: `UnableToDownloadException: … The request timed out.`)
+ *    restart from byte 0 on every foreground FOREVER, burning cellular data and
+ *    — because the failure also skips the paged pull — leaving the board with no
+ *    offline catalog at all. Counting it means the scope settles into the paged
+ *    crawl after MAX_BOOTSTRAP_ATTEMPTS (plus the one-shot heal's second round),
+ *    which is a working board on the slow path.
+ *
+ * Anything non-transport — a 500 from the CDN, a short artifact, a disk-full
+ * device — counts at either stage, exactly as it always did.
  */
 async function settleRetryableBootstrapFailure(
   db: OfflineDatabase,
   scopeKey: string,
   cause: unknown,
+  { exemptTransportFromCap }: { exemptTransportFromCap: boolean },
 ): Promise<{ attempt: number; expected: boolean }> {
-  if (isNetworkError(cause)) {
-    return { attempt: await getBootstrapAttempts(db, scopeKey), expected: true };
+  const expected = isNetworkError(cause);
+  if (expected && exemptTransportFromCap) {
+    return { attempt: await getBootstrapAttempts(db, scopeKey), expected };
   }
-  return { attempt: await recordRetryableBootstrapFailure(db, scopeKey), expected: false };
+  return { attempt: await recordRetryableBootstrapFailure(db, scopeKey), expected };
 }
 
 async function resolveManifestOnce(
@@ -602,9 +620,11 @@ async function resolveManifestOnce(
  *     counted attempt → SKIP paged pull this cycle.
  *   - manifest `ok` but no entry for (boardType, layoutId) → permanent miss, NO
  *     attempt → normal paged pull (layout not exported yet).
- *   - download fails transport-shaped → NO attempt → SKIP paged pull this cycle,
- *     reported as `expected`.
- *   - download fails/returns null otherwise → counted attempt → SKIP paged pull.
+ *   - download fails/returns null → counted attempt → SKIP paged pull this cycle,
+ *     transport-shaped or not (only the severity differs — see
+ *     `settleRetryableBootstrapFailure` for why the cap exemption stops at the
+ *     manifest). Two of these settle the scope onto the paged crawl, which is
+ *     what stops an unresumable 272 MB GET restarting on every foreground.
  *   - download throws SnapshotPermanentMissError → NO attempt → normal paged pull.
  *   - import throws (corrupt/short artifact, row-count/format mismatch) → counted
  *     attempt → SKIP paged pull this cycle. Import failures ALWAYS count: an
@@ -714,9 +734,11 @@ async function runBootstrapPhase(
           continue; // permanent miss, no attempt
         }
         if (resolution.status === 'error') {
-          const { attempt, expected } = await settleRetryableBootstrapFailure(db, scope.scopeKey, resolution.cause);
-          // A transport failure persists nothing, so there is no settled decision
-          // for the UI to re-read — only a counted one changed sync_meta.
+          const { attempt, expected } = await settleRetryableBootstrapFailure(db, scope.scopeKey, resolution.cause, {
+            exemptTransportFromCap: true,
+          });
+          // A cap-exempt transport failure persists nothing, so there is no settled
+          // decision for the UI to re-read — only a counted one changed sync_meta.
           metadataSettled = !expected;
           onSnapshotBootstrapError?.({
             scopeKey: scope.scopeKey,
@@ -772,8 +794,18 @@ async function runBootstrapPhase(
             });
             continue;
           }
-          const { attempt, expected } = await settleRetryableBootstrapFailure(db, scope.scopeKey, cachedDownload.cause);
-          metadataSettled = !expected;
+          // NOT cap-exempt even when transport-shaped: the manifest resolved over
+          // this same connection moments ago, so the device is online and the
+          // artifact just won't come down. See settleRetryableBootstrapFailure.
+          const { attempt, expected } = await settleRetryableBootstrapFailure(
+            db,
+            scope.scopeKey,
+            cachedDownload.cause,
+            {
+              exemptTransportFromCap: false,
+            },
+          );
+          metadataSettled = true;
           onSnapshotBootstrapError?.({
             scopeKey: scope.scopeKey,
             stage: 'download',

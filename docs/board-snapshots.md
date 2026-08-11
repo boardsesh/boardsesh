@@ -216,8 +216,7 @@ sync if the code comment changes):
 | manifest `error`, transport-shaped (offline/DNS/TLS/timeout)       | **no**          | skip paged pull this cycle; reported as `expected`                                      |
 | manifest `error`, anything else (HTTP non-2xx except 404, …)       | **yes**         | skip paged pull this cycle (retry next cycle)                                           |
 | manifest `ok` but no entry for `(boardType, layoutId)`             | **no**          | permanent miss (not exported yet) → normal paged pull                                   |
-| download fails transport-shaped                                    | **no**          | skip paged pull this cycle; reported as `expected`                                      |
-| download fails otherwise or returns `null`                         | **yes**         | skip paged pull this cycle                                                              |
+| download fails or returns `null` (transport-shaped or not)         | **yes**         | skip paged pull this cycle; transport-shaped ones still report as `expected`            |
 | download throws `SnapshotPermanentMissError`                       | **no**          | permanent miss → normal paged pull                                                      |
 | import throws — corrupt/short artifact, row-count/format mismatch  | **yes**         | skip paged pull this cycle                                                              |
 | import throws `SnapshotSchemaStaleError`                           | **no**          | permanent miss this run → normal paged pull                                             |
@@ -345,9 +344,10 @@ pre-import empty result set.
     bootstrap failure (manifest/download/import stage, with
     `scopeKey`/`stage`/`attempt`/`expected`/`cause`/`causeName` in `extra`) and for the gzip-sniff failure
     above. Transport-shaped failures carry `expected: true`, report at `level: warning`, and are additionally
-    tagged `expected_offline` — they are a phone with no signal, not a defect, and they burn no attempt. The
-    real exception is attached as the wrapper's `cause`, which is what lets the shared classifier recognise
-    them at all (issue #4238).
+    tagged `expected_offline` — they are a phone with no signal, not a defect. `expected` is a severity signal
+    only: at the manifest stage it also skips the attempt counter, but a transport-shaped download failure
+    still burns an attempt (see the matrix above). The real exception is attached as the wrapper's `cause`,
+    which is what lets the shared classifier recognise them at all (issue #4238).
 
 ## Ops runbook
 

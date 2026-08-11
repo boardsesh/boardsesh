@@ -17,8 +17,9 @@
 // error, an unreadable body, a stubborn gzip body) THROWS a descriptive Error
 // carrying the underlying exception as its `cause`, and the engine reports that
 // chain — see `runBootstrapPhase`'s `cachedDownload` handling in pull-client.ts.
-// A transport-shaped cause burns NO bootstrap attempt; anything else counts,
-// and MAX_BOOTSTRAP_ATTEMPTS caps it at two tries before the scope settles into
+// A transport-shaped cause is reported as a warning rather than an error; every
+// failure the engine sees from `downloadArtifact` still burns an attempt, and
+// MAX_BOOTSTRAP_ATTEMPTS caps it at two tries before the scope settles into
 // the ordinary paged crawl (issue #4106: these used to `return null` on real
 // failures, which is a legal contract but reported `cause: null` for
 // everything; issue #4238: the causes that survived were only interpolated into
