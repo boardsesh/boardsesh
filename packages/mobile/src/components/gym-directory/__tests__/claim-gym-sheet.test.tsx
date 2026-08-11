@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode, type RefObject } from 'react';
 import type { Gym } from '@boardsesh/shared-schema';
@@ -61,18 +61,30 @@ vi.mock('../../../lib/graphql/extract-error-message', () => ({
   extractGraphqlMessage: (error: unknown) => (error as Error)?.message ?? null,
 }));
 
+const openUrl = vi.hoisted(() => ({ openValidatedUrl: vi.fn().mockResolvedValue(true) }));
+vi.mock('../../../lib/open-external-link', () => openUrl);
+vi.mock('../../../lib/env', () => ({ WEB_BASE_URL: 'https://www.boardsesh.com' }));
+
 import { ClaimGymSheet } from '../ClaimGymSheet';
 
 // No website, so the sheet opens in admin-review mode — the only path that can
 // come back `approved`.
-const gym = { uuid: 'gym-uuid-1', name: 'Bonsist', website: null } as unknown as Gym;
-const sheetRef = { current: { dismiss: vi.fn() } } as unknown as RefObject<ManagedSheetHandle | null>;
+const gym = { uuid: 'gym-uuid-1', slug: null, name: 'Bonsist', website: null } as unknown as Gym;
+const dismissMock = vi.fn();
+const sheetRef = { current: { dismiss: dismissMock } } as unknown as RefObject<ManagedSheetHandle | null>;
 
-const renderSheet = () => render(<ClaimGymSheet sheetRef={sheetRef} gym={gym} />);
+const renderSheet = (overrides?: Partial<Gym>) =>
+  render(<ClaimGymSheet sheetRef={sheetRef} gym={{ ...gym, ...overrides } as Gym} />);
 
 const submit = () => fireEvent.click(screen.getByText('mobile.gymClaim.admin.submit'));
 
 describe('ClaimGymSheet — claim outcome', () => {
+  beforeEach(() => {
+    dismissMock.mockClear();
+    openUrl.openValidatedUrl.mockClear();
+    openUrl.openValidatedUrl.mockResolvedValue(true);
+  });
+
   it('confirms ownership when the claim is auto-approved', async () => {
     mockMutateAsync.mockResolvedValueOnce({ status: 'approved', email: null });
 
@@ -93,5 +105,60 @@ describe('ClaimGymSheet — claim outcome', () => {
     // to wait for a review that had already happened.
     await waitFor(() => expect(screen.getByText('mobile.gymClaim.admin.sent')).toBeTruthy());
     expect(screen.queryByText('mobile.gymClaim.approved.sent')).toBeNull();
+  });
+
+  it('offers a manage-gym hand-off on an approved claim and dismisses the sheet on success', async () => {
+    mockMutateAsync.mockResolvedValueOnce({ status: 'approved', email: null });
+
+    renderSheet();
+    submit();
+    await waitFor(() => expect(screen.getByText('mobile.gymClaim.approved.sent')).toBeTruthy());
+
+    fireEvent.click(screen.getByText('mobile.gymClaim.approved.manageCta'));
+
+    expect(openUrl.openValidatedUrl).toHaveBeenCalledWith(
+      'https://www.boardsesh.com/gym/gym-uuid-1/manage',
+      expect.any(Function),
+    );
+    await waitFor(() => expect(dismissMock).toHaveBeenCalled());
+  });
+
+  it('prefers the gym slug over the uuid in the hand-off URL', async () => {
+    mockMutateAsync.mockResolvedValueOnce({ status: 'approved', email: null });
+
+    renderSheet({ slug: 'bonsist-amsterdam' });
+    submit();
+    await waitFor(() => expect(screen.getByText('mobile.gymClaim.approved.sent')).toBeTruthy());
+
+    fireEvent.click(screen.getByText('mobile.gymClaim.approved.manageCta'));
+
+    expect(openUrl.openValidatedUrl).toHaveBeenCalledWith(
+      'https://www.boardsesh.com/gym/bonsist-amsterdam/manage',
+      expect.any(Function),
+    );
+  });
+
+  it('shows an inline error and keeps the sheet open when the hand-off fails to open', async () => {
+    openUrl.openValidatedUrl.mockResolvedValue(false);
+    mockMutateAsync.mockResolvedValueOnce({ status: 'approved', email: null });
+
+    renderSheet();
+    submit();
+    await waitFor(() => expect(screen.getByText('mobile.gymClaim.approved.sent')).toBeTruthy());
+
+    fireEvent.click(screen.getByText('mobile.gymClaim.approved.manageCta'));
+
+    await waitFor(() => expect(screen.getByText('mobile.gymClaim.approved.manageError')).toBeTruthy());
+    expect(dismissMock).not.toHaveBeenCalled();
+  });
+
+  it('does not offer the manage-gym hand-off on a review-queued claim', async () => {
+    mockMutateAsync.mockResolvedValueOnce({ status: 'admin_review', email: null });
+
+    renderSheet();
+    submit();
+    await waitFor(() => expect(screen.getByText('mobile.gymClaim.admin.sent')).toBeTruthy());
+
+    expect(screen.queryByText('mobile.gymClaim.approved.manageCta')).toBeNull();
   });
 });

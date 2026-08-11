@@ -281,7 +281,9 @@
         "sent": "Wir haben unser Team benachrichtigt. Wir melden uns bald."
       },
       "approved": {
-        "sent": "{{gym}} gehört jetzt dir."
+        "sent": "{{gym}} gehört jetzt dir.",
+        "manageCta": "Halle einrichten",
+        "manageError": "Die Halle-Einrichtung ließ sich nicht öffnen. Probier es im Browser."
       }
     },
     "offline": {

@@ -160,10 +160,20 @@ function EditGymForm({ gym }: { gym: Gym }) {
     [submitting, gym.uuid, updateGym, showToast, t, router],
   );
 
+  // An approved claim invalidates the `gym` query, so `canClaim` flips false a
+  // refetch later — while the sheet is still up showing the confirmation and its
+  // "Set up your gym" hand-off. Keep the sheet mounted from the moment it opens
+  // until it fully dismisses, or that refetch unmounts the confirmation out from
+  // under the user.
+  const [claimSheetOpen, setClaimSheetOpen] = useState(false);
+
   const presentClaim = useCallback(() => {
     hapticSelection();
+    setClaimSheetOpen(true);
     claimSheetRef.current?.present();
   }, []);
+
+  const onClaimSheetClosed = useCallback(() => setClaimSheetOpen(false), []);
 
   const extraSections = (
     <>
@@ -197,7 +207,9 @@ function EditGymForm({ gym }: { gym: Gym }) {
         submitLabel={t('mobile.gymEdit.save')}
         extraSections={extraSections}
       />
-      {gym.canClaim ? <ClaimGymSheet sheetRef={claimSheetRef} gym={gym} /> : null}
+      {gym.canClaim || claimSheetOpen ? (
+        <ClaimGymSheet sheetRef={claimSheetRef} gym={gym} onClosed={onClaimSheetClosed} />
+      ) : null}
     </>
   );
 }

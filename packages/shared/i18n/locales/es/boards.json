@@ -281,7 +281,9 @@
         "sent": "Hemos avisado a nuestro equipo. Se pondrán en contacto pronto."
       },
       "approved": {
-        "sent": "{{gym}} ya es tuyo."
+        "sent": "{{gym}} ya es tuyo.",
+        "manageCta": "Configura tu gimnasio",
+        "manageError": "No se pudo abrir la configuración del gimnasio. Ábrela en un navegador."
       }
     },
     "offline": {
