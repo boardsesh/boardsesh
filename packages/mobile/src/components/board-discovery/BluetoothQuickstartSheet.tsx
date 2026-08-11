@@ -42,7 +42,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
     // this sheet runs its own scan through use-board-scan, so it needs its own
     // hint. See lib/ble/android-scan-location-gate.ts.
     const locationHint = useAndroidScanLocationHint(scanFinishedEmpty);
-    const { requestLocationPermission } = locationHint;
+    const { requestLocationPermission, promptEnableLocationServices } = locationHint;
     const handleGrantLocation = useCallback(() => {
       // Rescan straight away on a grant — unlike the picker (whose scan is owned
       // by the connect flow) this sheet controls its own scan lifecycle.
@@ -52,6 +52,13 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
         if (granted) reset();
       });
     }, [requestLocationPermission, reset]);
+    const handleEnableLocationServices = useCallback(() => {
+      // Same rescan-on-success flow as handleGrantLocation, for Android 11 and
+      // below where it's the services toggle, not the permission.
+      void promptEnableLocationServices().then((enabled) => {
+        if (enabled) reset();
+      });
+    }, [promptEnableLocationServices, reset]);
 
     // Start scanning when the sheet opens; reset back to idle when it closes so
     // the next open re-scans from scratch.
@@ -106,9 +113,10 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
               {t('mobile.bluetooth.noResults')}
             </Text>
             {/* Android is withholding the results — say so instead of leaving a
-                bare "none in range" the user can't act on. No "location allowed"
-                follow-up copy here: a grant restarts the scan immediately, so
-                this whole branch is gone by the time it would render. */}
+                bare "none in range" the user can't act on. No "granted/enabled"
+                follow-up copy on either branch: a successful grant restarts the
+                scan immediately, so the branch is gone by the time it would
+                render. */}
             {locationHint.shouldOfferLocationGrant ? (
               <>
                 <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stateText}>
@@ -123,6 +131,22 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
                   variant="text"
                   size="medium"
                   loading={locationHint.isRequesting}
+                />
+              </>
+            ) : locationHint.shouldOfferLocationServicesEnable ? (
+              <>
+                <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stateText}>
+                  {t('settings:ble.locationServicesHintTitle')}
+                </Text>
+                <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.stateText}>
+                  {t('settings:ble.locationServicesHintBody')}
+                </Text>
+                <Button
+                  title={t('settings:ble.locationServicesHintEnable')}
+                  onPress={handleEnableLocationServices}
+                  variant="text"
+                  size="medium"
+                  loading={locationHint.isPromptingServices}
                 />
               </>
             ) : (

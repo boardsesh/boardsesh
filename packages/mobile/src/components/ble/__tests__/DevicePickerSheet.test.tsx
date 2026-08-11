@@ -17,6 +17,10 @@ const locationHint = vi.hoisted(() => ({
   wasGranted: false,
   isRequesting: false,
   requestLocationPermission: vi.fn(async () => true),
+  shouldOfferLocationServicesEnable: false,
+  servicesWereEnabled: false,
+  isPromptingServices: false,
+  promptEnableLocationServices: vi.fn(async () => true),
   lastActive: null as boolean | null,
 }));
 
@@ -136,8 +140,12 @@ describe('DevicePickerSheet', () => {
     locationHint.shouldOfferLocationGrant = false;
     locationHint.wasGranted = false;
     locationHint.isRequesting = false;
+    locationHint.shouldOfferLocationServicesEnable = false;
+    locationHint.servicesWereEnabled = false;
+    locationHint.isPromptingServices = false;
     locationHint.lastActive = null;
     locationHint.requestLocationPermission.mockClear();
+    locationHint.promptEnableLocationServices.mockClear();
   });
 
   it('shows the spinner and hides troubleshoot tips while the initial scan runs', () => {
@@ -229,5 +237,48 @@ describe('DevicePickerSheet', () => {
 
     render(<DevicePickerSheet {...makeProps({ isScanning: false, devices: [] })} />);
     expect(locationHint.lastActive).toBe(true);
+  });
+
+  it('replaces the hardware tips with the services hint on Android 11 and below', () => {
+    // The API<31 half of this bug: permission is granted, the system Location
+    // toggle is off. Distinct hint, distinct copy, same "don't blame the board".
+    locationHint.shouldOfferLocationServicesEnable = true;
+    const { container } = render(<DevicePickerSheet {...makeProps({ isScanning: false, devices: [] })} />);
+
+    expect(hasText(container, 'ble.locationServicesHintTitle')).toBe(true);
+    expect(hasText(container, 'ble.locationServicesHintBody')).toBe(true);
+    expect(hasText(container, 'ble.troubleshootTitle')).toBe(false);
+    expect(hasText(container, 'ble.troubleshootTips')).toBe(false);
+  });
+
+  it('offers an enable button that fires the services prompt', () => {
+    locationHint.shouldOfferLocationServicesEnable = true;
+    const { container } = render(<DevicePickerSheet {...makeProps({ isScanning: false, devices: [] })} />);
+
+    const enableButton = container.querySelector('[data-button="ble.locationServicesHintEnable"]');
+    expect(enableButton).not.toBeNull();
+    (enableButton as HTMLButtonElement).click();
+    expect(locationHint.promptEnableLocationServices).toHaveBeenCalledOnce();
+  });
+
+  it('swaps to the services-enabled rescan prompt, with no enable button left', () => {
+    locationHint.shouldOfferLocationServicesEnable = false;
+    locationHint.servicesWereEnabled = true;
+    const { container } = render(<DevicePickerSheet {...makeProps({ isScanning: false, devices: [] })} />);
+
+    expect(hasText(container, 'ble.locationServicesHintEnabled')).toBe(true);
+    expect(hasText(container, 'ble.locationServicesHintBody')).toBe(false);
+    expect(container.querySelector('[data-button="ble.locationServicesHintEnable"]')).toBeNull();
+  });
+
+  it('prefers the permission hint over the services hint if both were ever true', () => {
+    // Belt-and-braces: the hook keeps these mutually exclusive by API level, but
+    // the sheet's own render order should still resolve deterministically.
+    locationHint.shouldOfferLocationGrant = true;
+    locationHint.shouldOfferLocationServicesEnable = true;
+    const { container } = render(<DevicePickerSheet {...makeProps({ isScanning: false, devices: [] })} />);
+
+    expect(hasText(container, 'ble.locationHintTitle')).toBe(true);
+    expect(hasText(container, 'ble.locationServicesHintTitle')).toBe(false);
   });
 });

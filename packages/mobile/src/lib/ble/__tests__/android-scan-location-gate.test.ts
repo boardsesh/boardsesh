@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   androidBuildHidesScanResultsWithoutLocation,
+  androidScanRequiresLocationServices,
   MANIFEST_HAS_NEVER_FOR_LOCATION,
   type AndroidScanLocationGateInput,
 } from '../android-scan-location-gate';
@@ -68,5 +69,79 @@ describe('androidBuildHidesScanResultsWithoutLocation', () => {
       androidApiLevel: true,
     };
     expect(Object.keys(gateInputKeys).sort()).toEqual(['androidApiLevel', 'platformOs']);
+  });
+});
+
+describe('androidScanRequiresLocationServices', () => {
+  it('flags Android 6 (API 23), the floor of the range', () => {
+    expect(
+      androidScanRequiresLocationServices({
+        platformOs: 'android',
+        androidApiLevel: 23,
+      }),
+    ).toBe(true);
+  });
+
+  it('flags Android 8 (API 26), mid-range', () => {
+    expect(
+      androidScanRequiresLocationServices({
+        platformOs: 'android',
+        androidApiLevel: 26,
+      }),
+    ).toBe(true);
+  });
+
+  it('flags Android 11 (API 30), the ceiling of the range', () => {
+    expect(
+      androidScanRequiresLocationServices({
+        platformOs: 'android',
+        androidApiLevel: 30,
+      }),
+    ).toBe(true);
+  });
+
+  it('stays off on Android 12 (API 31) — the permission-only gate takes over there', () => {
+    expect(
+      androidScanRequiresLocationServices({
+        platformOs: 'android',
+        androidApiLevel: 31,
+      }),
+    ).toBe(false);
+  });
+
+  it('stays off on a newer Android release', () => {
+    expect(
+      androidScanRequiresLocationServices({
+        platformOs: 'android',
+        androidApiLevel: 34,
+      }),
+    ).toBe(false);
+  });
+
+  it('stays off below Android 6', () => {
+    expect(
+      androidScanRequiresLocationServices({
+        platformOs: 'android',
+        androidApiLevel: 21,
+      }),
+    ).toBe(false);
+  });
+
+  it('stays off on iOS', () => {
+    expect(
+      androidScanRequiresLocationServices({
+        platformOs: 'ios',
+        androidApiLevel: 26,
+      }),
+    ).toBe(false);
+  });
+
+  it('is mutually exclusive with the permission gate at every API level', () => {
+    for (let apiLevel = 21; apiLevel <= 36; apiLevel += 1) {
+      const input: AndroidScanLocationGateInput = { platformOs: 'android', androidApiLevel: apiLevel };
+      const needsServices = androidScanRequiresLocationServices(input);
+      const needsPermissionOnly = androidBuildHidesScanResultsWithoutLocation(input);
+      expect(needsServices && needsPermissionOnly).toBe(false);
+    }
   });
 });

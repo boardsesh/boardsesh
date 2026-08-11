@@ -102,10 +102,16 @@ export function DevicePickerSheet({
   // copy that is actually actionable. See lib/ble/android-scan-location-gate.ts.
   const locationHint = useAndroidScanLocationHint(showEmptyState);
   const showLocationHint = locationHint.shouldOfferLocationGrant || locationHint.wasGranted;
-  const { requestLocationPermission } = locationHint;
+  // Same idea, but for Android 11 and below: the permission is fine, the
+  // system-wide Location toggle is off. See android-scan-location-gate.ts.
+  const showLocationServicesHint = locationHint.shouldOfferLocationServicesEnable || locationHint.servicesWereEnabled;
+  const { requestLocationPermission, promptEnableLocationServices } = locationHint;
   const handleGrantLocation = useCallback(() => {
     void requestLocationPermission();
   }, [requestLocationPermission]);
+  const handleEnableLocationServices = useCallback(() => {
+    void promptEnableLocationServices();
+  }, [promptEnableLocationServices]);
 
   return (
     <BottomSheetModal
@@ -185,10 +191,34 @@ export function DevicePickerSheet({
           </View>
         )}
 
+        {/* Android 11 and below: the permission is granted, but the system
+            Location toggle is off, so AOSP withholds every scan result. */}
+        {!showLocationHint && showLocationServicesHint && (
+          <View style={styles.troubleshoot}>
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {t('ble.locationServicesHintTitle')}
+            </Text>
+            <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
+              {locationHint.servicesWereEnabled
+                ? t('ble.locationServicesHintEnabled')
+                : t('ble.locationServicesHintBody')}
+            </Text>
+            {locationHint.shouldOfferLocationServicesEnable && (
+              <Button
+                title={t('ble.locationServicesHintEnable')}
+                onPress={handleEnableLocationServices}
+                variant="text"
+                size="medium"
+                loading={locationHint.isPromptingServices}
+              />
+            )}
+          </View>
+        )}
+
         {/* Only when the board they want may be missing — not when it's clearly
             listed, and not while the initial scan is still running (showEmptyState
             gates the zero-device path on the scan having finished empty). */}
-        {!showLocationHint && (showEmptyState || noneMatchedSelectedType) && (
+        {!showLocationHint && !showLocationServicesHint && (showEmptyState || noneMatchedSelectedType) && (
           <View style={styles.troubleshoot}>
             <Text variant="footnote" color={systemColors.secondaryLabel}>
               {t('ble.troubleshootTitle')}
