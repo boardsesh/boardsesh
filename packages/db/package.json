@@ -79,6 +79,7 @@
     "test:explain": "tsx --test src/queries/climbs/__tests__/search-climbs-explain.integration.test.ts",
     "test:migration-journal": "tsx --test scripts/migration-journal-verification.integration.test.ts",
     "db:verify-journal": "tsx scripts/verify-migration-journal.ts",
+    "db:normalize-ledger": "tsx scripts/normalize-ledger-timestamps.ts",
     "db:studio": "drizzle-kit studio",
     "db:import-moonboard": "tsx scripts/import-moonboard-problems.ts",
     "db:import-moonboard-2024": "tsx scripts/import-moonboard-2024.ts",

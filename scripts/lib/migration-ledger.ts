@@ -41,6 +41,86 @@ export interface ExpectedMigration {
 }
 
 /**
+ * The same entry with the journal's own `when` attached — the value drizzle
+ * writes into `created_at` when it applies a migration itself
+ * (`PgDialect.migrate()` inserts `migration.folderMillis`, which
+ * `readMigrationFiles` copies straight from `journalEntry.when`).
+ *
+ * Only the timestamp planner below needs it; everything else keys on `hash`.
+ */
+export interface ExpectedMigrationWithWhen extends ExpectedMigration {
+  when: number;
+}
+
+/** One row of `drizzle."__drizzle_migrations"`, as the normaliser reads it. */
+export interface LedgerTimestampRow {
+  id: number;
+  hash: string;
+  createdAt: number;
+}
+
+/** A single `UPDATE … SET created_at = to WHERE id = id`, with the tag for the log line. */
+export interface LedgerTimestampRepair {
+  id: number;
+  tag: string;
+  from: number;
+  to: number;
+}
+
+/**
+ * Ledger rows whose `created_at` is not the journal `when` drizzle would have
+ * written, paired with the value they should carry.
+ *
+ * Why any row is ever wrong: the `boardsesh-dev-db` image applies the journal in
+ * a psql loop and stamps each ledger row with the image's *build* wall clock
+ * instead of the entry's `when`. That makes the ledger's high-water mark a build
+ * timestamp — far above every journal `when` — so drizzle's applier skips any
+ * migration added afterwards, forever, and `VERIFY_MIGRATION_JOURNAL=1` reports
+ * it as a genuine gap. Rewriting `created_at` to `when` writes exactly the value
+ * drizzle itself writes, so this is a no-op on any drizzle-managed database and a
+ * repair only where something else did the stamping.
+ *
+ * Pairing is positional within a hash, not a `Map<hash, when>` lookup:
+ * byte-identical `.sql` files share a hash (see the `0177_illegal_omega_red`
+ * note in `scripts/lib/drizzle-migrations.ts`), and a map would stamp both ledger
+ * rows with the first entry's `when`. The k-th ledger row bearing hash H (in `id`
+ * order — the order they were inserted) pairs with the k-th journal entry bearing
+ * hash H.
+ *
+ * Ledger rows whose hash matches no journal entry are left alone, the same rule
+ * `findUnappliedMigrations` applies in the other direction: those are renumber
+ * residue, and inventing a timestamp for them would be a guess.
+ */
+export function planLedgerTimestampRepairs(
+  expected: readonly ExpectedMigrationWithWhen[],
+  ledgerRows: readonly LedgerTimestampRow[],
+): LedgerTimestampRepair[] {
+  const entriesByHash = new Map<string, ExpectedMigrationWithWhen[]>();
+  for (const migration of expected) {
+    const entries = entriesByHash.get(migration.hash);
+    if (entries) {
+      entries.push(migration);
+    } else {
+      entriesByHash.set(migration.hash, [migration]);
+    }
+  }
+
+  const nextIndexByHash = new Map<string, number>();
+  const repairs: LedgerTimestampRepair[] = [];
+  for (const row of [...ledgerRows].sort((left, right) => left.id - right.id)) {
+    const entries = entriesByHash.get(row.hash);
+    if (!entries) continue;
+    const nextIndex = nextIndexByHash.get(row.hash) ?? 0;
+    const entry = entries[nextIndex];
+    if (!entry) continue;
+    nextIndexByHash.set(row.hash, nextIndex + 1);
+    if (row.createdAt === entry.when) continue;
+    repairs.push({ id: row.id, tag: entry.tag, from: row.createdAt, to: entry.when });
+  }
+  return repairs;
+}
+
+/**
  * Journal-order list of tags that have no matching row in the ledger.
  *
  * Multiset-aware on purpose: two byte-identical `.sql` files share a hash, and

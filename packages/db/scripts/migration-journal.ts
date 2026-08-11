@@ -9,6 +9,7 @@ import {
   formatMigrationGapError,
   partitionMissingMigrations,
   type ExpectedMigration,
+  type ExpectedMigrationWithWhen,
 } from '../../../scripts/lib/migration-ledger.js';
 import {
   EMPTY_LEDGER_BASELINE,
@@ -141,7 +142,7 @@ export function readExpectedMigrations(
   readFiles: (config: {
     migrationsFolder: string;
   }) => readonly { folderMillis: number; hash: string }[] = readMigrationFiles,
-): ExpectedMigration[] {
+): ExpectedMigrationWithWhen[] {
   const journalPath = path.join(migrationsFolder, 'meta', '_journal.json');
   const journal = JSON.parse(fs.readFileSync(journalPath, 'utf-8')) as MigrationJournal;
   const migrationFiles = readFiles({ migrationsFolder });
@@ -160,7 +161,12 @@ export function readExpectedMigrations(
           `when ${journalEntry.when}. readMigrationFiles no longer returns journal order.`,
       );
     }
-    return { tag: journalEntry.tag, hash: migrationFile.hash };
+    // `when` rides along for `normalize-ledger-timestamps.ts`: it is the exact
+    // value drizzle stamps into `created_at` (it inserts `folderMillis`, which
+    // the assertion just above pins to this same `when`), so the normaliser
+    // never has to re-derive a timestamp any more than this module re-derives a
+    // hash.
+    return { tag: journalEntry.tag, hash: migrationFile.hash, when: journalEntry.when };
   });
 }
 

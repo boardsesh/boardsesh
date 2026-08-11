@@ -27,6 +27,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { findUnappliedMigrations } from '../../../scripts/lib/migration-ledger.js';
 import { PRODUCTION_LEDGER_BASELINE, type LedgerBaseline } from '../../../scripts/lib/migration-ledger-baseline.js';
+import { DRIZZLE_LEDGER_TABLE, normalizeLedgerTable } from './normalize-ledger-timestamps.js';
 import {
   DRIZZLE_MIGRATIONS_FOLDER,
   assertMigrationJournalApplied,
@@ -603,6 +604,101 @@ describe('migration journal verification (#2933)', () => {
         `${spelling} must resolve to the production baseline`,
       );
     }
+  });
+
+  it('unblocks a build-clock-stamped ledger so drizzle applies the next migration (#4211)', async (context) => {
+    const adminUrl = localDatabaseUrl();
+    if (!adminUrl) {
+      context.skip('set DATABASE_URL to a local Postgres to run');
+      return;
+    }
+    // The dev-db image's exact shape: the journal is applied by a psql loop that
+    // stamps every ledger row with the image's build clock instead of the
+    // entry's `when`. That single value is a high-water mark drizzle can never
+    // clear, so every migration written after the image was built is skipped —
+    // on that deploy and on every one after it.
+    const migrationsFolder = makeTempFolder('build-clock');
+    const scratchUrl = await createScratchDatabase(adminUrl, 'build_clock');
+    writeMigrationsFolder(migrationsFolder, PHASE_ONE);
+    await applyMigrations(scratchUrl, migrationsFolder);
+
+    // As drizzle left it, there is nothing to repair — the normaliser writes the
+    // same value drizzle already wrote.
+    const drizzleManagedPlan = await withScratchClient(scratchUrl, (client) =>
+      normalizeLedgerTable(client, DRIZZLE_LEDGER_TABLE, readExpectedMigrations(migrationsFolder), { dryRun: true }),
+    );
+    assert.deepEqual(drizzleManagedPlan, [], 'a drizzle-managed ledger must need no repair');
+
+    const BUILD_CLOCK = 1_800_000_000_000;
+    await withScratchClient(scratchUrl, async (client) => {
+      await client`UPDATE drizzle."__drizzle_migrations" SET created_at = ${BUILD_CLOCK}`;
+    });
+
+    // A new migration lands, appended above every journal `when` but far below
+    // the build clock.
+    const laterEntry = { tag: '0002_later', when: 4000, sql: 'CREATE TABLE mjv_t_later (id int);' };
+    writeMigrationsFolder(migrationsFolder, [...PHASE_ONE, laterEntry]);
+    await applyMigrations(scratchUrl, migrationsFolder);
+
+    assert.equal(
+      await tableExists(scratchUrl, 'mjv_t_later'),
+      false,
+      'the build-clock high-water mark is expected to make drizzle skip the new migration',
+    );
+    await assert.rejects(
+      withScratchClient(scratchUrl, (client) =>
+        assertMigrationJournalApplied(readLedgerHashesWith(client), migrationsFolder),
+      ),
+      /0002_later/,
+      'the gate must see the skip as a real gap',
+    );
+
+    // The repair: rewrite created_at to each entry's own `when`.
+    const repairs = await withScratchClient(scratchUrl, (client) =>
+      normalizeLedgerTable(client, DRIZZLE_LEDGER_TABLE, readExpectedMigrations(migrationsFolder)),
+    );
+    assert.deepEqual(
+      repairs.map((repair) => ({ tag: repair.tag, to: repair.to })),
+      [
+        { tag: '0000_a', to: 1000 },
+        { tag: '0001_b', to: 3000 },
+      ],
+      'only the two rows the image stamped exist, and each takes its own journal when',
+    );
+
+    await applyMigrations(scratchUrl, migrationsFolder);
+    assert.equal(await tableExists(scratchUrl, 'mjv_t_later'), true, 'the repaired ledger must let the migration run');
+    await assert.doesNotReject(
+      withScratchClient(scratchUrl, (client) =>
+        assertMigrationJournalApplied(readLedgerHashesWith(client), migrationsFolder),
+      ),
+    );
+
+    // And drizzle's own row for the newly applied migration already carries the
+    // journal `when`, so a second pass finds nothing to do.
+    const secondPass = await withScratchClient(scratchUrl, (client) =>
+      normalizeLedgerTable(client, DRIZZLE_LEDGER_TABLE, readExpectedMigrations(migrationsFolder), { dryRun: true }),
+    );
+    assert.deepEqual(secondPass, [], 'the repair must be idempotent');
+  });
+
+  it('leaves a ledger table it cannot find alone (#4211)', async (context) => {
+    const adminUrl = localDatabaseUrl();
+    if (!adminUrl) {
+      context.skip('set DATABASE_URL to a local Postgres to run');
+      return;
+    }
+    // Older images have no legacy public."__drizzle_migrations" (and a brand new
+    // database has no drizzle schema at all). `vp run db:up` runs the normaliser
+    // unconditionally, so an absent table must be a quiet no-op, not a crash.
+    const migrationsFolder = makeTempFolder('absent-table');
+    const scratchUrl = await createScratchDatabase(adminUrl, 'absent_table');
+    writeMigrationsFolder(migrationsFolder, PHASE_ONE);
+
+    const plan = await withScratchClient(scratchUrl, (client) =>
+      normalizeLedgerTable(client, DRIZZLE_LEDGER_TABLE, readExpectedMigrations(migrationsFolder)),
+    );
+    assert.deepEqual(plan, []);
   });
 
   it('keeps findUnappliedMigrations multiset-aware for byte-identical migrations', () => {

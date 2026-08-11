@@ -171,6 +171,15 @@ export default defineConfig({
         command: 'bun run --filter=@boardsesh/db db:verify-journal',
         cache: false,
       },
+      // Rewrites created_at in drizzle's ledger to each entry's journal `when`
+      // (#4211), repairing a database whose ledger was stamped with the dev-db
+      // image's build clock instead — that timestamp is a high-water mark no
+      // later migration can clear, so drizzle silently skips them forever. No
+      // db:up dependency: db:up itself runs this, and a dependency would cycle.
+      'db:normalize-ledger': {
+        command: 'bun run --filter=@boardsesh/db db:normalize-ledger',
+        cache: false,
+      },
       'db:studio': {
         command: 'bun run --filter=@boardsesh/db db:studio',
         dependsOn: ['db:up'],
