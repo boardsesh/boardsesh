@@ -38,8 +38,11 @@ export function buildManageItems(
   labels: { ownedHeader: string; followingHeader: string },
 ): ManageItem[] {
   const items: ManageItem[] = [];
-  const owned = boards.filter((board) => boardIsOwnedBy(board, currentUserId));
-  const followed = boards.filter((board) => !boardIsOwnedBy(board, currentUserId));
+  const owned: UserBoard[] = [];
+  const followed: UserBoard[] = [];
+  for (const board of boards) {
+    (boardIsOwnedBy(board, currentUserId) ? owned : followed).push(board);
+  }
   if (owned.length > 0) {
     items.push({ type: 'header', key: 'header:owned', title: labels.ownedHeader });
     for (const board of owned) {

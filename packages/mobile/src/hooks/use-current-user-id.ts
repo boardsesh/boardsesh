@@ -4,6 +4,12 @@ import { userIdFromJwt } from '../lib/jwt-user-id';
 
 export const STORED_USER_ID_QUERY_KEY = ['storedJwtUserId'] as const;
 
+export type StoredUserId = {
+  userId: string | undefined;
+  /** The keychain read is still in flight — not yet "there is no id". */
+  isLoading: boolean;
+};
+
 /**
  * The signed-in user's id, read from the JWT already sitting in SecureStore.
  *
@@ -22,8 +28,8 @@ export const STORED_USER_ID_QUERY_KEY = ['storedJwtUserId'] as const;
  * derives the id instead of persisting a second identity field — one less thing
  * that can outlive an account on a shared device.
  */
-export function useStoredUserId(enabled: boolean): string | undefined {
-  const { data } = useQuery({
+export function useStoredUserId(enabled: boolean): StoredUserId {
+  const { data, isLoading } = useQuery({
     queryKey: STORED_USER_ID_QUERY_KEY,
     // `?? null` because React Query rejects an undefined resolution as a
     // programming error ("Query data cannot be undefined"); "no id" is a real,
@@ -31,9 +37,13 @@ export function useStoredUserId(enabled: boolean): string | undefined {
     queryFn: async () => userIdFromJwt(await getAuthToken()) ?? null,
     enabled,
     // The keychain read is cheap but the answer only changes across a sign-in /
-    // sign-out, both of which clear the cache anyway.
+    // sign-out, both of which clear the cache anyway. `gcTime: Infinity` is safe
+    // for the same reason: `runSignedOutCleanup`'s `queryClient.clear()` drops
+    // the entry, so it can't outlive the account that produced it.
     staleTime: Infinity,
     gcTime: Infinity,
   });
-  return data ?? undefined;
+  // `isLoading` (not `isPending`) so a disabled query never reads as in-flight —
+  // callers gate their loading state on this and would otherwise spin forever.
+  return { userId: data ?? undefined, isLoading };
 }

@@ -41,6 +41,7 @@ const state = vi.hoisted(() => ({
   profileId: undefined as string | undefined,
   /** What the JWT already in SecureStore decodes to — the offline id source. */
   storedUserId: undefined as string | undefined,
+  isStoredUserIdLoading: false,
   isProfileLoading: false,
   offlineCards: [] as unknown[],
   enabledBoards: [] as string[],
@@ -273,7 +274,8 @@ vi.mock('../../../src/hooks/use-is-offline', () => ({ useIsOffline: () => state.
 vi.mock('../../../src/hooks/use-current-user-id', () => ({
   useStoredUserId: (enabled: boolean) => {
     storedUserIdEnabledMock(enabled);
-    return enabled ? state.storedUserId : undefined;
+    if (!enabled) return { userId: undefined, isLoading: false };
+    return { userId: state.storedUserId, isLoading: state.isStoredUserIdLoading };
   },
 }));
 vi.mock('../../../src/sync', () => ({ useSyncStatus: () => state.syncStatus }));
@@ -359,6 +361,7 @@ beforeEach(() => {
   state.isOffline = false;
   state.profileId = undefined;
   state.storedUserId = undefined;
+  state.isStoredUserIdLoading = false;
   state.isProfileLoading = false;
   state.offlineCards = [];
   state.enabledBoards = [];
@@ -937,6 +940,27 @@ describe('My Boards offline with a persisted user id (#4003)', () => {
     expect(screen.getByText('Your boards')).toBeTruthy();
     expect(screen.getByText('Network board')).toBeTruthy();
     expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-readonly')).toBe('false');
+  });
+
+  it('holds the spinner while the keychain read is still in flight', () => {
+    // The profile settled with nothing, but the JWT read hasn't come back yet.
+    // Rendering here would flash the error state on the way to the grouped list.
+    state.isOffline = false;
+    state.profileId = undefined;
+    state.isProfileLoading = false;
+    state.isStoredUserIdLoading = true;
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+
+    render(createElement(ManageBoards));
+
+    expect(screen.getByTestId('spinner')).toBeTruthy();
+    expect(screen.queryByText('Something went wrong')).toBeNull();
+    expect(screen.queryByText('Network board')).toBeNull();
   });
 
   it('never reads the keychain once the profile has answered', () => {

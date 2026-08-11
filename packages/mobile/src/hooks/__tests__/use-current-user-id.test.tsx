@@ -32,20 +32,20 @@ describe('useStoredUserId', () => {
 
   it('resolves the id from the stored JWT', async () => {
     getAuthToken.mockResolvedValue(tokenForUser('user-42'));
-    const { result } = renderHook(() => useStoredUserId(true), { wrapper: wrapper() });
+    const { result } = renderHook(() => useStoredUserId(true).userId, { wrapper: wrapper() });
     await waitFor(() => expect(result.current).toBe('user-42'));
   });
 
   it('stays undefined when the keychain has no token', async () => {
     getAuthToken.mockResolvedValue(null);
-    const { result } = renderHook(() => useStoredUserId(true), { wrapper: wrapper() });
+    const { result } = renderHook(() => useStoredUserId(true).userId, { wrapper: wrapper() });
     await waitFor(() => expect(getAuthToken).toHaveBeenCalled());
     expect(result.current).toBeUndefined();
   });
 
   it('stays undefined when the stored token is malformed', async () => {
     getAuthToken.mockResolvedValue('not-a-jwt');
-    const { result } = renderHook(() => useStoredUserId(true), { wrapper: wrapper() });
+    const { result } = renderHook(() => useStoredUserId(true).userId, { wrapper: wrapper() });
     await waitFor(() => expect(getAuthToken).toHaveBeenCalled());
     expect(result.current).toBeUndefined();
   });
@@ -55,6 +55,24 @@ describe('useStoredUserId', () => {
     const { result } = renderHook(() => useStoredUserId(false), { wrapper: wrapper() });
     await Promise.resolve();
     expect(getAuthToken).not.toHaveBeenCalled();
-    expect(result.current).toBeUndefined();
+    expect(result.current.userId).toBeUndefined();
+    // A disabled query is "pending" in React Query terms; callers gate their
+    // loading state on this, so it must read as settled.
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it('reports the in-flight read so callers can hold their loading state', async () => {
+    let releaseToken!: (token: string) => void;
+    getAuthToken.mockReturnValue(
+      new Promise<string>((resolve) => {
+        releaseToken = resolve;
+      }),
+    );
+    const { result } = renderHook(() => useStoredUserId(true), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isLoading).toBe(true));
+
+    releaseToken(tokenForUser('user-7'));
+    await waitFor(() => expect(result.current.userId).toBe('user-7'));
+    expect(result.current.isLoading).toBe(false);
   });
 });

@@ -39,7 +39,12 @@ function base64UrlToBytes(segment: string): Uint8Array | undefined {
   return Uint8Array.from(bytes);
 }
 
-/** bytes → string, decoding UTF-8 by hand so no `TextDecoder` polyfill is assumed. */
+/**
+ * bytes → string, decoding UTF-8 by hand. Hermes ships `TextDecoder`, but this
+ * module also runs under the web build and under Vitest's jsdom, and a decoder
+ * that throws on a malformed sequence would defeat the never-throw contract
+ * above. 25 lines buys "works everywhere, fails soft".
+ */
 function utf8Decode(bytes: Uint8Array): string {
   let decoded = '';
   let index = 0;

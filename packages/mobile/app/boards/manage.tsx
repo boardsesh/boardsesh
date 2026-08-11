@@ -87,7 +87,7 @@ export default function ManageBoards() {
   // The profile is the fresher answer but it's network-only. Fall back to the id
   // the signed JWT already carries on this device, so owned-vs-followed survives a
   // cold start with no signal (and an online profile fetch that simply fails).
-  const storedUserId = useStoredUserId(isAuthenticated && !profile?.id);
+  const { userId: storedUserId, isLoading: isStoredUserIdLoading } = useStoredUserId(isAuthenticated && !profile?.id);
   const currentUserId = profile?.id ?? storedUserId;
   const { data: activeBoard } = useActiveBoard();
   const activeUuid = activeBoard?.uuid;
@@ -292,8 +292,11 @@ export default function ManageBoards() {
   // undefined id would confidently mis-file every board.
   const isOffline = useIsOffline();
   const offlineCards = useOfflineBoards();
-  const profileUnavailable = !currentUserId && !isProfileLoading;
-  const shouldUseOfflineList = isOffline || profileUnavailable || (isError && myBoards.length === 0);
+  // "No id is coming" — both sources have to have settled, or a slow keychain read
+  // would briefly look like a missing identity and flip the screen to the offline
+  // list on its way to the normal one.
+  const noUserIdAvailable = !currentUserId && !isProfileLoading && !isStoredUserIdLoading;
+  const shouldUseOfflineList = isOffline || noUserIdAvailable || (isError && myBoards.length === 0);
   const offlineItems = useMemo(() => {
     if (!shouldUseOfflineList) return EMPTY_ITEMS;
     const rows = offlineBoardRows({
@@ -513,7 +516,10 @@ export default function ManageBoards() {
   // Wait for an id too: owned-vs-followed is keyed on currentUserId, so rendering
   // before either source resolves would file the user's own boards under
   // "Following" (myBoards can win the race on a cold open / deep link).
-  if (!showOfflineList && ((isLoading && myBoards.length === 0) || (isProfileLoading && !currentUserId))) {
+  if (
+    !showOfflineList &&
+    ((isLoading && myBoards.length === 0) || ((isProfileLoading || isStoredUserIdLoading) && !currentUserId))
+  ) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         <ActivityIndicator size="large" />
