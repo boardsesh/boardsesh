@@ -1,6 +1,22 @@
 {
-  "generatedAt": "2026-08-10T21:53:38.027Z",
+  "generatedAt": "2026-08-11T02:55:23.199Z",
   "entries": [
+    {
+      "prNumber": 4250,
+      "category": "new",
+      "title": "Queue climbs from more than one board in the same session. Tap a climb that's set on",
+      "mergedAt": "2026-08-11T02:54:58Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4250",
+      "body": "another board and you get the choice: add it anyway, switch over to that board, or\nback out."
+    },
+    {
+      "prNumber": 4255,
+      "category": "new",
+      "title": "Filter the climb list by the stars you gave: set a minimum, or show only the climbs you've rated",
+      "mergedAt": "2026-08-11T02:54:01Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4255",
+      "body": "Works offline on a downloaded board, and re-rating a climb updates what the filter shows"
+    },
     {
       "prNumber": 4233,
       "category": "new",

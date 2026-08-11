@@ -4,6 +4,16 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-11
+
+### New
+
+- Queue climbs from more than one board in the same session. Tap a climb that's set on ([#4250](https://github.com/boardsesh/boardsesh/pull/4250))
+  another board and you get the choice: add it anyway, switch over to that board, or
+  back out.
+- Filter the climb list by the stars you gave: set a minimum, or show only the climbs you've rated ([#4255](https://github.com/boardsesh/boardsesh/pull/4255))
+  Works offline on a downloaded board, and re-rating a climb updates what the filter shows
+
 ## 2026-08-10
 
 ### New
