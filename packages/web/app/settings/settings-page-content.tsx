@@ -125,7 +125,7 @@ export default function SettingsPageContent() {
   const [profile, setProfile] = useState<MyProfile | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | undefined>();
-  const { token: authToken } = useWsAuthToken();
+  const { token: authToken, isLoading: authTokenLoading } = useWsAuthToken();
   const { refreshProfile: refreshPartyProfile } = usePartyProfile();
   const { showMessage } = useSnackbar();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -190,6 +190,24 @@ export default function SettingsPageContent() {
       void fetchProfile();
     }
   }, [status, authToken, fetchProfile]);
+
+  // ws-auth settled without a token (its retries ran out). Only the profile
+  // card needs that token — Aurora credentials, controllers, watch pairing,
+  // grade format and account deletion all still work, so release the
+  // page-level spinner instead of stranding the whole of /settings on it.
+  const wsAuthDeadEnd = status === 'authenticated' && !authToken && !authTokenLoading;
+  const reportedWsAuthDeadEnd = useRef(false);
+  useEffect(() => {
+    if (!wsAuthDeadEnd) {
+      reportedWsAuthDeadEnd.current = false;
+      return;
+    }
+    setLoading(false);
+    if (!reportedWsAuthDeadEnd.current) {
+      reportedWsAuthDeadEnd.current = true;
+      showMessage(t('loading.profileError'), 'error');
+    }
+  }, [wsAuthDeadEnd, showMessage, t]);
 
   // Clean up preview URL when component unmounts
   useEffect(() => {

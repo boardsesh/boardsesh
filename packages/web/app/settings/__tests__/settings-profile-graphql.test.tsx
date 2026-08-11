@@ -153,6 +153,23 @@ describe('settings profile form over GraphQL', () => {
     expect(mocks.graphqlRequest).not.toHaveBeenCalled();
   });
 
+  // ws-auth has its own retry budget and can settle with no token at all. Only
+  // the profile card needs it, so the rest of /settings (Aurora credentials,
+  // account deletion, grade format) must still render rather than sitting
+  // behind the page-level spinner forever.
+  it('stops the page spinner when ws-auth settles without a token', async () => {
+    mocks.wsAuthToken.token = null;
+    mocks.wsAuthToken.isLoading = false;
+
+    render(<SettingsPageContent />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('set-password-section')).toBeTruthy();
+    });
+    expect(mocks.graphqlRequest).not.toHaveBeenCalled();
+    expect(mocks.showMessage).toHaveBeenCalledWith('loading.profileError', 'error');
+  });
+
   it('seeds the form and the password section from the profile query', async () => {
     await renderLoadedSettings();
 
