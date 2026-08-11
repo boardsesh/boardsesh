@@ -189,6 +189,33 @@ describe('reportHandledError', () => {
     });
   });
 
+  it('follows the .cause chain of a synthetic wrapper to find the transport failure (#4238)', () => {
+    // The snapshot-bootstrap reporter wraps its own prose around the real error.
+    // The wrapper message matches nothing, so before the cause was attached this
+    // reached Sentry at level: error for every user who opened the app offline.
+    const wrapped = new Error('Snapshot bootstrap failed for kilter:1:10 at stage "manifest" (attempt 1)', {
+      cause: new TypeError('Network request failed'),
+    });
+    reportHandledError(wrapped, { tags: { source: 'offline-sync', kind: 'snapshot-bootstrap' } });
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(wrapped, {
+      level: 'warning',
+      tags: { source: 'offline-sync', kind: 'snapshot-bootstrap', network: true },
+    });
+  });
+
+  it('reaches a transport cause nested two wrappers deep (expo-file-system inside our own wrapper)', () => {
+    const wrapped = new Error('Snapshot bootstrap failed for kilter:1:10 at stage "download" (attempt 1)', {
+      cause: new Error('snapshot download: File.downloadFileAsync failed for kilter:1: The request timed out.', {
+        cause: Object.assign(new Error('The request timed out.'), { name: 'UnableToDownloadException' }),
+      }),
+    });
+    reportHandledError(wrapped, { tags: { source: 'offline-sync' } });
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(wrapped, {
+      level: 'warning',
+      tags: { source: 'offline-sync', network: true },
+    });
+  });
+
   it('forces warning for a network error even if the caller asked for a higher level', () => {
     const offline = new TypeError('Network request failed');
     reportHandledError(offline, { level: 'fatal', tags: { source: 'x' } });

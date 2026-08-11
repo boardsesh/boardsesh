@@ -13,14 +13,17 @@
 //
 // The engine only consumes what this returns — it never fetches, downloads, or
 // gunzips anything itself (see snapshot-bootstrap.ts's `SnapshotSource`
-// contract). Every failure path here (disk space, directory creation, download
-// error, a stubborn gzip body) THROWS a descriptive Error, which the engine
-// counts as one bootstrap attempt and falls back to the ordinary paged crawl
-// (MAX_BOOTSTRAP_ATTEMPTS caps it at two tries before giving up on the
-// snapshot path for that scope) — see `runBootstrapPhase`'s `cachedDownload`
-// handling in pull-client.ts, which only captures a `cause` for Sentry when
-// this throws (issue #4106: these used to `return null` on real failures,
-// which is a legal contract but reported `cause: null` for everything).
+// contract). EVERY failure path here (disk space, directory creation, download
+// error, an unreadable body, a stubborn gzip body) THROWS a descriptive Error
+// carrying the underlying exception as its `cause`, and the engine reports that
+// chain — see `runBootstrapPhase`'s `cachedDownload` handling in pull-client.ts.
+// A transport-shaped cause burns NO bootstrap attempt; anything else counts,
+// and MAX_BOOTSTRAP_ATTEMPTS caps it at two tries before the scope settles into
+// the ordinary paged crawl (issue #4106: these used to `return null` on real
+// failures, which is a legal contract but reported `cause: null` for
+// everything; issue #4238: the causes that survived were only interpolated into
+// the message, so the classifier could not see them and every offline user's
+// failure landed as a Sentry `error`).
 
 import { Directory, File, Paths } from 'expo-file-system';
 import { SnapshotPermanentMissError, type SnapshotManifestEntry, type SnapshotSource } from '@boardsesh/offline-sync';
@@ -134,9 +137,14 @@ function formatError(error: unknown): string {
  * `catch`) stayed `null` for every one of these — so Sentry's
  * `reportSnapshotBootstrapError` reported `cause: null` for every real-world
  * download failure, with no way to tell a 404 from a timeout from a disk-full
- * device without reproducing it (issue #4106). Throwing instead of swallowing
- * keeps the exact same retry/attempt/fallback semantics — only the visibility
- * changes.
+ * device without reproducing it (issue #4106).
+ *
+ * Each wrapper keeps the underlying exception as its `cause` as well as in its
+ * message. The message alone reads fine in Sentry's title but is invisible to
+ * the shared transport classifier, which walks `.cause` — and that classifier is
+ * what decides whether expo-file-system's `UnableToDownloadException("The
+ * request timed out.")` is an offline user (a warning) or a real fault (an
+ * error). Issue #4238.
  */
 async function downloadArtifact(entry: SnapshotManifestEntry): Promise<{ filePath: string } | null> {
   const freeSpaceSafetyMultiplier =
@@ -154,7 +162,7 @@ async function downloadArtifact(entry: SnapshotManifestEntry): Promise<{ filePat
   try {
     directory.create({ intermediates: true, idempotent: true });
   } catch (error) {
-    throw new Error(`snapshot download: failed to create cache directory: ${formatError(error)}`);
+    throw new Error(`snapshot download: failed to create cache directory: ${formatError(error)}`, { cause: error });
   }
 
   // Content-addressed filename (boardType/layoutId/builtAt) so a retried
@@ -169,6 +177,7 @@ async function downloadArtifact(entry: SnapshotManifestEntry): Promise<{ filePat
   } catch (error) {
     throw new Error(
       `snapshot download: File.downloadFileAsync failed for ${entry.boardType}:${entry.layoutId}: ${formatError(error)}`,
+      { cause: error },
     );
   }
 
@@ -176,10 +185,15 @@ async function downloadArtifact(entry: SnapshotManifestEntry): Promise<{ filePat
     let stillCompressed: boolean;
     try {
       stillCompressed = await looksGzipCompressed(downloaded);
-    } catch {
-      // Can't verify the body — treat it as untrustworthy, same as a failed download.
+    } catch (error) {
+      // Can't verify the body — treat it as untrustworthy, same as a failed
+      // download. This was the last path that still `return null`ed, and it is
+      // the one that reported `cause: null` to Sentry (issue #4238).
       safeDeleteFile(downloaded);
-      return null;
+      throw new Error(
+        `snapshot download: could not verify artifact encoding for ${entry.boardType}:${entry.layoutId}: ${formatError(error)}`,
+        { cause: error },
+      );
     }
     if (stillCompressed) {
       safeDeleteFile(downloaded);
