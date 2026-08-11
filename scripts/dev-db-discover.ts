@@ -21,6 +21,18 @@ const postgresProbeTimeoutMs = 2500;
 const redisProbeTimeoutMs = 800;
 const tailscaleStatusTimeoutMs = 1500;
 const maxTailscaleCandidates = 32;
+// Per-candidate ceiling covering the Postgres shape probe, the Redis port
+// probe, and connection teardown, so a single wedged candidate can never
+// stall the Promise.all in discoverDatabase().
+const probeCandidateBudgetMs = postgresProbeTimeoutMs + redisProbeTimeoutMs + 1_000;
+// See https://github.com/boardsesh/boardsesh/issues/3874: postgres.js
+// `client.end()` can leave a promise unsettled after its socket handle is
+// destroyed on a half-open connection. With no live timer/handle left, Bun
+// (and Node) treat the event loop as drained and exit 0 mid-`await` instead
+// of hanging or throwing. This watchdog keeps a real timer alive around
+// discovery so that scenario surfaces as a loud, actionable timeout instead
+// of a silent premature exit.
+const discoveryWatchdogTimeoutMs = 30_000;
 
 type CandidateSource = 'local-standalone' | 'tailscale' | 'env';
 
@@ -126,6 +138,31 @@ async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise
   }
 }
 
+export class DiscoveryTimeoutError extends Error {}
+
+/**
+ * Races `operation` against a real (non-unref'd) timer. The live timer
+ * handle is the point: it is what keeps the runtime's event loop from
+ * deciding "nothing left to do" and exiting 0 while `operation` is stuck
+ * unsettled (see the module-level comment on `discoveryWatchdogTimeoutMs`).
+ * The timer is always cleared once either side settles.
+ */
+export async function raceAgainstWatchdog<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const watchdog = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(
+      () => reject(new DiscoveryTimeoutError(`Discovery timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+  });
+
+  try {
+    return await Promise.race([operation, watchdog]);
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
+}
+
 async function isBoardseshDevDatabase(client: postgres.Sql): Promise<boolean> {
   const shapeRows = await client<BoardseshShapeRow[]>`
     SELECT
@@ -149,6 +186,13 @@ async function isBoardseshDevDatabase(client: postgres.Sql): Promise<boolean> {
 }
 
 async function probeDatabaseCandidate(candidate: DatabaseCandidate): Promise<DatabaseSelection | null> {
+  // Bound the entire probe (including connection teardown) so one wedged
+  // candidate can never stall the Promise.all in discoverDatabase() -- see
+  // the module-level comment on probeCandidateBudgetMs.
+  return withTimeout(probeDatabaseCandidateUnbounded(candidate), probeCandidateBudgetMs).catch(() => null);
+}
+
+async function probeDatabaseCandidateUnbounded(candidate: DatabaseCandidate): Promise<DatabaseSelection | null> {
   const connectionString = buildPostgresUrl(candidate.host);
   const client = postgres(connectionString, {
     max: 1,
@@ -171,7 +215,9 @@ async function probeDatabaseCandidate(candidate: DatabaseCandidate): Promise<Dat
   } catch {
     return null;
   } finally {
-    await client.end().catch(() => undefined);
+    // Force-close after 1s instead of waiting indefinitely for in-flight
+    // queries to settle on a half-open/filtered socket (issue #3874).
+    await client.end({ timeout: 1 }).catch(() => undefined);
   }
 }
 
@@ -333,7 +379,9 @@ async function runPendingMigrations(connectionString: string): Promise<void> {
       }
     }
   } finally {
-    await client.end().catch(() => undefined);
+    // Bound teardown for the same reason as probeDatabaseCandidateUnbounded
+    // above -- see the module-level comment on discoveryWatchdogTimeoutMs.
+    await client.end({ timeout: 5 }).catch(() => undefined);
   }
 }
 
@@ -365,7 +413,20 @@ function clearGeneratedEnv(): void {
 }
 
 async function main(): Promise<void> {
-  const selection = await discoverDatabase();
+  let selection: DatabaseSelection | null;
+  try {
+    // Watchdog covers discovery only -- migrations can legitimately take
+    // minutes and must not be raced against this timer.
+    selection = await raceAgainstWatchdog(discoverDatabase(), discoveryWatchdogTimeoutMs);
+  } catch (error) {
+    if (!(error instanceof DiscoveryTimeoutError)) throw error;
+    clearGeneratedEnv();
+    console.error(
+      `[dev-db] ${error.message}; falling back to Docker. See https://github.com/boardsesh/boardsesh/issues/3874.`,
+    );
+    process.exit(2);
+  }
+
   if (!selection) {
     clearGeneratedEnv();
     console.info('[dev-db] No local or Tailscale Boardsesh dev database found.');
@@ -389,7 +450,12 @@ async function main(): Promise<void> {
   console.info('  Test user: test@boardsesh.com / test');
 }
 
-main().catch((error: unknown) => {
-  console.error('[dev-db] Failed to discover or prepare a dev database:', error);
-  process.exit(1);
-});
+// Guarded so importing this module (e.g. from Vitest) never runs main() or
+// triggers its process.exit() side effects; `bun scripts/dev-db-discover.ts`
+// still executes it because import.meta.main is true for the entry script.
+if (import.meta.main) {
+  main().catch((error: unknown) => {
+    console.error('[dev-db] Failed to discover or prepare a dev database:', error);
+    process.exit(1);
+  });
+}
