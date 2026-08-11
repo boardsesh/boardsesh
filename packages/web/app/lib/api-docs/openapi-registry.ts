@@ -201,20 +201,6 @@ export const HoldClassificationSchema = z
   })
   .openapi('HoldClassification');
 
-// ============================================
-// Profile Schemas
-// ============================================
-
-export const UserProfileSchema = z
-  .object({
-    id: z.string().describe('User ID'),
-    displayName: z.string().nullable().describe('Display name'),
-    avatarUrl: z.string().nullable().describe('Avatar image URL'),
-    instagramUrl: z.string().nullable().describe('Instagram profile URL'),
-  })
-  .openapi('UserProfile');
-
-// ============================================
 // WebSocket Auth Schema
 // ============================================
 
@@ -236,4 +222,3 @@ registry.register('Setter', SetterSchema);
 registry.register('Angle', AngleSchema);
 registry.register('HoldType', HoldTypeSchema);
 registry.register('HoldClassification', HoldClassificationSchema);
-registry.register('UserProfile', UserProfileSchema);

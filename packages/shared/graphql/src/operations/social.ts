@@ -37,6 +37,8 @@ export const GET_PUBLIC_PROFILE = gql`
   query GetPublicProfile($userId: ID!) {
     publicProfile(userId: $userId) {
       id
+      isPrivate
+      canViewActivity
       displayName
       avatarUrl
       instagramUrl
