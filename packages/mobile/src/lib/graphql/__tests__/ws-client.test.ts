@@ -381,4 +381,53 @@ describe('native GraphQL WebSocket transport', () => {
     expect(getAuthTokenMock).toHaveBeenCalledTimes(1);
     await rawClient.dispose();
   });
+
+  // #4241: dispose() rejects with the raw closing Event/CloseEvent, not an
+  // Error — `void wsClient.dispose()` with no rejection handler let that
+  // escape as an unhandled rejection, which Hermes forwarded to Sentry as an
+  // opaque object. disposeWsClient() must fire-and-forget through a try/catch
+  // so the rejection never reaches the process.
+  describe('disposeWsClient (rejection safety)', () => {
+    it('swallows a dispose rejection without producing an unhandled rejection', async () => {
+      getWsClient();
+      const rawCloseEventLike = { type: 'close', code: 1001, reason: 'Stream end encountered', wasClean: false };
+      disposeSpy.mockRejectedValueOnce(rawCloseEventLike);
+
+      const unhandledRejections: unknown[] = [];
+      const onUnhandledRejection = (reason: unknown): void => {
+        unhandledRejections.push(reason);
+      };
+      process.on('unhandledRejection', onUnhandledRejection);
+      try {
+        disposeWsClient();
+        await vi.waitFor(() => expect(disposeSpy).toHaveBeenCalledTimes(1));
+        // Let the microtask queue flush so any unhandled rejection would have
+        // surfaced by now.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      } finally {
+        process.off('unhandledRejection', onUnhandledRejection);
+      }
+
+      expect(unhandledRejections).toEqual([]);
+    });
+
+    it('is idempotent — a second immediate call does not dispose again', () => {
+      getWsClient();
+      disposeWsClient();
+      expect(disposeSpy).toHaveBeenCalledTimes(1);
+
+      disposeWsClient();
+      expect(disposeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('nulls the singleton synchronously, so getWsClient() after dispose starts a fresh client lifecycle', () => {
+      getWsClient();
+      disposeWsClient();
+      expect(disposeSpy).toHaveBeenCalledTimes(1);
+
+      getWsClient();
+      disposeWsClient();
+      expect(disposeSpy).toHaveBeenCalledTimes(2);
+    });
+  });
 });

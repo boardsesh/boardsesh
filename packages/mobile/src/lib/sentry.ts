@@ -145,16 +145,97 @@ export function applyErrorContextToScope(scope: SentryScopeLike, context?: Error
   }
 }
 
+/** Result of normalizing a captured value into something Sentry can render usefully. */
+export type NormalizedCapturedError = {
+  error: Error;
+  extra?: Record<string, unknown>;
+};
+
+// Structural shape of a browser Event/CloseEvent/ErrorEvent — every field is
+// `unknown` on purpose since we only trust it after checking its runtime type.
+type EventLike = {
+  type?: unknown;
+  code?: unknown;
+  reason?: unknown;
+  wasClean?: unknown;
+  target?: unknown;
+};
+
+/**
+ * Strip a WebSocket URL down to protocol+host+pathname so a captured auth
+ * token or session id in the query string (or userinfo) never reaches
+ * Sentry. Returns undefined for anything that isn't a parseable URL string.
+ */
+function sanitizeSocketUrl(url: unknown): string | undefined {
+  if (typeof url !== 'string' || !url) return undefined;
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Normalizes a value on its way to `Sentry.captureException`. graphql-ws's
+ * `dispose()` and raw `wsClient.subscribe` error sinks reject/forward the
+ * browser's native `Event`/`CloseEvent` objects (not `Error` instances) on a
+ * WebSocket failure — Sentry renders those as `<unknown>` / `Event` /
+ * `anonymous`, discarding the close code and reason that would actually
+ * explain the failure (#4241).
+ *
+ * Duck-types on a `type` field rather than `instanceof Event`/`CloseEvent`:
+ * RN/Hermes' DOM-event polyfills aren't reliable across native vs. Expo-web,
+ * so structural detection is the only check that holds in both. A match is
+ * rewrapped as a proper `Error` (message carries the event type and close
+ * code, when present) with the code/reason/wasClean/readyState/sanitized
+ * socket URL surfaced as `extra` so triage isn't blind. Anything already an
+ * `Error` passes through unchanged; anything else (string, number, plain
+ * object with no `type`) falls back to `new Error(String(value))` so no
+ * value is ever handed to Sentry raw.
+ */
+export function normalizeCapturedValueForSentry(value: unknown): NormalizedCapturedError {
+  if (value instanceof Error) return { error: value };
+  if (typeof value === 'object' && value !== null && 'type' in value) {
+    const eventLike = value as EventLike;
+    const type = typeof eventLike.type === 'string' ? eventLike.type : 'unknown';
+    const code = typeof eventLike.code === 'number' ? eventLike.code : undefined;
+    const extra: Record<string, unknown> = { type };
+    if (code !== undefined) extra.code = code;
+    if (typeof eventLike.reason === 'string' && eventLike.reason) extra.reason = eventLike.reason;
+    if (typeof eventLike.wasClean === 'boolean') extra.wasClean = eventLike.wasClean;
+    if (typeof eventLike.target === 'object' && eventLike.target !== null) {
+      const target = eventLike.target as { readyState?: unknown; url?: unknown };
+      if (typeof target.readyState === 'number') extra.readyState = target.readyState;
+      const sanitizedUrl = sanitizeSocketUrl(target.url);
+      if (sanitizedUrl) extra.url = sanitizedUrl;
+    }
+    return {
+      error: new Error(`WebSocket ${type}${code !== undefined ? ` (code ${code})` : ''}`),
+      extra,
+    };
+  }
+  return { error: new Error(String(value)) };
+}
+
 /**
  * Report an error to Sentry if it is active. No-op otherwise. The optional
  * context (level/tags/extra) is mapped onto a Sentry scope so callers can attach
  * triage data — e.g. a `source` tag and HTTP status on a failed session start.
+ * The captured value is normalized first (see normalizeCapturedValueForSentry)
+ * so a raw WebSocket Event/CloseEvent never reaches Sentry as an opaque object.
  */
 export function captureToSentry(error: unknown, context?: ErrorReportContext): void {
   if (!isSentryEnabled) return;
+  const { error: normalizedError, extra } = normalizeCapturedValueForSentry(error);
   Sentry.withScope((scope) => {
     applyErrorContextToScope(scope, context);
-    Sentry.captureException(error);
+    if (extra) {
+      for (const [key, value] of Object.entries(extra)) {
+        scope.setExtra(key, value);
+      }
+    }
+    Sentry.captureException(normalizedError);
   });
 }
 

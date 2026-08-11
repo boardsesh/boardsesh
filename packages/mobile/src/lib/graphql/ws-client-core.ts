@@ -215,8 +215,17 @@ export function createWsClientModule(deps: WsClientDeps): WsClientModule {
 
   function disposeWsClient(): void {
     if (!wsClient) return;
-    void wsClient.dispose();
+    const client = wsClient;
     wsClient = null;
+    void (async () => {
+      try {
+        await client.dispose();
+      } catch {
+        // Suppress: dispose errors are non-fatal. The socket is being torn down
+        // and these rejections carry no actionable information (graphql-ws
+        // rejects with the raw closing Event/CloseEvent, not an Error).
+      }
+    })();
   }
 
   return { getWsClient, disposeWsClient };
