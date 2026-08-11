@@ -175,17 +175,22 @@ describe('credential selection + backoff (real DB)', () => {
   });
 
   it('treats a zero-failure credential with a recent attempt clock as retry-ready (SQL/JS parity)', async () => {
-    // consecutive_failures = 0 but attempted seconds ago. The JS mirror
+    // consecutive_failures = 0 but attempted 45 seconds ago. The JS mirror
     // (isCredentialInBackoff) returns not-in-backoff for zero failures, and the
     // SQL predicate must agree. Without the GREATEST(n-1, 0) guard on the
     // exponent, power(2, -1) = 0.5 would fabricate a ~1-minute window here and
     // wrongly exclude a healthy credential that just happens to carry an attempt
     // timestamp (a data inconsistency, but the two paths must not diverge).
+    //
+    // 45s is inside that fabricated 1-minute window (so the guard is still what
+    // this asserts) while clearing the claim's own 30-second reclaim gap
+    // (CREDENTIAL_MIN_RECLAIM_GAP_MS), which is a separate predicate covered in
+    // credential-claim-skip-locked.test.ts.
     await seedCredential({
       userId: USER_H1,
       syncStatus: 'active',
       consecutiveFailures: 0,
-      lastSyncAttemptAt: sql`now()`,
+      lastSyncAttemptAt: sql`now() - interval '45 seconds'`,
     });
 
     expect(await pickNextKilterCredential()).toBe(USER_H1);
