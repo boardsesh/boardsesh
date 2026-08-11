@@ -7600,6 +7600,8 @@ export type UpdateProfileInput = {
   avatarUrl?: InputMaybe<Scalars['String']['input']>;
   /** New display name */
   displayName?: InputMaybe<Scalars['String']['input']>;
+  /** New Instagram profile URL */
+  instagramUrl?: InputMaybe<Scalars['String']['input']>;
 };
 
 /**
@@ -7802,10 +7804,16 @@ export type UserProfile = {
   email: Scalars['String']['output'];
   /** Total number of climbs favourited by this user, across all boards */
   favoriteCount: Scalars['Int']['output'];
+  /** Whether the account has an email + password credential set */
+  hasPassword: Scalars['Boolean']['output'];
   /** Unique user identifier */
   id: Scalars['ID']['output'];
+  /** Link to the user's Instagram profile, when they set one */
+  instagramUrl?: Maybe<Scalars['String']['output']>;
   /** Whether this user can reach tester-only developer tooling (has the tester or admin community role) */
   isTester: Scalars['Boolean']['output'];
+  /** OAuth providers linked to this account (e.g. 'google', 'apple') */
+  linkedProviders: Array<Scalars['String']['output']>;
 };
 
 /** Paginated user search results. */
@@ -12906,8 +12914,11 @@ export type UserProfileResolvers<
   displayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   email?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   favoriteCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  hasPassword?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  instagramUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   isTester?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  linkedProviders?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 

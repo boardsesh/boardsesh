@@ -835,6 +835,12 @@ type UserProfile {
   displayName: String
   "URL to user's avatar image"
   avatarUrl: String
+  "Link to the user's Instagram profile, when they set one"
+  instagramUrl: String
+  "Whether the account has an email + password credential set"
+  hasPassword: Boolean!
+  "OAuth providers linked to this account (e.g. 'google', 'apple')"
+  linkedProviders: [String!]!
   "Whether this user can reach tester-only developer tooling (has the tester or admin community role)"
   isTester: Boolean!
   "When the account was created (ISO 8601)"
@@ -851,6 +857,8 @@ input UpdateProfileInput {
   displayName: String
   "New avatar URL"
   avatarUrl: String
+  "New Instagram profile URL"
+  instagramUrl: String
 }
 
 """
