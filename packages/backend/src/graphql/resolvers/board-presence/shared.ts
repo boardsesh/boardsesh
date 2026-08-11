@@ -289,6 +289,46 @@ export function normalizeSetIds(setIds: string | null | undefined): string {
     .join(',');
 }
 
+/**
+ * The board configuration a tick names: the board type it was logged against
+ * plus the layout/size/set triple from the route it was logged from. The three
+ * config fields are optional on the wire (`SaveTickInputSchema`), so a caller
+ * can omit them entirely.
+ */
+export interface TickBoardConfigTarget {
+  boardType: string;
+  layoutId?: number | null;
+  sizeId?: number | null;
+  setIds?: string | null;
+}
+
+/**
+ * Does a board's stored configuration match the one a tick names?
+ *
+ * Every board-resolution rung in `saveTick` accepts a candidate board only when
+ * its FULL config (type + layout + size + set) matches the tick's — otherwise a
+ * stale id/uuid stamps the tick onto the wrong wall and corrupts that board's
+ * stats and leaderboards. Set ids are compared normalized so order/format
+ * differences don't reject a real match.
+ *
+ * A tick that carries no layout/size/set matches nothing: without a config
+ * there is nothing to check, and accepting it would reopen the bypass this gate
+ * exists to close.
+ */
+export function boardConfigMatchesTick(
+  board: Pick<ActivePresenceBoard, 'boardType' | 'layoutId' | 'sizeId' | 'setIds'> | null | undefined,
+  target: TickBoardConfigTarget,
+): boolean {
+  if (!board) return false;
+  if (target.layoutId == null || target.sizeId == null || !target.setIds) return false;
+  return (
+    board.boardType === target.boardType &&
+    board.layoutId === target.layoutId &&
+    board.sizeId === target.sizeId &&
+    normalizeSetIds(board.setIds) === normalizeSetIds(target.setIds)
+  );
+}
+
 export async function requireActiveBoardById(boardId: number): Promise<ActivePresenceBoard> {
   assertValidBoardId(boardId);
   const board = await findActiveBoardById(boardId);

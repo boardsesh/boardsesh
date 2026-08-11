@@ -15,7 +15,7 @@ import {
   readTimestampFractionalSeconds,
 } from '../../../validation/schemas';
 import { resolveBoardFromPath } from '../social/boards';
-import { findActiveBoardById, normalizeSetIds } from '../board-presence/shared';
+import { boardConfigMatchesTick, findActiveBoardById } from '../board-presence/shared';
 import { queueBoardStatsPublish } from '../board-presence/stats';
 import { publishSocialEvent } from '../../../events';
 import { publishDebouncedSessionStats } from '../sessions/debounced-stats-publisher';
@@ -729,9 +729,12 @@ export const tickMutations = {
     // Resolve the tick's board_id. Four rungs, most specific first:
     //  1. boardUuid — a named-board route (`/b/<slug>/...`); attaches to that
     //     exact board entity even when the climber doesn't own it (e.g. a
-    //     seeded gym board owned by the system user). Best-effort: a deleted or
-    //     stale uuid records the tick unassociated rather than rejecting it, and
-    //     does NOT fall back to config resolution.
+    //     seeded gym board owned by the system user). Config-gated exactly like
+    //     rungs 2 and 3, so knowing a uuid isn't enough to stamp a tick onto
+    //     another board's stats (#4219). Best-effort: a deleted uuid, a stale
+    //     uuid, a config mismatch, or an input carrying no layout/size/set all
+    //     record the tick unassociated rather than rejecting it, and none of
+    //     them fall back to config resolution.
     //  2. boardId — the board-presence connected wall (resolveBoardForSerial),
     //     flag-gated. On a stale/mismatched id we warn and fall back to the
     //     config lookup rather than surfacing a raw FK/type mismatch.
@@ -760,23 +763,29 @@ export const tickMutations = {
       // Board may have been deleted or the client sent a stale UUID — just
       // record the tick without a board association rather than rejecting it.
       // board_id is nullable (onDelete: 'set null') so this is always valid.
-      if (board) {
+      // Same for a config mismatch: knowing a board's uuid must not be enough
+      // to add a tick to a wall the climber wasn't on (#4219).
+      if (board && boardConfigMatchesTick(board, validatedInput)) {
         boardId = board.id;
+      } else if (board) {
+        // Two different reasons to land here, and they mean different things in
+        // production triage: a client that sends no config at all is a client
+        // to go fix, a real mismatch is a stale uuid or a pollution attempt.
+        const hasConfig =
+          validatedInput.layoutId != null && validatedInput.sizeId != null && Boolean(validatedInput.setIds);
+        logger.warn(
+          hasConfig
+            ? `[saveTick] Ignoring tick boardUuid ${validatedInput.boardUuid} — config mismatch for ${validatedInput.boardType}/${validatedInput.layoutId}/${validatedInput.sizeId}/${validatedInput.setIds}`
+            : `[saveTick] Ignoring tick boardUuid ${validatedInput.boardUuid} — input carries no layout/size/set to match against`,
+        );
       }
     } else if (validatedInput.boardId != null) {
       const explicitBoard = await findActiveBoardById(validatedInput.boardId);
       // Accept the explicit wall board only when its FULL config matches the
       // tick's target (type + layout + size + set). A stale presence boardId
       // from a different layout/size/set would otherwise stamp this tick onto
-      // the wrong wall and corrupt that board's presence stats. Set ids are
-      // compared normalized so order/format differences don't reject a match.
-      const configMatches =
-        explicitBoard != null &&
-        explicitBoard.boardType === validatedInput.boardType &&
-        explicitBoard.layoutId === validatedInput.layoutId &&
-        explicitBoard.sizeId === validatedInput.sizeId &&
-        normalizeSetIds(explicitBoard.setIds) === normalizeSetIds(validatedInput.setIds);
-      if (configMatches) {
+      // the wrong wall and corrupt that board's presence stats.
+      if (explicitBoard && boardConfigMatchesTick(explicitBoard, validatedInput)) {
         boardId = explicitBoard.id;
       } else {
         logger.warn(
@@ -800,13 +809,7 @@ export const tickMutations = {
       const sessionBoard = await findActiveBoardById(sessionBoardId);
       // Same full-config gate as rung 2: a session left open on another wall
       // must not stamp this tick onto it.
-      const configMatches =
-        sessionBoard != null &&
-        sessionBoard.boardType === validatedInput.boardType &&
-        sessionBoard.layoutId === validatedInput.layoutId &&
-        sessionBoard.sizeId === validatedInput.sizeId &&
-        normalizeSetIds(sessionBoard.setIds) === normalizeSetIds(validatedInput.setIds);
-      if (configMatches) {
+      if (sessionBoard && boardConfigMatchesTick(sessionBoard, validatedInput)) {
         boardId = sessionBoard.id;
       }
     }
