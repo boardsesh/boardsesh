@@ -522,9 +522,35 @@ describe('smartPlaylist resolver', () => {
 
     expect(result.climbs).toHaveLength(20);
     expect(result.hasMore).toBe(false);
-    expect(selectRefsMock).toHaveBeenCalledWith('RECOMMENDED_CROWD_FAVORITES', expect.anything(), 'user-123', 25, 20);
+    // Trailing expect.anything() is the executor the resolver threads down (#4235).
+    expect(selectRefsMock).toHaveBeenCalledWith(
+      'RECOMMENDED_CROWD_FAVORITES',
+      expect.anything(),
+      'user-123',
+      25,
+      20,
+      expect.anything(),
+    );
   });
 });
+
+/**
+ * Queue the counts-CTE result.
+ *
+ * `mySmartPlaylistCounts` runs inside `withSerialPlan` (#4235). `mockDb` has no
+ * `transaction`, so the helper takes its execute-only fallback and the FIRST
+ * `execute` is the `SET LOCAL max_parallel_workers_per_gather = 0` guard — the
+ * CTE result has to be queued behind it or the guard eats it.
+ */
+function queueCountsRows(rows: unknown) {
+  mockDb.execute.mockResolvedValueOnce([]); // SET LOCAL guard
+  mockDb.execute.mockResolvedValueOnce(rows);
+}
+
+/** The SQL the resolver actually ran, i.e. the call after the guard. */
+function countsSqlArg() {
+  return mockDb.execute.mock.calls[1][0] as { queryChunks?: unknown[] } | undefined;
+}
 
 describe('mySmartPlaylistCounts resolver', () => {
   beforeEach(() => {
@@ -541,10 +567,9 @@ describe('mySmartPlaylistCounts resolver', () => {
   it('returns one entry per smart-playlist type from a single CTE roundtrip', async () => {
     const ctx = makeCtx();
 
-    // Single db.execute call returns three rows. Order returned from the
-    // resolver is fixed (FIVE_STARS, MOST_REPEATED, PROJECTS) regardless of
-    // SQL row order.
-    mockDb.execute.mockResolvedValueOnce([
+    // One CTE roundtrip returns three rows. Order returned from the resolver is
+    // fixed (FIVE_STARS, MOST_REPEATED, PROJECTS) regardless of SQL row order.
+    queueCountsRows([
       { type: 'PROJECTS', count: 5 },
       { type: 'FIVE_STARS', count: 7 },
       { type: 'MOST_REPEATED', count: 3 },
@@ -557,13 +582,14 @@ describe('mySmartPlaylistCounts resolver', () => {
       { type: 'PROJECTS', count: 5 },
       { type: 'LIKED_CLIMBS', count: 0 },
     ]);
-    expect(mockDb.execute).toHaveBeenCalledTimes(1);
+    // The guard plus the CTE — still one roundtrip for all four counts.
+    expect(mockDb.execute).toHaveBeenCalledTimes(2);
   });
 
   it('handles the {rows: ...} shape some postgres clients return', async () => {
     const ctx = makeCtx();
 
-    mockDb.execute.mockResolvedValueOnce({
+    queueCountsRows({
       rows: [
         { type: 'FIVE_STARS', count: 1 },
         { type: 'MOST_REPEATED', count: 2 },
@@ -583,7 +609,7 @@ describe('mySmartPlaylistCounts resolver', () => {
   it('returns 0 for any type missing from the CTE result', async () => {
     const ctx = makeCtx();
 
-    mockDb.execute.mockResolvedValueOnce([{ type: 'FIVE_STARS', count: 9 }]);
+    queueCountsRows([{ type: 'FIVE_STARS', count: 9 }]);
 
     const result = await playlistQueries.mySmartPlaylistCounts(null, undefined, ctx);
     expect(result).toEqual([
@@ -597,7 +623,7 @@ describe('mySmartPlaylistCounts resolver', () => {
   it('surfaces a non-zero LIKED_CLIMBS count from the CTE', async () => {
     const ctx = makeCtx();
 
-    mockDb.execute.mockResolvedValueOnce([
+    queueCountsRows([
       { type: 'FIVE_STARS', count: 7 },
       { type: 'MOST_REPEATED', count: 3 },
       { type: 'PROJECTS', count: 5 },
@@ -614,13 +640,12 @@ describe('mySmartPlaylistCounts resolver', () => {
     // the CTE is what enforces this, so this test asserts on the SQL string
     // rather than on db result rows.
     const ctx = makeCtx();
-    mockDb.execute.mockResolvedValueOnce([]);
+    queueCountsRows([]);
 
     await playlistQueries.mySmartPlaylistCounts(null, undefined, ctx);
 
-    expect(mockDb.execute).toHaveBeenCalledTimes(1);
-    const sqlArg = mockDb.execute.mock.calls[0][0] as { queryChunks?: unknown[] } | undefined;
-    const rendered = (sqlArg?.queryChunks ?? [])
+    expect(mockDb.execute).toHaveBeenCalledTimes(2);
+    const rendered = (countsSqlArg()?.queryChunks ?? [])
       .map((chunk) => (typeof chunk === 'string' ? chunk : ((chunk as { value?: string }).value ?? '')))
       .join(' ');
 
@@ -634,7 +659,7 @@ describe('mySmartPlaylistCounts resolver', () => {
 
   it('appends RECOMMENDED_* counts when a board resolves', async () => {
     const ctx = makeCtx();
-    mockDb.execute.mockResolvedValueOnce([{ type: 'FIVE_STARS', count: 1 }]);
+    queueCountsRows([{ type: 'FIVE_STARS', count: 1 }]);
     resolveTargetMock.mockResolvedValueOnce({ boardType: 'kilter', layoutId: 8, sizeId: 25, angle: 40, setIds: null });
     countRefsMock.mockResolvedValue(7);
 
@@ -648,7 +673,7 @@ describe('mySmartPlaylistCounts resolver', () => {
 
   it('omits RECOMMENDED_* counts when no board resolves', async () => {
     const ctx = makeCtx();
-    mockDb.execute.mockResolvedValueOnce([{ type: 'FIVE_STARS', count: 1 }]);
+    queueCountsRows([{ type: 'FIVE_STARS', count: 1 }]);
     resolveTargetMock.mockResolvedValueOnce(null);
 
     const result = await playlistQueries.mySmartPlaylistCounts(null, undefined, ctx);

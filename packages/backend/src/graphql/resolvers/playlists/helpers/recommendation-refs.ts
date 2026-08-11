@@ -6,9 +6,11 @@ import {
   buildUserSendGradesByBoardSql,
   computeUserMaxVGrade,
   rowsOf,
+  withSerialPlan,
   type BoardTarget,
   type RecommendationType,
   type RecommendationQueryParams,
+  type SerialPlanDb,
 } from '@boardsesh/db/queries';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
@@ -21,9 +23,12 @@ const GRADES_BELOW = 3;
 const GRADES_ABOVE = 1;
 
 /** The user's [max-3, max+1] V-band as target-board difficulty ids, or null. */
-async function resolveGradeBand(userId: string): Promise<{ minDifficultyId: number; maxDifficultyId: number } | null> {
+async function resolveGradeBand(
+  userId: string,
+  executor: SerialPlanDb,
+): Promise<{ minDifficultyId: number; maxDifficultyId: number } | null> {
   const rows = rowsOf<{ board_type: string; max_difficulty: number | null }>(
-    await db.execute(buildUserSendGradesByBoardSql(userId)),
+    await executor.execute(buildUserSendGradesByBoardSql(userId)),
   );
   const maxV = computeUserMaxVGrade(rows);
   if (maxV === null) return null;
@@ -40,13 +45,14 @@ async function buildParams(
   type: RecommendationType,
   target: BoardTarget,
   excludeUserId: string | null,
+  executor: SerialPlanDb,
 ): Promise<RecommendationQueryParams | null> {
   const tiers = getSizeFullnessTiers(target.boardType as BoardName, target.sizeId);
 
   let gradeBand: { minDifficultyId: number; maxDifficultyId: number } | null = null;
   if (type === 'RECOMMENDED_AT_LEVEL') {
     if (!excludeUserId) return null; // no user => no level to target
-    gradeBand = await resolveGradeBand(excludeUserId);
+    gradeBand = await resolveGradeBand(excludeUserId, executor);
     if (!gradeBand) return null;
   }
 
@@ -61,28 +67,48 @@ async function buildParams(
   };
 }
 
+/**
+ * Run `body` with per-gather parallelism disabled (#4235).
+ *
+ * The recommendation SQL hash-joins `board_climbs` against `board_climb_stats`,
+ * `board_setter_stats` and `board_climb_send_stats` — the plan shape that
+ * exhausts Postgres's dynamic shared memory on our small /dev/shm (pgCode 53100,
+ * Sentry BOARDSESH-AK). When the caller already owns a guarded transaction it
+ * passes its handle in and we run on that; re-wrapping it would open a savepoint
+ * and re-issue the GUC for nothing.
+ */
+function onGuardedExecutor<T>(executor: SerialPlanDb | undefined, body: (tx: SerialPlanDb) => Promise<T>): Promise<T> {
+  return executor ? body(executor) : withSerialPlan(db, body);
+}
+
 export async function selectRecommendationClimbRefs(
   type: RecommendationType,
   target: BoardTarget,
   excludeUserId: string | null,
   page: number,
   pageSize: number,
+  executor?: SerialPlanDb,
 ): Promise<ClimbRef[]> {
-  const params = await buildParams(type, target, excludeUserId);
-  if (!params) return [];
-  const rows = rowsOf<{ climb_uuid: string; board_type: string }>(
-    await db.execute(buildRecommendationRefsSql(params, page, pageSize)),
-  );
-  return rows.map((row) => ({ climbUuid: row.climb_uuid, boardType: row.board_type }));
+  return onGuardedExecutor(executor, async (tx) => {
+    const params = await buildParams(type, target, excludeUserId, tx);
+    if (!params) return [];
+    const rows = rowsOf<{ climb_uuid: string; board_type: string }>(
+      await tx.execute(buildRecommendationRefsSql(params, page, pageSize)),
+    );
+    return rows.map((row) => ({ climbUuid: row.climb_uuid, boardType: row.board_type }));
+  });
 }
 
 export async function countRecommendationClimbRefs(
   type: RecommendationType,
   target: BoardTarget,
   excludeUserId: string | null,
+  executor?: SerialPlanDb,
 ): Promise<number> {
-  const params = await buildParams(type, target, excludeUserId);
-  if (!params) return 0;
-  const rows = rowsOf<{ count: number }>(await db.execute(buildRecommendationCountSql(params)));
-  return Number(rows[0]?.count ?? 0);
+  return onGuardedExecutor(executor, async (tx) => {
+    const params = await buildParams(type, target, excludeUserId, tx);
+    if (!params) return 0;
+    const rows = rowsOf<{ count: number }>(await tx.execute(buildRecommendationCountSql(params)));
+    return Number(rows[0]?.count ?? 0);
+  });
 }
