@@ -12,7 +12,8 @@
   "title": "Admin-Panel",
   "auth": {
     "signInRequired": "Melde dich an, um ins Admin-Panel zu kommen.",
-    "noAccess": "Du hast keinen Admin-Zugang."
+    "noAccess": "Du hast keinen Admin-Zugang.",
+    "boardScopedNoAccess": "Dein Admin-Zugang gilt nur für ein Board. Diese Tools brauchen Admin-Zugang für die ganze Seite."
   },
   "tabs": {
     "roles": "Rollen",

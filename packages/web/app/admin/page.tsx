@@ -18,13 +18,14 @@ import RoleManagement from '@/app/components/admin/role-management';
 import CommunitySettingsPanel from '@/app/components/admin/community-settings-panel';
 import GymSettingsPanel from '@/app/components/admin/gym-settings-panel';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { rolesGrantGlobalAdmin, rolesGrantScopedAdmin } from '@/app/lib/admin/admin-scope';
 
 export default function AdminPage() {
   const { t } = useTranslation('admin');
   const { token } = useWsAuthToken();
   const [tab, setTab] = useState(0);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
+  const [boardScopedOnly, setBoardScopedOnly] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -36,16 +37,17 @@ export default function AdminPage() {
       try {
         const client = createGraphQLHttpClient(token);
         const result = await client.request<{ myRoles: CommunityRoleAssignment[] }>(GET_MY_ROLES);
-        setIsAdmin(result.myRoles.some((role) => role.role === 'admin'));
-        // Gym settings are global config, and the backend gates them with
-        // `requireAdmin(ctx)` / `hasAdmin(userId)` — no board type — which a
-        // board-scoped admin fails. Without this narrower check they'd see the
-        // tab, read the toggle as off whatever its real value, and hit an
-        // authorization error on every change.
-        setIsGlobalAdmin(result.myRoles.some((role) => role.role === 'admin' && role.boardType == null));
+        // Every resolver these pages call — role grants, community settings,
+        // gym settings — gates with `requireAdmin(ctx)` / `hasAdmin(userId)`
+        // and no board type, which a board-scoped admin fails. Without the
+        // narrower check they'd see a hub whose every action errors (and a
+        // gym-settings toggle that reads "off" whatever its real value is).
+        const globalAdmin = rolesGrantGlobalAdmin(result.myRoles);
+        setIsAdmin(globalAdmin);
+        setBoardScopedOnly(!globalAdmin && rolesGrantScopedAdmin(result.myRoles));
       } catch {
         setIsAdmin(false);
-        setIsGlobalAdmin(false);
+        setBoardScopedOnly(false);
       } finally {
         setLoading(false);
       }
@@ -66,7 +68,7 @@ export default function AdminPage() {
   if (!isAdmin) {
     return (
       <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
-        <Alert severity="error">{t('auth.noAccess')}</Alert>
+        <Alert severity="error">{t(boardScopedOnly ? 'auth.boardScopedNoAccess' : 'auth.noAccess')}</Alert>
       </Container>
     );
   }
@@ -110,13 +112,13 @@ export default function AdminPage() {
         <Tabs value={tab} onChange={(_, v) => setTab(v)}>
           <Tab label={t('tabs.roles')} sx={{ textTransform: 'none' }} />
           <Tab label={t('tabs.settings')} sx={{ textTransform: 'none' }} />
-          {isGlobalAdmin && <Tab label={t('tabs.gyms')} sx={{ textTransform: 'none' }} />}
+          <Tab label={t('tabs.gyms')} sx={{ textTransform: 'none' }} />
         </Tabs>
       </Box>
 
       {tab === 0 && <RoleManagement />}
       {tab === 1 && <CommunitySettingsPanel />}
-      {tab === 2 && isGlobalAdmin && <GymSettingsPanel />}
+      {tab === 2 && <GymSettingsPanel />}
     </Container>
   );
 }

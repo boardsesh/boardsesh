@@ -12,7 +12,8 @@
   "title": "Panneau d'administration",
   "auth": {
     "signInRequired": "Connectez-vous pour accéder au panneau d'administration.",
-    "noAccess": "Vous n'avez pas les droits d'administration."
+    "noAccess": "Vous n'avez pas les droits d'administration.",
+    "boardScopedNoAccess": "Vos droits d'administration ne couvrent qu'une seule board. Ces outils demandent un accès admin sur tout le site."
   },
   "tabs": {
     "roles": "Rôles",
