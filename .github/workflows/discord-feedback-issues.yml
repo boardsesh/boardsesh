@@ -122,13 +122,15 @@ jobs:
           # Read-only against GitHub and Discord: no `gh issue create`, no `gh api`,
           # no bare Bash.
           #
-          # `Write` is deliberately UNSCOPED. Claude Code only consults path rules
-          # for `Read` and `Edit` — a `Write(<path>)` rule is accepted and then
-          # never checked, which silently left Write unallowed and burned a whole
-          # run on an agent that could not create its output file. Confining the
-          # agent to the decisions file is the bundle digest's job anyway: the
-          # apply step refuses to file anything if the bundle changed, so
-          # rewriting it buys an attacker nothing.
+          # `Write` is deliberately UNSCOPED — meaning anywhere on this ephemeral
+          # runner, not anywhere that matters. Claude Code only consults path
+          # rules for `Read` and `Edit`; a `Write(<path>)` rule is accepted and
+          # then never checked, which silently left Write unallowed and burned a
+          # whole run on an agent that could not create its output file.
+          # Confining the agent to the decisions file is the bundle digest's job
+          # anyway: the apply step refuses to file anything if the bundle changed,
+          # so rewriting it — or writing anything else on the runner — buys an
+          # attacker nothing that reaches GitHub or Discord.
           #
           # Model is a repo variable so it can be bumped without a code change.
           claude_args: >-
@@ -138,6 +140,10 @@ jobs:
       # claude-code-action exits success even when the agent achieved nothing, so
       # without this a broken triage step reads as a green run that quietly filed
       # no issues — the exact failure mode that lets this rot unnoticed.
+      #
+      # This checks the agent produced a decisions FILE, not that it decided to
+      # file anything. `{"decisions": []}` passes on purpose: every message being
+      # noise is a legitimate outcome, and the count is logged either way.
       - name: Verify triage produced decisions
         if: steps.gate.outputs.count != '0'
         run: |

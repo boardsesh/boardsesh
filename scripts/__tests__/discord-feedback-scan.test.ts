@@ -445,6 +445,21 @@ describe('collectFeedback', () => {
     ).rejects.toThrow(/every scan pass failed/);
   });
 
+  it('fails when the bot can list channels but is denied reading every one of them', async () => {
+    // Channel-scoped permissions rather than guild-scoped: listing works, every
+    // read 403s. Without per-channel errors feeding the check this returned a
+    // clean empty bundle.
+    const source = stubSource({
+      listChannelMessages: vi.fn(async () => {
+        throw new Error('Discord 403 for /channels/x/messages — Missing Access');
+      }),
+    });
+
+    await expect(
+      collectFeedback({ ...collectOptions, feedbackChannelIds: [] }, { source, logger: { ...console, warn: vi.fn() } }),
+    ).rejects.toThrow(/every scan pass failed/);
+  });
+
   it('still succeeds with zero messages on a genuinely quiet server', async () => {
     // No errors, just nothing to report — that is a valid clean run, not a fault.
     const source = stubSource({ listChannelMessages: vi.fn(async () => []) });

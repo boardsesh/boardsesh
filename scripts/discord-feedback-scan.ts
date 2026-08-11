@@ -647,7 +647,10 @@ export async function collectFeedback(
     try {
       messages = await source.listChannelMessages(channel.id, snowflakeForTimestamp(reactionCutoff), options.maxPages);
     } catch (error) {
-      // A channel the bot cannot read is normal — permissions are how scanning is scoped.
+      // A channel the bot cannot read is normal — permissions are how scanning
+      // is scoped — so this only ever contributes to the all-passes-failed
+      // check below, which additionally requires that nothing was read anywhere.
+      passErrors.push(`#${channel.name}: ${String(error)}`);
       logger.warn(`[discord-feedback] skipping #${channel.name}: ${String(error)}`);
       continue;
     }
