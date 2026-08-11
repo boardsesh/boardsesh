@@ -1,3 +1,4 @@
+import { isSizeScopedBoard } from '@boardsesh/board-config';
 import { and, eq, ilike, sql } from 'drizzle-orm';
 import type { DbInstance } from '../../client/postgres';
 import { boardClimbs, boardClimbStats } from '../../schema/index';
@@ -25,6 +26,17 @@ export type SetterStat = {
  *
  * Capped at 50 rows ordered by descending climb count for UI performance.
  *
+ * Size-scoped boards (everything but MoonBoard) are filtered to climbs whose
+ * `compatible_size_ids` contains the requested size, using array containment
+ * (`@>`) so Postgres can use the `board_climbs_compatible_size_ids_idx` GIN
+ * index. MoonBoard has a single fixed product size and never populates
+ * `compatible_size_ids`, so the size predicate is skipped entirely for it —
+ * `size_id = ANY(NULL)` evaluates to NULL and would otherwise drop every
+ * MoonBoard row. This is deliberately board-type-gated rather than
+ * NULL-tolerant: Kilter draft climbs can also have a NULL
+ * `compatible_size_ids` (see the "Draft climbs may have NULL
+ * compatible_size_ids" comments in search-climbs.ts) and must stay excluded.
+ *
  * Runs under `withSerialPlan`: this hash-joins the two biggest catalog tables
  * over a whole layout and aggregates them, which the planner is happy to run as
  * a parallel hash join. It fires from the same search drawer as `searchClimbs`
@@ -41,7 +53,9 @@ export const getSetterStats = async (
     eq(boardClimbs.boardType, params.board_name),
     eq(boardClimbs.layoutId, params.layout_id),
     eq(boardClimbStats.angle, params.angle),
-    sql`${params.size_id} = ANY(${boardClimbs.compatibleSizeIds})`,
+    ...(isSizeScopedBoard(params.board_name)
+      ? [sql`${boardClimbs.compatibleSizeIds} @> ARRAY[${params.size_id}]::int[]`]
+      : []),
     sql`${boardClimbs.setterUsername} IS NOT NULL`,
     sql`${boardClimbs.setterUsername} != ''`,
   ];

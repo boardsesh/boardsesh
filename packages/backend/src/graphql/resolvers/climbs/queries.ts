@@ -220,7 +220,6 @@ export const climbQueries = {
 
   /**
    * Get setter usernames with climb counts for autocomplete in the search drawer.
-   * MoonBoard has no setter data — returns an empty list to match the REST behaviour.
    */
   setterStats: async (
     _: unknown,
@@ -232,12 +231,6 @@ export const climbQueries = {
 
     if (!isValidBoardName(validated.boardName)) {
       throw new Error(`Invalid board name: ${validated.boardName}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
-    }
-
-    // MoonBoard doesn't have database tables for setter stats — return empty results
-    // to match the legacy REST endpoint.
-    if (validated.boardName === 'moonboard') {
-      return [];
     }
 
     // Parse setIds from comma-separated string (same pattern as searchClimbs)
