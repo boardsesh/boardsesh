@@ -734,6 +734,22 @@ export const boardClimbStats = pgTable(
     // Do NOT add an ascents/quality index here — it would conflict with those custom
     // migrations and make drizzle-kit generate emit destructive diffs.
     // Note: No FK to board_climbs - stats may arrive before their corresponding climbs during sync
+    // #3551: defense-in-depth guards mirroring board_climb_ratings_rating_range
+    // (above). quality_average and upstream_quality_average are only ever kept
+    // on the canonical 1-5 scale by in-code guards (blendedQualityAverageSql,
+    // recompute filters, upstream writers) — a future writer regression could
+    // silently store an out-of-range value again. The prerequisite backfills
+    // (0149 affine rescale, 0151 sentinel cleanup, 0169 blend backfill) are all
+    // merged on main, so no existing row should violate these. Bound is `> 0`
+    // (not `>= 1`) because both columns are float blends, not integer votes.
+    qualityAverageRangeCheck: check(
+      'board_climb_stats_quality_average_range',
+      sql`${table.qualityAverage} IS NULL OR (${table.qualityAverage} > 0 AND ${table.qualityAverage} <= 5)`,
+    ),
+    upstreamQualityAverageRangeCheck: check(
+      'board_climb_stats_upstream_quality_average_range',
+      sql`${table.upstreamQualityAverage} IS NULL OR (${table.upstreamQualityAverage} > 0 AND ${table.upstreamQualityAverage} <= 5)`,
+    ),
   }),
 );
 
