@@ -53,6 +53,15 @@ vi.mock('@boardsesh/db/schema', () => ({
   boardDifficultyGrades: {},
   boardClimbs: {},
   boardClimbAliases: {},
+  userBoards: {},
+}));
+
+// The board the hardest send is drawn on is resolved by its own helper, which
+// runs its own queries — stub it out so this unit test keeps counting only the
+// summary's own `select()` calls. `resolveRenderBoard` has its own coverage.
+vi.mock('../graphql/resolvers/shared/render-board', () => ({
+  fetchOwnerBoards: () => Promise.resolve(new Map()),
+  toTickBoardCandidate: () => null,
 }));
 
 vi.mock('@boardsesh/db/queries', () => ({
@@ -144,6 +153,9 @@ describe('generateSessionSummary', () => {
       frames: 'p1145r15p1146r12',
       layoutId: 1,
       boardType: 'kilter',
+      // No tick board and no owner boards (both stubbed above), so the recap
+      // thumbnail falls back to the layout's biggest size.
+      renderBoard: { layoutId: 1, sizeId: 7, setIds: [1, 20] },
       isMirror: false,
     });
 

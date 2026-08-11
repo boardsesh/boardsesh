@@ -488,6 +488,11 @@ const SESSION_SUMMARY_FIELDS = `
     frames
     layoutId
     boardType
+    renderBoard {
+      layoutId
+      sizeId
+      setIds
+    }
     isMirror
   }
   participants {

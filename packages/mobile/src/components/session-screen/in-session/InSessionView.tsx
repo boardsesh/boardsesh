@@ -31,7 +31,7 @@ import { runSessionEndExports } from '../../../lib/integrations';
 import { SESSION_STORE_REVIEW_CANDIDATE_PARAM, isSessionStoreReviewEligible } from '../../../lib/store-review';
 import { climbToQueueItem } from '../../../lib/climb-to-queue-item';
 import { setDraftComment, clearDraftComment } from '../../../lib/session-comment-draft-store';
-import { getBoardConfigForPlaylist } from '../../../lib/playlists/board-details-for-playlist';
+import { renderBoardToPlaylistConfig } from '../../../lib/playlists/board-details-for-playlist';
 import { tickToClimb } from '../../../lib/tick-to-climb';
 import { openClimbInPlayDrawer } from '../../../lib/open-climb-in-play-drawer';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
@@ -160,7 +160,9 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
       break;
   }
   const climb = tickToClimb(tick);
-  const boardConfig = tick.layoutId ? getBoardConfigForPlaylist(tick.boardType, tick.layoutId) : null;
+  const boardConfig = tick.layoutId
+    ? renderBoardToPlaylistConfig(tick.boardType, tick.layoutId, tick.renderBoard)
+    : null;
   const subtitleParts = [
     participant?.displayName ?? null,
     status === 'flash' ? null : t('detail.attemptCount', { count: tick.attemptCount }),

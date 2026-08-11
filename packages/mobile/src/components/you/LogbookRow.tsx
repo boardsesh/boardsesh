@@ -34,7 +34,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useBoardseshGradesActive } from '../../hooks/use-display-grade';
 import { resolveCrowdDifficultyId, GRADE_BY_ID, clampDifficultyId } from '../../lib/boardsesh-grade-display';
-import { getBoardConfigForPlaylist } from '../../lib/playlists/board-details-for-playlist';
+import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
 import { hapticSelection, hapticMedium, hapticLight, hapticSuccess } from '../../lib/haptics';
 
 type LogbookRowProps = {
@@ -258,7 +258,8 @@ export const LogbookRow = memo(function LogbookRow({
   // Rows whose board config can't resolve (frameless MoonBoard ticks) dead-end
   // in the play drawer today; keep the tap (analytics + a future detail view)
   // but don't fire a success haptic for a no-op.
-  const actionable = !!ascent.frames && !!getBoardConfigForPlaylist(ascent.boardType, ascent.layoutId);
+  const actionable =
+    !!ascent.frames && !!renderBoardToPlaylistConfig(ascent.boardType, ascent.layoutId, ascent.renderBoard);
 
   const swipeableRef = useRef<SwipeableMethods>(null);
 

@@ -90,7 +90,7 @@ vi.mock('../../../theme/tokens', () => ({
   borderRadius: { sm: 4 },
 }));
 vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({
-  getBoardConfigForPlaylist: () => ({
+  renderBoardToPlaylistConfig: () => ({
     boardName: 'kilter',
     layoutId: 1,
     sizeId: 1,

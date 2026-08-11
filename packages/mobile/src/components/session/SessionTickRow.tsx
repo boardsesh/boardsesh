@@ -19,7 +19,7 @@ import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { brandColors, withAlpha } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
-import { getBoardConfigForPlaylist } from '../../lib/playlists/board-details-for-playlist';
+import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
 import { sessionTickToClimb } from '../../lib/session-tick-mapping';
 import { tickToClimb } from '../../lib/tick-to-climb';
 import { hapticSelection, hapticMedium } from '../../lib/haptics';
@@ -121,7 +121,7 @@ export const SessionTickRow = memo(function SessionTickRow({
   // board config + angle match the play-drawer open. No-ops without frames.
   const handleLongPress = useCallback(() => {
     const menuClimb = tickToClimb(tick);
-    const config = getBoardConfigForPlaylist(tick.boardType, tick.layoutId);
+    const config = renderBoardToPlaylistConfig(tick.boardType, tick.layoutId, tick.renderBoard);
     if (!menuClimb || !config) return;
     hapticMedium();
     openClimbActions(menuClimb, {
@@ -134,9 +134,9 @@ export const SessionTickRow = memo(function SessionTickRow({
   }, [tick, openClimbActions]);
 
   const climb = sessionTickToClimb(tick);
-  // getBoardConfigForPlaylist memoises internally (static board metadata), so
+  // The layout-default fallback memoises internally (static board metadata), so
   // this per-row call is O(1) after the first lookup for the board.
-  const boardConfig = getBoardConfigForPlaylist(tick.boardType, tick.layoutId);
+  const boardConfig = renderBoardToPlaylistConfig(tick.boardType, tick.layoutId, tick.renderBoard);
 
   if (climb && boardConfig) {
     return (

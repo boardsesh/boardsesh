@@ -93,6 +93,11 @@ const SESSION_FEED_ITEM_FIELDS = `
     climbName
     boardType
     layoutId
+    renderBoard {
+      layoutId
+      sizeId
+      setIds
+    }
     angle
     status
     attemptCount
@@ -117,6 +122,11 @@ const SESSION_FEED_ITEM_FIELDS = `
       climbName
       boardType
       layoutId
+      renderBoard {
+        layoutId
+        sizeId
+        setIds
+      }
       angle
       status
       attemptCount
@@ -173,6 +183,11 @@ export const GET_SESSION_DETAIL = gql`
         climbName
         boardType
         layoutId
+        renderBoard {
+          layoutId
+          sizeId
+          setIds
+        }
         angle
         status
         attemptCount

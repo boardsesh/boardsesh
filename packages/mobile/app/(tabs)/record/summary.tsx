@@ -21,7 +21,7 @@ import { buildSessionGradeBars, gradeBadgeColor } from '../../../src/components/
 import { useTheme } from '../../../src/providers/theme-provider';
 import { useSessionSummary } from '../../../src/lib/graphql/hooks';
 import { useGradeFormat } from '../../../src/hooks/use-grade-format';
-import { getBoardConfigForPlaylist } from '../../../src/lib/playlists/board-details-for-playlist';
+import { renderBoardToPlaylistConfig } from '../../../src/lib/playlists/board-details-for-playlist';
 import { formatSessionWhen } from '../../../src/lib/format-session-when';
 import { SaveToAppleHealthButton } from '../../../src/components/integrations/SaveToAppleHealthButton';
 import { ShareToStravaButton } from '../../../src/components/integrations/ShareToStravaButton';
@@ -172,7 +172,9 @@ function SessionSummaryContent({ summary }: { summary: SessionSummary }) {
   // way the session-detail rows do. Null → no thumbnail (legacy climb / board
   // the bundled-asset path can't render), so the card falls back to grade-only.
   const thumbConfig =
-    hardest?.frames && hardest.boardType ? getBoardConfigForPlaylist(hardest.boardType, hardest.layoutId) : null;
+    hardest?.frames && hardest.boardType
+      ? renderBoardToPlaylistConfig(hardest.boardType, hardest.layoutId, hardest.renderBoard)
+      : null;
 
   const gradeBars = useMemo(
     () => buildSessionGradeBars(summary.gradeDistribution, formatGrade),

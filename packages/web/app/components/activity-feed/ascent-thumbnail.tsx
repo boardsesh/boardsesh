@@ -8,6 +8,7 @@ import BoardCanvasRenderer from '@/app/components/board-renderer/board-canvas-re
 import { useCanvasRendererReady } from '@/app/lib/board-render-worker/worker-manager';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { getDefaultBoardConfig } from '@/app/lib/default-board-configs';
+import type { RenderBoardConfig } from '@boardsesh/shared-schema';
 import { constructClimbViewUrlWithSlugs, constructClimbViewUrl } from '@/app/lib/url-utils';
 import styles from './ascents-feed.module.css';
 
@@ -19,6 +20,12 @@ type AscentThumbnailProps = {
   climbName: string;
   frames: string | null;
   isMirror: boolean;
+  /**
+   * The board this ascent should be drawn on, resolved server-side — the board
+   * it was climbed on, or the closest one the climber has. Falls back to the
+   * layout default when absent (feeds that don't resolve it).
+   */
+  renderBoard?: RenderBoardConfig | null;
   /** When provided, renders as a <button> instead of the climb-view <Link>. */
   onClick?: (e: React.MouseEvent) => void;
 };
@@ -31,6 +38,7 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
   climbName,
   frames,
   isMirror,
+  renderBoard,
   onClick,
 }) => {
   const canvasReady = useCanvasRendererReady();
@@ -39,13 +47,13 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
     if (!layoutId) return null;
 
     const boardName = boardType as BoardName;
-    const config = getDefaultBoardConfig(boardName, layoutId);
+    const config = renderBoard ?? getDefaultBoardConfig(boardName, layoutId);
     if (!config) return null;
 
     try {
       return getBoardDetailsForBoard({
         board_name: boardName,
-        layout_id: layoutId,
+        layout_id: renderBoard?.layoutId ?? layoutId,
         size_id: config.sizeId,
         set_ids: config.setIds,
       });
@@ -53,7 +61,7 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
       console.error('Failed to get board details for thumbnail:', error);
       return null;
     }
-  }, [boardType, layoutId]);
+  }, [boardType, layoutId, renderBoard]);
 
   // Reuse the already-memoized boardDetails to build the climb view URL
   const climbViewPath = useMemo(() => {
@@ -72,11 +80,11 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
       );
     }
 
-    const config = getDefaultBoardConfig(boardType as BoardName, layoutId);
+    const config = renderBoard ?? getDefaultBoardConfig(boardType as BoardName, layoutId);
     return constructClimbViewUrl(
       {
         board_name: boardType as BoardName,
-        layout_id: layoutId,
+        layout_id: renderBoard?.layoutId ?? layoutId,
         size_id: config?.sizeId ?? 1,
         set_ids: config?.setIds ?? [],
         angle,
@@ -84,7 +92,7 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
       climbUuid,
       climbName,
     );
-  }, [boardDetails, boardType, layoutId, angle, climbUuid, climbName]);
+  }, [boardDetails, boardType, layoutId, renderBoard, angle, climbUuid, climbName]);
 
   // If we can't render the thumbnail, don't show anything
   if (!boardDetails || (!onClick && !climbViewPath)) {

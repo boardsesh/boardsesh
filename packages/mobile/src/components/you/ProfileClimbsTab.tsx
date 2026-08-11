@@ -9,7 +9,7 @@ import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { ClimbListRow } from '../ClimbListRow';
 import { useUserClimbs } from '../../lib/graphql/hooks';
-import { getBoardConfigForPlaylist } from '../../lib/playlists/board-details-for-playlist';
+import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
@@ -43,7 +43,7 @@ export function ProfileClimbsTab({ userId, topInset = 0 }: ProfileClimbsTabProps
     (climb: Climb) => {
       // boardType is typed optional on Climb but the userClimbs query always returns it.
       if (!climb.boardType) return;
-      const config = getBoardConfigForPlaylist(climb.boardType, climb.layoutId);
+      const config = renderBoardToPlaylistConfig(climb.boardType, climb.layoutId, climb.renderBoard);
       if (!config) return;
       // We already have the full climb, so open the play drawer in place (kind
       // 'climb') rather than 'ref', which would route to the Climbs tab's climb
@@ -71,7 +71,7 @@ export function ProfileClimbsTab({ userId, topInset = 0 }: ProfileClimbsTabProps
   const handleOpenActions = useCallback(
     (climb: Climb) => {
       if (!climb.boardType) return;
-      const config = getBoardConfigForPlaylist(climb.boardType, climb.layoutId);
+      const config = renderBoardToPlaylistConfig(climb.boardType, climb.layoutId, climb.renderBoard);
       if (!config) return;
       openClimbActions(climb, {
         boardName: config.boardName,
@@ -91,7 +91,7 @@ export function ProfileClimbsTab({ userId, topInset = 0 }: ProfileClimbsTabProps
   const renderItem = useCallback(
     ({ item }: { item: Climb }) => {
       if (!item.boardType) return null;
-      const config = getBoardConfigForPlaylist(item.boardType, item.layoutId);
+      const config = renderBoardToPlaylistConfig(item.boardType, item.layoutId, item.renderBoard);
       if (!config) return null;
       return (
         <ClimbListRow

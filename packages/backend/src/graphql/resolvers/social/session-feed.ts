@@ -4,6 +4,8 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { getGradeLabel, toConfidenceTier, withSerialPlan } from '@boardsesh/db/queries';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { requireAuthenticated, validateInput, isNoMatchClimb } from '../shared/helpers';
+import { fetchOwnerBoards, toTickBoardCandidate } from '../shared/render-board';
+import { resolveRenderBoard, type RenderBoardCandidate } from '@boardsesh/board-config';
 import { boardseshDifficultyExpr, boardseshConfidenceExpr, boardseshGradeTickJoin } from '../shared/sql-expressions';
 import { ActivityFeedInputSchema } from '../../../validation/schemas';
 import { encodeOffsetCursor, decodeOffsetCursor } from '../../../utils/feed-cursor';
@@ -507,6 +509,13 @@ export const sessionFeedQueries = {
         setterUsername: dbSchema.boardClimbs.setterUsername,
         layoutId: dbSchema.boardClimbs.layoutId,
         frames: dbSchema.boardClimbs.frames,
+        // Which sizes/sets the climb physically fits — drives renderBoard below.
+        compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
+        requiredSetIds: dbSchema.boardClimbs.requiredSetIds,
+        // The board each tick was logged against, for renderBoard's first rung.
+        boardLayoutId: dbSchema.userBoards.layoutId,
+        boardSizeId: dbSchema.userBoards.sizeId,
+        boardSetIds: dbSchema.userBoards.setIds,
         difficultyName: dbSchema.boardDifficultyGrades.boulderName,
         consensusDifficulty: dbSchema.boardClimbStats.displayDifficulty,
         boardseshDifficulty: boardseshDifficultyExpr,
@@ -516,6 +525,7 @@ export const sessionFeedQueries = {
         canonicalClimbUuid: sql<string>`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid})`,
       })
       .from(dbSchema.boardseshTicks)
+      .leftJoin(dbSchema.userBoards, eq(dbSchema.boardseshTicks.boardId, dbSchema.userBoards.id))
       // Resolve dedup-merged climbs to their canonical UUID before joining
       // board_climbs / board_climb_stats. A tick may point at an alias UUID that
       // was deduplicated away (no board_climbs row); the alias table maps it to
@@ -587,6 +597,10 @@ export const sessionFeedQueries = {
     // (not every community video for the climbs).
     const betaLinksByTick = await fetchBetaLinksByTick(tickUuids);
 
+    // A session can be a crew, so each tick is drawn on ITS climber's board, not
+    // the session owner's. One query covers everyone in the session.
+    const ownerBoardsByUserId = await fetchOwnerBoards(tickRows.map((row) => row.tick.userId));
+
     // Build ticks (totalAttempts added below)
     const ticks: SessionDetailTick[] = tickRows.map((row) => {
       const effectiveDifficulty =
@@ -600,6 +614,19 @@ export const sessionFeedQueries = {
         climbName: row.climbName || null,
         boardType: row.tick.boardType,
         layoutId: row.layoutId,
+        renderBoard: resolveRenderBoard({
+          boardType: row.tick.boardType,
+          climbLayoutId: row.layoutId,
+          compatibleSizeIds: row.compatibleSizeIds,
+          requiredSetIds: row.requiredSetIds,
+          tickBoard: toTickBoardCandidate({
+            boardType: row.tick.boardType,
+            layoutId: row.boardLayoutId,
+            sizeId: row.boardSizeId,
+            setIds: row.boardSetIds,
+          }),
+          ownerBoards: ownerBoardsByUserId.get(row.tick.userId) ?? [],
+        }),
         angle: row.tick.angle,
         status: row.tick.status,
         attemptCount: row.tick.attemptCount,
@@ -1114,6 +1141,11 @@ type TickHighlightRow = {
   climbDescription: string | null;
   boardType: string;
   layoutId: number | null;
+  compatibleSizeIds: number[] | null;
+  requiredSetIds: number[] | null;
+  boardLayoutId: number | null;
+  boardSizeId: number | null;
+  boardSetIds: string | null;
   angle: number;
   status: string;
   attemptCount: number;
@@ -1135,7 +1167,7 @@ function formatFeedTimestamp(timestamp: string | Date): string {
   return timestamp instanceof Date ? timestamp.toISOString() : String(timestamp);
 }
 
-function mapTickHighlightRow(row: TickHighlightRow): SessionFeedTickHighlight {
+function mapTickHighlightRow(row: TickHighlightRow, ownerBoards: RenderBoardCandidate[]): SessionFeedTickHighlight {
   const effectiveDifficulty =
     row.difficulty ?? (row.consensusDifficulty != null ? Math.round(row.consensusDifficulty) : null);
   const effectiveDifficultyName =
@@ -1148,6 +1180,19 @@ function mapTickHighlightRow(row: TickHighlightRow): SessionFeedTickHighlight {
     climbName: row.climbName,
     boardType: row.boardType,
     layoutId: row.layoutId,
+    renderBoard: resolveRenderBoard({
+      boardType: row.boardType,
+      climbLayoutId: row.layoutId,
+      compatibleSizeIds: row.compatibleSizeIds,
+      requiredSetIds: row.requiredSetIds,
+      tickBoard: toTickBoardCandidate({
+        boardType: row.boardType,
+        layoutId: row.boardLayoutId,
+        sizeId: row.boardSizeId,
+        setIds: row.boardSetIds,
+      }),
+      ownerBoards,
+    }),
     angle: row.angle,
     status: row.status,
     attemptCount: Number(row.attemptCount),
@@ -1176,6 +1221,11 @@ function tickHighlightSelectSql(groupIdExpression: SQL = sql`NULL::text`) {
     cf.description AS "climbDescription",
     t.board_type AS "boardType",
     cf.layout_id AS "layoutId",
+    cf.compatible_size_ids AS "compatibleSizeIds",
+    cf.required_set_ids AS "requiredSetIds",
+    ub.layout_id AS "boardLayoutId",
+    ub.size_id AS "boardSizeId",
+    ub.set_ids AS "boardSetIds",
     t.angle,
     t.status,
     t.attempt_count AS "attemptCount",
@@ -1212,6 +1262,9 @@ async function fetchTickHighlightsByUuid(tickUuids: string[]): Promise<Map<strin
       ON bcs.climb_uuid = COALESCE(bca.canonical_uuid, t.climb_uuid)
       AND bcs.board_type = t.board_type
       AND bcs.angle = t.angle
+    -- The board the tick was logged against, so renderBoard can draw the climb
+    -- on the wall it was actually climbed on.
+    LEFT JOIN user_boards ub ON ub.id = t.board_id
     -- Boardsesh grade join. Single source of truth: boardseshGradeTickJoin in
     -- ../shared/sql-expressions.ts, given this query's short aliases (t/bcg/bca).
     LEFT JOIN board_climb_grades bcg
@@ -1223,7 +1276,8 @@ async function fetchTickHighlightsByUuid(tickUuids: string[]): Promise<Map<strin
   `);
 
   const rows = rowsFromResult<TickHighlightRow>(result);
-  return new Map(rows.map((row) => [row.uuid, mapTickHighlightRow(row)]));
+  const ownerBoardsByUserId = await fetchOwnerBoards(rows.map((row) => row.userId));
+  return new Map(rows.map((row) => [row.uuid, mapTickHighlightRow(row, ownerBoardsByUserId.get(row.userId) ?? [])]));
 }
 
 async function fetchHardestSendsBatch(
@@ -1273,6 +1327,9 @@ async function fetchHardestSendsBatch(
       ON bcs.climb_uuid = COALESCE(bca.canonical_uuid, t.climb_uuid)
       AND bcs.board_type = t.board_type
       AND bcs.angle = t.angle
+    -- The board the tick was logged against, so renderBoard can draw the climb
+    -- on the wall it was actually climbed on.
+    LEFT JOIN user_boards ub ON ub.id = t.board_id
     -- Boardsesh grade join. Single source of truth: boardseshGradeTickJoin in
     -- ../shared/sql-expressions.ts, given this query's short aliases (t/bcg/bca).
     LEFT JOIN board_climb_grades bcg
@@ -1281,10 +1338,11 @@ async function fetchHardestSendsBatch(
   `);
 
   const rows = rowsFromResult<TickHighlightRow>(result);
+  const ownerBoardsByUserId = await fetchOwnerBoards(rows.map((row) => row.userId));
   const map = new Map<string, SessionFeedTickHighlight>();
   for (const row of rows) {
     if (!row.group_id) continue;
-    map.set(row.group_id, mapTickHighlightRow(row));
+    map.set(row.group_id, mapTickHighlightRow(row, ownerBoardsByUserId.get(row.userId) ?? []));
   }
   return map;
 }

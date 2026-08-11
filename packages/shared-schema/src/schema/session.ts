@@ -181,6 +181,8 @@ export const sessionTypeDefs = /* GraphQL */ `
     layoutId: Int
     "Board type the send was logged on (e.g. 'kilter', 'tension')"
     boardType: String
+    "Board configuration to draw the thumbnail on. Populated by sessionSummary."
+    renderBoard: RenderBoardConfig
     "Whether the send was on the mirrored climb"
     isMirror: Boolean
   }

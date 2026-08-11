@@ -1,10 +1,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
-import {
-  getProductSize,
-  getDefaultSizeForLayout,
-  getSetsForLayoutAndSize,
-} from '@boardsesh/board-constants/product-sizes';
+import { getDefaultSizeForLayout, getSetsForLayoutAndSize } from '@boardsesh/board-constants/product-sizes';
+import { getSizeRank } from '@boardsesh/board-constants/size-comparison';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { rowsOf, withSerialPlan, type BoardTarget, type SerialPlanDb } from '@boardsesh/db/queries';
 import { db } from '../../../../db/client';
@@ -23,13 +20,7 @@ function parseSetIds(csv: string | null | undefined): number[] | null {
 }
 
 /** Rank key: height dominates, width breaks ties (the product's "biggest"). */
-function sizeRank(boardType: string, sizeId: number): number {
-  const size = getProductSize(boardType as BoardName, sizeId);
-  if (!size) return -1;
-  const height = size.edgeTop - size.edgeBottom;
-  const width = size.edgeRight - size.edgeLeft;
-  return height * 100000 + width;
-}
+const sizeRank = (boardType: string, sizeId: number): number => getSizeRank(boardType as BoardName, sizeId);
 
 /** The user's biggest registered Kilter/Tension board, or null. Precise. */
 async function resolveRegisteredTarget(userId: string, executor: SerialPlanDb): Promise<BoardTarget | null> {

@@ -12,6 +12,22 @@ describe('getDefaultBoardConfig', () => {
   it('should return null for unknown board+layout', () => {
     expect(getDefaultBoardConfig('kilter', 999)).toBeNull();
   });
+
+  it('resolves the orphaned Kilter layouts that used to render no thumbnail', () => {
+    // Layouts 2-7 are absent from the product-size tables but still appear in
+    // historical ticks; the old hardcoded table returned null for them.
+    expect(getDefaultBoardConfig('kilter', 2)).toEqual({ sizeId: 11, setIds: [21] });
+  });
+
+  it('resolves boards the old hardcoded table never listed', () => {
+    const decoy = getDefaultBoardConfig('decoy', 2);
+    expect(decoy).not.toBeNull();
+    expect(decoy!.setIds.length).toBeGreaterThan(0);
+  });
+
+  it('agrees with mobile on the Tension Board 2 default (biggest size, not the 12x12)', () => {
+    expect(getDefaultBoardConfig('tension', 11)?.sizeId).toBe(10);
+  });
 });
 
 describe('getDefaultClimbViewPath', () => {

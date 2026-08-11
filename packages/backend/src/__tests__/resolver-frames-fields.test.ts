@@ -16,6 +16,14 @@ const { mockDb } = vi.hoisted(() => ({
 
 vi.mock('../db/client', () => ({ db: mockDb, dbRead: mockDb }));
 
+// `userClimbs` resolves which board to draw each climb on via its own helper,
+// which runs its own queries — stub it out so these tests keep driving only the
+// climb query's mock. The ladder has its own coverage in @boardsesh/board-config.
+vi.mock('../graphql/resolvers/shared/render-board', () => ({
+  fetchOwnerBoards: () => Promise.resolve(new Map()),
+  toTickBoardCandidate: () => null,
+}));
+
 // executeRows (used by userClimbs) lives in @boardsesh/db/client.
 vi.mock('@boardsesh/db/client', () => ({
   executeRows: vi.fn(),

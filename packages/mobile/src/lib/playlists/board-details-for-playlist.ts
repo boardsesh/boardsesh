@@ -1,6 +1,5 @@
 import type { BoardName } from '@boardsesh/shared-schema';
-import { getSizesForLayoutId, getSetsForLayoutAndSize, getAllLayouts } from '@boardsesh/board-constants/product-sizes';
-import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE, type MoonBoardLayoutKey } from '@boardsesh/board-config';
+import { getDefaultRenderBoard, toBoardName, type RenderBoardConfig } from '@boardsesh/board-config';
 
 export type PlaylistBoardConfig = {
   boardName: BoardName;
@@ -9,28 +8,26 @@ export type PlaylistBoardConfig = {
   setIds: number[];
 };
 
-function getDefaultLayoutId(boardName: BoardName): number | null {
-  const layouts = getAllLayouts(boardName);
-  return layouts.length > 0 ? layouts[0].id : null;
-}
-
 // The board metadata behind a (boardType, layoutId) key is static, so the
 // resolved config never changes — memoise it. Callers hit this per row in
 // virtualised lists (session ticks, logbook) and the compute runs a sizes
-// filter + largest-area reduce, so the cache keeps repeat lookups O(1). The
+// filter + biggest-size reduce, so the cache keeps repeat lookups O(1). The
 // FIFO cap just bounds memory; the real key space (every board × layout) sits
 // well under the limit, so it effectively never evicts.
 const BOARD_CONFIG_CACHE_LIMIT = 64;
 const boardConfigCache = new Map<string, PlaylistBoardConfig | null>();
 
 /**
- * Resolve a renderable board config (largest size + all its sets) for a
- * playlist that only carries `boardType` + `layoutId`. Mobile mirror of web's
- * `getBoardDetailsForPlaylist`, returning the minimal config the bundled
- * background cache needs. Handles Aurora boards (kilter/tension) via the
- * product-size tables and MoonBoard via its own layout/set config. Returns null
- * when the board/layout can't resolve so the caller falls back cleanly to the
- * plain colour tile. Memoised by board key.
+ * Resolve a renderable board config for something that only carries `boardType`
+ * + `layoutId` — a playlist, or a tick whose payload has no resolved
+ * `renderBoard`. This is rung 4 of the shared ladder (`getDefaultRenderBoard`):
+ * the layout's biggest size with every set installed, which is all you can say
+ * without knowing whose climb it is.
+ *
+ * Anything that renders a *logged* climb should prefer the `renderBoard` the
+ * backend resolved for it — see `renderBoardToPlaylistConfig` — and only fall
+ * back here. Returns null when the board/layout can't resolve so the caller
+ * falls back cleanly to the plain colour tile. Memoised by board key.
  */
 export function getBoardConfigForPlaylist(
   boardType: string,
@@ -40,7 +37,12 @@ export function getBoardConfigForPlaylist(
   const cached = boardConfigCache.get(cacheKey);
   if (cached !== undefined) return cached;
 
-  const result = computeBoardConfigForPlaylist(boardType, layoutId);
+  // `boardType` is a free-form string off the playlist/tick record; a resolved
+  // config means the shared helper's own `toBoardName` guard accepted it.
+  const resolved = getDefaultRenderBoard(boardType, layoutId);
+  const boardName = toBoardName(boardType);
+  const result = resolved && boardName ? { boardName, ...resolved } : null;
+
   if (boardConfigCache.size >= BOARD_CONFIG_CACHE_LIMIT) {
     const oldestKey = boardConfigCache.keys().next().value;
     if (oldestKey !== undefined) boardConfigCache.delete(oldestKey);
@@ -49,63 +51,25 @@ export function getBoardConfigForPlaylist(
   return result;
 }
 
-function computeBoardConfigForPlaylist(
+/**
+ * The board config to draw a logged climb on: the `renderBoard` the backend
+ * resolved (the board it was climbed on, or the closest one the climber has),
+ * falling back to the layout default for payloads that don't carry one — an
+ * older app talking to an older server, or a feed that doesn't resolve it.
+ */
+export function renderBoardToPlaylistConfig(
   boardType: string,
   layoutId: number | null | undefined,
+  renderBoard: RenderBoardConfig | null | undefined,
 ): PlaylistBoardConfig | null {
-  // `boardType` is a free-form string off the playlist record. Force it to
-  // BoardName (project convention: `as unknown as` for unsafe casts) and lean on
-  // the board-constants lookups below returning empty for anything unknown — we
-  // return null (→ plain colour tile) rather than rendering a bad board, so the
-  // cast is safe at runtime.
-  const boardName = boardType as unknown as BoardName;
-
-  // MoonBoard isn't in the Aurora product-size tables — it has a single fixed
-  // size and its own layout/set config. Mirror web's `getMoonBoardDetailsForPlaylist`.
-  if (boardName === 'moonboard') {
-    return computeMoonBoardConfigForPlaylist(layoutId);
+  const boardName = toBoardName(boardType);
+  if (boardName && renderBoard && renderBoard.setIds.length > 0) {
+    return {
+      boardName,
+      layoutId: renderBoard.layoutId,
+      sizeId: renderBoard.sizeId,
+      setIds: renderBoard.setIds,
+    };
   }
-
-  const effectiveLayoutId = layoutId ?? getDefaultLayoutId(boardName);
-  if (!effectiveLayoutId) return null;
-
-  const sizes = getSizesForLayoutId(boardName, effectiveLayoutId);
-  if (sizes.length === 0) return null;
-
-  // Largest-area size (web does the same — playlists have no session size).
-  const largest = sizes.reduce((best, size) => {
-    const area = (size.edgeRight - size.edgeLeft) * (size.edgeTop - size.edgeBottom);
-    const bestArea = (best.edgeRight - best.edgeLeft) * (best.edgeTop - best.edgeBottom);
-    return area > bestArea ? size : best;
-  });
-
-  const sets = getSetsForLayoutAndSize(boardName, effectiveLayoutId, largest.id);
-  if (sets.length === 0) return null;
-
-  return {
-    boardName,
-    layoutId: effectiveLayoutId,
-    sizeId: largest.id,
-    setIds: sets.map((set) => set.id),
-  };
-}
-
-function computeMoonBoardConfigForPlaylist(layoutId: number | null | undefined): PlaylistBoardConfig | null {
-  // MoonBoard has one fixed size; default to the 2024 layout when the playlist
-  // carries no layout id (matches web's fallback).
-  const effectiveLayoutId = layoutId ?? MOONBOARD_LAYOUTS['moonboard-2024'].id;
-
-  const layoutEntry = Object.entries(MOONBOARD_LAYOUTS).find(([, layout]) => layout.id === effectiveLayoutId);
-  if (!layoutEntry) return null;
-
-  const [layoutKey] = layoutEntry;
-  const sets = MOONBOARD_SETS[layoutKey as MoonBoardLayoutKey] ?? [];
-  if (sets.length === 0) return null;
-
-  return {
-    boardName: 'moonboard',
-    layoutId: effectiveLayoutId,
-    sizeId: MOONBOARD_SIZE.id,
-    setIds: sets.map((set) => set.id),
-  };
+  return getBoardConfigForPlaylist(boardType, layoutId);
 }

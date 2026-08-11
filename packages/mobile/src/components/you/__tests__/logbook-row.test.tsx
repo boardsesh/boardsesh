@@ -127,7 +127,7 @@ vi.mock('../../../hooks/use-display-grade', () => ({
   useBoardseshGradesActive: () => boardsesh.active,
 }));
 vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({
-  getBoardConfigForPlaylist: () => ({ boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: [1] }),
+  renderBoardToPlaylistConfig: () => ({ boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: [1] }),
 }));
 vi.mock('../../../lib/haptics', () => ({
   hapticSelection: () => {},

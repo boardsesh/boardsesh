@@ -433,6 +433,11 @@ export const GET_USER_CLIMBS = gql`
         benchmark_difficulty
         boardseshDifficulty
         boardseshConfidence
+        renderBoard {
+          layoutId
+          sizeId
+          setIds
+        }
       }
       totalCount
       hasMore

@@ -19,6 +19,14 @@ vi.mock('../db/client', () => ({
   db: mockDb,
 }));
 
+// `userClimbs` resolves which board to draw each climb on via its own helper,
+// which runs its own queries — stub it out so these tests keep driving only the
+// climb query's mock. The ladder has its own coverage in @boardsesh/board-config.
+vi.mock('../graphql/resolvers/shared/render-board', () => ({
+  fetchOwnerBoards: () => Promise.resolve(new Map()),
+  toTickBoardCandidate: () => null,
+}));
+
 vi.mock('../events/index', () => ({
   publishSocialEvent: vi.fn().mockResolvedValue(undefined),
 }));

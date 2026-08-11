@@ -1,5 +1,6 @@
 // Climb and Hold types
 import type { MoonBoardHoldsInput } from './new-climb-feed';
+import type { RenderBoardConfig } from './activity-feed';
 
 export type HoldState = 'OFF' | 'STARTING' | 'FINISH' | 'HAND' | 'FOOT' | 'ANY' | 'NOT' | 'AUX';
 export type LitupHold = { state: HoldState; color: string; displayColor: string };
@@ -61,6 +62,10 @@ export type Climb = {
   // 'setter_only'). Null when no grade row exists. The UI keeps the Aurora
   // grade when this is null or 'setter_only'.
   boardseshConfidence?: string | null;
+  // Board configuration to draw this climb on, resolved against its setter's
+  // boards. Populated by `userClimbs` (the profile Climbs tab, where no board is
+  // in the route); null everywhere the board comes from the URL.
+  renderBoard?: RenderBoardConfig | null;
 };
 
 // Input type for Climb (matches GraphQL ClimbInput)
