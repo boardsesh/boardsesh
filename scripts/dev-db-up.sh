@@ -127,18 +127,33 @@ sync_drizzle_migration_tracker() {
 
 normalize_ledger_timestamps() {
   # Images built before #4211 stamped every ledger row with the image's build
-  # clock instead of the journal entry's `when`. That timestamp is a high-water
-  # mark no later migration can clear, so both drizzle's migrate() and the
-  # pending-migration selection below would skip every migration written after
-  # the image was built — silently, forever. Rewriting created_at to `when`
-  # writes exactly the value drizzle writes, so it is a no-op once the image
-  # (or a `docker compose down -v`) is current.
+  # clock instead of the journal entry's `when`. That timestamp becomes a
+  # high-water mark that only moves up, so both drizzle's migrate() and the
+  # pending-migration selection below skip every journal entry whose `when` is
+  # below it and that the image did not itself apply — silently, and for good.
+  # In practice that is a migration you generated on a branch before pulling a
+  # newer image, which is why a checkout can look migrated and not be.
+  # Rewriting created_at to `when` writes exactly the value drizzle writes, so
+  # it is a no-op once the image (or a `docker compose down -v`) is current.
   #
-  # DATABASE_URL is passed explicitly: .boardsesh/dev-db.env is not written
-  # until write_dev_db_env below, so the dotenv chain in db-connection.ts has
-  # nothing to load yet.
+  # The target is passed explicitly: .boardsesh/dev-db.env is not written until
+  # write_dev_db_env below, so the dotenv chain in db-connection.ts has nothing
+  # to load yet.
+  #
+  # All THREE names are pinned, not just DATABASE_URL. getScriptDatabaseUrl()
+  # reads `DB_URL || DATABASE_URL || POSTGRES_URL`, and its dotenv chain fills
+  # whichever of them this shell leaves unset from .env.local / web/.env.local —
+  # where a DB_URL naming a remote or production database is a normal thing to
+  # have (docs/db-migrations.md's own db:verify-journal example is invoked with
+  # DB_URL). Setting DATABASE_URL alone would lose to such a DB_URL: `vp run
+  # db:up` would then either die on the non-local guard, or — for the tailnet
+  # MagicDNS/CGNAT hosts that guard deliberately accepts — quietly repair the
+  # ledger of a database other than the container this script just started.
   echo "Normalizing migration ledger timestamps..."
-  DATABASE_URL=postgresql://postgres:password@localhost:5432/main \
+  dev_db_ledger_url="postgresql://postgres:password@localhost:5432/main"
+  DB_URL="$dev_db_ledger_url" \
+    DATABASE_URL="$dev_db_ledger_url" \
+    POSTGRES_URL="$dev_db_ledger_url" \
     bun run --filter=@boardsesh/db db:normalize-ledger
 }
 
