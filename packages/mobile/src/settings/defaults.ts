@@ -15,4 +15,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notifyClimbComments: true,
   kioskHintSeen: false,
   bottomChromeDiagnostics: false,
+  sheetDetentDiagnostics: false,
 };
