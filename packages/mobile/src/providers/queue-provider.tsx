@@ -828,12 +828,17 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // session, an offline phone, or a transient WS error must NOT see "Action
       // failed" when the local queue is already correct. Dev-log only.
       dispatch({ type: 'DELTA_ADD_QUEUE_ITEM', payload: { item } });
+      // partyMode matches web's self-track (QueueContext.tsx): the crew roster
+      // holds more than one distinct human. Without it the suppressed self-echo
+      // would take `partyMode: true` with it and a PostHog breakdown on
+      // partyMode would lose every mobile self-add (#4042).
       track(SHARED_EVENTS.ClimbAddedToQueue, {
         climbUuid: item.climb.uuid,
         boardName: activeBoardRef.current?.boardType,
         layoutId: activeBoardRef.current?.layoutId,
         addedFromTab: 'mobile',
         currentQueueLength: stateRef.current.queue.length + 1,
+        partyMode: countDistinctSessionUsers(sessionRuntimeStateRef.current?.users) > 1,
       });
       // No unresolved-climb guard here: addToQueue is only ever called with a
       // fully-resolved climb from search / detail / playlist (a real user tap),

@@ -62,6 +62,8 @@ export type QueueEvent =
       stateHashOrdered?: string | null;
       item: ClimbQueueItem;
       position?: number | null;
+      /** Connection id of the adding client; optional so legacy/replayed payloads still typecheck. */
+      clientId?: string | null;
     }
   | {
       __typename: 'QueueItemRemoved';
@@ -112,6 +114,8 @@ export type SubscriptionQueueEvent =
       stateHashOrdered?: string | null;
       addedItem: ClimbQueueItem;
       position?: number | null;
+      /** Connection id of the adding client; optional so legacy/replayed payloads still typecheck. */
+      clientId?: string | null;
     }
   | {
       __typename: 'QueueItemRemoved';

@@ -5789,6 +5789,8 @@ export type QueueEvent =
 /** Event when an item is added to the queue. */
 export type QueueItemAdded = {
   __typename?: 'QueueItemAdded';
+  /** Connection id of the client that added the item; null when unknown (widget/controller paths, or a pre-#4042 server). Clients compare it against their own joinSession clientId to suppress self-echoes. */
+  clientId?: Maybe<Scalars['ID']['output']>;
   /** The added item */
   item: ClimbQueueItem;
   /** Position where item was inserted (null = end) */

@@ -1291,6 +1291,7 @@ export const QUEUE_UPDATES_SUBSCRIPTION = `
         stateHashOrdered
         addedItem: item { ${SUBSCRIPTION_QUEUE_ITEM_FIELDS} }
         position
+        clientId
       }
       ... on QueueItemRemoved {
         sequence

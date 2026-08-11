@@ -241,6 +241,8 @@ export const eventsTypeDefs = /* GraphQL */ `
     item: ClimbQueueItem!
     "Position where item was inserted (null = end)"
     position: Int
+    "Connection id of the client that added the item; null when unknown (widget/controller paths, or a pre-#4042 server). Clients compare it against their own joinSession clientId to suppress self-echoes."
+    clientId: ID
   }
 
   """

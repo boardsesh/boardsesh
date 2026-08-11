@@ -23,7 +23,7 @@ type UsePeerBroadcastAnalyticsParams = {
   /**
    * This client's joinSession-returned connection id (`lifecycle.session.clientId`),
    * or null when not in a session. Used to suppress self-echoes of our own
-   * removes. Read via a ref internally so a rejoin doesn't tear down the
+   * adds and removes. Read via a ref internally so a rejoin doesn't tear down the
    * subscription effect.
    */
   clientId: string | null;
@@ -46,12 +46,10 @@ type UsePeerBroadcastAnalyticsParams = {
  * firing off-board too, a parity regression.
  *
  * Fires on every `QueueItemAdded`/`QueueItemRemoved` event this client's
- * queue subscription receives. `QueueItemRemoved` now carries the removing
- * client's connection id (#3382), so echoes of our OWN removes are skipped —
- * the local remove already tracked itself with `removedBy: 'self'` in
+ * queue subscription receives. Both now carry the mutating client's connection
+ * id (#3382 for removes, #4042 for adds), so echoes of our OWN mutations are
+ * skipped — the local add/remove already tracked itself in
  * `graphql-queue/QueueContext.tsx`, and tracking the echo double counted.
- * `QueueItemAdded` still has no clientId on the wire, so self-adds remain
- * double counted — tracked as a follow-up in #4042.
  */
 export function usePeerBroadcastAnalytics({
   subscribeToQueueEvents,
@@ -76,6 +74,12 @@ export function usePeerBroadcastAnalytics({
         // that dispatch actually happening. Keep the parity — no state
         // change, no analytics.
         if (!event.addedItem) return;
+        // Echo of our own add: `graphql-queue/QueueContext.tsx` already tracked
+        // it with the real source tab, so tracking again would double count.
+        // Both truthiness guards matter — a solo/unjoined client has no
+        // clientId, and a pre-#4042 server sends none, so either way we fall
+        // back to the historical 'peer_broadcast' attribution.
+        if (event.clientId && clientIdRef.current && event.clientId === clientIdRef.current) return;
         track('Climb Added to Queue', {
           boardLayout: boardLayoutNameRef.current,
           addedFromTab: 'peer_broadcast',

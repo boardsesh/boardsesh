@@ -60,6 +60,9 @@ import {
 export function transformToSubscriptionEvent(event: QueueEvent | SubscriptionQueueEvent): SubscriptionQueueEvent {
   switch (event.__typename) {
     case 'QueueItemAdded': {
+      // Dropping clientId here is correct: this only rebuilds replayed events, and
+      // EVENTS_REPLAY deliberately doesn't select clientId (a replayed event carries the
+      // pre-reconnect connection id, so the self-echo comparison could never match) — #4042.
       const addedItem = 'addedItem' in event ? event.addedItem : event.item;
       return {
         __typename: 'QueueItemAdded',

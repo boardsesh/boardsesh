@@ -549,17 +549,43 @@ export function useSessionRealtime({
             if (result.kind !== 'dispatch') return;
             dispatch(result.action);
             switch (result.eventType) {
-              case 'QueueItemAdded':
+              case 'QueueItemAdded': {
+                // The server echoes our own adds back to us. A locally
+                // initiated add already tracked itself with its real source tab
+                // at the mutation site (queue-provider.tsx), so tracking the
+                // echo would double count — stay silent rather than emit a
+                // second, peer-attributed copy (#4042).
+                //
+                // Both truthiness guards are load-bearing: solo/unjoined state
+                // leaves clientId as '' (createEmptySessionRuntimeState) and a
+                // pre-#4042 server sends no clientId at all. Either way we fall
+                // back to today's 'peer_broadcast' attribution.
+                //
+                // The `__typename` re-check is load-bearing, not dead code:
+                // this switch discriminates on `result.eventType`, a separate
+                // variable, so `event` is still the full union here and TS
+                // rejects `event.clientId` without it. Compare against the
+                // joinSession-returned clientId in sessionRuntimeStateRef — NOT
+                // coordinator.clientId, which is generated locally and never
+                // reaches the server.
+                const selfAddClientId = sessionRuntimeStateRef.current?.clientId;
+                if (
+                  event.__typename === 'QueueItemAdded' &&
+                  event.clientId &&
+                  selfAddClientId &&
+                  event.clientId === selfAddClientId
+                ) {
+                  break;
+                }
                 track(SHARED_EVENTS.ClimbAddedToQueue, {
                   boardName: activeBoardRef.current?.boardType,
                   layoutId: activeBoardRef.current?.layoutId,
-                  // QueueItemAdded carries no clientId on the wire yet, so a
-                  // self-add echo is still tracked here (double count) — #4042.
                   addedFromTab: 'peer_broadcast',
                   currentQueueLength: stateRef.current.queue.length + 1,
                   partyMode: true,
                 });
                 break;
+              }
               case 'QueueItemRemoved': {
                 // The server echoes our own removes back to us. A locally
                 // initiated remove already tracked itself with
