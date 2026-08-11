@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import React from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import { createTestQueryClient } from '@/app/test-utils/test-providers';
 import PlaylistEditDrawer from '../playlist-edit-drawer';
 import type { Playlist } from '@boardsesh/graphql/operations/playlists';
 
@@ -74,7 +76,12 @@ describe('PlaylistEditDrawer', () => {
   function renderDrawer(playlist: Playlist) {
     const onClose = vi.fn();
     const onSuccess = vi.fn();
-    render(<PlaylistEditDrawer open playlist={playlist} onClose={onClose} onSuccess={onSuccess} />);
+    const queryClient = createTestQueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PlaylistEditDrawer open playlist={playlist} onClose={onClose} onSuccess={onSuccess} />
+      </QueryClientProvider>,
+    );
     return { onClose, onSuccess };
   }
 
@@ -103,6 +110,14 @@ describe('PlaylistEditDrawer', () => {
         color: '#ff0000',
         icon: '',
         isPublic: false,
+        basedOn: {
+          updatedAt: '2026-01-01T00:00:00Z',
+          name: 'Crimp circuit',
+          description: 'Ten hard ones',
+          isPublic: false,
+          color: '#ff0000',
+          icon: '🔥',
+        },
       },
     });
     expect(token).toBe('test-token');
@@ -129,6 +144,14 @@ describe('PlaylistEditDrawer', () => {
         color: '#ff0000',
         icon: '🔥',
         isPublic: false,
+        basedOn: {
+          updatedAt: '2026-01-01T00:00:00Z',
+          name: 'Crimp circuit',
+          description: 'Ten hard ones',
+          isPublic: false,
+          color: '#ff0000',
+          icon: '🔥',
+        },
       },
     });
   });
@@ -152,6 +175,38 @@ describe('PlaylistEditDrawer', () => {
         color: '',
         icon: '',
         isPublic: false,
+        basedOn: {
+          updatedAt: '2026-01-01T00:00:00Z',
+          name: 'Crimp circuit',
+          description: null,
+          isPublic: false,
+          color: null,
+          icon: null,
+        },
+      },
+    });
+  });
+
+  it('sends no basedOn when the playlist has no updatedAt (a stale pre-field cache)', async () => {
+    const playlist = createPlaylist({ updatedAt: '' });
+    mockExecuteGraphQL.mockResolvedValueOnce({ updatePlaylist: playlist });
+    renderDrawer(playlist);
+
+    await waitFor(() => expect(getDescriptionField().value).toBe('Ten hard ones'));
+    fireEvent.click(getSave());
+
+    await waitFor(() => expect(mockExecuteGraphQL).toHaveBeenCalledTimes(1));
+
+    const [, variables] = mockExecuteGraphQL.mock.calls[0];
+    expect(variables).toEqual({
+      input: {
+        playlistId: 'pl-uuid-1',
+        name: 'Crimp circuit',
+        description: 'Ten hard ones',
+        color: '#ff0000',
+        icon: '🔥',
+        isPublic: false,
+        basedOn: undefined,
       },
     });
   });
@@ -168,5 +223,165 @@ describe('PlaylistEditDrawer', () => {
     );
     expect(onSuccess).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  function conflictError(overrides?: Partial<Record<string, unknown>>) {
+    return {
+      response: {
+        errors: [
+          {
+            message: 'Playlist changed since you loaded it',
+            extensions: {
+              code: 'PLAYLIST_UPDATE_CONFLICT',
+              playlistUuid: 'pl-uuid-1',
+              serverUpdatedAt: '2026-01-02T00:00:00Z',
+              serverName: 'Crimp circuit',
+              serverDescription: 'Rewritten by someone else',
+              serverIsPublic: true,
+              serverColor: '#00ff00',
+              serverIcon: '⭐',
+              ...overrides,
+            },
+          },
+        ],
+      },
+    };
+  }
+
+  it('renders the conflict dialog quoting both names when the mutation is refused', async () => {
+    const playlist = createPlaylist();
+    mockExecuteGraphQL.mockRejectedValueOnce(conflictError({ serverName: 'Someone else renamed this' }));
+    renderDrawer(playlist);
+
+    await waitFor(() => expect(getDescriptionField().value).toBe('Ten hard ones'));
+    fireEvent.change(screen.getByPlaceholderText(tFromCatalog('playlists', 'edit.fields.namePlaceholder')), {
+      target: { value: 'My new name' },
+    });
+    fireEvent.click(getSave());
+
+    await waitFor(() => expect(screen.getByText(tFromCatalog('playlists', 'edit.conflict.title'))).toBeTruthy());
+    expect(
+      screen.getByText(
+        tFromCatalog('playlists', 'edit.conflict.message', {
+          serverName: 'Someone else renamed this',
+          yourName: 'My new name',
+        }),
+      ),
+    ).toBeTruthy();
+    // Only one attempt so far — the dialog is a resolution step, not a retry.
+    expect(mockExecuteGraphQL).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the messageDetails wording when the server kept the same name', async () => {
+    const playlist = createPlaylist();
+    mockExecuteGraphQL.mockRejectedValueOnce(conflictError({ serverName: 'Crimp circuit' }));
+    renderDrawer(playlist);
+
+    await waitFor(() => expect(getDescriptionField().value).toBe('Ten hard ones'));
+    fireEvent.click(getSave());
+
+    await waitFor(() =>
+      expect(screen.getByText(tFromCatalog('playlists', 'edit.conflict.messageDetails'))).toBeTruthy(),
+    );
+  });
+
+  it('"Use theirs" adopts the server values without a second mutation call', async () => {
+    const playlist = createPlaylist();
+    mockExecuteGraphQL.mockRejectedValueOnce(conflictError());
+    const { onSuccess, onClose } = renderDrawer(playlist);
+
+    await waitFor(() => expect(getDescriptionField().value).toBe('Ten hard ones'));
+    fireEvent.click(getSave());
+    await waitFor(() => expect(screen.getByText(tFromCatalog('playlists', 'edit.conflict.title'))).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: tFromCatalog('playlists', 'edit.conflict.keepTheirs') }));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+    expect(onSuccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Crimp circuit',
+        description: 'Rewritten by someone else',
+        isPublic: true,
+        color: '#00ff00',
+        icon: '⭐',
+        updatedAt: '2026-01-02T00:00:00Z',
+      }),
+    );
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(mockExecuteGraphQL).toHaveBeenCalledTimes(1);
+  });
+
+  it('"Keep mine" retries the mutation basedOn the server values', async () => {
+    const playlist = createPlaylist();
+    mockExecuteGraphQL.mockRejectedValueOnce(conflictError());
+    mockExecuteGraphQL.mockResolvedValueOnce({ updatePlaylist: playlist });
+    const { onSuccess } = renderDrawer(playlist);
+
+    await waitFor(() => expect(getDescriptionField().value).toBe('Ten hard ones'));
+    fireEvent.click(getSave());
+    await waitFor(() => expect(screen.getByText(tFromCatalog('playlists', 'edit.conflict.title'))).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: tFromCatalog('playlists', 'edit.conflict.keepMine') }));
+
+    await waitFor(() => expect(mockExecuteGraphQL).toHaveBeenCalledTimes(2));
+    const [, variables] = mockExecuteGraphQL.mock.calls[1];
+    expect((variables as { input: { basedOn: unknown } }).input.basedOn).toEqual({
+      updatedAt: '2026-01-02T00:00:00Z',
+      name: 'Crimp circuit',
+      description: 'Rewritten by someone else',
+      isPublic: true,
+      color: '#00ff00',
+      icon: '⭐',
+    });
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+  });
+
+  it('shows the changedAgain message inline when the retry conflicts again, without calling onSuccess', async () => {
+    const playlist = createPlaylist();
+    mockExecuteGraphQL.mockRejectedValueOnce(conflictError());
+    mockExecuteGraphQL.mockRejectedValueOnce(conflictError({ serverUpdatedAt: '2026-01-03T00:00:00Z' }));
+    const { onSuccess } = renderDrawer(playlist);
+
+    await waitFor(() => expect(getDescriptionField().value).toBe('Ten hard ones'));
+    fireEvent.click(getSave());
+    await waitFor(() => expect(screen.getByText(tFromCatalog('playlists', 'edit.conflict.title'))).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: tFromCatalog('playlists', 'edit.conflict.keepMine') }));
+
+    await waitFor(() =>
+      expect(mockShowMessage).toHaveBeenCalledWith(tFromCatalog('playlists', 'edit.conflict.changedAgain'), 'error'),
+    );
+    expect(onSuccess).not.toHaveBeenCalled();
+    // The dialog itself closes rather than chaining another prompt. MUI's
+    // Dialog stays mounted through its exit transition, so give it room to
+    // finish rather than asserting removal synchronously.
+    await waitFor(() => expect(screen.queryByText(tFromCatalog('playlists', 'edit.conflict.title'))).toBeNull(), {
+      timeout: 2000,
+    });
+  });
+
+  it('cancelling the conflict dialog keeps the drawer open with the edit intact', async () => {
+    const playlist = createPlaylist();
+    mockExecuteGraphQL.mockRejectedValueOnce(conflictError());
+    const { onClose } = renderDrawer(playlist);
+
+    await waitFor(() => expect(getDescriptionField().value).toBe('Ten hard ones'));
+    fireEvent.change(screen.getByPlaceholderText(tFromCatalog('playlists', 'edit.fields.namePlaceholder')), {
+      target: { value: 'My new name' },
+    });
+    fireEvent.click(getSave());
+    await waitFor(() => expect(screen.getByText(tFromCatalog('playlists', 'edit.conflict.title'))).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: tFromCatalog('playlists', 'edit.conflict.cancel') }));
+
+    // MUI's Dialog stays mounted through its exit transition, so give it
+    // room to finish rather than asserting removal synchronously.
+    await waitFor(() => expect(screen.queryByText(tFromCatalog('playlists', 'edit.conflict.title'))).toBeNull(), {
+      timeout: 2000,
+    });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(
+      (screen.getByPlaceholderText(tFromCatalog('playlists', 'edit.fields.namePlaceholder')) as HTMLInputElement).value,
+    ).toBe('My new name');
   });
 });
