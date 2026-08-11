@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
+import { logger } from '../utils/logger';
 import { socialBoardMutations } from '../graphql/resolvers/social/boards';
 import { socialGymMutations } from '../graphql/resolvers/social/gyms';
 import { resetAllRateLimits } from '../utils/rate-limiter';
@@ -13,15 +14,16 @@ import { resetAllRateLimits } from '../utils/rate-limiter';
  * DB is a plain `postgres` image and `schema-sql.ts` declares `user_boards` and
  * `gyms` with latitude/longitude but no `location` column — it IS the
  * no-PostGIS deployment #4218 reports. If PostGIS is ever added to the test
- * image, every case here passes vacuously and this file must be rewritten to
- * drop the column (or stub the write) explicitly.
+ * image, every case here would pass vacuously — so the first case below asserts
+ * the premise and fails loudly instead of going quietly green.
  *
  * On main, updateBoard/updateGym/createGym issued unguarded
  * `UPDATE ... SET location = ST_MakePoint(...)` statements, so saving an edit
  * with coordinates threw (42704 `type "geography" does not exist` here, 42703
  * undefined-column where the type exists but the column doesn't) after the row
  * had already been updated: the user saw a failure for a save that had landed.
- * Six of the seven cases below fail against main.
+ * Every case below except the premise probe and `createBoard` (already guarded)
+ * fails against main.
  */
 
 const OWNER = 'geo-degrade-owner';
@@ -72,6 +74,18 @@ async function storedCoordinates(table: 'user_boards' | 'gyms', uuid: string): P
   };
 }
 
+type GeographyWarning = { table: string; operation: string; code: string | undefined };
+
+// Reduce logger.warn calls to the geography-sync ones, dropping the message and
+// the raw driver text so the assertion reads as the contract, not the wording.
+function warnedGeographyFailures(warnSpy: { mock: { calls: unknown[][] } }): GeographyWarning[] {
+  return warnSpy.mock.calls.flatMap((call) => {
+    const meta = call[1] as { table?: string; operation?: string; code?: string } | undefined;
+    if (meta?.table == null || meta.operation == null) return [];
+    return [{ table: meta.table, operation: meta.operation, code: meta.code }];
+  });
+}
+
 beforeEach(async () => {
   resetAllRateLimits();
   await db.execute(sql`
@@ -82,7 +96,33 @@ beforeEach(async () => {
   await insertUser(OWNER);
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe('location geography writes degrade without PostGIS', () => {
+  it('runs against a database that really has no location column', async () => {
+    const tablesWithColumn = async (columnName: string) => {
+      const rows = await db.execute(sql`
+        SELECT table_name FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name IN ('user_boards', 'gyms')
+          AND column_name = ${columnName}
+      `);
+      return Array.from(rows as Iterable<{ table_name: string }>)
+        .map((row) => row.table_name)
+        .sort();
+    };
+
+    // The latitude probe proves the query shape finds columns that DO exist, so
+    // the empty `location` result below is a real absence rather than a query
+    // that silently returns nothing.
+    expect(await tablesWithColumn('latitude')).toEqual(['gyms', 'user_boards']);
+    // If this ever fails, the test DB grew PostGIS and every case below is now
+    // vacuous — drop the column here (or stub the write) before trusting them.
+    expect(await tablesWithColumn('location')).toEqual([]);
+  });
+
   it('updateBoard saves new coordinates instead of failing on the missing column', async () => {
     const board = await createBoard({ name: 'Klimmuur MoonBoard' });
 
@@ -134,5 +174,35 @@ describe('location geography writes degrade without PostGIS', () => {
     const board = await createBoard({ name: 'Klimmuur MoonBoard', latitude: 47.0, longitude: 8.0 });
 
     expect(await storedCoordinates('user_boards', board.uuid)).toEqual({ latitude: 47.0, longitude: 8.0 });
+  });
+
+  // The cases above only prove the mutations stop throwing — they would also
+  // pass if the geography writes were deleted outright. These two pin the
+  // guard itself: the write is still attempted, and the failure is warned with
+  // the SQLSTATE this database really returns.
+  it('warns with the ST_MakePoint SQLSTATE instead of throwing', async () => {
+    const board = await createBoard({ name: 'Klimmuur MoonBoard' });
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+    await updateBoard({ boardUuid: board.uuid, latitude: 47.0, longitude: 8.0 });
+
+    expect(warnedGeographyFailures(warnSpy)).toContainEqual({
+      table: 'user_boards',
+      operation: 'updateBoard',
+      code: '42704', // type "geography" does not exist
+    });
+  });
+
+  it('warns with the missing-column SQLSTATE when clearing coordinates', async () => {
+    const gym = await createGym({ name: 'Boulder Space', latitude: 47.0, longitude: 8.0 });
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+    await updateGym({ gymUuid: gym.uuid, latitude: null, longitude: null });
+
+    expect(warnedGeographyFailures(warnSpy)).toContainEqual({
+      table: 'gyms',
+      operation: 'updateGym',
+      code: '42703', // column "location" does not exist
+    });
   });
 });
