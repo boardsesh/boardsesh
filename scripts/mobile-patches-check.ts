@@ -39,9 +39,25 @@
  */
 
 import { createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+/**
+ * A substring that must NOT appear inside one specific Objective-C method body.
+ *
+ * Sentinels prove a patch's symbols survived. This proves its SHAPE survived: a
+ * re-keyed patch can keep every sentinel name and still restore the exact line
+ * that caused the crash the patch was written for.
+ */
+export interface ForbiddenInMethod {
+  /** Method to anchor on, e.g. `applyBottomAccessoryVisibility`. */
+  method: string;
+  /** Substrings that must not appear in that method's body (comments stripped). */
+  substrings: readonly string[];
+  /** Why they're forbidden — printed verbatim in the failure message. */
+  why: string;
+}
 
 export interface PatchRule {
   /** The patched package — must be a direct dependency of packages/mobile. */
@@ -52,6 +68,8 @@ export interface PatchRule {
   sentinels: readonly string[];
   /** The exact `patchedDependencies` key expected in the root package.json. */
   patchedKey: string;
+  /** Optional negative assertions scoped to a single method body. */
+  forbiddenInMethod?: readonly ForbiddenInMethod[];
 }
 
 /**
@@ -61,10 +79,10 @@ export interface PatchRule {
  * caught by `typecheck:mobile`, so it doesn't need one.
  *
  * Every rule's package must be a DIRECT dependency of packages/mobile, because
- * {@link createNodeEnv} resolves from packages/mobile/package.json. That is why
- * there is no expo-dev-launcher rule: under Bun's isolated linker it is only
- * reachable through expo-dev-client, so its 10s -> 120s iOS request-timeout
- * patch stays unguarded. Guarding it needs resolution via its parent first.
+ * {@link createNodeEnv} resolves from packages/mobile/package.json. A patched
+ * package that cannot be guarded for that reason must be listed in
+ * {@link UNGUARDED_PATCHES} — {@link checkPatchInventory} fails on any patched
+ * package that has neither a rule nor an allowlist entry.
  */
 export const RULES: readonly PatchRule[] = [
   {
@@ -90,11 +108,35 @@ export const RULES: readonly PatchRule[] = [
     ],
     patchedKey: 'react-native-screens@4.26.2',
   },
+  // The bottom-accessory attach nudge. The FIRST sentinel alone is not enough:
+  // the crashing pre-#4198 version of this patch also defined
+  // `rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance`, it just laid
+  // out synchronously inside the RN mounting transaction. A patch re-keyed for
+  // a react-native-screens bump could reintroduce exactly that and still pass a
+  // one-sentinel check, silently regressing BOARDSESH-9K. So the deferral
+  // machinery itself is asserted: the coalescing ivar, the out-of-transition
+  // helper, and the transition-coordinator hand-off — plus a negative assertion
+  // that no synchronous layout crept back into the mounting-transaction path.
   {
     package: 'react-native-screens',
     file: 'ios/tabs/host/RNSTabsHostComponentView.mm',
-    sentinels: ['rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance'],
+    sentinels: [
+      'rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance',
+      'rnscreens_layoutBottomAccessoryOutsideTransition',
+      '_rnscreens_bottomAccessoryRelayoutScheduled',
+      'animateAlongsideTransition',
+    ],
     patchedKey: 'react-native-screens@4.26.2',
+    forbiddenInMethod: [
+      {
+        method: 'applyBottomAccessoryVisibility',
+        substrings: ['layoutIfNeeded', 'layoutBelowIfNeeded'],
+        why:
+          'synchronous layout inside the RN mounting transaction re-enters UITabBar/_minimizeBehavior under a ' +
+          'UISheetPresentationController animation — BOARDSESH-9K. Lay out from ' +
+          'rnscreens_layoutBottomAccessoryOutsideTransition instead.',
+      },
+    ],
   },
   // The Android sheet guard is the one hunk NOTHING else can see: it only
   // swallows a native AsyncFunction rejection at runtime on store binaries
@@ -117,6 +159,142 @@ export const RULES: readonly PatchRule[] = [
     patchedKey: '@expo/ui@57.0.8',
   },
 ];
+
+/**
+ * `patchedDependencies` keys that deliberately have NO rule in {@link RULES},
+ * each with the reason. {@link checkPatchInventory} fails on any patched
+ * package that is in neither list, so adding a patch forces a decision instead
+ * of quietly landing unguarded.
+ */
+export const UNGUARDED_PATCHES: Readonly<Record<string, string>> = {
+  'expo-dev-launcher@57.0.10':
+    "raises the iOS dev-launcher request timeout from 10s to 120s. Under Bun's isolated linker the package is " +
+    'only reachable through expo-dev-client, so createNodeEnv cannot resolve it from packages/mobile. It is also ' +
+    'dev-client-only — it never ships in a store binary.',
+};
+
+/**
+ * Strip `//` line comments and block comments from Objective-C++ source.
+ *
+ * The RNSTabsHostComponentView patch documents the crash in prose that quotes
+ * `-layoutIfNeeded`, so a negative assertion has to read code only.
+ */
+function stripObjCComments(source: string): string {
+  let out = '';
+  let index = 0;
+  while (index < source.length) {
+    const two = source.slice(index, index + 2);
+    if (two === '//') {
+      const end = source.indexOf('\n', index);
+      index = end === -1 ? source.length : end;
+    } else if (two === '/*') {
+      const end = source.indexOf('*/', index + 2);
+      index = end === -1 ? source.length : end + 2;
+    } else {
+      out += source[index];
+      index += 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * Return the body of Objective-C method `methodName`, comments stripped, or
+ * `null` when the method can't be found.
+ *
+ * Anchors on the `- (…)methodName` / `+ (…)methodName` declaration and then
+ * balances braces from the first `{`, so trailing prose after the closing brace
+ * (or a following method) is never included. This is a slicer, not a parser:
+ * an upstream reformat that breaks the anchor is meant to fail the check loudly
+ * so a human re-verifies the patch.
+ *
+ * A forward declaration — the same signature terminated by `;` inside a class
+ * extension, which `RNSTabsHostComponentView.mm` already has two of — is
+ * skipped rather than matched. Matching one would slice from the *next* `{` in
+ * the file (the `@implementation` ivar block) and quietly scan the wrong text,
+ * which for a negative assertion means a silent pass. That is the exact failure
+ * this guard exists to prevent, so it must not be possible inside the guard.
+ */
+export function extractObjCMethodBody(source: string, methodName: string): string | null {
+  const stripped = stripObjCComments(source);
+  const escaped = methodName.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+  const declarations = new RegExp(String.raw`^[-+]\s*\([^)]*\)\s*${escaped}\b`, 'gm');
+
+  let declaration = declarations.exec(stripped);
+  while (declaration !== null) {
+    const openBrace = stripped.indexOf('{', declaration.index);
+    // Everything between the signature and its body is attributes/whitespace. A
+    // `;` in there means this match was a forward declaration, not a definition.
+    if (openBrace !== -1 && !stripped.slice(declaration.index, openBrace).includes(';')) {
+      let depth = 0;
+      for (let index = openBrace; index < stripped.length; index += 1) {
+        const character = stripped[index];
+        if (character === '{') depth += 1;
+        else if (character === '}') {
+          depth -= 1;
+          if (depth === 0) return stripped.slice(openBrace + 1, index);
+        }
+      }
+      return null;
+    }
+    declaration = declarations.exec(stripped);
+  }
+  return null;
+}
+
+export interface PatchInventoryInput {
+  /** The root package.json `patchedDependencies` map (key -> `patches/<file>`). */
+  patchedDependencies: Record<string, string>;
+  /** Filenames present in patches/ (basenames, not paths). */
+  patchFilenames: readonly string[];
+  /** `patchedKey` of every entry in {@link RULES}. */
+  guardedKeys: readonly string[];
+  /** Keys deliberately left unguarded, mapped to the reason. */
+  allowUnguarded: Readonly<Record<string, string>>;
+}
+
+/**
+ * Cross-check `patchedDependencies` against the patches/ directory and RULES.
+ *
+ * Catches the three things Bun and the per-rule check both stay silent about:
+ * a key pointing at a file that isn't there, a patch file left orphaned by a
+ * re-key (Bun never mentions unreferenced files), and a newly patched package
+ * that nobody guarded.
+ */
+export function checkPatchInventory(input: PatchInventoryInput): string[] {
+  const errors: string[] = [];
+  const present = new Set(input.patchFilenames);
+  const referenced = new Set<string>();
+  const guarded = new Set(input.guardedKeys);
+
+  for (const [patchedKey, patchPath] of Object.entries(input.patchedDependencies)) {
+    const filename = basename(patchPath);
+    referenced.add(filename);
+    if (!present.has(filename)) {
+      errors.push(
+        `${patchedKey}: "patchedDependencies" points at ${patchPath}, but that file is not in patches/. ` +
+          `Bun cannot apply a patch it can't read — restore the file or drop the key.`,
+      );
+    }
+    if (!guarded.has(patchedKey) && !Object.prototype.hasOwnProperty.call(input.allowUnguarded, patchedKey)) {
+      errors.push(
+        `${patchedKey}: patched but unguarded — add a rule to RULES in scripts/mobile-patches-check.ts so a ` +
+          `dropped patch fails CI, or add the key to UNGUARDED_PATCHES with the reason it can't be guarded.`,
+      );
+    }
+  }
+
+  for (const filename of input.patchFilenames) {
+    if (!referenced.has(filename)) {
+      errors.push(
+        `patches/${filename}: orphaned — no "patchedDependencies" key references it, so Bun ignores it entirely. ` +
+          `This is what a re-key leaves behind; delete the stale file or wire it up.`,
+      );
+    }
+  }
+
+  return errors;
+}
 
 /**
  * I/O abstracted so {@link checkPatchesApplied} can be unit-tested without a
@@ -201,6 +379,27 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
           `regenerate it with \`bun patch ${rule.package}\`.`,
       );
     }
+
+    // (4) Shape assertions: a symbol can survive a re-keyed patch while the
+    //     dangerous line it replaced comes back with it.
+    for (const forbidden of rule.forbiddenInMethod ?? []) {
+      const body = extractObjCMethodBody(source, forbidden.method);
+      if (body === null) {
+        errors.push(
+          `${rule.package}: cannot locate -[${forbidden.method}] in ${rule.file}, so its safety assertion could not ` +
+            `run. Upstream moved or reshaped the anchor — re-verify patches/${rule.patchedKey}.patch by hand and ` +
+            `update the rule in scripts/mobile-patches-check.ts. Do not delete the assertion to get green.`,
+        );
+        continue;
+      }
+      const found = forbidden.substrings.filter((substring) => body.includes(substring));
+      if (found.length > 0) {
+        errors.push(
+          `${rule.package}: ${rule.file} has ${found.map((s) => `"${s}"`).join(', ')} inside -[${forbidden.method}], ` +
+            `which the patch exists to remove — ${forbidden.why}`,
+        );
+      }
+    }
   }
 
   return { checked, errors };
@@ -239,16 +438,33 @@ export function main(): number {
     return 1;
   }
 
-  const env = createNodeEnv(mobilePackageJson, patchedDependencies);
-  const { checked, errors } = checkPatchesApplied(RULES, env);
-
-  if (errors.length > 0) {
-    console.error('[mobile-patches] FAILED — native patch(es) not applied:');
-    for (const error of errors) console.error(`  ✗ ${error}`);
+  let patchFilenames: string[];
+  try {
+    patchFilenames = readdirSync(resolve(repoRoot, 'patches')).filter((name) => name.endsWith('.patch'));
+  } catch (error) {
+    console.error(`[mobile-patches] FAILED — cannot read patches/: ${(error as Error).message}`);
     return 1;
   }
 
-  console.log(`[mobile-patches] OK — ${checked} native patch(es) applied.`);
+  const env = createNodeEnv(mobilePackageJson, patchedDependencies);
+  const { checked, errors } = checkPatchesApplied(RULES, env);
+  const inventoryErrors = checkPatchInventory({
+    patchedDependencies,
+    patchFilenames,
+    guardedKeys: RULES.map((rule) => rule.patchedKey),
+    allowUnguarded: UNGUARDED_PATCHES,
+  });
+  const allErrors = [...errors, ...inventoryErrors];
+
+  if (allErrors.length > 0) {
+    console.error('[mobile-patches] FAILED — native patch(es) not applied:');
+    for (const error of allErrors) console.error(`  ✗ ${error}`);
+    return 1;
+  }
+
+  console.log(
+    `[mobile-patches] OK — ${checked} native patch(es) applied, ${patchFilenames.length} patch file(s) accounted for.`,
+  );
   return 0;
 }
 
