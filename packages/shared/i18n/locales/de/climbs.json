@@ -930,6 +930,7 @@
       "message": "Deine Warteschlange läuft auf einem anderen Board. Füge ihn trotzdem hinzu, dann wartet er dort, bis du auf {{board}} bist, oder wechsle jetzt.",
       "addAnyway": "Trotzdem hinzufügen",
       "switchBoard": "Zu {{board}} wechseln",
+      "switchFailed": "Wechsel zu {{board}} hat nicht geklappt. Versuch es nochmal.",
       "cancel": "Abbrechen"
     }
   }

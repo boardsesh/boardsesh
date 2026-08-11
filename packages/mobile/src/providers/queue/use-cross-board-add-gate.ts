@@ -10,6 +10,8 @@ import { useSetActiveBoard } from '../../lib/graphql/use-active-board';
 import { myBoardsQueryKey } from '../../lib/graphql/query-keys';
 import type { GetMyBoardsQueryResponse } from '../../lib/graphql/operations';
 import { track } from '../../lib/analytics';
+import { reportHandledError } from '../../lib/error-reporting';
+import { useToast } from '../toast-provider';
 import { useChoose } from '../dialog-provider';
 
 /** What the climber picked, plus what the app has to do about it. */
@@ -59,6 +61,7 @@ const MY_BOARDS_QUERY_KEY = myBoardsQueryKey();
 export function useCrossBoardAddGate(): (request: CrossBoardAddRequest) => Promise<CrossBoardAddResult> {
   const { t } = useTranslation('climbs');
   const choose = useChoose();
+  const { showToast } = useToast();
   const setActiveBoard = useSetActiveBoard();
   const queryClient = useQueryClient();
   const inFlightRef = useRef<Map<string, Promise<CrossBoardAddResult>>>(new Map());
@@ -108,11 +111,25 @@ export function useCrossBoardAddGate(): (request: CrossBoardAddRequest) => Promi
         return { outcome: 'cancel' };
       }
 
+      try {
+        await setActiveBoard(owned);
+      } catch (error) {
+        // The activation mutation failed, so the queue is still on the old
+        // board. Queueing the climb now would drop a foreign climb onto it —
+        // exactly what the prompt exists to prevent — and letting the rejection
+        // through would surface as an unhandled rejection, because every add
+        // path fires this as `void addToQueue(...)`. Back out and say so; the
+        // switch is theirs to retry.
+        reportHandledError(error, { tags: { source: 'queue-sync', op: 'cross-board-switch' } });
+        showToast(t('mobile.crossBoardAdd.switchFailed', { board: boardLabel }), 'error');
+        trackOutcome('cancel');
+        return { outcome: 'cancel' };
+      }
+
       trackOutcome('switch');
-      await setActiveBoard(owned);
       return { outcome: 'switch', board: owned };
     },
-    [choose, queryClient, setActiveBoard, t],
+    [choose, queryClient, setActiveBoard, showToast, t],
   );
 
   return useCallback(

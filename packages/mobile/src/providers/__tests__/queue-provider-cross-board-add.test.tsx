@@ -65,6 +65,7 @@ const boards = vi.hoisted(() => {
 });
 
 const errorReporting = vi.hoisted(() => ({ reportError: vi.fn(), reportHandledError: vi.fn() }));
+const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
 
 const roster = vi.hoisted(() => ({ boards: [] as unknown[] }));
 const setActiveBoard = vi.hoisted(() => vi.fn(async (_board: unknown) => {}));
@@ -154,7 +155,7 @@ vi.mock('../../lib/graphql/use-active-board', () => ({
 vi.mock('../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: http.request }) }));
 vi.mock('../../lib/analytics', () => ({ track: analytics.track }));
 vi.mock('../../lib/error-reporting', () => errorReporting);
-vi.mock('../toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+vi.mock('../toast-provider', () => ({ useToast: () => ({ showToast: toast.showToast }) }));
 vi.mock('../queue-snackbar-provider', () => ({
   useQueueSnackbar: () => ({ showQueueAddedSnackbar: snackbar.showQueueAddedSnackbar }),
 }));
@@ -237,6 +238,8 @@ describe('QueueProvider cross-board add gate', () => {
     setActiveBoard.mockClear();
     routerPush.mockClear();
     errorReporting.reportHandledError.mockClear();
+    toast.showToast.mockClear();
+    setActiveBoard.mockImplementation(async () => {});
     queueMutations.setSessionBoardPath.mockImplementation(async () => {});
     analytics.track.mockClear();
     snackbar.showQueueAddedSnackbar.mockClear();
@@ -348,6 +351,36 @@ describe('QueueProvider cross-board add gate', () => {
         expect.objectContaining({ tags: expect.objectContaining({ op: 'set-board-path-switch' }) }),
       );
     });
+  });
+
+  it('cancels the add when activating the board fails, rather than rejecting into the void', async () => {
+    setActiveBoard.mockImplementation(async () => {
+      throw new Error('activation failed');
+    });
+    const provider = await mountProvider();
+
+    let pending!: Promise<'added' | 'cancelled'>;
+    act(() => {
+      // Every real call site fires this as `void addToQueue(...)`, so a
+      // rejection here would land as an unhandled rejection.
+      pending = provider.latest().addToQueue(tensionItem('foreign'));
+    });
+    await answerPrompt(0, 'switch');
+    await expect(pending).resolves.toBe('cancelled');
+
+    // The queue is still on the old board, so nothing foreign got queued onto it.
+    expect(queueUuids(provider.latest())).toEqual([]);
+    expect(queueMutations.addQueueItem).not.toHaveBeenCalled();
+    expect(queueMutations.setSessionBoardPath).not.toHaveBeenCalled();
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.crossBoardAdd.switchFailed', 'error');
+    expect(errorReporting.reportHandledError).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ tags: expect.objectContaining({ op: 'cross-board-switch' }) }),
+    );
+    expect(analytics.track).toHaveBeenCalledWith(
+      SHARED_EVENTS.CrossBoardQueueAddPrompted,
+      expect.objectContaining({ outcome: 'cancel' }),
+    );
   });
 
   it('routes to the board picker and cancels the add when they do not own that board', async () => {

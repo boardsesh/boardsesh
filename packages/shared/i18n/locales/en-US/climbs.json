@@ -930,6 +930,7 @@
       "message": "Your queue is on a different board. Add it anyway and it waits there until you're on {{board}}, or switch over now.",
       "addAnyway": "Add anyway",
       "switchBoard": "Switch to {{board}}",
+      "switchFailed": "Couldn't switch to {{board}}. Try again.",
       "cancel": "Cancel"
     }
   }

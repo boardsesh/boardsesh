@@ -867,6 +867,15 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       const activeBoardName = activeBoard ? toBoardName(activeBoard.boardType) : null;
       const activeConfig =
         activeBoardName && activeBoard ? { boardName: activeBoardName, layoutId: activeBoard.layoutId } : undefined;
+      // `stateRef.current` is reassigned during render, so between a dispatch
+      // and its commit this reads the pre-add queue — a second add from the
+      // same foreign board inside that sub-frame window would prompt twice.
+      // Left as is on purpose: the burst case that can actually fire that fast
+      // (several taps before anyone answers) is already collapsed to one prompt
+      // by the gate's in-flight dedup, the remaining window needs a second tap
+      // within a frame of answering the dialog, and the cost if it ever lands
+      // is one extra dialog. Shadowing the accepted set in a ref would trade
+      // that for a hand-maintained mirror of reducer state that can drift.
       const decision = decideAdd({
         climb: rawItem.climb,
         activeConfig,
