@@ -153,6 +153,10 @@ vi.mock('../ReturnToSessionButton', () => ({
 
 import { PersistentQueueBar } from '../persistent-queue-bar';
 import { BottomChromeMetricsProvider } from '../../../hooks/use-bottom-chrome-metrics';
+// Resolves to the layout mock above, which mirrors theme/layout's `glassSize`.
+// Assertions read it instead of repeating the literal, so retuning the ladder is
+// a one-line mock change rather than an opaque value mismatch.
+import { glassSize } from '../../../theme/layout';
 
 // The bar reads useBottomChromeMetrics(), which now requires the provider (the
 // geometry is computed once at the tab root). All the leaf inputs the provider
@@ -346,7 +350,7 @@ describe('PersistentQueueBar', () => {
       const { container } = renderBar();
       const capsule = container.querySelector('[data-capsule]');
       expect(capsule?.querySelector('[data-return-to-session]')).not.toBeNull();
-      expect(capsule?.getAttribute('data-end-action-size')).toBe('44');
+      expect(capsule?.getAttribute('data-end-action-size')).toBe(String(glassSize.inline));
     });
 
     it('omits the return-to-session button when no session is live', () => {
