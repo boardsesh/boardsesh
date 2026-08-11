@@ -2,7 +2,7 @@ import { getServerSession } from 'next-auth/next';
 import { type NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { authOptions } from '@/app/lib/auth/auth-options';
 
@@ -98,14 +98,17 @@ export async function GET(request: NextRequest) {
 
     const db = getDb();
 
-    // Get all favorites for the user matching the given climbs
+    // Narrow to the requested climbs in SQL. Favorites carry no board or angle
+    // any more, so the uuid list is the only filter left — without it this reads
+    // every favorite the user has ever made on every board.
     const favorites = await db
       .select({ climbUuid: schema.userFavorites.climbUuid })
       .from(schema.userFavorites)
-      .where(eq(schema.userFavorites.userId, session.user.id));
+      .where(
+        and(eq(schema.userFavorites.userId, session.user.id), inArray(schema.userFavorites.climbUuid, climbUuids)),
+      );
 
-    // Filter to only the requested climb UUIDs
-    const favoritedUuids = favorites.map((f) => f.climbUuid).filter((uuid) => climbUuids.includes(uuid));
+    const favoritedUuids = favorites.map((favorite) => favorite.climbUuid);
 
     return NextResponse.json({ favorites: favoritedUuids });
   } catch (error) {

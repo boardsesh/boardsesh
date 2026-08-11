@@ -5,6 +5,7 @@ import { db } from '../db/client';
 import { favoriteQueries } from '../graphql/resolvers/favorites/queries';
 import { favoriteMutations } from '../graphql/resolvers/favorites/mutations';
 import { favoriteClimbsQuery } from '../graphql/resolvers/favorites/favorite-climbs-query';
+import { playlistQueries } from '../graphql/resolvers/playlists/queries';
 
 // Integration test (real DB) for #2637: favorites are keyed by (user_id,
 // climb_uuid), so a heart survives a board or angle switch instead of being a
@@ -176,5 +177,59 @@ describe('userFavoriteClimbs — count and page use the same board scope', () =>
 
     expect(result.totalCount).toBe(1);
     expect(result.climbs).toHaveLength(1);
+  });
+});
+
+describe('mySmartPlaylistCounts — the liked-climbs card', () => {
+  // The liked_climbs CTE is raw SQL (co-defined CTEs the query builder can't
+  // express) and smart-playlists.test.ts mocks db.execute, so nothing else in
+  // the suite runs this statement against Postgres. A mistake in the
+  // board_climbs join would take out every count on the playlists tab, not just
+  // this one, with no compile-time signal.
+  it('counts a favorite once per catalog climb and drops orphans, matching the list', async () => {
+    await favoriteMutations.addFavorite(undefined, { input: { climbUuid: KILTER_CLIMB } }, ctx());
+    await favoriteMutations.addFavorite(undefined, { input: { climbUuid: TENSION_CLIMB } }, ctx());
+    await favoriteMutations.addFavorite(undefined, { input: { climbUuid: ORPHAN_CLIMB } }, ctx());
+
+    const counts = await playlistQueries.mySmartPlaylistCounts(null, undefined, ctx());
+    const likedClimbs = counts.find((entry) => entry.type === 'LIKED_CLIMBS');
+
+    // Two catalog climbs across two boards; the orphan favorite is excluded
+    // here exactly as it is from the list.
+    expect(likedClimbs?.count).toBe(2);
+  });
+
+  it('reports zero for a user with no favorites', async () => {
+    const counts = await playlistQueries.mySmartPlaylistCounts(null, undefined, ctx(OTHER_USER_ID));
+    expect(counts.find((entry) => entry.type === 'LIKED_CLIMBS')?.count).toBe(0);
+  });
+});
+
+describe('deploy-window compatibility with the previous backend', () => {
+  // Migrations run in a gated job BEFORE the new backend image is live, so for
+  // the minutes Railway takes to roll, the OLD resolver is serving against this
+  // schema. Its insert infers `ON CONFLICT (user_id, board_name, climb_uuid,
+  // angle)`; with no unique index on those four columns Postgres raises 42P10
+  // and every favorite tap 500s. Migration 0190 keeps unique_user_favorite_legacy
+  // for exactly that window — Release 2 drops it with the columns.
+  it('still resolves the old four-column ON CONFLICT target', async () => {
+    const insertTheOldWay = () =>
+      db.execute(sql`
+        INSERT INTO user_favorites (user_id, board_name, climb_uuid, angle, created_at, updated_at)
+        VALUES (${USER_ID}, 'kilter', ${KILTER_CLIMB}, 40, now(), now())
+        ON CONFLICT (user_id, board_name, climb_uuid, angle) DO NOTHING
+      `);
+
+    await insertTheOldWay();
+    expect(await favoriteRowCount(KILTER_CLIMB)).toBe(1);
+
+    // Replaying it is a no-op, not a 42P10 and not a second row.
+    await insertTheOldWay();
+    expect(await favoriteRowCount(KILTER_CLIMB)).toBe(1);
+
+    // And the new key still governs: the same climb from another board context
+    // collapses onto the one row.
+    await favoriteMutations.addFavorite(undefined, { input: { climbUuid: KILTER_CLIMB } }, ctx());
+    expect(await favoriteRowCount(KILTER_CLIMB)).toBe(1);
   });
 });
