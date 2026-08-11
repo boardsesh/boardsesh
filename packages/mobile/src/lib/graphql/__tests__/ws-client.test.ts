@@ -391,7 +391,18 @@ describe('native GraphQL WebSocket transport', () => {
     it('swallows a dispose rejection without producing an unhandled rejection', async () => {
       getWsClient();
       const rawCloseEventLike = { type: 'close', code: 1001, reason: 'Stream end encountered', wasClean: false };
-      disposeSpy.mockRejectedValueOnce(rawCloseEventLike);
+      // Deliberately NOT `disposeSpy.mockRejectedValueOnce(...)`: vitest attaches
+      // its own settled-result handlers to whatever a `vi.fn()` returns, which
+      // marks the promise handled and makes an unhandled-rejection assertion
+      // vacuous — it passes even against the pre-fix `void wsClient.dispose()`.
+      // A plain rejecting function leaves the promise genuinely unhandled unless
+      // disposeWsClient() attaches a handler itself.
+      let plainDisposeCalls = 0;
+      const clientUnderTest = singletonClient as unknown as { dispose: () => Promise<void> };
+      clientUnderTest.dispose = () => {
+        plainDisposeCalls += 1;
+        return Promise.reject(rawCloseEventLike);
+      };
 
       const unhandledRejections: unknown[] = [];
       const onUnhandledRejection = (reason: unknown): void => {
@@ -400,14 +411,16 @@ describe('native GraphQL WebSocket transport', () => {
       process.on('unhandledRejection', onUnhandledRejection);
       try {
         disposeWsClient();
-        await vi.waitFor(() => expect(disposeSpy).toHaveBeenCalledTimes(1));
-        // Let the microtask queue flush so any unhandled rejection would have
-        // surfaced by now.
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await vi.waitFor(() => expect(plainDisposeCalls).toBe(1));
+        // Node emits 'unhandledRejection' a turn after the microtask queue
+        // drains, so flush past a macrotask before asserting.
+        await new Promise((resolve) => setTimeout(resolve, 50));
       } finally {
         process.off('unhandledRejection', onUnhandledRejection);
+        clientUnderTest.dispose = disposeSpy;
       }
 
+      expect(plainDisposeCalls).toBe(1);
       expect(unhandledRejections).toEqual([]);
     });
 
