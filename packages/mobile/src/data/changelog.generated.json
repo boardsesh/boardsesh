@@ -1,6 +1,35 @@
 {
-  "generatedAt": "2026-08-11T20:51:01.417Z",
+  "generatedAt": "2026-08-11T21:02:18.526Z",
   "entries": [
+    {
+      "prNumber": 4261,
+      "category": "fixed",
+      "title": "Grasshopper climbs now light up on the browser app instead of showing a blank board. Outlines draw at the standard thickness for now.",
+      "mergedAt": "2026-08-11T20:52:38Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4261"
+    },
+    {
+      "prNumber": 4266,
+      "category": "fixed",
+      "title": "Admin access scoped to a single board no longer opens the site-wide admin tools; those pages now say plainly that they need full admin access instead of loading a page where nothing works.",
+      "mergedAt": "2026-08-11T20:52:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4266"
+    },
+    {
+      "prNumber": 4259,
+      "category": "fixed",
+      "title": "Open the app offline and your board downloads stay on the fast path — two launches without signal no longer drop a board to the slow catalog crawl.",
+      "mergedAt": "2026-08-11T20:51:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4259"
+    },
+    {
+      "prNumber": 4270,
+      "category": "new",
+      "title": "Claim a gym that's auto-approved and you'll get a \"Set up your gym\"",
+      "mergedAt": "2026-08-11T20:50:59Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4270",
+      "body": "button straight from the confirmation screen — no more hunting for the\nsetup page yourself."
+    },
     {
       "prNumber": 4268,
       "category": "fixed",

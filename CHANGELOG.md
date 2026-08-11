@@ -8,6 +8,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Claim a gym that's auto-approved and you'll get a "Set up your gym" ([#4270](https://github.com/boardsesh/boardsesh/pull/4270))
+  button straight from the confirmation screen — no more hunting for the
+  setup page yourself.
 - Talk beta on public playlists — every playlist now has a discussion thread, shared with the web app. ([#4245](https://github.com/boardsesh/boardsesh/pull/4245))
   Signed out? You can still read the thread; sign in to join it.
 - Queue climbs from more than one board in the same session. Tap a climb that's set on ([#4250](https://github.com/boardsesh/boardsesh/pull/4250))
@@ -18,6 +21,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Grasshopper climbs now light up on the browser app instead of showing a blank board. Outlines draw at the standard thickness for now. ([#4261](https://github.com/boardsesh/boardsesh/pull/4261))
+- Admin access scoped to a single board no longer opens the site-wide admin tools; those pages now say plainly that they need full admin access instead of loading a page where nothing works. ([#4266](https://github.com/boardsesh/boardsesh/pull/4266))
+- Open the app offline and your board downloads stay on the fast path — two launches without signal no longer drop a board to the slow catalog crawl. ([#4259](https://github.com/boardsesh/boardsesh/pull/4259))
 - Add to playlist now only shows playlists for the board you're climbing on ([#4268](https://github.com/boardsesh/boardsesh/pull/4268))
 - Purely a crash-reporting/observability fix — no user-visible behavior change. The subscription callback bodies (`next`/`error`/`complete`) are unchanged; only the transport wrapper they're routed through changed. ([#4258](https://github.com/boardsesh/boardsesh/pull/4258))
 - MoonBoard problems keep their grade in the new-climbs feed and in setter notifications, even when the problem isn't pinned to one wall angle. ([#4243](https://github.com/boardsesh/boardsesh/pull/4243))
