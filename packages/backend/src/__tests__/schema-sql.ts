@@ -217,8 +217,8 @@ export const schemaSQL = `
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "sync_seq" bigserial NOT NULL,
     PRIMARY KEY ("board_type", "climb_uuid", "angle"),
-    CONSTRAINT "board_climb_stats_quality_average_range" CHECK ("board_climb_stats"."quality_average" IS NULL OR ("board_climb_stats"."quality_average" > 0 AND "board_climb_stats"."quality_average" <= 5)),
-    CONSTRAINT "board_climb_stats_upstream_quality_average_range" CHECK ("board_climb_stats"."upstream_quality_average" IS NULL OR ("board_climb_stats"."upstream_quality_average" > 0 AND "board_climb_stats"."upstream_quality_average" <= 5))
+    CONSTRAINT "board_climb_stats_quality_average_range" CHECK ("board_climb_stats"."quality_average" IS NULL OR ("board_climb_stats"."quality_average" >= 0 AND "board_climb_stats"."quality_average" <= 5)),
+    CONSTRAINT "board_climb_stats_upstream_quality_average_range" CHECK ("board_climb_stats"."upstream_quality_average" IS NULL OR ("board_climb_stats"."upstream_quality_average" >= 0 AND "board_climb_stats"."upstream_quality_average" <= 5))
   );
 
   CREATE TABLE IF NOT EXISTS "board_climb_grades" (

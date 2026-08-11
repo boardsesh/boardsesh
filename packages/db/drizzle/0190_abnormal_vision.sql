@@ -1,2 +1,0 @@
-ALTER TABLE "board_climb_stats" ADD CONSTRAINT "board_climb_stats_quality_average_range" CHECK ("board_climb_stats"."quality_average" IS NULL OR ("board_climb_stats"."quality_average" > 0 AND "board_climb_stats"."quality_average" <= 5));--> statement-breakpoint
-ALTER TABLE "board_climb_stats" ADD CONSTRAINT "board_climb_stats_upstream_quality_average_range" CHECK ("board_climb_stats"."upstream_quality_average" IS NULL OR ("board_climb_stats"."upstream_quality_average" > 0 AND "board_climb_stats"."upstream_quality_average" <= 5));

@@ -13,8 +13,16 @@ import { getWorkerDatabaseUrl, setupWorkerDatabase } from './worker-db';
 // guards (blendedQualityAverageSql, recompute filters, upstream writers) —
 // this CHECK is defense-in-depth so a future writer regression fails loud
 // instead of silently poisoning stats. Mirrors board_climb_ratings_rating_range
-// (migration 0112). Bound is `> 0` (not `>= 1`) because both columns are float
-// blends, not integer votes.
+// (migration 0112).
+//
+// Bound is `>= 0`, NOT the issue's originally-suggested `> 0`: the CI seed
+// snapshot (ghcr.io/boardsesh/boardsesh-dev-db) has 22k+ real
+// board_climb_stats rows — all board_type='moonboard' — sitting at exactly
+// quality_average = upstream_quality_average = 0 (an "unrated" sentinel
+// migration 0151 already cleaned up once; see the schema comment on
+// boardClimbStats for the full account). `> 0` fails the ADD CONSTRAINT
+// table rewrite outright against that real data, so 0 is admitted here —
+// this still catches the unambiguously-impossible cases (negative, >5).
 // ---------------------------------------------------------------------------
 
 describe('board_climb_stats quality range CHECK constraints (real DB)', () => {
@@ -61,11 +69,11 @@ describe('board_climb_stats quality range CHECK constraints (real DB)', () => {
   }
 
   describe('quality_average', () => {
-    it.each([0, -1, 5.01])('rejects %s as out of range', async (badValue) => {
+    it.each([-1, -0.01, 5.01])('rejects %s as out of range', async (badValue) => {
       await expectCheckViolation(insertStats(badValue, null), 'board_climb_stats_quality_average_range');
     });
 
-    it.each([0.5, 1, 5])('accepts %s as in range', async (goodValue) => {
+    it.each([0, 0.5, 1, 5])('accepts %s as in range', async (goodValue) => {
       await insertStats(goodValue, null);
     });
 
@@ -75,11 +83,11 @@ describe('board_climb_stats quality range CHECK constraints (real DB)', () => {
   });
 
   describe('upstream_quality_average', () => {
-    it.each([0, -1, 5.01])('rejects %s as out of range', async (badValue) => {
+    it.each([-1, -0.01, 5.01])('rejects %s as out of range', async (badValue) => {
       await expectCheckViolation(insertStats(null, badValue), 'board_climb_stats_upstream_quality_average_range');
     });
 
-    it.each([0.5, 1, 5])('accepts %s as in range', async (goodValue) => {
+    it.each([0, 0.5, 1, 5])('accepts %s as in range', async (goodValue) => {
       await insertStats(null, goodValue);
     });
 

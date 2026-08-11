@@ -1,5 +1,5 @@
 {
-  "id": "4f1cb334-1aed-4695-89f6-3f3b79843050",
+  "id": "b731f6a5-674a-46e6-bc32-f4ffc9d54954",
   "prevId": "0b165712-1164-48bf-9840-16bbf0593c36",
   "version": "7",
   "dialect": "postgresql",
@@ -1133,11 +1133,11 @@
       "checkConstraints": {
         "board_climb_stats_quality_average_range": {
           "name": "board_climb_stats_quality_average_range",
-          "value": "\"board_climb_stats\".\"quality_average\" IS NULL OR (\"board_climb_stats\".\"quality_average\" > 0 AND \"board_climb_stats\".\"quality_average\" <= 5)"
+          "value": "\"board_climb_stats\".\"quality_average\" IS NULL OR (\"board_climb_stats\".\"quality_average\" >= 0 AND \"board_climb_stats\".\"quality_average\" <= 5)"
         },
         "board_climb_stats_upstream_quality_average_range": {
           "name": "board_climb_stats_upstream_quality_average_range",
-          "value": "\"board_climb_stats\".\"upstream_quality_average\" IS NULL OR (\"board_climb_stats\".\"upstream_quality_average\" > 0 AND \"board_climb_stats\".\"upstream_quality_average\" <= 5)"
+          "value": "\"board_climb_stats\".\"upstream_quality_average\" IS NULL OR (\"board_climb_stats\".\"upstream_quality_average\" >= 0 AND \"board_climb_stats\".\"upstream_quality_average\" <= 5)"
         }
       },
       "isRLSEnabled": false
