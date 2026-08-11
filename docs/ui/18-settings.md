@@ -28,7 +28,7 @@
 - `TextField`, disabled/read-only, person icon adornment.
 - Helper text explaining it cannot be changed.
 
-**Save button:** Full-width contained button. Shows `CircularProgress` spinner while saving. Calls `PUT /api/internal/profile`.
+**Save button:** Full-width contained button. Shows `CircularProgress` spinner while saving. Calls the `updateProfile` GraphQL mutation.
 
 ---
 
@@ -242,8 +242,8 @@ credential to `pending` so the daemon picks it up again).
 
 **Data operations:**
 
-- `profile` -- REST `GET /api/internal/profile`.
-- `updateProfile` -- REST `PUT /api/internal/profile`.
+- `profile` -- `Query.profile` (GraphQL). Carries `instagramUrl`, `hasPassword` and `linkedProviders` alongside the display name and avatar.
+- `updateProfile` -- `Mutation.updateProfile`. Omitting a field leaves it untouched; sending `null` clears it. A `displayName` change also mirrors onto `users.name`, which is what the NextAuth session renders.
 - `auroraCredentials` -- REST `GET/POST/DELETE /api/aurora-credentials`.
 - `auroraImport` -- streaming REST `POST /api/aurora-import`.
 - `kilterCredentialHandoff` -- REST `POST /api/board-credentials/kilter/handoff`, then browser redirects through `/board-credentials/kilter/start` and `/board-credentials/kilter/callback`, then the app finalizes with `POST /api/board-credentials/kilter/finalize`.
