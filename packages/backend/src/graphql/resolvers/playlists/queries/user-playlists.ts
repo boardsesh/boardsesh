@@ -80,7 +80,7 @@ export const userPlaylists = async (
         or(eq(dbSchema.playlists.layoutId, input.layoutId), isNull(dbSchema.playlists.layoutId)),
       ),
     )
-    .orderBy(PLAYLIST_ORDER);
+    .orderBy(PLAYLIST_ORDER, desc(dbSchema.playlists.id));
 
   return enrichOwnedPlaylists(userPlaylists, userId);
 };
@@ -139,7 +139,7 @@ export const allUserPlaylists = async (
       ),
     )
     .where(whereClause)
-    .orderBy(PLAYLIST_ORDER)
+    .orderBy(PLAYLIST_ORDER, desc(dbSchema.playlists.id))
     .limit(pageSize + 1)
     .offset(page * pageSize);
 

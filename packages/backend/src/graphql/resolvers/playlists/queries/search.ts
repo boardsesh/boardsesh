@@ -5,6 +5,7 @@ import { validateInput } from '../../shared/helpers';
 import { SearchPlaylistsInputSchema } from '../../../../validation/schemas';
 import { formatPublicPlaylist } from '../helpers/enrichment';
 import { PUBLIC_PLAYLIST_GROUP_BY, publicPlaylistBaseQuery, publicPlaylistCountQuery } from './discover';
+import { escapeLikePattern } from '../../../../utils/like-pattern';
 
 /**
  * Search public playlists globally by name.
@@ -23,7 +24,7 @@ export const searchPlaylists = async (
   const conditions = [eq(dbSchema.playlists.isPublic, true)];
 
   // Name filter (required, ILIKE partial match)
-  const escapedQuery = validatedInput.query.replace(/[%_\\]/g, '\\$&');
+  const escapedQuery = escapeLikePattern(validatedInput.query);
   conditions.push(sql`LOWER(${dbSchema.playlists.name}) LIKE LOWER(${'%' + escapedQuery + '%'})`);
 
   if (validatedInput.boardType) {
@@ -38,7 +39,11 @@ export const searchPlaylists = async (
   const results = await publicPlaylistBaseQuery()
     .where(whereClause)
     .groupBy(...PUBLIC_PLAYLIST_GROUP_BY)
-    .orderBy(desc(sql`count(DISTINCT ${dbSchema.playlistClimbs.id})`), desc(dbSchema.playlists.createdAt))
+    .orderBy(
+      desc(sql`count(DISTINCT ${dbSchema.playlistClimbs.id})`),
+      desc(dbSchema.playlists.createdAt),
+      desc(dbSchema.playlists.id),
+    )
     .limit(limit + 1)
     .offset(offset);
 
