@@ -74,9 +74,10 @@ export interface LedgerTimestampRepair {
  * Why any row is ever wrong: the `boardsesh-dev-db` image applies the journal in
  * a psql loop and stamps each ledger row with the image's *build* wall clock
  * instead of the entry's `when`. That makes the ledger's high-water mark a build
- * timestamp — far above every journal `when` — so drizzle's applier skips any
- * migration added afterwards, forever, and `VERIFY_MIGRATION_JOURNAL=1` reports
- * it as a genuine gap. Rewriting `created_at` to `when` writes exactly the value
+ * timestamp, so drizzle's applier skips every journal entry whose `when` predates
+ * the image build and which the image did not itself apply — a branch's migration
+ * generated before that build — permanently, and `VERIFY_MIGRATION_JOURNAL=1`
+ * reports it as a genuine gap. Rewriting `created_at` to `when` writes the value
  * drizzle itself writes, so this is a no-op on any drizzle-managed database and a
  * repair only where something else did the stamping.
  *

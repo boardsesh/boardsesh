@@ -6,10 +6,14 @@
  * psql loop and stamps both ledger tables with the image's *build* wall clock
  * (`$(date +%s)000`). Drizzle's applier is a single high-water mark — it reads
  * `max(created_at)` once and applies only entries whose `when` is strictly
- * greater — so a build timestamp sitting ~13 orders of magnitude of wall clock
- * above every journal `when` means the next migration anyone adds is skipped on
- * that database forever. `vp run db:migrate` reports success, the table never
- * appears, and `VERIFY_MIGRATION_JOURNAL=1` (correctly) calls it a gap.
+ * greater — so that build timestamp becomes the mark, and every journal entry
+ * whose `when` predates the image build but which the image did not itself apply
+ * is skipped. Concretely, that is a branch's migration generated before the
+ * image was built: on the e2e jobs, which run `:latest`, most open PRs. (Not the
+ * newest migrations — a `when` later than the build clock still applies, which
+ * is why the bug reads as intermittent.) `vp run db:migrate` reports success,
+ * the table never appears, and `VERIFY_MIGRATION_JOURNAL=1` (correctly) calls it
+ * a gap. The mark only ever moves up, so the skip is permanent.
  *
  * `Dockerfile.dev-db` now stamps `when`, but that only helps images built after
  * this lands: CI pins a digest and developers keep a persistent `db_data`

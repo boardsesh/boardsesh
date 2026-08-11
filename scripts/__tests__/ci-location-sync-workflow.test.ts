@@ -91,8 +91,8 @@ describe('location-sync CI integration contract', () => {
     // a high-water mark drizzle can never clear. Ordered after db:migrate the
     // repair is useless: the migrations it would have unblocked are already
     // skipped by then, and the ledger only ever moves up.
-    const normalizeIndex = integrationJob.indexOf('run: bun run --filter=@boardsesh/db db:normalize-ledger');
-    const migrateIndex = integrationJob.indexOf('run: bun run --filter=@boardsesh/db db:migrate');
+    const normalizeIndex = integrationJob.indexOf('run: vp exec pnpm --filter @boardsesh/db run db:normalize-ledger');
+    const migrateIndex = integrationJob.indexOf('run: vp exec pnpm --filter @boardsesh/db run db:migrate');
     expect(normalizeIndex).toBeGreaterThan(-1);
     expect(migrateIndex).toBeGreaterThan(normalizeIndex);
   });
