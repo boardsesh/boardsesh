@@ -15,19 +15,35 @@ export type CreateHealthServerOptions = {
   readonly logger: SchedulerLogger;
 };
 
+/** A scheduled job whose most recent run failed and has not since succeeded. */
+function isDegraded(jobs: JobStatus[]): boolean {
+  return jobs.some((job) => job.scheduled && job.lastError !== null);
+}
+
 /**
- * `GET /health` for Railway's healthcheck (`healthcheckPath = "/health"` in
- * railway.toml) and for a cheap ops answer to "are the crons actually
- * ticking?" — the per-job `lastRunAt` / `lastError` come straight off the
- * runner's status map.
+ * Two endpoints, split the way `packages/backend` splits `/health` from
+ * `/health/db` (see docs/db-connectivity.md):
+ *
+ * - `GET /health` — liveness. 200 whenever the process is up, which is what
+ *   Railway's `healthcheckPath = "/health"` polls. It deliberately does NOT go
+ *   red on a failing job: restarting the container cannot fix a rotated
+ *   `CRON_SECRET` or a WAF rule, and a restart would wipe the `lastError` that
+ *   says which of the two it is. The body still reports `status: 'degraded'`
+ *   so a human or a log scrape can see it.
+ * - `GET /health/jobs` — job health. 503 when a scheduled job's last run
+ *   failed, 200 otherwise. Point an alert at this one; Railway must not, or it
+ *   will restart-loop on a problem restarts don't solve.
  */
 export function createHealthServer({ port, getStatus, logger }: CreateHealthServerOptions): HealthServer {
   const server: Server = createServer((request, response) => {
     const requestPath = (request.url ?? '/').split('?')[0];
 
-    if (request.method === 'GET' && requestPath === '/health') {
-      const body = JSON.stringify({ status: 'ok', jobs: getStatus() });
-      response.writeHead(200, { 'Content-Type': 'application/json' });
+    if (request.method === 'GET' && (requestPath === '/health' || requestPath === '/health/jobs')) {
+      const jobs = getStatus();
+      const degraded = isDegraded(jobs);
+      const body = JSON.stringify({ status: degraded ? 'degraded' : 'ok', degraded, jobs });
+      const statusCode = requestPath === '/health/jobs' && degraded ? 503 : 200;
+      response.writeHead(statusCode, { 'Content-Type': 'application/json' });
       response.end(body);
       return;
     }

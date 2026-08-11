@@ -23,7 +23,7 @@ vp exec tsx packages/scheduler/src/cli/index.ts list        # registered jobs an
 | ------------------------- | -------- | --------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `CRON_SECRET`             | yes      | —                           | Same value as the Vercel project env var. Not renamed; see `packages/web/app/lib/auth/cron-auth.ts`. |
 | `BOARDSESH_WEB_URL`       | no       | `https://www.boardsesh.com` | Same name the backend uses for web callbacks.                                                        |
-| `PORT`                    | no       | `8080`                      | Health server port (`GET /health`).                                                                  |
+| `PORT`                    | no       | `8080`                      | Health server port (`GET /health` liveness, `GET /health/jobs` job health).                          |
 | `SCHEDULER_DISABLED_JOBS` | no       | —                           | Comma-separated job names to leave unscheduled. `run <job>` still works.                             |
 
 A missing `CRON_SECRET` throws at startup, not on the first tick.
@@ -31,8 +31,8 @@ A missing `CRON_SECRET` throws at startup, not on the first tick.
 ## Adding a job
 
 1. Add a `JobDefinition` to `src/jobs/registry.ts` with an explicit
-   `timezone: 'UTC'` — Vercel crons are UTC and a container's local zone is not
-   guaranteed to be.
+   `timezone: 'UTC'` — Vercel crons are UTC, a container's local zone is not
+   guaranteed to be, and UTC has no DST gap for a schedule to fall into.
 2. Remove the matching entry from `packages/web/vercel.json` and from
    `VERCEL_OWNED_CRON_PATHS`. `src/__tests__/registry.test.ts` diffs both sides,
    so editing only one fails CI.

@@ -42,6 +42,13 @@ The GitHub-Actions-scheduled jobs (`refresh-recommendations`,
 `export-board-snapshots`, `refresh-acknowledgements`) are a separate thing and
 are not in scope here.
 
+**Keep new jobs on UTC.** Every job declares its own IANA zone, and the ticker
+honours it — but UTC has no DST gaps. A job scheduled inside a spring-forward
+gap (say 02:30 `America/New_York`) simply does not run that day, because that
+wall-clock minute doesn't exist; fall-back is safe and runs once, not twice.
+That's standard crontab behaviour, and the reason the registry pins everything
+to UTC.
+
 ## Environment
 
 | Variable                  | Required | Default                     | Notes                                                                                                                                                              |
@@ -92,6 +99,19 @@ batches, so a double run is a no-op on the second pass.
 If the PR merges before the service exists, the 180-day feed-item and 90-day
 notification retention pauses. Harmless for weeks — the job is delete-by-age
 and catches up on its next run — but it should not be left that way.
+
+## Health endpoints
+
+Split the way the backend splits `/health` from `/health/db`:
+
+- `GET /health` — **liveness**, and what Railway's healthcheck polls. 200
+  whenever the process is up. It deliberately stays green on a failing job:
+  restarting the container cannot fix a rotated `CRON_SECRET` or a WAF rule,
+  and a restart would wipe the `lastError` that tells you which it is. The body
+  still carries `status: 'degraded'` and `degraded: true`.
+- `GET /health/jobs` — **job health**. 503 when a scheduled job's last run
+  failed, 200 otherwise. Point an alert here. Do **not** point Railway's
+  healthcheck at it.
 
 ## Runbook
 

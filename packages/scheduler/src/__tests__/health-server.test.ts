@@ -45,15 +45,47 @@ describe('createHealthServer', () => {
     const response = await fetch(`${baseUrl}/health`);
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('application/json');
-    await expect(response.json()).resolves.toEqual({ status: 'ok', jobs: [jobStatus] });
+    await expect(response.json()).resolves.toEqual({ status: 'ok', degraded: false, jobs: [jobStatus] });
   });
 
   it('reflects a failing job so ops can see it without reading logs', async () => {
     const baseUrl = await startServer(() => [{ ...jobStatus, lastError: 'HTTP 500', failureCount: 2 }]);
 
-    const body = (await (await fetch(`${baseUrl}/health`)).json()) as { jobs: JobStatus[] };
+    const body = (await (await fetch(`${baseUrl}/health`)).json()) as { jobs: JobStatus[]; degraded: boolean };
     expect(body.jobs[0].lastError).toBe('HTTP 500');
     expect(body.jobs[0].failureCount).toBe(2);
+    expect(body.degraded).toBe(true);
+  });
+
+  it('keeps /health at 200 while a job is failing — a restart cannot fix a bad secret', async () => {
+    const baseUrl = await startServer(() => [{ ...jobStatus, lastError: 'HTTP 401' }]);
+
+    // Railway polls /health; going red here would restart-loop the container
+    // and wipe the lastError that says what actually broke.
+    expect((await fetch(`${baseUrl}/health`)).status).toBe(200);
+  });
+
+  it('503s /health/jobs when a scheduled job last failed', async () => {
+    const baseUrl = await startServer(() => [{ ...jobStatus, lastError: 'HTTP 401' }]);
+
+    const response = await fetch(`${baseUrl}/health/jobs`);
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { status: string; degraded: boolean };
+    expect(body).toMatchObject({ status: 'degraded', degraded: true });
+  });
+
+  it('200s /health/jobs when every scheduled job is healthy', async () => {
+    const baseUrl = await startServer(() => [jobStatus]);
+
+    expect((await fetch(`${baseUrl}/health/jobs`)).status).toBe(200);
+  });
+
+  it('stays healthy before the first tick and ignores a disabled job failure', async () => {
+    const neverRun = { ...jobStatus, lastRunAt: null, lastSuccessAt: null, lastDurationMs: null, runCount: 0 };
+    const disabledAndBroken = { ...jobStatus, name: 'other', scheduled: false, lastError: 'HTTP 500' };
+    const baseUrl = await startServer(() => [neverRun, disabledAndBroken]);
+
+    expect((await fetch(`${baseUrl}/health/jobs`)).status).toBe(200);
   });
 
   it('ignores a query string on the health path', async () => {

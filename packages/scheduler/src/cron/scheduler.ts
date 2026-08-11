@@ -48,6 +48,13 @@ export type MinuteTickerOptions = {
  * whose expression matches the current wall clock in that task's timezone.
  * Missed minutes (process paused, host suspended) are skipped rather than
  * replayed — same behaviour as a system crontab.
+ *
+ * DST, for whoever adds the first job in a non-UTC zone: "fall back" is safe —
+ * the repeated hour produces the same `lastFiredMinuteKey`, so the job runs
+ * once, not twice. "Spring forward" **skips** a job scheduled inside the gap
+ * (e.g. 02:30 America/New_York), because that wall-clock minute does not exist
+ * that day. That matches system crontabs, and it is the reason every job in
+ * the registry is pinned to UTC, which has no gaps.
  */
 export function createMinuteTicker(options: MinuteTickerOptions = {}): CronScheduler {
   const now = options.now ?? (() => Date.now());
