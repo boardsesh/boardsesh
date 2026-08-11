@@ -7,7 +7,9 @@ import {
   usePlaybackEngine,
   type ExternalPlaybackState,
   type LocalPlaybackState,
+  type PeerFrameMismatch,
 } from '@boardsesh/playback-react/use-playback-engine';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { usePersistentSessionActions } from '../persistent-session';
 import { useBluetoothContext } from '../board-bluetooth-control/bluetooth-context';
 import { renderBoard } from '@/app/lib/board-render-worker/worker-manager';
@@ -110,6 +112,21 @@ export function useDrawerPlayback({
     [activeClimbUuid, publishPlaybackState, playbackClientId],
   );
 
+  // Telemetry only — the drawer shows no notice for this (the web climbing
+  // surface is frozen, #3122). Without it the event would be mobile-only and
+  // under-count how often a mixed fleet actually skews playback.
+  const handlePeerFrameMismatch = useCallback(
+    ({ peerFrameCount, localFrameCount }: PeerFrameMismatch) => {
+      track(SHARED_EVENTS.PlaybackPeerFrameMismatch, {
+        peerFrameCount,
+        localFrameCount,
+        boardName: boardDetails.board_name,
+        climbUuid: activeClimbUuid,
+      });
+    },
+    [boardDetails.board_name, activeClimbUuid],
+  );
+
   const playback = usePlaybackEngine({
     frames: climbFrames.frames,
     frameStrings: climbFrames.frameStrings,
@@ -117,6 +134,7 @@ export function useDrawerPlayback({
     clientId: playbackClientId,
     externalState: externalPlayback,
     onLocalStateChange: handleLocalPlaybackChange,
+    onPeerFrameMismatch: handlePeerFrameMismatch,
   });
 
   // Latest-wins BLE serialization: Web Bluetooth on Android can't cancel an

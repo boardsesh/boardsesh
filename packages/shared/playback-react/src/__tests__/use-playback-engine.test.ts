@@ -480,6 +480,22 @@ describe('usePlaybackEngine peer frame-count disagreement', () => {
     expect(result.current.peerFrameMismatch).toBe(false);
   });
 
+  it('clears the mismatch when the host drops the peer state', () => {
+    const { frames, frameStrings } = decode(TENSION_FRAMES);
+    const { result, rerender } = renderHook(
+      ({ externalState }: { externalState: ExternalPlaybackState | null }) =>
+        usePlaybackEngine({ frames, frameStrings, paceMs: 200, clientId: 'self', externalState }),
+      { initialProps: { externalState: null as ExternalPlaybackState | null } },
+    );
+    rerender({ externalState: peerState({ frameCount: 12 }) });
+    expect(result.current.peerFrameMismatch).toBe(true);
+
+    // The mismatched peer left the session, so the host clears its state. The
+    // notice must not outlive the peer it describes.
+    rerender({ externalState: null });
+    expect(result.current.peerFrameMismatch).toBe(false);
+  });
+
   it('stamps our own frame count on every emitted state', () => {
     const { frames, frameStrings } = decode(TENSION_FRAMES);
     const onLocalStateChange = vi.fn();

@@ -231,7 +231,12 @@ export function usePlaybackEngine({
   // out-of-range values would otherwise poison local state and get re-broadcast
   // on the next user action.
   useEffect(() => {
-    if (!externalState) return;
+    // Host dropped the peer state (climb change, session left). Nothing left to
+    // disagree with, so the notice shouldn't outlive it.
+    if (!externalState) {
+      updatePeerFrameMismatch(false);
+      return;
+    }
     if (externalState.clientId && externalState.clientId === clientId) return;
     if (frameStrings.length === 0) return;
     // Frame-count check first, before anything is clamped. A peer whose reader
