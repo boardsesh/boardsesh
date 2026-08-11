@@ -239,7 +239,7 @@ export default defineConfig({
       // later migration can clear, so drizzle silently skips them forever. No
       // db:up dependency: db:up itself runs this, and a dependency would cycle.
       'db:normalize-ledger': {
-        command: 'bun run --filter=@boardsesh/db db:normalize-ledger',
+        command: 'pnpm --filter @boardsesh/db run db:normalize-ledger',
         cache: false,
       },
       'db:studio': {
