@@ -465,8 +465,13 @@ export default defineConfig({
       // surfaced when a scheduled workflow failed at runtime. Scoped to the
       // Discord feedback pipeline via scripts/tsconfig.json; widen its
       // `include` as other scripts are made type-clean.
+      // typescript is a ROOT devDependency for this. Making scripts/ a workspace
+      // package to scope it instead does not work: the service Docker contexts
+      // copy workspace manifests from packages/ only, so a workspace outside it
+      // fails check:service-deploy-inputs and would need all three Dockerfiles
+      // changed to ship build tooling into production images.
       'typecheck:scripts': {
-        command: 'bun run --filter=@boardsesh/scripts typecheck',
+        command: 'tsc -p scripts/tsconfig.json',
       },
       'typecheck:shared': {
         command: 'bun run --filter=@boardsesh/shared-schema typecheck',
