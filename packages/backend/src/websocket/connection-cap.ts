@@ -210,7 +210,11 @@ export function countAnonConnectionSlots(tier: AnonConnectionCapTier, ip: string
   return holdersByCapKey.get(`${prefix}:${ip}`)?.size ?? 0;
 }
 
-/** Number of distinct keys held. Exported so tests can prove the registry drains. */
+/**
+ * Combined entry count of both internal maps. Not a slot count — it exists so a
+ * test can assert the registry fully drains: zero means no cap key and no
+ * connection is still tracked, i.e. nothing leaked.
+ */
 export function anonConnectionCapRegistrySize(): number {
   return holdersByCapKey.size + capKeysByConnectionId.size;
 }

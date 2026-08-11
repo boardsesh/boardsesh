@@ -141,13 +141,18 @@ describe('WebSocket anonymous connection cap', () => {
     });
   }
 
-  /** Wait for the raw socket close the server observed to be processed. */
-  function waitForServerClose(socket: WebSocket, terminate = false): Promise<void> {
-    return new Promise<void>((resolve) => {
-      socket.once('close', () => setTimeout(resolve, 25));
+  /**
+   * Drop a socket and wait for the server to have released its slot. Polls the
+   * registry rather than sleeping a fixed interval: the server's release runs on
+   * its own 'close' event, which has no ordering guarantee against the client's.
+   */
+  async function dropAndAwaitRelease(socket: WebSocket, tierIp: string, terminate = false): Promise<void> {
+    await new Promise<void>((resolve) => {
+      socket.once('close', () => resolve());
       if (terminate) socket.terminate();
       else socket.close(1000);
     });
+    await vi.waitUntil(() => countAnonConnectionSlots('client-ip', tierIp) === 0, { timeout: 2000, interval: 5 });
   }
 
   /**
@@ -218,8 +223,7 @@ describe('WebSocket anonymous connection cap', () => {
     const first = await connectExpectingAccept(headers);
     expect((await connect(headers)).accepted).toBe(false);
 
-    await waitForServerClose(first);
-    expect(countAnonConnectionSlots('client-ip', '203.0.113.8')).toBe(0);
+    await dropAndAwaitRelease(first, '203.0.113.8');
 
     const replacement = await connect(headers);
     expect(replacement.accepted).toBe(true);
@@ -232,11 +236,31 @@ describe('WebSocket anonymous connection cap', () => {
     const first = await connectExpectingAccept(headers);
     expect(countAnonConnectionSlots('client-ip', '203.0.113.9')).toBe(1);
 
-    await waitForServerClose(first, true);
-
     // A half-open socket that dies without a close handshake must not strand a
     // slot — stranded slots permanently shrink an IP's budget on this instance.
-    expect(countAnonConnectionSlots('client-ip', '203.0.113.9')).toBe(0);
+    await dropAndAwaitRelease(first, '203.0.113.9', true);
+
+    expect((await connect(headers)).accepted).toBe(true);
+  });
+
+  it('frees the slot when registerClient throws after acquisition', async () => {
+    process.env.WS_ANON_CONNECTIONS_PER_CLIENT_IP = '1';
+    const headers = { 'cf-connecting-ip': '203.0.113.12' };
+    registerClient.mockRejectedValueOnce(new Error('room manager unavailable'));
+
+    // onConnect throws, so it never resolves and graphql-ws never marks the
+    // connection acknowledged — onDisconnect is skipped entirely. Only the raw
+    // socket's 'close' listener can free this slot.
+    const outcome = await connect(headers);
+    expect(outcome.accepted).toBe(false);
+
+    await vi.waitUntil(() => countAnonConnectionSlots('client-ip', '203.0.113.12') === 0, {
+      timeout: 2000,
+      interval: 5,
+    });
+    expect(anonConnectionCapRegistrySize()).toBe(0);
+    // The IP's budget must be intact, not permanently down one slot.
+    registerClient.mockResolvedValue('participant-1');
     expect((await connect(headers)).accepted).toBe(true);
   });
 
