@@ -96,18 +96,13 @@ describe('createAppStoreConnectJwt', () => {
   });
 });
 
-describe('redactSensitiveText', () => {
-  it('removes emails, labelled names, self-introductions, and local usernames', () => {
-    const redacted = redactSensitiveText(
-      'name: Marco\ntester=Jane\nMy name is Alex Smith\n/Users/marco/Library\nmarco@example.com',
-    );
-
-    expect(redacted).not.toContain('Marco');
-    expect(redacted).not.toContain('Jane');
-    expect(redacted).not.toContain('Alex Smith');
-    expect(redacted).not.toContain('marco@example.com');
-    expect(redacted).toContain('[redacted email]');
-    expect(redacted).toContain('/Users/[redacted]/Library');
+// Behaviour lives in @boardsesh/text-redaction and is covered by its own tests.
+// This only pins that the re-export is still wired up.
+describe('redactSensitiveText re-export', () => {
+  it('redacts through to the shared helper', () => {
+    expect(redactSensitiveText('marco@example.com')).toContain('[redacted email]');
+    expect(redactSensitiveText('crash in /Users/marco/app')).toContain('/Users/[redacted]');
+    expect(redactSensitiveText('trace at /home/marco/app')).toContain('/home/[redacted]');
   });
 });
 

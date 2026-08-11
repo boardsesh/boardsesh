@@ -94,8 +94,10 @@ describe('buildFeedbackIssue', () => {
   });
 });
 
-describe('redactSensitiveText', () => {
-  it('redacts emails and home paths', () => {
+// Behaviour lives in @boardsesh/text-redaction and is covered by its own tests.
+// This only pins that the re-export is still wired up.
+describe('redactSensitiveText re-export', () => {
+  it('redacts through to the shared helper', () => {
     expect(redactSensitiveText('mail me at a@b.com')).toContain('[redacted email]');
     expect(redactSensitiveText('crash in /Users/marco/app')).toContain('/Users/[redacted]');
   });

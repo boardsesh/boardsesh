@@ -104,6 +104,7 @@ export default defineConfig({
       './packages/shared/board-config/vite.config.ts',
       './packages/shared/board-render/vite.config.ts',
       './packages/shared/velvet-tokens/vite.config.ts',
+      './packages/shared/text-redaction/vite.config.ts',
       './packages/shared/board-react/vite.config.ts',
       './packages/shared/create-climb-react/vite.config.ts',
       './packages/shared/queue/vite.config.ts',
@@ -460,6 +461,18 @@ export default defineConfig({
       },
 
       // --- Typecheck (depends on build for type declarations) ---
+      // Repo-root scripts/ had no typecheck at all, so type errors there only
+      // surfaced when a scheduled workflow failed at runtime. Scoped to the
+      // Discord feedback pipeline via scripts/tsconfig.json; widen its
+      // `include` as other scripts are made type-clean.
+      // typescript is a ROOT devDependency for this. Making scripts/ a workspace
+      // package to scope it instead does not work: the service Docker contexts
+      // copy workspace manifests from packages/ only, so a workspace outside it
+      // fails check:service-deploy-inputs and would need all three Dockerfiles
+      // changed to ship build tooling into production images.
+      'typecheck:scripts': {
+        command: 'tsc -p scripts/tsconfig.json',
+      },
       'typecheck:shared': {
         command: 'bun run --filter=@boardsesh/shared-schema typecheck',
         dependsOn: ['build:shared'],
@@ -591,6 +604,7 @@ export default defineConfig({
       typecheck: {
         command: 'true',
         dependsOn: [
+          'typecheck:scripts',
           'typecheck:shared',
           'typecheck:db',
           'typecheck:backend',
@@ -790,6 +804,10 @@ export default defineConfig({
       },
       'testflight:feedback-issues': {
         command: 'tsx scripts/testflight-feedback-to-issues.ts',
+        cache: false,
+      },
+      'discord:feedback-scan': {
+        command: 'tsx scripts/discord-feedback-scan.ts',
         cache: false,
       },
 

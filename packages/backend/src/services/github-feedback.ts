@@ -12,6 +12,7 @@
  */
 
 import type { AppFeedbackPlatform, AppFeedbackSource, FeedbackContextInput } from '@boardsesh/shared-schema';
+import { redactSensitiveText } from '@boardsesh/text-redaction';
 import { logger } from '../utils/logger';
 
 const GITHUB_API = 'https://api.github.com';
@@ -57,23 +58,9 @@ export type CreatedIssue = {
   htmlUrl: string;
 };
 
-/**
- * Redact obvious PII before free text lands in a public issue. Ported from
- * scripts/testflight-feedback-to-issues.ts (kept in sync via this file's test).
- */
-export function redactSensitiveText(text: string): string {
-  let redacted = text.replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[redacted email]');
-  redacted = redacted.replace(/\/Users\/[^/\s]+/g, '/Users/[redacted]');
-  redacted = redacted.replace(
-    /\b((?:first|last|full)\s+name|name|tester|email)\s*[:=]\s*([^\n\r,;]+)/gi,
-    (_match: string, label: string) => `${label}: [redacted]`,
-  );
-  redacted = redacted.replace(
-    /\b(my name is|i am|i'm)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\b/gi,
-    (_match: string, prefix: string) => `${prefix} [redacted name]`,
-  );
-  return redacted;
-}
+// Re-exported so this module's public surface (and its test) is unchanged by the
+// move to the shared package.
+export { redactSensitiveText };
 
 function formatBoard(payload: FeedbackIssuePayload): string | null {
   if (!payload.boardName) return null;

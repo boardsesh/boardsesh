@@ -3,6 +3,12 @@
 import { createSign } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 
+import { redactSensitiveText } from '@boardsesh/text-redaction';
+
+// Re-exported so this module's public surface (and its test) is unchanged by the
+// move to the shared package.
+export { redactSensitiveText };
+
 const APP_STORE_CONNECT_API_BASE = 'https://api.appstoreconnect.apple.com';
 const GITHUB_API_BASE = 'https://api.github.com';
 const DEFAULT_BUNDLE_ID = 'com.boardsesh.app';
@@ -609,20 +615,6 @@ function mapCrashFeedback(
 
 export function testFlightMarker(kind: TestFlightFeedback['kind'], id: string): string {
   return `<!-- testflight-feedback:${kind}:${id} -->`;
-}
-
-export function redactSensitiveText(text: string): string {
-  let redactedText = text.replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[redacted email]');
-  redactedText = redactedText.replace(/\/Users\/[^/\s]+/g, '/Users/[redacted]');
-  redactedText = redactedText.replace(
-    /\b((?:first|last|full)\s+name|name|tester|email)\s*[:=]\s*([^\n\r,;]+)/gi,
-    (_match: string, label: string) => `${label}: [redacted]`,
-  );
-  redactedText = redactedText.replace(
-    /\b(my name is|i am|i'm)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\b/gi,
-    (_match: string, prefix: string) => `${prefix} [redacted name]`,
-  );
-  return redactedText;
 }
 
 export function buildIssueDraft(feedback: TestFlightFeedback): IssueDraft {
