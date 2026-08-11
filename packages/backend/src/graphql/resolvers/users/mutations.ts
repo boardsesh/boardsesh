@@ -12,8 +12,7 @@ import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { coalesceInteractiveRun, ensureProviderSyncControl, lockProviderSyncControl } from '@boardsesh/db/queries';
-import { loadProfileRoleFlags } from './role-flags';
-import { FAVORITE_COUNT_SUBQUERY } from './favorite-count';
+import { mapProfileRow, PROFILE_SELECT } from './profile-row';
 import { logger } from '../../../utils/logger';
 import { markErrorReported } from '../../../utils/sentry-dedupe';
 import { getPostgresErrorCode } from '../../../utils/postgres-errors';
@@ -43,7 +42,7 @@ export const userMutations = {
    */
   updateProfile: async (
     _: unknown,
-    { input }: { input: { displayName?: string; avatarUrl?: string } },
+    { input }: { input: { displayName?: string | null; avatarUrl?: string | null; instagramUrl?: string | null } },
     ctx: ConnectionContext,
   ): Promise<UserProfile> => {
     requireAuthenticated(ctx);
@@ -53,14 +52,18 @@ export const userMutations = {
 
     try {
       const row = await db.transaction(async (tx) => {
+        const now = new Date();
+
         // Upsert only the fields the caller actually sent, so an omitted field
-        // keeps its existing value (partial-update semantics). Both fields are
-        // optional in the input schema; with neither present there is nothing
-        // to write, and an empty `set` would be invalid SQL — so skip the
-        // write entirely in that case.
-        const profileUpdates: { displayName?: string; avatarUrl?: string } = {};
+        // keeps its existing value (partial-update semantics). An explicit
+        // null clears the field. Every field is optional in the input schema;
+        // with none present there is nothing to write, and an empty `set`
+        // would be invalid SQL — so skip the write entirely in that case.
+        const profileUpdates: { displayName?: string | null; avatarUrl?: string | null; instagramUrl?: string | null } =
+          {};
         if (input.displayName !== undefined) profileUpdates.displayName = input.displayName;
         if (input.avatarUrl !== undefined) profileUpdates.avatarUrl = input.avatarUrl;
+        if (input.instagramUrl !== undefined) profileUpdates.instagramUrl = input.instagramUrl;
 
         if (Object.keys(profileUpdates).length > 0) {
           // `updated_at` only has `defaultNow()`, so without stamping it here
@@ -69,27 +72,32 @@ export const userMutations = {
           // `<lastmod>` (#5206): unstamped, a display-name or avatar change
           // rewrites the page's h1, summary, avatar and JSON-LD while the
           // sitemap goes on advertising the old date.
-          const stampedUpdates = { ...profileUpdates, updatedAt: new Date() };
+          const stampedUpdates = { ...profileUpdates, updatedAt: now };
           await tx
             .insert(dbSchema.userProfiles)
             .values({ userId, ...stampedUpdates })
-            .onConflictDoUpdate({ target: dbSchema.userProfiles.userId, set: stampedUpdates });
+            .onConflictDoUpdate({
+              target: dbSchema.userProfiles.userId,
+              set: stampedUpdates,
+            });
+        }
+
+        // Mirror the display name onto users.name, which is what the NextAuth
+        // session (and therefore the web header/drawer) reads. The REST route
+        // this mutation replaced did the same; without it, renaming yourself
+        // leaves a stale name everywhere the session is the source.
+        if (input.displayName !== undefined) {
+          await tx
+            .update(dbSchema.users)
+            .set({ name: input.displayName || null, updatedAt: now })
+            .where(eq(dbSchema.users.id, userId));
         }
 
         // One round trip to load the merged profile, mirroring the `profile`
         // query so both stay a single correlated-subquery select instead of the
         // previous 4 sequential, un-transactioned round trips (issue #3603).
         const [loadedRow] = await tx
-          .select({
-            id: dbSchema.users.id,
-            email: dbSchema.users.email,
-            name: dbSchema.users.name,
-            image: dbSchema.users.image,
-            createdAt: dbSchema.users.createdAt,
-            displayName: dbSchema.userProfiles.displayName,
-            avatarUrl: dbSchema.userProfiles.avatarUrl,
-            favoriteCount: FAVORITE_COUNT_SUBQUERY,
-          })
+          .select(PROFILE_SELECT)
           .from(dbSchema.users)
           .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, dbSchema.users.id))
           .where(eq(dbSchema.users.id, userId))
@@ -106,18 +114,7 @@ export const userMutations = {
         });
       }
 
-      const { isTester, isAdmin } = await loadProfileRoleFlags(row.id);
-
-      return {
-        id: row.id,
-        email: row.email,
-        displayName: row.displayName || row.name || undefined,
-        avatarUrl: row.avatarUrl || row.image || undefined,
-        isTester,
-        isAdmin,
-        createdAt: row.createdAt.toISOString(),
-        favoriteCount: row.favoriteCount,
-      };
+      return mapProfileRow(row);
     } catch (error) {
       // A GraphQLError here is already client-safe and intentional (the
       // USER_NOT_FOUND above) — let it through untouched.
@@ -135,6 +132,7 @@ export const userMutations = {
           userId,
           hasDisplayName: input.displayName !== undefined,
           hasAvatarUrl: input.avatarUrl !== undefined,
+          hasInstagramUrl: input.instagramUrl !== undefined,
         },
       });
       const clientSafeError = new GraphQLError('Could not save your profile. Please try again.', {
