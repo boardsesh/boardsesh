@@ -71,14 +71,15 @@ def asc_api_key
 end
 
 # True when App Store Connect has a version deliver can edit (Prepare for
-# Submission / a rejected state), false when there is none, so the `metadata` lane
-# can skip instead of letting deliver retry "Cannot find edit app store version"
-# for ~20 minutes. Requires the Spaceship token to already be set (asc_api_key sets
-# it by default). On ANY uncertainty — app not found, credentials/API error — it
-# returns true so deliver still runs; this never suppresses a legitimate push, it
-# only avoids the pointless retry loop when we're certain there's nothing to edit.
-# Mirrors deliver's own lookup (App#get_edit_app_store_version, which returns nil
-# when no version is editable).
+# Submission / a rejected state), false when there is none, so the `metadata` and
+# `screenshots` lanes can skip instead of letting deliver retry "Cannot find edit
+# app store version" for ~20 minutes. Requires the Spaceship token to already be
+# set (asc_api_key / app_store_connect_api_key set it by default). On ANY
+# uncertainty — app not found, credentials/API error — it returns true so deliver
+# still runs; this never suppresses a legitimate push, it only avoids the
+# pointless retry loop when we're certain there's nothing to edit. Mirrors
+# deliver's own lookup (App#get_edit_app_store_version, which returns nil when no
+# version is editable).
 def editable_app_store_version_present?
   require "spaceship"
   app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
@@ -98,6 +99,15 @@ def emit_ci_output(value)
   github_output = ENV["GITHUB_OUTPUT"]
   return if github_output.nil? || github_output.empty?
   File.open(github_output, "a") { |file| file.puts("value=#{value}") }
+end
+
+# Append a line to the job's step summary (rendered on the Actions run page), so
+# a clean skip is visible without opening the logs — a green job that uploaded
+# nothing otherwise reads as a normal success. No-op when run locally.
+def emit_step_summary(message)
+  github_step_summary = ENV["GITHUB_STEP_SUMMARY"]
+  return if github_step_summary.nil? || github_step_summary.empty?
+  File.open(github_step_summary, "a") { |file| file.puts(message) }
 end
 
 def pngs_for_locale(locale)
@@ -264,6 +274,18 @@ platform :ios do
         in_house: false
       )
 
+      # Same pre-flight as the `metadata` lane (see its comment above `upload_to_app_store`
+      # there): deliver (sync_screenshots: true) can only attach screenshots to the
+      # *editable* App Store version, and between releases there's often nothing editable.
+      # Without this guard the upload grinds through deliver's ~20-minute "Cannot find edit
+      # app store version" backoff ladder AFTER the ~30-minute capture matrix has already run
+      # — wasted either way, but at least this saves the finalize step itself.
+      unless editable_app_store_version_present?
+        UI.important("No editable App Store version in 'Prepare for Submission' — nothing for deliver to attach screenshots to. Skipping the upload; re-run once a version is editable.")
+        emit_step_summary("**Skipped:** no editable App Store version — no iOS screenshots uploaded.")
+        next
+      end
+
       with_upload_retries do
         upload_to_app_store(
           api_key: api_key,
@@ -302,6 +324,7 @@ platform :ios do
     # next run once a version is editable (and it's pushed again at release time).
     unless editable_app_store_version_present?
       UI.important("No editable App Store version in 'Prepare for Submission' — nothing for deliver to edit. Skipping the listing-text upload; it will be pushed once a version is editable.")
+      emit_step_summary("**Skipped:** no editable App Store version — no iOS listing text uploaded.")
       next
     end
 
