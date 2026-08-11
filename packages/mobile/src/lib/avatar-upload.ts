@@ -49,6 +49,16 @@ function withCacheBuster(url: string): string {
 export async function uploadAvatar(file: AvatarUploadFile, userId: string): Promise<string> {
   const localFile = new File(file.uri);
 
+  // Read the bytes now instead of handing the encoder a lazy `bytes()` closure.
+  // The multipart encoder only awaits `bytes()` at encode time, so a picked file
+  // that has since become unreadable (cache eviction) would be encoded as an
+  // empty part and stored as a zero-byte avatar that renders as a blank circle.
+  // Reading here turns that into an error the caller can surface, before the POST.
+  const avatarBytes = await localFile.bytes();
+  if (avatarBytes.length === 0) {
+    throw new Error('Avatar upload failed');
+  }
+
   const formData = new FormData();
   // Expo's global `fetch` (WinterCG) rejects React Native's legacy
   // `{ uri, name, type }` FormData file descriptor with "Unsupported FormDataPart
@@ -60,7 +70,7 @@ export async function uploadAvatar(file: AvatarUploadFile, userId: string): Prom
   const avatarPart = {
     name: file.name ?? 'avatar.jpg',
     type: file.type ?? 'image/jpeg',
-    bytes: () => localFile.bytes(),
+    bytes: () => Promise.resolve(avatarBytes),
   };
   formData.append('avatar', avatarPart as unknown as Blob);
   formData.append('userId', userId);
