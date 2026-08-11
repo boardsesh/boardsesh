@@ -614,9 +614,11 @@ describe('migration journal verification (#2933)', () => {
     }
     // The dev-db image's exact shape: the journal is applied by a psql loop that
     // stamps every ledger row with the image's build clock instead of the
-    // entry's `when`. That single value is a high-water mark drizzle can never
-    // clear, so every migration written after the image was built is skipped —
-    // on that deploy and on every one after it.
+    // entry's `when`. That single value becomes a high-water mark that only ever
+    // moves up, so every journal entry with an earlier `when` that the image did
+    // not itself apply — `0002_later` below, standing in for a branch's
+    // migration written before the image was built — is skipped on that deploy
+    // and on every one after it.
     const migrationsFolder = makeTempFolder('build-clock');
     const scratchUrl = await createScratchDatabase(adminUrl, 'build_clock');
     writeMigrationsFolder(migrationsFolder, PHASE_ONE);
