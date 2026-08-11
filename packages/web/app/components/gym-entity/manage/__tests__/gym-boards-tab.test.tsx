@@ -167,6 +167,7 @@ describe('GymBoardsTab — stray boards', () => {
       currentGymName: null,
       distanceMeters: 42,
       reason: 'NEARBY',
+      isLastBoardAtCurrentGym: false,
       ...overrides,
     };
   }
@@ -249,6 +250,95 @@ describe('GymBoardsTab — stray boards', () => {
 
     expect(await screen.findByText(/couldn't check for stray boards/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: /try again/i })).toBeTruthy();
+  });
+
+  it('asks before attaching the last board on a listing, and only then fires the mutation', async () => {
+    stubRequests({
+      gymBoards: [],
+      myBoards: [],
+      strays: [
+        makeStray({
+          uuid: 'stray-last',
+          name: 'Lonely Kilter',
+          currentGymUuid: 'other-gym',
+          currentGymName: 'Auto Listing',
+          isLastBoardAtCurrentGym: true,
+        }),
+      ],
+    });
+    render(<GymBoardsTab gym={editableGym} onGymChange={vi.fn()} />);
+
+    await screen.findByText('Lonely Kilter');
+    expect(screen.getByText(/last board on that listing/i)).toBeTruthy();
+    mockExecute.mockResolvedValueOnce({ attachBoardToGym: true });
+
+    fireEvent.click(screen.getByRole('button', { name: /add to gym/i }));
+
+    // The confirm step must land before anything is written.
+    expect(await screen.findByText(/this empties the other listing/i)).toBeTruthy();
+    expect(screen.getByText(/"Auto Listing" has no other boards/i)).toBeTruthy();
+    expect(mockExecute).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /add and merge/i }));
+
+    await waitFor(() =>
+      expect(mockExecute).toHaveBeenCalledWith({
+        input: { gymUuid: GYM_UUID, boardUuid: 'stray-last' },
+      }),
+    );
+  });
+
+  it('leaves the board alone when the merge confirm is cancelled', async () => {
+    stubRequests({
+      gymBoards: [],
+      myBoards: [],
+      strays: [
+        makeStray({
+          uuid: 'stray-last',
+          name: 'Lonely Kilter',
+          currentGymUuid: 'other-gym',
+          currentGymName: 'Auto Listing',
+          isLastBoardAtCurrentGym: true,
+        }),
+      ],
+    });
+    render(<GymBoardsTab gym={editableGym} onGymChange={vi.fn()} />);
+
+    await screen.findByText('Lonely Kilter');
+    fireEvent.click(screen.getByRole('button', { name: /add to gym/i }));
+    await screen.findByText(/this empties the other listing/i);
+
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+
+    await waitFor(() => expect(screen.queryByText(/this empties the other listing/i)).toBeNull());
+    expect(mockExecute).not.toHaveBeenCalled();
+    expect(screen.getByText('Lonely Kilter')).toBeTruthy();
+  });
+
+  it('keeps the one-tap path for a board that is not the last on its listing', async () => {
+    stubRequests({
+      gymBoards: [],
+      myBoards: [],
+      strays: [
+        makeStray({
+          uuid: 'stray-nearby',
+          name: 'Nearby Tension',
+          currentGymUuid: 'other-gym',
+          currentGymName: 'Auto Listing',
+          isLastBoardAtCurrentGym: false,
+        }),
+      ],
+    });
+    render(<GymBoardsTab gym={editableGym} onGymChange={vi.fn()} />);
+
+    await screen.findByText('Nearby Tension');
+    expect(screen.queryByText(/last board on that listing/i)).toBeNull();
+    mockExecute.mockResolvedValueOnce({ attachBoardToGym: true });
+
+    fireEvent.click(screen.getByRole('button', { name: /add to gym/i }));
+
+    await waitFor(() => expect(mockExecute).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText(/this empties the other listing/i)).toBeNull();
   });
 
   it('does not render the strays section without gym edit access', async () => {

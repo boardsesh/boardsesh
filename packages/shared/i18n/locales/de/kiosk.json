@@ -267,6 +267,10 @@
         "attach": "Zur Halle hinzufügen",
         "attached": "Board zu deiner Halle hinzugefügt.",
         "attachFailed": "Dieses Board ließ sich nicht hinzufügen.",
+        "lastBoardNote": "Letztes Board auf diesem Eintrag",
+        "lastBoardTitle": "Damit wird der andere Eintrag leer",
+        "lastBoardBody": "\"{{name}}\" hat kein weiteres Board. Häng dieses hier dran, dann geht der Eintrag in deiner Halle auf. Alte Links landen weiterhin hier, und er taucht nicht mehr als leeres Duplikat in der Suche auf.",
+        "lastBoardConfirm": "Hinzufügen und zusammenführen",
         "empty": "Gerade nichts Loses. Jedes Board in der Nähe deiner Halle steht schon in deinem Eintrag.",
         "loadError": "Konnte nicht nach herrenlosen Boards suchen.",
         "retry": "Nochmal versuchen"
