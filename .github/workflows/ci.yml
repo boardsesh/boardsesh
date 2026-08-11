@@ -733,6 +733,15 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: built-packages
+      # The pinned image's ledger was stamped with the image build clock, not
+      # each journal entry's `when` (#4211). That is a high-water mark drizzle
+      # can never clear, so without this repair the next step silently skips
+      # every migration written after the image was built — including the one a
+      # PR is adding. Must stay ahead of db:migrate.
+      - name: Normalize the dev-db image migration ledger
+        env:
+          DATABASE_URL: postgres://postgres:password@localhost:5432/main
+        run: bun run --filter=@boardsesh/db db:normalize-ledger
       - name: Apply the full migration journal
         env:
           DATABASE_URL: postgres://postgres:password@localhost:5432/main

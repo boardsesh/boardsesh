@@ -82,6 +82,17 @@ describe('location-sync CI integration contract', () => {
     expect(integrationJob).not.toContain('--changed');
   });
 
+  it('repairs the image ledger timestamps before applying the journal', () => {
+    // The pinned image stamps `created_at` with its build clock (#4211), which is
+    // a high-water mark drizzle can never clear. Ordered after db:migrate the
+    // repair is useless: the migrations it would have unblocked are already
+    // skipped by then, and the ledger only ever moves up.
+    const normalizeIndex = integrationJob.indexOf('run: bun run --filter=@boardsesh/db db:normalize-ledger');
+    const migrateIndex = integrationJob.indexOf('run: bun run --filter=@boardsesh/db db:migrate');
+    expect(normalizeIndex).toBeGreaterThan(-1);
+    expect(migrateIndex).toBeGreaterThan(normalizeIndex);
+  });
+
   it('publishes JUnit and makes both report and aggregate status depend on the job', () => {
     expect(integrationJob).toContain('--reporter=junit');
     expect(integrationJob).toContain('name: test-results-location-sync');
