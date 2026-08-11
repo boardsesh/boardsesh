@@ -456,7 +456,13 @@ export default function PlaylistDetail() {
         if (conflict) {
           Alert.alert(
             t('edit.conflict.title'),
-            t('edit.conflict.message', { serverName: conflict.serverName, yourName: values.name }),
+            // The server also conflicts on description, colour, icon and
+            // visibility, so the two names can be identical. Quoting them back
+            // would read as "saved as X now, your edit says X" — say the details
+            // diverged instead.
+            conflict.serverName === values.name
+              ? t('edit.conflict.messageDetails')
+              : t('edit.conflict.message', { serverName: conflict.serverName, yourName: values.name }),
             [
               { text: t('edit.conflict.cancel'), style: 'cancel' },
               {
