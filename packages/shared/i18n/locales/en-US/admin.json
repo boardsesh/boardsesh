@@ -12,7 +12,8 @@
   "title": "Admin Panel",
   "auth": {
     "signInRequired": "Please sign in to access the admin panel.",
-    "noAccess": "You do not have admin access."
+    "noAccess": "You do not have admin access.",
+    "boardScopedNoAccess": "Your admin role only covers one board. These tools need site-wide admin access."
   },
   "tabs": {
     "roles": "Roles",

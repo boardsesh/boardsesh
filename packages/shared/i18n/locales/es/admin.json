@@ -12,7 +12,8 @@
   "title": "Panel de admin",
   "auth": {
     "signInRequired": "Inicia sesión para acceder al panel de admin.",
-    "noAccess": "No tienes acceso de admin."
+    "noAccess": "No tienes acceso de admin.",
+    "boardScopedNoAccess": "Tu rol de admin solo cubre un plafón. Estas herramientas necesitan acceso de admin en todo el sitio."
   },
   "tabs": {
     "roles": "Roles",

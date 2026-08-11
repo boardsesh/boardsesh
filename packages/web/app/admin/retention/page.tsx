@@ -280,7 +280,7 @@ export default async function AdminRetentionPage() {
     return (
       <I18nProvider locale={locale} namespaces={['common', 'admin']}>
         <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
-          <Alert severity="error">{t('auth.noAccess')}</Alert>
+          <Alert severity="error">{t(access.boardScopedOnly ? 'auth.boardScopedNoAccess' : 'auth.noAccess')}</Alert>
         </Container>
       </I18nProvider>
     );

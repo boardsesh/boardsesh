@@ -42,7 +42,7 @@ export default async function AdminGymClaimsPage() {
           maxWidth="md"
           sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)', pb: 'var(--bottom-bar-height)' }}
         >
-          <Alert severity="error">{t('auth.noAccess')}</Alert>
+          <Alert severity="error">{t(access.boardScopedOnly ? 'auth.boardScopedNoAccess' : 'auth.noAccess')}</Alert>
         </Container>
       </I18nProvider>
     );
