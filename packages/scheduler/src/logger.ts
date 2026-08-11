@@ -27,10 +27,32 @@ export const consoleLogger: SchedulerLogger = {
   },
 };
 
-/** Turns an unknown thrown value into a log-safe message. */
+// A wrapped error can nest (fetch → undici → the socket error); three links is
+// plenty and keeps a pathological chain out of the log line.
+const MAX_CAUSE_DEPTH = 3;
+
+/**
+ * Turns an unknown thrown value into a log-safe message.
+ *
+ * The `cause` chain is unwrapped because `fetch` rejects with a bare
+ * `fetch failed` and hides the actual reason — `ECONNREFUSED`, `ENOTFOUND`, a
+ * TLS failure — in `cause`. `docs/scheduler.md`'s runbook reads `lastError` to
+ * tell a blocked egress IP from a DNS problem, and `fetch failed` on its own
+ * answers neither.
+ */
 export function describeError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
+  if (!(error instanceof Error)) {
+    return String(error);
   }
-  return String(error);
+
+  const messages = [error.message];
+  let cause: unknown = error.cause;
+  for (let depth = 0; depth < MAX_CAUSE_DEPTH && cause instanceof Error; depth += 1) {
+    if (cause.message !== '' && !messages.includes(cause.message)) {
+      messages.push(cause.message);
+    }
+    cause = cause.cause;
+  }
+
+  return messages.filter((message) => message !== '').join(': ') || error.name;
 }

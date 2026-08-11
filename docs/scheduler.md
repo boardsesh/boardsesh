@@ -56,7 +56,7 @@ to UTC.
 | `CRON_SECRET`             | yes      | —                           | **Copy** the Vercel project value, don't regenerate: the remaining Vercel crons authenticate with the same secret. Rotating it means updating both places at once. |
 | `BOARDSESH_WEB_URL`       | no       | `https://www.boardsesh.com` | Same env name the backend uses (`packages/backend/src/lib/web-revalidate.ts`).                                                                                     |
 | `PORT`                    | no       | `8080`                      | Health server.                                                                                                                                                     |
-| `SCHEDULER_DISABLED_JOBS` | no       | —                           | Comma-separated job names to leave unscheduled — an env-flip kill switch, no redeploy needed. `run <job>` still works on a disabled job.                           |
+| `SCHEDULER_DISABLED_JOBS` | no       | —                           | Comma-separated job names to leave unscheduled. Read once at startup, so set it and restart the service — no code change, no image rebuild. `run <job>` still works on a disabled job. |
 
 A missing `CRON_SECRET` throws at startup, so a misconfigured service
 crash-loops loudly instead of 401ing quietly at 05:00.
@@ -123,7 +123,10 @@ not firing; check the container is actually running and its clock is sane.
 **A job is failing.** `lastError` carries the HTTP status and a truncated body.
 401 → the two `CRON_SECRET`s have drifted apart. 403 with an HTML body → a
 Vercel WAF/bot rule is blocking Railway egress. 5xx → the route itself; look at
-the web logs.
+the web logs. A request that never reached the app reads
+`fetch failed: <cause>` — `ECONNREFUSED`/`ECONNRESET` means the connection was
+refused or dropped (egress blocked at the network layer rather than by a WAF
+page), `ENOTFOUND` means `BOARDSESH_WEB_URL` is wrong or DNS is broken.
 
 **A job is stuck.** A tick whose predecessor is still in flight is skipped and
 warned, never queued, so a slow run can't stack up. Each run is also bounded by
