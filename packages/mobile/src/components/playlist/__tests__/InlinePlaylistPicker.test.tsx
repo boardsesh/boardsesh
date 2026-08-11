@@ -241,6 +241,21 @@ describe('InlinePlaylistPicker', () => {
     expect(getByLabelText('banana').getAttribute('data-hint')).toBe('actions.playlist.toast.added');
   });
 
+  // #4224: the provider's `playlists` spans every board the user has
+  // playlists on; the picker (default props: boardName="kilter", layoutId=1)
+  // must only offer playlists for the climb's own board+layout.
+  it('never renders a playlist from a different board or layout as a row', () => {
+    playlistContext.playlists = [
+      makePlaylist('p-kilter', 'Kilter warmups'),
+      { ...basePlaylist, id: 'p-tension', uuid: 'p-tension', name: 'Tension crimps', boardType: 'tension' },
+      { ...basePlaylist, id: 'p-other-layout', uuid: 'p-other-layout', name: 'Other layout', layoutId: 2 },
+    ];
+    const { getByLabelText, queryByLabelText } = renderPicker();
+    expect(getByLabelText('Kilter warmups')).not.toBeNull();
+    expect(queryByLabelText('Tension crimps')).toBeNull();
+    expect(queryByLabelText('Other layout')).toBeNull();
+  });
+
   it('adds the climb when tapping a non-member row (optimistic + store sync)', async () => {
     playlistContext.playlists = [makePlaylist('p-1', 'Hard Crimps')];
     qstate.data = [];
