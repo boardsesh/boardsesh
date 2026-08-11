@@ -17,6 +17,7 @@ import {
   getBoardStrokeWidthMultiplier,
   getHoldDisplayColor,
   parseFramesSegments,
+  toFlatFrames,
 } from '@boardsesh/board-constants/hold-states';
 import {
   getWallLightness,
@@ -1662,6 +1663,17 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     [holdColorOverride, storedHoldRenderSignature, holdShapeOverrides, brushThickness, shapeSize],
   );
 
+  // Collapse a multi-frame route/circuit string to one static union snapshot —
+  // the same flatten web/backend/share-card static renders already apply via
+  // toFlatFrames (issue #3988). Without this the Rust renderer
+  // (frames_parser.rs) only ever sees frame 0, since it discards everything
+  // after the first comma. Single-frame strings (99.9% of the catalog) hit
+  // toFlatFrames's fast path and come back byte-identical, so cache keys for
+  // the vast majority of climbs are unaffected. Playback's currentFrameOverride
+  // snapshots (PlayDrawer -> SwipeBoardCarousel -> BoardImageNative) are
+  // comma-free, x-free `p{id}r{code}` strings and also pass through unchanged.
+  const flatFrames = useMemo(() => toFlatFrames(frames, boardName), [frames, boardName]);
+
   // Small surfaces that pass a renderWidth want the bundled thumb-sized
   // background too, so neither the overlay nor the photo is a large source the
   // main thread has to downscale. The play-drawer carousel overrides this to
@@ -1772,8 +1784,17 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // builders' inputs — a stale key would collide two climbs' overlays.
   const currentCacheKey = useMemo(
     () =>
-      buildCacheKey(boardName, layoutId, sizeId, setIds, frames, filledStyle, renderWidth, effectiveRenderSignature),
-    [boardName, layoutId, sizeId, setIds, frames, filledStyle, renderWidth, effectiveRenderSignature],
+      buildCacheKey(
+        boardName,
+        layoutId,
+        sizeId,
+        setIds,
+        flatFrames,
+        filledStyle,
+        renderWidth,
+        effectiveRenderSignature,
+      ),
+    [boardName, layoutId, sizeId, setIds, flatFrames, filledStyle, renderWidth, effectiveRenderSignature],
   );
   const currentBoardKey = useMemo(
     () => buildBoardKey(boardName, layoutId, sizeId, setIds, variant, colorScheme),
@@ -1980,7 +2001,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // effectiveOverrideSignature has already stepped away from anything the
     // renderer refused, so this only trips on the pathological case where the
     // fallback itself was somehow recorded.
-    if (!frames || unsupportedRenderSignatures.has(effectiveOverrideSignature)) return;
+    if (!flatFrames || unsupportedRenderSignatures.has(effectiveOverrideSignature)) return;
 
     // Frame 0's lit placement ids, parsed ONCE: the hold-match check right below
     // needs them, and so does the Aura outline attachment inside getBoardConfig.
@@ -2137,7 +2158,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     const renderPromise = getOrStartInflightRender(currentCacheKey, () => {
       const configJson = JSON.stringify({
         ...boardConfig.configBase,
-        frames,
+        frames: flatFrames,
       });
       return nativeModule.renderHoldsOverlay(configJson, currentCacheKey);
     });
@@ -2259,7 +2280,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     currentCacheKey,
-    frames,
+    flatFrames,
     boardName,
     layoutId,
     sizeId,
@@ -2539,9 +2560,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // Only surface the native URI if it matches the *current* cache key —
   // a stale render (from before a prop change) would otherwise show.
   const candidateOverlayUri =
-    frames && nativeRender?.key === currentCacheKey ? (nativeRender.entry?.uri ?? null) : null;
+    flatFrames && nativeRender?.key === currentCacheKey ? (nativeRender.entry?.uri ?? null) : null;
   const overlayLoadKey =
-    frames && nativeRender?.key === currentCacheKey && nativeRender.entry
+    flatFrames && nativeRender?.key === currentCacheKey && nativeRender.entry
       ? `${nativeRender.entry.generation}:${nativeRender.loadAttempt}`
       : null;
   const verifiedOverlayFile =

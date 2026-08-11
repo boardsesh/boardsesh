@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
+import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
 
 // In-flight render race regression (play-drawer "unlit holds"): a slow native
 // render must not clobber nativeRender state after the hook's props have moved
@@ -567,5 +568,90 @@ describe('capability-fallback render rejections', () => {
     expect(reported.message).toBe('Board overlay render failed: render_failed');
     expect((reported.cause as Error).message).toBe('some native failure');
     expect((options.extra as Record<string, unknown>).renderErrorMessage).toBe('some native failure');
+  });
+});
+
+// Issue #3988: mobile in-app thumbnails (ClimbListThumbnail, BoardImageNative)
+// only ever showed frame 0 of a multi-frame climb, because frames_parser.rs
+// discards everything after the first comma. Web/backend/share-card static
+// renders already collapse multi-frame climbs to the union of every frame via
+// toFlatFrames. The hook now applies the same flatten before handing the
+// config to the native renderer, so the Rust core only ever sees a
+// single-frame string and doesn't need to learn the frames grammar itself.
+describe('multi-frame flatten before the native renderer (issue #3988)', () => {
+  beforeEach(() => {
+    pendingRenders.clear();
+    existingOverlayUris.clear();
+    _resetWarmupForTests();
+    _inflightRendersForTests.clear();
+    fakeNativeModule.renderHoldsOverlay.mockClear();
+    reportErrorMock.mockClear();
+    _setNativeModuleForTests(fakeNativeModule as unknown as Parameters<typeof _setNativeModuleForTests>[0]);
+  });
+
+  // Real catalog climb from the aurora-frames-oracle fixture (issue #3947,
+  // packages/board-constants/src/__tests__/__fixtures__/aurora-frames-oracle.json),
+  // "FRE 20250608" on kilter. All 10 frames are absolute (unquoted, no `x`
+  // clear tokens), so frame-0-only rendering shows 5 lit holds where the
+  // union — what the web card and share card already show — shows the whole
+  // route.
+  const MULTI_FRAME_CATALOG_FRAMES =
+    'p1169r12p1205r13p1219r13p1256r13p1289r15,p1289r15p1308r15p1340r13p1374r13p1388r13,p1335r13p1349r13p1354r15p1368r13p1388r15,p1348r15p1349r15p1363r13p1380r13p1383r13,p1297r13p1311r13p1347r15p1363r15,p1247r13p1267r13p1278r15p1281r13p1297r15,p1251r15p1267r15p1284r13p1302r13p1322r13p1337r13,p1322r15p1371r15p1375r13p1390r13p1393r13,p1288r13p1302r13p1323r13p1356r15p1393r15,p1225r14p1257r13p1275r13p1288r15p1289r15';
+
+  it('hands the Rust renderer the flattened union, pinned exactly against toFlatFrames', async () => {
+    const expectedFlat = toFlatFrames(MULTI_FRAME_CATALOG_FRAMES, BASE.boardName);
+    // Sanity: this fixture climb really is multi-frame and really does
+    // collapse to something other than its first frame alone — otherwise the
+    // rest of this test would pass even with the pre-#3988 frame-0 bug.
+    expect(expectedFlat).not.toBe(MULTI_FRAME_CATALOG_FRAMES.split(',')[0]);
+    const flatCacheKey = cacheKeyFor(expectedFlat);
+
+    renderHook(() => useNativeClimbRender({ ...BASE, frames: MULTI_FRAME_CATALOG_FRAMES }));
+
+    await waitFor(() => expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1));
+    const [configJson, cacheKeyArg] = fakeNativeModule.renderHoldsOverlay.mock.calls[0];
+    expect(cacheKeyArg).toBe(flatCacheKey);
+    const parsedConfig = JSON.parse(configJson as string) as { frames: string };
+    // The exact pin the issue's "done when" asks for: the mobile static
+    // render path matches toFlatFrames, the same function web/backend/share
+    // cards already use.
+    expect(parsedConfig.frames).toBe(expectedFlat);
+  });
+
+  it('passes a single-frame string through byte-identical, with the same cache key as before this change', async () => {
+    const singleFrame = 'p1169r12p1205r13p1219r13';
+    // toFlatFrames's fast path (no comma, no `x`) returns the input
+    // untouched, so this is the exact key the hook produced pre-#3988 too —
+    // guards against invalidating cached thumbnails for the 99.9% of the
+    // catalog that's single-frame.
+    const preExistingCacheKey = cacheKeyFor(singleFrame);
+    expect(toFlatFrames(singleFrame, BASE.boardName)).toBe(singleFrame);
+
+    renderHook(() => useNativeClimbRender({ ...BASE, frames: singleFrame }));
+
+    await waitFor(() => expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1));
+    const [configJson, cacheKeyArg] = fakeNativeModule.renderHoldsOverlay.mock.calls[0];
+    expect(cacheKeyArg).toBe(preExistingCacheKey);
+    const parsedConfig = JSON.parse(configJson as string) as { frames: string };
+    expect(parsedConfig.frames).toBe(singleFrame);
+  });
+
+  it('leaves a comma-free playback-snapshot string untouched (PlayDrawer currentFrameOverride shape)', async () => {
+    // accumulatedMapsToFrameStrings (packages/board-constants) only ever
+    // emits `p{id}r{code}` — no commas, no `x` tokens — for the per-frame
+    // snapshot PlayDrawer passes down through SwipeBoardCarousel while
+    // animating a climb. The flatten must be a no-op on that shape, or the
+    // animation would render the whole route on every frame instead of just
+    // the current one.
+    const snapshotFrame = 'p1500r13p1501r14p1502r15';
+    const snapshotCacheKey = cacheKeyFor(snapshotFrame);
+
+    renderHook(() => useNativeClimbRender({ ...BASE, frames: snapshotFrame }));
+
+    await waitFor(() => expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1));
+    const [configJson, cacheKeyArg] = fakeNativeModule.renderHoldsOverlay.mock.calls[0];
+    expect(cacheKeyArg).toBe(snapshotCacheKey);
+    const parsedConfig = JSON.parse(configJson as string) as { frames: string };
+    expect(parsedConfig.frames).toBe(snapshotFrame);
   });
 });
