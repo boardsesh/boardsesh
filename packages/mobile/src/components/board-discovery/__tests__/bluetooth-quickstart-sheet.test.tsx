@@ -17,6 +17,10 @@ const locationHint = vi.hoisted(() => ({
   wasGranted: false,
   isRequesting: false,
   requestLocationPermission: vi.fn(async () => true),
+  shouldOfferLocationServicesEnable: false,
+  servicesWereEnabled: false,
+  isPromptingServices: false,
+  promptEnableLocationServices: vi.fn(async () => true),
   lastActive: null as boolean | null,
 }));
 
@@ -93,9 +97,14 @@ describe('BluetoothQuickstartSheet', () => {
     locationHint.shouldOfferLocationGrant = false;
     locationHint.wasGranted = false;
     locationHint.isRequesting = false;
+    locationHint.shouldOfferLocationServicesEnable = false;
+    locationHint.servicesWereEnabled = false;
+    locationHint.isPromptingServices = false;
     locationHint.lastActive = null;
     locationHint.requestLocationPermission.mockClear();
     locationHint.requestLocationPermission.mockResolvedValue(true);
+    locationHint.promptEnableLocationServices.mockClear();
+    locationHint.promptEnableLocationServices.mockResolvedValue(true);
   });
 
   it('gives the zero-result state something to try — it used to end at "no boards in range"', () => {
@@ -187,5 +196,51 @@ describe('BluetoothQuickstartSheet', () => {
     expect(hasText(container, 'mobile.bluetooth.noResults')).toBe(false);
     expect(hasText(container, 'settings:ble.troubleshootTips')).toBe(false);
     expect(hasText(container, 'mobile.bluetooth.resolving')).toBe(true);
+  });
+
+  it('shows the services hint instead of the hardware tips on Android 11 and below', () => {
+    locationHint.shouldOfferLocationServicesEnable = true;
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'settings:ble.locationServicesHintTitle')).toBe(true);
+    expect(hasText(container, 'settings:ble.locationServicesHintBody')).toBe(true);
+    expect(hasText(container, 'settings:ble.troubleshootTips')).toBe(false);
+  });
+
+  it('restarts the scan after the user enables Location services', async () => {
+    scan.reset.mockImplementation(() => {
+      scan.status = 'idle';
+    });
+    locationHint.shouldOfferLocationServicesEnable = true;
+    const { container, rerender } = renderSheet();
+
+    expect(scan.start).not.toHaveBeenCalled();
+
+    const enableButton = container.querySelector('[data-button="settings:ble.locationServicesHintEnable"]');
+    expect(enableButton).not.toBeNull();
+    (enableButton as HTMLButtonElement).click();
+
+    await waitFor(() => {
+      expect(scan.reset).toHaveBeenCalledOnce();
+    });
+
+    rerender(<BluetoothQuickstartSheet active onClose={vi.fn()} onSelect={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(scan.start).toHaveBeenCalledOnce();
+    });
+  });
+
+  it('does not restart the scan when enabling Location services fails', async () => {
+    locationHint.shouldOfferLocationServicesEnable = true;
+    locationHint.promptEnableLocationServices.mockResolvedValue(false);
+    const { container } = renderSheet();
+
+    (container.querySelector('[data-button="settings:ble.locationServicesHintEnable"]') as HTMLButtonElement).click();
+
+    await waitFor(() => {
+      expect(locationHint.promptEnableLocationServices).toHaveBeenCalledOnce();
+    });
+    expect(scan.reset).not.toHaveBeenCalled();
   });
 });

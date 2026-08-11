@@ -81,3 +81,26 @@ export function androidBuildHidesScanResultsWithoutLocation({
 
   return !MANIFEST_HAS_NEVER_FOR_LOCATION;
 }
+
+/** Android 6 (API 23). Below this, BLE scanning did not require location at all. */
+const ANDROID_6_API_LEVEL = 23;
+
+/**
+ * True when the running binary is on the Android range (6 through 11, API
+ * 23-30) where BLE scan-result delivery is gated on the system-wide Location
+ * *services* toggle, not just the app's location *permission*. AOSP suppresses
+ * every ScanResult while Location is switched off, even with
+ * ACCESS_FINE_LOCATION granted — the scan starts cleanly, reports no error, and
+ * finds nothing.
+ *
+ * From Android 12 (API 31) onward the services toggle is no longer required —
+ * only the permission is (see `androidBuildHidesScanResultsWithoutLocation`
+ * above) — so this and that predicate are mutually exclusive by construction.
+ */
+export function androidScanRequiresLocationServices({
+  platformOs,
+  androidApiLevel,
+}: AndroidScanLocationGateInput): boolean {
+  if (platformOs !== 'android') return false;
+  return androidApiLevel >= ANDROID_6_API_LEVEL && androidApiLevel < ANDROID_12_API_LEVEL;
+}
