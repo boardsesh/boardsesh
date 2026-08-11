@@ -11,6 +11,7 @@ import { useSetting } from '../../src/settings';
 import { hapticSelection } from '../../src/lib/haptics';
 import { openValidatedUrl } from '../../src/lib/open-external-link';
 import { WEB_BASE_URL } from '../../src/lib/env';
+import { buildGymManageUrl } from '../../src/lib/gym-manage-url';
 import { Text } from '../../src/components/Text';
 import { Icon } from '../../src/components/Icon';
 import { Button } from '../../src/components/Button';
@@ -19,15 +20,6 @@ import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { MyGymRow } from '../../src/components/gym-directory/MyGymRow';
 import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing, borderRadius } from '../../src/theme/tokens';
-
-// Kiosk/TV management is web-only by design; the mobile row hands off to the
-// browser console at /gym/{slug|uuid}/manage. The web route resolves either a
-// slug or a uuid, so a slugless legacy gym still reaches setup via its uuid.
-// `WEB_BASE_URL` respects the EXPO_PUBLIC_WEB_URL override, so it points at
-// whatever web build we're testing.
-function buildManageUrl(slugOrUuid: string): string {
-  return `${WEB_BASE_URL}/gym/${encodeURIComponent(slugOrUuid)}/manage`;
-}
 
 /**
  * "My gyms" — the owner's home for the gyms they run, reached from the More tab.
@@ -93,7 +85,7 @@ export default function MyGymsScreen() {
       hapticSelection();
       // openURL (never canOpenURL — false for https on Android 11+ package
       // visibility); a genuine failure rejects and we toast.
-      const opened = await openValidatedUrl(buildManageUrl(slugOrUuid), (url) => url.startsWith(WEB_BASE_URL));
+      const opened = await openValidatedUrl(buildGymManageUrl(slugOrUuid), (url) => url.startsWith(WEB_BASE_URL));
       if (!opened) showToast(t('mobile.myGyms.manageError'), 'error');
     },
     [kioskHintSeen, setKioskHintSeen, showToast, t],
