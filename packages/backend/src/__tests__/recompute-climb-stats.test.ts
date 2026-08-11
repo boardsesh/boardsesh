@@ -25,6 +25,14 @@ vi.mock('../db/client', () => ({
 
 import { recomputeClimbStats } from '../graphql/resolvers/ticks/recompute-climb-stats';
 
+/**
+ * The DSM guard `recomputeClimbStats` sets as the first statement of its
+ * transaction (#4235, Sentry BOARDSESH-B6). The aggregate below hash-joins
+ * `boardsesh_ticks` against `board_climb_stats`, the plan shape that exhausts
+ * Postgres's dynamic shared memory on our small /dev/shm.
+ */
+const GUARD_PATTERN = /SET LOCAL max_parallel_workers_per_gather\s*=\s*0/i;
+
 describe('recomputeClimbStats', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -50,11 +58,15 @@ describe('recomputeClimbStats', () => {
 
     await recomputeClimbStats('kilter', 'CLIMB-1', 40);
 
-    // Seed + aggregate. Asserted before indexing so a mock that never invoked
-    // the transaction callback fails as "0 statements" rather than as an
-    // undefined-index error inside sqlText.
-    expect(executed).toHaveLength(2);
-    const seedSql = sqlText(executed[0]);
+    // Guard + seed + aggregate. Asserted before indexing so a mock that never
+    // invoked the transaction callback fails as "0 statements" rather than as
+    // an undefined-index error inside sqlText.
+    expect(executed).toHaveLength(3);
+    // The guard has to come FIRST: `SET LOCAL` only covers statements that run
+    // after it in the same transaction, so a seed or aggregate ahead of it
+    // would still plan a parallel hash join (#4235).
+    expect(sqlText(executed[0])).toMatch(GUARD_PATTERN);
+    const seedSql = sqlText(executed[1]);
     expect(seedSql).toContain('INSERT INTO board_climb_stats');
     expect(seedSql).toMatch(/SELECT[\s\S]*FROM board_climbs bc/);
     expect(seedSql).toMatch(/WHERE bc\.uuid =/);
@@ -65,12 +77,12 @@ describe('recomputeClimbStats', () => {
     expect(seedSql).toContain('quality_normalized');
   });
 
-  it('runs the seed + recompute SQL inside a single transaction', async () => {
-    let executeCount = 0;
+  it('runs the guard, seed and recompute SQL inside one transaction', async () => {
+    const executed: unknown[] = [];
     mockDb.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
       const tx = {
-        execute: vi.fn(async () => {
-          executeCount += 1;
+        execute: vi.fn(async (query: unknown) => {
+          executed.push(query);
           return [];
         }),
       };
@@ -79,9 +91,14 @@ describe('recomputeClimbStats', () => {
 
     await recomputeClimbStats('kilter', 'CLIMB-1', 40);
 
+    // One transaction, and only one — the guard rides the transaction this
+    // path already opens rather than nesting a savepoint through
+    // `withSerialPlan` just to run a `SET LOCAL` (#4235).
     expect(mockDb.transaction).toHaveBeenCalledTimes(1);
-    // Seed + the aggregate recompute.
-    expect(executeCount).toBe(2);
+    // The DSM guard, the seed, then the aggregate recompute.
+    expect(executed).toHaveLength(3);
+    expect(sqlText(executed[0])).toMatch(GUARD_PATTERN);
+    expect(executed.filter((statement) => GUARD_PATTERN.test(sqlText(statement)))).toHaveLength(1);
   });
 
   // FRAGILE TEST WARNING — read before changing:
