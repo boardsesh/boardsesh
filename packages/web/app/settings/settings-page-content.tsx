@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Box from '@mui/material/Box';
 import MuiDivider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
@@ -52,6 +52,7 @@ export default function SettingsPageContent() {
   const activeLocale: Locale = isSupportedLocale(i18n.language) ? i18n.language : DEFAULT_LOCALE;
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const reportedWsAuthDeadEnd = useRef(false);
   const { showMessage } = useSnackbar();
 
   // Redirect unauthenticated users to login with a return URL.
@@ -90,10 +91,26 @@ export default function SettingsPageContent() {
   // Query.profile resolves from the bearer token; never send an anonymous
   // request for a signed-in settings session when ws-auth has not settled.
   useEffect(() => {
-    if (status === 'authenticated' && !authTokenLoading) {
+    if (status === 'authenticated' && authToken) {
       void fetchProfile();
     }
-  }, [status, authTokenLoading, fetchProfile]);
+  }, [status, authToken, fetchProfile]);
+
+  // The remaining settings sections do not need ws-auth. Once its retries are
+  // exhausted, stop blocking the page and report the unavailable profile once.
+  const wsAuthDeadEnd = status === 'authenticated' && !authToken && !authTokenLoading;
+  useEffect(() => {
+    if (!wsAuthDeadEnd) {
+      reportedWsAuthDeadEnd.current = false;
+      return;
+    }
+
+    setLoading(false);
+    if (!reportedWsAuthDeadEnd.current) {
+      reportedWsAuthDeadEnd.current = true;
+      showMessage(t('loading.profileError'), 'error');
+    }
+  }, [wsAuthDeadEnd, showMessage, t]);
 
   if (status === 'loading' || loading) {
     return (
