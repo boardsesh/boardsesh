@@ -75,12 +75,15 @@ async function runMigrations() {
     // count mismatch that *would* have caught it was a console.warn. See
     // scripts/lib/migration-ledger.ts for the mechanism.
     //
-    // Still behind the env gate: the boardsesh-dev-db image is missing
-    // 0187_sad_freak's ledger row, so a default-on check would redden every
-    // developer's `vp run db:migrate` today. Both places that matter
-    // (production-deploy.yml, db-migration-renumber.yml) already set it. The
-    // gate itself is `runMigrationJournalGate` so it has test coverage; this
-    // file connects on import and offers no seam of its own.
+    // On by default since #3978. It shipped opt-in because the boardsesh-dev-db
+    // image was missing 0187_sad_freak's ledger row, and a default-on check
+    // would have reddened every developer's `vp run db:migrate` for a defect in
+    // the image. The image carries every journal entry's row now, and `vp run
+    // db:up` reconciles a stale volume per hash before this runs (#3979).
+    // Opt-in also meant the check was off on the one machine where a gap is
+    // created — the branch author's. VERIFY_MIGRATION_JOURNAL=0 is the escape
+    // hatch. The gate itself is `runMigrationJournalGate` so it has test
+    // coverage; this file connects on import and offers no seam of its own.
     const report = await runMigrationJournalGate(process.env, readLedgerHashesWith(client), migrationsFolder);
     if (report) {
       // Named on every armed run, not only on failure: production's pre-gate

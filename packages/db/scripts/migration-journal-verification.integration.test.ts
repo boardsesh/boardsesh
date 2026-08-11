@@ -277,14 +277,22 @@ describe('migration journal verification (#2933)', () => {
       'migrate.ts runs the check through runMigrationJournalGate — it must throw, not report',
     );
 
-    // Gate off: the same broken database passes untouched. That is what keeps
-    // `vp run db:migrate` usable against the dev-db image (#3978) — and it must
-    // not read the ledger at all, so a future default-on flip is a visible change.
+    // An unset env now *arms* the gate (#3978): the same broken database fails.
+    await assert.rejects(
+      withScratchClient(scratchUrl, (client) =>
+        runMigrationJournalGate({}, readLedgerHashesWith(client), migrationsFolder),
+      ),
+      /0002_stale_when/,
+      'the check is on by default — an unset VERIFY_MIGRATION_JOURNAL must not disarm it',
+    );
+
+    // The escape hatch: `=0` passes the same broken database untouched, and must
+    // not read the ledger at all, so re-arming it stays a visible change.
     let ledgerReads = 0;
     const gateOff = await withScratchClient(scratchUrl, (client) => {
       const readHashes = readLedgerHashesWith(client);
       return runMigrationJournalGate(
-        {},
+        { VERIFY_MIGRATION_JOURNAL: '0' },
         () => {
           ledgerReads += 1;
           return readHashes();
@@ -292,7 +300,7 @@ describe('migration journal verification (#2933)', () => {
         migrationsFolder,
       );
     });
-    assert.equal(gateOff, null, 'an unset VERIFY_MIGRATION_JOURNAL must skip the check');
+    assert.equal(gateOff, null, 'VERIFY_MIGRATION_JOURNAL=0 must skip the check');
     assert.equal(ledgerReads, 0, 'the gate must not query the ledger when it is off');
 
     // And it never self-heals: a third deploy does not create the table either.
@@ -395,28 +403,30 @@ describe('migration journal verification (#2933)', () => {
     );
   });
 
-  it('only arms the deploy gate on an exact VERIFY_MIGRATION_JOURNAL=1', async () => {
+  it('arms the deploy gate by default and stands down only on VERIFY_MIGRATION_JOURNAL=0', async () => {
     // No database needed: the ledger reader is a stub, so this pins the env
-    // contract on its own. `production-deploy.yml` and `db-migration-renumber.yml`
-    // both pass the literal '1'; anything else must leave the check off rather
-    // than half-on.
+    // contract on its own. `ci.yml`, `production-deploy.yml` and
+    // `db-migration-renumber.yml` all pass the literal '1' and must stay armed
+    // without an edit; everything else that is not the exact escape hatch has to
+    // arm too, rather than leaving the check half-on (#3978).
     const migrationsFolder = makeTempFolder('gate');
     writeMigrationsFolder(migrationsFolder, PHASE_ONE);
     const emptyLedger = async () => [];
 
-    for (const value of [undefined, '', '0', 'true', 'yes']) {
-      const report = await runMigrationJournalGate(
-        value === undefined ? {} : { VERIFY_MIGRATION_JOURNAL: value },
-        emptyLedger,
-        migrationsFolder,
+    for (const value of [undefined, '', '1', 'true', 'yes']) {
+      await assert.rejects(
+        runMigrationJournalGate(
+          value === undefined ? {} : { VERIFY_MIGRATION_JOURNAL: value },
+          emptyLedger,
+          migrationsFolder,
+        ),
+        /Missing: 0000_a, 0001_b/,
+        `VERIFY_MIGRATION_JOURNAL=${String(value)} must arm the gate`,
       );
-      assert.equal(report, null, `VERIFY_MIGRATION_JOURNAL=${String(value)} must not arm the gate`);
     }
 
-    await assert.rejects(
-      runMigrationJournalGate({ VERIFY_MIGRATION_JOURNAL: '1' }, emptyLedger, migrationsFolder),
-      /Missing: 0000_a, 0001_b/,
-    );
+    const report = await runMigrationJournalGate({ VERIFY_MIGRATION_JOURNAL: '0' }, emptyLedger, migrationsFolder);
+    assert.equal(report, null, 'VERIFY_MIGRATION_JOURNAL=0 is the escape hatch');
   });
 
   it('tolerates a baselined gap and still fails on the one beside it', async (context) => {

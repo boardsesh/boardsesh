@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
+import { readJournalMigrations, selectPendingMigrations } from './lib/dev-db-pending-migrations.js';
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDirectory, '..');
@@ -46,17 +46,8 @@ type TailscaleStatus = {
   Peer?: Record<string, TailscaleNode>;
 };
 
-type MigrationJournalEntry = {
-  tag: string;
-  when: number;
-};
-
-type MigrationJournal = {
-  entries: MigrationJournalEntry[];
-};
-
-type MigrationTrackerRow = {
-  created_at: number | string | null;
+type LedgerHashRow = {
+  hash: string;
 };
 
 type BoardseshShapeRow = {
@@ -277,14 +268,28 @@ async function ensureMigrationTracker(client: postgres.Sql): Promise<void> {
   `;
 }
 
-function loadMigrationJournal(): MigrationJournal {
-  const journalPath = join(drizzleDirectory, 'meta', '_journal.json');
-  const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as MigrationJournal;
-  return {
-    entries: journal.entries.filter(
-      (entry): entry is MigrationJournalEntry => typeof entry.tag === 'string' && typeof entry.when === 'number',
-    ),
-  };
+/**
+ * The one apply failure a developer cannot read off the raw psql error: the
+ * database carries a superseded branch version of the migration's objects but
+ * not its ledger row, so the first `CREATE` dies on "already exists". Nothing
+ * repairs that in place — the two versions can differ in which objects they
+ * created, so no probe can tell what is already there. `scripts/dev-db-up.sh`
+ * prints the same thing for the local-container path.
+ *
+ * This one is a shared remote, so the reset is somebody's call rather than a
+ * command to run: the peer hosting it may be mid-session on it.
+ */
+function explainMigrationFailure(tag: string): string {
+  return [
+    '',
+    `[dev-db] Could not apply ${tag} to the remote dev database.`,
+    '         If postgres reported "already exists", that database carries this',
+    "         migration's objects without its ledger row — it ran a superseded version",
+    '         on another branch, before the migration was renumbered or collapsed (#3978).',
+    '         Whoever hosts it has to reset it (docker compose down -v && vp run db:up)',
+    '         or repair the ledger by hand; see docs/db-migrations.md.',
+    '',
+  ].join('\n');
 }
 
 async function runPendingMigrations(connectionString: string): Promise<void> {
@@ -298,14 +303,15 @@ async function runPendingMigrations(connectionString: string): Promise<void> {
 
   try {
     await ensureMigrationTracker(client);
-    const migrationTrackerRows = await client<MigrationTrackerRow[]>`
-      SELECT COALESCE(
-        (SELECT created_at FROM drizzle."__drizzle_migrations" ORDER BY created_at DESC LIMIT 1),
-        0
-      ) AS created_at
-    `;
-    const lastMigrationCreatedAt = Number(migrationTrackerRows[0]?.created_at ?? 0);
-    const pendingMigrations = loadMigrationJournal().entries.filter((entry) => entry.when > lastMigrationCreatedAt);
+    // Per-entry and hash-keyed, not `when > max(created_at)` (#3979). The old
+    // high-water mark only ever moved up, so a migration landing at or below it
+    // — renumbered by a rebase, collapsed with another branch's, or simply older
+    // than the peer's image build — was skipped here on every run, for good.
+    const ledgerRows = await client<LedgerHashRow[]>`SELECT hash FROM drizzle."__drizzle_migrations"`;
+    const pendingMigrations = selectPendingMigrations(
+      readJournalMigrations(drizzleDirectory),
+      ledgerRows.map((row) => row.hash),
+    );
 
     if (pendingMigrations.length === 0) {
       console.info('  No pending migrations.');
@@ -314,9 +320,7 @@ async function runPendingMigrations(connectionString: string): Promise<void> {
 
     console.info(`  Applying ${pendingMigrations.length} pending migration(s) from ${drizzleDirectory}...`);
     for (const migration of pendingMigrations) {
-      const migrationFile = join(drizzleDirectory, `${migration.tag}.sql`);
-      const migrationSql = readFileSync(migrationFile, 'utf8');
-      const migrationHash = createHash('sha256').update(migrationSql).digest('hex');
+      const migrationSql = readFileSync(join(drizzleDirectory, `${migration.tag}.sql`), 'utf8');
       console.info(`    -> ${migration.tag}`);
 
       await client.unsafe('BEGIN');
@@ -324,11 +328,12 @@ async function runPendingMigrations(connectionString: string): Promise<void> {
         await client.unsafe(migrationSql);
         await client`
           INSERT INTO drizzle."__drizzle_migrations" (hash, created_at)
-          VALUES (${migrationHash}, ${migration.when})
+          VALUES (${migration.hash}, ${migration.when})
         `;
         await client.unsafe('COMMIT');
       } catch (migrationError) {
         await client.unsafe('ROLLBACK').catch(() => undefined);
+        console.error(explainMigrationFailure(migration.tag));
         throw migrationError;
       }
     }

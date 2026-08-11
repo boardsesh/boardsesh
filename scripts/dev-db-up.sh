@@ -167,25 +167,22 @@ prepare_docker_postgres() {
 }
 
 run_pending_drizzle_sql_migrations() {
-  last_migration_created_at=$(docker exec -u postgres "$PG_CONTAINER" psql -U postgres -d main -t -A -c \
-    "SELECT COALESCE((SELECT created_at FROM drizzle.\"__drizzle_migrations\" ORDER BY created_at DESC LIMIT 1), 0);")
+  # Which migrations are pending is a per-entry, hash-keyed question — never
+  # "is this entry's `when` above the ledger's newest created_at" (#3979). That
+  # mark only ever moves up, so a migration landing at or below it was skipped
+  # on that run and on every run after it: silently, permanently, and for the
+  # entirely ordinary reasons a dev database hits (a rebase renumbered the
+  # migration, two branches collapsed theirs into one, or the pre-built image
+  # was built after the branch's `when` was minted). Same defect #2933 found in
+  # drizzle's own applier; scripts/lib/dev-db-pending-migrations.ts reuses the
+  # reconciliation #3977 put in front of the production path.
+  ledger_hashes=$(docker exec -u postgres "$PG_CONTAINER" psql -U postgres -d main -t -A -c \
+    "SELECT hash FROM drizzle.\"__drizzle_migrations\";")
 
-  pending_migrations=$(DRIZZLE_DIR="$DRIZZLE_DIR" LAST_MIGRATION_CREATED_AT="$last_migration_created_at" bun --eval '
-    const fs = require("node:fs");
-    const path = require("node:path");
-    const crypto = require("node:crypto");
-
-    const drizzleDir = process.env.DRIZZLE_DIR;
-    const lastAppliedAt = Number(process.env.LAST_MIGRATION_CREATED_AT ?? 0);
-    const journal = JSON.parse(fs.readFileSync(path.join(drizzleDir, "meta", "_journal.json"), "utf8"));
-
-    for (const entry of journal.entries) {
-      if (entry.when <= lastAppliedAt) continue;
-      const sql = fs.readFileSync(path.join(drizzleDir, `${entry.tag}.sql`), "utf8");
-      const hash = crypto.createHash("sha256").update(sql).digest("hex");
-      process.stdout.write(`${entry.tag}|${entry.when}|${hash}\n`);
-    }
-  ')
+  # An empty ledger prints one blank line here, which the reader drops — so a
+  # fresh tracker selects the whole journal rather than nothing.
+  pending_migrations=$(printf '%s\n' "$ledger_hashes" \
+    | DRIZZLE_DIR="$DRIZZLE_DIR" bun "$REPO_ROOT/scripts/dev-db-pending-migrations.ts")
 
   if [ -z "$pending_migrations" ]; then
     echo "  No pending migrations."
@@ -200,12 +197,30 @@ run_pending_drizzle_sql_migrations() {
     migration_file="$DRIZZLE_DIR/$tag.sql"
     echo "    → $tag"
 
-    {
+    # created_at is the journal's own `when` — the value drizzle writes itself,
+    # so the row is indistinguishable from one drizzle wrote and the ledger
+    # normaliser above has nothing to repair on the next run.
+    if ! {
       printf 'BEGIN;\n'
       cat "$migration_file"
       printf '\nINSERT INTO drizzle."__drizzle_migrations" (hash, created_at) VALUES (%s, %s);\n' "'$hash'" "$created_at"
       printf 'COMMIT;\n'
-    } | docker exec -i -u postgres "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d main > /dev/null
+    } | docker exec -i -u postgres "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d main > /dev/null; then
+      echo "" >&2
+      echo "ERROR: could not apply $tag to the dev database." >&2
+      echo "       If psql reported \"already exists\", this database carries that migration's" >&2
+      echo "       objects without its ledger row — a volume that ran a superseded version of" >&2
+      echo "       the migration on another branch, before it was renumbered or collapsed" >&2
+      echo "       (#3978). Nothing repairs that in place: the two versions can differ in" >&2
+      echo "       which objects they created, so no probe can tell what is already there." >&2
+      echo "" >&2
+      echo "       Reset the volume and pull a current image:" >&2
+      echo "         docker compose down -v && vp run db:up" >&2
+      echo "" >&2
+      echo "       The pre-built image ships the board data, the test user, and the seed" >&2
+      echo "       data, so a reset costs a pull rather than a re-import." >&2
+      exit 1
+    fi
   done
 }
 

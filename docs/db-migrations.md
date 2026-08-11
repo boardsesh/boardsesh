@@ -14,11 +14,14 @@ packages/db/drizzle/
 
 Three properties matter more than they look:
 
-**Order comes from `when`, not from the number.** `packages/db/scripts/migrate.ts` and
-`scripts/dev-db-up.sh` both select entries whose `when` is newer than the last applied
-migration. A migration whose `when` is at or below an already-applied timestamp is
+**Order comes from `when`, not from the number.** Drizzle's own applier selects entries
+whose `when` is newer than the last applied migration, from a `max(created_at)` mark it
+reads once. A migration whose `when` is at or below an already-applied timestamp is
 skipped _forever_, silently — green PR, green deploy, DDL that never happened. The
-number is for humans; `when` is what runs.
+number is for humans; `when` is what runs. The two dev appliers used to repeat that
+selection and now ask the per-entry, hash-keyed question instead (#3979), so a renumbered
+or collapsed migration still lands on a dev database; production is guarded by the
+journal-vs-ledger check below rather than by a different applier.
 
 **A `.sql` with no journal entry is inert.** Nothing applies it. It looks like a
 migration in review and does nothing in production.
@@ -107,7 +110,7 @@ It deliberately ignores six duplicate numbers that main has carried since 2024
 (`0025`, `0048`–`0052`). Both sides are journalled and applied in production; they order
 correctly by `when` and cannot be fixed now.
 
-### The journal-vs-ledger check (`VERIFY_MIGRATION_JOURNAL=1`)
+### The journal-vs-ledger check (on by default; `VERIFY_MIGRATION_JOURNAL=0` opts out)
 
 `check:db-migrations` reads files. It cannot see whether a database actually ran them, and
 one failure mode only shows up there.
@@ -120,11 +123,27 @@ because the mark only ever moves up. Production hit this with `0129_numerous_sta
 `location_sync_gym_sources` was never created, and the first Kilter location sync days
 later died on `relation "location_sync_gym_sources" does not exist`.
 
-With `VERIFY_MIGRATION_JOURNAL=1`, `packages/db/scripts/migrate.ts` now checks **every**
-journal entry against the ledger, keyed on the migration hash, and throws with the missing
-tags named. `production-deploy.yml` and `db-migration-renumber.yml` both set it. It stays
-opt-in, because a dev database can still carry gaps the developer did not cause and a
-default-on check would redden every `vp run db:migrate`.
+`packages/db/scripts/migrate.ts` checks **every** journal entry against the ledger, keyed on
+the migration hash, and throws with the missing tags named. `ci.yml`, `production-deploy.yml`
+and `db-migration-renumber.yml` pass the literal `1`; everywhere else it runs because it is
+now the default.
+
+It shipped opt-in (#2933) for one reason: the `boardsesh-dev-db` image was missing
+`0187_sad_freak`'s ledger row, so a default-on check would have reddened every developer's
+`vp run db:migrate` for a defect in the image rather than in their branch. Three things
+closed that (#3978): the image carries every journal entry's row, its build fails if the
+ledger's high-water mark is not the journal's newest `when`, and `vp run db:up` fills a stale
+volume's gaps hash-by-hash before `db:migrate` runs. Opt-in also meant the check was off in
+the one place a gap is created — the branch author's machine, on the branch that creates it.
+
+`VERIFY_MIGRATION_JOURNAL=0` is the escape hatch, for the one shape this cannot help: a
+database with a gap nobody can repair right now, where `db:migrate` has to run anyway.
+
+Two dev databases are outside `db:up`'s repair path and can still carry a real gap: a
+shared tailnet dev DB reached through `scripts/dev-db-discover.ts`, and a `db_data` volume
+that predates a migration renumber or collapse. Both report it now instead of hiding it —
+`db:up` names the migration it could not apply and hands over
+`docker compose down -v && vp run db:up`.
 
 #### Ledger timestamps on the dev DB (`vp run db:normalize-ledger`)
 
