@@ -14,17 +14,25 @@ Bugs and feature requests become issues. Questions, praise, and chatter get the 
 
 ## How it runs
 
-```
-collect (script)   →  bundle.json  →  triage (Claude, READ-ONLY)  →  decisions.json  →  apply (script)
-Discord reads,        redacted        gh issue list/search/view       validated          GitHub + Discord
-secrets, retries                      Read + Write(decisions) only    against bundle     writes
-```
+Three separate **jobs**, not three steps in one:
 
-The split is deliberate. The triage step reads text typed by anyone who can click a public invite, so it holds **no write tools** — `--allowed-tools` is a UX guardrail, not a security boundary, and an agent with `gh issue create` plus attacker-controlled input is a prompt-injection hole. Its only output is a JSON file. The apply step re-validates every decision against the bundle it produced itself: an unknown `messageId` is dropped, a label outside the allowlist is dropped, HTML comments are stripped so the model cannot forge a marker. Worst case from a successful injection is a badly-worded draft issue, capped by `--max-issues`.
+| Job | Environment | Permissions | Holds |
+|---|---|---|---|
+| `collect` | `discord-feedback` | `contents: read` | Discord token |
+| `triage` | **none** | `contents/issues: read` | Claude token only |
+| `apply` | `discord-feedback` | `contents/issues: write` | Discord token |
+
+**The privilege separation is the security model.** The triage job reads text typed by anyone who can click a public invite, so it is the one that must be assumed compromised. It has no Discord token, no repo write, no issue write, and — because it declares no `environment:` — no ability to name a single environment secret. A prompt injection that fully captures that agent still cannot reach GitHub or Discord. Its only output is a JSON file.
+
+`--allowed-tools` is a UX guardrail, not a sandbox; the job boundary is the real control. The write privileges live in `apply`, which runs no LLM.
+
+The Discord token lives in a **dedicated `discord-feedback` environment**, not `Production`. Production carries `DATABASE_URL`, cloud tokens and store-signing keys that this pipeline has no business being able to name.
+
+`apply` then re-validates every decision against the bundle: an unknown `messageId` is dropped, a label outside the allowlist is dropped, HTML comments are stripped so the model cannot forge a marker, `duplicateOf` must be a real GitHub issue URL, and `--max-issues` caps the volume. Worst case from a successful injection is a badly-worded draft issue about a message a real person actually posted.
 
 The file→react→reply ordering lives in tested TypeScript rather than in the skill prompt for the same reason: it is the correctness core, and agents skip steps.
 
-**The bundle is digest-pinned across the triage step.** Cross-validating decisions against the bundle only helps if the bundle itself is trustworthy — an agent holding an unscoped `Write` could rewrite *both* files to agree and walk fabricated issues straight through. So the workflow records the bundle's sha256 in a step output before the agent runs, somewhere the agent cannot write, and `apply` refuses to file anything if the bundle no longer matches. The `Write` tool is also path-scoped to the decisions file; the digest check is what makes that a guarantee rather than a hope.
+**The bundle is digest-pinned across the triage job.** Cross-validating decisions against the bundle only helps if the bundle itself is trustworthy. The `collect` job records its sha256 as a job output — a different job from the one the agent runs in, so the agent has no way to write it — and `apply` refuses to file anything if the bundle no longer matches.
 
 | File | Role |
 |---|---|
@@ -56,24 +64,26 @@ Channel and guild ids need Developer Mode on (Discord → Settings → Advanced)
 
 ### 3. Secrets and variables
 
-Secrets (repo → Settings → Secrets → Actions):
+Everything for this pipeline lives in a dedicated **`discord-feedback` environment** (repo → Settings → Environments), **not** in `Production`. Keep it that way — and keep it **reviewer-free**, or scheduled runs hang forever waiting for an approval nobody is watching for.
 
-| Name | Notes |
-|---|---|
-| `DISCORD_BOT_TOKEN` | Bot token from the portal |
-| `CLAUDE_CODE_OAUTH_TOKEN` | Already exists, shared with `claude.yml` |
+| Name | Where | Notes |
+|---|---|---|
+| `DISCORD_BOT_TOKEN` | `discord-feedback` secret | Bot token from the portal. The only secret this pipeline needs |
+| `CLAUDE_CODE_OAUTH_TOKEN` | repo secret | Already exists, shared with `claude.yml`. Used by the `triage` job, which declares no environment |
 
-Variables (non-secret so they're auditable in the run log):
+`DISCORD_DEPLOY_WEBHOOK` stays in `Production` — different thing, used by the deploy workflows.
 
-| Name | Default / example |
-|---|---|
-| `DISCORD_FEEDBACK_ENABLED` | `true` — kill switch for the **hourly run**; manual dispatch works regardless |
-| `DISCORD_GUILD_ID` | The Boardsesh guild id |
-| `DISCORD_FEEDBACK_CHANNEL_IDS` | Comma-separated; the `#user-feedback` id |
-| `DISCORD_EXCLUDE_CHANNEL_IDS` | Comma-separated; optional |
-| `DISCORD_TRIGGER_EMOJI` | `🐛` (custom emoji: `name:id`) |
-| `DISCORD_PROCESSED_EMOJI` | `✅` |
-| `DISCORD_TRIGGER_KEYWORDS` | `bug,issue,file this,feature request` |
+Variables, all in the `discord-feedback` environment except the kill switch (non-secret so they're auditable in the run log):
+
+| Name | Where | Default / example |
+|---|---|---|
+| `DISCORD_FEEDBACK_ENABLED` | **repo level** | `true` — kill switch for the **hourly run**; manual dispatch works regardless |
+| `DISCORD_GUILD_ID` | `discord-feedback` | The Boardsesh guild id |
+| `DISCORD_FEEDBACK_CHANNEL_IDS` | `discord-feedback` | Comma-separated; the `#user-feedback` id |
+| `DISCORD_EXCLUDE_CHANNEL_IDS` | `discord-feedback` | Comma-separated; optional |
+| `DISCORD_TRIGGER_EMOJI` | `discord-feedback` | `🐛` (custom emoji: `name:id`) |
+| `DISCORD_PROCESSED_EMOJI` | `discord-feedback` | `✅` |
+| `DISCORD_TRIGGER_KEYWORDS` | `discord-feedback` | `bug,issue,file this,feature request` |
 
 ### 4. Provenance label
 
