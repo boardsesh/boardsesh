@@ -25,12 +25,7 @@ import { resolveAutoGymForBoard } from './gym-matching';
 import { findBlockingDuplicate, type BoardLocation } from './board-duplicates';
 import { assertBoardCapNotReached } from './board-limits';
 import { getUserCommunityRoles, hasAdminOrLeader, rolesGrantAdminOrLeader } from './roles';
-import {
-  SYSTEM_BOARD_OWNER_ID,
-  isRowAnonReadable,
-  normalizeSetIds,
-  requireAnonReadableBoard,
-} from '../board-presence/shared';
+import { SYSTEM_BOARD_OWNER_ID, isRowAnonReadable, requireAnonReadableBoard } from '../board-presence/shared';
 import { assertKnownBoardConfig } from '../board-presence/board-catalog';
 import { publishBoardQueuePreviewTombstoneForBoard } from '../../../services/board-queue-preview';
 import { logger } from '../../../utils/logger';
@@ -231,8 +226,8 @@ export async function resolveBoardFromPath(
     // cap is a safety net against a pathological account.
     .limit(100);
 
-  const targetSetIds = normalizeSetIds(setIds);
-  return candidates.find((candidate) => normalizeSetIds(candidate.setIds) === targetSetIds)?.id ?? null;
+  const targetSetIds = normaliseSetIds(setIds);
+  return candidates.find((candidate) => normaliseSetIds(candidate.setIds) === targetSetIds)?.id ?? null;
 }
 
 /**

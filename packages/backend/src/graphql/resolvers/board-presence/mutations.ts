@@ -7,6 +7,7 @@ import type {
   ResolvedBoard,
   BoardPresenceClimb,
 } from '@boardsesh/shared-schema';
+import { normaliseSetIds } from '@boardsesh/board-config';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
@@ -35,7 +36,6 @@ import {
   findReachableActiveBoardByUuid,
   isDuplicateBoardSerialError,
   lastSentAtByBoardIds,
-  normalizeSetIds,
   rememberBoardForSerial,
   requireActiveBoardById,
   resolveSharedBoardForConfig,
@@ -181,7 +181,7 @@ async function bindOrCreateOwnBoardForSerial(
         boardType: config.boardType,
         layoutId: config.layoutId,
         sizeId: config.sizeId,
-        setIds: normalizeSetIds(config.setIds),
+        setIds: normaliseSetIds(config.setIds),
         name,
         serialNumber: serial,
       })

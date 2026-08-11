@@ -3,6 +3,7 @@ import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import type { BoardConnectionHolder, ResolvedBoard } from '@boardsesh/shared-schema';
+import { normaliseSetIds } from '@boardsesh/board-config';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { pubsub } from '../../../pubsub/index';
@@ -271,25 +272,6 @@ export async function findReachableActiveBoardByUuid(
 }
 
 /**
- * Canonical set-id string for equality checks: numeric tokens only, deduped,
- * numerically sorted. Lets us compare a tick's target set against a board's
- * stored set without caring about order or formatting.
- */
-export function normalizeSetIds(setIds: string | null | undefined): string {
-  if (!setIds) return '';
-  return [
-    ...new Set(
-      setIds
-        .split(',')
-        .map((token) => token.trim())
-        .filter((token) => /^\d+$/.test(token)),
-    ),
-  ]
-    .sort((first, second) => Number(first) - Number(second))
-    .join(',');
-}
-
-/**
  * The board configuration a tick names: the board type it was logged against
  * plus the layout/size/set triple from the route it was logged from. The three
  * config fields are optional on the wire (`SaveTickInputSchema`), so a caller
@@ -325,7 +307,7 @@ export function boardConfigMatchesTick(
     board.boardType === target.boardType &&
     board.layoutId === target.layoutId &&
     board.sizeId === target.sizeId &&
-    normalizeSetIds(board.setIds) === normalizeSetIds(target.setIds)
+    normaliseSetIds(board.setIds) === normaliseSetIds(target.setIds)
   );
 }
 
@@ -483,7 +465,7 @@ export async function findOwnActiveBoardByConfig(
   setIds: string,
   preferredSerial?: string,
 ): Promise<ActivePresenceBoard | undefined> {
-  const normalizedSetIds = normalizeSetIds(setIds);
+  const normalizedSetIds = normaliseSetIds(setIds);
   const [board] = await db
     .select({
       id: dbSchema.userBoards.id,
@@ -631,7 +613,7 @@ export async function resolveSharedBoardForConfig(
   // creates the feed the first time a config is seen; anon then joins it.
   allowCreate = true,
 ): Promise<ResolvedBoard> {
-  const normalizedSetIds = normalizeSetIds(setIds);
+  const normalizedSetIds = normaliseSetIds(setIds);
   const slug = boardConfigPresenceSlug(boardType, layoutId, sizeId, normalizedSetIds);
 
   const [existing] = await db
