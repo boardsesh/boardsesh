@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-08-11T12:09:17.909Z",
+  "generatedAt": "2026-08-11T20:51:01.417Z",
   "entries": [
+    {
+      "prNumber": 4268,
+      "category": "fixed",
+      "title": "Add to playlist now only shows playlists for the board you're climbing on",
+      "mergedAt": "2026-08-11T20:50:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4268"
+    },
+    {
+      "prNumber": 4258,
+      "category": "fixed",
+      "title": "Purely a crash-reporting/observability fix — no user-visible behavior change. The subscription callback bodies (`next`/`error`/`complete`) are unchanged; only the transport wrapper they're routed through changed.",
+      "mergedAt": "2026-08-11T20:50:00Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4258"
+    },
     {
       "prNumber": 4243,
       "category": "fixed",

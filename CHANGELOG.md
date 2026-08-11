@@ -18,6 +18,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Add to playlist now only shows playlists for the board you're climbing on ([#4268](https://github.com/boardsesh/boardsesh/pull/4268))
+- Purely a crash-reporting/observability fix — no user-visible behavior change. The subscription callback bodies (`next`/`error`/`complete`) are unchanged; only the transport wrapper they're routed through changed. ([#4258](https://github.com/boardsesh/boardsesh/pull/4258))
 - MoonBoard problems keep their grade in the new-climbs feed and in setter notifications, even when the problem isn't pinned to one wall angle. ([#4243](https://github.com/boardsesh/boardsesh/pull/4243))
 - Your logbook now draws each climb on the board you actually climbed it on, instead of the biggest board in the layout. ([#4249](https://github.com/boardsesh/boardsesh/pull/4249))
   Climbs on Kilter Orbit, Spire, JUUL, BKB, Decoy, Touchstone and Grasshopper walls finally show a thumbnail on the web.
