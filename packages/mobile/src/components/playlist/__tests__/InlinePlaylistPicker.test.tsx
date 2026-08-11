@@ -241,6 +241,41 @@ describe('InlinePlaylistPicker', () => {
     expect(getByLabelText('banana').getAttribute('data-hint')).toBe('actions.playlist.toast.added');
   });
 
+  // #4224: the provider's `playlists` spans every board the user has
+  // playlists on; the picker (default props: boardName="kilter", layoutId=1)
+  // must only offer playlists for the climb's own board+layout.
+  it('never renders a playlist from a different board or layout as a row', () => {
+    playlistContext.playlists = [
+      makePlaylist('p-kilter', 'Kilter warmups'),
+      { ...basePlaylist, id: 'p-tension', uuid: 'p-tension', name: 'Tension crimps', boardType: 'tension' },
+      { ...basePlaylist, id: 'p-other-layout', uuid: 'p-other-layout', name: 'Other layout', layoutId: 2 },
+    ];
+    const { getByLabelText, queryByLabelText } = renderPicker();
+    expect(getByLabelText('Kilter warmups')).not.toBeNull();
+    expect(queryByLabelText('Tension crimps')).toBeNull();
+    expect(queryByLabelText('Other layout')).toBeNull();
+  });
+
+  // A layout-less playlist (Aurora/Kilter-synced circuit) belongs to the whole
+  // board — the backend's own board-scoped queries match `layout_id IS NULL`,
+  // so the picker keeps offering it rather than hiding the climber's circuits.
+  it('still offers a layout-less playlist on the matching board', () => {
+    playlistContext.playlists = [
+      { ...basePlaylist, id: 'p-circuit', uuid: 'p-circuit', name: 'Aurora circuit', layoutId: null },
+      {
+        ...basePlaylist,
+        id: 'p-other-board-circuit',
+        uuid: 'p-other-board-circuit',
+        name: 'Tension circuit',
+        boardType: 'tension',
+        layoutId: null,
+      },
+    ];
+    const { getByLabelText, queryByLabelText } = renderPicker();
+    expect(getByLabelText('Aurora circuit')).not.toBeNull();
+    expect(queryByLabelText('Tension circuit')).toBeNull();
+  });
+
   it('adds the climb when tapping a non-member row (optimistic + store sync)', async () => {
     playlistContext.playlists = [makePlaylist('p-1', 'Hard Crimps')];
     qstate.data = [];

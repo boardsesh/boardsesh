@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import type { Playlist } from '@boardsesh/graphql/operations/playlists';
-import { sortAndFilterPlaylists, sortPlaylistsByName } from '../sort-filter-playlists';
+import { filterPlaylistsByBoard, sortAndFilterPlaylists, sortPlaylistsByName } from '../sort-filter-playlists';
 
 // A minimal Playlist factory — the helper only reads `name`, so the rest is
 // padding to satisfy the type.
-function playlist(name: string): Playlist {
+function playlist(name: string, overrides: Partial<Playlist> = {}): Playlist {
   return {
     id: name,
     uuid: name,
@@ -18,6 +18,7 @@ function playlist(name: string): Playlist {
     followerCount: 0,
     isFollowedByMe: false,
     isPinnedByMe: false,
+    ...overrides,
   } as Playlist;
 }
 
@@ -59,5 +60,41 @@ describe('sortAndFilterPlaylists', () => {
   it('returns an empty array when nothing matches', () => {
     const input = [playlist('Projects'), playlist('Warmups')];
     expect(sortAndFilterPlaylists(input, 'zzz')).toEqual([]);
+  });
+});
+
+describe('filterPlaylistsByBoard', () => {
+  it('keeps playlists matching both boardType and layoutId', () => {
+    const input = [playlist('Kilter 9', { boardType: 'kilter', layoutId: 9 })];
+    expect(names(filterPlaylistsByBoard(input, 'kilter', 9))).toEqual(['Kilter 9']);
+  });
+
+  it('drops playlists with a mismatched boardType', () => {
+    const input = [playlist('Tension climbs', { boardType: 'tension', layoutId: 9 })];
+    expect(filterPlaylistsByBoard(input, 'kilter', 9)).toEqual([]);
+  });
+
+  it('drops playlists with a mismatched layoutId', () => {
+    const input = [playlist('Other layout', { boardType: 'kilter', layoutId: 8 })];
+    expect(filterPlaylistsByBoard(input, 'kilter', 9)).toEqual([]);
+  });
+
+  // Mirrors the backend rule (`layout_id = $layout OR layout_id IS NULL`) that
+  // userPlaylists/allUserPlaylists apply: a layout-less playlist belongs to the
+  // whole board, so it stays an add target on every layout of that board.
+  it('keeps playlists with a null layoutId (Aurora/Kilter-synced circuits)', () => {
+    const input = [playlist('Aurora circuit', { boardType: 'kilter', layoutId: null })];
+    expect(names(filterPlaylistsByBoard(input, 'kilter', 9))).toEqual(['Aurora circuit']);
+  });
+
+  it('still drops a null-layout playlist belonging to another board', () => {
+    const input = [playlist('Tension circuit', { boardType: 'tension', layoutId: null })];
+    expect(filterPlaylistsByBoard(input, 'kilter', 9)).toEqual([]);
+  });
+
+  it('does not mutate the input array', () => {
+    const input = [playlist('a', { boardType: 'tension' }), playlist('b', { boardType: 'kilter', layoutId: 1 })];
+    filterPlaylistsByBoard(input, 'kilter', 1);
+    expect(names(input)).toEqual(['a', 'b']);
   });
 });

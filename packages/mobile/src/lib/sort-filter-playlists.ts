@@ -9,6 +9,26 @@ export function sortPlaylistsByName(playlists: Playlist[]): Playlist[] {
 }
 
 /**
+ * Keep only playlists that belong to the given board+layout, using the same rule
+ * the backend already applies for board-scoped playlist lists —
+ * `boardType = $board AND (layout_id = $layout OR layout_id IS NULL)` in
+ * `userPlaylists` / `allUserPlaylists`
+ * (packages/backend/src/graphql/resolvers/playlists/queries/user-playlists.ts).
+ *
+ * `layoutId` is nullable on `Playlist` by design: a playlist is scoped to a
+ * board and only *optionally* to a layout (see packages/db schema), which is how
+ * Aurora- and Kilter-synced circuits arrive. Those are legitimate add targets on
+ * every layout of their board, and the Discover "My playlists" list already
+ * shows them — so a null `layoutId` matches here too, rather than silently
+ * dropping a climber's circuits from the add-to-playlist picker.
+ */
+export function filterPlaylistsByBoard(playlists: Playlist[], boardName: string, layoutId: number): Playlist[] {
+  return playlists.filter(
+    (playlist) => playlist.boardType === boardName && (playlist.layoutId == null || playlist.layoutId === layoutId),
+  );
+}
+
+/**
  * Sort playlists alphabetically by name, then keep only those whose name
  * contains the (trimmed, case-insensitive) query.
  */

@@ -28,7 +28,7 @@ import { usePlaylistsContext, type Playlist } from '../../providers/playlists-pr
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { reportHandledError } from '../../lib/error-reporting';
-import { sortPlaylistsByName } from '../../lib/sort-filter-playlists';
+import { filterPlaylistsByBoard, sortPlaylistsByName } from '../../lib/sort-filter-playlists';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { borderRadius, spacing } from '../../theme/tokens';
 import { PLAYLIST_COLORS, normalizePlaylistColor } from './playlist-colors';
@@ -206,7 +206,13 @@ export function InlinePlaylistPicker({
     [showToast],
   );
 
-  const sortedPlaylists = useMemo(() => sortPlaylistsByName(playlists), [playlists]);
+  // Scope the "add to playlist" list to the climb's own board+layout — the
+  // provider's `playlists` spans every board the user has playlists on, and
+  // adding a climb to a wrong-board playlist isn't guarded server-side (#4224).
+  const sortedPlaylists = useMemo(
+    () => sortPlaylistsByName(filterPlaylistsByBoard(playlists, boardName, layoutId)),
+    [playlists, boardName, layoutId],
+  );
 
   // Write a membership set to the cache and mirror it into the shared chip store
   // (so climb-list playlist chips reflect the change without a refetch).
