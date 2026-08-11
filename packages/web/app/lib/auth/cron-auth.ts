@@ -12,6 +12,13 @@ import { NextResponse } from 'next/server';
  * Renaming it (e.g. to `CRON_TOKEN`) would silently break that auto-injection
  * and 401 every cron run.
  *
+ * There is a second caller now: the Railway scheduler (`packages/scheduler`)
+ * sends the identical `Authorization: Bearer $CRON_SECRET` header for the jobs
+ * that have moved off Vercel. It reads the same secret from its own env, so
+ * the name stays `CRON_SECRET` on both sides — rotating it means updating the
+ * Vercel project env AND the Railway service env together, or one of the two
+ * schedulers starts 401ing. `docs/scheduler.md` tracks which job runs where.
+ *
  * Comparison is constant-time to avoid leaking the secret's value through
  * response-timing side channels, mirroring the pattern used for the native
  * OAuth transfer token in `native-oauth-transfer.ts`.
