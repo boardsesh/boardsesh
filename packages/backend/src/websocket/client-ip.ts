@@ -91,7 +91,10 @@ function headerValue(value: string | string[] | undefined): string | undefined {
 }
 
 /**
- * Resolve the client IP of a WebSocket upgrade request for rate-limit keying.
+ * Resolve the client IP of an incoming request for rate-limit keying. Named for
+ * the WebSocket upgrade it was written for; `packages/backend/src/graphql/yoga.ts`
+ * now calls it with the Node request behind `yoga.handle` so both transports
+ * share one trust boundary (issue #4034).
  *
  * Trusted-hop order — mirrors `packages/backend/src/handlers/og-climb.ts`:
  *   1. `cf-connecting-ip` — Cloudflare overwrites this header, and Cloudflare
@@ -105,10 +108,8 @@ function headerValue(value: string | string[] | undefined): string | undefined {
  * Why not the FIRST x-forwarded-for hop: it is attacker-controlled. A scripted
  * client can set `x-forwarded-for: <random>` on each upgrade and mint a fresh
  * bucket every time — exactly the bypass issue #2863 exists to close — and can
- * also pin a *victim's* IP to exhaust their bucket. This deliberately diverges
- * from `packages/backend/src/graphql/yoga.ts`, whose HTTP anonymous derivation
- * still trusts the first hop; that is the same defect on the HTTP transport and
- * is tracked separately.
+ * also pin a *victim's* IP to exhaust their bucket. HTTP had the same defect
+ * until issue #4034 pointed `yoga.ts` at this resolver.
  *
  * Residual: a client that reaches the Railway origin directly, bypassing
  * Cloudflare, can spoof `cf-connecting-ip` (same caveat as og-climb.ts).
