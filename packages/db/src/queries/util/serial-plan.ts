@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import type { DbInstance } from '../../client/postgres';
 
 /**
@@ -13,8 +13,33 @@ export type SerialPlanDb = DbInstance | TransactionDb;
 type SerialPlanTransaction = DbInstance['transaction'];
 type SerialPlanExecute = (query: unknown) => Promise<unknown>;
 
+/**
+ * Anything that can run a statement. Structural on purpose rather than
+ * `SerialPlanDb`, so a caller holding a transaction handle from a differently
+ * parameterised drizzle client (the generic `PgDatabase` in
+ * `climb-stats/recompute.ts`, for one) can pass it without a cast.
+ */
+type SerialPlanStatementRunner = { execute: (query: SQL) => Promise<unknown> };
+
 /** The statement every guarded query runs before its SELECT. Exported for tests. */
 export const SERIAL_PLAN_STATEMENT = 'SET LOCAL max_parallel_workers_per_gather = 0';
+
+/**
+ * Disable per-gather parallelism on an ALREADY-OPEN transaction.
+ *
+ * `SET LOCAL` lasts until the end of the enclosing transaction, so this is for
+ * callers that own one already:
+ * `db.transaction(async (tx) => { await setSerialPlan(tx); ... })`. Handing it a
+ * top-level client instead emits the statement outside a transaction, where
+ * Postgres discards it with a warning.
+ *
+ * Reach for `withSerialPlan` when you don't have a transaction yet. Never pass an
+ * open transaction handle to `withSerialPlan` — drizzle's `tx` exposes
+ * `.transaction`, so it would open a savepoint just to set a GUC.
+ */
+export async function setSerialPlan(db: SerialPlanStatementRunner): Promise<void> {
+  await db.execute(sql`SET LOCAL max_parallel_workers_per_gather = 0`);
+}
 
 function getTransaction(db: SerialPlanDb): SerialPlanTransaction | null {
   const candidate = db as SerialPlanDb & { transaction?: unknown };
@@ -56,7 +81,7 @@ export async function withSerialPlan<T>(db: SerialPlanDb, query: (tx: SerialPlan
   const transaction = getTransaction(db);
   if (transaction) {
     return transaction(async (transactionDb) => {
-      await transactionDb.execute(sql`SET LOCAL max_parallel_workers_per_gather = 0`);
+      await setSerialPlan(transactionDb);
       return query(transactionDb);
     });
   }

@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { rowsOf } from '../util/rows';
+import { setSerialPlan } from '../util/serial-plan';
 import { blendedQualityAverageSql } from './quality-blend';
 
 // Any drizzle-orm PgDatabase (postgres-js client, the script client, the
@@ -144,6 +145,14 @@ export async function recomputeClimbStats(
   });
 
   await db.transaction(async (tx) => {
+    // The aggregate UPDATE below hash-joins boardsesh_ticks against
+    // board_climb_stats, which is exactly the plan shape that exhausts
+    // Postgres's dynamic shared memory on our small /dev/shm (pgCode 53100 —
+    // Sentry BOARDSESH-B6, issue #4235). Set the GUC on the transaction we
+    // already own; `withSerialPlan` here would open a savepoint just to run one
+    // SET LOCAL.
+    await setSerialPlan(tx);
+
     // Defensive seed: set upstream/boardsesh counts to 0 explicitly so the
     // recompute and any later upstream sync both see a sensible baseline.
     //
