@@ -403,8 +403,10 @@ describe('dark-mode art variants', () => {
       missingCount: 0,
     });
     // Omitting the param must behave exactly like passing 'light' — this is what
-    // keeps the callers that never pass it (PlaylistBoardBackdrop, the climbs-tab
-    // prefetch, the Live Activity thumbnail builder) rendering as they do today.
+    // keeps the one remaining caller that never passes it (the Live Activity
+    // thumbnail builder; PlaylistBoardBackdrop and the climbs-tab prefetch now
+    // thread the live app colour scheme through, see #3962) rendering as it
+    // does today.
     expect(explicitLight).toEqual(omitted);
   });
 

@@ -3,6 +3,7 @@ import { StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { getBoardConfigForPlaylist } from '../../lib/playlists/board-details-for-playlist';
 import { tryGetBackgroundPathsSync, ensureBackgroundsCached } from '../../lib/background-image-cache';
+import { useAppColorScheme } from '../../providers/theme-provider';
 
 type PlaylistBoardBackdropProps = {
   boardType: string;
@@ -20,11 +21,17 @@ type PlaylistBoardBackdropProps = {
  */
 function PlaylistBoardBackdropImpl({ boardType, layoutId }: PlaylistBoardBackdropProps) {
   const config = useMemo(() => getBoardConfigForPlaylist(boardType, layoutId), [boardType, layoutId]);
+  const colorScheme = useAppColorScheme();
 
   // This backdrop is blurred + dimmed to 35% opacity, so the 416px thumb
   // variant is plenty — and it keeps expo-image from resampling a ~1080px
-  // source on the main thread.
-  const backdropConfig = useMemo(() => (config ? { ...config, variant: 'thumb' as const } : null), [config]);
+  // source on the main thread. colorScheme picks up the MoonBoard `.dark.webp`
+  // siblings (issue #3885 / PR #3961) so the tile doesn't show the light art's
+  // near-black lettering and hold sheets behind the dark-mode colour tint.
+  const backdropConfig = useMemo(
+    () => (config ? { ...config, variant: 'thumb' as const, colorScheme } : null),
+    [config, colorScheme],
+  );
 
   // Sync fast-path so production builds paint the backdrop on the first frame.
   const [path, setPath] = useState<string | null>(() => {
