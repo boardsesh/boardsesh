@@ -1332,6 +1332,7 @@ export const QUEUE_UPDATES_SUBSCRIPTION = `
         sequence
         climbUuid
         frameIndex
+        frameCount
         isPlaying
         speed
         paceMs

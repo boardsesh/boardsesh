@@ -324,6 +324,18 @@ export const eventsTypeDefs = /* GraphQL */ `
     climbUuid: ID!
     "Frame index that became current at \`anchorTimestamp\`."
     frameIndex: Int!
+    """
+    Number of frames the publisher's frames reader produced for this climb.
+    Receivers compare it against their own frame list and stop following the
+    peer on a mismatch instead of clamping \`frameIndex\` into range — a clamp
+    turns a skew into a board stuck on its last frame. Null from clients that
+    predate this field.
+
+    Forward protection only: a peer that doesn't send the field can't be
+    checked, so this does nothing for frames-reader changes that already
+    shipped. It starts protecting from the next one.
+    """
+    frameCount: Int
     "Whether the engine is auto-advancing."
     isPlaying: Boolean!
     "Playback multiplier (1.0 = native pace)."
@@ -351,6 +363,12 @@ export const eventsTypeDefs = /* GraphQL */ `
     climbUuid: ID!
     "Frame index that was current at \`anchorTimestamp\`"
     frameIndex: Int!
+    """
+    Number of frames the publisher's frames reader produced. Receivers compare
+    it against their own frame list and stop following on a mismatch rather
+    than clamping. Null from publishers that predate the field.
+    """
+    frameCount: Int
     "Whether the engine is auto-advancing"
     isPlaying: Boolean!
     "Playback multiplier (1.0 = native pace)"

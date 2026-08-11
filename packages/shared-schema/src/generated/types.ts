@@ -4312,6 +4312,12 @@ export type PlaybackStateChanged = {
   clientId?: Maybe<Scalars['ID']['output']>;
   /** UUID of the climb whose playback changed */
   climbUuid: Scalars['ID']['output'];
+  /**
+   * Number of frames the publisher's frames reader produced. Receivers compare
+   * it against their own frame list and stop following on a mismatch rather
+   * than clamping. Null from publishers that predate the field.
+   */
+  frameCount?: Maybe<Scalars['Int']['output']>;
   /** Frame index that was current at `anchorTimestamp` */
   frameIndex: Scalars['Int']['output'];
   /** Whether the engine is auto-advancing */
@@ -4338,6 +4344,18 @@ export type PlaybackStateInput = {
   clientId?: InputMaybe<Scalars['ID']['input']>;
   /** Climb the playback applies to. Peers ignore the event if it's for a different climb than they're showing. */
   climbUuid: Scalars['ID']['input'];
+  /**
+   * Number of frames the publisher's frames reader produced for this climb.
+   * Receivers compare it against their own frame list and stop following the
+   * peer on a mismatch instead of clamping `frameIndex` into range — a clamp
+   * turns a skew into a board stuck on its last frame. Null from clients that
+   * predate this field.
+   *
+   * Forward protection only: a peer that doesn't send the field can't be
+   * checked, so this does nothing for frames-reader changes that already
+   * shipped. It starts protecting from the next one.
+   */
+  frameCount?: InputMaybe<Scalars['Int']['input']>;
   /** Frame index that became current at `anchorTimestamp`. */
   frameIndex: Scalars['Int']['input'];
   /** Whether the engine is auto-advancing. */
@@ -11029,6 +11047,7 @@ export type PlaybackStateChangedResolvers<
   anchorTimestamp?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   clientId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   climbUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  frameCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   frameIndex?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   isPlaying?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   paceMs?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;

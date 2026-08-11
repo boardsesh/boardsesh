@@ -298,3 +298,214 @@ describe('usePlaybackEngine', () => {
     expect(result.current.isPlaying).toBe(false);
   });
 });
+
+// Issue #3989: the broadcast used to carry a bare frameIndex, so a peer running
+// a different frames reader (mid-rollout: web deploys instantly, mobile arrives
+// by OTA over days) sent indexes into a sequence we don't have. The old
+// behaviour clamped that index into our range, which made `reachedEnd` trivially
+// true and parked the board on its last frame for the rest of the climb.
+describe('usePlaybackEngine peer frame-count disagreement', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function peerState(overrides: Partial<ExternalPlaybackState> = {}): ExternalPlaybackState {
+    return {
+      frameIndex: 0,
+      isPlaying: false,
+      speed: 1,
+      paceMs: 200,
+      anchorTimestamp: Date.now(),
+      clientId: 'peer',
+      ...overrides,
+    };
+  }
+
+  it('ignores a peer whose frame count is larger than ours instead of clamping and stopping', () => {
+    const { frames, frameStrings } = decode(TENSION_FRAMES);
+    const onPeerFrameMismatch = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ externalState }: { externalState: ExternalPlaybackState | null }) =>
+        usePlaybackEngine({
+          frames,
+          frameStrings,
+          paceMs: 200,
+          clientId: 'self',
+          externalState,
+          onPeerFrameMismatch,
+        }),
+      { initialProps: { externalState: null as ExternalPlaybackState | null } },
+    );
+
+    // Local playback is under way at frame 1.
+    act(() => {
+      result.current.play();
+    });
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(result.current.frameIndex).toBe(1);
+
+    // A peer on a newer reader broadcasts an index from a 21-frame sequence.
+    rerender({
+      externalState: peerState({ frameIndex: 15, isPlaying: true, frameCount: 21 }),
+    });
+
+    // Not clamped to the last frame, not stopped, not reset to 0 — we keep
+    // playing our own sequence and simply stop following the peer.
+    expect(result.current.frameIndex).toBe(1);
+    expect(result.current.isPlaying).toBe(true);
+    expect(result.current.peerFrameMismatch).toBe(true);
+    expect(onPeerFrameMismatch).toHaveBeenCalledTimes(1);
+    expect(onPeerFrameMismatch).toHaveBeenLastCalledWith({ peerFrameCount: 21, localFrameCount: 4 });
+  });
+
+  it('ignores a peer whose frame count is smaller than ours', () => {
+    const { frames, frameStrings } = decode(TENSION_FRAMES);
+    const { result, rerender } = renderHook(
+      ({ externalState }: { externalState: ExternalPlaybackState | null }) =>
+        usePlaybackEngine({ frames, frameStrings, paceMs: 200, clientId: 'self', externalState }),
+      { initialProps: { externalState: null as ExternalPlaybackState | null } },
+    );
+    act(() => {
+      result.current.seek(3);
+    });
+    rerender({ externalState: peerState({ frameIndex: 0, isPlaying: true, frameCount: 2 }) });
+    expect(result.current.frameIndex).toBe(3);
+    expect(result.current.isPlaying).toBe(false);
+    expect(result.current.peerFrameMismatch).toBe(true);
+  });
+
+  it('fires the mismatch callback once per stretch of disagreement, not per event', () => {
+    const { frames, frameStrings } = decode(TENSION_FRAMES);
+    const onPeerFrameMismatch = vi.fn();
+    const { rerender } = renderHook(
+      ({ externalState }: { externalState: ExternalPlaybackState | null }) =>
+        usePlaybackEngine({
+          frames,
+          frameStrings,
+          paceMs: 200,
+          clientId: 'self',
+          externalState,
+          onPeerFrameMismatch,
+        }),
+      { initialProps: { externalState: null as ExternalPlaybackState | null } },
+    );
+    // A peer scrubbing a slider republishes constantly; only the first one
+    // should reach the telemetry seam.
+    for (const frameIndex of [4, 5, 6]) {
+      rerender({ externalState: peerState({ frameIndex, frameCount: 9 }) });
+    }
+    expect(onPeerFrameMismatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('converges normally when the peer reports the same frame count', () => {
+    const { frames, frameStrings } = decode(TENSION_FRAMES);
+    const onPeerFrameMismatch = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ externalState }: { externalState: ExternalPlaybackState | null }) =>
+        usePlaybackEngine({
+          frames,
+          frameStrings,
+          paceMs: 200,
+          clientId: 'self',
+          externalState,
+          onPeerFrameMismatch,
+        }),
+      { initialProps: { externalState: null as ExternalPlaybackState | null } },
+    );
+    rerender({
+      externalState: peerState({ frameIndex: 2, speed: 2, frameCount: frameStrings.length }),
+    });
+    expect(result.current.frameIndex).toBe(2);
+    expect(result.current.speed).toBe(2);
+    expect(result.current.peerFrameMismatch).toBe(false);
+    expect(onPeerFrameMismatch).not.toHaveBeenCalled();
+  });
+
+  it('keeps the legacy clamp for peers that send no frame count', () => {
+    const { frames, frameStrings } = decode(TENSION_FRAMES);
+    const now = Date.now();
+    vi.setSystemTime(now);
+    const { result } = renderHook(() =>
+      usePlaybackEngine({
+        frames,
+        frameStrings,
+        paceMs: 200,
+        clientId: 'self',
+        externalState: peerState({ frameIndex: 99, isPlaying: true, anchorTimestamp: now }),
+      }),
+    );
+    // Unchanged pre-#3989 behaviour: an out-of-range index from a client that
+    // predates the field clamps to the last frame and stops.
+    expect(result.current.frameIndex).toBe(frameStrings.length - 1);
+    expect(result.current.isPlaying).toBe(false);
+    expect(result.current.peerFrameMismatch).toBe(false);
+  });
+
+  it('clears the mismatch once a peer agrees again, and on climb change', () => {
+    const { frames, frameStrings } = decode(TENSION_FRAMES);
+    const other = decode('p100r1,p200r2');
+    const { result, rerender } = renderHook(
+      ({ externalState, climb }: { externalState: ExternalPlaybackState | null; climb: ReturnType<typeof decode> }) =>
+        usePlaybackEngine({
+          frames: climb.frames,
+          frameStrings: climb.frameStrings,
+          paceMs: 200,
+          clientId: 'self',
+          externalState,
+        }),
+      { initialProps: { externalState: null as ExternalPlaybackState | null, climb: { frames, frameStrings } } },
+    );
+    rerender({ externalState: peerState({ frameCount: 12 }), climb: { frames, frameStrings } });
+    expect(result.current.peerFrameMismatch).toBe(true);
+
+    // Peer updated (or a different peer takes over) and now agrees.
+    rerender({
+      externalState: peerState({ frameIndex: 1, frameCount: frameStrings.length }),
+      climb: { frames, frameStrings },
+    });
+    expect(result.current.peerFrameMismatch).toBe(false);
+    expect(result.current.frameIndex).toBe(1);
+
+    // Back to a disagreement, then swap the climb underneath. Hosts drop the
+    // peer state on climb change (both use-mobile-playback and
+    // use-drawer-playback do), and the flag is per-climb, so it clears.
+    rerender({ externalState: peerState({ frameCount: 12 }), climb: { frames, frameStrings } });
+    expect(result.current.peerFrameMismatch).toBe(true);
+    rerender({ externalState: null, climb: other });
+    expect(result.current.peerFrameMismatch).toBe(false);
+  });
+
+  it('stamps our own frame count on every emitted state', () => {
+    const { frames, frameStrings } = decode(TENSION_FRAMES);
+    const onLocalStateChange = vi.fn();
+    const { result } = renderHook(() =>
+      usePlaybackEngine({ frames, frameStrings, paceMs: 200, clientId: 'self', onLocalStateChange }),
+    );
+    act(() => {
+      result.current.play();
+    });
+    expect(onLocalStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ frameCount: frameStrings.length }));
+    act(() => {
+      result.current.setSpeed(2);
+    });
+    expect(onLocalStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ frameCount: frameStrings.length }));
+  });
+
+  it('emits nothing for a frameless climb, so frameCount is never 0', () => {
+    const onLocalStateChange = vi.fn();
+    const { result } = renderHook(() =>
+      usePlaybackEngine({ frames: [], frameStrings: [], paceMs: 200, clientId: 'self', onLocalStateChange }),
+    );
+    // setSpeed is the one control not gated on isAnimatable.
+    act(() => {
+      result.current.setSpeed(2);
+    });
+    expect(onLocalStateChange).not.toHaveBeenCalled();
+    expect(result.current.speed).toBe(2);
+  });
+});

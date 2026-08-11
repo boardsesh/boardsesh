@@ -613,6 +613,7 @@
     "pause": "Pause",
     "replay": "Rejouer",
     "speed": "Vitesse de lecture",
+    "peerFrameMismatch": "Lecture en solo. Quelqu'un dans la session utilise une autre version de l'app qui lit les images de cette voie différemment.",
     "audienceCount_one": "{{count}} autre en train de regarder",
     "audienceCount_other": "{{count}} autres en train de regarder",
     "yourAscents_one": "Ton ascension ({{count}})",

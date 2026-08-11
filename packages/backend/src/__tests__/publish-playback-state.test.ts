@@ -62,6 +62,7 @@ const climbUuid = '11111111-1111-1111-1111-111111111111';
 const validPlaybackInput = {
   climbUuid,
   frameIndex: 3,
+  frameCount: 21,
   isPlaying: true,
   speed: 1.5,
   paceMs: 250,
@@ -90,6 +91,7 @@ describe('publishPlaybackState mutation', () => {
         __typename: string;
         climbUuid: string;
         frameIndex: number;
+        frameCount: number | null;
         isPlaying: boolean;
         speed: number;
         paceMs: number;
@@ -103,6 +105,7 @@ describe('publishPlaybackState mutation', () => {
     expect(event.__typename).toBe('PlaybackStateChanged');
     expect(event.climbUuid).toBe(climbUuid);
     expect(event.frameIndex).toBe(3);
+    expect(event.frameCount).toBe(21);
     expect(event.isPlaying).toBe(true);
     expect(event.speed).toBe(1.5);
     expect(event.paceMs).toBe(250);
@@ -130,6 +133,28 @@ describe('publishPlaybackState mutation', () => {
     );
     const event = pubsubMock.publishQueueEvent.mock.calls[0]?.[1] as { clientId: string | null };
     expect(event.clientId).toBeNull();
+  });
+
+  // Issue #3989: receivers use frameCount to notice they read this climb's
+  // frames differently to the publisher. Clients older than the field omit it,
+  // and those must still broadcast — as null, so receivers fall back to the
+  // legacy clamp rather than treating "no count" as a mismatch.
+  it('emits a null frameCount when the publisher predates the field', async () => {
+    await queueMutations.publishPlaybackState(
+      undefined,
+      {
+        input: {
+          climbUuid,
+          frameIndex: 1,
+          isPlaying: true,
+          speed: 1,
+          paceMs: 300,
+        },
+      },
+      makeCtx(),
+    );
+    const event = pubsubMock.publishQueueEvent.mock.calls[0]?.[1] as { frameCount: number | null };
+    expect(event.frameCount).toBeNull();
   });
 
   it('prefers the publisher-supplied clientId over the connection id', async () => {

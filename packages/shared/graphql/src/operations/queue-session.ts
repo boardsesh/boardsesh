@@ -487,6 +487,7 @@ export const EVENTS_REPLAY = `
           sequence
           climbUuid
           frameIndex
+          frameCount
           isPlaying
           speed
           paceMs
@@ -562,6 +563,7 @@ export const QUEUE_UPDATES = `
         sequence
         climbUuid
         frameIndex
+        frameCount
         isPlaying
         speed
         paceMs

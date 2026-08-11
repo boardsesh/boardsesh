@@ -9,15 +9,17 @@ import type { BoardName, Climb, PlaybackStateChangedEvent } from '@boardsesh/sha
 // latest-wins GATT-safe drain, the climb-change reset, and party-sync wiring.
 
 type EngineInput = {
-  externalState?: { clientId: string | null } | null;
+  externalState?: { clientId: string | null; frameCount?: number | null } | null;
   onLocalStateChange?: (state: {
     frameIndex: number;
+    frameCount: number;
     isPlaying: boolean;
     speed: number;
     paceMs: number;
     anchorTimestamp: number;
     clientId: string | null;
   }) => void;
+  onPeerFrameMismatch?: (mismatch: { peerFrameCount: number; localFrameCount: number }) => void;
 };
 
 type SendCall = { frame: string; mirrored?: boolean; resolve: (value: boolean) => void };
@@ -33,6 +35,7 @@ const mocks = vi.hoisted(() => ({
     currentFrameString: '',
     isPlaying: false,
     speed: 1,
+    peerFrameMismatch: false,
     play: vi.fn(),
     pause: vi.fn(),
     seek: vi.fn(),
@@ -46,6 +49,7 @@ const mocks = vi.hoisted(() => ({
   // clear the externally-synced state.
   subscribeToPlaybackEvents: null as unknown as (listener: (event: PlaybackStateChangedEvent) => void) => () => void,
   queueValue: null as unknown as { subscribeToPlaybackEvents: unknown; publishPlaybackState: unknown },
+  track: vi.fn(),
   bluetooth: {
     isConnected: true,
     sendFramesToBoard: vi.fn() as ReturnType<typeof vi.fn>,
@@ -78,6 +82,10 @@ vi.mock('../../../providers/queue-provider', () => ({
 
 vi.mock('../../../providers/bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => mocks.bluetooth,
+}));
+
+vi.mock('../../../lib/analytics', () => ({
+  track: mocks.track,
 }));
 
 import { useMobilePlayback } from '../use-mobile-playback';
@@ -115,6 +123,7 @@ beforeEach(() => {
   mocks.playback.currentFrameString = '';
   mocks.playback.isPlaying = false;
   mocks.playback.speed = 1;
+  mocks.playback.peerFrameMismatch = false;
   mocks.lastEngineInput.current = null;
   mocks.playbackEventListeners.clear();
   mocks.bluetooth.isConnected = true;
@@ -271,6 +280,7 @@ describe('useMobilePlayback — party-sync', () => {
     act(() => {
       mocks.lastEngineInput.current?.onLocalStateChange?.({
         frameIndex: 1,
+        frameCount: 3,
         isPlaying: true,
         speed: 2,
         paceMs: 500,
@@ -283,5 +293,56 @@ describe('useMobilePlayback — party-sync', () => {
     const published = mocks.publishPlaybackState.mock.calls[0][0];
     expect(published).toMatchObject({ climbUuid: 'c1', frameIndex: 1, isPlaying: true, speed: 2, paceMs: 500 });
     expect(typeof published.clientId).toBe('string');
+  });
+
+  // Issue #3989: the broadcast carries how many frames OUR reader produced, so a
+  // peer on a different frames reader can tell its index means something else
+  // rather than clamping it into range and freezing on the last frame.
+  it('publishes the frame count the engine reports', () => {
+    renderPlayback(climbWith('c1'));
+
+    act(() => {
+      mocks.lastEngineInput.current?.onLocalStateChange?.({
+        frameIndex: 4,
+        frameCount: 21,
+        isPlaying: true,
+        speed: 1,
+        paceMs: 500,
+        anchorTimestamp: 1700,
+        clientId: 'self',
+      });
+    });
+
+    expect(mocks.publishPlaybackState.mock.calls[0][0]).toMatchObject({ frameCount: 21 });
+  });
+
+  it('passes a peer frame count through to the engine, and null when absent', () => {
+    const { rerender } = renderPlayback(climbWith('c1'));
+
+    emitPlayback(playbackEvent({ climbUuid: 'c1', frameCount: 21 }));
+    expect(mocks.lastEngineInput.current?.externalState?.frameCount).toBe(21);
+
+    // A publisher older than the field sends nothing; the engine must see null
+    // rather than a stale count from the previous event.
+    act(() => {
+      rerender({ climb: climbWith('c1') });
+    });
+    emitPlayback(playbackEvent({ climbUuid: 'c1', frameCount: undefined }));
+    expect(mocks.lastEngineInput.current?.externalState?.frameCount).toBeNull();
+  });
+
+  it('reports a peer frame-count disagreement to analytics', () => {
+    renderPlayback(climbWith('c1'));
+
+    act(() => {
+      mocks.lastEngineInput.current?.onPeerFrameMismatch?.({ peerFrameCount: 21, localFrameCount: 11 });
+    });
+
+    expect(mocks.track).toHaveBeenCalledTimes(1);
+    expect(mocks.track).toHaveBeenLastCalledWith('Playback Peer Frame Mismatch', {
+      peerFrameCount: 21,
+      localFrameCount: 11,
+      boardName: KILTER,
+    });
   });
 });

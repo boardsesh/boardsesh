@@ -44,6 +44,13 @@ import {
 export type PublishPlaybackStateInput = {
   climbUuid: string;
   frameIndex: number;
+  /**
+   * Frames our reader produced for this climb. Peers compare it against their
+   * own list and stop following us when the two disagree instead of clamping
+   * our index into their range (issue #3989). Required here — a publisher
+   * always knows its own frame count.
+   */
+  frameCount: number;
   isPlaying: boolean;
   speed: number;
   paceMs: number;

@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
-import { useClimbFrames, usePlaybackEngine, type ExternalPlaybackState } from '@boardsesh/playback-react';
+import {
+  useClimbFrames,
+  usePlaybackEngine,
+  type ExternalPlaybackState,
+  type LocalPlaybackState,
+  type PeerFrameMismatch,
+} from '@boardsesh/playback-react';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { track } from '../../lib/analytics';
 import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 
@@ -32,6 +40,12 @@ export type UseMobilePlaybackOutput = {
   speed: number;
   /** Native per-frame pace (ms) — lets the UI glide a progress cue at the playback cadence. */
   paceMs: number;
+  /**
+   * True while a party peer is counting this climb's frames differently to us
+   * (they're on a build with a different frames reader). We stop following
+   * their playback rather than jumping to a frame that doesn't line up.
+   */
+  peerFrameMismatch: boolean;
   play: () => void;
   pause: () => void;
   seek: (frameIndex: number) => void;
@@ -74,6 +88,9 @@ export function useMobilePlayback({
       if (event.climbUuid !== climbUuid) return;
       setExternalPlayback({
         frameIndex: event.frameIndex,
+        // Null from peers that predate the field — the engine falls back to its
+        // legacy clamp when there's nothing to compare against.
+        frameCount: event.frameCount ?? null,
         isPlaying: event.isPlaying,
         speed: event.speed,
         paceMs: event.paceMs,
@@ -85,11 +102,14 @@ export function useMobilePlayback({
   }, [climbUuid, subscribeToPlaybackEvents]);
 
   const handleLocalStateChange = useCallback(
-    (next: ExternalPlaybackState) => {
+    (next: LocalPlaybackState) => {
       if (!climbUuid) return;
       void publishPlaybackState({
         climbUuid,
         frameIndex: next.frameIndex,
+        // Lets peers notice we read this climb's frames differently instead of
+        // clamping our index into their range (issue #3989).
+        frameCount: next.frameCount,
         isPlaying: next.isPlaying,
         speed: next.speed,
         paceMs: next.paceMs,
@@ -99,6 +119,19 @@ export function useMobilePlayback({
     [climbUuid, publishPlaybackState, playbackClientId],
   );
 
+  // Telemetry seam for the frame-count disagreement. Fires once per stretch of
+  // mismatched peer events, so a stale peer scrubbing a slider can't flood it.
+  const handlePeerFrameMismatch = useCallback(
+    ({ peerFrameCount, localFrameCount }: PeerFrameMismatch) => {
+      track(SHARED_EVENTS.PlaybackPeerFrameMismatch, {
+        peerFrameCount,
+        localFrameCount,
+        boardName,
+      });
+    },
+    [boardName],
+  );
+
   const playback = usePlaybackEngine({
     frames,
     frameStrings,
@@ -106,6 +139,7 @@ export function useMobilePlayback({
     clientId: playbackClientId,
     externalState: externalPlayback,
     onLocalStateChange: handleLocalStateChange,
+    onPeerFrameMismatch: handlePeerFrameMismatch,
   });
 
   // --- Latest-wins BLE frame writer ---
@@ -189,6 +223,7 @@ export function useMobilePlayback({
       isPlaying: playback.isPlaying,
       speed: playback.speed,
       paceMs,
+      peerFrameMismatch: playback.peerFrameMismatch,
       play,
       pause: playback.pause,
       seek: playback.seek,
