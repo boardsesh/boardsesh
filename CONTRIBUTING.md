@@ -204,6 +204,8 @@ Web, in `packages/web/.env.local`:
 | `NEXT_PUBLIC_WS_URL` | Backend WebSocket URL the browser connects to (`ws://localhost:8080/graphql`). |
 | `NEXTAUTH_SECRET`    | Must match the backend's value.                                                |
 
+Locally you can leave `NEXTAUTH_URL` unset — NextAuth defaults to `http://localhost:3000`. In any hosted deployment (Vercel, Docker, homelab preview) it must be the canonical https origin the browser actually talks to, e.g. `https://www.boardsesh.com`, with no trailing path. NextAuth builds every OAuth `redirect_uri` and the session-cookie domain from it, so a stale or loopback value drops users on a dead localhost page after Google/Apple sign-in. A loopback value is ignored on hosted deployments — `packages/web/app/lib/auth/canonical-auth-url.ts` substitutes the canonical origin (from `BASE_URL`, `VERCEL_ENV`, or `VERCEL_URL`) and logs a warning — but that is a backstop, not a substitute for setting the variable.
+
 Mobile: copy `packages/mobile/.env.example` to `packages/mobile/.env.development.local` and set these to aim the app at a local or custom backend:
 
 | Variable                  | Purpose                                                                                |

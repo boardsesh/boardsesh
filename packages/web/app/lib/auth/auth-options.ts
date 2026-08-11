@@ -12,6 +12,14 @@ import { compare } from 'bcryptjs';
 import { verifyNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-transfer';
 import { isSecureCookieContext, sessionCookieDomain } from '@/app/lib/auth/secure-cookies';
 import { isAllowedAppOrigin } from '@/app/lib/auth/app-origin-allowlist';
+import { applyCanonicalAuthUrl } from '@/app/lib/auth/canonical-auth-url';
+
+// Must run before anything below reads NEXTAUTH_URL (the cookie block does, via
+// isSecureCookieContext/sessionCookieDomain) and before next-auth resolves the
+// origin it builds OAuth redirect URIs from. Without it, a hosted deployment
+// with an unset or loopback NEXTAUTH_URL sends users to http://localhost:3000
+// after a Google/Apple sign-in (issue #4227).
+applyCanonicalAuthUrl();
 
 // How long a JWT-cached profile avatar/name stays authoritative before the
 // `jwt` callback re-reads userProfiles. A Settings edit refreshes it instantly
