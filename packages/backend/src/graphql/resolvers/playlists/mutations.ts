@@ -16,6 +16,56 @@ import {
 import { getPlaylistFollowStats } from './queries';
 import { verifyPlaylistAccess } from './helpers/enrichment';
 import { computePlaylistReorderWrites } from './helpers/reorder';
+import { logger } from '../../../utils/logger';
+
+type ClimbBoardScope = { boardType: string; layoutId: number };
+
+// Resolves the board + layout a climb belongs to, following the same
+// alias-read convention as the rest of the codebase (see
+// packages/db/src/queries/aliases.ts and
+// docs' "Climb alias read-resolution" note): board_climb_aliases dedups
+// duplicate Kilter UUIDs onto a single canonical board_climbs row within the
+// same board, so a climbUuid that isn't itself a board_climbs row may still
+// be a non-canonical alias whose canonical row carries the real board/layout.
+//
+// Returns null when the uuid resolves to no board_climbs row even after
+// alias resolution — callers should fail OPEN on null (see
+// addClimbToPlaylist below) rather than reject: the catalog row can
+// legitimately lag behind create-climb / offline-sync writes, and hard
+// rejecting here would risk breaking those flows for the sake of a guard
+// that is defense-in-depth (the mobile picker, per #4268, no longer offers
+// mismatched playlists as add targets in the first place).
+async function resolveClimbBoardScope(climbUuid: string): Promise<ClimbBoardScope | null> {
+  const direct = await db
+    .select({ boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId })
+    .from(dbSchema.boardClimbs)
+    .where(eq(dbSchema.boardClimbs.uuid, climbUuid))
+    .limit(1);
+
+  if (direct.length > 0) return direct[0];
+
+  // Not a canonical row — check whether it's a non-canonical alias. The
+  // alias table's PK is (board_type, alias_uuid), but the board a duplicate
+  // UUID belongs to is exactly the board its canonical row lives on, so we
+  // can join straight from alias_uuid to the canonical board_climbs row
+  // without needing to know board_type up front.
+  const viaAlias = await db
+    .select({ boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId })
+    .from(dbSchema.boardClimbAliases)
+    .innerJoin(dbSchema.boardClimbs, eq(dbSchema.boardClimbs.uuid, dbSchema.boardClimbAliases.canonicalUuid))
+    .where(eq(dbSchema.boardClimbAliases.aliasUuid, climbUuid))
+    .limit(1);
+
+  if (viaAlias.length > 0) return viaAlias[0];
+
+  logger.warn(
+    'addClimbToPlaylist: climb uuid not found in board_climbs or board_climb_aliases; allowing add (fail-open)',
+    {
+      climbUuid,
+    },
+  );
+  return null;
+}
 
 function playlistResult(playlist: dbSchema.Playlist, climbCount: number): Record<string, unknown> {
   return {
@@ -279,7 +329,11 @@ export const playlistMutations = {
     // Check owner role. Editors/viewers retain private read access, but cannot
     // mutate playlist contents.
     const ownership = await db
-      .select({ id: dbSchema.playlists.id })
+      .select({
+        id: dbSchema.playlists.id,
+        boardType: dbSchema.playlists.boardType,
+        layoutId: dbSchema.playlists.layoutId,
+      })
       .from(dbSchema.playlistOwnership)
       .innerJoin(dbSchema.playlists, eq(dbSchema.playlists.id, dbSchema.playlistOwnership.playlistId))
       .where(
@@ -296,6 +350,24 @@ export const playlistMutations = {
     }
 
     const playlistId = ownership[0].id;
+
+    // Board-compatibility guard (#4015): reject adds where the climb's own
+    // board/layout doesn't match the playlist's. This mirrors the exact rule
+    // playlistsForClimb / playlistsForClimbs already use to scope membership
+    // (board_type match + layout_id match-or-null) — without it, an add could
+    // succeed here while the membership refetch silently excludes it,
+    // making the UI checkmark vanish. #4268 already stops the mobile picker
+    // from offering a mismatched playlist as a target; this is the
+    // server-side backstop for stale clients and the deprecated web picker
+    // (packages/web, no longer maintained per #3122, is still unfiltered).
+    const climbBoardScope = await resolveClimbBoardScope(validatedInput.climbUuid);
+    if (climbBoardScope) {
+      const boardMismatch = climbBoardScope.boardType !== ownership[0].boardType;
+      const layoutMismatch = ownership[0].layoutId !== null && climbBoardScope.layoutId !== ownership[0].layoutId;
+      if (boardMismatch || layoutMismatch) {
+        throw new Error('This playlist is for a different board');
+      }
+    }
 
     // Insert-or-noop + position assignment share one transaction: a plain
     // pre-check SELECT followed by a separate INSERT leaves a window where
