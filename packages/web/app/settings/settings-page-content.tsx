@@ -213,6 +213,12 @@ export default function SettingsPageContent() {
 
     try {
       const compressed = await compressImage(file);
+      // A zero-byte blob means the canvas export produced nothing. Uploading it
+      // would replace a good avatar with an empty image, so treat it as a
+      // compression failure and keep the existing picture.
+      if (compressed.size === 0) {
+        throw new Error('Compressed image is empty');
+      }
       setSelectedFile(compressed);
     } catch (err) {
       console.error('Image compression failed:', err);
@@ -265,6 +271,12 @@ export default function SettingsPageContent() {
 
           if (!profile?.id) {
             throw new Error('User profile not loaded');
+          }
+
+          // Last line of defence against uploading an empty file: the backend
+          // rejects it too, but bailing here keeps the stored avatar untouched.
+          if (selectedFile.size === 0) {
+            throw new Error(t('profile.avatarUploadFailed'));
           }
 
           const formData = new FormData();

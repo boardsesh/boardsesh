@@ -16,6 +16,9 @@ vi.mock('../auth-interceptor', () => ({
 // expo-file-system is native; stub the File class so `.bytes()` resolves to a
 // fixed payload in Node.
 const fileBytes = new Uint8Array([1, 2, 3]);
+// What the stubbed File hands back, plus a read counter — a test points this at
+// an empty payload to simulate a picked file that has become unreadable.
+const stubbedFile = { bytes: fileBytes as Uint8Array, reads: 0 };
 vi.mock('expo-file-system', () => ({
   File: class {
     uri: string;
@@ -23,7 +26,8 @@ vi.mock('expo-file-system', () => ({
       this.uri = uri;
     }
     bytes() {
-      return Promise.resolve(fileBytes);
+      stubbedFile.reads += 1;
+      return Promise.resolve(stubbedFile.bytes);
     }
   },
 }));
@@ -57,6 +61,8 @@ function jsonResponse(body: unknown, ok = true): Response {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  stubbedFile.bytes = fileBytes;
+  stubbedFile.reads = 0;
 });
 
 describe('absolutizeAvatarUrl', () => {
@@ -97,6 +103,17 @@ describe('uploadAvatar', () => {
     expect(avatarPart.type).toBe('image/jpeg');
     expect(typeof avatarPart.bytes).toBe('function');
     await expect(avatarPart.bytes()).resolves.toBe(fileBytes);
+
+    // Read once, before the POST: the encoder only awaits `bytes()` at encode
+    // time, so a lazy read could hand it an empty part after the file went away.
+    expect(stubbedFile.reads).toBe(1);
+  });
+
+  it('refuses to POST an empty file instead of storing a zero-byte avatar', async () => {
+    stubbedFile.bytes = new Uint8Array([]);
+
+    await expect(uploadAvatar(file, userId)).rejects.toThrow('Avatar upload failed');
+    expect(mockAuthenticatedFetch).not.toHaveBeenCalled();
   });
 
   it('throws the server-provided error message on a non-ok response', async () => {
