@@ -51,6 +51,15 @@ export const MAX_BOOTSTRAP_ATTEMPTS = 2;
 export const BOOTSTRAP_ATTEMPTS_PREFIX = 'bootstrap-attempts:';
 export const BOOTSTRAP_DONE_PREFIX = 'bootstrap-done:';
 export const BOOTSTRAP_PAGED_FALLBACK_PREFIX = 'bootstrap-paged-fallback:';
+/**
+ * "This scope has already spent its one free counter reset." Written alongside
+ * `resetBootstrapAttempts` when `runBootstrapPhase` heals an over-cap scope that
+ * turns out to have a perfectly usable artifact waiting for it (issue #4238:
+ * two launches in airplane mode used to disqualify a board from the fast path
+ * forever). Bounding the heal to once per scope is what keeps a genuinely broken
+ * 272 MB artifact from being re-downloaded on every launch.
+ */
+export const BOOTSTRAP_ATTEMPTS_HEALED_PREFIX = 'bootstrap-attempts-healed:';
 const EPOCH_WATERMARK: SyncCheckpoint = { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' };
 
 // Only snake_case identifiers may be spliced into the INSERT/SELECT column list.
@@ -89,6 +98,21 @@ export type SnapshotBootstrapErrorReporter = (report: {
   stage: 'manifest' | 'download' | 'import';
   attempt: number;
   cause: unknown;
+  /**
+   * True when the failure is a transport/reachability one — the device was
+   * offline or the connection dropped, which is the normal state of a phone on
+   * a plane, not a defect in the artifact or the client. The mobile reporter
+   * downgrades these to a warning instead of an error (issue #4238). False for
+   * everything an engineer would actually want to look at: a corrupt artifact, a
+   * row-count mismatch, a schema-stale import, a permanent miss.
+   *
+   * SEVERITY ONLY. Whether the failure burns a bootstrap attempt is a separate,
+   * per-stage decision in `settleRetryableBootstrapFailure`: a transport-shaped
+   * MANIFEST failure is free, a transport-shaped DOWNLOAD failure still counts
+   * (the manifest already proved the device was online, and an unresumable
+   * 272 MB retry loop is worse than the paged crawl).
+   */
+  expected: boolean;
 }) => void;
 
 export type SnapshotBootstrapResult = {
@@ -251,6 +275,32 @@ export async function recordBootstrapAttempt(db: SqlExecutor, scopeKey: string):
     String(next),
   ]);
   return next;
+}
+
+/**
+ * Drop a scope's attempt counter entirely, making it bootstrap-eligible again.
+ * Only `runBootstrapPhase`'s one-shot heal calls this, and only once per scope
+ * (guarded by the healed marker below) — an unbounded reset would re-download a
+ * broken artifact on every launch.
+ */
+export async function resetBootstrapAttempts(db: SqlExecutor, scopeKey: string): Promise<void> {
+  await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [`${BOOTSTRAP_ATTEMPTS_PREFIX}${scopeKey}`]);
+}
+
+/** True once this scope has spent its single attempt-counter heal. */
+export async function hasHealedBootstrapAttempts(db: SqlExecutor, scopeKey: string): Promise<boolean> {
+  const row = await db.getFirstAsync<{ key: string }>('SELECT key FROM sync_meta WHERE key = ?', [
+    `${BOOTSTRAP_ATTEMPTS_HEALED_PREFIX}${scopeKey}`,
+  ]);
+  return row !== null;
+}
+
+/** Record that this scope's one attempt-counter heal has been spent. */
+export async function markBootstrapAttemptsHealed(db: SqlExecutor, scopeKey: string): Promise<void> {
+  await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+    `${BOOTSTRAP_ATTEMPTS_HEALED_PREFIX}${scopeKey}`,
+    '1',
+  ]);
 }
 
 /** Persist that the latest bootstrap decision selected the ordinary paged crawl. */

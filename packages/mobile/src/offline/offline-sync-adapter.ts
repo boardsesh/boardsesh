@@ -10,7 +10,9 @@
 // triggerSync / pullSync from '@boardsesh/offline-sync' directly — always from
 // here. The package's isOnline default assumes online; only this adapter
 // guarantees the real probe is attached, so a direct import would silently
-// drain (and burn retry budget) while offline.
+// drain (and burn retry budget) while offline — and, since #4238, would also
+// run a whole pull cycle offline, reporting a snapshot-bootstrap failure per
+// enabled-but-undownloaded board on the way.
 
 import { AppState, type AppStateStatus } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
@@ -86,11 +88,35 @@ const reportSchemaDrift: SchemaDriftReporter = ({ tableName, column }) => {
 // it skips entirely without one); reportScopeDownloadComplete fires for EVERY
 // scope's first full download — paged crawls included — because the
 // snapshot-vs-paged rollout comparison needs both methods to emit the event.
-const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({ scopeKey, stage, attempt, cause }) => {
-  reportHandledError(new Error(`Snapshot bootstrap failed for ${scopeKey} at stage "${stage}" (attempt ${attempt})`), {
-    tags: { source: 'offline-sync', kind: 'snapshot-bootstrap' },
-    extra: { scopeKey, stage, attempt, cause: cause instanceof Error ? cause.message : cause },
-  });
+// The `{ cause }` is load-bearing, not decoration: reportHandledError classifies
+// the error it is handed, and this synthetic wrapper matches nothing on its own,
+// so every offline user's bootstrap failure used to land in Sentry at `level:
+// error` with `extra.cause: null` (issue #4238). The shared classifier walks a
+// `.cause` chain three deep, so attaching the real cause is all it takes to get
+// the network downgrade — and `expected` (set by the engine for transport-shaped
+// failures) forces the warning even when the cause is an unrecognised shape.
+const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({
+  scopeKey,
+  stage,
+  attempt,
+  cause,
+  expected,
+}) => {
+  reportHandledError(
+    new Error(`Snapshot bootstrap failed for ${scopeKey} at stage "${stage}" (attempt ${attempt})`, { cause }),
+    {
+      ...(expected ? { level: 'warning' as const } : {}),
+      tags: { source: 'offline-sync', kind: 'snapshot-bootstrap', ...(expected ? { expected_offline: true } : {}) },
+      extra: {
+        scopeKey,
+        stage,
+        attempt,
+        expected,
+        cause: cause instanceof Error ? cause.message : cause,
+        causeName: cause instanceof Error ? cause.name : null,
+      },
+    },
+  );
 };
 
 // Fired once per board scope's initial download so the snapshot-bootstrap
@@ -194,6 +220,7 @@ export function startSyncScheduler(
   options?: SyncRunOptions,
 ): () => void {
   return startSyncSchedulerCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, schedulerTriggers, {
+    isOnline,
     onProgress: options?.onProgress,
     onCycleError: warnCycleError,
     onSchemaDrift: reportSchemaDrift,
@@ -214,6 +241,7 @@ export function triggerSync(
   options?: SyncRunOptions,
 ): void {
   triggerSyncCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, {
+    isOnline,
     onProgress: options?.onProgress,
     onCycleError: warnCycleError,
     onSchemaDrift: reportSchemaDrift,
@@ -233,6 +261,7 @@ export function pullSync(
 ): Promise<void> {
   return pullSyncCore(db, queryClient, graphqlFetch, {
     ...options,
+    isOnline: options?.isOnline ?? isOnline,
     onSchemaDrift: options?.onSchemaDrift ?? reportSchemaDrift,
     onSnapshotBootstrapError: options?.onSnapshotBootstrapError ?? reportSnapshotBootstrapError,
     onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),

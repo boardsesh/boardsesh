@@ -20,6 +20,9 @@ const state = vi.hoisted(() => ({
   // instead of the whole file in one chunk — for the empty-first-chunk and
   // split-header edge cases the ReadableStream spec allows.
   streamChunks: null as Uint8Array[] | null,
+  // When set, the reader rejects instead of yielding bytes — the "can't verify
+  // the body at all" path.
+  readError: null as Error | null,
   deletedUris: [] as string[],
 }));
 
@@ -68,6 +71,7 @@ vi.mock('expo-file-system', () => {
       return {
         getReader: () => ({
           read: async () => {
+            if (state.readError) throw state.readError;
             if (index >= chunks.length) return { done: true, value: undefined };
             return { done: false, value: chunks[index++] };
           },
@@ -144,6 +148,7 @@ beforeEach(() => {
   state.downloadError = null;
   state.downloadBytes = PLAIN_SQLITE_BYTES;
   state.streamChunks = null;
+  state.readError = null;
   state.deletedUris = [];
 });
 
@@ -241,11 +246,44 @@ describe('downloadArtifact', () => {
     await expect(mobileSnapshotSource.downloadArtifact(ENTRY)).rejects.toThrow(/downloadFileAsync failed.*boom/);
   });
 
-  it('throws a descriptive error wrapping the underlying cause when the cache directory cannot be created', async () => {
-    state.createDirectoryError = new Error('disk is read-only');
+  it('keeps the original download exception as `cause` so the transport classifier can see it (issue #4238)', async () => {
+    // expo-file-system throws UnableToDownloadException("The request timed out.")
+    // for an offline user. Interpolating it into the message reads fine in
+    // Sentry's title but is invisible to isNetworkError, which walks `.cause`.
+    const downloadError = Object.assign(new Error('The request timed out.'), {
+      name: 'UnableToDownloadException',
+    });
+    state.downloadError = downloadError;
 
-    await expect(mobileSnapshotSource.downloadArtifact(ENTRY)).rejects.toThrow(/cache directory.*disk is read-only/);
+    const rejection = await mobileSnapshotSource.downloadArtifact(ENTRY).catch((error: unknown) => error);
+
+    expect(rejection).toBeInstanceOf(Error);
+    expect((rejection as Error).cause).toBe(downloadError);
+  });
+
+  it('throws a descriptive error wrapping the underlying cause when the cache directory cannot be created', async () => {
+    const createError = new Error('disk is read-only');
+    state.createDirectoryError = createError;
+
+    const rejection = await mobileSnapshotSource.downloadArtifact(ENTRY).catch((error: unknown) => error);
+
+    expect((rejection as Error).message).toMatch(/cache directory.*disk is read-only/);
+    expect((rejection as Error).cause).toBe(createError);
     expect(state.downloadCalls).toHaveLength(0);
+  });
+
+  it('throws (rather than returning null) and deletes the partial file when the gzip sniff cannot read the body', async () => {
+    // The last path that still returned a bare null, which is exactly the one
+    // Sentry reported as `cause: null` at stage "download" (issue #4238).
+    const readError = new Error('stream closed');
+    state.downloadBytes = GZIP_BYTES;
+    state.readError = readError;
+
+    const rejection = await mobileSnapshotSource.downloadArtifact(ENTRY).catch((error: unknown) => error);
+
+    expect((rejection as Error).message).toMatch(/could not verify artifact encoding/);
+    expect((rejection as Error).cause).toBe(readError);
+    expect(state.deletedUris).toHaveLength(1);
   });
 
   it('accepts a gzip-encoded entry whose downloaded bytes are already decompressed', async () => {

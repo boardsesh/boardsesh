@@ -46,6 +46,14 @@ export type SchedulerTriggers = {
 export type SchedulerOptions = {
   onProgress?: SyncProgressSink;
   /**
+   * Threaded through to pullSync's SyncOptions. Omitted → pullSync assumes
+   * online, which is what every existing caller got. The offline→online edge
+   * detection below stays the retry mechanism: a cycle skipped because the
+   * probe said offline is re-run by `subscribeConnectivity` the moment the
+   * device reconnects.
+   */
+  isOnline?: () => boolean;
+  /**
    * Called when a sync cycle throws. A failed cycle is routine for offline
    * users (the reconnect trigger retries), so the mobile adapter passes a
    * dev-only console.warn — production neither spams the console nor reports
@@ -97,6 +105,7 @@ async function runSync(
     await drainQueue();
     await pullSync(db, queryClient, graphqlFetch, {
       enabledBoards: getEnabledBoards(),
+      isOnline: options?.isOnline,
       onProgress: options?.onProgress,
       onSchemaDrift: options?.onSchemaDrift,
       snapshotSource: options?.snapshotSource,

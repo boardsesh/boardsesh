@@ -306,13 +306,62 @@ describe('snapshot-bootstrap bindings', () => {
       async () => {},
     );
     const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
-    options.onSnapshotBootstrapError?.({ scopeKey: 'kilter:1:5', stage: 'download', attempt: 1, cause: null });
+    options.onSnapshotBootstrapError?.({
+      scopeKey: 'kilter:1:5',
+      stage: 'download',
+      attempt: 1,
+      cause: null,
+      expected: false,
+    });
 
     expect(reportHandledError).toHaveBeenCalledWith(
       expect.objectContaining({ message: expect.stringContaining('kilter:1:5') }),
       expect.objectContaining({
         tags: { source: 'offline-sync', kind: 'snapshot-bootstrap' },
         extra: expect.objectContaining({ scopeKey: 'kilter:1:5', stage: 'download', attempt: 1 }),
+      }),
+    );
+    // A counted failure keeps the caller's default severity — no level override.
+    const context = reportHandledError.mock.calls[0][1] as { level?: string };
+    expect(context.level).toBeUndefined();
+  });
+
+  it('attaches the real cause to the synthetic bootstrap error so the classifier can walk it', () => {
+    // The wrapper message ("Snapshot bootstrap failed for …") matches nothing in
+    // isNetworkError, so without `{ cause }` every offline user's failure landed
+    // at level: error with extra.cause: null (issue #4238).
+    const cause = new TypeError('Network request failed');
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    options.onSnapshotBootstrapError?.({
+      scopeKey: 'kilter:1:5',
+      stage: 'manifest',
+      attempt: 0,
+      cause,
+      expected: true,
+    });
+
+    const [reported, context] = reportHandledError.mock.calls[0] as [
+      Error,
+      { level?: string; tags: Record<string, unknown>; extra: Record<string, unknown> },
+    ];
+    expect(reported.cause).toBe(cause);
+    expect(context.level).toBe('warning');
+    expect(context.tags).toEqual({ source: 'offline-sync', kind: 'snapshot-bootstrap', expected_offline: true });
+    expect(context.extra).toEqual(
+      expect.objectContaining({
+        scopeKey: 'kilter:1:5',
+        stage: 'manifest',
+        attempt: 0,
+        expected: true,
+        cause: 'Network request failed',
+        causeName: 'TypeError',
       }),
     );
   });
@@ -381,7 +430,13 @@ describe('snapshot-bootstrap bindings', () => {
     await pullSync(db, queryClient, graphqlFetch, { onSnapshotBootstrapError: customBootstrapError });
 
     const options = pullSyncCore.mock.calls[0][3] as SyncOptions;
-    options.onSnapshotBootstrapError?.({ scopeKey: 'kilter:1:5', stage: 'manifest', attempt: 1, cause: null });
+    options.onSnapshotBootstrapError?.({
+      scopeKey: 'kilter:1:5',
+      stage: 'manifest',
+      attempt: 1,
+      cause: null,
+      expected: false,
+    });
     expect(customBootstrapError).toHaveBeenCalled();
     expect(reportHandledError).not.toHaveBeenCalled();
 
@@ -391,6 +446,53 @@ describe('snapshot-bootstrap bindings', () => {
       method: 'paged',
       durationMs: 500,
     });
+  });
+});
+
+describe('connectivity probe on the pull path (issue #4238)', () => {
+  it('startSyncScheduler hands the scheduler the onlineManager-backed probe', () => {
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    onlineManagerIsOnline.mockReturnValue(true);
+    expect(options.isOnline?.()).toBe(true);
+    onlineManagerIsOnline.mockReturnValue(false);
+    expect(options.isOnline?.()).toBe(false);
+  });
+
+  it('triggerSync hands the scheduler the same probe', () => {
+    triggerSync(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+
+    const options = triggerSyncCore.mock.calls[0][5] as SchedulerOptions;
+    onlineManagerIsOnline.mockReturnValue(false);
+    expect(options.isOnline?.()).toBe(false);
+  });
+
+  it('pullSync defaults to the probe and lets a caller-supplied one win', async () => {
+    await pullSync(db, queryClient, graphqlFetch);
+    const defaulted = pullSyncCore.mock.calls[0][3] as SyncOptions;
+    onlineManagerIsOnline.mockReturnValue(false);
+    expect(defaulted.isOnline?.()).toBe(false);
+
+    vi.clearAllMocks();
+    const customProbe = vi.fn(() => true);
+    await pullSync(db, queryClient, graphqlFetch, { isOnline: customProbe });
+    const overridden = pullSyncCore.mock.calls[0][3] as SyncOptions;
+    expect(overridden.isOnline?.()).toBe(true);
+    expect(customProbe).toHaveBeenCalled();
+    expect(onlineManagerIsOnline).not.toHaveBeenCalled();
   });
 });
 

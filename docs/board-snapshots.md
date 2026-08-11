@@ -172,36 +172,56 @@ layout artifact but intentionally outside the enabled size.
 Implemented in `snapshot-bootstrap.ts` (the ATTACH/import/verify mechanics) and orchestrated from
 `pull-client.ts`'s `runBootstrapPhase`, which runs **before** the deletions phase of every sync cycle.
 
+**Connectivity gate**: `pullSync` returns immediately when the injected `isOnline()` probe says the device
+is offline, mirroring `drainMutationQueue`'s entry guard. The probe defaults to `() => true`, so only the
+mobile adapter (React Query's `onlineManager`, wired to NetInfo) actually gates anything; web is unchanged.
+Without it, every offline launch ran the whole bootstrap phase and emitted one Sentry event per
+enabled-but-undownloaded scope (issue #4238). The scheduler's offline→online edge re-runs the skipped cycle.
+
 **Eligibility**: a board scope (`boardType:layoutId:sizeId`) is only considered when it has **no
 checkpoint on either snapshot-backed table, `board_climbs` or `board_climb_stats`** (i.e. genuinely
 fresh for the snapshot) and its bootstrap attempt count is under `MAX_BOOTSTRAP_ATTEMPTS` (2). The
 ordinary paged sync still downloads `board_climb_grades` before the scope is reported complete. One
 artifact download is shared across every size of the same `(boardType, layoutId)` within a cycle.
 
+The cap is evaluated **after** the manifest resolves, which is what makes the **one-shot heal** possible: a
+scope that already spent both attempts, still has no board checkpoint, and turns out to have a usable
+manifest entry waiting gets its `bootstrap-attempts:` row deleted and takes the snapshot path again —
+exactly once per scope, recorded in `bootstrap-attempts-healed:`. A device that burned both attempts in a
+tunnel therefore recovers on its first online launch, while a genuinely broken artifact costs two more
+attempts and then settles into the paged crawl for good. The cost is that an over-cap scope consults the
+manifest each cycle; `resolveManifestOnce` caches it per `pullSync` run, so that only adds a request on
+cycles where _every_ scope is over the cap.
+
 A scope torn down from **More → Storage** becomes eligible again: `removeBoardScopeData`
 (`sync/scope-teardown.ts`) clears all three board-data checkpoints **and** its `bootstrap-attempts:` /
-`bootstrap-done:` / `bootstrap-paged-fallback:` markers in the same transaction as the rows, so a re-download takes the snapshot fast
+`bootstrap-attempts-healed:` / `bootstrap-done:` / `bootstrap-paged-fallback:` markers in the same
+transaction as the rows, so a re-download takes the snapshot fast
 path rather than a paged crawl — and `onScopeDownloadComplete` attributes it honestly instead of
-reporting a stale `method: 'snapshot'` for a run that actually paged. All three marker prefixes are exported
+reporting a stale `method: 'snapshot'` for a run that actually paged. All four marker prefixes are exported
 from `snapshot-bootstrap.ts` for that teardown alone; they stay package-internal (not re-exported from
-`index.ts`).
+`index.ts`). Only the first three are read back by the My Boards metadata query — the heal marker has no UI,
+so `BOOTSTRAP_METADATA_PATTERNS` deliberately stays at six patterns.
 
 Failure/attempt matrix, copied from the `runBootstrapPhase` doc comment (the source of truth — keep this in
 sync if the code comment changes):
 
-| Condition                                                         | Attempt burned? | Result this cycle                                                                       |
-| ----------------------------------------------------------------- | --------------- | --------------------------------------------------------------------------------------- |
-| checkpoint exists on either board table                           | —               | not eligible → normal paged pull                                                        |
-| attempts ≥ `MAX_BOOTSTRAP_ATTEMPTS`                               | —               | gave up → normal paged pull                                                             |
-| manifest `absent` (404/missing or invalid JSON/shape)             | **no**          | permanent miss → normal paged pull                                                      |
-| manifest `error` (HTTP non-2xx except 404, network/transport)     | **yes**         | skip paged pull this cycle (retry next cycle)                                           |
-| manifest `ok` but no entry for `(boardType, layoutId)`            | **no**          | permanent miss (not exported yet) → normal paged pull                                   |
-| download fails or returns `null`                                  | **yes**         | skip paged pull this cycle                                                              |
-| download throws `SnapshotPermanentMissError`                      | **no**          | permanent miss → normal paged pull                                                      |
-| import throws — corrupt/short artifact, row-count/format mismatch | **yes**         | skip paged pull this cycle                                                              |
-| import throws `SnapshotSchemaStaleError`                          | **no**          | permanent miss this run → normal paged pull                                             |
-| a sign-out wipe is detected mid-phase                             | **no**          | whole phase bails, mirrors `syncTable`'s wipe guard                                     |
-| success                                                           | —               | marked done; deletions rewound; paged pull runs as a small delta from scoped watermarks |
+| Condition                                                          | Attempt burned? | Result this cycle                                                                       |
+| ------------------------------------------------------------------ | --------------- | --------------------------------------------------------------------------------------- |
+| checkpoint exists on either board table                            | —               | not eligible → normal paged pull                                                        |
+| `isOnline()` reports offline                                       | —               | whole cycle skipped before the phase starts; retried on reconnect                       |
+| attempts ≥ `MAX_BOOTSTRAP_ATTEMPTS`, heal available + usable entry | —               | counter reset once → snapshot path runs                                                 |
+| attempts ≥ `MAX_BOOTSTRAP_ATTEMPTS`, otherwise                     | —               | gave up → normal paged pull                                                             |
+| manifest `absent` (404/missing or invalid JSON/shape)              | **no**          | permanent miss → normal paged pull                                                      |
+| manifest `error`, transport-shaped (offline/DNS/TLS/timeout)       | **no**          | skip paged pull this cycle; reported as `expected`                                      |
+| manifest `error`, anything else (HTTP non-2xx except 404, …)       | **yes**         | skip paged pull this cycle (retry next cycle)                                           |
+| manifest `ok` but no entry for `(boardType, layoutId)`             | **no**          | permanent miss (not exported yet) → normal paged pull                                   |
+| download fails or returns `null` (transport-shaped or not)         | **yes**         | skip paged pull this cycle; transport-shaped ones still report as `expected`            |
+| download throws `SnapshotPermanentMissError`                       | **no**          | permanent miss → normal paged pull                                                      |
+| import throws — corrupt/short artifact, row-count/format mismatch  | **yes**         | skip paged pull this cycle                                                              |
+| import throws `SnapshotSchemaStaleError`                           | **no**          | permanent miss this run → normal paged pull                                             |
+| a sign-out wipe is detected mid-phase                              | **no**          | whole phase bails, mirrors `syncTable`'s wipe guard                                     |
+| success                                                            | —               | marked done; deletions rewound; paged pull runs as a small delta from scoped watermarks |
 
 "Skip paged pull this cycle" matters because a scope whose bootstrap failed but still has attempts left
 must **not** run its ordinary paged pull this cycle either — a first-page checkpoint from that pull would
@@ -321,8 +341,13 @@ pre-import empty result set.
     `'snapshot'` scope's duration includes its manifest/download/import time, not just the trailing delta
     pull — an apples-to-apples comparison against a full paged crawl).
   - Sentry handled errors, `tags: { source: 'offline-sync', kind: 'snapshot-bootstrap' }`, for every
-    counted bootstrap failure (manifest/download/import stage, with `scopeKey`/`stage`/`attempt`/`cause` in
-    `extra`) and for the gzip-sniff failure above.
+    bootstrap failure (manifest/download/import stage, with
+    `scopeKey`/`stage`/`attempt`/`expected`/`cause`/`causeName` in `extra`) and for the gzip-sniff failure
+    above. Transport-shaped failures carry `expected: true`, report at `level: warning`, and are additionally
+    tagged `expected_offline` — they are a phone with no signal, not a defect. `expected` is a severity signal
+    only: at the manifest stage it also skips the attempt counter, but a transport-shaped download failure
+    still burns an attempt (see the matrix above). The real exception is attached as the wrapper's `cause`,
+    which is what lets the shared classifier recognise them at all (issue #4238).
 
 ## Ops runbook
 
