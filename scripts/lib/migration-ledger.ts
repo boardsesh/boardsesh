@@ -34,6 +34,40 @@
  * drift from what the migrator actually inserts.
  */
 
+/** Env var that controls the journal-vs-ledger check in `packages/db/scripts/migrate.ts`. */
+export const VERIFY_MIGRATION_JOURNAL_ENV = 'VERIFY_MIGRATION_JOURNAL';
+
+/** The one value that turns the check off. Anything else — including unset — leaves it on. */
+export const VERIFY_MIGRATION_JOURNAL_OFF = '0';
+
+/**
+ * Whether `migrate.ts` runs the per-entry check. On by default since #3978.
+ *
+ * It shipped opt-in (`=1`) for one reason: the `boardsesh-dev-db` image was
+ * missing `0187_sad_freak`'s ledger row, so a default-on check would have
+ * reddened every developer's `vp run db:migrate` for a defect in the image
+ * rather than in their branch. The image carries the row now (190 of 190 journal
+ * entries recorded on `:latest`), the image build asserts the ledger's
+ * high-water mark equals the journal's newest `when` on every publish (#4211),
+ * and `vp run db:up` now fills any remaining gap hash-by-hash before
+ * `db:migrate` ever runs (#3979) — so the condition that justified the opt-in is
+ * gone. Leaving it opt-in means the check is off in exactly the place a gap is
+ * created: a developer's machine, on the branch that creates it.
+ *
+ * `0` remains an escape hatch for the one shape this cannot help — a database
+ * with a gap nobody can repair right now, where the operator needs `db:migrate`
+ * to run anyway. The three workflows that already pass the literal `1`
+ * (`ci.yml`, `production-deploy.yml`, `db-migration-renumber.yml`) keep working
+ * unchanged.
+ *
+ * Lives here, in a dependency-free module, so the decision has unit coverage in
+ * the `scripts` Vitest project — `packages/db` runs on `tsx --test` and is not
+ * part of the CI test graph.
+ */
+export function isMigrationJournalGateArmed(env: Record<string, string | undefined>): boolean {
+  return env[VERIFY_MIGRATION_JOURNAL_ENV] !== VERIFY_MIGRATION_JOURNAL_OFF;
+}
+
 /** One journal entry paired with the hash drizzle would record for its `.sql`. */
 export interface ExpectedMigration {
   tag: string;
