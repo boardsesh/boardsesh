@@ -59,6 +59,17 @@ describe('communityRoles auth gate', () => {
     ).rejects.toThrow('Admin role required for this operation');
   });
 
+  it('rejects a board-scoped admin caller', async () => {
+    // `requireAdmin(ctx)` is called with no board type, so only a globally
+    // scoped admin row passes. This is the contract the web /admin gate mirrors
+    // in packages/web/app/lib/admin/admin-scope.ts — a kilter-scoped admin now
+    // gets an explanation instead of a page whose every action fails.
+    dbState.queue = [[{ role: 'admin', boardType: 'kilter' }]];
+    await expect(
+      socialRoleQueries.communityRoles(null, {}, makeCtx({ isAuthenticated: true, userId: 'kilter-admin' })),
+    ).rejects.toThrow('Admin role required for this operation');
+  });
+
   it('returns the enriched role assignments for an admin caller', async () => {
     dbState.queue = [
       [{ role: 'admin', boardType: null }], // requireAdmin: caller is a global admin
