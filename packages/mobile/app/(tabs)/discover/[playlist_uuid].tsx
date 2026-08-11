@@ -445,6 +445,11 @@ export default function PlaylistDetail() {
                   // Read the cache at press time rather than reusing the row
                   // captured at submit, so a climb added while the prompt was up
                   // isn't rolled back.
+                  // `?? undefined` because `Playlist` types the optional text
+                  // fields as `string | undefined`; a save response puts the
+                  // server's raw `null` in the same slots. Both mean "unset" to
+                  // every consumer — nothing compares these to `null` — but if
+                  // that ever stops being true, fix it in the type, not here.
                   const current = queryClient.getQueryData<Playlist>(['playlist', playlistUuid]) ?? playlist;
                   cacheUpdatedPlaylist({
                     ...current,
