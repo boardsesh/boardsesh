@@ -48,6 +48,8 @@ jobs:
     permissions:
       contents: write # release assets host re-uploaded screenshots
       issues: write
+      # Required by anthropics/claude-code-action for its OIDC token exchange,
+      # matching claude.yml and claude-code-review.yml. Not used by our scripts.
       id-token: write
     steps:
       - name: Checkout repository
