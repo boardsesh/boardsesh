@@ -91,6 +91,19 @@ describe('buildHttpConnectionContext client IP', () => {
     expect(context.clientIp).toBe('203.0.113.7');
   });
 
+  it('trusts a single-hop forwarded chain — the residual a direct-origin caller can still forge', async () => {
+    const context = await buildHttpConnectionContext({
+      request: fetchRequest(),
+      req: nodeRequest({ headers: { 'x-forwarded-for': '203.0.113.9' }, remoteAddress: '10.0.0.5' }),
+    });
+
+    // Behind Cloudflare a lone entry IS our edge's own observation, so trusting
+    // it is right. Reaching the Railway origin directly it is client-authored
+    // again — the documented residual this fix does not close, shared with
+    // og-climb.ts and the WebSocket path (#4034).
+    expect(context.clientIp).toBe('203.0.113.9');
+  });
+
   it('falls through to the socket peer when the forwarded chain is junk', async () => {
     const context = await buildHttpConnectionContext({
       request: fetchRequest(),
