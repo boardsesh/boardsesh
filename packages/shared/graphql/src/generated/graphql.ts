@@ -3489,6 +3489,12 @@ export type Mutation = {
   /**
    * Replace the entire queue state.
    * Used for bulk operations or syncing from external sources.
+   *
+   * `baselineSequence` is the last server sequence this client had APPLIED when it
+   * composed `queue`. When supplied, the server replays its queue-event buffer from
+   * that point and re-appends any climb a peer added inside the window instead of
+   * silently overwriting it (issue #3933). Omit it for the historical wholesale
+   * overwrite — old clients send nothing here.
    */
   setQueue: QueueState;
   /**
@@ -4076,6 +4082,7 @@ export type MutationSetIntegrationAutoSyncArgs = {
 
 /** Root mutation type for all write operations. */
 export type MutationSetQueueArgs = {
+  baselineSequence?: InputMaybe<Scalars['Int']['input']>;
   currentClimbQueueItem?: InputMaybe<ClimbQueueItemInput>;
   queue: Array<ClimbQueueItemInput>;
 };

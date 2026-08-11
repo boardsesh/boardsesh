@@ -18,8 +18,13 @@ import { MAX_RETRIES } from './types';
  * It must pass `state.version` down as the `expectedVersion` so the CAS has
  * something to compare.
  *
- * Not for `setQueue`: its payload is entirely client-supplied, so there is
- * nothing to recompute and last-writer-wins is the mutation's actual contract.
+ * `setQueue` uses this only on its merge path (issue #3933), where the caller
+ * supplied the baseline sequence it composed its payload against and the
+ * resolver folds peer adds back in from the replay buffer — that IS a
+ * recompute against current state. A `setQueue` with no baseline still writes
+ * unversioned: nothing to recompute, last-writer-wins is the contract. It also
+ * catches the throw below and drops to that unversioned write, so a contended
+ * session can never turn a wholesale replace into a user-facing error.
  */
 export async function withQueueVersionRetry<T>(
   operation: string,

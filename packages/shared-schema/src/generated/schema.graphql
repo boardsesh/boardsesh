@@ -6134,8 +6134,18 @@ type Mutation {
   """
   Replace the entire queue state.
   Used for bulk operations or syncing from external sources.
+
+  `baselineSequence` is the last server sequence this client had APPLIED when it
+  composed `queue`. When supplied, the server replays its queue-event buffer from
+  that point and re-appends any climb a peer added inside the window instead of
+  silently overwriting it (issue #3933). Omit it for the historical wholesale
+  overwrite — old clients send nothing here.
   """
-  setQueue(queue: [ClimbQueueItemInput!]!, currentClimbQueueItem: ClimbQueueItemInput): QueueState!
+  setQueue(
+    queue: [ClimbQueueItemInput!]!
+    currentClimbQueueItem: ClimbQueueItemInput
+    baselineSequence: Int
+  ): QueueState!
 
   """
   Confirm to all session participants that a climb was successfully relayed to the wall

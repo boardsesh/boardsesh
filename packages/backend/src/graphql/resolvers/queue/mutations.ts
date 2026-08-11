@@ -1,5 +1,5 @@
 import type { ConnectionContext, ClimbQueueItem, QueueState } from '@boardsesh/shared-schema';
-import { roomManager } from '../../../services/room-manager';
+import { roomManager, VersionConflictError } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
 import { setCurrentClimbAndPublish } from '../../../services/queue-navigation';
 import {
@@ -21,6 +21,7 @@ import {
   QueueItemIdSchema,
 } from '../../../validation/schemas';
 import { withQueueVersionRetry } from '../shared/queue-retry';
+import { collectConcurrentAdds } from './set-queue-merge';
 import { logMutationMetrics } from './mutation-metrics';
 import { logger } from '../../../utils/logger';
 
@@ -397,7 +398,8 @@ export const queueMutations = {
     {
       queue: rawQueue,
       currentClimbQueueItem: rawCurrentClimbQueueItem,
-    }: { queue: ClimbQueueItem[]; currentClimbQueueItem?: ClimbQueueItem },
+      baselineSequence,
+    }: { queue: ClimbQueueItem[]; currentClimbQueueItem?: ClimbQueueItem; baselineSequence?: number | null },
     ctx: ConnectionContext,
   ) => {
     const startTime = performance.now();
@@ -461,19 +463,100 @@ export const queueMutations = {
     // on both hashes lets a real reorder through silently while still catching
     // a true no-op.
     //
-    // Deliberately NOT wrapped in withQueueVersionRetry, and deliberately
-    // passes no `expectedVersion` (issue #3906). Every other mutation derives
-    // its new queue from the current one, so a concurrent write has to be
-    // detected and recomputed against. setQueue's payload is entirely
-    // client-supplied — there is nothing to recompute, and replacing server
-    // state wholesale is the mutation's contract. All it needs is a sequence
-    // number nobody else is using, which the CAS now allocates atomically.
-    // Known consequence: a peer's addQueueItem landing inside this window is
-    // still overwritten. That is inherent to a full-state push (and web's
-    // drag-to-reorder takes this path), tracked separately rather than papered
-    // over here.
-    const { sequence, stateHash, stateHashOrdered, previousStateHash, previousStateHashOrdered } =
-      await roomManager.updateQueueState(sessionId, queue, currentClimbQueueItem);
+    // WITHOUT `baselineSequence` the write is deliberately NOT wrapped in
+    // withQueueVersionRetry and deliberately passes no `expectedVersion`
+    // (issue #3906): the payload is entirely client-supplied, so there is
+    // nothing to recompute against a concurrent write, and all it needs is a
+    // sequence number nobody else is using — which the CAS allocates
+    // atomically. That is the legacy path, still taken by pre-#3933 clients
+    // and by web (which never sends a baseline).
+    //
+    // WITH `baselineSequence` — the last sequence the caller had APPLIED when
+    // it composed this payload — the write merges instead (issue #3933). The
+    // replay buffer is asked what happened in the window, any peer add the
+    // caller never saw is re-appended, and the CAS runs against the version we
+    // read so an add racing the merge itself conflicts and retries.
+    //
+    // Accepted residuals, deliberately not papered over — this NARROWS #3933,
+    // it does not close it:
+    //   - Adds that reach the queue via a FullSync-publishing mutation
+    //     (replaceQueueItem, the controller navigation paths) carry no
+    //     QueueItemAdded event, so the merge cannot see them and they are
+    //     still lost inside the window.
+    //   - The merge degrades to the legacy overwrite whenever the buffer can't
+    //     describe the window completely (write still in flight, evicted past
+    //     100 events, expired past the 5-minute TTL, Redis off). That re-opens
+    //     the original race for those calls, by design: a partial merge that
+    //     dropped an add would be the same bug with a fix's paint on it.
+    //   - Closing it fully still means the mergeable-queue protocol rewrite the
+    //     issue describes.
+    const mergeBaseline =
+      typeof baselineSequence === 'number' && Number.isInteger(baselineSequence) && baselineSequence >= 0
+        ? baselineSequence
+        : null;
+
+    let writeResult: Awaited<ReturnType<typeof roomManager.updateQueueState>> | null = null;
+    let finalQueue = queue;
+
+    if (mergeBaseline !== null && pubsub.isRedisConnected()) {
+      const incomingUuids = new Set(queue.map((item) => item.uuid));
+      try {
+        const merged = await withQueueVersionRetry('setQueue', sessionId, async (currentState) => {
+          const outcome = await collectConcurrentAdds({
+            sessionId,
+            baselineSequence: mergeBaseline,
+            incomingUuids,
+            currentState,
+            callerClientId: ctx.connectionId || null,
+            readEvents: (id, since) => pubsub.getEventsSince(id, since),
+          });
+
+          if (outcome.status === 'degraded') {
+            // Greppable: sustained volume here means the merge is not actually
+            // protecting anyone and the buffer bounds need revisiting.
+            logger.warn(
+              `[setQueue] Concurrent-add merge degraded (${outcome.reason}) for session ${sessionId} at baseline ${mergeBaseline} — falling back to the legacy wholesale overwrite (#3933).`,
+            );
+            return null;
+          }
+
+          const nextQueue = outcome.survivors.length > 0 ? [...queue, ...outcome.survivors] : queue;
+          const write = await roomManager.updateQueueState(
+            sessionId,
+            nextQueue,
+            currentClimbQueueItem,
+            currentState.version,
+          );
+          if (outcome.survivors.length > 0) {
+            logger.info(
+              `[setQueue] Re-appended ${outcome.survivors.length} climb(s) a party member added during the replace window for session ${sessionId} (#3933).`,
+            );
+          }
+          return { write, nextQueue };
+        });
+
+        if (merged) {
+          writeResult = merged.write;
+          finalQueue = merged.nextQueue;
+        }
+      } catch (error) {
+        // withQueueVersionRetry THROWS once it burns MAX_RETRIES. A wholesale
+        // replace must not acquire a brand-new user-facing failure mode just
+        // because the session is under write pressure — drop to the legacy
+        // no-conflict overwrite, which is exactly what this call did before.
+        if (!(error instanceof VersionConflictError)) throw error;
+        logger.warn(
+          `[setQueue] Concurrent-add merge exhausted its version-conflict retries for session ${sessionId} — falling back to the legacy wholesale overwrite (#3933).`,
+        );
+      }
+    }
+
+    if (!writeResult) {
+      writeResult = await roomManager.updateQueueState(sessionId, queue, currentClimbQueueItem);
+      finalQueue = queue;
+    }
+
+    const { sequence, stateHash, stateHashOrdered, previousStateHash, previousStateHashOrdered } = writeResult;
 
     if (
       previousStateHash !== null &&
@@ -482,7 +565,7 @@ export const queueMutations = {
       previousStateHashOrdered === stateHashOrdered
     ) {
       logger.warn(
-        `[setQueue] Redundant full-queue resync for session ${sessionId} (hash=${stateHash}, queueSize=${queue.length}). Incoming queue matched server state in membership, order, and current climb — a wasted setQueue; check the caller re-pushing unchanged state.`,
+        `[setQueue] Redundant full-queue resync for session ${sessionId} (hash=${stateHash}, queueSize=${finalQueue.length}). Incoming queue matched server state in membership, order, and current climb — a wasted setQueue; check the caller re-pushing unchanged state.`,
       );
     }
 
@@ -490,7 +573,7 @@ export const queueMutations = {
       sequence,
       stateHash,
       stateHashOrdered,
-      queue,
+      queue: finalQueue,
       currentClimbQueueItem,
     };
 
@@ -501,7 +584,7 @@ export const queueMutations = {
     });
 
     logMutationMetrics('setQueue', performance.now() - startTime, sessionId, {
-      queueSize: queue.length,
+      queueSize: finalQueue.length,
       droppedCount,
     });
     return state;

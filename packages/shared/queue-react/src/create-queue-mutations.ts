@@ -34,6 +34,7 @@ import {
   MIRROR_CURRENT_CLIMB,
   PUBLISH_PLAYBACK_STATE,
   SET_QUEUE,
+  SET_QUEUE_WITH_BASELINE,
   REPLACE_QUEUE_ITEM,
   CONFIRM_CLIMB_ON_WALL,
   REPORT_WALL_DISCONNECT,
@@ -63,6 +64,23 @@ export type PublishPlaybackStateInput = {
 };
 
 const NOT_CONNECTED = 'Not connected to session';
+
+/**
+ * Does this failure mean the server doesn't know `setQueue`'s `baselineSequence`
+ * argument yet (#3933)?
+ *
+ * graphql-js emits `Unknown argument "baselineSequence" on field
+ * "Mutation.setQueue".` from `validate()`, before any resolver runs, and those
+ * validation errors carry no `extensions.code` — so this has to match the
+ * message. Kept deliberately narrow (the argument name AND a validation-shaped
+ * phrase) so a genuine server error is never mistaken for deploy skew and
+ * retried on the legacy document.
+ */
+function isUnknownBaselineArgumentError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  if (!message.includes('baselineSequence')) return false;
+  return /unknown argument|graphql_validation_failed|cannot query field|is not defined/i.test(message);
+}
 
 /**
  * Every action whose transport error is swallowed here and handed to
@@ -116,6 +134,20 @@ export type QueueMutationsDeps<TItem> = {
    * call's enqueue time; null means no session existed then.
    */
   ensureReady?: (capturedSessionId: string | null) => Promise<string | null>;
+  /**
+   * Last server sequence this client has APPLIED, or null when it has applied
+   * none (fresh connection) — mobile reads the sync gate's `getLastSequence()`.
+   *
+   * `setQueue` sends it so the server can re-append any climb a party member
+   * added while this payload was being composed, instead of overwriting it
+   * (#3933). It MUST be the applied sequence, never a locally invented counter:
+   * an add the client saw and deliberately dropped has a sequence at or below
+   * the baseline and so is never resurrected.
+   *
+   * Absent (web) or null: `setQueue` sends the legacy document with no baseline
+   * argument and the server keeps its wholesale-overwrite behaviour.
+   */
+  getBaselineSequence?: () => number | null;
   /** Sink for swallowed transport errors (best-effort actions + coalescer drains). */
   onBestEffortError?: (action: BestEffortAction, error: unknown) => void;
   /**
@@ -175,8 +207,16 @@ export type QueueMutationsActions<TItem> = {
 };
 
 export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): QueueMutationsActions<TItem> {
-  const { getClient, getSessionId, toQueueItemInput, getQueuePosition, ensureReady, onBestEffortError, onRateLimited } =
-    deps;
+  const {
+    getClient,
+    getSessionId,
+    toQueueItemInput,
+    getQueuePosition,
+    ensureReady,
+    getBaselineSequence,
+    onBestEffortError,
+    onRateLimited,
+  } = deps;
 
   type Ready = { client: Client; sessionId: string };
 
@@ -436,13 +476,28 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       }
       const ready = await resolveCore({ allowCreate: false });
       if (!ready) return;
-      await runMutation(ready.client, {
-        query: SET_QUEUE,
-        variables: {
-          queue: queueInputs,
-          currentClimbQueueItem: currentClimbQueueItem ? toQueueItemInput(currentClimbQueueItem) : undefined,
-        },
-      });
+      const variables = {
+        queue: queueInputs,
+        currentClimbQueueItem: currentClimbQueueItem ? toQueueItemInput(currentClimbQueueItem) : undefined,
+      };
+      const baselineSequence = getBaselineSequence?.() ?? null;
+      if (baselineSequence !== null) {
+        try {
+          await runMutation(ready.client, {
+            query: SET_QUEUE_WITH_BASELINE,
+            variables: { ...variables, baselineSequence },
+          });
+          return;
+        } catch (error) {
+          // A backend that predates the `baselineSequence` argument rejects the
+          // whole document at validation time. That is a deploy-skew artefact,
+          // not a user error — retry once on the legacy document so nobody's
+          // Clear button or playlist activation hard-fails during a rollout.
+          // Any other failure (rate limit, transport, auth) propagates.
+          if (!isUnknownBaselineArgumentError(error)) throw error;
+        }
+      }
+      await runMutation(ready.client, { query: SET_QUEUE, variables });
     },
 
     replaceQueueItem: async (uuid, item) => {

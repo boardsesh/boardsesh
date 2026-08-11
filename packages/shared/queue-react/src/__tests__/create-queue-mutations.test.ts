@@ -6,6 +6,7 @@ import {
   REORDER_QUEUE_ITEM,
   SET_CURRENT_CLIMB,
   SET_QUEUE,
+  SET_QUEUE_WITH_BASELINE,
   MIRROR_CURRENT_CLIMB,
   REPLACE_QUEUE_ITEM,
   CONFIRM_CLIMB_ON_WALL,
@@ -608,5 +609,77 @@ describe('setCurrentClimb coalescer', () => {
       shouldAddToQueue: true,
       correlationId: undefined,
     });
+  });
+});
+
+// A wholesale replace can silently overwrite a climb a party member added while
+// the payload was being composed (#3933). Callers that know the last server
+// sequence they applied send it so the backend can merge that add back in. Web
+// supplies no getter, so its document must stay byte-identical — an unknown
+// argument is a document-level GraphQL validation error, which would hard-fail
+// every setQueue against a backend that hasn't deployed the argument yet.
+describe('setQueue baseline sequence (#3933)', () => {
+  it('sends the legacy document when no baseline getter is injected (web)', async () => {
+    await make().setQueue([item('a')]);
+    expect(queriesFor(SET_QUEUE)).toHaveLength(1);
+    expect(queriesFor(SET_QUEUE_WITH_BASELINE)).toHaveLength(0);
+    expect(queriesFor(SET_QUEUE)[0][1].variables).not.toHaveProperty('baselineSequence');
+  });
+
+  it('sends the legacy document when the getter has no baseline yet', async () => {
+    await make({ getBaselineSequence: () => null }).setQueue([item('a')]);
+    expect(queriesFor(SET_QUEUE)).toHaveLength(1);
+    expect(queriesFor(SET_QUEUE_WITH_BASELINE)).toHaveLength(0);
+  });
+
+  it('sends the baseline document with the applied sequence when one is available', async () => {
+    await make({ getBaselineSequence: () => 42 }).setQueue([item('a')], item('a'));
+    expect(queriesFor(SET_QUEUE)).toHaveLength(0);
+    expect(queriesFor(SET_QUEUE_WITH_BASELINE)[0][1].variables).toEqual({
+      queue: [{ uuid: 'a', climb: { uuid: 'c-a' } }],
+      currentClimbQueueItem: { uuid: 'a', climb: { uuid: 'c-a' } },
+      baselineSequence: 42,
+    });
+  });
+
+  it('sends baseline 0 rather than dropping to the legacy document', async () => {
+    // 0 is a real applied sequence, not "no baseline" — a `?? null` on the
+    // wrong side of the falsy check would silently disable the merge for a
+    // client that has applied exactly the seed event.
+    await make({ getBaselineSequence: () => 0 }).setQueue([item('a')]);
+    expect(queriesFor(SET_QUEUE_WITH_BASELINE)[0][1].variables.baselineSequence).toBe(0);
+  });
+
+  it('reads the baseline at send time, not at factory construction', async () => {
+    let applied = 1;
+    const mutations = make({ getBaselineSequence: () => applied });
+    applied = 9;
+    await mutations.setQueue([item('a')]);
+    expect(queriesFor(SET_QUEUE_WITH_BASELINE)[0][1].variables.baselineSequence).toBe(9);
+  });
+
+  it('retries on the legacy document when the backend does not know the argument yet', async () => {
+    // Rolling deploy / web preview pointed at prod / a mobile preview channel
+    // running this branch — the old backend rejects the whole document at
+    // validation time. Nobody's Clear button may hard-fail on deploy skew.
+    executeMock.mockImplementation(async (_client: unknown, op: { query: string }) => {
+      if (op.query === SET_QUEUE_WITH_BASELINE) {
+        throw new Error('Unknown argument "baselineSequence" on field "Mutation.setQueue".');
+      }
+      return undefined;
+    });
+
+    await make({ getBaselineSequence: () => 42 }).setQueue([item('a')]);
+
+    expect(queriesFor(SET_QUEUE_WITH_BASELINE)).toHaveLength(1);
+    expect(queriesFor(SET_QUEUE)).toHaveLength(1);
+    expect(queriesFor(SET_QUEUE)[0][1].variables).not.toHaveProperty('baselineSequence');
+  });
+
+  it('propagates a real server failure instead of silently retrying', async () => {
+    executeMock.mockRejectedValue(new Error('Rate limit exceeded. Try again in 5 seconds.'));
+
+    await expect(make({ getBaselineSequence: () => 42 }).setQueue([item('a')])).rejects.toThrow(/Rate limit/);
+    expect(queriesFor(SET_QUEUE)).toHaveLength(0);
   });
 });
