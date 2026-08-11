@@ -52,6 +52,7 @@ import {
 import { buildManageItems, type ManageItem } from '../../src/components/board-discovery/manage-items';
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
 import { useIsOffline } from '../../src/hooks/use-is-offline';
+import { useStoredUserId } from '../../src/hooks/use-current-user-id';
 import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing } from '../../src/theme/tokens';
 
@@ -83,7 +84,11 @@ export default function ManageBoards() {
     isError: isProfileError,
     refetch: refetchProfile,
   } = useProfile({ enabled: isAuthenticated });
-  const currentUserId = profile?.id;
+  // The profile is the fresher answer but it's network-only. Fall back to the id
+  // the signed JWT already carries on this device, so owned-vs-followed survives a
+  // cold start with no signal (and an online profile fetch that simply fails).
+  const storedUserId = useStoredUserId(isAuthenticated && !profile?.id);
+  const currentUserId = profile?.id ?? storedUserId;
   const { data: activeBoard } = useActiveBoard();
   const activeUuid = activeBoard?.uuid;
 
@@ -278,24 +283,32 @@ export default function ManageBoards() {
     [myBoards, currentUserId, activeUuid, t],
   );
 
-  // Offline this screen has TWO independent failures, and the profile is the fatal
-  // one: `useProfile` is a plain network query, so with no signal `currentUserId` is
-  // undefined and the guard below shows a hard "Something went wrong" state no matter
-  // what the board list does. Fall back to a flat list of the boards this device
-  // downloaded — owned-vs-followed genuinely cannot be classified without the profile
-  // id, so the headers are dropped rather than guessed.
+  // Offline this screen has TWO independent failures: `useMyBoards` and `useProfile`
+  // are both plain network queries. Fall back to the boards this device downloaded,
+  // grouped the same way the online list is — `currentUserId` now resolves from the
+  // stored JWT, so the user's own wall still lands under "Your boards" instead of
+  // being filed as something they follow. Only when even that is missing (a keychain
+  // read that failed) do the headers drop and the list goes flat, because an
+  // undefined id would confidently mis-file every board.
   const isOffline = useIsOffline();
   const offlineCards = useOfflineBoards();
   const profileUnavailable = !currentUserId && !isProfileLoading;
   const shouldUseOfflineList = isOffline || profileUnavailable || (isError && myBoards.length === 0);
   const offlineItems = useMemo(() => {
     if (!shouldUseOfflineList) return EMPTY_ITEMS;
-    return offlineBoardRows({
+    const rows = offlineBoardRows({
       cards: offlineCards,
       cachedMyBoards: myBoards,
       activeBoard: activeBoard ?? null,
       downloadedScopeKeys: downloadedScopeKeys ?? [],
-    }).map(
+    });
+    if (currentUserId !== undefined) {
+      return buildManageItems(rows, currentUserId, activeUuid, {
+        ownedHeader: t('mobile.manage.ownedHeader'),
+        followingHeader: t('mobile.manage.followingHeader'),
+      });
+    }
+    return rows.map(
       (board): ManageItem => ({
         type: 'board',
         key: board.uuid,
@@ -304,7 +317,7 @@ export default function ManageBoards() {
         isActive: board.uuid === activeUuid,
       }),
     );
-  }, [shouldUseOfflineList, offlineCards, myBoards, activeBoard, downloadedScopeKeys, activeUuid]);
+  }, [shouldUseOfflineList, offlineCards, myBoards, activeBoard, downloadedScopeKeys, activeUuid, currentUserId, t]);
   // Only take over the screen when there is actually something to show; otherwise the
   // existing loading/error states still tell the more honest story.
   const showOfflineList = shouldUseOfflineList && offlineItems.length > 0;
@@ -497,8 +510,8 @@ export default function ManageBoards() {
     );
   }
 
-  // Wait for the profile too: owned-vs-followed is keyed on currentUserId, so
-  // rendering before it resolves would file the user's own boards under
+  // Wait for an id too: owned-vs-followed is keyed on currentUserId, so rendering
+  // before either source resolves would file the user's own boards under
   // "Following" (myBoards can win the race on a cold open / deep link).
   if (!showOfflineList && ((isLoading && myBoards.length === 0) || (isProfileLoading && !currentUserId))) {
     return (
@@ -508,9 +521,9 @@ export default function ManageBoards() {
     );
   }
 
-  // Boards failed with nothing cached, OR the profile settled without an id —
-  // without currentUserId we can't classify owned vs followed, so never render
-  // the list; offer a retry that refetches both.
+  // Boards failed with nothing cached, OR neither the profile nor the stored JWT
+  // yielded an id — without currentUserId we can't classify owned vs followed, so
+  // never render the list; offer a retry that refetches both.
   if (!showOfflineList && ((isError && myBoards.length === 0) || !currentUserId)) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>

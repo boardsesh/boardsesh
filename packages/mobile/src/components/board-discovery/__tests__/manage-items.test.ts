@@ -58,4 +58,38 @@ describe('buildManageItems', () => {
     expect(items[0]).toEqual({ type: 'header', key: 'header:following', title: 'Following' });
     expect(boardItem(items, 'o1').isOwned).toBe(false);
   });
+
+  // The offline My Boards list replays persisted snapshots instead of a live
+  // myBoards fetch, and gets its id from the stored JWT rather than the profile.
+  describe('offline snapshot rows', () => {
+    it('groups downloaded boards under their headers once a persisted id is available', () => {
+      const items = buildManageItems(
+        [board('home-wall', 'me'), board('gym-wall', 'someone-else')],
+        'me',
+        undefined,
+        labels,
+      );
+      expect(items.map((item) => (item.type === 'header' ? `#${item.title}` : item.key))).toEqual([
+        '#Your boards',
+        'home-wall',
+        '#Following',
+        'gym-wall',
+      ]);
+      expect(boardItem(items, 'home-wall').isOwned).toBe(true);
+      expect(boardItem(items, 'gym-wall').isOwned).toBe(false);
+    });
+
+    it("falls back to a card's persisted isOwned when the snapshot carries no ownerId", () => {
+      // Cards written by a build that didn't capture ownerId still hold the server's
+      // own answer — better than filing the home wall under "Following".
+      const legacyOwnedCard = { uuid: 'legacy', isOwned: true } as unknown as UserBoard;
+      const items = buildManageItems([legacyOwnedCard, board('f1', 'other')], 'me', undefined, labels);
+      expect(items.map((item) => (item.type === 'header' ? `#${item.title}` : item.key))).toEqual([
+        '#Your boards',
+        'legacy',
+        '#Following',
+        'f1',
+      ]);
+    });
+  });
 });
