@@ -13,6 +13,9 @@ import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useRequestGymClaim } from '../../lib/graphql/hooks';
 import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
+import { openValidatedUrl } from '../../lib/open-external-link';
+import { WEB_BASE_URL } from '../../lib/env';
+import { buildGymManageUrl } from '../../lib/gym-manage-url';
 import type { ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
 
 type ClaimMode = 'domain' | 'admin';
@@ -32,9 +35,11 @@ type ClaimGymSheetProps = {
  * or lands straight away (`approved`) when an admin has turned on auto-approval
  * and the gym is an unclaimed listing.
  * A domain mismatch rejects with a GraphQL error surfaced inline. Feedback stays
- * INSIDE the sheet — toasts render behind a native modal sheet — and the emailed
+ * INSIDE the sheet — toasts render behind a native modal sheet. The emailed
  * link is opened in the browser and handled by the backend, so the app does
- * nothing further after confirming.
+ * nothing further after confirming an `email_sent`/`admin_review` claim. An
+ * `approved` claim instead offers a "Manage gym" hand-off to the web setup
+ * console, mirroring MyGymsScreen's kiosk hand-off and the web claim dialog.
  */
 export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
   const { t } = useTranslation('boards');
@@ -52,6 +57,9 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<{ status: string; email?: string | null } | null>(null);
+  // Separate from `errorMessage` (pre-submission form validation) so resetting
+  // one never accidentally clears feedback that belongs to the other.
+  const [manageError, setManageError] = useState<string | null>(null);
 
   const resetState = useCallback(() => {
     setMode(canUseDomain ? 'domain' : 'admin');
@@ -59,6 +67,7 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
     setMessage('');
     setErrorMessage(null);
     setConfirmation(null);
+    setManageError(null);
     requestClaim.reset();
   }, [canUseDomain, requestClaim]);
 
@@ -89,6 +98,22 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
     setErrorMessage(null);
     setMode(next);
   }, []);
+
+  // Same web hand-off pattern as MyGymsScreen's manageKiosks: kiosk/setup
+  // management is web-only by design. `gym.uuid` is always present, so a
+  // slugless gym still reaches setup via its uuid.
+  const openManageGym = useCallback(async () => {
+    setManageError(null);
+    const slugOrUuid = gym.slug ?? gym.uuid;
+    const opened = await openValidatedUrl(buildGymManageUrl(slugOrUuid), (url) => url.startsWith(WEB_BASE_URL));
+    if (opened) {
+      dismiss();
+    } else {
+      // Inline, not a toast -- toasts render behind this native modal sheet
+      // (see the sheet-level doc comment above).
+      setManageError(t('mobile.gymClaim.approved.manageError'));
+    }
+  }, [gym.slug, gym.uuid, dismiss, t]);
 
   return (
     <ModalSheet
@@ -124,7 +149,25 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
                 ? t('mobile.gymClaim.approved.sent', { gym: gym.name })
                 : t('mobile.gymClaim.admin.sent')}
           </Text>
-          <Button title={t('mobile.gymClaim.done')} onPress={dismiss} variant="filled" size="large" />
+          {confirmation.status === 'approved' ? (
+            <Button
+              title={t('mobile.gymClaim.approved.manageCta')}
+              onPress={() => void openManageGym()}
+              variant="filled"
+              size="large"
+            />
+          ) : null}
+          {manageError ? (
+            <Text variant="footnote" color={brandColors.error} style={styles.errorText}>
+              {manageError}
+            </Text>
+          ) : null}
+          <Button
+            title={t('mobile.gymClaim.done')}
+            onPress={dismiss}
+            variant={confirmation.status === 'approved' ? 'text' : 'filled'}
+            size="large"
+          />
         </View>
       ) : mode === 'domain' && canUseDomain && domain ? (
         <>

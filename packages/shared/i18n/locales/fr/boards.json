@@ -281,7 +281,9 @@
         "sent": "Nous avons prévenu notre équipe. Elle te contactera bientôt."
       },
       "approved": {
-        "sent": "{{gym}} est à toi."
+        "sent": "{{gym}} est à toi.",
+        "manageCta": "Configurer votre salle",
+        "manageError": "Impossible d'ouvrir la configuration de la salle. Ouvre-la dans un navigateur."
       }
     },
     "offline": {
