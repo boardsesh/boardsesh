@@ -19,6 +19,9 @@ import SetPasswordSection from '@/app/components/account/set-password-section';
 import BackButton from '@/app/components/back-button';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
+import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
+import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import { GET_MY_PROFILE, type GetMyProfileQueryResponse } from '@boardsesh/graphql/operations/account';
 
 /**
  * Web settings keeps only what the app can't do: register an ESP32 controller
@@ -43,6 +46,7 @@ type UserProfile = {
 
 export default function SettingsPageContent() {
   const { data: session, status } = useSession();
+  const { token: authToken, isLoading: authTokenLoading } = useWsAuthToken();
   const router = useLocaleRouter();
   const { t, i18n } = useTranslation('settings');
   const activeLocale: Locale = isSupportedLocale(i18n.language) ? i18n.language : DEFAULT_LOCALE;
@@ -50,7 +54,7 @@ export default function SettingsPageContent() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const { showMessage } = useSnackbar();
 
-  // Redirect unauthenticated users to login with a return URL
+  // Redirect unauthenticated users to login with a return URL.
   useEffect(() => {
     if (status === 'unauthenticated') {
       const callback = encodeURIComponent(localeHref('/settings', activeLocale));
@@ -59,27 +63,37 @@ export default function SettingsPageContent() {
   }, [status, router, activeLocale]);
 
   const fetchProfile = useCallback(async () => {
+    if (!authToken) {
+      setLoading(false);
+      showMessage(t('loading.profileError'), 'error');
+      return;
+    }
+
     try {
-      const response = await fetch('/api/internal/profile');
-      if (!response.ok) {
+      const response = await createGraphQLHttpClient(authToken).request<GetMyProfileQueryResponse>(GET_MY_PROFILE);
+      if (!response.profile) {
         throw new Error('Failed to fetch profile');
       }
-      const data = await response.json();
-      setProfile(data);
+      setProfile({
+        email: response.profile.email,
+        hasPassword: response.profile.hasPassword,
+        linkedProviders: response.profile.linkedProviders,
+      });
     } catch (error) {
       console.error('Failed to fetch profile:', error);
       showMessage(t('loading.profileError'), 'error');
     } finally {
       setLoading(false);
     }
-  }, [showMessage, t]);
+  }, [authToken, showMessage, t]);
 
-  // Fetch profile on mount
+  // Query.profile resolves from the bearer token; never send an anonymous
+  // request for a signed-in settings session when ws-auth has not settled.
   useEffect(() => {
-    if (status === 'authenticated') {
+    if (status === 'authenticated' && !authTokenLoading) {
       void fetchProfile();
     }
-  }, [status, fetchProfile]);
+  }, [status, authTokenLoading, fetchProfile]);
 
   if (status === 'loading' || loading) {
     return (

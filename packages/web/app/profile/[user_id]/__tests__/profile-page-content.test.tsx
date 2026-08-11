@@ -134,10 +134,9 @@ function makeProfile(overrides?: Record<string, unknown>) {
   return {
     id: 'user-2',
     email: 'climber@example.com',
-    name: 'Test Climber',
-    image: null,
-    profile: { displayName: 'Test Climber', avatarUrl: null, instagramUrl: null },
-    credentials: [] as Array<{ boardType: string; auroraUsername: string }>,
+    displayName: 'Test Climber',
+    avatarUrl: null,
+    instagramUrl: null,
     followerCount: 5,
     followingCount: 3,
     isFollowedByMe: false,
