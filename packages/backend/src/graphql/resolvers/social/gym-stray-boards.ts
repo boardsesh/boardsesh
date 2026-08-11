@@ -1,9 +1,16 @@
-import { and, eq, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { distanceMeters } from '@boardsesh/db/queries';
+import {
+  computeClusterSignature,
+  distanceMeters,
+  mergeGymsIntoCanonical,
+  type CanonicalGymCandidate,
+} from '@boardsesh/db/queries';
+import { executeRows } from '@boardsesh/db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
+import { logger } from '../../../utils/logger';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { AttachBoardToGymInputSchema, DetachBoardFromGymInputSchema, UUIDSchema } from '../../../validation/schemas';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
@@ -44,6 +51,12 @@ type StrayBoardCandidate = {
   currentGymName: string | null;
   distanceMeters: number | null;
   reason: StrayBoardReason;
+  /**
+   * True when this is the only live board left on its current listing, so
+   * attaching it empties that listing (and retires it — see
+   * {@link retireEmptiedSourceGym}). Always false for an unlinked board.
+   */
+  isLastBoardAtCurrentGym: boolean;
 };
 
 export type StrayBoardResult = Omit<StrayBoardCandidate, 'boardId' | 'currentGymId'>;
@@ -194,6 +207,7 @@ export async function findStrayBoardCandidates(gym: GymRow, viewerUserId: string
       currentGymName: row.currentGymName ?? null,
       distanceMeters: distanceFromGym(gym, row),
       reason: 'MERGED_TWIN' as const,
+      isLastBoardAtCurrentGym: false,
     }))
     .sort((first, second) => first.name.localeCompare(second.name));
 
@@ -215,11 +229,218 @@ export async function findStrayBoardCandidates(gym: GymRow, viewerUserId: string
       currentGymName: row.currentGymName ?? null,
       distanceMeters: distance,
       reason: 'NEARBY',
+      isLastBoardAtCurrentGym: false,
     });
   }
   nearbyCandidates.sort((first, second) => (first.distanceMeters ?? 0) - (second.distanceMeters ?? 0));
 
-  return [...twinCandidates, ...nearbyCandidates].slice(0, STRAY_BOARD_LIMIT);
+  const candidates = [...twinCandidates, ...nearbyCandidates].slice(0, STRAY_BOARD_LIMIT);
+  await markLastBoardAtCurrentGym(candidates);
+  return candidates;
+}
+
+/**
+ * Fills in `isLastBoardAtCurrentGym` for every candidate that sits on a listing,
+ * with ONE grouped count over the distinct listings involved (never a query per
+ * row). Mutates in place — the candidates are freshly built above.
+ */
+async function markLastBoardAtCurrentGym(candidates: StrayBoardCandidate[]): Promise<void> {
+  const listingIds = [
+    ...new Set(
+      candidates
+        .map((candidate) => candidate.currentGymId)
+        .filter((gymId): gymId is number => typeof gymId === 'number'),
+    ),
+  ];
+  if (listingIds.length === 0) return;
+
+  const counts = await db
+    .select({ gymId: dbSchema.userBoards.gymId, boardCount: sql<number>`count(*)::int` })
+    .from(dbSchema.userBoards)
+    .where(and(inArray(dbSchema.userBoards.gymId, listingIds), isNull(dbSchema.userBoards.deletedAt)))
+    .groupBy(dbSchema.userBoards.gymId);
+
+  const boardCountByGymId = new Map(counts.map((row) => [Number(row.gymId), Number(row.boardCount)]));
+  for (const candidate of candidates) {
+    if (candidate.currentGymId == null) continue;
+    candidate.isLastBoardAtCurrentGym = boardCountByGymId.get(candidate.currentGymId) === 1;
+  }
+}
+
+// ============================================
+// Retiring the listing an attach emptied
+// ============================================
+//
+// Taking the last board off an auto-synced listing used to leave that listing
+// live and public with nothing on it, so it kept turning up in gym search as a
+// plausible-looking duplicate of the gym the board just moved to (#4188).
+//
+// Rather than delete anything, the emptied listing is FOLDED into the gym that
+// took its board, through the same primitive the admin duplicates queue uses:
+// `merged_into_gym_id` + soft-delete, so old uuids/slugs still resolve to the
+// survivor, and a `gym_merge_audit` row records what moved. Folding also moves
+// the listing's `location_sync_gym_sources` alias to the survivor, which is what
+// stops the next location-sync run re-minting the same empty listing.
+
+/** Every gym column the merge primitive needs, plus the gates that decide whether we may fold at all. */
+type RetireGateRow = CanonicalGymCandidate & {
+  ownerId: string | null;
+  /** Claims in a state that means a human is (or has been) staking a title to this listing. */
+  openClaimCount: number;
+  liveKioskCount: number;
+};
+
+type TransactionDb = { execute(query: SQLWrapper | string): PromiseLike<unknown> };
+
+/**
+ * Locks the given gym rows (ascending id — the fixed order that keeps two
+ * concurrent folds from deadlocking) and returns the ones that are live,
+ * un-merged and have coordinates, keyed by id. A gym missing from the result is
+ * one we must not fold.
+ */
+async function loadRetireGateRows(tx: TransactionDb, gymIds: number[]): Promise<Map<number, RetireGateRow>> {
+  const rows = await executeRows<RetireGateRow>(
+    tx,
+    sql`
+    WITH locked_gym AS (
+      SELECT g.id, g.uuid, g.name, g.address, g.contact_email, g.contact_phone,
+             g.description, g.image_url, g.latitude, g.longitude, g.created_at, g.owner_id
+        FROM gyms g
+       WHERE g.id IN (${sql.join(
+         gymIds.map((gymId) => sql`${gymId}`),
+         sql`, `,
+       )})
+         AND g.deleted_at IS NULL
+         AND g.merged_into_gym_id IS NULL
+         AND g.latitude IS NOT NULL
+         AND g.longitude IS NOT NULL
+       ORDER BY g.id
+         FOR UPDATE
+    )
+    SELECT
+      g.id AS "id",
+      g.uuid AS "uuid",
+      g.name AS "name",
+      g.address AS "address",
+      g.contact_email AS "contactEmail",
+      g.contact_phone AS "contactPhone",
+      g.description AS "description",
+      g.image_url AS "imageUrl",
+      g.latitude AS "latitude",
+      g.longitude AS "longitude",
+      g.created_at AS "createdAt",
+      g.owner_id AS "ownerId",
+      COALESCE(board_counts.count, 0)::int AS "boardCount",
+      COALESCE(member_counts.count, 0)::int AS "memberCount",
+      COALESCE(follower_counts.count, 0)::int AS "followerCount",
+      COALESCE(comment_counts.count, 0)::int AS "commentCount",
+      (
+        SELECT count(*)::int FROM gym_claims
+         WHERE gym_id = g.id AND status IN ('pending', 'approved')
+      ) AS "openClaimCount",
+      (
+        SELECT count(*)::int FROM gym_kiosks
+         WHERE gym_id = g.id AND deleted_at IS NULL
+      ) AS "liveKioskCount"
+    FROM locked_gym g
+    LEFT JOIN (
+      SELECT gym_id, count(*) AS count FROM user_boards WHERE deleted_at IS NULL GROUP BY gym_id
+    ) board_counts ON board_counts.gym_id = g.id
+    LEFT JOIN (
+      SELECT gym_id, count(*) AS count FROM gym_members GROUP BY gym_id
+    ) member_counts ON member_counts.gym_id = g.id
+    LEFT JOIN (
+      SELECT gym_id, count(*) AS count FROM gym_follows GROUP BY gym_id
+    ) follower_counts ON follower_counts.gym_id = g.id
+    LEFT JOIN (
+      SELECT entity_id, count(*) AS count FROM comments
+      WHERE entity_type = 'gym' AND deleted_at IS NULL GROUP BY entity_id
+    ) comment_counts ON comment_counts.entity_id = g.uuid
+  `,
+  );
+  return new Map(rows.map((row) => [Number(row.id), { ...row, id: Number(row.id) }]));
+}
+
+function toMergeCandidate(row: RetireGateRow): CanonicalGymCandidate {
+  const { ownerId: _ownerId, openClaimCount: _openClaimCount, liveKioskCount: _liveKioskCount, ...candidate } = row;
+  return candidate;
+}
+
+/**
+ * Folds `sourceGymId` into `targetGym` when the attach that just ran left it
+ * with no boards at all.
+ *
+ * Deliberately narrow: only an auto-synced (SYSTEM-owned) listing that nobody
+ * has claimed, staffed or hung a kiosk on can be folded, and only into a gym a
+ * real person owns. Anything else is left exactly as it was — a gym editor must
+ * never be able to make someone else's listing disappear. Every refusal is a
+ * debug log and a plain `return`: the board move has already committed, so a
+ * skipped fold is a no-op, not an error.
+ */
+async function retireEmptiedSourceGym(sourceGymId: number, targetGym: GymRow, actorUserId: string): Promise<void> {
+  if (targetGym.ownerId === SYSTEM_BOARD_OWNER_ID) {
+    logger.debug('stray attach: not retiring the source listing, the target gym is itself a synced listing', {
+      sourceGymId,
+      targetGymId: targetGym.id,
+    });
+    return;
+  }
+
+  await db.transaction(async (tx) => {
+    const gateRows = await loadRetireGateRows(tx, [sourceGymId, targetGym.id]);
+    const source = gateRows.get(sourceGymId);
+    const target = gateRows.get(targetGym.id);
+
+    if (!source || !target) {
+      logger.debug('stray attach: not retiring the source listing, a gym is merged, deleted or lacks coordinates', {
+        sourceGymId,
+        targetGymId: targetGym.id,
+        sourceEligible: Boolean(source),
+        targetEligible: Boolean(target),
+      });
+      return;
+    }
+    if (source.ownerId !== SYSTEM_BOARD_OWNER_ID || target.ownerId === SYSTEM_BOARD_OWNER_ID) {
+      logger.debug('stray attach: not retiring the source listing, ownership does not allow it', {
+        sourceGymId,
+        targetGymId: targetGym.id,
+      });
+      return;
+    }
+    if (source.boardCount > 0 || source.memberCount > 0 || source.openClaimCount > 0 || source.liveKioskCount > 0) {
+      logger.debug('stray attach: not retiring the source listing, it is still in use', {
+        sourceGymId,
+        boardCount: source.boardCount,
+        memberCount: source.memberCount,
+        openClaimCount: source.openClaimCount,
+        liveKioskCount: source.liveKioskCount,
+      });
+      return;
+    }
+
+    const mergeResult = await mergeGymsIntoCanonical(tx, toMergeCandidate(target), [toMergeCandidate(source)]);
+
+    // Belt and braces: a retired listing must never be refreshed back to life by
+    // the location sync, even if its alias is somehow re-pointed at it later.
+    await tx.execute(sql`UPDATE gyms SET sync_frozen_at = NOW() WHERE id = ${sourceGymId}`);
+
+    await tx.insert(dbSchema.gymMergeAudit).values({
+      action: 'merged',
+      canonicalGymId: target.id,
+      duplicateGymId: source.id,
+      clusterSignature: computeClusterSignature([target.id, source.id]),
+      movedCounts: mergeResult.counts,
+      movedRows: mergeResult.movedRows,
+      warnings: mergeResult.warnings,
+      performedBy: actorUserId,
+    });
+
+    logger.info('stray attach emptied a synced listing; folded it into the target gym', {
+      sourceGymId,
+      targetGymId: target.id,
+      performedBy: actorUserId,
+    });
+  });
 }
 
 // ============================================
@@ -274,7 +495,17 @@ export const socialGymStrayBoardMutations = {
     // the bound param's type against the bigint column.
     const updated = await db
       .update(dbSchema.userBoards)
-      .set({ gymId: gym.id })
+      .set({
+        gymId: gym.id,
+        // A deliberate human link. Without the freeze the next location-sync run
+        // re-points the board straight back to the synced listing it came from
+        // (upsert.ts's board upsert is guarded only by
+        // `setWhere: isNull(userBoards.syncFrozenAt)`), silently undoing the
+        // attach and re-populating the listing we are about to retire. Mirrors
+        // updateBoard.
+        syncFrozenAt: new Date(),
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(dbSchema.userBoards.id, target.boardId),
@@ -287,6 +518,22 @@ export const socialGymStrayBoardMutations = {
       throw new GraphQLError('This board changed before it could be attached. Refresh and try again.', {
         extensions: { code: 'CONFLICT' },
       });
+    }
+
+    // The board has moved and that write is committed. If it was the last board
+    // on a synced listing, fold that now-empty listing into this gym so it stops
+    // showing up in search as a board-less twin (#4188). A failure here must not
+    // turn a successful attach into a GraphQL error.
+    if (target.currentGymId != null && target.currentGymId !== gym.id) {
+      try {
+        await retireEmptiedSourceGym(target.currentGymId, gym, userId);
+      } catch (error) {
+        logger.error('failed to retire the listing a stray attach emptied', {
+          sourceGymId: target.currentGymId,
+          targetGymId: gym.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
     return true;
   },

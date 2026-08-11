@@ -7105,6 +7105,8 @@ export type StrayBoard = {
   currentGymUuid?: Maybe<Scalars['ID']['output']>;
   /** Metres from this gym's location to the board; null when either lacks coordinates. */
   distanceMeters?: Maybe<Scalars['Float']['output']>;
+  /** True when this is the only board left on its current listing — attaching it retires that listing into this gym. Always false for an unlinked board. */
+  isLastBoardAtCurrentGym: Scalars['Boolean']['output'];
   /** The board's display name. */
   name: Scalars['String']['output'];
   /** Why this board is a candidate for this gym. */
@@ -12596,6 +12598,7 @@ export type StrayBoardResolvers<
   currentGymName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   currentGymUuid?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   distanceMeters?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  isLastBoardAtCurrentGym?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   reason?: Resolver<ResolversTypes['StrayBoardReason'], ParentType, ContextType>;
   uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;

@@ -106,6 +106,11 @@ export type StrayBoard = {
   /** Metres from this gym's location to the board; null when either lacks coordinates. */
   distanceMeters?: number | null;
   reason: StrayBoardReason;
+  /**
+   * True when this is the only board left on its current listing — attaching it
+   * retires that listing into this gym. Always false for an unlinked board.
+   */
+  isLastBoardAtCurrentGym: boolean;
 };
 
 export type AttachBoardToGymInput = {

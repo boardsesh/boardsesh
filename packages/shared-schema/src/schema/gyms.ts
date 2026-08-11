@@ -177,6 +177,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     distanceMeters: Float
     "Why this board is a candidate for this gym."
     reason: StrayBoardReason!
+    "True when this is the only board left on its current listing — attaching it retires that listing into this gym. Always false for an unlinked board."
+    isLastBoardAtCurrentGym: Boolean!
   }
 
   """
