@@ -44,16 +44,19 @@ function createMockChain(resolveValue: unknown = []): Record<string, unknown> {
 type ClimbRow = { id: number; climbUuid: string; position: number };
 
 /**
- * Mock a transaction whose `tx.select(...).for('update')` yields `rows` and
+ * Mock a transaction whose selects yield, in order, the locked `playlist_climbs`
+ * rows and then the `board_climbs` rows that resolve them (every climb by
+ * default — pass `resolvableClimbUuids` to model orphaned refs, #4012), and
  * whose `tx.update(...).set(x)` records `x`. The resolver does at most two
  * updates: one batched `{ position: <CASE sql> }` for the shifted climbs, then
  * the parent playlist's `{ updatedAt }`.
  */
-function primeTransaction(rows: ClimbRow[]) {
+function primeTransaction(rows: ClimbRow[], resolvableClimbUuids: string[] = rows.map((row) => row.climbUuid)) {
   const setCalls: Array<Record<string, unknown>> = [];
-  const selectChain = createMockChain(rows);
+  const selectResults = [rows, resolvableClimbUuids.map((uuid) => ({ uuid }))];
+  let selectCall = 0;
   const tx = {
-    select: vi.fn(() => selectChain),
+    select: vi.fn(() => createMockChain(selectResults[selectCall++] ?? [])),
     update: vi.fn(() => {
       const chain: Record<string, unknown> = {};
       chain.set = vi.fn((arg: Record<string, unknown>) => {
@@ -66,7 +69,7 @@ function primeTransaction(rows: ClimbRow[]) {
     }),
   };
   mockDb.transaction.mockImplementationOnce(async (cb: (t: typeof tx) => Promise<unknown>) => cb(tx));
-  return { setCalls };
+  return { setCalls, tx };
 }
 
 /** How many of the captured updates rewrote climb positions (the batched CASE). */
@@ -108,6 +111,42 @@ describe('reorderPlaylistClimb mutation', () => {
     const result = await playlistMutations.reorderPlaylistClimb(
       null,
       { input: { playlistId: 'p-uuid', climbUuid: 'climb-a', newIndex: 0 } },
+      makeCtx(),
+    );
+
+    expect(result).toBe(true);
+    expect(positionUpdateCount(setCalls)).toBe(0);
+    expect('updatedAt' in setCalls[setCalls.length - 1]).toBe(true);
+  });
+
+  it('reads which refs resolve to a climb before splicing (#4012)', async () => {
+    mockDb.select.mockReturnValueOnce(createMockChain([{ id: 1 }]));
+    const { tx, setCalls } = primeTransaction(ROWS.map((row) => ({ ...row })));
+
+    await playlistMutations.reorderPlaylistClimb(
+      null,
+      { input: { playlistId: 'p-uuid', climbUuid: 'climb-c', newIndex: 0 } },
+      makeCtx(),
+    );
+
+    // Two selects inside the transaction: the locked playlist rows, then the
+    // board_climbs lookup that says which of them the client can actually see.
+    expect(tx.select).toHaveBeenCalledTimes(2);
+    expect(positionUpdateCount(setCalls)).toBe(1);
+  });
+
+  it('skips the position update when the move is a no-op in the rendered list (#4012)', async () => {
+    mockDb.select.mockReturnValueOnce(createMockChain([{ id: 1 }]));
+    // climb-a is an orphaned ref: the client renders [climb-b, climb-c], so
+    // "move climb-b to index 0" is already true on screen.
+    const { setCalls } = primeTransaction(
+      ROWS.map((row) => ({ ...row })),
+      ['climb-b', 'climb-c'],
+    );
+
+    const result = await playlistMutations.reorderPlaylistClimb(
+      null,
+      { input: { playlistId: 'p-uuid', climbUuid: 'climb-b', newIndex: 0 } },
       makeCtx(),
     );
 
