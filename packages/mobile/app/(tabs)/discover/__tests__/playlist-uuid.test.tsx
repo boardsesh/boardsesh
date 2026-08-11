@@ -485,6 +485,39 @@ describe('PlaylistDetail edit conflict (#1934)', () => {
     expect(updatePlaylistMock).toHaveBeenCalledTimes(1);
   });
 
+  it('does not quote two identical names back when the details are what diverged', async () => {
+    requestMock.mockResolvedValue({ playlist: cachedPlaylist });
+    // Both devices kept the name and changed the colour: the name-vs-name
+    // wording would read "saved as Bad climbs now, your edit says Bad climbs".
+    updatePlaylistMock.mockRejectedValue({
+      response: {
+        errors: [
+          {
+            message: 'This playlist changed somewhere else',
+            extensions: {
+              ...conflictError.response.errors[0].extensions,
+              serverName: 'Bad climbs',
+              serverColor: '#8C4A52',
+            },
+          },
+        ],
+      },
+    });
+
+    const { findByText } = renderDetail();
+    fireEvent.click(await findByText('form-submit'));
+
+    await waitFor(() => expect(alertMock).toHaveBeenCalledTimes(1));
+    expect(alertMock.mock.calls[0][1]).toBe('edit.conflict.messageDetails');
+    // Keep mine / Use theirs still resolve the whole record.
+    const buttons = alertMock.mock.calls[0][2] as Array<{ text: string }>;
+    expect(buttons.map((button) => button.text)).toEqual([
+      'edit.conflict.cancel',
+      'edit.conflict.keepTheirs',
+      'edit.conflict.keepMine',
+    ]);
+  });
+
   it('"Keep mine" losing a second race says so inline instead of reporting a fault', async () => {
     requestMock.mockResolvedValue({ playlist: cachedPlaylist });
     // A third device lands between the prompt and the retry.
