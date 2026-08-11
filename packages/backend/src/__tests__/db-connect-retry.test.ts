@@ -1,0 +1,307 @@
+import { describe, expect, it, afterEach } from 'vite-plus/test';
+import net from 'node:net';
+import postgres from 'postgres';
+import {
+  backoffDelayMs,
+  connectErrorCode,
+  isRetryableConnectError,
+  setDbConnectObserver,
+  withConnectRetry,
+  withDbConnectRetry,
+} from '@boardsesh/db/client';
+import type { DbConnectRetryEvent, PoolInstance } from '@boardsesh/db/client';
+
+function connectError(code: string): Error & { code: string } {
+  return Object.assign(new Error(`write ${code} db.internal:5432`), { code });
+}
+
+const noSleep = () => Promise.resolve();
+
+afterEach(() => {
+  setDbConnectObserver(null);
+});
+
+describe('connectErrorCode', () => {
+  it('accepts only the pre-dispatch connect codes', () => {
+    for (const code of ['CONNECT_TIMEOUT', 'ECONNREFUSED', 'EAI_AGAIN', 'EAI_NODATA', 'ENOTFOUND']) {
+      expect(connectErrorCode(connectError(code))).toBe(code);
+      expect(isRetryableConnectError(connectError(code))).toBe(true);
+    }
+  });
+
+  it('rejects codes that are ambiguous about whether the statement was dispatched', () => {
+    for (const code of ['CONNECTION_CLOSED', 'ETIMEDOUT', 'ECONNRESET', '57014', '23505']) {
+      expect(connectErrorCode(connectError(code))).toBeNull();
+      expect(isRetryableConnectError(connectError(code))).toBe(false);
+    }
+    expect(isRetryableConnectError(new Error('boom'))).toBe(false);
+    expect(isRetryableConnectError(null)).toBe(false);
+    expect(isRetryableConnectError('ECONNREFUSED')).toBe(false);
+  });
+});
+
+describe('withDbConnectRetry', () => {
+  it('runs once when the statement succeeds', async () => {
+    let calls = 0;
+    const result = await withDbConnectRetry(
+      () => {
+        calls += 1;
+        return Promise.resolve('rows');
+      },
+      { sleep: noSleep },
+    );
+
+    expect(result).toBe('rows');
+    expect(calls).toBe(1);
+  });
+
+  it('retries a connect failure and reports every retry to the observer', async () => {
+    const events: DbConnectRetryEvent[] = [];
+    setDbConnectObserver((event) => events.push(event));
+
+    let calls = 0;
+    const result = await withDbConnectRetry(
+      () => {
+        calls += 1;
+        return calls < 3 ? Promise.reject(connectError('EAI_AGAIN')) : Promise.resolve('rows');
+      },
+      { attempts: 3, sleep: noSleep },
+    );
+
+    expect(result).toBe('rows');
+    expect(calls).toBe(3);
+    expect(events.map((event) => event.attempt)).toEqual([1, 2]);
+    expect(events.every((event) => event.code === 'EAI_AGAIN' && event.maxAttempts === 3)).toBe(true);
+  });
+
+  it('rethrows the last error unchanged once attempts are exhausted', async () => {
+    const failure = connectError('ECONNREFUSED');
+    let calls = 0;
+
+    await expect(
+      withDbConnectRetry(
+        () => {
+          calls += 1;
+          return Promise.reject(failure);
+        },
+        { attempts: 3, sleep: noSleep },
+      ),
+    ).rejects.toBe(failure);
+
+    expect(calls).toBe(3);
+  });
+
+  it('never retries an error that could have reached the server', async () => {
+    let calls = 0;
+    const failure = connectError('CONNECTION_CLOSED');
+
+    await expect(
+      withDbConnectRetry(
+        () => {
+          calls += 1;
+          return Promise.reject(failure);
+        },
+        { attempts: 5, sleep: noSleep },
+      ),
+    ).rejects.toBe(failure);
+
+    expect(calls).toBe(1);
+  });
+
+  it('gives up immediately when the first attempt already burned the wall-clock budget', async () => {
+    // A CONNECT_TIMEOUT costs the full connect_timeout (30s). Retrying it would
+    // double the user's wait and hold a second pool slot, so the budget gate
+    // must stop the loop even though the code is on the allowlist.
+    let calls = 0;
+    let clock = 0;
+    const failure = connectError('CONNECT_TIMEOUT');
+
+    await expect(
+      withDbConnectRetry(
+        () => {
+          calls += 1;
+          clock += 30_000;
+          return Promise.reject(failure);
+        },
+        { attempts: 3, budgetMs: 10_000, sleep: noSleep, now: () => clock },
+      ),
+    ).rejects.toBe(failure);
+
+    expect(calls).toBe(1);
+  });
+
+  it('keeps a misbehaving observer from breaking the retry', async () => {
+    setDbConnectObserver(() => {
+      throw new Error('observer blew up');
+    });
+
+    let calls = 0;
+    const result = await withDbConnectRetry(
+      () => {
+        calls += 1;
+        return calls < 2 ? Promise.reject(connectError('ENOTFOUND')) : Promise.resolve('rows');
+      },
+      { attempts: 2, sleep: noSleep },
+    );
+
+    expect(result).toBe('rows');
+  });
+});
+
+describe('backoffDelayMs', () => {
+  it('grows, stays inside the +/-50% jitter envelope, and never exceeds the cap', () => {
+    for (const random of [0, 0.5, 0.999]) {
+      expect(backoffDelayMs(1, 150, 600, () => random)).toBeGreaterThanOrEqual(75);
+      expect(backoffDelayMs(1, 150, 600, () => random)).toBeLessThanOrEqual(225);
+      expect(backoffDelayMs(2, 150, 600, () => random)).toBeLessThanOrEqual(450);
+      // attempt 5 would be 2400ms unjittered; the cap holds it at 600 * 1.5.
+      expect(backoffDelayMs(5, 150, 600, () => random)).toBeLessThanOrEqual(900);
+    }
+  });
+});
+
+type FakeQuery = PromiseLike<unknown> & { values: () => FakeQuery };
+
+function fakeClient(run: (mode: 'rows' | 'values') => Promise<unknown>) {
+  let unsafeCalls = 0;
+  const client = {
+    unsafe(query: string, params?: unknown[]) {
+      unsafeCalls += 1;
+      void query;
+      void params;
+      let mode: 'rows' | 'values' = 'rows';
+      const fake: FakeQuery = {
+        values() {
+          mode = 'values';
+          return fake;
+        },
+        then(onFulfilled, onRejected) {
+          return run(mode).then(onFulfilled, onRejected);
+        },
+      };
+      return fake;
+    },
+    get unsafeCalls() {
+      return unsafeCalls;
+    },
+    options: { parsers: {} as Record<string, unknown> },
+    begin: (fn: unknown) => fn,
+  };
+  return client;
+}
+
+describe('withConnectRetry (pool wrapper)', () => {
+  it('retries a connect failure for a single statement issued through unsafe()', async () => {
+    let attempts = 0;
+    const client = fakeClient(() => {
+      attempts += 1;
+      return attempts < 3 ? Promise.reject(connectError('ECONNREFUSED')) : Promise.resolve([{ ok: 1 }]);
+    });
+
+    const wrapped = withConnectRetry(client as unknown as PoolInstance, { attempts: 3, sleep: noSleep });
+    await expect(wrapped.unsafe('select 1')).resolves.toEqual([{ ok: 1 }]);
+    expect(attempts).toBe(3);
+    // Every attempt builds a fresh postgres.js query — a rejected one can never
+    // be re-awaited.
+    expect(client.unsafeCalls).toBe(3);
+  });
+
+  it('preserves .values() across retries', async () => {
+    const modes: string[] = [];
+    let attempts = 0;
+    const client = fakeClient((mode) => {
+      modes.push(mode);
+      attempts += 1;
+      return attempts < 2 ? Promise.reject(connectError('EAI_AGAIN')) : Promise.resolve([[1]]);
+    });
+
+    const wrapped = withConnectRetry(client as unknown as PoolInstance, { attempts: 2, sleep: noSleep });
+    await expect(wrapped.unsafe('select 1').values()).resolves.toEqual([[1]]);
+    expect(modes).toEqual(['values', 'values']);
+  });
+
+  it('does not retry statements that may already have reached the server', async () => {
+    let attempts = 0;
+    const failure = connectError('CONNECTION_CLOSED');
+    const client = fakeClient(() => {
+      attempts += 1;
+      return Promise.reject(failure);
+    });
+
+    const wrapped = withConnectRetry(client as unknown as PoolInstance, { attempts: 3, sleep: noSleep });
+    await expect(wrapped.unsafe('insert into ticks values (1)')).rejects.toBe(failure);
+    expect(attempts).toBe(1);
+  });
+
+  it('passes non-statement members straight through so drizzle can install its parsers', () => {
+    const client = fakeClient(() => Promise.resolve([]));
+    const wrapped = withConnectRetry(client as unknown as PoolInstance, { sleep: noSleep });
+
+    // drizzle mutates client.options.parsers when it constructs — that has to
+    // land on the real pool, not on a copy.
+    (wrapped.options.parsers as Record<string, unknown>)['1184'] = 'transparent';
+    expect(client.options.parsers['1184']).toBe('transparent');
+    expect(typeof wrapped.begin).toBe('function');
+  });
+});
+
+describe('pool recovery after repeated connect failures', () => {
+  // The regression this whole PR is fenced against: a retry that leaves
+  // postgres.js's connection bookkeeping wedged. After `max` consecutive
+  // connect failures, the next query must still reject promptly (not hang), and
+  // the pool must still be willing to open a socket afterwards.
+  it('keeps rejecting promptly and still reconnects once the port comes back', async () => {
+    const probe = net.createServer();
+    const port = await new Promise<number>((resolve, reject) => {
+      probe.once('error', reject);
+      probe.listen(0, '127.0.0.1', () => {
+        const address = probe.address();
+        resolve(typeof address === 'object' && address ? address.port : 0);
+      });
+    });
+    await new Promise<void>((resolve) => probe.close(() => resolve()));
+
+    const pool = postgres(`postgresql://boardsesh:boardsesh@127.0.0.1:${port}/boardsesh`, {
+      max: 2,
+      connect_timeout: 2,
+      idle_timeout: 1,
+      prepare: false,
+      onnotice: () => {},
+    });
+    const retrying = withConnectRetry(pool, { attempts: 1 });
+    const accepted: net.Socket[] = [];
+    let connectionsSeen = 0;
+    // Accepts the TCP connection and then says nothing, so postgres.js reaches
+    // its own connect timeout and rejects. A listener that hung up instead
+    // would leave the query attached to the connection, and postgres.js
+    // answers that with an unbounded reconnect loop (connection.js:449).
+    const revived = net.createServer((socket) => {
+      connectionsSeen += 1;
+      accepted.push(socket);
+      socket.on('error', () => {});
+    });
+
+    try {
+      // max + 1 statements against a dead port: every one rejects, none hangs.
+      for (let index = 0; index < 3; index += 1) {
+        const startedAt = Date.now();
+        await expect(retrying.unsafe('select 1')).rejects.toMatchObject({ code: 'ECONNREFUSED' });
+        expect(Date.now() - startedAt).toBeLessThan(4_000);
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        revived.once('error', reject);
+        revived.listen(port, '127.0.0.1', () => resolve());
+      });
+
+      // The statement still fails, but the pool proves it is not wedged: it
+      // opened a socket again instead of queueing the query forever.
+      await expect(retrying.unsafe('select 1')).rejects.toMatchObject({ code: 'CONNECT_TIMEOUT' });
+      expect(connectionsSeen).toBeGreaterThan(0);
+    } finally {
+      await pool.end({ timeout: 1 });
+      for (const socket of accepted) socket.destroy();
+      await new Promise<void>((resolve) => revived.close(() => resolve()));
+    }
+  }, 20_000);
+});

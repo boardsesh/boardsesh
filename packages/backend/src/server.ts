@@ -7,7 +7,8 @@ import { roomManager } from './services/room-manager';
 import { redisClientManager } from './redis/client';
 import { eventBroker, NotificationWorker } from './events/index';
 import { initCors, applyCorsHeaders } from './handlers/cors';
-import { handleHealthCheck } from './handlers/health';
+import { handleDatabaseHealthCheck, handleHealthCheck } from './handlers/health';
+import { recordDbConnectRetry } from './services/db-health';
 import { handleSessionJoin } from './handlers/join';
 import { handleAvatarUpload } from './handlers/avatars';
 import { handleGymLogoUpload } from './handlers/gym-logos';
@@ -66,6 +67,7 @@ import { getBoardSeqFloor, resolveBoardHolder } from './graphql/resolvers/board-
 import { registerBoardQueuePreviewHook } from './services/board-queue-preview';
 import { logger, setInstanceIdProvider } from './utils/logger';
 import { isClientAbortError } from './utils/http-errors';
+import { setDbConnectObserver } from '@boardsesh/db/client';
 import type { QueueEvent } from '@boardsesh/shared-schema';
 
 /**
@@ -96,6 +98,19 @@ async function dispatchLiveActivityForSession(sessionId: string): Promise<void> 
 }
 
 export async function startServer(): Promise<ServerResources> {
+  // Surface database connect retries. `warn`, not `error`: SentryWinstonTransport
+  // is constructed with `level: 'error'` (utils/sentry-transport.ts:80), so a
+  // warn stays log-only and cannot double-report alongside the
+  // Sentry.captureException that graphql/mask-error.ts already does for the
+  // failures that outlive the retry.
+  setDbConnectObserver((event) => {
+    recordDbConnectRetry(event);
+    logger.warn(
+      `[db] connect retry ${event.attempt}/${event.maxAttempts} after ${event.code} ` +
+        `(elapsed ${event.elapsedMs}ms, next attempt in ${event.delayMs}ms)`,
+    );
+  });
+
   // Initialize PubSub (connects to Redis if configured)
   // This must happen before we start accepting connections
   await pubsub.initialize();
@@ -321,6 +336,13 @@ export async function startServer(): Promise<ServerResources> {
       // Health check endpoint
       if (pathname === '/health' && req.method === 'GET') {
         await handleHealthCheck(req, res);
+        return;
+      }
+
+      // Database health — 503 when Postgres does not answer. Point monitors
+      // here, not at /health (see handlers/health.ts for why).
+      if (pathname === '/health/db' && req.method === 'GET') {
+        await handleDatabaseHealthCheck(req, res);
         return;
       }
 
@@ -624,6 +646,7 @@ export async function startServer(): Promise<ServerResources> {
     logger.info(`  GraphQL HTTP: ${httpScheme}://0.0.0.0:${PORT}/graphql`);
     logger.info(`  GraphQL WS: ${wsScheme}://0.0.0.0:${PORT}/graphql`);
     logger.info(`  Health check: ${httpScheme}://0.0.0.0:${PORT}/health`);
+    logger.info(`  Database health: ${httpScheme}://0.0.0.0:${PORT}/health/db`);
     logger.info(`  Join session: ${httpScheme}://0.0.0.0:${PORT}/join/:sessionId`);
     logger.info(`  Avatar upload: ${httpScheme}://0.0.0.0:${PORT}/api/avatars`);
     logger.info(`  Avatar files: ${httpScheme}://0.0.0.0:${PORT}/static/avatars/`);
