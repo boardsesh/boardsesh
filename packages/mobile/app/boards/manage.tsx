@@ -316,7 +316,9 @@ export default function ManageBoards() {
         type: 'board',
         key: board.uuid,
         board,
-        isOwned: board.isOwned,
+        // `=== true` because a snapshot written by an older build can be missing
+        // the field entirely, and the row prop is a plain boolean.
+        isOwned: board.isOwned === true,
         isActive: board.uuid === activeUuid,
       }),
     );

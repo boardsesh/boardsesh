@@ -17,8 +17,8 @@ const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012
 
 /**
  * base64url → bytes. Hand-rolled rather than `atob` because the JWT alphabet
- * uses `-`/`_` and drops padding, and because Hermes' `atob` availability
- * varies by runtime. Returns undefined for anything it can't decode.
+ * uses `-`/`_` and drops padding, and because `atob` throws on a bad character
+ * where this must fail soft. Returns undefined for anything it can't decode.
  */
 function base64UrlToBytes(segment: string): Uint8Array | undefined {
   const normalized = segment.replace(/-/g, '+').replace(/_/g, '/');

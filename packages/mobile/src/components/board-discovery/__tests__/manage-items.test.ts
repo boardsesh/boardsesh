@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { buildManageItems, type ManageItem } from '../manage-items';
+import { boardIsOwnedBy, buildManageItems, type ManageItem } from '../manage-items';
 
 // buildManageItems only reads uuid + ownerId, so a minimal cast is enough.
 const board = (uuid: string, ownerId: string): UserBoard => ({ uuid, ownerId }) as unknown as UserBoard;
@@ -11,6 +11,21 @@ function boardItem(items: ManageItem[], key: string) {
   if (!found || found.type !== 'board') throw new Error(`board item not found: ${key}`);
   return found;
 }
+
+describe('boardIsOwnedBy', () => {
+  it('compares ownerId whenever the board carries one', () => {
+    expect(boardIsOwnedBy(board('o1', 'me'), 'me')).toBe(true);
+    expect(boardIsOwnedBy(board('f1', 'other'), 'me')).toBe(false);
+    expect(boardIsOwnedBy(board('o1', 'me'), undefined)).toBe(false);
+  });
+
+  it('falls back to the persisted isOwned only when ownerId is absent or blank', () => {
+    expect(boardIsOwnedBy({ uuid: 'x', isOwned: true } as unknown as UserBoard, 'me')).toBe(true);
+    expect(boardIsOwnedBy({ uuid: 'x', isOwned: false } as unknown as UserBoard, 'me')).toBe(false);
+    expect(boardIsOwnedBy({ uuid: 'x' } as unknown as UserBoard, 'me')).toBe(false);
+    expect(boardIsOwnedBy({ uuid: 'x', ownerId: '', isOwned: true } as unknown as UserBoard, 'me')).toBe(true);
+  });
+});
 
 describe('buildManageItems', () => {
   it('splits owned vs followed by ownerId, each under its own header (owned first)', () => {
