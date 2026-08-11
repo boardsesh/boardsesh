@@ -17,7 +17,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import type { PlaybackStateChangedEvent, SessionUser, UserBoard } from '@boardsesh/shared-schema';
 import { emitWallConfirm } from '@boardsesh/play-view';
-import { GraphQLOperationError, isNotSessionMemberError } from '@boardsesh/graphql-client';
+import { GraphQLOperationError, isNotSessionMemberError, subscribe } from '@boardsesh/graphql-client';
 import { getWsClient } from '../../lib/graphql/ws-client';
 import { AUTH_REFRESH_RETRY_CLOSE_CODE } from '../../lib/graphql/ws-close-codes';
 import {
@@ -450,13 +450,14 @@ export function useSessionRealtime({
       if (disposed || currentStartToken !== subscriptionStartToken || sessionIdRef.current !== sessionId) return;
       joinRetryCount = 0;
 
-      queueUpdatesCleanup = wsClient.subscribe<{ queueUpdates: QueueUpdateEvent }>(
+      queueUpdatesCleanup = subscribe<{ queueUpdates: QueueUpdateEvent }>(
+        wsClient,
         {
           query: QUEUE_UPDATES_SUBSCRIPTION,
           variables: { sessionId },
         },
         {
-          next: ({ data }) => {
+          next: (data) => {
             if (!data?.queueUpdates) return;
             const event = data.queueUpdates;
             // PlaybackStateChanged is a first-class wire variant but carries no
@@ -637,13 +638,14 @@ export function useSessionRealtime({
       // angle is session-shared: when a peer changes it we update our own active
       // board's angle (which cascades to the climb list, play drawer, and the
       // re-grade effect). We don't switch the whole board — only the angle.
-      sessionUpdatesCleanup = wsClient.subscribe<{ sessionUpdates: SessionUpdateEvent }>(
+      sessionUpdatesCleanup = subscribe<{ sessionUpdates: SessionUpdateEvent }>(
+        wsClient,
         {
           query: SESSION_UPDATES_SUBSCRIPTION,
           variables: { sessionId },
         },
         {
-          next: ({ data }) => {
+          next: (data) => {
             const event = data?.sessionUpdates;
             if (!event) return;
             if (sessionIdRef.current !== sessionId) return;

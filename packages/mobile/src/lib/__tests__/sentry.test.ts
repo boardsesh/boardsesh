@@ -28,6 +28,7 @@ import {
   captureToSentry,
   flushSentry,
   isExpoUiSheetNoHandlerRejection,
+  normalizeCapturedValueForSentry,
   setOtaChannelTag,
   setOtaSentryTags,
   wrapWithSentry,
@@ -292,6 +293,73 @@ describe('applyOtaTagsToScope', () => {
     const explicit = makeScope();
     applyOtaTagsToScope(explicit, { isEmbeddedLaunch: false });
     expect(explicit.setTag).toHaveBeenCalledWith('ota_is_embedded', 'false');
+  });
+});
+
+// normalizeCapturedValueForSentry runs purely (no SDK), so it's directly
+// testable regardless of enablement — it guards the #4241 fix: a raw
+// WebSocket Event/CloseEvent must never reach Sentry.captureException as an
+// opaque object that renders as `<unknown>` / `Event` / `anonymous`.
+describe('normalizeCapturedValueForSentry', () => {
+  it('passes a real Error through unchanged with no extra', () => {
+    const original = new Error('socket boom');
+    const result = normalizeCapturedValueForSentry(original);
+    expect(result.error).toBe(original);
+    expect(result.extra).toBeUndefined();
+  });
+
+  it('rewraps a CloseEvent-shaped object, surfaces code/reason/wasClean/readyState, and strips the query string from the target URL', () => {
+    const result = normalizeCapturedValueForSentry({
+      type: 'close',
+      code: 1001,
+      reason: 'Stream end encountered',
+      wasClean: false,
+      target: { readyState: 3, url: 'wss://api.example.com/graphql?token=SECRET' },
+    });
+    expect(result.error).toBeInstanceOf(Error);
+    expect(result.error.message).toContain('close');
+    expect(result.error.message).toContain('1001');
+    expect(result.extra).toEqual({
+      type: 'close',
+      code: 1001,
+      reason: 'Stream end encountered',
+      wasClean: false,
+      readyState: 3,
+      url: 'wss://api.example.com/graphql',
+    });
+  });
+
+  it('rewraps a bare Event with no code/reason into just a type extra', () => {
+    const result = normalizeCapturedValueForSentry({ type: 'error' });
+    expect(result.error).toBeInstanceOf(Error);
+    expect(result.error.message).toContain('error');
+    expect(result.extra).toEqual({ type: 'error' });
+  });
+
+  it('falls back to String(value) for a non-object, non-Error value', () => {
+    const stringResult = normalizeCapturedValueForSentry('connection reset');
+    expect(stringResult.error).toBeInstanceOf(Error);
+    expect(stringResult.error.message).toBe('connection reset');
+    expect(stringResult.extra).toBeUndefined();
+
+    const numberResult = normalizeCapturedValueForSentry(42);
+    expect(numberResult.error.message).toBe('42');
+  });
+
+  it('falls back to String(value) for a plain object with no `type` field', () => {
+    const result = normalizeCapturedValueForSentry({ status: 500 });
+    expect(result.error).toBeInstanceOf(Error);
+    expect(result.error.message).toBe('[object Object]');
+    expect(result.extra).toBeUndefined();
+  });
+
+  it('drops a malformed target URL instead of throwing', () => {
+    const result = normalizeCapturedValueForSentry({
+      type: 'close',
+      code: 1006,
+      target: { readyState: 3, url: 'not a url' },
+    });
+    expect(result.extra).toEqual({ type: 'close', code: 1006, readyState: 3 });
   });
 });
 
