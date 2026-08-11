@@ -158,10 +158,28 @@ ensure_job_queue_schema() {
   )
 }
 
+normalize_ledger_timestamps() {
+  # Images built before #4211 stamped every ledger row with the image's build
+  # clock instead of the journal entry's `when`. That timestamp is a high-water
+  # mark no later migration can clear, so both drizzle's migrate() and the
+  # pending-migration selection below would skip every migration written after
+  # the image was built — silently, forever. Rewriting created_at to `when`
+  # writes exactly the value drizzle writes, so it is a no-op once the image
+  # (or a `docker compose down -v`) is current.
+  #
+  # DATABASE_URL is passed explicitly: .boardsesh/dev-db.env is not written
+  # until write_dev_db_env below, so the dotenv chain in db-connection.ts has
+  # nothing to load yet.
+  echo "Normalizing migration ledger timestamps..."
+  DATABASE_URL=postgresql://postgres:password@localhost:5432/main \
+    vp exec pnpm --filter @boardsesh/db run db:normalize-ledger
+}
+
 prepare_docker_postgres() {
   ensure_postgres_network_access
   ensure_postgres_password
   sync_drizzle_migration_tracker
+  normalize_ledger_timestamps
   run_pending_drizzle_sql_migrations
   ensure_job_queue_schema
   write_dev_db_env "localhost" "$1" "$(detect_local_redis_url)"
