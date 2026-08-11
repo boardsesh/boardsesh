@@ -130,9 +130,17 @@ default-on check would redden every `vp run db:migrate`.
 
 The `boardsesh-dev-db` image applies the journal itself, in a psql loop. Until #4211 it
 stamped each ledger row with the image's **build clock** instead of the journal entry's
-`when`, which put the high-water mark years above every journal entry — so the next
-migration anyone wrote was skipped on that database forever. `vp run db:migrate` said
-nothing, the table never appeared, and `db:verify-journal` reported it as a real gap.
+`when`, which drags the high-water mark forward to the moment the image was built.
+
+What that skips is not the newest migrations — a migration generated today has a `when`
+later than any image built yesterday, so it still applies. It is the migrations whose `when`
+sits _below_ the build clock and that the image did not itself apply: a branch's migration,
+generated before the image was built and applied to that database afterwards. On the two e2e
+jobs, which run `boardsesh-dev-db:latest`, that is most open PRs — the image is rebuilt on
+every db-touching merge to `main`, so any branch older than the last such merge lands under
+the mark. The migration is skipped with no error at all: `vp run db:migrate` says nothing,
+the table never appears, and `db:verify-journal` reports it as a real gap. The mark only ever
+moves up, so it never recovers.
 
 The image now writes `when`, and fails its own build if the ledger's high-water mark is not
 the journal's newest `when`. That only helps images built after the fix, though: CI pins a

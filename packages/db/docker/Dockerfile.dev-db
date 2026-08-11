@@ -246,8 +246,10 @@ RUN set -e && \
     # created_at is the journal entry's own `when`, never the build clock (#4211). \
     # drizzle's migrate() reads max(created_at) once and applies only entries \
     # whose `when` is strictly greater, so a build timestamp would become a \
-    # high-water mark no later migration can clear — every migration added after \
-    # the image was built would be skipped on that database forever. `when` is \
+    # high-water mark that only moves up — and every journal entry with an \
+    # earlier `when` that this loop did not apply (a branch's migration, written \
+    # before this image was built) would be skipped on that database for good. \
+    # `when` is \
     # exactly what drizzle writes itself (it inserts folderMillis, which it copies \
     # from the journal's `when`). \
     applied=0 && \
