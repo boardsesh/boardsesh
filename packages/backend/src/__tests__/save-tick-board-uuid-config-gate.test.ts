@@ -70,6 +70,7 @@ function tickInput(overrides: Record<string, unknown> = {}) {
 
 async function insertBoard(opts: {
   ownerId?: string;
+  boardType?: string;
   setIds?: string;
   layoutId?: number;
   sizeId?: number;
@@ -79,7 +80,7 @@ async function insertBoard(opts: {
   const result = await db.execute(sql`
     INSERT INTO user_boards
       (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, is_public, created_at, updated_at)
-    VALUES (${uuid}, ${uuid}, ${opts.ownerId ?? USER_ID}, ${CONFIG.boardType}, ${opts.layoutId ?? CONFIG.layoutId},
+    VALUES (${uuid}, ${uuid}, ${opts.ownerId ?? USER_ID}, ${opts.boardType ?? CONFIG.boardType}, ${opts.layoutId ?? CONFIG.layoutId},
             ${opts.sizeId ?? CONFIG.sizeId}, ${opts.setIds ?? CONFIG.setIds}, ${opts.name}, true, now(), now())
     RETURNING id
   `);
@@ -168,6 +169,15 @@ describe('saveTick boardUuid config gate', () => {
     const otherSetsBoard = await insertBoard({ ownerId: OTHER_USER_ID, setIds: '3,4', name: 'Other sets' });
 
     expect(await saveTick({ boardUuid: otherSetsBoard.uuid })).toBeNull();
+  });
+
+  it('records the tick unassociated when the named board is a different board type', async () => {
+    // Layout, size and sets all line up — only the board type differs. Layout
+    // ids aren't unique across board types, so without this leg a Tension board
+    // could collect Kilter ticks.
+    const otherTypeBoard = await insertBoard({ ownerId: OTHER_USER_ID, boardType: 'tension', name: 'Tension wall' });
+
+    expect(await saveTick({ boardUuid: otherTypeBoard.uuid })).toBeNull();
   });
 
   it('attributes when stored and sent hold sets differ only in order', async () => {
