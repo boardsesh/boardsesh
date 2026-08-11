@@ -57,6 +57,15 @@ const notWired = (method: string) => async (): Promise<never> => {
   throw new Error(message);
 };
 
+// Built once at module scope rather than inline in the default parameters below:
+// a default expression re-evaluates on every render, so inline `notWired(...)`
+// calls handed the memoized callbacks a fresh identity each time and rebuilt the
+// whole context value on every parent render (#4014).
+const NOT_WIRED_ADD_TO_PLAYLIST = notWired('addToPlaylist');
+const NOT_WIRED_REMOVE_FROM_PLAYLIST = notWired('removeFromPlaylist');
+const NOT_WIRED_CREATE_PLAYLIST = notWired('createPlaylist');
+const NOT_WIRED_REFRESH_PLAYLISTS = notWired('refreshPlaylists');
+
 type PlaylistsProviderProps = {
   playlists?: Playlist[];
   playlistMemberships?: Map<string, Set<string>>;
@@ -78,9 +87,9 @@ type PlaylistsProviderProps = {
 export function PlaylistsProvider({
   playlists = EMPTY_PLAYLISTS,
   playlistMemberships = EMPTY_MEMBERSHIPS,
-  addToPlaylist = notWired('addToPlaylist'),
-  removeFromPlaylist = notWired('removeFromPlaylist'),
-  createPlaylist = notWired('createPlaylist'),
+  addToPlaylist = NOT_WIRED_ADD_TO_PLAYLIST,
+  removeFromPlaylist = NOT_WIRED_REMOVE_FROM_PLAYLIST,
+  createPlaylist = NOT_WIRED_CREATE_PLAYLIST,
   // Default `true` (not `false`) so a consumer reading `isLoading` to gate a
   // spinner doesn't mistake "data hook not wired yet" for "user has no
   // playlists". The combination of `playlists=[]` + `isLoading=true` is the
@@ -89,7 +98,7 @@ export function PlaylistsProvider({
   // unwired baseline" rather than masquerading as real data.
   isLoading = true,
   isAuthenticated = false,
-  refreshPlaylists = notWired('refreshPlaylists'),
+  refreshPlaylists = NOT_WIRED_REFRESH_PLAYLISTS,
   children,
 }: PlaylistsProviderProps) {
   const getPlaylistsForClimb = useMemo(
