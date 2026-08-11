@@ -1,9 +1,12 @@
+import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSetting } from '../settings';
+import { useDiagnosticsEligible } from '../hooks/use-diagnostics-eligible';
 import {
   clearSheetDetentReadings,
+  setSheetDetentReadoutActive,
   useSheetDetentReadings,
-  useSheetDetentReadoutEnabled,
   type SheetDetentReading,
 } from './sheet-detent-readout';
 
@@ -20,15 +23,30 @@ import {
  *
  * Mounted at the root, behind the persisted toggle plus the diagnostics
  * eligibility gate, and reading a store the probe writes — so it never
- * participates in the sheet's own layout.
+ * participates in the sheet's own layout. It also resolves that gate ON BEHALF
+ * of the sheets: they reach the store through `sheet-detent-probe.ts` and so
+ * cannot import `../settings` without dragging MMKV into every sheet's module
+ * graph (which breaks Vitest's collection scan).
  *
  * A native iOS sheet presents above the root view, so this panel is covered
  * while a sheet is up. That is why readings survive dismissal: open the sheet,
  * close it, screenshot the panel.
  */
 export function SheetDetentReadoutOverlay() {
-  const enabled = useSheetDetentReadoutEnabled();
+  const eligible = useDiagnosticsEligible();
+  const [toggledOn] = useSetting('sheetDetentDiagnostics');
+  // A production install can flip nothing, because the row never renders — but a
+  // stale persisted `true` from an earlier preview must not turn it on either.
+  const enabled = eligible && toggledOn;
   const readings = useSheetDetentReadings();
+
+  // This root-mounted component owns the settings read for the whole feature and
+  // pushes the result down to the sheets, which cannot import MMKV themselves —
+  // see the module doc on sheet-detent-readout.ts.
+  useEffect(() => {
+    setSheetDetentReadoutActive(enabled);
+  }, [enabled]);
+
   if (!enabled) return null;
   return <SheetDetentReadoutPanel readings={readings} />;
 }

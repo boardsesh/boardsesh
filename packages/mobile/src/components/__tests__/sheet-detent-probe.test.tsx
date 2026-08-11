@@ -16,13 +16,12 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 20, bottom: 0, left: 0, right: 0 }),
 }));
 
-// The readout module reaches MMKV (settings) and expo-updates (eligibility),
-// neither of which loads under vitest's node env. The store itself is covered by
-// sheet-detent-readout.test.ts.
+// The store itself is covered by sheet-detent-readout.test.ts; here we only care
+// what the probe does with the active flag it reads.
 const readout = vi.hoisted(() => ({ enabled: false, publish: vi.fn() }));
 vi.mock('../sheet-detent-readout', () => ({
   publishSheetDetentReading: readout.publish,
-  useSheetDetentReadoutEnabled: () => readout.enabled,
+  useSheetDetentReadoutActive: () => readout.enabled,
 }));
 
 import { useSheetDetentProbe, shouldInstrumentSheetDetent } from '../sheet-detent-probe';

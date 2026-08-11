@@ -1,23 +1,13 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-
-// The store's own module graph reaches MMKV (settings) and expo-updates
-// (eligibility); neither loads under vitest's node env.
-const settings = vi.hoisted(() => ({ sheetDetentDiagnostics: false }));
-vi.mock('../../settings', () => ({
-  useSetting: (key: 'sheetDetentDiagnostics') => [settings[key], vi.fn()],
-}));
-const eligibility = vi.hoisted(() => ({ eligible: false }));
-vi.mock('../../hooks/use-diagnostics-eligible', () => ({
-  useDiagnosticsEligible: () => eligibility.eligible,
-}));
 
 import {
   clearSheetDetentReadings,
   publishSheetDetentReading,
+  setSheetDetentReadoutActive,
   useSheetDetentReadings,
-  useSheetDetentReadoutEnabled,
+  useSheetDetentReadoutActive,
   type SheetDetentReading,
 } from '../sheet-detent-readout';
 
@@ -41,9 +31,8 @@ function publish(overrides: Partial<Omit<SheetDetentReading, 'sequence'>> = {}):
 
 // The store is module-level state shared by every sheet, so each case starts clean.
 beforeEach(() => {
-  clearSheetDetentReadings();
-  settings.sheetDetentDiagnostics = false;
-  eligibility.eligible = false;
+  act(() => setSheetDetentReadoutActive(false));
+  act(() => clearSheetDetentReadings());
 });
 
 describe('sheet detent readings store', () => {
@@ -100,23 +89,41 @@ describe('sheet detent readings store', () => {
   });
 });
 
-describe('useSheetDetentReadoutEnabled', () => {
-  it('needs both the toggle and a diagnostics-eligible session', () => {
-    const { result, rerender } = renderHook(() => useSheetDetentReadoutEnabled());
+describe('readout active flag', () => {
+  it('defaults off, so nothing instruments until the overlay says so', () => {
+    const { result } = renderHook(() => useSheetDetentReadoutActive());
     expect(result.current).toBe(false);
+  });
 
-    settings.sheetDetentDiagnostics = true;
-    rerender();
-    // A production install can flip nothing, because the row never renders — but
-    // a stale persisted `true` from an earlier preview must not turn it on either.
-    expect(result.current).toBe(false);
-
-    eligibility.eligible = true;
-    rerender();
+  it('propagates the overlay decision to every subscribed sheet', () => {
+    const { result } = renderHook(() => useSheetDetentReadoutActive());
+    act(() => setSheetDetentReadoutActive(true));
     expect(result.current).toBe(true);
-
-    settings.sheetDetentDiagnostics = false;
-    rerender();
+    act(() => setSheetDetentReadoutActive(false));
     expect(result.current).toBe(false);
+  });
+
+  it('drops stale readings when the tester turns the readout off', () => {
+    // Otherwise flipping the toggle back on shows numbers from a previous
+    // session's device state with no way to tell they are old.
+    const { result } = renderHook(() => useSheetDetentReadings());
+    act(() => setSheetDetentReadoutActive(true));
+    publish();
+    expect(result.current).toHaveLength(1);
+    act(() => setSheetDetentReadoutActive(false));
+    expect(result.current).toEqual([]);
+  });
+
+  it('does not notify subscribers when the flag is set to what it already is', () => {
+    // The overlay re-runs its effect on every settings change, including the
+    // unrelated ones.
+    let renders = 0;
+    renderHook(() => {
+      renders += 1;
+      return useSheetDetentReadoutActive();
+    });
+    const before = renders;
+    act(() => setSheetDetentReadoutActive(false));
+    expect(renders).toBe(before);
   });
 });

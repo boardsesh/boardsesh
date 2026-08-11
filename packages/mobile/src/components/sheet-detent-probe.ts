@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef } from 'react';
 import { StyleSheet, useWindowDimensions, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { publishSheetDetentReading, useSheetDetentReadoutEnabled } from './sheet-detent-readout';
+import { publishSheetDetentReading, useSheetDetentReadoutActive } from './sheet-detent-readout';
 
 /**
  * Instrumentation for the iOS sheet detent height (#3922).
@@ -131,7 +131,7 @@ export function shouldInstrumentSheetDetent(
 export function useSheetDetentProbe(columnStyle: ViewStyle, label: string): SheetDetentProbe {
   const window = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const readoutEnabled = useSheetDetentReadoutEnabled();
+  const readoutEnabled = useSheetDetentReadoutActive();
   const formulaHeight = typeof columnStyle.height === 'number' ? columnStyle.height : null;
 
   const epoch = useRef<ProbeEpoch>({
