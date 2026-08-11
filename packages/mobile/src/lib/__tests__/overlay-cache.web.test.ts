@@ -281,7 +281,9 @@ describe('renderHoldsOverlay Cache-API integration', () => {
     installCaches();
     installFakeWorker();
     await expect(
-      renderHoldsOverlay(JSON.stringify({ stroke_width_multiplier: 1.5, hold_state_map: {} }), 'marker'),
+      // shape_size_multiplier, not stroke_width_multiplier — the latter is
+      // tolerated by the committed WASM and must render (issue #4240).
+      renderHoldsOverlay(JSON.stringify({ shape_size_multiplier: 1.5, hold_state_map: {} }), 'marker'),
     ).rejects.toThrow(MARKER_RENDERER_UNAVAILABLE_MESSAGE);
   });
 

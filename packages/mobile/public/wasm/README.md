@@ -32,7 +32,11 @@ the pkg and verifies the checksums match.
 ## Phase 0 note
 
 This committed artifact is the **overlay-only** core (8-field `RenderConfig`, no
-`stroke_width_multiplier` / `shape_size_multiplier` / per-hold `shape`). Marker
-overrides therefore fall back to default rendering on web — see the guard in
-`index.web.ts`. Rebuilding the pkg from the current Rust core (which supports
-markers) and re-syncing will lift that limitation.
+`stroke_width_multiplier` / `shape_size_multiplier` / per-hold `shape`). Two of
+those — `shape_size_multiplier` and per-hold `shape` — would render silently
+wrong geometry, so `index.web.ts` refuses them and the overlay falls back to
+default rendering. `stroke_width_multiplier` is **not** refused: the struct has
+no `deny_unknown_fields`, so serde drops the key and the overlay draws at the
+built-in default thickness (issue #4240 — refusing it left Grasshopper, whose
+board default is 1.35, permanently blank). Rebuilding the pkg from the current
+Rust core (which supports markers) and re-syncing will lift both limitations.

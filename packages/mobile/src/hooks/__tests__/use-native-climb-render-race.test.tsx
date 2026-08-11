@@ -92,6 +92,8 @@ const {
   _inflightRendersForTests,
   _resetWarmupForTests,
   _setNativeModuleForTests,
+  _unsupportedRenderSignaturesForTests,
+  _MARKER_RENDERER_UNAVAILABLE_MESSAGE_FOR_TESTS,
 } = await import('../use-native-climb-render');
 
 const BASE = {
@@ -499,5 +501,55 @@ describe('useNativeClimbRender in-flight race', () => {
     ]);
     expect(JSON.stringify(reportErrorMock.mock.calls)).not.toContain(overlayUri);
     expect(JSON.stringify(reportErrorMock.mock.calls)).not.toContain(cacheKey);
+  });
+});
+
+// Issue #4240: a renderer that cannot honour a config's marker overrides is a
+// designed capability fallback, not a defect. Before this, the throw was
+// reported to Sentry once per climb — and because Grasshopper's board-level
+// stroke default leaves the render signature at DEFAULT_HOLD_COLOR_SIGNATURE,
+// the "record the signature and stop retrying" throttle never engaged (29
+// events in 60 seconds from one browser session).
+describe('capability-fallback render rejections', () => {
+  const rejectingNativeModule = {
+    boardRendererNative: {},
+    renderHoldsOverlay: vi.fn<(configJson: string, cacheKey: string) => Promise<string>>(),
+  };
+
+  beforeEach(() => {
+    existingOverlayUris.clear();
+    _resetWarmupForTests();
+    _renderedOverlaysForTests.clear();
+    _inflightRendersForTests.clear();
+    _unsupportedRenderSignaturesForTests.clear();
+    reportErrorMock.mockClear();
+    rejectingNativeModule.renderHoldsOverlay.mockReset();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    _setNativeModuleForTests(rejectingNativeModule as unknown as Parameters<typeof _setNativeModuleForTests>[0]);
+  });
+
+  it('does not report the marker-unavailable fallback, and never poisons the default signature', async () => {
+    rejectingNativeModule.renderHoldsOverlay.mockRejectedValue(
+      new Error(_MARKER_RENDERER_UNAVAILABLE_MESSAGE_FOR_TESTS),
+    );
+
+    renderHook(() => useNativeClimbRender({ ...BASE, frames: FRAMES_SLOW }));
+
+    await waitFor(() => expect(rejectingNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(console.warn).toHaveBeenCalled());
+
+    expect(reportErrorMock).not.toHaveBeenCalled();
+    // The default signature is consulted for every render on every board —
+    // adding it here would blank the overlay app-wide.
+    expect(_unsupportedRenderSignaturesForTests.size).toBe(0);
+  });
+
+  it('still reports an unrelated render failure', async () => {
+    rejectingNativeModule.renderHoldsOverlay.mockRejectedValue(new Error('disk full'));
+
+    renderHook(() => useNativeClimbRender({ ...BASE, frames: FRAMES_SLOW }));
+
+    await waitFor(() => expect(reportErrorMock).toHaveBeenCalledTimes(1));
+    expect((reportErrorMock.mock.calls[0][0] as Error).message).toBe('disk full');
   });
 });
