@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-11T03:10:34.193Z",
+  "generatedAt": "2026-08-11T12:09:17.909Z",
   "entries": [
+    {
+      "prNumber": 4243,
+      "category": "fixed",
+      "title": "MoonBoard problems keep their grade in the new-climbs feed and in setter notifications, even when the problem isn't pinned to one wall angle.",
+      "mergedAt": "2026-08-11T11:31:59Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4243"
+    },
     {
       "prNumber": 4249,
       "category": "fixed",

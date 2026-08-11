@@ -18,6 +18,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- MoonBoard problems keep their grade in the new-climbs feed and in setter notifications, even when the problem isn't pinned to one wall angle. ([#4243](https://github.com/boardsesh/boardsesh/pull/4243))
 - Your logbook now draws each climb on the board you actually climbed it on, instead of the biggest board in the layout. ([#4249](https://github.com/boardsesh/boardsesh/pull/4249))
   Climbs on Kilter Orbit, Spire, JUUL, BKB, Decoy, Touchstone and Grasshopper walls finally show a thumbnail on the web.
 - Record tab now shows a different badge color when a session is live vs. when a board is just connected, and a quick tap-back-to-session button shows up on your other tabs while you're mid-session. ([#4247](https://github.com/boardsesh/boardsesh/pull/4247))
