@@ -475,6 +475,15 @@ export default function PlaylistDetail() {
                       icon: conflict.serverIcon,
                     });
                   } catch (retryError) {
+                    // A third device can land between this prompt and the retry.
+                    // Say so inline rather than prompting again — a prompt chain
+                    // has no natural end — and don't report it: it's still an
+                    // expected outcome, not a fault. Saving from the still-open
+                    // sheet re-prompts with the newest server values.
+                    if (readPlaylistUpdateConflict(retryError)) {
+                      setEditError(t('edit.conflict.changedAgain'));
+                      return;
+                    }
                     console.error('Failed to update playlist:', retryError);
                     reportHandledError(retryError, { tags: { source: 'playlist', op: 'update-keep-mine' } });
                     setEditError(t('edit.messages.updateFailed'));

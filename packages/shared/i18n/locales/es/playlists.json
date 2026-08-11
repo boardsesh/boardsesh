@@ -204,6 +204,7 @@
     "conflict": {
       "title": "Cambió en otro sitio",
       "message": "Esta lista ahora se llama «{{serverName}}». Tu edición dice «{{yourName}}».",
+      "changedAgain": "Volvió a cambiar mientras decidías. Guarda otra vez para verlo.",
       "keepMine": "Quedarme con la mía",
       "keepTheirs": "Usar la otra",
       "cancel": "Cancelar"

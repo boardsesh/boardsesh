@@ -364,6 +364,14 @@ async function processMutation(mutation: PendingMutation) {
 
 Each mutation gets a client-generated UUID as an idempotency key. The backend's `saveTick` and `createPlaylist` accept this UUID and use `ON CONFLICT (uuid) DO NOTHING` for safe retry. Favorites use explicit `addFavorite`/`removeFavorite` (not `toggleFavorite`) so retries don't invert state. Follow/unfollow operations are naturally idempotent (follow when already following = no-op, unfollow when not following = no-op).
 
+### The one mutation that can't be auto-merged
+
+Every queued mutation above is idempotent or commutative, so replaying it is always safe. `updatePlaylist` is the exception: a queued rename replayed blind overwrites whatever the playlist is called now, including a rename made on another device while this one was offline (#1934).
+
+So it carries a `basedOn` snapshot — the `updatedAt` plus the metadata values the client last saw. The server compares that against the stored row inside a transaction holding a row lock and, when the two genuinely diverge, rejects with `PLAYLIST_UPDATE_CONFLICT` instead of writing. The error's extensions carry the server's current values, so the client can name both versions in a prompt and rebuild `basedOn` for a deliberate overwrite without a refetch. Omitting `basedOn` keeps the old last-write-wins behaviour, which is what shipped binaries and web still do.
+
+Two consequences for the queue. A rejection resolves to no HTTP status, so `isRetryable` returns false and the row dead-letters for a human to resolve instead of burning ten retries. And a climb added or reordered elsewhere bumps `playlists.updated_at` without touching the metadata, which is why the check compares fields rather than the bare timestamp — a timestamp alone would false-conflict on the same device's own queued climb add draining ahead of the rename. Any future mutation that can't be auto-merged should reuse this code rather than invent a shape.
+
 ### Dead letter handling
 
 Mutations that exceed `MAX_RETRY_COUNT` or fail with non-retryable errors are moved to `status = 'dead_letter'`. The app shows a badge/indicator when dead-letter mutations exist. Users can view failed mutations and choose to retry or discard them. This prevents silent data loss — the user always knows if a tick didn't sync.
