@@ -46,14 +46,23 @@ describe('normaliseSetIds', () => {
     expect(normaliseSetIds('')).toBe('');
   });
 
-  it('keeps a non-numeric token verbatim, unlike parseSetIds which drops it', () => {
+  it('keeps a non-numeric token, unlike parseSetIds which drops it', () => {
     // No real board's stored setIds ever contains a non-digit token (DB writes
     // and NumericCsvSchema-validated config both stay digit-CSV), so keeping the
     // token here means malformed input can never coincidentally normalise to
-    // match a real board — it just fails to match anything, which is the safe
-    // outcome. Backend consumers rely on exactly this: see
+    // match a real board's digit-only value — it just fails to match anything,
+    // which is the safe outcome. Backend consumers rely on exactly this: see
     // packages/backend/src/__tests__/save-tick-board-uuid-config-gate.test.ts.
-    expect(normaliseSetIds('1,2,abc')).toBe('1,2,abc');
+    //
+    // Asserted as a token set, not an exact string: the sort comparator's
+    // behaviour on a NaN comparison ('abc' vs a number) is a V8 implementation
+    // detail (stable-sort-on-NaN), not a documented contract, so pinning an
+    // exact output order here would make the test fragile across runtimes.
+    // The safety property under test — never collapsing to '1,2' — doesn't
+    // depend on where 'abc' lands.
+    const result = normaliseSetIds('1,2,abc');
+    expect(new Set(result.split(','))).toEqual(new Set(['1', '2', 'abc']));
+    expect(result).not.toBe('1,2');
     expect(parseSetIds('1,2,abc')).toEqual([1, 2]);
   });
 });
