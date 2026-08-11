@@ -373,8 +373,8 @@ called `-layoutIfNeeded` right there, and that layout got pulled into a feedback
 presenting/dismissing `UISheetPresentationController` and the tab bar's minimize machinery
 (our layout → `-[UITabBar layoutSubviews]` → `_minimizeBehavior` → a sheet alongside-animation
 property set → `_sheetLayoutInfoLayout` → tab bar again). On iOS 27 that trips an AnimationKit
-assertion over a stack overflow: 6 users, 27 crashes, one session looping 13 times (Sentry
-BOARDSESH-9K, fixed in #4198 / 2.3.1). The shipped shape hops out of the transaction with one
+assertion (`Missing animationAndComposerGetter`): 42 events across 6 users, every one of them on
+iOS 27.0 and on a pre-fix release (Sentry BOARDSESH-9K, fixed in #4198 / 2.3.1). The shipped shape hops out of the transaction with one
 coalesced `dispatch_async`, and hands the work to the transition coordinator's completion block
 if a transition is in flight.
 

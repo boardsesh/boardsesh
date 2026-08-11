@@ -207,23 +207,37 @@ function stripObjCComments(source: string): string {
  * (or a following method) is never included. This is a slicer, not a parser:
  * an upstream reformat that breaks the anchor is meant to fail the check loudly
  * so a human re-verifies the patch.
+ *
+ * A forward declaration — the same signature terminated by `;` inside a class
+ * extension, which `RNSTabsHostComponentView.mm` already has two of — is
+ * skipped rather than matched. Matching one would slice from the *next* `{` in
+ * the file (the `@implementation` ivar block) and quietly scan the wrong text,
+ * which for a negative assertion means a silent pass. That is the exact failure
+ * this guard exists to prevent, so it must not be possible inside the guard.
  */
 export function extractObjCMethodBody(source: string, methodName: string): string | null {
   const stripped = stripObjCComments(source);
-  const declaration = new RegExp(String.raw`^[-+]\s*\([^)]*\)\s*${methodName}\b`, 'm').exec(stripped);
-  if (declaration === null) return null;
+  const escaped = methodName.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+  const declarations = new RegExp(String.raw`^[-+]\s*\([^)]*\)\s*${escaped}\b`, 'gm');
 
-  const openBrace = stripped.indexOf('{', declaration.index);
-  if (openBrace === -1) return null;
-
-  let depth = 0;
-  for (let index = openBrace; index < stripped.length; index += 1) {
-    const character = stripped[index];
-    if (character === '{') depth += 1;
-    else if (character === '}') {
-      depth -= 1;
-      if (depth === 0) return stripped.slice(openBrace + 1, index);
+  let declaration = declarations.exec(stripped);
+  while (declaration !== null) {
+    const openBrace = stripped.indexOf('{', declaration.index);
+    // Everything between the signature and its body is attributes/whitespace. A
+    // `;` in there means this match was a forward declaration, not a definition.
+    if (openBrace !== -1 && !stripped.slice(declaration.index, openBrace).includes(';')) {
+      let depth = 0;
+      for (let index = openBrace; index < stripped.length; index += 1) {
+        const character = stripped[index];
+        if (character === '{') depth += 1;
+        else if (character === '}') {
+          depth -= 1;
+          if (depth === 0) return stripped.slice(openBrace + 1, index);
+        }
+      }
+      return null;
     }
+    declaration = declarations.exec(stripped);
   }
   return null;
 }

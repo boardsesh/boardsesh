@@ -342,6 +342,40 @@ describe('extractObjCMethodBody', () => {
     expect(extractObjCMethodBody(source, 'applyBottomAccessoryVisibility')).not.toContain('layoutIfNeeded');
   });
 
+  // RNSTabsHostComponentView.mm already carries two `@interface (…)` class
+  // extensions. If upstream ever forward-declares the anchor in one of them, a
+  // first-match slicer would read the @implementation ivar block instead of the
+  // method body, and the negative assertion would silently pass on crashing code.
+  it('skips a forward declaration and finds the real definition', () => {
+    const source = `
+@interface RNSTabsHostComponentView ()
+- (void)applyBottomAccessoryVisibility API_AVAILABLE(ios(26.0));
+@end
+
+@implementation RNSTabsHostComponentView {
+  BOOL _rnscreens_bottomAccessoryRelayoutScheduled;
+}
+
+- (void)applyBottomAccessoryVisibility API_AVAILABLE(ios(26.0))
+{
+  [_controller.view layoutIfNeeded];
+}
+@end
+`;
+
+    expect(extractObjCMethodBody(source, 'applyBottomAccessoryVisibility')).toContain('layoutIfNeeded');
+  });
+
+  it('returns null when only a forward declaration exists, so the check fails loudly', () => {
+    const source = `
+@interface RNSTabsHostComponentView ()
+- (void)applyBottomAccessoryVisibility;
+@end
+`;
+
+    expect(extractObjCMethodBody(source, 'applyBottomAccessoryVisibility')).toBeNull();
+  });
+
   it('handles class methods and nested braces', () => {
     const source = `
 + (void)load
