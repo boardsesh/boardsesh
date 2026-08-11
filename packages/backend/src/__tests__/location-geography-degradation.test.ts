@@ -21,7 +21,7 @@ import { resetAllRateLimits } from '../utils/rate-limiter';
  * with coordinates threw (42704 `type "geography" does not exist` here, 42703
  * undefined-column where the type exists but the column doesn't) after the row
  * had already been updated: the user saw a failure for a save that had landed.
- * Five of the six cases below fail against main.
+ * Six of the seven cases below fail against main.
  */
 
 const OWNER = 'geo-degrade-owner';
@@ -120,6 +120,14 @@ describe('location geography writes degrade without PostGIS', () => {
     await updateGym({ gymUuid: gym.uuid, latitude: 47.1, longitude: 8.1 });
 
     expect(await storedCoordinates('gyms', gym.uuid)).toEqual({ latitude: 47.1, longitude: 8.1 });
+  });
+
+  it('updateGym clears coordinates without failing', async () => {
+    const gym = await createGym({ name: 'Boulder Space', latitude: 47.0, longitude: 8.0 });
+
+    await updateGym({ gymUuid: gym.uuid, latitude: null, longitude: null });
+
+    expect(await storedCoordinates('gyms', gym.uuid)).toEqual({ latitude: null, longitude: null });
   });
 
   it('createBoard with coordinates still resolves after the refactor', async () => {
