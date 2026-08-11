@@ -428,6 +428,45 @@ describe('collectFeedback', () => {
     expect(bundle.messages.map((entry) => entry.messageId)).toContain('931');
   });
 
+  it('fails loudly when every pass errors and nothing is read at all', async () => {
+    // The misconfigured-bot case: reporting this as a clean "0 messages" run is
+    // how a dead pipeline goes unnoticed.
+    const boom = () => {
+      throw new Error('Discord 403 for /guilds/x — Missing Access');
+    };
+    const source = stubSource({
+      listGuildChannels: vi.fn(async () => boom()),
+      listActiveThreads: vi.fn(async () => boom()),
+      listChannelMessages: vi.fn(async () => []),
+    });
+
+    await expect(
+      collectFeedback({ ...collectOptions, feedbackChannelIds: [] }, { source, logger: { ...console, warn: vi.fn() } }),
+    ).rejects.toThrow(/every scan pass failed/);
+  });
+
+  it('fails when the bot can list channels but is denied reading every one of them', async () => {
+    // Channel-scoped permissions rather than guild-scoped: listing works, every
+    // read 403s. Without per-channel errors feeding the check this returned a
+    // clean empty bundle.
+    const source = stubSource({
+      listChannelMessages: vi.fn(async () => {
+        throw new Error('Discord 403 for /channels/x/messages — Missing Access');
+      }),
+    });
+
+    await expect(
+      collectFeedback({ ...collectOptions, feedbackChannelIds: [] }, { source, logger: { ...console, warn: vi.fn() } }),
+    ).rejects.toThrow(/every scan pass failed/);
+  });
+
+  it('still succeeds with zero messages on a genuinely quiet server', async () => {
+    // No errors, just nothing to report — that is a valid clean run, not a fault.
+    const source = stubSource({ listChannelMessages: vi.fn(async () => []) });
+    const bundle = await collectFeedback(collectOptions, { source, logger: console });
+    expect(bundle.messages).toHaveLength(0);
+  });
+
   it('fails loudly when message content comes back empty (intent disabled)', async () => {
     const source = stubSource({
       listChannelMessages: vi.fn(async (channelId: string) =>
