@@ -1,6 +1,35 @@
 {
-  "generatedAt": "2026-08-11T03:01:21.127Z",
+  "generatedAt": "2026-08-11T03:10:34.193Z",
   "entries": [
+    {
+      "prNumber": 4249,
+      "category": "fixed",
+      "title": "Your logbook now draws each climb on the board you actually climbed it on, instead of the biggest board in the layout.",
+      "mergedAt": "2026-08-11T03:08:50Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4249",
+      "body": "Climbs on Kilter Orbit, Spire, JUUL, BKB, Decoy, Touchstone and Grasshopper walls finally show a thumbnail on the web."
+    },
+    {
+      "prNumber": 4247,
+      "category": "fixed",
+      "title": "Record tab now shows a different badge color when a session is live vs. when a board is just connected, and a quick tap-back-to-session button shows up on your other tabs while you're mid-session.",
+      "mergedAt": "2026-08-11T03:07:59Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4247"
+    },
+    {
+      "prNumber": 4263,
+      "category": "fixed",
+      "title": "Board leaderboards now only count ticks actually logged on that board's setup — a tick whose layout, size, or hold sets don't match the board it names is kept in your logbook but left off that board's stats.",
+      "mergedAt": "2026-08-11T03:06:52Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4263"
+    },
+    {
+      "prNumber": 4262,
+      "category": "fixed",
+      "title": "Your playlist cards load their counts again instead of failing under load.",
+      "mergedAt": "2026-08-11T03:06:18Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4262"
+    },
     {
       "prNumber": 4245,
       "category": "new",

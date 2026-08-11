@@ -18,6 +18,11 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Your logbook now draws each climb on the board you actually climbed it on, instead of the biggest board in the layout. ([#4249](https://github.com/boardsesh/boardsesh/pull/4249))
+  Climbs on Kilter Orbit, Spire, JUUL, BKB, Decoy, Touchstone and Grasshopper walls finally show a thumbnail on the web.
+- Record tab now shows a different badge color when a session is live vs. when a board is just connected, and a quick tap-back-to-session button shows up on your other tabs while you're mid-session. ([#4247](https://github.com/boardsesh/boardsesh/pull/4247))
+- Board leaderboards now only count ticks actually logged on that board's setup — a tick whose layout, size, or hold sets don't match the board it names is kept in your logbook but left off that board's stats. ([#4263](https://github.com/boardsesh/boardsesh/pull/4263))
+- Your playlist cards load their counts again instead of failing under load. ([#4262](https://github.com/boardsesh/boardsesh/pull/4262))
 - Analytics correctness only — no user-visible behaviour change. ([#4254](https://github.com/boardsesh/boardsesh/pull/4254))
 
 ## 2026-08-10
