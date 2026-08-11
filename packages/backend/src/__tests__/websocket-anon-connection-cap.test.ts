@@ -306,8 +306,17 @@ describe('WebSocket anonymous connection cap', () => {
     // Warn-only by default: in the hosted topology the TCP peer can be a shared
     // Cloudflare/Railway edge, which would make this tier an instance-global cap.
     await connectExpectingAccept({ 'cf-connecting-ip': '203.0.113.20' });
+
+    const warn = vi.spyOn(logger, 'warn').mockReturnValue(logger);
     await connectExpectingAccept({ 'cf-connecting-ip': '203.0.113.21' });
     expect(countAnonConnectionSlots('socket-peer', '127.0.0.1')).toBe(2);
+    // The warning is the whole point of the warn-only tier — it is how the prod
+    // peer distribution gets measured before this tier is promoted to enforcing.
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('warn-only concurrency cap'),
+      expect.objectContaining({ tier: 'socket-peer', limit: 1 }),
+    );
+    warn.mockRestore();
 
     process.env.WS_ANON_CONNECTIONS_PER_SOCKET_PEER_ENFORCE = '1';
     // A direct-origin caller rotating a forged cf-connecting-ip keeps minting
