@@ -14,26 +14,28 @@ import {
 // The climbing-stats aggregation + grade/layout helpers now live in the
 // renderer-agnostic @boardsesh/profile-stats package so mobile can reuse them.
 // This file keeps the WEB-only presentation concerns (layout/grade chart
-// colors, MUI-facing option lists, the REST UserProfile shape) and re-exports
+// colors, MUI-facing option lists, the profile view-model shape) and re-exports
 // the shared pure helpers for back-compat with existing web call sites.
 
 export { BOARD_TYPES, difficultyMapping, getDifficultyMapping, sortGrades, getLayoutKey, getLayoutDisplayName };
 export type { LogbookEntry, UnifiedTimeframeType };
 
+/**
+ * What the profile pages render — `Query.publicProfile` field for field. The
+ * resolver already falls back to the NextAuth-derived users.name / users.image
+ * when a user never set a display name or avatar, so there is no second
+ * name/image pair to coalesce at the call site.
+ *
+ * `email` deliberately isn't part of `publicProfile` (PII behind a public
+ * query); callers fill it from the viewer's own session when someone is
+ * looking at their own profile.
+ */
 export type UserProfile = {
   id: string;
   email: string | undefined;
-  name: string | null;
-  image: string | null;
-  profile: {
-    displayName: string | null;
-    avatarUrl: string | null;
-    instagramUrl: string | null;
-  } | null;
-  credentials?: Array<{
-    boardType: string;
-    auroraUsername: string;
-  }>;
+  displayName: string | null;
+  avatarUrl: string | null;
+  instagramUrl: string | null;
   followerCount: number;
   followingCount: number;
   isFollowedByMe: boolean;

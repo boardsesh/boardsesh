@@ -77,16 +77,26 @@ export default async function ProfilePage({ params }: PageProps) {
   // Only check session if auth cookie exists (skip for anonymous visitors)
   const authToken = await getServerAuthToken();
   let viewerUserId: string | undefined;
+  let viewerEmail: string | undefined;
   if (authToken) {
     const session = await getServerSession(authOptions);
     viewerUserId = session?.user?.id;
+    viewerEmail = session?.user?.email ?? undefined;
   }
 
-  const initialProfile = await getProfileData(user_id, viewerUserId);
+  // The backend derives isFollowedByMe from the bearer token, so the viewer's
+  // token is what the read needs. viewerUserId only seeds the client's
+  // "is this me?" flag and the own-profile email below.
+  const publicProfile = await getProfileData(user_id, authToken ?? undefined);
 
-  if (!initialProfile) {
+  if (!publicProfile) {
     notFound();
   }
+
+  const isOwnProfile = viewerUserId === user_id;
+  // `publicProfile` never carries an email — on your own profile it comes from
+  // your session instead, which is the only place it's rendered.
+  const initialProfile = isOwnProfile ? { ...publicProfile, email: viewerEmail } : publicProfile;
 
   const [statsData, initialUserBeta, locale] = await Promise.all([
     fetchProfileStatsData(user_id),
@@ -103,7 +113,7 @@ export default async function ProfilePage({ params }: PageProps) {
         initialPercentile={statsData.initialPercentile}
         initialAllBoardsTicks={statsData.initialAllBoardsTicks}
         initialLogbook={statsData.initialLogbook}
-        initialIsOwnProfile={viewerUserId === user_id}
+        initialIsOwnProfile={isOwnProfile}
         initialUserBeta={initialUserBeta}
       />
     </I18nProvider>

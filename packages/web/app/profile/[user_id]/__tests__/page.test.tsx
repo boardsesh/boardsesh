@@ -90,10 +90,10 @@ describe('profile page route', () => {
   it('fetches stats only after the profile exists', async () => {
     profilePageTestState.getProfileDataMock.mockResolvedValue({
       id: 'user-1',
-      name: 'Alex',
-      image: null,
-      profile: null,
-      credentials: [],
+      email: undefined,
+      displayName: 'Alex',
+      avatarUrl: null,
+      instagramUrl: null,
       followerCount: 0,
       followingCount: 0,
       isFollowedByMe: false,

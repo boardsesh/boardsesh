@@ -78,7 +78,7 @@ export default function ProfilePageContent({
     return buildWeeklyBars(allTicks, fromDate, toDate, gradeFormat);
   }, [allBoardsTicks, gradeFormat]);
 
-  const sharedDisplayName = useMemo(() => profile?.profile?.displayName || profile?.name || null, [profile]);
+  const sharedDisplayName = useMemo(() => profile?.displayName || null, [profile]);
 
   if (loading) {
     return (

@@ -149,8 +149,14 @@ export const GET_PROFILE = gql`
   }
 `;
 
+// Pick, not the whole UserProfile: the selection above is deliberately narrow,
+// and the type must not promise fields (hasPassword, linkedProviders,
+// instagramUrl) this query never asks for.
 export type GetProfileQueryResponse = {
-  profile: UserProfile | null;
+  profile: Pick<
+    UserProfile,
+    'id' | 'email' | 'displayName' | 'avatarUrl' | 'isTester' | 'createdAt' | 'favoriteCount'
+  > | null;
 };
 
 export const GET_OTA_PREVIEW_CHANNELS = gql`
@@ -185,7 +191,7 @@ export type UpdateProfileMutationVariables = {
 };
 
 export type UpdateProfileMutationResponse = {
-  updateProfile: UserProfile;
+  updateProfile: Pick<UserProfile, 'id' | 'email' | 'displayName' | 'avatarUrl' | 'isTester'>;
 };
 
 export const GET_PUBLIC_PROFILE = gql`

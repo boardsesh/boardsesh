@@ -13,9 +13,12 @@ import {
   type GetUserProfileStatsQueryResponse,
   GET_USER_CLIMB_PERCENTILE,
   type GetUserClimbPercentileQueryResponse,
+  GET_PUBLIC_PROFILE,
 } from '@boardsesh/graphql/operations';
+import type { PublicUserProfile } from '@boardsesh/shared-schema';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
+import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import {
   type UserProfile,
   type LogbookEntry,
@@ -47,8 +50,12 @@ type InitialData = {
 
 type BoardTicks = Record<string, LogbookEntry[]>;
 
-// 404 from the profile endpoint is meaningful: the user wants the "not found"
-// page. Tag it so the query consumer can branch on it without parsing strings.
+type GetPublicProfileResponse = {
+  publicProfile: PublicUserProfile | null;
+};
+
+// A null `publicProfile` is meaningful: the user wants the "not found" page.
+// Tag it so the query consumer can branch on it without parsing strings.
 class ProfileNotFoundError extends Error {
   readonly code = 'PROFILE_NOT_FOUND';
   constructor() {
@@ -70,6 +77,7 @@ const PROFILE_GC_TIME_MS = PERSIST_MAX_AGE_MS;
 
 export function useProfileData(userId: string, initialData?: InitialData) {
   const { data: session } = useSession();
+  const { token: authToken, isLoading: authTokenLoading } = useWsAuthToken();
   const { showMessage } = useSnackbar();
   const { gradeFormat } = useGradeFormat();
   const queryClient = useQueryClient();
@@ -99,23 +107,29 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   const profileQuery = useQuery<UserProfile>({
     queryKey: ['userProfile', userId],
     queryFn: async () => {
-      const response = await fetch(`/api/internal/profile/${userId}`);
-      if (response.status === 404) throw new ProfileNotFoundError();
-      if (!response.ok) throw new Error('Failed to fetch profile');
-      const body = await response.json();
+      // Authenticated on purpose: `isFollowedByMe` is resolved from the bearer
+      // token. Firing this anonymously would come back false and stomp the
+      // SSR-seeded "Following" state on every refetch.
+      const client = createGraphQLHttpClient(authToken);
+      const response = await client.request<GetPublicProfileResponse>(GET_PUBLIC_PROFILE, { userId });
+      const publicProfile = response.publicProfile;
+      if (!publicProfile) throw new ProfileNotFoundError();
       return {
-        id: body.id,
-        email: body.email,
-        name: body.name,
-        image: body.image,
-        profile: body.profile,
-        credentials: body.credentials,
-        followerCount: body.followerCount ?? 0,
-        followingCount: body.followingCount ?? 0,
-        isFollowedByMe: body.isFollowedByMe ?? false,
+        id: publicProfile.id,
+        // publicProfile never exposes an email. On your own profile it comes
+        // from the NextAuth session instead — the only place it's rendered.
+        email: session?.user?.id === userId ? (session?.user?.email ?? undefined) : undefined,
+        displayName: publicProfile.displayName ?? null,
+        avatarUrl: publicProfile.avatarUrl ?? null,
+        instagramUrl: publicProfile.instagramUrl ?? null,
+        followerCount: publicProfile.followerCount ?? 0,
+        followingCount: publicProfile.followingCount ?? 0,
+        isFollowedByMe: publicProfile.isFollowedByMe ?? false,
       } satisfies UserProfile;
     },
-    enabled: !initialData?.initialNotFound,
+    // Wait for ws-auth to settle. Racing it would send the request with no
+    // bearer token and resolve isFollowedByMe as false for a signed-in viewer.
+    enabled: !initialData?.initialNotFound && !authTokenLoading,
     staleTime: PROFILE_STALE_TIME_MS,
     gcTime: PROFILE_GC_TIME_MS,
     refetchOnMount: profileInitial ? true : 'always',
