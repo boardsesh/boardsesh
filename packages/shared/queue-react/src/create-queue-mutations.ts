@@ -174,6 +174,28 @@ export type QueueMutationsActions<TItem> = {
    */
   reorderQueueItem: (uuid: string, oldIndex: number, newIndex: number) => Promise<void>;
   setCurrentClimb: (item: TItem | null, shouldAddToQueue?: boolean, correlationId?: string) => Promise<void>;
+  /**
+   * Did the CLIMBER drop `uuid` — via a per-item `removeQueueItem`, or a
+   * wholesale `setQueue` replace that discarded a remembered add-candidate?
+   *
+   * Read-only, synchronous, side-effect free. It exists so a caller-side
+   * recovery can classify a LOCAL ABSENCE the same way `sendDeferredQueueAdd`
+   * does. An item that has left this client's queue left for one of two very
+   * different reasons:
+   *   - true  — the climber dropped it. Don't resurrect it; a bare ADD would put
+   *             a climb they just discarded back on the whole crew's queue.
+   *   - false — a wholesale server sync REPLACED the queue (INITIAL_QUEUE_DATA
+   *             from a FullSync) and wiped a not-yet-synced optimistic slot. The
+   *             absence says nothing about intent, so the add must still be sent.
+   * Mobile's `recoverThrottledQueueAdd` reads it for exactly that fork (#4009);
+   * reimplementing the heuristic there would have to duplicate the ledger this
+   * factory already keeps.
+   *
+   * Also false for an item a PEER removed mid-flight: that arrives as a server
+   * delta, indistinguishable at this layer from a wholesale sync, so it takes
+   * the send branch. Same deliberate gap `sendDeferredQueueAdd` documents.
+   */
+  wasUuidExplicitlyRemoved: (uuid: string) => boolean;
   mirrorCurrentClimb: (mirrored: boolean) => Promise<void>;
   /**
    * Broadcast a playback engine state change for a multi-frame climb so party
@@ -241,6 +263,10 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
   // removing the item mid-back-off arrives as a server delta, which is
   // indistinguishable here from a wholesale sync, so it takes the append branch.
   // Pre-existing on the superseded path, which appended unconditionally.
+  //
+  // Read back through the `wasUuidExplicitlyRemoved` action so callers running
+  // their OWN recovery against the same fork (mobile's recoverThrottledQueueAdd,
+  // #4009) consult this ledger instead of re-deriving the heuristic.
   //
   // Backed by an insertion-ordered Set rather than a small ring: mobile's
   // `clearQueue` fires one `removeQueueItem` per queued item in a single burst,
@@ -437,6 +463,8 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       }
       await coalescer.enqueue({ item, shouldAddToQueue, correlationId });
     },
+
+    wasUuidExplicitlyRemoved: (uuid) => removedUuids.has(uuid),
 
     mirrorCurrentClimb: async (mirrored) => {
       const ready = await resolveCore({ allowCreate: false });

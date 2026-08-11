@@ -712,3 +712,60 @@ describe('setQueue baseline sequence (#3933)', () => {
     expect(queriesFor(SET_QUEUE)).toHaveLength(0);
   });
 });
+
+// The ledger is also read from OUTSIDE the coalescer: mobile's caller-side
+// burst-head recovery (recoverThrottledQueueAdd) faces the same "is this
+// absence intent or a wholesale sync?" fork and must reach the same verdict
+// (#4009). These pin the read-only action rather than the send branches.
+describe('wasUuidExplicitlyRemoved (#4009)', () => {
+  it('is false for a uuid nothing ever touched', () => {
+    expect(make().wasUuidExplicitlyRemoved('never-seen')).toBe(false);
+  });
+
+  it('is true after removeQueueItem', async () => {
+    const m = make();
+    await m.removeQueueItem('B');
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(true);
+    expect(m.wasUuidExplicitlyRemoved('C')).toBe(false);
+  });
+
+  // The remove records BEFORE the session guards, so a no-op remove (mobile,
+  // solo) still counts as the climber saying "drop this" — the same reason
+  // sendDeferredQueueAdd trusts it.
+  it('is true after a removeQueueItem that no-opped for want of a session', async () => {
+    const ensureReady = vi.fn(async (captured: string | null) => captured);
+    const m = make({ getSessionId: () => null, ensureReady });
+    await m.removeQueueItem('B');
+    expect(executeMock).not.toHaveBeenCalled();
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(true);
+  });
+
+  // Web's Clear button and mobile's playlist "replace my queue" never call
+  // removeQueueItem — setQueue diffs the remembered add-candidates instead.
+  it('is true after a wholesale setQueue replace discarded a remembered add-candidate', async () => {
+    const m = make();
+    await m.setCurrentClimb(item('B'), true); // remembers B as an add-candidate
+    await m.setQueue([item('X')]); // B is not in the new queue -> discarded
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(true);
+    // X survived the replace, so it was never discarded.
+    expect(m.wasUuidExplicitlyRemoved('X')).toBe(false);
+  });
+
+  // Only an activation that carried a queue-add can ever produce a deferred
+  // ADD, so a pointer-only activation is not an add-candidate and a later
+  // replace must not read as discarding it.
+  it('is false for an activation that carried no queue-add when a replace follows', async () => {
+    const m = make();
+    await m.setCurrentClimb(item('B'), false);
+    await m.setQueue([]);
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(false);
+  });
+
+  it('does not mutate the ledger when read', async () => {
+    const m = make();
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(false);
+    await m.setCurrentClimb(item('B'), true);
+    await m.setQueue([item('B')]); // still queued -> not discarded
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(false);
+  });
+});

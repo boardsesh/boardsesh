@@ -61,6 +61,11 @@ const queueMutations = vi.hoisted(() => ({
   confirmClimbOnWall: vi.fn(async () => {}),
   setSessionBoardSerial: vi.fn(async () => {}),
   setSessionBoardPath: vi.fn(async () => {}),
+  // Synchronous read of the shared factory's removal ledger (#4009). Nothing
+  // here removes a climb mid-recovery, so the honest default is "not dropped by
+  // the climber" — but the member has to exist or the provider's recovery path
+  // would call undefined.
+  wasUuidExplicitlyRemoved: vi.fn((_uuid: string) => false),
 }));
 
 // Capture the deps mobile passes into the shared useQueueMutations so the
@@ -232,6 +237,11 @@ describe('QueueProvider local solo queue', () => {
       mutation.mockReset();
       mutation.mockResolvedValue(undefined);
     }
+    // The blanket reset above hands every action a resolved promise, which for a
+    // SYNCHRONOUS boolean action is truthy — i.e. "the climber removed it"
+    // everywhere. Restore the real default.
+    queueMutations.wasUuidExplicitlyRemoved.mockReset();
+    queueMutations.wasUuidExplicitlyRemoved.mockReturnValue(false);
     sessionStore.getStoredSessionId.mockReset();
     sessionStore.getStoredSessionId.mockResolvedValue(null);
     sessionStore.setStoredSessionId.mockClear();

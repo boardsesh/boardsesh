@@ -1081,8 +1081,15 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // `execute` gives it a fresh rate-limit back-off budget, the server's add is
   // idempotent by uuid, and it leaves the current pointer alone, so the climb
   // reaches the crew without the yank-back a resync would cause (#2763).
+  //
+  // Three outcomes, decided by whether the slot is still in the local queue and,
+  // when it isn't, by the shared removal ledger (#4009):
+  //   still queued           -> positioned ADD (peers see our order)
+  //   gone, climber removed  -> nothing (don't resurrect their discard)
+  //   gone, wholesale sync   -> unpositioned ADD (server appends; the crew still
+  //                             gets the climb instead of nobody getting it)
   const recoverThrottledQueueAdd = useCallback(
-    async (item: ClimbQueueItem) => {
+    async (item: ClimbQueueItem, activationSessionId: string | null) => {
       // Capture the session this slot belongs to. Every leg below runs after an
       // await, and the undo leg in particular can wake up in a DIFFERENT session
       // (the climber ended this one and joined another while the add was backing
@@ -1090,15 +1097,32 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // Same discipline the coalescer applies to its own deferred sends.
       const recoverySessionId = sessionIdRef.current;
       if (!recoverySessionId) return;
+      // The activation was issued into a different room than the one we're in
+      // now: the throttled setCurrentClimb sat in back-off while the climber
+      // left and joined elsewhere. Re-sending here would append the OLD room's
+      // climb to the NEW crew's queue. `activationSessionId` is snapshotted by
+      // dispatchSetCurrent at issue time — the live ref is useless for this,
+      // because it is read fresh on entry and so always agrees with itself.
+      if (recoverySessionId !== activationSessionId) return;
       // Position the re-send where the optimistic insert actually landed
       // (insert-after-current, #2217) so peers see the same order we do. The
       // server clamps an out-of-range position to an append.
       const position = stateRef.current.queue.findIndex((queueItem) => queueItem.uuid === item.uuid);
-      // Already gone locally — removed, cleared, or replaced by a server sync
-      // while the throttled mutation was in flight. Don't resurrect it.
-      if (position === -1) return;
+      // Gone locally. Two reasons, and only one of them means "don't send"
+      // (#4009) — the same fork the shared coalescer's sendDeferredQueueAdd
+      // makes, read off the ledger it already keeps rather than re-derived here:
+      //   - the climber dropped it (a swipe-remove, a clear, a playlist replace)
+      //     → honour that; a bare ADD resurrects a climb they just discarded.
+      //   - a wholesale server sync replaced the queue → the activation that
+      //     started this burst was itself an add, so the server answered it with
+      //     a FullSync, and INITIAL_QUEUE_DATA applies that by REPLACING the
+      //     queue, wiping the not-yet-synced optimistic slot. Bailing here is
+      //     the bug: the climb reaches nobody. Send it WITHOUT a position — the
+      //     server appends, no worse than the pre-#3934 behaviour, and the crew
+      //     at least gets the climb.
+      if (position === -1 && mutations.wasUuidExplicitlyRemoved(item.uuid)) return;
       try {
-        await mutations.addQueueItem(item, position);
+        await mutations.addQueueItem(item, position === -1 ? undefined : position);
       } catch (error) {
         if (__DEV__) console.warn('[queue] throttled setCurrentClimb queue-add recovery failed', error);
         // The slot never reached the server even with its own retry budget, so
@@ -1117,6 +1141,13 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // room, and its lack of this item says nothing about the old one.
       if (sessionIdRef.current !== recoverySessionId) return;
       if (stateRef.current.queue.some((queueItem) => queueItem.uuid === item.uuid)) return;
+      // Absence alone is not intent (#4009). A wholesale sync wipes the slot
+      // locally while the add lands server-side, and undoing on that reading
+      // both deletes a climb the picker did choose and writes its uuid into the
+      // shared removal ledger, which then suppresses any later legitimate
+      // deferred add for it. Only a ledger hit — a real remove / clear /
+      // wholesale replace by this climber — is a reason to compensate.
+      if (!mutations.wasUuidExplicitlyRemoved(item.uuid)) return;
       mutations.removeQueueItem(item.uuid).catch((error) => {
         if (__DEV__) console.warn('[queue] undoing a resurrected queue-add failed', error);
         void resyncQueueAfterMutationFailure();
@@ -1177,6 +1208,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // of the previously-skipped slot can't re-broadcast an item we've moved off.
       pendingUnsyncedCurrentRef.current = null;
       coordinator.trackPendingMutation(correlationId);
+      // The room this activation is aimed at. A throttled setCurrentClimb can
+      // sit in back-off long enough for the climber to leave and join another
+      // session, so the recovery below needs the id from HERE — by the time it
+      // runs, the live ref may already point at the new room (#4009).
+      const activationSessionId = sessionIdRef.current;
       mutations.setCurrentClimb(item, shouldAddToQueue, correlationId).catch((error: unknown) => {
         // A throttled POINTER move is not a divergence: the rate-limit gate
         // throws before the resolver runs, so the server still holds the climb
@@ -1198,7 +1234,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         // content change isn't stranded locally (solo no-ops — its queue is
         // authoritative and there's no server to fall behind).
         if (throttled && shouldAddToQueue) {
-          void recoverThrottledQueueAdd(item);
+          void recoverThrottledQueueAdd(item, activationSessionId);
         }
         // Solo (no server to reconcile) and the rate-limited party case both
         // land here: toast only, no resync.
