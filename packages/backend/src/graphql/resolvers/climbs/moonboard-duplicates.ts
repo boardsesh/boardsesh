@@ -8,6 +8,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { executeRows } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import { convertLitUpHoldsStringToMap } from '../../../db/queries/util/hold-state';
+import { climbStatsEffectiveAngleSql } from '../../../db/queries/util/climb-stats-join';
 
 type MoonBoardHoldState = 'STARTING' | 'HAND' | 'FINISH';
 
@@ -171,7 +172,7 @@ export async function findMoonBoardDuplicateMatches(
       LEFT JOIN ${dbSchema.boardClimbStats}
         ON ${dbSchema.boardClimbStats.boardType} = ${dbSchema.boardClimbs.boardType}
        AND ${dbSchema.boardClimbStats.climbUuid} = ${dbSchema.boardClimbs.uuid}
-       AND ${dbSchema.boardClimbStats.angle} = ${dbSchema.boardClimbs.angle}
+       AND ${dbSchema.boardClimbStats.angle} = ${climbStatsEffectiveAngleSql}
       WHERE ${dbSchema.boardClimbs.boardType} = 'moonboard'
         AND ${dbSchema.boardClimbs.layoutId} = ${layoutId}
         AND ${dbSchema.boardClimbs.angle} = ${angle}
@@ -213,7 +214,7 @@ export async function findMoonBoardDuplicateMatches(
       LEFT JOIN ${dbSchema.boardClimbStats}
         ON ${dbSchema.boardClimbStats.boardType} = ${dbSchema.boardClimbs.boardType}
        AND ${dbSchema.boardClimbStats.climbUuid} = ${dbSchema.boardClimbs.uuid}
-       AND ${dbSchema.boardClimbStats.angle} = ${dbSchema.boardClimbs.angle}
+       AND ${dbSchema.boardClimbStats.angle} = ${climbStatsEffectiveAngleSql}
       WHERE ${dbSchema.boardClimbs.boardType} = 'moonboard'
         AND ${dbSchema.boardClimbs.layoutId} = ${layoutId}
         AND ${dbSchema.boardClimbs.angle} = ${angle}

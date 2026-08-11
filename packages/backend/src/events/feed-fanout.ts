@@ -5,6 +5,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { and, eq, or } from 'drizzle-orm';
 import { buildFeedItemMetadata } from './feed-metadata';
 import { isNoMatchClimb } from '../graphql/resolvers/shared/helpers';
+import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../db/queries/util/climb-stats-join';
 
 export { buildFeedItemMetadata } from './feed-metadata';
 
@@ -130,7 +131,7 @@ async function buildNewClimbMetadata(event: SocialEvent): Promise<Record<string,
       boardType: dbSchema.boardClimbs.boardType,
       layoutId: dbSchema.boardClimbs.layoutId,
       setterUsername: dbSchema.boardClimbs.setterUsername,
-      angle: dbSchema.boardClimbs.angle,
+      angle: resolvedClimbAngleSql,
       frames: dbSchema.boardClimbs.frames,
       description: dbSchema.boardClimbs.description,
       isDraft: dbSchema.boardClimbs.isDraft,
@@ -138,14 +139,7 @@ async function buildNewClimbMetadata(event: SocialEvent): Promise<Record<string,
       difficultyName: dbSchema.boardDifficultyGrades.boulderName,
     })
     .from(dbSchema.boardClimbs)
-    .leftJoin(
-      dbSchema.boardClimbStats,
-      and(
-        eq(dbSchema.boardClimbStats.boardType, dbSchema.boardClimbs.boardType),
-        eq(dbSchema.boardClimbStats.climbUuid, dbSchema.boardClimbs.uuid),
-        eq(dbSchema.boardClimbStats.angle, dbSchema.boardClimbs.angle),
-      ),
-    )
+    .leftJoin(dbSchema.boardClimbStats, and(...climbStatsJoinConditions()))
     .leftJoin(
       dbSchema.boardDifficultyGrades,
       and(

@@ -9,6 +9,7 @@ import {
 import type { BoardName } from '@boardsesh/board-constants';
 import { executeRows } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
+import { climbStatsEffectiveAngleSql } from '../../../db/queries/util/climb-stats-join';
 
 /**
  * Anything that can run a SQL query — the connection-pool `db` or a
@@ -181,7 +182,7 @@ export async function findExactDuplicateMatch({
       LEFT JOIN ${dbSchema.boardClimbStats}
         ON ${dbSchema.boardClimbStats.boardType} = ${dbSchema.boardClimbs.boardType}
        AND ${dbSchema.boardClimbStats.climbUuid} = ${dbSchema.boardClimbs.uuid}
-       AND ${dbSchema.boardClimbStats.angle} = ${dbSchema.boardClimbs.angle}
+       AND ${dbSchema.boardClimbStats.angle} = ${climbStatsEffectiveAngleSql}
       WHERE ${dbSchema.boardClimbs.boardType} = ${boardType}
         AND ${dbSchema.boardClimbs.layoutId} = ${layoutId}
         -- Angle is deliberately NOT a predicate. A climb is the same physical
