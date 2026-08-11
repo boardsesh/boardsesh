@@ -466,7 +466,7 @@ export default defineConfig({
       // Discord feedback pipeline via scripts/tsconfig.json; widen its
       // `include` as other scripts are made type-clean.
       'typecheck:scripts': {
-        command: 'tsc -p scripts/tsconfig.json',
+        command: 'bun run --filter=@boardsesh/scripts typecheck',
       },
       'typecheck:shared': {
         command: 'bun run --filter=@boardsesh/shared-schema typecheck',

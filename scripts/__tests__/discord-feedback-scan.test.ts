@@ -578,6 +578,18 @@ describe('DiscordClient.discordFetch', () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it('caps a proactive rate-limit wait instead of stalling on an absurd header', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(
+        response(200, { id: 'x' }, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset-after': '99999' }),
+      );
+    const sleep = vi.fn(async () => undefined);
+
+    await new DiscordClient({ fetcher, token: 't', sleep, logger: console }).getSelfUserId();
+    expect(sleep).toHaveBeenCalledWith(60_000);
+  });
+
   it('sends the bot authorization scheme', async () => {
     const fetcher = vi.fn().mockResolvedValue(response(200, { id: 'x' }));
     await new DiscordClient({ fetcher, token: 'secret', logger: console }).getSelfUserId();

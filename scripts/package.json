@@ -1,0 +1,13 @@
+{
+  "//": "Exists so repo-root scripts get a typecheck without hoisting typescript into the ROOT dependency set — doing that dehoists the typescript@6.0.3 pins that @voidzero-dev/vite-plus-core and the expo-share-intent graph resolve today. Scoping it here keeps the change to this package, matching how every other typecheck task works.",
+  "name": "@boardsesh/scripts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~7.0.2"
+  }
+}

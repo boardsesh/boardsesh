@@ -65,6 +65,8 @@ const PAGE_LIMIT = 100;
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 /** How much of a thread we read for context. Hitting it is logged, not silent. */
 const THREAD_MESSAGE_LIMIT = 50;
+/** Ceiling on a proactive rate-limit wait; the header value is an unbounded float. */
+const MAX_RATE_LIMIT_SLEEP_SECONDS = 60;
 
 /** Text channel types worth scanning: GUILD_TEXT (0) and GUILD_ANNOUNCEMENT (5). */
 const SCANNABLE_CHANNEL_TYPES: ReadonlySet<number> = new Set([0, 5]);
@@ -188,10 +190,12 @@ export class DiscordClient implements DiscordSource, DiscordWriter {
       throw new Error(`Discord ${response.status} for ${path}: ${detail}`);
     }
 
-    // Stay ahead of the bucket rather than earning a 429 we then have to sleep off.
+    // Stay ahead of the bucket rather than earning a 429 we then have to sleep
+    // off. Capped: reset-after is an unbounded float from Discord, and an
+    // absurd value would otherwise stall the whole job on one header.
     if (response.headers.get('x-ratelimit-remaining') === '0') {
       const resetAfter = Number(response.headers.get('x-ratelimit-reset-after') ?? '0');
-      if (resetAfter > 0) await this.sleep(resetAfter * 1000);
+      if (resetAfter > 0) await this.sleep(Math.min(resetAfter, MAX_RATE_LIMIT_SLEEP_SECONDS) * 1000);
     }
 
     return response;
