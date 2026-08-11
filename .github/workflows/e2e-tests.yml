@@ -321,6 +321,16 @@ jobs:
           tar -xf built-packages.tar
           rm built-packages.tar
 
+      # The dev-db image's ledger was stamped with its build clock, not each
+      # journal entry's `when` (#4211). drizzle-kit migrate reads max(created_at)
+      # once and applies only entries above it, so without this repair a PR's new
+      # migration silently never runs here and surfaces as an unrelated-looking
+      # app failure. Must stay ahead of the migrate step.
+      - name: Normalize the dev-db image migration ledger
+        run: bun run --filter=@boardsesh/db db:normalize-ledger
+        env:
+          DATABASE_URL: postgresql://postgres:password@postgres:5432/main
+
       - name: Run database migrations
         run: bunx drizzle-kit migrate
         working-directory: packages/db
@@ -570,6 +580,14 @@ jobs:
         run: |
           tar -xf built-packages.tar
           rm built-packages.tar
+
+      # Same repair as the shard job above: the image's ledger high-water mark is
+      # a build timestamp, so drizzle-kit migrate would skip a PR's new migration
+      # (#4211). Must stay ahead of the migrate step.
+      - name: Normalize the dev-db image migration ledger
+        run: bun run --filter=@boardsesh/db db:normalize-ledger
+        env:
+          DATABASE_URL: postgresql://postgres:password@postgres:5432/main
 
       - name: Run database migrations
         run: bunx drizzle-kit migrate
