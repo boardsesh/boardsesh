@@ -21,6 +21,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Fixed dark-mode MoonBoard playlist tiles showing the light-mode board art ([#4282](https://github.com/boardsesh/boardsesh/pull/4282))
+  (near-black coordinate lettering) instead of the readable dark variant.
 - MoonBoard setter search now shows setters and counts, matching Kilter/Tension. ([#4286](https://github.com/boardsesh/boardsesh/pull/4286))
 - Android phones on version 11 or older now get a clear "Location is switched off" message with a one-tap fix when Bluetooth scanning finds nothing, instead of being told to check their board. ([#4283](https://github.com/boardsesh/boardsesh/pull/4283))
 - Grasshopper climbs now light up on the browser app instead of showing a blank board. Outlines draw at the standard thickness for now. ([#4261](https://github.com/boardsesh/boardsesh/pull/4261))

@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-11T21:44:27.627Z",
+  "generatedAt": "2026-08-11T21:51:03.988Z",
   "entries": [
+    {
+      "prNumber": 4282,
+      "category": "fixed",
+      "title": "Fixed dark-mode MoonBoard playlist tiles showing the light-mode board art",
+      "mergedAt": "2026-08-11T21:49:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4282",
+      "body": "(near-black coordinate lettering) instead of the readable dark variant."
+    },
     {
       "prNumber": 4286,
       "category": "fixed",
