@@ -8,6 +8,7 @@ import { useSetMeasuredTabBarHeight } from '../../providers/tab-bar-height-provi
 import { brandColors as staticBrandColors } from '../../theme/colors';
 import { material } from '../../theme/tokens';
 import { MATERIAL_TAB_BAR_HEIGHT } from '../../theme/layout';
+import { isLiveTabBadge } from './tab-badge';
 
 /**
  * Material 3 bottom navigation bar — the JS tab bar for the Material UI variant
@@ -95,13 +96,14 @@ export function MaterialTabBar({ state, descriptors, navigation, insets }: Botto
                     styles.badge,
                     // Badge dot is a FILL (no text on it) → static light brand
                     // colors, not the scheme-lifted theme value. Record's screen
-                    // options set the 'live' sentinel string (not display text) to
-                    // distinguish a live session from a merely-connected board;
-                    // any other truthy badge value (e.g. 'connected') keeps the
-                    // existing green.
+                    // options carry a state marker (not display text) on
+                    // `tabBarBadge` to tell a live session from a merely-connected
+                    // board; the producer/consumer contract lives in ./tab-badge.
+                    // Any other badge value keeps the standard green.
                     {
-                      backgroundColor:
-                        options.tabBarBadge === 'live' ? staticBrandColors.live : staticBrandColors.success,
+                      backgroundColor: isLiveTabBadge(options.tabBarBadge)
+                        ? staticBrandColors.live
+                        : staticBrandColors.success,
                       borderColor: systemColors.elevatedSurface,
                     },
                   ]}
