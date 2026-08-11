@@ -103,6 +103,7 @@ import { QaTesterGate } from '../src/components/qa/QaTesterGate';
 import { SendRecoveryGate } from '../src/components/offline/SendRecoveryGate';
 import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
 import { BottomChromeDebugOverlay } from '../src/components/BottomChromeDebugOverlay';
+import { SheetDetentReadoutOverlay } from '../src/components/SheetDetentReadoutOverlay';
 import { WindowInsetPublisher } from '../src/hooks/use-window-bottom-inset';
 import { LiveActivityIntentDiagnostics } from '../src/components/LiveActivityIntentDiagnostics';
 import { isBranchSurfingBuild, prepareOtaBranchSurfing } from '../src/lib/legacy-ota-channel-migration';
@@ -894,6 +895,9 @@ function RootLayout() {
                                                             pr-channel + settings toggle). Inside the metrics provider
                                                             so it reads the same derived values consumers position with. */}
                                                                   <BottomChromeDebugOverlay />
+                                                                  {/* Sheet detent numbers for #3922, on screen so they can
+                                                            come off a TestFlight build (same toggle gate). */}
+                                                                  <SheetDetentReadoutOverlay />
                                                                   {/* Root-sampled window inset for bottom-docked sheets —
                                                             here (outside the tabs) useSafeAreaInsets IS the window's. */}
                                                                   <WindowInsetPublisher />

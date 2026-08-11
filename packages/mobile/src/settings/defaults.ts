@@ -27,4 +27,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   bottomChromeDiagnostics: false,
   qaBriefSeenKey: null,
   qaVerdictSubmittedKey: null,
+  sheetDetentDiagnostics: false,
 };

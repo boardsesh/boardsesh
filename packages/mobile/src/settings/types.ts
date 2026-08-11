@@ -102,6 +102,8 @@ export type AppSettings = {
    * testing something already signed off.
    */
   qaVerdictSubmittedKey: string | null;
+  /** Show the iOS sheet detent readout overlay (#3922; dev / preview / pr-channel only). */
+  sheetDetentDiagnostics: boolean;
 };
 
 export type SettingsKey = keyof AppSettings;

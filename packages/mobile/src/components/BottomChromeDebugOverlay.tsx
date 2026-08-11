@@ -1,9 +1,7 @@
-import * as Updates from 'expo-updates';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSetting } from '../settings';
-import { isPreviewBuild } from '../lib/preview-build';
-import { readOtaBranch } from '../lib/ota-telemetry';
+import { useDiagnosticsEligible } from '../hooks/use-diagnostics-eligible';
 import { useBottomChromeMetrics } from '../hooks/use-bottom-chrome-metrics';
 import { useNativeTabBar } from '../hooks/use-bottom-accessory';
 import { useTheme } from '../providers/theme-provider';
@@ -34,17 +32,8 @@ import { usePublishedWindowInsetBottom } from '../lib/window-inset-store';
  * preview a production install can switch onto).
  */
 
-/**
- * Whether this session may surface bottom-chrome diagnostics at all. Also gates
- * the settings row that flips the persisted toggle, so production users outside
- * a pr- preview never see either.
- */
-export function useBottomChromeDiagnosticsEligible(): boolean {
-  return __DEV__ || isPreviewBuild() || readOtaBranch(Updates.manifest)?.startsWith('pr-') === true;
-}
-
 export function BottomChromeDebugOverlay() {
-  const eligible = useBottomChromeDiagnosticsEligible();
+  const eligible = useDiagnosticsEligible();
   const [enabled] = useSetting('bottomChromeDiagnostics');
   if (!eligible || !enabled) return null;
   return <BottomChromeDebugOverlayInner />;
