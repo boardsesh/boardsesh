@@ -39,8 +39,10 @@ concurrency:
 
 jobs:
   triage:
-    # Kill switch. Unset this variable and the whole pipeline stops without a revert.
-    if: vars.DISCORD_FEEDBACK_ENABLED == 'true'
+    # Kill switch for the schedule: unset the variable and the hourly run stops
+    # without a revert. Manual dispatch is deliberately NOT gated on it, so the
+    # documented rollout — dry-run before ever enabling the cron — is possible.
+    if: github.event_name == 'workflow_dispatch' || vars.DISCORD_FEEDBACK_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Must stay reviewer-free: a gated environment would hang a scheduled run forever.

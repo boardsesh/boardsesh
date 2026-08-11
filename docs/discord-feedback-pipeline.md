@@ -67,7 +67,7 @@ Variables (non-secret so they're auditable in the run log):
 
 | Name | Default / example |
 |---|---|
-| `DISCORD_FEEDBACK_ENABLED` | `true` — the kill switch; the job skips entirely when unset |
+| `DISCORD_FEEDBACK_ENABLED` | `true` — kill switch for the **hourly run**; manual dispatch works regardless |
 | `DISCORD_GUILD_ID` | The Boardsesh guild id |
 | `DISCORD_FEEDBACK_CHANNEL_IDS` | Comma-separated; the `#user-feedback` id |
 | `DISCORD_EXCLUDE_CHANNEL_IDS` | Comma-separated; optional |
@@ -83,7 +83,7 @@ gh label create from-discord --color 5865F2 --description "Filed from Discord us
 
 ## Rollout
 
-Merge with `DISCORD_FEEDBACK_ENABLED` unset first. `workflow_dispatch` only appears once the workflow is on the default branch and `schedule` only fires from it, so this cannot be iterated on from a PR branch.
+Merge with `DISCORD_FEEDBACK_ENABLED` unset first: the cron stays off, but manual dispatch still runs, so the dry runs below work before anything is ever scheduled. `workflow_dispatch` only appears once the workflow is on the **default branch**, and `schedule` only fires from it, so none of this can be iterated on from a PR branch.
 
 1. **Dry run wide.** Dispatch with `dry_run: true`, `lookback_hours: 720`. Nothing is written anywhere. Download the artifact and read both files: `bundle.json` should contain no usernames and no raw `<@…>` mentions, and thread context should be present; `decisions.json` should match your own judgement. Iterate on the skill prompt here — this loop is free and safe.
 2. **Small live run.** `dry_run: false`, `lookback_hours: 6`, `max_issues: 2`. Check the marker is the issue body's first line, labels applied, ✅ visible in Discord, reply posted, attachment renders, and the Source link opens the original message.
