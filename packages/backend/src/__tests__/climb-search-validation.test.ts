@@ -77,16 +77,28 @@ describe('ClimbSearchInputSchema boulders/routes have no default (#3975)', () =>
     expect(result.routes).toBeUndefined();
   });
 
-  it('produces identical search params whether boulders/routes are omitted or explicitly true/true', () => {
+  it('resolves to the same "no climb-type constraint" outcome whether boulders/routes are omitted or explicitly true/true', () => {
     // This is the no-behavior-change proof for removing the dead .default(true)/
     // .default(false): now that searchClimbs uses validateInput's parsed return
     // (see queries.ts), a live default here would have flipped omitted callers
-    // to boulders-only. Confirm omission and explicit true/true stay equivalent
-    // (both mean "no frames_count constraint"), mirroring #3976's repro.
+    // to boulders-only. omitted and explicit true/true are NOT byte-identical
+    // ClimbSearchParams (boulders/routes are `undefined` vs `true`), but
+    // create-climb-filters.ts's `wantsBoulders = !!searchParams.boulders` /
+    // `wantsRoutes = !!searchParams.routes` coerce both `undefined` and the
+    // both-true case to the same "no frames_count constraint" branch — that's
+    // the equivalence #3976's repro (and filter-state.ts's comment) rely on.
     const omitted = mapSearchInputToParams(ClimbSearchInputSchema.parse(base));
     const explicit = mapSearchInputToParams(ClimbSearchInputSchema.parse({ ...base, boulders: true, routes: true }));
     expect(omitted.boulders).toBeUndefined();
     expect(omitted.routes).toBeUndefined();
-    expect(explicit).toEqual(omitted);
+
+    const hasNoClimbTypeConstraint = (params: { boulders?: boolean | null; routes?: boolean | null }) => {
+      const wantsBoulders = !!params.boulders;
+      const wantsRoutes = !!params.routes;
+      // Mirrors create-climb-filters.ts: constrained only when exactly one is set.
+      return !((wantsBoulders && !wantsRoutes) || (wantsRoutes && !wantsBoulders));
+    };
+    expect(hasNoClimbTypeConstraint(omitted)).toBe(true);
+    expect(hasNoClimbTypeConstraint(explicit)).toBe(true);
   });
 });
