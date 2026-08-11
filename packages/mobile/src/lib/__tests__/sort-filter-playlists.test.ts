@@ -79,8 +79,16 @@ describe('filterPlaylistsByBoard', () => {
     expect(filterPlaylistsByBoard(input, 'kilter', 9)).toEqual([]);
   });
 
-  it('drops playlists with a null layoutId (Aurora-synced circuits)', () => {
+  // Mirrors the backend rule (`layout_id = $layout OR layout_id IS NULL`) that
+  // userPlaylists/allUserPlaylists apply: a layout-less playlist belongs to the
+  // whole board, so it stays an add target on every layout of that board.
+  it('keeps playlists with a null layoutId (Aurora/Kilter-synced circuits)', () => {
     const input = [playlist('Aurora circuit', { boardType: 'kilter', layoutId: null })];
+    expect(names(filterPlaylistsByBoard(input, 'kilter', 9))).toEqual(['Aurora circuit']);
+  });
+
+  it('still drops a null-layout playlist belonging to another board', () => {
+    const input = [playlist('Tension circuit', { boardType: 'tension', layoutId: null })];
     expect(filterPlaylistsByBoard(input, 'kilter', 9)).toEqual([]);
   });
 

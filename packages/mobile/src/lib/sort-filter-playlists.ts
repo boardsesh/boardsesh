@@ -9,15 +9,23 @@ export function sortPlaylistsByName(playlists: Playlist[]): Playlist[] {
 }
 
 /**
- * Keep only playlists that belong to the given board+layout. Mirrors the
- * board+layout equality rule `canAddClimbToBoard` uses (board-config's
- * board-compatibility.ts): both fields must match exactly. `layoutId` is
- * nullable on `Playlist` for Aurora-synced circuits, whose board identity is
- * unverifiable — a null `layoutId` never matches, so those circuits are
- * correctly excluded from add-target lists rather than shown for every board.
+ * Keep only playlists that belong to the given board+layout, using the same rule
+ * the backend already applies for board-scoped playlist lists —
+ * `boardType = $board AND (layout_id = $layout OR layout_id IS NULL)` in
+ * `userPlaylists` / `allUserPlaylists`
+ * (packages/backend/src/graphql/resolvers/playlists/queries/user-playlists.ts).
+ *
+ * `layoutId` is nullable on `Playlist` by design: a playlist is scoped to a
+ * board and only *optionally* to a layout (see packages/db schema), which is how
+ * Aurora- and Kilter-synced circuits arrive. Those are legitimate add targets on
+ * every layout of their board, and the Discover "My playlists" list already
+ * shows them — so a null `layoutId` matches here too, rather than silently
+ * dropping a climber's circuits from the add-to-playlist picker.
  */
 export function filterPlaylistsByBoard(playlists: Playlist[], boardName: string, layoutId: number): Playlist[] {
-  return playlists.filter((playlist) => playlist.boardType === boardName && playlist.layoutId === layoutId);
+  return playlists.filter(
+    (playlist) => playlist.boardType === boardName && (playlist.layoutId == null || playlist.layoutId === layoutId),
+  );
 }
 
 /**
