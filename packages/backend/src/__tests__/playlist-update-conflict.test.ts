@@ -97,6 +97,35 @@ describe('detectPlaylistUpdateConflict', () => {
     ).toBe(false);
   });
 
+  it('conflicts on a colour or icon someone else changed, same as a rename', () => {
+    // name/description/colour/icon share one loop; pin colour and icon so a
+    // future field-list edit can't quietly drop them from the check.
+    expect(
+      detectPlaylistUpdateConflict({
+        stored: stored({ color: '#1F2937' }),
+        incoming: { color: '#6D28D9' },
+        basedOn: { updatedAt: olderSnapshot, color: '#8C4A52' },
+      }),
+    ).toBe(true);
+
+    expect(
+      detectPlaylistUpdateConflict({
+        stored: stored({ icon: '🪨' }),
+        incoming: { icon: '💀' },
+        basedOn: { updatedAt: olderSnapshot, icon: '🔥' },
+      }),
+    ).toBe(true);
+
+    // ...and not when the other device set it to what this edit already sends.
+    expect(
+      detectPlaylistUpdateConflict({
+        stored: stored({ color: '#6D28D9' }),
+        incoming: { color: '#6D28D9' },
+        basedOn: { updatedAt: olderSnapshot, color: '#8C4A52' },
+      }),
+    ).toBe(false);
+  });
+
   it('treats a missing based-on field as divergent (conservative)', () => {
     expect(
       detectPlaylistUpdateConflict({
