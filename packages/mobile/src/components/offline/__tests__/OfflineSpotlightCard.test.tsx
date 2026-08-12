@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, fireEvent } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
@@ -13,7 +13,13 @@ const state = vi.hoisted(() => ({
   nudgesEnabled: true,
 }));
 
-const spies = vi.hoisted(() => ({ push: vi.fn(), track: vi.fn(), saveNudgeState: vi.fn(async () => undefined) }));
+const spies = vi.hoisted(() => ({
+  push: vi.fn(),
+  track: vi.fn(),
+  // Typed loosely on purpose: the pill assertion below reads the saved state
+  // back out of the call args, so the parameter has to exist in the signature.
+  saveNudgeState: vi.fn(async (_next: unknown) => undefined),
+}));
 
 vi.mock('react-native', () => ({
   View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
@@ -57,6 +63,7 @@ vi.mock('../../../lib/offline-nudges/nudge-storage', async () => {
 });
 
 import { SHARED_EVENTS } from '@boardsesh/analytics';
+import type { OfflineNudgeState } from '../../../lib/offline-nudges/nudge-policy';
 import { OfflineSpotlightCard } from '../OfflineSpotlightCard';
 
 const board = { uuid: 'garage', name: 'Gym wall', boardType: 'kilter', layoutId: 1, sizeId: 10 } as UserBoard;
@@ -98,6 +105,20 @@ describe('OfflineSpotlightCard', () => {
       SHARED_EVENTS.OfflineNudgeAccepted,
       expect.objectContaining({ surface: 'whats_new' }),
     );
+  });
+
+  // The handoff is a drop-off risk: someone can open My Boards and back out
+  // without downloading anything. The spotlight must stay "seen" all the same,
+  // or hasUnseenOfflineSpotlight lights the What's New "New" pill again for a
+  // card the user already opened and accepted.
+  it('keeps the spotlight marked as seen after the handoff', async () => {
+    await renderSpotlight();
+    await waitFor(() => expect(spies.saveNudgeState).toHaveBeenCalled());
+    fireEvent.click(screen.getByText('mobile.offline.nudge.spotlight.cta'));
+
+    await waitFor(() => expect(spies.saveNudgeState).toHaveBeenCalledTimes(2));
+    const saved = spies.saveNudgeState.mock.calls[1][0] as OfflineNudgeState;
+    expect(saved.surfaces.whats_new.shownCount).toBe(1);
   });
 
   it('persists a dismissal as forever, with no "not now" half-measure', async () => {
