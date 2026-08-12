@@ -1,5 +1,5 @@
 /**
- * TEST-ONLY fixture for replaying migration 0188_moonboard_angle_dedup_backfill
+ * TEST-ONLY fixture for replaying migration 0190_moonboard_angle_dedup_backfill
  * against a scratch Postgres. Never import from production code.
  *
  * Shared by two harnesses so the replay runs BOTH in CI and locally, mirroring
@@ -25,7 +25,7 @@ import type postgres from 'postgres';
 /** packages/db/drizzle, resolved from this file's location. */
 export const MOONBOARD_DEDUP_REPLAY_DRIZZLE_DIR = path.resolve(import.meta.dirname, '../../drizzle');
 
-export const MOONBOARD_DEDUP_REPLAY_MIGRATION_TAG = '0188_moonboard_angle_dedup_backfill';
+export const MOONBOARD_DEDUP_REPLAY_MIGRATION_TAG = '0190_moonboard_angle_dedup_backfill';
 
 export function moonboardDedupReplayMigrationSql(): string {
   return readFileSync(
@@ -909,7 +909,7 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
   {
     name: 'records the guard row; re-application is a no-op',
     run: async (db) => {
-      const guards = await db`SELECT tag FROM _bs_migration_guards WHERE tag = '0188_moonboard_angle_dedup_backfill'`;
+      const guards = await db`SELECT tag FROM _bs_migration_guards WHERE tag = '0190_moonboard_angle_dedup_backfill'`;
       assert.equal(guards.length, 1);
       await db.unsafe(moonboardDedupReplayMigrationSql());
       const aliasesAfter = await db`SELECT count(*)::int AS n FROM board_climb_aliases WHERE alias_uuid = 'p25'`;

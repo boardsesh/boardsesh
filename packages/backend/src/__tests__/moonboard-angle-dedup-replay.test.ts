@@ -7,7 +7,7 @@ import {
 } from '@boardsesh/db/testing/moonboard-angle-dedup-replay';
 
 /**
- * CI replay of migration 0188_moonboard_angle_dedup_backfill.
+ * CI replay of migration 0190_moonboard_angle_dedup_backfill.
  *
  * Runs as a regular backend-project test so it executes on every CI backend
  * job against the auto-started docker postgres (docker-compose.test.yml; CI=1

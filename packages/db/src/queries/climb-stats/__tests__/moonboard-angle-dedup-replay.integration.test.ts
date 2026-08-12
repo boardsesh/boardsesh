@@ -7,7 +7,7 @@ import {
 } from '../../../testing/moonboard-angle-dedup-replay';
 
 /**
- * Scratch-Postgres replay of migration 0188_moonboard_angle_dedup_backfill —
+ * Scratch-Postgres replay of migration 0190_moonboard_angle_dedup_backfill —
  * LOCAL opt-in mode. Set MIGRATION_REPLAY_DB_URL to a throwaway superuser
  * Postgres (a plain `docker run postgres`), e.g.
  *
