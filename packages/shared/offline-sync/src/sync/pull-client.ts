@@ -14,10 +14,10 @@ import {
   bootstrapScopeFromSnapshot,
   markBootstrapDone,
   isBootstrapDone,
+  wasBootstrapHealed,
   SnapshotWipedError,
   SnapshotSchemaStaleError,
   SnapshotPermanentMissError,
-  SnapshotWatermarkRegressionError,
   type SnapshotSource,
   type SnapshotBootstrapErrorReporter,
 } from './snapshot-bootstrap';
@@ -33,6 +33,7 @@ import {
   readBootstrapRetryState,
   rearmForNewArtifact,
   shouldSkipPagedPull,
+  spendUserRequest,
   writeBootstrapRetryState,
   type BootstrapFailureKind,
   type BootstrapRetryState,
@@ -706,8 +707,10 @@ async function resolveManifestOnce(
  * Snapshot-bootstrap phase (runs BEFORE deletions). For each enabled scope the
  * shared eligibility gate vouches for, warm it from a pre-built artifact instead
  * of paging the whole catalog. Returns the scope keys whose paged board-table
- * pull must be SKIPPED this cycle, plus the scopes an artifact was imported over
- * a partly-crawled catalog for (see ScopeDownloadCompleteInfo.bootstrapHealed).
+ * pull must be SKIPPED this cycle. Whether an import was a HEAL over a
+ * partly-crawled catalog is persisted on the `bootstrap-done:` marker instead of
+ * returned, because the scope's completion event usually fires cycles later (see
+ * ScopeDownloadCompleteInfo.bootstrapHealed).
  *
  * ELIGIBILITY lives in `bootstrap-retry.ts`'s `evaluateBootstrapEligibility`,
  * which `estimateScopeDownload` calls too so the size the UI quotes can never
@@ -740,11 +743,17 @@ async function resolveManifestOnce(
  *     provably bad, so tonight's export MIGHT fix it: a terminal scope of this
  *     one kind consults the manifest again and a differently-built artifact
  *     re-arms its budget exactly once per scope, ever.
- *   - import throws SnapshotWatermarkRegressionError → permanent miss, NO burn.
- *     The artifact's scoped watermark is behind what this scope already crawled;
- *     importing would lower a checkpoint (and the global deletions cursor) below
- *     local progress. Nothing was written — reported at full severity because it
- *     means the export's scope filter and the client's disagree.
+ *   - import throws SnapshotSchemaStaleError → permanent miss, NO burn: the next
+ *     cycle's manifest pre-check filters the rebuilt entry out before any bytes
+ *     move, so nothing can loop on it.
+ *   - import throws SnapshotWatermarkRegressionError → structural-artifact burn,
+ *     same as any other import failure. The artifact's scoped watermark is behind
+ *     what this scope already crawled; importing would lower a checkpoint (and the
+ *     global deletions cursor) below local progress, so nothing was written.
+ *     Charging it is what stops the loop: the refusal is deterministic for that
+ *     artifact, and before #4313's fix the scope stayed eligible and pulled the
+ *     whole ~100 MB again every cycle, forever. Reported at full severity because
+ *     it means the export's scope filter and the client's disagree.
  *   - success → mark done, rewind deletions to min(watermarks), clear the
  *     consecutive-transport counter; the paged pull runs normally, now a ~1-day
  *     delta from the scoped watermark checkpoints.
@@ -762,9 +771,10 @@ async function resolveManifestOnce(
  * syncTable). One artifact is downloaded per (boardType, layoutId) and reused
  * across that layout's sizes; all downloads are deleted in a finally.
  *
- * Snapshot attribution for ScopeDownloadCompleteInfo.method is NOT threaded
- * through here — it reads the persisted `isBootstrapDone` marker instead,
- * because the completing delta pull can land cycles after the import.
+ * Snapshot attribution for ScopeDownloadCompleteInfo.method and .bootstrapHealed
+ * is NOT threaded through here — both read the persisted `bootstrap-done:` marker
+ * (its presence, and whether its value records a heal), because the completing
+ * delta pull can land cycles after the import.
  */
 async function runBootstrapPhase(params: {
   db: OfflineDatabase;
@@ -777,7 +787,7 @@ async function runBootstrapPhase(params: {
   options: SyncOptions | undefined;
   now: () => number;
   random: () => number;
-}): Promise<{ skipPagedPull: Set<string>; healedScopes: Set<string> }> {
+}): Promise<{ skipPagedPull: Set<string> }> {
   const { db, queryClient, source, scopes, cycleEpoch, stampScopeStart, options, now, random } = params;
   const onProgress = options?.onProgress;
   const onSchemaDrift = options?.onSchemaDrift;
@@ -786,7 +796,6 @@ async function runBootstrapPhase(params: {
   const isOnUnmeteredNetwork = options?.isOnUnmeteredNetwork ?? (() => true);
 
   const skipPagedPull = new Set<string>();
-  const healedScopes = new Set<string>();
   const manifestCache: { value?: ManifestResolution } = {};
   // Absent = not yet attempted; `file: null` = download failed (with its cause).
   const downloadByLayout = new Map<
@@ -854,7 +863,10 @@ async function runBootstrapPhase(params: {
         let retryState = migratedState;
         // Persist the derived state on first touch so the spread-out post-OTA
         // retryAfter is stable across launches instead of being re-rolled every
-        // cycle. The legacy rows are deliberately LEFT IN PLACE (rollback).
+        // cycle. The legacy ROWS survive (a rolled-back bundle still finds them),
+        // but this write does re-stamp `bootstrap-attempts:` down to the mirrored
+        // value — the migration grants one clean pass, and the mirror has to say
+        // so or a rollback would re-read the pre-migration count.
         if (migratedFromLegacy && retryState.hasPriorSnapshotFailure) {
           retryState = await writeBootstrapRetryState(db, scope.scopeKey, retryState);
           metadataSettled = true;
@@ -967,21 +979,43 @@ async function runBootstrapPhase(params: {
             ? ('heal-over-partial' as const)
             : ('fresh' as const);
 
+        // The one path the climber DID ask for today: "Try the fast download
+        // again", behind the same size-disclosing confirm the enable toggle
+        // uses. It reads as consent for this one download, so it overrides the
+        // metered defer below — without it the tap is a silent no-op on
+        // cellular, because a settled scope always carries board checkpoints and
+        // therefore always heals rather than bootstrapping fresh.
+        const isUserRequested = retryState.userRequested;
+
         // The automatic heal is the one path that downloads ~100 MB for a board
         // the user enabled on some earlier day. Defer it on a metered link; a
         // fresh bootstrap (confirmed behind a size-disclosing dialog moments ago)
         // and a user-requested retry are consented and ignore the probe.
-        if (bootstrapKind === 'heal-over-partial' && !isOnUnmeteredNetwork()) {
+        if (bootstrapKind === 'heal-over-partial' && !isUserRequested && !isOnUnmeteredNetwork()) {
           retryState = await writeBootstrapRetryState(db, scope.scopeKey, deferHeal(retryState, evaluatedAt));
           metadataSettled = true;
           continue;
+        }
+
+        // Spend the request BEFORE the download: one tap buys one artifact, so a
+        // failure schedules an ordinary cooldown instead of leaving a standing
+        // metered-link override that keeps pulling ~100 MB over cellular.
+        if (isUserRequested) {
+          retryState = await writeBootstrapRetryState(db, scope.scopeKey, spendUserRequest(retryState));
+          metadataSettled = true;
         }
 
         if (retryState.hasPriorSnapshotFailure) {
           options?.onBootstrapPathRecovered?.({
             scopeKey: scope.scopeKey,
             boardType: scope.boardType,
-            trigger: isRearmCandidate ? 'new-artifact' : migratedFromLegacy ? 'legacy-migration' : 'cooldown',
+            trigger: isUserRequested
+              ? 'user-request'
+              : isRearmCandidate
+                ? 'new-artifact'
+                : migratedFromLegacy
+                  ? 'legacy-migration'
+                  : 'cooldown',
             hadBoardCheckpoint: hasBoardCheckpoint,
           });
         }
@@ -1061,8 +1095,11 @@ async function runBootstrapPhase(params: {
               ? { board_climbs: climbsCheckpoint ?? undefined, board_climb_stats: statsCheckpoint ?? undefined }
               : undefined,
           });
-          await markBootstrapDone(db, scope.scopeKey);
-          if (hasBoardCheckpoint) healedScopes.add(scope.scopeKey);
+          // The heal flag rides the persisted marker, not a per-cycle set: the
+          // scope usually reaches completion in a LATER cycle (board_climb_grades
+          // is not a snapshot table and still crawls), and an in-memory set
+          // reports false for exactly the runs the flag exists to filter out.
+          await markBootstrapDone(db, scope.scopeKey, { healed: hasBoardCheckpoint });
           metadataSettled = true;
           // Bust the board-table query caches now: if the snapshot fully satisfies
           // the scope, the delta pull returns zero documents and syncTable's
@@ -1085,12 +1122,17 @@ async function runBootstrapPhase(params: {
             isBackgrounded()
           )
             break;
-          if (error instanceof SnapshotSchemaStaleError || error instanceof SnapshotWatermarkRegressionError) {
-            // Permanent miss for this run, no burn. Schema-stale: the artifact
-            // predates this client's schema, and tonight's export rebuilds it.
-            // Watermark regression: the artifact would have lowered a checkpoint
-            // this scope already crawled past, and it wrote nothing at all.
-            // Either way the scope's paged pull runs NOW, which is always correct.
+          if (error instanceof SnapshotSchemaStaleError) {
+            // Permanent miss for this run, no burn: the artifact predates this
+            // client's schema and tonight's export rebuilds it at the new one, so
+            // the next cycle's cheap manifest pre-check (isSnapshotEntryUsable)
+            // filters it out before any bytes move. The scope's paged pull runs
+            // NOW, which is always correct.
+            //
+            // The watermark regression deliberately does NOT land here — it is a
+            // structural failure, charged below. Refusing without recording the
+            // refusal left the scope exactly as eligible as it was, so the same
+            // ~100 MB artifact came down again on every cycle, forever.
             await markBootstrapPagedFallback(db, scope.scopeKey);
             metadataSettled = true;
             onSnapshotBootstrapError?.({
@@ -1104,7 +1146,10 @@ async function runBootstrapPhase(params: {
           }
           // The bytes are already on disk, so nothing about this failure is a
           // network problem: it burns the structural budget, and a differently
-          // built artifact is the only thing that can re-arm it.
+          // built artifact is the only thing that can re-arm it. A watermark
+          // regression is charged here too — the artifact on offer provably
+          // cannot serve this scope, and only a rebuilt one (with a watermark
+          // past the local checkpoint, or a fixed scope filter) can change that.
           const settled = await settleBootstrapFailure(db, scope.scopeKey, {
             state: retryState,
             cause: error,
@@ -1130,7 +1175,7 @@ async function runBootstrapPhase(params: {
     }
   }
 
-  return { skipPagedPull, healedScopes };
+  return { skipPagedPull };
 }
 
 /**
@@ -1356,7 +1401,6 @@ export async function pullSync(
   // Phase 0: snapshot bootstrap (BEFORE deletions). Only when an adapter injected
   // snapshot I/O; otherwise this is a pure paged pull, byte-identical to before.
   let skipBootstrapPagedPull: Set<string> = new Set();
-  let bootstrapHealedScopes: Set<string> = new Set();
   if (options?.snapshotSource && boardScopes.length > 0) {
     onProgress?.({ phase: 'bootstrap', currentTable: null, documentsProcessed: 0 });
     const bootstrapPhase = await runBootstrapPhase({
@@ -1371,7 +1415,6 @@ export async function pullSync(
       random: options.random ?? Math.random,
     });
     skipBootstrapPagedPull = bootstrapPhase.skipPagedPull;
-    bootstrapHealedScopes = bootstrapPhase.healedScopes;
   }
 
   // Deletions FIRST, table pulls second. This ordering is what makes a
@@ -1479,18 +1522,18 @@ export async function pullSync(
       // loop for every scope. If that invariant breaks, skip telemetry rather
       // than emit a misleading 0ms duration.
       if (startedAt === undefined) continue;
-      // Attribution reads the persisted marker, not this run's bootstrap set:
-      // the import and the completing delta pull can land in different cycles
-      // (connectivity drop between them), and this event fires exactly once per
-      // scope — misreporting that one event as 'paged' would permanently
-      // undercount snapshot wins in the rollout comparison.
+      // Both attributions read the persisted marker, not this run's bootstrap
+      // work: the import and the completing delta pull can land in different
+      // cycles (connectivity drop between them, or the grades crawl still
+      // running), and this event fires exactly once per scope — misreporting
+      // that one event would permanently skew the rollout comparison.
       options?.onScopeDownloadComplete?.({
         scopeKey,
         method: (await isBootstrapDone(db, scopeKey)) ? 'snapshot' : 'paged',
         durationMs: Date.now() - startedAt,
         // A healed scope's duration excludes the paged work earlier cycles did,
         // so it must be filtered out of snapshot-vs-paged comparisons.
-        bootstrapHealed: bootstrapHealedScopes.has(scopeKey),
+        bootstrapHealed: await wasBootstrapHealed(db, scopeKey),
       });
     }
   }

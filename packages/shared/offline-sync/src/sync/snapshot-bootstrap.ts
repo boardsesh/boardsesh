@@ -279,11 +279,29 @@ export async function getBootstrapMetadataByScope(
   return metadataByScope;
 }
 
-/** Permanent "this scope was warmed from a snapshot" marker (cheap, unambiguous). */
-export async function markBootstrapDone(db: SqlExecutor, scopeKey: string): Promise<void> {
+/** The `bootstrap-done:` value that records a heal over a partly-crawled catalog. */
+const BOOTSTRAP_DONE_HEAL_VALUE = 'heal';
+
+/**
+ * Permanent "this scope was warmed from a snapshot" marker (cheap, unambiguous).
+ *
+ * The VALUE carries whether the import landed on a scope that had already
+ * crawled rows (`healed`), because `ScopeDownloadCompleteInfo.bootstrapHealed`
+ * is read at scope completion — which is routinely a LATER cycle than the
+ * import, since `board_climb_grades` is not a snapshot table and still crawls to
+ * its tail. An in-memory per-cycle set would report `false` for exactly the
+ * population the field exists to filter out. Legacy rows hold `'1'`, which reads
+ * as done-and-not-healed — correct for every scope written before this marker
+ * carried a value.
+ */
+export async function markBootstrapDone(
+  db: SqlExecutor,
+  scopeKey: string,
+  options?: { healed: boolean },
+): Promise<void> {
   await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
     `${BOOTSTRAP_DONE_PREFIX}${scopeKey}`,
-    '1',
+    options?.healed ? BOOTSTRAP_DONE_HEAL_VALUE : '1',
   ]);
   // Write done first: if clearing the stale outcome fails, done still outranks
   // it in derivation. The reverse order has a crash window that mislabels a
@@ -296,6 +314,14 @@ export async function isBootstrapDone(db: SqlExecutor, scopeKey: string): Promis
     `${BOOTSTRAP_DONE_PREFIX}${scopeKey}`,
   ]);
   return row !== null;
+}
+
+/** Whether this scope's snapshot import was a heal over an existing partial crawl. */
+export async function wasBootstrapHealed(db: SqlExecutor, scopeKey: string): Promise<boolean> {
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
+    `${BOOTSTRAP_DONE_PREFIX}${scopeKey}`,
+  ]);
+  return row?.value === BOOTSTRAP_DONE_HEAL_VALUE;
 }
 
 // --- Column helpers -----------------------------------------------------------

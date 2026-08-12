@@ -25,6 +25,7 @@ import {
   rearmForNewArtifact,
   restoreBootstrapRetryBudget,
   shouldSkipPagedPull,
+  spendUserRequest,
   writeBootstrapRetryState,
   type BootstrapFailureKind,
   type BootstrapRetryState,
@@ -366,6 +367,17 @@ describe('clearRetryStateForUserRequest', () => {
       }),
     ).toEqual({ eligible: true, kind: 'heal-over-partial' });
   });
+
+  it('arms a one-shot user-request flag that survives one download and no more', () => {
+    // The flag is what lets the tap through the metered defer. Spending it as the
+    // download STARTS keeps a failure from leaving a standing licence to pull
+    // ~100 MB over cellular on every later cooldown.
+    const armed = clearRetryStateForUserRequest(state({ hasPriorSnapshotFailure: true }));
+    expect(armed.userRequested).toBe(true);
+    const spent = spendUserRequest(armed);
+    expect(spent.userRequested).toBe(false);
+    expect(spendUserRequest(spent)).toBe(spent);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -498,6 +510,9 @@ describe('bootstrap-retry persistence', () => {
     expect(await readMeta('bootstrap-attempts:kilter:1:5')).toBe('0');
     const { state: reread } = await readBootstrapRetryState(db, 'kilter:1:5', { now: NOW, random: noJitter }, true);
     expect(isTerminal(reread)).toBe(false);
+    // The consent survives the round trip: without it the next cycle defers the
+    // heal for 6 h on cellular and the tap does nothing at all.
+    expect(reread.userRequested).toBe(true);
     // …and the engine will actually run for it on the next cycle, which is the
     // only reason the row action exists.
     expect(

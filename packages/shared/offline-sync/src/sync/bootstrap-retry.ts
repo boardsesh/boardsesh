@@ -127,6 +127,14 @@ export type BootstrapRetryState = {
    */
   readonly hasPriorSnapshotFailure: boolean;
   /**
+   * The climber tapped "Try the fast download again" and has not been served
+   * yet. Worth one consented artifact download: it overrides the metered-link
+   * defer — they confirmed the size on that exact screen moments ago — and is
+   * spent the instant the download starts, so a failure does not hand the
+   * engine a standing licence to keep pulling ~100 MB over cellular.
+   */
+  readonly userRequested: boolean;
+  /**
    * The value last written to the legacy `bootstrap-attempts:` row. A legacy
    * counter ABOVE this means an older (rolled-back) bundle counted failures we
    * never saw, and the difference is folded into `structuralFailures` on read.
@@ -144,6 +152,7 @@ export const EMPTY_BOOTSTRAP_RETRY_STATE: BootstrapRetryState = {
   failedBuiltAt: null,
   retryAfter: null,
   hasPriorSnapshotFailure: false,
+  userRequested: false,
   mirroredAttempts: 0,
   legacyHealSpent: false,
 };
@@ -266,6 +275,10 @@ export function clearTransportFailures(state: BootstrapRetryState): BootstrapRet
 export function clearRetryStateForUserRequest(state: BootstrapRetryState): BootstrapRetryState {
   return {
     ...EMPTY_BOOTSTRAP_RETRY_STATE,
+    // The tap is the consent the automatic heal does not have, so it also
+    // overrides the metered-link defer — otherwise the climber confirms ~100 MB
+    // on a cellular link and the engine silently sits on it for 6 hours.
+    userRequested: true,
     // The failure history is KEPT on purpose. A settled scope has always crawled
     // (a terminal scope is never in `skipPagedPull`), so it carries board
     // checkpoints — and `evaluateBootstrapEligibility` only lets a checkpointed
@@ -281,6 +294,17 @@ export function clearRetryStateForUserRequest(state: BootstrapRetryState): Boots
 /** Defer an automatic heal without spending anything (metered link). */
 export function deferHeal(state: BootstrapRetryState, now: number): BootstrapRetryState {
   return { ...state, retryAfter: now + METERED_HEAL_DEFERRAL_MS };
+}
+
+/**
+ * Consume the user's retry the moment its download starts. Spending it here
+ * rather than on success is deliberate: one tap buys one artifact download, so a
+ * failure over cellular schedules an ordinary cooldown instead of leaving a
+ * standing metered-link override behind.
+ */
+export function spendUserRequest(state: BootstrapRetryState): BootstrapRetryState {
+  if (!state.userRequested) return state;
+  return { ...state, userRequested: false };
 }
 
 export type BootstrapEligibility =
@@ -351,8 +375,11 @@ export function shouldSkipPagedPull(input: {
  * bug — so its value is not carried into `structuralFailures`. A stranded scope
  * gets exactly one clean pass under the new taxonomy (bounded at 3 transport + 2
  * structural), which is what un-strands the mid-crawl population. The legacy rows
- * themselves stay on disk untouched: `mirroredAttempts` records what they said, so
- * a later read can tell "an older bundle bumped this" from "this is what we
+ * are never DELETED, but the first `writeBootstrapRetryState` after a migration
+ * re-stamps `bootstrap-attempts:` down to the mirrored value — the clean pass has
+ * to be visible to a rolled-back bundle too, or it would re-read the pre-migration
+ * count and settle the scope again. `mirroredAttempts` records what we wrote, so a
+ * later read can tell "an older bundle bumped this" from "this is what we
  * migrated".
  *
  * A scope that already holds rows gets a spread-out `retryAfter` so the whole
@@ -408,6 +435,7 @@ export function parseBootstrapRetryState(raw: string): BootstrapRetryState | nul
     failedBuiltAt: typeof parsed.failedBuiltAt === 'string' ? parsed.failedBuiltAt : null,
     retryAfter: typeof parsed.retryAfter === 'number' && Number.isFinite(parsed.retryAfter) ? parsed.retryAfter : null,
     hasPriorSnapshotFailure: parsed.hasPriorSnapshotFailure === true,
+    userRequested: parsed.userRequested === true,
     mirroredAttempts: readNumber(parsed.mirroredAttempts, 0),
     legacyHealSpent: parsed.legacyHealSpent === true,
   };
@@ -535,9 +563,10 @@ export async function clearBootstrapPagedFallback(db: SqlExecutor, scopeKey: str
 }
 
 /**
- * Restore both budgets for a scope the user explicitly asked to retry, and drop
- * the paged-fallback caption so My Boards stops promising the slow path. Returns
- * the state that was written.
+ * Restore both budgets for a scope the user explicitly asked to retry, drop the
+ * paged-fallback caption so My Boards stops promising the slow path, and arm the
+ * one-shot `userRequested` flag the bootstrap phase reads to override the
+ * metered-link defer. Returns the state that was written.
  */
 export async function restoreBootstrapRetryBudget(db: SqlExecutor, scopeKey: string): Promise<BootstrapRetryState> {
   const { state } = await readBootstrapRetryState(db, scopeKey, { now: 0, random: () => 0 }, false);
