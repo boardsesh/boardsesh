@@ -6,7 +6,7 @@ import {
   getSyncStatusSnapshot,
   __resetSyncStatusForTests,
 } from '../sync-status';
-import type { SyncProgress } from '@boardsesh/offline-sync';
+import { emptyScopeDownloadPhases, type SyncProgress } from '@boardsesh/offline-sync';
 
 // Store is React-free apart from the hook, so it's exercised through
 // setSyncProgress + getSyncStatusSnapshot directly. useSyncStatus is a thin
@@ -110,7 +110,12 @@ describe('sync-status store', () => {
       currentTable: 'board_climbs:kilter:1:5',
       documentsProcessed: 100,
     });
-    notifyScopeDownloadComplete({ scopeKey: 'kilter:1:5', method: 'paged', durationMs: 100 });
+    notifyScopeDownloadComplete({
+      scopeKey: 'kilter:1:5',
+      method: 'paged',
+      durationMs: 100,
+      phases: emptyScopeDownloadPhases(),
+    });
 
     const afterFirstScope = getSyncStatusSnapshot();
     expect(afterFirstScope.scopeCompletionRevision).toBe(1);
@@ -122,7 +127,12 @@ describe('sync-status store', () => {
       currentTable: 'board_climbs:tension:2:10',
       documentsProcessed: 200,
     });
-    notifyScopeDownloadComplete({ scopeKey: 'tension:2:10', method: 'paged', durationMs: 200 });
+    notifyScopeDownloadComplete({
+      scopeKey: 'tension:2:10',
+      method: 'paged',
+      durationMs: 200,
+      phases: emptyScopeDownloadPhases(),
+    });
     expect(getSyncStatusSnapshot().scopeCompletionRevision).toBe(2);
   });
 });

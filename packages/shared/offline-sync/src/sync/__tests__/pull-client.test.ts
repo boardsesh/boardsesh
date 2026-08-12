@@ -11,6 +11,9 @@ vi.mock('../checkpoints', () => ({
   isScopeDownloadComplete: vi.fn().mockResolvedValue(false),
   markScopeDownloadStarted: vi.fn().mockResolvedValue(undefined),
   isScopeDownloadStarted: vi.fn().mockResolvedValue(false),
+  // Returns the `nowMs` it was handed, i.e. behaves like a first stamp.
+  ensureScopeDownloadStartedAt: vi.fn(async (_db: unknown, _scopeKey: string, nowMs: number) => nowMs),
+  SCOPE_DOWNLOAD_START_MAX_AGE_MS: 24 * 60 * 60 * 1000,
   rewindDeletionsCheckpoint: vi.fn().mockResolvedValue(undefined),
   compareCheckpoints: vi.fn().mockReturnValue(0),
   DELETIONS_CHECKPOINT_KEY: 'checkpoint:deletions',

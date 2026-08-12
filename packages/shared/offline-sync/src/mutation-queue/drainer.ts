@@ -28,9 +28,44 @@ let _isSigningOut = false;
 // operations capture the epoch at start and abort when it has moved.
 let _wipeEpoch = 0;
 
+/**
+ * Fired the instant a teardown transition happens — sign-out starts, a local
+ * purge bumps the epoch, or the app goes to background.
+ *
+ * Everything else in the engine POLLS the three guards below across its awaits,
+ * which is enough for a loop that keeps reaching one. A single native artifact
+ * download does not: it can sit for minutes inside one `await` with no progress
+ * event to poll from (a stalled connection sends nothing), so the transfer would
+ * keep running over a metered link long after the cycle was torn down. Those
+ * callers subscribe instead of polling. Listeners must never throw and must
+ * never assume they run once — a listener that reads the guards itself gets the
+ * truth regardless of which transition woke it.
+ */
+const teardownListeners = new Set<() => void>();
+
+export function onTeardown(listener: () => void): () => void {
+  teardownListeners.add(listener);
+  return () => {
+    teardownListeners.delete(listener);
+  };
+}
+
+function notifyTeardown(): void {
+  // Snapshot first: a listener that unsubscribes itself must not mutate the set
+  // being iterated.
+  for (const listener of [...teardownListeners]) {
+    try {
+      listener();
+    } catch {
+      // A broken listener must never stop sign-out, a purge, or backgrounding.
+    }
+  }
+}
+
 export function setSigningOut(value: boolean): void {
   if (value && !_isSigningOut) _wipeEpoch += 1;
   _isSigningOut = value;
+  if (value) notifyTeardown();
 }
 
 /**
@@ -58,6 +93,7 @@ export function setSigningOut(value: boolean): void {
  */
 export function beginLocalPurge(): void {
   _wipeEpoch += 1;
+  notifyTeardown();
 }
 
 // Read by the pull client too: an in-flight pullSync page must stop writing the
@@ -75,7 +111,9 @@ export function getWipeEpoch(): number {
 let _isBackgrounded = false;
 
 export function setBackgrounded(value: boolean): void {
+  const wasBackgrounded = _isBackgrounded;
   _isBackgrounded = value;
+  if (value && !wasBackgrounded) notifyTeardown();
 }
 
 export function isBackgrounded(): boolean {
@@ -429,4 +467,6 @@ export function __resetDrainerStateForTests(): void {
   // Epoch checks are relative (capture-then-compare), so a residual value is
   // technically harmless — reset anyway so no test inherits another's wipes.
   _wipeEpoch = 0;
+  // A listener leaked by an aborted run would otherwise fire into the next test.
+  teardownListeners.clear();
 }

@@ -66,7 +66,7 @@ export {
 } from './mutation-queue/error-classification';
 
 // --- Pull sync -----------------------------------------------------------------
-export { pullSync, toSqliteValue, multiRowChunkSize } from './sync/pull-client';
+export { pullSync, toSqliteValue, multiRowChunkSize, emptyScopeDownloadPhases } from './sync/pull-client';
 export type {
   SyncProgress,
   SyncOptions,
@@ -77,6 +77,7 @@ export type {
   ScopeDownloadCompleteReporter,
   ScopeDownloadStartInfo,
   ScopeDownloadStartReporter,
+  ScopeDownloadPhaseBreakdown,
   CoverageResetInfo,
   CoverageResetReporter,
   CoverageEvaluatedInfo,
@@ -110,6 +111,9 @@ export {
 } from './sync/snapshot-bootstrap';
 export type {
   SnapshotSource,
+  SnapshotArtifactHandle,
+  SnapshotDownloadOptions,
+  SnapshotDownloadProgress,
   SnapshotBootstrapResult,
   SnapshotBootstrapErrorReporter,
   BootstrapScopeMetadata,
