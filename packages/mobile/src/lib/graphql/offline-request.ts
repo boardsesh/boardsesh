@@ -255,8 +255,15 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
         // accessor below destructures it, so skip the signal in that case
         // rather than throw on a read path.
         if (variables !== undefined) {
+          // A missing db handle is its OWN reason. Initialization retries for up
+          // to 30s and can stay wedged for the whole launch (#4313 / #4314), and
+          // the board may well BE downloaded — reporting that as
+          // `board_not_downloaded` would aim #4318's "download a board" nudge at
+          // people who already have one.
           recordOfflineReadUnavailable({
-            reason: operation.unavailableReason?.(variables as never) ?? 'board_not_downloaded',
+            reason: localDb
+              ? (operation.unavailableReason?.(variables as never) ?? 'board_not_downloaded')
+              : 'local_db_unavailable',
             surface: operation.surface,
             boardName: operation.boardNameOf(variables as never),
           });
@@ -279,15 +286,18 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
       // them; otherwise (flag off, or db not resolved above) probe now.
       const db = localDb ?? getDatabaseHandle();
       if (db && (localServiceable || (await operation.canServeLocal(db, variables as never)))) {
+        const rescued = (await operation.resolveLocal(db, variables as never)) as TResponse;
         // Real offline value that `onlineManager` called online — counted as its
         // own lane so the north-star doesn't lose captive-portal / dead-upstream
-        // sessions (#4317).
+        // sessions (#4317). Recorded only once the local read actually resolved,
+        // so a throwing resolveLocal (which propagates instead of answering)
+        // can't book a served read the user never got.
         recordOfflineRead({
           lane: 'network_error_local',
           surface: operation.surface,
           boardName: operation.boardNameOf(variables as never),
         });
-        return (await operation.resolveLocal(db, variables as never)) as TResponse;
+        return rescued;
       }
     }
     throw networkError;

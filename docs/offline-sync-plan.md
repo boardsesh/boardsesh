@@ -975,8 +975,9 @@ lane it took. Four terminal outcomes are worth measuring:
 | Offline, board downloaded         | `Offline Read Served`      | `offline_local`        |
 | Network threw, board downloaded   | `Offline Read Served`      | `network_error_local`  |
 | Online, flag on, board downloaded | `Offline Read Served`      | `online_local`         |
-| Offline, nothing local to serve   | `Offline Read Unavailable` | `board_not_downloaded` |
+| Offline, board not downloaded     | `Offline Read Unavailable` | `board_not_downloaded` |
 | Offline, filter not expressible   | `Offline Read Unavailable` | `filter_unsupported`   |
+| Offline, no database handle       | `Offline Read Unavailable` | `local_db_unavailable` |
 
 `network_error_local` is real offline value that `onlineManager` mislabels as
 online (captive portal, dead gym-wifi upstream, cold-start seed race), so it
@@ -996,8 +997,10 @@ only when the count crosses a rung of `[1, 10, 100]`:
 - A suppressed read costs one integer compare, one `Map` lookup and one
   increment. No I/O, no persistence, no battery.
 - Worst case for a pathological user is 3 lanes x 2 boards x 3 rungs = 18
-  events/day; typical is one or two. A `maxEmitsPerProcess` backstop (60) stops
-  any future call site turning it into a firehose.
+  events/day; typical is one or two. A `maxEmitsPerDay` backstop (60) stops any
+  future call site turning it into a firehose. Per day, not per process: a phone
+  can keep the process resident for weeks, and a lifetime cap would eventually
+  mute the north-star for the heaviest offline users.
 - Rung 1 fires on the _first_ qualifying read, so the north-star can never be
   lost to an app kill. The deeper rungs only add depth.
 - `readCount` is therefore the **rung**, never a raw counter, and the absence of
@@ -1018,12 +1021,16 @@ only when the count crosses a rung of `[1, 10, 100]`:
 
 Supporting tiles, in the order they answer questions about it:
 
-1. **Depth** — weekly median of the maximum `readCount` per user, same lane
-   filter. Distinguishes "opened the app once with no signal" from "climbed a
-   whole session off the local database".
+1. **Depth** — weekly unique users who crossed the 10-read rung (`readCount > 9`),
+   same lane filter. Distinguishes "opened the app once with no signal" from
+   "climbed a whole session off the local database". A rung count, not a median
+   of per-user maxima: `readCount` only ever takes the ladder values, so a median
+   over it would read as precision the rollup does not have.
 2. **The gap** — weekly unique users on `Offline Read Unavailable`, broken down
    by `reason`. `board_not_downloaded` is the audience #4318's nudges exist to
-   convert; `filter_unsupported` is #4002's.
+   convert; `filter_unsupported` is #4002's. `local_db_unavailable` is neither —
+   it means the database handle was missing (init retrying or wedged, #4313 /
+   #4314), so those users may already have the board downloaded.
 3. **Conversion** — `Offline Board Download Completed` → `Offline Read Served`
    (offline lanes) over 30 days: of the people who downloaded a board, how many
    ever used it away from signal.

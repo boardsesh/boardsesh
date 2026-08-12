@@ -49,7 +49,11 @@ export type OfflineReadSurface = 'search' | 'climb_detail' | 'grade';
 //   board_not_downloaded — nothing local for this board scope. The audience #4318 exists to convert.
 //   filter_unsupported   — the board IS downloaded but the filter needs a table we don't sync
 //                          (hold state, zone, tall/wide, beta, drafts) — the #4002 gap.
-export type OfflineUnavailableReason = 'board_not_downloaded' | 'filter_unsupported';
+//   local_db_unavailable — there was no database handle to ask at all (init still retrying, or
+//                          wedged — #4313 / #4314). Kept separate on purpose: the board may well
+//                          BE downloaded, so folding this into board_not_downloaded would aim
+//                          #4318's "download a board" nudge at people who already have one.
+export type OfflineUnavailableReason = 'board_not_downloaded' | 'filter_unsupported' | 'local_db_unavailable';
 
 export type OfflineUsageEmission =
   | { kind: 'served'; lane: OfflineReadLane; surface: OfflineReadSurface; boardName: string; readCount: number }
@@ -70,9 +74,13 @@ export type OfflineUsageSignalOptions = {
   // north-star is guaranteed on the first read.
   ladder?: readonly number[];
   // Hard backstop against any future call site turning this into a firehose:
-  // once this many emissions have fired in this process, the gate goes quiet
-  // until reset().
-  maxEmitsPerProcess?: number;
+  // once this many emissions have fired on the current UTC day, the gate goes
+  // quiet until the day rolls over (or reset() runs). Per-DAY rather than
+  // per-process on purpose — a phone can keep this process resident for weeks,
+  // and a lifetime cap would eventually mute the north-star for exactly the
+  // heaviest offline users, which is the silent under-count this signal exists
+  // to eliminate.
+  maxEmitsPerDay?: number;
 };
 
 export type OfflineUsageSignal = {
@@ -87,7 +95,7 @@ export type OfflineUsageSignal = {
 
 const MILLISECONDS_PER_DAY = 86_400_000;
 const DEFAULT_LADDER: readonly number[] = [1, 10, 100];
-const DEFAULT_MAX_EMITS_PER_PROCESS = 60;
+const DEFAULT_MAX_EMITS_PER_DAY = 60;
 
 // UTC epoch-day as a plain integer — no Intl, no Date object, no allocation, so
 // it is cheap enough to run on every suppressed read.
@@ -99,11 +107,11 @@ export function createOfflineUsageSignal({
   emit,
   now = Date.now,
   ladder = DEFAULT_LADDER,
-  maxEmitsPerProcess = DEFAULT_MAX_EMITS_PER_PROCESS,
+  maxEmitsPerDay = DEFAULT_MAX_EMITS_PER_DAY,
 }: OfflineUsageSignalOptions): OfflineUsageSignal {
   const countsByKey = new Map<string, number>();
   let currentEpochDay = epochDay(now());
-  let emitsThisProcess = 0;
+  let emitsToday = 0;
 
   // Returns the new count when it crossed a ladder rung, otherwise null.
   function countAndCheckRung(key: string): number | null {
@@ -111,12 +119,13 @@ export function createOfflineUsageSignal({
     if (day !== currentEpochDay) {
       currentEpochDay = day;
       countsByKey.clear();
+      emitsToday = 0;
     }
     const count = (countsByKey.get(key) ?? 0) + 1;
     countsByKey.set(key, count);
     if (!ladder.includes(count)) return null;
-    if (emitsThisProcess >= maxEmitsPerProcess) return null;
-    emitsThisProcess += 1;
+    if (emitsToday >= maxEmitsPerDay) return null;
+    emitsToday += 1;
     return count;
   }
 
@@ -143,7 +152,7 @@ export function createOfflineUsageSignal({
     reset() {
       countsByKey.clear();
       currentEpochDay = epochDay(now());
-      emitsThisProcess = 0;
+      emitsToday = 0;
     },
   };
 }

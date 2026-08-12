@@ -462,8 +462,12 @@ export const SHARED_EVENTS = {
   // local to serve, so the surface got an empty result. The conversion pool that
   // #4318 (discovery nudges) and #4002 (unsupported filters) exist to shrink.
   // Same rollup contract and same readCount semantics as Offline Read Served.
-  // Props: { reason: 'board_not_downloaded' | 'filter_unsupported',
-  //   surface: 'search' | 'climb_detail' | 'grade', boardName, readCount }.
+  // Props: { reason: 'board_not_downloaded' | 'filter_unsupported' |
+  //   'local_db_unavailable', surface: 'search' | 'climb_detail' | 'grade',
+  //   boardName, readCount }. `local_db_unavailable` means there was no database
+  // handle to ask at all (init still retrying, or wedged — #4313 / #4314). The
+  // board may well BE downloaded in that case, so it is deliberately NOT part of
+  // #4318's nudge audience.
   OfflineReadUnavailable: 'Offline Read Unavailable',
 } as const;
 

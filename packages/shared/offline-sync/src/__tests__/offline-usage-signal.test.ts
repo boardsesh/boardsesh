@@ -8,14 +8,14 @@ import { createOfflineUsageSignal, type OfflineUsageEmission } from '../telemetr
 
 const DAY_MS = 86_400_000;
 
-function createHarness(options?: { ladder?: readonly number[]; maxEmitsPerProcess?: number; startAt?: number }) {
+function createHarness(options?: { ladder?: readonly number[]; maxEmitsPerDay?: number; startAt?: number }) {
   const emissions: OfflineUsageEmission[] = [];
   let clock = options?.startAt ?? DAY_MS * 20_000;
   const signal = createOfflineUsageSignal({
     emit: (emission) => emissions.push(emission),
     now: () => clock,
     ladder: options?.ladder,
-    maxEmitsPerProcess: options?.maxEmitsPerProcess,
+    maxEmitsPerDay: options?.maxEmitsPerDay,
   });
   return {
     emissions,
@@ -149,8 +149,8 @@ describe('createOfflineUsageSignal', () => {
   });
 
   // Backstop against a future call site turning this into a firehose.
-  it('stops emitting once maxEmitsPerProcess is reached, until reset()', () => {
-    const { signal, emissions } = createHarness({ ladder: [1], maxEmitsPerProcess: 2 });
+  it('stops emitting once maxEmitsPerDay is reached, until reset()', () => {
+    const { signal, emissions } = createHarness({ ladder: [1], maxEmitsPerDay: 2 });
 
     signal.recordRead({ ...kilterSearch, boardName: 'kilter' });
     signal.recordRead({ ...kilterSearch, boardName: 'tension' });
@@ -162,6 +162,22 @@ describe('createOfflineUsageSignal', () => {
     signal.recordRead({ ...kilterSearch, boardName: 'moonboard' });
 
     expect(emissions).toHaveLength(3);
+  });
+
+  // A phone can keep this process resident for weeks. A lifetime cap would
+  // eventually mute the north-star for the heaviest offline users — the exact
+  // silent under-count this signal exists to eliminate — so the cap is per day.
+  it('lifts the emission cap when the day rolls over', () => {
+    const harness = createHarness({ ladder: [1], maxEmitsPerDay: 1 });
+
+    harness.signal.recordRead(kilterSearch);
+    harness.signal.recordRead({ ...kilterSearch, boardName: 'tension' });
+    expect(harness.emissions).toHaveLength(1);
+
+    harness.advance(DAY_MS);
+    harness.signal.recordRead(kilterSearch);
+
+    expect(harness.emissions).toHaveLength(2);
   });
 
   // The gate is called from a read path — a broken emit binding must never

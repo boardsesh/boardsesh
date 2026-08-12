@@ -694,6 +694,39 @@ describe('offlineAwareRequest — offline-usage signal lanes (#4317)', () => {
     expect(recordOfflineRead).not.toHaveBeenCalled();
   });
 
+  // Database init retries for up to 30s and can stay wedged for the whole launch
+  // (#4313 / #4314). Reporting that as `board_not_downloaded` would put users who
+  // DID download a board into the audience #4318 nudges to download one.
+  it('records local_db_unavailable, not board_not_downloaded, when there is no database handle', async () => {
+    setOnline(false);
+    getDatabaseHandle.mockReturnValue(null);
+
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(recordOfflineReadUnavailable).toHaveBeenCalledExactlyOnceWith({
+      reason: 'local_db_unavailable',
+      surface: 'search',
+      boardName: 'kilter',
+    });
+  });
+
+  // The rescue read is what makes this lane "served"; if it throws, the caller
+  // gets the network error and no data, so booking a served read would inflate
+  // the north-star with reads nobody received.
+  it('does not record network_error_local when the local rescue read itself throws', async () => {
+    setOfflineEngineEnabled(false);
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    request.mockRejectedValue(new Error('Network request failed'));
+    searchClimbsLocal.mockRejectedValue(new Error('database is locked'));
+
+    await expect(offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput })).rejects.toThrow(
+      'database is locked',
+    );
+
+    expect(recordOfflineRead).not.toHaveBeenCalled();
+  });
+
   it('does not record anything for an unregistered document', async () => {
     setOnline(false);
 
