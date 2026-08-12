@@ -167,6 +167,25 @@ layout artifact but intentionally outside the enabled size.
   **permanent miss for that run, no bootstrap attempt burned** — the scope falls back to the always-correct
   paged crawl, and the next nightly export rebuilds the artifact at the new schema.
 
+### The two artifact sizes in a manifest entry
+
+A manifest entry carries the artifact's size twice, and the two diverge once `--gzip` ships:
+
+| Field               | What it is                                    | Who reads it                                                                                                                                                              |
+| ------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bytes`             | Stored object size — what comes down the wire | **Every user-facing number.** The My Boards confirm-dialog size quote (`estimateScopeDownload`) and the download progress row both use it, so the two can never disagree. |
+| `uncompressedBytes` | Decoded size — the SQLite file that hits disk | Internals only: the progress denominator on downloaders that write decoded bytes with no usable reported total, and the exact free-disk-space precheck. Never rendered.   |
+
+Under `--gzip` the decoded size runs several times `bytes` (Kilter layout 1: ~103 MB stored, ~271 MB
+decoded). Showing the decoded figure in the progress row would contradict the number the user just accepted
+in the confirm dialog, so it never reaches the UI.
+
+`uncompressedBytes` is **optional and additive** — no `format_version` bump, since an old client simply
+ignores the key. Every entry published before the field existed omits it, and the merge path carries those
+entries through untouched, so a reader must handle `undefined`. It only starts appearing on the first
+export run after the field ships: the nightly runs at 07:15 UTC, or dispatch
+`.github/workflows/export-board-snapshots.yml` manually to fill it in sooner.
+
 ## Client bootstrap flow
 
 Implemented in `snapshot-bootstrap.ts` (the ATTACH/import/verify mechanics) and orchestrated from

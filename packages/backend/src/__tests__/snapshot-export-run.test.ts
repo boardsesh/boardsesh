@@ -381,6 +381,46 @@ describe('runExport — gzip + key-prefix (dual-publish transition)', () => {
     expect((body as Buffer)[1]).toBe(0x8b);
   });
 
+  it('--gzip publishes the pre-compression size in uncompressedBytes, distinct from the stored bytes', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+
+    await runExport(['--gzip', '--key-prefix', GZIP_PREFIX]);
+
+    const manifestCalls = vi.mocked(uploadToS3).mock.calls.filter(([, key]) => key === GZIP_MANIFEST_KEY);
+    const manifest = JSON.parse((manifestCalls[0][0] as Buffer).toString('utf8')) as SnapshotManifest;
+    const entry = manifest.entries[0];
+    const [gzippedBody] = artifactUploadCalls()[0];
+
+    // `bytes` is what S3 stores (and what the client downloads); uncompressedBytes
+    // is the SQLite file that lands on disk after gunzip — strictly larger here.
+    expect(entry.bytes).toBe((gzippedBody as Buffer).length);
+    expect(entry.uncompressedBytes).toBeGreaterThan(entry.bytes);
+  });
+
+  it('an identity run reports uncompressedBytes equal to bytes', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+
+    await runExport([]);
+
+    const entry = uploadedManifest().entries[0];
+    expect(entry.uncompressedBytes).toBe(entry.bytes);
+  });
+
+  it('a merged previous entry that predates uncompressedBytes rides through without it', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    // The fixture deliberately omits uncompressedBytes — every entry published
+    // before this field existed looks like this, and the merge must not invent one.
+    const legacyEntry = manifestEntryFixture('tension', 9, 'board-snapshots/v1/tension/9/old.db');
+    expect(legacyEntry.uncompressedBytes).toBeUndefined();
+    serveExistingManifest(manifestFixture([legacyEntry]));
+
+    await runExport(['--board', 'kilter']);
+
+    const merged = uploadedManifest().entries.find((entry) => entry.boardType === 'tension')!;
+    expect(merged).toEqual(legacyEntry);
+    expect(merged.uncompressedBytes).toBeUndefined();
+  });
+
   it('rejects an unsafe --key-prefix before any upload', async () => {
     await seedClimb('kilter', 1, 'k1-a');
     await expect(runExport(['--key-prefix', '../evil'])).rejects.toThrow(/--key-prefix expects a safe key/);
