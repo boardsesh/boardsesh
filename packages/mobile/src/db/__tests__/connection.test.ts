@@ -330,6 +330,10 @@ describe('initializeDatabase lock contention (#4104)', () => {
 
     expect(getDatabaseHandle()).toBe(healthy.db);
     expect(reportErrorMock).not.toHaveBeenCalled();
+    // Working around a remount is not recovering from a lock: the closed-handle
+    // artefact must not arm the recovery event either, or its ~retry-delay
+    // elapsedMs would feed the distribution that sizes the retry window (#4325).
+    expect(trackMock).not.toHaveBeenCalled();
   });
 
   it('reports a recovered init exactly once, with the contention it survived', async () => {

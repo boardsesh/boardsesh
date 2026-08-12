@@ -236,24 +236,35 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
       }
 
       if (outcome.status === 'ready') {
-        if (attempt > 1) {
+        // Only a chain that survived a GENUINE lock failure recovered from
+        // contention. A chain whose only failure was against a superseded (closed)
+        // handle worked around a remount, not a lock — firing the event for it
+        // would claim contention that never happened and feed a bogus ~retry-delay
+        // `elapsedMs` into the distribution that sizes the retry window (#4325).
+        if (attempt > 1 && lastFailure !== null) {
           reportInitRecovered({
             attempts: attempt,
             elapsedMs: Date.now() - startedAt,
-            phase: lastFailure?.phase ?? null,
-            sqliteCode: lastFailure?.sqliteCode ?? null,
+            phase: lastFailure.phase,
+            sqliteCode: lastFailure.sqliteCode,
           });
         }
         return;
       }
-
-      lastFailure = { phase: outcome.phase, sqliteCode: outcome.sqliteCode };
 
       // A remount landed WHILE this attempt was in flight, so the connection it just
       // failed against is the one `SQLiteProvider` closed on teardown. That failure
       // says nothing about the lock, and reporting it would pollute the sqlite-init
       // aggregate with a lifecycle artefact — carry on against the new handle instead.
       const superseded = latestDatabase !== null && latestDatabase !== target;
+
+      // Lock-classified failures always count toward the recovery narrative — the
+      // lock was real even if the handle was superseded a moment later. A non-lock
+      // throw against a superseded handle is the closed-connection artefact above
+      // and must not arm the recovery event.
+      if (outcome.retryable || !superseded) {
+        lastFailure = { phase: outcome.phase, sqliteCode: outcome.sqliteCode };
+      }
 
       const retryDelayMs = INIT_RETRY_DELAYS_MS[attempt - 1];
       const outOfRoad =
@@ -316,7 +327,7 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
 function reportInitRecovered(properties: {
   attempts: number;
   elapsedMs: number;
-  phase: InitPhase | null;
+  phase: InitPhase;
   sqliteCode: number | null;
 }): void {
   if (hasReportedRecovery) return;
