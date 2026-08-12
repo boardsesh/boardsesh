@@ -14,6 +14,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Improved
 
+- Kilter and Tension downloads finish much faster — Boardsesh grades now arrive with the catalog instead of being fetched a page at a time. Boards you already downloaded pick them up on the next sync too. ([#4347](https://github.com/boardsesh/boardsesh/pull/4347))
 - Downloading a board no longer starts over when you lock your phone — a finished download is kept and picked up on the next sync instead of being thrown away. ([#4345](https://github.com/boardsesh/boardsesh/pull/4345))
 
 ### Fixed

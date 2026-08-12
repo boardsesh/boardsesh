@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-12T11:28:16.973Z",
+  "generatedAt": "2026-08-12T11:41:37.247Z",
   "entries": [
+    {
+      "prNumber": 4347,
+      "category": "improved",
+      "title": "Kilter and Tension downloads finish much faster — Boardsesh grades now arrive with the catalog instead of being fetched a page at a time. Boards you already downloaded pick them up on the next sync too.",
+      "mergedAt": "2026-08-12T11:40:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4347"
+    },
     {
       "prNumber": 4345,
       "category": "improved",
