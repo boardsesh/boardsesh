@@ -66,6 +66,13 @@ export function getDatabaseHandle(): SQLiteDatabase | null {
  */
 const MAX_INIT_ATTEMPTS = 5;
 const MAX_INIT_WINDOW_MS = 30_000;
+/**
+ * How many times a superseded attempt may be refunded (see the restart branch in
+ * `beginInitialization`). Each refund needs its own remount — the retry immediately
+ * retargets onto the connection that superseded it — so this only exists to stop a
+ * pathological remount loop from keeping one chain alive forever.
+ */
+const MAX_SUPERSEDED_RESTARTS = 3;
 // Exported so the retry tests advance their fake clock by the real gap rather than
 // mirroring these numbers in a literal that silently drifts from them.
 export const INIT_RETRY_DELAYS_MS = [500, 2_000, 5_000, 10_000];
@@ -223,15 +230,24 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
     // was contended rather than just "it took three goes".
     let lastFailure: { phase: InitPhase; sqliteCode: number | null } | null = null;
 
-    for (let attempt = 1; attempt <= MAX_INIT_ATTEMPTS; attempt += 1) {
+    // Attempts made, for the telemetry narrative ("it took three goes").
+    let attempts = 0;
+    // Attempts that actually reached the live connection, which is what the backoff
+    // and the give-up ceiling are budgeting for. A superseded attempt is refunded —
+    // see the restart branch below.
+    let budgetSpent = 0;
+    let supersededRestarts = 0;
+
+    while (budgetSpent < MAX_INIT_ATTEMPTS) {
       // The live connection, which a remount may have swapped since the chain
       // started — see `latestDatabase`. Falls back to the captured one only if the
       // handle was cleared outright.
       const target = latestDatabase ?? db;
       const outcome = await attemptInitialization(target);
+      attempts += 1;
 
       // Unblock the provider once, whatever the first attempt did.
-      if (attempt === 1) {
+      if (attempts === 1) {
         releaseLaunch();
       }
 
@@ -241,9 +257,11 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
         // handle worked around a remount, not a lock — firing the event for it
         // would claim contention that never happened and feed a bogus ~retry-delay
         // `elapsedMs` into the distribution that sizes the retry window (#4325).
-        if (attempt > 1 && lastFailure !== null) {
+        // `lastFailure` is only ever set by an earlier iteration, so it doubles as
+        // the "this was not a first-attempt win" check.
+        if (lastFailure !== null) {
           reportInitRecovered({
-            attempts: attempt,
+            attempts,
             elapsedMs: Date.now() - startedAt,
             phase: lastFailure.phase,
             sqliteCode: lastFailure.sqliteCode,
@@ -266,17 +284,30 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
         lastFailure = { phase: outcome.phase, sqliteCode: outcome.sqliteCode };
       }
 
-      const retryDelayMs = INIT_RETRY_DELAYS_MS[attempt - 1];
+      // A non-lock failure against a superseded handle never touched the live file, so
+      // it spends no budget and takes no backoff — the replacement connection is fresh,
+      // there is nothing to wait out. Without the refund a remount landing during the
+      // LAST attempt hit the attempt ceiling and ended the chain with the
+      // replacement never initialized, and nothing left to call in: that remount had
+      // already been handed the resolved launch promise, so schema readiness stayed
+      // false for the rest of the session.
+      if (superseded && !outcome.retryable && supersededRestarts < MAX_SUPERSEDED_RESTARTS) {
+        supersededRestarts += 1;
+        continue;
+      }
+
+      budgetSpent += 1;
+      const retryDelayMs = INIT_RETRY_DELAYS_MS[budgetSpent - 1];
       const outOfRoad =
         (!outcome.retryable && !superseded) ||
-        attempt === MAX_INIT_ATTEMPTS ||
+        budgetSpent === MAX_INIT_ATTEMPTS ||
         retryDelayMs === undefined ||
         Date.now() + retryDelayMs >= deadline;
 
       if (outOfRoad) {
         if (__DEV__) {
           console.warn(
-            `[SQLite] initializeDatabase failed in phase "${outcome.phase}" after ${attempt} attempt(s); ` +
+            `[SQLite] initializeDatabase failed in phase "${outcome.phase}" after ${attempts} attempt(s); ` +
               'offline storage disabled this session:',
             outcome.error,
           );
@@ -299,7 +330,7 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
               sqlite_code: outcome.sqliteCode,
               journal_mode: await readJournalMode(target),
             },
-            extra: { attempts: attempt, retryable: outcome.retryable, elapsedMs: Date.now() - startedAt },
+            extra: { attempts, retryable: outcome.retryable, elapsedMs: Date.now() - startedAt },
           });
         }
         return;

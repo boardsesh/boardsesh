@@ -198,11 +198,20 @@ describe('initializeDatabase lock contention (#4104)', () => {
   let dbDir: string;
   let realDb: TestSqliteDb;
 
+  const LOCK_ERROR_MESSAGE = "Calling the 'execAsync' function has failed → Error code 5: database is locked";
+  // What expo-sqlite throws once SQLiteProvider's teardown has closed the handle the
+  // chain captured. Not a lock error, so it classifies as permanent.
+  const CLOSED_HANDLE_MESSAGE = 'Access to closed resource';
+
   // Stands in for the contended connection: the mutation-queue DDL — the first write
   // initializeDatabase issues — fails with the real Sentry message until `unlock()`.
-  function createContendedDatabase(options: { error?: Error; onFailure?: () => void } = {}) {
-    const failure =
-      options.error ?? new Error("Calling the 'execAsync' function has failed → Error code 5: database is locked");
+  // `error` may be a function to vary the throw per failure (attempt N is contended,
+  // attempt N+1 is a closed handle).
+  function createContendedDatabase(
+    options: { error?: Error | ((failureCount: number) => Error); onFailure?: (failureCount: number) => void } = {},
+  ) {
+    const { error = new Error(LOCK_ERROR_MESSAGE) } = options;
+    const failureFor = (failureCount: number) => (typeof error === 'function' ? error(failureCount) : error);
     let locked = true;
     let failures = 0;
 
@@ -212,8 +221,8 @@ describe('initializeDatabase lock contention (#4104)', () => {
           failures += 1;
           // Lets a test land a remount WHILE this attempt is in flight, which is the
           // only way the chain's target can be superseded.
-          options.onFailure?.();
-          throw failure;
+          options.onFailure?.(failures);
+          throw failureFor(failures);
         }
         await realDb.execAsync(source);
       },
@@ -313,11 +322,10 @@ describe('initializeDatabase lock contention (#4104)', () => {
     vi.useFakeTimers();
     const healthy = createContendedDatabase();
     healthy.unlock();
-    // What expo-sqlite throws once SQLiteProvider's teardown has closed the handle
-    // the chain captured. It is NOT a lock error, so without the supersede check the
-    // chain would stop dead on attempt 1 and file it under kind:'sqlite-init'.
+    // Without the supersede check the chain would stop dead on attempt 1 and file the
+    // closed-handle throw under kind:'sqlite-init'.
     const closed = createContendedDatabase({
-      error: new Error('Access to closed resource'),
+      error: new Error(CLOSED_HANDLE_MESSAGE),
       onFailure: () => {
         void initializeDatabase(healthy.db);
       },
@@ -334,6 +342,39 @@ describe('initializeDatabase lock contention (#4104)', () => {
     // artefact must not arm the recovery event either, or its ~retry-delay
     // elapsedMs would feed the distribution that sizes the retry window (#4325).
     expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  it('does not spend the final attempt on a connection the remount had already closed', async () => {
+    vi.useFakeTimers();
+    const healthy = createContendedDatabase();
+    healthy.unlock();
+
+    // Attempts 1-4 are genuine contention; the remount lands DURING attempt 5, so the
+    // last attempt fails against a handle SQLiteProvider had already closed. That
+    // failure tested nothing, so it must not be the one that exhausts the budget:
+    // the remount already holds the resolved launch promise, so a chain that gives up
+    // here leaves the replacement handle uninitialized for the whole session.
+    const contended = createContendedDatabase({
+      error: (failureCount) => new Error(failureCount === 5 ? CLOSED_HANDLE_MESSAGE : LOCK_ERROR_MESSAGE),
+      onFailure: (failureCount) => {
+        if (failureCount === 5) {
+          void initializeDatabase(healthy.db);
+        }
+      },
+    });
+
+    await initializeDatabase(contended.db);
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(contended.failures()).toBe(5);
+    expect(getDatabaseHandle()).toBe(healthy.db);
+    expect(isSchemaReady()).toBe(true);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+    // The refunded attempt retries immediately — the replacement connection is fresh,
+    // so there is no lock to wait out — and the lock narrative survives it: the
+    // recovery still names the contention from attempt 4, not the closed handle.
+    expect(trackMock).toHaveBeenCalledTimes(1);
+    expect(trackMock.mock.calls[0][1]).toMatchObject({ attempts: 6, phase: 'queue-table', sqliteCode: 5 });
   });
 
   it('reports a recovered init exactly once, with the contention it survived', async () => {
