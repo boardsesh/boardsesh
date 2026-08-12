@@ -317,7 +317,17 @@
       "retryFastDownloadTitle": "Schnellen Download nochmal versuchen?",
       "retryFastDownloadMessage": "Lädt die Boulder dieses Boards am Stück statt über Tausende kleiner Anfragen.",
       "retryFastDownloadMessageWithSize": "Etwa {{size}}, am Stück geladen statt über Tausende kleiner Anfragen.",
-      "retryFastDownloadConfirm": "Nochmal versuchen"
+      "retryFastDownloadConfirm": "Nochmal versuchen",
+      "nudge": {
+        "notNow": "Jetzt nicht",
+        "never": "Nicht mehr anzeigen",
+        "postSession": {
+          "title": "{{name}} aufs Handy holen",
+          "body": "Lade den ganzen Katalog einmal herunter, dann ist jeder Boulder da, wenn das Hallen-WLAN streikt: suchen, filtern, Begehungen eintragen, alles.",
+          "cta": "Dieses Board herunterladen",
+          "allBoardsCta": "Alle meine Boards heruntergeladen halten"
+        }
+      }
     },
     "gymPicker": {
       "title": "Wo steht dieses Board?",

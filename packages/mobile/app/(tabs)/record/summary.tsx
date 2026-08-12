@@ -27,12 +27,9 @@ import { SaveToAppleHealthButton } from '../../../src/components/integrations/Sa
 import { ShareToStravaButton } from '../../../src/components/integrations/ShareToStravaButton';
 import { springs, timing } from '../../../src/theme/animations';
 import { hapticSuccess } from '../../../src/lib/haptics';
-import {
-  SESSION_STORE_REVIEW_CANDIDATE_PARAM,
-  STORE_REVIEW_PROMPT_DELAY_MS,
-  isSessionStoreReviewEligible,
-  maybeRequestSessionStoreReview,
-} from '../../../src/lib/store-review';
+import { STORE_REVIEW_PROMPT_DELAY_MS, maybeRequestSessionStoreReview } from '../../../src/lib/store-review';
+import { usePostSessionPrompt } from '../../../src/lib/offline-nudges/use-post-session-prompt';
+import { PostSessionOfflineNudge } from '../../../src/components/offline/PostSessionOfflineNudge';
 import { spacing } from '../../../src/theme/tokens';
 
 type TFunc = (key: string, opts?: Record<string, unknown>) => string;
@@ -63,10 +60,15 @@ export default function SessionSummaryScreen() {
   const promptedSessionIdRef = useRef<string | null>(null);
   const reviewCandidateParam = Array.isArray(reviewCandidate) ? reviewCandidate[0] : reviewCandidate;
 
+  // One decision for the whole screen: the store review, the offline-download
+  // offer, or neither. Resolving it once is what keeps the offline prompt alive
+  // on the ≥3-send sessions where the review is merely on cooldown — see
+  // usePostSessionPrompt.
+  const postSessionPrompt = usePostSessionPrompt(summary, reviewCandidateParam);
+
   useEffect(() => {
     if (!summary) return undefined;
-    if (reviewCandidateParam !== SESSION_STORE_REVIEW_CANDIDATE_PARAM) return undefined;
-    if (!isSessionStoreReviewEligible(summary)) return undefined;
+    if (postSessionPrompt !== 'review') return undefined;
     if (promptedSessionIdRef.current === summary.sessionId) return undefined;
 
     const timer = setTimeout(() => {
@@ -75,7 +77,7 @@ export default function SessionSummaryScreen() {
     }, STORE_REVIEW_PROMPT_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [summary, reviewCandidateParam]);
+  }, [summary, postSessionPrompt]);
 
   // Still loading: query hasn't settled yet (first fetch in flight or refetching
   // after a retry). isPending covers the disabled (no sessionId) case too.
@@ -108,7 +110,7 @@ export default function SessionSummaryScreen() {
     );
   }
 
-  return <SessionSummaryContent summary={summary} />;
+  return <SessionSummaryContent summary={summary} storeReviewWillPrompt={postSessionPrompt !== 'offline'} />;
 }
 
 /**
@@ -118,7 +120,13 @@ export default function SessionSummaryScreen() {
  * stat tiles, and the same grade chart — so the post-session payoff feels like
  * the rest of the app.
  */
-function SessionSummaryContent({ summary }: { summary: SessionSummary }) {
+function SessionSummaryContent({
+  summary,
+  storeReviewWillPrompt,
+}: {
+  summary: SessionSummary;
+  storeReviewWillPrompt: boolean;
+}) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -239,6 +247,11 @@ function SessionSummaryContent({ summary }: { summary: SessionSummary }) {
           </Text>
         </Animated.View>
       </View>
+
+      {/* "You climbed here — keep it on your phone." Renders itself away unless
+          the board is un-downloaded, the flags are on, and the store review has
+          stood down. */}
+      <PostSessionOfflineNudge storeReviewWillPrompt={storeReviewWillPrompt} style={styles.offlineNudge} />
 
       {/* Hardest send — a real achievement card with a board thumbnail */}
       {hardest ? (
@@ -395,6 +408,9 @@ const styles = StyleSheet.create({
   },
   featuredValue: {
     fontWeight: '700',
+  },
+  offlineNudge: {
+    marginBottom: spacing[4],
   },
   hardestRow: {
     flexDirection: 'row',

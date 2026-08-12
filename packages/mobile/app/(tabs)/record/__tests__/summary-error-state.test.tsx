@@ -37,6 +37,10 @@ vi.mock('expo-router', () => ({
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
 vi.mock('../../../../src/lib/graphql/hooks', () => ({ useSessionSummary: () => hook.result }));
 vi.mock('../../../../src/lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
+// Has its own render suite (src/components/offline/__tests__).
+vi.mock('../../../../src/components/offline/PostSessionOfflineNudge', () => ({
+  PostSessionOfflineNudge: () => null,
+}));
 // Stub the integration summary actions so the real integrations lib (which
 // pulls in the native health-workouts/reanimated modules) isn't loaded in the
 // node test env.
@@ -56,6 +60,10 @@ vi.mock('../../../../src/lib/store-review', () => ({
   SESSION_STORE_REVIEW_CANDIDATE_PARAM: '1',
   STORE_REVIEW_PROMPT_DELAY_MS: 1000,
   isSessionStoreReviewEligible: (summary: { totalSends: number }) => summary.totalSends >= 3,
+  // The screen resolves the FULL decision now (cooldown + per-session dedup +
+  // StoreReview.hasAction()), not the bare eligibility predicate — see
+  // usePostSessionPrompt.
+  shouldRequestSessionStoreReview: async (summary: { totalSends: number }) => summary.totalSends >= 3,
   maybeRequestSessionStoreReview: storeReview.maybeRequestSessionStoreReview,
 }));
 
@@ -205,6 +213,9 @@ describe('SessionSummaryScreen settled error/empty state', () => {
     render(<SessionSummaryScreen />);
     expect(storeReview.maybeRequestSessionStoreReview).not.toHaveBeenCalled();
 
+    // The review-vs-offline-nudge decision resolves asynchronously now, and only
+    // then does the delay timer get scheduled — flush the microtask first.
+    await act(async () => {});
     await act(async () => {
       vi.advanceTimersByTime(1000);
     });
@@ -231,6 +242,7 @@ describe('SessionSummaryScreen settled error/empty state', () => {
 
     const { rerender } = render(<SessionSummaryScreen />);
 
+    await act(async () => {});
     await act(async () => {
       vi.advanceTimersByTime(500);
     });

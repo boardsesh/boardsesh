@@ -317,7 +317,17 @@
       "retryFastDownloadTitle": "Réessayer le téléchargement rapide ?",
       "retryFastDownloadMessage": "Télécharge les blocs de cette board en une fois au lieu de milliers de petites requêtes.",
       "retryFastDownloadMessageWithSize": "Environ {{size}}, téléchargés en une fois au lieu de milliers de petites requêtes.",
-      "retryFastDownloadConfirm": "Réessayer"
+      "retryFastDownloadConfirm": "Réessayer",
+      "nudge": {
+        "notNow": "Pas maintenant",
+        "never": "Ne plus afficher",
+        "postSession": {
+          "title": "Garde {{name}} sur ton téléphone",
+          "body": "Télécharge tout le catalogue une fois et chaque bloc est là quand le wifi de la salle lâche : recherche, filtres, croix dans le carnet, tout.",
+          "cta": "Télécharger cette board",
+          "allBoardsCta": "Garder toutes mes boards téléchargées"
+        }
+      }
     },
     "gymPicker": {
       "title": "Où se trouve cette board ?",
