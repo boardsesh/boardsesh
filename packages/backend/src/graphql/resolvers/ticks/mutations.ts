@@ -36,6 +36,7 @@ import {
   isDirectAuroraTwin,
   isRealAuroraPullRow,
   notAuroraTwinDuplicate,
+  resolveCanonicalClimbUuid,
 } from '@boardsesh/db/queries';
 
 // Beta links are only attached on successful ascents (flash / send), never
@@ -702,6 +703,28 @@ export const tickMutations = {
       validatedInput.angle,
     );
 
+    // Land the tick on the CANONICAL climb, not on whatever UUID the client
+    // happened to be holding. Dedup migrations retire catalog UUIDs and record
+    // the mapping in board_climb_aliases, but a phone carries an offline board
+    // catalog and only learns a climb was retired on its next pull — so a send
+    // logged from a stale catalog, or replayed by the offline drainer, arrives
+    // naming a retired UUID. Stored verbatim it is stranded: every read path
+    // resolves alias -> canonical FORWARD (get-climb.ts, web queries.ts), never
+    // tick -> canonical backward, so the ascent never reaches the canonical's
+    // board_climb_stats and never shows on the climb page, while the recompute
+    // seeds a fresh stats row under the retired UUID.
+    //
+    // The lookup is a primary-key hit on (board_type, alias_uuid) and a miss
+    // returns the input unchanged, so a non-aliased climb pays one index probe
+    // and nothing else. A DB error propagates rather than falling back — that is
+    // resolveCanonicalClimbUuid's documented contract, and it is the right call
+    // here: a silent fallback would let a wave of ticks land on retired rows,
+    // which is the failure this resolves.
+    //
+    // updateTick needs no counterpart: UpdateTickInputSchema carries no
+    // climbUuid, so an edit can never move a tick to a different climb.
+    const climbUuid = await resolveCanonicalClimbUuid(db, validatedInput.boardType, validatedInput.climbUuid);
+
     // A stale/unknown sessionId (session ended, or never existed on this
     // backend — e.g. an offline-replayed tick) would otherwise FK-violate the
     // insert and lose the whole tick (#2386). Same best-effort drop-the-ref
@@ -858,16 +881,10 @@ export const tickMutations = {
     const tickVideoUrl = videoUrlForTickStatus(validatedInput.status, validatedInput.videoUrl);
     const attachedVideoUrl = tickVideoUrl ? normalizeBetaVideoUrl(tickVideoUrl) : tickVideoUrl;
     const betaPlan: BetaLinkInsertPlan = attachedVideoUrl
-      ? await validateAndEnrichBetaLinkInsert(
-          ctx,
-          validatedInput.boardType,
-          validatedInput.climbUuid,
-          attachedVideoUrl,
-          {
-            onSameClimbDup: 'skip',
-            onCrossBoardDup: 'skip',
-          },
-        )
+      ? await validateAndEnrichBetaLinkInsert(ctx, validatedInput.boardType, climbUuid, attachedVideoUrl, {
+          onSameClimbDup: 'skip',
+          onCrossBoardDup: 'skip',
+        })
       : { action: 'no-url' };
 
     // Insert into database. When the client supplied a uuid that already exists
@@ -880,7 +897,7 @@ export const tickMutations = {
           uuid,
           userId,
           boardType: validatedInput.boardType,
-          climbUuid: validatedInput.climbUuid,
+          climbUuid,
           angle: validatedInput.angle,
           isMirror: validatedInput.isMirror,
           status: validatedInput.status,
@@ -920,7 +937,7 @@ export const tickMutations = {
           .insert(dbSchema.boardBetaLinks)
           .values({
             boardType: validatedInput.boardType,
-            climbUuid: validatedInput.climbUuid,
+            climbUuid,
             link: attachedVideoUrl,
             shortcode: getInstagramMediaId(attachedVideoUrl),
             videoIdentity: betaLinkIdentity(attachedVideoUrl),
