@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-08-12T11:08:41.250Z",
+  "generatedAt": "2026-08-12T11:14:48.025Z",
   "entries": [
+    {
+      "prNumber": 4333,
+      "category": "new",
+      "title": "Boards stuck on the slow download now have a button to try the fast one again, and tell you how big it is before you commit. On mobile data, a board won't quietly start a big download on its own.",
+      "mergedAt": "2026-08-12T11:11:26Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4333"
+    },
+    {
+      "prNumber": 4328,
+      "category": "new",
+      "title": "Logging out now asks first, and tells you what it clears — the boards you downloaded, your offline logbook, and any sends still waiting to sync, including the ones that already failed to send. The Log out button in the side menu used to do all that on the first tap with no warning at all. The downloaded boards actually come off the phone now instead of sitting there invisible, and the space comes back. A dropped connection that signs you out on its own leaves your downloads alone.",
+      "mergedAt": "2026-08-12T11:08:39Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4328"
+    },
     {
       "prNumber": 4323,
       "category": "fixed",
