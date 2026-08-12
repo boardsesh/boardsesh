@@ -77,6 +77,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'DEFAULT: ON — unlike every other flag here, absent/undefined means enabled. Real byte + percent progress on a downloading board instead of a static spinner. Off restores the old caption AND stops passing a progress callback to the native downloader, so it doubles as the kill switch if the progress-enabled download path ever proves slower.',
   },
   {
+    key: 'offline-discovery-nudges',
+    label: 'Offline discovery nudges',
+    description:
+      "Suggest taking a board offline: the post-session prompt, the no-signal empty states, the board-card download glyph and the What's New spotlight. Requires offline-board-downloads to also be on.",
+  },
+  {
     key: 'boardsesh-grade',
     label: 'Boardsesh grade',
     description:
@@ -181,6 +187,18 @@ export function useSnapshotBootstrapEnabled(): boolean {
  */
 export function useOfflineDownloadProgressEnabled(): boolean {
   return useFeatureFlag('offline-download-progress') !== false;
+}
+
+/**
+ * Gate for the offline discovery nudges (issue #4318). Missing/undefined reads
+ * as OFF so this ramps from zero — nudging users into a download before the
+ * download itself is fast burns the one first impression they get.
+ *
+ * Callers must AND this with `useOfflineDownloadsEnabled()`: a nudge for a
+ * feature the kill switch has disabled is a dead end.
+ */
+export function useOfflineNudgesEnabled(): boolean {
+  return useFeatureFlag('offline-discovery-nudges') === true;
 }
 
 /**

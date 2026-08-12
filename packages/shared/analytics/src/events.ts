@@ -515,6 +515,19 @@ export const SHARED_EVENTS = {
   // filesDeleted }. Mobile-only: web's overlay store is the Cache API, already
   // bounded by entry count.
   CachedImagesSwept: 'Cached Images Swept',
+  // Offline discovery nudges (issue #4318) — the app suggesting a board download
+  // rather than waiting to be found. One event trio across every nudge surface,
+  // separated by `surface`, so the funnel reads shown → accepted → (#4316's
+  // download started / OfflineBoardDownloadCompleted above). Props on all three:
+  // { surface: 'post_session' | 'no_catalog' | 'whats_new' | 'board_card',
+  //   boardType, layoutId, scopeKey, downloadedBoardCount }.
+  OfflineNudgeShown: 'Offline Nudge Shown',
+  // Plus { armedOnly }: true when accepting could only ARM the scope (the device
+  // was offline, so the pull waits for the scheduler's reconnect trigger). Without
+  // it the funnel reads as accepts that never download.
+  OfflineNudgeAccepted: 'Offline Nudge Accepted',
+  // Plus { dismissKind: 'once' | 'forever' }.
+  OfflineNudgeDismissed: 'Offline Nudge Dismissed',
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;

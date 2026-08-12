@@ -16,11 +16,11 @@ Bugs and feature requests become issues. Questions, praise, and chatter get the 
 
 Three separate **jobs**, not three steps in one:
 
-| Job | Environment | Permissions | Holds |
-|---|---|---|---|
-| `collect` | `discord-feedback` | `contents: read` | Discord token |
-| `triage` | **none** | `contents/issues: read` | Claude token only |
-| `apply` | `discord-feedback` | `contents/issues: write` | Discord token |
+| Job       | Environment        | Permissions              | Holds             |
+| --------- | ------------------ | ------------------------ | ----------------- |
+| `collect` | `discord-feedback` | `contents: read`         | Discord token     |
+| `triage`  | **none**           | `contents/issues: read`  | Claude token only |
+| `apply`   | `discord-feedback` | `contents/issues: write` | Discord token     |
 
 **The privilege separation is the security model.** The triage job reads text typed by anyone who can click a public invite, so it is the one that must be assumed compromised. It has no Discord token, no repo write, no issue write, and — because it declares no `environment:` — no ability to name a single environment secret. A prompt injection that fully captures that agent still cannot reach GitHub or Discord. Its only output is a JSON file.
 
@@ -34,14 +34,14 @@ The file→react→reply ordering lives in tested TypeScript rather than in the 
 
 **The bundle is digest-pinned across the triage job.** Cross-validating decisions against the bundle only helps if the bundle itself is trustworthy. The `collect` job records its sha256 as a job output — a different job from the one the agent runs in, so the agent has no way to write it — and `apply` refuses to file anything if the bundle no longer matches.
 
-| File | Role |
-|---|---|
-| `scripts/discord-feedback-scan.ts` | All Discord/GitHub I/O, retries, secrets, CLI |
-| `scripts/lib/discord-feedback.ts` | Pure: snowflakes, emoji matching, triggers, noise, redaction shaping |
-| `scripts/lib/discord-feedback-issue.ts` | Pure: marker, decision validation, issue body, replies |
-| `.claude/skills/discord-feedback-triage/` | The classifier prompt + output schema |
-| `.github/workflows/discord-feedback-issues.yml` | The scheduled job |
-| `scripts/tsconfig.json` | Typechecks these files — repo-root `scripts/` had no CI typecheck before |
+| File                                            | Role                                                                     |
+| ----------------------------------------------- | ------------------------------------------------------------------------ |
+| `scripts/discord-feedback-scan.ts`              | All Discord/GitHub I/O, retries, secrets, CLI                            |
+| `scripts/lib/discord-feedback.ts`               | Pure: snowflakes, emoji matching, triggers, noise, redaction shaping     |
+| `scripts/lib/discord-feedback-issue.ts`         | Pure: marker, decision validation, issue body, replies                   |
+| `.claude/skills/discord-feedback-triage/`       | The classifier prompt + output schema                                    |
+| `.github/workflows/discord-feedback-issues.yml` | The scheduled job                                                        |
+| `scripts/tsconfig.json`                         | Typechecks these files — repo-root `scripts/` had no CI typecheck before |
 
 Root `scripts/` was never typechecked, so a broken type here would only have surfaced when the scheduled workflow failed at runtime. `vp run typecheck:scripts` now covers this pipeline and runs as part of the `typecheck` aggregate; widen its `include` as other scripts are made type-clean.
 
@@ -66,24 +66,24 @@ Channel and guild ids need Developer Mode on (Discord → Settings → Advanced)
 
 Everything for this pipeline lives in a dedicated **`discord-feedback` environment** (repo → Settings → Environments), **not** in `Production`. Keep it that way — and keep it **reviewer-free**, or scheduled runs hang forever waiting for an approval nobody is watching for.
 
-| Name | Where | Notes |
-|---|---|---|
-| `DISCORD_BOT_TOKEN` | `discord-feedback` secret | Bot token from the portal. The only secret this pipeline needs |
-| `CLAUDE_CODE_OAUTH_TOKEN` | repo secret | Already exists, shared with `claude.yml`. Used by the `triage` job, which declares no environment |
+| Name                      | Where                     | Notes                                                                                             |
+| ------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------- |
+| `DISCORD_BOT_TOKEN`       | `discord-feedback` secret | Bot token from the portal. The only secret this pipeline needs                                    |
+| `CLAUDE_CODE_OAUTH_TOKEN` | repo secret               | Already exists, shared with `claude.yml`. Used by the `triage` job, which declares no environment |
 
 `DISCORD_DEPLOY_WEBHOOK` stays in `Production` — different thing, used by the deploy workflows.
 
 Variables, all in the `discord-feedback` environment except the kill switch (non-secret so they're auditable in the run log):
 
-| Name | Where | Default / example |
-|---|---|---|
-| `DISCORD_FEEDBACK_ENABLED` | **repo level** | `true` — kill switch for the **hourly run**; manual dispatch works regardless |
-| `DISCORD_GUILD_ID` | `discord-feedback` | The Boardsesh guild id |
-| `DISCORD_FEEDBACK_CHANNEL_IDS` | `discord-feedback` | Comma-separated; the `#user-feedback` id |
-| `DISCORD_EXCLUDE_CHANNEL_IDS` | `discord-feedback` | Comma-separated; optional |
-| `DISCORD_TRIGGER_EMOJI` | `discord-feedback` | `🐛` (custom emoji: `name:id`) |
-| `DISCORD_PROCESSED_EMOJI` | `discord-feedback` | `✅` |
-| `DISCORD_TRIGGER_KEYWORDS` | `discord-feedback` | `bug,issue,file this,feature request` |
+| Name                           | Where              | Default / example                                                             |
+| ------------------------------ | ------------------ | ----------------------------------------------------------------------------- |
+| `DISCORD_FEEDBACK_ENABLED`     | **repo level**     | `true` — kill switch for the **hourly run**; manual dispatch works regardless |
+| `DISCORD_GUILD_ID`             | `discord-feedback` | The Boardsesh guild id                                                        |
+| `DISCORD_FEEDBACK_CHANNEL_IDS` | `discord-feedback` | Comma-separated; the `#user-feedback` id                                      |
+| `DISCORD_EXCLUDE_CHANNEL_IDS`  | `discord-feedback` | Comma-separated; optional                                                     |
+| `DISCORD_TRIGGER_EMOJI`        | `discord-feedback` | `🐛` (custom emoji: `name:id`)                                                |
+| `DISCORD_PROCESSED_EMOJI`      | `discord-feedback` | `✅`                                                                          |
+| `DISCORD_TRIGGER_KEYWORDS`     | `discord-feedback` | `bug,issue,file this,feature request`                                         |
 
 ### 4. Provenance label
 
@@ -110,13 +110,13 @@ Two independent guards:
 
 Per message the order is `findIssueByMarker → ensureLabels → createIssue → addReaction → postReply`.
 
-| Crash point | Next run sees | Outcome |
-|---|---|---|
-| before create | no reaction, no marker | re-triaged and filed; one wasted triage |
+| Crash point    | Next run sees             | Outcome                                                                      |
+| -------------- | ------------------------- | ---------------------------------------------------------------------------- |
+| before create  | no reaction, no marker    | re-triaged and filed; one wasted triage                                      |
 | create → react | no reaction, marker found | creation short-circuits; reacts + replies. **This is why the marker exists** |
-| react → reply | reaction present | skipped; the reply is never posted |
+| react → reply  | reaction present          | skipped; the reply is never posted                                           |
 
-That last row is a deliberate trade. Replying before reacting would turn a missing reply into a *duplicate* reply on every subsequent run, which is louder and worse.
+That last row is a deliberate trade. Replying before reacting would turn a missing reply into a _duplicate_ reply on every subsequent run, which is louder and worse.
 
 ## Privacy
 
@@ -158,16 +158,16 @@ vp run discord:feedback-scan -- --mode apply --bundle /tmp/bundle.json --decisio
 
 ## Troubleshooting
 
-| Symptom | Cause |
-|---|---|
-| Run fails with "MESSAGE CONTENT ... disabled" | The privileged intent is off in the Developer Portal |
-| Run fails with "every scan pass failed" | The bot isn't in the guild, or lacks View Channels / Read Message History. `403 Missing Access` on `/guilds/{id}/channels` means **not a member** — inviting it is a browser flow you have to complete, editing the `permissions=` number in the URL does nothing on its own |
-| Collect finds nothing on a busy server | Bot can't see the channels — check role and category overrides |
-| `Discord 403` for one channel | Normal for channels the bot isn't allowed in; it's logged and skipped |
-| `Discord 401` | Bad or rotated token. Fails fast on purpose — repeated 401s get the runner IP Cloudflare-banned |
-| Triage step green but "did not write ... decisions" | A tool the agent needed was denied. Read `claude-execution-output.json` in the run artifact and check `permission_denials_count`. Note Claude Code only consults path rules for `Read`/`Edit` — a `Write(<path>)` rule is accepted and silently never checked |
-| Issues filed but no ✅ | Crash between filing and reacting; the next run recovers via the marker |
-| Same issue filed twice | Should be impossible — check the marker is the body's first line and that search isn't lagging |
-| Nothing runs at all | `DISCORD_FEEDBACK_ENABLED` is not `true` |
+| Symptom                                             | Cause                                                                                                                                                                                                                                                                        |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Run fails with "MESSAGE CONTENT ... disabled"       | The privileged intent is off in the Developer Portal                                                                                                                                                                                                                         |
+| Run fails with "every scan pass failed"             | The bot isn't in the guild, or lacks View Channels / Read Message History. `403 Missing Access` on `/guilds/{id}/channels` means **not a member** — inviting it is a browser flow you have to complete, editing the `permissions=` number in the URL does nothing on its own |
+| Collect finds nothing on a busy server              | Bot can't see the channels — check role and category overrides                                                                                                                                                                                                               |
+| `Discord 403` for one channel                       | Normal for channels the bot isn't allowed in; it's logged and skipped                                                                                                                                                                                                        |
+| `Discord 401`                                       | Bad or rotated token. Fails fast on purpose — repeated 401s get the runner IP Cloudflare-banned                                                                                                                                                                              |
+| Triage step green but "did not write ... decisions" | A tool the agent needed was denied. Read `claude-execution-output.json` in the run artifact and check `permission_denials_count`. Note Claude Code only consults path rules for `Read`/`Edit` — a `Write(<path>)` rule is accepted and silently never checked                |
+| Issues filed but no ✅                              | Crash between filing and reacting; the next run recovers via the marker                                                                                                                                                                                                      |
+| Same issue filed twice                              | Should be impossible — check the marker is the body's first line and that search isn't lagging                                                                                                                                                                               |
+| Nothing runs at all                                 | `DISCORD_FEEDBACK_ENABLED` is not `true`                                                                                                                                                                                                                                     |
 
 **Rollback:** set `DISCORD_FEEDBACK_ENABLED=false`. Emergency: revoke the bot token. Filed issues stay, and the ✅ reactions remain an accurate record of what was processed, so re-enabling never re-files.

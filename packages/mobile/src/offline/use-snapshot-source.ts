@@ -9,7 +9,6 @@ import {
 import { mobileSnapshotSource } from './snapshot-source';
 
 /**
-<<<<<<< HEAD
  * The kill-switch wrapper for download progress (issue #4311). Passing an
  * `onProgress` callback makes expo-file-system take a different NATIVE download
  * implementation — an 8 KB streaming copy loop on Android, a delegate-driven

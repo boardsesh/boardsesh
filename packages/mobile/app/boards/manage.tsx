@@ -19,7 +19,6 @@ import {
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
 import { useSyncStatus } from '../../src/sync';
 import {
-  getDownloadedScopeKeys,
   getCheckpoint,
   getCheckpointKey,
   readBootstrapRetryState,
@@ -29,8 +28,10 @@ import {
   estimateScopeDownload,
 } from '@boardsesh/offline-sync';
 import { useBoardDownloads } from '../../src/offline/use-board-downloads';
-import { useRememberDownloadedBoards } from '../../src/offline/use-remember-downloaded-boards';
 import { useSnapshotManifest } from '../../src/offline/use-snapshot-manifest';
+import { useConfirmBoardDownload } from '../../src/offline/use-confirm-board-download';
+import { useDownloadedScopeKeys } from '../../src/offline/use-downloaded-scope-keys';
+import { useRememberDownloadedBoards } from '../../src/offline/use-remember-downloaded-boards';
 import { useSnapshotSource } from '../../src/offline/use-snapshot-source';
 import { useOfflineSchemaReady } from '../../src/db/use-offline-schema-ready';
 import { formatBytes } from '../../src/lib/format-bytes';
@@ -128,7 +129,8 @@ export default function ManageBoards() {
   // previously-queued writes still flush (see OfflineSyncBridge). This screen
   // stays the only writer of syncEnabledBoards.
   const offlineDownloadsEnabled = useOfflineDownloadsEnabled();
-  const { enableBoardsOffline, retryFastDownload } = useBoardDownloads();
+  const { retryFastDownload } = useBoardDownloads();
+  const { confirmAndDownload } = useConfirmBoardDownload();
   // Warmed here on mount so the download-size estimate is already in cache when a
   // row's toggle is tapped — the confirm dialog must never wait on a fetch.
   //
@@ -194,14 +196,7 @@ export default function ManageBoards() {
   // Ungated by the flag: the offline fallback below needs it too, and a device that
   // still holds downloads after a kill-switch rollback must not be stranded. One
   // cheap indexed read, shared with the Storage screen's cache entry.
-  //
-  // Readiness is a KEY member, not an `enabled` gate: a read against the unmigrated
-  // connection fails into "nothing downloaded", which is the right answer, and a
-  // late flip refetches. Gating would spin forever whenever init genuinely fails.
-  const { data: downloadedScopeKeys, refetch: refetchDownloaded } = useQuery({
-    queryKey: ['downloadedScopeKeys', schemaReady],
-    queryFn: () => getDownloadedScopeKeys(db),
-  });
+  const { data: downloadedScopeKeys, refetch: refetchDownloaded } = useDownloadedScopeKeys();
   const downloadedSet = useMemo(() => new Set(downloadedScopeKeys ?? []), [downloadedScopeKeys]);
   useEffect(() => {
     if (offlineDownloadsEnabled && (!isSyncing || syncStatus.scopeCompletionRevision > 0)) void refetchDownloaded();
@@ -296,55 +291,10 @@ export default function ManageBoards() {
         }
         return;
       }
-      // How big is this download? Only the snapshot path can answer honestly, and
-      // only for a scope that would actually bootstrap — a board toggled off and
-      // back on keeps its rows + checkpoint and resumes as a small delta, so
-      // quoting the full artifact size there would be wrong. estimateScopeDownload
-      // owns those rules (shared with the engine's own eligibility check); anything
-      // it can't vouch for falls back to the sizeless copy.
-      //
-      // Concurrent, not sequential: these are three independent reads and the
-      // dialog opens behind them, so serialising them would show up as a stall on
-      // slow storage.
-      const now = Date.now();
-      const [climbsCheckpoint, statsCheckpoint, scopeComplete, bootstrapAlreadyDone] = await Promise.all([
-        getCheckpoint(db, getCheckpointKey('board_climbs', key)),
-        getCheckpoint(db, getCheckpointKey('board_climb_stats', key)),
-        isScopeDownloadComplete(db, key),
-        isBootstrapDone(db, key),
-      ]);
-      const hasBoardCheckpoint = !!climbsCheckpoint || !!statsCheckpoint;
-      const { state: retryState } = await readBootstrapRetryState(
-        db,
-        key,
-        { now, random: Math.random },
-        hasBoardCheckpoint,
-      );
-      const estimate = estimateScopeDownload({
-        manifest: snapshotManifestRef.current,
-        boardType: scope.boardType,
-        layoutId: scope.layoutId,
-        retryState,
-        hasBoardCheckpoint,
-        isScopeComplete: scopeComplete,
-        isBootstrapDone: bootstrapAlreadyDone,
-        now,
-      });
-      const confirmed = await confirm({
-        title: t('mobile.offline.enableTitle', { name: board.name }),
-        message:
-          estimate.kind === 'snapshot'
-            ? t('mobile.offline.enableMessageWithSize', { size: formatBytes(estimate.bytes, i18n.language) })
-            : t('mobile.offline.enableMessage'),
-        confirmLabel: t('mobile.offline.enableConfirm'),
-        cancelLabel: t('mobile.manage.cancel'),
-      });
-      if (!confirmed) return;
-      // Enable + kick a download now via the shared hook (single-flight, reads the
-      // latest syncEnabledBoards setting).
-      enableBoardsOffline(board, { trigger: 'toggle', source: 'manage' });
+      // Size quote + confirm + enable, shared with the discovery-nudge surfaces.
+      await confirmAndDownload(board, { trigger: 'toggle', source: 'manage' });
     },
-    [confirm, t, i18n.language, db, enableBoardsOffline, downloadProgressEnabled],
+    [confirmAndDownload],
   );
 
   // The escape from a board that settled onto the slow crawl (issue #4313).

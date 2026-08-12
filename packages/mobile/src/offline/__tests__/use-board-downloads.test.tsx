@@ -166,4 +166,31 @@ describe('useBoardDownloads', () => {
 
     expect(spies.triggerSync).not.toHaveBeenCalled();
   });
+
+  // This assertion is the guard, not a description: `onlineManager.isOnline()` is
+  // TRUE on captive-portal wifi, so a cycle kicked from an offline surface would
+  // run, fail, and spend one of the two MAX_BOOTSTRAP_ATTEMPTS per tap — pinning
+  // the scope to the paged crawl after two (#4313). The scheduler's own reconnect
+  // trigger pulls it instead.
+  it('arms a board without kicking a sync cycle', () => {
+    const board = makeBoard('garage', 'kilter', 1, 10);
+    const { result } = renderHook(() => useBoardDownloads());
+
+    result.current.armBoardsOffline(board);
+
+    expect(spies.setOfflineBoardEnabled).toHaveBeenCalledWith('kilter:1:10', true);
+    expect(spies.rememberOfflineBoards).toHaveBeenCalledWith([board]);
+    expect(spies.triggerSync).not.toHaveBeenCalled();
+  });
+
+  it('does nothing for an empty board list on either entry point', () => {
+    const { result } = renderHook(() => useBoardDownloads());
+
+    result.current.armBoardsOffline([]);
+    result.current.enableBoardsOffline([]);
+
+    expect(spies.setOfflineBoardEnabled).not.toHaveBeenCalled();
+    expect(spies.rememberOfflineBoards).not.toHaveBeenCalled();
+    expect(spies.triggerSync).not.toHaveBeenCalled();
+  });
 });

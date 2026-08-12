@@ -242,11 +242,31 @@ const reportScopeDownloadStart: ScopeDownloadStartReporter = ({ scopeKey, pathIn
   });
 };
 
+/**
+ * Query keys that answer "which board scopes are on this device". They are read
+ * by My Boards, the boards picker, More (the Storage row) and every download
+ * affordance, and until now only `remove-offline-board.ts` ever invalidated
+ * them — so a screen the user never left kept claiming a board was not
+ * downloaded long after it had finished (issue #4318).
+ *
+ * Invalidating from this callback rather than from a hook is deliberate:
+ * `useSyncStatus()` publishes a fresh object on every progress frame, so a
+ * subscribing hook would churn the hottest virtualised screens. This fires once
+ * per COMPLETED scope, so the cost is one SQLite read per completion.
+ */
+const DOWNLOAD_STATE_QUERY_KEYS: readonly (readonly string[])[] = [['downloadedScopeKeys'], ['offlineStorage']];
+
 function combinedScopeDownloadCompleteReporter(
   onScopeDownloadComplete: ScopeDownloadCompleteReporter | undefined,
+  queryClient?: QueryClient,
 ): ScopeDownloadCompleteReporter {
   return (info) => {
     reportScopeDownloadComplete(info);
+    if (queryClient) {
+      for (const queryKey of DOWNLOAD_STATE_QUERY_KEYS) {
+        void queryClient.invalidateQueries({ queryKey });
+      }
+    }
     onScopeDownloadComplete?.(info);
   };
 }
@@ -375,7 +395,18 @@ const schedulerTriggers: SchedulerTriggers = {
   },
   subscribeConnectivity(callback) {
     return NetInfo.addEventListener((state) => {
-      callback(state.isConnected ?? false);
+      // Reachability, not just "a network is attached". `isConnected` is TRUE
+      // for the whole of a captive portal or gym wifi with a dead upstream —
+      // the exact connection `armBoardsOffline` exists for — so forwarding it
+      // alone gives the scheduler no offline→online edge when that link starts
+      // working again: an armed scope would sit pending until the user changed
+      // networks or backgrounded and reopened the app. NetInfo's reachability
+      // probe is what actually flips there, and that false→true edge is the
+      // retry.
+      //
+      // `null` is "not probed yet", never "unreachable" — treating it as a
+      // disconnect would invent an edge on every platform that answers late.
+      callback((state.isConnected ?? false) && state.isInternetReachable !== false);
     });
   },
 };
@@ -440,7 +471,7 @@ export function startSyncScheduler(
     snapshotSource: options?.snapshotSource,
     onSnapshotBootstrapError: reportSnapshotBootstrapError,
     onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
-    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),
+    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete, queryClient),
     onScopeDownloadStart: reportScopeDownloadStart,
     onCoverageReset: reportCoverageReset,
     onCoverageEvaluated: reportCoverageEvaluated,
@@ -466,7 +497,7 @@ export function triggerSync(
     snapshotSource: options?.snapshotSource,
     onSnapshotBootstrapError: reportSnapshotBootstrapError,
     onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
-    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),
+    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete, queryClient),
     onScopeDownloadStart: reportScopeDownloadStart,
     onCoverageReset: reportCoverageReset,
     onCoverageEvaluated: reportCoverageEvaluated,
@@ -487,7 +518,7 @@ export function pullSync(
     isOnline: options?.isOnline ?? isOnline,
     onSchemaDrift: options?.onSchemaDrift ?? reportSchemaDrift,
     onSnapshotBootstrapError: options?.onSnapshotBootstrapError ?? reportSnapshotBootstrapError,
-    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),
+    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete, queryClient),
     onScopeDownloadStart: options?.onScopeDownloadStart ?? reportScopeDownloadStart,
     onCoverageReset: options?.onCoverageReset ?? reportCoverageReset,
     onCoverageEvaluated: options?.onCoverageEvaluated ?? reportCoverageEvaluated,
