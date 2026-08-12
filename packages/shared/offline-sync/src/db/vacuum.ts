@@ -100,8 +100,10 @@ export async function measureReclaimableBytes(db: OfflineDatabase): Promise<numb
 
 /**
  * Rebuild the database file, returning freelist pages to the filesystem. Resolves
- * false when the rebuild landed but the WAL truncation was blocked (see below) — the
- * data is still gone, the file just may not have shrunk as far as it should.
+ * false when the rebuild landed but the WAL truncation was blocked (see
+ * `truncateWal`) — the data is still gone, the file just may not have shrunk as far
+ * as it should. It never throws for lock contention; only a genuinely broken
+ * database escapes.
  *
  * MUST NOT run inside a transaction — SQLite rejects it outright, and note that
  * `withExclusiveTransactionAsync` opens a deferred BEGIN before its task body runs,
