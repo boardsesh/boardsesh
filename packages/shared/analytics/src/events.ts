@@ -522,9 +522,11 @@ export const SHARED_EVENTS = {
   // { surface: 'post_session' | 'no_catalog' | 'whats_new' | 'board_card',
   //   boardType, layoutId, scopeKey, downloadedBoardCount }.
   OfflineNudgeShown: 'Offline Nudge Shown',
-  // Plus { armedOnly }: true when accepting could only ARM the scope (the device
-  // was offline, so the pull waits for the scheduler's reconnect trigger). Without
-  // it the funnel reads as accepts that never download.
+  // Plus { armedOnly }: true when the accept could only ARM the scope, so the pull
+  // waits for the scheduler's reconnect trigger. Reported by the surface from what
+  // it actually did, never from a connectivity probe — `useIsOffline()` reads
+  // ONLINE on captive-portal wifi, where the arm-only CTA still downloads nothing.
+  // Without it the funnel reads as accepts that never download.
   OfflineNudgeAccepted: 'Offline Nudge Accepted',
   // Plus { dismissKind: 'once' | 'forever' }.
   OfflineNudgeDismissed: 'Offline Nudge Dismissed',

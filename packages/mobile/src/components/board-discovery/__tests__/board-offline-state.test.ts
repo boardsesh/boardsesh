@@ -4,6 +4,7 @@ import {
   boardDownloadProgress,
   boardDownloadState,
   boardIsBootstrapping,
+  offlineCatalogState,
 } from '../board-offline-state';
 import type { SnapshotBootstrapProgress } from '@boardsesh/offline-sync';
 
@@ -328,5 +329,47 @@ describe('boardDownloadProgress', () => {
         snapshot: { ...downloadingFrame, fraction: null, wireBytesDone: null },
       }),
     ).toEqual({ stage: 'download', fraction: null, bytesDone: null, bytesTotal: 103_000_000 });
+  });
+});
+
+// The catalog screens' half of the same derivation. It has to agree with the
+// download CTA's gate, which hides the moment the scope leaves 'off': a screen
+// asking "is it downloaded?" instead would keep the offer-the-download copy
+// with the offer already gone.
+describe('offlineCatalogState', () => {
+  const catalogBase = {
+    scopeKey: 'kilter:1:5',
+    enabledScopeKeys: [] as string[],
+    downloadedScopeKeys: [] as string[],
+  };
+
+  it('offers the download when the scope was never asked for', () => {
+    expect(offlineCatalogState(catalogBase)).toBe('missing');
+  });
+
+  it('reports queued once the scope is armed but has not landed', () => {
+    expect(offlineCatalogState({ ...catalogBase, enabledScopeKeys: ['kilter:1:5'] })).toBe('queued');
+  });
+
+  it('says nothing once this scope has actually downloaded', () => {
+    expect(
+      offlineCatalogState({
+        ...catalogBase,
+        enabledScopeKeys: ['kilter:1:5'],
+        downloadedScopeKeys: ['kilter:1:5'],
+      }),
+    ).toBeNull();
+  });
+
+  it('ignores a sibling scope', () => {
+    expect(offlineCatalogState({ ...catalogBase, enabledScopeKeys: ['kilter:1:50'] })).toBe('missing');
+  });
+
+  it('says nothing when there is no active board', () => {
+    expect(offlineCatalogState({ ...catalogBase, scopeKey: null })).toBeNull();
+  });
+
+  it('treats a still-loading downloaded-scope query as not downloaded', () => {
+    expect(offlineCatalogState({ ...catalogBase, downloadedScopeKeys: undefined })).toBe('missing');
   });
 });

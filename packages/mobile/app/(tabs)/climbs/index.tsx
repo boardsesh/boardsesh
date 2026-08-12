@@ -64,6 +64,8 @@ import { useInfiniteSearchClimbs } from '../../../src/lib/graphql/hooks/use-infi
 import { offlineAwareRequest } from '../../../src/lib/graphql/offline-request';
 import { isOfflineSearchSupported } from '../../../src/db/queries/search-climbs-local';
 import { useIsOffline } from '../../../src/hooks/use-is-offline';
+import { useOfflineCatalogState } from '../../../src/offline/use-offline-catalog-state';
+import { OfflineCatalogCta } from '../../../src/components/offline/OfflineCatalogCta';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../src/lib/graphql/operations';
 import { usePlaylistActivation } from '../../../src/lib/playlists/use-playlist-activation';
 import { toQueueClimb, toQueueClimbs } from '../../../src/lib/climb-types';
@@ -450,6 +452,8 @@ function ClimbListInner() {
 
   // Reactive connectivity, for the offline-only empty state below.
   const isOffline = useIsOffline();
+  // 'missing' (offer the download) vs 'queued' (already asked for) vs null.
+  const offlineCatalog = useOfflineCatalogState(activeBoard);
 
   const { data: gradesData } = useGrades(boardName);
   const gradesRef = useRef(gradesData);
@@ -602,6 +606,7 @@ function ClimbListInner() {
   const {
     data: searchPages,
     isLoading: isClimbsLoading,
+    isError: isClimbsError,
     isFetchingNextPage,
     isRefetching,
     fetchNextPage,
@@ -1361,11 +1366,29 @@ function ClimbListInner() {
   }
 
   const isEmpty = visibleClimbs.length === 0 && !isClimbsLoading;
-  // Offline with a filter we can't answer on-device (drafts, beta, zones, hold
-  // state) — the search returns an empty result, so tell the user why instead of
-  // the generic "no climbs". Tall/wide are offline-expressible, so they don't
-  // trip this.
-  const offlineFilterUnavailable = isEmpty && isOffline && !isOfflineSearchSupported(searchInput);
+  // A failed search counts as no connection, the same test the boards picker
+  // makes (`isLocalOnly`, app/boards/index.tsx): on a captive portal or gym wifi
+  // with a dead upstream `useIsOffline()` reads ONLINE, and offlineAwareRequest
+  // rethrows once it finds nothing local to serve the search with — the exact
+  // scenario these states exist for. Judging it by connectivity alone left that
+  // user on the generic "no climbs" with no way out.
+  const noUsableConnection = isOffline || isClimbsError;
+  // No connection, with a filter we can't answer on-device (drafts, beta, zones,
+  // hold state) — the search returns an empty result, so tell the user why
+  // instead of the generic "no climbs". Tall/wide are offline-expressible, so
+  // they don't trip this.
+  const offlineFilterUnavailable = isEmpty && noUsableConnection && !isOfflineSearchSupported(searchInput);
+  // The other offline empty state, and the one that had no branch of its own: the
+  // filter IS answerable on-device, there is just no catalog here to answer it
+  // against. Deliberately checked AFTER offlineFilterUnavailable so that branch
+  // keeps its clear-filters CTA untouched.
+  const offlineNoCatalog =
+    isEmpty && noUsableConnection && isOfflineSearchSupported(searchInput) && offlineCatalog !== null;
+  // Two states, not one: once the download is armed the CTA hides itself, so
+  // repeating "this board isn't on your phone" would drop the user back into
+  // the dead end they just tapped their way out of.
+  const offlineCatalogMissing = offlineNoCatalog && offlineCatalog === 'missing';
+  const offlineCatalogQueued = offlineNoCatalog && offlineCatalog === 'queued';
 
   return (
     <View testID="climbs-screen" style={[styles.container, { backgroundColor: systemColors.background }]}>
@@ -1408,6 +1431,27 @@ function ClimbListInner() {
                 onPress={handleClearNonGradeFilters}
                 style={styles.emptyCta}
               />
+            </View>
+          ) : offlineCatalogMissing ? (
+            <View style={styles.emptyContainer}>
+              <Icon name="offline.download" size={48} color={iosSystemColors.systemGray4} />
+              <Text variant="headline" style={styles.emptyTitle}>
+                {t('mobile.emptyState.offlineNoCatalog.title')}
+              </Text>
+              <Text variant="subheadline" style={styles.emptySubtitle}>
+                {t('mobile.emptyState.offlineNoCatalog.subtitle')}
+              </Text>
+              <OfflineCatalogCta board={activeBoard} style={styles.emptyCta} />
+            </View>
+          ) : offlineCatalogQueued ? (
+            <View style={styles.emptyContainer}>
+              <Icon name="offline.download" size={48} color={iosSystemColors.systemGray4} />
+              <Text variant="headline" style={styles.emptyTitle}>
+                {t('mobile.emptyState.offlineCatalogQueued.title')}
+              </Text>
+              <Text variant="subheadline" style={styles.emptySubtitle}>
+                {t('mobile.emptyState.offlineCatalogQueued.subtitle', { name: activeBoard?.name ?? '' })}
+              </Text>
             </View>
           ) : isEmpty ? (
             <View style={styles.emptyContainer}>

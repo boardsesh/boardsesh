@@ -78,6 +78,49 @@ export function boardDownloadState(input: BoardDownloadStateInput): BoardDownloa
 }
 
 /**
+ * Which offline empty state a catalog screen should show for the active board.
+ *
+ * `null` means there is no offline story to tell — the catalog is here, or
+ * there is no board to talk about — and the screen falls through to whatever
+ * empty state it would have shown anyway.
+ */
+export type OfflineCatalogState =
+  /** Nothing on the phone and nothing asked for: offer the download. */
+  | 'missing'
+  /** The user already asked; it lands on the next reconnect. */
+  | 'queued'
+  | null;
+
+export type OfflineCatalogStateInput = {
+  /** The active board's scope key, or `null` when there is no active board. */
+  scopeKey: string | null;
+  /** `getSetting('syncEnabledBoards')`. */
+  enabledScopeKeys: readonly string[];
+  /** `useDownloadedScopeKeys()`, still loading as `undefined`. */
+  downloadedScopeKeys: readonly string[] | undefined;
+};
+
+/**
+ * Derived from `boardDownloadState` with the same "no live sync frame" inputs
+ * the nudge gate uses, and that agreement is the point: the download CTA hides
+ * itself the moment the scope leaves `'off'`, so a screen that kept asking
+ * "is it downloaded?" would show the offer-the-download copy with the offer
+ * already gone — the dead end the CTA was added to remove, one tap later.
+ */
+export function offlineCatalogState(input: OfflineCatalogStateInput): OfflineCatalogState {
+  if (input.scopeKey === null) return null;
+  const state = boardDownloadState({
+    scopeKey: input.scopeKey,
+    enabled: input.enabledScopeKeys.includes(input.scopeKey),
+    downloaded: (input.downloadedScopeKeys ?? []).includes(input.scopeKey),
+    isSyncing: false,
+    currentTable: null,
+  });
+  if (state === 'downloaded') return null;
+  return state === 'off' ? 'missing' : 'queued';
+}
+
+/**
  * Whether THIS row's `'downloading'` state is the snapshot-bootstrap warm-up
  * rather than the paged crawl. The bootstrap phase carries no per-row climb
  * count (unlike the paged crawl's `currentTableProcessed`), so the UI needs a

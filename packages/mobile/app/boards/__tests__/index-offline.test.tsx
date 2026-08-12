@@ -28,6 +28,9 @@ const state = vi.hoisted(() => ({
   isOffline: false,
   offlineCards: [] as unknown[],
   downloadedScopeKeys: [] as string[],
+  // What the active board's catalog looks like on this device: the offline
+  // empty state reads differently for "never asked for" vs "already queued".
+  offlineCatalog: null as 'missing' | 'queued' | null,
   activeBoard: undefined as unknown,
   myBoards: {
     data: undefined as { boards: unknown[] } | undefined,
@@ -66,7 +69,7 @@ vi.mock('expo-router', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => {
+    t: (key: string, options?: { name?: string }) => {
       const map: Record<string, string> = {
         'mobile.emptyTitle': 'No boards yet',
         'mobile.emptySubtitle': 'Search for a board to get started',
@@ -77,6 +80,7 @@ vi.mock('react-i18next', () => ({
           "Can't reach your boards right now — here are the ones you've downloaded.",
         'mobile.offline.pickerEmptyTitle': 'Nothing downloaded yet',
         'mobile.offline.pickerEmptyBody': 'Boards you make available offline show up here.',
+        'mobile.offline.pickerQueuedNotice': "{{name}} is queued — it downloads the moment you're back online.",
         'mobile.discovery.yourBoardsTitle': 'Your boards',
         'mobile.discovery.popularTitle': 'Popular',
         'mobile.discovery.create': 'Create a board',
@@ -85,7 +89,8 @@ vi.mock('react-i18next', () => ({
         'mobile.discovery.findGym': 'Find a gym',
         'mobile.boardSwitchError': 'Could not switch board',
       };
-      return map[key] ?? key;
+      const template = map[key] ?? key;
+      return options?.name === undefined ? template : template.replace('{{name}}', options.name);
     },
   }),
 }));
@@ -136,6 +141,20 @@ vi.mock('../../../src/hooks/use-bottom-chrome-metrics', () => ({
 }));
 vi.mock('../../../src/hooks/use-is-offline', () => ({ useIsOffline: () => state.isOffline }));
 vi.mock('../../../src/settings', () => ({ useOfflineBoards: () => state.offlineCards }));
+// Has its own render suite (src/components/offline/__tests__); the screen only
+// needs to know it renders in the empty state.
+vi.mock('../../../src/components/offline/OfflineCatalogCta', () => ({
+  OfflineCatalogCta: ({ board }: { board: unknown }) =>
+    board ? createElement('div', { 'data-testid': 'offline-catalog-cta' }) : null,
+}));
+vi.mock('../../../src/offline/use-downloaded-scope-keys', () => ({
+  useDownloadedScopeKeys: () => ({ data: state.downloadedScopeKeys }),
+}));
+// The real hook reads MMKV through settings, which this suite mocks down to
+// useOfflineBoards; drive the derived state directly instead.
+vi.mock('../../../src/offline/use-offline-catalog-state', () => ({
+  useOfflineCatalogState: () => state.offlineCatalog,
+}));
 vi.mock('../../../src/offline/use-remember-downloaded-boards', () => ({
   useRememberDownloadedBoards: (boards: unknown) => rememberDownloadedBoardsMock(boards),
 }));
@@ -186,6 +205,7 @@ beforeEach(() => {
   state.isOffline = false;
   state.offlineCards = [];
   state.downloadedScopeKeys = [];
+  state.offlineCatalog = null;
   state.activeBoard = undefined;
   state.myBoards = { data: undefined, isLoading: false, isError: false, isRefetching: false };
   state.popular = { configs: [] };
@@ -233,6 +253,37 @@ describe('board picker with no usable network list', () => {
     expect(screen.queryByText('No boards yet')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Create a board' })).toBeNull();
     expect(screen.queryByText('Try again')).toBeNull();
+  });
+
+  // Tapping the CTA arms the scope, which takes the CTA away. Falling silent
+  // there leaves the user looking at the same un-downloaded board with nothing
+  // to tap and no sign anything happened, so the queued line takes its place.
+  it('acknowledges the queued download once the board has been armed', () => {
+    state.isOffline = true;
+    state.activeBoard = downloadedBoard;
+    state.offlineCards = [downloadedBoard];
+    state.offlineCatalog = 'queued';
+
+    render(createElement(BoardSelection));
+
+    expect(screen.getByText("Marco garage is queued — it downloads the moment you're back online.")).toBeTruthy();
+    expect(screen.queryByTestId('offline-catalog-cta')).toBeNull();
+  });
+
+  // `offlineBoardRows` always offers the active board, so the empty state only
+  // renders when there is no board to suggest — the CTA anchored inside it
+  // could never appear. It belongs beside the carousel the un-downloaded board
+  // is actually showing in.
+  it('offers the download beside the carousel, not only in the empty state', () => {
+    state.isOffline = true;
+    state.activeBoard = downloadedBoard;
+    state.offlineCards = [downloadedBoard];
+    state.offlineCatalog = 'missing';
+
+    render(createElement(BoardSelection));
+
+    expect(screen.getByTestId('carousel')).toBeTruthy();
+    expect(screen.getByTestId('offline-catalog-cta')).toBeTruthy();
   });
 
   it('falls back to downloaded boards when the connection lies (online, every request fails)', async () => {
