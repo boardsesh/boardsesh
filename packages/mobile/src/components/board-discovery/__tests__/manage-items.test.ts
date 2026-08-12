@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { buildManageItems, type ManageItem } from '../manage-items';
+import { boardIsOwnedBy, buildManageItems, type ManageItem } from '../manage-items';
 
 // buildManageItems only reads uuid + ownerId, so a minimal cast is enough.
 const board = (uuid: string, ownerId: string): UserBoard => ({ uuid, ownerId }) as unknown as UserBoard;
@@ -11,6 +11,21 @@ function boardItem(items: ManageItem[], key: string) {
   if (!found || found.type !== 'board') throw new Error(`board item not found: ${key}`);
   return found;
 }
+
+describe('boardIsOwnedBy', () => {
+  it('compares ownerId whenever the board carries one', () => {
+    expect(boardIsOwnedBy(board('o1', 'me'), 'me')).toBe(true);
+    expect(boardIsOwnedBy(board('f1', 'other'), 'me')).toBe(false);
+    expect(boardIsOwnedBy(board('o1', 'me'), undefined)).toBe(false);
+  });
+
+  it('falls back to the persisted isOwned only when ownerId is absent or blank', () => {
+    expect(boardIsOwnedBy({ uuid: 'x', isOwned: true } as unknown as UserBoard, 'me')).toBe(true);
+    expect(boardIsOwnedBy({ uuid: 'x', isOwned: false } as unknown as UserBoard, 'me')).toBe(false);
+    expect(boardIsOwnedBy({ uuid: 'x' } as unknown as UserBoard, 'me')).toBe(false);
+    expect(boardIsOwnedBy({ uuid: 'x', ownerId: '', isOwned: true } as unknown as UserBoard, 'me')).toBe(true);
+  });
+});
 
 describe('buildManageItems', () => {
   it('splits owned vs followed by ownerId, each under its own header (owned first)', () => {
@@ -57,5 +72,39 @@ describe('buildManageItems', () => {
     const items = buildManageItems([board('o1', 'me')], undefined, undefined, labels);
     expect(items[0]).toEqual({ type: 'header', key: 'header:following', title: 'Following' });
     expect(boardItem(items, 'o1').isOwned).toBe(false);
+  });
+
+  // The offline My Boards list replays persisted snapshots instead of a live
+  // myBoards fetch, and gets its id from the stored JWT rather than the profile.
+  describe('offline snapshot rows', () => {
+    it('groups downloaded boards under their headers once a persisted id is available', () => {
+      const items = buildManageItems(
+        [board('home-wall', 'me'), board('gym-wall', 'someone-else')],
+        'me',
+        undefined,
+        labels,
+      );
+      expect(items.map((item) => (item.type === 'header' ? `#${item.title}` : item.key))).toEqual([
+        '#Your boards',
+        'home-wall',
+        '#Following',
+        'gym-wall',
+      ]);
+      expect(boardItem(items, 'home-wall').isOwned).toBe(true);
+      expect(boardItem(items, 'gym-wall').isOwned).toBe(false);
+    });
+
+    it("falls back to a card's persisted isOwned when the snapshot carries no ownerId", () => {
+      // Cards written by a build that didn't capture ownerId still hold the server's
+      // own answer — better than filing the home wall under "Following".
+      const legacyOwnedCard = { uuid: 'legacy', isOwned: true } as unknown as UserBoard;
+      const items = buildManageItems([legacyOwnedCard, board('f1', 'other')], 'me', undefined, labels);
+      expect(items.map((item) => (item.type === 'header' ? `#${item.title}` : item.key))).toEqual([
+        '#Your boards',
+        'legacy',
+        '#Following',
+        'f1',
+      ]);
+    });
   });
 });

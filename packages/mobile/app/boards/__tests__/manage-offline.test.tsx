@@ -4,10 +4,13 @@
 // fatal one: `useProfile` is a plain network query, so with no signal `currentUserId`
 // is undefined and the guard `(isError && myBoards.length === 0) || !currentUserId`
 // fired the hard "Something went wrong / Try again" state — regardless of anything
-// done to the board list. Offline the screen now renders a flat list of the boards
-// this device downloaded (owned-vs-followed can't be classified without the profile
-// id, so the headers are dropped rather than guessed) with the network affordances
-// hidden.
+// done to the board list. Offline the screen now renders the boards this device
+// downloaded, with the network affordances hidden.
+//
+// #4003 finished the job: the id also comes off the JWT already in SecureStore
+// (`useStoredUserId`), so the owned/followed headers come back offline instead of
+// filing the user's own wall under "Following". Only when even that is missing does
+// the list stay flat.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -31,10 +34,14 @@ const forgetOfflineBoardMock = vi.hoisted(() => vi.fn());
 const deleteBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const unfollowBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const confirmMock = vi.hoisted(() => vi.fn().mockResolvedValue(false));
+const storedUserIdEnabledMock = vi.hoisted(() => vi.fn());
 
 const state = vi.hoisted(() => ({
   isOffline: false,
   profileId: undefined as string | undefined,
+  /** What the JWT already in SecureStore decodes to — the offline id source. */
+  storedUserId: undefined as string | undefined,
+  isStoredUserIdLoading: false,
   isProfileLoading: false,
   offlineCards: [] as unknown[],
   enabledBoards: [] as string[],
@@ -261,6 +268,16 @@ vi.mock('../../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
 }));
 vi.mock('../../../src/hooks/use-is-offline', () => ({ useIsOffline: () => state.isOffline }));
+// Mirrors the real hook's contract: disabled → undefined, otherwise the id decoded
+// from the stored JWT. Mocked at the hook boundary so this suite never has to pull
+// in expo-secure-store.
+vi.mock('../../../src/hooks/use-current-user-id', () => ({
+  useStoredUserId: (enabled: boolean) => {
+    storedUserIdEnabledMock(enabled);
+    if (!enabled) return { userId: undefined, isLoading: false };
+    return { userId: state.storedUserId, isLoading: state.isStoredUserIdLoading };
+  },
+}));
 vi.mock('../../../src/sync', () => ({ useSyncStatus: () => state.syncStatus }));
 vi.mock('../../../src/offline/use-board-downloads', () => ({
   useBoardDownloads: () => ({ enableBoardsOffline: vi.fn() }),
@@ -343,6 +360,8 @@ beforeEach(() => {
   confirmMock.mockResolvedValue(false);
   state.isOffline = false;
   state.profileId = undefined;
+  state.storedUserId = undefined;
+  state.isStoredUserIdLoading = false;
   state.isProfileLoading = false;
   state.offlineCards = [];
   state.enabledBoards = [];
@@ -861,5 +880,101 @@ describe('My Boards with no usable network list', () => {
     render(createElement(ManageBoards));
 
     expect(screen.getByText('Something went wrong')).toBeTruthy();
+  });
+});
+
+describe('My Boards offline with a persisted user id (#4003)', () => {
+  it("files the user's own wall under Your boards and the rest under Following", () => {
+    state.isOffline = true;
+    state.storedUserId = 'me';
+    state.offlineCards = [
+      board({ uuid: 'board-a', name: 'Marco garage', ownerId: 'me', isOwned: true }),
+      board({ uuid: 'board-b', name: 'City gym', ownerId: 'someone-else', isOwned: false, layoutId: 9 }),
+    ];
+    state.downloadedScopeKeys = ['kilter:8:17', 'kilter:9:17'];
+
+    render(createElement(ManageBoards));
+
+    const rendered = [...document.querySelectorAll('[data-testid="list"] span, [data-board]')].map(
+      (node) => node.getAttribute('data-board') ?? node.textContent,
+    );
+    expect(rendered).toEqual(expect.arrayContaining(['Your boards', 'board-a', 'Following', 'board-b']));
+    expect(rendered.indexOf('Your boards')).toBeLessThan(rendered.indexOf('board-a'));
+    expect(rendered.indexOf('board-a')).toBeLessThan(rendered.indexOf('Following'));
+    expect(rendered.indexOf('Following')).toBeLessThan(rendered.indexOf('board-b'));
+    // Every row is still read-only: edit / delete / unfollow stay server mutations.
+    expect(document.querySelector('[data-board="board-a"]')?.getAttribute('data-readonly')).toBe('true');
+    expect(document.querySelector('[data-board="board-b"]')?.getAttribute('data-readonly')).toBe('true');
+  });
+
+  it('stays flat when the keychain yields no id at all', () => {
+    state.isOffline = true;
+    state.storedUserId = undefined;
+    state.offlineCards = [board({ uuid: 'board-a', name: 'Marco garage' })];
+    state.downloadedScopeKeys = ['kilter:8:17'];
+
+    render(createElement(ManageBoards));
+
+    expect(screen.getByText('Marco garage')).toBeTruthy();
+    expect(screen.queryByText('Your boards')).toBeNull();
+    expect(screen.queryByText('Following')).toBeNull();
+  });
+
+  it('keeps the normal grouped list online when only the profile request fails', () => {
+    // Previously this fell through to the read-only offline list, because the
+    // profile was the only id source. The JWT answers instead, so the live board
+    // list renders as usual.
+    state.isOffline = false;
+    state.profileId = undefined;
+    state.storedUserId = 'me';
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board', ownerId: 'me' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+
+    render(createElement(ManageBoards));
+
+    expect(screen.queryByText('Something went wrong')).toBeNull();
+    expect(screen.getByText('Your boards')).toBeTruthy();
+    expect(screen.getByText('Network board')).toBeTruthy();
+    expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-readonly')).toBe('false');
+  });
+
+  it('holds the spinner while the keychain read is still in flight', () => {
+    // The profile settled with nothing, but the JWT read hasn't come back yet.
+    // Rendering here would flash the error state on the way to the grouped list.
+    state.isOffline = false;
+    state.profileId = undefined;
+    state.isProfileLoading = false;
+    state.isStoredUserIdLoading = true;
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+
+    render(createElement(ManageBoards));
+
+    expect(screen.getByTestId('spinner')).toBeTruthy();
+    expect(screen.queryByText('Something went wrong')).toBeNull();
+    expect(screen.queryByText('Network board')).toBeNull();
+  });
+
+  it('never reads the keychain once the profile has answered', () => {
+    state.profileId = 'me';
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+
+    render(createElement(ManageBoards));
+
+    expect(storedUserIdEnabledMock).toHaveBeenCalled();
+    expect(storedUserIdEnabledMock.mock.calls.every(([enabled]) => enabled === false)).toBe(true);
   });
 });
