@@ -205,7 +205,76 @@
 -- transaction there is nothing but the guard row below to stop a
 -- re-application.
 --
--- ⚠️ DEPLOY ORDERING: do NOT run packages/db/scripts/import-moonboard-catalog.ts
+-- ⚠️ DEPLOY ORDERING (A): AGAINST PR #4054's PROD-DATA MIGRATIONS.
+-- THIS MIGRATION MUST APPLY AFTER 0193_backfill_moonboard_ascensionist_invariant
+-- AND 0194_moonboard_wrong_angle_stats_cleanup (PR #4054, branch
+-- fix/3529-moonboard-tick-angle, open as of 2026-08-12 and not on main). Both
+-- rewrite exactly the rows this migration moves. Order comes from the journal's
+-- `when`, not from the filename number (docs/db-migrations.md), so this is a
+-- NUMBERING constraint on a fresh database, not just a merge-order preference:
+-- this file is renumbered ABOVE #4054's stack at merge time.
+--
+--   0193 — repairs 8 prod-verified MoonBoard rows (all angle=40, listed by
+--   exact PK) where ascensionist_count is the June 2026 catalog total but
+--   upstream_ascensionist_count is a stale February leftover, by raising
+--   upstream to `ascensionist_count - COALESCE(boardsesh, 0)`.
+--     * 0193 FIRST (required): upstream becomes the real total, this
+--       migration's GREATEST/max() merges carry it forward, and both totals
+--       recompute to that number plus the Boardsesh half. Nothing is lost.
+--     * THIS FIRST (destroys the repair, unrecoverably). This migration never
+--       READS ascensionist_count — step 2 and step 3b both synthesize it as
+--       upstream + boardsesh — so any of those 8 rows it touches collapses to
+--       the stale February number. Three ways in: (a) the 40° row is a
+--       non-canonical member, so step 2 re-keys it at upstream + boardsesh and
+--       the DELETE below drops the original, leaving the true total in no row
+--       anywhere and 0193's hardcoded PK naming a uuid that no longer has a
+--       stats row; (b) the 40° row is canonical and an alias holds a 40° stats
+--       row, so the conflict branch rewrites it in place and 0193's own
+--       idempotency predicate then reads "the invariant holds" and skips it;
+--       (c) the 40° row is canonical and a repointed tick lands at that key, so
+--       step 3b collapses it — literally 0193's own "climb 321b5952…/40 would
+--       drop from 64 to 4" warning. Canonical selection makes (a) MORE likely,
+--       not less: _mad_members reads ascents from the same untrusted
+--       upstream_ascensionist_count and _mad_canon orders on it, so a row whose
+--       real total is 64 loses canonical to a 25° partner over a stale 3.
+--
+--   0194 — moves MoonBoard ticks sitting at an angle their climb is not graded
+--   at onto the graded angle (statement A), then deletes the phantom stats rows
+--   that leaves behind (statement B), each fenced by "does this stats row carry
+--   real catalog data?".
+--     * 0194 FIRST (required): A moves its 113 measured ticks and B deletes its
+--       100 measured rows against the world both were measured in, and this
+--       migration then merges a catalog with fewer wrong-angle ticks and fewer
+--       non-native stats rows to fold — strictly less work and less exposure to
+--       the stale-Boardsesh-half shape step 3b now repairs.
+--     * THIS FIRST (two independent problems). First, this migration
+--       deliberately does NOT null the canonical's board_climbs.angle while
+--       repointing each loser's ticks at their OWN angle, so afterwards every
+--       merged tick satisfies statement A's `bt.angle <> bc.angle` on a
+--       user_id IS NULL row. A's fence saves the normal case — the re-keyed
+--       stats row carries display_difficulty — but not a problem the catalog
+--       importer could not grade: MOONBOARD_GRADE_TO_DIFFICULTY
+--       (packages/db/scripts/moonboard-helpers.ts) tops out at 8B+ and
+--       import-moonboard-catalog.ts writes `displayDifficulty: mapped.difficultyId
+--       ?? null`, so an 8C/8C+ problem with no repeats and no rating has all
+--       four fence columns empty. For those, A rewrites a climber's send to an
+--       angle they did not climb and B then deletes the second-angle stats row
+--       this migration's header promises survives. Second, and unconditionally:
+--       statement B's candidate set stops being the 100 rows #4054's 2026-07-31
+--       preflight measured and becomes every canonical carrying a second stats
+--       angle (766 groups on the dev-db image alone), which voids the
+--       maintainer sign-off that rests on "0 of those 100 carry real catalog
+--       data". Both are one-shot prod data migrations; neither number can be
+--       re-taken after the fact.
+--
+--   Not fixable from here, and deliberately not attempted: after this migration
+--   a canonical keeps ONE board_climbs.angle while carrying stats at several,
+--   so #4054's live code half (resolveMoonBoardTickAngle rule (d)) snaps a
+--   legitimate tick at the other angle back onto the graded one. #4054's own
+--   FORWARD COMPAT block names this window and accepts it until the
+--   angle-agnostic re-import lands; it is the same window #3851 closes, below.
+--
+-- ⚠️ DEPLOY ORDERING (B): do NOT run packages/db/scripts/import-moonboard-catalog.ts
 -- against a database this migration has touched until the angle-agnostic
 -- importer rewrite (#3851) has landed. As of 2026-08-12 #3851 is still OPEN —
 -- verified against origin/main, which has no commit referencing it — so the
