@@ -128,6 +128,49 @@
 --   * boardsesh_ticks is keyed locally by `uuid`, which no repoint touches, so
 --     its cursor bump alone is enough — no tombstone.
 --
+-- TWO ACCEPTED OFFLINE RESIDUALS. Both are documented rather than fixed, both
+-- are covered by a follow-up issue, and neither is repairable from inside this
+-- file. Stated here so a later reader does not mistake either for an oversight.
+--
+--   1. THE CURSOR STAMP IS TRANSACTION-START TIME, NOT COMMIT TIME. Every
+--      stamper — set_updated_at(), set_board_climbs_sync_fields(),
+--      set_board_climb_stats_sync_fields() (0144) — writes NOW(), which inside
+--      a transaction is when the transaction OPENED, and this migration's own
+--      watermark comment below relies on exactly that fact. The pull is a
+--      strict keyset, `(updated_at, sync_seq) > (cursor)`
+--      (packages/backend/src/graphql/resolvers/sync/queries.ts), so a
+--      CONCURRENT transaction that commits a MoonBoard stats row mid-migration
+--      carries a LATER updated_at, becomes pullable first, and a device that
+--      pulls it advances its cursor past this migration's stamp. When this
+--      transaction finally commits, every row it stamped is behind that cursor
+--      and is never revisited — the device deletes the alias rows via the
+--      tombstone stream and never receives the canonical's replacement.
+--      There is no in-migration fix. No GUC suppresses or overrides the
+--      stampers — `boardsesh.suppress_sync_tombstones` (0144) gates only the
+--      DELETE-tombstone triggers — and a hand-written clock_timestamp() would
+--      be overwritten by the BEFORE UPDATE trigger back to NOW() anyway, which
+--      is also why the "do NOT hand-stamp" rule above stands. The mitigation is
+--      on the reader and is an OPS action, not a code change: the pull already
+--      withholds rows younger than SYNC_STABILITY_WINDOW_SECONDS (default 30)
+--      for precisely this hazard, so raise it above this migration's measured
+--      runtime for the deploy, or run the deploy in a quiet window. The
+--      exposure is shared with 0157_recompute_ascensionist_backfill, which
+--      makes the same argument and has already shipped.
+--   2. A DEVICE THAT MISSES A BOARD-TABLE TOMBSTONE CANNOT RECOVER IT. This is
+--      the first production writer of NULL-scoped board_climb_stats tombstones,
+--      and the client's lost-coverage path is built on the opposite premise:
+--      packages/shared/offline-sync/src/sync/deletions-coverage.ts states "in
+--      production the board tables emit no tombstones at all" and
+--      resetUserDataForLostCoverage deliberately re-pulls only USER_DATA_TABLES,
+--      leaving board_climbs / board_climb_stats rows and their checkpoints
+--      alone. A device that stays offline across the WHOLE post-migration
+--      retention window (retention.ts) sees those tombstones pruned before any
+--      cursor reaches them and keeps a stats row under a retired uuid until its
+--      next snapshot bootstrap. Inert rather than harmful — local search
+--      hard-filters is_listed, and the delist itself arrives on the board_climbs
+--      cursor — so it is accepted for a one-shot migration rather than widening
+--      the recovery path here.
+--
 -- Explicitly NOT touched (left pointing at their original uuid):
 --   * sync_deletions — an append-only log of deletions that already
 --     happened; its encoded climb_uuid is a historical fact, not a live
@@ -189,6 +232,17 @@
 -- DELETE/UPDATE below runs with boardsesh.skip_vote_counts='on' (same guard
 -- the gym-merge path uses) so the per-row trigger doesn't do wasted/premature
 -- recomputes mid-repoint; vote_counts is then rebuilt in one pass afterwards.
+-- That guard is a PERFORMANCE AND INTERLEAVING measure only, and the replay
+-- fixture cannot assert it — said plainly here rather than left for a reader to
+-- assume it is covered. Every entity the trigger could fire on is inside
+-- _mad_all_ids, and step 6 deletes and rebuilds vote_counts for all of them, so
+-- the end state is provably identical whether or not the guard is set; the only
+-- difference is wasted per-row trigger work, which no assertion can see. The
+-- matching 'off' at the end of step 6 is a different matter and IS load-bearing:
+-- set_config's is_local flag scopes it to the transaction, and drizzle runs
+-- every pending migration in ONE transaction, so a leaked 'on' would suppress
+-- vote_counts maintenance for every migration queued behind this one in the
+-- same deploy.
 --
 -- Recommendation/ML caches (board_climb_embeddings, board_climb_similar) are
 -- fully rebuilt from board_climbs/board_climb_stats on their own schedule
@@ -304,20 +358,38 @@
 -- prod DB access at authoring time). Replayed against the pre-built dev-db
 -- image (ghcr.io/boardsesh/boardsesh-dev-db) via `vp run db:up`, which DOES
 -- carry real per-angle MoonBoard catalog duplication (contrary to an earlier
--- version of this comment that assumed otherwise). Latest run, 2026-08-12:
+-- version of this comment that assumed otherwise). Latest run, 2026-08-12, on a
+-- container recreated from the image immediately beforehand (`docker compose
+-- down -v` first — an earlier reading of "767 canonical climbs carrying more
+-- than one stats angle" came from a dev DB another worktree had already merged
+-- against, and did not reproduce on a clean one):
 --   766 non-canonical rows merged across 766 groups
 --   478 same-angle-collision groups correctly left untouched
+--   766 stats keys recomputed by step 3b
+--   766 board_climb_stats tombstones written
 --   0 errors; 0 listed alias rows left; 0 stats rows under a retired uuid;
---   0 orphaned tick references; 766 board_climb_stats tombstones written;
+--   0 orphaned tick references;
 --   0 rows violating ascensionist_count = upstream + boardsesh, on MoonBoard
 --     and on every other board;
---   767 canonical climbs now carrying more than one stats angle.
--- That run's ticks/votes/favourites/playlist tables had no rows landing on a
--- losing (non-canonical) member, so it validates the structural/grouping
--- logic and the tombstone plumbing on real data, but not the collision
--- policies, the stats recompute or the vote_counts rebuild under real load —
--- those are covered by the scratch-Postgres replay fixture
--- (moonboard-angle-dedup-replay.ts, CASE A-F). Dev-db counts are NOT a
+--   0 of the 1,532 rows under a merged canonical carry a quality_average that
+--     is off the blend of their own stored terms;
+--   766 canonical climbs now carrying more than one stats angle, all 766 of
+--     them canonicals of a group this migration merged.
+-- Also verified on that container: re-applying the file by hand is a no-op
+-- (guard row present, 766 aliases and 766 tombstones unchanged), and running it
+-- inside an explicit transaction that is then rolled back leaves zero aliases,
+-- zero guard rows, zero delisted MoonBoard climbs and zero tombstones — a crash
+-- part-way through cannot leave a half-merged catalog behind.
+--
+-- The 766 recomputed keys is the number to watch on the next replay: before
+-- step 3b covered every key step 2 writes it read 0, because dev-db has no
+-- MoonBoard ticks landing on a losing member and the old tick-presence gate
+-- excluded every re-keyed row. That same absence is why that run's
+-- ticks/votes/favourites/playlist tables validate the structural/grouping logic
+-- and the tombstone plumbing on real data, but not the collision policies, the
+-- stats recompute under real load, or the vote_counts rebuild — those are
+-- covered by the scratch-Postgres replay fixture
+-- (moonboard-angle-dedup-replay.ts, CASE A-G). Dev-db counts are NOT a
 -- substitute for prod sizing (dev is a small fixed snapshot, not
 -- representative of prod scale/shape) — still run a read-only sizing query
 -- against prod (see the _mad_groups/_mad_raw_groups shape below) before
