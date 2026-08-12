@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Your board cards now show at a glance which ones are on your phone, and tapping the download icon grabs one right there. ([#4344](https://github.com/boardsesh/boardsesh/pull/4344))
+- When you're out of signal and the board you're on isn't downloaded, the empty screen now offers to grab it — it starts the moment you're back online. ([#4343](https://github.com/boardsesh/boardsesh/pull/4343))
 - Finish a session at a board you haven't downloaded yet and Boardsesh now offers to keep the whole catalog on your phone — one tap, and every climb is there next time the gym wifi isn't. ([#4342](https://github.com/boardsesh/boardsesh/pull/4342))
 - Boards stuck on the slow download now have a button to try the fast one again, and tell you how big it is before you commit. On mobile data, a board won't quietly start a big download on its own. ([#4333](https://github.com/boardsesh/boardsesh/pull/4333))
 - Logging out now asks first, and tells you what it clears — the boards you downloaded, your offline logbook, and any sends still waiting to sync, including the ones that already failed to send. The Log out button in the side menu used to do all that on the first tap with no warning at all. The downloaded boards actually come off the phone now instead of sitting there invisible, and the space comes back. A dropped connection that signs you out on its own leaves your downloads alone. ([#4328](https://github.com/boardsesh/boardsesh/pull/4328))
