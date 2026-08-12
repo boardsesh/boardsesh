@@ -9,7 +9,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 // Imported by path — see cache-dir-io.test.ts for why.
-import { __resetFileSystem, __seedFileSystem } from '../../../test/expo-file-system-stub';
+import { Directory, __resetFileSystem, __seedFileSystem } from '../../../test/expo-file-system-stub';
 
 const clearDiskCache = vi.hoisted(() => vi.fn<() => Promise<boolean>>(() => Promise.resolve(true)));
 vi.mock('expo-image', () => ({ Image: { clearDiskCache } }));
@@ -110,6 +110,15 @@ describe('sweepBoardArtCache', () => {
     // and are never in the plan.
     expect(result.filesDeleted).toBe(4);
     expect(result.beforeBytes).toBe(4 * MB);
+    // Assert the survivors themselves, not just the count: deleting either of
+    // these is how a JS sweeper manufactures the "file vanished mid-write"
+    // render storm that PR 3 exists to stop.
+    expect(
+      new Directory('cache/board-thumbnails')
+        .list()
+        .map((entry) => entry.name)
+        .sort(),
+    ).toEqual(['.bsov-live.tmp', '.dat.nosync0f1e.abc']);
   });
 
   it('reaps an orphaned temp once it is old enough to be certainly dead', async () => {
