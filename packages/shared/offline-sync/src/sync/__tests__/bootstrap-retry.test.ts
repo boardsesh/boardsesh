@@ -345,6 +345,27 @@ describe('clearRetryStateForUserRequest', () => {
     expect(cleared.structuralRearms).toBe(0);
     expect(cleared.legacyHealSpent).toBe(true);
   });
+
+  it('makes the scope actually eligible again — a settled board has always crawled', () => {
+    // The regression this pins: dropping `hasPriorSnapshotFailure` alongside the
+    // budgets left a checkpointed scope on `no-failure-evidence`, so the whole
+    // "Try the fast download again" action was a silent no-op.
+    const settled = state({
+      structuralFailures: MAX_BOOTSTRAP_ATTEMPTS,
+      retryAfter: NOW + 24 * HOUR,
+      hasPriorSnapshotFailure: true,
+      lastFailureKind: 'structural-device',
+    });
+    expect(
+      evaluateBootstrapEligibility({
+        retryState: clearRetryStateForUserRequest(settled),
+        hasBoardCheckpoint: true,
+        isScopeComplete: false,
+        isBootstrapDone: false,
+        now: NOW,
+      }),
+    ).toEqual({ eligible: true, kind: 'heal-over-partial' });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -475,7 +496,18 @@ describe('bootstrap-retry persistence', () => {
     expect(isTerminal(restored)).toBe(false);
     expect(await readMeta('bootstrap-paged-fallback:kilter:1:5')).toBeNull();
     expect(await readMeta('bootstrap-attempts:kilter:1:5')).toBe('0');
-    const { state: reread } = await readBootstrapRetryState(db, 'kilter:1:5', { now: NOW, random: noJitter }, false);
+    const { state: reread } = await readBootstrapRetryState(db, 'kilter:1:5', { now: NOW, random: noJitter }, true);
     expect(isTerminal(reread)).toBe(false);
+    // …and the engine will actually run for it on the next cycle, which is the
+    // only reason the row action exists.
+    expect(
+      evaluateBootstrapEligibility({
+        retryState: reread,
+        hasBoardCheckpoint: true,
+        isScopeComplete: false,
+        isBootstrapDone: false,
+        now: NOW,
+      }).eligible,
+    ).toBe(true);
   });
 });

@@ -266,6 +266,13 @@ export function clearTransportFailures(state: BootstrapRetryState): BootstrapRet
 export function clearRetryStateForUserRequest(state: BootstrapRetryState): BootstrapRetryState {
   return {
     ...EMPTY_BOOTSTRAP_RETRY_STATE,
+    // The failure history is KEPT on purpose. A settled scope has always crawled
+    // (a terminal scope is never in `skipPagedPull`), so it carries board
+    // checkpoints — and `evaluateBootstrapEligibility` only lets a checkpointed
+    // scope back onto the artifact path as a `heal-over-partial`, which requires
+    // this evidence. Resetting it to false would make the whole "Try the fast
+    // download again" action a silent no-op: `no-failure-evidence`.
+    hasPriorSnapshotFailure: state.hasPriorSnapshotFailure,
     mirroredAttempts: state.mirroredAttempts,
     legacyHealSpent: true,
   };
