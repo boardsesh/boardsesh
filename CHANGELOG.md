@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Manage Storage now shows what the board art and photos on your phone actually take up, with a Clear cached images button for when you need the space back. Boardsesh also stops letting downloaded photos pile up without a ceiling, and cleans up board downloads that got interrupted halfway. ([#4334](https://github.com/boardsesh/boardsesh/pull/4334))
+- Sharing a phone? Your sends stay yours. The offline database now records who's signed in and checks it before serving anything from your logbook — so if a sign-out ever gets interrupted, the next climber sees their own ticks, not yours. ([#4351](https://github.com/boardsesh/boardsesh/pull/4351))
 - Your playlists, likes and logbook now refresh on their own once a background sync lands new rows, instead of waiting for you to pull-to-refresh or reopen the screen. ([#4350](https://github.com/boardsesh/boardsesh/pull/4350))
 - Screens that need a connection now say so instead of showing an endless spinner or an empty list. Your progress, sessions, logbook, playlists, gyms and the activity feed all tell you when there's no signal — and remind you that boards you've downloaded still browse, search and log fine. ([#4354](https://github.com/boardsesh/boardsesh/pull/4354))
 - Downloaded boards keep their "Your boards" and "Following" sections when you ([#4309](https://github.com/boardsesh/boardsesh/pull/4309))

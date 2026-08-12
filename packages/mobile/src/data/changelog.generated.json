@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-08-12T08:01:38.937Z",
+  "generatedAt": "2026-08-12T08:09:26.165Z",
   "entries": [
+    {
+      "prNumber": 4334,
+      "category": "fixed",
+      "title": "Manage Storage now shows what the board art and photos on your phone actually take up, with a Clear cached images button for when you need the space back. Boardsesh also stops letting downloaded photos pile up without a ceiling, and cleans up board downloads that got interrupted halfway.",
+      "mergedAt": "2026-08-12T08:08:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4334"
+    },
+    {
+      "prNumber": 4351,
+      "category": "fixed",
+      "title": "Sharing a phone? Your sends stay yours. The offline database now records who's signed in and checks it before serving anything from your logbook — so if a sign-out ever gets interrupted, the next climber sees their own ticks, not yours.",
+      "mergedAt": "2026-08-12T08:04:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4351"
+    },
     {
       "prNumber": 4350,
       "category": "fixed",
