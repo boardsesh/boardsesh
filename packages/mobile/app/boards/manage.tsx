@@ -32,6 +32,7 @@ import { useBoardDownloads } from '../../src/offline/use-board-downloads';
 import { useRememberDownloadedBoards } from '../../src/offline/use-remember-downloaded-boards';
 import { useSnapshotManifest } from '../../src/offline/use-snapshot-manifest';
 import { useSnapshotSource } from '../../src/offline/use-snapshot-source';
+import { useOfflineSchemaReady } from '../../src/db/use-offline-schema-ready';
 import { formatBytes } from '../../src/lib/format-bytes';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../src/lib/analytics';
@@ -138,6 +139,9 @@ export default function ManageBoards() {
   const snapshotManifestRef = useRef(snapshotManifest);
   snapshotManifestRef.current = snapshotManifest;
   const db = useSQLiteContext();
+  // This connection is handed out as soon as the launch gate opens — after the first
+  // init attempt, whatever it did — so on a contended launch it has no tables yet.
+  const schemaReady = useOfflineSchemaReady();
   const syncStatus = useSyncStatus();
   // Mirrored for the toggle-off handler, which only reads it at tap time: keeping
   // the live status out of that callback's deps means a progress frame can't churn
@@ -189,8 +193,12 @@ export default function ManageBoards() {
   // Ungated by the flag: the offline fallback below needs it too, and a device that
   // still holds downloads after a kill-switch rollback must not be stranded. One
   // cheap indexed read, shared with the Storage screen's cache entry.
+  //
+  // Readiness is a KEY member, not an `enabled` gate: a read against the unmigrated
+  // connection fails into "nothing downloaded", which is the right answer, and a
+  // late flip refetches. Gating would spin forever whenever init genuinely fails.
   const { data: downloadedScopeKeys, refetch: refetchDownloaded } = useQuery({
-    queryKey: ['downloadedScopeKeys'],
+    queryKey: ['downloadedScopeKeys', schemaReady],
     queryFn: () => getDownloadedScopeKeys(db),
   });
   const downloadedSet = useMemo(() => new Set(downloadedScopeKeys ?? []), [downloadedScopeKeys]);

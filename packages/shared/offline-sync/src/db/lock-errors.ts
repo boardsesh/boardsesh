@@ -6,6 +6,12 @@
 // broken database (disk full, corruption). Keeping one implementation here
 // stops the two workstreams from drifting apart on which strings count.
 //
+// Two entry points share that matcher:
+//   - `isDatabaseLockedError` — the yes/no question reporting asks.
+//   - `classifySqliteLockError` — the same verdict plus the numeric result
+//     code, which the mobile sqlite-init retry loop tags its failure and
+//     recovery events with.
+//
 // Matching rules, in order of trust:
 //   1. `database is locked` / `SQLITE_BUSY` — the primary, stable signal.
 //   2. The numeric result code, and only as a SECONDARY signal, because the
@@ -18,7 +24,15 @@
 //
 // Walks the `.cause` chain to the same depth error-classification.ts uses —
 // expo-sqlite wraps the driver error ("Calling the 'execAsync' function has
-// failed" → cause: the real one).
+// failed" → cause: the real one). Both platforms ALSO concatenate the cause
+// into the outer `message` (iOS `Exception.swift`, Android `CodedException.kt`),
+// so the message test carries the shapes that arrive with no structured cause:
+//   iOS 2.2.2  "Calling the 'prepareAsync' function has failed → Caused by:
+//               Error code 5: database is locked"
+//   iOS 2.3.x  "FunctionCallException: ...\n→ Caused by: SQLiteErrorException:
+//               Error code 5: database is locked"
+//   Android    "Call to function 'NativeDatabase.prepareAsync' has been rejected.\n
+//               → Caused by: Error code : database is locked"   ← NO numeric code
 
 const MAX_CAUSE_DEPTH = 3;
 
@@ -74,4 +88,53 @@ function isLockedAtDepth(error: unknown, depth: number): boolean {
  */
 export function isDatabaseLockedError(error: unknown): boolean {
   return isLockedAtDepth(error, 0);
+}
+
+/** SQLITE_BUSY — another connection holds the lock this statement needs. */
+const SQLITE_BUSY = 5;
+/** SQLITE_LOCKED — a lock conflict inside the same database connection. */
+const SQLITE_LOCKED = 6;
+
+/** Result of reading a thrown value as a SQLite lock failure. */
+export type SqliteLockClassification = {
+  /** True when another writer/reader held the file and a retry could win. */
+  locked: boolean;
+  /**
+   * The SQLite result code as reported, or null when the message carried none
+   * (the Android shape above). Kept RAW rather than reduced to its primary code so
+   * telemetry can still tell an extended code (e.g. 261 SQLITE_BUSY_RECOVERY) from
+   * a plain 5.
+   */
+  code: number | null;
+};
+
+const RESULT_CODE_PATTERN = /Error code (\d+)/;
+
+/**
+ * Read a thrown value as a SQLite lock failure, for callers that also report
+ * which result code came back.
+ *
+ * A numeric result code wins when present: it is unambiguous, and it keeps a
+ * message that merely mentions locking (a wrapped disk-I/O error whose prose
+ * happens to include the phrase) from being retried forever. SQLite's extended
+ * result codes pack the primary code in the low byte, so the comparison masks it —
+ * 261 (SQLITE_BUSY_RECOVERY) and 517 (SQLITE_BUSY_SNAPSHOT) are both retryable
+ * contention, and treating them as unknown would report a transient failure.
+ *
+ * With no code to read — the Android shape, which prints the digit as a raw
+ * control byte or omits it entirely — the verdict comes from
+ * `isDatabaseLockedError`, so the two entry points can never disagree about
+ * which strings count as contention.
+ */
+export function classifySqliteLockError(error: unknown): SqliteLockClassification {
+  const message = error instanceof Error ? error.message : String(error);
+  const codeMatch = RESULT_CODE_PATTERN.exec(message);
+
+  if (codeMatch) {
+    const code = Number.parseInt(codeMatch[1], 10);
+    const primaryCode = code & 0xff;
+    return { locked: primaryCode === SQLITE_BUSY || primaryCode === SQLITE_LOCKED, code };
+  }
+
+  return { locked: isDatabaseLockedError(error), code: null };
 }

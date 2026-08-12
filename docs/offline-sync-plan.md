@@ -792,6 +792,61 @@ async function saveTick(db: SQLiteDatabase, tickData: TickInput) {
 }
 ```
 
+## Startup lock model
+
+SQLite allows exactly one writer per database file. Everything below shares one
+`boardsesh.db`, so who holds that write lock at launch — and for how long — decides
+whether offline storage comes up at all.
+
+**Who holds it**
+
+| Writer                                                    | Connection                                                  | Lock window                                                                                                                                    |
+| --------------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Startup DDL (`ensureMutationQueueTable`, `runMigrations`) | the app's main connection                                   | milliseconds on a warm install; the full migration set on an upgrade                                                                           |
+| Snapshot import (`bootstrapScopeFromSnapshot`)            | its own native connection (`withExclusiveTransactionAsync`) | one `BEGIN EXCLUSIVE` covering `reconcileScope` + `importScope` ONLY — the artifact is already downloaded to disk before the transaction opens |
+| Paged crawl (`pull-client`)                               | its own native connection                                   | one short exclusive transaction per page, with a 5s `busy_timeout`, so a contender can win in the gaps                                         |
+| `VACUUM` / teardown deletes                               | the main connection                                         | 5-20s on a 200-400MB file                                                                                                                      |
+
+`OfflineBoardDownloadCompleted.durationMs` is **not** a lock-hold measurement. It is
+stamped when the cycle first touches a scope and covers the manifest fetch and the
+artifact download as well as the import — mostly network. Sizing a retry window off
+it overstates the real contention by an order of magnitude. The measurement that
+does describe the lock is `Offline SQLite Init Recovered`'s `elapsedMs`: how long a
+launch that lost the lock took to win it back.
+
+**Why the launch gate opens before the schema is ready**
+
+`SQLiteProvider` renders nothing until its `onInit` promise resolves, so blocking
+`initializeDatabase` until a retry wins would be a black screen for the length of the
+chain. It therefore resolves after the FIRST attempt whatever that attempt did, and
+the retries continue detached. A contended launch consequently renders the whole app
+against a connection with no tables.
+
+**The readiness contract**
+
+- Non-React callers use `getDatabaseHandle()`, which stays `null` until migrations
+  have run. They already null-check and fall back to the network.
+- Callers that take the database from `useSQLiteContext()` bypass that gate — the
+  provider hands out its connection regardless. Anything that **writes** through such
+  a handle (the sync scheduler in `OfflineSyncBridge`, the download kick in
+  `useBoardDownloads`) MUST gate on `useOfflineSchemaReady()` (`src/db/schema-ready.ts`).
+- Read-only surfaces deliberately do NOT gate. They wrap their reads in a React Query
+  `queryFn`, so a missing table lands in `isError` and renders the existing empty
+  state; gating would strand them in a permanent spinner whenever init genuinely
+  fails. They fold readiness into the `queryKey` instead, so a late flip refetches.
+- Readiness can arrive late (a retry wins seconds in) and can go back to false
+  (sign-out clears the handle), so it is a live store, not a one-shot flag. Anything
+  that clears the database must do so through `setDatabaseHandle(null)` rather than
+  poking the store, which is what keeps the two from disagreeing.
+
+**Remounts**
+
+`SQLiteProvider`'s effect teardown calls `db.closeAsync()`, so a remount mid-chain
+closes the connection the chain captured and opens a new one. The retry chain is
+single-flight for the process but retargets onto the latest connection on every
+attempt; a failure against a superseded handle is a lifecycle artefact and is
+deliberately not reported to error tracking.
+
 ## What stays the same
 
 | Component             | Status                                                                                                        |

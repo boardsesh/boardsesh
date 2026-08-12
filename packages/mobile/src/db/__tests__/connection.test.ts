@@ -14,7 +14,11 @@ import { fileURLToPath } from 'node:url';
 const reportErrorMock = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/error-reporting', () => ({ reportError: reportErrorMock }));
 
+const trackMock = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/analytics', () => ({ track: trackMock }));
+
 import type { SQLiteDatabase } from 'expo-sqlite';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import {
   clearUserData,
   getDatabaseHandle,
@@ -22,6 +26,7 @@ import {
   INIT_RETRY_DELAYS_MS,
   setDatabaseHandle,
 } from '../connection';
+import { isSchemaReady } from '../schema-ready';
 import { resetDatabaseInitializationForTests } from '../testing';
 import {
   runMigrations,
@@ -137,6 +142,7 @@ describe('initializeDatabase connection PRAGMAs', () => {
     resetDatabaseInitializationForTests();
     setDatabaseHandle(null);
     reportErrorMock.mockClear();
+    trackMock.mockClear();
     dbDir = mkdtempSync(join(tmpdir(), 'bs-conn-'));
     dbPath = join(dbDir, 'boardsesh.db');
     fileDb = createTestDatabase(dbPath) as unknown as TestSqliteDb & SQLiteDatabase;
@@ -180,14 +186,32 @@ describe('initializeDatabase lock contention (#4104)', () => {
   // and nothing else, and it keeps tracking if the backoff is ever retuned.
   const FIRST_RETRY_DELAY_MS = INIT_RETRY_DELAYS_MS[0];
 
+  // The failure report awaits a best-effort `PRAGMA journal_mode` read-back, so it
+  // lands a microtask or two after the launch gate the test awaited. Wait for the
+  // report itself rather than guessing a tick count.
+  function settledReport(): Promise<void> {
+    return vi.waitFor(() => {
+      expect(reportErrorMock).toHaveBeenCalled();
+    });
+  }
+
   let dbDir: string;
   let realDb: TestSqliteDb;
 
+  const LOCK_ERROR_MESSAGE = "Calling the 'execAsync' function has failed → Error code 5: database is locked";
+  // What expo-sqlite throws once SQLiteProvider's teardown has closed the handle the
+  // chain captured. Not a lock error, so it classifies as permanent.
+  const CLOSED_HANDLE_MESSAGE = 'Access to closed resource';
+
   // Stands in for the contended connection: the mutation-queue DDL — the first write
   // initializeDatabase issues — fails with the real Sentry message until `unlock()`.
-  function createContendedDatabase(options: { error?: Error } = {}) {
-    const failure =
-      options.error ?? new Error("Calling the 'execAsync' function has failed → Error code 5: database is locked");
+  // `error` may be a function to vary the throw per failure (attempt N is contended,
+  // attempt N+1 is a closed handle).
+  function createContendedDatabase(
+    options: { error?: Error | ((failureCount: number) => Error); onFailure?: (failureCount: number) => void } = {},
+  ) {
+    const { error = new Error(LOCK_ERROR_MESSAGE) } = options;
+    const failureFor = (failureCount: number) => (typeof error === 'function' ? error(failureCount) : error);
     let locked = true;
     let failures = 0;
 
@@ -195,7 +219,10 @@ describe('initializeDatabase lock contention (#4104)', () => {
       execAsync: async (source: string): Promise<void> => {
         if (locked && /pending_mutations/i.test(source)) {
           failures += 1;
-          throw failure;
+          // Lets a test land a remount WHILE this attempt is in flight, which is the
+          // only way the chain's target can be superseded.
+          options.onFailure?.(failures);
+          throw failureFor(failures);
         }
         await realDb.execAsync(source);
       },
@@ -219,6 +246,7 @@ describe('initializeDatabase lock contention (#4104)', () => {
     resetDatabaseInitializationForTests();
     setDatabaseHandle(null);
     reportErrorMock.mockClear();
+    trackMock.mockClear();
     dbDir = mkdtempSync(join(tmpdir(), 'bs-lock-'));
     realDb = createTestDatabase(join(dbDir, 'boardsesh.db'));
   });
@@ -262,7 +290,7 @@ describe('initializeDatabase lock contention (#4104)', () => {
     expect(reportErrorMock).not.toHaveBeenCalled();
   });
 
-  it('shares one lifecycle across a remount mid-retry rather than starting a second chain', async () => {
+  it('shares one lifecycle across a remount mid-retry, retargeted onto the new connection', async () => {
     vi.useFakeTimers();
     const first = createContendedDatabase();
     const second = createContendedDatabase();
@@ -277,12 +305,162 @@ describe('initializeDatabase lock contention (#4104)', () => {
     const remount = initializeDatabase(second.db);
     expect(remount).toBe(initial);
 
-    first.unlock();
+    // ...but the one chain must follow the LIVE connection. SQLiteProvider's effect
+    // teardown closed `first.db` on that remount, so every remaining attempt against
+    // it would throw "closed resource" — not a lock error, so classified permanent
+    // and reported to Sentry as a sqlite-init failure that never happened.
+    second.unlock();
     await vi.advanceTimersByTimeAsync(FIRST_RETRY_DELAY_MS);
 
-    expect(getDatabaseHandle()).toBe(first.db);
-    // The second database was never touched.
-    expect(second.failures()).toBe(0);
+    expect(getDatabaseHandle()).toBe(second.db);
+    // The dead connection was touched once, by the attempt that predates the remount.
+    expect(first.failures()).toBe(1);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('does not report a failure against a connection the remount had already closed', async () => {
+    vi.useFakeTimers();
+    const healthy = createContendedDatabase();
+    healthy.unlock();
+    // Without the supersede check the chain would stop dead on attempt 1 and file the
+    // closed-handle throw under kind:'sqlite-init'.
+    const closed = createContendedDatabase({
+      error: new Error(CLOSED_HANDLE_MESSAGE),
+      onFailure: () => {
+        void initializeDatabase(healthy.db);
+      },
+    });
+
+    await initializeDatabase(closed.db);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(FIRST_RETRY_DELAY_MS);
+
+    expect(getDatabaseHandle()).toBe(healthy.db);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+    // Working around a remount is not recovering from a lock: the closed-handle
+    // artefact must not arm the recovery event either, or its ~retry-delay
+    // elapsedMs would feed the distribution that sizes the retry window (#4325).
+    expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  it('does not spend the final attempt on a connection the remount had already closed', async () => {
+    vi.useFakeTimers();
+    const healthy = createContendedDatabase();
+    healthy.unlock();
+
+    // Attempts 1-4 are genuine contention; the remount lands DURING attempt 5, so the
+    // last attempt fails against a handle SQLiteProvider had already closed. That
+    // failure tested nothing, so it must not be the one that exhausts the budget:
+    // the remount already holds the resolved launch promise, so a chain that gives up
+    // here leaves the replacement handle uninitialized for the whole session.
+    const contended = createContendedDatabase({
+      error: (failureCount) => new Error(failureCount === 5 ? CLOSED_HANDLE_MESSAGE : LOCK_ERROR_MESSAGE),
+      onFailure: (failureCount) => {
+        if (failureCount === 5) {
+          void initializeDatabase(healthy.db);
+        }
+      },
+    });
+
+    await initializeDatabase(contended.db);
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(contended.failures()).toBe(5);
+    expect(getDatabaseHandle()).toBe(healthy.db);
+    expect(isSchemaReady()).toBe(true);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+    // The refunded attempt retries immediately — the replacement connection is fresh,
+    // so there is no lock to wait out — and the lock narrative survives it: the
+    // recovery still names the contention from attempt 4, not the closed handle.
+    expect(trackMock).toHaveBeenCalledTimes(1);
+    expect(trackMock.mock.calls[0][1]).toMatchObject({ attempts: 6, phase: 'queue-table', sqliteCode: 5 });
+  });
+
+  it('reports a recovered init exactly once, with the contention it survived', async () => {
+    vi.useFakeTimers();
+    const contended = createContendedDatabase();
+
+    await initializeDatabase(contended.db);
+    contended.unlock();
+    await vi.advanceTimersByTimeAsync(FIRST_RETRY_DELAY_MS);
+
+    expect(getDatabaseHandle()).toBe(contended.db);
+    expect(trackMock).toHaveBeenCalledTimes(1);
+    const [eventName, properties] = trackMock.mock.calls[0];
+    expect(eventName).toBe(SHARED_EVENTS.OfflineSqliteInitRecovered);
+    expect(properties).toMatchObject({ attempts: 2, phase: 'queue-table', sqliteCode: 5 });
+    expect(typeof (properties as { elapsedMs: unknown }).elapsedMs).toBe('number');
+    // A recovery is not a failure — it must not also land in the Sentry aggregate.
+    expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet on a clean launch — no recovery event when attempt 1 wins', async () => {
+    const healthy = createContendedDatabase();
+    healthy.unlock();
+
+    await initializeDatabase(healthy.db);
+
+    expect(getDatabaseHandle()).toBe(healthy.db);
+    expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  it('publishes schema readiness only once the migrations have actually run', async () => {
+    vi.useFakeTimers();
+    const contended = createContendedDatabase();
+
+    await initializeDatabase(contended.db);
+    // The launch gate is open and every screen is rendering against this connection,
+    // but it has no tables yet — the whole point of the readiness store.
+    expect(isSchemaReady()).toBe(false);
+
+    contended.unlock();
+    await vi.advanceTimersByTimeAsync(FIRST_RETRY_DELAY_MS);
+
+    expect(isSchemaReady()).toBe(true);
+  });
+
+  it('tags the failure report with the SQLite result code and the journal mode', async () => {
+    vi.useFakeTimers();
+    const contended = createContendedDatabase();
+
+    await initializeDatabase(contended.db);
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    const [, context] = reportErrorMock.mock.calls[0];
+    expect(context.tags).toMatchObject({ sqlite_code: 5, journal_mode: 'wal' });
+    expect(context.extra).toMatchObject({ attempts: 5, retryable: true });
+    expect(typeof context.extra.elapsedMs).toBe('number');
+  });
+
+  it('falls back to an explicit sentinel when the journal-mode read itself fails', async () => {
+    // The report runs against a database that is contended by definition, so the
+    // read-back can fail too. 'unavailable' keeps "stuck in rollback journal"
+    // distinguishable from "we could not tell", instead of the tag vanishing.
+    const contended = createContendedDatabase({ error: new Error('Error code 10: disk I/O error') });
+    const unreadable = {
+      ...(contended.db as unknown as Record<string, unknown>),
+      getFirstAsync: () => Promise.reject(new Error('Error code 10: disk I/O error')),
+    } as unknown as SQLiteDatabase;
+
+    await initializeDatabase(unreadable);
+    await settledReport();
+
+    const [, context] = reportErrorMock.mock.calls[0];
+    expect(context.tags).toMatchObject({ journal_mode: 'unavailable' });
+  });
+
+  it('reports a disk-I/O failure on the first attempt, carrying its result code', async () => {
+    const failing = createContendedDatabase({ error: new Error('Error code 10: disk I/O error') });
+
+    await initializeDatabase(failing.db);
+    await settledReport();
+
+    expect(failing.failures()).toBe(1);
+    expect(reportErrorMock).toHaveBeenCalledTimes(1);
+    const [, context] = reportErrorMock.mock.calls[0];
+    expect(context.tags).toMatchObject({ sqlite_code: 10 });
+    expect(context.extra).toMatchObject({ attempts: 1, retryable: false });
   });
 
   it('gives up after the bounded attempt window and reports once, tagged with the phase', async () => {
@@ -307,6 +485,7 @@ describe('initializeDatabase lock contention (#4104)', () => {
     const contended = createContendedDatabase({ error: new Error('disk I/O error') });
 
     await initializeDatabase(contended.db);
+    await settledReport();
 
     expect(contended.failures()).toBe(1);
     expect(reportErrorMock).toHaveBeenCalledTimes(1);

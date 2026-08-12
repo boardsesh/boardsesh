@@ -15,6 +15,7 @@ import { useAuth } from '../../../src/providers/auth-provider';
 import { useProfile, useMyBoards } from '../../../src/lib/graphql/hooks';
 import { useBoardDownloads } from '../../../src/offline/use-board-downloads';
 import { isOfflineEngineEnabled } from '../../../src/lib/offline-engine';
+import { useOfflineSchemaReady } from '../../../src/db/use-offline-schema-ready';
 import {
   useSetting,
   setSetting,
@@ -157,10 +158,16 @@ export default function MoreScreen() {
   // problem). A dead-lettered write is one the server rejected or that failed past
   // its retry budget while reachable: worth surfacing with a retry (never a discard).
   const db = useSQLiteContext();
+  // Handed out as soon as the launch gate opens — after the first init attempt,
+  // whatever it did — so on a contended launch it has no tables yet. Both reads
+  // below fold readiness into their KEY rather than gating on it: a failed read
+  // renders the existing empty state (the right answer), and a late flip refetches,
+  // whereas gating would spin forever whenever init genuinely fails.
+  const schemaReady = useOfflineSchemaReady();
   const queryClient = useQueryClient();
   const isOffline = useIsOffline();
   const { data: deadLetterCount = 0, refetch: refetchDeadLetters } = useQuery({
-    queryKey: ['deadLetters', 'count'],
+    queryKey: ['deadLetters', 'count', schemaReady],
     queryFn: () => getDeadLetterCount(db),
     enabled: !isOffline,
     // Dead letters are sticky (they don't resolve without a user Retry), so a slow
@@ -176,7 +183,7 @@ export default function MoreScreen() {
   // shared cache). One cheap indexed read, same cost shape as the dead-letter count.
   // Shares the ['downloadedScopeKeys'] cache entry with My Boards, so this warms it.
   const { data: downloadedScopeKeys } = useQuery({
-    queryKey: ['downloadedScopeKeys'],
+    queryKey: ['downloadedScopeKeys', schemaReady],
     queryFn: () => getDownloadedScopeKeys(db),
   });
   // ...AND when a removal deleted its rows but the compaction never landed, so the

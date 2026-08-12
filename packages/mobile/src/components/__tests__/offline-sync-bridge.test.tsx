@@ -130,9 +130,11 @@ vi.mock('@react-native-async-storage/async-storage', () => {
   };
 });
 
+import { act } from 'react';
 import { OfflineSyncBridge, OfflineEngineFlagSync } from '../offline-sync-bridge';
 import { FeatureFlagsProvider, type FeatureFlags } from '../../providers/feature-flags-provider';
 import { isOfflineEngineEnabled, __resetOfflineEngineForTests } from '../../lib/offline-engine';
+import { setSchemaReady, __resetSchemaReadyForTests } from '../../db/schema-ready';
 
 function Harness({ flags, queryClient }: { flags: FeatureFlags; queryClient: QueryClient }) {
   return (
@@ -190,10 +192,14 @@ beforeEach(() => {
   clearUserDataMock.mockClear();
   beginLocalPurgeMock.mockClear();
   snapshotBaseUrlConfigured.value = true;
+  // Every case below except the readiness-gating describe assumes the ordinary
+  // uncontended launch, where the schema is stamped before the first render.
+  setSchemaReady(true);
 });
 
 afterEach(() => {
   __resetOfflineEngineForTests();
+  __resetSchemaReadyForTests();
 });
 
 // The bridge owns the "whose rows are these?" stamp, which is the only defence
@@ -421,6 +427,59 @@ describe('OfflineSyncBridge — outbox backlog gauge', () => {
     await waitFor(() => expect(getPendingCountMock).toHaveBeenCalled());
 
     expect(reportOutboxBacklogOnceMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for a stamped schema before reading the outbox', async () => {
+    // Same hazard as the sync effect: on a contended launch pending_mutations
+    // does not exist yet, and a gauge that throws there reports no backlog at
+    // all rather than the backlog it could not read.
+    setSchemaReady(false);
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(setupNotificationHandlersMock).toHaveBeenCalledTimes(1));
+    expect(reportOutboxBacklogOnceMock).not.toHaveBeenCalled();
+
+    act(() => setSchemaReady(true));
+
+    await waitFor(() => expect(reportOutboxBacklogOnceMock).toHaveBeenCalledTimes(1));
+  });
+});
+
+// The launch gate opens after the FIRST init attempt whatever it did, so on a
+// contended launch SQLiteProvider renders this bridge against a connection whose
+// migrations never ran — no board_climb_grades, no characteristics column. Both
+// branches of the sync effect WRITE, so both have to wait.
+describe('OfflineSyncBridge — schema readiness gating', () => {
+  it('does not start the scheduler against a database whose migrations have not run', async () => {
+    setSchemaReady(false);
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+
+    // Notifications are readiness-independent, so waiting on them proves the effects
+    // have flushed rather than merely not run yet.
+    await waitFor(() => expect(setupNotificationHandlersMock).toHaveBeenCalledTimes(1));
+    expect(startSyncSchedulerMock).not.toHaveBeenCalled();
+  });
+
+  it('starts the scheduler exactly once when readiness lands late', async () => {
+    setSchemaReady(false);
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(setupNotificationHandlersMock).toHaveBeenCalledTimes(1));
+
+    // A retry won seconds after launch.
+    act(() => setSchemaReady(true));
+
+    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('holds the flag-off leftover drain until the schema is stamped', async () => {
+    setSchemaReady(false);
+    getPendingCountMock.mockResolvedValue(3);
+    render(<Harness flags={FLAG_OFF} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(setupNotificationHandlersMock).toHaveBeenCalledTimes(1));
+    expect(getPendingCountMock).not.toHaveBeenCalled();
+
+    act(() => setSchemaReady(true));
+
+    await waitFor(() => expect(drainMutationQueueMock).toHaveBeenCalledTimes(1));
   });
 });
 

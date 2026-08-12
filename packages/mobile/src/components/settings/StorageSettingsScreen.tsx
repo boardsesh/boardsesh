@@ -51,6 +51,7 @@ import {
 import { measureCachedImageBytes, clearCachedImages, type CachedImageMeasurement } from '../../lib/sweep-caches';
 import { removeOfflineBoard, compactOfflineDatabase } from '../../offline/remove-offline-board';
 import { formatStorageSize } from '../../lib/format-storage-size';
+import { useOfflineSchemaReady } from '../../db/use-offline-schema-ready';
 import { reportError } from '../../lib/error-reporting';
 import { hapticLight } from '../../lib/haptics';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -77,6 +78,11 @@ export function StorageSettingsScreen() {
   const confirm = useConfirm();
   const { showToast } = useToast();
   const db = useSQLiteContext();
+  // Live as soon as the launch gate opens — after the first init attempt, whatever
+  // it did — so on a contended launch this connection has no tables yet. Folded into
+  // the query KEY below rather than gating the query: a failed measurement renders
+  // the existing error state with its Retry, and a late readiness flip re-measures.
+  const schemaReady = useOfflineSchemaReady();
   const queryClient = useQueryClient();
   const bottomChrome = useBottomChromeMetrics();
   const offlineEnabled = useOfflineDownloadsEnabled();
@@ -93,7 +99,7 @@ export function StorageSettingsScreen() {
     isRefetching,
     refetch,
   } = useQuery<StorageMeasurement>({
-    queryKey: ['offlineStorage'],
+    queryKey: ['offlineStorage', schemaReady],
     // Not a poll: this walks 200k+ rows per scope in the worst case.
     refetchOnWindowFocus: false,
     queryFn: async () => {

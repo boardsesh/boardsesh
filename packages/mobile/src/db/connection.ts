@@ -11,9 +11,13 @@ import {
   runMigrations,
   deleteUserCheckpoints,
   applyBusyTimeout,
+  classifySqliteLockError,
   configureMainConnection,
 } from '@boardsesh/offline-sync';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { reportError } from '../lib/error-reporting';
+import { track } from '../lib/analytics';
+import { setSchemaReady } from './schema-ready';
 
 export const DATABASE_NAME = 'boardsesh.db';
 
@@ -37,6 +41,11 @@ let databaseHandle: SQLiteDatabase | null = null;
 
 export function setDatabaseHandle(db: SQLiteDatabase | null): void {
   databaseHandle = db;
+  // The handle is only ever published once migrations have run, so it doubles as
+  // the schema-readiness signal for the `useSQLiteContext()` consumers that can't
+  // see this handle at all. Driving the store from here — rather than letting
+  // callers poke it — keeps the two from ever disagreeing.
+  setSchemaReady(db !== null);
 }
 
 export function getDatabaseHandle(): SQLiteDatabase | null {
@@ -57,6 +66,13 @@ export function getDatabaseHandle(): SQLiteDatabase | null {
  */
 const MAX_INIT_ATTEMPTS = 5;
 const MAX_INIT_WINDOW_MS = 30_000;
+/**
+ * How many times a superseded attempt may be refunded (see the restart branch in
+ * `beginInitialization`). Each refund needs its own remount — the retry immediately
+ * retargets onto the connection that superseded it — so this only exists to stop a
+ * pathological remount loop from keeping one chain alive forever.
+ */
+const MAX_SUPERSEDED_RESTARTS = 3;
 // Exported so the retry tests advance their fake clock by the real gap rather than
 // mirroring these numbers in a literal that silently drifts from them.
 export const INIT_RETRY_DELAYS_MS = [500, 2_000, 5_000, 10_000];
@@ -72,26 +88,68 @@ export const INIT_RETRY_DELAYS_MS = [500, 2_000, 5_000, 10_000];
 let activeInitialization: Promise<void> | null = null;
 
 /**
+ * The most recent database `SQLiteProvider` handed us, which is not necessarily the
+ * one the in-flight chain started with.
+ *
+ * `SQLiteProvider`'s effect teardown calls `db.closeAsync()` (expo-sqlite
+ * `build/hooks.js`), so a remount mid-chain CLOSES the connection the chain captured
+ * and opens a new one. The single-flight guard above means the remount just gets the
+ * existing promise back — so without this, every remaining retry hammers a closed
+ * handle, throws "database is closed" (not a lock error, therefore classified
+ * non-retryable), and reports a lifecycle artefact to Sentry under
+ * `kind: 'sqlite-init'` — polluting the exact aggregate #4314 reads to decide
+ * whether the lock problem is fixed. Each attempt reads this instead, so one chain
+ * follows the LIVE connection.
+ */
+let latestDatabase: SQLiteDatabase | null = null;
+
+/**
+ * At most one recovery event per process. A launch can only recover once, but the
+ * chain can restart after an exhausted window (`activeInitialization` is cleared),
+ * and one launch must not emit two.
+ */
+let hasReportedRecovery = false;
+
+/**
  * Which step of the setup sequence failed. Tagged on the Sentry report so the next
  * triage can tell a refused WAL switch from a locked migration — #4104 could not,
  * because all three steps shared a single catch.
  */
 type InitPhase = 'wal' | 'queue-table' | 'migrations';
 
-type InitOutcome = { status: 'ready' } | { status: 'failed'; phase: InitPhase; error: unknown; retryable: boolean };
+type InitOutcome =
+  | { status: 'ready' }
+  | { status: 'failed'; phase: InitPhase; error: unknown; retryable: boolean; sqliteCode: number | null };
 
-/**
- * A lock contention (SQLITE_BUSY code 5 / SQLITE_LOCKED code 6) — transient by
- * definition, so worth retrying. Anything else (a full disk, a corrupt file, missing
- * permissions) would fail identically forever, so it is reported at once instead.
- */
-function isDatabaseLockedError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return /database (?:table )?is locked/i.test(message);
-}
+// Retryability comes from `classifySqliteLockError` (@boardsesh/offline-sync,
+// db/lock-errors.ts): a lock contention (SQLITE_BUSY 5 / SQLITE_LOCKED 6) is
+// transient by definition and worth another attempt, while anything else — a full
+// disk, a corrupt file, missing permissions — would fail identically forever and is
+// reported at once. The matching lives there rather than here because the message
+// shapes differ per platform and are only knowable from telemetry, so they need a
+// test pinning the literal strings Sentry carries.
 
 function delay(durationMs: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, durationMs));
+}
+
+/**
+ * Best-effort read of the file's journal mode for the failure report.
+ *
+ * Tagged because one untested hypothesis for a device that fails at launch forever
+ * is that it never made it out of rollback-journal mode (the WAL switch is
+ * one-shot, and `configureMainConnection` steps over a refused one). By definition
+ * this runs against a contended database, so the read can fail too — the explicit
+ * `'unavailable'` sentinel keeps "stuck in rollback journal" distinguishable from
+ * "we couldn't tell", instead of the tag silently vanishing.
+ */
+async function readJournalMode(db: SQLiteDatabase): Promise<string> {
+  try {
+    const row = await db.getFirstAsync<{ journal_mode: string }>('PRAGMA journal_mode');
+    return row?.journal_mode ?? 'unavailable';
+  } catch {
+    return 'unavailable';
+  }
 }
 
 /**
@@ -118,6 +176,9 @@ function delay(durationMs: number): Promise<void> {
  * layout, size) scope.
  */
 export function initializeDatabase(db: SQLiteDatabase): Promise<void> {
+  // Recorded on EVERY call, including the remount that only gets the shared promise
+  // back, so the in-flight chain can retarget onto the live connection.
+  latestDatabase = db;
   activeInitialization ??= beginInitialization(db);
   return activeInitialization;
 }
@@ -143,7 +204,8 @@ async function attemptInitialization(db: SQLiteDatabase): Promise<InitOutcome> {
     setDatabaseHandle(db);
     return { status: 'ready' };
   } catch (error) {
-    return { status: 'failed', phase, error, retryable: isDatabaseLockedError(error) };
+    const { locked, code } = classifySqliteLockError(error);
+    return { status: 'failed', phase, error, retryable: locked, sqliteCode: code };
   }
 }
 
@@ -162,44 +224,115 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
   });
 
   void (async () => {
-    const deadline = Date.now() + MAX_INIT_WINDOW_MS;
+    const startedAt = Date.now();
+    const deadline = startedAt + MAX_INIT_WINDOW_MS;
+    // What the last failed attempt tripped over, so a recovery can say which step
+    // was contended rather than just "it took three goes".
+    let lastFailure: { phase: InitPhase; sqliteCode: number | null } | null = null;
 
-    for (let attempt = 1; attempt <= MAX_INIT_ATTEMPTS; attempt += 1) {
-      const outcome = await attemptInitialization(db);
+    // Attempts made, for the telemetry narrative ("it took three goes").
+    let attempts = 0;
+    // Attempts that actually reached the live connection, which is what the backoff
+    // and the give-up ceiling are budgeting for. A superseded attempt is refunded —
+    // see the restart branch below.
+    let budgetSpent = 0;
+    let supersededRestarts = 0;
+
+    while (budgetSpent < MAX_INIT_ATTEMPTS) {
+      // The live connection, which a remount may have swapped since the chain
+      // started — see `latestDatabase`. Falls back to the captured one only if the
+      // handle was cleared outright.
+      const target = latestDatabase ?? db;
+      const outcome = await attemptInitialization(target);
+      attempts += 1;
 
       // Unblock the provider once, whatever the first attempt did.
-      if (attempt === 1) {
+      if (attempts === 1) {
         releaseLaunch();
       }
 
       if (outcome.status === 'ready') {
+        // Only a chain that survived a GENUINE lock failure recovered from
+        // contention. A chain whose only failure was against a superseded (closed)
+        // handle worked around a remount, not a lock — firing the event for it
+        // would claim contention that never happened and feed a bogus ~retry-delay
+        // `elapsedMs` into the distribution that sizes the retry window (#4325).
+        // `lastFailure` is only ever set by an earlier iteration, so it doubles as
+        // the "this was not a first-attempt win" check.
+        if (lastFailure !== null) {
+          reportInitRecovered({
+            attempts,
+            elapsedMs: Date.now() - startedAt,
+            phase: lastFailure.phase,
+            sqliteCode: lastFailure.sqliteCode,
+          });
+        }
         return;
       }
 
-      const retryDelayMs = INIT_RETRY_DELAYS_MS[attempt - 1];
+      // A remount landed WHILE this attempt was in flight, so the connection it just
+      // failed against is the one `SQLiteProvider` closed on teardown. That failure
+      // says nothing about the lock, and reporting it would pollute the sqlite-init
+      // aggregate with a lifecycle artefact — carry on against the new handle instead.
+      const superseded = latestDatabase !== null && latestDatabase !== target;
+
+      // Lock-classified failures always count toward the recovery narrative — the
+      // lock was real even if the handle was superseded a moment later. A non-lock
+      // throw against a superseded handle is the closed-connection artefact above
+      // and must not arm the recovery event.
+      if (outcome.retryable || !superseded) {
+        lastFailure = { phase: outcome.phase, sqliteCode: outcome.sqliteCode };
+      }
+
+      // A non-lock failure against a superseded handle never touched the live file, so
+      // it spends no budget and takes no backoff — the replacement connection is fresh,
+      // there is nothing to wait out. Without the refund a remount landing during the
+      // LAST attempt hit the attempt ceiling and ended the chain with the
+      // replacement never initialized, and nothing left to call in: that remount had
+      // already been handed the resolved launch promise, so schema readiness stayed
+      // false for the rest of the session.
+      if (superseded && !outcome.retryable && supersededRestarts < MAX_SUPERSEDED_RESTARTS) {
+        supersededRestarts += 1;
+        continue;
+      }
+
+      budgetSpent += 1;
+      const retryDelayMs = INIT_RETRY_DELAYS_MS[budgetSpent - 1];
       const outOfRoad =
-        !outcome.retryable ||
-        attempt === MAX_INIT_ATTEMPTS ||
+        (!outcome.retryable && !superseded) ||
+        budgetSpent === MAX_INIT_ATTEMPTS ||
         retryDelayMs === undefined ||
         Date.now() + retryDelayMs >= deadline;
 
       if (outOfRoad) {
         if (__DEV__) {
           console.warn(
-            `[SQLite] initializeDatabase failed in phase "${outcome.phase}" after ${attempt} attempt(s); ` +
+            `[SQLite] initializeDatabase failed in phase "${outcome.phase}" after ${attempts} attempt(s); ` +
               'offline storage disabled this session:',
             outcome.error,
           );
         }
-        // In production a silent null handle just switches every offline feature off
-        // with no trace — report it so a spike is diagnosable from telemetry. Only the
-        // final attempt reports, so a retried-and-recovered launch stays quiet.
-        reportError(outcome.error, {
-          tags: { source: 'offline-sync', kind: 'sqlite-init', phase: outcome.phase },
-          extra: { attempts: attempt, retryable: outcome.retryable },
-        });
-        // Let a genuinely new mount try again rather than staying dead for the process.
+        // Let a genuinely new mount try again rather than staying dead for the
+        // process. Cleared BEFORE the report, because the journal-mode read-back
+        // below awaits — a mount landing in that window must start a fresh chain
+        // rather than be handed this dead one.
         activeInitialization = null;
+        if (!superseded) {
+          // In production a silent null handle just switches every offline feature off
+          // with no trace — report it so a spike is diagnosable from telemetry. Only the
+          // final attempt reports, so a retried-and-recovered launch stays quiet (it
+          // fires the recovery event above instead).
+          reportError(outcome.error, {
+            tags: {
+              source: 'offline-sync',
+              kind: 'sqlite-init',
+              phase: outcome.phase,
+              sqlite_code: outcome.sqliteCode,
+              journal_mode: await readJournalMode(target),
+            },
+            extra: { attempts, retryable: outcome.retryable, elapsedMs: Date.now() - startedAt },
+          });
+        }
         return;
       }
 
@@ -208,6 +341,29 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
   })();
 
   return launchGate;
+}
+
+/**
+ * Report that offline storage came up on a retry, at most once per process.
+ *
+ * Without this the lane is write-only: Sentry hears about a launch that ran out of
+ * retries and nothing at all about one that contended and recovered, so after an OTA
+ * "fixed" and "still contending, just retrying its way out" look identical. The
+ * `elapsedMs` distribution is also the only measurement of how long the offline
+ * writers actually hold the file — the retry window is sized on a guess today.
+ *
+ * Firing this ~1s into launch is safe: the PostHog client is constructed eagerly at
+ * module import with a synchronously-resolved bootstrap distinct id.
+ */
+function reportInitRecovered(properties: {
+  attempts: number;
+  elapsedMs: number;
+  phase: InitPhase;
+  sqliteCode: number | null;
+}): void {
+  if (hasReportedRecovery) return;
+  hasReportedRecovery = true;
+  track(SHARED_EVENTS.OfflineSqliteInitRecovered, properties);
 }
 
 /**
@@ -220,6 +376,8 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
  */
 export function resetDatabaseInitializationForTests(): void {
   activeInitialization = null;
+  latestDatabase = null;
+  hasReportedRecovery = false;
 }
 
 /**

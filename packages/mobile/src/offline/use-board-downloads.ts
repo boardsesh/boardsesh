@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useQueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -19,6 +19,7 @@ import { getHttpClient } from '../lib/graphql/client';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
 import { triggerSync, drainMutationQueue } from './offline-sync-adapter';
 import { useSnapshotSource } from './use-snapshot-source';
+import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
 
 /** Which surface flipped the switch, for the Toggled event (issue #4316). */
 export type ToggleSource = 'manage' | 'storage' | 'more' | 'adopt';
@@ -41,12 +42,36 @@ export function useBoardDownloads() {
   const db = useSQLiteContext();
   const queryClient = useQueryClient();
   const snapshotSource = useSnapshotSource();
+  // The db from `useSQLiteContext()` is handed out as soon as the launch gate opens,
+  // which is after the FIRST init attempt whatever it did — so on a contended launch
+  // it has no tables yet and a snapshot import would land in a half-set-up file.
+  const schemaReady = useOfflineSchemaReady();
 
   const graphqlFetch = useMemo<GraphQLFetch>(() => (query, variables) => getHttpClient().request(query, variables), []);
   const drainQueue = useCallback(
     () => drainMutationQueue(db, queryClient, graphqlFetch),
     [db, queryClient, graphqlFetch],
   );
+
+  const startDownloadCycle = useCallback(() => {
+    // Reads `syncEnabledBoards` at call time, never a captured list — so a deferred
+    // kick downloads what is enabled NOW, not what was enabled when the user tapped.
+    // Someone who turns a board on and off again while the schema is unready gets
+    // one cycle that finds nothing to do rather than a download they cancelled.
+    triggerSync(db, queryClient, graphqlFetch, () => getSetting('syncEnabledBoards'), drainQueue, {
+      onProgress: setSyncProgress,
+      onBootstrapMetadataChanged: notifyBootstrapMetadataChanged,
+      onScopeDownloadComplete: notifyScopeDownloadComplete,
+      snapshotSource,
+    });
+  }, [db, queryClient, graphqlFetch, drainQueue, snapshotSource]);
+
+  // A tap that arrives before the schema is stamped is HELD, not dropped: the
+  // settings writes below are pure preference state and land immediately, and this
+  // flag replays the download kick once readiness flips. Dropping it would leave a
+  // "Download" tap doing visibly nothing, which is what discovery nudges send people
+  // straight into.
+  const downloadKickPendingRef = useRef(false);
 
   const enableBoardsOffline = useCallback(
     (boards: UserBoard | UserBoard[], options?: { trigger?: OfflineDownloadTrigger; source?: ToggleSource }) => {
@@ -84,15 +109,20 @@ export function useBoardDownloads() {
       // any caller having to remember to persist them. A scope key alone can't name
       // a board — see settings/offline-boards.ts.
       rememberOfflineBoards(list);
-      triggerSync(db, queryClient, graphqlFetch, () => getSetting('syncEnabledBoards'), drainQueue, {
-        onProgress: setSyncProgress,
-        onBootstrapMetadataChanged: notifyBootstrapMetadataChanged,
-        onScopeDownloadComplete: notifyScopeDownloadComplete,
-        snapshotSource,
-      });
+      if (!schemaReady) {
+        downloadKickPendingRef.current = true;
+        return;
+      }
+      startDownloadCycle();
     },
-    [db, queryClient, graphqlFetch, drainQueue, snapshotSource],
+    [schemaReady, startDownloadCycle],
   );
+
+  useEffect(() => {
+    if (!schemaReady || !downloadKickPendingRef.current) return;
+    downloadKickPendingRef.current = false;
+    startDownloadCycle();
+  }, [schemaReady, startDownloadCycle]);
 
   return { enableBoardsOffline };
 }
