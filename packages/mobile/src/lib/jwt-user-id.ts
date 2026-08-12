@@ -40,10 +40,11 @@ function base64UrlToBytes(segment: string): Uint8Array | undefined {
 }
 
 /**
- * bytes → string, decoding UTF-8 by hand. Hermes ships `TextDecoder`, but this
- * module also runs under the web build and under Vitest's jsdom, and a decoder
- * that throws on a malformed sequence would defeat the never-throw contract
- * above. 25 lines buys "works everywhere, fails soft".
+ * bytes → string, decoding UTF-8 by hand. `TextDecoder` would do — it substitutes
+ * on malformed input rather than throwing, so it wouldn't break the never-throw
+ * contract above. This keeps the whole decode in one place with one failure mode
+ * (substitute, return undefined) across the native, web, and jsdom targets this
+ * module runs in.
  */
 function utf8Decode(bytes: Uint8Array): string {
   let decoded = '';
