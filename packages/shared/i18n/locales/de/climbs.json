@@ -637,6 +637,10 @@
       "offlineNoCatalog": {
         "title": "Offline ist hier nichts",
         "subtitle": "Die Boulder dieses Boards sind nicht auf deinem Handy, ohne Verbindung gibt es also nichts zu durchsuchen."
+      },
+      "offlineCatalogQueued": {
+        "title": "Steht in der Warteschlange",
+        "subtitle": "{{name}} lädt, sobald du wieder online bist, danach tauchen die Boulder in der Suche auf."
       }
     },
     "detail": {

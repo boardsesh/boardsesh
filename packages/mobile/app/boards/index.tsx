@@ -26,6 +26,7 @@ import { useIsOffline } from '../../src/hooks/use-is-offline';
 import { useOfflineBoards } from '../../src/settings';
 import { useRememberDownloadedBoards } from '../../src/offline/use-remember-downloaded-boards';
 import { useDownloadedScopeKeys } from '../../src/offline/use-downloaded-scope-keys';
+import { useOfflineCatalogState } from '../../src/offline/use-offline-catalog-state';
 import { OfflineCatalogCta } from '../../src/components/offline/OfflineCatalogCta';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { setBoardRevealTipPending } from '../../src/lib/onboarding/onboarding-storage';
@@ -79,6 +80,9 @@ export default function BoardSelection() {
   // device has actually downloaded.
   const isOffline = useIsOffline();
   const { data: downloadedScopeKeys } = useDownloadedScopeKeys();
+  // Whether the active board's catalog is missing, or merely queued after an
+  // arm — the offline empty state below reads differently in each case.
+  const offlineCatalog = useOfflineCatalogState(activeBoard);
   const offlineCards = useOfflineBoards();
   // `isError && nothing cached` is the lying-connection case: captive portal or gym
   // wifi with a dead upstream, where onlineManager says online, the request fails for
@@ -329,10 +333,6 @@ export default function BoardSelection() {
             <Text variant="subheadline" style={styles.emptySubtitle}>
               {t('mobile.offline.pickerEmptyBody')}
             </Text>
-            {/* Arm-only, and it renders itself away unless the active board is
-                genuinely un-downloaded. This is the surface that used to be a
-                pure dead end. */}
-            <OfflineCatalogCta board={activeBoard} style={styles.emptyCta} />
             {/* Only the lying-connection case gets a retry — offline it would just
                 pause, and the user already knows they have no signal. */}
             {isError ? (
@@ -345,6 +345,21 @@ export default function BoardSelection() {
               />
             ) : null}
           </View>
+        )}
+        {/* Outside the empty state, because `offlineBoardRows` always offers the
+            active board: the empty state only happens when there is NO board to
+            suggest, so a CTA anchored inside it could never render. Here it sits
+            under the carousel the un-downloaded board is showing in.
+
+            Arm-only, and it takes itself away the moment the scope leaves 'off'
+            — which is why the queued line has to replace it rather than let the
+            screen fall silent on a board the user just asked for. */}
+        {offlineCatalog === 'queued' ? (
+          <Text variant="subheadline" style={styles.offlineNotice}>
+            {t('mobile.offline.pickerQueuedNotice', { name: activeBoard?.name ?? '' })}
+          </Text>
+        ) : (
+          <OfflineCatalogCta board={activeBoard} style={styles.emptyCta} />
         )}
       </ScrollView>
     );

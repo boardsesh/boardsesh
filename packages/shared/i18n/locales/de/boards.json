@@ -318,6 +318,7 @@
       "retryFastDownloadMessage": "Lädt die Boulder dieses Boards am Stück statt über Tausende kleiner Anfragen.",
       "retryFastDownloadMessageWithSize": "Etwa {{size}}, am Stück geladen statt über Tausende kleiner Anfragen.",
       "retryFastDownloadConfirm": "Nochmal versuchen",
+      "pickerQueuedNotice": "{{name}} steht in der Warteschlange und lädt, sobald du wieder online bist.",
       "nudge": {
         "notNow": "Jetzt nicht",
         "never": "Nicht mehr anzeigen",

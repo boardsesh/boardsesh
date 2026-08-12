@@ -318,6 +318,7 @@
       "retryFastDownloadMessage": "Télécharge les blocs de cette board en une fois au lieu de milliers de petites requêtes.",
       "retryFastDownloadMessageWithSize": "Environ {{size}}, téléchargés en une fois au lieu de milliers de petites requêtes.",
       "retryFastDownloadConfirm": "Réessayer",
+      "pickerQueuedNotice": "{{name}} est en file d’attente : le téléchargement démarre dès que tu es reconnecté.",
       "nudge": {
         "notNow": "Pas maintenant",
         "never": "Ne plus afficher",

@@ -318,6 +318,7 @@
       "retryFastDownloadMessage": "Descarga los bloques de este plafón de una vez en lugar de con miles de peticiones pequeñas.",
       "retryFastDownloadMessageWithSize": "Unos {{size}}, descargados de una vez en lugar de con miles de peticiones pequeñas.",
       "retryFastDownloadConfirm": "Reintentar",
+      "pickerQueuedNotice": "{{name}} está en cola: se descarga en cuanto vuelvas a tener conexión.",
       "nudge": {
         "notNow": "Ahora no",
         "never": "No volver a mostrar",

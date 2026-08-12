@@ -637,6 +637,10 @@
       "offlineNoCatalog": {
         "title": "Aquí no hay nada sin conexión",
         "subtitle": "Los bloques de este plafón no están en tu móvil, así que no hay nada que buscar sin conexión."
+      },
+      "offlineCatalogQueued": {
+        "title": "En cola para descargar",
+        "subtitle": "{{name}} se descarga en cuanto vuelvas a tener conexión y sus bloques aparecerán en la búsqueda."
       }
     },
     "detail": {

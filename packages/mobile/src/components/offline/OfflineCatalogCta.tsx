@@ -36,7 +36,11 @@ export function OfflineCatalogCta({ board, style }: OfflineCatalogCtaProps) {
 
   const handleArm = useCallback(() => {
     if (!board) return;
-    nudge.accept();
+    // 'armed', unconditionally, because that is all this button ever does.
+    // Deriving it from connectivity would file an arm as a started download on
+    // captive-portal wifi, where `useIsOffline()` reads online and nothing
+    // downloads — the exact case this surface was written for.
+    nudge.accept('armed');
     armWithoutConfirm(board);
     // Say what actually happens. Nothing downloads yet, and a toast that implied
     // otherwise is the most likely source of "it said it downloaded and it

@@ -318,6 +318,7 @@
       "retryFastDownloadMessage": "Downloads this board's climbs in one go instead of thousands of small requests.",
       "retryFastDownloadMessageWithSize": "About {{size}}, downloaded in one go instead of thousands of small requests.",
       "retryFastDownloadConfirm": "Try again",
+      "pickerQueuedNotice": "{{name}} is queued — it downloads the moment you're back online.",
       "nudge": {
         "notNow": "Not now",
         "never": "Don't show again",

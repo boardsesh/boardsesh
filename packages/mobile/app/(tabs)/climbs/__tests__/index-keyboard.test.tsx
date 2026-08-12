@@ -22,6 +22,10 @@ const mocks = vi.hoisted(() => ({
     boardFilters: {} as Record<string, unknown>,
     name: '',
   },
+  // Offline empty-state fixtures: connectivity, and what the active board's
+  // catalog looks like on this device.
+  isOffline: false,
+  offlineCatalog: null as 'missing' | 'queued' | null,
   activateClimb: vi.fn(),
   dismissKeyboard: vi.fn(),
   getLastSearch: vi.fn(),
@@ -271,6 +275,12 @@ vi.mock('../../../../src/lib/graphql/offline-request', () => ({ offlineAwareRequ
 // Has its own render suite (src/components/offline/__tests__).
 vi.mock('../../../../src/components/offline/OfflineCatalogCta', () => ({ OfflineCatalogCta: () => null }));
 vi.mock('../../../../src/offline/use-downloaded-scope-keys', () => ({ useDownloadedScopeKeys: () => ({ data: [] }) }));
+// Mocked rather than driven through settings: the real hook reads MMKV, which
+// this suite deliberately keeps out of the screen's module graph.
+vi.mock('../../../../src/offline/use-offline-catalog-state', () => ({
+  useOfflineCatalogState: () => mocks.offlineCatalog,
+}));
+vi.mock('../../../../src/hooks/use-is-offline', () => ({ useIsOffline: () => mocks.isOffline }));
 
 vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
   usePlaylistActivation: () => ({
@@ -355,6 +365,47 @@ beforeEach(() => {
   mocks.imagePrefetch.mockClear();
   mocks.searchClimbs = [mocks.climb, mocks.secondClimb];
   mocks.searchState = { filters: {}, boardFilters: {}, name: '' };
+  mocks.isOffline = false;
+  mocks.offlineCatalog = null;
+});
+
+// The dead end this branch exists to remove, and the one it nearly reintroduced:
+// arming the download flips the scope out of 'off', which takes the CTA away —
+// so a branch keyed on "is it downloaded?" would keep telling the user their
+// board isn't on their phone, with nothing left to tap.
+describe('ClimbList offline catalog empty states', () => {
+  beforeEach(() => {
+    mocks.searchClimbs = [];
+    mocks.isOffline = true;
+  });
+
+  it('offers the download when nothing has been asked for', async () => {
+    mocks.offlineCatalog = 'missing';
+
+    const { findByText, queryByText } = render(<ClimbList />);
+
+    expect(await findByText('mobile.emptyState.offlineNoCatalog.title')).toBeTruthy();
+    expect(queryByText('mobile.emptyState.offlineCatalogQueued.title')).toBeNull();
+  });
+
+  it('says the download is queued once the board has been armed', async () => {
+    mocks.offlineCatalog = 'queued';
+
+    const { findByText, queryByText } = render(<ClimbList />);
+
+    expect(await findByText('mobile.emptyState.offlineCatalogQueued.title')).toBeTruthy();
+    expect(queryByText('mobile.emptyState.offlineNoCatalog.title')).toBeNull();
+  });
+
+  it('leaves the generic empty state alone once the catalog is here', async () => {
+    mocks.offlineCatalog = null;
+
+    const { findByText, queryByText } = render(<ClimbList />);
+
+    expect(await findByText('mobile.emptyState.noClimbs.title')).toBeTruthy();
+    expect(queryByText('mobile.emptyState.offlineNoCatalog.title')).toBeNull();
+    expect(queryByText('mobile.emptyState.offlineCatalogQueued.title')).toBeNull();
+  });
 });
 
 describe('ClimbList keyboard handling', () => {

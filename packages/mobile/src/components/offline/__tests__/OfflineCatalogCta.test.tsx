@@ -116,6 +116,22 @@ describe('OfflineCatalogCta', () => {
     );
   });
 
+  // The case `armedOnly` was invented for, and the one a connectivity probe gets
+  // wrong: the boards picker reaches this CTA on captive-portal wifi, where
+  // `useIsOffline()` reads ONLINE. Nothing downloads there either, so filing the
+  // accept as a started download promises a completion that never arrives.
+  it('still reports arm-only when the connection lies about being online', async () => {
+    state.isOffline = false;
+    await renderCta();
+    fireEvent.click(screen.getByText('mobile.offline.nudge.noCatalog.cta'));
+
+    expect(spies.armWithoutConfirm).toHaveBeenCalledWith(board);
+    expect(spies.track).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineNudgeAccepted,
+      expect.objectContaining({ surface: 'no_catalog', armedOnly: true }),
+    );
+  });
+
   // No cooldown, no lifetime cap: an affordance that hides itself is the dead
   // end this replaced. Only "already armed / downloaded" takes it away.
   it('has no dismiss affordance at all', async () => {
