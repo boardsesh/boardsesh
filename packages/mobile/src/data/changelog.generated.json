@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-08-12T11:41:37.247Z",
+  "generatedAt": "2026-08-12T11:54:23.082Z",
   "entries": [
+    {
+      "prNumber": 4339,
+      "category": "fixed",
+      "title": "A phone that's out of space no longer burns battery re-drawing board art it can't save — Boardsesh backs off, frees what it can, and keeps the wall photo on screen.",
+      "mergedAt": "2026-08-12T11:45:14Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4339"
+    },
+    {
+      "prNumber": 4338,
+      "category": "fixed",
+      "title": "Board art no longer piles up during a long session — Boardsesh trims it as you browse instead of only at app start. Removing a downloaded board now clears the art it drew for that board, too.",
+      "mergedAt": "2026-08-12T11:42:30Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4338"
+    },
     {
       "prNumber": 4347,
       "category": "improved",

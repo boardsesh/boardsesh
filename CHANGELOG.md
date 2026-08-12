@@ -19,6 +19,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- A phone that's out of space no longer burns battery re-drawing board art it can't save — Boardsesh backs off, frees what it can, and keeps the wall photo on screen. ([#4339](https://github.com/boardsesh/boardsesh/pull/4339))
+- Board art no longer piles up during a long session — Boardsesh trims it as you browse instead of only at app start. Removing a downloaded board now clears the art it drew for that board, too. ([#4338](https://github.com/boardsesh/boardsesh/pull/4338))
 - Offline board downloads now survive a launch with no signal. The app used to check with our servers whether offline mode was switched on for you, and if that check never came back, offline mode switched itself off. Now it stays on unless we deliberately turn it off, so a send logged in a basement gym still gets saved and syncs when you're back on data. ([#4323](https://github.com/boardsesh/boardsesh/pull/4323))
 - Tapping "Download" on a board right after opening the app used to do nothing at all if the app was still finishing its local setup — the download quietly never started. Now the tap is held and the download begins the moment storage is ready. Offline data also stops being written against a half-built database on a busy launch, so a board you downloaded shows up as downloaded instead of vanishing. ([#4324](https://github.com/boardsesh/boardsesh/pull/4324))
 - A dropped connection while downloading a board no longer condemns it to the slow download path. Boards that got stuck partway through the slow crawl now finish on the fast one by themselves. ([#4326](https://github.com/boardsesh/boardsesh/pull/4326))
