@@ -222,6 +222,21 @@ export { OFFLINE_DB_BUSY_TIMEOUT_MS, applyBusyTimeout, configureMainConnection }
 export { isDatabaseLockedError, classifySqliteLockError } from './db/lock-errors';
 export type { SqliteLockClassification } from './db/lock-errors';
 
+// --- Offline-usage telemetry (issue #4317) ---------------------------------------
+// The rollup gate that turns "this read was served from the local DB" into a
+// low-volume, chartable signal. `emit` is injected so the package keeps zero
+// runtime deps and never imports an analytics client — mobile binds it in
+// packages/mobile/src/offline/offline-usage-signal.ts.
+export { createOfflineUsageSignal } from './telemetry/offline-usage-signal';
+export type {
+  OfflineReadLane,
+  OfflineReadSurface,
+  OfflineUnavailableReason,
+  OfflineUsageEmission,
+  OfflineUsageSignal,
+  OfflineUsageSignalOptions,
+} from './telemetry/offline-usage-signal';
+
 // --- Offline board scope keys ----------------------------------------------------
 export {
   offlineBoardKey,

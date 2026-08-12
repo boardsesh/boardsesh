@@ -23,6 +23,8 @@ const {
   getBoardseshGradeLocal,
   getBoardseshGradesForAnglesLocal,
   request,
+  recordOfflineRead,
+  recordOfflineReadUnavailable,
 } = vi.hoisted(() => ({
   getDatabaseHandle: vi.fn(),
   isBoardDownloadedLocally: vi.fn(),
@@ -34,6 +36,8 @@ const {
   getBoardseshGradeLocal: vi.fn(),
   getBoardseshGradesForAnglesLocal: vi.fn(),
   request: vi.fn(),
+  recordOfflineRead: vi.fn(),
+  recordOfflineReadUnavailable: vi.fn(),
 }));
 
 vi.mock('../../../db', () => ({ getDatabaseHandle }));
@@ -52,6 +56,12 @@ vi.mock('../../../db/queries/get-boardsesh-grade-local', () => ({
   getBoardseshGradesForAnglesLocal,
 }));
 vi.mock('../client', () => ({ getHttpClient: () => ({ request }) }));
+// The rollup gate itself is covered in @boardsesh/offline-sync; here we assert
+// the interceptor hands it the right LANE for each terminal outcome (#4317).
+vi.mock('../../../offline/offline-usage-signal', () => ({
+  recordOfflineRead,
+  recordOfflineReadUnavailable,
+}));
 
 const fakeDb = { tag: 'db' };
 
@@ -591,5 +601,228 @@ describe('offlineAwareRequest — offline-engine flag OFF', () => {
     const result = await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars);
     expect(result).toEqual({ climb: null });
     expect(request).not.toHaveBeenCalled();
+  });
+});
+
+describe('offlineAwareRequest — offline-usage signal lanes (#4317)', () => {
+  // Four terminal outcomes are worth measuring, and each one has to reach the
+  // rollup gate with the right lane or the north-star counts the wrong thing.
+
+  it('records offline_local when a downloaded board is served while offline', async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(recordOfflineRead).toHaveBeenCalledExactlyOnceWith({
+      lane: 'offline_local',
+      surface: 'search',
+      boardName: 'kilter',
+    });
+    expect(recordOfflineReadUnavailable).not.toHaveBeenCalled();
+  });
+
+  it('records online_local when the flag-on latency short-circuit serves local while online', async () => {
+    setOfflineEngineEnabled(true);
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+
+    await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars);
+
+    expect(recordOfflineRead).toHaveBeenCalledExactlyOnceWith({
+      lane: 'online_local',
+      surface: 'climb_detail',
+      boardName: 'kilter',
+    });
+  });
+
+  it('records network_error_local when a dead network is rescued by the downloaded board', async () => {
+    setOfflineEngineEnabled(false); // straight passthrough, so the network is the only lane
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    request.mockRejectedValue(new Error('Network request failed'));
+
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(recordOfflineRead).toHaveBeenCalledExactlyOnceWith({
+      lane: 'network_error_local',
+      surface: 'search',
+      boardName: 'kilter',
+    });
+  });
+
+  it('records board_not_downloaded when offline with nothing local', async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(recordOfflineReadUnavailable).toHaveBeenCalledExactlyOnceWith({
+      reason: 'board_not_downloaded',
+      surface: 'search',
+      boardName: 'kilter',
+    });
+    expect(recordOfflineRead).not.toHaveBeenCalled();
+  });
+
+  it('records filter_unsupported when the board IS downloaded but the filter needs a table we do not sync', async () => {
+    setOnline(false);
+    isOfflineSearchSupported.mockReturnValue(false);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(recordOfflineReadUnavailable).toHaveBeenCalledExactlyOnceWith({
+      reason: 'filter_unsupported',
+      surface: 'search',
+      boardName: 'kilter',
+    });
+  });
+
+  // Both gaps at once. Fixing #4002's filter coverage would still serve this
+  // user nothing — they have no downloaded board to filter — so the read belongs
+  // to #4318's conversion pool, not #4002's.
+  it('prefers board_not_downloaded over filter_unsupported when the board was never downloaded', async () => {
+    setOnline(false);
+    isOfflineSearchSupported.mockReturnValue(false);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(recordOfflineReadUnavailable).toHaveBeenCalledExactlyOnceWith({
+      reason: 'board_not_downloaded',
+      surface: 'search',
+      boardName: 'kilter',
+    });
+  });
+
+  // The supported-filter branch already ran (and failed) the download probe
+  // inside canServeSearchLocal, so labelling that read must not pay for a
+  // second SQLite round trip on every keystroke.
+  it('does not re-probe the download when the filter was expressible', async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(isBoardDownloadedLocally).toHaveBeenCalledOnce();
+    expect(recordOfflineReadUnavailable).toHaveBeenCalledExactlyOnceWith({
+      reason: 'board_not_downloaded',
+      surface: 'search',
+      boardName: 'kilter',
+    });
+  });
+
+  // The local read happened, but it MISSED and the network answered instead —
+  // counting it as served would inflate the north-star with reads the local DB
+  // could not actually satisfy.
+  it('does not record a served read when a local miss is answered by the network', async () => {
+    setOfflineEngineEnabled(true);
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    getClimbLocal.mockResolvedValue(null);
+
+    const result = await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars);
+
+    expect(result.climb?.uuid).toBe('net-detail');
+    expect(recordOfflineRead).not.toHaveBeenCalled();
+  });
+
+  // Offline, the miss can't be retried, so it is returned as-is — and what the
+  // caller gets is `{ climb: null }`, the same nothing the empty fallback gives.
+  // Counting that as offline_local would put "offline staring at an empty
+  // screen" into the north-star, the one distinction this signal exists to make.
+  it('does not record a served read for a local miss returned as-is while offline', async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    getClimbLocal.mockResolvedValue(null);
+
+    const result = await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars);
+
+    expect(result).toEqual({ climb: null });
+    expect(recordOfflineRead).not.toHaveBeenCalled();
+    // No `unavailable` counterpart either: a null grade row is indistinguishable
+    // from a genuinely ungraded climb, so the gap tile would be inventing a
+    // number. Silence beats a wrong one.
+    expect(recordOfflineReadUnavailable).not.toHaveBeenCalled();
+  });
+
+  it('does not record network_error_local when the rescue read itself misses', async () => {
+    setOfflineEngineEnabled(false); // straight passthrough, so the catch block is the only local read
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    getClimbLocal.mockResolvedValue(null);
+    request.mockRejectedValue(new Error('Network request failed'));
+
+    const result = await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars);
+
+    expect(result).toEqual({ climb: null });
+    expect(recordOfflineRead).not.toHaveBeenCalled();
+  });
+
+  // Database init retries for up to 30s and can stay wedged for the whole launch
+  // (#4313 / #4314). Reporting that as `board_not_downloaded` would put users who
+  // DID download a board into the audience #4318 nudges to download one.
+  it('records local_db_unavailable, not board_not_downloaded, when there is no database handle', async () => {
+    setOnline(false);
+    getDatabaseHandle.mockReturnValue(null);
+
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(recordOfflineReadUnavailable).toHaveBeenCalledExactlyOnceWith({
+      reason: 'local_db_unavailable',
+      surface: 'search',
+      boardName: 'kilter',
+    });
+  });
+
+  // The rescue read is what makes this lane "served"; if it throws, the caller
+  // gets the network error and no data, so booking a served read would inflate
+  // the north-star with reads nobody received.
+  it('does not record network_error_local when the local rescue read itself throws', async () => {
+    setOfflineEngineEnabled(false);
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    request.mockRejectedValue(new Error('Network request failed'));
+    searchClimbsLocal.mockRejectedValue(new Error('database is locked'));
+
+    await expect(offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput })).rejects.toThrow(
+      'database is locked',
+    );
+
+    expect(recordOfflineRead).not.toHaveBeenCalled();
+  });
+
+  it('does not record anything for an unregistered document', async () => {
+    setOnline(false);
+
+    await offlineAwareRequest('query Unregistered { x }');
+
+    expect(recordOfflineRead).not.toHaveBeenCalled();
+    expect(recordOfflineReadUnavailable).not.toHaveBeenCalled();
+  });
+
+  // A registered document called without variables degrades to the fallback;
+  // every accessor destructures the variables, so the signal has to sit this out
+  // rather than throw on a read path.
+  it('does not record an unavailable read when a registered document is called without variables', async () => {
+    setOnline(false);
+
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS);
+
+    expect(recordOfflineReadUnavailable).not.toHaveBeenCalled();
+  });
+
+  it('reports the board the read was scoped to, not a hardcoded one', async () => {
+    setOnline(false);
+    isBoardTypeDownloadedLocally.mockResolvedValue(true);
+
+    await offlineAwareRequest<BoardseshGradeResponse>(BOARDSESH_GRADE, { ...gradeVars, boardName: 'tension' });
+
+    expect(recordOfflineRead).toHaveBeenCalledExactlyOnceWith({
+      lane: 'offline_local',
+      surface: 'grade',
+      boardName: 'tension',
+    });
   });
 });

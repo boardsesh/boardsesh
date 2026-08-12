@@ -439,6 +439,45 @@ export const SHARED_EVENTS = {
   // identical. `elapsedMs` is the contention-duration measurement — its
   // distribution is what sizes the retry window, which today is a guess.
   OfflineSqliteInitRecovered: 'Offline SQLite Init Recovered',
+  // Offline sync — someone read climb data from the on-device database. THE
+  // north-star signal for offline mode (issue #4317): weekly unique users firing
+  // this with `lane in ('offline_local', 'network_error_local')`.
+  //
+  // ROLLED UP, NOT PER-READ. Search fires on every keystroke, so a per-read
+  // event would be thousands per session and would evict other events from
+  // PostHog's 1000-slot offline queue. The gate (createOfflineUsageSignal in
+  // @boardsesh/offline-sync) counts reads per (UTC day, lane, board) and emits
+  // only when the count crosses 1, 10 or 100. So `readCount` is the RUNG that
+  // was crossed — 1 / 10 / 100 — never a raw per-read counter, and the absence
+  // of a follow-up event means "fewer than the next rung", not "no more reads".
+  //
+  // Props: { lane: 'offline_local' | 'network_error_local' | 'online_local',
+  //   surface: 'search' | 'climb_detail' | 'grade', boardName, readCount }.
+  // `lane` is the source: served while offline, served after the network threw
+  // (a lying connection — real offline value), or the online flag-on latency
+  // short-circuit (NOT offline usage; excluded from the north-star). `surface`
+  // is the read that crossed the rung, not an exhaustive list of what was used.
+  //
+  // A read that found NOTHING locally is not served, in any lane: climb detail
+  // and the single-grade read can come back null from a downloaded board (the
+  // row hasn't synced), and offline there's no network to retry against, so the
+  // caller gets the same nothing the empty fallback gives. Counting it would put
+  // "offline staring at an empty screen" into the north-star.
+  OfflineReadServed: 'Offline Read Served',
+  // Offline sync — the counterpart: the device was offline and there was nothing
+  // local to serve, so the surface got an empty result. The conversion pool that
+  // #4318 (discovery nudges) and #4002 (unsupported filters) exist to shrink.
+  // Same rollup contract and same readCount semantics as Offline Read Served.
+  // Props: { reason: 'board_not_downloaded' | 'filter_unsupported' |
+  //   'local_db_unavailable', surface: 'search' | 'climb_detail' | 'grade',
+  //   boardName, readCount }. `local_db_unavailable` means there was no database
+  // handle to ask at all (init still retrying, or wedged — #4313 / #4314). The
+  // board may well BE downloaded in that case, so it is deliberately NOT part of
+  // #4318's nudge audience. `filter_unsupported` means the board IS downloaded
+  // and only the filter blocked the read — when both are missing the reason is
+  // `board_not_downloaded`, since fixing filters would still serve that read
+  // nothing.
+  OfflineReadUnavailable: 'Offline Read Unavailable',
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;
