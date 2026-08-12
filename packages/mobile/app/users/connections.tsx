@@ -7,6 +7,8 @@ import type { PublicUserProfile } from '@boardsesh/shared-schema';
 import { Text } from '../../src/components/Text';
 import { Icon } from '../../src/components/Icon';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
+import { OfflineState } from '../../src/components/OfflineState';
+import { useOfflineQueryState } from '../../src/hooks/use-offline-query-state';
 import {
   ClimberSearchErrorState,
   ClimberSearchPersonRow,
@@ -79,13 +81,17 @@ export default function ConnectionsScreen() {
     [currentUserId, handleToggleFollow, toggleFollow.isPending, toggleFollow.variables?.userId],
   );
 
-  const showSpinner = activeQuery.isPending && people.length === 0;
-  const showError = activeQuery.isError && people.length === 0;
+  // Followers/following are network-only. An offline fetch pauses instead of
+  // failing, so `isPending` never clears and neither branch below fires.
+  const offline = useOfflineQueryState(activeQuery);
+  const showOffline = offline.isBlocked && people.length === 0;
+  const showSpinner = !showOffline && activeQuery.isPending && people.length === 0;
+  const showError = !showOffline && activeQuery.isError && people.length === 0;
 
   return (
     <View style={[styles.flex, { backgroundColor: systemColors.background }]}>
       <FlashList
-        data={showSpinner || showError ? EMPTY_PEOPLE : people}
+        data={showSpinner || showError || showOffline ? EMPTY_PEOPLE : people}
         renderItem={renderItem}
         keyExtractor={(person) => person.id}
         contentInsetAdjustmentBehavior="automatic"
@@ -93,7 +99,9 @@ export default function ConnectionsScreen() {
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
         ListEmptyComponent={
-          showSpinner ? (
+          showOffline && offline.reason ? (
+            <OfflineState reason={offline.reason} onRetry={() => void activeQuery.refetch()} />
+          ) : showSpinner ? (
             <View style={styles.stateBlock}>
               <ActivityIndicator size="large" />
             </View>

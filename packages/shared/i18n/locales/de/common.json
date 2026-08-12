@@ -333,6 +333,13 @@
       "manualHint": "Die Preview-Liste ließ sich nicht laden. Gib einen Channel-Namen ein (etwa pr-1234), um manuell zu wechseln.",
       "manualPlaceholder": "Channel-Name",
       "manualInputA11y": "Channel-Name zum Wechseln"
+    },
+    "offlineState": {
+      "title": "Kein Empfang",
+      "body": "Dafür brauchst du Empfang. Heruntergeladene Boards kannst du weiter durchstöbern, durchsuchen und offline eintragen.",
+      "errorTitle": "Konnte nicht geladen werden",
+      "errorBody": "Das ist nicht durchgekommen. Versuch es noch mal.",
+      "retry": "Erneut versuchen"
     }
   },
   "lightControl": {

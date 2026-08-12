@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { deriveProfileViewModel, type UnifiedTimeframeType } from '@boardsesh/profile-stats';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
+import { useOfflineQueryState } from '../../../hooks/use-offline-query-state';
 import { useAllBoardsTicks, useUserProfileStats, useUserClimbPercentile } from './use-you-data';
 
 /**
@@ -51,10 +52,15 @@ export function useYouProfileData(userId: string | undefined) {
     void percentileQuery.refetch();
   }, [allBoardsTicksQuery, profileStatsQuery, percentileQuery]);
 
+  // With `networkMode: 'offlineFirst'`, an offline fetch pauses instead of
+  // failing, so `isPending` stays true forever and `loading` below would spin
+  // for good. This is what the Progress tab renders instead.
+  const offline = useOfflineQueryState([allBoardsTicksQuery, profileStatsQuery]);
+
   // `!userId` (the brief post-login window before useProfile resolves) counts
   // as loading so the Progress tab shows a spinner instead of flashing the
   // empty state, then the charts.
-  const loading = !userId || allBoardsTicksQuery.isPending || profileStatsQuery.isPending;
+  const loading = !offline.isBlocked && (!userId || allBoardsTicksQuery.isPending || profileStatsQuery.isPending);
 
   const refreshing = allBoardsTicksQuery.isRefetching || profileStatsQuery.isRefetching || percentileQuery.isRefetching;
 
@@ -62,6 +68,7 @@ export function useYouProfileData(userId: string | undefined) {
 
   return {
     loading,
+    offline,
     refreshing,
     refetch,
     percentile: percentileQuery.data ?? null,

@@ -30,6 +30,8 @@ import { useTheme } from '../../../src/providers/theme-provider';
 import { useToast } from '../../../src/providers/toast-provider';
 import { useDrawerHost } from '../../../src/providers/drawer-host-provider';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
+import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state';
+import { OfflineState } from '../../../src/components/OfflineState';
 import { dedupeSessionsById } from '../../../src/lib/feed-time-buckets';
 import { deriveFeedScopeInput, type FeedMode } from '../../../src/lib/feed/feed-scope';
 import { buildVoteSummaryMap, voteSummaryKey, type VoteSummary } from '../../../src/lib/feed/vote-summary-map';
@@ -127,6 +129,10 @@ export default function HomeTab() {
     scopeReady && betaReady && betaExpanded,
   );
   const feed = useSessionGroupedFeed(feedInput, isAuthenticated && scopeReady);
+  // The feed is network-only and `networkMode: 'offlineFirst'` pauses an offline
+  // fetch instead of failing it, so neither `isLoading` nor `isError` ever
+  // resolves — the skeleton list would sit there for good.
+  const feedOffline = useOfflineQueryState(feed);
 
   const sessions = useMemo(
     () => dedupeSessionsById(feed.data?.pages.flatMap((page) => page.sessionGroupedFeed.sessions) ?? []),
@@ -414,7 +420,9 @@ export default function HomeTab() {
           />
         }
         ListEmptyComponent={
-          feed.isLoading || !scopeReady ? (
+          feedOffline.isBlocked && feedOffline.reason ? (
+            <OfflineState reason={feedOffline.reason} onRetry={handleRefresh} />
+          ) : feed.isLoading || !scopeReady ? (
             <ActivitySkeletonList skeletonKeys={INITIAL_FEED_SKELETON_KEYS} />
           ) : feed.isError ? (
             <View style={styles.feedState}>

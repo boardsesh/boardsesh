@@ -17,6 +17,8 @@ import type { DiscoverablePlaylist, Playlist, SmartPlaylistType } from '@boardse
 import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
+import { OfflineState } from '../../../src/components/OfflineState';
+import { useIsOffline } from '../../../src/hooks/use-is-offline';
 import { Button } from '../../../src/components/Button';
 import { SectionHeader } from '../../../src/components/SectionHeader';
 import { HorizontalScrollSection } from '../../../src/components/HorizontalScrollSection';
@@ -418,6 +420,14 @@ export default function DiscoverLibrary() {
     communityItems.length === 0 &&
     !userLoading;
 
+  // Every section here is network-only, and under `networkMode: 'offlineFirst'`
+  // an offline fetch pauses rather than failing — so `showLoadError` never fires
+  // and the hub renders "No playlists yet" to someone who has plenty.
+  const isOffline = useIsOffline();
+  const hasAnyDiscoverContent =
+    hasVisiblePinnedItems || userPlaylists.length > 0 || forYouSmartCards.length > 0 || communityItems.length > 0;
+  const showOfflineState = isOffline && !hasAnyDiscoverContent && !showSignInPrompt && !showLoadError;
+
   const handleRetryLoad = useCallback(() => {
     if (userError) refetchUser();
     if (smartCountsError) void refetchSmartCounts();
@@ -598,8 +608,11 @@ export default function DiscoverLibrary() {
           </View>
         ) : null}
 
+        {showOfflineState ? <OfflineState reason="offline" onRetry={handleRetryLoad} /> : null}
+
         {/* Empty state: signed in, nothing anywhere, nothing loading, no error. */}
-        {isAuthenticated &&
+        {!showOfflineState &&
+        isAuthenticated &&
         !userLoading &&
         !smartCountsLoading &&
         !communityLoading &&
@@ -624,7 +637,8 @@ export default function DiscoverLibrary() {
         ) : null}
 
         {/* Initial spinner before any section has resolved. */}
-        {(authLoading || tokenLoading) &&
+        {!showOfflineState &&
+        (authLoading || tokenLoading) &&
         !hasVisiblePinnedItems &&
         userPlaylists.length === 0 &&
         forYouSmartCards.length === 0 &&

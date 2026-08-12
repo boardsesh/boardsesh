@@ -17,6 +17,8 @@ import { Icon } from '../../src/components/Icon';
 import { Button } from '../../src/components/Button';
 import { PressableSurface } from '../../src/components/PressableSurface';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
+import { OfflineState } from '../../src/components/OfflineState';
+import { useOfflineQueryState } from '../../src/hooks/use-offline-query-state';
 import { MyGymRow } from '../../src/components/gym-directory/MyGymRow';
 import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing, borderRadius } from '../../src/theme/tokens';
@@ -40,7 +42,11 @@ export default function MyGymsScreen() {
 
   const { data: profile } = useProfile();
   const currentUserId = profile?.id;
-  const { data: connection, isLoading, isError, refetch } = useMyGyms({ enabled: !!currentUserId });
+  const myGymsQuery = useMyGyms({ enabled: !!currentUserId });
+  const { data: connection, isLoading, isError, refetch } = myGymsQuery;
+  // Offline the fetch pauses rather than failing, so `isLoading` stays true and
+  // neither the error nor the empty branch below is ever reached.
+  const offline = useOfflineQueryState(myGymsQuery);
 
   const gyms = connection?.gyms ?? [];
 
@@ -104,6 +110,15 @@ export default function MyGymsScreen() {
     hapticSelection();
     router.push('/gyms');
   }, [router]);
+
+  if (offline.isBlocked && offline.reason) {
+    return (
+      <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
+        {header}
+        <OfflineState reason={offline.reason} onRetry={() => void refetch()} />
+      </View>
+    );
+  }
 
   if (isLoading) {
     return (

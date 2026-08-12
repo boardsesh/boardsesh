@@ -333,6 +333,13 @@
       "manualHint": "Impossible de charger la liste des préversions. Saisissez un nom de canal (comme pr-1234) pour changer manuellement.",
       "manualPlaceholder": "nom du canal",
       "manualInputA11y": "Nom du canal vers lequel basculer"
+    },
+    "offlineState": {
+      "title": "Pas de réseau",
+      "body": "Il faut du réseau pour ça. Les boards que tu as téléchargées se parcourent, se cherchent et s'enregistrent toujours hors ligne.",
+      "errorTitle": "Impossible de charger ça",
+      "errorBody": "Ça n'est pas passé. Réessaie.",
+      "retry": "Réessayer"
     }
   },
   "lightControl": {

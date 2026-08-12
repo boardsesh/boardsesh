@@ -7,6 +7,8 @@ import { useTranslation } from 'react-i18next';
 import type { PublicUserProfile } from '@boardsesh/shared-schema';
 import { Text } from '../../src/components/Text';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
+import { OfflineState } from '../../src/components/OfflineState';
+import { useOfflineQueryState } from '../../src/hooks/use-offline-query-state';
 import {
   ClimberSearchEmptyState,
   ClimberSearchErrorState,
@@ -83,9 +85,14 @@ export default function ClimberSearchScreen() {
   );
 
   const showHint = trimmedSearchQuery.length < 2;
-  const showInitialSpinner = !showHint && (searchIsDebouncing || (search.isPending && people.length === 0));
-  const showError = !showHint && !searchIsDebouncing && search.isError && people.length === 0;
-  const visiblePeople = showInitialSpinner || showHint || showError ? EMPTY_PEOPLE : people;
+  // Climber search is network-only. Offline the fetch pauses instead of failing,
+  // so without this it would sit on the loading state for good.
+  const offline = useOfflineQueryState(search);
+  const showOffline = !showHint && !searchIsDebouncing && offline.isBlocked && people.length === 0;
+  const showInitialSpinner =
+    !showOffline && !showHint && (searchIsDebouncing || (search.isPending && people.length === 0));
+  const showError = !showOffline && !showHint && !searchIsDebouncing && search.isError && people.length === 0;
+  const visiblePeople = showInitialSpinner || showHint || showError || showOffline ? EMPTY_PEOPLE : people;
 
   return (
     <View style={[styles.flex, { backgroundColor: systemColors.background, paddingTop: insets.top }]}>
@@ -120,7 +127,9 @@ export default function ClimberSearchScreen() {
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
         ListEmptyComponent={
-          showInitialSpinner ? (
+          showOffline && offline.reason ? (
+            <OfflineState reason={offline.reason} onRetry={() => void search.refetch()} />
+          ) : showInitialSpinner ? (
             <ClimberSearchLoadingState />
           ) : showError ? (
             <ClimberSearchErrorState onRetry={() => void search.refetch()} />

@@ -37,6 +37,8 @@ import { LogbookFacetRail } from './LogbookFacetRail';
 import type { LogbookFacetKey } from './LogbookChipRow.logic';
 import { useLogbookSearch, countActiveLogbookFilters } from './use-logbook-search';
 import { useUserAscentsFeed, useUserGroupedAscentsFeed, useGrades } from '../../lib/graphql/hooks';
+import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
+import { OfflineState } from '../OfflineState';
 import type { Grade } from '@boardsesh/shared-schema';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { tickToClimb } from '../../lib/tick-to-climb';
@@ -234,6 +236,10 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
   // Control-surface alias (status flags, pagination); data is read per-mode in
   // the rows memo below where the types differ.
   const feed = groupedMode ? groupedFeed : flatFeed;
+  // An offline fetch pauses rather than erroring under `networkMode:
+  // 'offlineFirst'`, so it lands in neither the isError nor the loaded branch
+  // below — without this it spins forever.
+  const offline = useOfflineQueryState(feed);
 
   // Day dividers render only on a date-ordered feed (the Latest preset or a
   // custom date sort) — keyed off the EFFECTIVE feedInput, so the flag-off
@@ -639,7 +645,11 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
         )}
       </View>
 
-      {feed.isPending ? (
+      {offline.isBlocked && offline.reason ? (
+        <View style={styles.centered}>
+          <OfflineState reason={offline.reason} onRetry={handleRetry} />
+        </View>
+      ) : feed.isPending ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" />
         </View>
