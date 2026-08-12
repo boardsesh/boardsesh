@@ -391,9 +391,23 @@
 -- covered by the scratch-Postgres replay fixture
 -- (moonboard-angle-dedup-replay.ts, CASE A-G). Dev-db counts are NOT a
 -- substitute for prod sizing (dev is a small fixed snapshot, not
--- representative of prod scale/shape) — still run a read-only sizing query
--- against prod (see the _mad_groups/_mad_raw_groups shape below) before
--- deploying, and update this comment with those numbers per repo convention.
+-- representative of prod scale/shape).
+--
+-- PROD SIZING (read-only, 2026-08-12, maintainer-approved run of the exact
+-- _mad_* grouping logic as pure SELECTs — script in PR #3849):
+--   9,471 raw same-signature groups; 8,977 mergeable (member_count =
+--     distinct_angles), ALL of them two-member 25/40 pairs — zero groups
+--     with more than two members, so the N-angle ranked-CTE paths exist for
+--     safety, not for any shape prod currently has;
+--   494 same-angle-collision groups will be counted and left untouched;
+--   8,977 losing members carrying: 8,979 stats rows (2 at a non-native
+--     angle), 359 boardsesh_ticks, 30 user_favorites, 13 playlist_climbs,
+--     0 votes, 0 comments, 0 board_climb_grades rows.
+--   At deploy expect ~8,977 merged / ~494 skipped, step 3b recomputing every
+--   written key (incl. the ~361 tick-bearing ones dev-db cannot exercise),
+--   the hand-written favorites/playlist tombstone paths firing ~43 times,
+--   and the vote collision policy never firing. Dev-db's 766/478 is the
+--   same shape at ~1/12 scale.
 
 CREATE TABLE IF NOT EXISTS _bs_migration_guards (
   tag text PRIMARY KEY,
