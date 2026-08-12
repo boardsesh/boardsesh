@@ -3,7 +3,8 @@
 `_redirects` and `_headers` are copied into the standalone Expo web export at
 deploy time and shipped to the `boardsesh-app` Cloudflare Pages project. They
 are the only deployed files here; the rest of the directory is this README plus
-the CI tests that guard them (`__tests__/`, `vite.config.ts`). They are **not**
+the CI tests that guard them — and the deploy job that ships them
+(`__tests__/`, `vite.config.ts`). They are **not**
 part of the export itself — the export recipe
 (`scripts/build-expo-web-export.sh --subdomain`) emits a `baseUrl /` static SPA;
 this directory adds the host-level SPA fallback and caching rules Pages needs.
@@ -60,6 +61,14 @@ above, the `noindex` tag, forever-caching on content-hashed assets only, and the
 `200` SPA rewrite for deep links. The `deploy-config` job in
 `.github/workflows/ci.yml` runs it on every PR touching this directory, the
 export script, `Dockerfile.web`, or the deploy workflow.
+
+`__tests__/production-deploy-hold.test.ts` guards the deploy job rather than the
+config files: it asserts the `APP_WEB_DEPLOY_HOLD` freeze on `deploy-app-web`,
+the Discord ping that makes a held run visible, and that the export's
+`EXPO_PUBLIC_*` stay at workflow level. It lives here because the `deploy-config`
+job already runs this project unfiltered on any `production-deploy.yml` change,
+which is the only CI gate that fires for a workflow-only diff. See
+`docs/expo-web-deployment.md`.
 
 ## Why `EXPO_PUBLIC_WEB_URL` is www, not app
 
