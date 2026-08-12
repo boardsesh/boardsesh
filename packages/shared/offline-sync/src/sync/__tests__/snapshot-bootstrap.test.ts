@@ -2840,3 +2840,402 @@ describe('pullSync onScopeDownloadStart', () => {
     expect(info.importMs).toBeUndefined();
   });
 });
+
+// Artifact retention, reuse, and phase telemetry (issue #4310)
+// ---------------------------------------------------------------------------
+
+/** A source that records how each artifact was released and can serve retained files. */
+function makeRetainingSource(config: {
+  manifest: SnapshotManifest;
+  fileForEntry: (entry: SnapshotManifestEntry) => string | null;
+  /** Files the previous cycle left on disk, returned with `reused: true`. */
+  retained?: Set<string>;
+}) {
+  const released: Array<{ filePath: string; imported: boolean }> = [];
+  const deleted: string[] = [];
+  const downloadedUrls: string[] = [];
+  const signals: (AbortSignal | undefined)[] = [];
+  const source = {
+    fetchManifest: vi.fn(async () => config.manifest),
+    downloadArtifact: vi.fn(async (entry: SnapshotManifestEntry, options?: { signal?: AbortSignal }) => {
+      const filePath = config.fileForEntry(entry);
+      if (!filePath) return null;
+      signals.push(options?.signal);
+      if (config.retained?.has(filePath)) return { filePath, reused: true };
+      downloadedUrls.push(entry.url);
+      return { filePath };
+    }),
+    deleteArtifact: vi.fn(async (filePath: string) => {
+      deleted.push(filePath);
+    }),
+    releaseArtifact: vi.fn(async (filePath: string, options: { imported: boolean }) => {
+      released.push({ filePath, imported: options.imported });
+    }),
+  };
+  return { source: source as unknown as SnapshotSource, released, deleted, downloadedUrls, signals };
+}
+
+describe('artifact release and reuse', () => {
+  it('releases an imported artifact with imported: true', async () => {
+    const filePath = join(workDir, 'released-imported.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const { source, released, deleted } = makeRetainingSource({
+      manifest: makeManifest([makeEntry()]),
+      fileForEntry: () => filePath,
+    });
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+    });
+
+    expect(released).toEqual([{ filePath, imported: true }]);
+    expect(deleted).toEqual([]);
+  });
+
+  it('releases a NEVER-IMPORTED artifact with imported: false so retention can keep it', async () => {
+    // Backgrounding after the download but before the import used to delete a
+    // 103 MB file in the phase's `finally` and start over on the next wake.
+    const filePath = join(workDir, 'released-unimported.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const { source, released } = makeRetainingSource({
+      manifest: makeManifest([makeEntry()]),
+      fileForEntry: () => filePath,
+    });
+    const backgroundingSource: SnapshotSource = {
+      ...source,
+      downloadArtifact: async (entry, options) => {
+        const handle = await source.downloadArtifact(entry, options);
+        setBackgrounded(true);
+        return handle;
+      },
+    };
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: backgroundingSource,
+    });
+
+    expect(released).toEqual([{ filePath, imported: false }]);
+    expect(await countRows('board_climbs')).toBe(0);
+  });
+
+  it('falls back to deleteArtifact for a source with no releaseArtifact (the shipped contract)', async () => {
+    const filePath = join(workDir, 'legacy-source.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+    });
+
+    expect(source.deleteArtifact).toHaveBeenCalledWith(filePath);
+  });
+
+  it('imports a REUSED artifact without downloading it again', async () => {
+    const filePath = join(workDir, 'reused-good.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const { source, downloadedUrls } = makeRetainingSource({
+      manifest: makeManifest([makeEntry()]),
+      fileForEntry: () => filePath,
+      retained: new Set([filePath]),
+    });
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+    });
+
+    expect(downloadedUrls).toEqual([]);
+    expect(await countRows('board_climbs')).toBe(1);
+  });
+
+  it('a REUSED artifact that fails to import is deleted and does NOT burn a bootstrap attempt', async () => {
+    // The #4313 failure mode retention could otherwise recreate: the same
+    // corrupt file on disk would fail twice and settle the scope onto the paged
+    // crawl forever. Deleting it is what bounds the uncounted path.
+    const filePath = join(workDir, 'reused-corrupt.db');
+    writeFileSync(filePath, 'not a sqlite database at all');
+    const { source, deleted } = makeRetainingSource({
+      manifest: makeManifest([makeEntry()]),
+      fileForEntry: () => filePath,
+      retained: new Set([filePath]),
+    });
+    const onSnapshotBootstrapError = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+    });
+
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
+    expect(deleted).toEqual([filePath]);
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(expect.objectContaining({ stage: 'import', attempt: 0 }));
+  });
+
+  it('a FRESHLY-DOWNLOADED artifact that fails to import still burns an attempt', async () => {
+    const filePath = join(workDir, 'fresh-corrupt.db');
+    writeFileSync(filePath, 'not a sqlite database at all');
+    const { source } = makeRetainingSource({
+      manifest: makeManifest([makeEntry()]),
+      fileForEntry: () => filePath,
+    });
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+    });
+
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(1);
+  });
+
+  it('hands the downloader an AbortSignal so a torn-down cycle can cancel the transfer', async () => {
+    const filePath = join(workDir, 'signal.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const { source, signals } = makeRetainingSource({
+      manifest: makeManifest([makeEntry()]),
+      fileForEntry: () => filePath,
+    });
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+    });
+
+    expect(signals[0]).toBeInstanceOf(AbortSignal);
+    expect(signals[0]?.aborted).toBe(false);
+  });
+
+  it('aborts an in-flight transfer that emits no progress when the app backgrounds', async () => {
+    // The teardown EVENT drives the abort, not the progress callback: a stalled
+    // transfer emits nothing, and that is exactly when cancelling matters.
+    const filePath = join(workDir, 'stalled.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    let seenSignal: AbortSignal | undefined;
+    const source = {
+      fetchManifest: vi.fn(async () => makeManifest([makeEntry()])),
+      downloadArtifact: vi.fn(async (_entry: SnapshotManifestEntry, options?: { signal?: AbortSignal }) => {
+        seenSignal = options?.signal;
+        // No progress events at all — the connection is hung.
+        setBackgrounded(true);
+        return { filePath };
+      }),
+      deleteArtifact: vi.fn(async () => {}),
+      releaseArtifact: vi.fn(async () => {}),
+    } as unknown as SnapshotSource;
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+    });
+
+    expect(seenSignal?.aborted).toBe(true);
+  });
+
+  it('charges the SECOND failed import of the same reused build, so an undeletable file cannot loop', async () => {
+    // deleteArtifact is best-effort on every platform (mobile swallows its
+    // errors), so a corrupt retained file can come back cycle after cycle. The
+    // free round is granted once per (scope, build); after that it settles on
+    // the structural ladder like any other on-disk failure.
+    const filePath = join(workDir, 'undeletable-corrupt.db');
+    writeFileSync(filePath, 'not a sqlite database at all');
+    const makeSource = () =>
+      makeRetainingSource({
+        manifest: makeManifest([makeEntry()]),
+        fileForEntry: () => filePath,
+        // The delete never takes: the file is still retained next cycle.
+        retained: new Set([filePath]),
+      });
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: makeSource().source,
+    });
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: makeSource().source,
+    });
+
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(1);
+  });
+
+  it('gives a DIFFERENT build its own free round', async () => {
+    const filePath = join(workDir, 'rebuilt-corrupt.db');
+    writeFileSync(filePath, 'not a sqlite database at all');
+    const cycle = async (builtAt: string) => {
+      const { source } = makeRetainingSource({
+        manifest: makeManifest([makeEntry({ builtAt })]),
+        fileForEntry: () => filePath,
+        retained: new Set([filePath]),
+      });
+      await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+      });
+    };
+
+    await cycle('2026-08-10T02:00:00.000Z');
+    await cycle('2026-08-11T02:00:00.000Z');
+
+    // Tonight's rebuilt artifact is a different bet: still uncounted.
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
+  });
+});
+
+describe('pullSync scope-download phase breakdown', () => {
+  it('reports the artifact bytes and a per-table paged-crawl split on the completion event', async () => {
+    const filePath = join(workDir, 'phases.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const source = makeSnapshotSource({
+      manifest: makeManifest([makeEntry({ bytes: 108_000_000 })]),
+      fileForEntry: () => filePath,
+    });
+    const onScopeDownloadComplete = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onScopeDownloadComplete,
+    });
+
+    const { phases } = onScopeDownloadComplete.mock.calls[0][0] as { phases: Record<string, number | boolean> };
+    expect(phases.artifactBytes).toBe(108_000_000);
+    expect(phases.artifactReused).toBe(false);
+    // Every phase is measured, even when a fast test makes them all 0ms.
+    for (const key of ['manifestMs', 'downloadMs', 'importMs', 'climbsPullMs', 'statsPullMs', 'gradesPullMs']) {
+      expect(phases[key], key).toBeGreaterThanOrEqual(0);
+    }
+    expect(phases.gradesRows).toBe(0);
+  });
+
+  it('measures a download that spans cycles from its FIRST cycle, not the last', async () => {
+    // Cycle 1 downloads and imports, then the phone backgrounds before the
+    // delta pull reaches the tail. Cycle 2 finishes. The reported duration must
+    // cover both, which is only possible because the start stamp is persisted.
+    const filePath = join(workDir, 'spanning.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const onScopeDownloadComplete = vi.fn();
+
+    // Cycle 1: stamp the start, then background out the moment the artifact
+    // lands — exactly the "user locks the phone mid-download" shape.
+    const backgroundingSource: SnapshotSource = {
+      ...source,
+      downloadArtifact: async (entry, options) => {
+        const handle = await source.downloadArtifact(entry, options);
+        setBackgrounded(true);
+        return handle;
+      },
+    };
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: backgroundingSource,
+    });
+    const startedRow = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
+      'scope-download-started:kilter:1:5',
+    ]);
+    expect(startedRow).not.toBeNull();
+    // Backdate the stamp by a minute — the second cycle must report ~60s, not ~0s.
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      'scope-download-started:kilter:1:5',
+      String(Date.now() - 60_000),
+    ]);
+    setBackgrounded(false);
+
+    // Cycle 2 completes the scope.
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onScopeDownloadComplete,
+    });
+
+    expect(onScopeDownloadComplete).toHaveBeenCalledTimes(1);
+    const { durationMs } = onScopeDownloadComplete.mock.calls[0][0] as { durationMs: number | null };
+    expect(durationMs).toBeGreaterThanOrEqual(60_000);
+  });
+
+  it('reports a null duration when the start stamp is older than the plausibility window', async () => {
+    // A stamp nobody cleared (a crash, or an app left closed for a week) is not
+    // a week-long download — reporting it would poison the percentiles.
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      'scope-download-started:kilter:1:5',
+      String(Date.now() - 9 * 24 * 60 * 60 * 1000),
+    ]);
+    const onScopeDownloadComplete = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      onScopeDownloadComplete,
+    });
+
+    expect(onScopeDownloadComplete).toHaveBeenCalledTimes(1);
+    const { durationMs } = onScopeDownloadComplete.mock.calls[0][0] as { durationMs: number | null };
+    expect(durationMs).toBeNull();
+  });
+
+  it('clears the start stamp once the scope completes', async () => {
+    const onScopeDownloadComplete = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      onScopeDownloadComplete,
+    });
+
+    const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
+      'scope-download-started:kilter:1:5',
+    ]);
+    expect(row).toBeNull();
+  });
+});

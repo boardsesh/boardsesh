@@ -9,6 +9,8 @@ import {
   isScopeDownloadComplete,
   markScopeDownloadStarted,
   isScopeDownloadStarted,
+  ensureScopeDownloadStartedAt,
+  SCOPE_DOWNLOAD_START_MAX_AGE_MS,
   DELETIONS_CHECKPOINT_KEY,
 } from './checkpoints';
 import { markUserDataComplete } from './local-user-owner';
@@ -17,10 +19,14 @@ import {
   markBootstrapDone,
   isBootstrapDone,
   wasBootstrapHealed,
+  getReusedImportFailure,
+  recordReusedImportFailure,
+  clearReusedImportFailure,
   SnapshotWipedError,
   SnapshotSchemaStaleError,
   SnapshotPermanentMissError,
   type SnapshotSource,
+  type SnapshotArtifactHandle,
   type SnapshotBootstrapErrorReporter,
 } from './snapshot-bootstrap';
 import {
@@ -59,7 +65,7 @@ import {
 import { applyBusyTimeout } from '../db/pragmas';
 import { getPendingCount } from '../mutation-queue/queue';
 import { isNetworkError } from '../mutation-queue/error-classification';
-import { isSigningOut, getWipeEpoch, isBackgrounded } from '../mutation-queue/drainer';
+import { isSigningOut, getWipeEpoch, isBackgrounded, onTeardown } from '../mutation-queue/drainer';
 import { parseOfflineBoardKey, type OfflineBoardScope } from '../offline-board-key';
 
 /**
@@ -97,6 +103,52 @@ export type SyncProgress = {
 };
 
 /**
+ * Where a board scope's initial download actually spent its time, split by
+ * phase, so `Offline Board Download Completed` can answer "is the 100 MB
+ * artifact the problem, or the paged crawl behind it?" (issue #4310) without
+ * minting a second event.
+ *
+ * SCOPED TO THE CYCLE THAT COMPLETED THE DOWNLOAD. `durationMs` spans cycles
+ * (it is persisted), the breakdown does not: a scope whose artifact imported on
+ * Monday and whose delta pull finished on Tuesday reports Tuesday's crawl time
+ * with zeros for manifest/download/import. Read the phases as "where this
+ * cycle's time went", not as a partition of `durationMs`.
+ */
+export type ScopeDownloadPhaseBreakdown = {
+  /** Resolving the manifest. 0 for every scope after the first in a cycle (it is cached per run). */
+  manifestMs: number;
+  /** Fetching the artifact. 0 when it was reused from disk or shared with another size of the layout. */
+  downloadMs: number;
+  /** ATTACH + verify + the single exclusive import transaction. */
+  importMs: number;
+  /** Stored (possibly gzip) size of the artifact this scope imported; 0 when none. */
+  artifactBytes: number;
+  /** The artifact came off disk from an earlier cycle — no bytes crossed the network. */
+  artifactReused: boolean;
+  /** Paged GraphQL crawl time per board table, the term the artifact does NOT cover. */
+  climbsPullMs: number;
+  statsPullMs: number;
+  gradesPullMs: number;
+  /** Rows the grades crawl consumed this cycle — the denominator for gradesPullMs. */
+  gradesRows: number;
+};
+
+/** A zeroed breakdown: what a scope reports before any phase has run. */
+export function emptyScopeDownloadPhases(): ScopeDownloadPhaseBreakdown {
+  return {
+    manifestMs: 0,
+    downloadMs: 0,
+    importMs: 0,
+    artifactBytes: 0,
+    artifactReused: false,
+    climbsPullMs: 0,
+    statsPullMs: 0,
+    gradesPullMs: 0,
+    gradesRows: 0,
+  };
+}
+
+/**
  * Fired once a board scope's initial download completes this cycle (every
  * BOARD_DATA_TABLES entry reached its tail — the same gate as
  * `markScopeDownloadComplete`). Lets the app compare the two download paths in
@@ -112,6 +164,14 @@ export type SyncProgress = {
  * loop. Per-scope stamping keeps a multi-board cycle honest: scope B's
  * duration never includes scope A's download time, so `'snapshot'` vs
  * `'paged'` percentiles stay apples-to-apples.
+ *
+ * Since issue #4310 the start stamp is PERSISTED in sync_meta rather than held
+ * in a per-run Map, so a download spanning several cycles reports its whole
+ * lifetime instead of only the final cycle's slice. Two consequences worth
+ * knowing before reading the series: durations recorded before that change are
+ * systematic under-reports and are not comparable to later ones, and a stamp
+ * older than SCOPE_DOWNLOAD_START_MAX_AGE_MS yields `durationMs: null` (a
+ * device that was simply closed for a week is not a week-long download).
  */
 export type ScopeDownloadCompleteInfo = {
   scopeKey: string;
@@ -121,8 +181,10 @@ export type ScopeDownloadCompleteInfo = {
    * over a partly-crawled catalog, issue #4313) reports `method: 'snapshot'` but
    * a duration that EXCLUDES the paged work earlier cycles already did. Filter on
    * `bootstrapHealed` before comparing snapshot-vs-paged percentiles.
+   *
+   * null when the persisted start stamp is too old to be a plausible duration.
    */
-  durationMs: number;
+  durationMs: number | null;
   /** The snapshot import landed on a scope that had already crawled some rows. */
   bootstrapHealed?: boolean;
   /**
@@ -140,6 +202,8 @@ export type ScopeDownloadCompleteInfo = {
   rowCount?: number;
   downloadMs?: number;
   importMs?: number;
+  /** Where this cycle's time went. See ScopeDownloadPhaseBreakdown. */
+  phases: ScopeDownloadPhaseBreakdown;
 };
 export type ScopeDownloadCompleteReporter = (info: ScopeDownloadCompleteInfo) => void;
 
@@ -840,7 +904,9 @@ async function resolveManifestOnce(
  *
  * A wipe detected mid-phase bails the whole phase with no burn (mirrors
  * syncTable). One artifact is downloaded per (boardType, layoutId) and reused
- * across that layout's sizes; all downloads are deleted in a finally.
+ * across that layout's sizes; every download is handed back in a finally through
+ * `releaseArtifact`, which keeps an UNIMPORTED file when the source supports
+ * retention and deletes it otherwise (issue #4310).
  *
  * Snapshot attribution for ScopeDownloadCompleteInfo.method and .bootstrapHealed
  * is NOT threaded through here — both read the persisted `bootstrap-done:` marker
@@ -854,11 +920,12 @@ async function runBootstrapPhase(params: {
   scopes: BoardScope[];
   /** The epoch pullSync captured at CYCLE start — see `cycleAborted` there. */
   cycleEpoch: number;
-  stampScopeStart: (scopeKey: string) => void;
   /** Once-ever Started emitter, shared with the board-data loop (issue #4316). */
   emitScopeDownloadStartOnce: (info: ScopeDownloadStartInfo) => Promise<void>;
   /** Per-scope download/import timings + payload size, read back by the Completed event. */
   bootstrapTimings: Map<string, { bytes: number; downloadMs?: number; importMs?: number; rowCount?: number }>;
+  stampScopeStart: (scopeKey: string) => Promise<void>;
+  phaseTimings: (scopeKey: string) => ScopeDownloadPhaseBreakdown;
   options: SyncOptions | undefined;
   now: () => number;
   random: () => number;
@@ -870,6 +937,7 @@ async function runBootstrapPhase(params: {
     scopes,
     cycleEpoch,
     stampScopeStart,
+    phaseTimings,
     emitScopeDownloadStartOnce,
     bootstrapTimings,
     options,
@@ -900,9 +968,12 @@ async function runBootstrapPhase(params: {
   // Absent = not yet attempted; `file: null` = download failed (with its cause).
   const downloadByLayout = new Map<
     string,
-    { file: { filePath: string } | null; cause: unknown; permanentMiss: boolean }
+    { file: SnapshotArtifactHandle | null; cause: unknown; permanentMiss: boolean; downloadMs: number }
   >();
-  const downloadedPaths = new Set<string>();
+  // filePath → whether any scope managed to import it. An artifact the phase
+  // never consumed (backgrounded cycle, wipe, aborted transfer) is handed back
+  // with `imported: false` so a retention-capable source can keep it.
+  const artifactImported = new Map<string, boolean>();
 
   const reportSettledFailure = (
     scope: BoardScope,
@@ -942,7 +1013,8 @@ async function runBootstrapPhase(params: {
 
         // Duration telemetry starts here — before the eligibility check — so a
         // snapshot scope's durationMs covers its manifest/download/import work.
-        stampScopeStart(scope.scopeKey);
+        await stampScopeStart(scope.scopeKey);
+        const phases = phaseTimings(scope.scopeKey);
 
         const climbsCheckpoint = await getCheckpoint(db, getCheckpointKey('board_climbs', scope.scopeKey));
         const statsCheckpoint = await getCheckpoint(db, getCheckpointKey('board_climb_stats', scope.scopeKey));
@@ -1010,7 +1082,9 @@ async function runBootstrapPhase(params: {
           }),
         );
 
+        const manifestStartedAt = Date.now();
         const resolution = await resolveManifestOnce(source, manifestCache);
+        phases.manifestMs += Date.now() - manifestStartedAt;
         // Re-check after the manifest network await: every branch below either
         // writes to SQLite or leads to one further down.
         if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) break;
@@ -1153,7 +1227,25 @@ async function runBootstrapPhase(params: {
         // reports the real error, not null.
         let cachedDownload = downloadByLayout.get(layoutKey);
         if (!cachedDownload) {
-          cachedDownload = { file: null, cause: null, permanentMiss: false };
+          cachedDownload = { file: null, cause: null, permanentMiss: false, downloadMs: 0 };
+          // The transfer runs for minutes on a 100 MB artifact. Cancelling it
+          // when the cycle is torn down (sign-out, purge, backgrounding) stops
+          // the native session from carrying on over a metered connection long
+          // after the engine stopped caring — the phase's own `break` below
+          // only stops the JS loop, not the download.
+          //
+          // The abort is driven by the teardown EVENT, not by progress: a
+          // stalled transfer emits no further progress, which is exactly the
+          // case where cancelling matters most. The progress callback stays a
+          // pure reporter.
+          const abortController = new AbortController();
+          const abortIfTornDown = (): void => {
+            if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) abortController.abort();
+          };
+          const unsubscribeTeardown = onTeardown(abortIfTornDown);
+          // Covers a teardown that landed between the guard check above and the
+          // subscription: the listener only sees transitions after this point.
+          abortIfTornDown();
           // Stage 2 of 3, the multi-minute one. A second SIZE of the same layout
           // reuses this cache entry, so it never re-runs and never re-emits
           // download frames for bytes that already came down.
@@ -1171,6 +1263,7 @@ async function runBootstrapPhase(params: {
           try {
             cachedDownload.file =
               (await source.downloadArtifact(entry, {
+                signal: abortController.signal,
                 onProgress: ({ bytesWritten, totalBytes }) => {
                   const resolved = resolveDownloadFraction({
                     entry,
@@ -1192,9 +1285,14 @@ async function runBootstrapPhase(params: {
           } catch (error) {
             cachedDownload.cause = error;
             cachedDownload.permanentMiss = error instanceof SnapshotPermanentMissError;
+          } finally {
+            unsubscribeTeardown();
           }
+          cachedDownload.downloadMs = Date.now() - downloadStartedAt;
           downloadByLayout.set(layoutKey, cachedDownload);
-          if (cachedDownload.file) downloadedPaths.add(cachedDownload.file.filePath);
+          // Registered even on the reuse path: the phase still owns the file for
+          // the rest of the cycle and must hand it back through releaseArtifact.
+          if (cachedDownload.file) artifactImported.set(cachedDownload.file.filePath, false);
           if (cachedDownload.file) {
             bootstrapTimings.set(scope.scopeKey, {
               bytes: entry.bytes,
@@ -1202,6 +1300,11 @@ async function runBootstrapPhase(params: {
             });
           }
         }
+        // Only the scope that actually fetched it pays the download time; a
+        // second size of the same layout reuses the file for free and its own
+        // breakdown correctly shows downloadMs 0.
+        phases.downloadMs += cachedDownload.downloadMs;
+        cachedDownload.downloadMs = 0;
         // Re-check after the (potentially multi-MB) artifact download await, same
         // reason as the manifest check above.
         if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) break;
@@ -1274,12 +1377,14 @@ async function runBootstrapPhase(params: {
           }),
         );
 
+        phases.artifactBytes = entry.bytes;
+        phases.artifactReused = download.reused === true;
+        const importStartedAt = Date.now();
         try {
           // Imports the scope's rows, stamps both table checkpoints, and rewinds
           // the global deletions cursor to the older table watermark — all in one
           // transaction, so no crash point can separate the imported rows from
           // the tombstone-replay window that must cover them.
-          const importStartedAt = Date.now();
           const imported = await bootstrapScopeFromSnapshot({
             db,
             scope,
@@ -1298,6 +1403,11 @@ async function runBootstrapPhase(params: {
             importMs: Date.now() - importStartedAt,
             rowCount: imported.climbsImported + imported.statsImported,
           });
+          phases.importMs += Date.now() - importStartedAt;
+          artifactImported.set(download.filePath, true);
+          // The scope imported an artifact, so any free-round marker it carries
+          // describes a build that no longer matters.
+          await clearReusedImportFailure(db, scope.scopeKey);
           // The heal flag rides the persisted marker, not a per-cycle set: the
           // scope usually reaches completion in a LATER cycle (board_climb_grades
           // is not a snapshot table and still crawls), and an in-memory set
@@ -1316,6 +1426,7 @@ async function runBootstrapPhase(params: {
           // Not skipped: the board-data phase delta-pulls from the watermark
           // checkpoints and fires markScopeDownloadComplete through the tail logic.
         } catch (error) {
+          phases.importMs += Date.now() - importStartedAt;
           // A wipe mid-import rolls the transaction back and bails the phase — no
           // burn (the pull is being torn down, not failing).
           if (
@@ -1345,6 +1456,42 @@ async function runBootstrapPhase(params: {
               cause: error,
               expected: false,
             });
+            continue;
+          }
+          // A RETAINED artifact that fails to import gets ONE round that spends
+          // no budget. Retention keeps the same file across cycles, so charging
+          // the first failure would spend the structural-artifact budget twice
+          // against the same bad bytes and settle the scope onto the paged crawl
+          // for good — recreating exactly the #4313 failure retention is meant to
+          // prevent.
+          //
+          // The free round is granted at most once per (scope, artifact build),
+          // and the marker is what bounds it. Deleting the file is best-effort on
+          // every platform — mobile's `safeDeleteFile` swallows its errors — so
+          // "the next cycle re-downloads fresh" is a hope, not a guarantee: a
+          // file that survives with its sidecar comes back as `reused: true` and
+          // would otherwise buy another free round every cycle, forever, with a
+          // fresh scope skipping its paged pull each time. The second failure on
+          // the same build falls through to the counted structural path below.
+          if (download.reused && (await getReusedImportFailure(db, scope.scopeKey)) !== entry.builtAt) {
+            await recordReusedImportFailure(db, scope.scopeKey, entry.builtAt);
+            await source.deleteArtifact(download.filePath).catch(() => {});
+            artifactImported.delete(download.filePath);
+            downloadByLayout.delete(layoutKey);
+            metadataSettled = true;
+            onSnapshotBootstrapError?.({
+              scopeKey: scope.scopeKey,
+              stage: 'import',
+              attempt: 0,
+              cause: error,
+              expected: false,
+            });
+            // Same grace-window rule as every other failure arm: only a fresh,
+            // non-terminal scope waits a cycle for the retry. A scope that already
+            // holds rows always crawls.
+            if (shouldSkipPagedPull({ retryState, hasBoardCheckpoint, now: evaluatedAt })) {
+              skipPagedPull.add(scope.scopeKey);
+            }
             continue;
           }
           // The bytes are already on disk, so nothing about this failure is a
@@ -1377,8 +1524,15 @@ async function runBootstrapPhase(params: {
     // behind them cannot emit a frame after the phase is over and re-light a row
     // the UI already moved past.
     progressThrottle.cancel();
-    for (const filePath of downloadedPaths) {
-      await source.deleteArtifact(filePath).catch(() => {});
+    // Hand every artifact back rather than deleting it outright. A source with
+    // no retention support falls through to deleteArtifact and behaves exactly
+    // as it did before #4310; a retention-capable one keeps the files the phase
+    // never got to import, so a backgrounded cycle no longer costs 100 MB.
+    for (const [filePath, imported] of artifactImported) {
+      const release = source.releaseArtifact
+        ? source.releaseArtifact(filePath, { imported })
+        : source.deleteArtifact(filePath);
+      await release.catch(() => {});
     }
   }
 
@@ -1600,9 +1754,28 @@ export async function pullSync(
   // its turn in the board-data loop) — NOT once at cycle start, which would
   // fold scope A's entire download time into scope B's duration whenever a
   // cycle processes several boards.
+  //
+  // PERSISTED (issue #4310), not just held here: a 100 MB Kilter artifact
+  // routinely spans cycles — the phone backgrounds, the scheduler wakes again —
+  // and a per-run Map made every one of those report only the final cycle's
+  // work. The in-memory Map is now a read-through cache over the sync_meta
+  // stamp so a cycle costs at most one extra SELECT per scope.
   const scopeStartedAt = new Map<string, number>();
-  const stampScopeStart = (scopeKey: string): void => {
-    if (!scopeStartedAt.has(scopeKey)) scopeStartedAt.set(scopeKey, Date.now());
+  const stampScopeStart = async (scopeKey: string): Promise<void> => {
+    if (scopeStartedAt.has(scopeKey)) return;
+    scopeStartedAt.set(scopeKey, await ensureScopeDownloadStartedAt(db, scopeKey, Date.now()));
+  };
+
+  // Per-scope phase breakdown for ScopeDownloadCompleteInfo.phases, accumulated
+  // across this cycle's bootstrap phase and board-data loop.
+  const phasesByScope = new Map<string, ScopeDownloadPhaseBreakdown>();
+  const phaseTimings = (scopeKey: string): ScopeDownloadPhaseBreakdown => {
+    let phases = phasesByScope.get(scopeKey);
+    if (!phases) {
+      phases = emptyScopeDownloadPhases();
+      phasesByScope.set(scopeKey, phases);
+    }
+    return phases;
   };
 
   // Download-funnel Started (issue #4316). Once ever per scope, guarded by the
@@ -1645,6 +1818,7 @@ export async function pullSync(
       stampScopeStart,
       emitScopeDownloadStartOnce,
       bootstrapTimings,
+      phaseTimings,
       options,
       now: options.now ?? Date.now,
       random: options.random ?? Math.random,
@@ -1708,7 +1882,8 @@ export async function pullSync(
     const scopeKey = boardScope.scopeKey;
     // No-op when the bootstrap phase already stamped this scope; the paged-only
     // path (no snapshotSource) starts its duration clock here.
-    stampScopeStart(scopeKey);
+    await stampScopeStart(scopeKey);
+    const phases = phaseTimings(scopeKey);
     // Started (issue #4316), the paged half — and the catch-all. Every scope
     // reaches this line on every path: a build with no snapshot source, a scope
     // the bootstrap phase found ineligible or unexportable, and the resumed
@@ -1732,6 +1907,12 @@ export async function pullSync(
         currentTableProcessed: 0,
       });
       const baseCount = totalDocuments;
+      // Timed per table, not per scope: the whole point of the #4310
+      // measurement is telling the artifact's tables (climbs, stats — imported
+      // in one shot) apart from board_climb_grades, which the artifact does not
+      // carry at all and which therefore crawls page by page every time.
+      const tableStartedAt = Date.now();
+      let tableRows = 0;
       const { reachedTail } = await syncTable(
         db,
         queryClient,
@@ -1740,6 +1921,7 @@ export async function pullSync(
         cycleEpoch,
         boardScope,
         (tableProcessed) => {
+          tableRows = tableProcessed;
           totalDocuments = baseCount + tableProcessed;
           onProgress?.({
             phase: 'board_data',
@@ -1750,6 +1932,13 @@ export async function pullSync(
         },
         options?.onSchemaDrift,
       );
+      const tableMs = Date.now() - tableStartedAt;
+      if (tableName === 'board_climbs') phases.climbsPullMs += tableMs;
+      else if (tableName === 'board_climb_stats') phases.statsPullMs += tableMs;
+      else if (tableName === 'board_climb_grades') {
+        phases.gradesPullMs += tableMs;
+        phases.gradesRows += tableRows;
+      }
       if (!reachedTail) allTablesReachedTail = false;
     }
     // Gate for local-first reads: only a scope whose climbs, stats AND grades
@@ -1758,6 +1947,7 @@ export async function pullSync(
     // catalog as if it were everything.
     if (allTablesReachedTail) {
       const wasScopeComplete = await isScopeDownloadComplete(db, scopeKey);
+      // Clears the persisted start stamp as well as writing the complete marker.
       await markScopeDownloadComplete(db, scopeKey);
       if (wasScopeComplete) continue;
       const startedAt = scopeStartedAt.get(scopeKey);
@@ -1765,6 +1955,12 @@ export async function pullSync(
       // loop for every scope. If that invariant breaks, skip telemetry rather
       // than emit a misleading 0ms duration.
       if (startedAt === undefined) continue;
+      // A stamp older than the plausibility window is a stamp nobody cleared,
+      // not a download that ran for days (a crash between stamp and completion,
+      // or an app the user simply did not open). Report the event with a null
+      // duration rather than poisoning the percentiles with it.
+      const elapsedMs = Date.now() - startedAt;
+      const durationMs = elapsedMs >= 0 && elapsedMs <= SCOPE_DOWNLOAD_START_MAX_AGE_MS ? elapsedMs : null;
       // Both attributions read the persisted marker, not this run's bootstrap
       // work: the import and the completing delta pull can land in different
       // cycles (connectivity drop between them, or the grades crawl still
@@ -1774,13 +1970,14 @@ export async function pullSync(
       options?.onScopeDownloadComplete?.({
         scopeKey,
         method: (await isBootstrapDone(db, scopeKey)) ? 'snapshot' : 'paged',
-        durationMs: Date.now() - startedAt,
+        durationMs,
         // A healed scope's duration excludes the paged work earlier cycles did,
         // so it must be filtered out of snapshot-vs-paged comparisons.
         bootstrapHealed: await wasBootstrapHealed(db, scopeKey),
         // Spread rather than set explicitly: absent when this cycle did not do
         // the import, which is the honest answer (see ScopeDownloadCompleteInfo).
         ...timings,
+        phases,
       });
     }
   }

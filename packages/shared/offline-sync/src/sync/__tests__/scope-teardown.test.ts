@@ -250,6 +250,14 @@ describe('removeBoardScopeData — markers', () => {
       `bootstrap-retry:${scopeKey}`,
       JSON.stringify({ transportFailures: 3, structuralFailures: 2, retryAfter: 1_800_000_000_000 }),
     ]);
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      `scope-download-started:${scopeKey}`,
+      String(Date.now()),
+    ]);
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      `reused-import-failed:${scopeKey}`,
+      '2026-08-11T02:00:00Z',
+    ]);
   }
 
   // Rows and markers must die together. A surviving checkpoint means the strict `>`
@@ -302,7 +310,7 @@ describe('removeBoardScopeData — markers', () => {
   // what "a scope's downloaded state" consists of. Adding a marker here should mean
   // deliberately updating this list (and `seedMarkers` above, which proves the
   // teardown actually clears each one), not nudging a magic number.
-  it('is exactly the scope’s checkpoints plus its six markers', async () => {
+  it('is exactly the scope’s checkpoints plus its eight markers', async () => {
     const keys = scopeSyncMetaKeys('kilter:1:5');
 
     expect(new Set(keys)).toEqual(
@@ -319,6 +327,8 @@ describe('removeBoardScopeData — markers', () => {
         'bootstrap-done:kilter:1:5',
         'bootstrap-paged-fallback:kilter:1:5',
         'bootstrap-retry:kilter:1:5',
+        'scope-download-started:kilter:1:5',
+        'reused-import-failed:kilter:1:5',
       ]),
     );
   });

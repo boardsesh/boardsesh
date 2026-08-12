@@ -182,6 +182,15 @@ const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({
 // Fired once per board scope's initial download so the snapshot-bootstrap
 // warm-up can be compared against the plain paged crawl in the field (which
 // path actually got used, and how long it took).
+// The phase breakdown rides on THIS event rather than a new one (issue #4310):
+// the question it answers — "of a 2m55s Kilter download, how much is the
+// artifact and how much is the grades crawl behind it?" — is a property of the
+// download that just completed, and splitting it across two events would make
+// every funnel query a join. Only the phases NOT already carried by the
+// per-scope timings above are emitted: `phases` also holds cycle-scoped copies
+// of download/import/artifact bytes, and the timings' absent-when-unknown
+// versions are the honest ones (a 0 from a later-cycle completion would read as
+// a real measurement).
 const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
   scopeKey,
   method,
@@ -190,6 +199,7 @@ const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
   rowCount,
   downloadMs,
   importMs,
+  phases,
 }) => {
   track(SHARED_EVENTS.OfflineBoardDownloadCompleted, {
     scopeKey,
@@ -202,6 +212,12 @@ const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
     ...(rowCount === undefined ? {} : { rowCount }),
     ...(downloadMs === undefined ? {} : { downloadMs }),
     ...(importMs === undefined ? {} : { importMs }),
+    manifestMs: phases.manifestMs,
+    artifactReused: phases.artifactReused,
+    climbsPullMs: phases.climbsPullMs,
+    statsPullMs: phases.statsPullMs,
+    gradesPullMs: phases.gradesPullMs,
+    gradesRows: phases.gradesRows,
     // Stamped so the funnel stays readable once #4312 bakes the flag on: the
     // engine gate, not the raw flag value.
     offlineEngineEnabled: isOfflineEngineEnabled(),

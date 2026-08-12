@@ -92,11 +92,57 @@ export async function rewindDeletionsCheckpoint(db: SqlExecutor, watermark: Sync
 // must clear this marker in the same transaction as the rows it describes.
 export const SCOPE_COMPLETE_PREFIX = 'scope-complete:';
 
+/**
+ * "This device started downloading scope X at wall-clock T." Persisted because
+ * the in-memory start map lives for exactly one `pullSync` run, so a download
+ * that spans cycles — the normal shape for a 100 MB Kilter artifact on a phone
+ * that backgrounds once — used to report only the FINAL cycle's work as
+ * `durationMs` (issue #4310). Deliberately NOT under the `checkpoint:` prefix:
+ * `deleteAllCheckpoints`' `LIKE 'checkpoint:%'` must not reach it, so every
+ * clearing site is explicit (scope completion, scope teardown, sign-out).
+ */
+export const SCOPE_DOWNLOAD_STARTED_PREFIX = 'scope-download-started:';
+
+/**
+ * Anything older than this is not a download, it is a stamp nobody cleared —
+ * a crash between the stamp and the completion, an app the user did not open
+ * for a week, a clock that moved. Reporting 9 days as a download duration would
+ * poison the p50 far worse than reporting nothing, so the caller emits a null
+ * duration instead. Same posture as the deletions-coverage plausibility floor.
+ */
+export const SCOPE_DOWNLOAD_START_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The wall-clock this scope's download started, creating the stamp at `nowMs`
+ * when there isn't one. Returns the EFFECTIVE start — the persisted value when
+ * it exists, `nowMs` otherwise — so a caller never has to read it back.
+ */
+export async function ensureScopeDownloadStartedAt(db: SqlExecutor, scopeKey: string, nowMs: number): Promise<number> {
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
+    `${SCOPE_DOWNLOAD_STARTED_PREFIX}${scopeKey}`,
+  ]);
+  const persisted = row ? Number(row.value) : Number.NaN;
+  if (Number.isFinite(persisted) && persisted > 0) return persisted;
+  await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+    `${SCOPE_DOWNLOAD_STARTED_PREFIX}${scopeKey}`,
+    String(nowMs),
+  ]);
+  return nowMs;
+}
+
+export async function clearScopeDownloadStarted(db: SqlExecutor, scopeKey: string): Promise<void> {
+  await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [`${SCOPE_DOWNLOAD_STARTED_PREFIX}${scopeKey}`]);
+}
+
 export async function markScopeDownloadComplete(db: SqlExecutor, scopeKey: string): Promise<void> {
   await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
     `${SCOPE_COMPLETE_PREFIX}${scopeKey}`,
     '1',
   ]);
+  // The download is over, so the start stamp describes nothing. Clearing it
+  // here (rather than only on teardown) is what keeps a later re-download —
+  // e.g. after a schema bump forces a fresh crawl — measuring its own time.
+  await clearScopeDownloadStarted(db, scopeKey);
 }
 
 export async function isScopeDownloadComplete(db: SqlExecutor, scopeKey: string): Promise<boolean> {
@@ -254,4 +300,10 @@ export async function deleteUserCheckpoints(db: SqlExecutor): Promise<void> {
   // companion `checkpoint:user_data_complete` is `checkpoint:`-prefixed and is
   // therefore already covered by the DELETE above.
   await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [LOCAL_USER_ID_KEY]);
+  // Every in-flight download start stamp goes too. It is not a `checkpoint:`
+  // key, so the DELETE above cannot reach it, and a stamp left behind by the
+  // departing account would be read months later by the next one — reporting a
+  // multi-week `durationMs` for a download that took two minutes. GLOB keeps
+  // the literal-prefix range scan on sync_meta's binary primary key.
+  await db.runAsync('DELETE FROM sync_meta WHERE key GLOB ?', [`${SCOPE_DOWNLOAD_STARTED_PREFIX}*`]);
 }

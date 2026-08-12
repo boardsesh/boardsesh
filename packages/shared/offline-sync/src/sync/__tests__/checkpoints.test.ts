@@ -12,6 +12,7 @@ import {
   markScopeDownloadComplete,
   isScopeDownloadComplete,
   getDownloadedScopeKeys,
+  ensureScopeDownloadStartedAt,
 } from '../checkpoints';
 import type { SyncCheckpoint } from '../checkpoints';
 import { getDeletionsCoverageAt, setDeletionsCoverageAt } from '../deletions-coverage';
@@ -239,5 +240,58 @@ describe('deleteAllSyncMeta', () => {
     const after = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM schema_version');
     expect(after?.count).toBe(before?.count);
     expect(after?.count).toBeGreaterThan(0);
+  });
+});
+
+// The persisted per-scope download start stamp (issue #4310). Before it, the
+// start time lived in a Map created per `pullSync` run, so a download that
+// spanned cycles — the normal shape for a 100 MB artifact on a phone that
+// backgrounds once — reported only the final cycle's slice as `durationMs`.
+describe('scope download start stamp', () => {
+  let db: TestSqliteDb;
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await runMigrations(db);
+  });
+
+  it('records the first start and returns the SAME instant on every later cycle', async () => {
+    const first = await ensureScopeDownloadStartedAt(db, 'kilter:1:5', 1_000);
+    const second = await ensureScopeDownloadStartedAt(db, 'kilter:1:5', 9_000);
+
+    expect(first).toBe(1_000);
+    expect(second).toBe(1_000);
+  });
+
+  it('scopes the stamp per board — one download never times another', async () => {
+    await ensureScopeDownloadStartedAt(db, 'kilter:1:5', 1_000);
+
+    expect(await ensureScopeDownloadStartedAt(db, 'tension:9:11', 5_000)).toBe(5_000);
+  });
+
+  it('is cleared by markScopeDownloadComplete so a later re-download times itself', async () => {
+    await ensureScopeDownloadStartedAt(db, 'kilter:1:5', 1_000);
+
+    await markScopeDownloadComplete(db, 'kilter:1:5');
+
+    expect(await ensureScopeDownloadStartedAt(db, 'kilter:1:5', 7_000)).toBe(7_000);
+  });
+
+  it('is cleared on sign-out — it is not a `checkpoint:` key, so the wipe must name it', async () => {
+    // Left behind, a departing account's stamp is read by the NEXT account
+    // months later and reports a multi-week download duration.
+    await ensureScopeDownloadStartedAt(db, 'kilter:1:5', 1_000);
+
+    await deleteUserCheckpoints(db);
+
+    expect(await ensureScopeDownloadStartedAt(db, 'kilter:1:5', 7_000)).toBe(7_000);
+  });
+
+  it('survives a checkpoint-only wipe, which must not reach past its own prefix', async () => {
+    await ensureScopeDownloadStartedAt(db, 'kilter:1:5', 1_000);
+
+    await deleteAllCheckpoints(db);
+
+    expect(await ensureScopeDownloadStartedAt(db, 'kilter:1:5', 7_000)).toBe(1_000);
   });
 });

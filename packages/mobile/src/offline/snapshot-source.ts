@@ -27,21 +27,43 @@
 // failure landed as a Sentry `error`).
 
 import { Directory, File, Paths } from 'expo-file-system';
-import { SnapshotPermanentMissError, type SnapshotManifestEntry, type SnapshotSource } from '@boardsesh/offline-sync';
+import {
+  SnapshotPermanentMissError,
+  type SnapshotArtifactHandle,
+  type SnapshotDownloadOptions,
+  type SnapshotManifestEntry,
+  type SnapshotSource,
+} from '@boardsesh/offline-sync';
 import { SNAPSHOT_BASE_URL } from '../lib/env';
 import { reportHandledError } from '../lib/error-reporting';
 
 const MANIFEST_URL = `${SNAPSHOT_BASE_URL}/manifest.json`;
 
 // Cache-dir subfolder for downloaded artifacts. The engine ATTACHes the file,
-// imports the scope's rows, then calls `deleteArtifact` once it's done with
-// it (in a `finally`) — nothing here is meant to persist across app launches,
-// so the OS is also free to reclaim it under storage pressure (Paths.cache,
-// not Paths.document).
+// imports the scope's rows, then hands it back through `releaseArtifact`.
+// Since issue #4310 a file the engine did NOT import survives to the next
+// cycle (see the retention notes below), but it still lives under Paths.cache,
+// not Paths.document: the OS may reclaim it under storage pressure and losing
+// it costs a re-download, never data.
 // Exported so the cache sweeper (lib/sweep-caches.ts) reaps artifacts leaked by
 // a kill mid-bootstrap from the same directory this writes to, rather than
 // re-literalling the name and silently sweeping nothing if it ever moves.
 export const SNAPSHOT_DIR_NAME = 'board-snapshots';
+
+// Written next to `<artifact>.db` once the download AND the gzip sniff have
+// both passed, holding the artifact's `builtAt`. Retention is only useful if a
+// half-written file can never be reused — the file's own size is no help
+// (`entry.bytes` is the STORED gzip size, the file on disk is decompressed),
+// so the sidecar is the completeness proof. No sidecar → re-download.
+const COMPLETE_SIDECAR_SUFFIX = '.complete';
+
+// How much of the cache directory retained artifacts may occupy, and the free
+// space below which retention is abandoned entirely. Retaining a Kilter
+// artifact is ~271 MB decompressed, which is worth it (it saves re-downloading
+// 103 MB over a phone connection) but only while the device can spare it —
+// offline mode's storage footprint is already a live complaint (issue #3647).
+const RETENTION_BUDGET_BYTES = 400 * 1024 * 1024;
+const RETENTION_FREE_SPACE_FLOOR_BYTES = 1.5 * 1024 * 1024 * 1024;
 
 // Identity artifacts are already stored as SQLite files, so they only need room
 // for the download plus write overhead. Gzip artifacts may temporarily require
@@ -136,6 +158,121 @@ function safeDeleteFile(file: File): void {
   }
 }
 
+// --- Retention (issue #4310) --------------------------------------------------
+
+function sidecarFor(artifact: File): File {
+  return new File(`${artifact.uri}${COMPLETE_SIDECAR_SUFFIX}`);
+}
+
+/** Delete an artifact and its completeness sidecar together — never one alone. */
+function deleteArtifactWithSidecar(artifact: File): void {
+  safeDeleteFile(sidecarFor(artifact));
+  safeDeleteFile(artifact);
+}
+
+/**
+ * True when this exact file was fully downloaded and verified in an earlier
+ * cycle: the sidecar exists AND names the same `builtAt` the manifest is asking
+ * for. A filename match alone is not enough — a crash between `create` and the
+ * first byte leaves a plausible-looking name over an empty file.
+ */
+function hasCompleteSidecar(artifact: File, builtAt: string): boolean {
+  try {
+    const sidecar = sidecarFor(artifact);
+    if (!sidecar.exists) return false;
+    return sidecar.textSync().trim() === builtAt;
+  } catch {
+    return false;
+  }
+}
+
+function writeCompleteSidecar(artifact: File, builtAt: string): void {
+  try {
+    const sidecar = sidecarFor(artifact);
+    sidecar.create({ overwrite: true, intermediates: true });
+    sidecar.write(builtAt);
+  } catch {
+    // A missing sidecar only costs a re-download next cycle; never fail the
+    // import over it.
+  }
+}
+
+/**
+ * Drop retained artifacts that no longer earn their space: anything for a
+ * DIFFERENT build of the same (board, layout) than the one just downloaded
+ * (superseded — the manifest will never ask for it again), and then, oldest
+ * first, whatever it takes to get under the byte budget. Called after each
+ * successful download, so the budget is enforced at the moment the directory
+ * grows rather than on a timer.
+ *
+ * `keep` — the file this cycle just downloaded — is never evicted (the import is
+ * about to read it) but DOES count against the budget. A cycle cut short retains
+ * it like any other artifact, so excluding it would let the directory settle at
+ * budget-plus-one-artifact: a 350 MB survivor passes a 400 MB budget, a 271 MB
+ * Kilter file is then retained beside it, and the "400 MB" cap holds 621 MB.
+ *
+ * Coordination note for the image/thumbnail cache sweeper (issue #3647): this
+ * directory owns its own budget. A sweeper that also deletes here would
+ * silently reintroduce "backgrounding costs you the whole download".
+ */
+function sweepRetainedArtifacts(keep: File): void {
+  let entries: (File | Directory)[];
+  try {
+    entries = snapshotDirectory().list();
+  } catch {
+    return;
+  }
+
+  const artifacts: File[] = [];
+  for (const entry of entries) {
+    if (!(entry instanceof File)) continue;
+    if (entry.uri.endsWith(COMPLETE_SIDECAR_SUFFIX)) continue;
+    artifacts.push(entry);
+  }
+
+  // Below the free-space floor, retention stops being a kindness — nothing is
+  // kept except the artifact this cycle is about to import.
+  const belowFreeSpaceFloor = Paths.availableDiskSpace < RETENTION_FREE_SPACE_FLOOR_BYTES;
+
+  const keepPrefix = artifactNamePrefix(keep.uri);
+  const survivors: { file: File; size: number; modifiedAt: number }[] = [];
+  for (const artifact of artifacts) {
+    if (artifact.uri === keep.uri) continue;
+    // Same (board, layout), different build stamp → the manifest has moved on.
+    const isSuperseded = keepPrefix !== null && artifactNamePrefix(artifact.uri) === keepPrefix;
+    if (belowFreeSpaceFloor || isSuperseded) {
+      deleteArtifactWithSidecar(artifact);
+      continue;
+    }
+    survivors.push({
+      file: artifact,
+      size: artifact.size,
+      modifiedAt: artifact.lastModified ?? 0,
+    });
+  }
+
+  // Starts at the kept file's own size — see the note above.
+  let retainedBytes = survivors.reduce((total, survivor) => total + survivor.size, keep.size);
+  if (retainedBytes <= RETENTION_BUDGET_BYTES) return;
+  survivors.sort((left, right) => left.modifiedAt - right.modifiedAt);
+  for (const survivor of survivors) {
+    if (retainedBytes <= RETENTION_BUDGET_BYTES) break;
+    deleteArtifactWithSidecar(survivor.file);
+    retainedBytes -= survivor.size;
+  }
+}
+
+/**
+ * `<board>-<layout>` from a `<board>-<layout>-<builtAt>.db` artifact URI, or
+ * null when the name doesn't match — an unrecognised file is left alone rather
+ * than guessed at.
+ */
+function artifactNamePrefix(uri: string): string | null {
+  const name = uri.slice(uri.lastIndexOf('/') + 1);
+  const match = name.match(/^([a-z0-9]+-\d+)-/i);
+  return match ? match[1] : null;
+}
+
 /**
  * Fetch the manifest JSON. Returns `null` only when the manifest is genuinely
  * absent or unparseable (permanent miss this cycle, no attempt). HTTP outages
@@ -177,8 +314,8 @@ function formatError(error: unknown): string {
  */
 async function downloadArtifact(
   entry: SnapshotManifestEntry,
-  options?: { onProgress?: (progress: { bytesWritten: number; totalBytes: number | null }) => void },
-): Promise<{ filePath: string } | null> {
+  options?: SnapshotDownloadOptions,
+): Promise<SnapshotArtifactHandle | null> {
   const requiredBytes = requiredFreeBytes(entry);
   const availableBytes = Paths.availableDiskSpace;
   if (availableBytes < requiredBytes) {
@@ -201,6 +338,19 @@ async function downloadArtifact(
   const safeBuiltAt = entry.builtAt.replace(/[^a-zA-Z0-9]/g, '-');
   const destination = new File(directory, `${entry.boardType}-${entry.layoutId}-${safeBuiltAt}.db`);
 
+  // A retained artifact from an earlier cycle, complete and for this exact
+  // build: hand it straight back. The engine still runs quick_check and
+  // verifySnapshotMeta over it before importing a single row, and treats an
+  // import failure on a reused file as delete-and-refetch rather than a counted
+  // bootstrap attempt — so trusting the sidecar here cannot strand a scope.
+  if (destination.exists && hasCompleteSidecar(destination, entry.builtAt)) {
+    return { filePath: toSqlitePath(destination.uri), reused: true };
+  }
+  // A file with no (or a mismatched) sidecar is a half-written download, not a
+  // shortcut. Clear it so `idempotent: true` below never writes over a body it
+  // cannot verify.
+  if (destination.exists) deleteArtifactWithSidecar(destination);
+
   let downloaded: File;
   try {
     // `onProgress` is only passed when the caller asked for it (the engine
@@ -208,13 +358,15 @@ async function downloadArtifact(
     // expo-file-system take a different native download implementation — an
     // 8 KB streaming copy loop on Android, a delegate-driven URLSession on iOS
     // — rather than its plain path. Omitting it keeps the call byte-identical
-    // to the pre-#4311 one.
+    // to the pre-#4311 one. `signal` rides both shapes: it only cancels the
+    // transfer and does not switch implementations.
     downloaded = await File.downloadFileAsync(
       entry.url,
       destination,
       options?.onProgress
         ? {
             idempotent: true,
+            signal: options.signal,
             onProgress: ({ bytesWritten, totalBytes }) => {
               // Android reports -1 for a gzip body (OkHttp gunzips transparently,
               // so Content-Length is meaningless); the engine expects null for
@@ -222,7 +374,7 @@ async function downloadArtifact(
               options.onProgress?.({ bytesWritten, totalBytes: totalBytes > 0 ? totalBytes : null });
             },
           }
-        : { idempotent: true },
+        : { idempotent: true, signal: options?.signal },
     );
   } catch (error) {
     throw new Error(
@@ -265,15 +417,32 @@ async function downloadArtifact(
     }
   }
 
+  // Only now is the file provably complete AND decoded, so only now may a
+  // later cycle reuse it.
+  writeCompleteSidecar(downloaded, entry.builtAt);
+  sweepRetainedArtifacts(downloaded);
+
   return { filePath: toSqlitePath(downloaded.uri) };
 }
 
 async function deleteArtifact(filePath: string): Promise<void> {
-  safeDeleteFile(new File(toFileUri(filePath)));
+  deleteArtifactWithSidecar(new File(toFileUri(filePath)));
+}
+
+/**
+ * The engine is done with this artifact for the cycle. Imported → delete it,
+ * the rows are in the database now. NOT imported → keep it: the cycle was cut
+ * short (backgrounded, wiped, another scope failed) and re-downloading 103 MB
+ * on the next wake is the failure this retention exists to remove (issue
+ * #4310). The budget sweep already ran at download time.
+ */
+async function releaseArtifact(filePath: string, options: { imported: boolean }): Promise<void> {
+  if (options.imported) deleteArtifactWithSidecar(new File(toFileUri(filePath)));
 }
 
 export const mobileSnapshotSource: SnapshotSource = {
   fetchManifest,
   downloadArtifact,
   deleteArtifact,
+  releaseArtifact,
 };

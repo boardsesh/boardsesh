@@ -31,8 +31,13 @@ import type { OfflineDatabase, SqlExecutor, SqlValue } from '../database';
 import { applyBusyTimeout } from '../db/pragmas';
 import type { OfflineBoardScope } from '../offline-board-key';
 import { climbsScopeFilter, isSizeScopedBoard, sizeMembershipClause } from './board-scope-sql';
-import { getCheckpointKey, SCOPE_COMPLETE_PREFIX, SCOPE_STARTED_PREFIX } from './checkpoints';
-import { BOOTSTRAP_DONE_PREFIX } from './snapshot-bootstrap';
+import {
+  getCheckpointKey,
+  SCOPE_COMPLETE_PREFIX,
+  SCOPE_STARTED_PREFIX,
+  SCOPE_DOWNLOAD_STARTED_PREFIX,
+} from './checkpoints';
+import { BOOTSTRAP_DONE_PREFIX, REUSED_IMPORT_FAILED_PREFIX } from './snapshot-bootstrap';
 import {
   BOOTSTRAP_ATTEMPTS_HEALED_PREFIX,
   BOOTSTRAP_ATTEMPTS_PREFIX,
@@ -83,6 +88,15 @@ export function scopeSyncMetaKeys(scopeKey: string): string[] {
     // The retry budgets + cooldown (issue #4313). Re-adding the board must give
     // the scope a clean slate, not a terminal verdict it earned before removal.
     `${BOOTSTRAP_RETRY_PREFIX}${scopeKey}`,
+    // The in-flight download's start stamp. Removing a board mid-download and
+    // re-adding it must time the SECOND download, not measure from the first
+    // one's start — and a stamp left over an emptied scope is unclearable by
+    // any other path (it is not a `checkpoint:` key).
+    `${SCOPE_DOWNLOAD_STARTED_PREFIX}${scopeKey}`,
+    // The free-round marker a reused artifact's failed import leaves behind.
+    // Same clean-slate rule as the budgets above: a re-added board must not
+    // inherit a round it spent before removal.
+    `${REUSED_IMPORT_FAILED_PREFIX}${scopeKey}`,
   ];
 }
 

@@ -13,7 +13,7 @@ const state = vi.hoisted(() => ({
     options?: { intermediates?: boolean; idempotent?: boolean; overwrite?: boolean };
   }>,
   createDirectoryError: null as Error | null,
-  downloadCalls: [] as Array<{ url: string; idempotent?: boolean; hasOnProgress: boolean }>,
+  downloadCalls: [] as Array<{ url: string; idempotent?: boolean; hasOnProgress: boolean; hasSignal: boolean }>,
   // Byte frames the fake downloader replays into the injected onProgress, in
   // whatever scale a real platform would report (Android: decoded bytes,
   // totalBytes -1).
@@ -28,6 +28,10 @@ const state = vi.hoisted(() => ({
   // the body at all" path.
   readError: null as Error | null,
   deletedUris: [] as string[],
+  // A real in-memory filesystem, not a stub: artifact RETENTION (issue #4310)
+  // turns on file existence, sidecar contents, sizes, and mtimes, so a fake
+  // where `exists` is always true would prove nothing.
+  files: new Map<string, { text: string | null; bytes: Uint8Array; size: number; lastModified: number }>(),
 }));
 
 vi.mock('expo-file-system', () => {
@@ -40,12 +44,14 @@ vi.mock('expo-file-system', () => {
       if (state.createDirectoryError) throw state.createDirectoryError;
       state.createdDirectories.push({ path: this.path, options });
     }
+    list(): FakeFile[] {
+      const prefix = `file://${this.path}/`;
+      return [...state.files.keys()].filter((uri) => uri.startsWith(prefix)).map((uri) => new FakeFile(uri));
+    }
   }
 
   class FakeFile {
     uri: string;
-    exists = true;
-    bytes: Uint8Array = new Uint8Array();
 
     constructor(...parts: unknown[]) {
       const joined = parts
@@ -58,29 +64,64 @@ vi.mock('expo-file-system', () => {
       this.uri = joined.startsWith('file://') ? joined : `file://${joined}`;
     }
 
+    get exists() {
+      return state.files.has(this.uri);
+    }
+
+    get size() {
+      return state.files.get(this.uri)?.size ?? 0;
+    }
+
+    get lastModified() {
+      return state.files.get(this.uri)?.lastModified ?? null;
+    }
+
+    get bytes() {
+      return state.files.get(this.uri)?.bytes ?? new Uint8Array();
+    }
+
     static downloadFileAsync = vi.fn(
       async (
         url: string,
         destination: FakeFile,
         options?: {
           idempotent?: boolean;
-          onProgress?: (progress: { bytesWritten: number; totalBytes: number }) => void;
+          onProgress?: (data: { bytesWritten: number; totalBytes: number }) => void;
+          signal?: AbortSignal;
         },
       ) => {
         state.downloadCalls.push({
           url,
           idempotent: options?.idempotent,
           hasOnProgress: options?.onProgress !== undefined,
+          hasSignal: options?.signal !== undefined,
         });
-        if (state.downloadError) throw state.downloadError;
         for (const frame of state.downloadProgressFrames) options?.onProgress?.(frame);
-        destination.bytes = state.downloadBytes;
+        if (options?.signal?.aborted) throw new Error('AbortError: download cancelled');
+        if (state.downloadError) throw state.downloadError;
+        writeFakeFile(destination.uri, { bytes: state.downloadBytes, text: null });
         return destination;
       },
     );
 
+    create(_options?: { intermediates?: boolean; overwrite?: boolean }) {
+      writeFakeFile(this.uri, { bytes: new Uint8Array(), text: '' });
+    }
+
+    write(content: string) {
+      writeFakeFile(this.uri, { bytes: new Uint8Array(), text: content });
+    }
+
+    textSync(): string {
+      const entry = state.files.get(this.uri);
+      if (entry?.text == null) throw new Error(`no text at ${this.uri}`);
+      return entry.text;
+    }
+
     delete() {
+      if (!state.files.has(this.uri)) throw new Error(`no such file: ${this.uri}`);
       state.deletedUris.push(this.uri);
+      state.files.delete(this.uri);
     }
 
     readableStream() {
@@ -97,6 +138,15 @@ vi.mock('expo-file-system', () => {
         }),
       };
     }
+  }
+
+  function writeFakeFile(uri: string, content: { bytes: Uint8Array; text: string | null }): void {
+    state.files.set(uri, {
+      bytes: content.bytes,
+      text: content.text,
+      size: content.text !== null ? content.text.length : content.bytes.length,
+      lastModified: state.files.size + 1,
+    });
   }
 
   return {
@@ -169,7 +219,17 @@ beforeEach(() => {
   state.streamChunks = null;
   state.readError = null;
   state.deletedUris = [];
+  state.files.clear();
 });
+
+const ARTIFACT_URI = 'file://cache-root/board-snapshots/kilter-8-2026-06-01T00-00-00-000Z.db';
+const SIDECAR_URI = `${ARTIFACT_URI}.complete`;
+
+/** Seeds a retained artifact + its completeness sidecar, as a previous cycle would leave them. */
+function seedRetainedArtifact(uri: string, builtAt: string, sizeBytes = 1_000): void {
+  state.files.set(uri, { bytes: PLAIN_SQLITE_BYTES, text: null, size: sizeBytes, lastModified: 1 });
+  state.files.set(`${uri}.complete`, { bytes: new Uint8Array(), text: builtAt, size: builtAt.length, lastModified: 1 });
+}
 
 describe('fetchManifest', () => {
   it('fetches the manifest URL with cache: no-store and returns the parsed JSON on 200', async () => {
@@ -253,7 +313,7 @@ describe('downloadArtifact', () => {
     expect(state.createdDirectories).toEqual([
       { path: 'cache-root/board-snapshots', options: { intermediates: true, idempotent: true } },
     ]);
-    expect(state.downloadCalls).toEqual([{ url: ENTRY.url, idempotent: true, hasOnProgress: false }]);
+    expect(state.downloadCalls).toEqual([{ url: ENTRY.url, idempotent: true, hasOnProgress: false, hasSignal: false }]);
     expect(result).not.toBeNull();
     expect(result?.filePath.startsWith('file://')).toBe(false);
     expect(result?.filePath).toContain('kilter-8-2026-06-01T00-00-00-000Z.db');
@@ -265,7 +325,7 @@ describe('downloadArtifact', () => {
     // exactly — not merely discard the callback's output.
     await mobileSnapshotSource.downloadArtifact(ENTRY);
 
-    expect(state.downloadCalls).toEqual([{ url: ENTRY.url, idempotent: true, hasOnProgress: false }]);
+    expect(state.downloadCalls).toEqual([{ url: ENTRY.url, idempotent: true, hasOnProgress: false, hasSignal: false }]);
   });
 
   it('forwards platform byte frames and maps a non-positive totalBytes to null', async () => {
@@ -280,7 +340,7 @@ describe('downloadArtifact', () => {
 
     await mobileSnapshotSource.downloadArtifact(ENTRY, { onProgress: (frame) => frames.push(frame) });
 
-    expect(state.downloadCalls).toEqual([{ url: ENTRY.url, idempotent: true, hasOnProgress: true }]);
+    expect(state.downloadCalls).toEqual([{ url: ENTRY.url, idempotent: true, hasOnProgress: true, hasSignal: false }]);
     expect(frames).toEqual([
       { bytesWritten: 1_000, totalBytes: null },
       { bytesWritten: 2_000, totalBytes: null },
@@ -412,8 +472,152 @@ describe('downloadArtifact', () => {
 });
 
 describe('deleteArtifact', () => {
-  it('deletes the file at the given plain path, best-effort', async () => {
+  it('deletes the file AND its completeness sidecar at the given plain path, best-effort', async () => {
+    seedRetainedArtifact('file:///cache/board-snapshots/kilter-8.db', ENTRY.builtAt);
+
     await mobileSnapshotSource.deleteArtifact('/cache/board-snapshots/kilter-8.db');
-    expect(state.deletedUris).toEqual(['file:///cache/board-snapshots/kilter-8.db']);
+
+    expect(new Set(state.deletedUris)).toEqual(
+      new Set(['file:///cache/board-snapshots/kilter-8.db', 'file:///cache/board-snapshots/kilter-8.db.complete']),
+    );
+  });
+
+  it('is a no-op when the file is already gone', async () => {
+    await mobileSnapshotSource.deleteArtifact('/cache/board-snapshots/kilter-8.db');
+    expect(state.deletedUris).toEqual([]);
+  });
+});
+
+// Artifact retention (issue #4310). Before this, `runBootstrapPhase` deleted
+// every downloaded artifact in a `finally`, so locking the phone mid-cycle threw
+// away a 103 MB Kilter download and started it again on the next wake.
+describe('retention and reuse', () => {
+  it('writes a completeness sidecar naming the artifact build only after the gzip sniff passes', async () => {
+    await mobileSnapshotSource.downloadArtifact(ENTRY);
+
+    expect(state.files.get(SIDECAR_URI)?.text).toBe(ENTRY.builtAt);
+  });
+
+  it('does NOT write a sidecar when the body arrived still gzip-compressed', async () => {
+    state.downloadBytes = GZIP_BYTES;
+
+    await expect(mobileSnapshotSource.downloadArtifact(ENTRY)).rejects.toThrow(SnapshotPermanentMissError);
+
+    expect(state.files.has(SIDECAR_URI)).toBe(false);
+  });
+
+  it('reuses a retained artifact for the same build with no network call at all', async () => {
+    seedRetainedArtifact(ARTIFACT_URI, ENTRY.builtAt);
+
+    const result = await mobileSnapshotSource.downloadArtifact(ENTRY);
+
+    expect(state.downloadCalls).toHaveLength(0);
+    expect(result?.reused).toBe(true);
+    expect(result?.filePath).toBe(ARTIFACT_URI.replace('file://', ''));
+  });
+
+  it('re-downloads a retained file that has NO sidecar — a half-written body is never reused', async () => {
+    state.files.set(ARTIFACT_URI, { bytes: PLAIN_SQLITE_BYTES, text: null, size: 12, lastModified: 1 });
+
+    const result = await mobileSnapshotSource.downloadArtifact(ENTRY);
+
+    expect(state.downloadCalls).toHaveLength(1);
+    expect(result?.reused).toBeUndefined();
+  });
+
+  it('re-downloads when the sidecar names a DIFFERENT build than the manifest asks for', async () => {
+    seedRetainedArtifact(ARTIFACT_URI, '2026-05-01T00:00:00.000Z');
+
+    await mobileSnapshotSource.downloadArtifact(ENTRY);
+
+    expect(state.downloadCalls).toHaveLength(1);
+  });
+
+  it('sweeps a superseded build of the same board+layout once the new one lands', async () => {
+    const supersededUri = 'file://cache-root/board-snapshots/kilter-8-2026-05-01T00-00-00-000Z.db';
+    seedRetainedArtifact(supersededUri, '2026-05-01T00:00:00.000Z');
+
+    await mobileSnapshotSource.downloadArtifact(ENTRY);
+
+    expect(state.files.has(supersededUri)).toBe(false);
+    expect(state.files.has(ARTIFACT_URI)).toBe(true);
+  });
+
+  it('keeps a DIFFERENT layout’s retained artifact — retention is per (board, layout)', async () => {
+    const otherLayoutUri = 'file://cache-root/board-snapshots/tension-9-2026-05-01T00-00-00-000Z.db';
+    seedRetainedArtifact(otherLayoutUri, '2026-05-01T00:00:00.000Z');
+
+    await mobileSnapshotSource.downloadArtifact(ENTRY);
+
+    expect(state.files.has(otherLayoutUri)).toBe(true);
+  });
+
+  it('evicts oldest-first once retained artifacts exceed the byte budget', async () => {
+    const oldest = 'file://cache-root/board-snapshots/tension-9-2026-01-01T00-00-00-000Z.db';
+    const newer = 'file://cache-root/board-snapshots/moonboard-2-2026-04-01T00-00-00-000Z.db';
+    seedRetainedArtifact(oldest, '2026-01-01T00:00:00.000Z', 300 * 1024 * 1024);
+    seedRetainedArtifact(newer, '2026-04-01T00:00:00.000Z', 300 * 1024 * 1024);
+    state.files.get(oldest)!.lastModified = 1;
+    state.files.get(newer)!.lastModified = 2;
+
+    await mobileSnapshotSource.downloadArtifact(ENTRY);
+
+    expect(state.files.has(oldest)).toBe(false);
+    expect(state.files.has(newer)).toBe(true);
+  });
+
+  it('counts the artifact it just downloaded against the budget', async () => {
+    // A survivor that exactly fills the 400 MB budget leaves no room for the
+    // file this cycle downloaded — which is retained too whenever the cycle is
+    // cut short before the import. Excluding it would let the directory settle
+    // at budget-plus-one-artifact.
+    const filling = 'file://cache-root/board-snapshots/tension-9-2026-01-01T00-00-00-000Z.db';
+    seedRetainedArtifact(filling, '2026-01-01T00:00:00.000Z', 400 * 1024 * 1024);
+
+    await mobileSnapshotSource.downloadArtifact(ENTRY);
+
+    expect(state.files.has(filling)).toBe(false);
+    expect(state.files.has(ARTIFACT_URI)).toBe(true);
+  });
+
+  it('retains nothing but the fresh artifact when free space is under the floor', async () => {
+    const otherLayoutUri = 'file://cache-root/board-snapshots/tension-9-2026-05-01T00-00-00-000Z.db';
+    seedRetainedArtifact(otherLayoutUri, '2026-05-01T00:00:00.000Z');
+    // Above the 6x download requirement for a 1 MB entry, below the 1.5 GB
+    // retention floor.
+    state.availableDiskSpace = 900 * 1024 * 1024;
+
+    await mobileSnapshotSource.downloadArtifact(ENTRY);
+
+    expect(state.files.has(otherLayoutUri)).toBe(false);
+    expect(state.files.has(ARTIFACT_URI)).toBe(true);
+  });
+
+  it('passes the caller’s AbortSignal through so a torn-down cycle cancels the transfer', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(mobileSnapshotSource.downloadArtifact(ENTRY, { signal: controller.signal })).rejects.toThrow(
+      /downloadFileAsync failed/,
+    );
+    expect(state.downloadCalls[0].hasSignal).toBe(true);
+  });
+
+  it('releaseArtifact deletes an IMPORTED artifact — its rows are in the database now', async () => {
+    seedRetainedArtifact(ARTIFACT_URI, ENTRY.builtAt);
+
+    await mobileSnapshotSource.releaseArtifact?.(ARTIFACT_URI.replace('file://', ''), { imported: true });
+
+    expect(state.files.has(ARTIFACT_URI)).toBe(false);
+    expect(state.files.has(SIDECAR_URI)).toBe(false);
+  });
+
+  it('releaseArtifact KEEPS an unimported artifact so the next cycle reuses it', async () => {
+    seedRetainedArtifact(ARTIFACT_URI, ENTRY.builtAt);
+
+    await mobileSnapshotSource.releaseArtifact?.(ARTIFACT_URI.replace('file://', ''), { imported: false });
+
+    expect(state.files.has(ARTIFACT_URI)).toBe(true);
+    expect(state.files.has(SIDECAR_URI)).toBe(true);
   });
 });

@@ -63,6 +63,39 @@ const EPOCH_WATERMARK: SyncCheckpoint = { updatedAt: '1970-01-01T00:00:00.000Z',
 // keeps the string-built SQL provably injection-free — same guard the export uses.
 const SAFE_IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
 
+/** Byte progress for one artifact download, as the transport observes it. */
+export type SnapshotDownloadProgress = {
+  bytesWritten: number;
+  /** `null` when the server sent no Content-Length — never a negative sentinel. */
+  totalBytes: number | null;
+};
+
+/** Per-download seams the engine may pass; every one is optional for a source. */
+export type SnapshotDownloadOptions = {
+  onProgress?: (progress: SnapshotDownloadProgress) => void;
+  /**
+   * Aborted when the cycle is torn down mid-transfer (sign-out, local purge, or
+   * the app going to background). Without it the native transfer keeps running
+   * — and keeps burning a metered connection — long after the engine stopped
+   * caring about the result.
+   */
+  signal?: AbortSignal;
+};
+
+/** What a source hands back for one downloaded (or retained) artifact. */
+export type SnapshotArtifactHandle = {
+  filePath: string;
+  /**
+   * True when the file was already on disk from an earlier cycle and no bytes
+   * were fetched. The engine treats an import failure on a REUSED artifact
+   * differently: it deletes the file and spends NO retry budget, because a
+   * corrupt retained file would otherwise spend the whole structural-artifact
+   * budget against the same bytes and strand the scope on the paged crawl
+   * forever (issue #4313's failure mode).
+   */
+  reused?: boolean;
+};
+
 /**
  * Platform-injected snapshot I/O. The adapter (mobile: Phase 4) owns the network
  * and gzip; the engine only consumes what these return.
@@ -98,10 +131,22 @@ export interface SnapshotSource {
    */
   downloadArtifact(
     entry: SnapshotManifestEntry,
-    options?: { onProgress?: (progress: { bytesWritten: number; totalBytes: number | null }) => void },
-  ): Promise<{ filePath: string } | null>;
+    options?: SnapshotDownloadOptions,
+  ): Promise<SnapshotArtifactHandle | null>;
   /** Delete a downloaded artifact once the run is done with it. Best-effort. */
   deleteArtifact(filePath: string): Promise<void>;
+  /**
+   * Hand an artifact back at the end of the bootstrap phase. `imported: false`
+   * means the phase never got to use it — a backgrounded cycle, a wipe, an
+   * aborted download — and a source that supports retention should KEEP the
+   * file so the next cycle can reuse it instead of re-fetching 100 MB (issue
+   * #4310: `runBootstrapPhase` used to delete every artifact unconditionally,
+   * so locking the phone mid-cycle cost the whole download).
+   *
+   * OPTIONAL, and the engine falls back to `deleteArtifact` when it is absent,
+   * so a source written against the shipped contract behaves exactly as before.
+   */
+  releaseArtifact?(filePath: string, options: { imported: boolean }): Promise<void>;
 }
 
 /** Where a bootstrap failed, for telemetry. */
@@ -344,6 +389,45 @@ export async function isBootstrapDone(db: SqlExecutor, scopeKey: string): Promis
     `${BOOTSTRAP_DONE_PREFIX}${scopeKey}`,
   ]);
   return row !== null;
+}
+
+/**
+ * The artifact build stamp whose REUSED import failure already took this
+ * scope's one free (uncounted) round — see the `download.reused` arm in
+ * `runBootstrapPhase`.
+ *
+ * That arm's whole safety argument is "the file is deleted, so the next cycle
+ * downloads fresh and the free round cannot repeat". Deletion is best-effort on
+ * every platform (mobile's `safeDeleteFile` swallows its errors by design), and
+ * a file that survives with its completeness sidecar is handed straight back as
+ * `reused: true` next cycle — the same bad bytes, another free round, forever,
+ * with a fresh scope skipping its paged pull each time. This marker is what
+ * makes the SECOND failure on the same build spend the structural budget like
+ * any other on-disk failure, so a scope can always settle. Keyed by `builtAt`:
+ * tonight's rebuilt artifact is a different bet and gets its own free round.
+ *
+ * Package-internal, like BOOTSTRAP_DONE_PREFIX — scope-teardown.ts clears it
+ * alongside the scope's other markers.
+ */
+export const REUSED_IMPORT_FAILED_PREFIX = 'reused-import-failed:';
+
+/** The build stamp that already took this scope's free reused-import round, if any. */
+export async function getReusedImportFailure(db: SqlExecutor, scopeKey: string): Promise<string | null> {
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
+    `${REUSED_IMPORT_FAILED_PREFIX}${scopeKey}`,
+  ]);
+  return row?.value ?? null;
+}
+
+export async function recordReusedImportFailure(db: SqlExecutor, scopeKey: string, builtAt: string): Promise<void> {
+  await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+    `${REUSED_IMPORT_FAILED_PREFIX}${scopeKey}`,
+    builtAt,
+  ]);
+}
+
+export async function clearReusedImportFailure(db: SqlExecutor, scopeKey: string): Promise<void> {
+  await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [`${REUSED_IMPORT_FAILED_PREFIX}${scopeKey}`]);
 }
 
 /** Whether this scope's snapshot import was a heal over an existing partial crawl. */

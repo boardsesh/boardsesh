@@ -657,6 +657,15 @@ export default defineConfig({
         command: 'vp test run --project web',
         cache: false,
       },
+      // The offline-sync engine suites live in their own Vitest project
+      // (packages/shared/offline-sync/vite.config.ts, name: 'offline-sync').
+      // Neither `test:mobile` nor the backend project pulls them in, so a
+      // snapshot-bootstrap change validated with only those two runs is a false
+      // green — hence its own alias next to the others.
+      'test:offline-sync': {
+        command: 'vp test run --project offline-sync',
+        cache: false,
+      },
 
       // --- Mobile validation ---
       'mobile:web-runtime:install': {

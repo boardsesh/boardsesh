@@ -2,7 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { cleanup, renderHook } from '@testing-library/react';
-import type { BootstrapMetadataChangedInfo, ScopeDownloadCompleteInfo } from '@boardsesh/offline-sync';
+import {
+  emptyScopeDownloadPhases,
+  type BootstrapMetadataChangedInfo,
+  type ScopeDownloadCompleteInfo,
+} from '@boardsesh/offline-sync';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 const fixtures = vi.hoisted(() => ({
@@ -89,8 +93,18 @@ describe('useBoardDownloads', () => {
 
     syncOptions?.onBootstrapMetadataChanged?.({ scopeKey: 'kilter:1:10' });
     syncOptions?.onBootstrapMetadataChanged?.({ scopeKey: 'tension:2:11' });
-    syncOptions?.onScopeDownloadComplete?.({ scopeKey: 'kilter:1:10', method: 'snapshot', durationMs: 12 });
-    syncOptions?.onScopeDownloadComplete?.({ scopeKey: 'tension:2:11', method: 'paged', durationMs: 34 });
+    syncOptions?.onScopeDownloadComplete?.({
+      scopeKey: 'kilter:1:10',
+      method: 'snapshot',
+      durationMs: 12,
+      phases: emptyScopeDownloadPhases(),
+    });
+    syncOptions?.onScopeDownloadComplete?.({
+      scopeKey: 'tension:2:11',
+      method: 'paged',
+      durationMs: 34,
+      phases: emptyScopeDownloadPhases(),
+    });
 
     expect(getSyncStatusSnapshot().bootstrapMetadataRevision).toBe(2);
     expect(getSyncStatusSnapshot().scopeCompletionRevision).toBe(2);

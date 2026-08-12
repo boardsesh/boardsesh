@@ -97,6 +97,32 @@ import type {
   SyncOptions,
 } from '@boardsesh/offline-sync';
 
+// The engine package is vi.mock'd above, so its `emptyScopeDownloadPhases`
+// helper is unreachable here — this literal stands in for it.
+const NO_PHASES = {
+  manifestMs: 0,
+  downloadMs: 0,
+  importMs: 0,
+  artifactBytes: 0,
+  artifactReused: false,
+  climbsPullMs: 0,
+  statsPullMs: 0,
+  gradesPullMs: 0,
+  gradesRows: 0,
+};
+
+// What the adapter actually emits from a zeroed breakdown: download/import/bytes
+// ride the per-scope timings on ScopeDownloadCompleteInfo (absent when this cycle
+// did not do the import), so the phase copies of them are not re-emitted.
+const NO_PHASE_PROPS = {
+  manifestMs: 0,
+  artifactReused: false,
+  climbsPullMs: 0,
+  statsPullMs: 0,
+  gradesPullMs: 0,
+  gradesRows: 0,
+};
+
 const db = {} as OfflineDatabase;
 const queryClient = { invalidateQueries: vi.fn() } as unknown as import('@tanstack/react-query').QueryClient;
 const graphqlFetch = vi.fn() as unknown as import('@boardsesh/offline-sync').GraphQLFetch;
@@ -471,12 +497,24 @@ describe('snapshot-bootstrap bindings', () => {
       async () => {},
     );
     const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
-    options.onScopeDownloadComplete?.({ scopeKey: 'kilter:1:5', method: 'snapshot', durationMs: 1234 });
+    options.onScopeDownloadComplete?.({
+      scopeKey: 'kilter:1:5',
+      method: 'snapshot',
+      durationMs: 1234,
+      phases: { ...NO_PHASES, downloadMs: 900, importMs: 200, gradesPullMs: 134, gradesRows: 500, artifactBytes: 42 },
+    });
 
+    // The phase split rides on the SAME event rather than a new one (#4310).
     expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadCompleted, {
       scopeKey: 'kilter:1:5',
       method: 'snapshot',
       durationMs: 1234,
+      manifestMs: 0,
+      artifactReused: false,
+      climbsPullMs: 0,
+      statsPullMs: 0,
+      gradesPullMs: 134,
+      gradesRows: 500,
       offlineEngineEnabled: false,
     });
   });
@@ -492,13 +530,16 @@ describe('snapshot-bootstrap bindings', () => {
       { onScopeDownloadComplete },
     );
     const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
-    const info = { scopeKey: 'kilter:1:5', method: 'paged' as const, durationMs: 500 };
+    const info = { scopeKey: 'kilter:1:5', method: 'paged' as const, durationMs: 500, phases: NO_PHASES };
 
     options.onScopeDownloadComplete?.(info);
 
     expect(onScopeDownloadComplete).toHaveBeenCalledWith(info);
     expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadCompleted, {
-      ...info,
+      scopeKey: 'kilter:1:5',
+      method: 'paged',
+      durationMs: 500,
+      ...NO_PHASE_PROPS,
       offlineEngineEnabled: false,
     });
   });
@@ -764,6 +805,7 @@ describe('snapshot-bootstrap bindings', () => {
       rowCount: 40_000,
       downloadMs: 800,
       importMs: 150,
+      phases: NO_PHASES,
     });
     expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadCompleted, {
       scopeKey: 'kilter:1:5',
@@ -773,17 +815,24 @@ describe('snapshot-bootstrap bindings', () => {
       rowCount: 40_000,
       downloadMs: 800,
       importMs: 150,
+      ...NO_PHASE_PROPS,
       offlineEngineEnabled: false,
     });
 
     // A cross-cycle completion: absent, never zero — a 0 would read as a real
     // measurement of a download that took no time.
     trackMock.mockClear();
-    options.onScopeDownloadComplete?.({ scopeKey: 'kilter:1:6', method: 'snapshot', durationMs: 2000 });
+    options.onScopeDownloadComplete?.({
+      scopeKey: 'kilter:1:6',
+      method: 'snapshot',
+      durationMs: 2000,
+      phases: NO_PHASES,
+    });
     expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadCompleted, {
       scopeKey: 'kilter:1:6',
       method: 'snapshot',
       durationMs: 2000,
+      ...NO_PHASE_PROPS,
       offlineEngineEnabled: false,
     });
   });
@@ -803,11 +852,12 @@ describe('snapshot-bootstrap bindings', () => {
     expect(customBootstrapError).toHaveBeenCalled();
     expect(reportHandledError).not.toHaveBeenCalled();
 
-    options.onScopeDownloadComplete?.({ scopeKey: 'kilter:1:5', method: 'paged', durationMs: 500 });
+    options.onScopeDownloadComplete?.({ scopeKey: 'kilter:1:5', method: 'paged', durationMs: 500, phases: NO_PHASES });
     expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadCompleted, {
       scopeKey: 'kilter:1:5',
       method: 'paged',
       durationMs: 500,
+      ...NO_PHASE_PROPS,
       offlineEngineEnabled: false,
     });
 
