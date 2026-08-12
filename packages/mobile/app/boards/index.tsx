@@ -258,7 +258,7 @@ export default function BoardSelection() {
             scopeKey: offlineBoardKeyForBoard(board),
             downloadedBoardCount: (downloadedScopeKeys ?? []).length,
           },
-          false,
+          'download',
         );
       });
     },

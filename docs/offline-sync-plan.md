@@ -1163,7 +1163,7 @@ Supporting tiles, in the order they answer questions about it:
 
 4.4% of monthly actives had downloaded a board when the epic was opened, and 82%
 of those stopped at one. The engine was not the problem — nothing in the app ever
-*suggested* a download. Before this, offline was reachable from exactly two
+_suggested_ a download. Before this, offline was reachable from exactly two
 places: the per-row toggle on My Boards and a switch buried in More.
 
 ### Four surfaces, two kinds
@@ -1175,20 +1175,20 @@ anyway, so they carry the full frequency machinery: a per-surface cooldown, a
 lifetime cap, a cross-surface cooldown so two prompts can't stack, and a quiet
 period after any acceptance.
 
-| Surface        | Where                              | Caps                                          |
-| -------------- | ---------------------------------- | --------------------------------------------- |
-| `post_session` | `app/(tabs)/record/summary.tsx`    | 14d cooldown, max 3 lifetime, 72h global, 30d after accept |
+| Surface        | Where                           | Caps                                                       |
+| -------------- | ------------------------------- | ---------------------------------------------------------- |
+| `post_session` | `app/(tabs)/record/summary.tsx` | 14d cooldown, max 3 lifetime, 72h global, 30d after accept |
 
 **Affordances don't.** They live inside a screen the user chose to open, usually
 in place of a dead end. Capping them would mean the empty state this set out to
 fix reverts to a dead end — possibly the day after an unrelated prompt. They are
 bounded by eligibility and dismiss-forever only.
 
-| Surface       | Where                                                        |
-| ------------- | ------------------------------------------------------------ |
-| `no_catalog`  | boards-picker `isLocalOnly` empty state + a new climbs branch |
-| `board_card`  | download glyph on the Your Boards carousel                   |
-| `whats_new`   | curated card pinned above the generated changelog timeline    |
+| Surface      | Where                                                         |
+| ------------ | ------------------------------------------------------------- |
+| `no_catalog` | boards-picker `isLocalOnly` empty state + a new climbs branch |
+| `board_card` | download glyph on the Your Boards carousel                    |
+| `whats_new`  | curated card pinned above the generated changelog timeline    |
 
 ### Arming is not downloading
 

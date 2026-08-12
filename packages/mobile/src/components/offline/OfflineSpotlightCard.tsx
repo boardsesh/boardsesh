@@ -33,7 +33,10 @@ export function OfflineSpotlightCard({ style }: OfflineSpotlightCardProps) {
   // "here's a feature you may not know about" card, not a confirmation, and the
   // per-board toggle there is where the size quote lives.
   const handleOpen = useCallback(() => {
-    nudge.accept();
+    // A handoff, not an arm: nothing is queued here, the user is sent to the
+    // screen where the size quote and the real download live. The drop-off that
+    // leaves behind is a real one, so it counts as an ordinary accept.
+    nudge.accept('handoff');
     router.push('/boards/manage');
   }, [nudge, router]);
 
