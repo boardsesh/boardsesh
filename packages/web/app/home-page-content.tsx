@@ -448,8 +448,14 @@ export default function HomePageContent({
         >
           {/* i18n-ignore-next-line -- brand name, not translated */}
           <Image src="/brand/boardsesh-mark.png" width={130} height={130} alt="Boardsesh" priority />
+          {/* `variant` keeps the visual size; `component` fixes the semantics.
+              MUI maps variant="h5" to a literal <h5>, so before this the
+              homepage server-rendered no <h1> at all — the highest-traffic
+              indexable page on the site had no top-level heading for a crawler
+              to read. Visual output is unchanged. */}
           <Typography
             variant="h5"
+            component="h1"
             fontWeight={themeTokens.typography.fontWeight.bold}
             sx={{ color: 'var(--bs-text-brand-primary)' }}
           >
