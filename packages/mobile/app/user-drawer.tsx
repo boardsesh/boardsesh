@@ -18,6 +18,7 @@ import { latestEntryDate } from '../src/lib/changelog';
 import { getLastSeenChangelogDate, hasUnseenChangelog } from '../src/lib/changelog-seen';
 import { hasUnseenOfflineSpotlight } from '../src/lib/offline-nudges/spotlight-unseen';
 import { useOfflineDownloadsEnabled, useOfflineNudgesEnabled } from '../src/providers/feature-flags-provider';
+import { useActiveBoard } from '../src/lib/graphql/use-active-board';
 
 const DRAWER_MAX_WIDTH = 320;
 const DRAWER_SCREEN_FRACTION = 0.86;
@@ -57,10 +58,13 @@ export default function UserDrawerScreen() {
   // ONLY when that card can actually render. Both flags gate the card itself, so
   // without this the pill would light for every user with nothing downloaded
   // while the nudge flag sits at 0%, and opening What's New would never clear it
-  // (the card never renders, so its "shown" marker is never written).
+  // (the card never renders, so its "shown" marker is never written). The active
+  // board is the same kind of precondition: the card names a board, so someone
+  // who has never picked one would carry the pill forever.
   const offlineEngineEnabled = useOfflineDownloadsEnabled();
   const offlineNudgesEnabled = useOfflineNudgesEnabled();
-  const spotlightReachable = offlineEngineEnabled && offlineNudgesEnabled;
+  const { data: activeBoard } = useActiveBoard();
+  const spotlightReachable = offlineEngineEnabled && offlineNudgesEnabled && !!activeBoard;
   const [changelogUnseen, setChangelogUnseen] = useState(false);
   useEffect(() => {
     let active = true;

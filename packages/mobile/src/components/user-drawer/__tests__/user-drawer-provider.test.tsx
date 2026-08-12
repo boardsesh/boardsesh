@@ -99,6 +99,11 @@ vi.mock('../../../providers/feature-flags-provider', () => ({
   useOfflineDownloadsEnabled: () => true,
   useOfflineNudgesEnabled: () => true,
 }));
+// AsyncStorage-backed; the spotlight names a board, so the pill asks whether
+// there is one.
+vi.mock('../../../lib/graphql/use-active-board', () => ({
+  useActiveBoard: () => ({ data: { uuid: 'board-1' } }),
+}));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: { id: 'user-1', displayName: 'Alex', email: 'alex@example.com', avatarUrl: null } }),
 }));
