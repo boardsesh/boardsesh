@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gyms Directory Wireframe</title>
+<style>
+  /* ============================================================
+     Velvet Send (web, light scheme) — tokens lifted from
+     docs/ai-design-guidelines.md + @boardsesh/velvet-tokens.
+     Single light theme by design (wireframe).
+     ============================================================ */
+  :root {
+    --bg: #F4F1FB;                       /* screen base (light) */
+    --surface: #FFFFFF;                  /* cards, panels */
+    --label: #16111F;                    /* primary text */
+    --secondary-label: #5B5563;          /* secondary text */
+    --tertiary-label: #8E8898;           /* tertiary text */
+    --separator: rgba(60, 55, 75, 0.18); /* hairlines */
+    --fill: rgba(109, 40, 217, 0.10);    /* faint violet track */
+    --primary: #6D28D9;                  /* brand foreground */
+    --primary-fill: #6D28D9;             /* brand filled surface */
+    --on-primary: #FFFFFF;
+    --accent: #FF8A3D;                   /* amber spark, fill-only, dark text */
+    --success: #047857;
+    --warning: #B45309;
+    --radius-card: 12px;                 /* lg */
+    --radius-btn: 10px;
+    --radius-full: 9999px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--label);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+    font-size: 16px;
+  }
+  a { color: var(--primary); }
+  .container { max-width: 1280px; margin: 0 auto; padding: 0 16px; }
+
+  /* ---- wireframe chrome (meta UI, not product UI) ---- */
+  .wf-banner {
+    background: #16111F; color: #F5F2FB;
+    font-size: 13px; padding: 8px 16px; text-align: center;
+  }
+  .wf-banner strong { color: #FF8A3D; }
+  .wf-tag {
+    display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--warning);
+    border: 1px dashed var(--warning); border-radius: 4px;
+    padding: 1px 6px; vertical-align: middle;
+  }
+  .note-ref {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; padding: 0 3px;
+    border-radius: var(--radius-full);
+    background: var(--primary-fill); color: var(--on-primary);
+    font-size: 11px; font-weight: 700; text-decoration: none;
+    vertical-align: super; line-height: 1; margin-left: 4px;
+  }
+  .note-ref:hover { background: #5B21B6; }
+
+  /* ---- simplified global header placeholder ---- */
+  .global-header {
+    background: var(--surface); border-bottom: 1px solid var(--separator);
+    padding: 12px 0;
+  }
+  .global-header .container { display: flex; align-items: center; gap: 12px; }
+  .brand-mark {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: linear-gradient(135deg, #6D28D9, #9C27B0);
+    flex-shrink: 0;
+  }
+  .brand-name { font-weight: 700; font-size: 17px; }
+  .header-hint { margin-left: auto; font-size: 12px; color: var(--tertiary-label); }
+
+  /* ---- breadcrumbs ---- */
+  .breadcrumbs { font-size: 14px; color: var(--secondary-label); padding: 16px 0 0; }
+  .breadcrumbs a { text-decoration: none; }
+  .breadcrumbs a:hover { text-decoration: underline; }
+  .breadcrumbs .sep { margin: 0 6px; color: var(--tertiary-label); }
+
+  /* ---- SEO header block ---- */
+  .seo-header { padding: 16px 0 8px; max-width: 720px; }
+  .seo-header h1 { font-size: 28px; font-weight: 700; line-height: 1.25; letter-spacing: -0.01em; }
+  .seo-header p { margin-top: 10px; color: var(--secondary-label); font-size: 16px; }
+  .seo-header p.claim-line { font-size: 15px; }
+
+  /* ---- search row ---- */
+  .search-row { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+  .search-input {
+    flex: 1 1 280px; display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--separator);
+    border-radius: var(--radius-btn); padding: 12px 14px;
+    color: var(--tertiary-label); font-size: 16px; min-height: 48px;
+  }
+  .search-input .glyph { color: var(--tertiary-label); flex-shrink: 0; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; justify-content: center;
+    border-radius: var(--radius-btn); border: none; cursor: pointer;
+    font-size: 15px; font-weight: 600; min-height: 48px; padding: 0 18px;
+    font-family: inherit;
+  }
+  .btn-primary { background: var(--primary-fill); color: var(--on-primary); }
+  .btn-primary:hover { background: #5B21B6; }
+  .btn-quiet {
+    background: var(--surface); color: var(--primary);
+    border: 1px solid var(--separator);
+  }
+  .geo-hint { flex-basis: 100%; font-size: 13px; color: var(--tertiary-label); margin-top: -2px; }
+
+  /* ---- facet chips ---- */
+  .facet-row {
+    display: flex; gap: 8px; margin-top: 14px;
+    overflow-x: auto; padding-bottom: 6px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .chip {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px;
+    border-radius: var(--radius-full); padding: 8px 14px;
+    background: var(--surface); border: 1px solid var(--separator);
+    font-size: 14px; font-weight: 600; color: var(--label);
+    white-space: nowrap; cursor: pointer;
+  }
+  .chip .count { color: var(--tertiary-label); font-weight: 400; }
+  .chip.selected {
+    background: var(--fill); border-color: var(--primary); color: var(--primary);
+  }
+  .chip.selected .count { color: var(--primary); }
+
+  /* ---- results meta ---- */
+  .results-meta {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 12px; margin: 20px 0 12px; flex-wrap: wrap;
+  }
+  .results-meta h2 { font-size: 17px; font-weight: 600; }
+  .results-meta .sort { font-size: 14px; color: var(--secondary-label); }
+  .results-meta .sort a { text-decoration: none; font-weight: 600; }
+
+  /* ---- list + map hybrid ---- */
+  .directory-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
+  @media (min-width: 960px) {
+    .directory-grid { grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); }
+    .map-panel { display: block !important; position: sticky; top: 16px; }
+    .map-toggle { display: none; }
+  }
+
+  .gym-list { display: flex; flex-direction: column; gap: 12px; }
+
+  /* ---- gym card ---- */
+  .gym-card {
+    background: var(--surface); border: 1px solid var(--separator);
+    border-radius: var(--radius-card); padding: 16px 18px;
+  }
+  .gym-card .card-head { display: flex; align-items: flex-start; gap: 10px; }
+  .gym-card h3 { font-size: 18px; font-weight: 700; line-height: 1.3; flex: 1; min-width: 0; }
+  .gym-card h3 a { text-decoration: none; color: var(--label); }
+  .gym-card h3 a:hover { color: var(--primary); text-decoration: underline; }
+  .badge-claimed {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px;
+    background: rgba(4, 120, 87, 0.10); color: var(--success);
+    border-radius: var(--radius-full); font-size: 12px; font-weight: 700;
+    padding: 3px 10px; margin-top: 2px;
+  }
+  .loc-line {
+    display: flex; align-items: center; gap: 6px; margin-top: 6px;
+    font-size: 14px; color: var(--secondary-label);
+  }
+  .loc-line.no-pin { color: var(--tertiary-label); font-style: italic; }
+  .pin-glyph { flex-shrink: 0; }
+  .board-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .board-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--fill); color: var(--primary);
+    border-radius: 6px; font-size: 13px; font-weight: 600;
+    padding: 4px 9px;
+  }
+  .board-chip .angle { font-weight: 400; opacity: 0.85; }
+  .claim-prompt {
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--separator);
+    font-size: 14px; color: var(--secondary-label);
+  }
+  .claim-prompt a { font-weight: 600; text-decoration: none; }
+  .claim-prompt a:hover { text-decoration: underline; }
+  .gym-card .desc { margin-top: 8px; font-size: 14px; color: var(--secondary-label); }
+  .gym-card .hours { margin-top: 6px; font-size: 13px; color: var(--tertiary-label); }
+  .logo-dot {
+    width: 40px; height: 40px; border-radius: 8px; flex-shrink: 0;
+    background: var(--fill); color: var(--primary);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 16px;
+  }
+
+  /* ---- map panel ---- */
+  .map-toggle { width: 100%; margin-bottom: 4px; }
+  .map-panel { display: none; }
+  /* Mobile: toggled-open map sits above the list so it appears next to the
+     "Hide map" button instead of below the fold. Desktop grid ignores order. */
+  @media (max-width: 959.98px) { .map-panel { order: -1; } .map-box { height: 300px; } }
+  .map-box {
+    position: relative; height: 420px; border-radius: var(--radius-card);
+    border: 1px solid var(--separator); overflow: hidden;
+    background:
+      linear-gradient(rgba(109,40,217,0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(109,40,217,0.05) 1px, transparent 1px),
+      linear-gradient(180deg, #EFEAF9, #E6E0F4);
+    background-size: 40px 40px, 40px 40px, 100% 100%;
+  }
+  @media (min-width: 960px) { .map-box { height: min(640px, calc(100vh - 96px)); } }
+  .map-box .map-label {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--tertiary-label); font-size: 14px; font-weight: 600; text-align: center; padding: 0 24px;
+  }
+  .map-pin {
+    position: absolute; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--primary-fill); border: 3px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  }
+  .map-cluster {
+    position: absolute; min-width: 30px; height: 30px; border-radius: var(--radius-full);
+    background: var(--primary-fill); color: var(--on-primary);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; border: 3px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4); padding: 0 4px;
+  }
+  .map-coverage-pill {
+    position: absolute; left: 10px; right: 10px; bottom: 10px;
+    background: rgba(22, 17, 31, 0.85); color: #F5F2FB;
+    border-radius: 8px; font-size: 12px; padding: 8px 10px; line-height: 1.4;
+  }
+
+  /* ---- pagination ---- */
+  .pagination {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    margin: 28px 0 8px; flex-wrap: wrap;
+  }
+  .page-link {
+    min-width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-btn); border: 1px solid var(--separator);
+    background: var(--surface); color: var(--label); font-size: 14px; font-weight: 600;
+    text-decoration: none; padding: 0 10px;
+  }
+  .page-link.current { background: var(--primary-fill); color: var(--on-primary); border-color: var(--primary-fill); }
+  .page-link.disabled { color: var(--tertiary-label); pointer-events: none; }
+  .page-ellipsis { color: var(--tertiary-label); padding: 0 4px; }
+
+  /* ---- state demos ---- */
+  .state-demos { margin-top: 40px; }
+  .state-demos > h2 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .state-demos > p { color: var(--secondary-label); font-size: 14px; margin-bottom: 16px; }
+  .demo-block {
+    border: 2px dashed var(--separator); border-radius: var(--radius-card);
+    padding: 16px; margin-bottom: 20px; background: rgba(255,255,255,0.5);
+  }
+  .demo-block > .demo-title { font-size: 14px; font-weight: 700; margin-bottom: 12px; }
+  .demo-compare { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  @media (min-width: 720px) { .demo-compare { grid-template-columns: 1fr 1fr; } }
+
+  .empty-state {
+    background: var(--surface); border: 1px solid var(--separator);
+    border-radius: var(--radius-card); padding: 40px 24px; text-align: center;
+  }
+  .empty-state .empty-glyph { font-size: 34px; margin-bottom: 8px; }
+  .empty-state h3 { font-size: 18px; font-weight: 700; }
+  .empty-state p { color: var(--secondary-label); font-size: 15px; margin: 8px auto 16px; max-width: 440px; }
+  .empty-state .actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+
+  /* ---- footer ---- */
+  .page-footer {
+    margin-top: 48px; border-top: 1px solid var(--separator);
+    padding: 28px 0 40px; font-size: 14px; color: var(--secondary-label);
+  }
+  .footer-links { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 16px; }
+  .footer-links a { text-decoration: none; font-weight: 600; }
+  .footer-links a:hover { text-decoration: underline; }
+  .trademark-line { font-size: 13px; color: var(--tertiary-label); max-width: 640px; }
+
+  /* ---- annotations ---- */
+  .annotations { margin-top: 40px; background: #16111F; color: #F5F2FB; border-radius: var(--radius-card); padding: 24px; }
+  .annotations h2 { font-size: 20px; margin-bottom: 4px; }
+  .annotations > p { color: #A9A2B6; font-size: 14px; margin-bottom: 20px; }
+  .annotation { display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid rgba(180,168,205,0.2); }
+  .annotation .num {
+    flex-shrink: 0; width: 26px; height: 26px; border-radius: var(--radius-full);
+    background: #7C3AED; color: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+  }
+  .annotation .body { font-size: 14px; line-height: 1.55; }
+  .annotation .body strong { color: #FFFFFF; }
+  .annotation .body .bind { color: #C4B5FD; }
+  .annotation .body .oq { color: #FBBF24; }
+  .annotation .body code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+    background: rgba(199,184,232,0.12); border-radius: 4px; padding: 1px 5px;
+  }
+</style>
+</head>
+<body>
+
+<div class="wf-banner">
+  <strong>WIREFRAME</strong> — Design 1 of Epic 2: the <code>/gyms</code> public directory. Not production UI.
+  All gym names are fictional; distances and addresses are demo values. Numbered violet markers link to the
+  <a href="#annotations" style="color:#C4B5FD">design annotations</a> at the bottom.
+</div>
+
+<!-- Simplified stand-in for the real global header; out of scope for this design. -->
+<header class="global-header">
+  <div class="container">
+    <div class="brand-mark" aria-hidden="true"></div>
+    <span class="brand-name">Boardsesh</span>
+    <span class="header-hint">global header placeholder — unchanged by this design</span>
+  </div>
+</header>
+
+<main class="container">
+
+  <!-- ① Breadcrumbs -->
+  <nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="/">Home</a><span class="sep">›</span><span aria-current="page">Gyms</span>
+    <a class="note-ref" href="#note-1">1</a>
+  </nav>
+
+  <!-- ② SEO header block: h1 + server-rendered intro copy -->
+  <section class="seo-header">
+    <h1>Kilter, Tension &amp; MoonBoard gyms near you <a class="note-ref" href="#note-2">2</a></h1>
+    <p>
+      Search 4,740 gyms, club walls, and garages with a climbing board on the wall. Filter by board,
+      check the angle, and line up your climbs before you walk in. Works with Kilter, Tension,
+      MoonBoard, and more.
+    </p>
+    <p class="claim-line">
+      Run one of these gyms? <a href="/gyms/claim">Claim your listing</a> — it&rsquo;s free and takes about five minutes.
+    </p>
+  </section>
+
+  <!-- ③④ Search: free text + near-me geolocation with text fallback -->
+  <div class="search-row">
+    <div class="search-input" role="search">
+      <svg class="glyph" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      Search gyms, cities, or places&hellip;
+      <a class="note-ref" href="#note-3">3</a>
+    </div>
+    <button class="btn btn-primary" type="button">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="8"/></svg>
+      Near me
+      <a class="note-ref" href="#note-4" style="background:rgba(255,255,255,0.25)">4</a>
+    </button>
+    <p class="geo-hint">Location off? Type a city instead &mdash; same results, no permission prompt.</p>
+  </div>
+
+  <!-- ⑤ Board-type facet chips (counts = live DB mix) -->
+  <div class="facet-row" role="group" aria-label="Filter by board type">
+    <span class="chip">All boards <span class="count">4,740</span></span>
+    <span class="chip">MoonBoard <span class="count">2,586</span></span>
+    <span class="chip selected">Kilter <span class="count">1,786</span> ✕</span>
+    <span class="chip">Tension <span class="count">465</span></span>
+    <span class="chip">Grasshopper <span class="count">44</span></span>
+    <span class="chip">Decoy <span class="count">27</span></span>
+    <span class="chip">So iLL <span class="count">12</span></span>
+    <span class="chip">Touchstone <span class="count">6</span></span>
+    <a class="note-ref" href="#note-5" style="align-self:center">5</a>
+  </div>
+
+  <!-- ⑥ Results meta -->
+  <div class="results-meta">
+    <h2>1,786 gyms with a Kilter board <a class="note-ref" href="#note-6">6</a></h2>
+    <span class="sort">Sort: <a href="/gyms">Nearest</a> · <a href="/gyms">A&ndash;Z</a></span>
+  </div>
+
+  <div class="directory-grid">
+
+    <!-- =================== LIST (primary surface) =================== -->
+    <div class="gym-list">
+
+      <button class="btn btn-quiet map-toggle" id="mapToggle" type="button" aria-expanded="false">Show map</button>
+
+      <!-- ⑦⑧ Card: claimed, has pin + address (the 23.8% address case) — this sparse card IS the default state -->
+      <article class="gym-card">
+        <div class="card-head">
+          <h3><a href="/gym/crimp-city-boulders">Crimp City Boulders</a> <a class="note-ref" href="#note-7">7</a></h3>
+          <span class="badge-claimed">✓ Claimed <a class="note-ref" href="#note-8" style="background:var(--success)">8</a></span>
+        </div>
+        <p class="loc-line">
+          <svg class="pin-glyph" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/></svg>
+          14 Crux Lane, Fakeston · 1.2 km
+        </p>
+        <div class="board-row">
+          <span class="board-chip">Kilter <span class="angle">· 40°</span></span>
+        </div>
+      </article>
+
+      <!-- Card: unclaimed, pin but no address (the common distance-only case), claim prompt -->
+      <article class="gym-card">
+        <div class="card-head">
+          <h3><a href="/gym/the-plywood-palace">The Plywood Palace</a></h3>
+        </div>
+        <p class="loc-line">
+          <svg class="pin-glyph" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/></svg>
+          3.4 km
+        </p>
+        <div class="board-row">
+          <span class="board-chip">Kilter <span class="angle">· 45°</span></span>
+        </div>
+        <p class="claim-prompt">Run this gym? <a href="/gyms/claim">Claim your listing</a> and keep it fresh.</p>
+      </article>
+
+      <!-- Card: unclaimed, multi-board (the ~25-gym destination tier) -->
+      <article class="gym-card">
+        <div class="card-head">
+          <h3><a href="/gym/static-point-training-co">Static Point Training Co.</a></h3>
+        </div>
+        <p class="loc-line">
+          <svg class="pin-glyph" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/></svg>
+          5.0 km
+        </p>
+        <div class="board-row">
+          <span class="board-chip">Kilter <span class="angle">· 45°</span></span>
+          <span class="board-chip">Tension <span class="angle">· 30°</span></span>
+          <span class="board-chip">MoonBoard <span class="angle">· 25°</span></span>
+        </div>
+        <p class="claim-prompt">Run this gym? <a href="/gyms/claim">Claim your listing</a> and keep it fresh.</p>
+      </article>
+
+      <!-- ⑨ Card: unclaimed, NO PIN — the 37% fallback state. Lists normally, never ranked down. -->
+      <article class="gym-card">
+        <div class="card-head">
+          <h3><a href="/gym/fictional-state-university-wall">Fictional State University Wall</a> <a class="note-ref" href="#note-9">9</a></h3>
+        </div>
+        <p class="loc-line no-pin">
+          <svg class="pin-glyph" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Z"/><circle cx="12" cy="9" r="2.5"/></svg>
+          No map pin yet
+        </p>
+        <div class="board-row">
+          <span class="board-chip">Kilter <span class="angle">· 40°</span></span>
+        </div>
+        <p class="claim-prompt">Run this wall? <a href="/gyms/claim">Claim your listing</a> and put it on the map.</p>
+      </article>
+
+      <!-- Card: claimed, second example -->
+      <article class="gym-card">
+        <div class="card-head">
+          <h3><a href="/gym/gastons-garage">Gaston&rsquo;s Garage</a></h3>
+          <span class="badge-claimed">✓ Claimed</span>
+        </div>
+        <p class="loc-line">
+          <svg class="pin-glyph" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/></svg>
+          61 Heel Hook Way, Fakeston · 8.9 km
+        </p>
+        <div class="board-row">
+          <span class="board-chip">Kilter <span class="angle">· 20°</span></span>
+        </div>
+      </article>
+
+      <!-- Card: unclaimed, has pin -->
+      <article class="gym-card">
+        <div class="card-head">
+          <h3><a href="/gym/sloper-station">Sloper Station</a></h3>
+        </div>
+        <p class="loc-line">
+          <svg class="pin-glyph" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/></svg>
+          12 km
+        </p>
+        <div class="board-row">
+          <span class="board-chip">Kilter <span class="angle">· 40°</span></span>
+        </div>
+        <p class="claim-prompt">Run this gym? <a href="/gyms/claim">Claim your listing</a> and keep it fresh.</p>
+      </article>
+
+      <!-- ⑪ Pagination -->
+      <nav class="pagination" aria-label="Pagination">
+        <span class="page-link disabled">‹ Prev</span>
+        <span class="page-link current">1</span>
+        <a class="page-link" href="/gyms?page=2">2</a>
+        <a class="page-link" href="/gyms?page=3">3</a>
+        <span class="page-ellipsis">…</span>
+        <a class="page-link" href="/gyms?page=90">90</a>
+        <a class="page-link" href="/gyms?page=2">Next ›</a>
+        <a class="note-ref" href="#note-11">11</a>
+      </nav>
+    </div>
+
+    <!-- =================== MAP (secondary surface) =================== -->
+    <aside class="map-panel" id="mapPanel" aria-label="Map of gyms">
+      <div class="map-box">
+        <div class="map-label">
+          Leaflet map placeholder<br>
+          (OpenStreetMap tiles — already in packages/web)
+          <a class="note-ref" href="#note-10">10</a>
+        </div>
+        <span class="map-pin" style="top: 22%; left: 30%;"></span>
+        <span class="map-pin" style="top: 38%; left: 55%;"></span>
+        <span class="map-pin" style="top: 60%; left: 42%;"></span>
+        <span class="map-pin" style="top: 70%; left: 68%;"></span>
+        <span class="map-cluster" style="top: 30%; left: 72%;">12</span>
+        <span class="map-cluster" style="top: 55%; left: 18%;">5</span>
+        <div class="map-coverage-pill">
+          2,991 of 4,740 gyms have a map pin (63%). The list shows every gym — the map only shows pinned ones.
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- =================== STATE DEMOS =================== -->
+  <section class="state-demos">
+    <h2>State demos</h2>
+    <p>These render inline here so delegated agents see every state; in production they replace the regions above.</p>
+
+    <!-- ⑫ Empty search state -->
+    <div class="demo-block">
+      <div class="demo-title"><span class="wf-tag">State</span> Empty search result (replaces the gym list) <a class="note-ref" href="#note-12">12</a></div>
+      <div class="empty-state">
+        <div class="empty-glyph" aria-hidden="true">🧗</div>
+        <h3>No gyms match that yet</h3>
+        <p>Widen the radius, drop a board filter, or check the spelling. Climb somewhere we&rsquo;re missing? Put it on the map.</p>
+        <div class="actions">
+          <button class="btn btn-quiet" type="button">Clear filters</button>
+          <a class="btn btn-primary" href="/gyms/add" style="text-decoration:none">Add a gym</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑬ Sparse default vs aspiration variant -->
+    <div class="demo-block">
+      <div class="demo-title"><span class="wf-tag">Comparison</span> Card today (DEFAULT) vs. after enrichment ships (ASPIRATION) <a class="note-ref" href="#note-13">13</a></div>
+      <div class="demo-compare">
+        <div>
+          <p style="font-size:13px; font-weight:700; color:var(--secondary-label); margin-bottom:8px;">DEFAULT — what ~100% of gyms can render today</p>
+          <article class="gym-card">
+            <div class="card-head">
+              <h3><a href="/gym/crimp-city-boulders">Crimp City Boulders</a></h3>
+              <span class="badge-claimed">✓ Claimed</span>
+            </div>
+            <p class="loc-line">
+              <svg class="pin-glyph" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/></svg>
+              14 Crux Lane, Fakeston · 1.2 km
+            </p>
+            <div class="board-row">
+              <span class="board-chip">Kilter <span class="angle">· 40°</span></span>
+            </div>
+          </article>
+        </div>
+        <div>
+          <p style="font-size:13px; font-weight:700; color:var(--warning); margin-bottom:8px;">ASPIRATION — needs the hours/description enrichment work (≤5 of 4,740 gyms could render it today; hours columns don&rsquo;t exist)</p>
+          <article class="gym-card">
+            <div class="card-head">
+              <div class="logo-dot" aria-hidden="true">CC</div>
+              <h3 style="margin-left:2px"><a href="/gym/crimp-city-boulders">Crimp City Boulders</a></h3>
+              <span class="badge-claimed">✓ Claimed</span>
+            </div>
+            <p class="loc-line">
+              <svg class="pin-glyph" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/></svg>
+              14 Crux Lane, Fakeston · 1.2 km
+            </p>
+            <div class="board-row">
+              <span class="board-chip">Kilter <span class="angle">· 40°</span></span>
+            </div>
+            <p class="desc">Bouldering co-op with a fresh-set Kilter corner and Friday night sessions.</p>
+            <p class="hours">Open today · until 22:00</p>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ⑭ Footer internal links + trademark line -->
+  <footer class="page-footer">
+    <div class="footer-links">
+      <a href="/">Browse climbs</a>
+      <a href="/playlists">Build a playlist</a>
+      <a href="/about">About Boardsesh</a>
+      <a href="/gyms/claim">Claim your gym</a>
+      <a class="note-ref" href="#note-14">14</a>
+    </div>
+    <p class="trademark-line">
+      Kilter, Tension, MoonBoard, and other board names are trademarks of their respective owners.
+      Boardsesh works with these boards and is not affiliated with or endorsed by any board manufacturer.
+    </p>
+  </footer>
+
+  <!-- =================== ANNOTATIONS =================== -->
+  <section class="annotations" id="annotations">
+    <h2>Design annotations</h2>
+    <p>
+      For delegated implementing agents. Each note: what the region is, the data it binds to
+      (with dossier citations DB-nn / PH-nn / DOC-nn), and open questions.
+      <strong>SPECULATIVE items from the persona synthesis can never become acceptance criteria.</strong>
+    </p>
+
+    <div class="annotation" id="note-1">
+      <span class="num">1</span>
+      <div class="body">
+        <strong>Breadcrumbs.</strong> Real <code>&lt;a href&gt;</code> (LocaleLink in prod), Home › Gyms.
+        Emit <code>BreadcrumbList</code> JSON-LD per the repo SEO rules. This is an indexable search surface:
+        unique title/description/canonical, server-rendered copy, no spinner-only render.
+        <span class="bind">Binds: static.</span>
+      </div>
+    </div>
+
+    <div class="annotation" id="note-2">
+      <span class="num">2</span>
+      <div class="body">
+        <strong>SEO header block.</strong> One <code>h1</code> leading with what people search for
+        ("kilter board near me" is the local-intent complement to climb SEO — DOC-02, H5 in the synthesis is the
+        test, not a fact). Intro is server-rendered with the live gym count.
+        The claim link surfaces the claim funnel, a "now" priority: 26 claims ever, all admin-processed (DB-02),
+        zero claim-path pageviews in 90 days (PH-09, PH-10), signed-out claim CTA still open (#3672, DOC-07).
+        <span class="bind">Binds: count(*) live gyms = 4,740 (DB-01); copy is static i18n.</span>
+        <span class="oq">Open: the "/gyms/claim" href is a placeholder — the claim entry route doesn't exist yet;
+        the "about five minutes" promise must be validated against the actual claim flow before it ships.</span>
+      </div>
+    </div>
+
+    <div class="annotation" id="note-3">
+      <span class="num">3</span>
+      <div class="body">
+        <strong>Free-text search.</strong> Backend is ready: <code>searchGyms</code> supports free-text +
+        offset paging, no required field (DOC-08). Debounced input, results replace the list.
+        Gym search is currently invisible in telemetry — all search events are climb-scoped (PH-12) and no
+        gym-CTA events exist (PH-15). Every persona conditions participation on a number, so instrument
+        search/facet/card-click/claim-click events in the same PR that ships the UI.
+        <span class="bind">Binds: searchGyms(freeText) (DOC-08).</span>
+      </div>
+    </div>
+
+    <div class="annotation" id="note-4">
+      <span class="num">4</span>
+      <div class="body">
+        <strong>"Near me" geolocation with text fallback.</strong> Uses the existing
+        <code>useGeolocation</code> hook + PostGIS proximity (<code>ST_DWithin</code>, radiusKm default 50) (DOC-08).
+        Geolocation is optional: denial or no support falls back to typing a city (Nominatim geocode — the exact
+        pattern already in <code>map-location-picker.tsx</code>). The hint line under the search row makes the
+        fallback discoverable without a permission prompt.
+        <span class="bind">Binds: searchGyms(lat, lng, radiusKm) (DOC-08).</span>
+        <span class="oq">Open: default radius 50 km — right for cities, maybe too tight for rural; consider widening
+        automatically when a radius search returns 0 (feeds the empty state, note 12).</span>
+      </div>
+    </div>
+
+    <div class="annotation" id="note-5">
+      <span class="num">5</span>
+      <div class="body">
+        <strong>Board-type facet chips.</strong> One chip per board type in the live mix, ordered by count:
+        MoonBoard 2,586 · Kilter 1,786 · Tension 465 · Grasshopper 44 · Decoy 27 · So iLL 12 · Touchstone 6
+        (DB-04; gym-linked live boards). Selected chip shows a dismiss ✕. Counts are dynamic, not hardcoded.
+        Trademark rules: capitalise MoonBoard/Kilter/Tension correctly; chips describe what's on the wall
+        (compatibility), never affiliation. Horizontal scroll at 390px.
+        <span class="bind">Binds: searchGyms(boardType facet) (DOC-08); counts from DB (DB-04).</span>
+        <span class="oq">Open: DB value is <code>soill</code> — confirm the display label ("So iLL") with
+        boardTypeLabel in @boardsesh/board-constants; low-count chips (Touchstone 6) may collapse into a
+        "More" chip on mobile.</span>
+      </div>
+    </div>
+
+    <div class="annotation" id="note-6">
+      <span class="num">6</span>
+      <div class="body">
+        <strong>Results meta + sort.</strong> Count reflects active filters (demo shows the Kilter facet:
+        1,786 — DB-04). Sort: Nearest (only when a location is set) or A–Z.
+        <strong>Hard rule from the panel:</strong> never rank or hide listings by data completeness — the long
+        tail (university walls, garages) will never have photos or descriptions (DB-09, university-wall
+        persona constraint). Sparse cards sort exactly like rich ones.
+        <span class="oq">Open: default sort with no location and no query — A–Z is arbitrary at 4,740 rows;
+        consider country/region grouping, but note the DB has no country column (DB-06, heuristic only).</span>
+      </div>
+    </div>
+
+    <div class="annotation" id="note-7">
+      <span class="num">7</span>
+      <div class="body">
+        <strong>Gym card — sparse DEFAULT.</strong> Renders only schema-real fields (DB-09):
+        name (100% coverage); a location line that is the free-text <code>gyms.address</code> when present
+        (23.8% — DB-06) plus a distance from lat/lng (63.1% have a pin — DB-06), and distance-only otherwise —
+        no city column exists, so no locality token is ever derived or fabricated; linked boards with type +
+        numeric angle (DB-04: 98.7% of gyms have ≥1 board, 96% exactly one — so most cards show one chip; the
+        3-chip card represents the ~25 gyms with 3+); and claim state. Same card contract as the homepage
+        teaser wireframe (its note 5). No photo, no description, no hours — those exist for ≤5 of 4,740 gyms
+        today (DB-09). Card title links to <code>/gym/&lt;slug&gt;</code>
+        via a real anchor (SEO rule: reachable by crawlable links, not router.push).
+        <span class="bind">Binds: gyms.name, gyms.address, gyms.latitude/longitude,
+        user_boards.board_type + angle, claim state (DB-09, DB-06, DB-04, DB-10).</span>
+        <span class="oq">Open: a reverse-geocoded locality column would make this line friendlier, but the work
+        doesn't exist and is deferred with the city/country pages (epic's "Not in this epic") — v1 ships
+        address-or-distance only.</span>
+      </div>
+    </div>
+
+    <div class="annotation" id="note-8">
+      <span class="num">8</span>
+      <div class="body">
+        <strong>Claim state: badge or prompt.</strong> Claimed gyms get the green "✓ Claimed" badge
+        (owner-maintained signal). Unclaimed gyms — 2,896 board-equipped gyms of the 2,897 synced
+        (SYSTEM-owned) set; effectively the whole synced directory is unclaimed (DB-10) —
+        get a quiet one-line claim prompt instead. Unclaimed listings are
+        first-class citizens: never hidden, never ranked down (university-wall constraint).
+        Sync-freeze and ownership-transfer copy belongs in the claim flow itself, not on the card.
+        <span class="bind">Binds: gyms.owner_id = SYSTEM sentinel ⇒ unclaimed (DB-01, DB-10); gym_claims (DB-02).</span>
+        <span class="oq">Open: exact claim entry point (per-gym CTA → /gym/&lt;slug&gt; claim flow vs. a central
+        /gyms/claim page). The card prompt must fire a tracked event either way (PH-15 gap).</span>
+      </div>
+    </div>
+
+    <div class="annotation" id="note-9">
+      <span class="num">9</span>
+      <div class="body">
+        <strong>No-pin fallback state.</strong> 36.9% of gyms have no coordinates (DB-06), so the card
+        must read fine without a location line: muted "No map pin yet" replaces locality/distance,
+        everything else identical. These gyms simply don't appear on the map; they keep their normal list
+        position (in a proximity search they sort after pinned results — they have no distance —
+        but are never dropped). The claim prompt doubles as the fix path ("put it on the map").
+        <span class="bind">Binds: gyms.latitude/longitude IS NULL (DB-06).</span>
+      </div>
+    </div>
+
+    <div class="annotation" id="note-10">
+      <span class="num">10</span>
+      <div class="body">
+        <strong>Map panel — secondary, never primary.</strong> Leaflet + OpenStreetMap tiles, already a
+        dependency in packages/web (DOC-08; see <code>map-location-picker.tsx</code> for the loading pattern).
+        Only 63.1% of gyms have pins (DB-06), so the map can never be the sole view — the list is the primary
+        surface, and the in-map coverage pill says so honestly. Cluster markers at low zoom. Desktop (≥960px):
+        sticky right column. Mobile (&lt;960px): hidden behind a "Show map" toggle above the list
+        (vanilla JS here; a plain client component in prod).
+        <span class="bind">Binds: searchGyms results with lat/lng (DOC-08, DB-06).</span>
+        <span class="oq">Open: map-bounds-as-filter ("search this area") is a nice follow-up, not v1.</span>
+      </div>
+    </div>
+
+    <div class="annotation" id="note-11">
+      <span class="num">11</span>
+      <div class="body">
+        <strong>Pagination.</strong> Offset paging is supported by searchGyms (DOC-08); 20/page ⇒ ~90 pages
+        for the Kilter facet shown. Real <code>&lt;a href&gt;</code> links so the whole set is crawlable.
+        Per the repo SEO rules, filtered/sorted/paginated variants canonicalise to the clean base
+        <code>/gyms</code>. The gyms sitemap is a separate "now" item but ships behind the dedup gate
+        (DOC-03: directory gated on dupe rate ~0/week; 8 merges ever, zero since — DB-07).
+        <span class="oq">Open: page size; and whether deep pagination should be de-emphasised once the
+        sitemap carries per-gym URLs.</span>
+      </div>
+    </div>
+
+    <div class="annotation" id="note-12">
+      <span class="num">12</span>
+      <div class="body">
+        <strong>Empty-search state.</strong> Replaces the list when 0 results. Climber voice, no dead end:
+        clear filters, widen the radius, or add the missing gym. "Add a gym" keeps the door open for the
+        1,824 self-created gyms pattern (DB-01 caveat — most user-owned gyms were self-created, not claimed).
+        <span class="oq">Open: "/gyms/add" href is a placeholder — reuse the existing gym-creation flow;
+        confirm its route.</span>
+      </div>
+    </div>
+
+    <div class="annotation" id="note-13">
+      <span class="num">13</span>
+      <div class="body">
+        <strong>Aspiration card variant — clearly gated.</strong> Description, hours line, and logo initial
+        render ONLY when the enrichment work ships and owners fill fields: today description = 5 gyms,
+        logo = 1, photos = 0 of 4,740, and hours columns don't exist at all (DB-09; planned migration 0187
+        never landed — DOC-09). The DEFAULT card (left) is the design contract; the aspiration card is
+        progressive enhancement on the same skeleton — no layout that collapses without these fields,
+        and no photo anywhere on the card. Hours must resist staleness (import/sync or free-text — H7 is
+        SPECULATIVE, so "imported hours" is a design direction, not an acceptance criterion).
+        <span class="bind">Binds (future): gyms.description, gyms.logo_url, hours (no column yet) (DB-09, DOC-09).</span>
+      </div>
+    </div>
+
+    <div class="annotation" id="note-14">
+      <span class="num">14</span>
+      <div class="body">
+        <strong>Footer internal links + trademark line.</strong> ≥2–3 real internal anchors with descriptive
+        text (repo SEO rule): Browse climbs (/), Build a playlist (/playlists), About (/about), Claim your gym.
+        The trademark line keeps every board mention compatibility-not-endorsement (DOC-05 wording constraint;
+        LEGAL.md). Active verbs, climber voice, no "platform/hub" language.
+      </div>
+    </div>
+
+    <div class="annotation" id="note-15">
+      <span class="num">15</span>
+      <div class="body">
+        <strong>Cross-cutting requirements (no single region).</strong>
+        (a) <strong>Never-404:</strong> every card links to the canonical slug; merged-gym slugs already
+        308-redirect on /gym/[gym_slug] (DOC-03 — printed QR codes exist in the field; all four personas hold
+        this as trust infrastructure). The directory must only ever emit canonical slugs.
+        (b) <strong>Dedup gate:</strong> directory + sitemap ship behind the human-driven merge queue reaching
+        ~0/week (DOC-03, DB-07) — a stale duplicate next to a maintained listing is worse than no directory
+        (multi-board-ops). (c) <strong>Instrumentation is part of the definition of done:</strong> gym search,
+        facet changes, card clicks, claim-CTA clicks, and map interactions all need events — none exist today
+        (PH-12, PH-15), and the whole persona panel conditions maintenance on receipts.
+        (d) i18n: every visible string via catalogs (marketing or a new gyms namespace), all four locales;
+        Spanish uses "plafón" for board per the glossary.
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  // Mobile-only map toggle. Desktop shows the map column via the media query.
+  (function () {
+    var toggleButton = document.getElementById('mapToggle');
+    var mapPanel = document.getElementById('mapPanel');
+    if (!toggleButton || !mapPanel) return;
+    toggleButton.addEventListener('click', function () {
+      var isOpen = mapPanel.style.display === 'block';
+      mapPanel.style.display = isOpen ? 'none' : 'block';
+      toggleButton.textContent = isOpen ? 'Show map' : 'Hide map';
+      toggleButton.setAttribute('aria-expanded', String(!isOpen));
+    });
+  })();
+</script>
+
+</body>
+</html>
