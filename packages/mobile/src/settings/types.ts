@@ -11,6 +11,15 @@ export type AppSettings = {
    * stale cards are ignored rather than misread.
    */
   offlineBoardsV1: UserBoard[];
+  /**
+   * Why each in-flight download was started, keyed by scope key (issue #4316).
+   * Persisted rather than held in memory because the case that matters most is
+   * exactly the one an in-memory map loses: a board enabled while offline, whose
+   * download runs on a later launch. Consumed and pruned when the Started event
+   * fires, and dropped with the scope on teardown, so it stays a handful of
+   * short-lived entries.
+   */
+  offlineDownloadTriggers: Record<string, string>;
   /** Keep every board the user follows/uses available offline by default. */
   autoOfflineBoards: boolean;
   autoConnectBle: boolean;

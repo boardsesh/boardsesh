@@ -323,13 +323,62 @@ export const SHARED_EVENTS = {
   IntegrationDisconnected: 'Integration Disconnected',
   IntegrationAutoSyncToggled: 'Integration Auto Sync Toggled',
   SessionExportedToIntegration: 'Session Exported to Integration',
-  // Offline sync — fired once per board scope when its INITIAL download
-  // completes (offline-sync's onScopeDownloadComplete, both tables reached the
-  // tail), so the snapshot-bootstrap warm-up (Phase 3/4) can be compared
-  // against the plain paged crawl in the field. Props: { scopeKey,
-  // method: 'snapshot' | 'paged', durationMs }. Mobile-only today (the engine
-  // is shared, so a future web offline consumer would fire this too).
+  // Offline sync — the board-download funnel (issue #4316). Started and
+  // Completed are each fired ONCE EVER per board scope, guarded by durable
+  // `scope-started:` / `scope-complete:` markers in sync_meta, so
+  // Started → Completed is a real completion ratio rather than a count of
+  // retries. Both markers survive sign-out (matching the board rows, which stay
+  // as a shared cache) and are cleared by scope teardown, so removing and
+  // re-adding a board starts a fresh funnel.
+  //
+  // Fired the first time any cycle starts pulling a scope. Props: { scopeKey,
+  // pathIntent: 'snapshot' | 'paged', artifactBytes: number | null, trigger,
+  // offlineEngineEnabled }.
+  //
+  // `pathIntent` is an INTENT read from cheap local facts at that moment, not an
+  // outcome — a snapshot-eligible scope can still fall back to the paged crawl
+  // after the manifest resolves. Split funnels by Completed's `method` for the
+  // resolved path.
+  //
+  // `trigger` distinguishes DELIBERATE taps from AUTOMATIC re-enables, which is
+  // the whole point for discovery work: 'toggle' | 'download-all' (the My Boards
+  // / More tap) vs 'auto-download-all' | 'adopt-auto' (a setting acting on its
+  // own), plus 'adopt-confirmed' | 'retry' | 'unknown'. 'unknown' is an explicit,
+  // expected value — the trigger is persisted per scope, but a scope enabled by
+  // a build that predates this event has none.
+  OfflineBoardDownloadStarted: 'Offline Board Download Started',
+  // Fired once per board scope when its INITIAL download completes (both tables
+  // reached the tail), so the snapshot-bootstrap warm-up can be compared against
+  // the plain paged crawl in the field. Props: { scopeKey,
+  // method: 'snapshot' | 'paged', durationMs, bytes?, rowCount?, downloadMs?,
+  // importMs?, offlineEngineEnabled }. The four optional props are ABSENT rather
+  // than faked when the completing delta pull lands in a later cycle than the
+  // import, which biases them toward the healthy population; durationMs and the
+  // funnel ratio are unaffected. Mobile-only today (the engine is shared, so a
+  // future web offline consumer would fire this too).
   OfflineBoardDownloadCompleted: 'Offline Board Download Completed',
+  // A bootstrap stage failed. Props: { scopeKey, stage: 'manifest' | 'download'
+  // | 'import', attempt, expected, errorMessage, offlineEngineEnabled }.
+  // `expected: true` is a transport/reachability failure — a phone in a tunnel,
+  // not a defect — and is the normal case, not an alarm. These previously went
+  // only to Sentry, where they could not be joined to the funnel.
+  OfflineBoardDownloadFailed: 'Offline Board Download Failed',
+  // The climber turned a board OFF while its first download was still in flight
+  // — the abandonment the funnel exists to size, caught at the moment it
+  // happens. Props: { scopeKey, source: 'manage' | 'storage', stage?, fraction?,
+  // bytesDone?, elapsedMs?, offlineEngineEnabled }.
+  OfflineBoardDownloadCancelled: 'Offline Board Download Cancelled',
+  // A board's offline switch was flipped, either way. Props: { scopeKey,
+  // enabled: boolean, source: 'manage' | 'storage' | 'more' | 'adopt',
+  // offlineEngineEnabled }. The enable half is the entry point #4318's discovery
+  // nudges are measured against.
+  OfflineBoardToggled: 'Offline Board Toggled',
+  // The "Download all my boards" switch was TAPPED (once per tap, not once per
+  // board). Props: { boardCount, offlineEngineEnabled }. Deliberately not fired
+  // by the mount effect that re-enables boards from the persisted setting — that
+  // is an automatic re-enable and shows up as `trigger: 'auto-download-all'` on
+  // Started instead.
+  OfflineDownloadAllTapped: 'Offline Download All Tapped',
   // Offline sync — the device went longer than the tombstone retention window
   // without completing a deletions pull, so its local USER data was rebuilt
   // from scratch (issue #3474). Expected behaviour rather than an error: the

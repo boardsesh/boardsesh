@@ -3,11 +3,25 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useQueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { GraphQLFetch } from '@boardsesh/offline-sync';
-import { getSetting, setOfflineBoardEnabled, offlineBoardScopeForBoard, rememberOfflineBoards } from '../settings';
+import {
+  getSetting,
+  setOfflineBoardEnabled,
+  offlineBoardKeyForBoard,
+  offlineBoardScopeForBoard,
+  rememberDownloadTrigger,
+  rememberOfflineBoards,
+  type OfflineDownloadTrigger,
+} from '../settings';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { track } from '../lib/analytics';
+import { isOfflineEngineEnabled } from '../lib/offline-engine';
 import { getHttpClient } from '../lib/graphql/client';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
 import { triggerSync, drainMutationQueue } from './offline-sync-adapter';
 import { useSnapshotSource } from './use-snapshot-source';
+
+/** Which surface flipped the switch, for the Toggled event (issue #4316). */
+export type ToggleSource = 'manage' | 'storage' | 'more' | 'adopt';
 
 /**
  * Enable one or more boards for offline and kick a single sync so their catalogs
@@ -35,11 +49,23 @@ export function useBoardDownloads() {
   );
 
   const enableBoardsOffline = useCallback(
-    (boards: UserBoard | UserBoard[]) => {
+    (boards: UserBoard | UserBoard[], options?: { trigger?: OfflineDownloadTrigger; source?: ToggleSource }) => {
       const list = Array.isArray(boards) ? boards : [boards];
       if (list.length === 0) return;
+      const trigger = options?.trigger ?? 'unknown';
+      const source = options?.source ?? 'manage';
       for (const board of list) {
+        const scopeKey = offlineBoardKeyForBoard(board);
         setOfflineBoardEnabled(offlineBoardScopeForBoard(board), true);
+        // Persisted, then consumed when the download actually starts — which can
+        // be a later app launch entirely if the board was enabled with no signal.
+        rememberDownloadTrigger(scopeKey, trigger);
+        track(SHARED_EVENTS.OfflineBoardToggled, {
+          scopeKey,
+          enabled: true,
+          source,
+          offlineEngineEnabled: isOfflineEngineEnabled(),
+        });
       }
       // Snapshot the board identities while we hold them. This is the single funnel
       // for every offline enable (the My Boards toggle, adopt-found-board, the

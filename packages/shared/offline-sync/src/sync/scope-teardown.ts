@@ -4,8 +4,8 @@
 //
 // Two invariants carry this whole module, and both are data-loss bugs when broken:
 //
-// 1. ROWS AND THEIR MARKERS DIE TOGETHER. A scope's downloaded state lives in seven
-//    kinds of sync_meta rows (see scopeSyncMetaKeys). If rows are deleted but a
+// 1. ROWS AND THEIR MARKERS DIE TOGETHER. A scope's downloaded state lives in a
+//    handful of sync_meta row kinds (see scopeSyncMetaKeys). If rows are deleted but a
 //    checkpoint survives, the next pull resumes from that cursor and — because the
 //    delta pull is a strict `>` keyset — NEVER revisits the deleted rows. The board
 //    comes back permanently incomplete, and a surviving `scope-complete:` marker
@@ -31,7 +31,7 @@ import type { OfflineDatabase, SqlExecutor, SqlValue } from '../database';
 import { applyBusyTimeout } from '../db/pragmas';
 import type { OfflineBoardScope } from '../offline-board-key';
 import { climbsScopeFilter, isSizeScopedBoard, sizeMembershipClause } from './board-scope-sql';
-import { getCheckpointKey, SCOPE_COMPLETE_PREFIX } from './checkpoints';
+import { getCheckpointKey, SCOPE_COMPLETE_PREFIX, SCOPE_STARTED_PREFIX } from './checkpoints';
 import { BOOTSTRAP_DONE_PREFIX } from './snapshot-bootstrap';
 import {
   BOOTSTRAP_ATTEMPTS_HEALED_PREFIX,
@@ -69,6 +69,10 @@ export function scopeSyncMetaKeys(scopeKey: string): string[] {
   return [
     ...BOARD_DATA_TABLES.map((tableName) => getCheckpointKey(tableName, scopeKey)),
     `${SCOPE_COMPLETE_PREFIX}${scopeKey}`,
+    // Its Started twin (issue #4316). Both must die with the rows: leaving the
+    // Started marker behind would silently drop a re-added board out of the
+    // funnel forever — its next download would emit Completed with no Started.
+    `${SCOPE_STARTED_PREFIX}${scopeKey}`,
     `${BOOTSTRAP_ATTEMPTS_PREFIX}${scopeKey}`,
     // Belongs with the attempts row it bounds: re-adding the board must give the
     // scope a clean counter AND a fresh heal budget, not one that was spent

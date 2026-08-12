@@ -18,4 +18,8 @@ export {
   forgetOfflineBoardScope,
   pruneOfflineBoards,
   clearOfflineBoards,
+  rememberDownloadTrigger,
+  takeDownloadTrigger,
+  forgetDownloadTrigger,
+  type OfflineDownloadTrigger,
 } from './offline-boards';

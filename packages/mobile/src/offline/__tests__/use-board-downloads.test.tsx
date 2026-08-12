@@ -14,7 +14,9 @@ const spies = vi.hoisted(() => ({
   drainMutationQueue: vi.fn(),
   graphqlRequest: vi.fn(),
   rememberOfflineBoards: vi.fn(),
+  rememberDownloadTrigger: vi.fn(),
   setOfflineBoardEnabled: vi.fn(),
+  track: vi.fn(),
   triggerSync: vi.fn(),
 }));
 
@@ -30,10 +32,14 @@ vi.mock('../../lib/graphql/client', () => ({
 }));
 vi.mock('../../settings', () => ({
   getSetting: () => ['kilter:1:10', 'tension:2:11'],
+  offlineBoardKeyForBoard: (board: UserBoard) => `${board.boardType}:${board.layoutId}:${board.sizeId}`,
   offlineBoardScopeForBoard: (board: UserBoard) => `${board.boardType}:${board.layoutId}:${board.sizeId}`,
   rememberOfflineBoards: spies.rememberOfflineBoards,
+  rememberDownloadTrigger: spies.rememberDownloadTrigger,
   setOfflineBoardEnabled: spies.setOfflineBoardEnabled,
 }));
+vi.mock('../../lib/analytics', () => ({ track: spies.track }));
+vi.mock('../../lib/offline-engine', () => ({ isOfflineEngineEnabled: () => true }));
 
 import {
   __resetSyncStatusForTests,

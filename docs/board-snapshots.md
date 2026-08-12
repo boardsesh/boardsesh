@@ -534,6 +534,53 @@ pre-import empty result set.
     still burns an attempt (see the matrix above). The real exception is attached as the wrapper's `cause`,
     which is what lets the shared classifier recognise them at all (issue #4238).
 
+## Download funnel events
+
+Five PostHog events (`@boardsesh/analytics`'s `SHARED_EVENTS`) make board downloads measurable
+end-to-end (issue #4316). Before them the feature had exactly one — `Offline Board Download
+Completed` — so abandonment was structurally unmeasurable and failures went only to Sentry.
+
+| Event                              | When                                                   | Key props                                                                          |
+| ---------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `Offline Board Download Started`   | first time any cycle starts pulling a scope, once ever | `scopeKey`, `pathIntent`, `artifactBytes`, `trigger`, `offlineEngineEnabled`        |
+| `Offline Board Download Completed`  | both board tables reached the tail, once ever          | `scopeKey`, `method`, `durationMs`, `bytes?`, `rowCount?`, `downloadMs?`, `importMs?` |
+| `Offline Board Download Failed`     | a bootstrap stage threw                                | `scopeKey`, `stage`, `attempt`, `expected`, `errorMessage`                          |
+| `Offline Board Download Cancelled`  | the board was switched off mid-download                | `scopeKey`, `source`, `stage?`, `fraction?`, `bytesDone?`                           |
+| `Offline Board Toggled`             | the offline switch was flipped, either way             | `scopeKey`, `enabled`, `source`                                                     |
+| `Offline Download All Tapped`       | the "download all my boards" switch was TAPPED         | `boardCount`                                                                        |
+
+**The once-ever contract.** Started and Completed are each guarded by a durable `sync_meta`
+marker — `scope-started:<scopeKey>` and `scope-complete:<scopeKey>` — so the funnel query is
+simply Started → Completed, with no first-occurrence de-duplication needed. Both markers sit
+**outside** the `checkpoint:` prefix, so signing out leaves them alone (matching the board rows,
+which survive as a shared cache), and both are cleared by `scope-teardown.ts` in the same
+transaction as the rows, so removing and re-adding a board starts a fresh funnel.
+
+Getting this wrong breaks the metric in both directions, which is why the marker exists at all: a
+paged crawl writes a board-table checkpoint on its **first page**, and `runBootstrapPhase` treats
+any existing checkpoint as ineligible — so a per-cycle Started gated on "no checkpoint yet" would
+emit **no Started at all** for the multi-cycle crawls that are the most likely to be abandoned,
+while a retrying snapshot would emit **several**.
+
+> **If a future change wipes board data on logout** (issue #3621), it must clear both markers in the
+> same transaction as the rows. Otherwise the next sign-in emits Completed with no Started.
+
+**Reading the props.** `pathIntent` on Started is an INTENT from cheap local facts, not an outcome —
+a snapshot-eligible scope can still fall back to the paged crawl after the manifest resolves. Split
+by resolved path using Completed's `method`. `bytes`/`rowCount`/`downloadMs`/`importMs` are absent
+(not zero) when the completing delta pull lands in a **later cycle** than the import — the
+dropped-connection tail — which biases those four toward the healthy population; `durationMs`,
+`method`, and the funnel ratio itself are unaffected.
+
+**Trigger vocabulary.** `trigger` separates deliberate taps from automatic re-enables, which is what
+#4318's discovery nudges are measured against: `toggle` and `download-all` are taps;
+`auto-download-all` (the More screen's mount effect acting on the persisted setting) and
+`adopt-auto` (a discovered board adopted because `autoOfflineBoards` is on) are not; plus
+`adopt-confirmed`, `retry`, and `unknown`. It is persisted per scope
+(`settings/offline-boards.ts`'s `rememberDownloadTrigger`), not held in memory, because the case
+that matters most is a board enabled with no signal whose download runs on a later launch — an
+in-memory map loses exactly that one. `unknown` is an explicit, expected value.
+
 ## Ops runbook
 
 ### Manual export

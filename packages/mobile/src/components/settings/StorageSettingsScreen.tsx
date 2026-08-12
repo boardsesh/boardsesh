@@ -38,7 +38,10 @@ import { useConfirm } from '../../providers/dialog-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useOfflineDownloadsEnabled } from '../../providers/feature-flags-provider';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
-import { useSetting } from '../../settings';
+import { useSetting, offlineBoardKey, forgetDownloadTrigger } from '../../settings';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { track } from '../../lib/analytics';
+import { isOfflineEngineEnabled } from '../../lib/offline-engine';
 import {
   measureDatabaseBytes,
   measureFreeDiskSpace,
@@ -161,7 +164,17 @@ export function StorageSettingsScreen() {
     async (scopes: OfflineBoardScope[]) => {
       try {
         for (const scope of scopes) {
+          const scopeKey = offlineBoardKey(scope);
           await removeOfflineBoard({ db, queryClient, scope });
+          // Removing storage IS turning the board off (issue #4316) — same
+          // funnel exit as the My Boards toggle, different surface.
+          forgetDownloadTrigger(scopeKey);
+          track(SHARED_EVENTS.OfflineBoardToggled, {
+            scopeKey,
+            enabled: false,
+            source: 'storage',
+            offlineEngineEnabled: isOfflineEngineEnabled(),
+          });
         }
         // Once, after every teardown — it rebuilds the whole file. Cosmetic by
         // design: a failure means the rows are gone but the file didn't shrink, so it

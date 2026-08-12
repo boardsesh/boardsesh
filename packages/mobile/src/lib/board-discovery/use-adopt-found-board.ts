@@ -50,7 +50,10 @@ export function useAdoptFoundBoard() {
       }
 
       if (decision.offline === 'auto') {
-        enableBoardsOffline(board);
+        // The `autoOfflineBoards` setting acting on its own — NOT a tap. Kept
+        // distinct from the confirmed branch below so discovery work (#4318) is
+        // measured against deliberate opt-ins only.
+        enableBoardsOffline(board, { trigger: 'adopt-auto', source: 'adopt' });
         return;
       }
       if (decision.offline === 'ask') {
@@ -60,7 +63,7 @@ export function useAdoptFoundBoard() {
           confirmLabel: t('mobile.offline.enableConfirm'),
           cancelLabel: t('mobile.manage.cancel'),
         });
-        if (confirmed) enableBoardsOffline(board);
+        if (confirmed) enableBoardsOffline(board, { trigger: 'adopt-confirmed', source: 'adopt' });
       }
     },
     // followBoard.mutate is stable; depending on the whole `followBoard` object

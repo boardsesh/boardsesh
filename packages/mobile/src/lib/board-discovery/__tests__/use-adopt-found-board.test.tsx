@@ -106,7 +106,12 @@ describe('useAdoptFoundBoard', () => {
     const board = makeBoard();
     await result.current(board);
     expect(spies.confirm).toHaveBeenCalledTimes(1);
-    expect(spies.enableBoardsOffline).toHaveBeenCalledWith(board);
+    // 'adopt-confirmed', not 'adopt-auto': the split is what makes discovery
+    // work measurable against deliberate opt-ins (issue #4316).
+    expect(spies.enableBoardsOffline).toHaveBeenCalledWith(board, {
+      trigger: 'adopt-confirmed',
+      source: 'adopt',
+    });
   });
 
   it('does not download when the confirm is declined', async () => {
@@ -125,7 +130,8 @@ describe('useAdoptFoundBoard', () => {
     const board = makeBoard();
     await result.current(board);
     expect(spies.confirm).not.toHaveBeenCalled();
-    expect(spies.enableBoardsOffline).toHaveBeenCalledWith(board);
+    // The setting acting on its own — NOT a tap.
+    expect(spies.enableBoardsOffline).toHaveBeenCalledWith(board, { trigger: 'adopt-auto', source: 'adopt' });
   });
 
   it('never re-offers a board whose scope is already enabled for offline', async () => {

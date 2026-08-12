@@ -5,6 +5,7 @@ import {
   type SchemaDriftReporter,
   type BootstrapMetadataChangedReporter,
   type ScopeDownloadCompleteReporter,
+  type ScopeDownloadStartReporter,
   type CoverageResetReporter,
   type CoverageEvaluatedReporter,
   type BootstrapRetryScheduledReporter,
@@ -73,6 +74,7 @@ export type SchedulerOptions = {
   onBootstrapMetadataChanged?: BootstrapMetadataChangedReporter;
   /** Threaded through to pullSync's SyncOptions — see ScopeDownloadCompleteInfo. */
   onScopeDownloadComplete?: ScopeDownloadCompleteReporter;
+  onScopeDownloadStart?: ScopeDownloadStartReporter;
   /** Threaded through to pullSync's SyncOptions — see CoverageResetInfo. */
   onCoverageReset?: CoverageResetReporter;
   /** Threaded through to pullSync's SyncOptions — see CoverageEvaluatedInfo. */
@@ -126,6 +128,7 @@ async function runSync(
       onSnapshotBootstrapError: options?.onSnapshotBootstrapError,
       onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
       onScopeDownloadComplete: options?.onScopeDownloadComplete,
+      onScopeDownloadStart: options?.onScopeDownloadStart,
       onCoverageReset: options?.onCoverageReset,
       onCoverageEvaluated: options?.onCoverageEvaluated,
       onBootstrapRetryScheduled: options?.onBootstrapRetryScheduled,

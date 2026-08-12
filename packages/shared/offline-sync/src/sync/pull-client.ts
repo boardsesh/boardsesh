@@ -7,6 +7,8 @@ import {
   getCheckpointKey,
   markScopeDownloadComplete,
   isScopeDownloadComplete,
+  markScopeDownloadStarted,
+  isScopeDownloadStarted,
   DELETIONS_CHECKPOINT_KEY,
 } from './checkpoints';
 import { markUserDataComplete } from './local-user-owner';
@@ -123,8 +125,49 @@ export type ScopeDownloadCompleteInfo = {
   durationMs: number;
   /** The snapshot import landed on a scope that had already crawled some rows. */
   bootstrapHealed?: boolean;
+  /**
+   * Wire size of the artifact this scope imported, and the rows it actually
+   * wrote (issue #4316) — what a slow download has to be normalised against
+   * before "Kilter is slow" means anything.
+   *
+   * All four are ABSENT rather than faked when the completing delta pull lands
+   * in a LATER cycle than the import (the dropped-connection tail), because this
+   * run has no record of work it did not do. That biases these props toward the
+   * healthy population; `durationMs`, `method`, and the Started→Completed ratio
+   * itself are unaffected.
+   */
+  bytes?: number;
+  rowCount?: number;
+  downloadMs?: number;
+  importMs?: number;
 };
 export type ScopeDownloadCompleteReporter = (info: ScopeDownloadCompleteInfo) => void;
+
+/**
+ * Fired ONCE EVER per board scope, the first time any cycle starts pulling it —
+ * the missing anchor that makes abandonment measurable (issue #4316). Guarded by
+ * a durable `scope-started:` marker, the mirror of the `scope-complete:` one, so
+ * a retrying snapshot cannot emit twice and a multi-cycle paged crawl cannot be
+ * skipped. Both markers are cleared by scope teardown, so removing and re-adding
+ * a board starts a fresh funnel.
+ *
+ * `pathIntent` is an INTENT decided from cheap local facts at emission time, not
+ * an outcome: a scope that looks snapshot-eligible can still fall back to the
+ * paged crawl after the manifest resolves. Funnel splits by resolved path must
+ * use Completed's `method`; reading `pathIntent` as ground truth would overstate
+ * the snapshot population.
+ *
+ * `artifactBytes` is the wire size of the artifact about to be downloaded, and
+ * is null on the paged path (a crawl has no byte total at all). It is on Started
+ * precisely because an ABANDONED download never emits Completed — without it,
+ * the size of the downloads people give up on is unknowable.
+ */
+export type ScopeDownloadStartInfo = {
+  scopeKey: string;
+  pathIntent: 'snapshot' | 'paged';
+  artifactBytes: number | null;
+};
+export type ScopeDownloadStartReporter = (info: ScopeDownloadStartInfo) => void;
 
 /**
  * Fired after one bootstrap scope reaches a coherent persisted decision (or is
@@ -246,6 +289,7 @@ export type SyncOptions = {
   onBootstrapMetadataChanged?: BootstrapMetadataChangedReporter;
   /** Telemetry for comparing the snapshot vs paged download paths. See ScopeDownloadCompleteInfo. */
   onScopeDownloadComplete?: ScopeDownloadCompleteReporter;
+  onScopeDownloadStart?: ScopeDownloadStartReporter;
   /** Telemetry for a forced deletions-coverage resync. See CoverageResetInfo. */
   onCoverageReset?: CoverageResetReporter;
   /**
@@ -802,11 +846,27 @@ async function runBootstrapPhase(params: {
   /** The epoch pullSync captured at CYCLE start — see `cycleAborted` there. */
   cycleEpoch: number;
   stampScopeStart: (scopeKey: string) => void;
+  /** Once-ever Started emitter, shared with the board-data loop (issue #4316). */
+  emitScopeDownloadStartOnce: (info: ScopeDownloadStartInfo) => Promise<void>;
+  /** Per-scope download/import timings + payload size, read back by the Completed event. */
+  bootstrapTimings: Map<string, { bytes: number; downloadMs?: number; importMs?: number; rowCount?: number }>;
   options: SyncOptions | undefined;
   now: () => number;
   random: () => number;
 }): Promise<{ skipPagedPull: Set<string> }> {
-  const { db, queryClient, source, scopes, cycleEpoch, stampScopeStart, options, now, random } = params;
+  const {
+    db,
+    queryClient,
+    source,
+    scopes,
+    cycleEpoch,
+    stampScopeStart,
+    emitScopeDownloadStartOnce,
+    bootstrapTimings,
+    options,
+    now,
+    random,
+  } = params;
   const onProgress = options?.onProgress;
   const onSchemaDrift = options?.onSchemaDrift;
   const onSnapshotBootstrapError = options?.onSnapshotBootstrapError;
@@ -1063,6 +1123,21 @@ async function runBootstrapPhase(params: {
           });
         }
 
+        // Started (issue #4316), the snapshot half. Emitted HERE — below every
+        // `continue` that means this scope does no snapshot work this cycle, and
+        // once the entry proved usable — so it can carry the artifact's wire
+        // size, which is the one thing an ABANDONED download never gets to
+        // report (it emits no Completed at all). The durable marker makes the
+        // board-data loop's emission below a no-op for this scope; every path
+        // that `continue`s above (including the metered heal defer) reaches that
+        // one instead and is correctly attributed to the paged crawl.
+        await emitScopeDownloadStartOnce({
+          scopeKey: scope.scopeKey,
+          pathIntent: 'snapshot',
+          artifactBytes: entry.bytes,
+        });
+        if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) break;
+
         const layoutKey = `${scope.boardType}:${scope.layoutId}`;
         // The failure cause is cached alongside the result so a second size of the
         // same layout (which reuses this entry instead of re-downloading) still
@@ -1074,6 +1149,7 @@ async function runBootstrapPhase(params: {
           // reuses this cache entry, so it never re-runs and never re-emits
           // download frames for bytes that already came down.
           let fractionAnchor: DownloadFractionAnchor = createDownloadFractionAnchor();
+          const downloadStartedAt = Date.now();
           emitSnapshotFrame(
             progressThrottle.flush({
               scopeKey: scope.scopeKey,
@@ -1110,6 +1186,12 @@ async function runBootstrapPhase(params: {
           }
           downloadByLayout.set(layoutKey, cachedDownload);
           if (cachedDownload.file) downloadedPaths.add(cachedDownload.file.filePath);
+          if (cachedDownload.file) {
+            bootstrapTimings.set(scope.scopeKey, {
+              bytes: entry.bytes,
+              downloadMs: Date.now() - downloadStartedAt,
+            });
+          }
         }
         // Re-check after the (potentially multi-MB) artifact download await, same
         // reason as the manifest check above.
@@ -1170,7 +1252,8 @@ async function runBootstrapPhase(params: {
           // the global deletions cursor to the older table watermark — all in one
           // transaction, so no crash point can separate the imported rows from
           // the tombstone-replay window that must cover them.
-          await bootstrapScopeFromSnapshot({
+          const importStartedAt = Date.now();
+          const imported = await bootstrapScopeFromSnapshot({
             db,
             scope,
             scopeKey: scope.scopeKey,
@@ -1181,6 +1264,12 @@ async function runBootstrapPhase(params: {
             existingCheckpoints: hasBoardCheckpoint
               ? { board_climbs: climbsCheckpoint ?? undefined, board_climb_stats: statsCheckpoint ?? undefined }
               : undefined,
+          });
+          const timings = bootstrapTimings.get(scope.scopeKey) ?? { bytes: entry.bytes };
+          bootstrapTimings.set(scope.scopeKey, {
+            ...timings,
+            importMs: Date.now() - importStartedAt,
+            rowCount: imported.climbsImported + imported.statsImported,
           });
           // The heal flag rides the persisted marker, not a per-cycle set: the
           // scope usually reaches completion in a LATER cycle (board_climb_grades
@@ -1489,6 +1578,23 @@ export async function pullSync(
     if (!scopeStartedAt.has(scopeKey)) scopeStartedAt.set(scopeKey, Date.now());
   };
 
+  // Download-funnel Started (issue #4316). Once ever per scope, guarded by the
+  // durable `scope-started:` marker rather than by anything cycle-local, so a
+  // snapshot that fails and retries emits one event and a paged crawl that spans
+  // cycles is not skipped. Both are how the naive in-cycle version broke.
+  const emitScopeDownloadStartOnce = async (info: ScopeDownloadStartInfo): Promise<void> => {
+    if (await isScopeDownloadStarted(db, info.scopeKey)) return;
+    await markScopeDownloadStarted(db, info.scopeKey);
+    options?.onScopeDownloadStart?.(info);
+  };
+  // Per-scope payload size and stage timings, recorded by the bootstrap phase and
+  // read back by Completed below. Run-local on purpose: a cycle that did not do
+  // the import has nothing honest to report (see ScopeDownloadCompleteInfo).
+  const bootstrapTimings = new Map<
+    string,
+    { bytes: number; downloadMs?: number; importMs?: number; rowCount?: number }
+  >();
+
   // Phase 0: snapshot bootstrap (BEFORE deletions). Only when an adapter injected
   // snapshot I/O; otherwise this is a pure paged pull, byte-identical to before.
   let skipBootstrapPagedPull: Set<string> = new Set();
@@ -1501,6 +1607,8 @@ export async function pullSync(
       scopes: boardScopes,
       cycleEpoch,
       stampScopeStart,
+      emitScopeDownloadStartOnce,
+      bootstrapTimings,
       options,
       now: options.now ?? Date.now,
       random: options.random ?? Math.random,
@@ -1565,6 +1673,14 @@ export async function pullSync(
     // No-op when the bootstrap phase already stamped this scope; the paged-only
     // path (no snapshotSource) starts its duration clock here.
     stampScopeStart(scopeKey);
+    // Started (issue #4316), the paged half — and the catch-all. Every scope
+    // reaches this line on every path: a build with no snapshot source, a scope
+    // the bootstrap phase found ineligible or unexportable, and the resumed
+    // multi-cycle crawl the checkpoint gate above skips. A scope the bootstrap
+    // phase already announced is a no-op here thanks to the durable marker, so
+    // it keeps its 'snapshot' intent and its artifact size.
+    await emitScopeDownloadStartOnce({ scopeKey, pathIntent: 'paged', artifactBytes: null });
+    if (cycleAborted()) return;
     // A scope whose bootstrap failed this cycle (with attempts still left) skips
     // its paged pull: a first-page checkpoint would permanently disqualify the
     // snapshot path, so the next cycle retries the snapshot instead.
@@ -1618,6 +1734,7 @@ export async function pullSync(
       // cycles (connectivity drop between them, or the grades crawl still
       // running), and this event fires exactly once per scope — misreporting
       // that one event would permanently skew the rollout comparison.
+      const timings = bootstrapTimings.get(scopeKey);
       options?.onScopeDownloadComplete?.({
         scopeKey,
         method: (await isBootstrapDone(db, scopeKey)) ? 'snapshot' : 'paged',
@@ -1625,6 +1742,9 @@ export async function pullSync(
         // A healed scope's duration excludes the paged work earlier cycles did,
         // so it must be filtered out of snapshot-vs-paged comparisons.
         bootstrapHealed: await wasBootstrapHealed(db, scopeKey),
+        // Spread rather than set explicitly: absent when this cycle did not do
+        // the import, which is the honest answer (see ScopeDownloadCompleteInfo).
+        ...timings,
       });
     }
   }

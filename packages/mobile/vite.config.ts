@@ -71,6 +71,15 @@ export default defineConfig({
         find: '@react-native-community/netinfo',
         replacement: fileURLToPath(new URL('./test/netinfo-stub.ts', import.meta.url)),
       },
+      // react-native-mmkv's react-native Flow entry throws a SyntaxError under
+      // vitest's node env, and the settings store binds an instance at module
+      // load — so any suite that transitively reaches `src/settings` would fail
+      // to load. Suites that need to reset the store between tests register
+      // their own vi.mock, which takes precedence.
+      {
+        find: 'react-native-mmkv',
+        replacement: fileURLToPath(new URL('./test/react-native-mmkv-stub.ts', import.meta.url)),
+      },
       // @sentry/react-native's real entry pulls in react-native's Promise.js,
       // which imports `promise/setimmediate/es6-extensions` (no extension) and
       // fails to resolve under vitest's node ESM env — breaking every suite that

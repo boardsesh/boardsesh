@@ -227,6 +227,10 @@ describe('removeBoardScopeData — markers', () => {
       '1',
     ]);
     await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      `scope-started:${scopeKey}`,
+      '1',
+    ]);
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
       `bootstrap-attempts:${scopeKey}`,
       '2',
     ]);
@@ -307,6 +311,9 @@ describe('removeBoardScopeData — markers', () => {
         'checkpoint:board_climb_stats:kilter:1:5',
         'checkpoint:board_climb_grades:kilter:1:5',
         'scope-complete:kilter:1:5',
+        // Its Started twin: leaving this behind would drop a re-added board out
+        // of the download funnel forever (issue #4316).
+        'scope-started:kilter:1:5',
         'bootstrap-attempts:kilter:1:5',
         'bootstrap-attempts-healed:kilter:1:5',
         'bootstrap-done:kilter:1:5',
