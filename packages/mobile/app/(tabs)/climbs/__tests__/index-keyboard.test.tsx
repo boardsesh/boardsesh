@@ -268,6 +268,9 @@ vi.mock('../../../../src/lib/graphql/client', () => ({ getHttpClient: () => ({ r
 // registered document from `operations`, so loading the real module would make
 // this test's partial operations mock load-bearing for future registrations.
 vi.mock('../../../../src/lib/graphql/offline-request', () => ({ offlineAwareRequest: vi.fn() }));
+// Has its own render suite (src/components/offline/__tests__).
+vi.mock('../../../../src/components/offline/OfflineCatalogCta', () => ({ OfflineCatalogCta: () => null }));
+vi.mock('../../../../src/offline/use-downloaded-scope-keys', () => ({ useDownloadedScopeKeys: () => ({ data: [] }) }));
 
 vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
   usePlaylistActivation: () => ({

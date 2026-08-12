@@ -633,6 +633,10 @@
         "title": "This filter needs a signal",
         "subtitle": "Drafts, beta, zones, and hold filters only work online. Clear it to keep browsing your downloaded board.",
         "cta": "Clear filter"
+      },
+      "offlineNoCatalog": {
+        "title": "Nothing here offline",
+        "subtitle": "This board's climbs aren't on your phone, so there's nothing to search without a connection."
       }
     },
     "detail": {

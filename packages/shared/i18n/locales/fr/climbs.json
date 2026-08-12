@@ -633,6 +633,10 @@
         "title": "Ce filtre nécessite une connexion",
         "subtitle": "Les brouillons, les betas, les zones et les filtres de prises ne fonctionnent qu'en ligne. Efface-le pour continuer à parcourir hors ligne.",
         "cta": "Effacer le filtre"
+      },
+      "offlineNoCatalog": {
+        "title": "Rien ici hors connexion",
+        "subtitle": "Les blocs de cette board ne sont pas sur ton téléphone, il n'y a donc rien à chercher sans connexion."
       }
     },
     "detail": {

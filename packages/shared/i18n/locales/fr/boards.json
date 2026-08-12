@@ -326,6 +326,12 @@
           "body": "Télécharge tout le catalogue une fois et chaque bloc est là quand le wifi de la salle lâche : recherche, filtres, croix dans le carnet, tout.",
           "cta": "Télécharger cette board",
           "allBoardsCta": "Garder toutes mes boards téléchargées"
+        },
+        "noCatalog": {
+          "title": "Pas de réseau, pas de catalogue",
+          "body": "{{name}} n'est pas encore sur ton téléphone, donc il n'y a rien à chercher ici.",
+          "cta": "La récupérer dès que j’ai du réseau",
+          "armedToast": "{{name}} est en file d’attente : le téléchargement démarre dès que tu es reconnecté."
         }
       }
     },

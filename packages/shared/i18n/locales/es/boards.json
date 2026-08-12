@@ -326,6 +326,12 @@
           "body": "Descarga el catálogo completo una vez y tendrás todos los bloques la próxima vez que falle el wifi del rocódromo: buscar, filtrar y registrar encadenes, todo.",
           "cta": "Descargar este plafón",
           "allBoardsCta": "Mantener descargados todos mis plafones"
+        },
+        "noCatalog": {
+          "title": "Sin cobertura y sin catálogo",
+          "body": "Todavía no tienes {{name}} en el móvil, así que aquí abajo no hay nada que buscar.",
+          "cta": "Descargarlo cuando tenga cobertura",
+          "armedToast": "{{name}} está en cola: se descarga en cuanto vuelvas a tener conexión."
         }
       }
     },

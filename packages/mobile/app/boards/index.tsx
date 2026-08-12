@@ -26,6 +26,7 @@ import { useIsOffline } from '../../src/hooks/use-is-offline';
 import { useOfflineBoards } from '../../src/settings';
 import { useRememberDownloadedBoards } from '../../src/offline/use-remember-downloaded-boards';
 import { useDownloadedScopeKeys } from '../../src/offline/use-downloaded-scope-keys';
+import { OfflineCatalogCta } from '../../src/components/offline/OfflineCatalogCta';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { setBoardRevealTipPending } from '../../src/lib/onboarding/onboarding-storage';
 import { track } from '../../src/lib/analytics';
@@ -328,6 +329,10 @@ export default function BoardSelection() {
             <Text variant="subheadline" style={styles.emptySubtitle}>
               {t('mobile.offline.pickerEmptyBody')}
             </Text>
+            {/* Arm-only, and it renders itself away unless the active board is
+                genuinely un-downloaded. This is the surface that used to be a
+                pure dead end. */}
+            <OfflineCatalogCta board={activeBoard} style={styles.emptyCta} />
             {/* Only the lying-connection case gets a retry — offline it would just
                 pause, and the user already knows they have no signal. */}
             {isError ? (

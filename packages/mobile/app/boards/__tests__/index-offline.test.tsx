@@ -136,6 +136,14 @@ vi.mock('../../../src/hooks/use-bottom-chrome-metrics', () => ({
 }));
 vi.mock('../../../src/hooks/use-is-offline', () => ({ useIsOffline: () => state.isOffline }));
 vi.mock('../../../src/settings', () => ({ useOfflineBoards: () => state.offlineCards }));
+// Has its own render suite (src/components/offline/__tests__); the screen only
+// needs to know it renders in the empty state.
+vi.mock('../../../src/components/offline/OfflineCatalogCta', () => ({
+  OfflineCatalogCta: () => null,
+}));
+vi.mock('../../../src/offline/use-downloaded-scope-keys', () => ({
+  useDownloadedScopeKeys: () => ({ data: state.downloadedScopeKeys }),
+}));
 vi.mock('../../../src/offline/use-remember-downloaded-boards', () => ({
   useRememberDownloadedBoards: (boards: unknown) => rememberDownloadedBoardsMock(boards),
 }));

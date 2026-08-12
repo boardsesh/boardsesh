@@ -326,6 +326,12 @@
           "body": "Download the whole catalog once and every climb is there next time the gym wifi isn't — browsing, filtering, logging sends, all of it.",
           "cta": "Download this board",
           "allBoardsCta": "Keep all my boards downloaded"
+        },
+        "noCatalog": {
+          "title": "No signal, no catalog",
+          "body": "{{name}} isn't on your phone yet, so there's nothing to search down here.",
+          "cta": "Grab it when I have signal",
+          "armedToast": "{{name}} is queued — it downloads the moment you're back online."
         }
       }
     },

@@ -633,6 +633,10 @@
         "title": "Dieser Filter braucht Empfang",
         "subtitle": "Entwürfe, Beta, Zonen und Griff-Filter funktionieren nur online. Setz ihn zurück, um weiter in deinem heruntergeladenen Board zu stöbern.",
         "cta": "Filter zurücksetzen"
+      },
+      "offlineNoCatalog": {
+        "title": "Offline ist hier nichts",
+        "subtitle": "Die Boulder dieses Boards sind nicht auf deinem Handy, ohne Verbindung gibt es also nichts zu durchsuchen."
       }
     },
     "detail": {

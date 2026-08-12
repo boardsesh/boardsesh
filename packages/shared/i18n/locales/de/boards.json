@@ -326,6 +326,12 @@
           "body": "Lade den ganzen Katalog einmal herunter, dann ist jeder Boulder da, wenn das Hallen-WLAN streikt: suchen, filtern, Begehungen eintragen, alles.",
           "cta": "Dieses Board herunterladen",
           "allBoardsCta": "Alle meine Boards heruntergeladen halten"
+        },
+        "noCatalog": {
+          "title": "Kein Netz, kein Katalog",
+          "body": "{{name}} ist noch nicht auf deinem Handy, hier unten gibt es also nichts zu durchsuchen.",
+          "cta": "Holen, sobald ich Netz habe",
+          "armedToast": "{{name}} steht in der Warteschlange und lädt, sobald du wieder online bist."
         }
       }
     },

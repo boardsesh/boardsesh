@@ -64,6 +64,9 @@ import { useInfiniteSearchClimbs } from '../../../src/lib/graphql/hooks/use-infi
 import { offlineAwareRequest } from '../../../src/lib/graphql/offline-request';
 import { isOfflineSearchSupported } from '../../../src/db/queries/search-climbs-local';
 import { useIsOffline } from '../../../src/hooks/use-is-offline';
+import { offlineBoardKeyForBoard } from '@boardsesh/offline-sync';
+import { useDownloadedScopeKeys } from '../../../src/offline/use-downloaded-scope-keys';
+import { OfflineCatalogCta } from '../../../src/components/offline/OfflineCatalogCta';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../src/lib/graphql/operations';
 import { usePlaylistActivation } from '../../../src/lib/playlists/use-playlist-activation';
 import { toQueueClimb, toQueueClimbs } from '../../../src/lib/climb-types';
@@ -450,6 +453,10 @@ function ClimbListInner() {
 
   // Reactive connectivity, for the offline-only empty state below.
   const isOffline = useIsOffline();
+  // One cheap indexed read, shared with My Boards / the boards picker via the
+  // ['downloadedScopeKeys'] cache entry — not a useSyncStatus() subscription,
+  // which republishes on every progress frame and would churn this list.
+  const { data: downloadedScopeKeys } = useDownloadedScopeKeys();
 
   const { data: gradesData } = useGrades(boardName);
   const gradesRef = useRef(gradesData);
@@ -1366,6 +1373,17 @@ function ClimbListInner() {
   // the generic "no climbs". Tall/wide are offline-expressible, so they don't
   // trip this.
   const offlineFilterUnavailable = isEmpty && isOffline && !isOfflineSearchSupported(searchInput);
+  // The other offline empty state, and the one that had no branch of its own: the
+  // filter IS answerable on-device, there is just no catalog here to answer it
+  // against. Deliberately checked AFTER offlineFilterUnavailable so that branch
+  // keeps its clear-filters CTA untouched.
+  const activeBoardScopeKey = activeBoard ? offlineBoardKeyForBoard(activeBoard) : null;
+  const offlineCatalogMissing =
+    isEmpty &&
+    isOffline &&
+    isOfflineSearchSupported(searchInput) &&
+    activeBoardScopeKey !== null &&
+    !(downloadedScopeKeys ?? []).includes(activeBoardScopeKey);
 
   return (
     <View testID="climbs-screen" style={[styles.container, { backgroundColor: systemColors.background }]}>
@@ -1408,6 +1426,17 @@ function ClimbListInner() {
                 onPress={handleClearNonGradeFilters}
                 style={styles.emptyCta}
               />
+            </View>
+          ) : offlineCatalogMissing ? (
+            <View style={styles.emptyContainer}>
+              <Icon name="offline.download" size={48} color={iosSystemColors.systemGray4} />
+              <Text variant="headline" style={styles.emptyTitle}>
+                {t('mobile.emptyState.offlineNoCatalog.title')}
+              </Text>
+              <Text variant="subheadline" style={styles.emptySubtitle}>
+                {t('mobile.emptyState.offlineNoCatalog.subtitle')}
+              </Text>
+              <OfflineCatalogCta board={activeBoard} style={styles.emptyCta} />
             </View>
           ) : isEmpty ? (
             <View style={styles.emptyContainer}>
