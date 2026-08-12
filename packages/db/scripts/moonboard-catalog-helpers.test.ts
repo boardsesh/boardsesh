@@ -233,10 +233,10 @@ void test('catalog matching ignores a listed alias chain whose terminal climb is
   assert.deepEqual(resolveCatalogClimbUuid(mapped, index), { uuid: mapped.uuid, matched: false, ambiguous: false });
 });
 
-void test('catalog matching flags ambiguous when TWO DISTINCT listed rows share holds+name (pre-0185 database)', () => {
+void test('catalog matching flags ambiguous when TWO DISTINCT listed rows share holds+name (pre-dedup-migration database)', () => {
   const mapped = makeMappedClimb();
   // Neither aliases the other — both are independently listed, same holds,
-  // same name. This is the exact shape a database predating migration 0185
+  // same name. This is the exact shape a database predating the dedup migration
   // (moonboard angle-dedup) looks like: both angle-rows of one problem still
   // separately listed.
   const angle25Uuid = 'moonboard-not-yet-deduped-25';

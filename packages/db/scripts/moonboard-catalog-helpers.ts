@@ -157,7 +157,7 @@ export function catalogAliasConflictUpdate() {
  *
  * `ambiguous: true` means the fingerprint bucket held >1 DISTINCT listed
  * candidate uuid — expected shape post-#3849 (one canonical per problem), but
- * on a database migration 0185 hasn't run against yet, both angle-rows of a
+ * on a database the moonboard_angle_dedup_backfill migration (#3849) hasn't run against yet, both angle-rows of a
  * problem are still separately listed and typically share a name, so the
  * name tie-break "resolves" to one of them non-deterministically (row order)
  * while the OTHER stays listed too. Writing through that state doubles-counts

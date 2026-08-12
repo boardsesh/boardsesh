@@ -96,7 +96,7 @@ async function buildExistingIndex(
   flush();
 
   // user_id IS NULL fences out Boardsesh-native user climbs, matching the
-  // same fence 0185's dedup migration applies. Without it, a user climb that
+  // same fence the moonboard_angle_dedup_backfill migration (#3849) applies. Without it, a user climb that
   // happens to share holds with an incoming catalog problem could be adopted
   // as the merge target, after which the catalog import would upsert its
   // stats onto the user's climb and point the problem's aliases at it.
@@ -208,10 +208,10 @@ async function importMoonBoardCatalog() {
         const { uuid, matched: matchedExisting, ambiguous } = resolveCatalogClimbUuid(mapped, existingIndex);
 
         // Multiple DISTINCT listed rows share this problem's holds. Two causes:
-        //   1. Migration 0185 (moonboard angle-dedup) hasn't run against this
+        //   1. The moonboard_angle_dedup_backfill migration (#3849) hasn't run against this
         //      database yet, so both angle-rows of the problem are still
         //      separately listed. Running it fixes this one.
-        //   2. The database IS migrated, but 0185 deliberately left this group
+        //   2. The database IS migrated, but the dedup migration deliberately left this group
         //      alone: it only collapses a same-signature group whose members
         //      all sit at DISTINCT angles, so a cross-problem duplicate class
         //      (the real "birthday cake trail mix" vs the junk problem named
@@ -224,7 +224,7 @@ async function importMoonBoardCatalog() {
           skippedAmbiguous++;
           console.error(
             `   ⚠️  Skipping problem ${problem.id} ("${problem.name}"): multiple listed rows already share its holds ` +
-              `at layout ${layoutId} — either this database predates migration 0185 (moonboard angle-dedup), or 0185 ` +
+              `at layout ${layoutId} — either this database predates the moonboard_angle_dedup_backfill migration (#3849), or that migration ` +
               `ran and left a cross-problem duplicate group for manual follow-up. Check migrations first; if they're ` +
               `up to date, these rows need deduping by hand.`,
           );
@@ -295,15 +295,13 @@ async function importMoonBoardCatalog() {
           edgeRight: null,
           edgeBottom: null,
           edgeTop: null,
-          // Angle-agnostic identity (see module header) — but KNOWN GAP,
-          // deliberately deferred, tracked in #4220: three backend paths
-          // (new-climb-subscriptions.ts, notification-worker.ts, feed-fanout.ts)
-          // resolve difficultyName via `LEFT JOIN board_climb_stats ON
-          // stats.angle = climbs.angle`, which never matches when climbs.angle
-          // is null — so a newly-imported MoonBoard problem shows ungraded in
-          // the new-climb feed and notifications until those queries learn a
-          // fallback (e.g. pick the min-angle stats row when climbs.angle is
-          // null). Nothing fails; the grade just doesn't show.
+          // Angle-agnostic identity (see module header). Consumers that
+          // resolve difficultyName by joining board_climb_stats at the climb's
+          // own angle handle the null via climbStatsEffectiveAngleSql
+          // (packages/backend/src/db/queries/util/climb-stats-join.ts): when
+          // climbs.angle is null they fall back to the climb's most-ascended
+          // stats row (lower angle wins ties). Formerly tracked as #4220,
+          // fixed on main before this importer landed.
           angle: null,
           framesCount: 1,
           framesPace: 0,
@@ -475,8 +473,8 @@ async function importMoonBoardCatalog() {
     if (totals.skippedAmbiguous > 0) {
       console.error(
         `   ⚠️  Problems skipped as ambiguous: ${totals.skippedAmbiguous} — several listed rows share their holds. ` +
-          `If this database predates migration 0185 (moonboard angle-dedup), run it and re-run this import to pick ` +
-          `these up. If it's already migrated, these are cross-problem duplicate groups 0185 left alone on purpose ` +
+          `If this database predates the moonboard_angle_dedup_backfill migration (#3849), run it and re-run this import to pick ` +
+          `these up. If it's already migrated, these are cross-problem duplicate groups the dedup migration left alone on purpose ` +
           `and they need deduping by hand.`,
       );
     }
