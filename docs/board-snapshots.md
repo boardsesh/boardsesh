@@ -108,6 +108,13 @@ avoid dropping data on a broken read:
   decompressed on disk (see Rollout plan). No explicit `cacheControl` is passed to `uploadToS3`, so
   artifacts get the storage layer's default: `public, max-age=31536000, immutable`. Content-addressed by
   build timestamp — safe to cache forever, a new build gets a new key.
+- Grades artifacts: `<keyPrefix>/<boardType>/<layoutId>/<builtAt>-grades.db`, same `Content-Type`, always
+  gzip, and **published only in the `v1-gzip` pass** (issue #4310). Same content-addressed immutability as
+  the whole-layout artifact. Referenced from the layout's manifest entry through the optional `grades`
+  block, never as its own `entries` element — `findSnapshotEntry` first-matches on `(boardType, layoutId)`,
+  so a sibling entry could be imported by an older client as if it carried the whole layout, stamping
+  checkpoints past rows it never imported. Layouts with no grade rows (every MoonBoard layout: MoonBoard is
+  deliberately outside `CROWD_MEAN_BOARDS`, see `docs/boardsesh-grade.md`) publish nothing.
 - Manifest: `<keyPrefix>/manifest.json`, `Content-Type: application/json`,
   `Cache-Control: public, max-age=300`. Mutable and cheap to refetch, written last so it's the only object
   in the whole scheme that changes in place. Each prefix has its own manifest.
@@ -122,7 +129,8 @@ Artifacts superseded by a newer build for the same `(boardType, layoutId)` are d
 
 An object is eligible for deletion when it's under the prefix the run targets (`board-snapshots/v1/` for
 the identity pass, `board-snapshots/v1-gzip/` for the gzip pass) and NOT referenced by the manifest
-just written, **and** its `lastModified` is older than a **14-day grace window**
+just written — where "referenced" includes every surviving entry's `grades.key`, which is not in `entries`
+and would otherwise be swept out from under live clients — **and** its `lastModified` is older than a **14-day grace window**
 (`PRUNE_GRACE_MS`). The grace window exists because the manifest is CDN-cached for up to 5 minutes and a
 client may hold a fetched manifest (with a now-superseded artifact URL) far longer than that before it
 actually starts the download. Pruning is defensive by design: any failure (per-object or the whole scan) is
@@ -130,8 +138,12 @@ logged and swallowed, never fails the run.
 
 ## Artifact format
 
-Each `.db` file carries exactly two data tables — `board_climbs` and `board_climb_stats` — plus
-`snapshot_meta`:
+The whole-layout `.db` file carries exactly two data tables — `board_climbs` and `board_climb_stats` —
+plus `snapshot_meta`. That has not changed since the first release and must not: every shipped binary
+verifies the file against its own two-table list and throws `snapshot_meta missing row for <table>` on a
+mismatch, which is a **counted** import failure. Two of those settle the scope onto the paged crawl, so
+widening this file's meta would break the fleet for the whole 14-day prune-grace window. Boardsesh grades
+ride in a separate file for exactly that reason (see "Grades artifact" below).
 
 ```sql
 CREATE TABLE snapshot_meta (
@@ -185,6 +197,28 @@ ignores the key. Every entry published before the field existed omits it, and th
 entries through untouched, so a reader must handle `undefined`. It only starts appearing on the first
 export run after the field ships: the nightly runs at 07:15 UTC, or dispatch
 `.github/workflows/export-board-snapshots.yml` manually to fill it in sooner.
+
+### Grades artifact (issue #4310)
+
+`board_climb_grades` is a per-board table the scope-completion gate waits on, but the whole-layout artifact
+never carried it — so every Kilter and Tension download paid hundreds of serial authenticated GraphQL
+pages for grades after the artifact had already landed. The natural experiment: `moonboard:2` (20.0 MB,
+93,939 climbs, **zero** grade rows) has a p50 of 14.5s, while `tension:9` (17.1 MB, 72,051 climbs, ~79k
+grade rows) takes 1m27s. Same bytes, same import shape, ~6x the duration.
+
+The fix is a second, standalone artifact per layout:
+
+- Contents: the `board_climb_grades` DDL from the shared MIGRATIONS, that layout's grade rows, and a
+  **one-row** `snapshot_meta`.
+- Scope: the same correlated `EXISTS` over `board_climbs` that `syncClimbGrades` uses, plus the stability
+  window — cursored on **`computed_at`**, not `updated_at`. Grades have no `updated_at` column. The cursor
+  column is declared once in `TABLE_CONFIGS[...].cursorColumn` (`@boardsesh/offline-sync`) and read from
+  there by both the export and the client, so the two cannot disagree about which column a watermark
+  covers.
+- Consistency: written inside the **same** `REPEATABLE READ` transaction as the whole-layout artifact, so
+  the grade rows and the climbs they hang off come from one database snapshot.
+- Kill switch: publish a manifest with no `grades` anywhere (or roll back to the identity `v1` prefix,
+  which never carries grades) and every client reverts to today's crawl with no deploy.
 
 ## Client bootstrap flow
 
@@ -426,6 +460,10 @@ manifest) and the export re-bases entry URLs onto it. Keep it consistent with
 - **Fastest, no deploy**: flip the `offline-snapshot-bootstrap-v2` PostHog flag off. Every client falls back
   to the paged crawl for newly-enabled boards; nothing already bootstrapped is affected (it's already past
   the eligibility check).
+- **Grades only** (issue #4310): the grades import runs only when the manifest entry carries a `grades`
+  block, so publishing a manifest without one — or rolling the fleet back to the identity `board-snapshots/v1`
+  prefix, which never publishes grades — reverts every client to the paged grades crawl with no deploy. It
+  is a slower download, not a broken one.
 - **Nuclear, affects every client regardless of flag state after cache expiry**: delete the
   `board-snapshots/v1-gzip/manifest.json` object from the bucket — that's the prefix the fleet reads;
   deleting `board-snapshots/v1/manifest.json` stops nothing. The manifest is cached for up to 5 minutes

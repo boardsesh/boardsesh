@@ -11,8 +11,25 @@
 // change so an old client rejects a manifest it can't parse rather than acting
 // on partial data.
 
-/** The two reference-data tables a snapshot carries. */
+/** The two reference-data tables the whole-layout snapshot carries. */
 export type SnapshotTableName = 'board_climbs' | 'board_climb_stats';
+
+/**
+ * The table the SEPARATE per-layout grades artifact carries.
+ *
+ * Boardsesh grades live in their own file rather than in the whole-layout
+ * artifact for two reasons (issue #4310). First, every shipped binary already
+ * downloads and verifies the whole-layout artifact against a two-table
+ * `snapshot_meta`, and widening that file's meta would make an updated client
+ * reject every pre-change artifact still inside the 14-day prune grace as a
+ * COUNTED import failure — two of those and the scope falls to the paged crawl.
+ * Second, grades are the term the whole-layout artifact never covered: they are
+ * a per-board table the scope-completion gate waits on, so every Kilter and
+ * Tension download pays hundreds of serial authenticated GraphQL pages for
+ * them, which is why boards with grades are ~6x slower than a MoonBoard layout
+ * of the same size.
+ */
+export type SnapshotGradesTableName = 'board_climb_grades';
 
 /** Artifact-level per-table watermark + row count. */
 export type SnapshotTableStats = {
@@ -24,6 +41,31 @@ export type SnapshotTableStats = {
   // lose precision in a JS number.
   watermarkSyncSeq: string;
   rowCount: number;
+};
+
+/**
+ * A layout's Boardsesh-grades artifact: a standalone SQLite file with the
+ * `board_climb_grades` DDL, that layout's grade rows, and its own one-row
+ * `snapshot_meta`. Optional per entry — layouts with no grade rows (every
+ * MoonBoard layout: MoonBoard is deliberately outside CROWD_MEAN_BOARDS,
+ * see docs/boardsesh-grade.md) publish none, and a manifest with no `grades`
+ * anywhere is the kill switch that reverts the fleet to the crawl.
+ *
+ * Deliberately NOT its own element of `entries`: `findSnapshotEntry` first-
+ * matches on (boardType, layoutId), so a sibling entry could be picked by an
+ * older client and imported as if it were the whole layout — stamping
+ * checkpoints past rows it never imported.
+ */
+export type SnapshotGradesArtifact = {
+  // S3 object key, e.g. `board-snapshots/v1-gzip/kilter/1/<iso>-grades.db`.
+  key: string;
+  url: string;
+  // Stored object size in bytes (gzip, like the whole-layout entry's `bytes`).
+  bytes: number;
+  contentEncoding: 'gzip' | 'identity';
+  builtAt: string;
+  schemaVersion: number;
+  tables: Record<SnapshotGradesTableName, SnapshotTableStats>;
 };
 
 export type SnapshotManifestEntry = {
@@ -60,6 +102,11 @@ export type SnapshotManifestEntry = {
   // up (or refuse it) before serving reads from it.
   schemaVersion: number;
   tables: Record<SnapshotTableName, SnapshotTableStats>;
+  // The layout's separate grades artifact, when it has grade rows. ADDITIVE:
+  // `formatVersion` stays 1 because the shipped validator only rejects
+  // missing/mistyped KNOWN fields, so a binary that predates this field parses
+  // the manifest unchanged and takes today's path.
+  grades?: SnapshotGradesArtifact;
 };
 
 export type SnapshotManifest = {
@@ -72,6 +119,7 @@ export type SnapshotManifest = {
 export const SNAPSHOT_MANIFEST_FORMAT_VERSION = 1 as const;
 
 const SNAPSHOT_TABLE_NAMES: readonly SnapshotTableName[] = ['board_climbs', 'board_climb_stats'];
+const SNAPSHOT_GRADES_TABLE_NAMES: readonly SnapshotGradesTableName[] = ['board_climb_grades'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -105,6 +153,27 @@ function isTableStats(value: unknown): value is SnapshotTableStats {
   );
 }
 
+// Validated only WHEN PRESENT: absent `grades` is the normal, supported state
+// (a MoonBoard layout, a rolled-back export, the kill switch). A MALFORMED one
+// is rejected, because a half-written grades block would otherwise be trusted
+// far enough to stamp a grades checkpoint over rows that never arrived.
+function isGradesArtifact(value: unknown): value is SnapshotGradesArtifact {
+  if (!isRecord(value)) return false;
+  if (
+    typeof value.key !== 'string' ||
+    typeof value.url !== 'string' ||
+    !isInteger(value.bytes) ||
+    (value.contentEncoding !== 'gzip' && value.contentEncoding !== 'identity') ||
+    !isIsoUtcTimestamp(value.builtAt) ||
+    !isInteger(value.schemaVersion)
+  ) {
+    return false;
+  }
+  const tables = value.tables;
+  if (!isRecord(tables)) return false;
+  return SNAPSHOT_GRADES_TABLE_NAMES.every((tableName) => isTableStats(tables[tableName]));
+}
+
 function isManifestEntry(value: unknown): value is SnapshotManifestEntry {
   if (!isRecord(value)) return false;
   if (
@@ -127,6 +196,7 @@ function isManifestEntry(value: unknown): value is SnapshotManifestEntry {
   if (value.uncompressedBytes !== undefined && (!isInteger(value.uncompressedBytes) || value.uncompressedBytes < 0)) {
     return false;
   }
+  if (value.grades !== undefined && !isGradesArtifact(value.grades)) return false;
   const tables = value.tables;
   if (!isRecord(tables)) return false;
   return SNAPSHOT_TABLE_NAMES.every((tableName) => isTableStats(tables[tableName]));

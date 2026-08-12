@@ -91,8 +91,19 @@ beforeEach(async () => {
   vi.mocked(getFromS3Strict).mockResolvedValue(null);
   vi.mocked(listS3Objects).mockResolvedValue([]);
   vi.mocked(deleteFromS3).mockResolvedValue(undefined);
-  await db.execute(sql`TRUNCATE TABLE board_climbs, board_climb_stats RESTART IDENTITY CASCADE`);
+  await db.execute(sql`TRUNCATE TABLE board_climbs, board_climb_stats, board_climb_grades RESTART IDENTITY CASCADE`);
 });
+
+/** Seeds one Boardsesh grade row for a climb (the NOT NULL columns are required). */
+async function seedGrade(boardType: string, climbUuid: string, angle: number): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO board_climb_grades
+      (board_type, climb_uuid, angle, local_grade, universal_grade, confidence,
+       ascensionist_count, model_version, coeff_version, computed_at)
+    VALUES (${boardType}, ${climbUuid}, ${angle}, 20, 19, 'high', 100, 'test-model', 'test-coeff',
+            '2026-05-01T00:00:00Z'::timestamp)
+  `);
+}
 
 describe('mergeManifestEntries', () => {
   const kilterOld = manifestEntryFixture('kilter', 1, 'board-snapshots/v1/kilter/1/old.db');
@@ -451,5 +462,118 @@ describe('runExport — gzip + key-prefix (dual-publish transition)', () => {
     expect(manifest.entries[0].key.startsWith(`${GZIP_PREFIX}/kilter/1/`)).toBe(true);
     // A filtered run never prunes.
     expect(listS3Objects).not.toHaveBeenCalled();
+  });
+});
+
+// The separate per-layout grades artifact (issue #4310). It rides under the same
+// key prefix as the whole-layout artifact but is referenced through the entry's
+// optional `grades` block, never as its own `entries` element.
+describe('runExport — board_climb_grades artifacts', () => {
+  const GZIP_PREFIX = 'board-snapshots/v1-gzip';
+  const GZIP_MANIFEST_KEY = `${GZIP_PREFIX}/manifest.json`;
+
+  function gzipManifest(): SnapshotManifest {
+    const manifestCalls = vi.mocked(uploadToS3).mock.calls.filter(([, key]) => key === GZIP_MANIFEST_KEY);
+    expect(manifestCalls.length).toBeGreaterThan(0);
+    return JSON.parse((manifestCalls[manifestCalls.length - 1][0] as Buffer).toString('utf8')) as SnapshotManifest;
+  }
+
+  it('publishes a grades artifact and references it from the entry, not from `entries`', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await seedGrade('kilter', 'k1-a', 40);
+
+    await runExport(['--gzip', '--key-prefix', GZIP_PREFIX]);
+
+    const manifest = gzipManifest();
+    // One entry per (board, layout) — the grades file must never become a
+    // sibling entry, because findSnapshotEntry first-matches on that pair.
+    expect(manifest.entries).toHaveLength(1);
+    const entry = manifest.entries[0];
+    expect(entry.grades).toBeDefined();
+    expect(entry.grades?.key).toBe(`${entry.key.replace(/\.db$/, '')}-grades.db`);
+    expect(entry.grades?.contentEncoding).toBe('gzip');
+    expect(entry.grades?.tables.board_climb_grades.rowCount).toBe(1);
+    // The whole-layout entry's own fields are untouched.
+    expect(Object.keys(entry.tables).sort()).toEqual(['board_climb_stats', 'board_climbs']);
+    expect(manifest.formatVersion).toBe(1);
+
+    const gradesUpload = vi.mocked(uploadToS3).mock.calls.find(([, key]) => String(key).endsWith('-grades.db'))!;
+    expect(gradesUpload[3]).toEqual({ contentEncoding: 'gzip' });
+    expect((gradesUpload[0] as Buffer)[0]).toBe(0x1f); // gzip magic
+  });
+
+  it('omits `grades` for a layout with no grade rows (every MoonBoard layout)', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+
+    await runExport(['--gzip', '--key-prefix', GZIP_PREFIX]);
+
+    expect(gzipManifest().entries[0].grades).toBeUndefined();
+    expect(vi.mocked(uploadToS3).mock.calls.some(([, key]) => String(key).endsWith('-grades.db'))).toBe(false);
+  });
+
+  it('publishes NO grades artifact on the identity rollback pass — that prefix is the kill switch', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await seedGrade('kilter', 'k1-a', 40);
+
+    await runExport([]);
+
+    expect(uploadedManifest().entries[0].grades).toBeUndefined();
+    expect(vi.mocked(uploadToS3).mock.calls.some(([, key]) => String(key).endsWith('-grades.db'))).toBe(false);
+  });
+
+  it('never prunes a grades artifact the manifest just published', async () => {
+    // Grades keys are not in `entries`, so a prune that only walks entry.key
+    // would delete live grades files out from under every client holding the
+    // current manifest.
+    await seedClimb('kilter', 1, 'k1-a');
+    await seedGrade('kilter', 'k1-a', 40);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    vi.mocked(listS3Objects).mockImplementation(async () =>
+      vi
+        .mocked(uploadToS3)
+        .mock.calls.filter(([, key]) => !String(key).endsWith('/manifest.json'))
+        .map(([, key]) => ({ key: String(key), size: 10, lastModified: thirtyDaysAgo })),
+    );
+
+    await runExport(['--gzip', '--key-prefix', GZIP_PREFIX]);
+
+    expect(deleteFromS3).not.toHaveBeenCalled();
+  });
+
+  it('prunes a SUPERSEDED grades artifact once it leaves the grace window', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await seedGrade('kilter', 'k1-a', 40);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    vi.mocked(listS3Objects).mockResolvedValue([
+      { key: `${GZIP_PREFIX}/kilter/1/ancient-grades.db`, size: 10, lastModified: thirtyDaysAgo },
+    ]);
+
+    await runExport(['--gzip', '--key-prefix', GZIP_PREFIX]);
+
+    expect(deleteFromS3).toHaveBeenCalledWith(`${GZIP_PREFIX}/kilter/1/ancient-grades.db`);
+  });
+
+  it('a filtered run preserves another board’s previously-published grades block', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    const previousTension: SnapshotManifestEntry = {
+      ...manifestEntryFixture('tension', 9, `${GZIP_PREFIX}/tension/9/old.db`),
+      grades: {
+        key: `${GZIP_PREFIX}/tension/9/old-grades.db`,
+        url: `https://cdn.example/${GZIP_PREFIX}/tension/9/old-grades.db`,
+        bytes: 42,
+        contentEncoding: 'gzip',
+        builtAt: '2026-06-01T00:00:00.000Z',
+        schemaVersion: 3,
+        tables: {
+          board_climb_grades: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '9', rowCount: 4 },
+        },
+      },
+    };
+    serveExistingManifest(manifestFixture([previousTension]));
+
+    await runExport(['--gzip', '--key-prefix', GZIP_PREFIX, '--board', 'kilter']);
+
+    const tensionEntry = gzipManifest().entries.find((entry) => entry.boardType === 'tension')!;
+    expect(tensionEntry.grades?.key).toBe(`${GZIP_PREFIX}/tension/9/old-grades.db`);
   });
 });

@@ -43,6 +43,8 @@ import {
   SNAPSHOT_MANIFEST_FORMAT_VERSION,
   type SnapshotManifest,
   type SnapshotManifestEntry,
+  type SnapshotGradesArtifact,
+  type SnapshotGradesTableName,
   type SnapshotTableName,
 } from '@boardsesh/offline-sync';
 import { createPool, closePool } from '@boardsesh/db/client';
@@ -105,6 +107,28 @@ const EPOCH_WATERMARK_SYNC_SEQ = '0';
 
 const SNAPSHOT_TABLES: readonly SnapshotTableName[] = ['board_climbs', 'board_climb_stats'];
 
+// The SEPARATE per-layout grades artifact's single table (issue #4310). It is
+// not folded into SNAPSHOT_TABLES on purpose: the client verifies a whole-layout
+// artifact's `snapshot_meta` against its OWN two-table list and throws
+// "snapshot_meta missing row for <table>" on a mismatch, so growing the
+// whole-layout file's meta would make an updated client reject every artifact
+// published before this change — as a COUNTED import failure, twice, which
+// settles the scope onto the paged crawl. Separate file, separate meta, no
+// interaction.
+const GRADES_SNAPSHOT_TABLES: readonly SnapshotGradesTableName[] = ['board_climb_grades'];
+
+// Every snapshot table's keyset cursor column, read from the SHARED table config
+// so the export, the sync resolvers, and the client import can never disagree
+// about which column a watermark covers. `board_climb_grades` is the one that
+// is not `updated_at`.
+function cursorColumnFor(tableName: SnapshotTableName | SnapshotGradesTableName): string {
+  const cursorColumn = TABLE_CONFIGS[tableName]?.cursorColumn;
+  if (!cursorColumn || !SAFE_IDENTIFIER.test(cursorColumn)) {
+    throw new Error(`No safe cursor column configured for snapshot table ${tableName}`);
+  }
+  return cursorColumn;
+}
+
 const SNAPSHOT_META_DDL = `
 CREATE TABLE IF NOT EXISTS snapshot_meta (
   table_name TEXT PRIMARY KEY,
@@ -139,6 +163,18 @@ export type LayoutSnapshotResult = {
   builtAt: string;
   schemaVersion: number;
   tables: Record<SnapshotTableName, SnapshotTableExportResult>;
+  /**
+   * The layout's grades artifact, when one was requested AND the layout has
+   * grade rows. Absent for every MoonBoard layout (MoonBoard is outside
+   * CROWD_MEAN_BOARDS, so `board_climb_grades` is empty for it by design) and
+   * for any run that did not ask for one.
+   */
+  grades?: LayoutGradesSnapshotResult;
+};
+
+export type LayoutGradesSnapshotResult = {
+  filePath: string;
+  tables: Record<SnapshotGradesTableName, SnapshotTableExportResult>;
 };
 
 export type LayoutPair = { boardType: string; layoutId: number };
@@ -153,9 +189,11 @@ export type LayoutPair = { boardType: string; layoutId: number };
  * client (e.g. the v2 `characteristics` ALTER) flows into the snapshot with no
  * duplicated DDL here.
  */
-export function boardSnapshotDdlStatements(): string[] {
+export function boardSnapshotDdlStatements(
+  tables: readonly (SnapshotTableName | SnapshotGradesTableName)[] = SNAPSHOT_TABLES,
+): string[] {
   const referencesSnapshotTable = (statement: string): boolean =>
-    SNAPSHOT_TABLES.some((table) => new RegExp(`\\b${table}\\b`).test(statement));
+    tables.some((table) => new RegExp(`\\b${table}\\b`).test(statement));
 
   const statements: string[] = [];
   for (const migration of [...MIGRATIONS].sort((left, right) => left.version - right.version)) {
@@ -202,6 +240,17 @@ const STATS_WHERE = `board_type = $1
     )
     AND updated_at < now() - make_interval(secs => $3)`;
 
+// Grades have no layout_id, so they are scoped to the layout's climbs through
+// the SAME correlated EXISTS the syncClimbGrades resolver uses — import wider
+// than the resolver's scope and rows are merely redundant, narrower and a row
+// inside the stamped watermark is lost forever.
+const GRADES_WHERE = `board_type = $1
+    AND EXISTS (
+      SELECT 1 FROM board_climbs bc
+      WHERE bc.uuid = board_climb_grades.climb_uuid AND bc.board_type = $1 AND bc.layout_id = $2
+    )
+    AND computed_at < now() - make_interval(secs => $3)`;
+
 /**
  * Stream one table's scoped rows from Postgres through the shared row shaping into
  * the SQLite artifact, batched into multi-row INSERTs. Returns the number of rows
@@ -211,7 +260,7 @@ const STATS_WHERE = `board_type = $1
 async function streamTableIntoSqlite(
   tx: TransactionSql,
   sqliteDb: DatabaseSync,
-  tableName: SnapshotTableName,
+  tableName: SnapshotTableName | SnapshotGradesTableName,
   columns: readonly string[],
   whereClause: string,
   params: (string | number)[],
@@ -264,34 +313,70 @@ async function streamTableIntoSqlite(
  */
 async function tableWatermark(
   tx: TransactionSql,
-  tableName: SnapshotTableName,
+  tableName: SnapshotTableName | SnapshotGradesTableName,
   whereClause: string,
   params: (string | number)[],
 ): Promise<{ watermarkUpdatedAt: string; watermarkSyncSeq: string }> {
+  const cursorColumn = cursorColumnFor(tableName);
   const rows = await tx.unsafe(
-    `SELECT updated_at, sync_seq
+    `SELECT ${cursorColumn} AS cursor_at, sync_seq
      FROM ${tableName}
      WHERE ${whereClause}
-     ORDER BY updated_at DESC, sync_seq DESC
+     ORDER BY ${cursorColumn} DESC, sync_seq DESC
      LIMIT 1`,
     params,
   );
-  const watermarkRow = rows[0] as unknown as { updated_at: unknown; sync_seq: unknown } | undefined;
+  const watermarkRow = rows[0] as unknown as { cursor_at: unknown; sync_seq: unknown } | undefined;
   if (!watermarkRow) {
     return { watermarkUpdatedAt: EPOCH_WATERMARK_UPDATED_AT, watermarkSyncSeq: EPOCH_WATERMARK_SYNC_SEQ };
   }
   return {
-    watermarkUpdatedAt: toIso(watermarkRow.updated_at),
+    watermarkUpdatedAt: toIso(watermarkRow.cursor_at),
     watermarkSyncSeq: String(watermarkRow.sync_seq),
   };
 }
 
 // --- Layout snapshot build ----------------------------------------------------
 
+/** Writes one `snapshot_meta` row per table into an artifact. */
+function writeSnapshotMeta(
+  sqliteDb: DatabaseSync,
+  builtAt: string,
+  tables: Record<string, SnapshotTableExportResult>,
+): void {
+  const insertMeta = sqliteDb.prepare(
+    `INSERT OR REPLACE INTO snapshot_meta
+      (table_name, watermark_updated_at, watermark_sync_seq, row_count, built_at, schema_version, format_version)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  );
+  for (const [tableName, tableResult] of Object.entries(tables)) {
+    insertMeta.run(
+      tableName,
+      tableResult.watermarkUpdatedAt,
+      tableResult.watermarkSyncSeq,
+      tableResult.rowCount,
+      builtAt,
+      LATEST_SCHEMA_VERSION,
+      SNAPSHOT_MANIFEST_FORMAT_VERSION,
+    );
+  }
+}
+
 /**
- * Build ONE (boardType, layoutId) SQLite snapshot at `filePath`. Both tables and
- * every watermark are read inside a single REPEATABLE READ transaction so climbs,
- * stats, and their watermarks come from one consistent database snapshot.
+ * Build ONE (boardType, layoutId) SQLite snapshot at `filePath`, and — when
+ * `gradesFilePath` is given and the layout has grade rows — a SECOND, separate
+ * artifact carrying only `board_climb_grades`.
+ *
+ * Every table and every watermark is read inside a SINGLE REPEATABLE READ
+ * transaction, so the whole-layout artifact, the grades artifact, and all four
+ * watermarks come from one consistent database snapshot. That matters for the
+ * grades file specifically: its rows are scoped by an EXISTS over
+ * `board_climbs`, so a climb committed between the two reads would otherwise
+ * make the grade rows and the climbs they hang off disagree.
+ *
+ * The whole-layout artifact is BYTE-FOR-BYTE what it was before grades existed
+ * — same DDL, same two tables, same two `snapshot_meta` rows — because every
+ * shipped binary verifies it against a two-table list.
  */
 export async function exportLayoutSnapshot(params: {
   sqlClient: Sql;
@@ -299,22 +384,31 @@ export async function exportLayoutSnapshot(params: {
   layoutId: number;
   filePath: string;
   builtAt: string;
+  /** Where to write the layout's grades artifact. Omit to skip grades entirely. */
+  gradesFilePath?: string;
   stabilityWindowSeconds?: number;
   streamBatchSize?: number;
 }): Promise<LayoutSnapshotResult> {
-  const { sqlClient, boardType, layoutId, filePath, builtAt } = params;
+  const { sqlClient, boardType, layoutId, filePath, builtAt, gradesFilePath } = params;
   const stabilityWindowSeconds = params.stabilityWindowSeconds ?? DEFAULT_STABILITY_WINDOW_SECONDS;
   const streamBatchSize = params.streamBatchSize ?? 5000;
   const scopeParams: (string | number)[] = [boardType, layoutId, stabilityWindowSeconds];
 
   const sqliteDb = new DatabaseSync(filePath);
+  const gradesDb = gradesFilePath ? new DatabaseSync(gradesFilePath) : null;
   try {
     for (const statement of boardSnapshotDdlStatements()) {
       sqliteDb.exec(statement);
     }
+    if (gradesDb) {
+      for (const statement of boardSnapshotDdlStatements(GRADES_SNAPSHOT_TABLES)) {
+        gradesDb.exec(statement);
+      }
+    }
 
     sqliteDb.exec('BEGIN');
-    const tables = await sqlClient.begin(async (tx) => {
+    gradesDb?.exec('BEGIN');
+    const streamed = await sqlClient.begin(async (tx) => {
       await tx.unsafe('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
 
       const climbColumns = TABLE_CONFIGS.board_climbs.localColumns;
@@ -342,30 +436,46 @@ export async function exportLayoutSnapshot(params: {
       );
       const statsWatermark = await tableWatermark(tx, 'board_climb_stats', STATS_WHERE, scopeParams);
 
-      return {
+      const tables = {
         board_climbs: { rowCount: climbRowCount, ...climbWatermark },
         board_climb_stats: { rowCount: statsRowCount, ...statsWatermark },
       } satisfies Record<SnapshotTableName, SnapshotTableExportResult>;
+
+      if (!gradesDb) return { tables, gradesTables: null };
+
+      const gradesRowCount = await streamTableIntoSqlite(
+        tx,
+        gradesDb,
+        'board_climb_grades',
+        TABLE_CONFIGS.board_climb_grades.localColumns,
+        GRADES_WHERE,
+        scopeParams,
+        streamBatchSize,
+      );
+      const gradesWatermark = await tableWatermark(tx, 'board_climb_grades', GRADES_WHERE, scopeParams);
+
+      return {
+        tables,
+        gradesTables: {
+          board_climb_grades: { rowCount: gradesRowCount, ...gradesWatermark },
+        } satisfies Record<SnapshotGradesTableName, SnapshotTableExportResult>,
+      };
     });
 
-    const insertMeta = sqliteDb.prepare(
-      `INSERT OR REPLACE INTO snapshot_meta
-        (table_name, watermark_updated_at, watermark_sync_seq, row_count, built_at, schema_version, format_version)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    );
-    for (const tableName of SNAPSHOT_TABLES) {
-      const tableResult = tables[tableName];
-      insertMeta.run(
-        tableName,
-        tableResult.watermarkUpdatedAt,
-        tableResult.watermarkSyncSeq,
-        tableResult.rowCount,
-        builtAt,
-        LATEST_SCHEMA_VERSION,
-        SNAPSHOT_MANIFEST_FORMAT_VERSION,
-      );
-    }
+    writeSnapshotMeta(sqliteDb, builtAt, streamed.tables);
     sqliteDb.exec('COMMIT');
+
+    let grades: LayoutGradesSnapshotResult | undefined;
+    if (gradesDb && streamed.gradesTables) {
+      writeSnapshotMeta(gradesDb, builtAt, streamed.gradesTables);
+      gradesDb.exec('COMMIT');
+      // A layout with no grade rows publishes nothing at all — every MoonBoard
+      // layout lands here, because MoonBoard is deliberately outside
+      // CROWD_MEAN_BOARDS (docs/boardsesh-grade.md).
+      if (streamed.gradesTables.board_climb_grades.rowCount > 0) {
+        grades = { filePath: gradesFilePath as string, tables: streamed.gradesTables };
+      }
+    }
 
     return {
       boardType,
@@ -373,17 +483,21 @@ export async function exportLayoutSnapshot(params: {
       filePath,
       builtAt,
       schemaVersion: LATEST_SCHEMA_VERSION,
-      tables,
+      tables: streamed.tables,
+      ...(grades ? { grades } : {}),
     };
   } catch (error) {
-    try {
-      sqliteDb.exec('ROLLBACK');
-    } catch {
-      // No open transaction to roll back — ignore.
+    for (const database of [sqliteDb, gradesDb]) {
+      try {
+        database?.exec('ROLLBACK');
+      } catch {
+        // No open transaction to roll back — ignore.
+      }
     }
     throw error;
   } finally {
     sqliteDb.close();
+    gradesDb?.close();
   }
 }
 
@@ -465,7 +579,20 @@ function buildManifestEntry(
     uncompressedBytes: number;
     contentEncoding: 'gzip' | 'identity';
   },
+  gradesUpload?: { url: string; key: string; bytes: number; contentEncoding: 'gzip' | 'identity' },
 ): SnapshotManifestEntry {
+  const grades: SnapshotGradesArtifact | undefined =
+    gradesUpload && result.grades
+      ? {
+          key: gradesUpload.key,
+          url: gradesUpload.url,
+          bytes: gradesUpload.bytes,
+          contentEncoding: gradesUpload.contentEncoding,
+          builtAt: result.builtAt,
+          schemaVersion: result.schemaVersion,
+          tables: { board_climb_grades: result.grades.tables.board_climb_grades },
+        }
+      : undefined;
   return {
     boardType: result.boardType,
     layoutId: result.layoutId,
@@ -480,6 +607,10 @@ function buildManifestEntry(
       board_climbs: result.tables.board_climbs,
       board_climb_stats: result.tables.board_climb_stats,
     },
+    // Omitted entirely rather than set to undefined: the manifest is serialized
+    // to JSON, and an explicit `"grades": undefined` key is not a thing — but
+    // keeping the shape clean makes the golden test's byte comparison honest.
+    ...(grades ? { grades } : {}),
   };
 }
 
@@ -585,6 +716,12 @@ async function fetchPreviousManifest(options: {
 async function pruneStaleArtifacts(manifest: SnapshotManifest, nowMs: number, keyPrefix: string): Promise<void> {
   try {
     const referencedKeys = new Set<string>(manifest.entries.map((entry) => entry.key));
+    // Grades artifacts live under the same prefix but are NOT in `entries`, so
+    // without this the 14-day grace window would start deleting live grades
+    // files out from under every client holding the current manifest.
+    for (const entry of manifest.entries) {
+      if (entry.grades) referencedKeys.add(entry.grades.key);
+    }
     referencedKeys.add(manifestKeyForPrefix(keyPrefix));
     const cutoffMs = nowMs - PRUNE_GRACE_MS;
 
@@ -676,6 +813,7 @@ export async function runExport(argv: string[]): Promise<void> {
     for (const pair of pairs) {
       const startedAt = Date.now();
       const filePath = join(workDir, `${pair.boardType}-${pair.layoutId}.db`);
+      const gradesFilePath = join(workDir, `${pair.boardType}-${pair.layoutId}-grades.db`);
       try {
         const result = await exportLayoutSnapshot({
           sqlClient,
@@ -683,6 +821,13 @@ export async function runExport(argv: string[]): Promise<void> {
           layoutId: pair.layoutId,
           filePath,
           builtAt,
+          // GZIP PASS ONLY. The nightly runs twice — once at the identity `v1`
+          // prefix kept as a rollback target, once at `v1-gzip` where the fleet
+          // actually points. Publishing grades only in the gzip pass means a
+          // rollback to `v1` is exactly today's behaviour (whole file + grades
+          // crawl) with no deploy, which is the kill switch for the whole
+          // grades path.
+          ...(options.gzip ? { gradesFilePath } : {}),
         });
 
         const rawBuffer = readFileSync(filePath);
@@ -699,28 +844,51 @@ export async function runExport(argv: string[]): Promise<void> {
         const keyStamp = builtAt.replace(/[:.]/g, '-');
         const key = `${keyPrefix}/${pair.boardType}/${pair.layoutId}/${keyStamp}.db`;
 
+        // The grades artifact is a sibling object under the same prefix, never
+        // a second `entries` element — findSnapshotEntry first-matches on
+        // (boardType, layoutId), so an old client could otherwise pick it up as
+        // if it were the whole layout and stamp checkpoints past rows it never
+        // imported.
+        const gradesKey = `${keyPrefix}/${pair.boardType}/${pair.layoutId}/${keyStamp}-grades.db`;
+        const gradesRawBuffer = result.grades ? readFileSync(result.grades.filePath) : null;
+        const gradesUploadBody = gradesRawBuffer ? gzipSync(gradesRawBuffer) : null;
+
         if (options.dryRun) {
           logger.info('[export-snapshots] built (dry-run, not uploaded)', {
             boardType: pair.boardType,
             layoutId: pair.layoutId,
             climbs: result.tables.board_climbs.rowCount,
             stats: result.tables.board_climb_stats.rowCount,
+            grades: result.grades?.tables.board_climb_grades.rowCount ?? 0,
             rawBytes: rawBuffer.length,
             uploadBytes: uploadBody.length,
+            gradesUploadBytes: gradesUploadBody?.length ?? 0,
             contentEncoding,
             durationMs: Date.now() - startedAt,
           });
+          // publicUrlForKey may fall back to getPublicUrl, which instantiates
+          // the S3 client — so only call it when S3 is configured. A dry-run
+          // must work with no AWS credentials at all.
+          const canBuildPublicUrl = isS3Configured() || snapshotPublicBaseUrl() !== '';
           newEntries.push(
-            buildManifestEntry(result, {
-              // publicUrlForKey may fall back to getPublicUrl, which instantiates
-              // the S3 client — so only call it when S3 is configured. A dry-run
-              // must work with no AWS credentials at all.
-              url: isS3Configured() || snapshotPublicBaseUrl() ? publicUrlForKey(key) : `dry-run:${key}`,
-              key,
-              bytes: uploadBody.length,
-              uncompressedBytes: rawBuffer.length,
-              contentEncoding,
-            }),
+            buildManifestEntry(
+              result,
+              {
+                url: canBuildPublicUrl ? publicUrlForKey(key) : `dry-run:${key}`,
+                key,
+                bytes: uploadBody.length,
+                uncompressedBytes: rawBuffer.length,
+                contentEncoding,
+              },
+              gradesUploadBody
+                ? {
+                    url: canBuildPublicUrl ? publicUrlForKey(gradesKey) : `dry-run:${gradesKey}`,
+                    key: gradesKey,
+                    bytes: gradesUploadBody.length,
+                    contentEncoding: 'gzip' as const,
+                  }
+                : undefined,
+            ),
           );
         } else {
           const uploaded = await uploadToS3(
@@ -729,24 +897,44 @@ export async function runExport(argv: string[]): Promise<void> {
             ARTIFACT_CONTENT_TYPE,
             options.gzip ? { contentEncoding: 'gzip' } : undefined,
           );
+          // Uploaded BEFORE the manifest that references it, like the
+          // whole-layout artifact — the manifest is always written last, so a
+          // reader never sees a key that is not on S3 yet.
+          const uploadedGrades = gradesUploadBody
+            ? await uploadToS3(gradesUploadBody, gradesKey, ARTIFACT_CONTENT_TYPE, { contentEncoding: 'gzip' })
+            : null;
           logger.info('[export-snapshots] uploaded', {
             boardType: pair.boardType,
             layoutId: pair.layoutId,
             climbs: result.tables.board_climbs.rowCount,
             stats: result.tables.board_climb_stats.rowCount,
+            grades: result.grades?.tables.board_climb_grades.rowCount ?? 0,
             uploadBytes: uploadBody.length,
+            gradesUploadBytes: gradesUploadBody?.length ?? 0,
             contentEncoding,
             key: uploaded.key,
+            gradesKey: uploadedGrades?.key ?? null,
             durationMs: Date.now() - startedAt,
           });
           newEntries.push(
-            buildManifestEntry(result, {
-              url: publicUrlForKey(uploaded.key),
-              key: uploaded.key,
-              bytes: uploadBody.length,
-              uncompressedBytes: rawBuffer.length,
-              contentEncoding,
-            }),
+            buildManifestEntry(
+              result,
+              {
+                url: publicUrlForKey(uploaded.key),
+                key: uploaded.key,
+                bytes: uploadBody.length,
+                uncompressedBytes: rawBuffer.length,
+                contentEncoding,
+              },
+              uploadedGrades && gradesUploadBody
+                ? {
+                    url: publicUrlForKey(uploadedGrades.key),
+                    key: uploadedGrades.key,
+                    bytes: gradesUploadBody.length,
+                    contentEncoding: 'gzip' as const,
+                  }
+                : undefined,
+            ),
           );
         }
       } catch (error) {
@@ -763,6 +951,7 @@ export async function runExport(argv: string[]): Promise<void> {
         });
       } finally {
         rmSync(filePath, { force: true });
+        rmSync(gradesFilePath, { force: true });
       }
     }
 

@@ -144,6 +144,8 @@ export type {
   SnapshotManifestEntry,
   SnapshotTableStats,
   SnapshotTableName,
+  SnapshotGradesArtifact,
+  SnapshotGradesTableName,
 } from './sync/snapshot-manifest';
 
 // --- Pre-download size estimate (issue #3616) ------------------------------------
