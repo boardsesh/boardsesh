@@ -957,6 +957,12 @@ jobs:
           WEB_RESULT: ${{ needs.deploy-web.result }}
           BACKEND_RESULT: ${{ needs.deploy-production-backend.result }}
           APP_WEB_RESULT: ${{ needs.deploy-app-web.result }}
+          # A held deploy is a skip, which would otherwise print as "unchanged" —
+          # the exact invisibility notify-app-web-held exists to prevent. True
+          # only when the hold is set AND this push would have deployed the
+          # subdomain; with the variable unset this renders "false" and the
+          # message is byte-identical to before.
+          APP_WEB_HELD: ${{ vars.APP_WEB_DEPLOY_HOLD != '' && needs.detect-changes.outputs.app_changed == 'true' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT_SHA: ${{ github.sha }}
           BEFORE_SHA: ${{ github.event.before }}
@@ -973,6 +979,7 @@ jobs:
           if [ "$BACKEND_RESULT" = "success" ]; then BACKEND_LINE="deployed"; fi
           APP_WEB_LINE="unchanged"
           if [ "$APP_WEB_RESULT" = "success" ]; then APP_WEB_LINE="deployed"; fi
+          if [ "$APP_WEB_HELD" = "true" ]; then APP_WEB_LINE="held (APP_WEB_DEPLOY_HOLD set)"; fi
 
           # Pull PR numbers from merge-commit subjects in BEFORE..SHA. Skip the
           # section entirely if BEFORE is missing/zero (workflow_dispatch, first

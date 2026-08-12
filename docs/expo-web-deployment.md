@@ -158,6 +158,47 @@ variable instead:
 - `notify-failure` fires on `failure`/`cancelled` only, so a held (skipped) job
   raises no false alarm.
 
+#### Holding and releasing
+
+Anyone with **admin** or **maintain** on the repo can set it: GitHub →
+Settings → Secrets and variables → Actions → **Variables** → _Repository
+variables_, or from the CLI:
+
+```
+gh variable set APP_WEB_DEPLOY_HOLD --body "2026-08-12 incident: Pages pinned to <deployment>"
+gh variable list                       # confirm it is set
+gh variable delete APP_WEB_DEPLOY_HOLD # release
+```
+
+Three things to get right:
+
+- **Repository variable, not an environment variable.** The gate is the
+  job-level `if:` on `deploy-app-web`, which GitHub evaluates before the job's
+  `environment: Production` is resolved — a variable scoped to that environment
+  is not reliably visible there, and a hold that silently does nothing is worse
+  than no hold at all.
+- **Not a secret.** Only its presence is read, never its value, so spend the body
+  on the incident reference: it is what the next person sees in Settings.
+- **Clear it before the next intended deploy.** The hold is not time-boxed and
+  nothing queues behind it. Every qualifying merge while it is set skips the
+  subdomain and pings Discord, and those commits stay unshipped until it is
+  cleared.
+
+Releasing does not redeploy by itself. After `gh variable delete`, either wait
+for the next qualifying merge or ship current `main` immediately with
+`gh workflow run production-deploy.yml` — a manual dispatch marks web, backend
+and app as changed (see `detect-changes`), so it rebuilds and republishes the
+subdomain.
+
+The hold covers `app.boardsesh.com` only. `deploy-web` (Vercel) and
+`deploy-production-backend` (Railway) still deploy while it is set; their own
+guard is `check-rollback`.
+
+`deploy/app-subdomain/__tests__/production-deploy-hold.test.ts` asserts the gate,
+its Discord counterpart, and that the export's `EXPO_PUBLIC_*` stay at workflow
+level. The `deploy-config` job in `.github/workflows/ci.yml` runs it on every PR
+touching `production-deploy.yml`.
+
 ### Infra follow-ups (not provisioned here)
 
 These are DNS / hosting operations outside this repo's build:
