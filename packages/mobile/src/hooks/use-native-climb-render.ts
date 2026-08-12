@@ -12,6 +12,7 @@ import {
 } from '../lib/background-image-cache';
 import { useAppColorScheme } from '../providers/theme-provider';
 import { reportError } from '../lib/error-reporting';
+import { sweepBoardArtCache } from '../lib/sweep-caches';
 import {
   cacheRenderedOverlay,
   getRenderedOverlay,
@@ -198,6 +199,94 @@ function reportOverlayLoadOnce(kind: OverlayLoadTelemetryKind, boardName: BoardN
 }
 
 /**
+ * Why a render failed, at a cardinality Sentry can group on.
+ *
+ * `disk_full` is the device being out of space, which is a user condition rather
+ * than a defect in this code: the write cannot succeed, and every recycled
+ * FlashList row tries again.
+ */
+type RenderFailureKind = 'disk_full' | 'render_failed';
+
+/** iOS's NSFileManager wording, plus the POSIX shapes Android surfaces. */
+const DISK_FULL_PATTERN = /out of space|ENOSPC|No space left/i;
+
+export function classifyRenderFailure(message: string): RenderFailureKind {
+  return DISK_FULL_PATTERN.test(message) ? 'disk_full' : 'render_failed';
+}
+
+const reportedRenderFailures = new Set<RenderFailureKind>();
+
+/**
+ * One Sentry event per failure class per JS lifetime, carrying a STABLE message.
+ *
+ * Both halves are load-bearing. Without the once-guard, a full device produced
+ * one `level: error` event per recycled row — 50 events in 50 minutes from a
+ * single device (BOARDSESH-C6/C7/C8), because `getOrStartInflightRender` clears
+ * the settled promise so every recycle re-renders and re-reports. And without
+ * the stable synthetic message, the guard alone would not have been enough:
+ * Sentry groups on the message, and the raw error interpolates the FILENAME
+ * ("You can't save the file \"v5_….png\"…"), so each distinct cache key minted a
+ * NEW issue group. That is why one device produced three of them. The original
+ * error rides along as `cause`, and the filename lands in `extra` where it is
+ * still readable but no longer part of the fingerprint.
+ */
+function reportRenderFailureOnce(params: {
+  kind: RenderFailureKind;
+  error: unknown;
+  message: string;
+  boardName: BoardName;
+  extra: Record<string, unknown>;
+}): void {
+  const { kind, error, message, boardName, extra } = params;
+  if (reportedRenderFailures.has(kind)) return;
+  reportedRenderFailures.add(kind);
+  const isDiskFull = kind === 'disk_full';
+  reportError(new Error(`Board overlay render failed: ${kind}`, { cause: error }), {
+    // A device with no free space is expected behaviour we back off from, not a
+    // bug to page on.
+    level: isDiskFull ? 'warning' : 'error',
+    tags: {
+      feature: 'mobile_board_renderer',
+      boardName,
+      renderFailure: kind,
+      ...(isDiskFull ? { expected_disk_full: 'true' } : {}),
+    },
+    extra: { ...extra, renderErrorMessage: message },
+  });
+}
+
+/**
+ * How long the render path stays quiet after the device reports a full disk.
+ *
+ * The overlay stays null and the wall photo still shows — the existing
+ * missing-layer contract — so the cost of backing off is a plain board rather
+ * than a blank screen. The cost of NOT backing off is a phone with no free space
+ * burning battery re-encoding PNGs it cannot write.
+ */
+const DISK_PRESSURE_BACKOFF_MS = 60_000;
+let diskPressureUntilMs = 0;
+
+function isDiskPressureLatched(nowMs = Date.now()): boolean {
+  return nowMs < diskPressureUntilMs;
+}
+
+function latchDiskPressure(): void {
+  diskPressureUntilMs = Date.now() + DISK_PRESSURE_BACKOFF_MS;
+  // Free what we can while we are backed off. The sweeper's own per-trigger rate
+  // limit keeps this to one sweep even if several rows fail at once.
+  void sweepBoardArtCache({ trigger: 'disk-pressure' }).catch(() => {
+    // Best-effort: a sweep that fails on a full disk changes nothing about the
+    // back-off, which is the part that stops the storm.
+  });
+}
+
+/** Test-only handles for the failure-reporting guards. */
+export function _resetRenderFailureStateForTests(): void {
+  reportedRenderFailures.clear();
+  diskPressureUntilMs = 0;
+}
+
+/**
  * One-time eager scan of the native module's PNG cache directory. The
  * Swift/Kotlin modules write to {cache}/board-thumbnails/<cacheKey>.png;
  * we list it once at JS startup and populate `renderedOverlays` so prior
@@ -266,6 +355,7 @@ export function _resetWarmupForTests(): void {
   warmupRun = false;
   _resetOverlayIndexForTests();
   reportedOverlayLoadTelemetry.clear();
+  _resetRenderFailureStateForTests();
 }
 
 /** Test-only handle to invoke the warm-up explicitly (it normally runs lazily on first render). */
@@ -850,6 +940,10 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       holdRenderSignature,
     );
     if (!boardConfig) return;
+    // Backed off after a full-disk failure: the write cannot succeed, and every
+    // recycled row retrying it is what turned one out-of-space device into 50
+    // Sentry events in 50 minutes. Overlay stays null; backgrounds still show.
+    if (isDiskPressureLatched()) return;
 
     const renderPromise = getOrStartInflightRender(currentCacheKey, () => {
       const configJson = JSON.stringify({
@@ -894,11 +988,13 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         // whenever the signature stays default (issue #4240: 29 Sentry events
         // in 60s from one session).
         if (isCapabilityFallback) return;
-        reportError(error, {
-          tags: {
-            feature: 'mobile_board_renderer',
-            boardName,
-          },
+        const kind = classifyRenderFailure(message);
+        if (kind === 'disk_full') latchDiskPressure();
+        reportRenderFailureOnce({
+          kind,
+          error,
+          message,
+          boardName,
           extra: {
             layoutId,
             sizeId,

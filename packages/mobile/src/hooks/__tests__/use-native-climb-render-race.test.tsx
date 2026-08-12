@@ -545,11 +545,18 @@ describe('capability-fallback render rejections', () => {
   });
 
   it('still reports an unrelated render failure', async () => {
-    rejectingNativeModule.renderHoldsOverlay.mockRejectedValue(new Error('disk full'));
+    rejectingNativeModule.renderHoldsOverlay.mockRejectedValue(new Error('some native failure'));
 
     renderHook(() => useNativeClimbRender({ ...BASE, frames: FRAMES_SLOW }));
 
     await waitFor(() => expect(reportErrorMock).toHaveBeenCalledTimes(1));
-    expect((reportErrorMock.mock.calls[0][0] as Error).message).toBe('disk full');
+    // Reported through a stable synthetic message with the original as `cause`
+    // (issue #3647): Sentry groups on the message, and the native errors
+    // interpolate the cache filename, so reporting the raw error minted a new
+    // issue group per climb. The original text still rides along in `extra`.
+    const [reported, options] = reportErrorMock.mock.calls[0] as [Error, Record<string, unknown>];
+    expect(reported.message).toBe('Board overlay render failed: render_failed');
+    expect((reported.cause as Error).message).toBe('some native failure');
+    expect((options.extra as Record<string, unknown>).renderErrorMessage).toBe('some native failure');
   });
 });
