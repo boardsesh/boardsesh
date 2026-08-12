@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-12T11:01:27.717Z",
+  "generatedAt": "2026-08-12T11:08:41.250Z",
   "entries": [
+    {
+      "prNumber": 4323,
+      "category": "fixed",
+      "title": "Offline board downloads now survive a launch with no signal. The app used to check with our servers whether offline mode was switched on for you, and if that check never came back, offline mode switched itself off. Now it stays on unless we deliberately turn it off, so a send logged in a basement gym still gets saved and syncs when you're back on data.",
+      "mergedAt": "2026-08-12T11:02:32Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4323"
+    },
     {
       "prNumber": 4324,
       "category": "fixed",
