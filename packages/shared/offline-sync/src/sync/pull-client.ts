@@ -30,6 +30,14 @@ import {
 import { parseSnapshotManifest, type SnapshotManifest } from './snapshot-manifest';
 import { findSnapshotEntry, isSnapshotEntryUsable } from './snapshot-estimate';
 import {
+  createDownloadFractionAnchor,
+  createSnapshotProgressThrottle,
+  resolveDownloadFraction,
+  toWireProgress,
+  type DownloadFractionAnchor,
+  type SnapshotBootstrapProgress,
+} from './snapshot-progress';
+import {
   evaluateDeletionsCoverage,
   getDeletionsCoverageAt,
   setDeletionsCoverageAt,
@@ -63,6 +71,16 @@ export type SyncProgress = {
    * (the cycle did not complete). pullSync's own success idle omits it.
    */
   failed?: boolean;
+  /**
+   * Live snapshot download/import detail (issue #4311). Only ever attached to a
+   * `phase: 'bootstrap'` frame whose `currentTable` IS the scope key it
+   * describes, so a row matches it exactly the way it already matches the
+   * bootstrapping flag. Never present on the phase's own `currentTable: null`
+   * frame, nor on the terminal idle frame, and the throttle behind it is
+   * cancelled before the phase ends — so no late frame can re-light a row whose
+   * download already finished.
+   */
+  snapshot?: SnapshotBootstrapProgress;
 };
 
 /**
@@ -666,6 +684,19 @@ async function runBootstrapPhase(
 ): Promise<Set<string>> {
   const skipPagedPull = new Set<string>();
   const manifestCache: { value?: ManifestResolution } = {};
+  // Progress frames (issue #4311). Every emission below is SYNCHRONOUS — the
+  // throttle is a pure state machine — so none of this introduces a new `await`
+  // and none of it shifts where a wipe can land relative to the epoch checks.
+  const progressThrottle = createSnapshotProgressThrottle({ now: () => Date.now() });
+  const emitSnapshotFrame = (frame: SnapshotBootstrapProgress | null): void => {
+    if (!frame) return;
+    onProgress?.({
+      phase: 'bootstrap',
+      currentTable: frame.scopeKey,
+      documentsProcessed: 0,
+      snapshot: frame,
+    });
+  };
   // Absent = not yet attempted; `file: null` = download failed (with its cause).
   const downloadByLayout = new Map<
     string,
@@ -696,6 +727,18 @@ async function runBootstrapPhase(
         const isOverAttemptCap = (await getBootstrapAttempts(db, scope.scopeKey)) >= MAX_BOOTSTRAP_ATTEMPTS;
 
         onProgress?.({ phase: 'bootstrap', currentTable: scope.scopeKey, documentsProcessed: 0 });
+        // Stage 1 of 3. The manifest fetch is usually instant off the React
+        // Query cache, but on a cold start behind a slow connection it is the
+        // first thing the climber waits on, so it gets its own caption.
+        emitSnapshotFrame(
+          progressThrottle.flush({
+            scopeKey: scope.scopeKey,
+            stage: 'manifest',
+            fraction: null,
+            wireBytes: null,
+            wireBytesDone: null,
+          }),
+        );
 
         const resolution = await resolveManifestOnce(source, manifestCache);
         // Re-check after the manifest network await: every branch below either
@@ -779,8 +822,40 @@ async function runBootstrapPhase(
         let cachedDownload = downloadByLayout.get(layoutKey);
         if (!cachedDownload) {
           cachedDownload = { file: null, cause: null, permanentMiss: false };
+          // Stage 2 of 3, the multi-minute one. A second SIZE of the same layout
+          // reuses this cache entry, so it never re-runs and never re-emits
+          // download frames for bytes that already came down.
+          let fractionAnchor: DownloadFractionAnchor = createDownloadFractionAnchor();
+          emitSnapshotFrame(
+            progressThrottle.flush({
+              scopeKey: scope.scopeKey,
+              stage: 'download',
+              fraction: 0,
+              wireBytes: entry.bytes,
+              wireBytesDone: 0,
+            }),
+          );
           try {
-            cachedDownload.file = (await source.downloadArtifact(entry)) ?? null;
+            cachedDownload.file =
+              (await source.downloadArtifact(entry, {
+                onProgress: ({ bytesWritten, totalBytes }) => {
+                  const resolved = resolveDownloadFraction({
+                    entry,
+                    bytesWritten,
+                    reportedTotalBytes: totalBytes,
+                    anchor: fractionAnchor,
+                  });
+                  fractionAnchor = resolved.anchor;
+                  emitSnapshotFrame(
+                    progressThrottle.offer({
+                      scopeKey: scope.scopeKey,
+                      stage: 'download',
+                      fraction: resolved.fraction,
+                      ...toWireProgress(resolved.fraction, entry.bytes),
+                    }),
+                  );
+                },
+              })) ?? null;
           } catch (error) {
             cachedDownload.cause = error;
             cachedDownload.permanentMiss = error instanceof SnapshotPermanentMissError;
@@ -827,6 +902,18 @@ async function runBootstrapPhase(
           skipPagedPull.add(scope.scopeKey);
           continue;
         }
+
+        // Stage 3 of 3. Indeterminate by construction: the import is one
+        // exclusive SQLite transaction with no safe place to emit from inside it.
+        emitSnapshotFrame(
+          progressThrottle.flush({
+            scopeKey: scope.scopeKey,
+            stage: 'import',
+            fraction: null,
+            wireBytes: entry.bytes,
+            wireBytesDone: null,
+          }),
+        );
 
         try {
           // Imports the scope's rows, stamps both table checkpoints, and rewinds
@@ -898,6 +985,10 @@ async function runBootstrapPhase(
       }
     }
   } finally {
+    // Before the artifact cleanup awaits, so an onProgress callback still queued
+    // behind them cannot emit a frame after the phase is over and re-light a row
+    // the UI already moved past.
+    progressThrottle.cancel();
     for (const filePath of downloadedPaths) {
       await source.deleteArtifact(filePath).catch(() => {});
     }

@@ -296,8 +296,36 @@ pre-import empty result set.
   small delta, so the full artifact size would be a lie), attempts at `MAX_BOOTSTRAP_ATTEMPTS`, no
   entry for the layout, or a schema-stale entry. `findSnapshotEntry`/`isSnapshotEntryUsable` are
   shared with `runBootstrapPhase` so the UI can never disagree with the engine about which artifact a
-  scope would download. Note `bytes` is the **stored** object size: correct as a download figure while
-  artifacts stay identity-encoded, and an undercount of the on-disk file the day `--gzip` ships.
+  scope would download. Note `bytes` is the **stored** object size — the wire figure, and deliberately
+  the same scale the download progress row renders, so the dialog and the bar can never disagree.
+
+- **Download progress (issue #4311)**: `runBootstrapPhase` emits three staged frames per scope on the
+  existing `onProgress` sink — `manifest` → `download` → `import` — carried as
+  `SyncProgress.snapshot` (`SnapshotBootstrapProgress`). A payload is only ever attached to a
+  `phase: 'bootstrap'` frame whose `currentTable` **is** the scope key, which is how a row matches it;
+  the throttle behind it is cancelled in the phase's `finally` so a late native callback can't re-light
+  a finished row. Every number on the frame is **wire scale**: `wireBytes` is `entry.bytes` and
+  `wireBytesDone` is `fraction × entry.bytes`, so no renderer can reach the decoded size.
+
+  The denominator lives in `resolveDownloadFraction` (`snapshot-progress.ts`) and prefers, in order:
+  the platform's own reported total when positive (on iOS the total and the counter arrive in one
+  delegate callback, so their ratio is self-consistent whatever scale Foundation picked), then
+  `uncompressedBytes` for a gzip entry (Android — OkHttp gunzips transparently, so `contentLength()`
+  is -1 while the write loop counts decoded bytes), then `entry.bytes` for identity, then `null` =
+  indeterminate (byte counter, no bar). If the counter runs >2% past the denominator the two scales
+  disagree, so it **re-anchors** to `uncompressedBytes` when that is larger rather than pinning the bar
+  at 100%, and latches indeterminate when there is no larger candidate. expo's synthetic terminal frame
+  (`bytesWritten === totalBytes`, carrying the decoded on-disk size) is read as "complete", never as a
+  data point.
+
+  Frames are throttled to one per 400 ms plus a rounded-percent/rounded-megabyte change gate — Android
+  emits natively every 100 ms, which is ~5,300 events over an 8m52s Kilter download.
+
+  `offline-download-progress` is the kill switch and **defaults ON** (the inverse of every other flag
+  in `feature-flags-provider.tsx`, because the frozen spinner is the bug). Off does two things:
+  restores the static caption, and stops passing `onProgress` into `File.downloadFileAsync` at the
+  source (`use-snapshot-source.ts`) — that callback makes expo take a different **native** download
+  implementation, so the flag has to restore the original call exactly, not just hide the UI.
 
 - **Download fallback status**: My Boards keeps the normal per-row download state (`pending`,
   `downloading`, or `downloaded`) and separately derives a `BoardDownloadNotice` from the persisted

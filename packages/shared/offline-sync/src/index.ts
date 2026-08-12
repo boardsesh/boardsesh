@@ -139,6 +139,23 @@ export type {
 export { estimateScopeDownload, findSnapshotEntry, isSnapshotEntryUsable } from './sync/snapshot-estimate';
 export type { SnapshotDownloadEstimate } from './sync/snapshot-estimate';
 
+// --- Snapshot download/import progress (issue #4311) -----------------------------
+// The wire-scale frame the bootstrap phase emits while an artifact downloads and
+// imports, plus the pure denominator + throttle rules behind it.
+export {
+  createDownloadFractionAnchor,
+  createSnapshotProgressThrottle,
+  resolveDownloadFraction,
+  toWireProgress,
+  DOWNLOAD_PROGRESS_THROTTLE_MS,
+} from './sync/snapshot-progress';
+export type {
+  SnapshotBootstrapProgress,
+  SnapshotBootstrapStage,
+  DownloadFractionAnchor,
+  SnapshotProgressThrottle,
+} from './sync/snapshot-progress';
+
 // --- On-device schema ------------------------------------------------------------
 export { vacuumDatabase, measureReclaimableBytes } from './db/vacuum';
 export { SCHEMA_STATEMENTS } from './db/schema';

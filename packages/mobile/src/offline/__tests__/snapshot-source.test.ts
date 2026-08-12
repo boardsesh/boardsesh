@@ -13,7 +13,11 @@ const state = vi.hoisted(() => ({
     options?: { intermediates?: boolean; idempotent?: boolean; overwrite?: boolean };
   }>,
   createDirectoryError: null as Error | null,
-  downloadCalls: [] as Array<{ url: string; idempotent?: boolean }>,
+  downloadCalls: [] as Array<{ url: string; idempotent?: boolean; hasOnProgress: boolean }>,
+  // Byte frames the fake downloader replays into the injected onProgress, in
+  // whatever scale a real platform would report (Android: decoded bytes,
+  // totalBytes -1).
+  downloadProgressFrames: [] as Array<{ bytesWritten: number; totalBytes: number }>,
   downloadError: null as Error | null,
   downloadBytes: new Uint8Array([9, 9, 9, 9]), // non-gzip payload by default
   // When set, readableStream() yields these chunks one read() at a time
@@ -54,12 +58,26 @@ vi.mock('expo-file-system', () => {
       this.uri = joined.startsWith('file://') ? joined : `file://${joined}`;
     }
 
-    static downloadFileAsync = vi.fn(async (url: string, destination: FakeFile, options?: { idempotent?: boolean }) => {
-      state.downloadCalls.push({ url, idempotent: options?.idempotent });
-      if (state.downloadError) throw state.downloadError;
-      destination.bytes = state.downloadBytes;
-      return destination;
-    });
+    static downloadFileAsync = vi.fn(
+      async (
+        url: string,
+        destination: FakeFile,
+        options?: {
+          idempotent?: boolean;
+          onProgress?: (progress: { bytesWritten: number; totalBytes: number }) => void;
+        },
+      ) => {
+        state.downloadCalls.push({
+          url,
+          idempotent: options?.idempotent,
+          hasOnProgress: options?.onProgress !== undefined,
+        });
+        if (state.downloadError) throw state.downloadError;
+        for (const frame of state.downloadProgressFrames) options?.onProgress?.(frame);
+        destination.bytes = state.downloadBytes;
+        return destination;
+      },
+    );
 
     delete() {
       state.deletedUris.push(this.uri);
@@ -143,6 +161,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.availableDiskSpace = 10_000_000_000;
   state.createdDirectories = [];
+  state.downloadProgressFrames = [];
   state.createDirectoryError = null;
   state.downloadCalls = [];
   state.downloadError = null;
@@ -234,10 +253,60 @@ describe('downloadArtifact', () => {
     expect(state.createdDirectories).toEqual([
       { path: 'cache-root/board-snapshots', options: { intermediates: true, idempotent: true } },
     ]);
-    expect(state.downloadCalls).toEqual([{ url: ENTRY.url, idempotent: true }]);
+    expect(state.downloadCalls).toEqual([{ url: ENTRY.url, idempotent: true, hasOnProgress: false }]);
     expect(result).not.toBeNull();
     expect(result?.filePath.startsWith('file://')).toBe(false);
     expect(result?.filePath).toContain('kilter-8-2026-06-01T00-00-00-000Z.db');
+  });
+
+  it('omits the onProgress option entirely when the caller does not ask for it (kill-switch path)', async () => {
+    // Passing onProgress makes expo take a DIFFERENT native download
+    // implementation, so the flag-off path has to reproduce the original call
+    // exactly — not merely discard the callback's output.
+    await mobileSnapshotSource.downloadArtifact(ENTRY);
+
+    expect(state.downloadCalls).toEqual([{ url: ENTRY.url, idempotent: true, hasOnProgress: false }]);
+  });
+
+  it('forwards platform byte frames and maps a non-positive totalBytes to null', async () => {
+    // Android gunzips transparently, so contentLength() is -1 while the write
+    // loop counts decoded bytes. The engine needs null, not -1.
+    state.downloadProgressFrames = [
+      { bytesWritten: 1_000, totalBytes: -1 },
+      { bytesWritten: 2_000, totalBytes: 0 },
+      { bytesWritten: 3_000, totalBytes: 4_000 },
+    ];
+    const frames: Array<{ bytesWritten: number; totalBytes: number | null }> = [];
+
+    await mobileSnapshotSource.downloadArtifact(ENTRY, { onProgress: (frame) => frames.push(frame) });
+
+    expect(state.downloadCalls).toEqual([{ url: ENTRY.url, idempotent: true, hasOnProgress: true }]);
+    expect(frames).toEqual([
+      { bytesWritten: 1_000, totalBytes: null },
+      { bytesWritten: 2_000, totalBytes: null },
+      { bytesWritten: 3_000, totalBytes: 4_000 },
+    ]);
+  });
+
+  it('requires exactly (decoded + wire + slack) free bytes when the manifest carries uncompressedBytes', async () => {
+    // The old 6x guess demanded ~6 MB to download this 1 MB artifact. The exact
+    // figure is 3 MB decoded + 1 MB wire + 32 MB slack.
+    const withDecodedSize: SnapshotManifestEntry = { ...ENTRY, uncompressedBytes: 3_000_000 };
+    const exactRequirement = 3_000_000 + ENTRY.bytes + 32 * 1024 * 1024;
+
+    state.availableDiskSpace = exactRequirement - 1;
+    await expect(mobileSnapshotSource.downloadArtifact(withDecodedSize)).rejects.toThrow(/insufficient disk space/);
+    expect(state.downloadCalls).toHaveLength(0);
+
+    state.availableDiskSpace = exactRequirement;
+    await expect(mobileSnapshotSource.downloadArtifact(withDecodedSize)).resolves.not.toBeNull();
+  });
+
+  it('falls back to the coarse multiplier for an entry built before uncompressedBytes existed', async () => {
+    expect(ENTRY.uncompressedBytes).toBeUndefined();
+    state.availableDiskSpace = ENTRY.bytes * 5; // under the 6x gzip multiplier
+
+    await expect(mobileSnapshotSource.downloadArtifact(ENTRY)).rejects.toThrow(/insufficient disk space/);
   });
 
   it('throws a descriptive error wrapping the underlying cause when the download itself fails (issue #4106: this used to swallow to null)', async () => {

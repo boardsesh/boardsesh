@@ -13,7 +13,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { QueryInvalidator } from '../../database';
-import { pullSync } from '../pull-client';
+import { pullSync, type SyncProgress } from '../pull-client';
+import type { SnapshotBootstrapProgress } from '../snapshot-progress';
 import {
   bootstrapScopeFromSnapshot,
   getBootstrapAttempts,
@@ -995,16 +996,22 @@ describe('pullSync snapshot bootstrap', () => {
       }),
       deleteArtifact: vi.fn(async () => {}),
     };
+    // This assertion is about ORDER, not frame count: each scope now emits
+    // several staged progress frames (manifest → download → import, issue
+    // #4311), so consecutive repeats of the same scope collapse to one entry.
     const events: string[] = [];
+    const pushEvent = (event: string): void => {
+      if (events[events.length - 1] !== event) events.push(event);
+    };
     const { fetch } = makeGraphqlFetch();
 
     const syncPromise = pullSync(db, noopQueryClient(), fetch, {
       enabledBoards: ['kilter:1:5', 'tension:2:10'],
       snapshotSource: source,
       onProgress: (progress) => {
-        if (progress.phase === 'bootstrap' && progress.currentTable) events.push(`progress:${progress.currentTable}`);
+        if (progress.phase === 'bootstrap' && progress.currentTable) pushEvent(`progress:${progress.currentTable}`);
       },
-      onBootstrapMetadataChanged: ({ scopeKey }) => events.push(`settled:${scopeKey}`),
+      onBootstrapMetadataChanged: ({ scopeKey }) => pushEvent(`settled:${scopeKey}`),
     });
 
     await secondDownloadStarted.promise;
@@ -1924,5 +1931,228 @@ describe('deletions checkpoint rewind on bootstrap', () => {
       updatedAt: '2026-04-30T23:59:59Z',
       syncSeq: '5000',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// staged download/import progress frames (issue #4311)
+// ---------------------------------------------------------------------------
+
+describe('pullSync bootstrap progress frames', () => {
+  const ARTIFACT_WIRE_BYTES = 103_000_000;
+  const ARTIFACT_DECODED_BYTES = 271_000_000;
+
+  function progressEntry(overrides: Partial<SnapshotManifestEntry> = {}): SnapshotManifestEntry {
+    return makeEntry({
+      bytes: ARTIFACT_WIRE_BYTES,
+      uncompressedBytes: ARTIFACT_DECODED_BYTES,
+      contentEncoding: 'gzip',
+      ...overrides,
+    });
+  }
+
+  /** Every bootstrap frame that carried a snapshot payload, in order. */
+  function collectSnapshotFrames(): {
+    frames: SnapshotBootstrapProgress[];
+    onProgress: (progress: SyncProgress) => void;
+    allFrames: SyncProgress[];
+  } {
+    const frames: SnapshotBootstrapProgress[] = [];
+    const allFrames: SyncProgress[] = [];
+    return {
+      frames,
+      allFrames,
+      onProgress: (progress) => {
+        allFrames.push(progress);
+        if (progress.snapshot) frames.push(progress.snapshot);
+      },
+    };
+  }
+
+  it('emits manifest → download → import, all tagged with the scope key', async () => {
+    const filePath = join(workDir, 'staged.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const source = makeSnapshotSource({
+      manifest: makeManifest([progressEntry()]),
+      fileForEntry: () => filePath,
+    });
+    const collector = collectSnapshotFrames();
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onProgress: collector.onProgress,
+    });
+
+    expect(collector.frames.map((frame) => frame.stage)).toEqual(['manifest', 'download', 'import']);
+    expect(collector.frames.every((frame) => frame.scopeKey === 'kilter:1:5')).toBe(true);
+    // Every snapshot payload rides on a bootstrap frame whose currentTable IS
+    // its scope key, which is how a row matches it.
+    const payloadFrames = collector.allFrames.filter((frame) => frame.snapshot);
+    expect(payloadFrames.every((frame) => frame.phase === 'bootstrap' && frame.currentTable === 'kilter:1:5')).toBe(
+      true,
+    );
+    // Wire scale only: the download frame quotes the same 103 MB the confirm
+    // dialog did, never the 271 MB decoded size.
+    const downloadFrame = collector.frames.find((frame) => frame.stage === 'download')!;
+    expect(downloadFrame.wireBytes).toBe(ARTIFACT_WIRE_BYTES);
+    expect(collector.frames.some((frame) => frame.wireBytes === ARTIFACT_DECODED_BYTES)).toBe(false);
+  });
+
+  it('turns platform byte callbacks into wire-scale frames, never the decoded size', async () => {
+    const filePath = join(workDir, 'bytes.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    // An Android-shaped source: decoded byte counts, no usable total.
+    const source: SnapshotSource = {
+      fetchManifest: vi.fn(async () => makeManifest([progressEntry()])),
+      downloadArtifact: vi.fn(
+        async (
+          _entry: SnapshotManifestEntry,
+          options?: { onProgress?: (p: { bytesWritten: number; totalBytes: number | null }) => void },
+        ) => {
+          options?.onProgress?.({ bytesWritten: ARTIFACT_DECODED_BYTES / 2, totalBytes: -1 });
+          return { filePath };
+        },
+      ),
+      deleteArtifact: vi.fn(async () => {}),
+    };
+    const collector = collectSnapshotFrames();
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onProgress: collector.onProgress,
+    });
+
+    const halfway = collector.frames.filter((frame) => frame.stage === 'download').at(-1)!;
+    expect(halfway.fraction).toBeCloseTo(0.5, 3);
+    expect(halfway.wireBytes).toBe(ARTIFACT_WIRE_BYTES);
+    expect(halfway.wireBytesDone).toBe(Math.round(0.5 * ARTIFACT_WIRE_BYTES));
+    // The decoded figure never reaches a frame the UI can read.
+    expect(collector.frames.some((frame) => frame.wireBytesDone === ARTIFACT_DECODED_BYTES / 2)).toBe(false);
+  });
+
+  it('drives a full bootstrap from a source written against the OLD one-argument downloadArtifact', async () => {
+    const filePath = join(workDir, 'legacy-source.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c-legacy', compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    // Exactly the pre-#4311 shape: one parameter, no options, no callback.
+    const legacySource: SnapshotSource = {
+      fetchManifest: async () => makeManifest([progressEntry()]),
+      downloadArtifact: async (_entry: SnapshotManifestEntry) => ({ filePath }),
+      deleteArtifact: async () => {},
+    };
+    const collector = collectSnapshotFrames();
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: legacySource,
+      onProgress: collector.onProgress,
+    });
+
+    // The import still ran…
+    expect(await db.getFirstAsync('SELECT uuid FROM board_climbs WHERE uuid = ?', ['c-legacy'])).not.toBeNull();
+    // …and the row still gets its stage captions, just with no byte detail.
+    expect(collector.frames.map((frame) => frame.stage)).toEqual(['manifest', 'download', 'import']);
+  });
+
+  it('emits ONE download stream for two sizes of the same layout (the artifact is downloaded once)', async () => {
+    const filePath = join(workDir, 'shared-layout.db');
+    buildArtifact({
+      filePath,
+      climbs: [
+        { uuid: 'c5', compatibleSizeIds: [5] },
+        { uuid: 'c6', compatibleSizeIds: [6] },
+      ],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const source: SnapshotSource = {
+      fetchManifest: vi.fn(async () => makeManifest([progressEntry()])),
+      downloadArtifact: vi.fn(
+        async (
+          _entry: SnapshotManifestEntry,
+          options?: { onProgress?: (p: { bytesWritten: number; totalBytes: number | null }) => void },
+        ) => {
+          options?.onProgress?.({ bytesWritten: ARTIFACT_DECODED_BYTES, totalBytes: ARTIFACT_DECODED_BYTES });
+          return { filePath };
+        },
+      ),
+      deleteArtifact: vi.fn(async () => {}),
+    };
+    const collector = collectSnapshotFrames();
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5', 'kilter:1:6'],
+      snapshotSource: source,
+      onProgress: collector.onProgress,
+    });
+
+    expect(source.downloadArtifact).toHaveBeenCalledTimes(1);
+    // The second size gets manifest + download-start + import captions, but the
+    // byte stream belongs solely to the scope that actually pulled the file.
+    const byteFrames = collector.frames.filter((frame) => frame.stage === 'download' && (frame.fraction ?? 0) > 0);
+    expect(byteFrames.every((frame) => frame.scopeKey === 'kilter:1:5')).toBe(true);
+  });
+
+  it('drops a download frame that arrives after the bootstrap phase ended', async () => {
+    const filePath = join(workDir, 'late-frame.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    let lateEmit: (() => void) | null = null;
+    const source: SnapshotSource = {
+      fetchManifest: vi.fn(async () => makeManifest([progressEntry()])),
+      downloadArtifact: vi.fn(
+        async (
+          _entry: SnapshotManifestEntry,
+          options?: { onProgress?: (p: { bytesWritten: number; totalBytes: number | null }) => void },
+        ) => {
+          // Stash the callback and fire it long after the phase is over — the
+          // shape of a native downloader whose last event lands late.
+          lateEmit = () => options?.onProgress?.({ bytesWritten: ARTIFACT_DECODED_BYTES, totalBytes: -1 });
+          return { filePath };
+        },
+      ),
+      deleteArtifact: vi.fn(async () => {}),
+    };
+    const collector = collectSnapshotFrames();
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onProgress: collector.onProgress,
+    });
+
+    const frameCountAfterSync = collector.frames.length;
+    lateEmit!();
+    expect(collector.frames).toHaveLength(frameCountAfterSync);
   });
 });

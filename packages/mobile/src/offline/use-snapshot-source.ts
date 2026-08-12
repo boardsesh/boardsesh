@@ -1,7 +1,26 @@
-import type { SnapshotSource } from '@boardsesh/offline-sync';
+import { useMemo } from 'react';
+import type { SnapshotManifestEntry, SnapshotSource } from '@boardsesh/offline-sync';
 import { isSnapshotBaseUrlConfigured } from '../lib/env';
-import { useSnapshotBootstrapEnabled } from '../providers/feature-flags-provider';
+import { useOfflineDownloadProgressEnabled, useSnapshotBootstrapEnabled } from '../providers/feature-flags-provider';
 import { mobileSnapshotSource } from './snapshot-source';
+
+/**
+ * The kill-switch wrapper for download progress (issue #4311). Passing an
+ * `onProgress` callback makes expo-file-system take a different NATIVE download
+ * implementation — an 8 KB streaming copy loop on Android, a delegate-driven
+ * URLSession on iOS instead of `URLSession.shared` plus a completion handler. If
+ * that path ever proves slower on a 103 MB artifact, flipping
+ * `offline-download-progress` off has to restore the original call exactly, not
+ * merely hide the UI — so the options object is dropped here, at the source. The
+ * engine keeps emitting its stage captions either way; only the byte detail goes.
+ */
+function withoutDownloadProgress(source: SnapshotSource): SnapshotSource {
+  return {
+    fetchManifest: () => source.fetchManifest(),
+    downloadArtifact: (entry: SnapshotManifestEntry) => source.downloadArtifact(entry),
+    deleteArtifact: (filePath: string) => source.deleteArtifact(filePath),
+  };
+}
 
 /**
  * The one gate for handing the engine snapshot I/O: the
@@ -14,5 +33,9 @@ import { mobileSnapshotSource } from './snapshot-source';
  */
 export function useSnapshotSource(): SnapshotSource | undefined {
   const snapshotBootstrapEnabled = useSnapshotBootstrapEnabled();
-  return snapshotBootstrapEnabled && isSnapshotBaseUrlConfigured() ? mobileSnapshotSource : undefined;
+  const downloadProgressEnabled = useOfflineDownloadProgressEnabled();
+  return useMemo(() => {
+    if (!snapshotBootstrapEnabled || !isSnapshotBaseUrlConfigured()) return undefined;
+    return downloadProgressEnabled ? mobileSnapshotSource : withoutDownloadProgress(mobileSnapshotSource);
+  }, [snapshotBootstrapEnabled, downloadProgressEnabled]);
 }

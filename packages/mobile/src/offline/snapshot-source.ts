@@ -44,8 +44,33 @@ const SNAPSHOT_DIR_NAME = 'board-snapshots';
 // for the download plus write overhead. Gzip artifacts may temporarily require
 // the compressed object and the decompressed SQLite file; board_climbs +
 // board_climb_stats are text-heavy, so keep that path deliberately conservative.
+//
+// These are GUESSES, and the gzip one is expensive: 6× a 103 MB artifact demands
+// ~618 MB free to download a file that needs ~374 MB, so a storage-tight phone
+// is refused a download it could have completed. They are now only the fallback
+// for manifest entries built before `uncompressedBytes` shipped (issue #4311) —
+// with that field the requirement is computed exactly in `requiredFreeBytes`.
 const IDENTITY_FREE_SPACE_SAFETY_MULTIPLIER = 2;
 const GZIP_FREE_SPACE_SAFETY_MULTIPLIER = 6;
+
+// Headroom over the exact figure: SQLite journal/WAL side files during the
+// import, plus filesystem block rounding.
+const EXACT_FREE_SPACE_SLACK_BYTES = 32 * 1024 * 1024;
+
+/**
+ * Free disk space this download needs. Exact when the manifest carries the
+ * decoded artifact size — the compressed body and the decompressed SQLite file
+ * can both be on disk at once, so it is the sum plus slack — and a coarse
+ * multiplier otherwise.
+ */
+function requiredFreeBytes(entry: SnapshotManifestEntry): number {
+  if (typeof entry.uncompressedBytes === 'number' && entry.uncompressedBytes > 0) {
+    return entry.uncompressedBytes + entry.bytes + EXACT_FREE_SPACE_SLACK_BYTES;
+  }
+  const multiplier =
+    entry.contentEncoding === 'gzip' ? GZIP_FREE_SPACE_SAFETY_MULTIPLIER : IDENTITY_FREE_SPACE_SAFETY_MULTIPLIER;
+  return entry.bytes * multiplier;
+}
 
 const GZIP_MAGIC_BYTE_0 = 0x1f;
 const GZIP_MAGIC_BYTE_1 = 0x8b;
@@ -147,10 +172,11 @@ function formatError(error: unknown): string {
  * request timed out.")` is an offline user (a warning) or a real fault (an
  * error). Issue #4238.
  */
-async function downloadArtifact(entry: SnapshotManifestEntry): Promise<{ filePath: string } | null> {
-  const freeSpaceSafetyMultiplier =
-    entry.contentEncoding === 'gzip' ? GZIP_FREE_SPACE_SAFETY_MULTIPLIER : IDENTITY_FREE_SPACE_SAFETY_MULTIPLIER;
-  const requiredBytes = entry.bytes * freeSpaceSafetyMultiplier;
+async function downloadArtifact(
+  entry: SnapshotManifestEntry,
+  options?: { onProgress?: (progress: { bytesWritten: number; totalBytes: number | null }) => void },
+): Promise<{ filePath: string } | null> {
+  const requiredBytes = requiredFreeBytes(entry);
   const availableBytes = Paths.availableDiskSpace;
   if (availableBytes < requiredBytes) {
     throw new Error(
@@ -174,7 +200,27 @@ async function downloadArtifact(entry: SnapshotManifestEntry): Promise<{ filePat
 
   let downloaded: File;
   try {
-    downloaded = await File.downloadFileAsync(entry.url, destination, { idempotent: true });
+    // `onProgress` is only passed when the caller asked for it (the engine
+    // omits it when the kill switch is off), because supplying it makes
+    // expo-file-system take a different native download implementation — an
+    // 8 KB streaming copy loop on Android, a delegate-driven URLSession on iOS
+    // — rather than its plain path. Omitting it keeps the call byte-identical
+    // to the pre-#4311 one.
+    downloaded = await File.downloadFileAsync(
+      entry.url,
+      destination,
+      options?.onProgress
+        ? {
+            idempotent: true,
+            onProgress: ({ bytesWritten, totalBytes }) => {
+              // Android reports -1 for a gzip body (OkHttp gunzips transparently,
+              // so Content-Length is meaningless); the engine expects null for
+              // "no usable total" and resolves the denominator itself.
+              options.onProgress?.({ bytesWritten, totalBytes: totalBytes > 0 ? totalBytes : null });
+            },
+          }
+        : { idempotent: true },
+    );
   } catch (error) {
     throw new Error(
       `snapshot download: File.downloadFileAsync failed for ${entry.boardType}:${entry.layoutId}: ${formatError(error)}`,

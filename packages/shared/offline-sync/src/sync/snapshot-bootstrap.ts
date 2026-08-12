@@ -86,8 +86,21 @@ export interface SnapshotSource {
    * plain SQLite file. Return `null` or throw on retryable failure — both count
    * as a bootstrap attempt. Throw SnapshotPermanentMissError for a known
    * unusable artifact that should fall through to the paged pull immediately.
+   *
+   * `options.onProgress` (issue #4311) is optional on BOTH sides: an
+   * implementation written against the one-argument signature keeps compiling
+   * and behaves exactly as before, and the engine tolerates a source that never
+   * invokes the callback (the row keeps the static "Downloading board…"
+   * caption). `bytesWritten` is whatever the platform downloader counts — which
+   * may be DECODED bytes for a gzip artifact — and `totalBytes` is null when the
+   * platform has no usable total (Android reports Content-Length -1 after
+   * transparent gunzip). Reconciling those scales is the engine's job in
+   * `resolveDownloadFraction`; a source must not attempt it.
    */
-  downloadArtifact(entry: SnapshotManifestEntry): Promise<{ filePath: string } | null>;
+  downloadArtifact(
+    entry: SnapshotManifestEntry,
+    options?: { onProgress?: (progress: { bytesWritten: number; totalBytes: number | null }) => void },
+  ): Promise<{ filePath: string } | null>;
   /** Delete a downloaded artifact once the run is done with it. Best-effort. */
   deleteArtifact(filePath: string): Promise<void>;
 }

@@ -48,6 +48,7 @@ import {
   boardDownloadNotice,
   boardDownloadState,
   boardIsBootstrapping,
+  boardDownloadProgress,
 } from '../../src/components/board-discovery/board-offline-state';
 import { buildManageItems, type ManageItem } from '../../src/components/board-discovery/manage-items';
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
@@ -157,6 +158,10 @@ export default function ManageBoards() {
   const currentTable = syncStatus.progress?.currentTable ?? null;
   const currentTableProcessed = syncStatus.progress?.currentTableProcessed;
   const currentPhase = syncStatus.progress?.phase ?? null;
+  // The live snapshot download frame, whichever scope it names (issue #4311).
+  // Read once here and matched per row below, so a row that is NOT the one
+  // downloading gets a stable `null` prop and its memo holds.
+  const snapshotFrame = syncStatus.progress?.snapshot;
 
   // Per-scope "downloaded" signal: which scopes actually have a board_climbs
   // checkpoint. Refetched whenever a cycle finishes (isSyncing → false), so a
@@ -429,6 +434,15 @@ export default function ManageBoards() {
       // flag; every other row gets undefined/false (stable props), so its
       // memo skips the per-frame churn.
       const downloadCount = downloadState === 'downloading' ? currentTableProcessed : undefined;
+      const downloadProgress = isBootstrapping
+        ? boardDownloadProgress({
+            scopeKey,
+            isSyncing,
+            currentTable,
+            phase: currentPhase,
+            snapshot: snapshotFrame,
+          })
+        : null;
       return (
         <BoardManageRow
           board={item.board}
@@ -442,6 +456,7 @@ export default function ManageBoards() {
           downloadState={downloadState}
           downloadCount={downloadCount}
           isBootstrapping={isBootstrapping}
+          downloadProgress={downloadProgress}
           downloadNotice={downloadNotice}
           onEdit={handleEdit}
           onDelete={handleDelete}
@@ -464,6 +479,7 @@ export default function ManageBoards() {
       currentTable,
       currentTableProcessed,
       currentPhase,
+      snapshotFrame,
       bootstrapMetadataByScope,
       snapshotSourceAvailable,
       handleEdit,

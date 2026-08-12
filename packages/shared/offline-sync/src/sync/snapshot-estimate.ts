@@ -29,9 +29,12 @@ export type SnapshotDownloadEstimate =
    * even for a size-scoped board — but it is a DOWNLOAD size, not a storage one:
    * the import keeps only the enabled size's rows.
    *
-   * NOTE: `bytes` is the stored object size. Today artifacts are identity-encoded
-   * so stored == wire == on-disk. If the export ever ships `--gzip`, this stays
-   * right about data usage and becomes an undercount of the file on disk.
+   * NOTE: `bytes` is the stored object size, which under `--gzip` (what the
+   * fleet reads today) is the WIRE figure and an undercount of the file on disk
+   * — the manifest carries the decoded size separately as `uncompressedBytes`.
+   * Wire is deliberately the scale quoted here: it is the honest number for a
+   * cellular-data prompt, and it is the same scale the download progress row
+   * renders (issue #4311), so the dialog and the bar can never disagree.
    */
   | { kind: 'snapshot'; bytes: number; climbCount: number; builtAt: string }
   /** No trustworthy number — say nothing rather than guess. */
