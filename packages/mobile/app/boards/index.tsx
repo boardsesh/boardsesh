@@ -23,11 +23,15 @@ import { offlineBoardRows } from '../../src/components/board-discovery/offline-b
 import type { DiscoveryBoardItem } from '../../src/components/board-discovery/BoardDiscoveryCard';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
 import { useIsOffline } from '../../src/hooks/use-is-offline';
-import { useOfflineBoards } from '../../src/settings';
+import { offlineBoardKeyForBoard, useOfflineBoards, useSetting } from '../../src/settings';
 import { useRememberDownloadedBoards } from '../../src/offline/use-remember-downloaded-boards';
 import { useDownloadedScopeKeys } from '../../src/offline/use-downloaded-scope-keys';
+import { useConfirmBoardDownload } from '../../src/offline/use-confirm-board-download';
 import { useOfflineCatalogState } from '../../src/offline/use-offline-catalog-state';
+import { useOfflineDownloadsEnabled } from '../../src/providers/feature-flags-provider';
+import { boardDownloadState, type BoardDownloadState } from '../../src/components/board-discovery/board-offline-state';
 import { OfflineCatalogCta } from '../../src/components/offline/OfflineCatalogCta';
+import { trackNudgeAccepted } from '../../src/lib/offline-nudges/nudge-analytics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { setBoardRevealTipPending } from '../../src/lib/onboarding/onboarding-storage';
 import { track } from '../../src/lib/analytics';
@@ -80,6 +84,8 @@ export default function BoardSelection() {
   // device has actually downloaded.
   const isOffline = useIsOffline();
   const { data: downloadedScopeKeys } = useDownloadedScopeKeys();
+  const offlineDownloadsEnabled = useOfflineDownloadsEnabled();
+  const { confirmAndDownload } = useConfirmBoardDownload();
   // Whether the active board's catalog is missing, or merely queued after an
   // arm — the offline empty state below reads differently in each case.
   const offlineCatalog = useOfflineCatalogState(activeBoard);
@@ -160,12 +166,28 @@ export default function BoardSelection() {
     [setActiveBoard, adoptFoundBoard, router, boardReturnTo, showToast, t, fromOnboarding, isLocalOnly],
   );
 
+  // Only the user's OWN boards carry a download state. Derived from the setting
+  // + the downloaded checkpoints, not from useSyncStatus(): the card only needs
+  // "on my phone / on the way / not yet", and subscribing to the live progress
+  // frame would re-render three carousels on every tick.
+  const enabledScopeKeys = useSetting('syncEnabledBoards')[0];
+  const boardOfflineState = useCallback(
+    (board: UserBoard): BoardDownloadState =>
+      boardDownloadState({
+        scopeKey: offlineBoardKeyForBoard(board),
+        enabled: enabledScopeKeys.includes(offlineBoardKeyForBoard(board)),
+        downloaded: (downloadedScopeKeys ?? []).includes(offlineBoardKeyForBoard(board)),
+        isSyncing: false,
+        currentTable: null,
+      }),
+    [enabledScopeKeys, downloadedScopeKeys],
+  );
   const myBoardItems = useMemo(
     () =>
       myBoards
-        .map((board) => userBoardToItem(board, activeBoard?.uuid))
+        .map((board) => userBoardToItem(board, activeBoard?.uuid, boardOfflineState(board)))
         .filter((item): item is DiscoveryBoardItem => item !== null),
-    [myBoards, activeBoard?.uuid],
+    [myBoards, activeBoard?.uuid, boardOfflineState],
   );
   const nearbyItems = useMemo(
     () =>
@@ -214,10 +236,47 @@ export default function BoardSelection() {
         <BoardCarousel items={nearbyItems} onSelect={onSelectMyBoard} />
       </Section>
     ) : null;
+  // Tap-to-download, scoped to boards the user owns or follows. Gated on the
+  // engine's kill switch so the glyph never renders in the Expo browser app
+  // (offline-downloads-enabled.web.ts hard-returns false) or with offline off.
+  const onDownloadMyBoard = useCallback(
+    (item: DiscoveryBoardItem) => {
+      const board = myBoards.find((candidate) => candidate.uuid === item.key);
+      if (!board) return;
+      void confirmAndDownload(board).then((confirmed) => {
+        if (!confirmed) return;
+        // This surface deliberately has no impression event — a card scrolling
+        // past in a carousel is not a suggestion the way a prompt is — so the
+        // accept is what joins the glyph to the download funnel. Without it the
+        // widest-reach discovery surface ships blind, which is the failure
+        // epic #4319 exists to fix. Never arm-only: the glyph is online-only.
+        trackNudgeAccepted(
+          {
+            surface: 'board_card',
+            boardType: board.boardType,
+            layoutId: board.layoutId,
+            scopeKey: offlineBoardKeyForBoard(board),
+            downloadedBoardCount: (downloadedScopeKeys ?? []).length,
+          },
+          'download',
+        );
+      });
+    },
+    [myBoards, confirmAndDownload, downloadedScopeKeys],
+  );
+  const downloadLabelFor = useCallback(
+    (item: DiscoveryBoardItem) => t('mobile.offline.makeAvailableAria', { name: item.title }),
+    [t],
+  );
   const myBoardsSection =
     myBoardItems.length > 0 ? (
       <Section title={t('mobile.discovery.yourBoardsTitle')}>
-        <BoardCarousel items={myBoardItems} onSelect={onSelectMyBoard} />
+        <BoardCarousel
+          items={myBoardItems}
+          onSelect={onSelectMyBoard}
+          onDownload={offlineDownloadsEnabled ? onDownloadMyBoard : undefined}
+          downloadLabelFor={downloadLabelFor}
+        />
       </Section>
     ) : null;
 

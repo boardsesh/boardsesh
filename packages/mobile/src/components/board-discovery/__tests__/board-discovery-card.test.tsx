@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { DiscoveryBoardItem } from '../BoardDiscoveryCard';
 
@@ -11,7 +11,15 @@ const boardImageProps = vi.hoisted(() => ({ last: null as Record<string, unknown
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  Pressable: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  Pressable: ({
+    children,
+    onPress,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+  }) => createElement('div', { onClick: onPress, 'aria-label': accessibilityLabel, role: 'button' }, children),
   Platform: { select: (spec: Record<string, unknown>) => spec.ios },
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
@@ -47,7 +55,9 @@ vi.mock('../../../providers/theme-provider', () => ({
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
-vi.mock('../../Icon', () => ({ Icon: () => createElement('span', { 'data-icon': 'true' }) }));
+vi.mock('../../Icon', () => ({
+  Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }),
+}));
 
 // A non-null render keeps the card on the BoardImageNative branch.
 vi.mock('../../../lib/board-details', () => ({
@@ -85,5 +95,60 @@ describe('BoardDiscoveryCard', () => {
     // The discovery card cell is 168px; requesting renderWidth forces the
     // thumb-variant background + small overlay instead of a full-res decode.
     expect(boardImageProps.last?.renderWidth).toBe(400);
+  });
+
+  // The badge answers "is this board on my phone" without leaving the picker.
+  it.each([
+    ['downloaded', 'offline.downloaded'],
+    ['downloading', 'offline.pending'],
+    ['pending', 'offline.pending'],
+  ] as const)('shows a status badge for a %s board', (offlineState, icon) => {
+    const { container } = render(
+      createElement(BoardDiscoveryCard, { item: { ...item, offlineState }, onPress: vi.fn() }),
+    );
+    expect(container.querySelector(`[data-icon="${icon}"]`)).not.toBeNull();
+  });
+
+  it('has no press target on a board that is already downloading', () => {
+    const onDownload = vi.fn();
+    const { container } = render(
+      createElement(BoardDiscoveryCard, {
+        item: { ...item, offlineState: 'downloading' },
+        onPress: vi.fn(),
+        onDownload,
+      }),
+    );
+    fireEvent.click(container.querySelector('[data-icon="offline.pending"]')!.parentElement!);
+    expect(onDownload).not.toHaveBeenCalled();
+  });
+
+  it('offers a tappable download glyph only where the host wired one', () => {
+    const onDownload = vi.fn();
+    const downloadItem = { ...item, offlineState: 'off' as const };
+
+    const withoutHandler = render(createElement(BoardDiscoveryCard, { item: downloadItem, onPress: vi.fn() }));
+    expect(withoutHandler.container.querySelector('[data-icon="offline.download"]')).toBeNull();
+    cleanup();
+
+    const { container } = render(
+      createElement(BoardDiscoveryCard, {
+        item: downloadItem,
+        onPress: vi.fn(),
+        onDownload,
+        downloadLabel: 'Make Tension 8x10 available offline',
+      }),
+    );
+    const glyph = container.querySelector('[data-icon="offline.download"]')!.parentElement!;
+    expect(glyph.getAttribute('aria-label')).toBe('Make Tension 8x10 available offline');
+    fireEvent.click(glyph);
+    expect(onDownload).toHaveBeenCalledWith(downloadItem);
+  });
+
+  // A popular config has no uuid, so rememberOfflineBoards drops it: its data
+  // would download but the board could never appear in the offline picker.
+  it('renders no offline affordance at all without an offlineState', () => {
+    const { container } = render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn(), onDownload: vi.fn() }));
+    expect(container.querySelector('[data-icon="offline.download"]')).toBeNull();
+    expect(container.querySelector('[data-icon="offline.downloaded"]')).toBeNull();
   });
 });

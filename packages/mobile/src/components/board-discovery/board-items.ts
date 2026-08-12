@@ -5,8 +5,19 @@
 import type { BoardName, UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
 import { toBoardName, normaliseSetIds } from '@boardsesh/board-config';
 import type { DiscoveryBoardItem } from './BoardDiscoveryCard';
+import type { BoardDownloadState } from './board-offline-state';
 
-export function userBoardToItem(board: UserBoard, activeUuid?: string | null): DiscoveryBoardItem | null {
+export function userBoardToItem(
+  board: UserBoard,
+  activeUuid?: string | null,
+  /**
+   * Whether this board's catalog is on the device. Only owned/followed boards
+   * get one — a popular config has no `uuid`, so `rememberOfflineBoards` drops
+   * it (see settings/offline-boards.ts) and it could never appear in the offline
+   * picker even though its data would download.
+   */
+  offlineState?: BoardDownloadState,
+): DiscoveryBoardItem | null {
   const boardName = toBoardName(board.boardType);
   if (boardName === null) return null;
   return {
@@ -19,6 +30,7 @@ export function userBoardToItem(board: UserBoard, activeUuid?: string | null): D
     subtitle: board.sizeName ?? board.boardType,
     distanceMeters: board.distanceMeters ?? undefined,
     isActive: activeUuid != null && board.uuid === activeUuid,
+    offlineState,
   };
 }
 

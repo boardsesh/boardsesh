@@ -119,3 +119,33 @@ describe('findOwnedBoardForConfig', () => {
     expect(findOwnedBoardForConfig([], { boardType: 'kilter', layoutId: 1, sizeId: 2, setIds: '3,4' })).toBeUndefined();
   });
 });
+
+describe('offline state on discovery items', () => {
+  it('carries the download state a caller supplies for an owned board', () => {
+    const board = {
+      uuid: 'garage',
+      name: "Marco's garage",
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1,2',
+    } as UserBoard;
+    expect(userBoardToItem(board, null, 'downloaded')?.offlineState).toBe('downloaded');
+    expect(userBoardToItem(board, null)?.offlineState).toBeUndefined();
+  });
+
+  // A popular config has no uuid, so rememberOfflineBoards filters it out
+  // (settings/offline-boards.ts): its data would download but the board could
+  // never appear in the offline picker. It must never carry a download state.
+  it('never gives a popular config a download state', () => {
+    const item = popularConfigToItem({
+      boardType: 'tension',
+      layoutId: 9,
+      sizeId: 8,
+      setIds: [1, 2],
+      displayName: 'Tension 8x10',
+    } as unknown as PopularBoardConfig);
+    expect(item?.offlineState).toBeUndefined();
+    expect(item?.key.startsWith('popular:')).toBe(true);
+  });
+});

@@ -333,6 +333,11 @@
           "body": "{{name}} ist noch nicht auf deinem Handy, hier unten gibt es also nichts zu durchsuchen.",
           "cta": "Holen, sobald ich Netz habe",
           "armedToast": "{{name}} steht in der Warteschlange und lädt, sobald du wieder online bist."
+        },
+        "spotlight": {
+          "title": "Klettere, wo kein WLAN hinkommt",
+          "body": "Lade ein Board einmal herunter und der ganze Katalog liegt auf deinem Handy: Suche, Filter und Begehungen eintragen funktionieren auch im Kellerraum ohne Empfang.",
+          "cta": "Board zum Herunterladen wählen"
         }
       }
     },

@@ -1158,3 +1158,99 @@ Supporting tiles, in the order they answer questions about it:
 2. Deploy to Postgres. Pre-warmed DB is NOT rebuilt yet (simulates weekly lag).
 3. Launch the app. Verify on-device migration adds the new column.
 4. Sync pull returns rows with the new column. Verify they INSERT correctly.
+
+## Discovery nudges (issue #4318)
+
+4.4% of monthly actives had downloaded a board when the epic was opened, and 82%
+of those stopped at one. The engine was not the problem — nothing in the app ever
+_suggested_ a download. Before this, offline was reachable from exactly two
+places: the per-row toggle on My Boards and a switch buried in More.
+
+### Four surfaces, two kinds
+
+The split matters more than the count.
+
+**Prompts interrupt.** The user asked for something else and the app spoke
+anyway, so they carry the full frequency machinery: a per-surface cooldown, a
+lifetime cap, a cross-surface cooldown so two prompts can't stack, and a quiet
+period after any acceptance.
+
+| Surface        | Where                           | Caps                                                       |
+| -------------- | ------------------------------- | ---------------------------------------------------------- |
+| `post_session` | `app/(tabs)/record/summary.tsx` | 14d cooldown, max 3 lifetime, 72h global, 30d after accept |
+
+**Affordances don't.** They live inside a screen the user chose to open, usually
+in place of a dead end. Capping them would mean the empty state this set out to
+fix reverts to a dead end — possibly the day after an unrelated prompt. They are
+bounded by eligibility and dismiss-forever only.
+
+| Surface      | Where                                                         |
+| ------------ | ------------------------------------------------------------- |
+| `no_catalog` | boards-picker `isLocalOnly` empty state + a new climbs branch |
+| `board_card` | download glyph on the Your Boards carousel                    |
+| `whats_new`  | curated card pinned above the generated changelog timeline    |
+
+### Arming is not downloading
+
+`useBoardDownloads` exposes two actions, and the difference is a bug fix, not a
+convenience:
+
+- `enableBoardsOffline` — enable + `triggerSync`. Only from surfaces that are
+  genuinely online.
+- `armBoardsOffline` — enable, **no cycle**. From every surface that can fire
+  offline.
+
+`onlineManager.isOnline()` is TRUE on captive-portal wifi, so `triggerSync`'s own
+guard does not short-circuit there: the cycle runs, every request fails, and
+`recordRetryableBootstrapFailure` spends one of the two `MAX_BOOTSTRAP_ATTEMPTS`.
+Two taps of an offline CTA and that scope is pinned to the multi-minute paged
+crawl (#4313). Nothing is lost by waiting — the scheduler's `subscribeConnectivity`
+trigger runs a cycle the moment the device reconnects, reading the latest
+`syncEnabledBoards`.
+
+The user-visible consequence: an accepted offline nudge is a promise, not a
+download. The copy and the toast say so, and `Offline Nudge Accepted` carries
+`armedOnly: true` — without it the funnel reads as accepts that never downloaded.
+
+### Eligibility
+
+`shouldShowNudge` (pure, `src/lib/offline-nudges/nudge-policy.ts`) gates on
+`boardDownloadState() !== 'off'`, i.e. on `syncEnabledBoards` — **not** on
+"absent from `downloadedScopeKeys`". An offline arm leaves the scope `'pending'`,
+which satisfies the naive gate, so the nudge would re-prompt for the board it
+just armed. `autoOfflineBoards` suppresses everything (that user downloads
+everything already), and screenshot mode suppresses everything so App Store
+captures never sprout nudge cards.
+
+### Events
+
+`Offline Nudge Shown / Accepted / Dismissed`, split by `surface`, with
+`{ boardType, layoutId, scopeKey, downloadedBoardCount }` plus `armedOnly` on
+accept and `dismissKind` on dismiss. State lives in one AsyncStorage key,
+`offlineNudgeStateV1`.
+
+`board_card` is the exception: the glyph emits `Accepted` only. A card scrolling
+past in a carousel is not a suggestion the way a prompt is, so there is no
+impression event to divide by — read that surface as accepts joined to
+`Offline Board Download Completed`, not as a conversion rate. It is also the one
+surface not behind `offline-discovery-nudges`: it is a status badge on a screen
+the user opened, gated by the offline kill switch alone.
+
+### Flag ramp
+
+`offline-discovery-nudges`, ANDed with `offline-board-downloads`. Ramp from 0%.
+Before going past 25%, check `Offline Nudge Accepted` against the completed /
+failed split per board type — nudging someone into a download that takes minutes
+is a worse first impression than not nudging at all.
+
+**Bake it at 100%, do not leave it flagged.** Once the accept-to-complete rate
+holds for two weeks at 100%, delete the flag definition and the
+`useOfflineNudgesEnabled` gate in the same PR. `offline-board-downloads` sat
+resolved-on for months while the changelog still called it a tester feature
+(#4312); this one gets an owner and a date instead.
+
+### Hand-off to #3621 (sign-out wipe)
+
+`offlineNudgeStateV1` must be added to the logout wipe. A stale key across
+accounts on a shared device silently suppresses every nudge for the next user.
+`__resetNudgeStateCacheForTests` in `nudge-storage.ts` is the in-memory half.

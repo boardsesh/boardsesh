@@ -333,6 +333,11 @@
           "body": "{{name}} n'est pas encore sur ton téléphone, donc il n'y a rien à chercher ici.",
           "cta": "La récupérer dès que j’ai du réseau",
           "armedToast": "{{name}} est en file d’attente : le téléchargement démarre dès que tu es reconnecté."
+        },
+        "spotlight": {
+          "title": "Grimpe là où le wifi ne va pas",
+          "body": "Télécharge une board une fois et tout son catalogue reste sur ton téléphone : recherche, filtres et croix dans le carnet marchent dans une salle en sous-sol sans réseau.",
+          "cta": "Choisir une board à télécharger"
         }
       }
     },
