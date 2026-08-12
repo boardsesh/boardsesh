@@ -606,6 +606,7 @@ function ClimbListInner() {
   const {
     data: searchPages,
     isLoading: isClimbsLoading,
+    isError: isClimbsError,
     isFetchingNextPage,
     isRefetching,
     fetchNextPage,
@@ -1365,16 +1366,24 @@ function ClimbListInner() {
   }
 
   const isEmpty = visibleClimbs.length === 0 && !isClimbsLoading;
-  // Offline with a filter we can't answer on-device (drafts, beta, zones, hold
-  // state) — the search returns an empty result, so tell the user why instead of
-  // the generic "no climbs". Tall/wide are offline-expressible, so they don't
-  // trip this.
-  const offlineFilterUnavailable = isEmpty && isOffline && !isOfflineSearchSupported(searchInput);
+  // A failed search counts as no connection, the same test the boards picker
+  // makes (`isLocalOnly`, app/boards/index.tsx): on a captive portal or gym wifi
+  // with a dead upstream `useIsOffline()` reads ONLINE, and offlineAwareRequest
+  // rethrows once it finds nothing local to serve the search with — the exact
+  // scenario these states exist for. Judging it by connectivity alone left that
+  // user on the generic "no climbs" with no way out.
+  const noUsableConnection = isOffline || isClimbsError;
+  // No connection, with a filter we can't answer on-device (drafts, beta, zones,
+  // hold state) — the search returns an empty result, so tell the user why
+  // instead of the generic "no climbs". Tall/wide are offline-expressible, so
+  // they don't trip this.
+  const offlineFilterUnavailable = isEmpty && noUsableConnection && !isOfflineSearchSupported(searchInput);
   // The other offline empty state, and the one that had no branch of its own: the
   // filter IS answerable on-device, there is just no catalog here to answer it
   // against. Deliberately checked AFTER offlineFilterUnavailable so that branch
   // keeps its clear-filters CTA untouched.
-  const offlineNoCatalog = isEmpty && isOffline && isOfflineSearchSupported(searchInput) && offlineCatalog !== null;
+  const offlineNoCatalog =
+    isEmpty && noUsableConnection && isOfflineSearchSupported(searchInput) && offlineCatalog !== null;
   // Two states, not one: once the download is armed the CTA hides itself, so
   // repeating "this board isn't on your phone" would drop the user back into
   // the dead end they just tapped their way out of.

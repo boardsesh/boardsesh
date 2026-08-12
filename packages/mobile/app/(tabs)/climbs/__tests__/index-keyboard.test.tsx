@@ -22,9 +22,10 @@ const mocks = vi.hoisted(() => ({
     boardFilters: {} as Record<string, unknown>,
     name: '',
   },
-  // Offline empty-state fixtures: connectivity, and what the active board's
-  // catalog looks like on this device.
+  // Offline empty-state fixtures: connectivity, whether the search itself
+  // failed, and what the active board's catalog looks like on this device.
   isOffline: false,
+  searchFailed: false,
   offlineCatalog: null as 'missing' | 'queued' | null,
   activateClimb: vi.fn(),
   dismissKeyboard: vi.fn(),
@@ -258,6 +259,7 @@ vi.mock('../../../../src/lib/graphql/hooks/use-infinite-search-climbs', () => ({
   useInfiniteSearchClimbs: () => ({
     data: { pages: [{ climbs: mocks.searchClimbs, hasMore: false }] },
     isLoading: false,
+    isError: mocks.searchFailed,
     isFetchingNextPage: false,
     isRefetching: false,
     fetchNextPage: vi.fn(),
@@ -366,6 +368,7 @@ beforeEach(() => {
   mocks.searchClimbs = [mocks.climb, mocks.secondClimb];
   mocks.searchState = { filters: {}, boardFilters: {}, name: '' };
   mocks.isOffline = false;
+  mocks.searchFailed = false;
   mocks.offlineCatalog = null;
 });
 
@@ -405,6 +408,33 @@ describe('ClimbList offline catalog empty states', () => {
     expect(await findByText('mobile.emptyState.noClimbs.title')).toBeTruthy();
     expect(queryByText('mobile.emptyState.offlineNoCatalog.title')).toBeNull();
     expect(queryByText('mobile.emptyState.offlineCatalogQueued.title')).toBeNull();
+  });
+
+  // The lying connection: captive portal or dead-upstream gym wifi, where
+  // NetInfo says online and the search fails for real. The boards picker has
+  // always counted that as no connection (isLocalOnly); this screen used to fall
+  // through to the generic "no climbs", which reads as a broken search.
+  it('offers the download when the connection lies and the search fails', async () => {
+    mocks.isOffline = false;
+    mocks.searchFailed = true;
+    mocks.offlineCatalog = 'missing';
+
+    const { findByText } = render(<ClimbList />);
+
+    expect(await findByText('mobile.emptyState.offlineNoCatalog.title')).toBeTruthy();
+  });
+
+  // A search that failed but returned rows from a previous page is not an empty
+  // state at all, and a working search that finds nothing is still "no climbs".
+  it('keeps the generic empty state when the search simply found nothing', async () => {
+    mocks.isOffline = false;
+    mocks.searchFailed = false;
+    mocks.offlineCatalog = 'missing';
+
+    const { findByText, queryByText } = render(<ClimbList />);
+
+    expect(await findByText('mobile.emptyState.noClimbs.title')).toBeTruthy();
+    expect(queryByText('mobile.emptyState.offlineNoCatalog.title')).toBeNull();
   });
 });
 
