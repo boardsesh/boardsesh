@@ -12,17 +12,32 @@
 // create-if-missing path a party-session join takes. The only thing this module
 // adds is understanding the *named-slug* URL form (`/kilter/original/…`), which
 // `parseBoardPath` deliberately doesn't parse.
+//
+// Resolution is local-first, then server, and never reactive. Every lookup here
+// is imperative (`fetchAllMyBoards`, `fetchBoardBySlug`) because React Query
+// runs `networkMode: 'offlineFirst'`: an awaited `refetch()` on a cold offline
+// open pauses its retryer and never settles, so the route would spin forever
+// over a climb that is sitting in the downloaded snapshot. A bare request
+// rejects, and a rejection is a not-found the user can act on.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
-import type { UserBoard } from '@boardsesh/shared-schema';
+import { onlineManager } from '@tanstack/react-query';
+import type { CreateBoardInput, UserBoard } from '@boardsesh/shared-schema';
 import { toBoardPath, type BoardRouteTarget } from './board-route-target';
 import { useClimb } from '../graphql/hooks';
-import { fetchBoardBySlug, useCreateBoard, useMyBoards } from '../graphql/hooks';
+import { fetchAllMyBoards, fetchBoardBySlug, fetchBoardByUuid, useCreateBoard } from '../graphql/hooks';
+import { readDuplicateBoardError } from '../graphql/extract-error-message';
 import { useSetActiveBoard } from '../graphql/use-active-board';
+import { getStoredActiveBoard } from '../active-board-store';
+import { getOfflineBoards } from '../../settings/offline-boards';
 import { useAuth } from '../../providers/auth-provider';
 import { useDrawerHost, type BoardConfig } from '../../providers/drawer-host-provider';
-import { resolveBoardForSession } from '../board-path-to-user-board';
+import {
+  findOwnedBoardForSession,
+  parseBoardConfigFromPath,
+  resolveBoardForSession,
+} from '../board-path-to-user-board';
 import { openClimbInPlayDrawer } from '../open-climb-in-play-drawer';
 
 export type BoardRouteStatus = 'resolving' | 'not-found';
@@ -51,20 +66,80 @@ function urlBoardConfig(target: BoardRouteTarget | null): BoardConfig | null {
 }
 
 /**
+ * The board snapshots this device holds that may answer a URL, best first.
+ *
+ * The stored active board is always fair game: it's the board every other
+ * surface is already pointed at, so adopting it can't surprise anyone, and
+ * matching it skips the owned-list round trip on the overwhelmingly common deep
+ * link — your own wall.
+ *
+ * The offline cards are consulted ONLY while offline. Online the server list is
+ * authoritative, and a card for a board deleted on another device outlives the
+ * board until a complete `myBoards` fetch prunes it; adopting one would write a
+ * uuid the backend no longer knows into the active-board store, which is exactly
+ * the board-presence poisoning `offline-boards.ts` refuses to risk.
+ */
+async function localBoardCandidates(): Promise<UserBoard[]> {
+  const activeBoard = await getStoredActiveBoard();
+  const offlineCards = onlineManager.isOnline() ? [] : getOfflineBoards();
+  return activeBoard ? [activeBoard, ...offlineCards] : offlineCards;
+}
+
+/** A local board matching a tuple URL's config, with the URL's angle applied. */
+async function findLocalBoardForPath(boardPath: string): Promise<UserBoard | null> {
+  const config = parseBoardConfigFromPath(boardPath);
+  if (!config) return null;
+  return findOwnedBoardForSession(await localBoardCandidates(), config) ?? null;
+}
+
+/** A local board carrying `slug`, for the `/b/{slug}` form. */
+async function findLocalBoardForSlug(slug: string): Promise<UserBoard | null> {
+  return (await localBoardCandidates()).find((candidate) => candidate.slug === slug) ?? null;
+}
+
+/**
+ * `createBoard`, with the server's duplicate rejection recovered into the board
+ * it names.
+ *
+ * Walking the owned list first closes the common case but not the race: a board
+ * with this config created on another device between that walk and this create
+ * still comes back as BOARD_DUPLICATE_CONFIG. The rejection carries the existing
+ * board's uuid precisely so a client needn't search a paginated list for it — so
+ * a URL that would otherwise dead-end as not-found adopts the board the user
+ * already has. The angle comes off the create input, which is the URL's.
+ */
+async function createBoardOrAdoptDuplicate(
+  input: CreateBoardInput,
+  createBoard: (input: CreateBoardInput) => Promise<UserBoard>,
+): Promise<UserBoard> {
+  try {
+    return await createBoard(input);
+  } catch (createError) {
+    const duplicate = readDuplicateBoardError(createError);
+    if (!duplicate) throw createError;
+    const existing = await fetchBoardByUuid(duplicate.boardUuid);
+    // A duplicate naming a board we then can't read is a dead end, not a
+    // fallback: re-throw the create rejection rather than the lookup's, since
+    // that's the failure that actually describes what happened.
+    if (!existing) throw createError;
+    // `CreateBoardInput.angle` is optional on the wire; `buildCreateBoardInput`
+    // always fills it from the URL, and the board's own angle is the fallback.
+    const angle = input.angle ?? existing.angle;
+    return existing.angle === angle ? existing : { ...existing, angle };
+  }
+}
+
+/**
  * Resolve the URL's board to a `UserBoard` and adopt it as active. Runs once
  * per target; `null` while resolving, and `error` once the board can't be
- * resolved at all (dead slug, board config that no longer exists).
+ * resolved at all (dead slug, board config that no longer exists, offline with
+ * nothing local that matches).
  */
 function useAdoptedBoard(
   target: BoardRouteTarget | null,
   enabled: boolean,
 ): { board: UserBoard | null; error: boolean } {
   const { isAuthenticated, isLoading: authIsLoading } = useAuth();
-  // `enabled` first: in `in-app` mode nothing here ever resolves a board, so the
-  // owned list would be fetched on every mount (a tick tap through the legacy
-  // redirector) and thrown away. The query has no staleTime, so that's a real
-  // round-trip each time.
-  const myBoards = useMyBoards(undefined, { enabled: enabled && isAuthenticated });
   const createBoard = useCreateBoard();
   const setActiveBoard = useSetActiveBoard();
 
@@ -72,7 +147,7 @@ function useAdoptedBoard(
   const [error, setError] = useState(false);
 
   // Only the tuple form can mint a board, and only that path reads the owned
-  // list; a `/b/{slug}` URL resolves server-side.
+  // list; a `/b/{slug}` URL resolves by slug, locally or server-side.
   const needsOwnedBoards = target?.kind === 'list' || target?.kind === 'climb';
   // Resolution must not start on an unsettled session. A signed-in state that
   // hasn't resolved yet reads as signed-out, which skips the owned-boards wait
@@ -89,11 +164,11 @@ function useAdoptedBoard(
   const resolvedPathRef = useRef<string | null>(null);
 
   // The resolve effect deliberately runs once per path, so it must not close
-  // over the first render's query objects — `myBoards.data` is exactly the value
-  // that arrives late on a cold deep-link open.
-  const queriesRef = useRef({ myBoards, createBoard, isAuthenticated });
+  // over the first render's values — the session is exactly the one that lands
+  // late on a cold deep-link open.
+  const queriesRef = useRef({ createBoard, isAuthenticated });
   useEffect(() => {
-    queriesRef.current = { myBoards, createBoard, isAuthenticated };
+    queriesRef.current = { createBoard, isAuthenticated };
   });
 
   useEffect(() => {
@@ -112,27 +187,43 @@ function useAdoptedBoard(
     let cancelled = false;
     void (async () => {
       try {
-        const {
-          myBoards: boardsQuery,
-          createBoard: createBoardMutation,
-          isAuthenticated: signedIn,
-        } = queriesRef.current;
-        // Same cold-start guard the join screen uses: an empty owned-board list
-        // makes resolveBoardForSession mint a board the user already has, which
-        // the backend rejects. Wait for the real list first — and treat a list we
-        // couldn't fetch at all as unresolvable, since "no boards" and "we don't
-        // know your boards" mint the same duplicate board otherwise.
+        const { createBoard: createBoardMutation, isAuthenticated: signedIn } = queriesRef.current;
+        // Local first, before anything can wait on the network. The deep-linked
+        // board is nearly always the board this device is already on, and on a
+        // cold offline open it's the only board resolvable at all — the climb
+        // itself already serves from the downloaded snapshot.
+        const localBoard = needsOwnedBoards ? await findLocalBoardForPath(boardPath) : null;
+
         let ownedBoards: UserBoard[] = [];
-        if (needsOwnedBoards && signedIn) {
-          const myBoardsData = boardsQuery.data ?? (await boardsQuery.refetch()).data;
-          if (!myBoardsData) throw new Error(`Could not load owned boards for ${boardPath}`);
-          ownedBoards = myBoardsData.boards;
+        if (needsOwnedBoards && !localBoard) {
+          // Offline with nothing local is unresolvable and has to say so rather
+          // than wait: every remaining step (the owned-list walk, CREATE_BOARD)
+          // needs the network. Failing here is what turns an endless spinner
+          // into the route's not-found.
+          if (!onlineManager.isOnline()) {
+            throw new Error(`No downloaded board matches ${boardPath} while offline`);
+          }
+          // Same cold-start guard the join screen uses: an empty owned-board list
+          // makes resolveBoardForSession mint a board the user already has, which
+          // the backend rejects. Fetch the *whole* list — `myBoards` pages at 50,
+          // and a board on page two reads as no board at all — and let a rejected
+          // walk fail the resolve, since "no boards" and "we don't know your
+          // boards" mint the same duplicate otherwise. Signed out is legitimately
+          // empty: there the create fails, and that rejection is the not-found.
+          if (signedIn) ownedBoards = await fetchAllMyBoards();
         }
-        const resolved = await resolveBoardForSession(boardPath, {
-          ownedBoards,
-          createBoard: (input) => createBoardMutation.mutateAsync(input),
-          fetchBoardBySlug,
-        });
+
+        const resolved =
+          localBoard ??
+          (await resolveBoardForSession(boardPath, {
+            ownedBoards,
+            createBoard: (input) =>
+              createBoardOrAdoptDuplicate(input, (createInput) => createBoardMutation.mutateAsync(createInput)),
+            // Local first here too, so a named board already on the device opens
+            // offline. The named-path angle rule (URL angle, else the board's
+            // own) stays inside `resolveBoardForSession` for both branches.
+            fetchBoardBySlug: async (slug) => (await findLocalBoardForSlug(slug)) ?? (await fetchBoardBySlug(slug)),
+          }));
         if (cancelled) return;
         await setActiveBoard(resolved);
         if (cancelled) return;

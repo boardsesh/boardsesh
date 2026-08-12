@@ -250,6 +250,13 @@ export async function fetchBoardByUuid(boardUuid: string) {
   return data.board;
 }
 
+// `fetchAllMyBoards` — the paginated companion to `fetchBoardByUuid` — lives in
+// its own module rather than here: the walk needs a unit test, and this barrel
+// can't be imported under Vitest (it statically reaches react-native's Flow
+// source, which Rolldown's scan refuses; see the `hooks-dual-write` exclusion in
+// packages/mobile/vite.config.ts). Re-exported so callers keep one import path.
+export { fetchAllMyBoards } from './fetch-all-my-boards';
+
 /**
  * A single gym by uuid, including the viewer's `canEdit` flag. Backs the
  * gym-edit screen (moderators reach it from the wall finder's edit affordance).

@@ -10,7 +10,12 @@ const openPlayDrawer = vi.hoisted(() => vi.fn());
 const openClimbInPlayDrawer = vi.hoisted(() => vi.fn());
 const setActiveBoard = vi.hoisted(() => vi.fn(async () => {}));
 const resolveBoardForSession = vi.hoisted(() => vi.fn());
-const refetchMyBoards = vi.hoisted(() => vi.fn());
+const fetchAllMyBoards = vi.hoisted(() => vi.fn());
+const fetchBoardByUuid = vi.hoisted(() => vi.fn());
+const fetchBoardBySlug = vi.hoisted(() => vi.fn());
+const createBoardMutateAsync = vi.hoisted(() => vi.fn());
+const getStoredActiveBoard = vi.hoisted(() => vi.fn());
+const getOfflineBoards = vi.hoisted(() => vi.fn());
 // Mutable so each test seeds the climb query it wants without re-mocking.
 const climbQuery = vi.hoisted(() => ({
   current: { data: undefined, isError: false, isSuccess: false } as {
@@ -19,36 +24,40 @@ const climbQuery = vi.hoisted(() => ({
     isSuccess: boolean;
   },
 }));
-const myBoardsQuery = vi.hoisted(() => ({
-  current: { data: { boards: [] as UserBoard[] }, refetch: refetchMyBoards } as {
-    data?: { boards: UserBoard[] };
-    refetch: typeof refetchMyBoards;
-  },
-}));
 // Mirrors AuthProvider: `isLoading` starts true and the session resolves async.
 const authState = vi.hoisted(() => ({ current: { isAuthenticated: true, isLoading: false } }));
-// What `useMyBoards` was last asked for, so the in-app mode's skipped fetch is
-// assertable rather than assumed.
-const myBoardsEnabled = vi.hoisted(() => ({ current: undefined as boolean | undefined }));
+// The hook reads connectivity straight off React Query's onlineManager (the
+// resolve runs once, so a reactive hook would be the wrong shape).
+const connectivity = vi.hoisted(() => ({ isOnline: true }));
 
 vi.mock('expo-router', () => ({ useRouter: () => router }));
+vi.mock('@tanstack/react-query', () => ({ onlineManager: { isOnline: () => connectivity.isOnline } }));
 vi.mock('../../graphql/hooks', () => ({
   useClimb: (variables: unknown) =>
     variables ? climbQuery.current : { data: undefined, isError: false, isSuccess: false },
-  useMyBoards: (_input: unknown, options?: { enabled?: boolean }) => {
-    myBoardsEnabled.current = options?.enabled;
-    return myBoardsQuery.current;
-  },
-  useCreateBoard: () => ({ mutateAsync: vi.fn() }),
-  fetchBoardBySlug: vi.fn(),
+  useCreateBoard: () => ({ mutateAsync: createBoardMutateAsync }),
+  fetchAllMyBoards,
+  fetchBoardByUuid,
+  fetchBoardBySlug,
 }));
 vi.mock('../../graphql/use-active-board', () => ({ useSetActiveBoard: () => setActiveBoard }));
+vi.mock('../../active-board-store', () => ({ getStoredActiveBoard }));
+vi.mock('../../../settings/offline-boards', () => ({ getOfflineBoards }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => authState.current }));
 vi.mock('../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => ({ openPlayDrawer }) }));
-vi.mock('../../board-path-to-user-board', () => ({ resolveBoardForSession }));
+// Only `resolveBoardForSession` is stubbed — the local-match tests below want the
+// real config parser and owned-board matcher, and the tests that assert the
+// create/slug paths hand the real resolver back in (see `useRealResolver`).
+vi.mock('../../board-path-to-user-board', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../board-path-to-user-board')>()),
+  resolveBoardForSession,
+}));
 vi.mock('../../open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer }));
 
 const { useBoardRouteTarget } = await import('../use-board-route-target');
+const { resolveBoardForSession: realResolveBoardForSession } = await vi.importActual<
+  typeof import('../../board-path-to-user-board')
+>('../../board-path-to-user-board');
 
 const CLIMB_UUID = '0A1B2C3D4E5F60718293A4B5C6D7E8F9';
 const OTHER_CLIMB_UUID = 'F9E8D7C6B5A4938271605F4E3D2C1B0A';
@@ -62,6 +71,35 @@ const RESOLVED_BOARD = {
   angle: 40,
 } as unknown as UserBoard;
 
+/** A UserBoard on the tuple URL's config unless overridden — angle deliberately not 40. */
+function board(overrides: Partial<UserBoard> & { uuid: string }): UserBoard {
+  return {
+    slug: overrides.uuid,
+    boardType: 'kilter',
+    layoutId: 1,
+    sizeId: 10,
+    setIds: '1,20',
+    angle: 20,
+    ...overrides,
+  } as unknown as UserBoard;
+}
+
+/** Hand the real resolver back to the hook, for the create / slug branches. */
+function useRealResolver() {
+  resolveBoardForSession.mockImplementation(realResolveBoardForSession);
+}
+
+/** The BOARD_DUPLICATE_CONFIG shape graphql-request throws, as the backend sends it. */
+function duplicateBoardRejection(existingBoardUuid: string) {
+  return {
+    response: {
+      errors: [
+        { message: 'You already have this board', extensions: { code: 'BOARD_DUPLICATE_CONFIG', existingBoardUuid } },
+      ],
+    },
+  };
+}
+
 function Harness({ target, mode }: { target: BoardRouteTarget | null; mode?: 'deep-link' | 'in-app' }) {
   return createElement('span', { 'data-status': useBoardRouteTarget(target, { mode }) });
 }
@@ -74,10 +112,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   router.canGoBack.mockReturnValue(true);
   resolveBoardForSession.mockResolvedValue(RESOLVED_BOARD);
+  fetchAllMyBoards.mockResolvedValue([]);
+  fetchBoardByUuid.mockResolvedValue(null);
+  fetchBoardBySlug.mockResolvedValue(null);
+  getStoredActiveBoard.mockResolvedValue(null);
+  getOfflineBoards.mockReturnValue([]);
   climbQuery.current = { data: undefined, isError: false, isSuccess: false };
-  myBoardsQuery.current = { data: { boards: [] }, refetch: refetchMyBoards };
   authState.current = { isAuthenticated: true, isLoading: false };
-  myBoardsEnabled.current = undefined;
+  connectivity.isOnline = true;
 });
 
 describe('useBoardRouteTarget', () => {
@@ -232,8 +274,7 @@ describe('useBoardRouteTarget', () => {
   // duplicate of a board the user already has.
   it('waits for the session to settle before resolving a tuple URL', async () => {
     authState.current = { isAuthenticated: false, isLoading: true };
-    myBoardsQuery.current = { data: undefined, refetch: refetchMyBoards };
-    refetchMyBoards.mockResolvedValue({ data: { boards: [RESOLVED_BOARD] } });
+    fetchAllMyBoards.mockResolvedValue([RESOLVED_BOARD]);
 
     const { container, rerender } = render(
       createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }),
@@ -274,12 +315,12 @@ describe('useBoardRouteTarget', () => {
     );
 
     await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
-    expect(myBoardsEnabled.current).toBe(false);
+    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+    expect(getStoredActiveBoard).not.toHaveBeenCalled();
   });
 
   it('does not mint a duplicate board when the owned-board list could not be loaded', async () => {
-    myBoardsQuery.current = { data: undefined, refetch: refetchMyBoards };
-    refetchMyBoards.mockResolvedValue({ data: undefined });
+    fetchAllMyBoards.mockRejectedValue(new Error('network down'));
 
     const { container } = render(
       createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }),
@@ -287,5 +328,135 @@ describe('useBoardRouteTarget', () => {
 
     await waitFor(() => expect(statusOf(container)).toBe('not-found'));
     expect(resolveBoardForSession).not.toHaveBeenCalled();
+  });
+
+  // `myBoards` pages at 50 rows. Reading only the first page made a board on page
+  // two read as "you don't own this", and the URL minted a duplicate of the
+  // user's own wall (or dead-ended on the backend's duplicate guard).
+  it('reuses an owned board that sits past the first page of myBoards', async () => {
+    useRealResolver();
+    const pageTwoBoard = board({ uuid: 'page-two' });
+    const pageOne = Array.from({ length: 50 }, (_, index) => board({ uuid: `other-${index}`, sizeId: 99 }));
+    fetchAllMyBoards.mockResolvedValue([...pageOne, pageTwoBoard]);
+
+    render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledTimes(1));
+    // Adopted at the URL's angle, not the board's stored 20.
+    expect(setActiveBoard).toHaveBeenCalledWith({ ...pageTwoBoard, angle: 40 });
+    expect(createBoardMutateAsync).not.toHaveBeenCalled();
+  });
+
+  // The list walk closes the common case but not the race — a board created on
+  // another device between the walk and the create still lands as
+  // BOARD_DUPLICATE_CONFIG, and the error names the board to use.
+  it('adopts the existing board when createBoard rejects as a duplicate', async () => {
+    useRealResolver();
+    const existingBoard = board({ uuid: 'existing-uuid' });
+    createBoardMutateAsync.mockRejectedValue(duplicateBoardRejection('existing-uuid'));
+    fetchBoardByUuid.mockResolvedValue(existingBoard);
+
+    const { container } = render(
+      createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }),
+    );
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledTimes(1));
+    expect(fetchBoardByUuid).toHaveBeenCalledWith('existing-uuid');
+    expect(setActiveBoard).toHaveBeenCalledWith({ ...existingBoard, angle: 40 });
+    expect(statusOf(container)).toBe('resolving');
+  });
+
+  // The stored active board is the board the rest of the app is already pointed
+  // at, so a URL that matches it needs no network at all — which is what makes a
+  // cold offline open resolve instead of spinning.
+  it('adopts the stored active board offline without touching the network', async () => {
+    connectivity.isOnline = false;
+    const activeBoard = board({ uuid: 'active-uuid' });
+    getStoredActiveBoard.mockResolvedValue(activeBoard);
+
+    render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith({ ...activeBoard, angle: 40 }));
+    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+    expect(resolveBoardForSession).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a downloaded board card when offline', async () => {
+    connectivity.isOnline = false;
+    const downloadedBoard = board({ uuid: 'downloaded-uuid' });
+    getOfflineBoards.mockReturnValue([downloadedBoard]);
+
+    render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith({ ...downloadedBoard, angle: 40 }));
+    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+  });
+
+  // Offline with nothing local can never resolve: the list walk and CREATE_BOARD
+  // both need the network. It has to fail rather than await a request React
+  // Query pauses, or the route spins forever.
+  it('is not found offline when no local board matches', async () => {
+    connectivity.isOnline = false;
+
+    const { container } = render(
+      createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+    expect(resolveBoardForSession).not.toHaveBeenCalled();
+  });
+
+  // Online the server list stays authoritative: the local shortcut only applies
+  // when the active board actually matches the URL.
+  it('falls through to the full owned list when the active board does not match', async () => {
+    useRealResolver();
+    getStoredActiveBoard.mockResolvedValue(board({ uuid: 'tension-uuid', boardType: 'tension' }));
+    const ownedBoard = board({ uuid: 'owned-uuid' });
+    fetchAllMyBoards.mockResolvedValue([ownedBoard]);
+
+    render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith({ ...ownedBoard, angle: 40 }));
+    expect(fetchAllMyBoards).toHaveBeenCalledTimes(1);
+    expect(createBoardMutateAsync).not.toHaveBeenCalled();
+  });
+
+  // Online, a stale card (board deleted on another device, not pruned yet) must
+  // never be adopted — its uuid is one the backend no longer knows.
+  it('ignores downloaded board cards while online', async () => {
+    useRealResolver();
+    getOfflineBoards.mockReturnValue([board({ uuid: 'stale-card' })]);
+    const ownedBoard = board({ uuid: 'owned-uuid' });
+    fetchAllMyBoards.mockResolvedValue([ownedBoard]);
+
+    render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith({ ...ownedBoard, angle: 40 }));
+  });
+
+  // The named form gets the same local-first treatment, and keeps the named-path
+  // angle rule: the URL's angle wins, the board's own is the fallback.
+  it('resolves a slug URL from the stored active board while offline', async () => {
+    useRealResolver();
+    connectivity.isOnline = false;
+    const namedBoard = board({ uuid: 'gym-uuid', slug: 'the-gym', angle: 25 });
+    getStoredActiveBoard.mockResolvedValue(namedBoard);
+
+    render(createElement(Harness, { target: { kind: 'slug-list', slug: 'the-gym', angle: 40 } as BoardRouteTarget }));
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith({ ...namedBoard, angle: 40 }));
+    expect(fetchBoardBySlug).not.toHaveBeenCalled();
+  });
+
+  it('keeps the named board angle when a slug URL carries none', async () => {
+    useRealResolver();
+    connectivity.isOnline = false;
+    const namedBoard = board({ uuid: 'gym-uuid', slug: 'the-gym', angle: 25 });
+    getStoredActiveBoard.mockResolvedValue(namedBoard);
+
+    render(createElement(Harness, { target: { kind: 'slug-list', slug: 'the-gym', angle: null } as BoardRouteTarget }));
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(namedBoard));
   });
 });
