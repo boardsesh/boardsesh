@@ -1,6 +1,7 @@
 import type { PostHog } from 'posthog-react-native';
 import { createAnalytics } from '@boardsesh/analytics';
 import { getPostHogClient, registerAppSuperProperties } from './posthog-client';
+import { registerConnectivitySuperProperty } from './analytics-connectivity';
 
 // `sendEvent: false` suppresses the SDK's `$feature_flag_called` capture. Verified
 // in @posthog/core 1.46.1 (shared by posthog-react-native and posthog-js-lite):
@@ -145,10 +146,18 @@ export const { track, identify, setPersonProperties, alias } = analytics;
 // reads as production again, reopening #3814) and `$raw_user_agent` (without it,
 // PostHog bot-filters the events). Person-scoped properties are meant to be
 // cleared and are deliberately not restored.
+//
+// `connectivity` goes back on for the same reason: it is registered once at
+// startup and then only on a network transition, so a sign-out that dropped it
+// would leave every remaining event of the launch unattributed to online or
+// offline unless the user happened to change networks (issue #4317).
 export function reset(): boolean {
   const didReset = analytics.reset();
   const client = getClient();
-  if (client) registerAppSuperProperties(client);
+  if (client) {
+    registerAppSuperProperties(client);
+    registerConnectivitySuperProperty(client);
+  }
   return didReset;
 }
 

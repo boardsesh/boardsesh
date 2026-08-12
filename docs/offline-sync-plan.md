@@ -851,6 +851,45 @@ On logout or account switch:
 4. Reset `syncEnabledBoards` and the `offlineBoardsV1` snapshots (board names must not survive into the next account on a shared device).
 5. On new login, sync pull client fetches the new user's data (small, seconds).
 
+## Usage telemetry
+
+Offline mode's whole value proposition is "you can still climb when the signal
+can't". Until issue #4317 nothing in the telemetry could tell an offline-served
+read apart from an online one, so that claim was unfalsifiable. This section is
+the source of truth for the signals that fix it. They are mobile-only today (the
+engine is shared, so a future web offline consumer would emit the same things).
+
+### The `connectivity` super property
+
+`packages/mobile/src/lib/analytics-connectivity.ts` registers a PostHog super
+property `connectivity: 'online' | 'offline'` at analytics startup and again on
+every real network transition. PostHog stamps super properties onto events at
+**capture** time, so every event the app sends — `$screen`, `Tick Logged`, the
+offline download events — becomes segmentable by connectivity, retroactively and
+for free.
+
+Three things are worth knowing before trusting a number derived from it:
+
+- **Offline-captured events do arrive.** The RN SDK persists its queue to disk
+  (`persistence: 'file'` is the default), and `@posthog/core`'s flush only
+  dequeues a batch when the failure was **not** a `PostHogFetchNetworkError` — a
+  network failure leaves the batch in the queue. So events captured in airplane
+  mode survive an app kill and flush on reconnect, still carrying the
+  `connectivity: 'offline'` they were captured with. The queue is capped at 1000
+  events with the oldest dropped, which is the reason the read signal below is a
+  rollup rather than one event per read.
+- **It is best-known connectivity, not ground truth.** It mirrors React Query's
+  `onlineManager`, which the app seeds from NetInfo asynchronously and which
+  defaults to online (`query-provider.tsx`), and which tracks `isConnected`, not
+  `isInternetReachable`. A genuinely-offline cold start can stamp its first
+  events `online`, and a captive portal or a dead gym-wifi upstream reads
+  `online` throughout. Both errors under-count offline usage, so any number built
+  on this is a floor.
+- **It is re-registered after `analytics.reset()`.** PostHog's reset clears every
+  super property and the client singleton is cached, so a sign-out would
+  otherwise drop `connectivity` for the rest of the launch — the same trap
+  `environment` and `$raw_user_agent` already document in `posthog-client.ts`.
+
 ## Performance targets
 
 | Metric                   | Target                | Notes                                     |
