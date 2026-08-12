@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-12T09:04:38.699Z",
+  "generatedAt": "2026-08-12T10:55:19.926Z",
   "entries": [
+    {
+      "prNumber": 4355,
+      "category": "new",
+      "title": "Watch your board actually come down. Enabling a board offline now shows the megabytes, a percentage and whether it's downloading or unpacking, instead of a spinner that looked like the app had hung. Kilter takes about three minutes on a good connection — now you can see it happening.",
+      "mergedAt": "2026-08-12T10:54:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4355"
+    },
     {
       "prNumber": 4326,
       "category": "fixed",

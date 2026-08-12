@@ -6,6 +6,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-08-12
 
+### New
+
+- Watch your board actually come down. Enabling a board offline now shows the megabytes, a percentage and whether it's downloading or unpacking, instead of a spinner that looked like the app had hung. Kilter takes about three minutes on a good connection — now you can see it happening. ([#4355](https://github.com/boardsesh/boardsesh/pull/4355))
+
 ### Fixed
 
 - A dropped connection while downloading a board no longer condemns it to the slow download path. Boards that got stuck partway through the slow crawl now finish on the fast one by themselves. ([#4326](https://github.com/boardsesh/boardsesh/pull/4326))
