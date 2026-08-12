@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- A dropped connection while downloading a board no longer condemns it to the slow download path. Boards that got stuck partway through the slow crawl now finish on the fast one by themselves. ([#4326](https://github.com/boardsesh/boardsesh/pull/4326))
 - Manage Storage now shows what the board art and photos on your phone actually take up, with a Clear cached images button for when you need the space back. Boardsesh also stops letting downloaded photos pile up without a ceiling, and cleans up board downloads that got interrupted halfway. ([#4334](https://github.com/boardsesh/boardsesh/pull/4334))
 - Sharing a phone? Your sends stay yours. The offline database now records who's signed in and checks it before serving anything from your logbook — so if a sign-out ever gets interrupted, the next climber sees their own ticks, not yours. ([#4351](https://github.com/boardsesh/boardsesh/pull/4351))
 - Your playlists, likes and logbook now refresh on their own once a background sync lands new rows, instead of waiting for you to pull-to-refresh or reopen the screen. ([#4350](https://github.com/boardsesh/boardsesh/pull/4350))

@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-12T08:09:26.165Z",
+  "generatedAt": "2026-08-12T09:04:38.699Z",
   "entries": [
+    {
+      "prNumber": 4326,
+      "category": "fixed",
+      "title": "A dropped connection while downloading a board no longer condemns it to the slow download path. Boards that got stuck partway through the slow crawl now finish on the fast one by themselves.",
+      "mergedAt": "2026-08-12T09:02:24Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4326"
+    },
     {
       "prNumber": 4334,
       "category": "fixed",
