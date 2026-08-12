@@ -17,6 +17,7 @@ import { useUserDrawer } from '../src/components/user-drawer/UserDrawerProvider'
 import { latestEntryDate } from '../src/lib/changelog';
 import { getLastSeenChangelogDate, hasUnseenChangelog } from '../src/lib/changelog-seen';
 import { hasUnseenOfflineSpotlight } from '../src/lib/offline-nudges/spotlight-unseen';
+import { useOfflineDownloadsEnabled, useOfflineNudgesEnabled } from '../src/providers/feature-flags-provider';
 
 const DRAWER_MAX_WIDTH = 320;
 const DRAWER_SCREEN_FRACTION = 0.86;
@@ -52,17 +53,27 @@ export default function UserDrawerScreen() {
   // time it opens, so a one-shot mount read is enough; opening the changelog clears
   // the marker and the next drawer open re-reads it.
   // ...OR'd with the curated offline spotlight pinned inside that screen, which
-  // is otherwise unreachable for anyone whose changelog is already read.
+  // is otherwise unreachable for anyone whose changelog is already read — but
+  // ONLY when that card can actually render. Both flags gate the card itself, so
+  // without this the pill would light for every user with nothing downloaded
+  // while the nudge flag sits at 0%, and opening What's New would never clear it
+  // (the card never renders, so its "shown" marker is never written).
+  const offlineEngineEnabled = useOfflineDownloadsEnabled();
+  const offlineNudgesEnabled = useOfflineNudgesEnabled();
+  const spotlightReachable = offlineEngineEnabled && offlineNudgesEnabled;
   const [changelogUnseen, setChangelogUnseen] = useState(false);
   useEffect(() => {
     let active = true;
-    void Promise.all([getLastSeenChangelogDate(), hasUnseenOfflineSpotlight()]).then(([lastSeen, spotlightUnseen]) => {
+    void Promise.all([
+      getLastSeenChangelogDate(),
+      spotlightReachable ? hasUnseenOfflineSpotlight() : Promise.resolve(false),
+    ]).then(([lastSeen, spotlightUnseen]) => {
       if (active) setChangelogUnseen(hasUnseenChangelog(latestEntryDate, lastSeen) || spotlightUnseen);
     });
     return () => {
       active = false;
     };
-  }, []);
+  }, [spotlightReachable]);
 
   const {
     navigateToBoards,

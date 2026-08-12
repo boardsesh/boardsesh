@@ -1229,6 +1229,13 @@ captures never sprout nudge cards.
 accept and `dismissKind` on dismiss. State lives in one AsyncStorage key,
 `offlineNudgeStateV1`.
 
+`board_card` is the exception: the glyph emits `Accepted` only. A card scrolling
+past in a carousel is not a suggestion the way a prompt is, so there is no
+impression event to divide by — read that surface as accepts joined to
+`Offline Board Download Completed`, not as a conversion rate. It is also the one
+surface not behind `offline-discovery-nudges`: it is a status badge on a screen
+the user opened, gated by the offline kill switch alone.
+
 ### Flag ramp
 
 `offline-discovery-nudges`, ANDed with `offline-board-downloads`. Ramp from 0%.

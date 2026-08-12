@@ -93,6 +93,12 @@ vi.mock('../../../lib/changelog-seen', () => changelogSeen);
 vi.mock('../../../lib/offline-nudges/spotlight-unseen', () => ({
   hasUnseenOfflineSpotlight: async () => false,
 }));
+// Pulls PostHog into the graph; the pill only asks it whether the spotlight
+// could render at all.
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useOfflineDownloadsEnabled: () => true,
+  useOfflineNudgesEnabled: () => true,
+}));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: { id: 'user-1', displayName: 'Alex', email: 'alex@example.com', avatarUrl: null } }),
 }));

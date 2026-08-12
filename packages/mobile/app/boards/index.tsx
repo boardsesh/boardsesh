@@ -31,6 +31,7 @@ import { useOfflineCatalogState } from '../../src/offline/use-offline-catalog-st
 import { useOfflineDownloadsEnabled } from '../../src/providers/feature-flags-provider';
 import { boardDownloadState, type BoardDownloadState } from '../../src/components/board-discovery/board-offline-state';
 import { OfflineCatalogCta } from '../../src/components/offline/OfflineCatalogCta';
+import { trackNudgeAccepted } from '../../src/lib/offline-nudges/nudge-analytics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { setBoardRevealTipPending } from '../../src/lib/onboarding/onboarding-storage';
 import { track } from '../../src/lib/analytics';
@@ -241,9 +242,27 @@ export default function BoardSelection() {
   const onDownloadMyBoard = useCallback(
     (item: DiscoveryBoardItem) => {
       const board = myBoards.find((candidate) => candidate.uuid === item.key);
-      if (board) void confirmAndDownload(board);
+      if (!board) return;
+      void confirmAndDownload(board).then((confirmed) => {
+        if (!confirmed) return;
+        // This surface deliberately has no impression event — a card scrolling
+        // past in a carousel is not a suggestion the way a prompt is — so the
+        // accept is what joins the glyph to the download funnel. Without it the
+        // widest-reach discovery surface ships blind, which is the failure
+        // epic #4319 exists to fix. Never arm-only: the glyph is online-only.
+        trackNudgeAccepted(
+          {
+            surface: 'board_card',
+            boardType: board.boardType,
+            layoutId: board.layoutId,
+            scopeKey: offlineBoardKeyForBoard(board),
+            downloadedBoardCount: (downloadedScopeKeys ?? []).length,
+          },
+          false,
+        );
+      });
     },
-    [myBoards, confirmAndDownload],
+    [myBoards, confirmAndDownload, downloadedScopeKeys],
   );
   const downloadLabelFor = useCallback(
     (item: DiscoveryBoardItem) => t('mobile.offline.makeAvailableAria', { name: item.title }),

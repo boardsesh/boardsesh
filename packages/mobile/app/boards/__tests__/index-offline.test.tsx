@@ -136,7 +136,8 @@ vi.mock('../../../src/lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../src/lib/onboarding/onboarding-storage', () => ({
   setBoardRevealTipPending: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('../../../src/lib/analytics', () => ({ track: vi.fn() }));
+const trackMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/lib/analytics', () => ({ track: trackMock }));
 vi.mock('../../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
 }));
@@ -153,8 +154,9 @@ vi.mock('../../../src/components/offline/OfflineCatalogCta', () => ({
   OfflineCatalogCta: ({ board }: { board: unknown }) =>
     board ? createElement('div', { 'data-testid': 'offline-catalog-cta' }) : null,
 }));
+const confirmAndDownloadMock = vi.hoisted(() => vi.fn(async () => true));
 vi.mock('../../../src/offline/use-confirm-board-download', () => ({
-  useConfirmBoardDownload: () => ({ confirmAndDownload: vi.fn(), armWithoutConfirm: vi.fn() }),
+  useConfirmBoardDownload: () => ({ confirmAndDownload: confirmAndDownloadMock, armWithoutConfirm: vi.fn() }),
 }));
 vi.mock('../../../src/providers/feature-flags-provider', () => ({ useOfflineDownloadsEnabled: () => true }));
 vi.mock('../../../src/offline/use-downloaded-scope-keys', () => ({
@@ -189,12 +191,31 @@ vi.mock('../../../src/components/ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'spinner' }),
 }));
 vi.mock('../../../src/components/board-discovery/BoardCarousel', () => ({
-  BoardCarousel: ({ items, onSelect }: { items: CarouselItem[]; onSelect: (item: CarouselItem) => void }) =>
+  BoardCarousel: ({
+    items,
+    onSelect,
+    onDownload,
+  }: {
+    items: CarouselItem[];
+    onSelect: (item: CarouselItem) => void;
+    onDownload?: (item: CarouselItem) => void;
+  }) =>
     createElement(
       'div',
       { 'data-testid': 'carousel' },
       items.map((item) =>
-        createElement('button', { key: item.key, type: 'button', onClick: () => onSelect(item) }, item.title),
+        createElement('span', { key: item.key }, [
+          createElement('button', { key: 'select', type: 'button', onClick: () => onSelect(item) }, item.title),
+          // Only the Your Boards carousel is handed one; the download glyph is
+          // what fires the board-card accept event.
+          onDownload
+            ? createElement(
+                'button',
+                { key: 'download', type: 'button', onClick: () => onDownload(item) },
+                `download ${item.title}`,
+              )
+            : null,
+        ]),
       ),
     ),
 }));
@@ -344,6 +365,45 @@ describe('board picker with no usable network list', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Network board' }));
 
     await waitFor(() => expect(adoptFoundBoardMock).toHaveBeenCalledTimes(1));
+  });
+
+  // The board-card glyph is the widest-reach discovery surface in #4318, and it
+  // is the one that joins to the download funnel through this event alone (it
+  // has no impression event by design).
+  it('reports a board-card download once the size dialog is confirmed', async () => {
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByRole('button', { name: 'download Network board' }));
+
+    await waitFor(() => expect(confirmAndDownloadMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith(
+        'Offline Nudge Accepted',
+        expect.objectContaining({ surface: 'board_card', scopeKey: 'kilter:8:17', armedOnly: false }),
+      ),
+    );
+  });
+
+  it('reports nothing when the board-card size dialog is cancelled', async () => {
+    confirmAndDownloadMock.mockResolvedValueOnce(false);
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByRole('button', { name: 'download Network board' }));
+
+    await waitFor(() => expect(confirmAndDownloadMock).toHaveBeenCalledTimes(1));
+    expect(trackMock).not.toHaveBeenCalledWith('Offline Nudge Accepted', expect.anything());
   });
 
   it('leaves the online screen untouched', () => {
