@@ -337,6 +337,37 @@ export const SHARED_EVENTS = {
   // pendingMutations }. Downloaded board catalogs are deliberately untouched,
   // so this never implies a surprise re-download.
   OfflineSyncCoverageResetForced: 'Offline Sync Coverage Reset Forced',
+  // Offline sync — a queued write was given up on permanently. A dead letter is
+  // never a connectivity problem (a network error leaves the row pending
+  // without burning retry_count), so each one is a user action that will never
+  // reach the server. Props: { tableName, operation, reason:
+  // 'retries_exhausted' | 'non_retryable', retryCount, status, queuedForMs,
+  // error }. The idempotency key is deliberately NOT a prop — it is a raw uuid
+  // or a per-climb key, i.e. unbounded cardinality; it rides the Sentry event.
+  OfflineMutationDeadLettered: 'Offline Mutation Dead Lettered',
+  // Offline sync — how much unsynced work was already sitting in the outbox at
+  // launch. Per-mutation events only count from ship day, so without this every
+  // backlog that accumulated earlier is invisible. Fires at most once per app
+  // launch, and only when something is queued. Props: { pendingCount,
+  // deadLetterCount, oldestPendingAgeDays, oldestDeadLetterAgeDays }.
+  OfflineOutboxBacklogDetected: 'Offline Outbox Backlog Detected',
+  // Offline sync — sign-out deletes the whole outbox, dead letters included, so
+  // this is the size of what the user just lost. Emitted before the analytics
+  // reset so it lands on the signed-in identity. Props: { pendingCount,
+  // deadLetterCount, oldestPendingAgeDays, oldestDeadLetterAgeDays }.
+  OfflineOutboxDiscardedOnSignOut: 'Offline Outbox Discarded On Sign Out',
+  // Offline sync — an enqueue was swallowed by INSERT OR IGNORE because a
+  // dead-lettered row already owns that deterministic idempotency key
+  // (favorites, follows). The user's repeat action is dropped at enqueue time,
+  // so neither a drain nor a dead-letter event can ever report it. Props:
+  // { tableName, operation, existingStatus }.
+  OfflineMutationEnqueueSuppressed: 'Offline Mutation Enqueue Suppressed',
+  // Offline sync — the local SQLite write behind an offline tick threw, so the
+  // tick fell through to a direct network save. Online that still lands;
+  // offline it is a lost tick. `wasOffline` is the dimension that splits those
+  // two, and `isLockError` says whether it was write-lock contention (#4314)
+  // rather than a broken database. Props: { isLockError, wasOffline, error }.
+  OfflineTickLocalWriteFailed: 'Offline Tick Local Write Failed',
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;

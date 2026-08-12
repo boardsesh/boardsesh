@@ -11,6 +11,7 @@ import {
   type GraphQLFetch,
 } from '@boardsesh/offline-sync';
 import { startSyncScheduler, drainMutationQueue, startBackgroundTracking } from '../offline/offline-sync-adapter';
+import { reportOutboxBacklogOnce } from '../offline/outbox-telemetry';
 import { getSetting } from '../settings';
 import { setupNotificationHandlers } from '../notifications';
 import { getHttpClient } from '../lib/graphql/client';
@@ -133,6 +134,16 @@ export function OfflineSyncBridge() {
       void queryClient.invalidateQueries({ queryKey: ['climb'] });
     }
   }, [offlineEnabled, queryClient]);
+
+  // How much unsynced work this launch inherited. Deliberately OUTSIDE the
+  // offlineEnabled branch below: a kill-switched user's queued writes (and dead
+  // letters) are exactly as stranded as a flag-on user's, and the bridge
+  // already drains their leftovers. reportOutboxBacklogOnce self-guards against
+  // this effect re-running on an auth or flag flip, and swallows its own errors.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    void reportOutboxBacklogOnce(db);
+  }, [db, isAuthenticated]);
 
   // Push-then-pull sync loop (foreground + reconnect triggers). Returns its own
   // teardown, so React calls it on unmount / dependency change — including the

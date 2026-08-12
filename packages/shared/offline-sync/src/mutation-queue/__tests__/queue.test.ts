@@ -17,6 +17,7 @@ import {
   markDeadLetter,
   getPendingCount,
   getDeadLetterCount,
+  getOutboxSummary,
   retryDeadLetter,
   discardDeadLetter,
   clearAll,
@@ -66,11 +67,11 @@ describe('mutation queue', () => {
   });
 
   it.each(['pending', 'dead_letter'] as const)(
-    'recordFailure returns %s from one UPDATE RETURNING statement',
+    'recordFailure returns %s and the bumped retry count from one UPDATE RETURNING statement',
     async (status) => {
-      (db.getFirstAsync as ReturnType<typeof vi.fn>).mockResolvedValue({ status });
+      (db.getFirstAsync as ReturnType<typeof vi.fn>).mockResolvedValue({ status, retry_count: 3 });
 
-      await expect(recordFailure(db, 7, 'Connection timeout')).resolves.toBe(status);
+      await expect(recordFailure(db, 7, 'Connection timeout')).resolves.toEqual({ status, retryCount: 3 });
 
       expect(db.getFirstAsync).toHaveBeenCalledTimes(1);
       const [sql, params] = (db.getFirstAsync as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -78,7 +79,7 @@ describe('mutation queue', () => {
       expect(sql).toMatch(/retry_count = retry_count \+ 1/);
       expect(sql).toMatch(/last_error = \?/);
       expect(sql).toMatch(/status = CASE WHEN retry_count \+ 1 >= max_retries THEN 'dead_letter' ELSE status END/);
-      expect(sql).toMatch(/RETURNING status$/);
+      expect(sql).toMatch(/RETURNING status, retry_count$/);
       expect(sql).not.toMatch(/\bSELECT\b/);
       expect(params).toEqual(['Connection timeout', 7]);
       expect(db.runAsync).not.toHaveBeenCalled();
@@ -88,10 +89,83 @@ describe('mutation queue', () => {
   it('recordFailure treats an already-missing row as pending without a second query', async () => {
     (db.getFirstAsync as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
-    await expect(recordFailure(db, 404, 'Already removed')).resolves.toBe('pending');
+    await expect(recordFailure(db, 404, 'Already removed')).resolves.toEqual({ status: 'pending', retryCount: 0 });
 
     expect(db.getFirstAsync).toHaveBeenCalledTimes(1);
     expect(db.runAsync).not.toHaveBeenCalled();
+  });
+
+  describe('enqueue result (issue #4315)', () => {
+    it('reports a fresh insert without spending a lookup', async () => {
+      (db.runAsync as ReturnType<typeof vi.fn>).mockResolvedValue({ changes: 1, lastInsertRowId: 9 });
+
+      await expect(enqueue(db, 'user_favorites', 'create', {}, 'add:user_favorites:kilter:abc:40')).resolves.toEqual({
+        inserted: true,
+        existingStatus: null,
+      });
+
+      expect(db.getFirstAsync).not.toHaveBeenCalled();
+    });
+
+    it('reports a suppression against a live pending row (legitimate dedup)', async () => {
+      (db.runAsync as ReturnType<typeof vi.fn>).mockResolvedValue({ changes: 0, lastInsertRowId: 0 });
+      (db.getFirstAsync as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 'pending' });
+
+      await expect(enqueue(db, 'user_favorites', 'create', {}, 'add:user_favorites:kilter:abc:40')).resolves.toEqual({
+        inserted: false,
+        existingStatus: 'pending',
+      });
+    });
+
+    it('reports a suppression against a dead-lettered row — the silent-loss case', async () => {
+      (db.runAsync as ReturnType<typeof vi.fn>).mockResolvedValue({ changes: 0, lastInsertRowId: 0 });
+      (db.getFirstAsync as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 'dead_letter' });
+
+      await expect(enqueue(db, 'user_favorites', 'create', {}, 'add:user_favorites:kilter:abc:40')).resolves.toEqual({
+        inserted: false,
+        existingStatus: 'dead_letter',
+      });
+
+      expect(db.getFirstAsync).toHaveBeenCalledWith('SELECT status FROM pending_mutations WHERE idempotency_key = ?', [
+        'add:user_favorites:kilter:abc:40',
+      ]);
+    });
+
+    it('degrades to "inserted" when the driver reports no changes count', async () => {
+      (db.runAsync as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+
+      await expect(enqueue(db, 'boardsesh_ticks', 'create', {}, 'uuid-1')).resolves.toEqual({
+        inserted: true,
+        existingStatus: null,
+      });
+    });
+  });
+
+  describe('getOutboxSummary', () => {
+    it('splits counts and oldest timestamps per status', async () => {
+      (db.getAllAsync as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { status: 'pending', count: 3, oldest_created_at: '2026-08-01 10:00:00' },
+        { status: 'dead_letter', count: 2, oldest_created_at: '2026-07-20 08:30:00' },
+      ]);
+
+      await expect(getOutboxSummary(db)).resolves.toEqual({
+        pendingCount: 3,
+        deadLetterCount: 2,
+        oldestPendingAt: '2026-08-01 10:00:00',
+        oldestDeadLetterAt: '2026-07-20 08:30:00',
+      });
+    });
+
+    it('returns zeros and nulls on an empty outbox', async () => {
+      (db.getAllAsync as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+      await expect(getOutboxSummary(db)).resolves.toEqual({
+        pendingCount: 0,
+        deadLetterCount: 0,
+        oldestPendingAt: null,
+        oldestDeadLetterAt: null,
+      });
+    });
   });
 
   it('markDeadLetter sets status to dead_letter with error', async () => {

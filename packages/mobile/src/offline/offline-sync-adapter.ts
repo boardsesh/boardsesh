@@ -26,6 +26,7 @@ import {
   pullSync as pullSyncCore,
   setBackgrounded,
   type DrainOptions,
+  type MutationDeadLetterReporter,
   type MutationDeliveryEvent,
   type MutationStatusListenerFailure,
   type DrainQueue,
@@ -41,11 +42,14 @@ import {
   type SyncOptions,
   type SyncProgressSink,
 } from '@boardsesh/offline-sync';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, sanitizeErrorForAnalytics } from '@boardsesh/analytics';
 import { reportHandledError } from '../lib/error-reporting';
 import { track } from '../lib/analytics';
 
-const isOnline = () => onlineManager.isOnline();
+// Exported so non-drain reporters can record the one dimension that decides
+// whether a failed local write actually lost data: a tick that falls through to
+// the network save is fine online and gone offline (see board-adapter).
+export const isOnline = () => onlineManager.isOnline();
 
 const mutationDeliveryListeners = new Set<(event: MutationDeliveryEvent) => void>();
 
@@ -74,6 +78,43 @@ function publishMutationDelivery(event: MutationDeliveryEvent): void {
     }
   }
 }
+
+// A queued write we will never deliver. Both channels are deliberate: Sentry
+// because a dead letter is a defect (the drainer never dead-letters for lack of
+// a connection, so this is always a real rejection or an exhausted retry
+// budget), and PostHog because only a rate across the fleet says whether it is
+// one broken account or a systemic loss. The `{ cause }` is load-bearing for the
+// same reason it is on reportSnapshotBootstrapError: reportHandledError
+// classifies what it is handed, and a synthetic wrapper with no cause matches
+// nothing (issue #4238).
+const reportMutationDeadLettered: MutationDeadLetterReporter = ({
+  tableName,
+  operation,
+  idempotencyKey,
+  reason,
+  retryCount,
+  maxRetries,
+  queuedForMs,
+  status,
+  errorMessage,
+  error,
+}) => {
+  reportHandledError(new Error(`Offline ${tableName} ${operation} dead-lettered (${reason})`, { cause: error }), {
+    tags: { source: 'offline-sync', kind: 'mutation-dead-letter', reason },
+    extra: { tableName, operation, idempotencyKey, reason, retryCount, maxRetries, status, queuedForMs, errorMessage },
+  });
+  // idempotencyKey stays out of the analytics props on purpose: it is a raw
+  // uuid for ticks and a per-climb key for favorites, i.e. unbounded cardinality.
+  track(SHARED_EVENTS.OfflineMutationDeadLettered, {
+    tableName,
+    operation,
+    reason,
+    retryCount,
+    status,
+    queuedForMs,
+    error: sanitizeErrorForAnalytics(error),
+  });
+};
 
 const reportSchemaDrift: SchemaDriftReporter = ({ tableName, column }) => {
   reportHandledError(new Error(`Sync document for ${tableName} contains unknown column: ${column}`), {
@@ -192,6 +233,16 @@ export function drainMutationQueue(
         options?.onMutationStatus?.(event);
       } finally {
         publishMutationDelivery(event);
+      }
+    },
+    // Composed, not defaulted (unlike the reporters above): telemetry for a
+    // permanently lost write must not be something a call site can opt out of
+    // by passing its own handler.
+    onMutationDeadLettered: (info) => {
+      try {
+        options?.onMutationDeadLettered?.(info);
+      } finally {
+        reportMutationDeadLettered(info);
       }
     },
   });

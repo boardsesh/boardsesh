@@ -17,12 +17,13 @@ vi.mock('../error-classification', () => ({
   isGraphQLEmptyResponseError: vi.fn().mockReturnValue(false),
   isRetryable: vi.fn().mockReturnValue(false),
   isNetworkError: vi.fn().mockReturnValue(false),
+  getErrorStatus: vi.fn().mockReturnValue(null),
 }));
 
 import { drainMutationQueue, __resetDrainerStateForTests, setSigningOut, setBackgrounded } from '../drainer';
 import { peekPending, markCompleted, recordFailure, markDeadLetter } from '../queue';
 import { processMutation } from '../handlers';
-import { isGraphQLEmptyResponseError, isRetryable, isNetworkError } from '../error-classification';
+import { isGraphQLEmptyResponseError, isRetryable, isNetworkError, getErrorStatus } from '../error-classification';
 
 const mockPeekPending = peekPending as ReturnType<typeof vi.fn>;
 const mockMarkCompleted = markCompleted as ReturnType<typeof vi.fn>;
@@ -32,6 +33,7 @@ const mockProcessMutation = processMutation as ReturnType<typeof vi.fn>;
 const mockIsGraphQLEmptyResponseError = isGraphQLEmptyResponseError as ReturnType<typeof vi.fn>;
 const mockIsRetryable = isRetryable as ReturnType<typeof vi.fn>;
 const mockIsNetworkError = isNetworkError as ReturnType<typeof vi.fn>;
+const mockGetErrorStatus = getErrorStatus as ReturnType<typeof vi.fn>;
 
 // Always online unless a test opts out — matches the onlineManager default and
 // keeps every existing drain-behaviour test running as before.
@@ -73,7 +75,8 @@ describe('drainMutationQueue', () => {
     mockIsGraphQLEmptyResponseError.mockReturnValue(false);
     mockIsRetryable.mockReturnValue(false);
     mockIsNetworkError.mockReturnValue(false);
-    mockRecordFailure.mockResolvedValue('pending');
+    mockGetErrorStatus.mockReturnValue(null);
+    mockRecordFailure.mockResolvedValue({ status: 'pending', retryCount: 1 });
   });
 
   it('skips the drain entirely while offline', async () => {
@@ -178,7 +181,7 @@ describe('drainMutationQueue', () => {
     mockPeekPending.mockResolvedValueOnce([retryable]).mockResolvedValueOnce([nonRetryable]).mockResolvedValueOnce([]);
     mockProcessMutation.mockRejectedValueOnce(new Error('503')).mockRejectedValueOnce(new Error('invalid'));
     mockIsRetryable.mockReturnValueOnce(true).mockReturnValueOnce(false);
-    mockRecordFailure.mockResolvedValueOnce('dead_letter');
+    mockRecordFailure.mockResolvedValueOnce({ status: 'dead_letter', retryCount: 10 });
     const onMutationStatus = vi.fn();
 
     await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
@@ -194,6 +197,118 @@ describe('drainMutationQueue', () => {
     expect(onMutationStatus).toHaveBeenCalledWith(
       expect.objectContaining({ idempotencyKey: 'invalid-tick', status: 'dead_letter' }),
     );
+  });
+
+  // Issue #4315: a dead letter is a permanently lost user write, and until this
+  // seam existed it produced no Sentry event and no analytics event anywhere.
+  describe('dead-letter telemetry', () => {
+    it('reports an exhausted retry budget with the bumped attempt count', async () => {
+      const mutation = makeMutation({ id: 1, idempotency_key: 'tick-uuid', max_retries: 5 });
+      mockPeekPending.mockResolvedValueOnce([mutation]).mockResolvedValueOnce([]);
+      mockProcessMutation.mockRejectedValueOnce(new Error('503 Service Unavailable'));
+      mockIsRetryable.mockReturnValue(true);
+      mockGetErrorStatus.mockReturnValue(503);
+      mockRecordFailure.mockResolvedValueOnce({ status: 'dead_letter', retryCount: 5 });
+      const onMutationDeadLettered = vi.fn();
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        maxCycleAttempts: 1,
+        sleep: async () => {},
+        onMutationDeadLettered,
+      });
+
+      expect(onMutationDeadLettered).toHaveBeenCalledTimes(1);
+      expect(onMutationDeadLettered).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tableName: 'boardsesh_ticks',
+          operation: 'create',
+          idempotencyKey: 'tick-uuid',
+          reason: 'retries_exhausted',
+          retryCount: 5,
+          maxRetries: 5,
+          status: 503,
+          errorMessage: '503 Service Unavailable',
+        }),
+      );
+      // The original throw rides along so the platform reporter can attach it
+      // as `cause` — a synthetic wrapper with no cause classifies as nothing.
+      expect(onMutationDeadLettered.mock.calls[0]?.[0].error).toBeInstanceOf(Error);
+      expect(onMutationDeadLettered.mock.calls[0]?.[0].queuedForMs).toBeTypeOf('number');
+    });
+
+    it('reports a non-retryable rejection', async () => {
+      const mutation = makeMutation({ id: 2, idempotency_key: 'invalid-tick', retry_count: 1 });
+      mockPeekPending.mockResolvedValueOnce([mutation]).mockResolvedValueOnce([]);
+      mockProcessMutation.mockRejectedValueOnce(new Error('400 Bad Request'));
+      mockIsRetryable.mockReturnValue(false);
+      mockGetErrorStatus.mockReturnValue(400);
+      const onMutationDeadLettered = vi.fn();
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        onMutationDeadLettered,
+      });
+
+      expect(onMutationDeadLettered).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: 'non_retryable', retryCount: 1, status: 400 }),
+      );
+    });
+
+    it('does not fire on an acknowledged write', async () => {
+      mockPeekPending.mockResolvedValueOnce([makeMutation({ id: 3 })]).mockResolvedValueOnce([]);
+      const onMutationDeadLettered = vi.fn();
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        onMutationDeadLettered,
+      });
+
+      expect(onMutationDeadLettered).not.toHaveBeenCalled();
+    });
+
+    // The regression that would silently re-break the "an offline write never
+    // dead-letters for lack of a connection" contract: a network failure must
+    // leave the row pending, so there is nothing to report.
+    it('does not fire on a network error', async () => {
+      // No trailing empty peek queued: the network branch breaks the cycle
+      // immediately, so an unconsumed mockResolvedValueOnce would leak into the
+      // next test and silently drain nothing there.
+      mockPeekPending.mockResolvedValueOnce([makeMutation({ id: 4 })]);
+      mockProcessMutation.mockRejectedValueOnce(new Error('Network request failed'));
+      mockIsNetworkError.mockReturnValue(true);
+      const onMutationDeadLettered = vi.fn();
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        onMutationDeadLettered,
+      });
+
+      expect(onMutationDeadLettered).not.toHaveBeenCalled();
+      expect(mockRecordFailure).not.toHaveBeenCalled();
+      expect(mockMarkDeadLetter).not.toHaveBeenCalled();
+    });
+
+    it('survives a throwing reporter without aborting the drain or skipping the write', async () => {
+      const failing = makeMutation({ id: 5, idempotency_key: 'invalid-tick' });
+      const healthy = makeMutation({ id: 6, idempotency_key: 'tick-ok' });
+      mockPeekPending.mockResolvedValueOnce([failing, healthy]).mockResolvedValueOnce([]);
+      mockProcessMutation.mockRejectedValueOnce(new Error('400')).mockResolvedValueOnce(undefined);
+      mockIsRetryable.mockReturnValue(false);
+      const onMutationDeadLettered = vi.fn(() => {
+        throw new Error('reporter exploded');
+      });
+
+      await expect(
+        drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+          ...ONLINE,
+          onMutationDeadLettered,
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(mockMarkDeadLetter).toHaveBeenCalledWith(mockDb, 5, '400');
+      expect(mockMarkCompleted).toHaveBeenCalledWith(mockDb, 6);
+    });
   });
 
   it('stops processing on retryable error and increments retry', async () => {

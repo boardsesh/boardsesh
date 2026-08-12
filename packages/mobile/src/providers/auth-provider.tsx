@@ -37,6 +37,7 @@ import { clearUserData, getDatabaseHandle } from '../db';
 import { setSetting, clearOfflineBoards } from '../settings';
 import { getPendingCount, setSigningOut } from '@boardsesh/offline-sync';
 import { drainMutationQueue } from '../offline/offline-sync-adapter';
+import { reportOutboxDiscardedOnSignOut } from '../offline/outbox-telemetry';
 import { stopTokenManagement } from '../notifications';
 import { consumeFreshOAuthPending } from '../lib/oauth-pending-store';
 import { consumeWebOAuthReturn } from '../lib/oauth-return';
@@ -234,6 +235,16 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   const runSignedOutCleanup = useCallback(
     async (transitionEpoch: number, storageOwner?: UserStorageOwner | null): Promise<boolean> => {
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
+      // What the wipe below is about to delete. clearUserData DELETEs
+      // pending_mutations wholesale — dead letters included, and those never get
+      // a drain attempt (the pre-sign-out drain gates on getPendingCount, which
+      // filters status = 'pending'). This MUST stay ahead of resetAnalytics():
+      // afterwards the event would land on an anonymous distinct_id and could no
+      // longer be joined to the account that lost the writes. Sitting in
+      // runSignedOutCleanup rather than in the manual signOut covers all three
+      // paths — manual, forced 401, and proactive expiry.
+      const localDb = getDatabaseHandle();
+      if (localDb) await reportOutboxDiscardedOnSignOut(localDb);
       resetAnalytics();
       const stopTokenCleanup = stopTokenManagement(async () => {});
       if (Platform.OS === 'web') await waitForCleanupPhase(stopTokenCleanup);

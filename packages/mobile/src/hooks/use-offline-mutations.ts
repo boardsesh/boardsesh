@@ -4,10 +4,12 @@ import {
   applyBusyTimeout,
   enqueue,
   getLocalUserId,
+  type EnqueueResult,
   type GraphQLFetch,
   type OfflineDatabase,
 } from '@boardsesh/offline-sync';
 import { drainMutationQueue } from '../offline/offline-sync-adapter';
+import { reportEnqueueSuppressed } from '../offline/outbox-telemetry';
 import type { SaveTickMutationVariables } from '../lib/graphql/operations';
 
 export type SaveTickInput = SaveTickMutationVariables['input'];
@@ -69,6 +71,10 @@ export async function writeTickLocal(db: OfflineDatabase, input: SaveTickInput, 
       ],
     );
 
+    // No suppressed-enqueue check here, and that is a property of the key, not
+    // an oversight: every tick gets a fresh uuid, so this INSERT OR IGNORE can
+    // never collide with an existing row. A future tick key derived from
+    // climb+angle would inherit the favorites blind spot below — re-check then.
     await enqueue(txn, 'boardsesh_ticks', 'create', input, tickUuid);
   });
 }
@@ -83,6 +89,11 @@ export function favoriteRemoveKey(input: FavoriteInput): string {
 
 export async function addFavoriteLocal(db: OfflineDatabase, input: FavoriteInput): Promise<void> {
   const now = new Date().toISOString();
+  // Captured inside the transaction, reported after it commits: the report
+  // reaches Sentry/PostHog, and neither belongs on a held write lock. A holder
+  // object rather than a `let` because TypeScript doesn't track assignments made
+  // inside a callback.
+  const enqueueOutcome = newEnqueueOutcome();
 
   await db.withExclusiveTransactionAsync(async (txn) => {
     await applyBusyTimeout(txn);
@@ -98,11 +109,32 @@ export async function addFavoriteLocal(db: OfflineDatabase, input: FavoriteInput
     await txn.runAsync(`DELETE FROM pending_mutations WHERE idempotency_key = ? AND status = 'pending'`, [
       favoriteRemoveKey(input),
     ]);
-    await enqueue(txn, 'user_favorites', 'create', input, favoriteAddKey(input));
+    enqueueOutcome.result = await enqueue(txn, 'user_favorites', 'create', input, favoriteAddKey(input));
   });
+
+  // The cancel DELETE above matches only `status = 'pending'`, so a
+  // dead-lettered add keeps owning this UNIQUE key forever and every later add
+  // for the same climb/angle is dropped right here — local row written, nothing
+  // queued, nothing to drain. Reviving that row is a behaviour change with its
+  // own issue; this makes the swallow countable.
+  reportSuppressedEnqueue('user_favorites', 'create', enqueueOutcome);
+}
+
+type EnqueueOutcome = { result: EnqueueResult | null };
+
+function newEnqueueOutcome(): EnqueueOutcome {
+  return { result: null };
+}
+
+function reportSuppressedEnqueue(tableName: string, operation: 'create' | 'delete', outcome: EnqueueOutcome): void {
+  const { result } = outcome;
+  if (result === null || result.inserted) return;
+  reportEnqueueSuppressed(tableName, operation, result.existingStatus);
 }
 
 export async function removeFavoriteLocal(db: OfflineDatabase, input: FavoriteInput): Promise<void> {
+  const enqueueOutcome = newEnqueueOutcome();
+
   await db.withExclusiveTransactionAsync(async (txn) => {
     await applyBusyTimeout(txn);
     await txn.runAsync(`DELETE FROM user_favorites WHERE board_name = ? AND climb_uuid = ? AND angle = ?`, [
@@ -120,8 +152,10 @@ export async function removeFavoriteLocal(db: OfflineDatabase, input: FavoriteIn
     await txn.runAsync(`DELETE FROM pending_mutations WHERE idempotency_key = ? AND status = 'pending'`, [
       favoriteAddKey(input),
     ]);
-    await enqueue(txn, 'user_favorites', 'delete', input, favoriteRemoveKey(input));
+    enqueueOutcome.result = await enqueue(txn, 'user_favorites', 'delete', input, favoriteRemoveKey(input));
   });
+
+  reportSuppressedEnqueue('user_favorites', 'delete', enqueueOutcome);
 }
 
 export function useOfflineFollowUser(db: OfflineDatabase, graphqlFetch: GraphQLFetch) {
@@ -131,6 +165,7 @@ export function useOfflineFollowUser(db: OfflineDatabase, graphqlFetch: GraphQLF
     async (followingId: string) => {
       const now = new Date().toISOString();
       const idempotencyKey = `add:user_follows:${followingId}`;
+      const enqueueOutcome = newEnqueueOutcome();
 
       await db.withExclusiveTransactionAsync(async (txn) => {
         await applyBusyTimeout(txn);
@@ -147,8 +182,10 @@ export function useOfflineFollowUser(db: OfflineDatabase, graphqlFetch: GraphQLF
         await txn.runAsync(`DELETE FROM pending_mutations WHERE idempotency_key = ? AND status = 'pending'`, [
           `del:user_follows:${followingId}`,
         ]);
-        await enqueue(txn, 'user_follows', 'create', { followingId }, idempotencyKey);
+        enqueueOutcome.result = await enqueue(txn, 'user_follows', 'create', { followingId }, idempotencyKey);
       });
+
+      reportSuppressedEnqueue('user_follows', 'create', enqueueOutcome);
 
       queryClient.invalidateQueries({ queryKey: ['followers'] });
       queryClient.invalidateQueries({ queryKey: ['following'] });
@@ -165,6 +202,7 @@ export function useOfflineUnfollowUser(db: OfflineDatabase, graphqlFetch: GraphQ
   return useCallback(
     async (followingId: string) => {
       const idempotencyKey = `del:user_follows:${followingId}`;
+      const enqueueOutcome = newEnqueueOutcome();
 
       await db.withExclusiveTransactionAsync(async (txn) => {
         await applyBusyTimeout(txn);
@@ -176,8 +214,10 @@ export function useOfflineUnfollowUser(db: OfflineDatabase, graphqlFetch: GraphQ
         await txn.runAsync(`DELETE FROM pending_mutations WHERE idempotency_key = ? AND status = 'pending'`, [
           `add:user_follows:${followingId}`,
         ]);
-        await enqueue(txn, 'user_follows', 'delete', { followingId }, idempotencyKey);
+        enqueueOutcome.result = await enqueue(txn, 'user_follows', 'delete', { followingId }, idempotencyKey);
       });
+
+      reportSuppressedEnqueue('user_follows', 'delete', enqueueOutcome);
 
       queryClient.invalidateQueries({ queryKey: ['followers'] });
       queryClient.invalidateQueries({ queryKey: ['following'] });

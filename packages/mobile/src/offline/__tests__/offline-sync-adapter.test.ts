@@ -67,6 +67,7 @@ import {
 import type {
   OfflineDatabase,
   DrainOptions,
+  MutationDeadLetterInfo,
   MutationDeliveryEvent,
   SchedulerTriggers,
   SchedulerOptions,
@@ -158,6 +159,77 @@ describe('drainMutationQueue binding', () => {
       unsubscribeThrowing();
       unsubscribeLater();
     }
+  });
+});
+
+// Issue #4315: before this binding a dead-lettered write — a user action that
+// will never reach the server — produced nothing in Sentry and nothing in
+// PostHog. The drainer never dead-letters for lack of a connection, so every
+// one of these is a real, permanent loss.
+describe('dead-letter binding', () => {
+  const deadLetterInfo = (overrides: Partial<MutationDeadLetterInfo> = {}): MutationDeadLetterInfo => ({
+    tableName: 'user_favorites',
+    operation: 'create',
+    idempotencyKey: 'add:user_favorites:kilter:climb-uuid:40',
+    reason: 'non_retryable',
+    retryCount: 2,
+    maxRetries: 10,
+    queuedForMs: 90_000,
+    status: 400,
+    errorMessage: 'Bad Request',
+    error: new Error('Bad Request'),
+    ...overrides,
+  });
+
+  it('reports to Sentry with the original error as cause and to analytics without the idempotency key', async () => {
+    await drainMutationQueue(db, queryClient, graphqlFetch);
+    const options = drainMutationQueueCore.mock.calls[0][3] as DrainOptions;
+    const info = deadLetterInfo();
+
+    options.onMutationDeadLettered?.(info);
+
+    expect(reportHandledError).toHaveBeenCalledTimes(1);
+    const [reportedError, context] = reportHandledError.mock.calls[0] as [Error, { tags: Record<string, unknown> }];
+    expect(reportedError.cause).toBe(info.error);
+    expect(context.tags).toEqual({ source: 'offline-sync', kind: 'mutation-dead-letter', reason: 'non_retryable' });
+
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineMutationDeadLettered, {
+      tableName: 'user_favorites',
+      operation: 'create',
+      reason: 'non_retryable',
+      retryCount: 2,
+      status: 400,
+      queuedForMs: 90_000,
+      error: 'Bad Request',
+    });
+    const [, trackedProps] = trackMock.mock.calls[0] as [string, Record<string, unknown>];
+    expect(trackedProps).not.toHaveProperty('idempotencyKey');
+  });
+
+  it('runs telemetry even when the caller supplies its own handler', async () => {
+    const callerHandler = vi.fn();
+    await drainMutationQueue(db, queryClient, graphqlFetch, { onMutationDeadLettered: callerHandler });
+    const options = drainMutationQueueCore.mock.calls[0][3] as DrainOptions;
+    const info = deadLetterInfo({ reason: 'retries_exhausted' });
+
+    options.onMutationDeadLettered?.(info);
+
+    expect(callerHandler).toHaveBeenCalledWith(info);
+    expect(reportHandledError).toHaveBeenCalledTimes(1);
+    expect(trackMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('still reports when a caller-supplied handler throws', async () => {
+    await drainMutationQueue(db, queryClient, graphqlFetch, {
+      onMutationDeadLettered: () => {
+        throw new Error('caller exploded');
+      },
+    });
+    const options = drainMutationQueueCore.mock.calls[0][3] as DrainOptions;
+
+    expect(() => options.onMutationDeadLettered?.(deadLetterInfo())).toThrow('caller exploded');
+    expect(reportHandledError).toHaveBeenCalledTimes(1);
+    expect(trackMock).toHaveBeenCalledTimes(1);
   });
 });
 

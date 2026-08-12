@@ -174,9 +174,18 @@ vi.mock('../../lib/error-reporting', () => ({
   reportHandledError: (...args: unknown[]) => reportHandledErrorMock(...args),
 }));
 
+const resetAnalyticsMock = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/analytics', () => ({
-  reset: vi.fn(),
+  reset: resetAnalyticsMock,
   track: (...args: unknown[]) => trackMock(...args),
+}));
+
+// Sign-out is about to DELETE the whole outbox (dead letters included). The
+// gauge that measures it must run before resetAnalytics() or the event lands on
+// an anonymous distinct_id — see the ordering test near the bottom of this file.
+const reportOutboxDiscardedOnSignOutMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
+vi.mock('../../offline/outbox-telemetry', () => ({
+  reportOutboxDiscardedOnSignOut: reportOutboxDiscardedOnSignOutMock,
 }));
 
 vi.mock('../../lib/oauth-pending-store', () => ({
@@ -1009,6 +1018,44 @@ describe('AuthProvider.signOut mutation-queue drain gating', () => {
 
     expect(getPendingCountMock).not.toHaveBeenCalled();
     expect(drainMutationQueueMock).not.toHaveBeenCalled();
+  });
+
+  // Issue #4315. clearUserData DELETEs pending_mutations wholesale, and the
+  // best-effort drain above skips dead letters entirely (getPendingCount filters
+  // status = 'pending'), so this gauge is the only record that those writes
+  // existed. The ordering is the whole correctness of it: after
+  // resetAnalytics() the event carries an anonymous distinct_id and can never be
+  // joined back to the account that lost them.
+  it('measures the outbox before resetting analytics', async () => {
+    resetAnalyticsMock.mockClear();
+    reportOutboxDiscardedOnSignOutMock.mockClear();
+
+    await signOutWithQueueState(0);
+
+    expect(reportOutboxDiscardedOnSignOutMock).toHaveBeenCalledWith({ tag: 'db' });
+    expect(resetAnalyticsMock).toHaveBeenCalled();
+    const gaugeOrder = reportOutboxDiscardedOnSignOutMock.mock.invocationCallOrder[0];
+    const resetOrder = resetAnalyticsMock.mock.invocationCallOrder[0];
+    expect(gaugeOrder).toBeLessThan(resetOrder);
+  });
+
+  it('skips the gauge when there is no local database', async () => {
+    reportOutboxDiscardedOnSignOutMock.mockClear();
+    getDatabaseHandleMock.mockReturnValue(null);
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(reportOutboxDiscardedOnSignOutMock).not.toHaveBeenCalled();
   });
 });
 

@@ -23,8 +23,11 @@ import { getHttpClient } from '../lib/graphql/client';
 import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
 import { reportHandledError } from '../lib/error-reporting';
 import { getWsClient } from '../lib/graphql/ws-client';
-import { drainMutationQueue, subscribeMutationDelivery } from '../offline/offline-sync-adapter';
+import { drainMutationQueue, isOnline, subscribeMutationDelivery } from '../offline/offline-sync-adapter';
 import { writeTickLocal } from '../hooks/use-offline-mutations';
+import { isDatabaseLockedError } from '@boardsesh/offline-sync';
+import { SHARED_EVENTS, sanitizeErrorForAnalytics } from '@boardsesh/analytics';
+import { track } from '../lib/analytics';
 
 export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -138,7 +141,31 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
               // returning null falls through to the direct network save in
               // useSaveTick. Offline, that network attempt fails visibly — same
               // outcome as today — but online the send still lands.
-              reportHandledError(error, { tags: { source: 'offline-sync', kind: 'tick-local-write' } });
+              //
+              // The two dimensions on the report are what the Sentry trend alone
+              // could never answer. `wasOffline` splits "fell through and landed"
+              // from "fell through and the tick is gone" — the only version of
+              // this failure that actually loses data. `isLockError` says whether
+              // it was write-lock contention (the snapshot import holding a long
+              // EXCLUSIVE, #4314) or a genuinely broken database, which need
+              // completely different fixes. The `kind` tag is unchanged on
+              // purpose so the existing 90-day trend stays comparable.
+              const wasOffline = !isOnline();
+              const isLockError = isDatabaseLockedError(error);
+              reportHandledError(error, {
+                tags: {
+                  source: 'offline-sync',
+                  kind: 'tick-local-write',
+                  was_offline: wasOffline,
+                  is_lock_error: isLockError,
+                },
+                extra: { errorMessage: error instanceof Error ? error.message : String(error) },
+              });
+              track(SHARED_EVENTS.OfflineTickLocalWriteFailed, {
+                isLockError,
+                wasOffline,
+                error: sanitizeErrorForAnalytics(error),
+              });
               return null;
             }
             // Wake the "waiting to sync" badge immediately: its query caches with
