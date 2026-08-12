@@ -74,13 +74,6 @@ vi.mock('../../offline/outbox-telemetry', () => ({
   reportOutboxBacklogOnce: reportOutboxBacklogOnceMock,
 }));
 
-// The gauge itself is unit-tested in offline/__tests__/outbox-telemetry.test.ts;
-// what matters here is WHERE the bridge calls it from — both flag branches, once.
-const reportOutboxBacklogOnceMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
-vi.mock('../../offline/outbox-telemetry', () => ({
-  reportOutboxBacklogOnce: reportOutboxBacklogOnceMock,
-}));
-
 // Stub the settings barrel so the static import graph never pulls
 // react-native-mmkv (its react-native Flow entry breaks Rolldown's scan).
 vi.mock('../../settings', () => ({
