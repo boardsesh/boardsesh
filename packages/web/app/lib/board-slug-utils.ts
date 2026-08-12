@@ -15,6 +15,9 @@ export type ResolvedBoard = {
   description?: string | null;
   locationName?: string | null;
   isPublic: boolean;
+  // Link-only: reachable anonymously (when isPublic) but excluded from
+  // search/browse and, per this fix, from crawler indexing (noindex,follow).
+  isUnlisted: boolean;
   isOwned: boolean;
   ownerId: string;
   angle: number;
@@ -24,6 +27,12 @@ export type ResolvedBoard = {
 /**
  * Resolve a board entity by its slug.
  * Uses React cache() to deduplicate within a single server request.
+ *
+ * This read is anonymous, and its result lands in a cross-user data cache, so
+ * treat every field it returns as disclosable to whoever holds the slug. That
+ * is what #4087 changes: it forwards the viewer's token and splits the cache so
+ * `boardBySlug` can mask a private board. Until it lands, `isPublic` here is
+ * only good enough to drive `noindex` — never to decide what a page renders.
  */
 export const resolveBoardBySlug = cache(async (slug: string): Promise<ResolvedBoard | null> => {
   const url = getGraphQLHttpUrl();
@@ -41,6 +50,7 @@ export const resolveBoardBySlug = cache(async (slug: string): Promise<ResolvedBo
         description
         locationName
         isPublic
+        isUnlisted
         isOwned
         angle
         isAngleAdjustable
