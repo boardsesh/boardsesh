@@ -37,6 +37,7 @@ const publicBoard: ResolvedBoard = {
   description: null,
   locationName: null,
   isPublic: true,
+  isUnlisted: false,
   isOwned: true,
   ownerId: 'owner-1',
   angle: 40,
