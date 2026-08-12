@@ -14,6 +14,7 @@ function validEntry(): SnapshotManifestEntry {
     key: 'board-snapshots/v1/kilter/8/2026-06-01T00-00-00-000Z.db',
     url: 'https://cdn.example/board-snapshots/v1/kilter/8/2026-06-01T00-00-00-000Z.db',
     bytes: 123456,
+    uncompressedBytes: 456789,
     contentEncoding: 'gzip',
     builtAt: '2026-06-01T00:00:00.000Z',
     schemaVersion: 3,
@@ -85,6 +86,25 @@ describe('parseSnapshotManifest', () => {
       },
     });
     expect(parseSnapshotManifest(fractionalRowCount)).toBeNull();
+  });
+
+  it('accepts an entry with no uncompressedBytes (every entry built before the field existed)', () => {
+    const entry = validEntry();
+    delete entry.uncompressedBytes;
+    const parsed = parseSnapshotManifest({
+      formatVersion: 1,
+      generatedAt: '2026-06-01T00:05:00.000Z',
+      entries: [entry],
+    });
+    expect(parsed?.entries[0].uncompressedBytes).toBeUndefined();
+  });
+
+  it('accepts a non-negative integer uncompressedBytes and rejects fractional / negative ones', () => {
+    expect(parseSnapshotManifest(withEntry({ uncompressedBytes: 271_000_000 }))).not.toBeNull();
+    expect(parseSnapshotManifest(withEntry({ uncompressedBytes: 0 }))).not.toBeNull();
+    expect(parseSnapshotManifest(withEntry({ uncompressedBytes: 1.5 }))).toBeNull();
+    expect(parseSnapshotManifest(withEntry({ uncompressedBytes: -1 }))).toBeNull();
+    expect(parseSnapshotManifest(withEntry({ uncompressedBytes: '271000000' as unknown as number }))).toBeNull();
   });
 
   it('rejects a numeric watermarkSyncSeq — the protocol carries seqs as decimal strings', () => {

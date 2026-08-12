@@ -454,7 +454,17 @@ function parseLayoutFilter(raw: string | undefined): number {
 
 function buildManifestEntry(
   result: LayoutSnapshotResult,
-  upload: { url: string; key: string; bytes: number; contentEncoding: 'gzip' | 'identity' },
+  upload: {
+    url: string;
+    key: string;
+    bytes: number;
+    // Pre-compression size of the artifact: equal to `bytes` on an identity
+    // upload, several times larger under --gzip. Clients use it as the progress
+    // denominator on downloaders that write decoded bytes with no usable total,
+    // and for the exact free-disk-space precheck. Never shown to a user.
+    uncompressedBytes: number;
+    contentEncoding: 'gzip' | 'identity';
+  },
 ): SnapshotManifestEntry {
   return {
     boardType: result.boardType,
@@ -462,6 +472,7 @@ function buildManifestEntry(
     key: upload.key,
     url: upload.url,
     bytes: upload.bytes,
+    uncompressedBytes: upload.uncompressedBytes,
     contentEncoding: upload.contentEncoding,
     builtAt: result.builtAt,
     schemaVersion: result.schemaVersion,
@@ -707,6 +718,7 @@ export async function runExport(argv: string[]): Promise<void> {
               url: isS3Configured() || snapshotPublicBaseUrl() ? publicUrlForKey(key) : `dry-run:${key}`,
               key,
               bytes: uploadBody.length,
+              uncompressedBytes: rawBuffer.length,
               contentEncoding,
             }),
           );
@@ -732,6 +744,7 @@ export async function runExport(argv: string[]): Promise<void> {
               url: publicUrlForKey(uploaded.key),
               key: uploaded.key,
               bytes: uploadBody.length,
+              uncompressedBytes: rawBuffer.length,
               contentEncoding,
             }),
           );

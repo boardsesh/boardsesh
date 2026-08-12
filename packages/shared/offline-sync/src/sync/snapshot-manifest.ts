@@ -33,8 +33,18 @@ export type SnapshotManifestEntry = {
   key: string;
   // Public URL of the artifact.
   url: string;
-  // Stored object size in bytes.
+  // Stored object size in bytes — what comes down the wire, and the ONLY size
+  // ever shown to a user (the pre-download estimate and the download progress
+  // row both quote it, so the two can never disagree).
   bytes: number;
+  // The DECODED artifact size in bytes: the size of the SQLite file that lands
+  // on disk, which for a gzip-encoded entry is several times `bytes`. Absent on
+  // entries built before this field existed, so every reader must treat it as
+  // optional. Used internally only — as the progress denominator on platforms
+  // whose downloader reports decoded byte counts with no usable total (Android
+  // gunzips transparently and then reports Content-Length -1), and for the exact
+  // free-disk-space precheck. Never rendered.
+  uncompressedBytes?: number;
   // The S3 object's Content-Encoding — how the bytes are stored at rest, NOT
   // necessarily what a client receives: an HTTP stack that honours
   // Content-Encoding (browser/RN fetch) hands back decompressed bytes, while a
@@ -107,6 +117,14 @@ function isManifestEntry(value: unknown): value is SnapshotManifestEntry {
     !isIsoUtcTimestamp(value.builtAt) ||
     !isInteger(value.schemaVersion)
   ) {
+    return false;
+  }
+  // Optional and additive, so no formatVersion bump: an old client ignores the
+  // key, a new client reading an old manifest gets `undefined` and falls back.
+  // Present-but-corrupt is still a rejection — a fractional or negative decoded
+  // size would drive a nonsense progress denominator and a nonsense disk-space
+  // precheck.
+  if (value.uncompressedBytes !== undefined && (!isInteger(value.uncompressedBytes) || value.uncompressedBytes < 0)) {
     return false;
   }
   const tables = value.tables;
