@@ -46,6 +46,22 @@ import { showSignOutFailure } from '../lib/sign-out-failure-alert';
  * is already dead), so putting the dialog in the provider would mean an opt-out flag
  * on every one of them.
  */
+/**
+ * Run one dialog probe on its own. A read that fails costs its own sentence and
+ * nothing more: the other probes still run, and whatever already came back keeps its
+ * answer. One catch around both reads meant a single locked table — the "database is
+ * locked" this device hits under contention — threw away an outbox count that had
+ * already been read and skipped the probe behind it, so the dialog went quiet about
+ * data the wipe was still about to delete.
+ */
+async function probeOrNull<Result>(read: () => Promise<Result>): Promise<Result | null> {
+  try {
+    return await read();
+  } catch {
+    return null;
+  }
+}
+
 export function useConfirmSignOut(): () => Promise<void> {
   const confirm = useConfirm();
   const { signOut } = useAuth();
@@ -59,31 +75,20 @@ export function useConfirmSignOut(): () => Promise<void> {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
     try {
+      // No handle means offline storage never initialised this session, so there is
+      // nothing local to lose. A read failure is not a reason to skip the warning —
+      // that probe falls back to "nothing to report" and the dialog still opens.
       const localDb = getDatabaseHandle();
-      let pendingCount = 0;
-      let deadLetterCount = 0;
-      let hasDownloads = false;
-      try {
-        // No handle means offline storage never initialised this session, so there is
-        // nothing local to lose. A read failure is not a reason to skip the warning —
-        // fall back to "nothing to report" and still confirm.
-        if (localDb) {
-          // One grouped read for both counts — the same gauge the sign-out drain gate
-          // and the outbox telemetry use, so the dialog can't disagree with them.
-          const outbox = await getOutboxSummary(localDb);
-          pendingCount = outbox.pendingCount;
-          deadLetterCount = outbox.deadLetterCount;
-          // The honest signal for the boards sentence is whether a catalog is on disk
-          // (what the wipe deletes), NOT the syncEnabledBoards toggle list: a
-          // feature-flag rollback clears the list while the rows remain, and those
-          // users lose the most. See hasDownloadedBoardData.
-          hasDownloads = await hasDownloadedBoardData(localDb);
-        }
-      } catch {
-        pendingCount = 0;
-        deadLetterCount = 0;
-        hasDownloads = false;
-      }
+      // One grouped read for both counts — the same gauge the sign-out drain gate
+      // and the outbox telemetry use, so the dialog can't disagree with them.
+      const outbox = localDb ? await probeOrNull(() => getOutboxSummary(localDb)) : null;
+      // The honest signal for the boards sentence is whether a catalog is on disk
+      // (what the wipe deletes), NOT the syncEnabledBoards toggle list: a
+      // feature-flag rollback clears the list while the rows remain, and those
+      // users lose the most. See hasDownloadedBoardData.
+      const hasDownloads = localDb ? ((await probeOrNull(() => hasDownloadedBoardData(localDb))) ?? false) : false;
+      const pendingCount = outbox?.pendingCount ?? 0;
+      const deadLetterCount = outbox?.deadLetterCount ?? 0;
 
       const message = [
         hasDownloads ? t('mobile.more.signOut.messageOffline') : t('mobile.more.signOut.message'),

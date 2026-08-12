@@ -213,6 +213,34 @@ describe('useConfirmSignOut', () => {
     expect(signOutMock).toHaveBeenCalledWith('manual');
   });
 
+  // The probes are independent because they fail independently: SQLite hands out
+  // "database is locked" per statement, and one grouped catch let a locked board query
+  // erase an outbox count that had already come back — the dialog then said nothing
+  // about writes the wipe was seconds from deleting.
+  it('keeps the unsynced-writes warning when the downloads read fails', async () => {
+    getOutboxSummaryMock.mockResolvedValue(outbox(2, 1));
+    hasDownloadedBoardDataMock.mockRejectedValue(new Error('database is locked'));
+    const { press } = renderConfirmSignOut();
+
+    await press();
+
+    expect(messageOf()).toContain('mobile.more.signOut.pendingMessage#2');
+    expect(messageOf()).toContain('mobile.more.signOut.failedMessage#1');
+    expect(messageOf()).toContain('mobile.more.signOut.message');
+    expect(signOutMock).toHaveBeenCalledWith('manual');
+  });
+
+  it('still checks for downloaded boards when the outbox read fails', async () => {
+    getOutboxSummaryMock.mockRejectedValue(new Error('database is locked'));
+    hasDownloadedBoardDataMock.mockResolvedValue(true);
+    const { press } = renderConfirmSignOut();
+
+    await press();
+
+    expect(hasDownloadedBoardDataMock).toHaveBeenCalledTimes(1);
+    expect(messageOf()).toBe('mobile.more.signOut.messageOffline');
+  });
+
   it('still confirms when offline storage never initialised', async () => {
     databaseHandle.current = null;
     const { press } = renderConfirmSignOut();
