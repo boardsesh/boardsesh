@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-12T13:20:14.215Z",
+  "generatedAt": "2026-08-12T23:14:06.355Z",
   "entries": [
+    {
+      "prNumber": 4167,
+      "category": "fixed",
+      "title": "Share previews for setters, profiles, playlists and sessions can now be picked up by search engines, which they were silently blocked from before. Boards you've shared as unlisted stay out of search results, and filtered climb lists no longer compete with the clean board page for ranking.",
+      "mergedAt": "2026-08-12T23:02:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4167"
+    },
     {
       "prNumber": 4357,
       "category": "fixed",

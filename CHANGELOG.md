@@ -22,6 +22,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Share previews for setters, profiles, playlists and sessions can now be picked up by search engines, which they were silently blocked from before. Boards you've shared as unlisted stay out of search results, and filtered climb lists no longer compete with the clean board page for ranking. ([#4167](https://github.com/boardsesh/boardsesh/pull/4167))
 - Removing a downloaded board could fail to hand its space back while the app was busy reading, and stop with a database error instead of just leaving the file a little larger. It now waits for the app to finish and reclaims the space properly. ([#4357](https://github.com/boardsesh/boardsesh/pull/4357))
   Downloads that get interrupted — by locking your phone, or by removing another board mid-download — are now recorded instead of vanishing, so we can see how often a board download stops short and why.
 - The freshness fix is real but not observable on any surface that ships today; the surfaces that make it visible are PRs 2-4 in this stack. ([#4341](https://github.com/boardsesh/boardsesh/pull/4341))
