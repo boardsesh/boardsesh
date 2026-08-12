@@ -18,6 +18,7 @@ import {
 import {
   DELETIONS_COVERAGE_EPOCH_FLOOR_MS,
   DELETIONS_COVERAGE_MARGIN_DAYS,
+  DELETIONS_COVERAGE_MAX_AGE_MS,
   SYNC_DELETIONS_RETENTION_DAYS,
 } from '../retention';
 import { USER_DATA_TABLES, BOARD_DATA_TABLES } from '../table-config';
@@ -30,6 +31,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW = Date.parse('2026-07-01T12:00:00.000Z');
 
 describe('evaluateDeletionsCoverage', () => {
+  // Issue #4315: `Offline Sync Coverage Reset Forced` has never fired, and that
+  // is arithmetic, not breakage. The marker first shipped 2026-08-01 (#4048),
+  // and the guard needs one 80 days old, so nothing can fire before roughly
+  // 2026-10-20. Pinning the 80 here means a retention or margin edit that moves
+  // that date fails CI instead of quietly moving a dashboard's expectations.
+  it('pins the 80-day staleness threshold the reachability arithmetic depends on', () => {
+    expect(DELETIONS_COVERAGE_MAX_AGE_MS).toBe(80 * DAY_MS);
+  });
+
   it('reads an absent marker as unknown, never as stale', () => {
     // Rollout safety: the key is new, so every existing install hits this branch
     // once. If absence ever meant "stale", the OTA that ships this feature would

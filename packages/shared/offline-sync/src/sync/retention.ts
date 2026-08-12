@@ -46,6 +46,23 @@ export const DELETIONS_COVERAGE_MARGIN_DAYS = 10;
  * tombstones it never saw may already be pruned and the only recovery is a
  * from-scratch user-data resync.
  *
+ * WHY `Offline Sync Coverage Reset Forced` has never fired once, and why that is
+ * arithmetic rather than breakage (issue #4315): the guard only acts on verdict
+ * `stale`, which needs a `deletions-coverage` marker older than this constant —
+ * 90 − 10 = 80 days. The marker is stamped in TWO places, both claiming coverage
+ * only for work that actually completed: after a completed deletions pull
+ * (pull-client.ts) and inside resetUserDataForLostCoverage
+ * (deletions-coverage.ts) as the post-wipe re-seed. It first shipped in
+ * cb4210c5c on 2026-08-01 (#4048), so no device can hold an 80-day-old marker
+ * before roughly 2026-10-20. Zero events is the predicted value, and
+ * deletions-coverage.test.ts pins the 80 so a retention or margin edit that
+ * moves that date fails CI rather than quietly moving a dashboard.
+ *
+ * `Offline Sync Coverage Evaluated` reports the verdict on EVERY cycle, which
+ * makes that prediction falsifiable — and its `unknown` bucket is the
+ * population the reset event structurally cannot see: devices that have never
+ * completed a deletions pull at all.
+ *
  * NOTE: the client's copy of these numbers only refreshes with the OTA bundle.
  * Lowering SYNC_DELETIONS_RETENTION_DAYS on the backend does NOT reach older
  * clients — they keep comparing against the value they shipped with, and the

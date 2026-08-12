@@ -33,6 +33,7 @@ import {
   type GraphQLFetch,
   type OfflineDatabase,
   type BootstrapMetadataChangedReporter,
+  type CoverageEvaluatedReporter,
   type CoverageResetReporter,
   type ScopeDownloadCompleteReporter,
   type SchedulerTriggers,
@@ -186,6 +187,30 @@ const reportCoverageReset: CoverageResetReporter = ({ markerAgeDays, rowsCleared
   track(SHARED_EVENTS.OfflineSyncCoverageResetForced, { markerAgeDays, rowsCleared, pendingMutations });
 };
 
+// The reset above only fires on the rare wipe. This one reports the verdict for
+// every evaluation, including `unknown` — the devices that have never completed
+// a deletions pull, which the reset event can never see (issue #4315).
+//
+// The dedupe lives HERE rather than in the engine on purpose: the engine seam
+// fires on every pullSync so it stays deterministic and testable, but
+// enforceDeletionsCoverage runs at the top of every cycle and the scheduler has
+// no interval — it wakes on foreground and on reconnect. Un-deduped, a device
+// stuck on `unknown` would emit indefinitely, and those are precisely the
+// devices we care about. Keyed on the verdict so a fresh→stale transition still
+// reports; once per launch otherwise.
+const reportedCoverageVerdicts = new Set<string>();
+
+const reportCoverageEvaluated: CoverageEvaluatedReporter = ({ verdict, markerAgeDays, outcome }) => {
+  const dedupeKey = `${verdict}:${outcome}`;
+  if (reportedCoverageVerdicts.has(dedupeKey)) return;
+  reportedCoverageVerdicts.add(dedupeKey);
+  track(SHARED_EVENTS.OfflineSyncCoverageEvaluated, { verdict, markerAgeDays, outcome });
+};
+
+export function __resetCoverageVerdictDedupeForTests(): void {
+  reportedCoverageVerdicts.clear();
+}
+
 // A failed cycle is routine for offline users (the reconnect trigger retries),
 // so production neither spams the console nor reports expected network errors
 // as handled exceptions.
@@ -280,6 +305,7 @@ export function startSyncScheduler(
     onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
     onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),
     onCoverageReset: reportCoverageReset,
+    onCoverageEvaluated: reportCoverageEvaluated,
   });
 }
 
@@ -301,6 +327,7 @@ export function triggerSync(
     onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
     onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),
     onCoverageReset: reportCoverageReset,
+    onCoverageEvaluated: reportCoverageEvaluated,
   });
 }
 
@@ -317,6 +344,7 @@ export function pullSync(
     onSnapshotBootstrapError: options?.onSnapshotBootstrapError ?? reportSnapshotBootstrapError,
     onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),
     onCoverageReset: options?.onCoverageReset ?? reportCoverageReset,
+    onCoverageEvaluated: options?.onCoverageEvaluated ?? reportCoverageEvaluated,
     // Caller-provided error/drift/coverage reporters keep their existing
     // override semantics; scope completion is the one callback deliberately
     // composed because both telemetry and per-scope UI invalidation are required.

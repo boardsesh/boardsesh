@@ -368,6 +368,15 @@ export const SHARED_EVENTS = {
   // two, and `isLockError` says whether it was write-lock contention (#4314)
   // rather than a broken database. Props: { isLockError, wasOffline, error }.
   OfflineTickLocalWriteFailed: 'Offline Tick Local Write Failed',
+  // Offline sync — the deletions-coverage verdict for one sync cycle, reported
+  // whatever it is. The reset event above only fires on the rare wipe, and a
+  // device that has never completed a deletions pull stays `unknown` forever
+  // and emits nothing — so the reset-only view samples exactly the devices that
+  // are not at risk. Props: { verdict: 'unknown' | 'future' | 'fresh' |
+  // 'stale', markerAgeDays (null for unknown/future), outcome: 'evaluated' |
+  // 'reset' | 'probe_failed' }. Deduped once-per-launch-per-verdict in the
+  // mobile binding, because the engine evaluates on every foreground.
+  OfflineSyncCoverageEvaluated: 'Offline Sync Coverage Evaluated',
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;

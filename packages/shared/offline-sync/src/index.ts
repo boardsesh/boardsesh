@@ -77,6 +77,8 @@ export type {
   ScopeDownloadCompleteReporter,
   CoverageResetInfo,
   CoverageResetReporter,
+  CoverageEvaluatedInfo,
+  CoverageEvaluatedReporter,
 } from './sync/pull-client';
 
 // --- Tombstone retention (issue #3474) --------------------------------------

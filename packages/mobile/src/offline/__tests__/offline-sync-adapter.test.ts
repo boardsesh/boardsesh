@@ -63,6 +63,7 @@ import {
   pullSync,
   startBackgroundTracking,
   subscribeMutationDelivery,
+  __resetCoverageVerdictDedupeForTests,
 } from '../offline-sync-adapter';
 import type {
   OfflineDatabase,
@@ -495,6 +496,40 @@ describe('snapshot-bootstrap bindings', () => {
       pendingMutations: 3,
     });
     expect(reportHandledError).not.toHaveBeenCalled();
+  });
+
+  // Issue #4315. The engine reports the verdict on EVERY cycle so the seam stays
+  // deterministic; the dedupe lives here because enforceDeletionsCoverage runs
+  // at the top of every pullSync and the scheduler wakes on foreground and
+  // reconnect with no interval — a device stuck on `unknown` would otherwise
+  // emit forever, and those are exactly the devices worth counting once.
+  it('reports the coverage verdict to analytics, deduped per verdict for the launch', () => {
+    __resetCoverageVerdictDedupeForTests();
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+
+    options.onCoverageEvaluated?.({ verdict: 'unknown', markerAgeDays: null, outcome: 'evaluated' });
+    options.onCoverageEvaluated?.({ verdict: 'unknown', markerAgeDays: null, outcome: 'evaluated' });
+
+    expect(trackMock).toHaveBeenCalledTimes(1);
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineSyncCoverageEvaluated, {
+      verdict: 'unknown',
+      markerAgeDays: null,
+      outcome: 'evaluated',
+    });
+    // Never Sentry: an evaluation is not a failure, even when it is `stale`.
+    expect(reportHandledError).not.toHaveBeenCalled();
+
+    // A changed verdict is new information and reports again.
+    options.onCoverageEvaluated?.({ verdict: 'stale', markerAgeDays: 100, outcome: 'evaluated' });
+    options.onCoverageEvaluated?.({ verdict: 'stale', markerAgeDays: 100, outcome: 'reset' });
+    expect(trackMock).toHaveBeenCalledTimes(3);
   });
 
   it('pullSync binds the snapshot-bootstrap telemetry defaults but lets caller options win', async () => {

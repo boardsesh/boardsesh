@@ -34,6 +34,7 @@ import { runMigrations } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
 import { getDeletionsCoverageAt } from '../deletions-coverage';
+import { DELETIONS_COVERAGE_EPOCH_FLOOR_MS } from '../retention';
 import { TABLE_CONFIGS } from '../table-config';
 
 // The non-null fields of the backend's `input SaveTickInput`
@@ -1071,6 +1072,126 @@ describe('sync layer — real-DDL integration', () => {
       }
 
       expect(await readCoverage()).toBe(freshAt);
+    });
+
+    // Issue #4315. The reset event alone is a censored instrument: it can only
+    // ever fire for a device that already completed a deletions pull, and a
+    // device that never completes one (the at-risk population — see #4313) stays
+    // `unknown` forever and emits nothing. Reporting the verdict for every cycle
+    // is what turns "zero resets" into evidence.
+    describe('coverage verdict telemetry', () => {
+      it('reports verdict unknown with a null age when no marker exists', async () => {
+        await seedStaleDevice();
+        const onCoverageEvaluated = vi.fn();
+        const onCoverageReset = vi.fn();
+
+        await pullSync(db, queryClient, makeCoverageFetch([]).fetch, { onCoverageEvaluated, onCoverageReset });
+
+        expect(onCoverageEvaluated).toHaveBeenCalledWith({
+          verdict: 'unknown',
+          markerAgeDays: null,
+          outcome: 'evaluated',
+        });
+        // Still resets nothing — the verdict report is observation only.
+        expect(onCoverageReset).not.toHaveBeenCalled();
+        expect(await countRows('boardsesh_ticks')).toBe(1);
+      });
+
+      it('reports verdict fresh for a marker well inside the window', async () => {
+        await seedStaleDevice();
+        await setCoverage(Date.now() - 45 * DAY_MS);
+        const onCoverageEvaluated = vi.fn();
+
+        await pullSync(db, queryClient, makeCoverageFetch([]).fetch, { onCoverageEvaluated });
+
+        expect(onCoverageEvaluated).toHaveBeenCalledWith({
+          verdict: 'fresh',
+          markerAgeDays: 45,
+          outcome: 'evaluated',
+        });
+      });
+
+      // The age is asserted exactly, not via objectContaining: the arithmetic
+      // does produce a value here (-10) and reporting it would put negative
+      // numbers into a property a dashboard averages. Same for the below-floor
+      // marker below, whose raw age is ~20,000 days.
+      it('reports verdict future with a null age for a clock corrected backwards', async () => {
+        await seedStaleDevice();
+        await setCoverage(Date.now() + 10 * DAY_MS);
+        const onCoverageEvaluated = vi.fn();
+
+        await pullSync(db, queryClient, makeCoverageFetch([]).fetch, { onCoverageEvaluated });
+
+        expect(onCoverageEvaluated).toHaveBeenCalledWith({
+          verdict: 'future',
+          markerAgeDays: null,
+          outcome: 'evaluated',
+        });
+      });
+
+      it('reports a below-epoch-floor marker as unknown with a null age', async () => {
+        await seedStaleDevice();
+        // A phone that booted to 1970 before NTP landed. evaluateDeletionsCoverage
+        // calls this `unknown` rather than 56-years-stale, and the reported age
+        // has to agree with that verdict.
+        await setCoverage(DELETIONS_COVERAGE_EPOCH_FLOOR_MS - DAY_MS);
+        const onCoverageEvaluated = vi.fn();
+        const onCoverageReset = vi.fn();
+
+        await pullSync(db, queryClient, makeCoverageFetch([]).fetch, { onCoverageEvaluated, onCoverageReset });
+
+        expect(onCoverageEvaluated).toHaveBeenCalledWith({
+          verdict: 'unknown',
+          markerAgeDays: null,
+          outcome: 'evaluated',
+        });
+        expect(onCoverageReset).not.toHaveBeenCalled();
+      });
+
+      it('reports evaluated then reset when the guard actually fires', async () => {
+        await seedStaleDevice();
+        await setCoverage(Date.now() - 100 * DAY_MS);
+        const onCoverageEvaluated = vi.fn();
+        const onCoverageReset = vi.fn();
+
+        await pullSync(db, queryClient, makeCoverageFetch([{ uuid: 'fresh-tick', status: 'send' }]).fetch, {
+          onCoverageEvaluated,
+          onCoverageReset,
+        });
+
+        expect(onCoverageReset).toHaveBeenCalledTimes(1);
+        expect(onCoverageEvaluated.mock.calls.map(([info]) => info)).toEqual([
+          { verdict: 'stale', markerAgeDays: 100, outcome: 'evaluated' },
+          { verdict: 'stale', markerAgeDays: 100, outcome: 'reset' },
+        ]);
+      });
+
+      // The probe rejecting on a stale device is invisible today (it vanishes
+      // into the scheduler's dev-only console.warn). Reporting it must not
+      // change the throw: the throw is exactly what leaves local data intact.
+      it('reports probe_failed and still rethrows, leaving local rows untouched', async () => {
+        await seedStaleDevice();
+        const staleAt = Date.now() - 100 * DAY_MS;
+        await setCoverage(staleAt);
+        const onCoverageEvaluated = vi.fn();
+        const onCoverageReset = vi.fn();
+        const offlineFetch = vi.fn(async () => {
+          throw new Error('Network request failed');
+        }) as unknown as GraphQLFetch;
+
+        await expect(pullSync(db, queryClient, offlineFetch, { onCoverageEvaluated, onCoverageReset })).rejects.toThrow(
+          'Network request failed',
+        );
+
+        expect(onCoverageEvaluated.mock.calls.map(([info]) => info)).toEqual([
+          { verdict: 'stale', markerAgeDays: 100, outcome: 'evaluated' },
+          { verdict: 'stale', markerAgeDays: 100, outcome: 'probe_failed' },
+        ]);
+        expect(onCoverageReset).not.toHaveBeenCalled();
+        expect(await countRows('boardsesh_ticks')).toBe(1);
+        expect(await countRows('playlists')).toBe(1);
+        expect(await readCoverage()).toBe(staleAt);
+      });
     });
   });
 });
