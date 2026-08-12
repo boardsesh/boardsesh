@@ -679,6 +679,40 @@ describe('offlineAwareRequest — offline-usage signal lanes (#4317)', () => {
     });
   });
 
+  // Both gaps at once. Fixing #4002's filter coverage would still serve this
+  // user nothing — they have no downloaded board to filter — so the read belongs
+  // to #4318's conversion pool, not #4002's.
+  it('prefers board_not_downloaded over filter_unsupported when the board was never downloaded', async () => {
+    setOnline(false);
+    isOfflineSearchSupported.mockReturnValue(false);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(recordOfflineReadUnavailable).toHaveBeenCalledExactlyOnceWith({
+      reason: 'board_not_downloaded',
+      surface: 'search',
+      boardName: 'kilter',
+    });
+  });
+
+  // The supported-filter branch already ran (and failed) the download probe
+  // inside canServeSearchLocal, so labelling that read must not pay for a
+  // second SQLite round trip on every keystroke.
+  it('does not re-probe the download when the filter was expressible', async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(isBoardDownloadedLocally).toHaveBeenCalledOnce();
+    expect(recordOfflineReadUnavailable).toHaveBeenCalledExactlyOnceWith({
+      reason: 'board_not_downloaded',
+      surface: 'search',
+      boardName: 'kilter',
+    });
+  });
+
   // The local read happened, but it MISSED and the network answered instead —
   // counting it as served would inflate the north-star with reads the local DB
   // could not actually satisfy.
@@ -691,6 +725,38 @@ describe('offlineAwareRequest — offline-usage signal lanes (#4317)', () => {
     const result = await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars);
 
     expect(result.climb?.uuid).toBe('net-detail');
+    expect(recordOfflineRead).not.toHaveBeenCalled();
+  });
+
+  // Offline, the miss can't be retried, so it is returned as-is — and what the
+  // caller gets is `{ climb: null }`, the same nothing the empty fallback gives.
+  // Counting that as offline_local would put "offline staring at an empty
+  // screen" into the north-star, the one distinction this signal exists to make.
+  it('does not record a served read for a local miss returned as-is while offline', async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    getClimbLocal.mockResolvedValue(null);
+
+    const result = await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars);
+
+    expect(result).toEqual({ climb: null });
+    expect(recordOfflineRead).not.toHaveBeenCalled();
+    // No `unavailable` counterpart either: a null grade row is indistinguishable
+    // from a genuinely ungraded climb, so the gap tile would be inventing a
+    // number. Silence beats a wrong one.
+    expect(recordOfflineReadUnavailable).not.toHaveBeenCalled();
+  });
+
+  it('does not record network_error_local when the rescue read itself misses', async () => {
+    setOfflineEngineEnabled(false); // straight passthrough, so the catch block is the only local read
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    getClimbLocal.mockResolvedValue(null);
+    request.mockRejectedValue(new Error('Network request failed'));
+
+    const result = await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars);
+
+    expect(result).toEqual({ climb: null });
     expect(recordOfflineRead).not.toHaveBeenCalled();
   });
 

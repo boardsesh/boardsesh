@@ -970,14 +970,14 @@ Every offline-served read funnels through `offlineAwareRequest()` in
 `packages/mobile/src/lib/graphql/offline-request.ts`, which already knows which
 lane it took. Four terminal outcomes are worth measuring:
 
-| Outcome                           | Event                      | Lane / reason          |
-| --------------------------------- | -------------------------- | ---------------------- |
-| Offline, board downloaded         | `Offline Read Served`      | `offline_local`        |
-| Network threw, board downloaded   | `Offline Read Served`      | `network_error_local`  |
-| Online, flag on, board downloaded | `Offline Read Served`      | `online_local`         |
-| Offline, board not downloaded     | `Offline Read Unavailable` | `board_not_downloaded` |
-| Offline, filter not expressible   | `Offline Read Unavailable` | `filter_unsupported`   |
-| Offline, no database handle       | `Offline Read Unavailable` | `local_db_unavailable` |
+| Outcome                                    | Event                      | Lane / reason          |
+| ------------------------------------------ | -------------------------- | ---------------------- |
+| Offline, board downloaded, row found       | `Offline Read Served`      | `offline_local`        |
+| Network threw, board downloaded, row found | `Offline Read Served`      | `network_error_local`  |
+| Online, flag on, board downloaded          | `Offline Read Served`      | `online_local`         |
+| Offline, board not downloaded              | `Offline Read Unavailable` | `board_not_downloaded` |
+| Offline, board downloaded, filter gap      | `Offline Read Unavailable` | `filter_unsupported`   |
+| Offline, no database handle                | `Offline Read Unavailable` | `local_db_unavailable` |
 
 `network_error_local` is real offline value that `onlineManager` mislabels as
 online (captive portal, dead gym-wifi upstream, cold-start seed race), so it
@@ -985,6 +985,22 @@ counts toward the north-star. `online_local` is the flag-on latency
 optimization — it proves the local path is exercised but it is **not** offline
 usage, and it is excluded from the north-star. Expect it to dominate the
 breakdown once #4312 bakes the engine flag on.
+
+Two labelling rules keep those buckets honest, and both are cases where the
+obvious code books the wrong thing:
+
+- **A local miss is never a served read.** Climb detail and the single-grade read
+  treat a null row as a miss (`isLocalMiss`) and retry over the network while
+  online. Offline there is no retry, so the null is returned as-is — and the
+  caller gets exactly the nothing the empty fallback would have given, so it
+  counts in no served lane. It gets no `Offline Read Unavailable` either: for the
+  grade reads a null row is indistinguishable from a genuinely ungraded climb
+  (MoonBoard, too few ascents), so counting it would put a number we can't verify
+  on the gap tile.
+- **A missing download outranks the filter gap.** An unsupported filter run
+  against a board that was never downloaded is reported as
+  `board_not_downloaded`. Teaching SQLite every filter (#4002) would still serve
+  that read nothing; only a download (#4318) would.
 
 **These events are rolled up, not per-read.** Search and its count fire on every
 keystroke, so a per-read event would be thousands per session — and PostHog's

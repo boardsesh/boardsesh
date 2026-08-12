@@ -59,9 +59,11 @@ type OfflineOperation<TVariables, TResponse> = {
   surface: OfflineReadSurface;
   boardNameOf: (variables: TVariables) => string;
   // Why an offline read came back empty, when the answer isn't simply "the
-  // board isn't downloaded". Only computed when the rollup gate has already
-  // decided to emit, so it costs nothing on the suppressed path.
-  unavailableReason?: (variables: TVariables) => OfflineUnavailableReason;
+  // board isn't downloaded". Runs on every unavailable read (the rollup gate
+  // keys on the reason, so it can't be deferred until the gate decides to
+  // emit) — keep it to what `canServeLocal` already established, and only pay
+  // for an extra probe on the branch that genuinely needs one.
+  unavailableReason?: (db: SQLiteDatabase, variables: TVariables) => Promise<OfflineUnavailableReason>;
   canServeLocal: (db: SQLiteDatabase, variables: TVariables) => Promise<boolean>;
   // Returns the RAW GraphQL response shape (as if the server had answered).
   resolveLocal: (db: SQLiteDatabase, variables: TVariables) => Promise<TResponse>;
@@ -92,8 +94,20 @@ async function canServeSearchLocal(db: SQLiteDatabase, { input }: SearchClimbsQu
 // A search can come back empty offline for two very different reasons, and the
 // difference decides who can be converted: a missing download is #4318's
 // audience, an unsupported filter is #4002's.
-function searchUnavailableReason({ input }: SearchClimbsQueryVariables): OfflineUnavailableReason {
-  return isOfflineSearchSupported(input) ? 'board_not_downloaded' : 'filter_unsupported';
+//
+// The missing download OUTRANKS the filter gap when both are true. Teaching
+// SQLite every filter would not serve a board that was never downloaded, so
+// attributing those reads to `filter_unsupported` would credit #4002 with an
+// audience it can't convert and hide it from #4318's. `canServeSearchLocal`
+// short-circuits on the filter before probing the download, so the probe is
+// only owed on the unsupported branch — when the filter IS expressible, the
+// download probe already ran (and returned false) on the way here.
+async function searchUnavailableReason(
+  db: SQLiteDatabase,
+  { input }: SearchClimbsQueryVariables,
+): Promise<OfflineUnavailableReason> {
+  if (isOfflineSearchSupported(input)) return 'board_not_downloaded';
+  return (await isBoardDownloadedLocally(db, scopeOf(input))) ? 'filter_unsupported' : 'board_not_downloaded';
 }
 
 const searchBoardName = ({ input }: SearchClimbsQueryVariables) => input.boardName;
@@ -237,15 +251,25 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
         // A known-key miss falls through to the network while online — the row
         // may simply not have synced yet. Offline, the miss stands (it has the
         // same shape as offlineFallback).
-        const retryOverNetwork = operation.isLocalMiss?.(localResponse) === true && isOnline;
-        if (!retryOverNetwork) {
+        const localMiss = operation.isLocalMiss?.(localResponse) === true;
+        if (!(localMiss && isOnline)) {
           // Recorded on the RETURN path only, so the online miss-retry that
-          // continues to the network below is never counted as served (#4317).
-          recordOfflineRead({
-            lane: isOnline ? 'online_local' : 'offline_local',
-            surface: operation.surface,
-            boardName: operation.boardNameOf(variables as never),
-          });
+          // continues to the network below is never counted as served (#4317) —
+          // and NOT for a miss we return as-is. A null climb or grade is the
+          // empty fallback reached by another route: the caller gets nothing,
+          // so booking it as served would put "offline staring at an empty
+          // screen" into the north-star. There is no `unavailable` counterpart
+          // either, deliberately: for the grade ops a null row is
+          // indistinguishable from a genuinely ungraded climb (see the
+          // BOARDSESH_GRADES_FOR_ANGLES note above), so counting it would
+          // invent a gap number we can't verify.
+          if (!localMiss) {
+            recordOfflineRead({
+              lane: isOnline ? 'online_local' : 'offline_local',
+              surface: operation.surface,
+              boardName: operation.boardNameOf(variables as never),
+            });
+          }
           return localResponse;
         }
       } else if (!isOnline) {
@@ -262,7 +286,7 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
           // people who already have one.
           recordOfflineReadUnavailable({
             reason: localDb
-              ? (operation.unavailableReason?.(variables as never) ?? 'board_not_downloaded')
+              ? ((await operation.unavailableReason?.(localDb, variables as never)) ?? 'board_not_downloaded')
               : 'local_db_unavailable',
             surface: operation.surface,
             boardName: operation.boardNameOf(variables as never),
@@ -291,12 +315,17 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
         // own lane so the north-star doesn't lose captive-portal / dead-upstream
         // sessions (#4317). Recorded only once the local read actually resolved,
         // so a throwing resolveLocal (which propagates instead of answering)
-        // can't book a served read the user never got.
-        recordOfflineRead({
-          lane: 'network_error_local',
-          surface: operation.surface,
-          boardName: operation.boardNameOf(variables as never),
-        });
+        // can't book a served read the user never got — and only when it
+        // resolved to something: a rescue that misses hands the caller the same
+        // nothing the network error would have, exactly like the miss on the
+        // local-first path above.
+        if (operation.isLocalMiss?.(rescued) !== true) {
+          recordOfflineRead({
+            lane: 'network_error_local',
+            surface: operation.surface,
+            boardName: operation.boardNameOf(variables as never),
+          });
+        }
         return rescued;
       }
     }

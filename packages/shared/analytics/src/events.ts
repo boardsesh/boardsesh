@@ -457,6 +457,12 @@ export const SHARED_EVENTS = {
   // (a lying connection — real offline value), or the online flag-on latency
   // short-circuit (NOT offline usage; excluded from the north-star). `surface`
   // is the read that crossed the rung, not an exhaustive list of what was used.
+  //
+  // A read that found NOTHING locally is not served, in any lane: climb detail
+  // and the single-grade read can come back null from a downloaded board (the
+  // row hasn't synced), and offline there's no network to retry against, so the
+  // caller gets the same nothing the empty fallback gives. Counting it would put
+  // "offline staring at an empty screen" into the north-star.
   OfflineReadServed: 'Offline Read Served',
   // Offline sync — the counterpart: the device was offline and there was nothing
   // local to serve, so the surface got an empty result. The conversion pool that
@@ -467,7 +473,10 @@ export const SHARED_EVENTS = {
   //   boardName, readCount }. `local_db_unavailable` means there was no database
   // handle to ask at all (init still retrying, or wedged — #4313 / #4314). The
   // board may well BE downloaded in that case, so it is deliberately NOT part of
-  // #4318's nudge audience.
+  // #4318's nudge audience. `filter_unsupported` means the board IS downloaded
+  // and only the filter blocked the read — when both are missing the reason is
+  // `board_not_downloaded`, since fixing filters would still serve that read
+  // nothing.
   OfflineReadUnavailable: 'Offline Read Unavailable',
 } as const;
 
