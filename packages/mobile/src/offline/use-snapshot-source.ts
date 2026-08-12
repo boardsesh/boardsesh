@@ -1,10 +1,15 @@
 import { useMemo } from 'react';
 import type { SnapshotManifestEntry, SnapshotSource } from '@boardsesh/offline-sync';
 import { isSnapshotBaseUrlConfigured } from '../lib/env';
-import { useOfflineDownloadProgressEnabled, useSnapshotBootstrapEnabled } from '../providers/feature-flags-provider';
+import {
+  useOfflineDownloadProgressEnabled,
+  useOfflineDownloadsEnabled,
+  useSnapshotBootstrapEnabled,
+} from '../providers/feature-flags-provider';
 import { mobileSnapshotSource } from './snapshot-source';
 
 /**
+<<<<<<< HEAD
  * The kill-switch wrapper for download progress (issue #4311). Passing an
  * `onProgress` callback makes expo-file-system take a different NATIVE download
  * implementation — an 8 KB streaming copy loop on Android, a delegate-driven
@@ -29,19 +34,27 @@ function withoutDownloadProgress(source: SnapshotSource): SnapshotSource {
 }
 
 /**
- * The one gate for handing the engine snapshot I/O: the
- * `offline-snapshot-bootstrap-v2` flag (nested under `offline-board-downloads`)
- * AND a real build-time manifest URL. `undefined` otherwise, which makes
- * `pullSync` skip the bootstrap phase entirely — a freshly-enabled board still
- * downloads, just through the paged crawl. Every caller that starts or
- * triggers a sync must source its `snapshotSource` from here so the gate can
- * never diverge between surfaces.
+ * The one gate for handing the engine snapshot I/O: `offline-board-downloads`
+ * AND the `offline-snapshot-bootstrap-v2` flag nested under it AND a real
+ * build-time manifest URL. `undefined` otherwise, which makes `pullSync` skip
+ * the bootstrap phase entirely — a freshly-enabled board still downloads, just
+ * through the paged crawl. Every caller that starts or triggers a sync must
+ * source its `snapshotSource` from here so the gate can never diverge between
+ * surfaces.
+ *
+ * The `offline-board-downloads` term used to be documentation only. It is a
+ * real term now, because that gate is also the platform split: the `.web` fork
+ * reads it hard-false, and `mobileSnapshotSource` statically imports
+ * `expo-file-system`. Until now the only thing keeping snapshot I/O off Expo
+ * web was that no web workflow happens to set `EXPO_PUBLIC_SNAPSHOT_BASE_URL`
+ * — an accident, not a guard.
  */
 export function useSnapshotSource(): SnapshotSource | undefined {
+  const offlineDownloadsEnabled = useOfflineDownloadsEnabled();
   const snapshotBootstrapEnabled = useSnapshotBootstrapEnabled();
   const downloadProgressEnabled = useOfflineDownloadProgressEnabled();
   return useMemo(() => {
-    if (!snapshotBootstrapEnabled || !isSnapshotBaseUrlConfigured()) return undefined;
+    if (!offlineDownloadsEnabled || !snapshotBootstrapEnabled || !isSnapshotBaseUrlConfigured()) return undefined;
     return downloadProgressEnabled ? mobileSnapshotSource : withoutDownloadProgress(mobileSnapshotSource);
-  }, [snapshotBootstrapEnabled, downloadProgressEnabled]);
+  }, [offlineDownloadsEnabled, snapshotBootstrapEnabled, downloadProgressEnabled]);
 }

@@ -153,6 +153,8 @@ function makeQueryClient() {
 
 const FLAG_ON: FeatureFlags = { 'offline-board-downloads': true };
 const FLAG_OFF: FeatureFlags = { 'offline-board-downloads': false };
+// PostHog never resolved — the #4312 cohort. Since the bake this reads as ON.
+const FLAG_UNSET: FeatureFlags = {};
 const FLAG_ON_WITH_SNAPSHOT: FeatureFlags = {
   'offline-board-downloads': true,
   'offline-snapshot-bootstrap-v2': true,
@@ -480,6 +482,15 @@ describe('OfflineSyncBridge — schema readiness gating', () => {
     act(() => setSchemaReady(true));
 
     await waitFor(() => expect(drainMutationQueueMock).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe('OfflineSyncBridge — flag never resolved', () => {
+  it('runs the engine anyway: scheduler starts and the module store flips on', async () => {
+    render(<Harness flags={FLAG_UNSET} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(isOfflineEngineEnabled()).toBe(true));
+    expect(getPendingCountMock).not.toHaveBeenCalled();
   });
 });
 

@@ -30,8 +30,9 @@ import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
  * child inside FeatureFlagsProvider so its effect flushes before any screen's
  * query effect fires — a flag-on user's first local-first read never races the
  * store. First render always sees flags as `{}` (PostHog state lands via the
- * provider's own effect), so the first commit is flag-off for everyone; the
- * store's own default matches.
+ * provider's own effect), which since #4312 resolves to engine-ON; the store's
+ * literal `false` default therefore holds only until this effect runs, which is
+ * before anything can read it.
  */
 export function OfflineEngineFlagSync() {
   const offlineEnabled = useOfflineDownloadsEnabled();

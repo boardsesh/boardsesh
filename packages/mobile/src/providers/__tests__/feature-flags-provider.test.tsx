@@ -3,7 +3,14 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FeatureFlagsProvider, useFeatureFlag, useFeatureFlags } from '../feature-flags-provider';
+import {
+  FeatureFlagsProvider,
+  useBoardseshGradeEnabled,
+  useFeatureFlag,
+  useFeatureFlags,
+  useOfflineDownloadsEnabled,
+  useSnapshotBootstrapEnabled,
+} from '../feature-flags-provider';
 import {
   setFeatureFlagOverride,
   resetFeatureFlagOverridesForTests,
@@ -87,6 +94,40 @@ describe('FeatureFlagsProvider', () => {
     const wrapper = ({ children }: { children: ReactNode }) => <FeatureFlagsProvider>{children}</FeatureFlagsProvider>;
     const { result } = renderHook(() => useFeatureFlag('strava-integration'), { wrapper });
     expect(result.current).toBe(true);
+  });
+
+  it('useOfflineDownloadsEnabled is on when the flag never resolved', () => {
+    const wrapper = ({ children }: { children: ReactNode }) => <FeatureFlagsProvider>{children}</FeatureFlagsProvider>;
+    const { result } = renderHook(() => useOfflineDownloadsEnabled(), { wrapper });
+    expect(result.current).toBe(true);
+  });
+
+  it('useOfflineDownloadsEnabled is off on an explicit false (the kill switch)', () => {
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <FeatureFlagsProvider flags={{ 'offline-board-downloads': false }}>{children}</FeatureFlagsProvider>
+    );
+    const { result } = renderHook(() => useOfflineDownloadsEnabled(), { wrapper });
+    expect(result.current).toBe(false);
+  });
+
+  it('a tester override to off beats the default-on for an unresolved flag', () => {
+    setFeatureFlagOverride('offline-board-downloads', false);
+    const wrapper = ({ children }: { children: ReactNode }) => <FeatureFlagsProvider>{children}</FeatureFlagsProvider>;
+    const { result } = renderHook(() => useOfflineDownloadsEnabled(), { wrapper });
+    expect(result.current).toBe(false);
+  });
+
+  it('the offline default-on does not leak to the other flags', () => {
+    const wrapper = ({ children }: { children: ReactNode }) => <FeatureFlagsProvider>{children}</FeatureFlagsProvider>;
+    const { result } = renderHook(
+      () => ({
+        snapshotBootstrap: useSnapshotBootstrapEnabled(),
+        boardseshGrade: useBoardseshGradeEnabled(),
+      }),
+      { wrapper },
+    );
+    expect(result.current.snapshotBootstrap).toBe(false);
+    expect(result.current.boardseshGrade).toBe(false);
   });
 
   it('useFeatureFlagOverrides re-renders consumers when an override changes post-mount', () => {
