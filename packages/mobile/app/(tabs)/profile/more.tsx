@@ -31,11 +31,19 @@ import {
   getDeadLetterCount,
   getDeadLetters,
   retryDeadLetter,
+<<<<<<< HEAD
   getDownloadedScopeKeys,
+||||||| parent of 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
+  getPendingCount,
+  getDownloadedScopeKeys,
+=======
+  getPendingCount,
+>>>>>>> 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
   measureReclaimableBytes,
   type GraphQLFetch,
 } from '@boardsesh/offline-sync';
 import { drainMutationQueue } from '../../../src/offline/offline-sync-adapter';
+import { useDownloadedScopeKeys } from '../../../src/offline/use-downloaded-scope-keys';
 import { getHttpClient } from '../../../src/lib/graphql/client';
 import { hapticLight, hapticSelection } from '../../../src/lib/haptics';
 import { DevMetadataPanel } from '../../../src/components/DevMetadataPanel';
@@ -178,10 +186,19 @@ export default function MoreScreen() {
   // sign-out — which clears syncEnabledBoards but deliberately keeps the rows as the
   // shared cache). One cheap indexed read, same cost shape as the dead-letter count.
   // Shares the ['downloadedScopeKeys'] cache entry with My Boards, so this warms it.
+<<<<<<< HEAD
   const { data: downloadedScopeKeys } = useQuery({
     queryKey: ['downloadedScopeKeys', schemaReady],
     queryFn: () => getDownloadedScopeKeys(db),
   });
+||||||| parent of 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
+  const { data: downloadedScopeKeys } = useQuery({
+    queryKey: ['downloadedScopeKeys'],
+    queryFn: () => getDownloadedScopeKeys(db),
+  });
+=======
+  const { data: downloadedScopeKeys } = useDownloadedScopeKeys();
+>>>>>>> 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
   // ...AND when a removal deleted its rows but the compaction never landed, so the
   // freelist is still holding real space. That state clears the scope-complete
   // markers (so downloadedScopeKeys is empty) and can coincide with the flag being

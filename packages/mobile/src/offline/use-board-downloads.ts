@@ -73,10 +73,15 @@ export function useBoardDownloads() {
   // straight into.
   const downloadKickPendingRef = useRef(false);
 
-  const enableBoardsOffline = useCallback(
-    (boards: UserBoard | UserBoard[], options?: { trigger?: OfflineDownloadTrigger; source?: ToggleSource }) => {
-      const list = Array.isArray(boards) ? boards : [boards];
-      if (list.length === 0) return;
+  // The enable half both entry points share: flip the per-scope setting, persist
+  // the attribution, emit Toggled, and snapshot the board identities while we
+  // hold them. This is the single funnel for every offline enable (the My Boards
+  // toggle, adopt-found-board, the "download all" settings toggle, the discovery
+  // nudges), so the offline picker gets its rows without any caller having to
+  // remember to persist them. A scope key alone can't name a board — see
+  // settings/offline-boards.ts.
+  const markBoardsEnabled = useCallback(
+    (list: UserBoard[], options?: { trigger?: OfflineDownloadTrigger; source?: ToggleSource }) => {
       const trigger = options?.trigger ?? 'unknown';
       const source = options?.source ?? 'manage';
       // Two boards can share one offline scope — the key is board type + layout +
@@ -94,7 +99,8 @@ export function useBoardDownloads() {
         seenScopeKeys.add(scopeKey);
         setOfflineBoardEnabled(offlineBoardScopeForBoard(board), true);
         // Persisted, then consumed when the download actually starts — which can
-        // be a later app launch entirely if the board was enabled with no signal.
+        // be a later app launch entirely if the board was enabled with no signal,
+        // which is exactly what the arm path below leaves behind.
         rememberDownloadTrigger(scopeKey, trigger);
         track(SHARED_EVENTS.OfflineBoardToggled, {
           scopeKey,
@@ -103,19 +109,23 @@ export function useBoardDownloads() {
           offlineEngineEnabled: isOfflineEngineEnabled(),
         });
       }
-      // Snapshot the board identities while we hold them. This is the single funnel
-      // for every offline enable (the My Boards toggle, adopt-found-board, the
-      // "download all" settings toggle), so the offline picker gets its rows without
-      // any caller having to remember to persist them. A scope key alone can't name
-      // a board — see settings/offline-boards.ts.
       rememberOfflineBoards(list);
+    },
+    [],
+  );
+
+  const enableBoardsOffline = useCallback(
+    (boards: UserBoard | UserBoard[], options?: { trigger?: OfflineDownloadTrigger; source?: ToggleSource }) => {
+      const list = Array.isArray(boards) ? boards : [boards];
+      if (list.length === 0) return;
+      markBoardsEnabled(list, options);
       if (!schemaReady) {
         downloadKickPendingRef.current = true;
         return;
       }
       startDownloadCycle();
     },
-    [schemaReady, startDownloadCycle],
+    [markBoardsEnabled, schemaReady, startDownloadCycle],
   );
 
   useEffect(() => {
@@ -140,5 +150,32 @@ export function useBoardDownloads() {
     [db, startDownloadCycle],
   );
 
-  return { enableBoardsOffline, retryFastDownload };
+  /**
+   * Mark boards for offline WITHOUT kicking a sync cycle.
+   *
+   * Deliberately no `triggerSync`. Every surface that can fire while the device
+   * has no usable connection — the offline board picker, the offline climbs
+   * empty state — reaches this instead of `enableBoardsOffline`, because
+   * `onlineManager.isOnline()` is TRUE on captive-portal / dead-upstream wifi, so
+   * `triggerSync`'s own guard would not short-circuit: the cycle would run,
+   * every request would fail, and `recordRetryableBootstrapFailure` would spend
+   * one of the two `MAX_BOOTSTRAP_ATTEMPTS` per tap. Two taps and the scope is
+   * pinned to the multi-minute paged crawl forever (issue #4313).
+   *
+   * Nothing is lost by waiting: the scheduler's own connectivity trigger
+   * (`subscribeConnectivity` in this adapter) runs a cycle the moment the device
+   * reconnects, and that cycle reads the latest `syncEnabledBoards`. The board
+   * sits in the documented `'pending'` state until then, which the My Boards row
+   * already renders as "Waiting to download".
+   */
+  const armBoardsOffline = useCallback(
+    (boards: UserBoard | UserBoard[]) => {
+      const list = Array.isArray(boards) ? boards : [boards];
+      if (list.length === 0) return;
+      markBoardsEnabled(list);
+    },
+    [markBoardsEnabled],
+  );
+
+  return { enableBoardsOffline, armBoardsOffline, retryFastDownload };
 }

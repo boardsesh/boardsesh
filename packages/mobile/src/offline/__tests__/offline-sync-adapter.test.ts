@@ -650,6 +650,44 @@ describe('snapshot-bootstrap bindings', () => {
     stopTracking();
   });
 
+  // Until #4318 only remove-offline-board.ts ever invalidated these, so a board
+  // that finished downloading kept reading as "not downloaded" on every screen
+  // the user hadn't left — the badge and every download affordance with it.
+  it.each([
+    [
+      'startSyncScheduler',
+      () =>
+        startSyncScheduler(
+          db,
+          queryClient,
+          graphqlFetch,
+          () => [],
+          async () => {},
+        ),
+    ],
+    [
+      'triggerSync',
+      () =>
+        triggerSync(
+          db,
+          queryClient,
+          graphqlFetch,
+          () => [],
+          async () => {},
+        ),
+    ],
+  ])('refreshes the downloaded-scope caches from %s on scope completion', (name, run) => {
+    run();
+    const options = (
+      name === 'startSyncScheduler' ? startSyncSchedulerCore.mock.calls[0][6] : triggerSyncCore.mock.calls[0][5]
+    ) as SchedulerOptions;
+
+    options.onScopeDownloadComplete?.({ scopeKey: 'kilter:1:5', method: 'snapshot', durationMs: 10 });
+
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['downloadedScopeKeys'] });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['offlineStorage'] });
+  });
+
   it('captures a PostHog event — not a Sentry error — when the coverage guard forces a resync', () => {
     // A forced deletions-coverage reset is expected behaviour whose FREQUENCY is
     // the signal (issue #3474), so it belongs with the operational events, not

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useNavigation, useRouter } from 'expo-router';
@@ -18,25 +18,21 @@ import {
 } from '../../src/providers/feature-flags-provider';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
 import { useSyncStatus } from '../../src/sync';
-import {
-  getDownloadedScopeKeys,
-  getCheckpoint,
-  getCheckpointKey,
-  readBootstrapRetryState,
-  isScopeDownloadComplete,
-  isBootstrapDone,
-  getBootstrapMetadataByScope,
-  estimateScopeDownload,
-} from '@boardsesh/offline-sync';
-import { useBoardDownloads } from '../../src/offline/use-board-downloads';
+import { getBootstrapMetadataByScope } from '@boardsesh/offline-sync';
+import { useConfirmBoardDownload } from '../../src/offline/use-confirm-board-download';
+import { useDownloadedScopeKeys } from '../../src/offline/use-downloaded-scope-keys';
 import { useRememberDownloadedBoards } from '../../src/offline/use-remember-downloaded-boards';
-import { useSnapshotManifest } from '../../src/offline/use-snapshot-manifest';
 import { useSnapshotSource } from '../../src/offline/use-snapshot-source';
+<<<<<<< HEAD
 import { useOfflineSchemaReady } from '../../src/db/use-offline-schema-ready';
 import { formatBytes } from '../../src/lib/format-bytes';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../src/lib/analytics';
 import { isOfflineEngineEnabled } from '../../src/lib/offline-engine';
+||||||| parent of 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
+import { formatBytes } from '../../src/lib/format-bytes';
+=======
+>>>>>>> 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
 import {
   getSetting,
   useSetting,
@@ -76,7 +72,7 @@ const getItemType = (item: ManageItem) => item.type;
 export default function ManageBoards() {
   const router = useRouter();
   const navigation = useNavigation();
-  const { t, i18n } = useTranslation('boards');
+  const { t } = useTranslation('boards');
   const { isAuthenticated, refreshAuthState } = useAuth();
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
@@ -128,7 +124,13 @@ export default function ManageBoards() {
   // previously-queued writes still flush (see OfflineSyncBridge). This screen
   // stays the only writer of syncEnabledBoards.
   const offlineDownloadsEnabled = useOfflineDownloadsEnabled();
+<<<<<<< HEAD
   const { enableBoardsOffline, retryFastDownload } = useBoardDownloads();
+||||||| parent of 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
+  const { enableBoardsOffline } = useBoardDownloads();
+=======
+  const { confirmAndDownload } = useConfirmBoardDownload();
+>>>>>>> 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
   // Warmed here on mount so the download-size estimate is already in cache when a
   // row's toggle is tapped — the confirm dialog must never wait on a fetch.
   //
@@ -136,9 +138,6 @@ export default function ManageBoards() {
   // keeping it out of that handler's deps means a manifest refresh can't churn the
   // callback identity and re-render every memoised row. The ref also always reads
   // the freshest manifest, which is exactly what the tap wants.
-  const snapshotManifest = useSnapshotManifest();
-  const snapshotManifestRef = useRef(snapshotManifest);
-  snapshotManifestRef.current = snapshotManifest;
   const db = useSQLiteContext();
   // This connection is handed out as soon as the launch gate opens — after the first
   // init attempt, whatever it did — so on a contended launch it has no tables yet.
@@ -194,6 +193,7 @@ export default function ManageBoards() {
   // Ungated by the flag: the offline fallback below needs it too, and a device that
   // still holds downloads after a kill-switch rollback must not be stranded. One
   // cheap indexed read, shared with the Storage screen's cache entry.
+<<<<<<< HEAD
   //
   // Readiness is a KEY member, not an `enabled` gate: a read against the unmigrated
   // connection fails into "nothing downloaded", which is the right answer, and a
@@ -202,6 +202,14 @@ export default function ManageBoards() {
     queryKey: ['downloadedScopeKeys', schemaReady],
     queryFn: () => getDownloadedScopeKeys(db),
   });
+||||||| parent of 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
+  const { data: downloadedScopeKeys, refetch: refetchDownloaded } = useQuery({
+    queryKey: ['downloadedScopeKeys'],
+    queryFn: () => getDownloadedScopeKeys(db),
+  });
+=======
+  const { data: downloadedScopeKeys, refetch: refetchDownloaded } = useDownloadedScopeKeys();
+>>>>>>> 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
   const downloadedSet = useMemo(() => new Set(downloadedScopeKeys ?? []), [downloadedScopeKeys]);
   useEffect(() => {
     if (offlineDownloadsEnabled && (!isSyncing || syncStatus.scopeCompletionRevision > 0)) void refetchDownloaded();
@@ -296,6 +304,7 @@ export default function ManageBoards() {
         }
         return;
       }
+<<<<<<< HEAD
       // How big is this download? Only the snapshot path can answer honestly, and
       // only for a scope that would actually bootstrap — a board toggled off and
       // back on keeps its rows + checkpoint and resumes as a small delta, so
@@ -343,7 +352,60 @@ export default function ManageBoards() {
       // Enable + kick a download now via the shared hook (single-flight, reads the
       // latest syncEnabledBoards setting).
       enableBoardsOffline(board, { trigger: 'toggle', source: 'manage' });
+||||||| parent of 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
+      // How big is this download? Only the snapshot path can answer honestly, and
+      // only for a scope that would actually bootstrap — a board toggled off and
+      // back on keeps its rows + checkpoint and resumes as a small delta, so
+      // quoting the full artifact size there would be wrong. estimateScopeDownload
+      // owns those rules (shared with the engine's own eligibility check); anything
+      // it can't vouch for falls back to the sizeless copy.
+      //
+      // Concurrent, not sequential: these are three independent reads and the
+      // dialog opens behind them, so serialising them would show up as a stall on
+      // slow storage.
+      const now = Date.now();
+      const [climbsCheckpoint, statsCheckpoint, scopeComplete, bootstrapAlreadyDone] = await Promise.all([
+        getCheckpoint(db, getCheckpointKey('board_climbs', key)),
+        getCheckpoint(db, getCheckpointKey('board_climb_stats', key)),
+        isScopeDownloadComplete(db, key),
+        isBootstrapDone(db, key),
+      ]);
+      const hasBoardCheckpoint = !!climbsCheckpoint || !!statsCheckpoint;
+      const { state: retryState } = await readBootstrapRetryState(
+        db,
+        key,
+        { now, random: Math.random },
+        hasBoardCheckpoint,
+      );
+      const estimate = estimateScopeDownload({
+        manifest: snapshotManifestRef.current,
+        boardType: scope.boardType,
+        layoutId: scope.layoutId,
+        retryState,
+        hasBoardCheckpoint,
+        isScopeComplete: scopeComplete,
+        isBootstrapDone: bootstrapAlreadyDone,
+        now,
+      });
+      const confirmed = await confirm({
+        title: t('mobile.offline.enableTitle', { name: board.name }),
+        message:
+          estimate.kind === 'snapshot'
+            ? t('mobile.offline.enableMessageWithSize', { size: formatBytes(estimate.bytes, i18n.language) })
+            : t('mobile.offline.enableMessage'),
+        confirmLabel: t('mobile.offline.enableConfirm'),
+        cancelLabel: t('mobile.manage.cancel'),
+      });
+      if (!confirmed) return;
+      // Enable + kick a download now via the shared hook (single-flight, reads the
+      // latest syncEnabledBoards setting).
+      enableBoardsOffline(board);
+=======
+      // Size quote + confirm + enable, shared with the discovery-nudge surfaces.
+      await confirmAndDownload(board);
+>>>>>>> 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
     },
+<<<<<<< HEAD
     [confirm, t, i18n.language, db, enableBoardsOffline, downloadProgressEnabled],
   );
 
@@ -396,6 +458,11 @@ export default function ManageBoards() {
       await retryFastDownload(board);
     },
     [confirm, t, i18n.language, db, retryFastDownload],
+||||||| parent of 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
+    [confirm, t, i18n.language, db, enableBoardsOffline],
+=======
+    [confirmAndDownload],
+>>>>>>> 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
   );
 
   // See boards/index.tsx: a hard 401 clears tokens without flipping
