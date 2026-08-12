@@ -492,16 +492,20 @@ pre-import empty result set.
   needs a new build to take effect, not just a config change.
 - **PostHog flags** (`packages/mobile/src/providers/feature-flags-provider.tsx`):
   - `offline-board-downloads` — the offline engine's _new_ work: downloads, the **online** local-first
-    read optimization, queued offline writes, and background sync. Missing/undefined reads as **off**.
-    Reading an already-downloaded board while the network is unavailable is NOT gated by this flag — see
-    the flag-gate section in `docs/offline-sync-plan.md` and issue #3888.
+    read optimization, queued offline writes, and background sync. **A kill switch, on by default**:
+    missing/undefined reads as **on** (issue #4312) and only an explicit `false` disables it, so disable
+    the flag or set it to 0% rather than deleting it. Reading an already-downloaded board while the
+    network is unavailable is NOT gated by this flag — see the flag-gate section in
+    `docs/offline-sync-plan.md` and issue #3888.
   - `offline-snapshot-bootstrap-v2` — nested under the flag above: whether a freshly-enabled scope warms
-    from the snapshot at all. With `offline-board-downloads` on and `offline-snapshot-bootstrap-v2` off, a
-    fresh board still downloads — just via the paged crawl. `OfflineSyncBridge`
-    (`packages/mobile/src/components/offline-sync-bridge.tsx`) only passes `mobileSnapshotSource` to the
-    sync scheduler when `useSnapshotBootstrapEnabled()` is true **and** `EXPO_PUBLIC_SNAPSHOT_BASE_URL` is
-    configured; otherwise it passes `undefined`, which makes `pullSync` skip the bootstrap phase entirely
-    — behaviourally identical to before this feature existed.
+    from the snapshot at all. Unlike its parent this one stays `=== true`, i.e. **off by default**, so the
+    snapshot path stays remotely killable; a download needs connectivity anyway, and connectivity resolves
+    the flags within seconds. With `offline-board-downloads` on and `offline-snapshot-bootstrap-v2` off, a
+    fresh board still downloads — just via the paged crawl. `useSnapshotSource`
+    (`packages/mobile/src/offline/use-snapshot-source.ts`) is the single place snapshot I/O is handed out,
+    and it requires all three: `useOfflineDownloadsEnabled()`, `useSnapshotBootstrapEnabled()`, and a
+    configured `EXPO_PUBLIC_SNAPSHOT_BASE_URL`. Otherwise it returns `undefined`, which makes `pullSync`
+    skip the bootstrap phase entirely — behaviourally identical to before this feature existed.
 - **Gzip magic-byte sniff** (`packages/mobile/src/offline/snapshot-source.ts`): identity artifacts skip
   gzip verification. For manifest entries with `contentEncoding: 'gzip'`, the expectation is that the
   native HTTP stack (`NSURLSession` / OkHttp via `expo-file-system`'s `File.downloadFileAsync`)

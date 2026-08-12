@@ -5,8 +5,14 @@
  * so the single flag decision — PostHog + env override + tester overrides —
  * happens in one place and this store never disagrees with the UI.
  *
- * Defaults to `false`: until flags load, every user gets the pre-offline
- * network-only behavior, which is the safe direction.
+ * Defaults to `false` even though the flag gate itself now defaults to ON
+ * (issue #4312). This literal is NOT the flag decision — it is the value that
+ * holds for the few microseconds before `OfflineEngineFlagSync`'s effect
+ * publishes one. That component is the first child inside
+ * `FeatureFlagsProvider` (`app/_layout.tsx`), so its effect flushes before any
+ * screen's query effect and the window is effectively zero. Keeping the literal
+ * here also keeps this module free of a `providers/` import, which is why it is
+ * standalone in the first place.
  */
 
 let offlineEngineEnabled = false;

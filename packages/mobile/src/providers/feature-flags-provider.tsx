@@ -57,7 +57,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'offline-board-downloads',
     label: 'Offline board downloads',
     description:
-      'The whole offline engine: board downloads, local-first climb reads, queued offline ticks/favorites, background sync. Off fully disables it (previously-queued writes still flush).',
+      'The whole offline engine: board downloads, local-first climb reads, queued offline ticks/favorites, background sync. On by default — this flag is a kill switch: disable it or set it to 0% to turn the feature off (previously-queued writes still flush). Do not DELETE it; a missing flag reads as on.',
   },
   {
     // v2, deliberately a NEW PostHog key: bundles published before the
@@ -144,8 +144,10 @@ export function useFeatureFlag<K extends keyof FeatureFlags>(key: K): FeatureFla
 
 /**
  * The one expression every offline-engine gate shares. Missing/undefined
- * (flags not loaded yet) deliberately reads as OFF — pre-offline behavior is
- * the safe default while PostHog resolves.
+ * (flags never loaded) deliberately reads as ON: the users PostHog can't
+ * reach are the ones who opened the app with no signal, i.e. this feature's
+ * audience (issue #4312). Only an explicit `false` disables it — see
+ * `isOfflineDownloadsEnabled` for the full kill-switch contract.
  */
 export function useOfflineDownloadsEnabled(): boolean {
   return isOfflineDownloadsEnabled(useFeatureFlag('offline-board-downloads'));
@@ -155,9 +157,13 @@ export function useOfflineDownloadsEnabled(): boolean {
  * Gate for the snapshot-bootstrap warm-up (offline-sync Phase 3/4): whether a
  * freshly-enabled board scope should warm from the nightly pre-built SQLite
  * artifact instead of paging the whole catalog. Missing/undefined reads as
- * OFF — the paged crawl (today's only behaviour) is the safe default while
- * this rolls out. Independent of `useOfflineDownloadsEnabled`; the bridge only
- * consults this when the offline engine itself is already on.
+ * OFF — deliberately still `=== true`, unlike `useOfflineDownloadsEnabled`:
+ * starting a download needs connectivity, and connectivity resolves flags
+ * within seconds, so the never-resolved cohort barely overlaps with the
+ * fresh-download cohort. Keeping this one default-off keeps the snapshot path
+ * remotely killable while #4313 (transport failures burning bootstrap
+ * attempts) is open. Nested under `useOfflineDownloadsEnabled` — the nesting
+ * is enforced in `useSnapshotSource`, the one place snapshot I/O is handed out.
  */
 export function useSnapshotBootstrapEnabled(): boolean {
   return useFeatureFlag('offline-snapshot-bootstrap-v2') === true;
