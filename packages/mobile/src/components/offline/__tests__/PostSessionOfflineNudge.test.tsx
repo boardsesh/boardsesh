@@ -6,6 +6,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 
 const state = vi.hoisted(() => ({
   activeBoard: null as UserBoard | null,
+  myBoards: [] as UserBoard[],
   enabledBoards: [] as string[],
   downloadedScopeKeys: [] as string[],
   autoOfflineBoards: false,
@@ -17,9 +18,12 @@ const state = vi.hoisted(() => ({
 
 const spies = vi.hoisted(() => ({
   confirmAndDownload: vi.fn(async () => true),
+  enableBoardsOffline: vi.fn(),
   setSetting: vi.fn(),
   track: vi.fn(),
-  saveNudgeState: vi.fn(async () => undefined),
+  // Typed loosely on purpose: the assertions below read the saved state back
+  // out of the call args, so the parameter has to exist in the spy's signature.
+  saveNudgeState: vi.fn(async (_next: unknown) => undefined),
 }));
 
 vi.mock('react-native', () => ({
@@ -52,8 +56,16 @@ vi.mock('react-i18next', () => ({
 vi.mock('../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: state.activeBoard }),
 }));
+vi.mock('../../../lib/graphql/hooks', () => ({
+  useMyBoards: (_input: unknown, options?: { enabled?: boolean }) => ({
+    data: options?.enabled === false ? undefined : { boards: state.myBoards },
+  }),
+}));
 vi.mock('../../../offline/use-confirm-board-download', () => ({
   useConfirmBoardDownload: () => ({ confirmAndDownload: spies.confirmAndDownload, armWithoutConfirm: vi.fn() }),
+}));
+vi.mock('../../../offline/use-board-downloads', () => ({
+  useBoardDownloads: () => ({ enableBoardsOffline: spies.enableBoardsOffline, armBoardsOffline: vi.fn() }),
 }));
 vi.mock('../../../offline/use-downloaded-scope-keys', () => ({
   useDownloadedScopeKeys: () => ({ data: state.downloadedScopeKeys }),
@@ -65,6 +77,7 @@ vi.mock('../../../providers/feature-flags-provider', () => ({
 vi.mock('../../../hooks/use-is-offline', () => ({ useIsOffline: () => state.isOffline }));
 vi.mock('../../../settings', () => ({
   offlineBoardKeyForBoard: (board: UserBoard) => `${board.boardType}:${board.layoutId}:${board.sizeId}`,
+  offlineBoardScopeForBoard: (board: UserBoard) => board,
   useSetting: (key: string) => [key === 'syncEnabledBoards' ? state.enabledBoards : state.autoOfflineBoards, vi.fn()],
   getSetting: (key: string) => (key === 'syncEnabledBoards' ? state.enabledBoards : state.autoOfflineBoards),
   setSetting: spies.setSetting,
@@ -79,7 +92,7 @@ vi.mock('../../../lib/offline-nudges/nudge-storage', async () => {
 });
 
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { suppressedNudgeState } from '../../../lib/offline-nudges/nudge-policy';
+import { suppressedNudgeState, type OfflineNudgeState } from '../../../lib/offline-nudges/nudge-policy';
 import { PostSessionOfflineNudge } from '../PostSessionOfflineNudge';
 
 const board = { uuid: 'garage', name: "Marco's garage", boardType: 'kilter', layoutId: 1, sizeId: 10 } as UserBoard;
@@ -87,6 +100,7 @@ const board = { uuid: 'garage', name: "Marco's garage", boardType: 'kilter', lay
 beforeEach(() => {
   vi.clearAllMocks();
   state.activeBoard = board;
+  state.myBoards = [board];
   state.enabledBoards = [];
   state.downloadedScopeKeys = [];
   state.autoOfflineBoards = false;
@@ -200,6 +214,36 @@ describe('PostSessionOfflineNudge', () => {
     await waitFor(() => expect(spies.setSetting).toHaveBeenCalledWith('autoOfflineBoards', true));
   });
 
+  // The setting alone only reaches the other boards when the More screen next
+  // mounts, so "download all my boards" used to download one.
+  it('downloads the boards the user already owns, not just the active one', async () => {
+    const otherBoard = { uuid: 'gym', name: 'The gym', boardType: 'tension', layoutId: 8, sizeId: 25 } as UserBoard;
+    state.myBoards = [board, otherBoard];
+    // confirmAndDownload has enabled the active board by the time we expand.
+    spies.confirmAndDownload.mockImplementationOnce(async () => {
+      state.enabledBoards = ['kilter:1:10'];
+      return true;
+    });
+    await renderNudge();
+    fireEvent.click(screen.getByText('mobile.offline.nudge.postSession.allBoardsCta'));
+
+    await waitFor(() => expect(spies.enableBoardsOffline).toHaveBeenCalledWith([otherBoard]));
+  });
+
+  // Re-enabling the board confirmAndDownload just enabled would kick a second
+  // sync cycle for a download already in flight.
+  it('leaves the board the dialog just started alone', async () => {
+    spies.confirmAndDownload.mockImplementationOnce(async () => {
+      state.enabledBoards = ['kilter:1:10'];
+      return true;
+    });
+    await renderNudge();
+    fireEvent.click(screen.getByText('mobile.offline.nudge.postSession.allBoardsCta'));
+
+    await waitFor(() => expect(spies.setSetting).toHaveBeenCalled());
+    expect(spies.enableBoardsOffline).not.toHaveBeenCalled();
+  });
+
   // Cancelling must not leave the user opted into downloading every board they
   // own — that is the opposite of what they just said.
   it('leaves auto-download alone when the size dialog is cancelled', async () => {
@@ -209,6 +253,32 @@ describe('PostSessionOfflineNudge', () => {
 
     await waitFor(() => expect(spies.confirmAndDownload).toHaveBeenCalled());
     expect(spies.setSetting).not.toHaveBeenCalled();
+  });
+
+  // The impression is a write too. Building accept/dismiss on the pre-impression
+  // state saved shownCount back to 0 and dropped lastPromptAtMs, so an accepted
+  // or dismissed prompt stopped counting against the three-show lifetime cap and
+  // stopped holding off the cross-surface cooldown.
+  it('keeps the impression it just recorded when the download is accepted', async () => {
+    await renderNudge();
+    await waitFor(() => expect(spies.saveNudgeState).toHaveBeenCalled());
+    fireEvent.click(screen.getByText('mobile.offline.nudge.postSession.cta'));
+
+    await waitFor(() => expect(spies.saveNudgeState).toHaveBeenCalledTimes(2));
+    const saved = spies.saveNudgeState.mock.calls[1][0] as OfflineNudgeState;
+    expect(saved.surfaces.post_session.shownCount).toBe(1);
+    expect(saved.lastPromptAtMs).not.toBeNull();
+    expect(saved.lastAcceptedAtMs).not.toBeNull();
+  });
+
+  it('keeps the impression it just recorded when the prompt is dismissed', async () => {
+    await renderNudge();
+    await waitFor(() => expect(spies.saveNudgeState).toHaveBeenCalled());
+    fireEvent.click(screen.getByText('mobile.offline.nudge.notNow'));
+
+    const saved = spies.saveNudgeState.mock.calls[1][0] as OfflineNudgeState;
+    expect(saved.surfaces.post_session.shownCount).toBe(1);
+    expect(saved.lastPromptAtMs).not.toBeNull();
   });
 
   it.each([

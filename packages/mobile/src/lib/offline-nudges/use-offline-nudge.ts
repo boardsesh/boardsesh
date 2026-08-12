@@ -60,11 +60,25 @@ export function useOfflineNudge({ surface, board, storeReviewWillPrompt }: UseOf
   // `null` until AsyncStorage answers. Nothing renders before that, so a nudge
   // can't flash on screen and then retract when the cap turns out to be spent.
   const [nudgeState, setNudgeState] = useState<OfflineNudgeState | null>(null);
+
+  // What is actually ON DISK, which after an impression is no longer what
+  // `nudgeState` holds. Two values because they answer different questions:
+  // `nudgeState` decides visibility and must NOT absorb the shown transition
+  // (an incremented shownCount / fresh lastShownAtMs fails the very cooldown
+  // checks that just passed, retracting the card mid-mount), while accept and
+  // dismiss are writes and have to build on the last write — otherwise they
+  // save a pre-impression state back over it, resetting shownCount and
+  // lastPromptAtMs. That reset is how an accepted spotlight got its "New" pill
+  // back, and how an accepted prompt stopped counting against the lifetime cap.
+  const persistedStateRef = useRef<OfflineNudgeState | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     loadNudgeState()
       .then((loaded) => {
-        if (!cancelled) setNudgeState(loaded);
+        if (cancelled) return;
+        persistedStateRef.current = loaded;
+        setNudgeState(loaded);
       })
       // loadNudgeState resolves a read failure to the suppress-everything state,
       // so this only catches a genuinely unexpected throw. Stay silent either way.
@@ -72,6 +86,13 @@ export function useOfflineNudge({ surface, board, storeReviewWillPrompt }: UseOf
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Persist a transition and remember it, so the next writer builds on it.
+  const persist = useCallback((next: OfflineNudgeState) => {
+    persistedStateRef.current = next;
+    void saveNudgeState(next);
+    return next;
   }, []);
 
   const scopeKey = board ? offlineBoardKeyForBoard(board) : null;
@@ -131,30 +152,40 @@ export function useOfflineNudge({ surface, board, storeReviewWillPrompt }: UseOf
     if (shownScopeKeyRef.current === eventContext.scopeKey) return;
     shownScopeKeyRef.current = eventContext.scopeKey;
     trackNudgeShown(eventContext);
-    void saveNudgeState(withNudgeShown(nudgeState, surface, Date.now()));
+    // Into the ref only: see persistedStateRef. `nudgeState` keeps driving
+    // visibility, so this can't retract the card it just counted.
+    persist(withNudgeShown(persistedStateRef.current ?? nudgeState, surface, Date.now()));
     // Deliberately not re-running on `nudgeState`: recording the show writes it
     // back, and depending on it would loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, eventContext, surface]);
+  }, [visible, eventContext, surface, persist]);
 
   const accept = useCallback(
     (action: NudgeAcceptAction) => {
       if (eventContext) trackNudgeAccepted(eventContext, action);
-      void saveNudgeState(withNudgeAccepted(nudgeState ?? emptyNudgeState(), surface, Date.now()));
-      setNudgeState((previous) => withNudgeAccepted(previous ?? emptyNudgeState(), surface, Date.now()));
+      const next = persist(
+        withNudgeAccepted(persistedStateRef.current ?? nudgeState ?? emptyNudgeState(), surface, Date.now()),
+      );
+      setNudgeState(next);
     },
-    [eventContext, nudgeState, surface],
+    [eventContext, nudgeState, surface, persist],
   );
 
   const dismiss = useCallback(
     (dismissKind: 'once' | 'forever') => {
       if (eventContext) trackNudgeDismissed(eventContext, dismissKind);
-      const next = withNudgeDismissed(nudgeState ?? emptyNudgeState(), surface, dismissKind, Date.now());
-      void saveNudgeState(next);
+      const next = persist(
+        withNudgeDismissed(
+          persistedStateRef.current ?? nudgeState ?? emptyNudgeState(),
+          surface,
+          dismissKind,
+          Date.now(),
+        ),
+      );
       setNudgeState(next);
       setDismissedThisMount(true);
     },
-    [eventContext, nudgeState, surface],
+    [eventContext, nudgeState, surface, persist],
   );
 
   return { visible, accept, dismiss } satisfies OfflineNudgeController;
