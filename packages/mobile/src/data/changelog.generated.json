@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-12T10:55:19.926Z",
+  "generatedAt": "2026-08-12T11:01:27.717Z",
   "entries": [
+    {
+      "prNumber": 4324,
+      "category": "fixed",
+      "title": "Tapping \"Download\" on a board right after opening the app used to do nothing at all if the app was still finishing its local setup — the download quietly never started. Now the tap is held and the download begins the moment storage is ready. Offline data also stops being written against a half-built database on a busy launch, so a board you downloaded shows up as downloaded instead of vanishing.",
+      "mergedAt": "2026-08-12T10:59:36Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4324"
+    },
     {
       "prNumber": 4355,
       "category": "new",
