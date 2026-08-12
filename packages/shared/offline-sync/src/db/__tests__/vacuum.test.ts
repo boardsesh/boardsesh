@@ -7,6 +7,8 @@ import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { vacuumDatabase, measureReclaimableBytes } from '../vacuum';
+import { classifySqliteLockError } from '../lock-errors';
+import type { OfflineDatabase } from '../../database';
 import { runMigrations } from '../migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
@@ -80,3 +82,94 @@ describe('vacuumDatabase', () => {
     ).rejects.toThrow();
   });
 });
+
+// --- Contended WAL truncation (Sentry BOARDSESH-D7) ------------------------------
+//
+// The offline database is ONE connection shared by the sync engine and every
+// `useSQLiteContext()` screen, so a compaction routinely runs while another
+// statement on that same handle is mid-flight. SQLite refuses the truncation
+// outright in that case — `sqlite3BtreeCheckpoint()` returns SQLITE_LOCKED when the
+// connection's b-tree already has an open transaction — and it arrives as a THROW,
+// not as the `busy = 1` row the original implementation was written against.
+describe('vacuumDatabase under lock contention', () => {
+  // The regression pin, against REAL SQLite rather than a hand-written message: if a
+  // future SQLite or driver stops reporting this as a lock, the shared classifier
+  // stops recognising it and the throw escapes to the user again.
+  it('is what SQLite really does when the same connection holds a read transaction', async () => {
+    await insertClimbs(20);
+
+    await db.execAsync('BEGIN');
+    await db.getFirstAsync('SELECT COUNT(*) AS n FROM board_climbs');
+    let thrown: unknown = null;
+    try {
+      await db.getFirstAsync('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch (error) {
+      thrown = error;
+    }
+    await db.execAsync('ROLLBACK');
+
+    expect(thrown, 'a checkpoint under an open read transaction must fail').not.toBeNull();
+    expect((thrown as Error).message).toContain('database table is locked');
+    // Code 6 (SQLITE_LOCKED), not 5 (SQLITE_BUSY): a conflict INSIDE one connection,
+    // which no busy_timeout can wait out. node:sqlite exposes it as a field and
+    // leaves the message bare; expo-sqlite prints it into the message instead
+    // ("Error code 6: database table is locked"), which is the shape the classifier
+    // test covers. Both must read as contention.
+    expect((thrown as { errcode?: number }).errcode).toBe(6);
+    expect(classifySqliteLockError(thrown).locked).toBe(true);
+  });
+
+  it('resolves false instead of throwing when the truncation stays locked', async () => {
+    const locked = lockedCheckpointDatabase({ failures: Number.POSITIVE_INFINITY });
+
+    await expect(vacuumDatabase(locked.db, { checkpointAttempts: 2, sleep: locked.sleep })).resolves.toBe(false);
+    expect(locked.checkpointCalls(), 'every attempt should have been spent').toBe(2);
+  });
+
+  // The retry is the whole reason the user's storage figure moves: the blocker is a
+  // list row or a search query that finishes in milliseconds.
+  it('retries and succeeds once the reader lets go', async () => {
+    const locked = lockedCheckpointDatabase({ failures: 1 });
+
+    await expect(vacuumDatabase(locked.db, { checkpointAttempts: 3, sleep: locked.sleep })).resolves.toBe(true);
+    expect(locked.checkpointCalls()).toBe(2);
+  });
+
+  // A broken database must never be laundered into "the file just didn't shrink".
+  it('still throws when the failure is not lock contention', async () => {
+    const broken = lockedCheckpointDatabase({
+      failures: Number.POSITIVE_INFINITY,
+      error: new Error('Error code 11: database disk image is malformed'),
+    });
+
+    await expect(vacuumDatabase(broken.db, { checkpointAttempts: 3, sleep: broken.sleep })).rejects.toThrow(
+      'malformed',
+    );
+  });
+});
+
+/**
+ * A database double whose VACUUM always succeeds and whose `wal_checkpoint` fails
+ * the first `failures` times. Only the checkpoint behaviour is under test, and a
+ * real file cannot be made to hold a contending cursor and run a VACUUM in the same
+ * call — the test above pins the error SHAPE against real SQLite, this one pins what
+ * the retry loop does with it.
+ */
+function lockedCheckpointDatabase(config: { failures: number; error?: Error }): {
+  db: OfflineDatabase;
+  sleep: (ms: number) => Promise<void>;
+  checkpointCalls: () => number;
+} {
+  const failure = config.error ?? new Error('Error code 6: database table is locked');
+  let checkpointCalls = 0;
+  const db = {
+    execAsync: async (): Promise<void> => {},
+    getFirstAsync: async <Row>(source: string): Promise<Row | null> => {
+      if (!source.includes('wal_checkpoint')) return null;
+      checkpointCalls += 1;
+      if (checkpointCalls <= config.failures) throw failure;
+      return { busy: 0 } as Row;
+    },
+  } as unknown as OfflineDatabase;
+  return { db, sleep: async (): Promise<void> => {}, checkpointCalls: () => checkpointCalls };
+}
