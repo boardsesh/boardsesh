@@ -19,8 +19,8 @@ import {
   stampSharedSyncFinished,
   type SharedSyncClaimToken,
 } from '@boardsesh/db/queries';
-import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
-import { syncUserData, hasForeignOwnedCircuitPlaylists } from '../sync/user-sync';
+import { circuitPlaylistConflictSyncError } from '@boardsesh/shared-schema/sync-error-codes';
+import { syncUserData, getCircuitPlaylistOwnershipConflictState } from '../sync/user-sync';
 import { syncSharedData } from '../sync/shared-sync';
 import {
   AURORA_LOCATION_BOARDS,
@@ -550,7 +550,24 @@ export class SyncRunner {
 
     const { client, db } = this.getClient();
     this.log(`[SyncRunner] Syncing user ${cred.userId} for ${boardType}...`);
-    await syncUserData(client, boardType, token, cred.auroraUserId, cred.userId, undefined, this.log.bind(this));
+    await syncUserData(
+      client,
+      boardType,
+      token,
+      cred.auroraUserId,
+      cred.userId,
+      undefined,
+      this.log.bind(this),
+      (message) =>
+        this.handleError(new Error(message), {
+          userId: cred.userId,
+          board: boardType,
+          boardType,
+          syncStatus: cred.syncStatus ?? undefined,
+          consecutiveFailures: cred.consecutiveFailures ?? undefined,
+          quarantined: false,
+        }),
+    );
     const succeededAt = new Date();
 
     // Circuits whose playlist belongs to another Boardsesh user get refused by
@@ -575,7 +592,7 @@ export class SyncRunner {
     // sync would be recorded as a failure over a message. Swallow it, log it,
     // and report no duplicate; the check is a pure state read, so the next
     // cycle re-evaluates it from scratch and self-heals.
-    const hasDuplicateCircuitOwner = await hasForeignOwnedCircuitPlaylists(
+    const circuitPlaylistConflictState = await getCircuitPlaylistOwnershipConflictState(
       db,
       boardType,
       cred.auroraUserId,
@@ -586,15 +603,15 @@ export class SyncRunner {
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      return false;
+      return 'none' as const;
     });
     // A CODE, not a sentence. The board card is the surface that shows this,
     // and it renders in the viewer's language — so the daemon states the
     // condition and the client owns the wording.
-    const duplicateCircuitOwnerError = hasDuplicateCircuitOwner ? DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR : null;
+    const duplicateCircuitOwnerError = circuitPlaylistConflictSyncError(circuitPlaylistConflictState);
     if (duplicateCircuitOwnerError) {
       this.log(
-        `[SyncRunner] User ${cred.userId}: circuits not syncing — the ${boardType} account is linked to another Boardsesh user who owns the playlists (see #3526)`,
+        `[SyncRunner] User ${cred.userId}: circuits not syncing — ${boardType} playlist ownership state is ${circuitPlaylistConflictState} (see #3526)`,
       );
     }
 

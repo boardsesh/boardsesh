@@ -192,7 +192,9 @@
       "error": "Erreur",
       "expired": "Expiré",
       "syncing": "Synchronisation",
-      "duplicateAccountCircuits": "Les circuits ne se synchronisent pas : un autre compte Boardsesh utilise les mêmes identifiants de board, donc la synchro des playlists est en pause des deux côtés. Vos croix et vos notes continuent d'arriver."
+      "duplicateAccountCircuits": "Les circuits ne se synchronisent pas : un autre compte Boardsesh utilise les mêmes identifiants de board, donc la synchro des playlists est en pause des deux côtés. Vos croix et vos notes continuent d'arriver.",
+      "foreignAccountCircuits": "Les circuits ne se synchronisent pas sur ce compte, car un autre compte Boardsesh possède les playlists correspondantes. Vos croix et vos notes continuent d'arriver. Contactez l'assistance Boardsesh pour régler la propriété des playlists.",
+      "ambiguousAccountCircuits": "Les circuits ne se synchronisent pas, car les playlists correspondantes appartiennent à plusieurs comptes Boardsesh. Vos croix et vos notes continuent d'arriver. Contactez l'assistance Boardsesh pour régler la propriété des playlists."
     },
     "unsynced": {
       "title_one": "{{count}} élément en attente de synchro",

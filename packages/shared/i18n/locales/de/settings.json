@@ -192,7 +192,9 @@
       "error": "Fehler",
       "expired": "Abgelaufen",
       "syncing": "Wird synchronisiert",
-      "duplicateAccountCircuits": "Circuits synchronisieren gerade nicht: Ein anderes Boardsesh-Konto hängt an diesem Board-Login, deshalb pausiert die Playlist-Sync für euch beide. Deine Begehungen und Bewertungen kommen weiter an."
+      "duplicateAccountCircuits": "Circuits synchronisieren gerade nicht: Ein anderes Boardsesh-Konto hängt an diesem Board-Login, deshalb pausiert die Playlist-Sync für euch beide. Deine Begehungen und Bewertungen kommen weiter an.",
+      "foreignAccountCircuits": "Circuits synchronisieren auf diesem Konto gerade nicht, weil die passenden Playlists einem anderen Boardsesh-Konto gehören. Deine Begehungen und Bewertungen kommen weiter an. Schreib dem Boardsesh-Support, damit wir klären, wem die Playlists gehören.",
+      "ambiguousAccountCircuits": "Circuits synchronisieren gerade nicht, weil die passenden Playlists mehreren Boardsesh-Konten gehören. Deine Begehungen und Bewertungen kommen weiter an. Schreib dem Boardsesh-Support, damit wir klären, wem die Playlists gehören."
     },
     "unsynced": {
       "title_one": "{{count}} Eintrag wartet auf die Sync",

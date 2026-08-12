@@ -5,8 +5,13 @@ vi.mock('server-only', () => ({}));
 // The module imports getDb at load time, which opens a pool. Every test drives
 // upsertTableData with an explicit shim db, so the real one is never used.
 vi.mock('@/app/lib/db/db', () => ({ getDb: () => ({}) }));
+vi.mock('../../../api-wrappers/aurora/userSync', () => ({ userSync: vi.fn() }));
+vi.mock('@boardsesh/aurora-sync/apply-user-logbook', () => ({
+  applyAuroraAscents: vi.fn(),
+  applyAuroraBids: vi.fn(),
+}));
 
-import { playlists, playlistClimbs, playlistOwnership } from '../../../db/schema';
+import { boardCircuits, playlists, playlistClimbs, playlistOwnership } from '../../../db/schema';
 import { upsertTableData } from '../user-sync';
 
 /**
@@ -20,15 +25,37 @@ import { upsertTableData } from '../user-sync';
  * exists because without it, deleting the guard block here passes every other
  * test in the repo.
  */
-type DbCall = { kind: 'select' | 'insert' | 'delete' | 'conflict'; table?: unknown; args: unknown[] };
+type DbCall = {
+  kind: 'select' | 'insert' | 'delete' | 'conflict' | 'execute' | 'transaction';
+  table?: unknown;
+  args: unknown[];
+};
 
-function createDbShim(opts: { owners?: Array<Record<string, unknown>>; returning?: Array<Record<string, unknown>> }) {
+function createDbShim(opts: {
+  owners?: Array<Record<string, unknown>>;
+  ownerResults?: Array<Array<Record<string, unknown>>>;
+  returning?: Array<Record<string, unknown>>;
+}) {
   const calls: DbCall[] = [];
+  let selectIndex = 0;
   const db = {
+    // The circuits branch opens its own transaction so the advisory locks are
+    // always held by one. The shim records the call (a test asserts the locks
+    // run inside it) and hands the same handle back, standing in for the
+    // savepoint a real nested `db.transaction` would open.
+    transaction<T>(run: (tx: unknown) => Promise<T>) {
+      calls.push({ kind: 'transaction', args: [] });
+      return run(db);
+    },
+    execute(statement: unknown) {
+      calls.push({ kind: 'execute', args: [statement] });
+      return Promise.resolve([]);
+    },
     select(cols: unknown) {
       calls.push({ kind: 'select', args: [cols] });
+      const rows = opts.ownerResults?.[selectIndex++] ?? opts.owners ?? [];
       const source = {
-        where: () => Promise.resolve(opts.owners ?? []),
+        where: () => Promise.resolve(rows),
         leftJoin: () => source,
         innerJoin: () => source,
       };
@@ -124,12 +151,133 @@ describe('web aurora proxy — circuits foreign-owner guard (#3526)', () => {
   });
 
   it('abandons the item when the race guard suppresses the upsert', async () => {
+    const error = vi.fn();
     const { db, calls, insertsInto } = createDbShim({ owners: [], returning: [] });
 
-    await upsertTableData(db as never, 'tension', 'circuits', 144574, 'user-1', [circuit] as never);
+    await upsertTableData(db as never, 'tension', 'circuits', 144574, 'user-1', [circuit] as never, {
+      warn: vi.fn(),
+      error,
+    });
 
     expect(insertsInto(playlistOwnership)).toHaveLength(0);
     expect(insertsInto(playlistClimbs)).toHaveLength(0);
     expect(calls.filter((call) => call.kind === 'delete')).toHaveLength(0);
+    expect(calls.filter((call) => call.kind === 'select')).toHaveLength(2);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(error.mock.calls[0]?.[0] ?? '{}')).toEqual({
+      level: 'error',
+      event: 'aurora_circuit_playlist_suppressed_without_foreign_owner',
+      boardType: 'tension',
+      circuitUuid: 'circuit-1',
+      syncingUserId: 'user-1',
+      stage: 'suppressed-upsert',
+      reason: 'no-owner',
+    });
+  });
+
+  it('re-reads and reports a foreign owner when the SQL guard suppresses the upsert', async () => {
+    const warn = vi.fn();
+    const { db, calls, insertsInto } = createDbShim({
+      ownerResults: [[], [{ upstreamId: 'circuit-1', ownerUserId: 'user-2' }]],
+      returning: [],
+    });
+
+    await upsertTableData(db as never, 'tension', 'circuits', 144574, 'user-1', [circuit] as never, {
+      warn,
+      error: vi.fn(),
+    });
+
+    expect(calls.filter((call) => call.kind === 'select')).toHaveLength(2);
+    expect(insertsInto(playlistOwnership)).toHaveLength(0);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain('"stage":"suppressed-upsert"');
+    expect(warn.mock.calls[0]?.[0]).toContain('"reason":"foreign"');
+  });
+
+  it('opens its own transaction before taking any advisory lock', async () => {
+    const { db, calls } = createDbShim({ owners: [] });
+
+    await upsertTableData(db as never, 'tension', 'circuits', 144574, 'user-1', [circuit] as never);
+
+    // pg_advisory_xact_lock protects nothing outside an explicit transaction —
+    // the statement commits on its own and the lock drops immediately. The
+    // branch must make the handle transactional itself rather than trusting
+    // every caller to have done it.
+    expect(calls[0]).toEqual({ kind: 'transaction', args: [] });
+    expect(calls[1]?.kind).toBe('execute');
+  });
+
+  it('takes the shared advisory locks in sorted UUID order before every source write', async () => {
+    const { db, calls } = createDbShim({ owners: [], returning: [{ id: BigInt(1) }] });
+    const laterCircuit = { ...circuit, uuid: 'z-circuit', name: 'later' };
+    const earlierCircuit = { ...circuit, uuid: 'a-circuit', name: 'earlier' };
+
+    await upsertTableData(db as never, 'tension', 'circuits', 144574, 'user-1', [
+      laterCircuit,
+      earlierCircuit,
+    ] as never);
+
+    const executeCalls = calls.filter((call) => call.kind === 'execute');
+    const firstInsertIndex = calls.findIndex((call) => call.kind === 'insert');
+    expect(executeCalls).toHaveLength(2);
+    expect(calls[0]?.kind).toBe('transaction');
+    expect(calls.slice(1, firstInsertIndex).every((call) => call.kind === 'execute')).toBe(true);
+    const sourceWrites = calls
+      .filter((call) => call.kind === 'insert' && call.table === boardCircuits)
+      .map((call) => call.args[0] as { uuid?: string })
+      .filter((row) => row.uuid === 'a-circuit' || row.uuid === 'z-circuit');
+    expect(sourceWrites.map((row) => row.uuid)).toEqual(['a-circuit', 'z-circuit']);
+  });
+
+  it('filters malformed UUIDs before locks or writes and reports only a safe count', async () => {
+    const error = vi.fn();
+    const { db, calls } = createDbShim({ owners: [] });
+
+    await upsertTableData(
+      db as never,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [
+        { ...circuit, uuid: 42 },
+        { name: 'missing uuid', secret: 'do-not-log' },
+      ] as never,
+      { warn: vi.fn(), error },
+    );
+
+    expect(calls.filter((call) => call.kind !== 'transaction')).toHaveLength(0);
+    expect(error).toHaveBeenCalledTimes(1);
+    const logLine = error.mock.calls[0]?.[0] ?? '';
+    expect(JSON.parse(logLine)).toEqual({
+      level: 'error',
+      event: 'aurora_circuit_playlist_malformed_payload',
+      boardType: 'tension',
+      rejectedCount: 2,
+    });
+    expect(logLine).not.toContain('do-not-log');
+  });
+
+  it('de-duplicates last-row-wins before locking and writing', async () => {
+    const { db, calls } = createDbShim({ owners: [] });
+
+    await upsertTableData(db as never, 'tension', 'circuits', 144574, '', [
+      { ...circuit, name: 'old' },
+      { ...circuit, name: 'new' },
+    ] as never);
+
+    expect(calls.filter((call) => call.kind === 'execute')).toHaveLength(1);
+    const sourceInsert = calls.find((call) => call.kind === 'insert');
+    expect(sourceInsert?.args[0]).toMatchObject({ uuid: 'circuit-1', name: 'new' });
+  });
+
+  it('promotes an existing viewer/editor edge to owner', async () => {
+    const { db, calls } = createDbShim({ owners: [] });
+
+    await upsertTableData(db as never, 'tension', 'circuits', 144574, 'user-1', [circuit] as never);
+
+    const ownershipConflict = calls.find((call) => call.kind === 'conflict' && call.table === playlistOwnership)
+      ?.args[0] as { set?: { role?: string } } | undefined;
+    expect(ownershipConflict?.set).toEqual({ role: 'owner' });
   });
 });

@@ -1,26 +1,30 @@
 import { userSync } from '../api/user-sync-api';
 import { type SyncOptions, type UserSyncData, type AuroraBoardName, USER_TABLES } from '../api/types';
-import { eq, and, inArray, ne, sql } from 'drizzle-orm';
+import { eq, and, inArray, sql } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type postgres from 'postgres';
 import {
   resolveUpstreamPlaylistWrite,
-  canWriteUpstreamPlaylist,
   upstreamPlaylistSkipLogLine,
+  type UpstreamPlaylistWriteDecision,
 } from '@boardsesh/sync-runtime';
 import { normalizePlaylistColor } from '@boardsesh/shared-schema';
-import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
+import {
+  DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+  type CircuitPlaylistOwnershipConflictState,
+} from '@boardsesh/shared-schema/sync-error-codes';
 import { foreignPlaylistOwnerGuard, selectUpstreamPlaylistOwners } from '@boardsesh/db/queries';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { UNIFIED_TABLES } from '../db/table-select';
 import { playlists, playlistClimbs, playlistOwnership } from '@boardsesh/db/schema/app';
 import { formatDbError } from './db-error';
 import { applyAuroraAscents, applyAuroraBids } from './apply-user-logbook';
+import { auroraCircuitAdvisoryLockStatement, normalizeAuroraCircuitItems } from './circuit-arbitration';
 
 const BATCH_SIZE = 100;
 
 /**
- * The generic Drizzle shape `hasForeignOwnedCircuitPlaylists` accepts. Wider
+ * The generic Drizzle shape the ownership queries accept. Wider
  * than this module's `DrizzleDb` (which pins the postgres-js driver) so the
  * runner can hand over its own client without a cast.
  */
@@ -30,16 +34,17 @@ type OwnerQueryDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
  * Machine-stable marker on `SyncTableResult.skippedReason` for circuits refused
  * because another Boardsesh user owns the playlist.
  *
- * Same string the runners write to `aurora_credentials.sync_error`, so the
- * per-table result, the daemon log and the board card all name one condition —
- * but the runner does NOT derive the credential's value from this counter: see
- * hasForeignOwnedCircuitPlaylists for why that has to be a state question.
+ * Retains the pre-#3950 generic code for callers that inspect per-table sync
+ * results. The runner now persists a more precise foreign/ambiguous code and
+ * does NOT derive it from this counter: see
+ * getCircuitPlaylistOwnershipConflictState for why that must be a state
+ * question.
  */
 export const DUPLICATE_CIRCUIT_OWNER_SKIP_REASON = DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR;
 
 /**
- * Does any playlist mirroring one of THIS Aurora account's circuits belong to a
- * different Boardsesh user?
+ * Classify ownership across every playlist mirroring THIS Aurora account's
+ * circuits as `none`, `foreign`, or `ambiguous`.
  *
  * Drives the user-facing `sync_error`, and it is deliberately a STATE query
  * rather than a count of what this cycle refused. Aurora's user sync is
@@ -57,34 +62,44 @@ export const DUPLICATE_CIRCUIT_OWNER_SKIP_REASON = DUPLICATE_BOARD_ACCOUNT_CIRCU
  * does wipe it board-wide, but that also clears `board_user_syncs` in the same
  * transaction, so the next sync refills both and the check self-heals.
  */
-export async function hasForeignOwnedCircuitPlaylists(
+export async function getCircuitPlaylistOwnershipConflictState(
   db: OwnerQueryDb,
   boardName: AuroraBoardName,
   auroraUserId: number,
   nextAuthUserId: string,
-): Promise<boolean> {
+): Promise<CircuitPlaylistOwnershipConflictState> {
   const circuitsSchema = UNIFIED_TABLES.circuits;
-  const conflicting = await db
-    .select({ playlistId: playlistOwnership.playlistId })
+  const ownerRows = await db
+    .select({ circuitUuid: circuitsSchema.uuid, ownerUserId: playlistOwnership.userId })
     .from(circuitsSchema)
     .innerJoin(
       playlists,
       and(eq(playlists.auroraId, circuitsSchema.uuid), eq(playlists.boardType, circuitsSchema.boardType)),
     )
-    .innerJoin(
+    .leftJoin(
       playlistOwnership,
       and(eq(playlistOwnership.playlistId, playlists.id), eq(playlistOwnership.role, 'owner')),
     )
-    .where(
-      and(
-        eq(circuitsSchema.boardType, boardName),
-        eq(circuitsSchema.userId, auroraUserId),
-        ne(playlistOwnership.userId, nextAuthUserId),
-      ),
-    )
-    .limit(1);
+    .where(and(eq(circuitsSchema.boardType, boardName), eq(circuitsSchema.userId, auroraUserId)));
 
-  return conflicting.length > 0;
+  const ownerIdsByCircuit = new Map<string, string[]>();
+  for (const row of ownerRows) {
+    let ownerIds = ownerIdsByCircuit.get(row.circuitUuid);
+    if (!ownerIds) {
+      ownerIds = [];
+      ownerIdsByCircuit.set(row.circuitUuid, ownerIds);
+    }
+    if (typeof row.ownerUserId === 'string') ownerIds.push(row.ownerUserId);
+  }
+
+  let hasForeignOwner = false;
+  for (const ownerIds of ownerIdsByCircuit.values()) {
+    const decision = resolveUpstreamPlaylistWrite(ownerIds, nextAuthUserId);
+    if (decision === 'ambiguous') return 'ambiguous';
+    if (decision === 'foreign') hasForeignOwner = true;
+  }
+
+  return hasForeignOwner ? 'foreign' : 'none';
 }
 
 async function processBatches<T>(
@@ -98,15 +113,97 @@ async function processBatches<T>(
   }
 }
 
-type UpsertResult = {
+export type CircuitPlaylistRefusalSummary = {
+  foreign: number;
+  ambiguous: number;
+  invariant: number;
+};
+
+export type UpsertResult = {
   synced: number;
   skipped: number;
   skippedReason?: string;
+  circuitPlaylistRefusals?: CircuitPlaylistRefusalSummary;
 };
 
 type AuroraApiRow = Record<string, string>;
 
 type DrizzleDb = PostgresJsDatabase<Record<string, never>>;
+
+type CircuitRefusalStage = 'ownership-check' | 'suppressed-upsert';
+type CircuitRefusalReason = 'foreign' | 'ambiguous' | 'no-owner' | 'own';
+type CircuitPlaylistWriteOutcome = { status: 'written' } | { status: 'refused'; reason: CircuitRefusalReason };
+
+export const CIRCUIT_PLAYLIST_INVARIANT_SKIP_REASON = 'circuit-playlist-invariant:circuits';
+
+function logCircuitRefusal(
+  log: (message: string) => void,
+  logError: (message: string) => void,
+  input: {
+    boardName: AuroraBoardName;
+    circuitUuid: string;
+    syncingUserId: string;
+    stage: CircuitRefusalStage;
+    reason: CircuitRefusalReason;
+  },
+): void {
+  const structuredContext = JSON.stringify({
+    event: 'aurora_circuit_playlist_refused',
+    boardType: input.boardName,
+    circuitUuid: input.circuitUuid,
+    syncingUserId: input.syncingUserId,
+    stage: input.stage,
+    reason: input.reason,
+  });
+
+  if (input.stage === 'suppressed-upsert' && input.reason === 'own') {
+    // `foreignPlaylistOwnerGuard` cannot suppress an update when the syncing
+    // user is the sole owner. Keep the item in the invariant refusal bucket,
+    // but emit a separate error-level event so an operator can distinguish this
+    // protocol contradiction from the recoverable no-owner race. Do not include
+    // the circuit payload, credentials, or other upstream response data.
+    logError(
+      JSON.stringify({
+        level: 'error',
+        event: 'aurora_circuit_playlist_suppressed_own_contradiction',
+        boardType: input.boardName,
+        circuitUuid: input.circuitUuid,
+        syncingUserId: input.syncingUserId,
+        stage: input.stage,
+        reason: input.reason,
+      }),
+    );
+    return;
+  }
+
+  if (input.reason === 'foreign' || input.reason === 'ambiguous') {
+    log(
+      `${upstreamPlaylistSkipLogLine({
+        syncTag: 'aurora-sync',
+        upstreamIdColumn: 'aurora_id',
+        upstreamId: input.circuitUuid,
+        syncingUserId: input.syncingUserId,
+        decision: input.reason,
+      })} ${structuredContext}`,
+    );
+    return;
+  }
+
+  const ownerState = input.reason === 'no-owner' ? 'no owner edge' : 'only the syncing user as owner';
+  log(
+    `[aurora-sync] aurora_id ${input.circuitUuid}: invariant/concurrency warning — playlist upsert returned no row, but the fresh owner read found ${ownerState}; refusing to mutate ownership or climbs for user ${input.syncingUserId} ${structuredContext}`,
+  );
+}
+
+async function selectCircuitOwnerDecision(
+  db: OwnerQueryDb,
+  circuitUuid: string,
+  syncingUserId: string,
+): Promise<UpstreamPlaylistWriteDecision> {
+  const ownersByAuroraId = await selectUpstreamPlaylistOwners(db, playlists.auroraId, [circuitUuid]);
+  const owners = ownersByAuroraId.get(circuitUuid) ?? [];
+  return resolveUpstreamPlaylistWrite(owners, syncingUserId);
+}
 
 /**
  * Exported for unit tests: the circuits branch carries the duplicate-account
@@ -121,6 +218,7 @@ export async function upsertTableData(
   nextAuthUserId: string,
   data: AuroraApiRow[],
   log: (message: string) => void = console.info,
+  logError: (message: string) => void = console.error,
 ): Promise<UpsertResult> {
   if (data.length === 0) return { synced: 0, skipped: 0 };
 
@@ -297,155 +395,239 @@ export async function upsertTableData(
 
     case 'circuits': {
       const circuitsSchema = UNIFIED_TABLES.circuits;
+      const { items: circuitItems, rejectedCount } = normalizeAuroraCircuitItems(data);
 
-      await processBatches(data, BATCH_SIZE, async (batch) => {
-        const values = batch.map((item) => ({
-          boardType: boardName,
-          uuid: item.uuid,
-          name: item.name,
-          description: item.description,
-          color: item.color,
-          userId: Number(auroraUserId),
-          isPublic: Boolean(item.is_public),
-          createdAt: item.created_at,
-          updatedAt: item.updated_at,
-        }));
-        await db
-          .insert(circuitsSchema)
-          .values(values)
-          .onConflictDoUpdate({
-            target: [circuitsSchema.boardType, circuitsSchema.uuid],
-            set: {
-              name: sql`excluded.name`,
-              description: sql`excluded.description`,
-              color: sql`excluded.color`,
-              isPublic: sql`excluded.is_public`,
-              updatedAt: sql`excluded.updated_at`,
-            },
-          });
-      });
-
-      if (nextAuthUserId) {
-        // Who already owns the playlists behind these circuit uuids?
-        // `playlists_aurora_id_idx` is a GLOBAL unique index, so the
-        // `ON CONFLICT (aurora_id) DO UPDATE` below lands on whichever
-        // Boardsesh user's row got there first — and the ownership insert then
-        // hands this user an `owner` edge on it. That is how the 8 cross-linked
-        // tension playlists in prod were created (#3526 / #3541). Same
-        // partition-and-skip shape as the foreignAuroraIds guard in
-        // apply-user-logbook.ts.
-        const ownersByAuroraId = await selectUpstreamPlaylistOwners(
-          db,
-          playlists.auroraId,
-          data.map((item) => item.uuid).filter((uuid): uuid is string => typeof uuid === 'string'),
+      if (rejectedCount > 0) {
+        logError(
+          JSON.stringify({
+            level: 'error',
+            event: 'aurora_circuit_playlist_malformed_payload',
+            boardType: boardName,
+            rejectedCount,
+          }),
         );
-        // Distinct circuit uuids, not items: a duplicated uuid in one payload
-        // must not inflate the count the log line and the result report.
-        const refusedCircuitUuids = new Set<string>();
+      }
 
-        for (const item of data) {
-          const decision = resolveUpstreamPlaylistWrite(ownersByAuroraId.get(item.uuid) ?? [], nextAuthUserId);
-          if (!canWriteUpstreamPlaylist(decision)) {
-            // Refuse the whole item — upsert, ownership grant AND the
-            // playlist_climbs replace below. Skipping only the upsert would
-            // still wipe the other user's climbs further down.
-            refusedCircuitUuids.add(item.uuid);
-            log(
-              upstreamPlaylistSkipLogLine({
-                syncTag: 'aurora-sync',
-                upstreamIdColumn: 'aurora_id',
-                upstreamId: item.uuid,
-                syncingUserId: nextAuthUserId,
-                decision,
-              }),
-            );
-            continue;
-          }
+      return db.transaction(async (transaction): Promise<UpsertResult> => {
+        const circuitsTransaction = transaction as unknown as DrizzleDb;
 
-          const formattedColor = normalizePlaylistColor(item.color);
+        // Take the complete normalized lock set before ANY row write. Source
+        // rows and playlist rows share the same surrounding transaction, so
+        // writing board_circuits first would mix row locks with advisory locks
+        // and let two reused outer transactions form a cross-lock deadlock.
+        // UUID sorting in normalizeCircuitItems gives every claimant the same
+        // acquisition order. When the caller already supplied a transaction,
+        // this callback is a savepoint and the locks remain owned by that outer
+        // transaction until it commits or rolls back.
+        for (const item of circuitItems) {
+          await circuitsTransaction.execute(auroraCircuitAdvisoryLockStatement(boardName, item.uuid));
+        }
 
-          const [playlist] = await db
-            .insert(playlists)
-            .values({
-              uuid: item.uuid,
-              boardType: boardName,
-              layoutId: null,
-              name: item.name || 'Untitled Circuit',
-              description: item.description || null,
-              isPublic: Boolean(item.is_public),
-              color: formattedColor,
-              auroraType: 'circuits',
-              auroraId: item.uuid,
-              auroraSyncedAt: new Date(),
-              createdAt: item.created_at ? new Date(item.created_at) : new Date(),
-              updatedAt: item.updated_at ? new Date(item.updated_at) : new Date(),
-            })
+        await processBatches(circuitItems, BATCH_SIZE, async (batch) => {
+          const values = batch.map((item) => ({
+            boardType: boardName,
+            uuid: item.uuid,
+            name: item.name,
+            description: item.description,
+            color: item.color,
+            userId: Number(auroraUserId),
+            isPublic: Boolean(item.is_public),
+            createdAt: item.created_at,
+            updatedAt: item.updated_at,
+          }));
+          await circuitsTransaction
+            .insert(circuitsSchema)
+            .values(values)
             .onConflictDoUpdate({
-              target: playlists.auroraId,
+              target: [circuitsSchema.boardType, circuitsSchema.uuid],
               set: {
-                name: item.name || 'Untitled Circuit',
-                description: item.description || null,
-                isPublic: Boolean(item.is_public),
-                color: formattedColor,
-                updatedAt: item.updated_at ? new Date(item.updated_at) : new Date(),
-                auroraSyncedAt: new Date(),
+                name: sql`excluded.name`,
+                description: sql`excluded.description`,
+                color: sql`excluded.color`,
+                isPublic: sql`excluded.is_public`,
+                updatedAt: sql`excluded.updated_at`,
               },
-              // SQL-level twin of the decision gate above, evaluated at
-              // statement time against the conflicting row — closes the window
-              // where two daemons syncing two Boardsesh users on the SAME
-              // Aurora account both read "no playlist yet" and both INSERT.
-              // Widened by #3539 (no cross-instance mutual exclusion). When it
-              // bites, DO UPDATE matches nothing and `.returning()` comes back
-              // empty, so the guard below skips the item.
-              setWhere: foreignPlaylistOwnerGuard(nextAuthUserId),
-            })
-            .returning({ id: playlists.id });
+            });
+        });
 
-          if (!playlist) continue;
-
-          await db
-            .insert(playlistOwnership)
-            .values({
-              playlistId: playlist.id,
-              userId: nextAuthUserId,
-              role: 'owner',
-            })
-            .onConflictDoNothing();
-
-          if (item.climbs && Array.isArray(item.climbs)) {
-            await db.delete(playlistClimbs).where(eq(playlistClimbs.playlistId, playlist.id));
-
-            for (let i = 0; i < item.climbs.length; i++) {
-              const climb = item.climbs[i];
-              const climbUuid = climb.climb_uuid || climb.uuid || climb;
-              const climbAngle = climb.angle ?? null;
-              const climbPosition = climb.position ?? i;
-
-              if (typeof climbUuid === 'string') {
-                await db.insert(playlistClimbs).values({
-                  playlistId: playlist.id,
-                  climbUuid: climbUuid,
-                  angle: climbAngle,
-                  position: climbPosition,
-                });
+        if (!nextAuthUserId) {
+          return rejectedCount > 0
+            ? {
+                synced: data.length - rejectedCount,
+                skipped: rejectedCount,
+                skippedReason: CIRCUIT_PLAYLIST_INVARIANT_SKIP_REASON,
+                circuitPlaylistRefusals: { foreign: 0, ambiguous: 0, invariant: rejectedCount },
               }
-            }
+            : { synced: data.length, skipped: 0 };
+        }
+
+        const refusalReasonsByCircuitUuid = new Map<string, CircuitRefusalReason>();
+        // One owner query per payload, after every advisory lock and source
+        // write. Compliant writers cannot change these owner sets until this
+        // transaction releases its complete lock set; only the rare SQL-guard
+        // suppression path below needs a second, per-circuit diagnostic read.
+        const ownersByCircuitUuid = await selectUpstreamPlaylistOwners(
+          circuitsTransaction as unknown as OwnerQueryDb,
+          playlists.auroraId,
+          circuitItems.map((item) => item.uuid),
+        );
+
+        for (const item of circuitItems) {
+          const outcome = await circuitsTransaction.transaction(
+            async (playlistTransaction): Promise<CircuitPlaylistWriteOutcome> => {
+              const tx = playlistTransaction as unknown as DrizzleDb;
+
+              // All server-wide per-(board,circuit) locks were acquired above,
+              // before the source upsert. The fresh owner read therefore sees
+              // any prior claimant's committed edge under READ COMMITTED.
+              const initialOwnerDecision = resolveUpstreamPlaylistWrite(
+                ownersByCircuitUuid.get(item.uuid) ?? [],
+                nextAuthUserId,
+              );
+              if (initialOwnerDecision === 'foreign' || initialOwnerDecision === 'ambiguous') {
+                // Refuse the whole item — upsert, ownership grant AND the
+                // playlist_climbs replace below. Skipping only the upsert would
+                // still wipe the other user's climbs further down.
+                logCircuitRefusal(log, logError, {
+                  boardName,
+                  circuitUuid: item.uuid,
+                  syncingUserId: nextAuthUserId,
+                  stage: 'ownership-check',
+                  reason: initialOwnerDecision,
+                });
+                return { status: 'refused', reason: initialOwnerDecision };
+              }
+
+              const formattedColor = normalizePlaylistColor(item.color);
+
+              const [playlist] = await tx
+                .insert(playlists)
+                .values({
+                  uuid: item.uuid,
+                  boardType: boardName,
+                  layoutId: null,
+                  name: item.name || 'Untitled Circuit',
+                  description: item.description || null,
+                  isPublic: Boolean(item.is_public),
+                  color: formattedColor,
+                  auroraType: 'circuits',
+                  auroraId: item.uuid,
+                  auroraSyncedAt: new Date(),
+                  createdAt: item.created_at ? new Date(item.created_at) : new Date(),
+                  updatedAt: item.updated_at ? new Date(item.updated_at) : new Date(),
+                })
+                .onConflictDoUpdate({
+                  target: playlists.auroraId,
+                  set: {
+                    name: item.name || 'Untitled Circuit',
+                    description: item.description || null,
+                    isPublic: Boolean(item.is_public),
+                    color: formattedColor,
+                    updatedAt: item.updated_at ? new Date(item.updated_at) : new Date(),
+                    auroraSyncedAt: new Date(),
+                  },
+                  // Defence in depth: the advisory lock is the primary
+                  // arbitration mechanism, while this statement-time predicate
+                  // still prevents a foreign owner from being adopted if a
+                  // caller ever bypasses or changes the lock protocol.
+                  setWhere: foreignPlaylistOwnerGuard(nextAuthUserId),
+                })
+                .returning({ id: playlists.id });
+
+              if (!playlist) {
+                // The SQL guard suppressed the update. Re-read after the failed
+                // write so observability reports the actual owner state that
+                // caused it, rather than the stale pre-upsert decision.
+                const suppressedOwnerDecision = await selectCircuitOwnerDecision(
+                  tx as unknown as OwnerQueryDb,
+                  item.uuid,
+                  nextAuthUserId,
+                );
+                const reason: CircuitRefusalReason =
+                  suppressedOwnerDecision === 'adopt' ? 'no-owner' : suppressedOwnerDecision;
+                logCircuitRefusal(log, logError, {
+                  boardName,
+                  circuitUuid: item.uuid,
+                  syncingUserId: nextAuthUserId,
+                  stage: 'suppressed-upsert',
+                  reason,
+                });
+                return { status: 'refused', reason };
+              }
+
+              await tx
+                .insert(playlistOwnership)
+                .values({
+                  playlistId: playlist.id,
+                  userId: nextAuthUserId,
+                  role: 'owner',
+                })
+                .onConflictDoUpdate({
+                  target: [playlistOwnership.playlistId, playlistOwnership.userId],
+                  // An orphan can still have this user attached as editor/viewer.
+                  // Claiming it must promote that existing edge, not let
+                  // ON CONFLICT DO NOTHING leave the playlist ownerless.
+                  set: { role: 'owner' },
+                });
+
+              if (item.climbs && Array.isArray(item.climbs)) {
+                await tx.delete(playlistClimbs).where(eq(playlistClimbs.playlistId, playlist.id));
+
+                for (let i = 0; i < item.climbs.length; i++) {
+                  const climb = item.climbs[i];
+                  const climbUuid = climb.climb_uuid || climb.uuid || climb;
+                  const climbAngle = climb.angle ?? null;
+                  const climbPosition = climb.position ?? i;
+
+                  if (typeof climbUuid === 'string') {
+                    await tx.insert(playlistClimbs).values({
+                      playlistId: playlist.id,
+                      climbUuid,
+                      angle: climbAngle,
+                      position: climbPosition,
+                    });
+                  }
+                }
+              }
+
+              return { status: 'written' };
+            },
+          );
+
+          if (outcome.status === 'refused') {
+            refusalReasonsByCircuitUuid.set(item.uuid, outcome.reason);
           }
         }
-        log(`  Synced ${data.length - refusedCircuitUuids.size} circuits to playlists table`);
-        if (refusedCircuitUuids.size > 0) {
-          // `synced` stays data.length: every row DID land in the `circuits`
-          // table above (that upsert is user-scoped by aurora_user_id and was
-          // never at risk). Only the playlists mirror was refused, and that's
-          // what `skipped` reports.
+
+        log(`  Synced ${circuitItems.length - refusalReasonsByCircuitUuid.size} circuits to playlists table`);
+        if (refusalReasonsByCircuitUuid.size > 0 || rejectedCount > 0) {
+          const circuitPlaylistRefusals: CircuitPlaylistRefusalSummary = {
+            foreign: 0,
+            ambiguous: 0,
+            invariant: rejectedCount,
+          };
+          for (const reason of refusalReasonsByCircuitUuid.values()) {
+            if (reason === 'foreign') circuitPlaylistRefusals.foreign += 1;
+            else if (reason === 'ambiguous') circuitPlaylistRefusals.ambiguous += 1;
+            else circuitPlaylistRefusals.invariant += 1;
+          }
+          const hasOwnershipConflict = circuitPlaylistRefusals.foreign > 0 || circuitPlaylistRefusals.ambiguous > 0;
+
+          // `synced` retains the existing input-row metric for compatibility;
+          // duplicate UUIDs are applied once, with their last payload row
+          // winning. `skipped` and the detailed summary count unique circuits.
           return {
-            synced: data.length,
-            skipped: refusedCircuitUuids.size,
-            skippedReason: DUPLICATE_CIRCUIT_OWNER_SKIP_REASON,
+            synced: data.length - rejectedCount,
+            skipped: refusalReasonsByCircuitUuid.size + rejectedCount,
+            skippedReason: hasOwnershipConflict
+              ? DUPLICATE_CIRCUIT_OWNER_SKIP_REASON
+              : CIRCUIT_PLAYLIST_INVARIANT_SKIP_REASON,
+            circuitPlaylistRefusals,
           };
         }
-      }
-      break;
+
+        return { synced: data.length, skipped: 0 };
+      });
     }
 
     default:
@@ -518,6 +700,7 @@ export type SyncTableResult = {
   synced: number;
   skipped?: number;
   skippedReason?: string;
+  circuitPlaylistRefusals?: CircuitPlaylistRefusalSummary;
 };
 
 export type SyncUserDataResult = Record<string, SyncTableResult>;
@@ -530,6 +713,7 @@ export async function syncUserData(
   nextAuthUserId: string,
   tables: string[] = USER_TABLES,
   log: (message: string) => void = console.info,
+  logError: (message: string) => void = console.error,
 ): Promise<SyncUserDataResult> {
   try {
     const syncParams: SyncOptions = {
@@ -579,6 +763,7 @@ export async function syncUserData(
                 nextAuthUserId,
                 data,
                 log,
+                logError,
               );
 
               if (!totalResults[tableName]) {
@@ -587,7 +772,26 @@ export async function syncUserData(
               totalResults[tableName].synced += upsertResult.synced;
               if (upsertResult.skipped > 0) {
                 totalResults[tableName].skipped = (totalResults[tableName].skipped || 0) + upsertResult.skipped;
-                totalResults[tableName].skippedReason = upsertResult.skippedReason;
+                // Keep the legacy duplicate-account marker if any page saw a
+                // genuine owner conflict; a later invariant refusal must not
+                // overwrite it. Detailed counts preserve every category.
+                if (
+                  !totalResults[tableName].skippedReason ||
+                  upsertResult.skippedReason === DUPLICATE_CIRCUIT_OWNER_SKIP_REASON
+                ) {
+                  totalResults[tableName].skippedReason = upsertResult.skippedReason;
+                }
+                if (upsertResult.circuitPlaylistRefusals) {
+                  const accumulated = totalResults[tableName].circuitPlaylistRefusals ?? {
+                    foreign: 0,
+                    ambiguous: 0,
+                    invariant: 0,
+                  };
+                  accumulated.foreign += upsertResult.circuitPlaylistRefusals.foreign;
+                  accumulated.ambiguous += upsertResult.circuitPlaylistRefusals.ambiguous;
+                  accumulated.invariant += upsertResult.circuitPlaylistRefusals.invariant;
+                  totalResults[tableName].circuitPlaylistRefusals = accumulated;
+                }
               }
             } else if (!totalResults[tableName]) {
               totalResults[tableName] = { synced: 0 };

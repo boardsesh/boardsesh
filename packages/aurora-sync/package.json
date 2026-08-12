@@ -34,6 +34,11 @@
       "import": "./src/sync/apply-user-logbook.ts",
       "default": "./src/sync/apply-user-logbook.ts"
     },
+    "./circuit-arbitration": {
+      "types": "./src/sync/circuit-arbitration.ts",
+      "import": "./src/sync/circuit-arbitration.ts",
+      "default": "./src/sync/circuit-arbitration.ts"
+    },
     "./json-import": {
       "types": "./src/sync/json-import.ts",
       "import": "./src/sync/json-import.ts",

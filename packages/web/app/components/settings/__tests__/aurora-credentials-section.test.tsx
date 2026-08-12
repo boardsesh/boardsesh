@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 
 // --- Hoisted mocks ---
 const mockSaveKilterViaPassword = vi.fn();
@@ -253,6 +254,56 @@ describe('AuroraCredentialsSection', () => {
       const reconnectIdx = buttons.findIndex((b) => b.textContent?.includes('Reconnect'));
       const unlinkIdx = buttons.findIndex((b) => b.textContent?.includes('Unlink'));
       expect(reconnectIdx).toBeLessThan(unlinkIdx);
+    });
+  });
+
+  describe('circuit playlist ownership warnings (#3950)', () => {
+    function mockConnectedCredential(syncError: string | null, syncErrorReason?: 'foreign' | 'ambiguous') {
+      mockGetAuroraCredentials.mockResolvedValue({
+        credentials: [
+          {
+            boardType: 'tension',
+            auroraUsername: 'climber',
+            auroraUserId: 144574,
+            syncStatus: 'active',
+            lastSyncAt: '2026-07-25T00:00:00.000Z',
+            syncError,
+            syncErrorReason,
+            createdAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      });
+    }
+
+    it('shows distinct copy for a foreign owner', async () => {
+      mockConnectedCredential(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR, 'foreign');
+      render(<AuroraCredentialsSection />);
+
+      expect(await screen.findByText(tFromCatalog('settings', 'aurora.status.foreignAccountCircuits'))).toBeTruthy();
+      expect(screen.queryByText(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR)).toBeNull();
+    });
+
+    it('shows distinct copy for ambiguous owners', async () => {
+      mockConnectedCredential(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR, 'ambiguous');
+      render(<AuroraCredentialsSection />);
+
+      expect(await screen.findByText(tFromCatalog('settings', 'aurora.status.ambiguousAccountCircuits'))).toBeTruthy();
+      expect(screen.queryByText(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR)).toBeNull();
+    });
+
+    it('still localises the legacy generic value already stored in sync_error', async () => {
+      mockConnectedCredential(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR);
+      render(<AuroraCredentialsSection />);
+
+      expect(await screen.findByText(tFromCatalog('settings', 'aurora.status.duplicateAccountCircuits'))).toBeTruthy();
+      expect(screen.queryByText(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR)).toBeNull();
+    });
+
+    it('keeps rendering an unknown legacy error verbatim', async () => {
+      mockConnectedCredential('Refresh token rejected by Keycloak', 'foreign');
+      render(<AuroraCredentialsSection />);
+
+      expect(await screen.findByText('Refresh token rejected by Keycloak')).toBeTruthy();
     });
   });
 });

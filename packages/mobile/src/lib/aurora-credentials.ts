@@ -1,5 +1,6 @@
 import * as WebBrowser from 'expo-web-browser';
 import { type AuroraBoardName } from '@boardsesh/shared-schema';
+import type { CircuitPlaylistSyncErrorReason } from '@boardsesh/shared-schema/sync-error-codes';
 import type { ImportProgressEvent, ImportResult, StrippedAuroraExportData } from '@boardsesh/shared-schema';
 import { authenticatedFetch } from './auth-interceptor';
 import { parseDeepLinkQueryParams } from './deep-link-query';
@@ -15,6 +16,7 @@ export type AuroraCredentialStatus = {
   lastSyncAt: string | null;
   syncStatus: string;
   syncError: string | null;
+  syncErrorReason?: CircuitPlaylistSyncErrorReason;
   createdAt: string;
 };
 
