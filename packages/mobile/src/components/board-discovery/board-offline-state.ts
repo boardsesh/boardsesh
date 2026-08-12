@@ -87,6 +87,50 @@ export function boardIsBootstrapping(input: BoardDownloadStateInput): boolean {
   return input.isSyncing && isBootstrappingThisScope(input);
 }
 
+/**
+ * What the downloading row should say, and how far to fill its bar (issue
+ * #4311). Every byte figure here is WIRE scale — the same number the
+ * enable-confirm dialog quoted — because the engine only ever puts wire-scale
+ * numbers on the frame in the first place.
+ */
+export type BoardDownloadProgress = {
+  stage: 'manifest' | 'download' | 'import';
+  /** 0..1, or null when no honest denominator exists (byte counter, no bar). */
+  fraction: number | null;
+  /** Bytes downloaded so far, wire scale. Null before the first byte frame. */
+  bytesDone: number | null;
+  /** The artifact's wire size. Null while the manifest is still resolving. */
+  bytesTotal: number | null;
+};
+
+export type BoardDownloadProgressInput = Pick<
+  BoardDownloadStateInput,
+  'scopeKey' | 'isSyncing' | 'phase' | 'currentTable'
+> & {
+  /** From useSyncStatus().progress?.snapshot — the live frame, whichever scope it names. */
+  snapshot?: SyncProgress['snapshot'];
+};
+
+/**
+ * Null for every row except the one actually downloading. Keyed on the frame's
+ * OWN `scopeKey` as well as the phase/currentTable match, so a sibling size
+ * (kilter:1:50 next to kilter:1:5) can never pick up its neighbour's numbers —
+ * and so every other row's prop stays a stable `null` and its memo holds while
+ * the downloading row re-renders.
+ */
+export function boardDownloadProgress(input: BoardDownloadProgressInput): BoardDownloadProgress | null {
+  if (!input.isSyncing) return null;
+  if (!isBootstrappingThisScope(input)) return null;
+  const frame = input.snapshot;
+  if (!frame || frame.scopeKey !== input.scopeKey) return null;
+  return {
+    stage: frame.stage,
+    fraction: frame.fraction,
+    bytesDone: frame.wireBytesDone,
+    bytesTotal: frame.wireBytes,
+  };
+}
+
 export type BoardDownloadNoticeInput = Pick<BoardDownloadStateInput, 'enabled' | 'downloaded'> & {
   /** Snapshot I/O is actually injected for this build and feature-flag state. */
   snapshotSourceAvailable: boolean;

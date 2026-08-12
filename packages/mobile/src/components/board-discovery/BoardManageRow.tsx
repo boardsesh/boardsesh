@@ -7,8 +7,10 @@ import { SwipeableRow } from '../SwipeableRow';
 import { BoardImageNative } from '../BoardImageNative';
 import { boardTypeLabel } from './board-builder-labels';
 import { BoardOfflineToggle } from './BoardOfflineToggle';
-import type { BoardDownloadNotice, BoardDownloadState } from './board-offline-state';
+import type { BoardDownloadNotice, BoardDownloadProgress, BoardDownloadState } from './board-offline-state';
+import { OfflineDownloadProgressBar } from './OfflineDownloadProgressBar';
 import { getBoardRenderData } from '../../lib/board-details';
+import { formatBytes } from '../../lib/format-bytes';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
@@ -52,6 +54,14 @@ type BoardManageRowProps = {
    * no per-row count to show).
    */
   isBootstrapping?: boolean;
+  /**
+   * Live byte/percent detail for the snapshot warm-up (issue #4311), for THIS
+   * row only — null on every other row, so their memo holds while this one
+   * re-renders. Null also covers a build where the progress flag is off or the
+   * downloader emits nothing, in which case the row keeps the plain
+   * "Downloading board…" caption.
+   */
+  downloadProgress?: BoardDownloadProgress | null;
   /** Durable context for a retrying snapshot or a paged-crawl fallback. */
   downloadNotice?: BoardDownloadNotice;
   onEdit: (board: UserBoard) => void;
@@ -77,13 +87,14 @@ function BoardManageRowComponent({
   downloadState,
   downloadCount,
   isBootstrapping,
+  downloadProgress = null,
   downloadNotice = null,
   onEdit,
   onDelete,
   onUnfollow,
   onToggleOffline,
 }: BoardManageRowProps) {
-  const { t } = useTranslation('boards');
+  const { t, i18n } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
 
   const boardName = toBoardName(board.boardType);
@@ -116,6 +127,28 @@ function BoardManageRowComponent({
   // contradict what is happening now.
   const effectiveDownloadNotice = isBootstrapping ? null : downloadNotice;
   const showsPagedFallbackCount = effectiveDownloadNotice === 'paged-fallback' && downloadState === 'downloading';
+
+  // The staged bootstrap caption (issue #4311). Every byte figure comes from the
+  // engine on the WIRE scale, so this renders the same number the enable-confirm
+  // dialog quoted. Falls back to the plain "Downloading board…" string whenever
+  // there is no frame yet — first render, flag off, or a downloader that never
+  // reports.
+  const bootstrapProgressStatus =
+    isBootstrapping && downloadProgress
+      ? downloadProgress.stage === 'manifest'
+        ? t('mobile.offline.bootstrapPreparing')
+        : downloadProgress.stage === 'import'
+          ? t('mobile.offline.bootstrapImporting')
+          : downloadProgress.bytesDone !== null && downloadProgress.bytesTotal !== null
+            ? t('mobile.offline.bootstrapDownloading', {
+                done: formatBytes(downloadProgress.bytesDone, i18n.language),
+                total: formatBytes(downloadProgress.bytesTotal, i18n.language),
+              })
+            : t('mobile.offline.bootstrapDownloadingUnknown', {
+                total: formatBytes(downloadProgress.bytesTotal ?? 0, i18n.language),
+              })
+      : null;
+
   const offlineStatus =
     effectiveDownloadNotice === 'snapshot-retrying'
       ? t('mobile.offline.snapshotRetrying')
@@ -125,7 +158,7 @@ function BoardManageRowComponent({
           : t('mobile.offline.pagedFallbackPending')
         : downloadState === 'downloading'
           ? isBootstrapping
-            ? t('mobile.offline.bootstrapping')
+            ? (bootstrapProgressStatus ?? t('mobile.offline.bootstrapping'))
             : t('mobile.offline.downloadingCount', { count: downloadCount ?? 0 })
           : downloadState === 'downloaded'
             ? t('mobile.offline.available')
@@ -238,6 +271,14 @@ function BoardManageRowComponent({
           <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1} accessibilityLiveRegion="none">
             {pagedFallbackProgress}
           </Text>
+        ) : null}
+        {/* Rendered unconditionally when the row can download at all, so the
+            first progress frame cannot change the row's height inside the
+            FlashList and jump the scroll position. */}
+        {downloadState !== undefined ? (
+          <OfflineDownloadProgressBar
+            fraction={downloadProgress && downloadProgress.stage === 'download' ? downloadProgress.fraction : undefined}
+          />
         ) : null}
       </View>
 

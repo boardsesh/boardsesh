@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { boardDownloadNotice, boardDownloadState, boardIsBootstrapping } from '../board-offline-state';
+import {
+  boardDownloadNotice,
+  boardDownloadProgress,
+  boardDownloadState,
+  boardIsBootstrapping,
+} from '../board-offline-state';
+import type { SnapshotBootstrapProgress } from '@boardsesh/offline-sync';
 
 const base = {
   scopeKey: 'kilter:1:5',
@@ -248,5 +254,63 @@ describe('boardDownloadNotice', () => {
         isBootstrapping: true,
       }),
     ).toBeNull();
+  });
+});
+
+describe('boardDownloadProgress', () => {
+  const downloadingFrame: SnapshotBootstrapProgress = {
+    scopeKey: 'kilter:1:5',
+    stage: 'download',
+    fraction: 0.4,
+    wireBytes: 103_000_000,
+    wireBytesDone: 41_200_000,
+  };
+  const downloadingRow = {
+    scopeKey: 'kilter:1:5',
+    isSyncing: true,
+    currentTable: 'kilter:1:5' as string | null,
+    phase: 'bootstrap' as const,
+    snapshot: downloadingFrame,
+  };
+
+  it('returns the wire-scale numbers for the scope that is actually downloading', () => {
+    expect(boardDownloadProgress(downloadingRow)).toEqual({
+      stage: 'download',
+      fraction: 0.4,
+      bytesDone: 41_200_000,
+      bytesTotal: 103_000_000,
+    });
+  });
+
+  it('returns null for a SIBLING SIZE of the same layout, which shares the frame stream', () => {
+    // kilter:1:50 must not pick up kilter:1:5's bytes — the two rows sit next to
+    // each other in My Boards and only the scope key tells them apart.
+    expect(
+      boardDownloadProgress({ ...downloadingRow, scopeKey: 'kilter:1:50', currentTable: 'kilter:1:50' }),
+    ).toBeNull();
+  });
+
+  it('returns null when the frame belongs to another scope entirely', () => {
+    expect(
+      boardDownloadProgress({
+        ...downloadingRow,
+        snapshot: { ...downloadingFrame, scopeKey: 'tension:2:10' },
+      }),
+    ).toBeNull();
+  });
+
+  it('returns null when no cycle is running, when the phase is not bootstrap, and when there is no frame', () => {
+    expect(boardDownloadProgress({ ...downloadingRow, isSyncing: false })).toBeNull();
+    expect(boardDownloadProgress({ ...downloadingRow, phase: 'board_data' })).toBeNull();
+    expect(boardDownloadProgress({ ...downloadingRow, snapshot: undefined })).toBeNull();
+  });
+
+  it('passes an indeterminate fraction straight through rather than inventing one', () => {
+    expect(
+      boardDownloadProgress({
+        ...downloadingRow,
+        snapshot: { ...downloadingFrame, fraction: null, wireBytesDone: null },
+      }),
+    ).toEqual({ stage: 'download', fraction: null, bytesDone: null, bytesTotal: 103_000_000 });
   });
 });
