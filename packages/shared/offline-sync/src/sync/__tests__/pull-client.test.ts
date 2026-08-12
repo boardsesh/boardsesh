@@ -514,8 +514,8 @@ describe('pullSync', () => {
     const invalidateCalls = (queryClient.invalidateQueries as ReturnType<typeof vi.fn>).mock.calls;
     const invalidatedKeys = invalidateCalls.map((args: unknown[]) => (args[0] as { queryKey: string[] }).queryKey);
 
-    expect(invalidatedKeys).toContainEqual(['ticks']);
     expect(invalidatedKeys).toContainEqual(['logbook']);
+    expect(invalidatedKeys).toContainEqual(['userTicks']);
   });
 
   it('reports progress via onProgress callback', async () => {
@@ -732,11 +732,11 @@ describe('pullSync', () => {
       return JSON.stringify(first.queryKey);
     });
 
-    const ticksKeyCount = keysFromDeletionPhase.filter((k: string) => k === '["ticks"]').length;
     const logbookKeyCount = keysFromDeletionPhase.filter((k: string) => k === '["logbook"]').length;
+    const userTicksKeyCount = keysFromDeletionPhase.filter((k: string) => k === '["userTicks"]').length;
 
-    expect(ticksKeyCount).toBeGreaterThanOrEqual(1);
     expect(logbookKeyCount).toBeGreaterThanOrEqual(1);
+    expect(userTicksKeyCount).toBeGreaterThanOrEqual(1);
   });
 
   it('calls getCheckpointKey with the full scope key for per-board tables', async () => {

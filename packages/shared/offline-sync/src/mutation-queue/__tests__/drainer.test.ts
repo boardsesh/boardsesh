@@ -411,8 +411,8 @@ describe('drainMutationQueue', () => {
 
     await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, { ...ONLINE });
 
-    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['ticks'] });
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['logbook'] });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['userTicks'] });
   });
 
   it('invalidates correct query keys for user_favorites', async () => {
@@ -424,7 +424,7 @@ describe('drainMutationQueue', () => {
 
     await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, { ...ONLINE });
 
-    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['favorites'] });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['favoriteStatus'] });
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
   });
 
