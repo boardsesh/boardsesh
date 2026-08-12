@@ -132,6 +132,23 @@ export function deleteCacheDirEntries(dirName: string, names: readonly string[])
   return deleted;
 }
 
+/**
+ * Free bytes on the volume the cache lives on, or null when the platform won't say.
+ *
+ * A `statfs`, not a walk — cheap enough to ask on a failed write. It exists so
+ * "is this device full?" has an answer that does not depend on the language the
+ * OS phrased its error in: `NSError.localizedDescription` is translated, so
+ * matching English wording alone misses a full disk on every non-English phone.
+ */
+export function measureFreeCacheSpaceBytes(): number | null {
+  try {
+    const availableBytes = Paths.availableDiskSpace;
+    return typeof availableBytes === 'number' && Number.isFinite(availableBytes) ? availableBytes : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The expo-image disk-cache directory on this device, or null when none of the known names exist. */
 export function resolveImageCacheDirName(): string | null {
   for (const candidate of IMAGE_CACHE_DIR_CANDIDATES) {

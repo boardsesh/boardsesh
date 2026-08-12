@@ -19,6 +19,10 @@ export function deleteCacheDirEntries(): string[] {
   return [];
 }
 
+export function measureFreeCacheSpaceBytes(): number | null {
+  return null;
+}
+
 export function resolveImageCacheDirName(): string | null {
   return null;
 }
