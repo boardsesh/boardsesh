@@ -19,6 +19,7 @@ import {
 } from '@boardsesh/offline-sync';
 import { getSetting, setOfflineBoardEnabled, forgetOfflineBoardScope } from '../settings';
 import { reportHandledError } from '../lib/error-reporting';
+import { sweepOverlaysForScope } from '../lib/sweep-caches';
 
 /** The query keys that read board reference rows, derived from the tables we delete from. */
 function boardDataQueryKeys(): readonly (readonly unknown[])[] {
@@ -87,6 +88,18 @@ export async function removeOfflineBoard(params: {
     .filter((parsed): parsed is OfflineBoardScope => parsed !== null);
 
   const result = await removeBoardScopeData({ db, scope, scopeKey: offlineBoardKey(scope), retainedScopes });
+
+  // The rendered PNGs for this board are cache, not data, so they are swept
+  // AFTER the rows are gone and never allowed to change the teardown result —
+  // same posture as compactOfflineDatabase. Remove is a reclaim-space action and
+  // the art re-renders locally in tens of milliseconds, no network, so leaving it
+  // behind would just be the leftover this screen exists to reap.
+  try {
+    await sweepOverlaysForScope(scope);
+  } catch (error) {
+    reportHandledError(error, { tags: { source: 'offline-sync', kind: 'scope-overlay-sweep' } });
+  }
+
   invalidateBoardReaders(queryClient);
   return result;
 }

@@ -11,7 +11,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 // vite.config.ts points at this same file, so this is the same module instance
 // cache-dir-io sees — but `tsc` resolves the package name to the real types,
 // which know nothing about the seeding helpers.
-import { Directory, __resetFileSystem, __seedFileSystem } from '../../../test/expo-file-system-stub';
+import { Directory, File, __resetFileSystem, __seedFileSystem } from '../../../test/expo-file-system-stub';
 import { deleteCacheDirEntries, resolveImageCacheDirName, walkCacheDir } from '../cache-dir-io';
 
 afterEach(() => {
@@ -82,8 +82,20 @@ describe('deleteCacheDirEntries', () => {
     __seedFileSystem({
       'cache/board-thumbnails': { 'a.png': { size: 1 }, 'c.png': { size: 1 } },
     });
-    expect(deleteCacheDirEntries('board-thumbnails', ['a.png', 'b-vanished.png', 'c.png'])).toBe(2);
+    expect(deleteCacheDirEntries('board-thumbnails', ['a.png', 'b-vanished.png', 'c.png'])).toEqual(['a.png', 'c.png']);
     expect(new Directory('cache/board-thumbnails').list()).toHaveLength(0);
+  });
+
+  // The names rather than a count, because the callers turn this into freed
+  // BYTES: a file that survived the pass is still occupying its space.
+  it('leaves a file it could not delete out of the result', () => {
+    __seedFileSystem({
+      'cache/board-thumbnails': { 'a.png': { size: 1 }, 'locked.png': { size: 1 }, 'c.png': { size: 1 } },
+    });
+    vi.spyOn(File.prototype, 'delete').mockImplementation(function refuseOne(this: File) {
+      if (this.name === 'locked.png') throw new Error('EPERM: operation not permitted');
+    });
+    expect(deleteCacheDirEntries('board-thumbnails', ['a.png', 'locked.png', 'c.png'])).toEqual(['a.png', 'c.png']);
   });
 });
 

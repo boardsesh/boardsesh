@@ -73,6 +73,7 @@ import { performOtaRecovery, type OtaRecoveryPhase } from '../src/lib/ota-recove
 import { loadRequiredFonts } from '../src/lib/required-fonts';
 import { loadSectionExpandState } from '../src/lib/section-expand-store';
 import { useImageCacheMemoryManagement } from '../src/hooks/use-image-cache-memory-management';
+import { useDiskCacheSweep } from '../src/hooks/use-disk-cache-sweep';
 import { AnalyticsProvider } from '../src/components/analytics/AnalyticsProvider';
 import { AnalyticsScreenTracker } from '../src/components/analytics/AnalyticsScreenTracker';
 import { ImageCacheTabSweeper } from '../src/components/ImageCacheTabSweeper';
@@ -429,6 +430,9 @@ function RootLayout() {
 
   // Flush decoded board-art bitmaps on background / memory warning (#3479).
   useImageCacheMemoryManagement();
+  // Keep the on-disk board-art cache under its cap DURING a session, not only on
+  // the cold launch the native pruner runs on (#3647).
+  useDiskCacheSweep();
 
   useEffect(() => {
     let cancelled = false;

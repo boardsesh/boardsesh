@@ -48,6 +48,11 @@ vi.mock('../../lib/error-reporting', () => ({
   reportError: vi.fn(),
 }));
 
+const sweepOverlaysForScope = vi.fn(async () => ({ beforeBytes: 0, freedBytes: 0, filesDeleted: 0 }));
+vi.mock('../../lib/sweep-caches', () => ({
+  sweepOverlaysForScope: (...args: unknown[]) => sweepOverlaysForScope(...(args as [])),
+}));
+
 import type { QueryClient } from '@tanstack/react-query';
 import { removeOfflineBoard, compactOfflineDatabase } from '../remove-offline-board';
 import { getSetting, setSetting, resetAllSettings } from '../../settings/hooks';
@@ -151,6 +156,25 @@ describe('removeOfflineBoard', () => {
     expect(invalidatedKeys).toContain(JSON.stringify(['climb']));
     expect(invalidatedKeys).toContain(JSON.stringify(['downloadedScopeKeys']));
     expect(invalidatedKeys).toContain(JSON.stringify(['offlineStorage']));
+  });
+});
+
+describe('removeOfflineBoard cached art', () => {
+  it("sweeps the removed scope's rendered art", async () => {
+    setSetting('syncEnabledBoards', ['kilter:1:7']);
+    await removeOfflineBoard({ db, queryClient, scope: KILTER_12X14 });
+    expect(sweepOverlaysForScope).toHaveBeenCalledWith(KILTER_12X14);
+  });
+
+  // Cache housekeeping must never be able to turn a successful teardown into a
+  // failure the user reads as "the removal didn't work" — same posture as
+  // compactOfflineDatabase.
+  it('still reports the teardown result when the art sweep throws', async () => {
+    sweepOverlaysForScope.mockRejectedValueOnce(new Error('cache dir vanished'));
+    setSetting('syncEnabledBoards', ['kilter:1:7']);
+    await expect(removeOfflineBoard({ db, queryClient, scope: KILTER_12X14 })).resolves.toMatchObject({
+      removedAnyRows: true,
+    });
   });
 });
 

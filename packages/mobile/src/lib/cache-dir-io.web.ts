@@ -15,8 +15,8 @@ export async function walkCacheDir(): Promise<CacheDirWalk | null> {
   return null;
 }
 
-export function deleteCacheDirEntries(): number {
-  return 0;
+export function deleteCacheDirEntries(): string[] {
+  return [];
 }
 
 export function resolveImageCacheDirName(): string | null {
