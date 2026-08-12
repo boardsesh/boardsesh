@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Your playlists, likes and logbook now refresh on their own once a background sync lands new rows, instead of waiting for you to pull-to-refresh or reopen the screen. ([#4350](https://github.com/boardsesh/boardsesh/pull/4350))
+- Screens that need a connection now say so instead of showing an endless spinner or an empty list. Your progress, sessions, logbook, playlists, gyms and the activity feed all tell you when there's no signal — and remind you that boards you've downloaded still browse, search and log fine. ([#4354](https://github.com/boardsesh/boardsesh/pull/4354))
 - Downloaded boards keep their "Your boards" and "Following" sections when you ([#4309](https://github.com/boardsesh/boardsesh/pull/4309))
   open My Boards with no signal.
   JS-only, no native deps, no fingerprint movement — rides OTA.
