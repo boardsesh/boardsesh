@@ -16,7 +16,7 @@
 //     group per cache key. A guard alone was never enough.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 
 vi.mock('../../providers/theme-provider', () => ({ useAppColorScheme: () => 'light' }));
 
@@ -30,10 +30,18 @@ class MockFile {
   }
 }
 
+/** Free space on the cache volume, as the platform reports it. */
+const diskState = vi.hoisted(() => ({ freeBytes: null as number | null }));
+
 vi.mock('expo-file-system', () => ({
   Directory: vi.fn(() => ({ exists: false, list: () => [] })),
   File: MockFile,
-  Paths: { cache: { uri: 'file:///cache/' } },
+  Paths: {
+    cache: { uri: 'file:///cache/' },
+    get availableDiskSpace(): number | null {
+      return diskState.freeBytes;
+    },
+  },
 }));
 
 vi.mock('../../lib/board-details', () => ({
@@ -71,17 +79,24 @@ vi.mock('../../lib/hold-color-overrides', async (importOriginal) => {
 
 // Every render rejects the way a full volume does, with the FILENAME in the
 // message — which is what fragmented the Sentry groups.
-const renderOutcome = vi.hoisted(() => ({ mode: 'disk-full' as 'disk-full' | 'other' }));
+const renderOutcome = vi.hoisted(() => ({ mode: 'disk-full' as 'disk-full' | 'localized-disk-full' | 'other' }));
+
+/** What Foundation hands back for the same failure, by device language. */
+function failureMessage(mode: (typeof renderOutcome)['mode'], cacheKey: string): string {
+  if (mode === 'disk-full') {
+    return `The operation couldn’t be completed. You can’t save the file “${cacheKey}.png” because the volume “User” is out of space.`;
+  }
+  if (mode === 'localized-disk-full') {
+    // Same NSCocoaErrorDomain 640, on a phone set to Spanish.
+    return `No se puede guardar el archivo “${cacheKey}.png” porque el volumen “User” no tiene suficiente espacio.`;
+  }
+  return `render failed for ${cacheKey}: unknown native error`;
+}
+
 const fakeNativeModule = {
   boardRendererNative: {},
   renderHoldsOverlay: vi.fn((_configJson: string, cacheKey: string) =>
-    Promise.reject(
-      new Error(
-        renderOutcome.mode === 'disk-full'
-          ? `The operation couldn’t be completed. You can’t save the file “${cacheKey}.png” because the volume “User” is out of space.`
-          : `render failed for ${cacheKey}: unknown native error`,
-      ),
-    ),
+    Promise.reject(new Error(failureMessage(renderOutcome.mode, cacheKey))),
   ),
 };
 
@@ -102,6 +117,8 @@ function renderRow(index: number) {
 
 beforeEach(() => {
   renderOutcome.mode = 'disk-full';
+  // Default: a platform that won't say, so the message match stands alone.
+  diskState.freeBytes = null;
   _resetWarmupForTests();
   _inflightRendersForTests.clear();
   fakeNativeModule.renderHoldsOverlay.mockClear();
@@ -116,6 +133,19 @@ describe('classifyRenderFailure', () => {
     expect(classifyRenderFailure('write failed: ENOSPC (No space left on device)')).toBe('disk_full');
     expect(classifyRenderFailure('java.io.IOException: No space left on device')).toBe('disk_full');
     expect(classifyRenderFailure('unknown native error')).toBe('render_failed');
+  });
+
+  // `NSError.localizedDescription` is translated, so the wording above only
+  // exists on an English phone. Free space answers the same question in a way no
+  // locale can change.
+  it('recognises a full disk the OS described in another language', () => {
+    const spanish = 'No se puede guardar el archivo porque el volumen no tiene suficiente espacio.';
+    expect(classifyRenderFailure(spanish)).toBe('render_failed');
+    expect(classifyRenderFailure(spanish, 4 * 1024 * 1024)).toBe('disk_full');
+  });
+
+  it('does not blame the disk for a genuine render bug on a phone with room to spare', () => {
+    expect(classifyRenderFailure('unknown native error', 8 * 1024 * 1024 * 1024)).toBe('render_failed');
   });
 });
 
@@ -179,5 +209,71 @@ describe('out-of-space render storm', () => {
     expect(backedOff.result.current.overlayUri).toBeNull();
     expect(backedOff.result.current.backgroundPaths).toEqual(['file:///bg.png']);
     expect(result.current.backgroundPaths).toEqual(['file:///bg.png']);
+  });
+
+  // The same storm, on a phone that isn't set to English: without the free-space
+  // check nothing backs off and nothing sweeps, because the OS phrased "out of
+  // space" in Spanish.
+  it('backs off and sweeps when the OS reports the full disk in another language', async () => {
+    renderOutcome.mode = 'localized-disk-full';
+    diskState.freeBytes = 3 * 1024 * 1024;
+    renderRow(0);
+    await waitFor(() => expect(sweepBoardArtCache).toHaveBeenCalledWith({ trigger: 'disk-pressure' }));
+    const [reported, options] = reportErrorMock.mock.calls[0] as [Error, Record<string, unknown>];
+    expect(reported.message).toBe('Board overlay render failed: disk_full');
+    expect(options.level).toBe('warning');
+  });
+
+  // A play view the user is looking at never re-runs the render effect on its
+  // own, so without a re-trigger it stays without art for the life of the mount
+  // even after the sweep freed the space.
+  it('comes back once the back-off lifts instead of staying blank for the whole mount', async () => {
+    vi.useFakeTimers();
+    try {
+      renderRow(0);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(sweepBoardArtCache).toHaveBeenCalledWith({ trigger: 'disk-pressure' });
+
+      const stationary = renderRow(1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      const callsWhileLatched = fakeNativeModule.renderHoldsOverlay.mock.calls.length;
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_001);
+      });
+      expect(fakeNativeModule.renderHoldsOverlay.mock.calls.length).toBeGreaterThan(callsWhileLatched);
+      // Still the missing-layer contract while it retries, never a blank screen.
+      expect(stationary.result.current.backgroundPaths).toEqual(['file:///bg.png']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives up after a bounded number of retries rather than retrying forever', async () => {
+    vi.useFakeTimers();
+    try {
+      renderRow(0);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      renderRow(1);
+
+      const attempts: number[] = [];
+      for (let round = 0; round < 6; round += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_001);
+        });
+        attempts.push(fakeNativeModule.renderHoldsOverlay.mock.calls.length);
+      }
+      // Every retry fails and re-latches, so the count stops moving once the
+      // per-mount budget is spent.
+      expect(attempts.at(-1)).toBe(attempts.at(-2));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

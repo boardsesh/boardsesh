@@ -13,6 +13,7 @@ import {
 import { useAppColorScheme } from '../providers/theme-provider';
 import { reportError } from '../lib/error-reporting';
 import { sweepBoardArtCache } from '../lib/sweep-caches';
+import { measureFreeCacheSpaceBytes } from '../lib/cache-dir-io';
 import {
   cacheRenderedOverlay,
   getRenderedOverlay,
@@ -210,8 +211,33 @@ type RenderFailureKind = 'disk_full' | 'render_failed';
 /** iOS's NSFileManager wording, plus the POSIX shapes Android surfaces. */
 const DISK_FULL_PATTERN = /out of space|ENOSPC|No space left/i;
 
-export function classifyRenderFailure(message: string): RenderFailureKind {
-  return DISK_FULL_PATTERN.test(message) ? 'disk_full' : 'render_failed';
+/**
+ * Below this much free space, a failed write is the disk — whatever language the
+ * OS said so in.
+ *
+ * A board overlay PNG is a few hundred KB, so 32 MB is far more headroom than one
+ * write needs: this is not "would this render have fit", it is "this phone is out
+ * of room", the same condition the English wording describes. The margin covers
+ * the gap between our probe and the write, and iOS's habit of refusing writes
+ * before the volume literally hits zero.
+ */
+const DISK_FULL_FREE_SPACE_BYTES = 32 * 1024 * 1024;
+
+/**
+ * @param freeDiskBytes free space on the cache volume, or null when unavailable.
+ *
+ * The message match is the fast path, but `NSError.localizedDescription` is
+ * TRANSLATED: on a Spanish, French or German phone a full volume reads "no hay
+ * espacio suficiente" / "n'a plus d'espace" / "nicht genügend Speicherplatz" and
+ * matches none of the English wording. Misclassifying that as `render_failed`
+ * costs exactly the storm this whole path exists to stop — no back-off, no sweep,
+ * every recycled row re-encoding a PNG it cannot write. Free space is the same
+ * question asked in a way no locale can change the answer to.
+ */
+export function classifyRenderFailure(message: string, freeDiskBytes: number | null = null): RenderFailureKind {
+  if (DISK_FULL_PATTERN.test(message)) return 'disk_full';
+  if (freeDiskBytes !== null && freeDiskBytes < DISK_FULL_FREE_SPACE_BYTES) return 'disk_full';
+  return 'render_failed';
 }
 
 const reportedRenderFailures = new Set<RenderFailureKind>();
@@ -269,6 +295,24 @@ let diskPressureUntilMs = 0;
 function isDiskPressureLatched(nowMs = Date.now()): boolean {
   return nowMs < diskPressureUntilMs;
 }
+
+/** How long until the current back-off lifts. Zero when nothing is latched. */
+function diskPressureRemainingMs(nowMs = Date.now()): number {
+  return Math.max(0, diskPressureUntilMs - nowMs);
+}
+
+/**
+ * How many times one mounted surface will come back after a back-off lifts.
+ *
+ * The back-off exists so a full device stops re-encoding PNGs it cannot write —
+ * but a play view the user is staring at has no prop change to bring it back, so
+ * without a re-trigger its overlay stays missing for the life of the mount even
+ * after the sweep freed 200 MB. Bounded rather than unlimited because the retry
+ * costs a full render on a device that may still be full: three attempts covers
+ * the sweep landing and a user deleting photos in the next couple of minutes,
+ * and then this surface gives up until it is remounted or its props change.
+ */
+const DISK_PRESSURE_MAX_RETRIES = 3;
 
 function latchDiskPressure(): void {
   diskPressureUntilMs = Date.now() + DISK_PRESSURE_BACKOFF_MS;
@@ -808,6 +852,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   latestCacheKeyRef.current = currentCacheKey;
   const nativeRenderRef = useRef(nativeRender);
   nativeRenderRef.current = nativeRender;
+  // Per-mount budget for coming back after a full-disk back-off lifts. Not keyed
+  // on the cache key: a recycled row that lands on a new climb re-renders anyway.
+  const diskPressureRetriesRef = useRef(0);
   const retryBudgetRef = useRef({ key: currentCacheKey, used: 0 });
   if (retryBudgetRef.current.key !== currentCacheKey) {
     retryBudgetRef.current = { key: currentCacheKey, used: 0 };
@@ -943,7 +990,19 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // Backed off after a full-disk failure: the write cannot succeed, and every
     // recycled row retrying it is what turned one out-of-space device into 50
     // Sentry events in 50 minutes. Overlay stays null; backgrounds still show.
-    if (isDiskPressureLatched()) return;
+    if (isDiskPressureLatched()) {
+      // Come back once when the latch lifts. A list scrolls and remounts rows,
+      // so it recovers on its own; a stationary play view never re-runs this
+      // effect, and would sit with no overlay for the rest of the mount even
+      // though the sweep this back-off kicked off may have freed the space.
+      if (diskPressureRetriesRef.current >= DISK_PRESSURE_MAX_RETRIES) return;
+      diskPressureRetriesRef.current += 1;
+      // +1ms so the latch has certainly expired by the time the effect re-runs.
+      const retryTimer = setTimeout(() => {
+        if (mountedRef.current) setRecoveryRequest((request) => request + 1);
+      }, diskPressureRemainingMs() + 1);
+      return () => clearTimeout(retryTimer);
+    }
 
     const renderPromise = getOrStartInflightRender(currentCacheKey, () => {
       const configJson = JSON.stringify({
@@ -988,7 +1047,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         // whenever the signature stays default (issue #4240: 29 Sentry events
         // in 60s from one session).
         if (isCapabilityFallback) return;
-        const kind = classifyRenderFailure(message);
+        const kind = classifyRenderFailure(message, measureFreeCacheSpaceBytes());
         if (kind === 'disk_full') latchDiskPressure();
         reportRenderFailureOnce({
           kind,
