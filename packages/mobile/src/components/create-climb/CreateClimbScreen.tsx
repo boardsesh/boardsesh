@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -8,12 +8,15 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
+import { useToast } from '../../providers/toast-provider';
+import { useHoldHeatmap } from '../../lib/graphql/hooks';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { getCreateBoardHolds } from '../../lib/create-board-holds';
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { HoldRoleSheet } from './HoldRoleSheet';
 import { CreateDrawer } from './CreateDrawer';
+import { isNewHeatmapFailure } from './heatmap-error';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
 
 type CreateClimbScreenProps = {
@@ -42,6 +45,7 @@ export function CreateClimbScreen({
   const { systemColors } = useTheme();
   const router = useRouter();
   const { openPlayDrawer } = useDrawerHost();
+  const { showToast } = useToast();
 
   const controller = useCreateClimbScreen({
     board,
@@ -53,6 +57,35 @@ export function CreateClimbScreen({
   });
 
   const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);
+  const [heatmapActive, setHeatmapActive] = useState(false);
+  const handledHeatmapErrorAtRef = useRef(0);
+
+  const heatmap = useHoldHeatmap(
+    {
+      boardName: board.boardName,
+      layoutId: board.layoutId,
+      sizeId: board.sizeId,
+      setIds: board.setIds,
+      angle: controller.effectiveAngle,
+    },
+    heatmapActive,
+  );
+  useEffect(() => {
+    if (
+      !isNewHeatmapFailure({
+        active: heatmapActive,
+        isError: heatmap.isError,
+        isFetching: heatmap.isFetching,
+        errorUpdatedAt: heatmap.errorUpdatedAt,
+        handledErrorAt: handledHeatmapErrorAtRef.current,
+      })
+    ) {
+      return;
+    }
+    handledHeatmapErrorAtRef.current = heatmap.errorUpdatedAt;
+    setHeatmapActive(false);
+    showToast(t('createClimbForm.alerts.heatmapLoadFailed'), 'error');
+  }, [heatmap.errorUpdatedAt, heatmap.isError, heatmap.isFetching, heatmapActive, showToast, t]);
 
   const boardHolds = useMemo(
     () =>
@@ -81,11 +114,11 @@ export function CreateClimbScreen({
           layoutId: String(board.layoutId),
           sizeId: String(board.sizeId),
           setIds: board.setIds,
-          angle: String(board.angle),
+          angle: String(climb.angle ?? controller.effectiveAngle),
         },
       });
     },
-    [router, board],
+    [router, board, controller.effectiveAngle],
   );
 
   const handleViewDuplicate = useCallback(
@@ -99,14 +132,14 @@ export function CreateClimbScreen({
           climbUuid: uuid,
           boardType: board.boardName,
           layoutId: board.layoutId,
-          angle: board.angle,
+          angle: controller.effectiveAngle,
           sizeId: board.sizeId,
           setIds: board.setIds,
         },
         { openPlayDrawer, router },
       );
     },
-    [openPlayDrawer, router, board],
+    [openPlayDrawer, router, board, controller.effectiveAngle],
   );
 
   if (!boardHolds) {
@@ -138,6 +171,10 @@ export function CreateClimbScreen({
         onLoadDraft={handleLoadDraft}
         onClose={() => router.back()}
         onViewDuplicate={handleViewDuplicate}
+        heatmapActive={heatmapActive}
+        heatmapLoading={heatmap.isFetching}
+        heatmapStatsByHoldId={heatmap.statsByHoldId}
+        onToggleHeatmap={() => setHeatmapActive((active) => !active)}
       />
 
       <HoldRoleSheet

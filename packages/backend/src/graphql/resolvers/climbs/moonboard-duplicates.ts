@@ -73,7 +73,7 @@ export function normalizeMoonBoardHolds(holds: MoonBoardHoldsInput): NormalizedM
     .map(([holdId, holdState]) => ({ holdId, holdState }));
 }
 
-function buildMoonBoardHoldSignature(entries: NormalizedMoonBoardHold[]): string {
+export function buildMoonBoardHoldSignature(entries: NormalizedMoonBoardHold[]): string {
   return entries.map(({ holdId, holdState }) => `${holdId}:${holdState}`).join(',');
 }
 
@@ -135,6 +135,8 @@ export async function findMoonBoardDuplicateMatches(
   layoutId: number,
   angle: number,
   climbs: DuplicateCandidate[],
+  excludeUuid?: string,
+  executor: Pick<typeof db, 'execute'> = db,
 ): Promise<MoonBoardClimbDuplicateMatch[]> {
   if (climbs.length === 0) return [];
 
@@ -155,7 +157,7 @@ export async function findMoonBoardDuplicateMatches(
       sql`, `,
     );
     const exactMatchRows = await executeRows<DuplicateLookupRow>(
-      db,
+      executor,
       sql`
       SELECT
         ${dbSchema.boardClimbs.uuid} AS uuid,
@@ -178,6 +180,7 @@ export async function findMoonBoardDuplicateMatches(
         AND ${dbSchema.boardClimbs.angle} = ${angle}
         AND ${dbSchema.boardClimbs.isListed} = true
         AND ${dbSchema.boardClimbs.isDraft} = false
+        ${excludeUuid ? sql`AND ${dbSchema.boardClimbs.uuid} <> ${excludeUuid}` : sql``}
       GROUP BY
         ${dbSchema.boardClimbs.uuid},
         ${dbSchema.boardClimbs.name},
@@ -203,7 +206,7 @@ export async function findMoonBoardDuplicateMatches(
     }
 
     const legacyRows = await executeRows<LegacyDuplicateLookupRow>(
-      db,
+      executor,
       sql`
       SELECT
         ${dbSchema.boardClimbs.uuid} AS uuid,
@@ -220,6 +223,7 @@ export async function findMoonBoardDuplicateMatches(
         AND ${dbSchema.boardClimbs.angle} = ${angle}
         AND ${dbSchema.boardClimbs.isListed} = true
         AND ${dbSchema.boardClimbs.isDraft} = false
+        ${excludeUuid ? sql`AND ${dbSchema.boardClimbs.uuid} <> ${excludeUuid}` : sql``}
         AND NOT EXISTS (
           SELECT 1
           FROM ${dbSchema.boardClimbHolds} legacy_holds
@@ -261,7 +265,15 @@ export async function findMoonBoardDuplicateMatch(
   layoutId: number,
   angle: number,
   holds: MoonBoardHoldsInput,
+  excludeUuid?: string,
+  executor: Pick<typeof db, 'execute'> = db,
 ): Promise<MoonBoardClimbDuplicateMatch | null> {
-  const [match] = await findMoonBoardDuplicateMatches(layoutId, angle, [{ clientKey: 'save', holds }]);
+  const [match] = await findMoonBoardDuplicateMatches(
+    layoutId,
+    angle,
+    [{ clientKey: 'save', holds }],
+    excludeUuid,
+    executor,
+  );
   return match?.exists ? match : null;
 }

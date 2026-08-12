@@ -5,11 +5,21 @@
 // the orchestration and the public surface are the same.
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
-import type { BoardName, UpdateClimbInput } from '@boardsesh/shared-schema';
+import type {
+  BoardName,
+  SaveMoonBoardClimbInput,
+  UpdateClimbInput,
+  UpdateMoonBoardClimbInput,
+} from '@boardsesh/shared-schema';
 import { useBoardAdapter } from './adapter';
 import { useLogbook as useLogbookQuery } from './use-logbook';
 import { useSaveTick as useSaveTickMutation } from './use-save-tick';
-import { useSaveClimb as useSaveClimbMutation, useUpdateClimb as useUpdateClimbMutation } from './use-save-climb';
+import {
+  useSaveClimb as useSaveClimbMutation,
+  useSaveMoonBoardClimb as useSaveMoonBoardClimbMutation,
+  useUpdateClimb as useUpdateClimbMutation,
+  useUpdateMoonBoardClimb as useUpdateMoonBoardClimbMutation,
+} from './use-save-climb';
 import { logbookClimbAngleKey, type LogbookEntry } from './logbook-keys';
 import type { SaveTickOptions } from './tick-helpers';
 import type { SaveClimbOptions, SaveClimbResponse, UpdateClimbResponse } from './climb-helpers';
@@ -51,7 +61,9 @@ export type BoardContextType = {
   getLogbook: (climbUuids: string[]) => Promise<void>;
   saveTick: (options: SaveTickOptions) => Promise<void>;
   saveClimb: (options: SaveClimbOptions) => Promise<SaveClimbResponse>;
+  saveMoonBoardClimb: (input: SaveMoonBoardClimbInput) => Promise<SaveClimbResponse>;
   updateClimb: (input: UpdateClimbInput) => Promise<UpdateClimbResponse>;
+  updateMoonBoardClimb: (input: UpdateMoonBoardClimbInput) => Promise<UpdateClimbResponse>;
 };
 
 /**
@@ -111,7 +123,9 @@ export function BoardProvider({
   const { logbook, fetchedUuids: fetchedLogbookClimbUuids } = useLogbookQuery(boardName, climbUuids);
   const saveTickMutation = useSaveTickMutation(boardName);
   const saveClimbMutation = useSaveClimbMutation(boardName);
+  const saveMoonBoardClimbMutation = useSaveMoonBoardClimbMutation();
   const updateClimbMutation = useUpdateClimbMutation();
+  const updateMoonBoardClimbMutation = useUpdateMoonBoardClimbMutation();
 
   // Flip isInitialized once auth has resolved. Latched: once true, stays
   // true even if auth re-enters a loading state (e.g. token refresh).
@@ -150,11 +164,15 @@ export function BoardProvider({
   // rendering. Empty-dep `useCallback` then keeps the public callback stable.
   const saveTickMutateRef = useRef(saveTickMutation.mutateAsync);
   const saveClimbMutateRef = useRef(saveClimbMutation.mutateAsync);
+  const saveMoonBoardClimbMutateRef = useRef(saveMoonBoardClimbMutation.mutateAsync);
   const updateClimbMutateRef = useRef(updateClimbMutation.mutateAsync);
+  const updateMoonBoardClimbMutateRef = useRef(updateMoonBoardClimbMutation.mutateAsync);
   useEffect(() => {
     saveTickMutateRef.current = saveTickMutation.mutateAsync;
     saveClimbMutateRef.current = saveClimbMutation.mutateAsync;
+    saveMoonBoardClimbMutateRef.current = saveMoonBoardClimbMutation.mutateAsync;
     updateClimbMutateRef.current = updateClimbMutation.mutateAsync;
+    updateMoonBoardClimbMutateRef.current = updateMoonBoardClimbMutation.mutateAsync;
   });
 
   // Mirror the active board uuid into a ref so the stable empty-dep saveTick
@@ -187,6 +205,14 @@ export function BoardProvider({
     return updateClimbMutateRef.current(input);
   }, []);
 
+  const saveMoonBoardClimb = useCallback(async (input: SaveMoonBoardClimbInput): Promise<SaveClimbResponse> => {
+    return saveMoonBoardClimbMutateRef.current(input);
+  }, []);
+
+  const updateMoonBoardClimb = useCallback(async (input: UpdateMoonBoardClimbInput): Promise<UpdateClimbResponse> => {
+    return updateMoonBoardClimbMutateRef.current(input);
+  }, []);
+
   // Stable slice: NO logbook deps, so its identity holds steady across logbook
   // merges. Consumers reading only callbacks/identity (via `useBoardActions`)
   // don't re-render when the user scrolls and ticks merge in mid-fling.
@@ -201,9 +227,23 @@ export function BoardProvider({
       getLogbook,
       saveTick,
       saveClimb,
+      saveMoonBoardClimb,
       updateClimb,
+      updateMoonBoardClimb,
     }),
-    [boardName, boardUuid, isAuthenticated, isAuthLoading, isInitialized, getLogbook, saveTick, saveClimb, updateClimb],
+    [
+      boardName,
+      boardUuid,
+      isAuthenticated,
+      isAuthLoading,
+      isInitialized,
+      getLogbook,
+      saveTick,
+      saveClimb,
+      saveMoonBoardClimb,
+      updateClimb,
+      updateMoonBoardClimb,
+    ],
   );
 
   // Volatile slice: changes on every merge. Only the ascent-status reader and

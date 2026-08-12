@@ -1,5 +1,6 @@
 import type { BoardName } from '@boardsesh/shared-schema';
 import type { BoardEdges } from '@boardsesh/climb-filters';
+import { MOONBOARD_CELL_SETS } from '@boardsesh/board-config';
 import { getBoardRenderData } from './board-details';
 
 /**
@@ -56,9 +57,17 @@ export function getCreateBoardHolds(cfg: CreateBoardHoldsConfig): CreateBoardHol
   }
 
   const data = getBoardRenderData(cfg);
+  const selectedSetIds = new Set(cfg.setIds);
+  const holdTargets = data?.holdsData
+    .filter((hold) => {
+      if (cfg.boardName !== 'moonboard') return true;
+      const setId = MOONBOARD_CELL_SETS[cfg.layoutId]?.[hold.id];
+      return setId !== undefined && selectedSetIds.has(setId);
+    })
+    .map((hold) => ({ id: hold.id, cx: hold.cx, cy: hold.cy, r: hold.r }));
   const result = data
     ? {
-        holdTargets: data.holdsData.map((hold) => ({ id: hold.id, cx: hold.cx, cy: hold.cy, r: hold.r })),
+        holdTargets: holdTargets ?? [],
         boardWidth: data.boardWidth,
         boardHeight: data.boardHeight,
         edgeLeft: data.edgeLeft,

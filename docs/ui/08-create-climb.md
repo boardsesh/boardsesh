@@ -68,6 +68,16 @@
 5. On success: `markJustSaved()` -- 3s confirmation state, clears autosave, syncs to queue via `syncSavedClimbToQueue()`
 6. On duplicate error (`CLIMB_IS_DUPLICATE`): shows inline Alert + opens SimilarClimbsList drawer showing the matching climb
 
+The server rechecks MoonBoard ownership and the 24-hour window after locking the
+climb row, so a concurrent edit cannot extend or bypass the window. Publishing a
+draft sets `publishedAt` and starts the window; published climbs cannot return to
+draft state.
+
+**Heatmap data:** The mobile overlay uses the shared GraphQL `holdHeatmap` query.
+Anonymous configuration results are cached in Redis for five minutes with passive
+expiry. Creating or editing a climb does not actively invalidate that cache, so a
+new hold placement can take up to five minutes to appear in the community heatmap.
+
 **Bluetooth preview:** When BLE is connected (Aurora boards only), `sendFramesToBoard(frames)` fires on every `litUpHoldsMap` change, sending current hold pattern to the physical board in real-time.
 
 **Drafts drawer:**

@@ -1,13 +1,24 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   SAVE_CLIMB_MUTATION,
+  SAVE_MOONBOARD_CLIMB_MUTATION,
   UPDATE_CLIMB_MUTATION,
+  UPDATE_MOONBOARD_CLIMB_MUTATION,
   type SaveClimbMutationVariables,
   type SaveClimbMutationResponse,
+  type SaveMoonBoardClimbMutationVariables,
+  type SaveMoonBoardClimbMutationResponse,
   type UpdateClimbMutationVariables,
   type UpdateClimbMutationResponse,
+  type UpdateMoonBoardClimbMutationVariables,
+  type UpdateMoonBoardClimbMutationResponse,
 } from '@boardsesh/graphql/operations/new-climb-feed';
-import type { BoardName, UpdateClimbInput } from '@boardsesh/shared-schema';
+import type {
+  BoardName,
+  SaveMoonBoardClimbInput,
+  UpdateClimbInput,
+  UpdateMoonBoardClimbInput,
+} from '@boardsesh/shared-schema';
 import { useBoardAdapter } from './adapter';
 import {
   isDuplicateClimbError,
@@ -92,6 +103,54 @@ export function useUpdateClimb() {
     },
     onError: () => {
       showError?.('updateClimbFailed');
+    },
+  });
+}
+
+export function useSaveMoonBoardClimb() {
+  const { isAuthenticated, executeWs, showError } = useBoardAdapter();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: SaveMoonBoardClimbInput): Promise<SaveClimbResponse> => {
+      if (!isAuthenticated) throw new Error('Authentication required to create climbs');
+      const variables: SaveMoonBoardClimbMutationVariables = { input };
+      const result = await executeWs<SaveMoonBoardClimbMutationResponse, SaveMoonBoardClimbMutationVariables>({
+        query: SAVE_MOONBOARD_CLIMB_MUTATION,
+        variables,
+      });
+      return result.saveMoonBoardClimb;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
+      void queryClient.invalidateQueries({ queryKey: ['climb'] });
+      void queryClient.invalidateQueries({ queryKey: ['myClimbs'] });
+    },
+    onError: (error) => {
+      if (!isDuplicateClimbError(error)) showError?.('saveClimbFailed');
+    },
+  });
+}
+
+export function useUpdateMoonBoardClimb() {
+  const { isAuthenticated, executeWs, showError } = useBoardAdapter();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: UpdateMoonBoardClimbInput): Promise<UpdateClimbResponse> => {
+      if (!isAuthenticated) throw new Error('Authentication required to update climbs');
+      const variables: UpdateMoonBoardClimbMutationVariables = { input };
+      const result = await executeWs<UpdateMoonBoardClimbMutationResponse, UpdateMoonBoardClimbMutationVariables>({
+        query: UPDATE_MOONBOARD_CLIMB_MUTATION,
+        variables,
+      });
+      return result.updateMoonBoardClimb;
+    },
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['climb', result.uuid] });
+      void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
+      void queryClient.invalidateQueries({ queryKey: ['myClimbs'] });
+    },
+    onError: (error) => {
+      if (!isDuplicateClimbError(error)) showError?.('updateClimbFailed');
     },
   });
 }

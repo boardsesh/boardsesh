@@ -157,7 +157,9 @@ describe('useQueueDataFetching', () => {
       fetchedLogbookClimbUuids: new Set<string>(),
       saveTick: vi.fn(),
       saveClimb: vi.fn(),
+      saveMoonBoardClimb: vi.fn(),
       updateClimb: vi.fn(),
+      updateMoonBoardClimb: vi.fn(),
       boardName: 'kilter',
       boardUuid: null,
     });
@@ -173,7 +175,9 @@ describe('useQueueDataFetching', () => {
       fetchedLogbookClimbUuids: new Set<string>(),
       saveTick: vi.fn(),
       saveClimb: vi.fn(),
+      saveMoonBoardClimb: vi.fn(),
       updateClimb: vi.fn(),
+      updateMoonBoardClimb: vi.fn(),
       boardName: 'kilter',
       boardUuid: null,
     });
@@ -189,7 +193,9 @@ describe('useQueueDataFetching', () => {
       fetchedLogbookClimbUuids: new Set<string>(),
       saveTick: vi.fn(),
       saveClimb: vi.fn(),
+      saveMoonBoardClimb: vi.fn(),
       updateClimb: vi.fn(),
+      updateMoonBoardClimb: vi.fn(),
       boardName: 'kilter',
       boardUuid: null,
     });

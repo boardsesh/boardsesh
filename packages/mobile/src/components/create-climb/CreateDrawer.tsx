@@ -6,7 +6,7 @@ import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 // native sheet draws its own scrim + drag handle, so the measured-handle peek
 // machinery is replaced by a small fixed reserve for the native grabber.
 import BottomSheet, { BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
-import type { BoardName, Climb } from '@boardsesh/shared-schema';
+import type { BoardName, Climb, HoldStat } from '@boardsesh/shared-schema';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, sheetStyles } from '../../theme/tokens';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
@@ -17,6 +17,7 @@ import { CreateDrawerForm } from './CreateDrawerForm';
 import { OpenDraftsSection } from './OpenDraftsSection';
 import { DuplicateBanner } from './DuplicateBanner';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
+import { HeatmapOverlay } from './HeatmapOverlay';
 
 type Controller = ReturnType<typeof useCreateClimbScreen>;
 
@@ -39,6 +40,10 @@ type CreateDrawerProps = {
   onClose: () => void;
   /** Open the climb that a publish collided with (the duplicate banner link). */
   onViewDuplicate: (uuid: string) => void;
+  heatmapActive: boolean;
+  heatmapLoading: boolean;
+  heatmapStatsByHoldId: Map<number, HoldStat>;
+  onToggleHeatmap: () => void;
 };
 
 // Space the header + two-row action bar + handle + safe areas need, so the
@@ -66,6 +71,10 @@ export function CreateDrawer({
   onLoadDraft,
   onClose,
   onViewDuplicate,
+  heatmapActive,
+  heatmapLoading,
+  heatmapStatsByHoldId,
+  onToggleHeatmap,
 }: CreateDrawerProps) {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -130,6 +139,20 @@ export function CreateDrawer({
   );
 
   const backgroundStyle = { ...sheetStyles.background, backgroundColor: systemColors.secondaryBackground };
+  const paintedHoldIds = useMemo(
+    () => new Set(Object.keys(controller.litUpHoldsMap).map(Number)),
+    [controller.litUpHoldsMap],
+  );
+  const heatmapOverlay = heatmapActive ? (
+    <HeatmapOverlay
+      statsByHoldId={heatmapStatsByHoldId}
+      holdTargets={boardHolds.holdTargets}
+      boardWidth={boardHolds.boardWidth}
+      boardHeight={boardHolds.boardHeight}
+      measuredWidth={boardRender.width}
+      paintedHoldIds={paintedHoldIds}
+    />
+  ) : null;
 
   return (
     <BottomSheet
@@ -194,6 +217,7 @@ export function CreateDrawer({
               showAllHolds={controller.showAllHolds}
               renderWidth={boardRender.width}
               renderHeight={boardRender.height}
+              overlay={heatmapOverlay}
             />
           </View>
 
@@ -210,11 +234,15 @@ export function CreateDrawer({
             onSetActive={controller.handleSetActive}
             saveState={controller.saveState}
             onSave={() => void controller.handleSave()}
+            heatmapActive={heatmapActive}
+            heatmapLoading={heatmapLoading}
+            onToggleHeatmap={onToggleHeatmap}
           />
         </View>
 
         <View style={styles.belowFold}>
           <CreateDrawerForm
+            boardName={board.boardName}
             description={controller.description}
             onChangeDescription={controller.setDescription}
             noMatch={controller.noMatch}
@@ -223,8 +251,17 @@ export function CreateDrawer({
             onChangeIsDraft={controller.setIsDraft}
             showAllHolds={controller.showAllHolds}
             onChangeShowAllHolds={controller.setShowAllHolds}
+            moonboardAngle={controller.moonboardAngle}
+            onChangeMoonboardAngle={controller.setMoonboardAngle}
+            moonboardGrade={controller.moonboardGrade}
+            onChangeMoonboardGrade={controller.setMoonboardGrade}
+            moonboardMethod={controller.moonboardMethod}
+            onChangeMoonboardMethod={controller.setMoonboardMethod}
+            moonboardBenchmark={controller.moonboardBenchmark}
+            onChangeMoonboardBenchmark={controller.setMoonboardBenchmark}
+            canSetMoonboardBenchmark={controller.canSetMoonboardBenchmark}
           />
-          <OpenDraftsSection board={board} onLoadDraft={onLoadDraft} />
+          <OpenDraftsSection board={{ ...board, angle: controller.effectiveAngle }} onLoadDraft={onLoadDraft} />
         </View>
       </BottomSheetScrollView>
     </BottomSheet>

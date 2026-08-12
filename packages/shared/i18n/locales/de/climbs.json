@@ -479,7 +479,8 @@
       "publishDuplicateUnnamed": "Dieses Griff-Muster passt zu einem bestehenden Boulder. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
       "viewMatchingClimb": "Passenden Boulder ansehen",
       "identicalClimbDrawerTitle": "Identischer Boulder",
-      "saveFailedFallback": "Boulder konnte nicht gespeichert werden. Versuch es nochmal."
+      "saveFailedFallback": "Boulder konnte nicht gespeichert werden. Versuch es nochmal.",
+      "heatmapLoadFailed": "Die Griff-Heatmap konnte nicht geladen werden. Versuch es nochmal, wenn du online bist."
     },
     "settings": {
       "tooltip": "Boulder-Einstellungen",
@@ -856,7 +857,9 @@
         "clear": "Griffe entfernen",
         "setActive": "Als aktiven Boulder setzen",
         "undo": "Rückgängig",
-        "redo": "Wiederholen"
+        "redo": "Wiederholen",
+        "showHeatmap": "Griff-Heatmap zeigen",
+        "hideHeatmap": "Griff-Heatmap ausblenden"
       },
       "holdRole": {
         "title": "Griff-Rolle festlegen",
@@ -868,7 +871,11 @@
         "showAllHoldsLabel": "Alle Griffe zeigen",
         "showAllHoldsDescription": "Hebt jeden antippbaren Griff auf dem Board hervor.",
         "noMatchLabel": "Kein Matchen",
-        "noMatchDescription": "Hände dürfen nicht am selben Griff matchen"
+        "noMatchDescription": "Hände dürfen nicht am selben Griff matchen",
+        "benchmarkDescription": "Markier diesen Boulder als MoonBoard-Benchmark. Dafür brauchst du einen Grad."
+      },
+      "validation": {
+        "benchmarkRequiresGrade": "Wähl einen Grad, bevor du einen Benchmark markierst."
       },
       "drafts": {
         "holds_one": "{{count}} Griff",

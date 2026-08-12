@@ -5,7 +5,8 @@ import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
-import { isNoMatchClimb, withNoMatch } from '@boardsesh/shared-schema';
+import { getMoonBoardMethod, isNoMatchClimb, withNoMatch } from '@boardsesh/shared-schema';
+import { convertLitUpHoldsMapToMoonBoardHolds, encodeMoonBoardHoldsToFrames } from '@boardsesh/board-config';
 import {
   useCreateClimb,
   computeCanUpdate,
@@ -19,7 +20,7 @@ import { getLayoutName } from '@boardsesh/board-constants/product-sizes';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../lib/analytics';
 import { useAuth } from '../../providers/auth-provider';
-import { useProfile, useClimb } from '../../lib/graphql/hooks';
+import { useProfile, useClimb, useMyRoles } from '../../lib/graphql/hooks';
 import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -32,6 +33,12 @@ import {
   type CreateClimbDraft,
 } from '../../lib/create-climb-draft-store';
 import { getPaintRoles, type BrushRole } from './brush-roles';
+import {
+  moonBoardGradeValue,
+  toMoonBoardAngle,
+  type MoonBoardAngle,
+  type MoonBoardMethodToken,
+} from './moonboard-create';
 
 // The save button's visual state, derived from auth + the saved-climb snapshot +
 // in-flight state. Lives here (the controller computes it) so the UI imports it.
@@ -95,9 +102,11 @@ export function useCreateClimbScreen({
 }: UseCreateClimbScreenArgs) {
   const router = useRouter();
   const { t } = useTranslation('climbs');
-  const { isAuthenticated, saveClimb, updateClimb } = useBoardActions();
+  const { isAuthenticated, saveClimb, updateClimb, saveMoonBoardClimb, updateMoonBoardClimb } = useBoardActions();
   const auth = useAuth();
   const { data: profile } = useProfile();
+  const isMoonBoard = board.boardName === 'moonboard';
+  const { data: communityRoles = [] } = useMyRoles({ enabled: isAuthenticated && isMoonBoard });
   const { setCurrentClimb } = useQueueActions();
   const bluetooth = useOptionalBluetoothContext();
   const { showToast } = useToast();
@@ -142,6 +151,22 @@ export function useCreateClimbScreen({
   const [noMatch, setNoMatch] = useState(isForking && forkDescription ? isNoMatchClimb(forkDescription) : false);
   const [isDraft, setIsDraft] = useState(true);
   const [showAllHolds, setShowAllHolds] = useState(false);
+  const [moonboardAngle, setMoonboardAngle] = useState<MoonBoardAngle>(() => toMoonBoardAngle(board.angle));
+  const [moonboardGrade, setMoonboardGrade] = useState<string | null>(null);
+  const [moonboardMethod, setMoonboardMethod] = useState<MoonBoardMethodToken | null>(null);
+  const [moonboardBenchmark, setMoonboardBenchmark] = useState(false);
+
+  const effectiveAngle = isMoonBoard ? moonboardAngle : board.angle;
+  const canSetMoonboardBenchmark = useMemo(
+    () =>
+      isMoonBoard &&
+      communityRoles.some(
+        (assignment) =>
+          (assignment.role === 'admin' || assignment.role === 'community_leader') &&
+          (assignment.boardType == null || assignment.boardType === 'moonboard'),
+      ),
+    [communityRoles, isMoonBoard],
+  );
 
   const [savedClimb, setSavedClimb] = useState<SavedClimbSnapshot | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -186,18 +211,26 @@ export function useCreateClimbScreen({
   // so an angle change remounts the form and resets `savedClimb` to null. This
   // mirrors that reset without wiping the paint. Skipped in edit mode, whose
   // identity is `editClimbUuid` (you're editing one row across any angle).
+  //
+  // MoonBoard is exempt on both sides. Its working angle is in-editor state
+  // (`moonboardAngle`, the 25°/40° picker), not the route param, so the route
+  // angle changing underneath doesn't change the climb being authored — a reset
+  // there would silently orphan the saved row and duplicate it on the next Save.
+  // And a 25° <-> 40° switch inside the editor deliberately does NOT reset:
+  // `updateMoonBoardClimb` re-angles the same uuid (moving its stats row), which
+  // is exactly the edit a setter means when they flip the picker.
   const lastAngleRef = useRef(board.angle);
   useEffect(() => {
     if (lastAngleRef.current === board.angle) return;
     lastAngleRef.current = board.angle;
-    if (isEditing) return;
+    if (isEditing || isMoonBoard) return;
     // Fresh authoring context at the new angle: drop the saved-row link so the
     // next Save creates a new climb, clear any stale duplicate banner, and mint
     // a new preview uuid so Set Active pushes an independent queue item.
     setSavedClimb(null);
     setPublishDuplicateError(null);
     previewUuidRef.current = randomUUID();
-  }, [board.angle, isEditing]);
+  }, [board.angle, isEditing, isMoonBoard]);
 
   // ---- Edit mode: fetch the climb and seed the editor once. ----
   const editVariables = useMemo(
@@ -221,9 +254,15 @@ export function useCreateClimbScreen({
     editSeededRef.current = true;
     loadHolds(buildInitialHoldsMap(editClimb.frames, board.boardName));
     setName(editClimb.name);
-    setDescription(withNoMatch(editClimb.description ?? '', false));
-    setNoMatch(isNoMatchClimb(editClimb.description));
+    setDescription(isMoonBoard ? (editClimb.description ?? '') : withNoMatch(editClimb.description ?? '', false));
+    setNoMatch(isMoonBoard ? false : isNoMatchClimb(editClimb.description));
     setIsDraft(editClimb.is_draft ?? false);
+    if (isMoonBoard) {
+      setMoonboardAngle(toMoonBoardAngle(editClimb.angle ?? board.angle));
+      setMoonboardGrade(moonBoardGradeValue(editClimb.difficulty));
+      setMoonboardMethod(getMoonBoardMethod(editClimb.characteristics) as MoonBoardMethodToken | null);
+      setMoonboardBenchmark(editClimb.benchmark_difficulty != null);
+    }
     setSavedClimb({
       uuid: editClimb.uuid,
       boardType: board.boardName,
@@ -231,7 +270,7 @@ export function useCreateClimbScreen({
       publishedAt: editClimb.published_at ?? null,
       isDraft: editClimb.is_draft ?? false,
     });
-  }, [editClimb, board.boardName, loadHolds]);
+  }, [editClimb, board.angle, board.boardName, isMoonBoard, loadHolds]);
 
   // ---- Local autosave restore on mount. ----
   useEffect(() => {
@@ -252,9 +291,15 @@ export function useCreateClimbScreen({
         // Corrupt holds payload — ignore and start clean.
       }
       setName(draft.name);
-      setDescription(withNoMatch(draft.description, false));
-      setNoMatch(isNoMatchClimb(draft.description));
+      setDescription(isMoonBoard ? draft.description : withNoMatch(draft.description, false));
+      setNoMatch(isMoonBoard ? false : isNoMatchClimb(draft.description));
       setIsDraft(draft.isDraft);
+      if (isMoonBoard && draft.moonboard) {
+        setMoonboardAngle(draft.moonboard.angle);
+        setMoonboardGrade(draft.moonboard.userGrade);
+        setMoonboardMethod(draft.moonboard.method);
+        setMoonboardBenchmark(draft.moonboard.isBenchmark);
+      }
       restoredRef.current = true;
     });
     return () => {
@@ -266,13 +311,26 @@ export function useCreateClimbScreen({
 
   // ---- Local autosave (debounced). ----
   const holdsJson = useMemo(() => JSON.stringify(litUpHoldsMap), [litUpHoldsMap]);
+  const moonboardDraftMetadata = useMemo<CreateClimbDraft['moonboard']>(
+    () =>
+      isMoonBoard
+        ? {
+            angle: moonboardAngle,
+            userGrade: moonboardGrade,
+            method: moonboardMethod,
+            isBenchmark: moonboardBenchmark,
+          }
+        : undefined,
+    [isMoonBoard, moonboardAngle, moonboardBenchmark, moonboardGrade, moonboardMethod],
+  );
+  const storedDescription = isMoonBoard ? description : withNoMatch(description, noMatch);
   // The most recent autosave payload, kept current by the debounced effect so a
   // flush-on-unmount / background can persist it synchronously without waiting
   // for the (suspended-when-backgrounded) debounce timer. `dirty` gates whether
   // there is anything worth flushing for the current per-board new-draft slot.
   const pendingDraftRef = useRef<{ key: string; draft: CreateClimbDraft; dirty: boolean }>({
     key: draftKey,
-    draft: { holdsJson, name, description, isDraft },
+    draft: { holdsJson, name, description: storedDescription, isDraft, moonboard: moonboardDraftMetadata },
     dirty: false,
   });
   // Forks seed from another climb's frames and skip restore, so — like edit
@@ -288,8 +346,26 @@ export function useCreateClimbScreen({
       pendingDraftRef.current.dirty = false;
       return;
     }
-    const hasContent = holdsJson !== '{}' || name.trim() !== '' || description.trim() !== '';
-    const draft: CreateClimbDraft = { holdsJson, name, description: withNoMatch(description, noMatch), isDraft };
+    const moonboardMetadataChanged =
+      isMoonBoard &&
+      (moonboardAngle !== toMoonBoardAngle(board.angle) ||
+        moonboardGrade !== null ||
+        moonboardMethod !== null ||
+        moonboardBenchmark);
+    const hasContent =
+      holdsJson !== '{}' ||
+      name.trim() !== '' ||
+      description.trim() !== '' ||
+      noMatch ||
+      !isDraft ||
+      moonboardMetadataChanged;
+    const draft: CreateClimbDraft = {
+      holdsJson,
+      name,
+      description: storedDescription,
+      isDraft,
+      moonboard: moonboardDraftMetadata,
+    };
     // Mirror the latest payload so a flush (unmount/background) can persist the
     // pending edit even before the debounce fires.
     pendingDraftRef.current = { key: draftKey, draft, dirty: hasContent };
@@ -303,7 +379,23 @@ export function useCreateClimbScreen({
       pendingDraftRef.current.dirty = false;
     }, AUTOSAVE_DEBOUNCE_MS);
     return () => clearTimeout(handle);
-  }, [holdsJson, name, description, noMatch, isDraft, draftKey, autosaveDisabled]);
+  }, [
+    holdsJson,
+    name,
+    description,
+    noMatch,
+    isDraft,
+    draftKey,
+    autosaveDisabled,
+    isMoonBoard,
+    moonboardAngle,
+    board.angle,
+    moonboardGrade,
+    moonboardMethod,
+    moonboardBenchmark,
+    storedDescription,
+    moonboardDraftMetadata,
+  ]);
 
   // ---- Flush the pending draft on unmount / background. ----
   // JS timers are suspended when the app is backgrounded and the cleanup's
@@ -327,6 +419,11 @@ export function useCreateClimbScreen({
     };
   }, [flushPendingDraft]);
 
+  const generateEditorFramesString = useCallback(() => {
+    if (!isMoonBoard) return generateFramesString();
+    return encodeMoonBoardHoldsToFrames(convertLitUpHoldsMapToMoonBoardHolds(litUpHoldsMap));
+  }, [generateFramesString, isMoonBoard, litUpHoldsMap]);
+
   // ---- BLE preview (debounced) while connected. ----
   const sendFramesRef = useRef(bluetooth?.sendFramesToBoard);
   sendFramesRef.current = bluetooth?.sendFramesToBoard;
@@ -334,10 +431,10 @@ export function useCreateClimbScreen({
   useEffect(() => {
     if (!bleConnected) return;
     const handle = setTimeout(() => {
-      void sendFramesRef.current?.(generateFramesString());
+      void sendFramesRef.current?.(generateEditorFramesString());
     }, BLE_PREVIEW_DEBOUNCE_MS);
     return () => clearTimeout(handle);
-  }, [holdsJson, bleConnected, generateFramesString]);
+  }, [holdsJson, bleConnected, generateEditorFramesString]);
 
   // ---- Painting + role assignment. ----
   const handlePaint = useCallback(
@@ -362,12 +459,16 @@ export function useCreateClimbScreen({
     setDescription('');
     setNoMatch(false);
     setIsDraft(true);
+    setMoonboardAngle(toMoonBoardAngle(board.angle));
+    setMoonboardGrade(null);
+    setMoonboardMethod(null);
+    setMoonboardBenchmark(false);
     setSavedClimb(null);
     setPublishDuplicateError(null);
     // Fresh climb identity for the next WIP so its queue item is independent.
     previewUuidRef.current = randomUUID();
     void clearDraft(draftKey);
-  }, [resetHolds, draftKey]);
+  }, [board.angle, resetHolds, draftKey]);
 
   // Build a minimal Climb the queue can hold for a not-yet-saved or just-saved
   // climb. The mutation input (`ClimbInput`) is a strict subset of Climb, so
@@ -399,7 +500,9 @@ export function useCreateClimbScreen({
       // update path; revisit if it shows up in offline-first flows.
       userId: profile?.id ?? null,
       description,
-      angle: board.angle,
+      // MoonBoard picks its angle inside the editor, so the queue item has to
+      // carry the in-editor angle rather than the route param.
+      angle: effectiveAngle,
       ascensionist_count: 0,
       difficulty: '',
       quality_average: '0',
@@ -417,7 +520,7 @@ export function useCreateClimbScreen({
       framesCount: 1,
       framesPace: null,
     }),
-    [name, description, noMatch, profile, savedClimb, board.angle, board.boardName, board.layoutId, t],
+    [name, description, noMatch, profile, savedClimb, effectiveAngle, board.boardName, board.layoutId, t],
   );
 
   // Push the freshly saved climb into the queue as the current climb so the
@@ -435,11 +538,11 @@ export function useCreateClimbScreen({
 
   // ---- Set Active: build a minimal Climb and push to the queue. ----
   const handleSetActive = useCallback(() => {
-    const frames = generateFramesString();
+    const frames = generateEditorFramesString();
     if (!frames) return;
     const uuid = savedClimb?.uuid ?? previewUuidRef.current ?? randomUUID();
     setCurrentClimb(climbToQueueItem(buildProvisionalClimb(uuid, frames), { uuid }));
-  }, [generateFramesString, savedClimb, buildProvisionalClimb, setCurrentClimb]);
+  }, [generateEditorFramesString, savedClimb, buildProvisionalClimb, setCurrentClimb]);
 
   // ---- BLE toggle (drives the header lightbulb): connect lights the wall with
   // the current holds; tapping again disconnects. ----
@@ -449,8 +552,8 @@ export function useCreateClimbScreen({
     // connect tears down the first attempt's scan and strands the picker.
     if (bluetooth.loading) return;
     if (bluetooth.isConnected) void bluetooth.disconnect();
-    else void bluetooth.connect(generateFramesString());
-  }, [bluetooth, generateFramesString]);
+    else void bluetooth.connect(generateEditorFramesString());
+  }, [bluetooth, generateEditorFramesString]);
 
   // ---- Save state machine. ----
   const editLocked = computeEditLocked(savedClimb);
@@ -475,7 +578,15 @@ export function useCreateClimbScreen({
       return;
     }
     if (editLocked) return;
-    if (!isValid) return;
+    if (!isMoonBoard && !isValid) return;
+    if (isMoonBoard && !isDraft && (startingCount === 0 || finishCount === 0)) {
+      showToast(t('createClimbForm.validation.needsStartFinish'), 'error');
+      return;
+    }
+    if (isMoonBoard && moonboardBenchmark && !moonboardGrade) {
+      showToast(t('mobile.create.validation.benchmarkRequiresGrade'), 'error');
+      return;
+    }
     if (name.trim() === '') {
       requestFocusName();
       return;
@@ -483,9 +594,10 @@ export function useCreateClimbScreen({
 
     setIsSaving(true);
     setPublishDuplicateError(null);
-    const frames = generateFramesString();
+    const frames = generateEditorFramesString();
     // Encode the no-match marker into the description only at save time.
-    const fullDescription = withNoMatch(description, noMatch);
+    const fullDescription = isMoonBoard ? description : withNoMatch(description, noMatch);
+    const moonboardHolds = isMoonBoard ? convertLitUpHoldsMapToMoonBoardHolds(litUpHoldsMap) : null;
     // The reducer removes OFF-state holds from the map, so key count equals
     // web's `totalHolds` (non-OFF hold count, used in Climb Created events).
     const holdCount = Object.keys(litUpHoldsMap).length;
@@ -496,15 +608,29 @@ export function useCreateClimbScreen({
     const boardLayout = getLayoutName(board.boardName, board.layoutId);
     try {
       if (canUpdate && savedClimb) {
-        const result = await updateClimb({
-          uuid: savedClimb.uuid,
-          boardType: board.boardName,
-          name: name.trim(),
-          description: fullDescription,
-          frames,
-          angle: board.angle,
-          isDraft,
-        });
+        const result =
+          isMoonBoard && moonboardHolds
+            ? await updateMoonBoardClimb({
+                uuid: savedClimb.uuid,
+                boardType: 'moonboard',
+                name: name.trim(),
+                description: fullDescription,
+                holds: moonboardHolds,
+                angle: moonboardAngle,
+                isDraft,
+                userGrade: moonboardGrade,
+                method: moonboardMethod,
+                ...(canSetMoonboardBenchmark ? { isBenchmark: moonboardBenchmark } : {}),
+              })
+            : await updateClimb({
+                uuid: savedClimb.uuid,
+                boardType: board.boardName,
+                name: name.trim(),
+                description: fullDescription,
+                frames,
+                angle: board.angle,
+                isDraft,
+              });
         setSavedClimb({
           uuid: result.uuid,
           boardType: board.boardName,
@@ -522,14 +648,28 @@ export function useCreateClimbScreen({
         });
         syncSavedToQueue(result.uuid, frames);
       } else {
-        const result = await saveClimb({
-          layout_id: board.layoutId,
-          name: name.trim(),
-          description: fullDescription,
-          is_draft: isDraft,
-          frames,
-          angle: board.angle,
-        });
+        const result =
+          isMoonBoard && moonboardHolds
+            ? await saveMoonBoardClimb({
+                boardType: 'moonboard',
+                layoutId: board.layoutId,
+                name: name.trim(),
+                description: fullDescription,
+                holds: moonboardHolds,
+                angle: moonboardAngle,
+                isDraft,
+                userGrade: moonboardGrade,
+                method: moonboardMethod,
+                isBenchmark: canSetMoonboardBenchmark && moonboardBenchmark,
+              })
+            : await saveClimb({
+                layout_id: board.layoutId,
+                name: name.trim(),
+                description: fullDescription,
+                is_draft: isDraft,
+                frames,
+                angle: board.angle,
+              });
         setSavedClimb({
           uuid: result.uuid,
           boardType: board.boardName,
@@ -553,6 +693,7 @@ export function useCreateClimbScreen({
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
       void queryClient.invalidateQueries({ queryKey: ['infiniteSearchClimbs'] });
       void queryClient.invalidateQueries({ queryKey: ['searchClimbsCount'] });
+      void queryClient.invalidateQueries({ queryKey: ['holdHeatmap'] });
       setJustSaved(true);
       showToast(isDraft ? t('mobile.create.save.draftToast') : t('mobile.create.save.publishedToast'), 'success');
       // A publish is commit-and-done — dismiss the drawer so the toast shows
@@ -581,17 +722,27 @@ export function useCreateClimbScreen({
     router,
     editLocked,
     isValid,
+    isMoonBoard,
+    startingCount,
+    finishCount,
+    moonboardBenchmark,
+    moonboardGrade,
     name,
     canUpdate,
     savedClimb,
     litUpHoldsMap,
-    generateFramesString,
+    generateEditorFramesString,
     updateClimb,
+    updateMoonBoardClimb,
     saveClimb,
+    saveMoonBoardClimb,
     board,
     description,
     noMatch,
     isDraft,
+    moonboardAngle,
+    moonboardMethod,
+    canSetMoonboardBenchmark,
     draftKey,
     requestFocusName,
     syncSavedToQueue,
@@ -602,6 +753,10 @@ export function useCreateClimbScreen({
   ]);
 
   const dismissDuplicateError = useCallback(() => setPublishDuplicateError(null), []);
+  const handleSetMoonboardGrade = useCallback((nextGrade: string | null) => {
+    setMoonboardGrade(nextGrade);
+    if (nextGrade === null) setMoonboardBenchmark(false);
+  }, []);
 
   const canSetActive = isValid;
 
@@ -632,6 +787,16 @@ export function useCreateClimbScreen({
     setIsDraft,
     noMatch,
     setNoMatch,
+    effectiveAngle,
+    moonboardAngle,
+    setMoonboardAngle,
+    moonboardGrade,
+    setMoonboardGrade: handleSetMoonboardGrade,
+    moonboardMethod,
+    setMoonboardMethod,
+    moonboardBenchmark,
+    setMoonboardBenchmark,
+    canSetMoonboardBenchmark,
     // save
     saveState,
     handleSave,

@@ -24,7 +24,7 @@ vi.mock('@react-native-async-storage/async-storage', () => {
   };
 });
 
-import { createClimbDraftKey } from '../create-climb-draft-store';
+import { createClimbDraftKey, loadDraft, saveDraft, type CreateClimbDraft } from '../create-climb-draft-store';
 
 beforeEach(async () => {
   const storage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
@@ -66,5 +66,46 @@ describe('createClimbDraftKey', () => {
 
     await expect(loadDraft('first-board')).resolves.toBeNull();
     await expect(loadDraft('second-board')).resolves.toBeNull();
+  });
+});
+
+describe('MoonBoard draft metadata', () => {
+  it('round-trips angle, grade, method, and benchmark state', async () => {
+    const draft = {
+      holdsJson: '{}',
+      name: 'Project',
+      description: 'Beta',
+      isDraft: true,
+      moonboard: {
+        angle: 25 as const,
+        userGrade: '7A',
+        method: 'method_footless' as const,
+        isBenchmark: true,
+      },
+    };
+
+    await saveDraft('moonboard-valid', draft);
+
+    await expect(loadDraft('moonboard-valid')).resolves.toEqual(draft);
+  });
+
+  it('loads an older draft when its optional MoonBoard metadata is invalid', async () => {
+    const draftWithInvalidMetadata = {
+      holdsJson: '{}',
+      name: 'Older project',
+      description: '',
+      isDraft: true,
+      moonboard: {
+        angle: 30,
+        userGrade: '6B',
+        method: 'method_no_kickboard',
+        isBenchmark: false,
+      },
+    } as unknown as CreateClimbDraft;
+    await saveDraft('moonboard-invalid', draftWithInvalidMetadata);
+
+    const stored = await loadDraft('moonboard-invalid');
+    expect(stored).toMatchObject({ name: 'Older project', isDraft: true });
+    expect(stored?.moonboard).toBeUndefined();
   });
 });

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { climbMutations } from '../graphql/resolvers/climbs/mutations';
 
-const { mockDb, mockPublishSocialEvent, insertCalls } = vi.hoisted(() => {
+const { mockDb, mockPublishSocialEvent, mockAcquireDuplicateGateLock, insertCalls } = vi.hoisted(() => {
   const insertCalls: Array<{ table: unknown; values: unknown }> = [];
 
   const mockDb = {
@@ -15,8 +15,9 @@ const { mockDb, mockPublishSocialEvent, insertCalls } = vi.hoisted(() => {
   };
 
   const mockPublishSocialEvent = vi.fn().mockResolvedValue(undefined);
+  const mockAcquireDuplicateGateLock = vi.fn().mockResolvedValue(undefined);
 
-  return { mockDb, mockPublishSocialEvent, insertCalls };
+  return { mockDb, mockPublishSocialEvent, mockAcquireDuplicateGateLock, insertCalls };
 });
 
 vi.mock('../db/client', () => ({
@@ -35,7 +36,7 @@ vi.mock('../graphql/resolvers/climbs/climb-similarity', async () => {
   );
   return {
     ...actual,
-    acquireDuplicateGateLock: vi.fn().mockResolvedValue(undefined),
+    acquireDuplicateGateLock: mockAcquireDuplicateGateLock,
   };
 });
 
@@ -301,6 +302,444 @@ describe('climb mutations', () => {
       benchmarkDifficulty: null,
       difficultyAverage: 17,
     });
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+    expect(mockAcquireDuplicateGateLock).toHaveBeenCalledWith(mockDb, 'moonboard', 3, '1:STARTING,13:HAND,25:FINISH');
+    // Exact + legacy duplicate lookups, followed by the in-transaction
+    // required_set_ids population query.
+    expect(mockDb.execute).toHaveBeenCalledTimes(3);
+  });
+
+  it('accepts an ungraded MoonBoard draft with the default method', async () => {
+    mockDb.select.mockReturnValueOnce(
+      createMockChain([{ name: 'Alice', displayName: 'Alice Setter', image: null, avatarUrl: null }]),
+    );
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.saveMoonBoardClimb(
+      {},
+      {
+        input: {
+          boardType: 'moonboard',
+          layoutId: 3,
+          name: 'MoonBoard Draft',
+          description: '',
+          holds: { start: [], hand: [], finish: [] },
+          angle: 25,
+          isDraft: true,
+          userGrade: null,
+          method: null,
+        },
+      },
+      makeCtx(),
+    );
+
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0].values).toMatchObject({
+      boardType: 'moonboard',
+      angle: 25,
+      isDraft: true,
+      isListed: false,
+      characteristics: null,
+    });
+    expect(mockAcquireDuplicateGateLock).not.toHaveBeenCalled();
+  });
+
+  it('rejects angles MoonBoard hardware does not support', async () => {
+    await expect(
+      climbMutations.saveMoonBoardClimb(
+        {},
+        {
+          input: {
+            boardType: 'moonboard',
+            layoutId: 3,
+            name: 'Invalid angle',
+            holds: { start: [], hand: [], finish: [] },
+            angle: 30,
+            isDraft: true,
+          },
+        },
+        makeCtx(),
+      ),
+    ).rejects.toThrow(/invalid input/i);
+    expect(mockDb.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects clearing isBenchmark without an admin/leader role', async () => {
+    mockDb.select.mockReturnValueOnce(createMockChain([]));
+
+    await expect(
+      climbMutations.updateMoonBoardClimb(
+        {},
+        { input: { uuid: 'climb-1', boardType: 'moonboard', isBenchmark: false } },
+        makeCtx(),
+      ),
+    ).rejects.toThrow(/admin or community leader/i);
+
+    expect(mockDb.transaction).not.toHaveBeenCalled();
+    expect(mockAcquireDuplicateGateLock).not.toHaveBeenCalled();
+  });
+
+  it('locks and checks MoonBoard draft publishing inside the write transaction', async () => {
+    mockDb.execute.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    mockDb.select
+      .mockReturnValueOnce(
+        createMockChain([
+          {
+            uuid: 'climb-1',
+            userId: 'user-123',
+            name: 'Draft',
+            description: '',
+            isDraft: true,
+            publishedAt: null,
+            createdAt: '2026-05-14T20:00:00.000Z',
+            angle: 40,
+            layoutId: 3,
+            frames: 'p1r42p13r43p25r44',
+            setterUsername: 'Alice',
+            characteristics: null,
+          },
+        ]),
+      )
+      .mockReturnValueOnce(
+        createMockChain([
+          { holdId: 1, holdState: 'STARTING' },
+          { holdId: 13, holdState: 'HAND' },
+          { holdId: 25, holdState: 'FINISH' },
+        ]),
+      )
+      .mockReturnValueOnce(createMockChain([]))
+      .mockReturnValueOnce(
+        createMockChain([
+          {
+            userId: 'user-123',
+            name: 'Draft',
+            description: '',
+            isDraft: true,
+            publishedAt: null,
+            angle: 40,
+            frames: 'p1r42p13r43p25r44',
+            setterUsername: 'Alice',
+            characteristics: null,
+          },
+        ]),
+      )
+      .mockReturnValueOnce(
+        createMockChain([
+          { holdId: 1, holdState: 'STARTING' },
+          { holdId: 13, holdState: 'HAND' },
+          { holdId: 25, holdState: 'FINISH' },
+        ]),
+      )
+      .mockReturnValueOnce(createMockChain([]))
+      .mockReturnValueOnce(createMockChain([{ name: 'Alice', displayName: 'Alice', image: null, avatarUrl: null }]));
+    mockDb.update.mockReturnValue(createMockChain());
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.updateMoonBoardClimb(
+      {},
+      { input: { uuid: 'climb-1', boardType: 'moonboard', isDraft: false } },
+      makeCtx(),
+    );
+
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+    expect(mockAcquireDuplicateGateLock).toHaveBeenCalledWith(mockDb, 'moonboard', 3, '1:STARTING,13:HAND,25:FINISH');
+    expect(mockDb.update).toHaveBeenCalled();
+    expect(insertCalls).toContainEqual(
+      expect.objectContaining({ values: expect.objectContaining({ boardType: 'moonboard', climbUuid: 'climb-1' }) }),
+    );
+  });
+
+  it('rejects malformed or overlapping MoonBoard coordinates before writing', async () => {
+    for (const holds of [
+      { start: ['L1'], hand: [], finish: ['K18'] },
+      { start: ['A1'], hand: ['a1'], finish: ['K18'] },
+    ]) {
+      await expect(
+        climbMutations.saveMoonBoardClimb(
+          {},
+          {
+            input: {
+              boardType: 'moonboard',
+              layoutId: 3,
+              name: 'Invalid',
+              holds,
+              angle: 40,
+              isDraft: false,
+            },
+          },
+          makeCtx(),
+        ),
+      ).rejects.toThrow(/invalid input/i);
+    }
+    expect(mockDb.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects a benchmark when its grade cannot be resolved', async () => {
+    mockDb.select
+      .mockReturnValueOnce(createMockChain([{ role: 'community_leader', boardType: null }]))
+      .mockReturnValueOnce(
+        createMockChain([{ name: 'Alice', displayName: 'Alice Setter', image: null, avatarUrl: null }]),
+      )
+      .mockReturnValueOnce(createMockChain([]));
+
+    await expect(
+      climbMutations.saveMoonBoardClimb(
+        {},
+        {
+          input: {
+            boardType: 'moonboard',
+            layoutId: 3,
+            name: 'Invalid Benchmark',
+            holds: { start: ['A1'], hand: ['B2'], finish: ['C3'] },
+            angle: 40,
+            isDraft: false,
+            userGrade: 'not-a-grade',
+            isBenchmark: true,
+          },
+        },
+        makeCtx(),
+      ),
+    ).rejects.toThrow(/valid grade/i);
+    expect(mockDb.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects a partial update when metadata changed before the row lock', async () => {
+    const existing = {
+      uuid: 'climb-1',
+      userId: 'user-123',
+      name: 'Draft',
+      description: 'Original description',
+      isDraft: true,
+      publishedAt: null,
+      createdAt: '2026-05-14T20:00:00.000Z',
+      angle: 40,
+      layoutId: 3,
+      frames: 'p1r42p13r43p25r44',
+      setterUsername: 'Alice',
+      characteristics: null,
+    };
+    const holds = [
+      { holdId: 1, holdState: 'STARTING' },
+      { holdId: 13, holdState: 'HAND' },
+      { holdId: 25, holdState: 'FINISH' },
+    ];
+    mockDb.execute.mockResolvedValueOnce([]);
+    mockDb.select
+      .mockReturnValueOnce(createMockChain([existing]))
+      .mockReturnValueOnce(createMockChain(holds))
+      .mockReturnValueOnce(createMockChain([]))
+      .mockReturnValueOnce(createMockChain([{ ...existing, description: 'Concurrent description' }]))
+      .mockReturnValueOnce(createMockChain(holds))
+      .mockReturnValueOnce(createMockChain([]));
+
+    await expect(
+      climbMutations.updateMoonBoardClimb(
+        {},
+        { input: { uuid: 'climb-1', boardType: 'moonboard', angle: 25 } },
+        makeCtx(),
+      ),
+    ).rejects.toThrow(/changed while it was being edited/i);
+    expect(mockDb.update).not.toHaveBeenCalled();
+  });
+
+  it('rechecks the MoonBoard edit window after locking the climb', async () => {
+    const publishedAt = '2026-07-16T00:00:00.000Z';
+    const publishedMs = Date.parse(publishedAt);
+    const editWindowMs = 24 * 60 * 60 * 1000;
+    const existing = {
+      uuid: 'climb-1',
+      userId: 'user-123',
+      name: 'Published',
+      description: '',
+      isDraft: false,
+      publishedAt,
+      createdAt: publishedAt,
+      angle: 40,
+      layoutId: 3,
+      frames: 'p1r42p13r43p25r44',
+      setterUsername: 'Alice',
+      characteristics: null,
+    };
+    const holds = [
+      { holdId: 1, holdState: 'STARTING' },
+      { holdId: 13, holdState: 'HAND' },
+      { holdId: 25, holdState: 'FINISH' },
+    ];
+    mockDb.execute.mockResolvedValueOnce([]);
+    mockDb.select
+      .mockReturnValueOnce(createMockChain([existing]))
+      .mockReturnValueOnce(createMockChain(holds))
+      .mockReturnValueOnce(createMockChain([]))
+      .mockReturnValueOnce(createMockChain([existing]))
+      .mockReturnValueOnce(createMockChain(holds))
+      .mockReturnValueOnce(createMockChain([]));
+    const dateNow = vi
+      .spyOn(Date, 'now')
+      .mockReturnValueOnce(publishedMs + editWindowMs - 1)
+      .mockReturnValueOnce(publishedMs + editWindowMs + 1);
+
+    try {
+      await expect(
+        climbMutations.updateMoonBoardClimb(
+          {},
+          { input: { uuid: 'climb-1', boardType: 'moonboard', name: 'Too late' } },
+          makeCtx(),
+        ),
+      ).rejects.toThrow(/24 hour edit window has expired/i);
+    } finally {
+      dateNow.mockRestore();
+    }
+
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+    expect(mockDb.update).not.toHaveBeenCalled();
+  });
+
+  it('does not seed a stats row when a MoonBoard draft is saved without a grade', async () => {
+    // Mobile always sends userGrade (null when the picker is empty), so gating
+    // on `userGrade !== undefined` would upsert a null-difficulty, zero-ascent
+    // row on every draft autosave. saveMoonBoardClimb skips the seed for a
+    // grade-less draft; the update path has to match.
+    const existing = {
+      uuid: 'climb-1',
+      userId: 'user-123',
+      name: 'Draft',
+      description: '',
+      isDraft: true,
+      publishedAt: null,
+      createdAt: '2026-07-16T00:00:00.000Z',
+      angle: 40,
+      layoutId: 3,
+      frames: 'p1r42p13r43p25r44',
+      setterUsername: 'Alice',
+      characteristics: null,
+    };
+    const holds = [
+      { holdId: 1, holdState: 'STARTING' },
+      { holdId: 13, holdState: 'HAND' },
+      { holdId: 25, holdState: 'FINISH' },
+    ];
+    mockDb.execute.mockResolvedValueOnce([]);
+    mockDb.select
+      .mockReturnValueOnce(createMockChain([existing]))
+      .mockReturnValueOnce(createMockChain(holds))
+      .mockReturnValueOnce(createMockChain([]))
+      .mockReturnValueOnce(createMockChain([existing]))
+      .mockReturnValueOnce(createMockChain(holds))
+      .mockReturnValueOnce(createMockChain([]));
+    mockDb.update.mockReturnValue(createMockChain());
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.updateMoonBoardClimb(
+      {},
+      { input: { uuid: 'climb-1', boardType: 'moonboard', name: 'Draft', isDraft: true, userGrade: null } },
+      makeCtx(),
+    );
+
+    expect(mockDb.update).toHaveBeenCalledTimes(1);
+    expect(insertCalls).toHaveLength(0);
+  });
+
+  it('still writes stats for a grade-less draft that already has a stats row', async () => {
+    // An existing row must keep being updated (that's how a grade gets cleared)
+    // — the skip only covers the "nothing to write yet" case.
+    const existing = {
+      uuid: 'climb-1',
+      userId: 'user-123',
+      name: 'Draft',
+      description: '',
+      isDraft: true,
+      publishedAt: null,
+      createdAt: '2026-07-16T00:00:00.000Z',
+      angle: 40,
+      layoutId: 3,
+      frames: 'p1r42p13r43p25r44',
+      setterUsername: 'Alice',
+      characteristics: null,
+    };
+    const holds = [
+      { holdId: 1, holdState: 'STARTING' },
+      { holdId: 13, holdState: 'HAND' },
+      { holdId: 25, holdState: 'FINISH' },
+    ];
+    const stats = [{ displayDifficulty: 17, benchmarkDifficulty: null }];
+    mockDb.execute.mockResolvedValueOnce([]);
+    mockDb.select
+      .mockReturnValueOnce(createMockChain([existing]))
+      .mockReturnValueOnce(createMockChain(holds))
+      .mockReturnValueOnce(createMockChain(stats))
+      .mockReturnValueOnce(createMockChain([existing]))
+      .mockReturnValueOnce(createMockChain(holds))
+      .mockReturnValueOnce(createMockChain(stats));
+    mockDb.update.mockReturnValue(createMockChain());
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.updateMoonBoardClimb(
+      {},
+      { input: { uuid: 'climb-1', boardType: 'moonboard', name: 'Draft', isDraft: true, userGrade: null } },
+      makeCtx(),
+    );
+
+    expect(insertCalls).toContainEqual(
+      expect.objectContaining({
+        values: expect.objectContaining({ climbUuid: 'climb-1', displayDifficulty: null }),
+      }),
+    );
+  });
+
+  it('removes old-angle setter stats when an angle edit has no tick history', async () => {
+    const publishedAt = new Date().toISOString();
+    const existing = {
+      uuid: 'climb-1',
+      userId: 'user-123',
+      name: 'Published',
+      description: '',
+      isDraft: false,
+      publishedAt,
+      createdAt: publishedAt,
+      angle: 40,
+      layoutId: 3,
+      frames: 'p1r42p13r43p25r44',
+      setterUsername: 'Alice',
+      characteristics: null,
+    };
+    const holds = [
+      { holdId: 1, holdState: 'STARTING' },
+      { holdId: 13, holdState: 'HAND' },
+      { holdId: 25, holdState: 'FINISH' },
+    ];
+    const stats = [{ displayDifficulty: 17, benchmarkDifficulty: null }];
+    mockDb.execute.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    mockDb.select
+      .mockReturnValueOnce(createMockChain([existing]))
+      .mockReturnValueOnce(createMockChain(holds))
+      .mockReturnValueOnce(createMockChain(stats))
+      .mockReturnValueOnce(createMockChain([existing]))
+      .mockReturnValueOnce(createMockChain(holds))
+      .mockReturnValueOnce(createMockChain(stats))
+      .mockReturnValueOnce(createMockChain([]));
+    mockDb.update.mockReturnValue(createMockChain());
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+    mockDb.delete.mockReturnValue(createMockChain());
+
+    await climbMutations.updateMoonBoardClimb(
+      {},
+      { input: { uuid: 'climb-1', boardType: 'moonboard', angle: 25 } },
+      makeCtx(),
+    );
+
+    expect(mockDb.delete).toHaveBeenCalledTimes(1);
+    expect(mockDb.update).toHaveBeenCalledTimes(1);
+    expect(mockAcquireDuplicateGateLock).toHaveBeenCalledWith(mockDb, 'moonboard', 3, expect.any(String));
   });
 
   it('rejects isBenchmark for a user without an admin/leader role', async () => {

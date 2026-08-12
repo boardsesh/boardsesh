@@ -470,7 +470,8 @@
       "publishDuplicateUnnamed": "Este patrón de presas coincide con un bloque existente. Activa Borrador para guardarlo sin publicar, o cambia una presa.",
       "viewMatchingClimb": "Ver bloque coincidente",
       "identicalClimbDrawerTitle": "Bloque idéntico",
-      "saveFailedFallback": "No se pudo guardar el bloque. Inténtalo de nuevo."
+      "saveFailedFallback": "No se pudo guardar el bloque. Inténtalo de nuevo.",
+      "heatmapLoadFailed": "No se pudo cargar el mapa de calor de presas. Inténtalo de nuevo cuando tengas conexión."
     },
     "settings": {
       "tooltip": "Ajustes del bloque",
@@ -856,7 +857,9 @@
         "clear": "Borrar presas",
         "setActive": "Fijar como vía activa",
         "undo": "Deshacer",
-        "redo": "Rehacer"
+        "redo": "Rehacer",
+        "showHeatmap": "Mostrar mapa de calor de presas",
+        "hideHeatmap": "Ocultar mapa de calor de presas"
       },
       "holdRole": {
         "title": "Asignar rol de presa",
@@ -868,7 +871,11 @@
         "showAllHoldsLabel": "Mostrar todas las presas",
         "showAllHoldsDescription": "Resalta todas las presas pulsables del panel.",
         "noMatchLabel": "Sin igualar",
-        "noMatchDescription": "No se pueden igualar las manos en la misma presa"
+        "noMatchDescription": "No se pueden igualar las manos en la misma presa",
+        "benchmarkDescription": "Marca este bloque como benchmark de MoonBoard. Se necesita un grado."
+      },
+      "validation": {
+        "benchmarkRequiresGrade": "Elige un grado antes de marcar un benchmark."
       },
       "drafts": {
         "holds_one": "{{count}} presa",

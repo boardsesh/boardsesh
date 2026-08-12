@@ -123,6 +123,10 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
   const baseConditions: SQL[] = [
     eq(boardClimbs.boardType, params.board_name),
     eq(boardClimbs.layoutId, params.layout_id),
+    // Aurora stores one climb definition with stats at many angles. MoonBoard
+    // problems are native to one angle, so the climb row itself is part of the
+    // physical configuration identity.
+    ...(params.board_name === 'moonboard' ? [eq(boardClimbs.angle, params.angle)] : []),
     ...(isListedCondition ? [isListedCondition] : []),
     isDraftCondition,
     ...(climbTypeCondition ? [climbTypeCondition] : []),

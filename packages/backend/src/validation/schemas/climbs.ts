@@ -260,11 +260,34 @@ export const UpdateClimbInputSchema = z.object({
   framesPace: z.number().int().min(0).optional(),
 });
 
-export const MoonBoardHoldsInputSchema = z.object({
-  start: z.array(z.string()).default([]),
-  hand: z.array(z.string()).default([]),
-  finish: z.array(z.string()).default([]),
-});
+const MoonBoardCoordinateSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-K](?:[1-9]|1[0-8])$/i, 'MoonBoard coordinates must be between A1 and K18')
+  .transform((coordinate) => coordinate.toUpperCase());
+
+export const MoonBoardHoldsInputSchema = z
+  .object({
+    start: z.array(MoonBoardCoordinateSchema).max(198).default([]),
+    hand: z.array(MoonBoardCoordinateSchema).max(198).default([]),
+    finish: z.array(MoonBoardCoordinateSchema).max(198).default([]),
+  })
+  .superRefine((holds, ctx) => {
+    const roleByCoordinate = new Map<string, string>();
+    for (const [role, coordinates] of Object.entries(holds)) {
+      for (const coordinate of coordinates) {
+        const existingRole = roleByCoordinate.get(coordinate);
+        if (existingRole) {
+          ctx.addIssue({
+            code: 'custom',
+            message: `${coordinate} cannot be used more than once or in both ${existingRole} and ${role}`,
+          });
+        } else {
+          roleByCoordinate.set(coordinate, role);
+        }
+      }
+    }
+  });
 
 export const SaveMoonBoardClimbInputSchema = z.object({
   boardType: z.literal('moonboard'),
@@ -272,9 +295,9 @@ export const SaveMoonBoardClimbInputSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(2000).optional().default(''),
   holds: MoonBoardHoldsInputSchema,
-  angle: z.number().int().min(0).max(90),
+  angle: z.union([z.literal(25), z.literal(40)]),
   isDraft: z.boolean().optional(),
-  userGrade: z.string().max(20).optional(),
+  userGrade: z.string().max(20).nullable().optional(),
   isBenchmark: z.boolean().optional(),
   // MoonBoard problem "method" as a characteristic token (mutually exclusive).
   // Omitted = the "feet follow hands" default. Source of truth for the token set:
@@ -285,8 +308,56 @@ export const SaveMoonBoardClimbInputSchema = z.object({
       CLIMB_CHARACTERISTICS.METHOD_FOOTLESS_KICKBOARD,
       CLIMB_CHARACTERISTICS.METHOD_NO_KICKBOARD,
     ])
+    .nullable()
     .optional(),
-  setter: z.string().max(100).optional(),
+  setter: z.string().max(100).nullable().optional(),
+});
+
+export const UpdateMoonBoardClimbInputSchema = z
+  .object({
+    uuid: ExternalUUIDSchema,
+    boardType: z.literal('moonboard'),
+    name: z.string().min(1).max(200).optional(),
+    description: z.string().max(2000).nullable().optional(),
+    holds: MoonBoardHoldsInputSchema.optional(),
+    angle: z.union([z.literal(25), z.literal(40)]).optional(),
+    isDraft: z.boolean().optional(),
+    userGrade: z.string().max(20).nullable().optional(),
+    isBenchmark: z.boolean().optional(),
+    method: z
+      .enum([
+        CLIMB_CHARACTERISTICS.METHOD_FOOTLESS,
+        CLIMB_CHARACTERISTICS.METHOD_FOOTLESS_KICKBOARD,
+        CLIMB_CHARACTERISTICS.METHOD_NO_KICKBOARD,
+      ])
+      .nullable()
+      .optional(),
+    setter: z.string().max(100).nullable().optional(),
+  })
+  .refine(
+    (input) =>
+      input.name !== undefined ||
+      input.description !== undefined ||
+      input.holds !== undefined ||
+      input.angle !== undefined ||
+      input.isDraft !== undefined ||
+      input.userGrade !== undefined ||
+      input.isBenchmark !== undefined ||
+      input.method !== undefined ||
+      input.setter !== undefined,
+    { message: 'At least one field must be provided' },
+  );
+
+export const HoldHeatmapInputSchema = z.object({
+  boardName: BoardNameSchema,
+  layoutId: z.number().int().positive(),
+  sizeId: z.number().int().positive(),
+  setIds: z
+    .string()
+    .trim()
+    .max(500)
+    .regex(/^\d+(,\d+)*$/, 'setIds must be a non-empty comma-separated list of integers'),
+  angle: z.number().int().min(0).max(90),
 });
 
 export const CheckMoonBoardClimbDuplicatesInputSchema = z.object({

@@ -1,4 +1,5 @@
 export * from './climb-search';
+export * from './hold-heatmap';
 export * from './favorites';
 export * from './ticks';
 export * from './playlists';

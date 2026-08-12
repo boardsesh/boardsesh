@@ -1,6 +1,8 @@
 import { eq, and, gte, desc, asc, inArray, sql } from 'drizzle-orm';
 import {
   type CheckMoonBoardClimbDuplicatesInput,
+  type HoldHeatmapInput,
+  type HoldStat,
   type ClimbSearchInput,
   type ConnectionContext,
   type SetterStat,
@@ -11,7 +13,7 @@ import {
   USER_SPECIFIC_SEARCH_PARAMS,
 } from '@boardsesh/shared-schema';
 import type { BoardName } from '@boardsesh/board-constants';
-import { getGradeLabel, getSetterStats } from '@boardsesh/db/queries';
+import { getGradeLabel, getHoldHeatmapData, getSetterStats } from '@boardsesh/db/queries';
 import { logger } from '../../../utils/logger';
 import {
   type ClimbSearchParams,
@@ -31,15 +33,72 @@ import {
   ExternalUUIDSchema,
   SetterStatsInputSchema,
   SimilarClimbsInputSchema,
+  HoldHeatmapInputSchema,
 } from '../../../validation/schemas';
 import type { ClimbSearchContext } from '../shared/types';
 import { db, dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { redisClientManager } from '../../../redis/client';
 
 // Debug logging flag - only log in development
 const DEBUG = process.env.NODE_ENV === 'development';
+const HOLD_HEATMAP_CACHE_PREFIX = 'boardsesh:hold-heatmap:v1:';
+const HOLD_HEATMAP_CACHE_TTL_SECONDS = 5 * 60;
+
+function holdHeatmapCacheKey(input: HoldHeatmapInput): string {
+  return `${HOLD_HEATMAP_CACHE_PREFIX}${input.boardName}:${input.layoutId}:${input.sizeId}:${input.setIds}:${input.angle}`;
+}
+
+async function getCachedHoldHeatmap(input: HoldHeatmapInput): Promise<HoldStat[] | null> {
+  if (!redisClientManager.isRedisConnected()) return null;
+  try {
+    const { publisher } = redisClientManager.getClients();
+    const cached = await publisher.get(holdHeatmapCacheKey(input));
+    return cached === null ? null : (JSON.parse(cached) as HoldStat[]);
+  } catch (error) {
+    logger.warn('[hold-heatmap] cache read failed', { error });
+    return null;
+  }
+}
+
+function cacheHoldHeatmap(input: HoldHeatmapInput, stats: HoldStat[]): void {
+  if (!redisClientManager.isRedisConnected()) return;
+  try {
+    const { publisher } = redisClientManager.getClients();
+    publisher
+      .set(holdHeatmapCacheKey(input), JSON.stringify(stats), 'EX', HOLD_HEATMAP_CACHE_TTL_SECONDS)
+      .catch((error: unknown) => logger.warn('[hold-heatmap] cache write failed', { error }));
+  } catch (error) {
+    logger.warn('[hold-heatmap] cache write initiation failed', { error });
+  }
+}
 
 export const climbQueries = {
+  holdHeatmap: async (
+    _: unknown,
+    { input }: { input: HoldHeatmapInput },
+    ctx: ConnectionContext,
+  ): Promise<HoldStat[]> => {
+    await applyRateLimit(ctx, 30, 'hold-heatmap');
+    const validated = validateInput(HoldHeatmapInputSchema, input, 'input');
+    const cached = await getCachedHoldHeatmap(validated);
+    if (cached) return cached;
+
+    const stats = await getHoldHeatmapData(
+      dbRead,
+      {
+        board_name: validated.boardName as BoardName,
+        layout_id: validated.layoutId,
+        size_id: validated.sizeId,
+        set_ids: validated.setIds.split(',').map(Number),
+        angle: validated.angle,
+      },
+      {},
+    );
+    cacheHoldHeatmap(validated, stats);
+    return stats;
+  },
+
   checkMoonBoardClimbDuplicates: async (
     _: unknown,
     { input }: { input: CheckMoonBoardClimbDuplicatesInput },

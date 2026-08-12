@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { GraphQLOperationError } from '@boardsesh/graphql-client';
-import { useSaveClimb, useUpdateClimb } from '../use-save-climb';
+import { useSaveClimb, useSaveMoonBoardClimb, useUpdateClimb, useUpdateMoonBoardClimb } from '../use-save-climb';
 import type { ExecuteWs } from '../adapter';
 import type { SaveClimbOptions } from '../climb-helpers';
 import { createWrapper } from './test-helpers';
@@ -136,5 +136,35 @@ describe('useUpdateClimb (shared)', () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(showError).toHaveBeenCalledWith('updateClimbFailed');
+  });
+});
+
+describe('MoonBoard climb mutations (shared)', () => {
+  it('sends the dedicated save mutation payload unchanged', async () => {
+    const executeWs = vi.fn().mockResolvedValue({ saveMoonBoardClimb: { uuid: 'moon-1' } });
+    const { wrapper } = createWrapper({ executeWs: executeWs as unknown as ExecuteWs });
+    const { result } = renderHook(() => useSaveMoonBoardClimb(), { wrapper });
+    const input = {
+      boardType: 'moonboard',
+      layoutId: 3,
+      name: 'Moon problem',
+      holds: { start: ['A1'], hand: ['D3'], finish: ['K18'] },
+      angle: 40,
+    };
+
+    await act(async () => result.current.mutate(input));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(executeWs).toHaveBeenCalledWith(expect.objectContaining({ variables: { input } }));
+  });
+
+  it('sends an omitted benchmark flag unchanged on update', async () => {
+    const executeWs = vi.fn().mockResolvedValue({ updateMoonBoardClimb: { uuid: 'moon-1', isDraft: true } });
+    const { wrapper } = createWrapper({ executeWs: executeWs as unknown as ExecuteWs });
+    const { result } = renderHook(() => useUpdateMoonBoardClimb(), { wrapper });
+    const input = { uuid: 'moon-1', boardType: 'moonboard', name: 'Edited' };
+
+    await act(async () => result.current.mutate(input));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(executeWs).toHaveBeenCalledWith(expect.objectContaining({ variables: { input } }));
   });
 });

@@ -10,12 +10,21 @@
 import { getPreference, setPreference, removePreference, removePreferencesMatching } from './preference-store';
 import type { UserStorageOwner } from './user-storage-owner';
 
+export type MoonBoardDraftMetadata = {
+  angle: 25 | 40;
+  userGrade: string | null;
+  method: 'method_footless' | 'method_footless_kickboard' | 'method_no_kickboard' | null;
+  isBenchmark: boolean;
+};
+
 export type CreateClimbDraft = {
   /** JSON.stringify of the editor's LitUpHoldsMap. */
   holdsJson: string;
   name: string;
   description: string;
   isDraft: boolean;
+  /** MoonBoard-only state. Optional so pre-existing WIP snapshots still load. */
+  moonboard?: MoonBoardDraftMetadata;
 };
 
 const KEY_PREFIX = 'boardsesh_create_climb_draft:';
@@ -53,10 +62,35 @@ function isCreateClimbDraft(value: unknown): value is CreateClimbDraft {
   );
 }
 
+function readMoonBoardMetadata(value: unknown): MoonBoardDraftMetadata | undefined {
+  if (value == null || typeof value !== 'object') return undefined;
+  const candidate = value as Partial<MoonBoardDraftMetadata>;
+  const validMethod =
+    candidate.method === null ||
+    candidate.method === 'method_footless' ||
+    candidate.method === 'method_footless_kickboard' ||
+    candidate.method === 'method_no_kickboard';
+  if (
+    (candidate.angle !== 25 && candidate.angle !== 40) ||
+    (candidate.userGrade !== null && typeof candidate.userGrade !== 'string') ||
+    !validMethod ||
+    typeof candidate.isBenchmark !== 'boolean'
+  ) {
+    return undefined;
+  }
+  return {
+    angle: candidate.angle,
+    userGrade: candidate.userGrade,
+    method: candidate.method as MoonBoardDraftMetadata['method'],
+    isBenchmark: candidate.isBenchmark,
+  };
+}
+
 /** Returns the saved working draft for this board, or null if none/invalid. */
 export async function loadDraft(boardKey: string, _owner?: UserStorageOwner | null): Promise<CreateClimbDraft | null> {
   const stored = await getPreference<unknown>(storageKey(boardKey));
-  return isCreateClimbDraft(stored) ? stored : null;
+  if (!isCreateClimbDraft(stored)) return null;
+  return { ...stored, moonboard: readMoonBoardMetadata(stored.moonboard) };
 }
 
 /** Persists the current working draft for this board (overwrites any prior). */

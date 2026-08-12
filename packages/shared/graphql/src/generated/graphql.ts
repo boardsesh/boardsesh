@@ -2737,6 +2737,26 @@ export type GymTopClimb = {
   name?: Maybe<Scalars['String']['output']>;
 };
 
+export type HoldHeatmapInput = {
+  angle: Scalars['Int']['input'];
+  boardName: Scalars['String']['input'];
+  layoutId: Scalars['Int']['input'];
+  setIds: Scalars['String']['input'];
+  sizeId: Scalars['Int']['input'];
+};
+
+export type HoldStat = {
+  __typename?: 'HoldStat';
+  averageDifficulty?: Maybe<Scalars['Float']['output']>;
+  finishUses: Scalars['Int']['output'];
+  footUses: Scalars['Int']['output'];
+  handUses: Scalars['Int']['output'];
+  holdId: Scalars['Int']['output'];
+  startingUses: Scalars['Int']['output'];
+  totalAscents: Scalars['Int']['output'];
+  totalUses: Scalars['Int']['output'];
+};
+
 /** A scanned post whose climb name matched multiple climbs — the user picks one. */
 export type InstagramBetaAmbiguous = {
   __typename?: 'InstagramBetaAmbiguous';
@@ -3437,6 +3457,8 @@ export type Mutation = {
    * and linked to this kiosk's gym.
    */
   updateGymKiosk: GymKiosk;
+  /** Update a MoonBoard climb, including its holds, grade, method, and benchmark metadata. */
+  updateMoonBoardClimb: UpdateClimbResult;
   /** Update playlist metadata. */
   updatePlaylist: Playlist;
   /** Update only lastAccessedAt for a playlist (does not update updatedAt). */
@@ -4030,6 +4052,11 @@ export type MutationUpdateGymArgs = {
 /** Root mutation type for all write operations. */
 export type MutationUpdateGymKioskArgs = {
   input: UpdateGymKioskInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationUpdateMoonBoardClimbArgs = {
+  input: UpdateMoonBoardClimbInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4845,6 +4872,8 @@ export type Query = {
    * bounded to the gym's linked boards and the time window.
    */
   gymStats: GymStats;
+  /** Community hold usage for one board configuration. */
+  holdHeatmap: Array<HoldStat>;
   /**
    * Resolve scraped Instagram posts against Boardsesh: which beta videos are
    * missing, already linked, ambiguous, or unmatched. Read-only — the client
@@ -5433,6 +5462,11 @@ export type QueryGymMembersArgs = {
 /** Root query type for all read operations. */
 export type QueryGymStatsArgs = {
   input: GymStatsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryHoldHeatmapArgs = {
+  input: HoldHeatmapInput;
 };
 
 /** Root query type for all read operations. */
@@ -7563,6 +7597,20 @@ export type UpdateGymKioskInput = {
   slug?: InputMaybe<Scalars['String']['input']>;
 };
 
+export type UpdateMoonBoardClimbInput = {
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  boardType: Scalars['String']['input'];
+  description?: InputMaybe<Scalars['String']['input']>;
+  holds?: InputMaybe<MoonBoardHoldsInput>;
+  isBenchmark?: InputMaybe<Scalars['Boolean']['input']>;
+  isDraft?: InputMaybe<Scalars['Boolean']['input']>;
+  method?: InputMaybe<MoonBoardMethod>;
+  name?: InputMaybe<Scalars['String']['input']>;
+  setter?: InputMaybe<Scalars['String']['input']>;
+  userGrade?: InputMaybe<Scalars['String']['input']>;
+  uuid: Scalars['ID']['input'];
+};
+
 /** Input for updating a playlist. */
 export type UpdatePlaylistInput = {
   /** New color */
@@ -8554,6 +8602,25 @@ export type UpdateAppFeedbackStatusMutation = {
   };
 };
 
+export type HoldHeatmapQueryVariables = Exact<{
+  input: HoldHeatmapInput;
+}>;
+
+export type HoldHeatmapQuery = {
+  __typename?: 'Query';
+  holdHeatmap: Array<{
+    __typename?: 'HoldStat';
+    holdId: number;
+    totalUses: number;
+    startingUses: number;
+    handUses: number;
+    footUses: number;
+    finishUses: number;
+    totalAscents: number;
+    averageDifficulty?: number | null;
+  }>;
+};
+
 export type GetNewClimbFeedQueryVariables = Exact<{
   input: NewClimbFeedInput;
 }>;
@@ -8709,6 +8776,21 @@ export type UpdateClimbMutationVariables = Exact<{
 export type UpdateClimbMutation = {
   __typename?: 'Mutation';
   updateClimb: {
+    __typename?: 'UpdateClimbResult';
+    uuid: string;
+    createdAt?: string | null;
+    publishedAt?: string | null;
+    isDraft: boolean;
+  };
+};
+
+export type UpdateMoonBoardClimbMutationVariables = Exact<{
+  input: UpdateMoonBoardClimbInput;
+}>;
+
+export type UpdateMoonBoardClimbMutation = {
+  __typename?: 'Mutation';
+  updateMoonBoardClimb: {
     __typename?: 'UpdateClimbResult';
     uuid: string;
     createdAt?: string | null;
@@ -12264,6 +12346,52 @@ export const UpdateAppFeedbackStatusDocument = {
     },
   ],
 } as unknown as DocumentNode<UpdateAppFeedbackStatusMutation, UpdateAppFeedbackStatusMutationVariables>;
+export const HoldHeatmapDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'HoldHeatmap' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'HoldHeatmapInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'holdHeatmap' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'holdId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalUses' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'startingUses' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'handUses' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'footUses' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'finishUses' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalAscents' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'averageDifficulty' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<HoldHeatmapQuery, HoldHeatmapQueryVariables>;
 export const GetNewClimbFeedDocument = {
   kind: 'Document',
   definitions: [
@@ -12724,6 +12852,51 @@ export const UpdateClimbDocument = {
     },
   ],
 } as unknown as DocumentNode<UpdateClimbMutation, UpdateClimbMutationVariables>;
+export const UpdateMoonBoardClimbDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'UpdateMoonBoardClimb' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'UpdateMoonBoardClimbInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'updateMoonBoardClimb' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'publishedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isDraft' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UpdateMoonBoardClimbMutation, UpdateMoonBoardClimbMutationVariables>;
 export const DeleteDraftClimbDocument = {
   kind: 'Document',
   definitions: [

@@ -114,7 +114,9 @@ describe('BoardPageClimbsList logbook seed', () => {
       getLogbook: mockGetLogbook,
       saveTick: vi.fn(),
       saveClimb: vi.fn(),
+      saveMoonBoardClimb: vi.fn(),
       updateClimb: vi.fn(),
+      updateMoonBoardClimb: vi.fn(),
     });
     mockUseSearchData.mockReturnValue({
       climbSearchParams: {} as never,

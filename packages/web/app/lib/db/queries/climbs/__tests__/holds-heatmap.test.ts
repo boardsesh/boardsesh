@@ -3,6 +3,12 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
 import type { ParsedBoardRouteParameters, SearchRequestPagination } from '@/app/lib/types';
 
+// The aggregate itself now lives in `@boardsesh/db` (shared with the backend's
+// holdHeatmap resolver); this file is the thin web wrapper that hands it
+// `dbzRead`. The real shared implementation is deliberately NOT mocked here, so
+// this stays a genuine end-to-end check that the web entry point still runs the
+// guarded query — the failure #3694 fixed — rather than a mock-shaped tautology.
+
 // Shared mock state for the fake read-DB. Hoisted so the vi.mock factory below can
 // reference it (vi.mock is hoisted above the imports).
 const dbMock = vi.hoisted(() => {
@@ -64,26 +70,6 @@ vi.mock('@/app/lib/db/db', () => ({
   executeRows: vi.fn(() => Promise.resolve([])),
 }));
 
-vi.mock('@boardsesh/db/queries', () => ({
-  createClimbFilters: () => ({
-    getClimbHoldsJoinConditions: () => [],
-    getHoldHeatmapClimbStatsConditions: () => [],
-    getClimbWhereConditions: () => [],
-    getSizeConditions: () => [],
-    getClimbStatsConditions: () => [],
-  }),
-}));
-
-vi.mock('@/lib/db/queries/util/table-select', () => ({
-  UNIFIED_TABLES: {
-    climbs: {},
-    climbStats: { ascensionistCount: {}, displayDifficulty: {} },
-    climbHolds: { holdId: {}, climbUuid: {}, holdState: {} },
-  },
-}));
-
-vi.mock('@/app/lib/db/schema', () => ({ boardseshTicks: {} }));
-
 import { getHoldHeatmapData } from '../holds-heatmap';
 
 const PARAMS: ParsedBoardRouteParameters = {
@@ -138,9 +124,22 @@ describe('getHoldHeatmapData — DSM parallelism guard (#2378)', () => {
   it('runs the personal-progress aggregate inside the same guarded transaction', async () => {
     await getHoldHeatmapData(PARAMS, makeSearch({ hideCompleted: true }), 'user-1');
 
+    // Personal-progress filters collapse the three queries into one: the filtered
+    // climb set already IS the user's, so the tick roll-ups are skipped.
     expect(dbMock.callOrder).toEqual(['execute', 'aggregate']);
     expect(renderedGuards().some((statement) => GUARD_PATTERN.test(statement))).toBe(true);
     // Personal branch: totalAscents counts the user's distinct climbs per hold.
     expect(renderedTotalAscents()).toContain('count(distinct');
+  });
+
+  it('guards the tick roll-ups too when a signed-in user has no personal filter', async () => {
+    await getHoldHeatmapData(PARAMS, makeSearch(), 'user-1');
+
+    // Community aggregate + userAscents + userAttempts, each behind its own guard.
+    expect(dbMock.callOrder.filter((call) => call === 'aggregate')).toHaveLength(3);
+    expect(renderedGuards()).toHaveLength(3);
+    for (const statement of renderedGuards()) {
+      expect(statement).toMatch(GUARD_PATTERN);
+    }
   });
 });

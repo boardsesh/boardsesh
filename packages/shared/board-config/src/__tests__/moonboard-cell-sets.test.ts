@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, type MoonBoardLayoutKey } from '../moonboard-config';
+import {
+  MOONBOARD_LAYOUTS,
+  MOONBOARD_SETS,
+  convertLitUpHoldsMapToMoonBoardHolds,
+  type MoonBoardLayoutKey,
+} from '../moonboard-config';
 import {
   MOONBOARD_CELL_SETS,
   parseHoldIdsFromFrames,
@@ -106,5 +111,18 @@ describe('requiredSetIdsForMoonBoard', () => {
 
   it('returns an empty array for an unknown layout', () => {
     expect(requiredSetIdsForMoonBoard(999, 'p1r42')).toEqual([]);
+  });
+});
+
+describe('convertLitUpHoldsMapToMoonBoardHolds', () => {
+  it('maps renderer cell ids to sorted MoonBoard coordinates and roles', () => {
+    expect(
+      convertLitUpHoldsMapToMoonBoardHolds({
+        198: { state: 'FINISH', color: '', displayColor: '' },
+        26: { state: 'HAND', color: '', displayColor: '' },
+        1: { state: 'STARTING', color: '', displayColor: '' },
+        2: { state: 'FOOT', color: '', displayColor: '' },
+      }),
+    ).toEqual({ start: ['A1'], hand: ['D3'], finish: ['K18'] });
   });
 });
