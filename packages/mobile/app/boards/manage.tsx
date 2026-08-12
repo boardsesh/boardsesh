@@ -12,7 +12,10 @@ import { useAuth } from '../../src/providers/auth-provider';
 import { useToast } from '../../src/providers/toast-provider';
 import { useConfirm } from '../../src/providers/dialog-provider';
 import { useTheme } from '../../src/providers/theme-provider';
-import { useOfflineDownloadsEnabled } from '../../src/providers/feature-flags-provider';
+import {
+  useOfflineDownloadProgressEnabled,
+  useOfflineDownloadsEnabled,
+} from '../../src/providers/feature-flags-provider';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
 import { useSyncStatus } from '../../src/sync';
 import {
@@ -50,6 +53,7 @@ import {
   boardDownloadNotice,
   boardDownloadState,
   boardIsBootstrapping,
+  boardDownloadProgress,
 } from '../../src/components/board-discovery/board-offline-state';
 import { buildManageItems, type ManageItem } from '../../src/components/board-discovery/manage-items';
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
@@ -159,6 +163,16 @@ export default function ManageBoards() {
   const currentTable = syncStatus.progress?.currentTable ?? null;
   const currentTableProcessed = syncStatus.progress?.currentTableProcessed;
   const currentPhase = syncStatus.progress?.phase ?? null;
+  // The live snapshot download frame, whichever scope it names (issue #4311).
+  // Read once here and matched per row below, so a row that is NOT the one
+  // downloading gets a stable `null` prop and its memo holds.
+  const snapshotFrame = syncStatus.progress?.snapshot;
+  // The UI half of the download-progress kill switch: `useSnapshotSource` drops
+  // the native progress callback, but the engine keeps flushing its three stage
+  // frames regardless, so the row would otherwise sit on "Downloading 0 MB of
+  // 103 MB" with the switch off. `boardDownloadProgress` takes this as a
+  // required input so no call site can forget it.
+  const downloadProgressEnabled = useOfflineDownloadProgressEnabled();
 
   // Per-scope "downloaded" signal: which scopes actually have a board_climbs
   // checkpoint. Refetched whenever a cycle finishes (isSyncing → false), so a
@@ -445,6 +459,16 @@ export default function ManageBoards() {
       // flag; every other row gets undefined/false (stable props), so its
       // memo skips the per-frame churn.
       const downloadCount = downloadState === 'downloading' ? currentTableProcessed : undefined;
+      const downloadProgress = isBootstrapping
+        ? boardDownloadProgress({
+            scopeKey,
+            isSyncing,
+            currentTable,
+            phase: currentPhase,
+            snapshot: snapshotFrame,
+            progressEnabled: downloadProgressEnabled,
+          })
+        : null;
       return (
         <BoardManageRow
           board={item.board}
@@ -458,6 +482,7 @@ export default function ManageBoards() {
           downloadState={downloadState}
           downloadCount={downloadCount}
           isBootstrapping={isBootstrapping}
+          downloadProgress={downloadProgress}
           downloadNotice={downloadNotice}
           onEdit={handleEdit}
           onDelete={handleDelete}
@@ -480,6 +505,8 @@ export default function ManageBoards() {
       currentTable,
       currentTableProcessed,
       currentPhase,
+      snapshotFrame,
+      downloadProgressEnabled,
       bootstrapMetadataByScope,
       snapshotSourceAvailable,
       handleEdit,

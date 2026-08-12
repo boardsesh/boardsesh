@@ -12,6 +12,11 @@ const offlineToggleProps = vi.hoisted(() => ({ last: null as Record<string, unkn
 const swipeableProps = vi.hoisted(() => ({ last: null as Record<string, unknown> | null }));
 const platformState = vi.hoisted(() => ({ OS: 'ios' }));
 const accessibilitySpies = vi.hoisted(() => ({ announce: vi.fn() }));
+// Every t() call with its interpolation values, so the progress caption's
+// numbers can be asserted while t() keeps returning the bare key for the
+// existing key-presence assertions.
+const translationCalls = vi.hoisted(() => ({ calls: [] as Array<{ key: string; options?: Record<string, unknown> }> }));
+const progressBarProps = vi.hoisted(() => ({ last: null as Record<string, unknown> | null, renderCount: 0 }));
 
 vi.mock('react-native', () => ({
   AccessibilityInfo: { announceForAccessibility: accessibilitySpies.announce },
@@ -41,6 +46,13 @@ vi.mock('../../SwipeableRow', () => ({
 vi.mock('../../BoardImageNative', () => ({
   BoardImageNative: () => createElement('div', { 'data-testid': 'board-image' }),
 }));
+vi.mock('../OfflineDownloadProgressBar', () => ({
+  OfflineDownloadProgressBar: (props: Record<string, unknown>) => {
+    progressBarProps.last = props;
+    progressBarProps.renderCount += 1;
+    return createElement('div', { 'data-testid': 'download-progress-bar' });
+  },
+}));
 vi.mock('../BoardOfflineToggle', () => ({
   BoardOfflineToggle: (props: Record<string, unknown>) => {
     offlineToggleProps.last = props;
@@ -49,7 +61,13 @@ vi.mock('../BoardOfflineToggle', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => {
+      translationCalls.calls.push({ key, options });
+      return key;
+    },
+    i18n: { language: 'en-US' },
+  }),
 }));
 vi.mock('../../../lib/board-details', () => ({
   // null → the row takes the fallback-icon branch; board art is irrelevant here.
@@ -128,6 +146,9 @@ afterEach(() => {
   swipeableProps.last = null;
   platformState.OS = 'ios';
   accessibilitySpies.announce.mockReset();
+  translationCalls.calls = [];
+  progressBarProps.last = null;
+  progressBarProps.renderCount = 0;
 });
 
 describe('BoardManageRow offline toggle gating', () => {
@@ -157,6 +178,96 @@ describe('BoardManageRow offline toggle gating', () => {
     );
     expect(queryByText('mobile.offline.bootstrapping')).not.toBeNull();
     expect(queryByText('mobile.offline.downloadingCount')).toBeNull();
+  });
+
+  it('renders wire-scale megabytes during the download stage — the same scale the confirm dialog quoted', () => {
+    render(
+      <BoardManageRow
+        {...rowProps}
+        downloadState="downloading"
+        isBootstrapping
+        downloadProgress={{ stage: 'download', fraction: 0.408, bytesDone: 42_000_000, bytesTotal: 103_000_000 }}
+      />,
+    );
+
+    const caption = translationCalls.calls.find((call) => call.key === 'mobile.offline.bootstrapDownloading');
+    expect(caption?.options).toEqual({ done: '42 MB', total: '103 MB' });
+    // The 271 MB decoded figure can't reach the caption: the row is only ever
+    // handed wire-scale numbers.
+    expect(JSON.stringify(translationCalls.calls)).not.toContain('271');
+    expect(progressBarProps.last?.fraction).toBe(0.408);
+  });
+
+  it('falls back to a size-only caption and an empty bar when the fraction is indeterminate', () => {
+    render(
+      <BoardManageRow
+        {...rowProps}
+        downloadState="downloading"
+        isBootstrapping
+        downloadProgress={{ stage: 'download', fraction: null, bytesDone: null, bytesTotal: 103_000_000 }}
+      />,
+    );
+
+    const caption = translationCalls.calls.find((call) => call.key === 'mobile.offline.bootstrapDownloadingUnknown');
+    expect(caption?.options).toEqual({ total: '103 MB' });
+    expect(progressBarProps.last?.fraction).toBeNull();
+  });
+
+  it('captions the manifest and import stages distinctly', () => {
+    const { queryByText } = render(
+      <BoardManageRow
+        {...rowProps}
+        downloadState="downloading"
+        isBootstrapping
+        downloadProgress={{ stage: 'manifest', fraction: null, bytesDone: null, bytesTotal: null }}
+      />,
+    );
+    expect(queryByText('mobile.offline.bootstrapPreparing')).not.toBeNull();
+    cleanup();
+
+    const importing = render(
+      <BoardManageRow
+        {...rowProps}
+        downloadState="downloading"
+        isBootstrapping
+        downloadProgress={{ stage: 'import', fraction: null, bytesDone: null, bytesTotal: 103_000_000 }}
+      />,
+    );
+    expect(importing.queryByText('mobile.offline.bootstrapImporting')).not.toBeNull();
+    // The bar is only meaningful while bytes are moving.
+    expect(progressBarProps.last?.fraction).toBeUndefined();
+  });
+
+  it('keeps the legacy caption when no progress frame has arrived (flag off, or a downloader that never reports)', () => {
+    const { queryByText } = render(
+      <BoardManageRow {...rowProps} downloadState="downloading" isBootstrapping downloadProgress={null} />,
+    );
+    expect(queryByText('mobile.offline.bootstrapping')).not.toBeNull();
+    expect(queryByText('mobile.offline.bootstrapDownloading')).toBeNull();
+  });
+
+  it('reserves the progress bar on every downloadable row, so the first frame cannot change row height', () => {
+    // A bar that only appears once bytes arrive would resize the row inside the
+    // FlashList and jump the scroll position under the climber's thumb.
+    const idle = render(<BoardManageRow {...rowProps} downloadState="pending" />);
+    expect(idle.queryByTestId('download-progress-bar')).not.toBeNull();
+    expect(progressBarProps.last?.fraction).toBeUndefined();
+    cleanup();
+
+    const downloading = render(
+      <BoardManageRow
+        {...rowProps}
+        downloadState="downloading"
+        isBootstrapping
+        downloadProgress={{ stage: 'download', fraction: 0.5, bytesDone: 51_500_000, bytesTotal: 103_000_000 }}
+      />,
+    );
+    expect(downloading.queryByTestId('download-progress-bar')).not.toBeNull();
+    cleanup();
+
+    // …and never on a row that can't download at all (offline flag off).
+    const flagOff = render(<BoardManageRow {...rowProps} downloadState={undefined} />);
+    expect(flagOff.queryByTestId('download-progress-bar')).toBeNull();
   });
 
   it('lets active bootstrap outrank a stale paged-fallback notice', () => {

@@ -71,6 +71,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'Warm a freshly-enabled board from the nightly pre-built SQLite snapshot instead of paging the whole catalog over GraphQL. Requires offline-board-downloads to also be on; off falls back to the plain paged crawl.',
   },
   {
+    key: 'offline-download-progress',
+    label: 'Offline download progress',
+    description:
+      'DEFAULT: ON — unlike every other flag here, absent/undefined means enabled. Real byte + percent progress on a downloading board instead of a static spinner. Off restores the old caption AND stops passing a progress callback to the native downloader, so it doubles as the kill switch if the progress-enabled download path ever proves slower.',
+  },
+  {
     key: 'boardsesh-grade',
     label: 'Boardsesh grade',
     description:
@@ -155,6 +161,20 @@ export function useOfflineDownloadsEnabled(): boolean {
  */
 export function useSnapshotBootstrapEnabled(): boolean {
   return useFeatureFlag('offline-snapshot-bootstrap-v2') === true;
+}
+
+/**
+ * Gate for real byte/percent download progress on a bootstrapping board
+ * (issue #4311). DEFAULTS ON — the inverse of every other gate in this file,
+ * and deliberately so: the frozen spinner is the bug, so an unresolved flag
+ * must not reproduce it. Only an explicit `false` turns it off, which both
+ * restores the old static caption and stops the engine passing a progress
+ * callback into `File.downloadFileAsync` (that callback switches expo to a
+ * different native download implementation, so this is the throughput kill
+ * switch too).
+ */
+export function useOfflineDownloadProgressEnabled(): boolean {
+  return useFeatureFlag('offline-download-progress') !== false;
 }
 
 /**
