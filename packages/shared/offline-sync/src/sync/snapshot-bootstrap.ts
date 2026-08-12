@@ -34,6 +34,15 @@ import {
 import { getWipeEpoch, isSigningOut } from '../mutation-queue/drainer';
 import { LATEST_SCHEMA_VERSION } from '../db/migrations';
 import { applyBusyTimeout } from '../db/pragmas';
+import {
+  BOOTSTRAP_ATTEMPTS_PREFIX,
+  BOOTSTRAP_PAGED_FALLBACK_PREFIX,
+  BOOTSTRAP_RETRY_PREFIX,
+  clearBootstrapPagedFallback,
+  isTerminal,
+  parseBootstrapRetryState,
+  type BootstrapRetryState,
+} from './bootstrap-retry';
 import type { SchemaDriftReporter } from './pull-client';
 
 /** The two reference tables a snapshot carries; import order is climbs → stats. */
@@ -42,24 +51,11 @@ const SNAPSHOT_TABLES = ['board_climbs', 'board_climb_stats'] as const;
 /** The ATTACH alias for the artifact; the only ATTACH the DB lifecycle performs. */
 const SNAPSHOT_ALIAS = 'bs_snapshot';
 
-/** Two bootstrap attempts, then a scope falls through to the normal paged crawl. */
-export const MAX_BOOTSTRAP_ATTEMPTS = 2;
-
 // Package-internal (deliberately NOT re-exported from index.ts, same posture as
-// checkpoints.ts's DELETIONS_CHECKPOINT_KEY): scope-teardown.ts must clear these
-// alongside the rows they describe, so it needs the exact key spelling.
-export const BOOTSTRAP_ATTEMPTS_PREFIX = 'bootstrap-attempts:';
+// checkpoints.ts's DELETIONS_CHECKPOINT_KEY): scope-teardown.ts must clear this
+// alongside the rows it describes, so it needs the exact key spelling. The
+// retry-accounting keys live in bootstrap-retry.ts, which owns their writes.
 export const BOOTSTRAP_DONE_PREFIX = 'bootstrap-done:';
-export const BOOTSTRAP_PAGED_FALLBACK_PREFIX = 'bootstrap-paged-fallback:';
-/**
- * "This scope has already spent its one free counter reset." Written alongside
- * `resetBootstrapAttempts` when `runBootstrapPhase` heals an over-cap scope that
- * turns out to have a perfectly usable artifact waiting for it (issue #4238:
- * two launches in airplane mode used to disqualify a board from the fast path
- * forever). Bounding the heal to once per scope is what keeps a genuinely broken
- * 272 MB artifact from being re-downloaded on every launch.
- */
-export const BOOTSTRAP_ATTEMPTS_HEALED_PREFIX = 'bootstrap-attempts-healed:';
 const EPOCH_WATERMARK: SyncCheckpoint = { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' };
 
 // Only snake_case identifiers may be spliced into the INSERT/SELECT column list.
@@ -149,16 +145,26 @@ export class SnapshotPermanentMissError extends Error {
 // describe, which survive as the shared cache) ---------------------------------
 
 export type BootstrapScopeMetadata = {
-  /** Counted transient bootstrap failures persisted for this scope. */
+  /**
+   * The legacy `bootstrap-attempts:` mirror. Kept for rollback compatibility and
+   * for callers that only want "has this scope failed before"; the budgets the
+   * engine actually enforces are `structuralFailures` / `isTerminal` below.
+   */
   readonly attempts: number;
   /** The scope has imported a snapshot, even if its delta pull has not finished yet. */
   readonly isBootstrapDone: boolean;
   /** The latest bootstrap decision for this scope selected the ordinary paged crawl. */
   readonly isPagedFallback: boolean;
-  /** Either board table has a checkpoint, so the scope is no longer bootstrap-eligible. */
+  /** Either board table has a checkpoint. */
   readonly hasBoardCheckpoint: boolean;
   /** The whole scope has reached the tail and can serve complete offline results. */
   readonly isScopeComplete: boolean;
+  /** Epoch ms of the next scheduled snapshot retry, or null when none is pending. */
+  readonly retryAfter: number | null;
+  /** Structural (artifact/device) failures spent from the current budget. */
+  readonly structuralFailures: number;
+  /** Both budgets are spent: only a user-requested retry or a teardown revives it. */
+  readonly isTerminal: boolean;
 };
 
 type MutableBootstrapScopeMetadata = {
@@ -168,37 +174,28 @@ type MutableBootstrapScopeMetadata = {
 const BOARD_CLIMBS_CHECKPOINT_PREFIX = 'checkpoint:board_climbs:';
 const BOARD_STATS_CHECKPOINT_PREFIX = 'checkpoint:board_climb_stats:';
 
-// GLOB's literal-prefix optimization uses sync_meta's binary primary-key index.
-// SQLite's default case-insensitive LIKE cannot use that index and scans every
-// metadata row, which is especially expensive after years of sync checkpoints.
-export const BOOTSTRAP_METADATA_QUERY = `SELECT key, value
-  FROM sync_meta
-  WHERE key GLOB ?
-     OR key GLOB ?
-     OR key GLOB ?
-     OR key GLOB ?
-     OR key GLOB ?
-     OR key GLOB ?`;
-
 export const BOOTSTRAP_METADATA_PATTERNS = [
   `${BOOTSTRAP_ATTEMPTS_PREFIX}*`,
   `${BOOTSTRAP_DONE_PREFIX}*`,
   `${BOOTSTRAP_PAGED_FALLBACK_PREFIX}*`,
+  `${BOOTSTRAP_RETRY_PREFIX}*`,
   `${BOARD_CLIMBS_CHECKPOINT_PREFIX}*`,
   `${BOARD_STATS_CHECKPOINT_PREFIX}*`,
   `${SCOPE_COMPLETE_PREFIX}*`,
 ] as const;
 
+// GLOB's literal-prefix optimization uses sync_meta's binary primary-key index.
+// SQLite's default case-insensitive LIKE cannot use that index and scans every
+// metadata row, which is especially expensive after years of sync checkpoints.
+// Built FROM the pattern list rather than hand-written, so adding a prefix can
+// never leave a dangling clause or drop one silently (a test pins the counts).
+export const BOOTSTRAP_METADATA_QUERY = `SELECT key, value
+  FROM sync_meta
+  WHERE ${BOOTSTRAP_METADATA_PATTERNS.map(() => 'key GLOB ?').join('\n     OR ')}`;
+
 function parseBootstrapAttempts(value: string): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-export async function getBootstrapAttempts(db: SqlExecutor, scopeKey: string): Promise<number> {
-  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
-    `${BOOTSTRAP_ATTEMPTS_PREFIX}${scopeKey}`,
-  ]);
-  return row ? parseBootstrapAttempts(row.value) : 0;
 }
 
 /**
@@ -231,6 +228,9 @@ export async function getBootstrapMetadataByScope(
     const fallbackScopeKey = row.key.startsWith(BOOTSTRAP_PAGED_FALLBACK_PREFIX)
       ? row.key.slice(BOOTSTRAP_PAGED_FALLBACK_PREFIX.length)
       : null;
+    const retryScopeKey = row.key.startsWith(BOOTSTRAP_RETRY_PREFIX)
+      ? row.key.slice(BOOTSTRAP_RETRY_PREFIX.length)
+      : null;
     const climbsCheckpointScopeKey = row.key.startsWith(BOARD_CLIMBS_CHECKPOINT_PREFIX)
       ? row.key.slice(BOARD_CLIMBS_CHECKPOINT_PREFIX.length)
       : null;
@@ -244,6 +244,7 @@ export async function getBootstrapMetadataByScope(
       attemptsScopeKey ??
       doneScopeKey ??
       fallbackScopeKey ??
+      retryScopeKey ??
       climbsCheckpointScopeKey ??
       statsCheckpointScopeKey ??
       completeScopeKey;
@@ -255,10 +256,21 @@ export async function getBootstrapMetadataByScope(
       isPagedFallback: false,
       hasBoardCheckpoint: false,
       isScopeComplete: false,
+      retryAfter: null,
+      structuralFailures: 0,
+      isTerminal: false,
     };
     if (attemptsScopeKey) existing.attempts = parseBootstrapAttempts(row.value);
     if (doneScopeKey) existing.isBootstrapDone = true;
     if (fallbackScopeKey) existing.isPagedFallback = true;
+    if (retryScopeKey) {
+      const retryState: BootstrapRetryState | null = parseBootstrapRetryState(row.value);
+      if (retryState) {
+        existing.retryAfter = retryState.retryAfter;
+        existing.structuralFailures = retryState.structuralFailures;
+        existing.isTerminal = isTerminal(retryState);
+      }
+    }
     if (climbsCheckpointScopeKey || statsCheckpointScopeKey) existing.hasBoardCheckpoint = true;
     if (completeScopeKey) existing.isScopeComplete = true;
     metadataByScope.set(scopeKey, existing);
@@ -267,60 +279,29 @@ export async function getBootstrapMetadataByScope(
   return metadataByScope;
 }
 
-/** Increments the attempt counter for a scope and returns the new count. */
-export async function recordBootstrapAttempt(db: SqlExecutor, scopeKey: string): Promise<number> {
-  const next = (await getBootstrapAttempts(db, scopeKey)) + 1;
-  await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
-    `${BOOTSTRAP_ATTEMPTS_PREFIX}${scopeKey}`,
-    String(next),
-  ]);
-  return next;
-}
+/** The `bootstrap-done:` value that records a heal over a partly-crawled catalog. */
+const BOOTSTRAP_DONE_HEAL_VALUE = 'heal';
 
 /**
- * Drop a scope's attempt counter entirely, making it bootstrap-eligible again.
- * Only `runBootstrapPhase`'s one-shot heal calls this, and only once per scope
- * (guarded by the healed marker below) — an unbounded reset would re-download a
- * broken artifact on every launch.
+ * Permanent "this scope was warmed from a snapshot" marker (cheap, unambiguous).
+ *
+ * The VALUE carries whether the import landed on a scope that had already
+ * crawled rows (`healed`), because `ScopeDownloadCompleteInfo.bootstrapHealed`
+ * is read at scope completion — which is routinely a LATER cycle than the
+ * import, since `board_climb_grades` is not a snapshot table and still crawls to
+ * its tail. An in-memory per-cycle set would report `false` for exactly the
+ * population the field exists to filter out. Legacy rows hold `'1'`, which reads
+ * as done-and-not-healed — correct for every scope written before this marker
+ * carried a value.
  */
-export async function resetBootstrapAttempts(db: SqlExecutor, scopeKey: string): Promise<void> {
-  await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [`${BOOTSTRAP_ATTEMPTS_PREFIX}${scopeKey}`]);
-}
-
-/** True once this scope has spent its single attempt-counter heal. */
-export async function hasHealedBootstrapAttempts(db: SqlExecutor, scopeKey: string): Promise<boolean> {
-  const row = await db.getFirstAsync<{ key: string }>('SELECT key FROM sync_meta WHERE key = ?', [
-    `${BOOTSTRAP_ATTEMPTS_HEALED_PREFIX}${scopeKey}`,
-  ]);
-  return row !== null;
-}
-
-/** Record that this scope's one attempt-counter heal has been spent. */
-export async function markBootstrapAttemptsHealed(db: SqlExecutor, scopeKey: string): Promise<void> {
-  await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
-    `${BOOTSTRAP_ATTEMPTS_HEALED_PREFIX}${scopeKey}`,
-    '1',
-  ]);
-}
-
-/** Persist that the latest bootstrap decision selected the ordinary paged crawl. */
-export async function markBootstrapPagedFallback(db: SqlExecutor, scopeKey: string): Promise<void> {
-  await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
-    `${BOOTSTRAP_PAGED_FALLBACK_PREFIX}${scopeKey}`,
-    '1',
-  ]);
-}
-
-/** A new eligible snapshot attempt supersedes a prior run's paged decision. */
-export async function clearBootstrapPagedFallback(db: SqlExecutor, scopeKey: string): Promise<void> {
-  await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [`${BOOTSTRAP_PAGED_FALLBACK_PREFIX}${scopeKey}`]);
-}
-
-/** Permanent "this scope was warmed from a snapshot" marker (cheap, unambiguous). */
-export async function markBootstrapDone(db: SqlExecutor, scopeKey: string): Promise<void> {
+export async function markBootstrapDone(
+  db: SqlExecutor,
+  scopeKey: string,
+  options?: { healed: boolean },
+): Promise<void> {
   await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
     `${BOOTSTRAP_DONE_PREFIX}${scopeKey}`,
-    '1',
+    options?.healed ? BOOTSTRAP_DONE_HEAL_VALUE : '1',
   ]);
   // Write done first: if clearing the stale outcome fails, done still outranks
   // it in derivation. The reverse order has a crash window that mislabels a
@@ -333,6 +314,14 @@ export async function isBootstrapDone(db: SqlExecutor, scopeKey: string): Promis
     `${BOOTSTRAP_DONE_PREFIX}${scopeKey}`,
   ]);
   return row !== null;
+}
+
+/** Whether this scope's snapshot import was a heal over an existing partial crawl. */
+export async function wasBootstrapHealed(db: SqlExecutor, scopeKey: string): Promise<boolean> {
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
+    `${BOOTSTRAP_DONE_PREFIX}${scopeKey}`,
+  ]);
+  return row?.value === BOOTSTRAP_DONE_HEAL_VALUE;
 }
 
 // --- Column helpers -----------------------------------------------------------
@@ -579,6 +568,31 @@ export class SnapshotSchemaStaleError extends Error {
 }
 
 /**
+ * Thrown when the artifact's scoped watermark sits BEHIND the checkpoint this
+ * scope has already crawled to. Importing anyway would lower
+ * `checkpoint:board_climbs:<scope>` — destroying exactly the crawl progress a
+ * heal-over-partial exists to rescue — and rewind the single global deletions
+ * cursor with it. Two reachable causes, both refused for the same reason:
+ *
+ *  - the artifact holds NO row matching this scope's filter, so `tableWatermark`
+ *    returns the epoch (a size whose `compatible_size_ids` never matches, or any
+ *    scope-filter drift between export and client), and
+ *  - the local crawl already ran past the artifact's watermark.
+ *
+ * Nothing is written on this path: no rows, no checkpoint, no deletions rewind.
+ * Reported at full severity — it means the export's scope filter and the
+ * client's disagree, which is a real signal, not a flaky network.
+ */
+export class SnapshotWatermarkRegressionError extends Error {
+  constructor(tableName: SnapshotTableName, artifact: SyncCheckpoint, local: SyncCheckpoint) {
+    super(
+      `snapshot bootstrap: ${tableName} artifact watermark ${artifact.updatedAt}/${artifact.syncSeq} is behind local checkpoint ${local.updatedAt}/${local.syncSeq}`,
+    );
+    this.name = 'SnapshotWatermarkRegressionError';
+  }
+}
+
+/**
  * Read + validate the artifact's `snapshot_meta`: every snapshot table present,
  * `format_version` matching this client, `schema_version` not older than this
  * client's schema, and each recorded `row_count` equal to the artifact's ACTUAL
@@ -643,8 +657,15 @@ export async function bootstrapScopeFromSnapshot(params: {
   scopeKey: string;
   filePath: string;
   onSchemaDrift?: SchemaDriftReporter;
+  /**
+   * The scope's CURRENT board-table checkpoints, when it already has any (the
+   * heal-over-partial path — the caller read them for its eligibility check).
+   * Supplying them arms the watermark-regression guard; omitting them is the
+   * fresh-scope case, where there is no progress to protect.
+   */
+  existingCheckpoints?: Partial<Record<SnapshotTableName, SyncCheckpoint>>;
 }): Promise<SnapshotBootstrapResult> {
-  const { db, scope, scopeKey, filePath, onSchemaDrift } = params;
+  const { db, scope, scopeKey, filePath, onSchemaDrift, existingCheckpoints } = params;
 
   // The whole import + checkpoint stamping is all-or-nothing. A wipe that runs
   // (or starts AND finishes) across ANY await below — including the ATTACH,
@@ -675,6 +696,18 @@ export async function bootstrapScopeFromSnapshot(params: {
 
         await verifySnapshotMeta(txn);
         watermarks = await scopedWatermarks(txn, scope);
+
+        // Refuse BEFORE the exclusive transaction opens, so a regression writes
+        // nothing at all — see SnapshotWatermarkRegressionError.
+        if (existingCheckpoints) {
+          for (const tableName of SNAPSHOT_TABLES) {
+            const localCheckpoint = existingCheckpoints[tableName];
+            if (!localCheckpoint) continue;
+            if (compareCheckpoints(watermarks[tableName], localCheckpoint) < 0) {
+              throw new SnapshotWatermarkRegressionError(tableName, watermarks[tableName], localCheckpoint);
+            }
+          }
+        }
 
         if (isSigningOut() || getWipeEpoch() !== startEpoch) throw new SnapshotWipedError();
 

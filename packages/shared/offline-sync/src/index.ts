@@ -79,6 +79,10 @@ export type {
   CoverageResetReporter,
   CoverageEvaluatedInfo,
   CoverageEvaluatedReporter,
+  BootstrapRetryScheduledInfo,
+  BootstrapRetryScheduledReporter,
+  BootstrapPathRecoveredInfo,
+  BootstrapPathRecoveredReporter,
 } from './sync/pull-client';
 
 // --- Tombstone retention (issue #3474) --------------------------------------
@@ -94,15 +98,13 @@ export {
 } from './sync/retention';
 export {
   bootstrapScopeFromSnapshot,
-  getBootstrapAttempts,
   getBootstrapMetadataByScope,
-  recordBootstrapAttempt,
   markBootstrapDone,
   isBootstrapDone,
-  MAX_BOOTSTRAP_ATTEMPTS,
   SnapshotWipedError,
   SnapshotSchemaStaleError,
   SnapshotPermanentMissError,
+  SnapshotWatermarkRegressionError,
 } from './sync/snapshot-bootstrap';
 export type {
   SnapshotSource,
@@ -110,6 +112,29 @@ export type {
   SnapshotBootstrapErrorReporter,
   BootstrapScopeMetadata,
 } from './sync/snapshot-bootstrap';
+
+// --- Bootstrap retry budgets + cooldowns (issue #4313) ---------------------------
+// The failure taxonomy that decides whether a snapshot failure is worth another
+// artifact download, and when. `restoreBootstrapRetryBudget` is the user-facing
+// escape from a settled scope ("Try the fast download again").
+export {
+  MAX_BOOTSTRAP_ATTEMPTS,
+  MAX_TRANSPORT_DOWNLOAD_FAILURES,
+  MAX_STRUCTURAL_REARMS,
+  EMPTY_BOOTSTRAP_RETRY_STATE,
+  classifyBootstrapFailure,
+  evaluateBootstrapEligibility,
+  isTerminal as isBootstrapRetryTerminal,
+  getBootstrapAttempts,
+  readBootstrapRetryState,
+  restoreBootstrapRetryBudget,
+} from './sync/bootstrap-retry';
+export type {
+  BootstrapFailureKind,
+  BootstrapRetryState,
+  BootstrapRetryRead,
+  BootstrapEligibility,
+} from './sync/bootstrap-retry';
 export { startSyncScheduler, triggerSync } from './sync/sync-scheduler';
 export type { SyncProgressSink, SchedulerTriggers, SchedulerOptions, DrainQueue } from './sync/sync-scheduler';
 export {

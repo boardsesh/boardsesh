@@ -16,7 +16,6 @@ import type { QueryInvalidator } from '../../database';
 import { pullSync } from '../pull-client';
 import {
   bootstrapScopeFromSnapshot,
-  getBootstrapAttempts,
   getBootstrapMetadataByScope,
   BOOTSTRAP_METADATA_QUERY,
   BOOTSTRAP_METADATA_PATTERNS,
@@ -24,6 +23,14 @@ import {
   SnapshotSchemaStaleError,
   type SnapshotSource,
 } from '../snapshot-bootstrap';
+import {
+  getBootstrapAttempts,
+  restoreBootstrapRetryBudget,
+  EMPTY_BOOTSTRAP_RETRY_STATE,
+  MAX_BOOTSTRAP_ATTEMPTS,
+  MAX_STRUCTURAL_REARMS,
+  MAX_TRANSPORT_DOWNLOAD_FAILURES,
+} from '../bootstrap-retry';
 import { getCheckpoint, setCheckpoint, DELETIONS_CHECKPOINT_KEY } from '../checkpoints';
 import { runMigrations, LATEST_SCHEMA_VERSION } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
@@ -273,6 +280,9 @@ type GraphqlFetchMock = ReturnType<typeof vi.fn> &
   (<T>(query: string, variables?: Record<string, unknown>) => Promise<T>);
 
 const SCOPE_KILTER_5: OfflineBoardScope = { boardType: 'kilter', layoutId: 1, sizeId: 5 };
+/** Fixed clock for the retry-ladder tests; the real one is injected via SyncOptions. */
+const BASE_NOW = 1_800_000_000_000;
+const HOUR_MS = 3_600_000;
 const CLIMBS_WATERMARK: Cursor = { updatedAt: '2026-05-02T00:00:00Z', syncSeq: '20' };
 const STATS_WATERMARK: Cursor = { updatedAt: '2026-05-02T00:00:00Z', syncSeq: '20' };
 
@@ -314,6 +324,22 @@ describe('getBootstrapMetadataByScope', () => {
       'bootstrap-paged-fallback:tension:2:10',
       '1',
     ]);
+    // A settled scope's retry row is what My Boards reads to tell "waiting to try
+    // again" from "this board is on the slow path for good".
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [
+      'bootstrap-retry:tension:2:10',
+      JSON.stringify({
+        transportFailures: 0,
+        structuralFailures: MAX_BOOTSTRAP_ATTEMPTS,
+        structuralRearms: 0,
+        lastFailureKind: 'structural-device',
+        failedBuiltAt: null,
+        retryAfter: 1_800_000_000_000,
+        hasPriorSnapshotFailure: true,
+        mirroredAttempts: MAX_BOOTSTRAP_ATTEMPTS,
+        legacyHealSpent: true,
+      }),
+    ]);
     await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-attempts:kilter:9:20', '1']);
     await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [
       'checkpoint:board_climb_stats:kilter:9:20',
@@ -335,6 +361,9 @@ describe('getBootstrapMetadataByScope', () => {
       isPagedFallback: false,
       hasBoardCheckpoint: true,
       isScopeComplete: true,
+      retryAfter: null,
+      structuralFailures: 0,
+      isTerminal: false,
     });
     expect(metadataByScope.get('tension:2:10')).toEqual({
       attempts: 2,
@@ -342,6 +371,9 @@ describe('getBootstrapMetadataByScope', () => {
       isPagedFallback: true,
       hasBoardCheckpoint: false,
       isScopeComplete: false,
+      retryAfter: 1_800_000_000_000,
+      structuralFailures: MAX_BOOTSTRAP_ATTEMPTS,
+      isTerminal: true,
     });
     expect(metadataByScope.get('kilter:9:20')).toEqual({
       attempts: 1,
@@ -349,9 +381,18 @@ describe('getBootstrapMetadataByScope', () => {
       isPagedFallback: false,
       hasBoardCheckpoint: true,
       isScopeComplete: false,
+      retryAfter: null,
+      structuralFailures: 0,
+      isTerminal: false,
     });
     expect(metadataByScope.get('missing:4:20')).toBeUndefined();
     expect(metadataByScope.has('moonboard:3:7')).toBe(false);
+  });
+
+  it('binds exactly one placeholder per metadata prefix', () => {
+    // The query is built FROM the pattern list, so this can only break if someone
+    // hand-writes the clauses again — which is how a prefix gets silently dropped.
+    expect((BOOTSTRAP_METADATA_QUERY.match(/\?/g) ?? []).length).toBe(BOOTSTRAP_METADATA_PATTERNS.length);
   });
 
   it('uses the sync_meta primary-key index for every metadata prefix', async () => {
@@ -1102,7 +1143,7 @@ describe('pullSync snapshot bootstrap', () => {
     expect(onSnapshotBootstrapError).toHaveBeenCalledWith(expect.objectContaining({ stage: 'download', attempt: 0 }));
   });
 
-  it('counts an attempt AND skips the paged pull when the manifest fetch fails for a non-transport reason', async () => {
+  it('burns a structural slot on a non-transport manifest failure and lets the crawl deliver the board meanwhile', async () => {
     const source = makeSnapshotSource({ manifestThrows: true });
     const onSnapshotBootstrapError = vi.fn();
     const onBootstrapMetadataChanged = vi.fn();
@@ -1115,9 +1156,11 @@ describe('pullSync snapshot bootstrap', () => {
       onBootstrapMetadataChanged,
     });
 
-    // Paged pull SKIPPED this cycle (a first-page checkpoint would disqualify bootstrap).
+    // The retry is 6 hours out, well past the grace window, so the crawl runs
+    // rather than leave the board empty until then (issue #4313). Its first-page
+    // checkpoint no longer disqualifies the snapshot path — heal-over-partial does.
     const climbsCalls = fetch.mock.calls.filter((args) => (args[0] as string).includes('syncClimbs'));
-    expect(climbsCalls).toHaveLength(0);
+    expect(climbsCalls.length).toBeGreaterThan(0);
     expect(
       await db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', ['bootstrap-attempts:kilter:1:5']),
     ).toEqual({
@@ -1131,28 +1174,36 @@ describe('pullSync snapshot bootstrap', () => {
 
   it('persists paged fallback after a transient failure is followed by a permanent miss', async () => {
     const source = makeSnapshotSource({ manifestThrows: true });
-
-    const firstRun = makeGraphqlFetch();
-    await pullSync(db, noopQueryClient(), firstRun.fetch, {
-      enabledBoards: ['kilter:1:5'],
-      snapshotSource: source,
-    });
-    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(1);
-
-    // The next cycle can reach the source but no usable manifest exists. Abort
-    // the paged crawl at its first board request so the explicit decision is
-    // tested before a checkpoint or scope-complete marker can mask it.
-    source.fetchManifest.mockResolvedValue(null);
-    const secondRun = makeGraphqlFetch();
-    const failPagedFetch = (async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
-      if (query.includes('syncClimbs')) throw new Error('stop after bootstrap outcome');
-      return secondRun.fetch<T>(query, variables);
-    }) as GraphqlFetchMock;
+    // Abort the paged crawl at its first board request on BOTH cycles, so the
+    // explicit bootstrap decision is what the assertions see rather than a
+    // checkpoint or scope-complete marker the (instant) fake crawl would write.
+    const stopAtPagedCrawl = (): GraphqlFetchMock => {
+      const run = makeGraphqlFetch();
+      return (async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
+        if (query.includes('syncClimbs')) throw new Error('stop after bootstrap outcome');
+        return run.fetch<T>(query, variables);
+      }) as GraphqlFetchMock;
+    };
 
     await expect(
-      pullSync(db, noopQueryClient(), failPagedFetch, {
+      pullSync(db, noopQueryClient(), stopAtPagedCrawl(), {
         enabledBoards: ['kilter:1:5'],
         snapshotSource: source,
+        now: () => BASE_NOW,
+        random: () => 0,
+      }),
+    ).rejects.toThrow('stop after bootstrap outcome');
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(1);
+
+    // A day later — past the structural cooldown — the source is reachable but no
+    // usable manifest exists.
+    source.fetchManifest.mockResolvedValue(null);
+    await expect(
+      pullSync(db, noopQueryClient(), stopAtPagedCrawl(), {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+        now: () => BASE_NOW + 25 * HOUR_MS,
+        random: () => 0,
       }),
     ).rejects.toThrow('stop after bootstrap outcome');
 
@@ -1166,61 +1217,13 @@ describe('pullSync snapshot bootstrap', () => {
             isPagedFallback: true,
             hasBoardCheckpoint: false,
             isScopeComplete: false,
+            retryAfter: expect.any(Number),
+            structuralFailures: 1,
+            isTerminal: false,
           },
         ],
       ]),
     );
-  });
-
-  it('records two attempts on repeated corrupt artifacts, heals once, then settles into the paged crawl', async () => {
-    const filePath = join(workDir, 'corrupt.db');
-    writeFileSync(filePath, 'not a database');
-    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
-    const onBootstrapMetadataChanged = vi.fn();
-
-    const runOnce = async () => {
-      const run = makeGraphqlFetch();
-      await pullSync(db, noopQueryClient(), run.fetch, {
-        enabledBoards: ['kilter:1:5'],
-        snapshotSource: source,
-        onBootstrapMetadataChanged,
-      });
-      return run;
-    };
-    const attemptsRow = () =>
-      db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', ['bootstrap-attempts:kilter:1:5']);
-
-    // Runs 1 and 2: import fails → attempts 1 then 2, paged pull skipped both times.
-    const run1 = await runOnce();
-    expect(run1.fetch.mock.calls.filter((a) => (a[0] as string).includes('syncClimbs'))).toHaveLength(0);
-    expect(await attemptsRow()).toEqual({ value: '1' });
-
-    const run2 = await runOnce();
-    expect(run2.fetch.mock.calls.filter((a) => (a[0] as string).includes('syncClimbs'))).toHaveLength(0);
-    expect(await attemptsRow()).toEqual({ value: '2' });
-
-    // Run 3: over the cap, but the manifest resolves with a usable entry, so the
-    // scope spends its ONE heal and tries the snapshot path again (issue #4238).
-    // The artifact is still corrupt, so it burns a fresh attempt 1.
-    const run3 = await runOnce();
-    expect(source.downloadArtifact).toHaveBeenCalledTimes(3);
-    expect(run3.fetch.mock.calls.filter((a) => (a[0] as string).includes('syncClimbs'))).toHaveLength(0);
-    expect(await attemptsRow()).toEqual({ value: '1' });
-    expect(
-      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-attempts-healed:kilter:1:5']),
-    ).not.toBeNull();
-
-    // Run 4: attempt 2 again.
-    await runOnce();
-    expect(await attemptsRow()).toEqual({ value: '2' });
-
-    // Run 5: over the cap AND the heal is spent → bootstrap gives up for good and
-    // the paged crawl runs from scratch. No sixth download.
-    const run5 = await runOnce();
-    expect(run5.fetch.mock.calls.filter((a) => (a[0] as string).includes('syncClimbs')).length).toBeGreaterThan(0);
-    expect(run5.capturedClimbCursors[0]).toBeUndefined();
-    expect(source.downloadArtifact).toHaveBeenCalledTimes(4);
-    expect(onBootstrapMetadataChanged).toHaveBeenCalledTimes(5);
   });
 
   it('Sentry BOARDSESH-AN: stops before the attempt-bookkeeping write when the app backgrounds during the manifest fetch', async () => {
@@ -1345,8 +1348,8 @@ describe('pullSync connectivity gate', () => {
   });
 });
 
-describe('pullSync bootstrap: transport failures at the manifest stage do not burn an attempt', () => {
-  it('reports a transport manifest failure as expected, keeps the counter at 0, and still skips the paged pull', async () => {
+describe('pullSync bootstrap: transport failures never spend the structural budget', () => {
+  it('reports a transport manifest failure as expected, keeps the counters at 0, and still skips the paged pull', async () => {
     const cause = new TypeError('Network request failed');
     const source = makeSnapshotSource({ manifestError: cause });
     const onSnapshotBootstrapError = vi.fn();
@@ -1361,8 +1364,8 @@ describe('pullSync bootstrap: transport failures at the manifest stage do not bu
     });
 
     expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
-    // Still skipped: a first-page checkpoint would disqualify the snapshot path
-    // for good, which is exactly what we're protecting the scope from.
+    // Still skipped: a first-page checkpoint used to disqualify the snapshot path
+    // for good, and the manifest stage is where an offline launch dies.
     expect(fetch.mock.calls.filter((args) => (args[0] as string).includes('syncClimbs'))).toHaveLength(0);
     expect(onSnapshotBootstrapError).toHaveBeenCalledWith({
       scopeKey: 'kilter:1:5',
@@ -1405,57 +1408,77 @@ describe('pullSync bootstrap: transport failures at the manifest stage do not bu
     ).not.toBeNull();
   });
 
-  it('counts a download failure even when it is transport-shaped — only the severity differs', async () => {
-    // The manifest resolved over this same connection moments earlier, so the
-    // device is provably online. Exempting this from the cap would let an
-    // unresumable 272 MB GET that always times out restart on every foreground
-    // forever, and — because a download failure also skips the paged pull — the
-    // board would never get an offline catalog by any route.
+  it('charges a transport DOWNLOAD failure to the transport budget, leaving the structural one intact', async () => {
+    // The regression this whole issue is about: a dropped connection mid-artifact
+    // used to burn the same 2-slot counter a corrupt artifact does, so two
+    // bad-reception launches condemned the board to the 400+-round-trip crawl.
     const transportSource = makeSnapshotSource({
       manifest: makeManifest([makeEntry()]),
       downloadError: new Error('snapshot download: File.downloadFileAsync failed', {
         cause: new TypeError('Network request failed'),
       }),
     });
-    const transportReports = vi.fn();
-    const transportRun = makeGraphqlFetch();
-    await pullSync(db, noopQueryClient(), transportRun.fetch, {
-      enabledBoards: ['kilter:1:5'],
-      snapshotSource: transportSource,
-      onSnapshotBootstrapError: transportReports,
-    });
+    const reports = vi.fn();
+    const clock = { now: BASE_NOW };
+    const retries: unknown[] = [];
 
-    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(1);
+    for (let launch = 0; launch < 2; launch += 1) {
+      const run = makeGraphqlFetch();
+      await pullSync(db, noopQueryClient(), run.fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: transportSource,
+        onSnapshotBootstrapError: reports,
+        onBootstrapRetryScheduled: (info) => retries.push(info),
+        now: () => clock.now,
+        random: () => 0,
+      });
+      clock.now += 3 * HOUR_MS;
+    }
+
+    // Two transport failures — the OLD cap — and the scope is still on the fast path.
+    expect(transportSource.downloadArtifact).toHaveBeenCalledTimes(2);
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-paged-fallback:kilter:1:5']),
+    ).toBeNull();
     // Still reported as expected, so Sentry sees a warning rather than an error.
-    expect(transportReports).toHaveBeenCalledWith(
-      expect.objectContaining({ stage: 'download', attempt: 1, expected: true }),
-    );
-
-    // A disk-full device is a real failure the user can act on — that counts too,
-    // and reports at full severity.
-    const diskFullSource = makeSnapshotSource({
-      manifest: makeManifest([makeEntry()]),
-      downloadError: new Error('snapshot download: insufficient disk space for kilter:1'),
-    });
-    const diskReports = vi.fn();
-    const diskRun = makeGraphqlFetch();
-    await pullSync(db, noopQueryClient(), diskRun.fetch, {
-      enabledBoards: ['kilter:1:5'],
-      snapshotSource: diskFullSource,
-      onSnapshotBootstrapError: diskReports,
-    });
-
-    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(2);
-    expect(diskReports).toHaveBeenCalledWith(
-      expect.objectContaining({ stage: 'download', attempt: 2, expected: false }),
-    );
+    expect(reports).toHaveBeenCalledWith(expect.objectContaining({ stage: 'download', expected: true }));
+    expect(retries).toEqual([
+      expect.objectContaining({
+        failureKind: 'transport',
+        transportFailures: 1,
+        structuralFailures: 0,
+        terminal: false,
+      }),
+      expect.objectContaining({ failureKind: 'transport', transportFailures: 2, terminal: false }),
+    ]);
   });
 
-  it('settles a board whose huge artifact always times out onto the paged crawl instead of re-downloading forever', async () => {
-    // Regression guard for the download-stage cap exemption: an unresumable
-    // multi-hundred-MB GET that times out every cycle must not restart on every
-    // foreground. Two counted attempts (+ the one-shot heal's second round) and
-    // the scope takes the slow-but-working paged path.
+  it('waits out the scheduled cooldown instead of re-downloading on every foreground', async () => {
+    const source = makeSnapshotSource({
+      manifest: makeManifest([makeEntry()]),
+      downloadError: new Error('boom', { cause: new TypeError('Network request failed') }),
+    });
+    const clock = { now: BASE_NOW };
+
+    for (let launch = 0; launch < 4; launch += 1) {
+      const run = makeGraphqlFetch();
+      await pullSync(db, noopQueryClient(), run.fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+        now: () => clock.now,
+        random: () => 0,
+      });
+      // Four foregrounds inside the first 2-minute rung.
+      clock.now += 20_000;
+    }
+
+    expect(source.downloadArtifact).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops after the transport budget and lets the paged crawl deliver the board', async () => {
+    // Bounded spend, which is the half of the old cap worth keeping: a device on
+    // which the unresumable GET can never complete must not retry it forever.
     const timeoutSource = makeSnapshotSource({
       manifest: makeManifest([makeEntry()]),
       downloadError: new Error('snapshot download: File.downloadFileAsync failed for kilter:1', {
@@ -1463,28 +1486,86 @@ describe('pullSync bootstrap: transport failures at the manifest stage do not bu
         cause: new Error('UnableToDownloadException: The request timed out.'),
       }),
     });
+    const clock = { now: BASE_NOW };
+    let climbQueries = 0;
 
-    // Four launches: two burn the initial budget, the third heals it once, the
-    // fourth exhausts the healed budget.
-    for (let launch = 0; launch < 4; launch += 1) {
+    for (let launch = 0; launch < 40; launch += 1) {
       const run = makeGraphqlFetch();
       await pullSync(db, noopQueryClient(), run.fetch, {
         enabledBoards: ['kilter:1:5'],
         snapshotSource: timeoutSource,
+        now: () => clock.now,
+        random: () => 0,
       });
+      climbQueries += run.capturedClimbCursors.length;
+      clock.now += 25 * HOUR_MS;
     }
-    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(2);
-    expect(timeoutSource.downloadArtifact).toHaveBeenCalledTimes(4);
 
-    // Fifth launch: over the cap with the heal spent, so the artifact is not
-    // fetched again and the paged crawl finally runs for this scope.
-    const settled = makeGraphqlFetch();
-    await pullSync(db, noopQueryClient(), settled.fetch, {
-      enabledBoards: ['kilter:1:5'],
-      snapshotSource: timeoutSource,
+    expect(timeoutSource.downloadArtifact).toHaveBeenCalledTimes(MAX_TRANSPORT_DOWNLOAD_FAILURES);
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-paged-fallback:kilter:1:5']),
+    ).not.toBeNull();
+    // …and the board is not left empty while that plays out.
+    expect(climbQueries).toBeGreaterThan(0);
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['scope-complete:kilter:1:5']),
+    ).not.toBeNull();
+  });
+
+  it('spends only the structural budget for a device-side fault, and no nightly rebuild re-arms it', async () => {
+    // A disk-full device would otherwise download 2 x 103 MB every night, because
+    // `builtAt` differs on essentially every launch after the first day.
+    const diskFullSource = makeSnapshotSource({
+      manifest: makeManifest([makeEntry()]),
+      downloadError: new Error('snapshot download: insufficient disk space for kilter:1'),
     });
-    expect(timeoutSource.downloadArtifact).toHaveBeenCalledTimes(4);
-    expect(settled.capturedClimbCursors).toHaveLength(1);
+    const clock = { now: BASE_NOW };
+
+    for (let launch = 0; launch < 40; launch += 1) {
+      diskFullSource.fetchManifest.mockResolvedValue(
+        makeManifest([makeEntry({ builtAt: new Date(clock.now).toISOString() })]),
+      );
+      const run = makeGraphqlFetch();
+      await pullSync(db, noopQueryClient(), run.fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: diskFullSource,
+        now: () => clock.now,
+        random: () => 0,
+      });
+      // The real Kilter crawl is 400+ serial round trips and does not finish in
+      // one cycle; the fake resolver reaches the tail instantly, so drop the
+      // completion marker to keep the scope in the state this test is about.
+      await db.runAsync('DELETE FROM sync_meta WHERE key = ?', ['scope-complete:kilter:1:5']);
+      clock.now += 25 * HOUR_MS;
+    }
+
+    expect(diskFullSource.downloadArtifact).toHaveBeenCalledTimes(MAX_BOOTSTRAP_ATTEMPTS);
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(MAX_BOOTSTRAP_ATTEMPTS);
+  });
+
+  it('gives a broken ARTIFACT exactly one extra round when a new build lands, then stops', async () => {
+    const filePath = join(workDir, 'corrupt-forever.db');
+    writeFileSync(filePath, 'not a database');
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const clock = { now: BASE_NOW };
+
+    for (let launch = 0; launch < 40; launch += 1) {
+      source.fetchManifest.mockResolvedValue(makeManifest([makeEntry({ builtAt: new Date(clock.now).toISOString() })]));
+      const run = makeGraphqlFetch();
+      await pullSync(db, noopQueryClient(), run.fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+        now: () => clock.now,
+        random: () => 0,
+      });
+      // See above: keep the scope mid-crawl so the budget, not the crawl
+      // finishing, is what stops the downloads.
+      await db.runAsync('DELETE FROM sync_meta WHERE key = ?', ['scope-complete:kilter:1:5']);
+      clock.now += 25 * HOUR_MS;
+    }
+
+    // 2 structural slots + 2 more from the single lifetime re-arm.
+    expect(source.downloadArtifact).toHaveBeenCalledTimes(MAX_BOOTSTRAP_ATTEMPTS * (1 + MAX_STRUCTURAL_REARMS));
     expect(
       await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-paged-fallback:kilter:1:5']),
     ).not.toBeNull();
@@ -1510,8 +1591,9 @@ describe('pullSync bootstrap: transport failures at the manifest stage do not bu
   });
 });
 
-describe('pullSync bootstrap: one-shot heal for an over-cap scope', () => {
-  async function seedExhaustedScope(): Promise<void> {
+describe('pullSync bootstrap: healing a scope stranded mid-crawl', () => {
+  /** A board that gave up on the snapshot path and then crawled part of its catalog. */
+  async function seedStrandedMidCrawl(checkpoint = { updatedAt: '2026-04-01T00:00:00Z', syncSeq: '5' }): Promise<void> {
     await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
       'bootstrap-attempts:kilter:1:5',
       '2',
@@ -1520,11 +1602,318 @@ describe('pullSync bootstrap: one-shot heal for an over-cap scope', () => {
       'bootstrap-paged-fallback:kilter:1:5',
       '1',
     ]);
+    await setCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5', checkpoint);
   }
 
-  it('clears the counter and takes the snapshot path when the manifest finally resolves online', async () => {
-    await seedExhaustedScope();
+  function buildHealArtifact(filePath: string): void {
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c-in', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c-in', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+  }
+
+  it('imports the artifact over the partial catalog and moves both checkpoints FORWARD', async () => {
+    await seedStrandedMidCrawl();
     const filePath = join(workDir, 'heal.db');
+    buildHealArtifact(filePath);
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const { fetch } = makeGraphqlFetch();
+    const recovered = vi.fn();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onBootstrapPathRecovered: recovered,
+      now: () => BASE_NOW,
+      random: () => 0,
+    });
+
+    const climbs = await db.getAllAsync<{ uuid: string }>('SELECT uuid FROM board_climbs ORDER BY uuid');
+    expect(climbs.map((row) => row.uuid)).toEqual(['c-in']);
+    expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toEqual(CLIMBS_WATERMARK);
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-done:kilter:1:5']),
+    ).not.toBeNull();
+    expect(recovered).toHaveBeenCalledWith({
+      scopeKey: 'kilter:1:5',
+      boardType: 'kilter',
+      trigger: 'legacy-migration',
+      hadBoardCheckpoint: true,
+    });
+    // Rollback safety: the legacy rows an older bundle reads are still there.
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-attempts:kilter:1:5']),
+    ).not.toBeNull();
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-attempts-healed:kilter:1:5']),
+    ).not.toBeNull();
+  });
+
+  it('reports the healed scope so download-duration comparisons can exclude it', async () => {
+    await seedStrandedMidCrawl();
+    const filePath = join(workDir, 'heal-telemetry.db');
+    buildHealArtifact(filePath);
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const { fetch } = makeGraphqlFetch();
+    const onScopeDownloadComplete = vi.fn();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onScopeDownloadComplete,
+      now: () => BASE_NOW,
+      random: () => 0,
+    });
+
+    expect(onScopeDownloadComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ scopeKey: 'kilter:1:5', method: 'snapshot', bootstrapHealed: true }),
+    );
+  });
+
+  it('still reports the heal when the scope completes in a LATER cycle', async () => {
+    // The common shape: board_climb_grades is not a snapshot table, so a healed
+    // scope routinely reaches completion cycles after the import. An in-memory
+    // per-cycle set reported bootstrapHealed:false for exactly those runs —
+    // contaminating the comparison the field exists to protect.
+    await seedStrandedMidCrawl();
+    const filePath = join(workDir, 'heal-late-complete.db');
+    buildHealArtifact(filePath);
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const onScopeDownloadComplete = vi.fn();
+
+    const run1 = makeGraphqlFetch();
+    const failingStatsFetch = (async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
+      if (query.includes('syncClimbStats')) throw new Error('network dropped mid-delta');
+      return run1.fetch<T>(query, variables);
+    }) as GraphqlFetchMock;
+    await expect(
+      pullSync(db, noopQueryClient(), failingStatsFetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+        onScopeDownloadComplete,
+        now: () => BASE_NOW,
+        random: () => 0,
+      }),
+    ).rejects.toThrow('network dropped mid-delta');
+    expect(onScopeDownloadComplete).not.toHaveBeenCalled();
+
+    const run2 = makeGraphqlFetch();
+    await pullSync(db, noopQueryClient(), run2.fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onScopeDownloadComplete,
+      now: () => BASE_NOW + HOUR_MS,
+      random: () => 0,
+    });
+
+    expect(onScopeDownloadComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ scopeKey: 'kilter:1:5', method: 'snapshot', bootstrapHealed: true }),
+    );
+  });
+
+  it('never heals a scope that already serves the whole catalog offline', async () => {
+    await seedStrandedMidCrawl();
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      'scope-complete:kilter:1:5',
+      '1',
+    ]);
+    const source = makeSnapshotSource({
+      manifest: makeManifest([makeEntry()]),
+      fileForEntry: () => join(workDir, 'never.db'),
+    });
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      now: () => BASE_NOW,
+      random: () => 0,
+    });
+
+    expect(source.fetchManifest).not.toHaveBeenCalled();
+    expect(source.downloadArtifact).not.toHaveBeenCalled();
+  });
+
+  it('never heals a mid-crawl scope that has no snapshot failures behind it', async () => {
+    await setCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5', { updatedAt: '2026-04-01T00:00:00Z', syncSeq: '5' });
+    const source = makeSnapshotSource({
+      manifest: makeManifest([makeEntry()]),
+      fileForEntry: () => join(workDir, 'never.db'),
+    });
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      now: () => BASE_NOW,
+      random: () => 0,
+    });
+
+    expect(source.downloadArtifact).not.toHaveBeenCalled();
+    // …and its crawl is never stalled by a snapshot decision it isn't part of.
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['scope-complete:kilter:1:5']),
+    ).not.toBeNull();
+  });
+
+  it('defers the automatic heal on a metered link without burning anything', async () => {
+    await seedStrandedMidCrawl();
+    const filePath = join(workDir, 'metered.db');
+    buildHealArtifact(filePath);
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      isOnUnmeteredNetwork: () => false,
+      now: () => BASE_NOW,
+      random: () => 0,
+    });
+
+    expect(source.downloadArtifact).not.toHaveBeenCalled();
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
+
+    // The crawl ran while the heal was deferred (a deferred scope is never
+    // stalled), and the fake resolver reaches the tail instantly. Drop the
+    // completion marker so this stays the mid-crawl case the heal exists for.
+    await db.runAsync('DELETE FROM sync_meta WHERE key = ?', ['scope-complete:kilter:1:5']);
+
+    // Back on wifi (and past the deferral), the same scope heals.
+    const later = makeGraphqlFetch();
+    await pullSync(db, noopQueryClient(), later.fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      now: () => BASE_NOW + 7 * HOUR_MS,
+      random: () => 0,
+    });
+    expect(source.downloadArtifact).toHaveBeenCalledTimes(1);
+  });
+
+  it('a fresh scope ignores the metered probe — the user just confirmed the size', async () => {
+    const filePath = join(workDir, 'metered-fresh.db');
+    buildHealArtifact(filePath);
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      isOnUnmeteredNetwork: () => false,
+      now: () => BASE_NOW,
+      random: () => 0,
+    });
+
+    expect(source.downloadArtifact).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('pullSync bootstrap: the watermark-regression guard', () => {
+  async function seedStranded(checkpoint: Cursor): Promise<void> {
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      'bootstrap-attempts:kilter:1:5',
+      '2',
+    ]);
+    await setCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5', checkpoint);
+    await setCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5', checkpoint);
+    await setCheckpoint(db, DELETIONS_CHECKPOINT_KEY, checkpoint);
+  }
+
+  it('refuses an artifact whose scope filter matches nothing, leaving every checkpoint byte-identical', async () => {
+    const localCheckpoint: Cursor = { updatedAt: '2026-04-01T00:00:00Z', syncSeq: '5' };
+    await seedStranded(localCheckpoint);
+    const filePath = join(workDir, 'empty-scope.db');
+    // Every climb is compatible with a size this scope does not have, so the
+    // scoped watermark computes as the EPOCH — which would otherwise stamp
+    // checkpoint:board_climbs back to 1970 and re-crawl 400+ pages from scratch.
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'other-size', compatibleSizeIds: [77] }],
+      stats: [{ climbUuid: 'other-size', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const onSnapshotBootstrapError = vi.fn();
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+      now: () => BASE_NOW,
+      random: () => 0,
+    });
+
+    expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toEqual(localCheckpoint);
+    expect(await getCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5')).toEqual(localCheckpoint);
+    expect(await getCheckpoint(db, DELETIONS_CHECKPOINT_KEY)).toEqual(localCheckpoint);
+    expect(await countRows('board_climbs')).toBe(0);
+    // The refusal is RECORDED: it burns the structural budget like any other
+    // import failure, because the artifact on offer provably cannot serve this
+    // scope and only a rebuilt one can change that.
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(1);
+    // It is also something an engineer wants to see, at full severity.
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'import', attempt: 1, expected: false }),
+    );
+  });
+
+  it('does not re-download the artifact on every cycle after refusing it', async () => {
+    // The regression that shipped in the first cut of #4313: the refusal stamped
+    // a paged-fallback marker and continued, leaving the scope exactly as
+    // eligible as before, so every sync cycle pulled the whole ~100 MB again.
+    const aheadOfArtifact: Cursor = { updatedAt: '2026-09-01T00:00:00Z', syncSeq: '999' };
+    await seedStranded(aheadOfArtifact);
+    const filePath = join(workDir, 'refusal-loop.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c-in', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c-in', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+
+    for (let cycle = 0; cycle < 5; cycle += 1) {
+      const run = makeGraphqlFetch();
+      await pullSync(db, noopQueryClient(), run.fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+        now: () => BASE_NOW + cycle * 60_000,
+        random: () => 0,
+      });
+      // The scope stays incomplete between cycles — board_climb_grades is still
+      // crawling, which is exactly the population the heal targets and the one
+      // that kept re-downloading. Completion would end the loop on its own.
+      await db.runAsync('DELETE FROM sync_meta WHERE key = ?', ['scope-complete:kilter:1:5']);
+    }
+    expect(source.downloadArtifact).toHaveBeenCalledTimes(1);
+
+    // Past the 6 h cooldown the scope spends its second and last structural
+    // attempt; the same artifact refuses again and it settles onto the crawl.
+    const afterCooldown = makeGraphqlFetch();
+    await pullSync(db, noopQueryClient(), afterCooldown.fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      now: () => BASE_NOW + 7 * HOUR_MS,
+      random: () => 0,
+    });
+
+    expect(source.downloadArtifact).toHaveBeenCalledTimes(2);
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(MAX_BOOTSTRAP_ATTEMPTS);
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-paged-fallback:kilter:1:5']),
+    ).not.toBeNull();
+  });
+
+  it('refuses an artifact the local crawl has already run past', async () => {
+    const aheadOfArtifact: Cursor = { updatedAt: '2026-09-01T00:00:00Z', syncSeq: '999' };
+    await seedStranded(aheadOfArtifact);
+    const filePath = join(workDir, 'behind-crawl.db');
     buildArtifact({
       filePath,
       climbs: [{ uuid: 'c-in', compatibleSizeIds: [5] }],
@@ -1535,22 +1924,82 @@ describe('pullSync bootstrap: one-shot heal for an over-cap scope', () => {
     const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
     const { fetch } = makeGraphqlFetch();
 
-    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      now: () => BASE_NOW,
+      random: () => 0,
+    });
 
-    const climbs = await db.getAllAsync<{ uuid: string }>('SELECT uuid FROM board_climbs ORDER BY uuid');
-    expect(climbs.map((row) => row.uuid)).toEqual(['c-in']);
-    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
-    expect(
-      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-attempts-healed:kilter:1:5']),
-    ).not.toBeNull();
+    expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toEqual(aheadOfArtifact);
+    expect(await countRows('board_climbs')).toBe(0);
+  });
+
+  it('still imports the same artifact into a FRESH scope', async () => {
+    const filePath = join(workDir, 'fresh-ok.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'other-size', compatibleSizeIds: [77] }],
+      stats: [{ climbUuid: 'other-size', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      now: () => BASE_NOW,
+      random: () => 0,
+    });
+
     expect(
       await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-done:kilter:1:5']),
     ).not.toBeNull();
   });
+});
 
-  it('drops the paged-fallback marker before the download so My Boards stops saying "slower download"', async () => {
-    await seedExhaustedScope();
-    const filePath = join(workDir, 'heal-marker.db');
+// ---------------------------------------------------------------------------
+// "Try the fast download again" — the consented, size-disclosed retry
+// ---------------------------------------------------------------------------
+
+describe('pullSync bootstrap: a user-requested retry', () => {
+  /**
+   * A board that spent its budget and settled. It ALWAYS carries board
+   * checkpoints — a terminal scope is never in `skipPagedPull`, so it crawls
+   * while it is settled — which is why it can only ever come back as a
+   * heal-over-partial, the one kind the metered probe defers.
+   */
+  async function seedSettledScope(): Promise<void> {
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      'bootstrap-retry:kilter:1:5',
+      JSON.stringify({
+        ...EMPTY_BOOTSTRAP_RETRY_STATE,
+        structuralFailures: MAX_BOOTSTRAP_ATTEMPTS,
+        lastFailureKind: 'structural-device',
+        hasPriorSnapshotFailure: true,
+        mirroredAttempts: MAX_BOOTSTRAP_ATTEMPTS,
+      }),
+    ]);
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      'bootstrap-paged-fallback:kilter:1:5',
+      '1',
+    ]);
+    await setCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5', { updatedAt: '2026-04-01T00:00:00Z', syncSeq: '5' });
+  }
+
+  /**
+   * The fixture's paged crawl reaches its tail on every cycle, which would mark
+   * the scope complete and make it permanently bootstrap-ineligible. A real
+   * settled board is still crawling `board_climb_grades`, so it is not complete —
+   * drop the marker between cycles to keep the fixture honest.
+   */
+  async function keepScopeIncomplete(): Promise<void> {
+    await db.runAsync('DELETE FROM sync_meta WHERE key = ?', ['scope-complete:kilter:1:5']);
+  }
+
+  function buildRetryArtifact(filePath: string): void {
     buildArtifact({
       filePath,
       climbs: [{ uuid: 'c-in', compatibleSizeIds: [5] }],
@@ -1558,93 +2007,89 @@ describe('pullSync bootstrap: one-shot heal for an over-cap scope', () => {
       climbsWatermark: CLIMBS_WATERMARK,
       statsWatermark: STATS_WATERMARK,
     });
-    // A snapshot download can run for 18 minutes; the row must not claim the slow
-    // path for the whole of it once the scope is back on the fast one.
-    let fallbackDuringDownload: unknown = 'never read';
-    const source: SnapshotSource = {
-      fetchManifest: vi.fn(async () => makeManifest([makeEntry()])),
-      downloadArtifact: vi.fn(async () => {
-        fallbackDuringDownload = await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', [
-          'bootstrap-paged-fallback:kilter:1:5',
-        ]);
-        return { filePath };
-      }),
-      deleteArtifact: vi.fn(async () => {}),
-    };
-    const { fetch } = makeGraphqlFetch();
+  }
 
-    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+  it('downloads on a metered link — the climber just confirmed the size', async () => {
+    await seedSettledScope();
+    const filePath = join(workDir, 'user-retry-metered.db');
+    buildRetryArtifact(filePath);
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const recovered = vi.fn();
 
-    expect(fallbackDuringDownload).toBeNull();
-  });
-
-  it('does not heal a second time — the marker is what bounds the re-download', async () => {
-    await seedExhaustedScope();
-    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
-      'bootstrap-attempts-healed:kilter:1:5',
-      '1',
-    ]);
-    const source = makeSnapshotSource({
-      manifest: makeManifest([makeEntry()]),
-      fileForEntry: () => join(workDir, 'never.db'),
+    // Settled: the engine will not even read the manifest for it.
+    const before = makeGraphqlFetch();
+    await pullSync(db, noopQueryClient(), before.fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      isOnUnmeteredNetwork: () => false,
+      now: () => BASE_NOW,
+      random: () => 0,
     });
-    const { fetch, capturedClimbCursors } = makeGraphqlFetch();
-
-    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
-
     expect(source.downloadArtifact).not.toHaveBeenCalled();
-    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(2);
-    // The paged crawl runs this cycle, exactly as it did before the heal existed.
-    expect(capturedClimbCursors[0]).toBeUndefined();
-    expect(
-      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-paged-fallback:kilter:1:5']),
-    ).not.toBeNull();
-  });
+    await keepScopeIncomplete();
 
-  it('does not heal while still offline: the manifest never resolves, so the paged crawl runs and the counter stands', async () => {
-    await seedExhaustedScope();
-    const source = makeSnapshotSource({ manifestError: new TypeError('Network request failed') });
-    const { fetch, capturedClimbCursors } = makeGraphqlFetch();
+    await restoreBootstrapRetryBudget(db, 'kilter:1:5');
 
-    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
-
-    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(2);
-    expect(
-      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-attempts-healed:kilter:1:5']),
-    ).toBeNull();
-    expect(capturedClimbCursors[0]).toBeUndefined();
-  });
-
-  it('does not heal a scope whose layout is not in the manifest', async () => {
-    await seedExhaustedScope();
-    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry({ layoutId: 99 })]) });
-    const { fetch } = makeGraphqlFetch();
-
-    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
-
-    expect(source.downloadArtifact).not.toHaveBeenCalled();
-    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(2);
-    expect(
-      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-attempts-healed:kilter:1:5']),
-    ).toBeNull();
-  });
-
-  it('does not heal a scope that already has a board checkpoint (nothing to bootstrap into)', async () => {
-    await seedExhaustedScope();
-    await setCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5', { updatedAt: '2026-01-01T00:00:00Z', syncSeq: '5' });
-    const source = makeSnapshotSource({
-      manifest: makeManifest([makeEntry()]),
-      fileForEntry: () => join(workDir, 'never.db'),
+    const after = makeGraphqlFetch();
+    await pullSync(db, noopQueryClient(), after.fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      isOnUnmeteredNetwork: () => false,
+      onBootstrapPathRecovered: recovered,
+      now: () => BASE_NOW + 60_000,
+      random: () => 0,
     });
-    const { fetch } = makeGraphqlFetch();
 
-    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+    expect(source.downloadArtifact).toHaveBeenCalledTimes(1);
+    const climbs = await db.getAllAsync<{ uuid: string }>('SELECT uuid FROM board_climbs');
+    expect(climbs.map((row) => row.uuid)).toEqual(['c-in']);
+    expect(recovered).toHaveBeenCalledWith({
+      scopeKey: 'kilter:1:5',
+      boardType: 'kilter',
+      trigger: 'user-request',
+      hadBoardCheckpoint: true,
+    });
+  });
 
-    expect(source.fetchManifest).not.toHaveBeenCalled();
-    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(2);
-    expect(
-      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-attempts-healed:kilter:1:5']),
-    ).toBeNull();
+  it('spends the request on one download, then defers on a metered link again', async () => {
+    await seedSettledScope();
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), downloadThrows: true });
+    await restoreBootstrapRetryBudget(db, 'kilter:1:5');
+
+    const consented = makeGraphqlFetch();
+    await pullSync(db, noopQueryClient(), consented.fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      isOnUnmeteredNetwork: () => false,
+      now: () => BASE_NOW,
+      random: () => 0,
+    });
+    expect(source.downloadArtifact).toHaveBeenCalledTimes(1);
+    await keepScopeIncomplete();
+
+    // Past the failure's 6 h cooldown, still on cellular: the tap is spent, so
+    // this is an ordinary automatic heal again and defers instead of pulling
+    // another ~100 MB the climber never asked for.
+    const stillMetered = makeGraphqlFetch();
+    await pullSync(db, noopQueryClient(), stillMetered.fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      isOnUnmeteredNetwork: () => false,
+      now: () => BASE_NOW + 7 * HOUR_MS,
+      random: () => 0,
+    });
+    expect(source.downloadArtifact).toHaveBeenCalledTimes(1);
+    await keepScopeIncomplete();
+
+    // On wifi, past the deferral, the automatic heal runs on its own.
+    const onWifi = makeGraphqlFetch();
+    await pullSync(db, noopQueryClient(), onWifi.fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      now: () => BASE_NOW + 14 * HOUR_MS,
+      random: () => 0,
+    });
+    expect(source.downloadArtifact).toHaveBeenCalledTimes(2);
   });
 });
 

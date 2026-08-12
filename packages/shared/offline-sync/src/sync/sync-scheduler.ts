@@ -7,6 +7,8 @@ import {
   type ScopeDownloadCompleteReporter,
   type CoverageResetReporter,
   type CoverageEvaluatedReporter,
+  type BootstrapRetryScheduledReporter,
+  type BootstrapPathRecoveredReporter,
 } from './pull-client';
 import type { SnapshotSource, SnapshotBootstrapErrorReporter } from './snapshot-bootstrap';
 
@@ -75,6 +77,15 @@ export type SchedulerOptions = {
   onCoverageReset?: CoverageResetReporter;
   /** Threaded through to pullSync's SyncOptions — see CoverageEvaluatedInfo. */
   onCoverageEvaluated?: CoverageEvaluatedReporter;
+  /** Threaded through to pullSync's SyncOptions — see BootstrapRetryScheduledInfo. */
+  onBootstrapRetryScheduled?: BootstrapRetryScheduledReporter;
+  /** Threaded through to pullSync's SyncOptions — see BootstrapPathRecoveredInfo. */
+  onBootstrapPathRecovered?: BootstrapPathRecoveredReporter;
+  /**
+   * Threaded through to pullSync's SyncOptions. Only the automatic heal of a
+   * partly-crawled scope consults it (issue #4313).
+   */
+  isOnUnmeteredNetwork?: () => boolean;
 };
 
 let isSyncing = false;
@@ -117,6 +128,9 @@ async function runSync(
       onScopeDownloadComplete: options?.onScopeDownloadComplete,
       onCoverageReset: options?.onCoverageReset,
       onCoverageEvaluated: options?.onCoverageEvaluated,
+      onBootstrapRetryScheduled: options?.onBootstrapRetryScheduled,
+      onBootstrapPathRecovered: options?.onBootstrapPathRecovered,
+      isOnUnmeteredNetwork: options?.isOnUnmeteredNetwork,
     });
   } catch (error) {
     options?.onCycleError?.(error);

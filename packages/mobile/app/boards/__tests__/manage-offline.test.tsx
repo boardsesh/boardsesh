@@ -54,6 +54,8 @@ const state = vi.hoisted(() => ({
       isPagedFallback: boolean;
       hasBoardCheckpoint: boolean;
       isScopeComplete: boolean;
+      isTerminal?: boolean;
+      retryAfter?: number | null;
     }
   >(),
   bootstrapQueryAsync: false,
@@ -495,6 +497,8 @@ describe('My Boards with no usable network list', () => {
           isPagedFallback: false,
           hasBoardCheckpoint: true,
           isScopeComplete: false,
+          // Both snapshot budgets spent, so this board really is on the crawl.
+          isTerminal: true,
         },
       ],
     ]);

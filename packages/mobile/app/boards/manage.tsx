@@ -19,7 +19,9 @@ import {
   getDownloadedScopeKeys,
   getCheckpoint,
   getCheckpointKey,
-  getBootstrapAttempts,
+  readBootstrapRetryState,
+  isScopeDownloadComplete,
+  isBootstrapDone,
   getBootstrapMetadataByScope,
   estimateScopeDownload,
 } from '@boardsesh/offline-sync';
@@ -237,17 +239,29 @@ export default function ManageBoards() {
       // Concurrent, not sequential: these are three independent reads and the
       // dialog opens behind them, so serialising them would show up as a stall on
       // slow storage.
-      const [climbsCheckpoint, statsCheckpoint, bootstrapAttempts] = await Promise.all([
+      const now = Date.now();
+      const [climbsCheckpoint, statsCheckpoint, scopeComplete, bootstrapAlreadyDone] = await Promise.all([
         getCheckpoint(db, getCheckpointKey('board_climbs', key)),
         getCheckpoint(db, getCheckpointKey('board_climb_stats', key)),
-        getBootstrapAttempts(db, key),
+        isScopeDownloadComplete(db, key),
+        isBootstrapDone(db, key),
       ]);
+      const hasBoardCheckpoint = !!climbsCheckpoint || !!statsCheckpoint;
+      const { state: retryState } = await readBootstrapRetryState(
+        db,
+        key,
+        { now, random: Math.random },
+        hasBoardCheckpoint,
+      );
       const estimate = estimateScopeDownload({
         manifest: snapshotManifestRef.current,
         boardType: scope.boardType,
         layoutId: scope.layoutId,
-        hasExistingCheckpoint: !!climbsCheckpoint || !!statsCheckpoint,
-        bootstrapAttempts,
+        retryState,
+        hasBoardCheckpoint,
+        isScopeComplete: scopeComplete,
+        isBootstrapDone: bootstrapAlreadyDone,
+        now,
       });
       const confirmed = await confirm({
         title: t('mobile.offline.enableTitle', { name: board.name }),
@@ -417,6 +431,8 @@ export default function ManageBoards() {
             downloaded: isDownloaded,
             snapshotSourceAvailable,
             bootstrapAttempts: bootstrapMetadata?.attempts ?? 0,
+            isTerminal: bootstrapMetadata?.isTerminal ?? false,
+            retryAfter: bootstrapMetadata?.retryAfter ?? null,
             isBootstrapDone: bootstrapMetadata?.isBootstrapDone ?? false,
             isPagedFallback: bootstrapMetadata?.isPagedFallback ?? false,
             hasBoardCheckpoint: bootstrapMetadata?.hasBoardCheckpoint ?? false,

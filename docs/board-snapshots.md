@@ -231,55 +231,143 @@ mobile adapter (React Query's `onlineManager`, wired to NetInfo) actually gates 
 Without it, every offline launch ran the whole bootstrap phase and emitted one Sentry event per
 enabled-but-undownloaded scope (issue #4238). The scheduler's offline→online edge re-runs the skipped cycle.
 
-**Eligibility**: a board scope (`boardType:layoutId:sizeId`) is only considered when it has **no
-checkpoint on either snapshot-backed table, `board_climbs` or `board_climb_stats`** (i.e. genuinely
-fresh for the snapshot) and its bootstrap attempt count is under `MAX_BOOTSTRAP_ATTEMPTS` (2). The
-ordinary paged sync still downloads `board_climb_grades` before the scope is reported complete. One
-artifact download is shared across every size of the same `(boardType, layoutId)` within a cycle.
+**Eligibility** (`evaluateBootstrapEligibility` in `sync/bootstrap-retry.ts`, called by BOTH
+`runBootstrapPhase` and `estimateScopeDownload` so the size the UI quotes can never disagree with what the
+engine does). A board scope (`boardType:layoutId:sizeId`) qualifies in one of two ways:
 
-The cap is evaluated **after** the manifest resolves, which is what makes the **one-shot heal** possible: a
-scope that already spent both attempts, still has no board checkpoint, and turns out to have a usable
-manifest entry waiting gets its `bootstrap-attempts:` row deleted and takes the snapshot path again —
-exactly once per scope, recorded in `bootstrap-attempts-healed:`. A device that burned both attempts in a
-tunnel therefore recovers on its first online launch, while a genuinely broken artifact costs two more
-attempts and then settles into the paged crawl for good. The cost is that an over-cap scope consults the
-manifest each cycle; `resolveManifestOnce` caches it per `pullSync` run, so that only adds a request on
-cycles where _every_ scope is over the cap.
+- **fresh** — no checkpoint on either snapshot-backed table (`board_climbs`, `board_climb_stats`).
+- **heal-over-partial** — it HAS checkpoints, has **not** reached `scope-complete:`, has not already
+  imported an artifact, and carries snapshot-path failures behind it. This is the un-strand for issue
+  #4313: a board that gave up on the snapshot and then crawled part of its catalog can jump the rest of
+  the climbs/stats crawl from an artifact.
+
+Both also require that neither retry budget is spent and that any scheduled cooldown has elapsed. A
+`scope-complete:` scope is never healed — it already serves the whole catalog locally, so ~100 MB buys it
+nothing. The ordinary paged sync still downloads `board_climb_grades` before a scope is reported complete
+(it is not in `SNAPSHOT_TABLES`), so a heal removes part of the slow path, not all of it. One artifact
+download is shared across every size of the same `(boardType, layoutId)` within a cycle.
+
+**Failure taxonomy and budgets** (issue #4313). Before this, `MAX_BOOTSTRAP_ATTEMPTS = 2` was doing two
+jobs: it was the retry policy (there is none — the artifact GET is unresumable and never retried) and the
+total-spend bound. Because a dropped connection at the DOWNLOAD stage burned the same counter as a corrupt
+artifact, two bad-reception launches condemned a board to the 400+-round-trip crawl for the life of the
+install. The two jobs are now separate: kind-specific budgets bound total spend, a cooldown ladder bounds
+frequency.
+
+| Kind                  | Raised by                                                                            | Budget                                | Cooldown ladder      | Re-armed by a new `builtAt`?                         |
+| --------------------- | ------------------------------------------------------------------------------------ | ------------------------------------- | -------------------- | ---------------------------------------------------- |
+| `transport`           | `isNetworkError(cause)` at the download stage (offline, DNS, TLS, timeout)           | `MAX_TRANSPORT_DOWNLOAD_FAILURES` = 3 | 2 min → 15 min → 2 h | no                                                   |
+| `structural-artifact` | anything raised inside the import (`quick_check`, `snapshot_meta` mismatch, throw)   | `MAX_BOOTSTRAP_ATTEMPTS` = 2          | 6 h → 24 h           | yes, `MAX_STRUCTURAL_REARMS` = 1 per scope, lifetime |
+| `structural-device`   | every other non-transport cause (disk space, cache dir, CDN non-2xx, unclassifiable) | `MAX_BOOTSTRAP_ATTEMPTS` = 2          | 6 h → 24 h           | **no**                                               |
+
+A successful download resets `transportFailures` to 0 and drops its cooldown. The manifest stage stays
+entirely free for transport failures (a few KB of JSON, and the stage an offline launch dies at — issue
+#4238); everything else is charged at either stage. The `structural-device` default is deliberately
+conservative: a plain `Error` from an adapter's downloader cannot be told apart from a disk-full or
+cache-dir fault, and the export is **nightly**, so a `builtAt` reset for a device-side fault would be
+2 × ~100 MB every day, forever.
+
+**Worst-case lifetime spend per scope: 7 artifact downloads** — 3 transport + 2 structural + 2 for the
+single re-armed structural round — each separated by at least one cooldown rung. A test in
+`snapshot-bootstrap.test.ts` drives 40 cycles against an injected clock and pins that count, so any future
+loosening shows up in a diff.
+
+When either budget is spent the scope is **terminal**: `bootstrap-paged-fallback:` is stamped and the
+manifest is not even fetched for it (cheaper than the pre-#4313 over-cap path, which consulted it every
+cycle). The one exception is a terminal scope whose last failure was `structural-artifact` and which has a
+re-arm left — that one still reads the manifest, because a differently built artifact is exactly what could
+fix it. Terminal is cleared by scope teardown or by the user tapping **Try the fast download again** in My
+Boards, which restores both budgets behind the same size-disclosing confirm dialog the enable toggle uses.
+
+**Cooldowns and skipping the paged crawl.** The skip is a grace window, not all-or-nothing: only a FRESH,
+non-terminal scope whose retry lands within 30 minutes waits for it, because a first-page checkpoint used
+to disqualify the snapshot path permanently and the crawl is 400+ serial round trips it is about to throw
+away. Past that window the crawl runs, so a board is never left empty waiting on a 2-hour cooldown, and a
+scope that already holds rows always crawls — a failed heal must not stall progress already being made.
+
+**The metered-network probe.** `SyncOptions.isOnUnmeteredNetwork` (default `() => true`, so web and every
+existing caller are unchanged) gates ONE decision: the automatic heal of a partly-crawled scope, which is a
+~100 MB download the user did not ask for that day. On a metered link the heal defers 6 hours and burns
+nothing. A fresh bootstrap (they just confirmed the size) ignores it, and so does a user-requested retry:
+`restoreBootstrapRetryBudget` arms a `userRequested` flag on the persisted state, `runBootstrapPhase` skips
+the defer while it is set, and the flag is spent the instant the download starts (one tap, one artifact).
+That last part matters — a settled scope has always crawled, so it can only ever come back as a
+heal-over-partial, and without the flag "Try the fast download again" was a silent 6-hour deferral on
+cellular. A recovery on that path reports `trigger: 'user-request'`.
+
+**The watermark-regression guard.** `bootstrapScopeFromSnapshot` takes the scope's current board-table
+checkpoints on the heal path and throws `SnapshotWatermarkRegressionError` — before opening the exclusive
+transaction, so nothing at all is written — when either table's artifact watermark compares older than the
+local checkpoint. That covers both hazards at once: an artifact whose scope filter matches no rows
+(`tableWatermark` returns the epoch, reachable for a size whose `compatible_size_ids` never matches or
+after any export/client filter drift), and a crawl that already ran past the artifact. Without it the
+import would lower `checkpoint:board_climbs:<scope>` — destroying exactly the progress the heal exists to
+rescue — and rewind the single global deletions cursor with it. It is reported at full severity
+(`expected: false`) because it means the export's scope filter and the client's disagree.
+
+The refusal **burns the structural-artifact budget**, like any other import failure. That is not bookkeeping
+pedantry: the refusal is deterministic for a given artifact (local checkpoints only move forward), so a
+refusal that recorded nothing left the scope exactly as eligible as before and pulled the whole ~100 MB
+again on every single sync cycle, forever. Charged, it costs at most 2 downloads (6 h then 24 h apart) plus
+the one re-armed round a genuinely newer `builtAt` can grant.
+
+With `W ≥ C` enforced the coverage argument is simple: rows ≤ C are already local, the artifact supplies
+every scoped row ≤ W, `reconcileScope` removes local scoped rows ≤ W absent from the artifact, and the
+checkpoint moves forward to W with the strict-`>` delta covering (W, head].
+
+**Rollback safety: the legacy dual-write.** `bootstrap-retry:<scopeKey>` (a JSON `BootstrapRetryState`) is
+the source of truth, but `writeBootstrapRetryState` also mirrors the legacy `bootstrap-attempts:` /
+`bootstrap-attempts-healed:` / `bootstrap-paged-fallback:` rows and **never deletes them**. Production
+channel rollback and `pr-<n>` preview channels are live paths here: an older bundle that read no legacy row
+would re-arm a fresh 2-attempt round plus another one-shot heal. Reads reconcile the other way too — if the
+legacy counter moved past what we last mirrored (`mirroredAttempts`), an older bundle counted something
+real and the difference is folded back into `structuralFailures`. On first touch,
+`migrateLegacyBootstrapMarkers` derives a state from the legacy rows and grants one clean pass under the
+new taxonomy (the old counter conflated transport with structural, which is the bug); a scope that already
+holds rows gets a `retryAfter` jittered across 2 hours so the fleet does not start downloading on the same
+post-OTA launch. The legacy rows are never deleted, but the first write after a migration does re-stamp
+`bootstrap-attempts:` down to the mirrored value — the clean pass has to be visible to a rolled-back bundle
+too, or it would re-read the pre-migration count and settle the scope all over again.
 
 A scope torn down from **More → Storage** becomes eligible again: `removeBoardScopeData`
 (`sync/scope-teardown.ts`) clears all three board-data checkpoints **and** its `bootstrap-attempts:` /
-`bootstrap-attempts-healed:` / `bootstrap-done:` / `bootstrap-paged-fallback:` markers in the same
-transaction as the rows, so a re-download takes the snapshot fast
-path rather than a paged crawl — and `onScopeDownloadComplete` attributes it honestly instead of
-reporting a stale `method: 'snapshot'` for a run that actually paged. All four marker prefixes are exported
-from `snapshot-bootstrap.ts` for that teardown alone; they stay package-internal (not re-exported from
-`index.ts`). Only the first three are read back by the My Boards metadata query — the heal marker has no UI,
-so `BOOTSTRAP_METADATA_PATTERNS` deliberately stays at six patterns.
+`bootstrap-attempts-healed:` / `bootstrap-done:` / `bootstrap-paged-fallback:` / `bootstrap-retry:` markers
+in the same transaction as the rows, so a re-download takes the snapshot fast path rather than a paged
+crawl — and `onScopeDownloadComplete` attributes it honestly instead of reporting a stale
+`method: 'snapshot'` for a run that actually paged. The marker prefixes stay package-internal (not
+re-exported from `index.ts`). `BOOTSTRAP_METADATA_QUERY` is built from `BOOTSTRAP_METADATA_PATTERNS` rather
+than hand-written, and a test asserts the placeholder count matches, so adding a prefix cannot silently
+drop one; the heal marker is the only one with no UI and stays out of that list.
 
-Failure/attempt matrix, copied from the `runBootstrapPhase` doc comment (the source of truth — keep this in
+Per-stage outcomes, copied from the `runBootstrapPhase` doc comment (the source of truth — keep this in
 sync if the code comment changes):
 
-| Condition                                                          | Attempt burned? | Result this cycle                                                                       |
-| ------------------------------------------------------------------ | --------------- | --------------------------------------------------------------------------------------- |
-| checkpoint exists on either board table                            | —               | not eligible → normal paged pull                                                        |
-| `isOnline()` reports offline                                       | —               | whole cycle skipped before the phase starts; retried on reconnect                       |
-| attempts ≥ `MAX_BOOTSTRAP_ATTEMPTS`, heal available + usable entry | —               | counter reset once → snapshot path runs                                                 |
-| attempts ≥ `MAX_BOOTSTRAP_ATTEMPTS`, otherwise                     | —               | gave up → normal paged pull                                                             |
-| manifest `absent` (404/missing or invalid JSON/shape)              | **no**          | permanent miss → normal paged pull                                                      |
-| manifest `error`, transport-shaped (offline/DNS/TLS/timeout)       | **no**          | skip paged pull this cycle; reported as `expected`                                      |
-| manifest `error`, anything else (HTTP non-2xx except 404, …)       | **yes**         | skip paged pull this cycle (retry next cycle)                                           |
-| manifest `ok` but no entry for `(boardType, layoutId)`             | **no**          | permanent miss (not exported yet) → normal paged pull                                   |
-| download fails or returns `null` (transport-shaped or not)         | **yes**         | skip paged pull this cycle; transport-shaped ones still report as `expected`            |
-| download throws `SnapshotPermanentMissError`                       | **no**          | permanent miss → normal paged pull                                                      |
-| import throws — corrupt/short artifact, row-count/format mismatch  | **yes**         | skip paged pull this cycle                                                              |
-| import throws `SnapshotSchemaStaleError`                           | **no**          | permanent miss this run → normal paged pull                                             |
-| a sign-out wipe is detected mid-phase                              | **no**          | whole phase bails, mirrors `syncTable`'s wipe guard                                     |
-| success                                                            | —               | marked done; deletions rewound; paged pull runs as a small delta from scoped watermarks |
+| Condition                                                            | Budget burned             | Result this cycle                                                                         |
+| -------------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------- |
+| `scope-complete:` / `bootstrap-done:` / mid-crawl with no failures   | —                         | not eligible → normal paged pull                                                          |
+| `isOnline()` reports offline                                         | —                         | whole cycle skipped before the phase starts; retried on reconnect                         |
+| a scheduled retry has not elapsed                                    | —                         | not eligible this cycle; crawl runs unless the retry is inside the 30-minute grace window |
+| terminal, last failure `structural-artifact`, re-arm left, new build | — (grants a round)        | budget restored once → snapshot path runs                                                 |
+| terminal, otherwise                                                  | —                         | settled → normal paged pull, manifest not fetched                                         |
+| heal-over-partial on a metered link                                  | **no** (defers 6 h)       | normal paged pull                                                                         |
+| the same, with `userRequested` armed by the retry action             | — (spends the tap)        | snapshot path runs now; recovery reports `trigger: 'user-request'`                        |
+| manifest `absent` (404/missing or invalid JSON/shape)                | **no**                    | permanent miss → normal paged pull                                                        |
+| manifest `error`, transport-shaped (offline/DNS/TLS/timeout)         | **no**, nothing persisted | skip paged pull this cycle; reported as `expected`                                        |
+| manifest `error`, anything else (HTTP non-2xx except 404, …)         | `structural-device`       | 6 h ladder; crawl runs (past the grace window)                                            |
+| manifest `ok` but no entry for `(boardType, layoutId)`               | **no**                    | permanent miss (not exported yet) → normal paged pull                                     |
+| download fails or returns `null`, transport-shaped                   | `transport`               | 2 min ladder; paged pull skipped while the retry is imminent                              |
+| download fails or returns `null`, anything else                      | `structural-device`       | 6 h ladder; crawl runs                                                                    |
+| download throws `SnapshotPermanentMissError`                         | **no**                    | permanent miss → normal paged pull                                                        |
+| import throws — corrupt/short artifact, row-count/format mismatch    | `structural-artifact`     | 6 h ladder; a new `builtAt` may re-arm it once                                            |
+| import throws `SnapshotSchemaStaleError`                             | **no**                    | permanent miss this run → normal paged pull                                               |
+| import throws `SnapshotWatermarkRegressionError`                     | `structural-artifact`     | nothing written → normal paged pull; 6 h ladder; reported `expected: false`               |
+| a sign-out wipe is detected mid-phase                                | **no**                    | whole phase bails, mirrors `syncTable`'s wipe guard                                       |
+| success                                                              | transport counter reset   | marked done; deletions rewound; paged pull runs as a small delta from scoped watermarks   |
 
-"Skip paged pull this cycle" matters because a scope whose bootstrap failed but still has attempts left
-must **not** run its ordinary paged pull this cycle either — a first-page checkpoint from that pull would
-permanently disqualify the scope from ever bootstrapping (the eligibility check requires no checkpoint at
-all), so the next cycle retries the snapshot path instead of falling through to a slow crawl by accident.
+Resumable / ranged artifact downloads are **not** in scope here — artifacts ship gzip-encoded and rely on
+the native stack to decode, so byte-offset resume needs a JS gunzipper (a native dependency, OTA-forbidden).
+That is issue #4310's; when it lands, the transport ladder's first rung should drop, because a resumed
+attempt is cheap.
 
 **Import mechanics** (`bootstrapScopeFromSnapshot`): `ATTACH`es the downloaded file as `bs_snapshot`, runs
 `PRAGMA quick_check` (rejects a truncated/corrupt file before touching any row), verifies `snapshot_meta`
@@ -298,10 +386,13 @@ inside the artifact, then in **one exclusive transaction**:
 - Stamps both table checkpoints at the scoped imported-row watermarks.
 - **Rewinds the deletions checkpoint** to the older scoped table watermark timestamp with deletion cursor
   `syncSeq = '0'`, in the _same_ transaction as the import. Deletion cursors page over deletion-row ids, not
-  board table `sync_seq` values. Once a scope has board checkpoints it's never bootstrap-eligible again, so
-  a crash between the import commit and a separate rewind step would permanently strand any board-row
-  deletions that fell in `(watermark, deletions-head]` — they'd never replay against the freshly-imported
-  rows. Doing it in the same transaction closes that gap.
+  board table `sync_seq` values. A committed import stamps `bootstrap-done:`, which disqualifies the scope
+  from ever bootstrapping again, so a crash between the import commit and a separate rewind step would
+  permanently strand any board-row deletions that fell in `(watermark, deletions-head]` — they'd never
+  replay against the freshly-imported rows. Doing it in the same transaction closes that gap. Note the
+  rewind target is `min(scoped watermarks)`, the max `updated_at` of the artifact's rows FOR THIS SCOPE:
+  on a quiet layout that timestamp can be weeks old, so the replay window is bounded by the 80-day
+  tombstone retention, not by one nightly export window.
 
 **Wipe-epoch guard**: a sign-out wipe can start (or fully complete) across any of the `await`s above. The
 bootstrap captures the monotonic wipe epoch before its first `await` and re-checks it (and the
@@ -392,7 +483,11 @@ pre-import empty result set.
     per scope's first-download completion (climbs, stats, and grades all reached the tail), with method
     `snapshot` or `paged` and `durationMs` measured from the start of the sync cycle's work on that scope (so a
     `'snapshot'` scope's duration includes its manifest/download/import time, not just the trailing delta
-    pull — an apples-to-apples comparison against a full paged crawl).
+    pull — an apples-to-apples comparison against a full paged crawl). A HEALED scope carries
+    `bootstrapHealed: true` and must be filtered out of those percentiles: its duration excludes the paged
+    work earlier cycles already did. Both fields read the persisted `bootstrap-done:` row (its presence for
+    `method`, its value — `'heal'` vs `'1'` — for `bootstrapHealed`) rather than anything in-memory, because
+    completion routinely lands cycles after the import.
   - Sentry handled errors, `tags: { source: 'offline-sync', kind: 'snapshot-bootstrap' }`, for every
     bootstrap failure (manifest/download/import stage, with
     `scopeKey`/`stage`/`attempt`/`expected`/`cause`/`causeName` in `extra`) and for the gzip-sniff failure

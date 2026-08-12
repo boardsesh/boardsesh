@@ -12,7 +12,7 @@ import type { QueryInvalidator } from '../../database';
 import { pullSync } from '../pull-client';
 import { removeBoardScopeData } from '../scope-teardown';
 import { getCheckpoint, setCheckpoint, markScopeDownloadComplete } from '../checkpoints';
-import { getBootstrapAttempts } from '../snapshot-bootstrap';
+import { getBootstrapAttempts } from '../bootstrap-retry';
 import { runMigrations } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
 import { beginLocalPurge, __resetDrainerStateForTests } from '../../mutation-queue/drainer';
@@ -154,6 +154,11 @@ describe('re-downloading a removed board', () => {
       `bootstrap-attempts-healed:${SCOPE_KEY}`,
       '1',
     ]);
+    // …as must the retry budgets and cooldown the scope settled into (#4313).
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      `bootstrap-retry:${SCOPE_KEY}`,
+      JSON.stringify({ transportFailures: 3, structuralFailures: 2, retryAfter: 1_800_000_000_000 }),
+    ]);
 
     await removeBoardScopeData({ db, scope: SCOPE, scopeKey: SCOPE_KEY, retainedScopes: [] });
 
@@ -165,6 +170,9 @@ describe('re-downloading a removed board', () => {
     expect(await getCheckpoint(db, `checkpoint:board_climb_grades:${SCOPE_KEY}`)).toBeNull();
     expect(
       await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', [`bootstrap-paged-fallback:${SCOPE_KEY}`]),
+    ).toBeNull();
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', [`bootstrap-retry:${SCOPE_KEY}`]),
     ).toBeNull();
     expect(
       await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', [`bootstrap-attempts-healed:${SCOPE_KEY}`]),
