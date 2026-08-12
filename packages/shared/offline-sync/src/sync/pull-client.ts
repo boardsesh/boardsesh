@@ -35,14 +35,6 @@ import {
   type SnapshotBootstrapErrorReporter,
 } from './snapshot-bootstrap';
 import { classifySnapshotBootstrapFailure, type SnapshotBootstrapFailureReason } from './bootstrap-failure-reason';
-
-/**
- * What a report site inside the phase supplies. `reason` and `aborted` are filled
- * in by the wrapper in `runBootstrapPhase`, so an arm that has nothing special to
- * say about either simply leaves them out.
- */
-type BootstrapErrorInput = Omit<SnapshotBootstrapErrorReport, 'reason' | 'aborted'> &
-  Partial<Pick<SnapshotBootstrapErrorReport, 'reason' | 'aborted'>>;
 import {
   classifyBootstrapFailure,
   clearBootstrapPagedFallback,
@@ -88,6 +80,14 @@ import { parseOfflineBoardKey, type OfflineBoardScope } from '../offline-board-k
  * source: 'offline-sync', kind: 'schema-drift'); tests and headless callers omit it.
  */
 export type SchemaDriftReporter = (drift: { tableName: string; column: string }) => void;
+
+/**
+ * What a report site inside the bootstrap phase supplies. `reason` and `aborted`
+ * are filled in by the wrapper in `runBootstrapPhase`, so an arm with nothing
+ * special to say about either simply leaves them out.
+ */
+type BootstrapErrorInput = Omit<SnapshotBootstrapErrorReport, 'reason' | 'aborted'> &
+  Partial<Pick<SnapshotBootstrapErrorReport, 'reason' | 'aborted'>>;
 
 export type SyncProgress = {
   phase: 'bootstrap' | 'user_data' | 'board_data' | 'deletions' | 'idle';

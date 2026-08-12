@@ -464,12 +464,14 @@ describe('snapshot-bootstrap bindings', () => {
       attempt: 1,
       cause: null,
       expected: false,
+      reason: 'unknown',
+      aborted: false,
     });
 
     expect(reportHandledError).toHaveBeenCalledWith(
       expect.objectContaining({ message: expect.stringContaining('kilter:1:5') }),
       expect.objectContaining({
-        tags: { source: 'offline-sync', kind: 'snapshot-bootstrap' },
+        tags: { source: 'offline-sync', kind: 'snapshot-bootstrap', stage: 'download', reason: 'unknown' },
         extra: expect.objectContaining({ scopeKey: 'kilter:1:5', stage: 'download', attempt: 1 }),
       }),
     );
@@ -497,6 +499,8 @@ describe('snapshot-bootstrap bindings', () => {
       attempt: 0,
       cause,
       expected: true,
+      reason: 'network',
+      aborted: false,
     });
 
     const [reported, context] = reportHandledError.mock.calls[0] as [
@@ -505,7 +509,13 @@ describe('snapshot-bootstrap bindings', () => {
     ];
     expect(reported.cause).toBe(cause);
     expect(context.level).toBe('warning');
-    expect(context.tags).toEqual({ source: 'offline-sync', kind: 'snapshot-bootstrap', expected_offline: true });
+    expect(context.tags).toEqual({
+      source: 'offline-sync',
+      kind: 'snapshot-bootstrap',
+      stage: 'manifest',
+      reason: 'network',
+      expected_offline: true,
+    });
     expect(context.extra).toEqual(
       expect.objectContaining({
         scopeKey: 'kilter:1:5',
@@ -847,6 +857,8 @@ describe('snapshot-bootstrap bindings', () => {
       attempt: 2,
       cause: new Error('The request timed out.'),
       expected: true,
+      reason: 'network',
+      aborted: false,
     });
 
     expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadFailed, {
@@ -854,10 +866,86 @@ describe('snapshot-bootstrap bindings', () => {
       stage: 'download',
       attempt: 2,
       expected: true,
+      reason: 'network',
+      aborted: false,
       errorMessage: 'The request timed out.',
       offlineEngineEnabled: false,
     });
     expect(reportHandledError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ level: 'warning' }));
+  });
+
+  it('keeps a torn-down download in the funnel and out of Sentry', () => {
+    // A board removal, a sign-out, or a pocketed phone. These used to emit
+    // NOTHING, leaving a Started with no terminal event (issue #4314) — so the
+    // funnel gets them, tagged `aborted: true` for the rate query to exclude.
+    // Sentry does not: there are as many of these as there are lock screens, and
+    // they would bury the artifact and database failures worth reading.
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+
+    options.onSnapshotBootstrapError?.({
+      scopeKey: 'kilter:1:5',
+      stage: 'download',
+      attempt: 0,
+      cause: null,
+      expected: true,
+      reason: 'aborted-wipe',
+      aborted: true,
+    });
+
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadFailed, {
+      scopeKey: 'kilter:1:5',
+      stage: 'download',
+      attempt: 0,
+      expected: true,
+      reason: 'aborted-wipe',
+      aborted: true,
+      errorMessage: 'null',
+      offlineEngineEnabled: false,
+    });
+    expect(reportHandledError).not.toHaveBeenCalled();
+  });
+
+  it('tags a real failure with its stage and reason so Sentry can group on them', () => {
+    // Tags, not extras: Sentry only searches and groups on tags, and chasing
+    // BOARDSESH-D7 through `extra.stage` is what made "which phase is this?"
+    // unanswerable from the issue page.
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+
+    options.onSnapshotBootstrapError?.({
+      scopeKey: 'kilter:1:5',
+      stage: 'import',
+      attempt: 1,
+      cause: new Error('Error code 6: database table is locked'),
+      expected: false,
+      reason: 'database-locked',
+      aborted: false,
+    });
+
+    expect(trackMock).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineBoardDownloadFailed,
+      expect.objectContaining({ reason: 'database-locked', aborted: false }),
+    );
+    const context = reportHandledError.mock.calls[0][1] as { tags: Record<string, unknown> };
+    expect(context.tags).toEqual({
+      source: 'offline-sync',
+      kind: 'snapshot-bootstrap',
+      stage: 'import',
+      reason: 'database-locked',
+    });
   });
 
   it('carries the payload props on Completed, and omits them when the import ran in an earlier cycle', () => {
@@ -921,6 +1009,8 @@ describe('snapshot-bootstrap bindings', () => {
       attempt: 1,
       cause: null,
       expected: false,
+      reason: 'unknown',
+      aborted: false,
     });
     expect(customBootstrapError).toHaveBeenCalled();
     expect(reportHandledError).not.toHaveBeenCalled();

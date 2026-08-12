@@ -3861,3 +3861,225 @@ describe('pullSync grades bootstrap', () => {
     expect(gradesDownloads).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Teardown reporting (issue #4314)
+//
+// Every one of these used to `break` in SILENCE: `Offline Board Download
+// Started` fired, the cycle was torn down by a sign-out / a `beginLocalPurge`
+// from removing any board / the app backgrounding, and no terminal event ever
+// followed. The funnel could not tell an abandoned 100 MB transfer from a
+// download that is still running. They report through the same
+// `onSnapshotBootstrapError` seam now, marked `aborted: true` so a failure RATE
+// can exclude them — nothing broke, and no retry budget was spent.
+// ---------------------------------------------------------------------------
+
+describe('pullSync bootstrap teardown reporting', () => {
+  /** A valid artifact, so only the teardown under test can end the phase. */
+  function buildScopeArtifact(filePath: string): void {
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+  }
+
+  it('reports a board removal that lands while the artifact is downloading', async () => {
+    const filePath = join(workDir, 'purged-mid-download.db');
+    buildScopeArtifact(filePath);
+    const source: SnapshotSource = {
+      fetchManifest: async () => makeManifest([makeEntry()]),
+      downloadArtifact: async () => {
+        // Removing ANY board bumps the wipe epoch — the field report behind
+        // #4314, where a Kilter transfer died to a Tension removal.
+        beginLocalPurge();
+        return { filePath };
+      },
+      deleteArtifact: vi.fn(async () => {}),
+    };
+    const onSnapshotBootstrapError = vi.fn();
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+    });
+
+    expect(onSnapshotBootstrapError).toHaveBeenCalledTimes(1);
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scopeKey: 'kilter:1:5',
+        stage: 'download',
+        attempt: 0,
+        aborted: true,
+        reason: 'aborted-wipe',
+        expected: true,
+      }),
+    );
+    // Torn down, not failed: no rows, no budget spent, so the same scope simply
+    // runs again on the next cycle.
+    expect(await countRows('board_climbs')).toBe(0);
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
+  });
+
+  it('reports the app backgrounding during the artifact download as its own reason', async () => {
+    const filePath = join(workDir, 'backgrounded-mid-download.db');
+    buildScopeArtifact(filePath);
+    const source: SnapshotSource = {
+      fetchManifest: async () => makeManifest([makeEntry()]),
+      downloadArtifact: async () => {
+        setBackgrounded(true);
+        return { filePath };
+      },
+      deleteArtifact: vi.fn(async () => {}),
+    };
+    const onSnapshotBootstrapError = vi.fn();
+    const { fetch } = makeGraphqlFetch();
+
+    try {
+      await pullSync(db, noopQueryClient(), fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+        onSnapshotBootstrapError,
+      });
+    } finally {
+      setBackgrounded(false);
+    }
+
+    expect(onSnapshotBootstrapError).toHaveBeenCalledTimes(1);
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'download', aborted: true, reason: 'aborted-background' }),
+    );
+    expect(await countRows('board_climbs')).toBe(0);
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
+  });
+
+  it('closes the tightest window of all: a teardown between Started and the transfer', async () => {
+    const filePath = join(workDir, 'purged-at-start.db');
+    buildScopeArtifact(filePath);
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const onSnapshotBootstrapError = vi.fn();
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      // Fired on the line directly above the bail, so this is a teardown landing
+      // in the gap between Started and the first byte.
+      onScopeDownloadStart: () => beginLocalPurge(),
+      onSnapshotBootstrapError,
+    });
+
+    expect(source.downloadArtifact).not.toHaveBeenCalled();
+    expect(onSnapshotBootstrapError).toHaveBeenCalledTimes(1);
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'download', attempt: 0, aborted: true, reason: 'aborted-wipe' }),
+    );
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
+  });
+
+  it('reports a SnapshotWipedError from the import as an abort, not a failure', async () => {
+    const filePath = join(workDir, 'wiped-mid-import.db');
+    buildScopeArtifact(filePath);
+    // Bump the epoch the moment the stats INSERT runs — inside the exclusive
+    // transaction, after bootstrapScopeFromSnapshot captured its start epoch, so
+    // the post-import guard raises SnapshotWipedError and rolls everything back.
+    // Prototype spy: the import runs on the transaction's own adapter instance.
+    const adapterPrototype = Object.getPrototypeOf(db) as { runAsync: typeof db.runAsync };
+    const realRunAsync = adapterPrototype.runAsync;
+    let purged = false;
+    vi.spyOn(adapterPrototype, 'runAsync').mockImplementation(async function (
+      this: unknown,
+      source: string,
+      ...rest: unknown[]
+    ) {
+      if (!purged && source.includes('INSERT OR REPLACE INTO main.board_climb_stats')) {
+        purged = true;
+        beginLocalPurge();
+      }
+      return realRunAsync.call(this, source, ...(rest as never[]));
+    } as typeof db.runAsync);
+
+    const snapshotSource = makeSnapshotSource({
+      manifest: makeManifest([makeEntry()]),
+      fileForEntry: () => filePath,
+    });
+    const onSnapshotBootstrapError = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource,
+      onSnapshotBootstrapError,
+    });
+
+    expect(onSnapshotBootstrapError).toHaveBeenCalledTimes(1);
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scopeKey: 'kilter:1:5',
+        stage: 'import',
+        attempt: 0,
+        aborted: true,
+        reason: 'aborted-wipe',
+        expected: true,
+      }),
+    );
+    // The transaction rolled back and the budget is untouched.
+    expect(await countRows('board_climbs')).toBe(0);
+    expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toBeNull();
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
+  });
+
+  it('still charges a GENUINE import failure, reported as a non-abort with a real reason', async () => {
+    // The behaviour the abort reporting must not have changed: a freshly
+    // downloaded artifact whose meta disagrees with its contents is broken, not
+    // torn down, and it burns a structural attempt exactly as it always did.
+    const filePath = join(workDir, 'truncated-artifact.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+      climbsRowCountOverride: 999, // claims 999 rows, artifact holds 1
+    });
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const onSnapshotBootstrapError = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+    });
+
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scopeKey: 'kilter:1:5',
+        stage: 'import',
+        attempt: 1,
+        aborted: false,
+        reason: 'artifact-invalid',
+        expected: false,
+      }),
+    );
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(1);
+  });
+
+  it('says nothing at all about a bootstrap that worked', async () => {
+    const filePath = join(workDir, 'clean-bootstrap.db');
+    buildScopeArtifact(filePath);
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const onSnapshotBootstrapError = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+    });
+
+    expect(onSnapshotBootstrapError).not.toHaveBeenCalled();
+    expect(await countRows('board_climbs')).toBe(1);
+  });
+});
