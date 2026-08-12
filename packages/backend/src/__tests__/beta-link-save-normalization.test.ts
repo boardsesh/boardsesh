@@ -6,11 +6,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // param. `betaInsert` is set whenever an inserted row carries a `link` field.
 const { betaInsert, selectMock } = vi.hoisted(() => ({
   betaInsert: { current: null as Record<string, unknown> | null },
-  // Dedup probe (findBetaLinkIdentityConflict) — return no conflict. It now
-  // leftJoins board_climbs for the conflicting climb's name, so the mock chain
-  // mirrors from().leftJoin().where().
+  // Two different SELECTs run through this mock, so `from()` answers both call
+  // shapes and both resolve empty:
+  //   * findBetaLinkIdentityConflict — from().leftJoin().where(), leftJoining
+  //     board_climbs for the conflicting climb's name. Empty = no conflict.
+  //   * resolveCanonicalClimbUuid — from().where().limit(); saveTick resolves an
+  //     alias-borne climb UUID to the canonical before the insert. Empty = no
+  //     alias row, so the UUID passes through unchanged, which is what the
+  //     assertions below expect.
   selectMock: vi.fn(() => ({
-    from: () => ({ leftJoin: () => ({ where: () => Promise.resolve([]) }) }),
+    from: () => ({
+      leftJoin: () => ({ where: () => Promise.resolve([]) }),
+      where: () => ({ limit: () => Promise.resolve([]) }),
+    }),
   })),
 }));
 

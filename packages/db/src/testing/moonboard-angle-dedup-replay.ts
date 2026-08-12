@@ -858,9 +858,10 @@ export const MOONBOARD_DEDUP_REPLAY_SEED_SQL = `
   -- so sum 12 over 3 climbers. With no upstream quality on the 40° row the
   -- blend collapses to that plain average, 4.0.
   --
-  -- s25's own 25° row has upstream quality and NO ticks, so it re-blends back
-  -- to exactly its upstream average — the "don't disturb what you didn't
-  -- merge" half of the same assertion.
+  -- s25's own 25° row has upstream quality and NO ticks. Step 3b covers every
+  -- key step 2 writes, so it IS recomputed — and lands back on exactly its
+  -- upstream average, which is the "a recount on a tick-less key is a no-op,
+  -- not a disturbance" half of the same assertion.
   INSERT INTO board_climbs (uuid, board_type, layout_id, angle, user_id, is_draft, is_listed, created_at) VALUES
     ('s25', 'moonboard', 1, 25, NULL, false, true, '2024-01-01T00:00:00Z'),
     ('s40', 'moonboard', 1, 40, NULL, false, true, '2024-01-02T00:00:00Z');
@@ -1639,7 +1640,7 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
     },
   },
   {
-    name: 'CASE F: a re-keyed row with no ticks keeps its upstream quality untouched',
+    name: 'CASE F: a re-keyed row with no ticks recounts back to its upstream quality',
     run: async (db) => {
       const rows = await db`SELECT ascensionist_count, upstream_ascensionist_count, boardsesh_ascensionist_count,
           quality_average, upstream_quality_average
@@ -1648,7 +1649,11 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
       assert.equal(Number(rows[0].upstream_ascensionist_count), 4);
       assert.equal(Number(rows[0].boardsesh_ascensionist_count), 0);
       assert.equal(Number(rows[0].ascensionist_count), 4);
-      assert.equal(rows[0].quality_average, 3.5, 'nothing merged into this row, so its upstream average stands');
+      assert.equal(
+        rows[0].quality_average,
+        3.5,
+        'the recount finds no ticks here, so the blend collapses to the upstream average it already had',
+      );
       assert.equal(rows[0].upstream_quality_average, 3.5);
     },
   },
