@@ -16,13 +16,22 @@ import { getSetting } from '../settings';
 import { setupNotificationHandlers } from '../notifications';
 import { getHttpClient } from '../lib/graphql/client';
 import { setOfflineEngineEnabled } from '../lib/offline-engine';
+import { registerSuperProperties } from '../lib/analytics';
 import { useAuth } from '../providers/auth-provider';
-import { useOfflineDownloadsEnabled } from '../providers/feature-flags-provider';
+import { useFeatureFlag, useOfflineDownloadsEnabled } from '../providers/feature-flags-provider';
 import { useSnapshotSource } from '../offline/use-snapshot-source';
 import { useStoredUserId } from '../hooks/use-current-user-id';
 import { clearUserData } from '../db/connection';
 import { reportError } from '../lib/error-reporting';
 import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
+
+/**
+ * How long the flag gets to resolve before a launch counts as "flags never
+ * landed". Everyone starts unresolved for the first few hundred milliseconds,
+ * so registering `default-on` immediately would tag ~100% of sessions with it
+ * and measure nothing.
+ */
+export const FLAG_SETTLE_MS = 10_000;
 
 /**
  * Publishes the offline-engine flag decision to the module-level store that
@@ -33,12 +42,39 @@ import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
  * provider's own effect), which since #4312 resolves to engine-ON; the store's
  * literal `false` default therefore holds only until this effect runs, which is
  * before anything can read it.
+ *
+ * It also stamps HOW the engine got its state onto every subsequent event, via
+ * the `offline_engine_state` super property. #4208 turned off
+ * `$feature_flag_called`, which is the signal #4312 was diagnosed from, so
+ * without this we would have no way to tell whether the bake worked. A super
+ * property costs no event volume — it rides along on events we already send,
+ * including the download funnel.
  */
 export function OfflineEngineFlagSync() {
   const offlineEnabled = useOfflineDownloadsEnabled();
+  const rawFlag = useFeatureFlag('offline-board-downloads');
+
   useEffect(() => {
     setOfflineEngineEnabled(offlineEnabled);
   }, [offlineEnabled]);
+
+  // Keyed on the RAW flag, not the resolved boolean: `flag-on` and `default-on`
+  // both resolve to `true`, so an effect keyed on the boolean could not tell
+  // them apart. A resolved value registers straight away; an unresolved one
+  // waits out FLAG_SETTLE_MS and only then counts as "flags never landed" —
+  // the cleanup cancels the timer if the flag resolves first, so a normal
+  // launch never registers `default-on`.
+  useEffect(() => {
+    if (rawFlag !== undefined) {
+      registerSuperProperties({ offline_engine_state: rawFlag ? 'flag-on' : 'flag-off' });
+      return undefined;
+    }
+    const settleTimer = setTimeout(() => {
+      registerSuperProperties({ offline_engine_state: 'default-on' });
+    }, FLAG_SETTLE_MS);
+    return () => clearTimeout(settleTimer);
+  }, [rawFlag]);
+
   return null;
 }
 

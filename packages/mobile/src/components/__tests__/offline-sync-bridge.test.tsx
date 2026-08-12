@@ -1,7 +1,17 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+// The analytics barrel reaches posthog-react-native; stub it so the module scan
+// never parses it, and so the super-property calls are assertable. The two flag
+// readers are what FeatureFlagsProvider itself imports from here.
+const registerSuperPropertiesMock = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/analytics', () => ({
+  registerSuperProperties: (properties: Record<string, unknown>) => registerSuperPropertiesMock(properties),
+  readPosthogFeatureFlags: () => ({}),
+  subscribePosthogFeatureFlags: () => () => {},
+}));
 
 // The bridge is the flag boundary of the offline engine: scheduler only when
 // `offline-board-downloads` is on, a one-shot leftover drain when it's off
@@ -131,7 +141,7 @@ vi.mock('@react-native-async-storage/async-storage', () => {
 });
 
 import { act } from 'react';
-import { OfflineSyncBridge, OfflineEngineFlagSync } from '../offline-sync-bridge';
+import { OfflineSyncBridge, OfflineEngineFlagSync, FLAG_SETTLE_MS } from '../offline-sync-bridge';
 import { FeatureFlagsProvider, type FeatureFlags } from '../../providers/feature-flags-provider';
 import { isOfflineEngineEnabled, __resetOfflineEngineForTests } from '../../lib/offline-engine';
 import { setSchemaReady, __resetSchemaReadyForTests } from '../../db/schema-ready';
@@ -149,6 +159,16 @@ function Harness({ flags, queryClient }: { flags: FeatureFlags; queryClient: Que
 
 function makeQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
+// Just the flag-sync component — no scheduler, no async drain — so the
+// measurement tests can run under fake timers without racing the bridge.
+function FlagSyncHarness({ flags }: { flags: FeatureFlags }) {
+  return (
+    <FeatureFlagsProvider flags={flags}>
+      <OfflineEngineFlagSync />
+    </FeatureFlagsProvider>
+  );
 }
 
 const FLAG_ON: FeatureFlags = { 'offline-board-downloads': true };
@@ -491,6 +511,51 @@ describe('OfflineSyncBridge — flag never resolved', () => {
     await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(isOfflineEngineEnabled()).toBe(true));
     expect(getPendingCountMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('OfflineEngineFlagSync — offline_engine_state super property', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('registers flag-on for a resolved true, without waiting', () => {
+    render(<FlagSyncHarness flags={FLAG_ON} />);
+    expect(registerSuperPropertiesMock).toHaveBeenCalledWith({ offline_engine_state: 'flag-on' });
+  });
+
+  it('registers flag-off for a resolved false', () => {
+    render(<FlagSyncHarness flags={FLAG_OFF} />);
+    expect(registerSuperPropertiesMock).toHaveBeenCalledWith({ offline_engine_state: 'flag-off' });
+  });
+
+  it('registers default-on only once the flag has failed to resolve for FLAG_SETTLE_MS', () => {
+    render(<FlagSyncHarness flags={FLAG_UNSET} />);
+    expect(registerSuperPropertiesMock).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(FLAG_SETTLE_MS);
+    });
+    expect(registerSuperPropertiesMock).toHaveBeenCalledWith({ offline_engine_state: 'default-on' });
+  });
+
+  it('never registers default-on when the flag resolves inside the settle window', () => {
+    const { rerender } = render(<FlagSyncHarness flags={FLAG_UNSET} />);
+    act(() => {
+      vi.advanceTimersByTime(FLAG_SETTLE_MS / 2);
+    });
+
+    rerender(<FlagSyncHarness flags={FLAG_ON} />);
+    act(() => {
+      vi.advanceTimersByTime(FLAG_SETTLE_MS);
+    });
+
+    expect(registerSuperPropertiesMock).toHaveBeenCalledWith({ offline_engine_state: 'flag-on' });
+    expect(registerSuperPropertiesMock).not.toHaveBeenCalledWith({ offline_engine_state: 'default-on' });
   });
 });
 
