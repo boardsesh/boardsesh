@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useQueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import type { GraphQLFetch } from '@boardsesh/offline-sync';
+import { restoreBootstrapRetryBudget, type GraphQLFetch } from '@boardsesh/offline-sync';
 import {
   getSetting,
   setOfflineBoardEnabled,
@@ -124,5 +124,21 @@ export function useBoardDownloads() {
     startDownloadCycle();
   }, [schemaReady, startDownloadCycle]);
 
-  return { enableBoardsOffline };
+  /**
+   * Put a board that settled onto the slow crawl back on the fast download
+   * (issue #4313). Restores both retry budgets, clears the cooldown and the
+   * slow-path caption, then kicks a cycle so the artifact starts coming down
+   * now rather than at the next foreground. The caller owns the confirm dialog,
+   * because this is the one path where the ~100 MB spend is consented.
+   */
+  const retryFastDownload = useCallback(
+    async (board: UserBoard) => {
+      await restoreBootstrapRetryBudget(db, offlineBoardKeyForBoard(board));
+      notifyBootstrapMetadataChanged({ scopeKey: offlineBoardKeyForBoard(board) });
+      startDownloadCycle();
+    },
+    [db, startDownloadCycle],
+  );
+
+  return { enableBoardsOffline, retryFastDownload };
 }

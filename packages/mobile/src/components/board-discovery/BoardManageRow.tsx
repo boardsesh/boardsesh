@@ -64,6 +64,13 @@ type BoardManageRowProps = {
   downloadProgress?: BoardDownloadProgress | null;
   /** Durable context for a retrying snapshot or a paged-crawl fallback. */
   downloadNotice?: BoardDownloadNotice;
+  /**
+   * This board has settled onto the slow crawl and can be put back on the fast
+   * download by hand (issue #4313). Shows an inline action under the caption —
+   * the only escape from a settled scope short of removing and re-adding it.
+   */
+  canRetryFastDownload?: boolean;
+  onRetryFastDownload?: (board: UserBoard) => void;
   onEdit: (board: UserBoard) => void;
   onDelete: (board: UserBoard) => void;
   onUnfollow: (board: UserBoard) => void;
@@ -89,6 +96,8 @@ function BoardManageRowComponent({
   isBootstrapping,
   downloadProgress = null,
   downloadNotice = null,
+  canRetryFastDownload = false,
+  onRetryFastDownload,
   onEdit,
   onDelete,
   onUnfollow,
@@ -280,6 +289,19 @@ function BoardManageRowComponent({
             fraction={downloadProgress && downloadProgress.stage === 'download' ? downloadProgress.fraction : undefined}
           />
         ) : null}
+        {canRetryFastDownload && onRetryFastDownload ? (
+          <Pressable
+            onPress={() => onRetryFastDownload(board)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.offline.retryFastDownloadAria', { name: board.name })}
+            style={({ pressed }) => [styles.retryFastDownload, pressed && styles.pressed]}
+          >
+            <Text variant="caption1" color={brandColors.primary}>
+              {t('mobile.offline.retryFastDownload')}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
 
       {downloadState !== undefined ? (
@@ -347,6 +369,10 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.5,
+  },
+  retryFastDownload: {
+    alignSelf: 'flex-start',
+    paddingVertical: spacing[1],
   },
   thumb: {
     width: THUMB_SIZE,

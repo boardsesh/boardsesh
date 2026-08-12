@@ -128,7 +128,7 @@ export default function ManageBoards() {
   // previously-queued writes still flush (see OfflineSyncBridge). This screen
   // stays the only writer of syncEnabledBoards.
   const offlineDownloadsEnabled = useOfflineDownloadsEnabled();
-  const { enableBoardsOffline } = useBoardDownloads();
+  const { enableBoardsOffline, retryFastDownload } = useBoardDownloads();
   // Warmed here on mount so the download-size estimate is already in cache when a
   // row's toggle is tapped — the confirm dialog must never wait on a fetch.
   //
@@ -347,6 +347,57 @@ export default function ManageBoards() {
     [confirm, t, i18n.language, db, enableBoardsOffline, downloadProgressEnabled],
   );
 
+  // The escape from a board that settled onto the slow crawl (issue #4313).
+  // Consented and size-disclosed on purpose: this is the largest single download
+  // in the app, and the automatic paths deliberately never ask.
+  const handleRetryFastDownload = useCallback(
+    async (board: UserBoard) => {
+      const scope = offlineBoardScopeForBoard(board);
+      const key = offlineBoardKeyForBoard(board);
+      const now = Date.now();
+      const [climbsCheckpoint, statsCheckpoint, scopeComplete, bootstrapAlreadyDone] = await Promise.all([
+        getCheckpoint(db, getCheckpointKey('board_climbs', key)),
+        getCheckpoint(db, getCheckpointKey('board_climb_stats', key)),
+        isScopeDownloadComplete(db, key),
+        isBootstrapDone(db, key),
+      ]);
+      const hasBoardCheckpoint = !!climbsCheckpoint || !!statsCheckpoint;
+      const { state: retryState } = await readBootstrapRetryState(
+        db,
+        key,
+        { now, random: Math.random },
+        hasBoardCheckpoint,
+      );
+      const estimate = estimateScopeDownload({
+        manifest: snapshotManifestRef.current,
+        boardType: scope.boardType,
+        layoutId: scope.layoutId,
+        retryState,
+        hasBoardCheckpoint,
+        isScopeComplete: scopeComplete,
+        isBootstrapDone: bootstrapAlreadyDone,
+        now,
+        // Restoring the budget IS the action being confirmed, so the terminal
+        // state the row is showing must not suppress the size.
+        userRequested: true,
+      });
+      const confirmed = await confirm({
+        title: t('mobile.offline.retryFastDownloadTitle'),
+        message:
+          estimate.kind === 'snapshot'
+            ? t('mobile.offline.retryFastDownloadMessageWithSize', {
+                size: formatBytes(estimate.bytes, i18n.language),
+              })
+            : t('mobile.offline.retryFastDownloadMessage'),
+        confirmLabel: t('mobile.offline.retryFastDownloadConfirm'),
+        cancelLabel: t('mobile.manage.cancel'),
+      });
+      if (!confirmed) return;
+      await retryFastDownload(board);
+    },
+    [confirm, t, i18n.language, db, retryFastDownload],
+  );
+
   // See boards/index.tsx: a hard 401 clears tokens without flipping
   // isAuthenticated, so re-validate on error to escape a stuck retry loop.
   useEffect(() => {
@@ -522,6 +573,16 @@ export default function ManageBoards() {
             progressEnabled: downloadProgressEnabled,
           })
         : null;
+      // Offered only where it can actually help: a board that has settled onto
+      // the crawl and has not yet finished it. A completed scope already holds
+      // the whole catalog, so an artifact buys it nothing.
+      const canRetryFastDownload =
+        offlineDownloadsEnabled &&
+        snapshotSourceAvailable &&
+        enabledSet.has(scopeKey) &&
+        !isDownloaded &&
+        (bootstrapMetadata?.isTerminal ?? false) &&
+        !(bootstrapMetadata?.isBootstrapDone ?? false);
       return (
         <BoardManageRow
           board={item.board}
@@ -537,6 +598,8 @@ export default function ManageBoards() {
           isBootstrapping={isBootstrapping}
           downloadProgress={downloadProgress}
           downloadNotice={downloadNotice}
+          canRetryFastDownload={canRetryFastDownload}
+          onRetryFastDownload={handleRetryFastDownload}
           onEdit={handleEdit}
           onDelete={handleDelete}
           onUnfollow={handleUnfollow}
@@ -566,6 +629,7 @@ export default function ManageBoards() {
       handleDelete,
       handleUnfollow,
       handleToggleOffline,
+      handleRetryFastDownload,
     ],
   );
 

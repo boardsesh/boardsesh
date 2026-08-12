@@ -311,7 +311,13 @@
       "pickerNotice": "Pas de réseau — voici les boards que tu as téléchargées.",
       "pickerNoticeUnreachable": "Impossible de charger tes boards pour l'instant — voici celles que tu as téléchargées.",
       "pickerEmptyTitle": "Rien de téléchargé pour le moment",
-      "pickerEmptyBody": "Les boards que tu rends disponibles hors ligne apparaissent ici. Télécharge-en une quand tu as du réseau."
+      "pickerEmptyBody": "Les boards que tu rends disponibles hors ligne apparaissent ici. Télécharge-en une quand tu as du réseau.",
+      "retryFastDownload": "Réessayer le téléchargement rapide",
+      "retryFastDownloadAria": "Réessayer le téléchargement rapide pour {{name}}",
+      "retryFastDownloadTitle": "Réessayer le téléchargement rapide ?",
+      "retryFastDownloadMessage": "Télécharge les voies de cette board en une fois au lieu de milliers de petites requêtes.",
+      "retryFastDownloadMessageWithSize": "Environ {{size}}, téléchargés en une fois au lieu de milliers de petites requêtes.",
+      "retryFastDownloadConfirm": "Réessayer"
     },
     "gymPicker": {
       "title": "Où se trouve cette board ?",

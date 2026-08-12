@@ -25,6 +25,8 @@ type ManageRowProps = {
   downloadCount?: number;
   downloadNotice?: string | null;
   downloadProgress?: { stage: string; fraction: number | null } | null;
+  canRetryFastDownload?: boolean;
+  onRetryFastDownload?: (board: UserBoard) => void;
   onDelete: (board: UserBoard) => void;
   onUnfollow: (board: UserBoard) => void;
 };
@@ -35,6 +37,8 @@ const forgetOfflineBoardMock = vi.hoisted(() => vi.fn());
 const deleteBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const unfollowBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const confirmMock = vi.hoisted(() => vi.fn().mockResolvedValue(false));
+const retryFastDownloadMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const estimateScopeDownloadMock = vi.hoisted(() => vi.fn(() => ({ kind: 'unknown' }) as { kind: string }));
 const storedUserIdEnabledMock = vi.hoisted(() => vi.fn());
 
 const state = vi.hoisted(() => ({
@@ -230,11 +234,13 @@ vi.mock('@boardsesh/offline-sync', () => ({
   getDownloadedScopeKeys: vi.fn(async () => state.downloadedScopeKeys),
   getCheckpoint: vi.fn(async () => null),
   getCheckpointKey: (table: string, key: string) => `${table}:${key}`,
-  getBootstrapAttempts: vi.fn(async () => 0),
+  isScopeDownloadComplete: vi.fn(async () => false),
+  isBootstrapDone: vi.fn(async () => false),
+  readBootstrapRetryState: vi.fn(async () => ({ state: {}, migratedFromLegacy: false })),
   getBootstrapMetadataByScope: vi.fn(async () =>
     state.bootstrapMetadataRead ? await state.bootstrapMetadataRead : state.bootstrapMetadataByScope,
   ),
-  estimateScopeDownload: () => ({ kind: 'unknown' }),
+  estimateScopeDownload: estimateScopeDownloadMock,
   offlineBoardKeyForBoard: (input: { boardType: string; layoutId: number; sizeId: number }) =>
     `${input.boardType}:${input.layoutId}:${input.sizeId}`,
 }));
@@ -295,7 +301,7 @@ vi.mock('../../../src/hooks/use-current-user-id', () => ({
 }));
 vi.mock('../../../src/sync', () => ({ useSyncStatus: () => state.syncStatus }));
 vi.mock('../../../src/offline/use-board-downloads', () => ({
-  useBoardDownloads: () => ({ enableBoardsOffline: vi.fn() }),
+  useBoardDownloads: () => ({ enableBoardsOffline: vi.fn(), retryFastDownload: retryFastDownloadMock }),
 }));
 vi.mock('../../../src/offline/use-remember-downloaded-boards', () => ({
   useRememberDownloadedBoards: vi.fn(),
@@ -349,6 +355,8 @@ vi.mock('../../../src/components/board-discovery/BoardManageRow', () => ({
     downloadCount,
     downloadNotice,
     downloadProgress,
+    canRetryFastDownload,
+    onRetryFastDownload,
     onDelete,
     onUnfollow,
   }: ManageRowProps) =>
@@ -361,10 +369,18 @@ vi.mock('../../../src/components/board-discovery/BoardManageRow', () => ({
         'data-download-count': downloadCount ?? '',
         'data-download-notice': downloadNotice ?? '',
         'data-download-stage': downloadProgress?.stage ?? '',
+        'data-can-retry-fast': String(!!canRetryFastDownload),
       },
       rowBoard.name,
       createElement('button', { type: 'button', onClick: () => onDelete(rowBoard) }, `delete ${rowBoard.uuid}`),
       createElement('button', { type: 'button', onClick: () => onUnfollow(rowBoard) }, `unfollow ${rowBoard.uuid}`),
+      canRetryFastDownload && onRetryFastDownload
+        ? createElement(
+            'button',
+            { type: 'button', onClick: () => onRetryFastDownload(rowBoard) },
+            `retry-fast ${rowBoard.uuid}`,
+          )
+        : null,
     ),
 }));
 
@@ -375,6 +391,7 @@ beforeEach(() => {
   deleteBoardMock.mockResolvedValue(undefined);
   unfollowBoardMock.mockResolvedValue(undefined);
   confirmMock.mockResolvedValue(false);
+  estimateScopeDownloadMock.mockReturnValue({ kind: 'unknown' });
   state.isOffline = false;
   state.profileId = undefined;
   state.storedUserId = undefined;
@@ -1053,5 +1070,76 @@ describe('My Boards offline with a persisted user id (#4003)', () => {
 
     expect(storedUserIdEnabledMock).toHaveBeenCalled();
     expect(storedUserIdEnabledMock.mock.calls.every(([enabled]) => enabled === false)).toBe(true);
+  });
+});
+
+describe('My Boards: retrying the fast download (#4313)', () => {
+  const settledMetadata = {
+    attempts: 2,
+    isBootstrapDone: false,
+    isPagedFallback: true,
+    hasBoardCheckpoint: true,
+    isScopeComplete: false,
+    isTerminal: true,
+    retryAfter: null,
+  };
+
+  function renderWithMetadata(metadata: Record<string, unknown>): void {
+    state.profileId = 'me';
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+    state.enabledBoards = ['kilter:8:17'];
+    state.bootstrapMetadataByScope = new Map([['kilter:8:17', metadata]]) as typeof state.bootstrapMetadataByScope;
+    render(createElement(ManageBoards));
+  }
+
+  it('offers the retry only for a settled board that has not finished downloading', () => {
+    renderWithMetadata(settledMetadata);
+    expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-can-retry-fast')).toBe('true');
+  });
+
+  it('does not offer it while a snapshot attempt is still scheduled', () => {
+    renderWithMetadata({ ...settledMetadata, isTerminal: false, retryAfter: 1_800_000_000_000 });
+    expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-can-retry-fast')).toBe('false');
+  });
+
+  it('does not offer it to a board that already holds the whole catalog', () => {
+    renderWithMetadata({ ...settledMetadata, isScopeComplete: true });
+    expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-can-retry-fast')).toBe('false');
+  });
+
+  it('does not offer it to a board that already imported an artifact', () => {
+    renderWithMetadata({ ...settledMetadata, isBootstrapDone: true });
+    expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-can-retry-fast')).toBe('false');
+  });
+
+  it('quotes the download size in the confirm and restores the budget only when accepted', async () => {
+    estimateScopeDownloadMock.mockReturnValue({ kind: 'snapshot', bytes: 103_000_000 } as { kind: string });
+    confirmMock.mockResolvedValue(true);
+    renderWithMetadata(settledMetadata);
+
+    fireEvent.click(screen.getByText('retry-fast net-1'));
+
+    await waitFor(() => expect(retryFastDownloadMock).toHaveBeenCalled());
+    // The estimate is asked for the user-requested verdict, not the persisted
+    // terminal one — restoring the budget IS the action being confirmed.
+    expect(estimateScopeDownloadMock).toHaveBeenCalledWith(expect.objectContaining({ userRequested: true }));
+    expect(confirmMock).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'mobile.offline.retryFastDownloadMessageWithSize' }),
+    );
+  });
+
+  it('does nothing when the confirm is dismissed', async () => {
+    confirmMock.mockResolvedValue(false);
+    renderWithMetadata(settledMetadata);
+
+    fireEvent.click(screen.getByText('retry-fast net-1'));
+
+    await waitFor(() => expect(confirmMock).toHaveBeenCalled());
+    expect(retryFastDownloadMock).not.toHaveBeenCalled();
   });
 });

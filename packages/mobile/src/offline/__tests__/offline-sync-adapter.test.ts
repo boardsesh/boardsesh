@@ -36,7 +36,8 @@ vi.mock('react-native', () => ({
   },
 }));
 
-type NetInfoListener = (state: { isConnected: boolean | null }) => void;
+type NetInfoState = { isConnected: boolean | null; type?: string; details?: { isConnectionExpensive?: boolean } };
+type NetInfoListener = (state: NetInfoState) => void;
 let netInfoListener: NetInfoListener | null = null;
 const netInfoUnsubscribe = vi.fn();
 vi.mock('@react-native-community/netinfo', () => ({
@@ -495,6 +496,70 @@ describe('snapshot-bootstrap bindings', () => {
       ...info,
       offlineEngineEnabled: false,
     });
+  });
+
+  it('captures PostHog events for a scheduled snapshot retry and for a recovered board', () => {
+    // Operational, not errors: the failure itself already reached Sentry via
+    // onSnapshotBootstrapError, and what nobody could answer before #4313 is how
+    // often boards give up entirely versus find their way back.
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    const scheduled = {
+      scopeKey: 'kilter:1:5',
+      boardType: 'kilter',
+      stage: 'download' as const,
+      failureKind: 'transport' as const,
+      retryAfterMs: 120_000,
+      transportFailures: 1,
+      structuralFailures: 0,
+      terminal: false,
+    };
+    const recovered = {
+      scopeKey: 'kilter:1:5',
+      boardType: 'kilter',
+      trigger: 'cooldown' as const,
+      hadBoardCheckpoint: true,
+    };
+
+    options.onBootstrapRetryScheduled?.(scheduled);
+    options.onBootstrapPathRecovered?.(recovered);
+
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineSnapshotRetryScheduled, scheduled);
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineSnapshotPathRecovered, recovered);
+    expect(reportHandledError).not.toHaveBeenCalled();
+  });
+
+  it('treats a cellular link as metered and an unreported one as unmetered', () => {
+    // Unknown must read as unmetered: a platform that never reports
+    // isConnectionExpensive would otherwise defer every automatic heal forever,
+    // leaving the board on the 400+-round-trip crawl with nothing saying why.
+    const stopTracking = startBackgroundTracking();
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+
+    expect(options.isOnUnmeteredNetwork?.()).toBe(true);
+    netInfoListener?.({ isConnected: true, type: 'cellular' });
+    expect(options.isOnUnmeteredNetwork?.()).toBe(false);
+    netInfoListener?.({ isConnected: true, type: 'wifi', details: { isConnectionExpensive: false } });
+    expect(options.isOnUnmeteredNetwork?.()).toBe(true);
+    netInfoListener?.({ isConnected: true, type: 'wifi', details: { isConnectionExpensive: true } });
+    expect(options.isOnUnmeteredNetwork?.()).toBe(false);
+    netInfoListener?.({ isConnected: true, type: 'wifi' });
+    expect(options.isOnUnmeteredNetwork?.()).toBe(true);
+
+    stopTracking();
   });
 
   it('captures a PostHog event — not a Sentry error — when the coverage guard forces a resync', () => {

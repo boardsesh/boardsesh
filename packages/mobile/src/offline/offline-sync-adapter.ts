@@ -34,6 +34,8 @@ import {
   type OfflineDatabase,
   type BootstrapMetadataChangedReporter,
   type CoverageEvaluatedReporter,
+  type BootstrapPathRecoveredReporter,
+  type BootstrapRetryScheduledReporter,
   type CoverageResetReporter,
   type ScopeDownloadCompleteReporter,
   type ScopeDownloadStartReporter,
@@ -267,6 +269,37 @@ export function __resetCoverageVerdictDedupeForTests(): void {
   reportedCoverageVerdicts.clear();
 }
 
+// The retry ladder scheduled another go at the fast download (issue #4313).
+// track(), not reportHandledError(): the failure itself already went to Sentry
+// via reportSnapshotBootstrapError at its own severity, and what nobody can
+// answer today is how often boards give up entirely versus recover.
+const reportBootstrapRetryScheduled: BootstrapRetryScheduledReporter = (info) => {
+  track(SHARED_EVENTS.OfflineSnapshotRetryScheduled, { ...info });
+};
+
+// The other half of that measurement: a board that had failed the fast download
+// is back on it, and what brought it back.
+const reportBootstrapPathRecovered: BootstrapPathRecoveredReporter = (info) => {
+  track(SHARED_EVENTS.OfflineSnapshotPathRecovered, { ...info });
+};
+
+// Last connectivity state NetInfo pushed us, kept because the engine's probe is
+// synchronous and NetInfo's own read is a promise. Updated by the listener in
+// startBackgroundTracking (one subscription for the app's lifetime).
+let isConnectionMetered = false;
+
+/**
+ * Gates ONE decision in the engine: the automatic heal of a partly-crawled
+ * scope, which is a ~100 MB download the climber did not ask for that day
+ * (issue #4313). A fresh bootstrap — confirmed behind a size-disclosing dialog
+ * moments earlier — and a user-requested retry both ignore it.
+ *
+ * Unknown reads as UNMETERED. A platform that never reports `isConnectionExpensive`
+ * would otherwise defer every heal forever, which is the worse failure: the board
+ * stays on the 400+-round-trip crawl and nothing ever says why.
+ */
+const isOnUnmeteredNetwork = (): boolean => !isConnectionMetered;
+
 // A failed cycle is routine for offline users (the reconnect trigger retries),
 // so production neither spams the console nor reports expected network errors
 // as handled exceptions.
@@ -276,13 +309,20 @@ const warnCycleError = (error: unknown) => {
   }
 };
 
-// Feeds setBackgrounded() (Sentry BOARDSESH-AN); call once for the app's lifetime — see OfflineSyncBridge.
+// Feeds setBackgrounded() (Sentry BOARDSESH-AN) and the metered-link flag above;
+// call once for the app's lifetime — see OfflineSyncBridge.
 export function startBackgroundTracking(): () => void {
   const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
     if (nextState === 'background') setBackgrounded(true);
     if (nextState === 'active') setBackgrounded(false);
   });
-  return () => subscription.remove();
+  const unsubscribeNetInfo = NetInfo.addEventListener((state) => {
+    isConnectionMetered = state.type === 'cellular' || state.details?.isConnectionExpensive === true;
+  });
+  return () => {
+    subscription.remove();
+    unsubscribeNetInfo();
+  };
 }
 
 const schedulerTriggers: SchedulerTriggers = {
@@ -363,6 +403,9 @@ export function startSyncScheduler(
     onScopeDownloadStart: reportScopeDownloadStart,
     onCoverageReset: reportCoverageReset,
     onCoverageEvaluated: reportCoverageEvaluated,
+    onBootstrapRetryScheduled: reportBootstrapRetryScheduled,
+    onBootstrapPathRecovered: reportBootstrapPathRecovered,
+    isOnUnmeteredNetwork,
   });
 }
 
@@ -386,6 +429,9 @@ export function triggerSync(
     onScopeDownloadStart: reportScopeDownloadStart,
     onCoverageReset: reportCoverageReset,
     onCoverageEvaluated: reportCoverageEvaluated,
+    onBootstrapRetryScheduled: reportBootstrapRetryScheduled,
+    onBootstrapPathRecovered: reportBootstrapPathRecovered,
+    isOnUnmeteredNetwork,
   });
 }
 
@@ -404,6 +450,9 @@ export function pullSync(
     onScopeDownloadStart: options?.onScopeDownloadStart ?? reportScopeDownloadStart,
     onCoverageReset: options?.onCoverageReset ?? reportCoverageReset,
     onCoverageEvaluated: options?.onCoverageEvaluated ?? reportCoverageEvaluated,
+    onBootstrapRetryScheduled: options?.onBootstrapRetryScheduled ?? reportBootstrapRetryScheduled,
+    onBootstrapPathRecovered: options?.onBootstrapPathRecovered ?? reportBootstrapPathRecovered,
+    isOnUnmeteredNetwork: options?.isOnUnmeteredNetwork ?? isOnUnmeteredNetwork,
     // Caller-provided error/drift/coverage reporters keep their existing
     // override semantics; scope completion is the one callback deliberately
     // composed because both telemetry and per-scope UI invalidation are required.
