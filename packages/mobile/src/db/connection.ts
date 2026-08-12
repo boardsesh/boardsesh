@@ -418,8 +418,20 @@ export async function clearUserData(db: SQLiteDatabase): Promise<void> {
 
 /** What an explicit sign-out's wipe actually removed, for telemetry. */
 export type SignOutPurgeResult = {
-  /** Queued writes still unsent when the wipe ran — counted inside the transaction. */
+  /**
+   * Queued writes still awaiting a send when the wipe ran — counted inside the
+   * transaction. Excludes dead letters, which are reported separately below;
+   * `pendingDiscarded + deadLettersDiscarded` is the whole outbox the wipe deleted.
+   */
   pendingDiscarded: number;
+  /**
+   * Writes that had already exhausted their retries (`status = 'dead_letter'`) when
+   * the wipe ran. Split out because they are a different kind of loss: the drain
+   * sign-out runs cannot push them, the user was being shown a Retry button for them
+   * on the More tab, and folding them into `pendingDiscarded` made "writes lost at
+   * sign-out" and "writes that were still trying" the same number.
+   */
+  deadLettersDiscarded: number;
   /** Whether a downloaded board catalog was on disk before the wipe. */
   hadDownloads: boolean;
   /** Whether the VACUUM handed the freed pages back to the filesystem. */
@@ -469,6 +481,7 @@ export async function purgeLocalDataForSignOut(db: SQLiteDatabase): Promise<Sign
   const bytesBefore = measureDatabaseBytesQuietly();
 
   let pendingDiscarded = 0;
+  let deadLettersDiscarded = 0;
   let hadDownloads = false;
   await db.withExclusiveTransactionAsync(async (txn) => {
     // Same lock guard as clearUserData: this runs on its own connection alongside
@@ -479,8 +492,18 @@ export async function purgeLocalDataForSignOut(db: SQLiteDatabase): Promise<Sign
     // this is the only place the number is both post-drain and exact. The count the
     // confirmation dialog showed was taken before sign-out's bounded 3s drain, so it
     // can be larger than what was really lost.
-    const pendingRow = await txn.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM pending_mutations');
-    pendingDiscarded = pendingRow?.count ?? 0;
+    //
+    // One grouped read rather than two COUNTs, and anything that is not a dead letter
+    // counts as pending: the schema defaults `status` to 'pending', so an unknown
+    // future status still lands in the "unsent write" bucket instead of vanishing
+    // from both totals.
+    const queueRows = await txn.getAllAsync<{ status: string; count: number }>(
+      'SELECT status, COUNT(*) AS count FROM pending_mutations GROUP BY status',
+    );
+    for (const row of queueRows) {
+      if (row.status === 'dead_letter') deadLettersDiscarded += row.count;
+      else pendingDiscarded += row.count;
+    }
     const downloadRow = await txn.getFirstAsync<{ has_rows: number }>(
       'SELECT EXISTS(SELECT 1 FROM board_climbs LIMIT 1) AS has_rows',
     );
@@ -501,7 +524,14 @@ export async function purgeLocalDataForSignOut(db: SQLiteDatabase): Promise<Sign
     reportError(error, { tags: { source: 'offline-sync', kind: 'sign-out-vacuum' } });
   }
 
-  return { pendingDiscarded, hadDownloads, vacuumed, bytesBefore, bytesAfter: measureDatabaseBytesQuietly() };
+  return {
+    pendingDiscarded,
+    deadLettersDiscarded,
+    hadDownloads,
+    vacuumed,
+    bytesBefore,
+    bytesAfter: measureDatabaseBytesQuietly(),
+  };
 }
 
 /**

@@ -45,6 +45,7 @@ import {
   getCheckpointKey,
   enqueue,
   getPendingCount,
+  getDeadLetterCount,
   markScopeDownloadComplete,
   isScopeDownloadComplete,
   getDownloadedScopeKeys,
@@ -221,8 +222,32 @@ describe('purgeLocalDataForSignOut', () => {
     const result = await purgeLocalDataForSignOut(db);
 
     expect(result.pendingDiscarded).toBe(2);
+    expect(result.deadLettersDiscarded).toBe(0);
     expect(result.hadDownloads).toBe(true);
     expect(result.vacuumed).toBe(true);
+  });
+
+  // Dead letters are deleted by the same DELETE, but nothing ever tried to send them:
+  // their retries were already spent and the More tab was showing a Retry button for
+  // them. Counting them as pending would claim a send attempt that never happened,
+  // and the old `status = 'pending'` COUNT dropped them from the report entirely —
+  // the loss this wipe is most likely to cause, reported as zero.
+  it('counts dead-lettered writes separately from the ones still trying', async () => {
+    await seedSignedInDevice();
+    await enqueue(db, 'boardsesh_ticks', 'create', { climbUuid: 'climb-3' }, 'tick-3');
+    // markDeadLetter isn't part of the package's public surface (the drainer owns the
+    // transition), so the row is aged into the state the drainer would leave it in.
+    await db.runAsync(`UPDATE pending_mutations SET status = 'dead_letter', last_error = ? WHERE idempotency_key = ?`, [
+      'climb does not exist',
+      'tick-3',
+    ]);
+    expect(await getDeadLetterCount(db)).toBe(1);
+
+    const result = await purgeLocalDataForSignOut(db);
+
+    expect(result.pendingDiscarded).toBe(2);
+    expect(result.deadLettersDiscarded).toBe(1);
+    expect(await countRows('pending_mutations')).toBe(0);
   });
 
   it('reports no downloads when only user data was present', async () => {
@@ -232,6 +257,7 @@ describe('purgeLocalDataForSignOut', () => {
 
     expect(result.hadDownloads).toBe(false);
     expect(result.pendingDiscarded).toBe(0);
+    expect(result.deadLettersDiscarded).toBe(0);
   });
 
   // The rows are already gone by the time VACUUM runs, so a SQLITE_FULL means "the
@@ -252,7 +278,7 @@ describe('purgeLocalDataForSignOut', () => {
   it('is a no-op on an already-empty database', async () => {
     const result = await purgeLocalDataForSignOut(db);
 
-    expect(result).toMatchObject({ pendingDiscarded: 0, hadDownloads: false });
+    expect(result).toMatchObject({ pendingDiscarded: 0, deadLettersDiscarded: 0, hadDownloads: false });
     expect(await countRows('board_climbs')).toBe(0);
   });
 });

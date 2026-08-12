@@ -24,8 +24,29 @@ vi.mock('../../db/queries/board-download-status', () => ({
   hasDownloadedBoardData: hasDownloadedBoardDataMock,
 }));
 
-const getPendingCountMock = vi.hoisted(() => vi.fn(async (): Promise<number> => 0));
-vi.mock('@boardsesh/offline-sync', () => ({ getPendingCount: getPendingCountMock }));
+// One grouped gauge for the whole outbox — the same read the sign-out drain gate and
+// the outbox telemetry use, so the dialog cannot report a different queue than they do.
+type OutboxSummary = {
+  pendingCount: number;
+  deadLetterCount: number;
+  oldestPendingAt: string | null;
+  oldestDeadLetterAt: string | null;
+};
+const getOutboxSummaryMock = vi.hoisted(() =>
+  vi.fn(
+    async (): Promise<OutboxSummary> => ({
+      pendingCount: 0,
+      deadLetterCount: 0,
+      oldestPendingAt: null,
+      oldestDeadLetterAt: null,
+    }),
+  ),
+);
+vi.mock('@boardsesh/offline-sync', () => ({ getOutboxSummary: getOutboxSummaryMock }));
+
+function outbox(pendingCount: number, deadLetterCount: number): OutboxSummary {
+  return { pendingCount, deadLetterCount, oldestPendingAt: null, oldestDeadLetterAt: null };
+}
 
 const reportErrorMock = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/error-reporting', () => ({ reportError: reportErrorMock }));
@@ -75,8 +96,8 @@ beforeEach(() => {
   confirmMock.mockResolvedValue(true);
   signOutMock.mockClear();
   signOutMock.mockResolvedValue(undefined);
-  getPendingCountMock.mockClear();
-  getPendingCountMock.mockResolvedValue(0);
+  getOutboxSummaryMock.mockClear();
+  getOutboxSummaryMock.mockResolvedValue(outbox(0, 0));
   hasDownloadedBoardDataMock.mockClear();
   hasDownloadedBoardDataMock.mockResolvedValue(false);
   reportErrorMock.mockClear();
@@ -126,7 +147,7 @@ describe('useConfirmSignOut', () => {
   });
 
   it('names the unsynced changes that signing out would discard', async () => {
-    getPendingCountMock.mockResolvedValue(3);
+    getOutboxSummaryMock.mockResolvedValue(outbox(3, 0));
     const { press } = renderConfirmSignOut();
 
     await press();
@@ -136,7 +157,7 @@ describe('useConfirmSignOut', () => {
 
   it('says both when there are downloads and unsynced changes', async () => {
     hasDownloadedBoardDataMock.mockResolvedValue(true);
-    getPendingCountMock.mockResolvedValue(1);
+    getOutboxSummaryMock.mockResolvedValue(outbox(1, 0));
     const { press } = renderConfirmSignOut();
 
     await press();
@@ -151,16 +172,44 @@ describe('useConfirmSignOut', () => {
     await press();
 
     expect(messageOf()).not.toContain('mobile.more.signOut.pendingMessage');
+    expect(messageOf()).not.toContain('mobile.more.signOut.failedMessage');
   });
 
-  it('still confirms when the pending-count read fails', async () => {
-    getPendingCountMock.mockRejectedValue(new Error('database is locked'));
+  // The regression this pair exists for: the wipe DELETEs pending_mutations whole, but
+  // the dialog counted only status = 'pending'. A user whose entire queue had
+  // dead-lettered — the writes the More tab was already showing a Retry button for —
+  // was told the neutral "you'll need to sign in again" and then lost them.
+  it('warns about writes that already failed to sync, even with nothing pending', async () => {
+    getOutboxSummaryMock.mockResolvedValue(outbox(0, 2));
+    const { press } = renderConfirmSignOut();
+
+    await press();
+
+    expect(messageOf()).toContain('mobile.more.signOut.failedMessage#2');
+  });
+
+  // Two counts, two sentences: a pending write still gets sign-out's drain, a dead
+  // letter never will. Collapsing them into one number would promise an attempt that
+  // cannot happen.
+  it('counts pending and failed writes separately', async () => {
+    getOutboxSummaryMock.mockResolvedValue(outbox(3, 1));
+    const { press } = renderConfirmSignOut();
+
+    await press();
+
+    expect(messageOf()).toContain('mobile.more.signOut.pendingMessage#3');
+    expect(messageOf()).toContain('mobile.more.signOut.failedMessage#1');
+  });
+
+  it('still confirms when the outbox read fails', async () => {
+    getOutboxSummaryMock.mockRejectedValue(new Error('database is locked'));
     const { press } = renderConfirmSignOut();
 
     await press();
 
     expect(confirmMock).toHaveBeenCalledTimes(1);
     expect(messageOf()).not.toContain('mobile.more.signOut.pendingMessage');
+    expect(messageOf()).not.toContain('mobile.more.signOut.failedMessage');
     expect(signOutMock).toHaveBeenCalledWith('manual');
   });
 
@@ -170,7 +219,7 @@ describe('useConfirmSignOut', () => {
 
     await press();
 
-    expect(getPendingCountMock).not.toHaveBeenCalled();
+    expect(getOutboxSummaryMock).not.toHaveBeenCalled();
     expect(confirmMock).toHaveBeenCalledTimes(1);
     expect(signOutMock).toHaveBeenCalledWith('manual');
   });

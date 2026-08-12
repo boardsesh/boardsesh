@@ -37,7 +37,7 @@ import { ACTIVE_BOARD_QUERY_KEY } from '../lib/graphql/use-active-board';
 import { clearUserData, purgeLocalDataForSignOut, getDatabaseHandle } from '../db';
 import { resetSyncStatus } from '../sync/sync-status';
 import { setSetting, clearOfflineBoards } from '../settings';
-import { getPendingCount, setSigningOut } from '@boardsesh/offline-sync';
+import { getOutboxSummary, setSigningOut } from '@boardsesh/offline-sync';
 import { drainMutationQueue } from '../offline/offline-sync-adapter';
 import { reportOutboxDiscardedOnSignOut } from '../offline/outbox-telemetry';
 import { stopTokenManagement } from '../notifications';
@@ -197,12 +197,22 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     if (!localDb) return;
 
     try {
-      // Gated on the queue being non-empty, NOT on the offline feature flag:
-      // writes queued while the flag was on must still flush after a rollback.
-      // With an empty queue (every flag-off user) this is one local COUNT and
+      // Gated on the OUTBOX being empty, NOT on the offline feature flag: writes
+      // queued while the flag was on must still flush after a rollback. With an
+      // empty outbox (every flag-off user) this is one local grouped COUNT and
       // sign-out proceeds immediately, as pre-offline.
-      const pendingCount = await getPendingCount(localDb);
-      if (pendingCount === 0) return;
+      //
+      // Dead letters count toward the gate even though the drainer cannot push them
+      // (peekPending filters `status = 'pending'`), so a dead-letters-only outbox
+      // enters the drain and leaves again on the first empty peek — no network,
+      // microseconds. Counting them is what keeps "is there unsynced work on this
+      // device?" answering the same in every place that asks: this gate, the
+      // confirmation dialog, the outbox telemetry below, and the purge's own
+      // discard counts. Auto-retrying dead letters here is a product decision this
+      // leaves alone: their retries are already spent, and requeueing them would
+      // empty the Sync-issues screen for a sign-out that can still fail.
+      const { pendingCount, deadLetterCount } = await getOutboxSummary(localDb);
+      if (pendingCount + deadLetterCount === 0) return;
 
       const graphqlFetch = (query: string, variables?: Record<string, unknown>) =>
         getHttpClient().request(query, variables);
@@ -264,8 +274,9 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
       // What the wipe below is about to delete. clearUserData DELETEs
       // pending_mutations wholesale — dead letters included, and those never get
-      // a drain attempt (the pre-sign-out drain gates on getPendingCount, which
-      // filters status = 'pending'). This MUST stay ahead of resetAnalytics():
+      // a drain attempt (the drainer's peekPending only takes status = 'pending',
+      // so entering the drain does nothing for them). This MUST stay ahead of
+      // resetAnalytics():
       // afterwards the event would land on an anonymous distinct_id and could no
       // longer be joined to the account that lost the writes. Sitting in
       // runSignedOutCleanup rather than in the manual signOut covers all three

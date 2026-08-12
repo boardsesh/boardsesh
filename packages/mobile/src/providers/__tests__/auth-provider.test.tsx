@@ -270,7 +270,7 @@ const getDatabaseHandleMock = vi.fn((): unknown => null);
 // guard of issue #3621, so both are recorded rather than stubbed anonymously.
 const clearUserDataMock = vi.hoisted(() => vi.fn(async () => {}));
 const purgeLocalDataForSignOutMock = vi.hoisted(() =>
-  vi.fn(async () => ({ pendingDiscarded: 0, hadDownloads: false, vacuumed: true })),
+  vi.fn(async () => ({ pendingDiscarded: 0, deadLettersDiscarded: 0, hadDownloads: false, vacuumed: true })),
 );
 vi.mock('../../db', () => ({
   getDatabaseHandle: () => getDatabaseHandleMock(),
@@ -282,9 +282,20 @@ const resetSyncStatusMock = vi.hoisted(() => vi.fn());
 vi.mock('../../sync/sync-status', () => ({ resetSyncStatus: resetSyncStatusMock }));
 
 const drainMutationQueueMock = vi.fn(async (..._args: unknown[]) => {});
-const getPendingCountMock = vi.fn(async (..._args: unknown[]) => 0);
+// The sign-out drain gate reads the WHOLE outbox, pending plus dead letters: a device
+// holding only failed writes still has unsynced work this sign-out is about to delete.
+type OutboxSummary = {
+  pendingCount: number;
+  deadLetterCount: number;
+  oldestPendingAt: string | null;
+  oldestDeadLetterAt: string | null;
+};
+function outbox(pendingCount: number, deadLetterCount = 0): OutboxSummary {
+  return { pendingCount, deadLetterCount, oldestPendingAt: null, oldestDeadLetterAt: null };
+}
+const getOutboxSummaryMock = vi.fn(async (..._args: unknown[]): Promise<OutboxSummary> => outbox(0));
 vi.mock('@boardsesh/offline-sync', () => ({
-  getPendingCount: (...args: unknown[]) => getPendingCountMock(...args),
+  getOutboxSummary: (...args: unknown[]) => getOutboxSummaryMock(...args),
   setSigningOut: vi.fn(),
 }));
 vi.mock('../../offline/offline-sync-adapter', () => ({
@@ -529,7 +540,7 @@ describe('AuthProvider.signOut', () => {
   it('does not sign out a newer credential owner that arrives during the queue drain', async () => {
     platformState.OS = 'web';
     getDatabaseHandleMock.mockReturnValue({ tag: 'db' });
-    getPendingCountMock.mockResolvedValue(1);
+    getOutboxSummaryMock.mockResolvedValue(outbox(1));
     let releaseDrain!: () => void;
     drainMutationQueueMock.mockReturnValueOnce(
       new Promise<void>((resolve) => {
@@ -978,18 +989,19 @@ describe('AuthProvider.signOut mutation-queue drain gating', () => {
     authSignOutMock.mockReset();
     getDatabaseHandleMock.mockReset();
     drainMutationQueueMock.mockReset();
-    getPendingCountMock.mockReset();
+    getOutboxSummaryMock.mockReset();
     getAuthTokenMock.mockResolvedValue('jwt-token');
     isTokenExpiringSoonMock.mockResolvedValue(false);
     authSignOutMock.mockResolvedValue(true);
     clearStoredSessionIdMock.mockResolvedValue(undefined);
     clearStoredActiveBoardMock.mockResolvedValue(undefined);
     drainMutationQueueMock.mockResolvedValue(undefined);
+    getOutboxSummaryMock.mockResolvedValue(outbox(0));
   });
 
-  async function signOutWithQueueState(pendingCount: number) {
+  async function signOutWithQueueState(pendingCount: number, deadLetterCount = 0) {
     getDatabaseHandleMock.mockReturnValue({ tag: 'db' });
-    getPendingCountMock.mockResolvedValue(pendingCount);
+    getOutboxSummaryMock.mockResolvedValue(outbox(pendingCount, deadLetterCount));
 
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const wrapper = ({ children }: { children: ReactNode }) => (
@@ -1012,19 +1024,29 @@ describe('AuthProvider.signOut mutation-queue drain gating', () => {
   // latency for every flag-off user.
   it('drains the queue during sign-out when writes are pending', async () => {
     await signOutWithQueueState(3);
-    expect(getPendingCountMock).toHaveBeenCalled();
+    expect(getOutboxSummaryMock).toHaveBeenCalled();
     expect(drainMutationQueueMock).toHaveBeenCalledTimes(1);
   });
 
-  it('skips the drain entirely when the queue is empty', async () => {
+  it('skips the drain entirely when the outbox is empty', async () => {
     await signOutWithQueueState(0);
-    expect(getPendingCountMock).toHaveBeenCalled();
+    expect(getOutboxSummaryMock).toHaveBeenCalled();
     expect(drainMutationQueueMock).not.toHaveBeenCalled();
   });
 
-  it('skips both the count and the drain when there is no local database', async () => {
+  // Dead letters can't be pushed by the drainer, but they ARE unsynced work this
+  // sign-out is about to delete. Gating on `status = 'pending'` alone let a device
+  // whose whole outbox had dead-lettered report an empty queue, which is the same
+  // blind spot the confirmation dialog had.
+  it('still enters the drain when only dead letters are queued', async () => {
+    await signOutWithQueueState(0, 2);
+    expect(getOutboxSummaryMock).toHaveBeenCalled();
+    expect(drainMutationQueueMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips both counts and the drain when there is no local database', async () => {
     getDatabaseHandleMock.mockReturnValue(null);
-    getPendingCountMock.mockResolvedValue(5);
+    getOutboxSummaryMock.mockResolvedValue(outbox(5, 5));
 
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const wrapper = ({ children }: { children: ReactNode }) => (
@@ -1038,7 +1060,7 @@ describe('AuthProvider.signOut mutation-queue drain gating', () => {
       await result.current.signOut();
     });
 
-    expect(getPendingCountMock).not.toHaveBeenCalled();
+    expect(getOutboxSummaryMock).not.toHaveBeenCalled();
     expect(drainMutationQueueMock).not.toHaveBeenCalled();
   });
 
@@ -1096,12 +1118,13 @@ describe('AuthProvider sign-out offline data wipe', () => {
     purgeLocalDataForSignOutMock.mockClear();
     purgeLocalDataForSignOutMock.mockResolvedValue({
       pendingDiscarded: 0,
+      deadLettersDiscarded: 0,
       hadDownloads: false,
       vacuumed: true,
     });
     resetSyncStatusMock.mockClear();
     drainMutationQueueMock.mockReset();
-    getPendingCountMock.mockReset();
+    getOutboxSummaryMock.mockReset();
     setOnForcedSignOutMock.mockReset();
     deduplicatedRefreshMock.mockReset();
     deduplicatedRefreshMock.mockResolvedValue({ status: 'refreshed', generation: 1 });
@@ -1110,7 +1133,7 @@ describe('AuthProvider sign-out offline data wipe', () => {
     authSignOutMock.mockResolvedValue(true);
     clearStoredSessionIdMock.mockResolvedValue(undefined);
     clearStoredActiveBoardMock.mockResolvedValue(undefined);
-    getPendingCountMock.mockResolvedValue(0);
+    getOutboxSummaryMock.mockResolvedValue(outbox(0));
     getDatabaseHandleMock.mockReturnValue({ tag: 'db' });
   });
 
@@ -1178,9 +1201,12 @@ describe('AuthProvider sign-out offline data wipe', () => {
     expect(purgeLocalDataForSignOutMock).not.toHaveBeenCalled();
   });
 
+  // Dead letters ride along as their own count rather than being folded into
+  // pendingDiscarded: they are deleted here too, but nothing tried to send them.
   it('reports what the wipe actually removed, once', async () => {
     purgeLocalDataForSignOutMock.mockResolvedValue({
       pendingDiscarded: 4,
+      deadLettersDiscarded: 2,
       hadDownloads: true,
       vacuumed: true,
     });
@@ -1192,7 +1218,12 @@ describe('AuthProvider sign-out offline data wipe', () => {
 
     const wipeEvents = trackMock.mock.calls.filter((call) => call[0] === 'Offline Data Wiped On Sign Out');
     expect(wipeEvents).toHaveLength(1);
-    expect(wipeEvents[0][1]).toMatchObject({ pendingDiscarded: 4, hadDownloads: true, vacuumed: true });
+    expect(wipeEvents[0][1]).toMatchObject({
+      pendingDiscarded: 4,
+      deadLettersDiscarded: 2,
+      hadDownloads: true,
+      vacuumed: true,
+    });
   });
 
   it('does not report the wipe on a path that kept the catalogs', async () => {
@@ -1231,7 +1262,7 @@ describe('AuthProvider sign-out offline data wipe', () => {
   });
 
   it('drains the queue exactly once per sign-out', async () => {
-    getPendingCountMock.mockResolvedValue(2);
+    getOutboxSummaryMock.mockResolvedValue(outbox(2));
     drainMutationQueueMock.mockResolvedValue(undefined);
     const result = await renderSignedIn();
 

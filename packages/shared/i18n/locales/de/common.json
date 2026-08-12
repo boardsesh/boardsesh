@@ -190,6 +190,8 @@
         "messageOffline": "Beim Abmelden werden die heruntergeladenen Boards und dein Offline-Routenbuch von diesem Handy gelöscht. Beim nächsten Anmelden lädst du sie neu herunter.",
         "pendingMessage_one": "1 Änderung ist noch nicht synchronisiert. Wir versuchen sie zuerst zu senden, der Rest geht verloren.",
         "pendingMessage_other": "{{count}} Änderungen sind noch nicht synchronisiert. Wir versuchen sie zuerst zu senden, der Rest geht verloren.",
+        "failedMessage_one": "1 Änderung konnte nicht synchronisiert werden und wird beim Abmelden gelöscht. Brich ab und tippe erst auf „Sync wiederholen“, wenn du sie behalten willst.",
+        "failedMessage_other": "{{count}} Änderungen konnten nicht synchronisiert werden und werden beim Abmelden gelöscht. Brich ab und tippe erst auf „Sync wiederholen“, wenn du sie behalten willst.",
         "confirm": "Abmelden",
         "cancel": "Abbrechen",
         "failureTitle": "Abmeldung nicht bestätigt",

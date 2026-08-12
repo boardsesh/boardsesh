@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getPendingCount } from '@boardsesh/offline-sync';
+import { getOutboxSummary } from '@boardsesh/offline-sync';
 import { useAuth } from '../providers/auth-provider';
 import { useConfirm } from '../providers/dialog-provider';
 import { getDatabaseHandle } from '../db';
@@ -20,8 +20,18 @@ import { showSignOutFailure } from '../lib/sign-out-failure-alert';
  *
  * It ALWAYS confirms, and composes the message from what is actually true for this
  * device: the downloaded-boards sentence only when a catalog is really on disk, the
- * unsynced-writes sentence only when the queue isn't empty, and otherwise the plain
- * "you'll need to sign in again".
+ * unsynced-writes sentence only when the queue isn't empty, the failed-writes sentence
+ * only when something has dead-lettered, and otherwise the plain "you'll need to sign
+ * in again".
+ *
+ * Pending and dead-lettered writes are counted separately because they are lost in
+ * different ways and the user can act on them differently. A pending write still gets
+ * an attempt (see the drain below); a dead letter has already exhausted its retries,
+ * so nothing at sign-out will send it — its only route home is Retry sync on the More
+ * tab, which is what the copy points at. The wipe DELETEs `pending_mutations` whole,
+ * so counting only `status = 'pending'` told a user whose queue was entirely
+ * dead-lettered that there was nothing to lose, moments before deleting exactly the
+ * writes the app had already flagged as in trouble.
  *
  * No drain here. `signOut` already runs one bounded best-effort drain of its own
  * (3s), so draining before the dialog would mean two drains and a user who meant to
@@ -51,13 +61,18 @@ export function useConfirmSignOut(): () => Promise<void> {
     try {
       const localDb = getDatabaseHandle();
       let pendingCount = 0;
+      let deadLetterCount = 0;
       let hasDownloads = false;
       try {
         // No handle means offline storage never initialised this session, so there is
         // nothing local to lose. A read failure is not a reason to skip the warning —
         // fall back to "nothing to report" and still confirm.
         if (localDb) {
-          pendingCount = await getPendingCount(localDb);
+          // One grouped read for both counts — the same gauge the sign-out drain gate
+          // and the outbox telemetry use, so the dialog can't disagree with them.
+          const outbox = await getOutboxSummary(localDb);
+          pendingCount = outbox.pendingCount;
+          deadLetterCount = outbox.deadLetterCount;
           // The honest signal for the boards sentence is whether a catalog is on disk
           // (what the wipe deletes), NOT the syncEnabledBoards toggle list: a
           // feature-flag rollback clears the list while the rows remain, and those
@@ -66,12 +81,14 @@ export function useConfirmSignOut(): () => Promise<void> {
         }
       } catch {
         pendingCount = 0;
+        deadLetterCount = 0;
         hasDownloads = false;
       }
 
       const message = [
         hasDownloads ? t('mobile.more.signOut.messageOffline') : t('mobile.more.signOut.message'),
         ...(pendingCount > 0 ? [t('mobile.more.signOut.pendingMessage', { count: pendingCount })] : []),
+        ...(deadLetterCount > 0 ? [t('mobile.more.signOut.failedMessage', { count: deadLetterCount })] : []),
       ].join('\n\n');
 
       const confirmed = await confirm({

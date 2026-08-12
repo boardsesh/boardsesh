@@ -190,6 +190,8 @@
         "messageOffline": "La déconnexion supprime de ce téléphone les boards que tu as téléchargées et ton carnet hors ligne. Tu les retéléchargeras à ta prochaine connexion.",
         "pendingMessage_one": "1 modification n'est pas encore synchronisée. On essaie de l'envoyer d'abord, et ce qui reste est supprimé.",
         "pendingMessage_other": "{{count}} modifications ne sont pas encore synchronisées. On essaie de les envoyer d'abord, et ce qui reste est supprimé.",
+        "failedMessage_one": "1 modification n'a pas pu se synchroniser, et la déconnexion la supprime. Annule et lance Réessayer la synchronisation d'abord si tu veux la garder.",
+        "failedMessage_other": "{{count}} modifications n'ont pas pu se synchroniser, et la déconnexion les supprime. Annule et lance Réessayer la synchronisation d'abord si tu veux les garder.",
         "confirm": "Se déconnecter",
         "cancel": "Annuler",
         "failureTitle": "Déconnexion non confirmée",
