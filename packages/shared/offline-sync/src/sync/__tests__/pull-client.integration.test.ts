@@ -34,6 +34,7 @@ import { runMigrations } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
 import { getDeletionsCoverageAt } from '../deletions-coverage';
+import { DELETIONS_COVERAGE_EPOCH_FLOOR_MS } from '../retention';
 import { TABLE_CONFIGS } from '../table-config';
 
 // The non-null fields of the backend's `input SaveTickInput`
@@ -1110,16 +1111,41 @@ describe('sync layer — real-DDL integration', () => {
         });
       });
 
-      it('reports verdict future for a clock corrected backwards', async () => {
+      // The age is asserted exactly, not via objectContaining: the arithmetic
+      // does produce a value here (-10) and reporting it would put negative
+      // numbers into a property a dashboard averages. Same for the below-floor
+      // marker below, whose raw age is ~20,000 days.
+      it('reports verdict future with a null age for a clock corrected backwards', async () => {
         await seedStaleDevice();
         await setCoverage(Date.now() + 10 * DAY_MS);
         const onCoverageEvaluated = vi.fn();
 
         await pullSync(db, queryClient, makeCoverageFetch([]).fetch, { onCoverageEvaluated });
 
-        expect(onCoverageEvaluated).toHaveBeenCalledWith(
-          expect.objectContaining({ verdict: 'future', outcome: 'evaluated' }),
-        );
+        expect(onCoverageEvaluated).toHaveBeenCalledWith({
+          verdict: 'future',
+          markerAgeDays: null,
+          outcome: 'evaluated',
+        });
+      });
+
+      it('reports a below-epoch-floor marker as unknown with a null age', async () => {
+        await seedStaleDevice();
+        // A phone that booted to 1970 before NTP landed. evaluateDeletionsCoverage
+        // calls this `unknown` rather than 56-years-stale, and the reported age
+        // has to agree with that verdict.
+        await setCoverage(DELETIONS_COVERAGE_EPOCH_FLOOR_MS - DAY_MS);
+        const onCoverageEvaluated = vi.fn();
+        const onCoverageReset = vi.fn();
+
+        await pullSync(db, queryClient, makeCoverageFetch([]).fetch, { onCoverageEvaluated, onCoverageReset });
+
+        expect(onCoverageEvaluated).toHaveBeenCalledWith({
+          verdict: 'unknown',
+          markerAgeDays: null,
+          outcome: 'evaluated',
+        });
+        expect(onCoverageReset).not.toHaveBeenCalled();
       });
 
       it('reports evaluated then reset when the guard actually fires', async () => {

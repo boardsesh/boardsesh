@@ -132,10 +132,14 @@ export type CoverageResetReporter = (info: CoverageResetInfo) => void;
  * be at risk. Reporting the verdict for every cycle makes `unknown` a
  * first-class value and turns "zero resets" into evidence rather than a shrug.
  *
- * `markerAgeDays` is null for `unknown` (no marker) and `future` (a marker
- * dated after now, i.e. a clock corrected backwards) — neither has a meaningful
- * age. `outcome: 'probe_failed'` is the reachability probe rejecting on a stale
- * device, which today vanishes into a dev-only console.warn.
+ * `markerAgeDays` is a number only for `fresh` and `stale`. It is null for
+ * `unknown` (no marker at all, or one below the epoch floor — a phone that
+ * booted to 1970) and for `future` (a marker dated after now, i.e. a clock
+ * corrected backwards): the arithmetic still produces a value for those two,
+ * but it is ~20,000 days or a negative number, and either would poison an
+ * average over this property. `outcome: 'probe_failed'` is the reachability
+ * probe rejecting on a stale device, which today vanishes into a dev-only
+ * console.warn.
  */
 export type CoverageEvaluatedInfo = {
   verdict: 'unknown' | 'future' | 'fresh' | 'stale';
@@ -999,8 +1003,18 @@ async function enforceDeletionsCoverage(
 
   // floor, not round, everywhere this age is reported: a 79.6-day marker must
   // not read as 80 (the threshold value) when the decision was made on exact
-  // milliseconds. Null for the two verdicts with no meaningful age.
-  const markerAgeDays = coverageAt === null ? null : Math.floor((evaluatedAt - coverageAt) / 86_400_000);
+  // milliseconds.
+  //
+  // Null for the two verdicts whose age is not a coverage age. That is a data
+  // rule, not cosmetics: `future` is a marker dated after now (a clock
+  // corrected backwards) and would report a NEGATIVE age, and `unknown` covers
+  // both an absent marker AND one below DELETIONS_COVERAGE_EPOCH_FLOOR_MS (a
+  // phone that booted to 1970 before NTP landed), which would report ~20,000
+  // days. Either value poisons an average or a percentile over this property.
+  const markerAgeDays =
+    coverageAt === null || verdict === 'unknown' || verdict === 'future'
+      ? null
+      : Math.floor((evaluatedAt - coverageAt) / 86_400_000);
 
   // Reported BEFORE the early return below, so `unknown` and `future` are
   // first-class values rather than silence. That is the whole point: the
@@ -1013,8 +1027,8 @@ async function enforceDeletionsCoverage(
   // whatever the classifier is later taught to return — and it narrows
   // coverageAt to a number, so markerAgeDays needs no fallback for a case that
   // cannot happen.
-  // (markerAgeDays is null exactly when coverageAt is; naming it in the guard
-  // narrows it to a number for the reset report below.)
+  // (markerAgeDays is null for every verdict except `fresh` and `stale`;
+  // naming it in the guard narrows it to a number for the reset report below.)
   if (coverageAt === null || markerAgeDays === null || verdict !== 'stale') return;
 
   // Reachability + auth probe. Its payload is irrelevant; only "did it resolve"
