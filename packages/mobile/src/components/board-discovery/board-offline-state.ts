@@ -2,7 +2,7 @@
 // sync status. Kept renderer-free so the My Boards screen can compute one state
 // per row without each row subscribing to the sync store, and so it can be tested.
 
-import { MAX_BOOTSTRAP_ATTEMPTS, type SyncProgress } from '@boardsesh/offline-sync';
+import type { SyncProgress } from '@boardsesh/offline-sync';
 
 export type BoardDownloadState =
   | 'off' // not made available offline
@@ -90,8 +90,15 @@ export function boardIsBootstrapping(input: BoardDownloadStateInput): boolean {
 export type BoardDownloadNoticeInput = Pick<BoardDownloadStateInput, 'enabled' | 'downloaded'> & {
   /** Snapshot I/O is actually injected for this build and feature-flag state. */
   snapshotSourceAvailable: boolean;
-  /** Persisted count of transient snapshot-bootstrap failures for this scope. */
+  /** Persisted count of snapshot-bootstrap failures for this scope (any kind). */
   bootstrapAttempts: number;
+  /**
+   * Both snapshot retry budgets are spent (issue #4313): this board is on the
+   * slow crawl until the climber asks for another go or removes it.
+   */
+  isTerminal: boolean;
+  /** Epoch ms of the next scheduled snapshot attempt, or null when none is pending. */
+  retryAfter: number | null;
   /** Persisted once an artifact import succeeded for this scope. */
   isBootstrapDone: boolean;
   /** Persisted when the latest bootstrap decision selected the paged crawl. */
@@ -122,11 +129,11 @@ export function boardDownloadNotice(input: BoardDownloadNoticeInput): BoardDownl
     input.isBootstrapping
   )
     return null;
-  if (
-    input.isPagedFallback ||
-    input.bootstrapAttempts >= MAX_BOOTSTRAP_ATTEMPTS ||
-    ((input.hasBoardCheckpoint || input.isPagedDownloadActive) && input.bootstrapAttempts > 0)
-  )
-    return 'paged-fallback';
+  // A settled scope is the only permanent verdict now. A scheduled retry keeps
+  // the softer "we'll try the fast download again" caption even though the crawl
+  // is running underneath it, because that is exactly what will happen.
+  if (input.isTerminal) return 'paged-fallback';
+  if (input.retryAfter !== null) return 'snapshot-retrying';
+  if (input.isPagedFallback) return 'paged-fallback';
   return input.bootstrapAttempts > 0 ? 'snapshot-retrying' : null;
 }

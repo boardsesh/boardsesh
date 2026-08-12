@@ -2,9 +2,10 @@
 // quotes a number the download won't match, so most of this file is the `unknown`
 // branches: every case where the paged crawl runs instead of a snapshot import.
 //
-// The eligibility rules here mirror runBootstrapPhase's. `mirrors runBootstrapPhase`
-// below is the guard against the two drifting apart — that drift is the only way
-// this feature starts lying to users.
+// Eligibility is not restated here: `estimateScopeDownload` CALLS the engine's
+// own `evaluateBootstrapEligibility`, and the parity table at the bottom pins
+// that the two verdicts agree row for row — that drift is the only way this
+// feature starts lying to users.
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -13,7 +14,13 @@ import {
   isSnapshotEntryUsable,
   type SnapshotDownloadEstimate,
 } from '../snapshot-estimate';
-import { MAX_BOOTSTRAP_ATTEMPTS } from '../snapshot-bootstrap';
+import {
+  evaluateBootstrapEligibility,
+  EMPTY_BOOTSTRAP_RETRY_STATE,
+  MAX_BOOTSTRAP_ATTEMPTS,
+  MAX_TRANSPORT_DOWNLOAD_FAILURES,
+  type BootstrapRetryState,
+} from '../bootstrap-retry';
 import { LATEST_SCHEMA_VERSION } from '../../db/migrations';
 import type { SnapshotManifest, SnapshotManifestEntry } from '../snapshot-manifest';
 
@@ -44,14 +51,23 @@ function manifest(entries: SnapshotManifestEntry[] = [entry()]): SnapshotManifes
   return { formatVersion: 1, generatedAt: '2026-07-15T02:33:29.916Z', entries };
 }
 
-/** A scope that would bootstrap: fresh on both board tables, no attempts burned. */
+const NOW = 1_800_000_000_000;
+
+function retryState(patch: Partial<BootstrapRetryState> = {}): BootstrapRetryState {
+  return { ...EMPTY_BOOTSTRAP_RETRY_STATE, ...patch };
+}
+
+/** A scope that would bootstrap: fresh on both board tables, nothing burned. */
 function eligible(patch: Partial<Parameters<typeof estimateScopeDownload>[0]> = {}) {
   return estimateScopeDownload({
     manifest: manifest(),
     boardType: 'kilter',
     layoutId: 1,
-    hasExistingCheckpoint: false,
-    bootstrapAttempts: 0,
+    retryState: retryState(),
+    hasBoardCheckpoint: false,
+    isScopeComplete: false,
+    isBootstrapDone: false,
+    now: NOW,
     ...patch,
   });
 }
@@ -105,16 +121,58 @@ describe('estimateScopeDownload', () => {
     expect(eligible({ manifest: null })).toEqual({ kind: 'unknown' });
   });
 
-  it('is unknown when the scope already has a checkpoint — a re-enable pulls a delta, not 270 MB', () => {
-    expect(eligible({ hasExistingCheckpoint: true })).toEqual({ kind: 'unknown' });
+  it('is unknown when the scope has a checkpoint and no snapshot failures — a re-enable pulls a delta, not 270 MB', () => {
+    expect(eligible({ hasBoardCheckpoint: true })).toEqual({ kind: 'unknown' });
+  });
+
+  it('quotes the artifact for a mid-crawl scope the engine would heal', () => {
+    // The heal-over-partial path (issue #4313): the scope holds a fraction of the
+    // catalog, never finished the crawl, and has snapshot failures behind it.
+    expect(
+      eligible({
+        hasBoardCheckpoint: true,
+        retryState: retryState({ structuralFailures: 1, hasPriorSnapshotFailure: true }),
+      }),
+    ).toMatchObject({ kind: 'snapshot' });
+  });
+
+  it('is unknown for a scope that already serves the whole catalog offline', () => {
+    expect(eligible({ isScopeComplete: true })).toEqual({ kind: 'unknown' });
   });
 
   it('is unknown once the engine has given up on the snapshot for this scope', () => {
-    expect(eligible({ bootstrapAttempts: MAX_BOOTSTRAP_ATTEMPTS })).toEqual({ kind: 'unknown' });
+    expect(eligible({ retryState: retryState({ structuralFailures: MAX_BOOTSTRAP_ATTEMPTS }) })).toEqual({
+      kind: 'unknown',
+    });
+    expect(eligible({ retryState: retryState({ transportFailures: MAX_TRANSPORT_DOWNLOAD_FAILURES }) })).toEqual({
+      kind: 'unknown',
+    });
   });
 
-  it('still quotes a size on the last remaining attempt', () => {
-    expect(eligible({ bootstrapAttempts: MAX_BOOTSTRAP_ATTEMPTS - 1 })).toMatchObject({ kind: 'snapshot' });
+  it('is unknown while the scope is waiting out a scheduled retry', () => {
+    expect(eligible({ retryState: retryState({ retryAfter: NOW + 60_000 }) })).toEqual({ kind: 'unknown' });
+  });
+
+  it('still quotes a size on the last remaining structural attempt', () => {
+    expect(eligible({ retryState: retryState({ structuralFailures: MAX_BOOTSTRAP_ATTEMPTS - 1 }) })).toMatchObject({
+      kind: 'snapshot',
+    });
+  });
+
+  it('quotes a size for a user-requested retry even though the scope is terminal', () => {
+    // The confirm dialog behind "Try the fast download again" restores the budget
+    // as its action, so the size it discloses must be the artifact's.
+    expect(
+      eligible({
+        retryState: retryState({ structuralFailures: MAX_BOOTSTRAP_ATTEMPTS }),
+        userRequested: true,
+      }),
+    ).toMatchObject({ kind: 'snapshot' });
+  });
+
+  it('refuses even a user-requested quote for a complete or already-warmed scope', () => {
+    expect(eligible({ isScopeComplete: true, userRequested: true })).toEqual({ kind: 'unknown' });
+    expect(eligible({ isBootstrapDone: true, userRequested: true })).toEqual({ kind: 'unknown' });
   });
 
   it('is unknown when the layout has not been exported yet', () => {
@@ -137,4 +195,85 @@ describe('estimateScopeDownload', () => {
     // into 'unknown' and silently dropping the size line.
     expect(eligible({ manifest: manifest([entry({ bytes: 0 })]) })).toMatchObject({ kind: 'snapshot', bytes: 0 });
   });
+});
+
+describe('estimateScopeDownload parity with the engine gate', () => {
+  // The mirror that used to be a promise in a comment. Every row asserts the
+  // estimate's snapshot/unknown verdict equals evaluateBootstrapEligibility's,
+  // so the UI can never quote a number for a download the engine would skip.
+  const rows: Array<{
+    name: string;
+    scopeState: Omit<Parameters<typeof evaluateBootstrapEligibility>[0], 'now'>;
+  }> = [
+    {
+      name: 'fresh',
+      scopeState: {
+        retryState: retryState(),
+        hasBoardCheckpoint: false,
+        isScopeComplete: false,
+        isBootstrapDone: false,
+      },
+    },
+    {
+      name: 'heal-over-partial',
+      scopeState: {
+        retryState: retryState({ transportFailures: 1, hasPriorSnapshotFailure: true }),
+        hasBoardCheckpoint: true,
+        isScopeComplete: false,
+        isBootstrapDone: false,
+      },
+    },
+    {
+      name: 'mid-crawl with no failure history',
+      scopeState: {
+        retryState: retryState(),
+        hasBoardCheckpoint: true,
+        isScopeComplete: false,
+        isBootstrapDone: false,
+      },
+    },
+    {
+      name: 'scope complete',
+      scopeState: { retryState: retryState(), hasBoardCheckpoint: true, isScopeComplete: true, isBootstrapDone: false },
+    },
+    {
+      name: 'already bootstrapped',
+      scopeState: { retryState: retryState(), hasBoardCheckpoint: true, isScopeComplete: false, isBootstrapDone: true },
+    },
+    {
+      name: 'terminal on transport',
+      scopeState: {
+        retryState: retryState({ transportFailures: MAX_TRANSPORT_DOWNLOAD_FAILURES, hasPriorSnapshotFailure: true }),
+        hasBoardCheckpoint: false,
+        isScopeComplete: false,
+        isBootstrapDone: false,
+      },
+    },
+    {
+      name: 'cooling down',
+      scopeState: {
+        retryState: retryState({ transportFailures: 1, hasPriorSnapshotFailure: true, retryAfter: NOW + 1 }),
+        hasBoardCheckpoint: false,
+        isScopeComplete: false,
+        isBootstrapDone: false,
+      },
+    },
+    {
+      name: 'cooldown just elapsed',
+      scopeState: {
+        retryState: retryState({ transportFailures: 1, hasPriorSnapshotFailure: true, retryAfter: NOW }),
+        hasBoardCheckpoint: false,
+        isScopeComplete: false,
+        isBootstrapDone: false,
+      },
+    },
+  ];
+
+  for (const row of rows) {
+    it(`agrees with the engine for: ${row.name}`, () => {
+      const verdict = evaluateBootstrapEligibility({ ...row.scopeState, now: NOW });
+      const estimate = eligible({ ...row.scopeState, now: NOW });
+      expect(estimate.kind === 'snapshot').toBe(verdict.eligible);
+    });
+  }
 });

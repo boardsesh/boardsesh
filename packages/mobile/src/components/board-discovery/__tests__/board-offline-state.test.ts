@@ -159,6 +159,8 @@ describe('boardDownloadNotice', () => {
     downloaded: false,
     snapshotSourceAvailable: true,
     bootstrapAttempts: 0,
+    isTerminal: false,
+    retryAfter: null,
     isBootstrapDone: false,
     isPagedFallback: false,
     hasBoardCheckpoint: false,
@@ -171,17 +173,31 @@ describe('boardDownloadNotice', () => {
     expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 1 })).toBe('snapshot-retrying');
   });
 
-  it('shows a paged-fallback notice after bootstrap retries are exhausted', () => {
-    expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 2 })).toBe('paged-fallback');
+  it('keeps the retrying notice while a snapshot attempt is scheduled', () => {
+    // The crawl may be running underneath it, but the fast download WILL be
+    // tried again — the caption promises what actually happens (issue #4313).
+    expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 1, retryAfter: 1_800_000_000_000 })).toBe(
+      'snapshot-retrying',
+    );
+  });
+
+  it('shows a paged-fallback notice once both snapshot budgets are spent', () => {
+    expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 2, isTerminal: true })).toBe('paged-fallback');
+  });
+
+  it('does not condemn a board to the slow path just because it failed twice', () => {
+    // Pre-#4313 this was the cliff: two transport failures and the caption said
+    // "slower download" for the life of the install.
+    expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 2 })).toBe('snapshot-retrying');
   });
 
   it('uses the explicit paged outcome after a transient failure followed by a permanent miss', () => {
     expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 1, isPagedFallback: true })).toBe('paged-fallback');
   });
 
-  it('treats a restored checkpoint as paged fallback after restart', () => {
+  it('keeps a mid-crawl scope on the retrying caption — it can still be healed', () => {
     expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 1, hasBoardCheckpoint: true })).toBe(
-      'paged-fallback',
+      'snapshot-retrying',
     );
   });
 
@@ -194,15 +210,15 @@ describe('boardDownloadNotice', () => {
   });
 
   it('clears the notice once the scope has completed its download', () => {
-    expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 2, downloaded: true })).toBeNull();
+    expect(boardDownloadNotice({ ...noticeBase, isTerminal: true, downloaded: true })).toBeNull();
   });
 
   it('clears from the metadata batch as soon as the per-scope completion marker lands', () => {
-    expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 2, isScopeComplete: true })).toBeNull();
+    expect(boardDownloadNotice({ ...noticeBase, isTerminal: true, isScopeComplete: true })).toBeNull();
   });
 
   it('ignores stale bootstrap markers when snapshot I/O is unavailable', () => {
-    expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 2, snapshotSourceAvailable: false })).toBeNull();
+    expect(boardDownloadNotice({ ...noticeBase, isTerminal: true, snapshotSourceAvailable: false })).toBeNull();
   });
 
   it('restores the correct retry outcome when snapshot I/O is toggled back on before paging starts', () => {
@@ -211,11 +227,12 @@ describe('boardDownloadNotice', () => {
     expect(boardDownloadNotice({ ...persistedRetry, snapshotSourceAvailable: true })).toBe('snapshot-retrying');
   });
 
-  it('uses live paged progress when the snapshot flag returns before a checkpoint lands', () => {
+  it('reports the settled verdict while the crawl it fell back to is running', () => {
     expect(
       boardDownloadNotice({
         ...noticeBase,
-        bootstrapAttempts: 1,
+        bootstrapAttempts: 2,
+        isTerminal: true,
         isPagedDownloadActive: true,
       }),
     ).toBe('paged-fallback');
@@ -227,6 +244,7 @@ describe('boardDownloadNotice', () => {
         ...noticeBase,
         bootstrapAttempts: 1,
         isPagedFallback: true,
+        isTerminal: true,
         isBootstrapping: true,
       }),
     ).toBeNull();

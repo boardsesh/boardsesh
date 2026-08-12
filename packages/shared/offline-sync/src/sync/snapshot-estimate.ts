@@ -4,9 +4,11 @@
 // The manifest already carries every number this needs (`bytes` per artifact,
 // `rowCount` per table) — the hard part is knowing WHEN that number is the truth.
 // A scope only downloads an artifact if the snapshot bootstrap would actually run
-// for it, and `runBootstrapPhase` (pull-client.ts) is the authority on that. The
-// rules are duplicated nowhere: `findSnapshotEntry` is shared with the engine, and
-// the checkpoint/attempt gates below mirror its eligibility check one-for-one.
+// for it, so this CALLS the engine's own gate (`evaluateBootstrapEligibility`)
+// rather than re-stating it. It used to carry a copy of the checkpoint/attempt
+// rules with a comment promising they mirrored `runBootstrapPhase` one-for-one;
+// heal-over-partial (issue #4313) made both of those rules wrong at once, which
+// is why the mirror is now a literal shared call.
 //
 // Getting this wrong is worse than showing nothing. A board that was downloaded
 // once and toggled off keeps its rows + checkpoints on purpose (see
@@ -18,7 +20,7 @@
 // and cached it) and the scope's local checkpoint/attempt state.
 
 import type { SnapshotManifest, SnapshotManifestEntry } from './snapshot-manifest';
-import { MAX_BOOTSTRAP_ATTEMPTS } from './snapshot-bootstrap';
+import { evaluateBootstrapEligibility, type BootstrapRetryState } from './bootstrap-retry';
 import { LATEST_SCHEMA_VERSION } from '../db/migrations';
 
 export type SnapshotDownloadEstimate =
@@ -72,23 +74,35 @@ export function isSnapshotEntryUsable(entry: SnapshotManifestEntry): boolean {
  *
  * - `manifest` is null: not fetched yet, unreachable, unparseable, or the
  *   snapshot path is switched off entirely (flag/base URL) so nothing is downloaded.
- * - `hasExistingCheckpoint`: the scope already pulled rows, so it is permanently
- *   past bootstrap eligibility and resumes as a delta.
- * - attempts at the cap: the engine has given up on the snapshot for this scope.
+ * - the engine's gate says no: a scope that already serves the full catalog, one
+ *   that already imported an artifact, one mid-cooldown, one whose budgets are
+ *   spent, and a mid-crawl scope with no snapshot failures behind it all resume
+ *   as a delta or a crawl instead of downloading.
  * - no entry for the layout: not exported yet.
  * - schema-stale entry: rejected before the download (`isSnapshotEntryUsable`).
+ *
+ * `userRequested` is the "Try the fast download again" path: the user has asked
+ * for the artifact explicitly, so the size must be quoted from the entry even
+ * though the scope's persisted state is currently terminal — restoring the
+ * budget is the action the dialog is confirming.
  */
 export function estimateScopeDownload(input: {
   manifest: SnapshotManifest | null;
   boardType: string;
   layoutId: number;
-  hasExistingCheckpoint: boolean;
-  bootstrapAttempts: number;
+  retryState: BootstrapRetryState;
+  hasBoardCheckpoint: boolean;
+  isScopeComplete: boolean;
+  isBootstrapDone: boolean;
+  now: number;
+  userRequested?: boolean;
 }): SnapshotDownloadEstimate {
-  const { manifest, boardType, layoutId, hasExistingCheckpoint, bootstrapAttempts } = input;
+  const { manifest, boardType, layoutId, userRequested } = input;
   if (!manifest) return { kind: 'unknown' };
-  if (hasExistingCheckpoint) return { kind: 'unknown' };
-  if (bootstrapAttempts >= MAX_BOOTSTRAP_ATTEMPTS) return { kind: 'unknown' };
+  if (!userRequested && !evaluateBootstrapEligibility(input).eligible) return { kind: 'unknown' };
+  // Even a user-requested retry cannot download over a catalog that is already
+  // complete or already snapshot-warmed — the engine would refuse it too.
+  if (userRequested && (input.isScopeComplete || input.isBootstrapDone)) return { kind: 'unknown' };
 
   const entry = findSnapshotEntry(manifest, boardType, layoutId);
   if (!entry) return { kind: 'unknown' };

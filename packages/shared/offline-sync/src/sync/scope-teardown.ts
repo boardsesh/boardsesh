@@ -32,12 +32,13 @@ import { applyBusyTimeout } from '../db/pragmas';
 import type { OfflineBoardScope } from '../offline-board-key';
 import { climbsScopeFilter, isSizeScopedBoard, sizeMembershipClause } from './board-scope-sql';
 import { getCheckpointKey, SCOPE_COMPLETE_PREFIX } from './checkpoints';
+import { BOOTSTRAP_DONE_PREFIX } from './snapshot-bootstrap';
 import {
   BOOTSTRAP_ATTEMPTS_HEALED_PREFIX,
   BOOTSTRAP_ATTEMPTS_PREFIX,
-  BOOTSTRAP_DONE_PREFIX,
   BOOTSTRAP_PAGED_FALLBACK_PREFIX,
-} from './snapshot-bootstrap';
+  BOOTSTRAP_RETRY_PREFIX,
+} from './bootstrap-retry';
 import { BOARD_DATA_TABLES } from './table-config';
 
 /** One scope's measured footprint. `estimatedBytes` is an apportionment — see getScopeUsage. */
@@ -75,6 +76,9 @@ export function scopeSyncMetaKeys(scopeKey: string): string[] {
     `${BOOTSTRAP_ATTEMPTS_HEALED_PREFIX}${scopeKey}`,
     `${BOOTSTRAP_DONE_PREFIX}${scopeKey}`,
     `${BOOTSTRAP_PAGED_FALLBACK_PREFIX}${scopeKey}`,
+    // The retry budgets + cooldown (issue #4313). Re-adding the board must give
+    // the scope a clean slate, not a terminal verdict it earned before removal.
+    `${BOOTSTRAP_RETRY_PREFIX}${scopeKey}`,
   ];
 }
 
