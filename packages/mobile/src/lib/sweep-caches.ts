@@ -21,17 +21,28 @@
 // OS" problem this issue is about.
 
 import { Image } from 'expo-image';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
+import type { OfflineBoardScope } from '@boardsesh/offline-sync';
 import { deleteCacheDirEntries, resolveImageCacheDirName, walkCacheDir } from './cache-dir-io';
 import { invalidateCacheMeasurement, measureCacheDirBytes, recordCacheMeasurement } from './cache-size-meter';
 import {
   measureOverlayCacheBytes,
+  overlayNameMatchesScope,
+  planLruEviction,
   planOverlayCacheClear,
   planStaleArtifactSweep,
+  OVERLAY_CACHE_TARGET_BYTES,
   SNAPSHOT_CLEAR_MIN_AGE_MS,
   SNAPSHOT_LEFTOVER_MAX_AGE_MS,
   cacheKeyForOverlayName,
 } from './cache-sweep-plan';
-import { clearOverlayIndex, forgetOverlays } from './overlay-index';
+import {
+  clearOverlayIndex,
+  forgetOverlays,
+  getRecentlyUsedCacheKeys,
+  resetOverlayWriteOdometer,
+} from './overlay-index';
+import { track } from './analytics';
 import { SNAPSHOT_DIR_NAME } from '../offline/snapshot-source';
 
 /** Must match the directory the native BoardRenderer modules write PNGs into. */
@@ -177,4 +188,129 @@ export async function clearCachedImages(): Promise<ClearCachedImagesResult> {
 
   invalidateCacheMeasurement();
   return { freedBytes, filesDeleted, photoCacheCleared };
+}
+
+/** Where a sweep came from. Carried on the analytics event so the triggers can be compared. */
+export type CacheSweepTrigger =
+  | 'launch'
+  | 'background'
+  | 'write-threshold'
+  | 'board-removed'
+  | 'manual'
+  | 'disk-pressure';
+
+export type CacheSweepResult = {
+  beforeBytes: number;
+  freedBytes: number;
+  filesDeleted: number;
+};
+
+const EMPTY_SWEEP: CacheSweepResult = { beforeBytes: 0, freedBytes: 0, filesDeleted: 0 };
+
+/**
+ * How long a cache key stays protected from eviction after JS last read it.
+ *
+ * Long enough to cover a surface that is mounted but idle (a play drawer left
+ * open, a list the user stopped scrolling), short enough that the warm-up's
+ * couple of hundred prior-session insertions age out of the protected set within
+ * one browsing session.
+ */
+const RECENTLY_USED_WINDOW_MS = 120_000;
+
+/** Minimum gap between two sweeps of the same trigger class. */
+const SWEEP_RATE_LIMIT_MS = 5 * 60 * 1000;
+
+const lastSweptAtMsByTrigger = new Map<CacheSweepTrigger, number>();
+
+/**
+ * Bring `{cache}/board-thumbnails` back under the native modules' own 200 MB cap.
+ *
+ * The cap already exists — what was missing is anything enforcing it during a
+ * session. Both native modules prune behind a once-per-module-lifetime gate
+ * (`BoardRendererModule.swift`'s `lazy var pruneOnce`, `.kt`'s `@Volatile pruned`),
+ * so a foreground session that never relaunches grows unchecked. Fixing the gate
+ * is a native change that could not reach store binaries over OTA, so this runs
+ * the same mtime-LRU from JS against the same directory, with the same
+ * file-classification rules, plus the one thing mtime can't know: which keys a
+ * live surface read in the last two minutes.
+ */
+export async function sweepBoardArtCache(params: {
+  trigger: CacheSweepTrigger;
+  targetBytes?: number;
+  nowMs?: number;
+}): Promise<CacheSweepResult> {
+  const nowMs = params.nowMs ?? Date.now();
+  const lastSweptAtMs = lastSweptAtMsByTrigger.get(params.trigger);
+  if (lastSweptAtMs !== undefined && nowMs - lastSweptAtMs < SWEEP_RATE_LIMIT_MS) return EMPTY_SWEEP;
+  lastSweptAtMsByTrigger.set(params.trigger, nowMs);
+  // The odometer counts growth since the LAST sweep, whatever fired it.
+  resetOverlayWriteOdometer();
+
+  const walk = await walkCacheDir(OVERLAY_CACHE_DIR_NAME);
+  if (walk === null) return EMPTY_SWEEP;
+
+  const plan = planLruEviction({
+    entries: walk.entries,
+    targetBytes: params.targetBytes ?? OVERLAY_CACHE_TARGET_BYTES,
+    protectedNames: getRecentlyUsedCacheKeys(RECENTLY_USED_WINDOW_MS, nowMs),
+    nowMs,
+  });
+  const deleteNames = [...plan.evictNames, ...plan.staleTempNames];
+  if (deleteNames.length === 0) {
+    // The walk we just paid for is the measurement Manage Storage would take.
+    recordCacheMeasurement(OVERLAY_CACHE_DIR_NAME, plan.beforeBytes, nowMs);
+    return { beforeBytes: plan.beforeBytes, freedBytes: 0, filesDeleted: 0 };
+  }
+
+  const filesDeleted = deleteCacheDirEntries(OVERLAY_CACHE_DIR_NAME, deleteNames);
+  forgetOverlays(plan.evictNames.map(cacheKeyForOverlayName));
+  invalidateCacheMeasurement(OVERLAY_CACHE_DIR_NAME);
+
+  const result = { beforeBytes: plan.beforeBytes, freedBytes: plan.beforeBytes - plan.afterBytes, filesDeleted };
+  if (result.freedBytes > 0) {
+    track(SHARED_EVENTS.CachedImagesSwept, {
+      trigger: params.trigger,
+      beforeBytes: result.beforeBytes,
+      freedBytes: result.freedBytes,
+      filesDeleted: result.filesDeleted,
+    });
+  }
+  return result;
+}
+
+/**
+ * Drop the rendered art for one board scope, on removal.
+ *
+ * Best-effort by design: Remove is about reclaiming space, and art that survives
+ * a removal is exactly the leftover this screen exists to reap. Re-browsing that
+ * board online redraws every thumbnail locally in tens of milliseconds, no
+ * network — which is why this is worth doing even though it is not free.
+ */
+export async function sweepOverlaysForScope(scope: OfflineBoardScope): Promise<CacheSweepResult> {
+  const walk = await walkCacheDir(OVERLAY_CACHE_DIR_NAME);
+  if (walk === null) return EMPTY_SWEEP;
+
+  const matching = walk.entries.filter((entry) => overlayNameMatchesScope(entry.name, scope));
+  if (matching.length === 0) return EMPTY_SWEEP;
+
+  const freedBytes = matching.reduce((sum, entry) => sum + entry.sizeBytes, 0);
+  const names = matching.map((entry) => entry.name);
+  const filesDeleted = deleteCacheDirEntries(OVERLAY_CACHE_DIR_NAME, names);
+  forgetOverlays(names.map(cacheKeyForOverlayName));
+  invalidateCacheMeasurement(OVERLAY_CACHE_DIR_NAME);
+
+  if (freedBytes > 0) {
+    track(SHARED_EVENTS.CachedImagesSwept, {
+      trigger: 'board-removed',
+      beforeBytes: measureOverlayCacheBytes(walk.entries),
+      freedBytes,
+      filesDeleted,
+    });
+  }
+  return { beforeBytes: measureOverlayCacheBytes(walk.entries), freedBytes, filesDeleted };
+}
+
+/** Test-only: forget the per-trigger rate limit. */
+export function _resetSweepRateLimitForTests(): void {
+  lastSweptAtMsByTrigger.clear();
 }

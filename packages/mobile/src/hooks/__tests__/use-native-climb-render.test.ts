@@ -60,6 +60,8 @@ vi.mock('../../../modules/board-renderer/src/index', () => {
   throw new Error('Native module not available (simulated Expo Go)');
 });
 
+import { overlayNameMatchesScope } from '../../lib/cache-sweep-plan';
+
 const {
   buildCacheKey,
   buildBoardKey,
@@ -96,6 +98,18 @@ describe('buildCacheKey', () => {
     // style defaults to 's' (stroke-only / non-filled); width defaults to
     // 'full' (native board width, used by the play view).
     expect(key).toMatch(/^v\d+_s_wfull_kilter_1_10_24,25_[0-9a-f]{8}$/);
+  });
+
+  // The board-removal sweep (issue #3647) matches PNG names against an
+  // OfflineBoardScope's `boardType`, while the name itself carries `boardName`
+  // from here. They are the same string today; if that ever drifts, the sweep
+  // silently deletes nothing rather than failing loudly — so pin the identity
+  // against the real key builder rather than a hand-written filename.
+  it('produces a name the offline-scope sweep can match', () => {
+    const scope = { boardType: 'kilter', layoutId: 1, sizeId: 10 };
+    const name = `${buildCacheKey(scope.boardType, scope.layoutId, scope.sizeId, '24,25', 'p1r42', true, 400)}.png`;
+    expect(overlayNameMatchesScope(name, scope)).toBe(true);
+    expect(overlayNameMatchesScope(name, { ...scope, sizeId: 100 })).toBe(false);
   });
 
   it('defaults to the full-width token and switches to a numeric token when renderWidth is set', () => {

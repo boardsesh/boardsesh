@@ -7,9 +7,14 @@
 // returns null so Manage Storage omits the whole Cached-images section rather
 // than rendering a live Clear button over a fabricated `0 B`.
 
-import type { CachedImageMeasurement, ClearCachedImagesResult } from './sweep-caches';
+import type { CacheSweepResult, CachedImageMeasurement, ClearCachedImagesResult } from './sweep-caches';
 
-export type { CachedImageMeasurement, ClearCachedImagesResult } from './sweep-caches';
+export type {
+  CacheSweepResult,
+  CacheSweepTrigger,
+  CachedImageMeasurement,
+  ClearCachedImagesResult,
+} from './sweep-caches';
 
 export const OVERLAY_CACHE_DIR_NAME = 'board-thumbnails';
 
@@ -23,4 +28,12 @@ export async function sweepSnapshotLeftovers(): Promise<number> {
 
 export async function clearCachedImages(): Promise<ClearCachedImagesResult> {
   return { freedBytes: 0, filesDeleted: 0, photoCacheCleared: false };
+}
+
+export async function sweepBoardArtCache(): Promise<CacheSweepResult> {
+  return { beforeBytes: 0, freedBytes: 0, filesDeleted: 0 };
+}
+
+export async function sweepOverlaysForScope(): Promise<CacheSweepResult> {
+  return { beforeBytes: 0, freedBytes: 0, filesDeleted: 0 };
 }

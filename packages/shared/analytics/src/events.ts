@@ -506,6 +506,15 @@ export const SHARED_EVENTS = {
   // `hadBoardCheckpoint` distinguishes a heal over a partly-crawled catalog
   // from a fresh board's first attempt.
   OfflineSnapshotPathRecovered: 'Offline Snapshot Path Recovered',
+  // Offline sync — a JS sweep of the rendered board-art cache freed disk space
+  // (issue #3647). Fired only when it actually freed something, so the rate is
+  // the signal for "does the 200 MB cap ever bite in the field", and
+  // `beforeBytes` is what the write-odometer trigger constant gets tuned from.
+  // Props: { trigger: 'launch' | 'background' | 'write-threshold' |
+  // 'board-removed' | 'manual' | 'disk-pressure', beforeBytes, freedBytes,
+  // filesDeleted }. Mobile-only: web's overlay store is the Cache API, already
+  // bounded by entry count.
+  CachedImagesSwept: 'Cached Images Swept',
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;
