@@ -1,16 +1,18 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useTheme } from '../providers/theme-provider';
 import { hapticLight, hapticSelection } from '../lib/haptics';
 import { spacing } from '../theme/tokens';
 import { FEATURE_FLAG_DEFINITIONS, FEATURE_FLAG_KEYS } from '../providers/feature-flags-provider';
-import { isOfflineDownloadsEnabled } from '../providers/offline-downloads-enabled';
 import { useFeatureFlagOverrides } from '../lib/feature-flag-overrides';
-import { readPosthogFeatureFlags } from '../lib/analytics';
+import { readPosthogFeatureFlags, subscribePosthogFeatureFlags } from '../lib/analytics';
 import { useProfile } from '../lib/graphql/hooks';
+import { buildFeatureFlagRows } from './feature-flag-rows';
 import { FeatureFlagsForm } from './FeatureFlagsForm';
 import type { FeatureFlagChoice, FeatureFlagRow } from './FeatureFlagsForm.types';
+
+const NO_BASE_FLAGS: Record<string, boolean> = {};
 
 // Tester-only screen — all copy is hardcoded English with `i18n-ignore`, matching
 // ChannelSwitcherScreen. It lets a tester force any catalog flag On/Off (or back
@@ -35,10 +37,29 @@ export function FeatureFlagsScreen() {
   const { data: profile, isLoading: profileLoading } = useProfile();
 
   // Resolved base values (PostHog) so the caption can show what a flag falls back
-  // to when its override is cleared. No-op / empty in dev or unkeyed builds. Read
-  // once on mount: PostHog values rarely move while this tester screen is open,
-  // and live override changes already re-render via the store hook.
-  const baseFlags = useMemo(() => readPosthogFeatureFlags(FEATURE_FLAG_KEYS), []);
+  // to when its override is cleared. No-op / empty in dev or unkeyed builds.
+  //
+  // Subscribed, not read once on mount: on a cold open the SDK has usually not
+  // stored a /flags payload yet, so a mount-only read makes every row read
+  // "Live default: not set" forever — which is indistinguishable from a flag
+  // that genuinely never resolves, the one thing a tester opens this screen to
+  // check. subscribePosthogFeatureFlags also kicks a reload, same as
+  // FeatureFlagsProvider does.
+  const [baseFlags, setBaseFlags] = useState<Record<string, boolean>>(NO_BASE_FLAGS);
+  useEffect(() => {
+    let mounted = true;
+    const refreshBaseFlags = () => {
+      const nextFlags = readPosthogFeatureFlags(FEATURE_FLAG_KEYS);
+      if (!mounted) return;
+      setBaseFlags((previousFlags) => (baseFlagsEqual(previousFlags, nextFlags) ? previousFlags : nextFlags));
+    };
+    refreshBaseFlags();
+    const unsubscribe = subscribePosthogFeatureFlags(refreshBaseFlags);
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
   const hasOverrides = Object.keys(overrides).length > 0;
 
   // The native form's view model. Memoized so the Host's children don't rebuild
@@ -46,25 +67,7 @@ export function FeatureFlagsScreen() {
   // precomputed "Live default… Effective…" caption so the native side renders a
   // plain string.
   const rows = useMemo<FeatureFlagRow[]>(
-    () =>
-      FEATURE_FLAG_DEFINITIONS.map((definition) => {
-        const override = overrides[definition.key];
-        const choice: FeatureFlagChoice = override === undefined ? 'default' : override ? 'on' : 'off';
-        const base = baseFlags[definition.key];
-        // i18n-ignore-next-line — tester-only screen
-        const baseLabel = base === undefined ? 'not set' : base ? 'on' : 'off';
-        const configuredValue = override ?? base ?? false;
-        const effective =
-          definition.key === 'offline-board-downloads' ? isOfflineDownloadsEnabled(configuredValue) : configuredValue;
-        return {
-          key: definition.key,
-          label: definition.label,
-          description: definition.description,
-          choice,
-          // i18n-ignore-next-line — tester-only screen
-          effectiveLabel: `Live default: ${baseLabel} · Effective: ${effective ? 'on' : 'off'}`,
-        };
-      }),
+    () => buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, overrides, baseFlags),
     [overrides, baseFlags],
   );
 
@@ -127,6 +130,13 @@ export function FeatureFlagsScreen() {
       title={SCREEN_TITLE}
     />
   );
+}
+
+function baseFlagsEqual(leftFlags: Record<string, boolean>, rightFlags: Record<string, boolean>): boolean {
+  const leftKeys = Object.keys(leftFlags);
+  const rightKeys = Object.keys(rightFlags);
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every((key) => leftFlags[key] === rightFlags[key]);
 }
 
 const styles = StyleSheet.create({
