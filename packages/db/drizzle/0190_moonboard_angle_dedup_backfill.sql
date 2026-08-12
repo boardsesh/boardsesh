@@ -66,14 +66,19 @@
 -- GREATEST is right when two angle-rows merge: a climber who ticked BOTH
 -- aliases at the same angle is ONE ascensionist afterwards (SUM double-counts
 -- them), and two different climbers who each ticked a different alias are TWO
--- (GREATEST loses one). Step 2 merges the source columns and rewrites the
--- total as their sum so the invariant holds on every row it writes, then step
--- 3b re-derives the Boardsesh half from the repointed ticks by porting
--- recomputeClimbStatsBulk() (packages/db/src/queries/climb-stats/recompute.ts)
--- — the same code the backend runs after every tick write. The three
--- Boardsesh-owned columns (boardsesh_ascensionist_count, boardsesh_quality_sum,
--- boardsesh_quality_count) are carried through the re-key so a row step 3b
--- never revisits keeps its provenance instead of silently nulling.
+-- (GREATEST loses one). The two steps own disjoint halves of the row:
+--   * step 2 places the row and merges the UPSTREAM half (the catalog's own
+--     numbers), rewriting ascensionist_count in the same statement so the
+--     materialized invariant holds on the row it leaves behind;
+--   * step 3b owns boardsesh_ascensionist_count, boardsesh_quality_sum,
+--     boardsesh_quality_count, quality_average and ascensionist_count for
+--     EVERY key step 2 touched, re-deriving them from the repointed ticks by
+--     porting recomputeClimbStatsBulk()
+--     (packages/db/src/queries/climb-stats/recompute.ts) — the same code the
+--     backend runs after every tick write.
+-- Step 2 therefore never imports the alias's Boardsesh half onto the
+-- canonical: an earlier version did, and on any key 3b then skipped that
+-- promoted a stale tick-less count onto the surviving climb permanently.
 --
 -- MULTI-MEMBER COLLISIONS (groups of 3+): every dedupe-then-repoint step
 -- below ranks ALL rows touching a group — the canonical's own pre-existing
@@ -425,55 +430,74 @@ BEGIN
       ) ranked
      GROUP BY canonical_uuid, angle;
 
-  --    The three ascent columns are merged so the materialized total stays the
-  --    sum of its parts (the invariant documented on boardClimbStats in
-  --    packages/db/src/schema/boards/unified.ts): merge the two SOURCE columns
-  --    first, then write ascensionist_count as their sum in the same statement,
-  --    exactly like every other writer on main. Merging all three independently
-  --    with GREATEST (as an earlier version of this migration did) can produce
-  --    a total that is not upstream + boardsesh.
-  --      * upstream_ascensionist_count: GREATEST is right — both rows observe
-  --        the SAME upstream community-repeat count for one physical problem,
-  --        so the larger is the more complete import, never a second cohort.
-  --      * boardsesh_ascensionist_count: GREATEST here is only a provisional
-  --        floor. Step 3b below recomputes it from the repointed ticks, which
-  --        is the only way to get it right — a climber who ticked BOTH aliases
-  --        at the same angle is ONE ascensionist after the merge, so SUM would
-  --        double-count them and GREATEST would undercount two distinct
-  --        climbers who each ticked a different alias.
-  --    boardsesh_quality_sum / boardsesh_quality_count carry the blend's
-  --    Boardsesh numerator/weight (owned by recomputeClimbStats); they are
-  --    copied so a re-keyed row that step 3b never revisits keeps its
-  --    provenance instead of silently nulling, and re-blended there for every
-  --    key that does have ticks.
-  INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty, benchmark_difficulty,
-         ascensionist_count, upstream_ascensionist_count, boardsesh_ascensionist_count, difficulty_average,
-         quality_average, upstream_quality_average, boardsesh_quality_sum, boardsesh_quality_count,
-         quality_normalized, fa_username, fa_at, upstream_synced_at)
-  SELECT 'moonboard', src.canonical_uuid, src.angle, src.display_difficulty, src.benchmark_difficulty,
-         COALESCE(src.upstream_ascensionist_count, 0) + COALESCE(src.boardsesh_ascensionist_count, 0),
-         src.upstream_ascensionist_count, src.boardsesh_ascensionist_count, src.difficulty_average,
-         src.quality_average, src.upstream_quality_average, src.boardsesh_quality_sum,
-         src.boardsesh_quality_count, src.quality_normalized, src.fa_username, src.fa_at,
-         src.upstream_synced_at
-    FROM _mad_stats_src src
-  ON CONFLICT (board_type, climb_uuid, angle) DO UPDATE SET
-    display_difficulty = COALESCE(board_climb_stats.display_difficulty, excluded.display_difficulty),
-    benchmark_difficulty = COALESCE(board_climb_stats.benchmark_difficulty, excluded.benchmark_difficulty),
-    upstream_ascensionist_count = GREATEST(COALESCE(board_climb_stats.upstream_ascensionist_count, 0), COALESCE(excluded.upstream_ascensionist_count, 0)),
-    boardsesh_ascensionist_count = GREATEST(COALESCE(board_climb_stats.boardsesh_ascensionist_count, 0), COALESCE(excluded.boardsesh_ascensionist_count, 0)),
-    ascensionist_count =
-      GREATEST(COALESCE(board_climb_stats.upstream_ascensionist_count, 0), COALESCE(excluded.upstream_ascensionist_count, 0))
-      + GREATEST(COALESCE(board_climb_stats.boardsesh_ascensionist_count, 0), COALESCE(excluded.boardsesh_ascensionist_count, 0)),
-    difficulty_average = COALESCE(board_climb_stats.difficulty_average, excluded.difficulty_average),
-    quality_average = COALESCE(board_climb_stats.quality_average, excluded.quality_average),
-    upstream_quality_average = COALESCE(board_climb_stats.upstream_quality_average, excluded.upstream_quality_average),
-    boardsesh_quality_sum = COALESCE(board_climb_stats.boardsesh_quality_sum, excluded.boardsesh_quality_sum),
-    boardsesh_quality_count = COALESCE(board_climb_stats.boardsesh_quality_count, excluded.boardsesh_quality_count),
-    fa_username = COALESCE(board_climb_stats.fa_username, excluded.fa_username),
-    fa_at = COALESCE(board_climb_stats.fa_at, excluded.fa_at),
-    quality_normalized = board_climb_stats.quality_normalized OR excluded.quality_normalized,
-    upstream_synced_at = GREATEST(board_climb_stats.upstream_synced_at, excluded.upstream_synced_at);
+  --    SINGLE-OWNER CONTRACT for the recompute-owned columns. This statement
+  --    places the row and merges the UPSTREAM half; step 3b below owns
+  --    boardsesh_ascensionist_count, boardsesh_quality_sum,
+  --    boardsesh_quality_count, quality_average and ascensionist_count for
+  --    EVERY key this statement writes — INSERT and ON CONFLICT alike, captured
+  --    by the RETURNING below and handed to 3b with no tick-presence filter.
+  --    So the conflict branch deliberately does NOT import the alias's
+  --    Boardsesh half onto the canonical. An earlier version did, with
+  --    GREATEST/COALESCE, and on any key 3b then skipped that published a stale
+  --    tick-less Boardsesh count as the surviving climb's ascent number and
+  --    left quality_average off its own blend inputs (the contract
+  --    blendedQualityAverageSql states in
+  --    packages/db/src/queries/climb-stats/quality-blend.ts). With 3b covering
+  --    every written key, a merge policy for those columns is a published wrong
+  --    number at worst and, at best, still not free: writing a value 3b then
+  --    writes straight back moves the row's (updated_at, sync_seq) cursor, so
+  --    every offline device re-pulls a row whose published values never changed.
+  --      * upstream_ascensionist_count: GREATEST is right, and step 2 owns it —
+  --        both rows observe the SAME upstream community-repeat count for one
+  --        physical problem, so the larger is the more complete import, never a
+  --        second cohort.
+  --      * ascensionist_count is still rewritten here, as the merged upstream
+  --        plus the canonical's OWN Boardsesh half, so the materialized
+  --        invariant (documented on boardClimbStats in
+  --        packages/db/src/schema/boards/unified.ts) holds on the row this
+  --        statement leaves behind rather than only after 3b. Merging all three
+  --        ascent columns independently with GREATEST (as an even earlier
+  --        version did) can produce a total that is not upstream + boardsesh.
+  --      * boardsesh_ascensionist_count counts DISTINCT climbers, so no
+  --        row-level arithmetic can be right: a climber who ticked BOTH aliases
+  --        at the same angle is ONE ascensionist after the merge (SUM
+  --        double-counts them) and two climbers who each ticked a different
+  --        alias are TWO (GREATEST loses one). Only 3b's recount from the
+  --        repointed ticks lands on the right number.
+  --    The INSERT path still copies the alias's Boardsesh columns verbatim. 3b
+  --    overwrites them on the same key moments later, so the copy changes no
+  --    outcome today; it is there so this statement is self-consistent on its
+  --    own, and so a future edit that narrows 3b degrades to "the re-keyed row
+  --    kept its provenance" instead of "the re-keyed row silently nulled it".
+  CREATE TEMP TABLE _mad_written_stats_keys ON COMMIT DROP AS
+  WITH written AS (
+    INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty, benchmark_difficulty,
+           ascensionist_count, upstream_ascensionist_count, boardsesh_ascensionist_count, difficulty_average,
+           quality_average, upstream_quality_average, boardsesh_quality_sum, boardsesh_quality_count,
+           quality_normalized, fa_username, fa_at, upstream_synced_at)
+    SELECT 'moonboard', src.canonical_uuid, src.angle, src.display_difficulty, src.benchmark_difficulty,
+           COALESCE(src.upstream_ascensionist_count, 0) + COALESCE(src.boardsesh_ascensionist_count, 0),
+           src.upstream_ascensionist_count, src.boardsesh_ascensionist_count, src.difficulty_average,
+           src.quality_average, src.upstream_quality_average, src.boardsesh_quality_sum,
+           src.boardsesh_quality_count, src.quality_normalized, src.fa_username, src.fa_at,
+           src.upstream_synced_at
+      FROM _mad_stats_src src
+    ON CONFLICT (board_type, climb_uuid, angle) DO UPDATE SET
+      display_difficulty = COALESCE(board_climb_stats.display_difficulty, excluded.display_difficulty),
+      benchmark_difficulty = COALESCE(board_climb_stats.benchmark_difficulty, excluded.benchmark_difficulty),
+      upstream_ascensionist_count = GREATEST(COALESCE(board_climb_stats.upstream_ascensionist_count, 0), COALESCE(excluded.upstream_ascensionist_count, 0)),
+      ascensionist_count =
+        GREATEST(COALESCE(board_climb_stats.upstream_ascensionist_count, 0), COALESCE(excluded.upstream_ascensionist_count, 0))
+        + COALESCE(board_climb_stats.boardsesh_ascensionist_count, 0),
+      difficulty_average = COALESCE(board_climb_stats.difficulty_average, excluded.difficulty_average),
+      upstream_quality_average = COALESCE(board_climb_stats.upstream_quality_average, excluded.upstream_quality_average),
+      fa_username = COALESCE(board_climb_stats.fa_username, excluded.fa_username),
+      fa_at = COALESCE(board_climb_stats.fa_at, excluded.fa_at),
+      quality_normalized = board_climb_stats.quality_normalized OR excluded.quality_normalized,
+      upstream_synced_at = GREATEST(board_climb_stats.upstream_synced_at, excluded.upstream_synced_at)
+    RETURNING board_climb_stats.climb_uuid, board_climb_stats.angle
+  )
+  SELECT DISTINCT climb_uuid, angle FROM written;
 
   -- The rows just copied onto the canonical uuid now fully duplicate the
   -- retiring uuid's own stats rows (same board_type/angle, identical values) —
@@ -552,24 +576,40 @@ BEGIN
   --     this migration to user_id IS NULL catalog rows, so every canonical
   --     here is non-owned by construction.
   --
-  --     Keys: every (canonical, angle) step 2 wrote, plus every key that now
-  --     owns a repointed tick — narrowed to the keys that actually carry a
-  --     tick. A key with no attached tick has no Boardsesh half for the merge
-  --     to have corrupted, and re-deriving it there would rewrite
-  --     quality_average from the upstream terms on rows this migration has no
-  --     business touching. Rows only, too: this pass never INSERTs a stats
-  --     row, so a key with no stats row before the merge still has none after
-  --     (recompute, not invent) and the next tick write seeds it the normal
-  --     way. Offline propagation is the trigger's job as usual
-  --     (trg_board_climb_stats_set_sync_fields, 0144/0146) — do NOT stamp
-  --     updated_at/sync_seq by hand.
+  --     Keys: every (canonical, angle) key step 2 actually wrote — captured by
+  --     RETURNING into _mad_written_stats_keys, INSERT and ON CONFLICT alike —
+  --     plus every key that now owns a repointed tick.
+  --
+  --     The step-2 keys are deliberately NOT gated on tick presence. Step 2
+  --     rewrote those rows' upstream half, so their Boardsesh half and blend
+  --     have to be re-derived whether or not a tick survives at that key: a key
+  --     with zero live ticks recomputes to boardsesh 0 / NULL and an
+  --     upstream-only blend, which is the CORRECT repair, not a disturbance.
+  --     Prod carries stats rows whose Boardsesh half outlived its ticks —
+  --     deleteAccount cascades boardsesh_ticks (packages/db/src/schema/app/
+  --     ascents.ts, onDelete: 'cascade') with no recompute anywhere on that
+  --     path, and selfHealStaleClimbStats joins THROUGH a surviving tick
+  --     (packages/db/src/queries/climb-stats/self-heal.ts) so it can never see
+  --     them. An earlier version of this migration imported exactly those stale
+  --     halves onto the canonical and then skipped the key, publishing a
+  --     phantom ascent count on the surviving climb permanently.
+  --
+  --     The repointed-tick keys DO keep the tick-presence gate. This migration
+  --     rewrote no column on those rows — it only moved a tick onto them — so a
+  --     key whose only arrivals are detached ticks has nothing to re-derive,
+  --     and re-blending it would rewrite quality_average from the upstream
+  --     terms on a row this migration has no business touching.
+  --
+  --     Rows only, too: this pass never INSERTs a stats row, so a key with no
+  --     stats row before the merge still has none after (recompute, not invent)
+  --     and the next tick write seeds it the normal way. Offline propagation is
+  --     the trigger's job as usual (trg_board_climb_stats_set_sync_fields,
+  --     0144/0146) — do NOT stamp updated_at/sync_seq by hand.
   CREATE TEMP TABLE _mad_recompute_keys ON COMMIT DROP AS
+    SELECT climb_uuid, angle FROM _mad_written_stats_keys
+    UNION
     SELECT k.climb_uuid, k.angle
-      FROM (
-        SELECT canonical_uuid AS climb_uuid, angle FROM _mad_stats_src
-        UNION
-        SELECT climb_uuid, angle FROM _mad_repointed_tick_keys
-      ) k
+      FROM _mad_repointed_tick_keys k
      WHERE EXISTS (
        SELECT 1 FROM boardsesh_ticks bt
         WHERE bt.board_type = 'moonboard'
