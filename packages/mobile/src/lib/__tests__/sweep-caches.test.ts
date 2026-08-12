@@ -8,7 +8,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 // Imported by path — see cache-dir-io.test.ts for why.
-import { __resetFileSystem, __seedFileSystem } from '../../../test/expo-file-system-stub';
+import { Directory, __resetFileSystem, __seedFileSystem } from '../../../test/expo-file-system-stub';
 
 // The stub aliased in for expo-image is a bare render component with no statics,
 // so the disk-cache call has to be mocked here.
@@ -66,6 +66,32 @@ describe('measureCachedImageBytes', () => {
     expect(measurement).toEqual({ artBytes: 1_000, photoBytes: 5_000, leftoverSnapshotBytes: 271_000_000 });
   });
 
+  // This runs inside the same ['offlineStorage'] query as the database total, the
+  // board list and the Remove buttons, so a throwing walk must degrade to "no
+  // section", never to the error state on the one screen about reclaiming space.
+  it('omits the section rather than failing the whole Manage Storage query', async () => {
+    __seedFileSystem({ 'cache/board-thumbnails': { 'a.png': { size: 1_000, lastModified: NOW } } });
+    vi.spyOn(Directory.prototype, 'list').mockImplementation(() => {
+      throw new Error('EACCES');
+    });
+    await expect(measureCachedImageBytes()).resolves.toBeNull();
+  });
+
+  it('still reports board art when only the photo directory is unreadable', async () => {
+    __seedFileSystem({
+      'cache/board-thumbnails': { 'a.png': { size: 1_000, lastModified: NOW } },
+      'cache/image_manager_disk_cache': {},
+    });
+    const listDirectory = Directory.prototype.list;
+    vi.spyOn(Directory.prototype, 'list').mockImplementation(function (this: Directory) {
+      if (this.path.includes('image_manager_disk_cache')) throw new Error('EACCES');
+      return listDirectory.call(this);
+    });
+    const measurement = await measureCachedImageBytes();
+    expect(measurement?.artBytes).toBe(1_000);
+    expect(measurement?.photoBytes).toBeNull();
+  });
+
   it('reuses a measurement rather than re-walking on every focus', async () => {
     __seedFileSystem({ 'cache/board-thumbnails': { 'a.png': { size: 1_000, lastModified: NOW } } });
     await measureCachedImageBytes();
@@ -114,7 +140,16 @@ describe('clearCachedImages', () => {
     expect(result.photoCacheCleared).toBe(true);
 
     // The in-flight temp and the foreign staging file survived — deleting either
-    // is how a sweeper manufactures the render-failure storm.
+    // is how a sweeper manufactures the render-failure storm. Assert the files
+    // themselves, not just the byte total: artBytes counts PNGs only, so it
+    // would read 0 whether or not the temps were collateral damage.
+    expect(
+      new Directory('cache/board-thumbnails')
+        .list()
+        .map((entry) => entry.name)
+        .sort(),
+    ).toEqual(['.bsov-live.tmp', '.dat.nosync0f1e.abc']);
+
     const measurement = await measureCachedImageBytes();
     expect(measurement?.artBytes).toBe(0);
   });

@@ -84,12 +84,27 @@ async function measureSnapshotLeftoverBytes(): Promise<number> {
  * works, so the action survives even when the measurement doesn't.
  */
 export async function measureCachedImageBytes(): Promise<CachedImageMeasurement | null> {
-  const [artBytes, photoBytes, leftoverSnapshotBytes] = await Promise.all([
-    measureOverlayBytes(),
-    measurePhotoBytes(),
-    measureSnapshotLeftoverBytes(),
-  ]);
-  return { artBytes, photoBytes, leftoverSnapshotBytes };
+  try {
+    const [artBytes, photoBytes, leftoverSnapshotBytes] = await Promise.all([
+      measureOverlayBytes(),
+      // A directory we can name but not read is the same answer as one we
+      // couldn't name: omit the row, keep the button.
+      measurePhotoBytes().catch(() => null),
+      measureSnapshotLeftoverBytes(),
+    ]);
+    return { artBytes, photoBytes, leftoverSnapshotBytes };
+  } catch {
+    // This runs inside Manage Storage's single `['offlineStorage']` query, beside
+    // the database total, the free-space figure, the board list and the Remove
+    // buttons. A walk that throws — `list()` on an unreadable directory, a
+    // permission failure on an Android volume — would take all of that down with
+    // it and render the error state on the one screen whose purpose is
+    // reclaiming space. Omitting the section is the same degraded-not-dishonest
+    // answer the Photos row already gives, and the same posture as
+    // `measureFreeDiskSpace` (storage-usage.ts), which returns null rather than
+    // a fabricated zero.
+    return null;
+  }
 }
 
 /**
