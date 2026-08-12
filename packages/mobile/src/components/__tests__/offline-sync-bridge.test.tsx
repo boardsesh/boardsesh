@@ -145,7 +145,6 @@ vi.mock('@react-native-async-storage/async-storage', () => {
   };
 });
 
-import { act } from 'react';
 import { OfflineSyncBridge, OfflineEngineFlagSync, FLAG_SETTLE_MS } from '../offline-sync-bridge';
 import { FeatureFlagsProvider, type FeatureFlags } from '../../providers/feature-flags-provider';
 import { isOfflineEngineEnabled, __resetOfflineEngineForTests } from '../../lib/offline-engine';
