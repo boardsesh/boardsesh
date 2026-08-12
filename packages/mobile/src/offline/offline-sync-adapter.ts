@@ -15,7 +15,7 @@
 // enabled-but-undownloaded board on the way.
 
 import { AppState, type AppStateStatus } from 'react-native';
-import NetInfo from '@react-native-community/netinfo';
+import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
 import { onlineManager, type QueryClient } from '@tanstack/react-query';
 // The adapter is the one sanctioned importer of the raw engine entry points.
 // oxlint-disable-next-line no-restricted-imports
@@ -283,10 +283,16 @@ const reportBootstrapPathRecovered: BootstrapPathRecoveredReporter = (info) => {
   track(SHARED_EVENTS.OfflineSnapshotPathRecovered, { ...info });
 };
 
-// Last connectivity state NetInfo pushed us, kept because the engine's probe is
-// synchronous and NetInfo's own read is a promise. Updated by the listener in
-// startBackgroundTracking (one subscription for the app's lifetime).
-let isConnectionMetered = false;
+// Last connectivity state NetInfo reported. `null` means it has not reported
+// yet, which on a cold launch is a real window and not a formality: the
+// scheduler's first cycle starts in the effect right after
+// startBackgroundTracking's, and NetInfo's first emission is asynchronous.
+// Updated by the listener there (one subscription for the app's lifetime) and
+// seeded by the probe below.
+let isConnectionMetered: boolean | null = null;
+
+const readMetered = (state: NetInfoState): boolean =>
+  state.type === 'cellular' || state.details?.isConnectionExpensive === true;
 
 /**
  * Gates ONE decision in the engine: the automatic heal of a partly-crawled
@@ -294,11 +300,30 @@ let isConnectionMetered = false;
  * (issue #4313). A fresh bootstrap — confirmed behind a size-disclosing dialog
  * moments earlier — and a user-requested retry both ignore it.
  *
- * Unknown reads as UNMETERED. A platform that never reports `isConnectionExpensive`
- * would otherwise defer every heal forever, which is the worse failure: the board
- * stays on the 400+-round-trip crawl and nothing ever says why.
+ * Async on purpose. Before the listener has fired there is nothing to answer
+ * from, and answering "unmetered" would hand the FIRST cycle of a cold cellular
+ * launch precisely the heal this probe exists to defer — so that once, it asks
+ * NetInfo directly and seeds the cache every later cycle reads.
+ *
+ * Unknown still reads as UNMETERED (a failed fetch, or a platform reporting
+ * neither `cellular` nor `isConnectionExpensive`). Deferring forever is the
+ * worse failure: the board stays on the 400+-round-trip crawl and nothing ever
+ * says why.
  */
-const isOnUnmeteredNetwork = (): boolean => !isConnectionMetered;
+const isOnUnmeteredNetwork = async (): Promise<boolean> => {
+  if (isConnectionMetered !== null) return !isConnectionMetered;
+  try {
+    isConnectionMetered = readMetered(await NetInfo.fetch());
+  } catch {
+    return true;
+  }
+  return !isConnectionMetered;
+};
+
+/** Cold-launch state is per-process; tests re-arm it between cases. */
+export function __resetMeteredStateForTests(): void {
+  isConnectionMetered = null;
+}
 
 // A failed cycle is routine for offline users (the reconnect trigger retries),
 // so production neither spams the console nor reports expected network errors
@@ -317,7 +342,7 @@ export function startBackgroundTracking(): () => void {
     if (nextState === 'active') setBackgrounded(false);
   });
   const unsubscribeNetInfo = NetInfo.addEventListener((state) => {
-    isConnectionMetered = state.type === 'cellular' || state.details?.isConnectionExpensive === true;
+    isConnectionMetered = readMetered(state);
   });
   return () => {
     subscription.remove();

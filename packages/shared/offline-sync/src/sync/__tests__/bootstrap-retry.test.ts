@@ -437,6 +437,51 @@ describe('bootstrap-retry persistence', () => {
     expect(await readMeta('bootstrap-attempts:kilter:1:5')).toBe(String(MAX_BOOTSTRAP_ATTEMPTS));
   });
 
+  it('rolls the JSON row back when the legacy mirror fails, so a torn write cannot forge failures', async () => {
+    // The read path infers "a rolled-back bundle counted something real" from the
+    // legacy counter sitting ABOVE mirroredAttempts. Committing the JSON row on
+    // its own would forge that evidence: a user retry drops the counter from 2 to
+    // 0, and the next read would fold the stale 2 straight back into
+    // structuralFailures and settle the scope again — the confirmed retry lost.
+    let settled = state();
+    for (let failure = 0; failure < MAX_BOOTSTRAP_ATTEMPTS; failure += 1) settled = burn(settled, 'structural-device');
+    await writeBootstrapRetryState(db, 'kilter:1:5', settled);
+    const jsonBefore = await readMeta('bootstrap-retry:kilter:1:5');
+
+    // Fails the SECOND statement inside the transaction (the legacy mirror),
+    // which is exactly the window a kill or a disk error can land in.
+    const failingLegacyWrite = {
+      execAsync: (source: string) => db.execAsync(source),
+      runAsync: (source: string, params: string[]) => db.runAsync(source, params),
+      getFirstAsync: (source: string, params: string[]) => db.getFirstAsync(source, params),
+      getAllAsync: (source: string, params: string[]) => db.getAllAsync(source, params),
+      withExclusiveTransactionAsync: (task: (txn: TestSqliteDb) => Promise<void>) =>
+        db.withExclusiveTransactionAsync(async (txn) => {
+          let writes = 0;
+          await task({
+            execAsync: (source: string) => txn.execAsync(source),
+            getFirstAsync: (source: string, params: string[]) => txn.getFirstAsync(source, params),
+            getAllAsync: (source: string, params: string[]) => txn.getAllAsync(source, params),
+            runAsync: async (source: string, params: string[]) => {
+              writes += 1;
+              if (writes === 2) throw new Error('disk I/O error');
+              return txn.runAsync(source, params);
+            },
+          } as unknown as TestSqliteDb);
+        }),
+    } as unknown as TestSqliteDb;
+
+    await expect(
+      writeBootstrapRetryState(failingLegacyWrite, 'kilter:1:5', clearRetryStateForUserRequest(settled)),
+    ).rejects.toThrow('disk I/O error');
+
+    // Neither row moved: the scope is still settled, not half-retried.
+    expect(await readMeta('bootstrap-retry:kilter:1:5')).toBe(jsonBefore);
+    expect(await readMeta('bootstrap-attempts:kilter:1:5')).toBe(String(MAX_BOOTSTRAP_ATTEMPTS));
+    const { state: reread } = await readBootstrapRetryState(db, 'kilter:1:5', { now: NOW, random: noJitter }, true);
+    expect(reread.structuralFailures).toBe(MAX_BOOTSTRAP_ATTEMPTS);
+  });
+
   it('folds back failures an older bundle counted while it was rolled back', async () => {
     await writeBootstrapRetryState(db, 'kilter:1:5', state({ hasPriorSnapshotFailure: true }));
     // A rolled-back bundle runs and bumps only the legacy counter it knows about.

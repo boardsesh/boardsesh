@@ -308,9 +308,14 @@ export type SyncOptions = {
    * user did not ask for today. A fresh bootstrap (they just enabled the board,
    * behind a size-disclosing confirm) and a user-requested retry both ignore it.
    *
+   * May be async: a platform whose connectivity read is a promise (React
+   * Native's NetInfo) would otherwise have to answer from a listener that has
+   * not fired yet on a cold launch, and answer "unmetered" for the very first
+   * cycle — the one that starts a ~100 MB heal over cellular.
+   *
    * DEFAULTS TO `() => true`, so web and every existing caller are unchanged.
    */
-  isOnUnmeteredNetwork?: () => boolean;
+  isOnUnmeteredNetwork?: () => boolean | Promise<boolean>;
   /**
    * Wall clock for the bootstrap retry ladder. Injected so the cooldown schedule
    * is testable without fake timers fighting the SQLite test double.
@@ -800,7 +805,11 @@ async function resolveManifestOnce(
  *     launches condemned the board to the crawl for the life of the install.
  *   - download fails otherwise → structural-device burn (6 h → 24 h ladder), and
  *     a device-side fault is never re-armed by a nightly rebuild.
- *   - download throws SnapshotPermanentMissError → NO burn → normal paged pull.
+ *   - download throws SnapshotPermanentMissError → structural-device burn, and
+ *     the paged pull runs THIS cycle (never skipped). The bytes are already down
+ *     the wire — mobile only raises this after a full artifact turns out to be
+ *     undecoded gzip — and a heal-eligible scope would otherwise re-download the
+ *     same unusable artifact on every cycle, forever.
  *   - import throws → structural-artifact burn. The bytes are on disk and
  *     provably bad, so tonight's export MIGHT fix it: a terminal scope of this
  *     one kind consults the manifest again and a differently-built artifact
@@ -1094,7 +1103,7 @@ async function runBootstrapPhase(params: {
         // the user enabled on some earlier day. Defer it on a metered link; a
         // fresh bootstrap (confirmed behind a size-disclosing dialog moments ago)
         // and a user-requested retry are consented and ignore the probe.
-        if (bootstrapKind === 'heal-over-partial' && !isUserRequested && !isOnUnmeteredNetwork()) {
+        if (bootstrapKind === 'heal-over-partial' && !isUserRequested && !(await isOnUnmeteredNetwork())) {
           retryState = await writeBootstrapRetryState(db, scope.scopeKey, deferHeal(retryState, evaluatedAt));
           metadataSettled = true;
           continue;
@@ -1199,15 +1208,33 @@ async function runBootstrapPhase(params: {
         const download = cachedDownload.file;
         if (!download) {
           if (cachedDownload.permanentMiss) {
+            // A permanent miss at the DOWNLOAD stage is not free the way a
+            // missing manifest entry is: the ~100 MB is already down the wire
+            // (mobile only raises it after the artifact lands and turns out to
+            // still be gzip-compressed). Before heal-over-partial only a
+            // checkpoint-free scope could reach this line, so the crawl's first
+            // checkpoint ended the loop by itself. A checkpointed scope with
+            // failure history is eligible EVERY cycle, so leaving it uncharged
+            // would re-download the same unusable artifact forever. It burns the
+            // DEVICE budget — nothing about bytes already on disk is a network
+            // problem, and a nightly rebuild cannot fix an HTTP stack that will
+            // not decode them — but the crawl still runs this cycle, which is
+            // what "permanent miss" has always meant.
+            const settled = await settleBootstrapFailure(db, scope.scopeKey, {
+              state: retryState,
+              cause: cachedDownload.cause,
+              stage: 'download',
+              builtAt: entry.builtAt,
+              now: evaluatedAt,
+              random,
+            });
+            retryState = settled.state;
+            // Overrides settleBootstrapFailure's non-terminal clear: this
+            // decision is already durable — the crawl is what serves the scope
+            // now — so My Boards should say so instead of waiting a cycle.
             await markBootstrapPagedFallback(db, scope.scopeKey);
             metadataSettled = true;
-            onSnapshotBootstrapError?.({
-              scopeKey: scope.scopeKey,
-              stage: 'download',
-              attempt: 0,
-              cause: cachedDownload.cause,
-              expected: false,
-            });
+            reportSettledFailure(scope, 'download', settled, evaluatedAt);
             continue;
           }
           const settled = await settleBootstrapFailure(db, scope.scopeKey, {

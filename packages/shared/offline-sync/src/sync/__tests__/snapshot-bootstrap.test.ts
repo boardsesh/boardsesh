@@ -1132,7 +1132,11 @@ describe('pullSync snapshot bootstrap', () => {
     ).toBeNull();
   });
 
-  it('falls straight to the paged crawl when the source marks a download as a permanent miss', async () => {
+  it('crawls this cycle on a permanent miss, and charges the device budget because the bytes were already spent', async () => {
+    // A DOWNLOAD-stage permanent miss is not free the way a missing manifest
+    // entry is: mobile only learns the artifact is undecoded gzip after the
+    // whole ~100 MB lands. Leaving it uncharged let a heal-eligible scope pull
+    // it again on every cycle, forever.
     const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => null });
     source.downloadArtifact.mockImplementation(async () => {
       throw new SnapshotPermanentMissError('unsupported content encoding');
@@ -1146,9 +1150,13 @@ describe('pullSync snapshot bootstrap', () => {
       onSnapshotBootstrapError,
     });
 
+    // The crawl still runs in the same cycle — that part is what the name means.
     expect(capturedClimbCursors[0]).toBeUndefined();
-    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
-    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(expect.objectContaining({ stage: 'download', attempt: 0 }));
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(1);
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['bootstrap-paged-fallback:kilter:1:5']),
+    ).not.toBeNull();
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(expect.objectContaining({ stage: 'download', attempt: 1 }));
   });
 
   it('burns a structural slot on a non-transport manifest failure and lets the crawl deliver the board meanwhile', async () => {
@@ -1799,6 +1807,46 @@ describe('pullSync bootstrap: healing a scope stranded mid-crawl', () => {
       random: () => 0,
     });
     expect(source.downloadArtifact).toHaveBeenCalledTimes(1);
+  });
+
+  it('settles a heal-eligible scope after two permanent misses instead of pulling the artifact every cycle', async () => {
+    // The gzip case (#4238): the device's HTTP stack hands back a body it never
+    // decoded, which mobile can only detect once the whole artifact has landed.
+    // A heal-eligible scope is eligible on EVERY cycle, so an uncharged miss
+    // meant ~100 MB down the wire per cycle for the life of the install.
+    await seedStrandedMidCrawl();
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => null });
+    source.downloadArtifact.mockImplementation(async () => {
+      throw new SnapshotPermanentMissError('snapshot artifact arrived still gzip-compressed');
+    });
+
+    for (let cycle = 0; cycle < 5; cycle += 1) {
+      const run = makeGraphqlFetch();
+      await pullSync(db, noopQueryClient(), run.fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+        now: () => BASE_NOW + cycle * 60_000,
+        random: () => 0,
+      });
+      // board_climb_grades is still crawling on a real device, so the scope
+      // never completes between cycles — the population this loop punished.
+      await db.runAsync('DELETE FROM sync_meta WHERE key = ?', ['scope-complete:kilter:1:5']);
+    }
+    expect(source.downloadArtifact).toHaveBeenCalledTimes(1);
+
+    // Past the 6 h cooldown: the second and last device slot, then it settles.
+    for (const hoursLater of [7, 40, 24 * 30]) {
+      const run = makeGraphqlFetch();
+      await pullSync(db, noopQueryClient(), run.fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+        now: () => BASE_NOW + hoursLater * HOUR_MS,
+        random: () => 0,
+      });
+      await db.runAsync('DELETE FROM sync_meta WHERE key = ?', ['scope-complete:kilter:1:5']);
+    }
+    expect(source.downloadArtifact).toHaveBeenCalledTimes(2);
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(MAX_BOOTSTRAP_ATTEMPTS);
   });
 
   it('a fresh scope ignores the metered probe — the user just confirmed the size', async () => {
