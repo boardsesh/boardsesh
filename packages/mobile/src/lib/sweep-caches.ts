@@ -26,6 +26,7 @@ import type { OfflineBoardScope } from '@boardsesh/offline-sync';
 import { deleteCacheDirEntries, resolveImageCacheDirName, walkCacheDir } from './cache-dir-io';
 import { invalidateCacheMeasurement, measureCacheDirBytes, recordCacheMeasurement } from './cache-size-meter';
 import {
+  measureFreedBytes,
   measureOverlayCacheBytes,
   overlayNameMatchesScope,
   planLruEviction,
@@ -138,9 +139,9 @@ export async function sweepSnapshotLeftovers(options?: { maxAgeMs?: number }): P
     recordCacheMeasurement(SNAPSHOT_DIR_NAME, walk.totalBytes);
     return 0;
   }
-  deleteCacheDirEntries(SNAPSHOT_DIR_NAME, plan.deleteNames);
+  const deletedNames = deleteCacheDirEntries(SNAPSHOT_DIR_NAME, plan.deleteNames);
   invalidateCacheMeasurement(SNAPSHOT_DIR_NAME);
-  return plan.freedBytes;
+  return measureFreedBytes({ entries: walk.entries, deletedNames, countableNames: plan.deleteNames });
 }
 
 export type ClearCachedImagesResult = {
@@ -166,8 +167,12 @@ export async function clearCachedImages(): Promise<ClearCachedImagesResult> {
   const walk = await walkCacheDir(OVERLAY_CACHE_DIR_NAME);
   if (walk !== null) {
     const plan = planOverlayCacheClear({ entries: walk.entries, nowMs: Date.now() });
-    filesDeleted += deleteCacheDirEntries(OVERLAY_CACHE_DIR_NAME, plan.deleteNames);
-    freedBytes += plan.freedBytes;
+    const deletedNames = deleteCacheDirEntries(OVERLAY_CACHE_DIR_NAME, plan.deleteNames);
+    filesDeleted += deletedNames.length;
+    freedBytes += measureFreedBytes({ entries: walk.entries, deletedNames, countableNames: plan.pngNames });
+    // Forgetting a key whose file survived the delete is the safe direction: the
+    // index would otherwise keep handing out a URI for a file the next pass is
+    // still trying to remove, and a forgotten key costs one re-render.
     forgetOverlays(plan.deleteNames.map(cacheKeyForOverlayName));
   }
   // Belt and braces: anything the walk missed (a race with a render that landed
@@ -262,11 +267,18 @@ export async function sweepBoardArtCache(params: {
     return { beforeBytes: plan.beforeBytes, freedBytes: 0, filesDeleted: 0 };
   }
 
-  const filesDeleted = deleteCacheDirEntries(OVERLAY_CACHE_DIR_NAME, deleteNames);
+  const deletedNames = deleteCacheDirEntries(OVERLAY_CACHE_DIR_NAME, deleteNames);
   forgetOverlays(plan.evictNames.map(cacheKeyForOverlayName));
   invalidateCacheMeasurement(OVERLAY_CACHE_DIR_NAME);
 
-  const result = { beforeBytes: plan.beforeBytes, freedBytes: plan.beforeBytes - plan.afterBytes, filesDeleted };
+  // Not `beforeBytes - afterBytes`: that is what the plan WANTED to free. A file
+  // the delete pass couldn't remove leaves the cache above its cap, and saying
+  // otherwise here would put the fiction straight into `CachedImagesSwept`.
+  const result = {
+    beforeBytes: plan.beforeBytes,
+    freedBytes: measureFreedBytes({ entries: walk.entries, deletedNames, countableNames: plan.evictNames }),
+    filesDeleted: deletedNames.length,
+  };
   if (result.freedBytes > 0) {
     track(SHARED_EVENTS.CachedImagesSwept, {
       trigger: params.trigger,
@@ -293,21 +305,26 @@ export async function sweepOverlaysForScope(scope: OfflineBoardScope): Promise<C
   const matching = walk.entries.filter((entry) => overlayNameMatchesScope(entry.name, scope));
   if (matching.length === 0) return EMPTY_SWEEP;
 
-  const freedBytes = matching.reduce((sum, entry) => sum + entry.sizeBytes, 0);
   const names = matching.map((entry) => entry.name);
-  const filesDeleted = deleteCacheDirEntries(OVERLAY_CACHE_DIR_NAME, names);
+  const deletedNames = deleteCacheDirEntries(OVERLAY_CACHE_DIR_NAME, names);
   forgetOverlays(names.map(cacheKeyForOverlayName));
   invalidateCacheMeasurement(OVERLAY_CACHE_DIR_NAME);
+
+  // Only the files that are actually gone — art that survived the pass is still
+  // occupying the space the Remove screen just told the user it reclaimed.
+  const freedBytes = measureFreedBytes({ entries: walk.entries, deletedNames, countableNames: names });
+  const filesDeleted = deletedNames.length;
+  const beforeBytes = measureOverlayCacheBytes(walk.entries);
 
   if (freedBytes > 0) {
     track(SHARED_EVENTS.CachedImagesSwept, {
       trigger: 'board-removed',
-      beforeBytes: measureOverlayCacheBytes(walk.entries),
+      beforeBytes,
       freedBytes,
       filesDeleted,
     });
   }
-  return { beforeBytes: measureOverlayCacheBytes(walk.entries), freedBytes, filesDeleted };
+  return { beforeBytes, freedBytes, filesDeleted };
 }
 
 /** Test-only: forget the per-trigger rate limit. */

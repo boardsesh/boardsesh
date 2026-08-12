@@ -119,6 +119,31 @@ export function measureOverlayCacheBytes(entries: readonly CacheDirEntry[]): num
   return total;
 }
 
+/**
+ * Bytes a delete pass genuinely reclaimed.
+ *
+ * `deletedNames` is what the filesystem confirmed gone; `countableNames` is the
+ * subset of the plan whose bytes the caller is reporting on (for the overlay
+ * cache that is the finished PNGs, so a freed figure stays comparable with the
+ * `beforeBytes` measured the same way). Anything the delete pass planned but
+ * could not remove — a permission failure, an unreadable volume — is absent from
+ * `deletedNames` and therefore absent from this total, which is the whole point:
+ * a sweep that leaves the cache over its cap must not report the space as freed.
+ */
+export function measureFreedBytes(params: {
+  entries: readonly CacheDirEntry[];
+  deletedNames: readonly string[];
+  countableNames: readonly string[];
+}): number {
+  const countable = new Set(params.countableNames);
+  const sizeByName = new Map(params.entries.map((entry) => [entry.name, entry.sizeBytes]));
+  let freedBytes = 0;
+  for (const name of params.deletedNames) {
+    if (countable.has(name)) freedBytes += sizeByName.get(name) ?? 0;
+  }
+  return freedBytes;
+}
+
 /** A null mtime sorts oldest, so an entry the platform can't date is evicted first. */
 function modifiedAtOrEpoch(entry: CacheDirEntry): number {
   return entry.modifiedAtMs ?? 0;
@@ -188,10 +213,13 @@ export function planOverlayCacheClear(params: {
   entries: readonly CacheDirEntry[];
   nowMs: number;
   managedTempMinAgeMs?: number;
-}): { deleteNames: string[]; freedBytes: number } {
+}): { deleteNames: string[]; pngNames: string[]; freedBytes: number } {
   const plan = planLruEviction({ ...params, targetBytes: -1 });
   return {
     deleteNames: [...plan.evictNames, ...plan.staleTempNames],
+    // The PNGs alone, so the caller can report the bytes it actually removed
+    // against the same definition `beforeBytes` uses.
+    pngNames: plan.evictNames,
     freedBytes: plan.beforeBytes - plan.afterBytes,
   };
 }

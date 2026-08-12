@@ -9,7 +9,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 // Imported by path — see cache-dir-io.test.ts for why.
-import { Directory, __resetFileSystem, __seedFileSystem } from '../../../test/expo-file-system-stub';
+import { Directory, File, __resetFileSystem, __seedFileSystem } from '../../../test/expo-file-system-stub';
 
 const clearDiskCache = vi.hoisted(() => vi.fn<() => Promise<boolean>>(() => Promise.resolve(true)));
 vi.mock('expo-image', () => ({ Image: { clearDiskCache } }));
@@ -149,6 +149,31 @@ describe('sweepBoardArtCache', () => {
       beforeBytes: 10 * MB,
       freedBytes: 4 * MB,
       filesDeleted: 4,
+    });
+  });
+
+  // A sweep that couldn't delete everything it planned leaves the cache above
+  // its cap. Reporting the planned figure would put that fiction into
+  // `CachedImagesSwept` and into the number Manage Storage shows.
+  it('counts only the files it actually removed, not the ones it planned to', async () => {
+    seedOverlays(10);
+    vi.setSystemTime(NOW + 5 * 60 * 1000);
+    const reallyDelete = File.prototype.delete;
+    vi.spyOn(File.prototype, 'delete').mockImplementation(function refuseTwo(this: File) {
+      if (this.name === overlayName(0) || this.name === overlayName(1)) {
+        throw new Error('EPERM: operation not permitted');
+      }
+      reallyDelete.call(this);
+    });
+
+    const result = await sweepBoardArtCache({ trigger: 'background', targetBytes: 6 * MB });
+    expect(result.filesDeleted).toBe(2);
+    expect(result.freedBytes).toBe(2 * MB);
+    expect(track).toHaveBeenCalledWith('Cached Images Swept', {
+      trigger: 'background',
+      beforeBytes: 10 * MB,
+      freedBytes: 2 * MB,
+      filesDeleted: 2,
     });
   });
 

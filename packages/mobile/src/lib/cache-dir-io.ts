@@ -103,21 +103,28 @@ export async function walkCacheDir(
 }
 
 /**
- * Delete named entries from a cache directory, best-effort.
+ * Delete named entries from a cache directory, best-effort. Returns the names it
+ * actually removed.
  *
  * Per-entry try/catch because the interesting failure is a race — the OS
  * reclaimed the file, or the native pruner got there first — and a sweep that
  * rejects on the first of those frees nothing at all.
+ *
+ * The names rather than a count, because the callers report freed BYTES: a
+ * permission failure or an unreadable volume takes one file out of the plan
+ * without taking it out of a `beforeBytes - afterBytes` subtraction, so the
+ * sweep would claim space it never reclaimed. Only what came back from here is
+ * counted.
  */
-export function deleteCacheDirEntries(dirName: string, names: readonly string[]): number {
+export function deleteCacheDirEntries(dirName: string, names: readonly string[]): string[] {
   const directory = new Directory(Paths.cache, dirName);
-  let deleted = 0;
+  const deleted: string[] = [];
   for (const name of names) {
     try {
       const file = new File(directory, name);
       if (!file.exists) continue;
       file.delete();
-      deleted += 1;
+      deleted.push(name);
     } catch {
       // Ignore: see above.
     }
