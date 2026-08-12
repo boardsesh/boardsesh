@@ -47,7 +47,10 @@ on:
 # Share the production OTA lane so a backport can never publish concurrently with a
 # main production OTA (repo-wide group, across workflows). Queued, never cancelled.
 concurrency:
-  group: mobile-ota-production
+  # Share the one production-release lane with production-deploy.yml. A backport
+  # must never race a server/web release or its downstream production OTA.
+  group: production-deploy
+  queue: max
   cancel-in-progress: false
 
 permissions:

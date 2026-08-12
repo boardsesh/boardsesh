@@ -229,12 +229,32 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
   });
 
   it('runs every automatic fingerprint surface when root linker or patch inputs change', () => {
-    const automaticFingerprintWorkflows = [NATIVE_IOS, NATIVE_ANDROID, OTA, OTA_CHECK, OTA_PREVIEW, ANDROID_PR, IOS_PR];
+    // production-deploy.yml now owns the production OTA via a reusable
+    // workflow_call. It has no trigger paths of its own, so assert its OTA
+    // change classifier separately below rather than treating the reusable
+    // callee as an automatic workflow.
+    const automaticFingerprintWorkflows = [NATIVE_IOS, NATIVE_ANDROID, OTA_CHECK, OTA_PREVIEW, ANDROID_PR, IOS_PR];
     for (const name of automaticFingerprintWorkflows) {
       const source = readWorkflow(name);
       expect(source, `${name} must react to root patchedDependencies edits`).toContain("- 'package.json'");
       expect(source, `${name} must react to isolated-linker lock changes`).toContain("- 'bun.lock'");
       expect(source, `${name} must react to native patch body changes`).toContain("- 'patches/**'");
+    }
+
+    // The OTA alternation is wrapped across backslash-continued lines, so scope
+    // the search to that one `case` branch instead of matching a contiguous run
+    // of patterns — a reflow must not read as a dropped fingerprint input.
+    const productionDeploy = readWorkflow('production-deploy.yml');
+    const otaBranchEnd = productionDeploy.indexOf('OTA_CHANGED=true');
+    const otaBranch = productionDeploy.slice(
+      productionDeploy.lastIndexOf('case "$file" in', otaBranchEnd),
+      otaBranchEnd,
+    );
+    expect(otaBranchEnd).toBeGreaterThan(0);
+    for (const fingerprintInput of ['package.json', 'bun.lock', 'patches/*', 'scripts/mobile-publish.ts']) {
+      expect(otaBranch, `the unified release path must publish OTA for ${fingerprintInput} edits`).toContain(
+        fingerprintInput,
+      );
     }
 
     expect(readWorkflow(OTA_CHECK), 'OTA compatibility must react to fingerprint config edits').toContain(
