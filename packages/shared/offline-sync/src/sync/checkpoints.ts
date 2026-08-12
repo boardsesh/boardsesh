@@ -83,9 +83,11 @@ export async function rewindDeletionsCheckpoint(db: SqlExecutor, watermark: Sync
 // silently truncates search results while fully online. The marker is written
 // once every BOARD_DATA_TABLES pull (climbs, stats, and grades) has reached its
 // tail; incremental re-syncs keep the data fresh from then on. It is
-// deliberately NOT under the `checkpoint:` prefix so the sign-out checkpoint
-// wipe (deleteUserCheckpoints/deleteAllCheckpoints) leaves it alone, matching
-// the board rows it describes, which also survive as the shared cache.
+// deliberately NOT under the `checkpoint:` prefix, so it survives the SELECTIVE
+// checkpoint wipe (deleteUserCheckpoints/deleteAllCheckpoints) a forced sign-out
+// runs, matching the board rows it describes, which survive there as the shared
+// cache. An explicit, confirmed sign-out deletes those rows instead, so it wipes
+// sync_meta whole and this marker goes with them — see deleteAllSyncMeta below.
 // Package-internal (deliberately NOT re-exported from index.ts): scope-teardown.ts
 // must clear this marker in the same transaction as the rows it describes.
 export const SCOPE_COMPLETE_PREFIX = 'scope-complete:';
@@ -176,6 +178,38 @@ export async function deleteCheckpoint(db: SqlExecutor, key: string): Promise<vo
 
 export async function deleteAllCheckpoints(db: SqlExecutor): Promise<void> {
   await db.runAsync("DELETE FROM sync_meta WHERE key LIKE 'checkpoint:%'");
+}
+
+/**
+ * Drop every row of sync_meta — checkpoints, `scope-complete:`, the snapshot
+ * `bootstrap-done:` / `bootstrap-attempts:` markers and the deletions-coverage key
+ * alike.
+ *
+ * This is the reset that belongs with a wipe of every table sync_meta describes,
+ * board reference rows included (mobile's `purgeLocalDataForSignOut`, issue #3621).
+ * A marker outliving its rows is the unrecoverable direction: a surviving
+ * `scope-complete:` makes `isBoardDownloadedLocally` serve an empty catalog to
+ * local-first search as though it were the whole board, and a surviving checkpoint
+ * makes the strict `>` delta pull resume past rows that are gone and never revisit
+ * them.
+ *
+ * Deliberately a blunt `DELETE FROM sync_meta` rather than a prefix sweep, for
+ * exactly that reason: the marker families sit across three modules and two prefix
+ * conventions (SCOPE_COMPLETE_PREFIX above, snapshot-bootstrap.ts's BOOTSTRAP_*),
+ * so any pattern here is a list someone must remember to extend, and
+ * `board_climb_grades` fell through precisely that kind of hardcoded list once
+ * already. Whole-table is the one form that cannot go stale.
+ *
+ * `schema_version` is its own table, not a sync_meta key, so the migration state
+ * survives this untouched.
+ *
+ * Removing ONE scope while others stay is the opposite problem — see
+ * scope-teardown.ts's exact-key `clearScopeSyncMeta`, which must not touch a
+ * retained scope's markers or the global `checkpoint:deletions` cursor. A forced
+ * sign-out is the middle case and keeps `deleteUserCheckpoints`.
+ */
+export async function deleteAllSyncMeta(db: SqlExecutor): Promise<void> {
+  await db.runAsync('DELETE FROM sync_meta');
 }
 
 /**

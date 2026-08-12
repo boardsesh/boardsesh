@@ -8,6 +8,10 @@ import {
   deleteCheckpoint,
   deleteAllCheckpoints,
   deleteUserCheckpoints,
+  deleteAllSyncMeta,
+  markScopeDownloadComplete,
+  isScopeDownloadComplete,
+  getDownloadedScopeKeys,
 } from '../checkpoints';
 import type { SyncCheckpoint } from '../checkpoints';
 import { getDeletionsCoverageAt, setDeletionsCoverageAt } from '../deletions-coverage';
@@ -169,5 +173,71 @@ describe('deleteUserCheckpoints', () => {
     await deleteUserCheckpoints(db);
 
     expect(await getDeletionsCoverageAt(db)).toBeNull();
+  });
+});
+
+// The reset that goes with an explicit sign-out's FULL local wipe (issue #3621),
+// where the board rows deleteUserCheckpoints protects are themselves deleted. Runs
+// against real node:sqlite for the same reason as the suite above: the guarantee is
+// about which rows actually survive, not about which SQL string gets built.
+describe('deleteAllSyncMeta', () => {
+  let db: TestSqliteDb;
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await runMigrations(db);
+  });
+
+  it('leaves no checkpoint behind — user tables and per-board tables alike', async () => {
+    // Derived from BOARD_DATA_TABLES rather than hardcoded to today's three tables,
+    // so a future isPerBoard entry in table-config.ts is covered automatically.
+    for (const tableName of BOARD_DATA_TABLES) {
+      await setCheckpoint(db, `checkpoint:${tableName}:kilter:1:5`, {
+        updatedAt: '2026-01-01T00:00:00Z',
+        syncSeq: '1',
+      });
+    }
+    await setCheckpoint(db, 'checkpoint:boardsesh_ticks', { updatedAt: '2026-01-01T00:00:00Z', syncSeq: '7' });
+    await setCheckpoint(db, 'checkpoint:deletions', { updatedAt: '2026-01-01T00:00:00Z', syncSeq: '3' });
+
+    await deleteAllSyncMeta(db);
+
+    for (const tableName of BOARD_DATA_TABLES) {
+      expect(await getCheckpoint(db, `checkpoint:${tableName}:kilter:1:5`)).toBeNull();
+    }
+    expect(await getCheckpoint(db, 'checkpoint:boardsesh_ticks')).toBeNull();
+    expect(await getCheckpoint(db, 'checkpoint:deletions')).toBeNull();
+  });
+
+  // Why this is a whole-table DELETE and not a `checkpoint:%` sweep: these markers
+  // deliberately live outside that prefix, so a prefix wipe would strand them past
+  // the rows they describe — and a stranded `scope-complete:` advertises an empty
+  // catalog to local-first search as a whole board.
+  it('takes the scope-complete, bootstrap and coverage markers a prefix sweep would strand', async () => {
+    await markScopeDownloadComplete(db, 'kilter:1:5');
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-done:kilter:1:5', '1']);
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-attempts:kilter:1:5', '2']);
+    await setDeletionsCoverageAt(db, Date.now());
+    expect(await isScopeDownloadComplete(db, 'kilter:1:5')).toBe(true);
+
+    await deleteAllSyncMeta(db);
+
+    expect(await isScopeDownloadComplete(db, 'kilter:1:5')).toBe(false);
+    expect(await getDownloadedScopeKeys(db)).toEqual([]);
+    expect(await getDeletionsCoverageAt(db)).toBeNull();
+    const remaining = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM sync_meta');
+    expect(remaining?.count).toBe(0);
+  });
+
+  // schema_version is its own table, not a sync_meta key. If it went too, the next
+  // launch would replay every migration over a live database.
+  it('leaves the migration state alone', async () => {
+    const before = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM schema_version');
+
+    await deleteAllSyncMeta(db);
+
+    const after = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM schema_version');
+    expect(after?.count).toBe(before?.count);
+    expect(after?.count).toBeGreaterThan(0);
   });
 });

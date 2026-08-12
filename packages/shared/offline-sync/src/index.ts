@@ -145,6 +145,7 @@ export {
   deleteCheckpoint,
   deleteAllCheckpoints,
   deleteUserCheckpoints,
+  deleteAllSyncMeta,
   getCheckpointKey,
   markScopeDownloadComplete,
   isScopeDownloadComplete,

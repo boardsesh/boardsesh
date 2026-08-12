@@ -1,0 +1,116 @@
+import { useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+import { getOutboxSummary } from '@boardsesh/offline-sync';
+import { useAuth } from '../providers/auth-provider';
+import { useConfirm } from '../providers/dialog-provider';
+import { getDatabaseHandle } from '../db';
+import { hasDownloadedBoardData } from '../db/queries/board-download-status';
+import { reportError } from '../lib/error-reporting';
+import { showSignOutFailure } from '../lib/sign-out-failure-alert';
+
+/**
+ * The manual sign-out flow: say what leaving costs, then run it.
+ *
+ * Sign-out is destructive in two ways nobody can see from the button —
+ * `purgeLocalDataForSignOut` deletes the downloaded board catalogs and the offline
+ * logbook, and any writes still queued go with them (issue #3621). Both entry points
+ * (the More tab and the user drawer) go through here so the warning cannot drift
+ * apart from one of them again; the drawer used to sign out on the first tap with no
+ * confirmation at all.
+ *
+ * It ALWAYS confirms, and composes the message from what is actually true for this
+ * device: the downloaded-boards sentence only when a catalog is really on disk, the
+ * unsynced-writes sentence only when the queue isn't empty, the failed-writes sentence
+ * only when something has dead-lettered, and otherwise the plain "you'll need to sign
+ * in again".
+ *
+ * Pending and dead-lettered writes are counted separately because they are lost in
+ * different ways and the user can act on them differently. A pending write still gets
+ * an attempt (see the drain below); a dead letter has already exhausted its retries,
+ * so nothing at sign-out will send it — its only route home is Retry sync on the More
+ * tab, which is what the copy points at. The wipe DELETEs `pending_mutations` whole,
+ * so counting only `status = 'pending'` told a user whose queue was entirely
+ * dead-lettered that there was nothing to lose, moments before deleting exactly the
+ * writes the app had already flagged as in trouble.
+ *
+ * No drain here. `signOut` already runs one bounded best-effort drain of its own
+ * (3s), so draining before the dialog would mean two drains and a user who meant to
+ * cancel staring at a spinner first. The consequence is that the count shown is
+ * pre-drain and can overstate the loss, which is why the copy promises an attempt to
+ * sync rather than a guaranteed discard. The exact post-drain number goes to
+ * analytics from inside the wipe's own transaction.
+ *
+ * The confirm lives in this hook rather than in AuthProvider's `signOut` on purpose.
+ * The forced paths — the interceptor's failed-refresh 401 and checkAuth's proactive
+ * expiry — reach the cleanup directly and have no meaningful moment to ask (the token
+ * is already dead), so putting the dialog in the provider would mean an opt-out flag
+ * on every one of them.
+ */
+/**
+ * Run one dialog probe on its own. A read that fails costs its own sentence and
+ * nothing more: the other probes still run, and whatever already came back keeps its
+ * answer. One catch around both reads meant a single locked table — the "database is
+ * locked" this device hits under contention — threw away an outbox count that had
+ * already been read and skipped the probe behind it, so the dialog went quiet about
+ * data the wipe was still about to delete.
+ */
+async function probeOrNull<Result>(read: () => Promise<Result>): Promise<Result | null> {
+  try {
+    return await read();
+  } catch {
+    return null;
+  }
+}
+
+export function useConfirmSignOut(): () => Promise<void> {
+  const confirm = useConfirm();
+  const { signOut } = useAuth();
+  const { t } = useTranslation('common');
+  // A double-tap must not stack two dialogs or two sign-outs. Held only for the
+  // duration of one flow (see the finally) so a cancel — or a sign-out that resolves
+  // without navigating away — leaves the button usable for a retry.
+  const inFlightRef = useRef(false);
+
+  return useCallback(async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    try {
+      // No handle means offline storage never initialised this session, so there is
+      // nothing local to lose. A read failure is not a reason to skip the warning —
+      // that probe falls back to "nothing to report" and the dialog still opens.
+      const localDb = getDatabaseHandle();
+      // One grouped read for both counts — the same gauge the sign-out drain gate
+      // and the outbox telemetry use, so the dialog can't disagree with them.
+      const outbox = localDb ? await probeOrNull(() => getOutboxSummary(localDb)) : null;
+      // The honest signal for the boards sentence is whether a catalog is on disk
+      // (what the wipe deletes), NOT the syncEnabledBoards toggle list: a
+      // feature-flag rollback clears the list while the rows remain, and those
+      // users lose the most. See hasDownloadedBoardData.
+      const hasDownloads = localDb ? ((await probeOrNull(() => hasDownloadedBoardData(localDb))) ?? false) : false;
+      const pendingCount = outbox?.pendingCount ?? 0;
+      const deadLetterCount = outbox?.deadLetterCount ?? 0;
+
+      const message = [
+        hasDownloads ? t('mobile.more.signOut.messageOffline') : t('mobile.more.signOut.message'),
+        ...(pendingCount > 0 ? [t('mobile.more.signOut.pendingMessage', { count: pendingCount })] : []),
+        ...(deadLetterCount > 0 ? [t('mobile.more.signOut.failedMessage', { count: deadLetterCount })] : []),
+      ].join('\n\n');
+
+      const confirmed = await confirm({
+        title: t('mobile.more.signOut.title'),
+        message,
+        confirmLabel: t('mobile.more.signOut.confirm'),
+        cancelLabel: t('mobile.more.signOut.cancel'),
+        destructive: true,
+      });
+      if (!confirmed) return;
+
+      await signOut('manual');
+    } catch (error) {
+      reportError(error);
+      showSignOutFailure(t('mobile.more.signOut.failureTitle'), t('mobile.more.signOut.failure'));
+    } finally {
+      inFlightRef.current = false;
+    }
+  }, [confirm, signOut, t]);
+}
