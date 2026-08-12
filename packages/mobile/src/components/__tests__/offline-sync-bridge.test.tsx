@@ -43,10 +43,12 @@ const getPendingCountMock = vi.fn(async (..._args: unknown[]) => 0);
 const assertLocalUserDataOwnerMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => 'ok'));
 const stampLocalUserIdMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
 const clearUserDataMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
+const beginLocalPurgeMock = vi.hoisted(() => vi.fn());
 vi.mock('@boardsesh/offline-sync', () => ({
   getPendingCount: (...args: unknown[]) => getPendingCountMock(...args),
   assertLocalUserDataOwner: (...args: unknown[]) => assertLocalUserDataOwnerMock(...args),
   stampLocalUserId: (...args: unknown[]) => stampLocalUserIdMock(...args),
+  beginLocalPurge: (...args: unknown[]) => beginLocalPurgeMock(...args),
 }));
 
 // db/connection statically reaches expo-sqlite + the error reporter; the bridge
@@ -179,6 +181,7 @@ beforeEach(() => {
   assertLocalUserDataOwnerMock.mockResolvedValue('ok');
   stampLocalUserIdMock.mockClear();
   clearUserDataMock.mockClear();
+  beginLocalPurgeMock.mockClear();
   snapshotBaseUrlConfigured.value = true;
 });
 
@@ -205,6 +208,12 @@ describe('OfflineSyncBridge — local user-data owner stamp', () => {
     await waitFor(() => expect(clearUserDataMock).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(stampLocalUserIdMock).toHaveBeenCalledTimes(1));
     expect(stampLocalUserIdMock.mock.calls[0][1]).toBe('user-1');
+    // The epoch bump must land BEFORE the wipe: a pull page already on the wire
+    // when clearUserData ran would otherwise land afterwards and resurrect rows
+    // with a checkpoint past them — a gap `user_data_complete` would then
+    // falsely vouch for.
+    expect(beginLocalPurgeMock).toHaveBeenCalledTimes(1);
+    expect(beginLocalPurgeMock.mock.invocationCallOrder[0]).toBeLessThan(clearUserDataMock.mock.invocationCallOrder[0]);
   });
 
   it('leaves a matching stamp alone', async () => {

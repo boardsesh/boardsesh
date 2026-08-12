@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
 import {
   assertLocalUserDataOwner,
+  beginLocalPurge,
   getPendingCount,
   stampLocalUserId,
   type GraphQLFetch,
@@ -87,6 +88,16 @@ export function OfflineSyncBridge() {
           reportError(new Error('Local offline user data belonged to a different account'), {
             tags: { source: 'offline-sync', op: 'owner-stamp-mismatch' },
           });
+          // Same hazard every other wipe path guards against (sign-out uses
+          // setSigningOut, board removal uses beginLocalPurge): the scheduler
+          // effect below may already have a pull cycle mid-table, and a page
+          // that was on the wire when clearUserData ran would land AFTER the
+          // wipe — resurrecting rows with a checkpoint past them, which the
+          // strict `>` delta pull never revisits and `user_data_complete` would
+          // then vouch for. Bumping the epoch makes syncTable's post-await
+          // re-check discard that page; the next cycle restarts from the
+          // now-empty checkpoints.
+          beginLocalPurge();
           await clearUserData(db);
           if (cancelled) return;
         }
