@@ -118,6 +118,8 @@ export {
 export type { SyncCheckpoint } from './sync/checkpoints';
 export { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './sync/table-config';
 export type { TableSyncConfig } from './sync/table-config';
+export { TABLE_INVALIDATE_KEYS, invalidateKeysForTable } from './sync/invalidate-keys';
+export type { InvalidateKeys } from './sync/invalidate-keys';
 
 // --- Reclaiming a downloaded board's disk space ----------------------------------
 export { removeBoardScopeData, getScopeUsage, scopeSyncMetaKeys } from './sync/scope-teardown';

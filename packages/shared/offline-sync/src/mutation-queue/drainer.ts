@@ -3,6 +3,7 @@ import type { GraphQLFetch } from './handlers';
 import { processMutation } from './handlers';
 import { peekPending, markCompleted, recordFailure, markDeadLetter } from './queue';
 import { isGraphQLEmptyResponseError, isRetryable, isNetworkError } from './error-classification';
+import { invalidateKeysForTable } from '../sync/invalidate-keys';
 
 // Module-level singletons (drain flag, sign-out guard, wipe epoch): correct as
 // long as exactly one app runtime consumes this package per JS context — the
@@ -161,32 +162,14 @@ function backoffDelay(attempt: number, baseDelayMs: number, maxDelayMs: number):
 }
 
 function invalidateForTable(queryClient: QueryInvalidator, tableName: string): void {
-  const keyMap: Record<string, string[][]> = {
-    // ['climb'] + ['localTicks'] so the climb detail's server counts refetch and
-    // the "waiting to sync" badge clears once a tick actually reaches the server.
-    boardsesh_ticks: [['ticks'], ['logbook'], ['climb'], ['localTicks']],
-    // ['favoriteStatus'] so the per-climb heart refetches AFTER the queued
-    // favorite lands — the optimistic write at enqueue time can be overwritten
-    // by a network refetch that raced the drain.
-    user_favorites: [['favorites'], ['searchClimbs'], ['infiniteSearchClimbs'], ['favoriteStatus']],
-    playlists: [['playlists']],
-    playlist_climbs: [['playlists']],
-    user_follows: [['followers'], ['following']],
-    setter_follows: [['setterFollows']],
-    playlist_follows: [['playlistFollows']],
-    user_playlist_pins: [['playlists']],
-    // Board tables aren't mutation-driven today, but if a board-table write ever
-    // drains, point it at the keys real readers use (mirrors table-config.ts).
-    board_climbs: [['searchClimbs'], ['infiniteSearchClimbs'], ['searchClimbsCount'], ['climb']],
-    board_climb_stats: [['searchClimbs'], ['infiniteSearchClimbs'], ['searchClimbsCount'], ['climb']],
-  };
-  const keys = keyMap[tableName];
+  const keys = invalidateKeysForTable(tableName);
   if (!keys) {
     // table_name is a plain string, so a NEW mutation type missing from the
     // map compiles fine and drains fine — but its UI would never refresh.
     // Surface the gap loudly in dev instead of silently skipping. (NODE_ENV is
     // the platform-free stand-in for RN's __DEV__ — Metro inlines it the same
-    // way, and this package has no react-native globals.)
+    // way, and this package has no react-native globals.) An entry that is
+    // present but EMPTY is a deliberate "nothing reads this yet", not a gap.
     if (process.env.NODE_ENV !== 'production') {
       console.warn(`[MutationQueue] no invalidation keys mapped for table "${tableName}" — UI will not refresh`);
     }
