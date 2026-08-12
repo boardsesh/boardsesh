@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Finish a session at a board you haven't downloaded yet and Boardsesh now offers to keep the whole catalog on your phone — one tap, and every climb is there next time the gym wifi isn't. ([#4342](https://github.com/boardsesh/boardsesh/pull/4342))
 - Boards stuck on the slow download now have a button to try the fast one again, and tell you how big it is before you commit. On mobile data, a board won't quietly start a big download on its own. ([#4333](https://github.com/boardsesh/boardsesh/pull/4333))
 - Logging out now asks first, and tells you what it clears — the boards you downloaded, your offline logbook, and any sends still waiting to sync, including the ones that already failed to send. The Log out button in the side menu used to do all that on the first tap with no warning at all. The downloaded boards actually come off the phone now instead of sitting there invisible, and the space comes back. A dropped connection that signs you out on its own leaves your downloads alone. ([#4328](https://github.com/boardsesh/boardsesh/pull/4328))
 - Watch your board actually come down. Enabling a board offline now shows the megabytes, a percentage and whether it's downloading or unpacking, instead of a spinner that looked like the app had hung. Kilter takes about three minutes on a good connection — now you can see it happening. ([#4355](https://github.com/boardsesh/boardsesh/pull/4355))
@@ -19,6 +20,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- The freshness fix is real but not observable on any surface that ships today; the surfaces that make it visible are PRs 2-4 in this stack. ([#4341](https://github.com/boardsesh/boardsesh/pull/4341))
 - A phone that's out of space no longer burns battery re-drawing board art it can't save — Boardsesh backs off, frees what it can, and keeps the wall photo on screen. ([#4339](https://github.com/boardsesh/boardsesh/pull/4339))
 - Board art no longer piles up during a long session — Boardsesh trims it as you browse instead of only at app start. Removing a downloaded board now clears the art it drew for that board, too. ([#4338](https://github.com/boardsesh/boardsesh/pull/4338))
 - Offline board downloads now survive a launch with no signal. The app used to check with our servers whether offline mode was switched on for you, and if that check never came back, offline mode switched itself off. Now it stays on unless we deliberately turn it off, so a send logged in a basement gym still gets saved and syncs when you're back on data. ([#4323](https://github.com/boardsesh/boardsesh/pull/4323))
