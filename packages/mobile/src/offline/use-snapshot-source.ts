@@ -11,8 +11,14 @@ import { mobileSnapshotSource } from './snapshot-source';
  * URLSession on iOS instead of `URLSession.shared` plus a completion handler. If
  * that path ever proves slower on a 103 MB artifact, flipping
  * `offline-download-progress` off has to restore the original call exactly, not
- * merely hide the UI — so the options object is dropped here, at the source. The
- * engine keeps emitting its stage captions either way; only the byte detail goes.
+ * merely hide the UI — so the options object is dropped here, at the source.
+ *
+ * This is the THROUGHPUT half of the switch only. The engine still emits its
+ * three stage frames (manifest / download-at-zero / import) whether or not a
+ * downloader reports bytes, so My Boards reads the same flag before it renders
+ * any of them — see `snapshotFrame` in `app/boards/manage.tsx`. Both reads have
+ * to stay, or the row sits on "Downloading 0 MB of 103 MB" for the whole
+ * download with the switch supposedly off.
  */
 function withoutDownloadProgress(source: SnapshotSource): SnapshotSource {
   return {

@@ -271,6 +271,7 @@ describe('boardDownloadProgress', () => {
     currentTable: 'kilter:1:5' as string | null,
     phase: 'bootstrap' as const,
     snapshot: downloadingFrame,
+    progressEnabled: true,
   };
 
   it('returns the wire-scale numbers for the scope that is actually downloading', () => {
@@ -303,6 +304,21 @@ describe('boardDownloadProgress', () => {
     expect(boardDownloadProgress({ ...downloadingRow, isSyncing: false })).toBeNull();
     expect(boardDownloadProgress({ ...downloadingRow, phase: 'board_data' })).toBeNull();
     expect(boardDownloadProgress({ ...downloadingRow, snapshot: undefined })).toBeNull();
+  });
+
+  it('returns null with the kill switch off, so the row keeps the static caption', () => {
+    // The engine still flushes its stage frames when `offline-download-progress`
+    // is off — dropping the native callback only stops the byte frames. Without
+    // this gate the row would show "Downloading 0 MB of 103 MB" for the whole
+    // download instead of the plain "Downloading board…" the switch restores.
+    expect(boardDownloadProgress({ ...downloadingRow, progressEnabled: false })).toBeNull();
+    expect(
+      boardDownloadProgress({
+        ...downloadingRow,
+        progressEnabled: false,
+        snapshot: { ...downloadingFrame, stage: 'download', fraction: 0, wireBytesDone: 0 },
+      }),
+    ).toBeNull();
   });
 
   it('passes an indeterminate fraction straight through rather than inventing one', () => {

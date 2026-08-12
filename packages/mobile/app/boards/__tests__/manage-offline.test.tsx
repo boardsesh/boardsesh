@@ -24,6 +24,7 @@ type ManageRowProps = {
   downloadState?: string;
   downloadCount?: number;
   downloadNotice?: string | null;
+  downloadProgress?: { stage: string; fraction: number | null } | null;
   onDelete: (board: UserBoard) => void;
   onUnfollow: (board: UserBoard) => void;
 };
@@ -61,12 +62,21 @@ const state = vi.hoisted(() => ({
   bootstrapQueryAsync: false,
   bootstrapMetadataRead: undefined as Promise<ReadonlyMap<string, unknown>> | undefined,
   snapshotSourceAvailable: true,
+  /** `offline-download-progress`. Defaults ON, like the real flag. */
+  downloadProgressEnabled: true,
   syncStatus: {
     isSyncing: false,
     progress: null as {
       phase: string;
       currentTable: string | null;
       currentTableProcessed?: number;
+      snapshot?: {
+        scopeKey: string;
+        stage: 'manifest' | 'download' | 'import';
+        fraction: number | null;
+        wireBytes: number | null;
+        wireBytesDone: number | null;
+      };
     } | null,
     bootstrapMetadataRevision: 0,
     scopeCompletionRevision: 0,
@@ -265,7 +275,10 @@ vi.mock('../../../src/providers/theme-provider', () => ({
     brandColors: { primary: '#6D28D9', onPrimary: '#fff' },
   }),
 }));
-vi.mock('../../../src/providers/feature-flags-provider', () => ({ useOfflineDownloadsEnabled: () => true }));
+vi.mock('../../../src/providers/feature-flags-provider', () => ({
+  useOfflineDownloadsEnabled: () => true,
+  useOfflineDownloadProgressEnabled: () => state.downloadProgressEnabled,
+}));
 vi.mock('../../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
 }));
@@ -335,6 +348,7 @@ vi.mock('../../../src/components/board-discovery/BoardManageRow', () => ({
     downloadState,
     downloadCount,
     downloadNotice,
+    downloadProgress,
     onDelete,
     onUnfollow,
   }: ManageRowProps) =>
@@ -346,6 +360,7 @@ vi.mock('../../../src/components/board-discovery/BoardManageRow', () => ({
         'data-download-state': downloadState ?? '',
         'data-download-count': downloadCount ?? '',
         'data-download-notice': downloadNotice ?? '',
+        'data-download-stage': downloadProgress?.stage ?? '',
       },
       rowBoard.name,
       createElement('button', { type: 'button', onClick: () => onDelete(rowBoard) }, `delete ${rowBoard.uuid}`),
@@ -372,6 +387,7 @@ beforeEach(() => {
   state.bootstrapQueryAsync = false;
   state.bootstrapMetadataRead = undefined;
   state.snapshotSourceAvailable = true;
+  state.downloadProgressEnabled = true;
   state.syncStatus = {
     isSyncing: false,
     progress: null,
@@ -636,6 +652,63 @@ describe('My Boards with no usable network list', () => {
     );
     expect(document.querySelector('[data-board="board-b"]')?.getAttribute('data-download-state')).toBe('downloading');
     expect(document.querySelector('[data-board="board-b"]')?.getAttribute('data-download-notice')).toBe('');
+  });
+
+  // The download-progress kill switch has two halves: `useSnapshotSource` drops
+  // the native byte callback, and the screen drops the frames. The engine flushes
+  // its three stage frames either way, so without the second half a build with
+  // `offline-download-progress` off would show "Downloading 0 MB of 103 MB" and a
+  // bar pinned at 0 for the whole download — worse than the caption it restores.
+  const renderBootstrappingRow = () => {
+    state.profileId = 'me';
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+    state.enabledBoards = ['kilter:8:17'];
+    state.bootstrapMetadataByScope = new Map([
+      [
+        'kilter:8:17',
+        {
+          attempts: 1,
+          isBootstrapDone: false,
+          isPagedFallback: false,
+          hasBoardCheckpoint: false,
+          isScopeComplete: false,
+        },
+      ],
+    ]);
+    state.syncStatus = {
+      isSyncing: true,
+      progress: {
+        phase: 'bootstrap',
+        currentTable: 'kilter:8:17',
+        snapshot: {
+          scopeKey: 'kilter:8:17',
+          stage: 'download',
+          fraction: 0.4,
+          wireBytes: 103_000_000,
+          wireBytesDone: 41_200_000,
+        },
+      },
+      bootstrapMetadataRevision: 1,
+      scopeCompletionRevision: 0,
+    };
+    render(createElement(ManageBoards));
+    return document.querySelector('[data-board="net-1"]');
+  };
+
+  it('hands the downloading row its live snapshot frame', () => {
+    expect(renderBootstrappingRow()?.getAttribute('data-download-stage')).toBe('download');
+  });
+
+  it('withholds the snapshot frame from the row when the progress kill switch is off', () => {
+    state.downloadProgressEnabled = false;
+    const row = renderBootstrappingRow();
+    expect(row?.getAttribute('data-download-stage')).toBe('');
+    expect(row?.getAttribute('data-download-state')).toBe('downloading');
   });
 
   it('keeps fallback active with a live count while board_climb_grades downloads', () => {

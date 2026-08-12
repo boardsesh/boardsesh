@@ -109,6 +109,16 @@ export type BoardDownloadProgressInput = Pick<
 > & {
   /** From useSyncStatus().progress?.snapshot — the live frame, whichever scope it names. */
   snapshot?: SyncProgress['snapshot'];
+  /**
+   * `useOfflineDownloadProgressEnabled()`. Required, not defaulted, because the
+   * kill switch has two halves and forgetting this one is invisible: the engine
+   * emits its three stage frames (manifest / download-at-zero / import) whether
+   * or not a downloader ever reports a byte, so a caller that skipped the flag
+   * would leave the row on "Downloading 0 MB of 103 MB" with the switch off —
+   * a worse frozen look than the static caption the switch restores. The other
+   * half lives in `useSnapshotSource`, which drops the native callback.
+   */
+  progressEnabled: boolean;
 };
 
 /**
@@ -119,6 +129,7 @@ export type BoardDownloadProgressInput = Pick<
  * the downloading row re-renders.
  */
 export function boardDownloadProgress(input: BoardDownloadProgressInput): BoardDownloadProgress | null {
+  if (!input.progressEnabled) return null;
   if (!input.isSyncing) return null;
   if (!isBootstrappingThisScope(input)) return null;
   const frame = input.snapshot;
