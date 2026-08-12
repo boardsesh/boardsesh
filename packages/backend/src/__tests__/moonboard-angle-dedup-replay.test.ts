@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, it } from 'vite-plus/test';
 import postgres from 'postgres';
 
 import {
+  MOONBOARD_DEDUP_REPLAY_MIGRATION_TAG,
   prepareMoonboardDedupReplayDatabase,
   moonboardDedupReplayChecks,
 } from '@boardsesh/db/testing/moonboard-angle-dedup-replay';
@@ -30,7 +31,7 @@ const ADMIN_URL = (
 // Unique per vitest worker so parallel workers can't collide.
 const DB_NAME = `bs_moonboard_dedup_replay_w${process.env.VITEST_POOL_ID || '0'}`;
 
-describe('moonboard angle dedup migration replay (0185)', () => {
+describe(`moonboard angle dedup migration replay (${MOONBOARD_DEDUP_REPLAY_MIGRATION_TAG})`, () => {
   let admin: postgres.Sql;
   let db: postgres.Sql;
 

@@ -2,6 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import postgres from 'postgres';
 
 import {
+  MOONBOARD_DEDUP_REPLAY_MIGRATION_TAG,
   prepareMoonboardDedupReplayDatabase,
   moonboardDedupReplayChecks,
 } from '../../../testing/moonboard-angle-dedup-replay';
@@ -27,7 +28,7 @@ const DB_NAME = 'bs_moonboard_angle_dedup_replay';
 
 const suite = REPLAY_URL ? describe : describe.skip;
 
-suite('moonboard angle dedup migration replay (0185)', () => {
+suite(`moonboard angle dedup migration replay (${MOONBOARD_DEDUP_REPLAY_MIGRATION_TAG})`, () => {
   let admin: postgres.Sql;
   let db: postgres.Sql;
 
