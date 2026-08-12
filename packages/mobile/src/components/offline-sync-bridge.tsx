@@ -16,7 +16,7 @@ import { getSetting } from '../settings';
 import { setupNotificationHandlers } from '../notifications';
 import { getHttpClient } from '../lib/graphql/client';
 import { setOfflineEngineEnabled } from '../lib/offline-engine';
-import { registerSuperProperties } from '../lib/analytics';
+import { registerOfflineEngineState } from '../lib/analytics-offline-engine-state';
 import { useAuth } from '../providers/auth-provider';
 import { useFeatureFlag, useOfflineDownloadsEnabled } from '../providers/feature-flags-provider';
 import { useSnapshotSource } from '../offline/use-snapshot-source';
@@ -48,7 +48,9 @@ export const FLAG_SETTLE_MS = 10_000;
  * `$feature_flag_called`, which is the signal #4312 was diagnosed from, so
  * without this we would have no way to tell whether the bake worked. A super
  * property costs no event volume — it rides along on events we already send,
- * including the download funnel.
+ * including the download funnel. `registerOfflineEngineState` remembers what it
+ * registered so `analytics.reset()` can put it back: a sign-out wipes every
+ * super property, and this effect will not run again for the rest of the launch.
  */
 export function OfflineEngineFlagSync() {
   const offlineEnabled = useOfflineDownloadsEnabled();
@@ -66,11 +68,11 @@ export function OfflineEngineFlagSync() {
   // launch never registers `default-on`.
   useEffect(() => {
     if (rawFlag !== undefined) {
-      registerSuperProperties({ offline_engine_state: rawFlag ? 'flag-on' : 'flag-off' });
+      registerOfflineEngineState(rawFlag ? 'flag-on' : 'flag-off');
       return undefined;
     }
     const settleTimer = setTimeout(() => {
-      registerSuperProperties({ offline_engine_state: 'default-on' });
+      registerOfflineEngineState('default-on');
     }, FLAG_SETTLE_MS);
     return () => clearTimeout(settleTimer);
   }, [rawFlag]);

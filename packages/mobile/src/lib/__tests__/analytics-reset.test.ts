@@ -59,6 +59,38 @@ describe('analytics reset', () => {
     expect(fakeClient.register).toHaveBeenCalledWith({ connectivity: 'online' });
   });
 
+  // #4312: `offline_engine_state` is registered once, from a flag effect that
+  // will not run again this launch, so a sign-out that dropped it would end the
+  // bake measurement there — including for the account signed in next.
+  it('re-registers the offline engine state after resetting the client', async () => {
+    const fakeClient = { register: vi.fn() };
+    posthogClientMocks.getPostHogClient.mockReturnValue(fakeClient);
+    const { registerOfflineEngineState, __resetOfflineEngineStateForTests } =
+      await import('../analytics-offline-engine-state');
+    __resetOfflineEngineStateForTests();
+    registerOfflineEngineState('default-on');
+    fakeClient.register.mockClear();
+    const { reset } = await import('../analytics');
+
+    expect(reset()).toBe(true);
+
+    expect(fakeClient.register).toHaveBeenCalledWith({ offline_engine_state: 'default-on' });
+  });
+
+  it('registers no engine state when the flag effect has not decided one yet', async () => {
+    const fakeClient = { register: vi.fn() };
+    posthogClientMocks.getPostHogClient.mockReturnValue(fakeClient);
+    const { __resetOfflineEngineStateForTests } = await import('../analytics-offline-engine-state');
+    __resetOfflineEngineStateForTests();
+    const { reset } = await import('../analytics');
+
+    expect(reset()).toBe(true);
+
+    expect(fakeClient.register).not.toHaveBeenCalledWith(
+      expect.objectContaining({ offline_engine_state: expect.anything() }),
+    );
+  });
+
   it('does not re-register when analytics is disabled (no client)', async () => {
     posthogClientMocks.getPostHogClient.mockReturnValue(null);
     const { reset } = await import('../analytics');

@@ -4,13 +4,18 @@ import { act, render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // The analytics barrel reaches posthog-react-native; stub it so the module scan
-// never parses it, and so the super-property calls are assertable. The two flag
-// readers are what FeatureFlagsProvider itself imports from here.
-const registerSuperPropertiesMock = vi.hoisted(() => vi.fn());
+// never parses it. The two flag readers are what FeatureFlagsProvider itself
+// imports from here.
 vi.mock('../../lib/analytics', () => ({
-  registerSuperProperties: (properties: Record<string, unknown>) => registerSuperPropertiesMock(properties),
   readPosthogFeatureFlags: () => ({}),
   subscribePosthogFeatureFlags: () => () => {},
+}));
+
+// Same reason (it reaches the PostHog client), plus it makes the registered
+// engine state assertable.
+const registerOfflineEngineStateMock = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/analytics-offline-engine-state', () => ({
+  registerOfflineEngineState: (state: string) => registerOfflineEngineStateMock(state),
 }));
 
 // The bridge is the flag boundary of the offline engine: scheduler only when
@@ -525,22 +530,22 @@ describe('OfflineEngineFlagSync — offline_engine_state super property', () => 
 
   it('registers flag-on for a resolved true, without waiting', () => {
     render(<FlagSyncHarness flags={FLAG_ON} />);
-    expect(registerSuperPropertiesMock).toHaveBeenCalledWith({ offline_engine_state: 'flag-on' });
+    expect(registerOfflineEngineStateMock).toHaveBeenCalledWith('flag-on');
   });
 
   it('registers flag-off for a resolved false', () => {
     render(<FlagSyncHarness flags={FLAG_OFF} />);
-    expect(registerSuperPropertiesMock).toHaveBeenCalledWith({ offline_engine_state: 'flag-off' });
+    expect(registerOfflineEngineStateMock).toHaveBeenCalledWith('flag-off');
   });
 
   it('registers default-on only once the flag has failed to resolve for FLAG_SETTLE_MS', () => {
     render(<FlagSyncHarness flags={FLAG_UNSET} />);
-    expect(registerSuperPropertiesMock).not.toHaveBeenCalled();
+    expect(registerOfflineEngineStateMock).not.toHaveBeenCalled();
 
     act(() => {
       vi.advanceTimersByTime(FLAG_SETTLE_MS);
     });
-    expect(registerSuperPropertiesMock).toHaveBeenCalledWith({ offline_engine_state: 'default-on' });
+    expect(registerOfflineEngineStateMock).toHaveBeenCalledWith('default-on');
   });
 
   it('never registers default-on when the flag resolves inside the settle window', () => {
@@ -554,8 +559,8 @@ describe('OfflineEngineFlagSync — offline_engine_state super property', () => 
       vi.advanceTimersByTime(FLAG_SETTLE_MS);
     });
 
-    expect(registerSuperPropertiesMock).toHaveBeenCalledWith({ offline_engine_state: 'flag-on' });
-    expect(registerSuperPropertiesMock).not.toHaveBeenCalledWith({ offline_engine_state: 'default-on' });
+    expect(registerOfflineEngineStateMock).toHaveBeenCalledWith('flag-on');
+    expect(registerOfflineEngineStateMock).not.toHaveBeenCalledWith('default-on');
   });
 });
 

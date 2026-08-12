@@ -2,6 +2,7 @@ import type { PostHog } from 'posthog-react-native';
 import { createAnalytics } from '@boardsesh/analytics';
 import { getPostHogClient, registerAppSuperProperties } from './posthog-client';
 import { registerConnectivitySuperProperty } from './analytics-connectivity';
+import { reregisterOfflineEngineState } from './analytics-offline-engine-state';
 
 // `sendEvent: false` suppresses the SDK's `$feature_flag_called` capture. Verified
 // in @posthog/core 1.46.1 (shared by posthog-react-native and posthog-js-lite):
@@ -151,12 +152,18 @@ export const { track, identify, setPersonProperties, alias } = analytics;
 // startup and then only on a network transition, so a sign-out that dropped it
 // would leave every remaining event of the launch unattributed to online or
 // offline unless the user happened to change networks (issue #4317).
+//
+// `offline_engine_state` is the same shape of problem and worse: it is
+// registered exactly once, from a flag effect that will not run again for the
+// rest of the launch, so a dropped value never comes back on its own and the
+// #4312 bake measurement would stop at the first sign-out.
 export function reset(): boolean {
   const didReset = analytics.reset();
   const client = getClient();
   if (client) {
     registerAppSuperProperties(client);
     registerConnectivitySuperProperty(client);
+    reregisterOfflineEngineState(client);
   }
   return didReset;
 }
