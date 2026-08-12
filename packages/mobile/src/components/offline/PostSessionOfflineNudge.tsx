@@ -32,25 +32,36 @@ export function PostSessionOfflineNudge({ storeReviewWillPrompt, style }: PostSe
 
   const board = activeBoard ?? null;
 
+  // The size dialog inside confirmAndDownload is the consent gate, so nothing is
+  // recorded until it resolves true. Accepting on the tap would count a cancelled
+  // dialog as an accept: it inflates the funnel, and it starts the 30-day
+  // post-acceptance quiet period for someone who just said no.
   const handleDownload = useCallback(() => {
     if (!board) return;
-    nudge.accept();
-    void confirmAndDownload(board);
+    void confirmAndDownload(board).then((confirmed) => {
+      if (confirmed) nudge.accept();
+    });
   }, [board, nudge, confirmAndDownload]);
 
   // The 82%-stop-at-one lever, using the switch that already exists in More
   // rather than a second nudge surface: one setting write, and every board the
-  // user owns (now and later) downloads.
+  // user owns (now and later) downloads. Same gate, and here it matters most —
+  // writing the setting before the dialog resolves would leave someone who
+  // cancelled opted into downloading every board they own.
   const handleDownloadAll = useCallback(() => {
     if (!board) return;
-    nudge.accept();
-    setSetting('autoOfflineBoards', true);
-    void confirmAndDownload(board);
+    void confirmAndDownload(board).then((confirmed) => {
+      if (!confirmed) return;
+      nudge.accept();
+      setSetting('autoOfflineBoards', true);
+    });
   }, [board, nudge, confirmAndDownload]);
 
   if (!nudge.visible || !board) return null;
 
-  // Only worth offering "all my boards" to someone who has more than this one.
+  // Offered to someone who has downloaded nothing yet: the bulk switch is a fair
+  // ask on a first download, but a user already curating individual boards has
+  // made that choice by hand and shouldn't be talked out of it.
   const offerAllBoards = getSetting('syncEnabledBoards').length === 0;
 
   return (

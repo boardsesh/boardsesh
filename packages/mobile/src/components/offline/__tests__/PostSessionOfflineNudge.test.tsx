@@ -156,18 +156,42 @@ describe('PostSessionOfflineNudge', () => {
     fireEvent.click(screen.getByText('mobile.offline.nudge.postSession.cta'));
 
     expect(spies.confirmAndDownload).toHaveBeenCalledWith(board);
-    expect(spies.track).toHaveBeenCalledWith(
-      SHARED_EVENTS.OfflineNudgeAccepted,
-      expect.objectContaining({ surface: 'post_session', armedOnly: false }),
+    await waitFor(() =>
+      expect(spies.track).toHaveBeenCalledWith(
+        SHARED_EVENTS.OfflineNudgeAccepted,
+        expect.objectContaining({ surface: 'post_session', armedOnly: false }),
+      ),
     );
+  });
+
+  // The size dialog is the consent gate: counting a cancel as an accept would
+  // inflate the funnel and start the 30-day quiet period on a "no".
+  it('records nothing when the size dialog is cancelled', async () => {
+    spies.confirmAndDownload.mockResolvedValueOnce(false);
+    await renderNudge();
+    fireEvent.click(screen.getByText('mobile.offline.nudge.postSession.cta'));
+
+    await waitFor(() => expect(spies.confirmAndDownload).toHaveBeenCalled());
+    expect(spies.track).not.toHaveBeenCalledWith(SHARED_EVENTS.OfflineNudgeAccepted, expect.anything());
   });
 
   it('turns on auto-download from the secondary action', async () => {
     await renderNudge();
     fireEvent.click(screen.getByText('mobile.offline.nudge.postSession.allBoardsCta'));
 
-    expect(spies.setSetting).toHaveBeenCalledWith('autoOfflineBoards', true);
     expect(spies.confirmAndDownload).toHaveBeenCalledWith(board);
+    await waitFor(() => expect(spies.setSetting).toHaveBeenCalledWith('autoOfflineBoards', true));
+  });
+
+  // Cancelling must not leave the user opted into downloading every board they
+  // own — that is the opposite of what they just said.
+  it('leaves auto-download alone when the size dialog is cancelled', async () => {
+    spies.confirmAndDownload.mockResolvedValueOnce(false);
+    await renderNudge();
+    fireEvent.click(screen.getByText('mobile.offline.nudge.postSession.allBoardsCta'));
+
+    await waitFor(() => expect(spies.confirmAndDownload).toHaveBeenCalled());
+    expect(spies.setSetting).not.toHaveBeenCalled();
   });
 
   it.each([
