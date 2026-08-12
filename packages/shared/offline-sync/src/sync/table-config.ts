@@ -13,13 +13,31 @@ export type TableSyncConfig = {
   invalidateKeys: InvalidateKeys;
   primaryKeyColumns: string[];
   localColumns: readonly string[];
+  /**
+   * The timestamp half of this table's `(timestamp, sync_seq)` keyset cursor —
+   * whatever the resolver passes as `updatedAtColumn` in
+   * packages/backend/src/graphql/resolvers/sync/queries.ts. Almost every table
+   * cursors on `updated_at`; `board_climb_grades` cursors on `computed_at`
+   * because grades are bulk-recomputed reference data, not user writes.
+   *
+   * Declared HERE rather than duplicated in the nightly export job and the
+   * snapshot import so the two can never disagree about which column a
+   * watermark covers. Disagreement is a data-loss bug in one direction: a
+   * watermark read off the wrong column can cover rows the artifact never
+   * carried, and the strict `>` delta pull never revisits them.
+   */
+  cursorColumn: string;
 };
 
 type TableSyncDefinition = Omit<TableSyncConfig, 'invalidateKeys'>;
 
+/** The cursor column all but one sync table uses. */
+const UPDATED_AT_CURSOR = 'updated_at';
+
 const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
   boardsesh_ticks: {
     queryName: 'syncTicks',
+    cursorColumn: UPDATED_AT_CURSOR,
     operationKey: 'SYNC_TICKS',
     isPerBoard: false,
     primaryKeyColumns: ['uuid'],
@@ -44,6 +62,7 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
   },
   playlists: {
     queryName: 'syncPlaylists',
+    cursorColumn: UPDATED_AT_CURSOR,
     operationKey: 'SYNC_PLAYLISTS',
     isPerBoard: false,
     primaryKeyColumns: ['uuid'],
@@ -63,6 +82,7 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
   },
   playlist_climbs: {
     queryName: 'syncPlaylistClimbs',
+    cursorColumn: UPDATED_AT_CURSOR,
     operationKey: 'SYNC_PLAYLIST_CLIMBS',
     isPerBoard: false,
     primaryKeyColumns: ['playlist_uuid', 'climb_uuid'],
@@ -70,6 +90,7 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
   },
   user_favorites: {
     queryName: 'syncFavorites',
+    cursorColumn: UPDATED_AT_CURSOR,
     operationKey: 'SYNC_FAVORITES',
     isPerBoard: false,
     primaryKeyColumns: ['board_name', 'climb_uuid', 'angle'],
@@ -77,6 +98,7 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
   },
   user_follows: {
     queryName: 'syncUserFollows',
+    cursorColumn: UPDATED_AT_CURSOR,
     operationKey: 'SYNC_USER_FOLLOWS',
     isPerBoard: false,
     primaryKeyColumns: ['following_id'],
@@ -84,6 +106,7 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
   },
   setter_follows: {
     queryName: 'syncSetterFollows',
+    cursorColumn: UPDATED_AT_CURSOR,
     operationKey: 'SYNC_SETTER_FOLLOWS',
     isPerBoard: false,
     primaryKeyColumns: ['setter_username'],
@@ -91,6 +114,7 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
   },
   playlist_follows: {
     queryName: 'syncPlaylistFollows',
+    cursorColumn: UPDATED_AT_CURSOR,
     operationKey: 'SYNC_PLAYLIST_FOLLOWS',
     isPerBoard: false,
     primaryKeyColumns: ['playlist_uuid'],
@@ -98,6 +122,7 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
   },
   board_climbs: {
     queryName: 'syncClimbs',
+    cursorColumn: UPDATED_AT_CURSOR,
     operationKey: 'SYNC_CLIMBS',
     isPerBoard: true,
     primaryKeyColumns: ['uuid'],
@@ -133,6 +158,7 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
   },
   board_climb_stats: {
     queryName: 'syncClimbStats',
+    cursorColumn: UPDATED_AT_CURSOR,
     operationKey: 'SYNC_CLIMB_STATS',
     isPerBoard: true,
     primaryKeyColumns: ['board_type', 'climb_uuid', 'angle'],
@@ -153,6 +179,10 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
   },
   board_climb_grades: {
     queryName: 'syncClimbGrades',
+    // The one table that does NOT cursor on updated_at — it has no such column.
+    // Matches `updatedAtColumn: sql`board_climb_grades.computed_at`` in the
+    // syncClimbGrades resolver.
+    cursorColumn: 'computed_at',
     // operationKey is a label only — the pull client builds the query from
     // queryName (buildSyncQuery), so no separate registered SYNC_CLIMB_GRADES
     // document is needed, exactly like SYNC_CLIMB_STATS.

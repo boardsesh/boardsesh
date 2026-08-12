@@ -45,6 +45,7 @@ const BUILT_AT = '2026-06-01T00:00:00.000Z';
 
 const CLIMB_COLUMNS = TABLE_CONFIGS.board_climbs.localColumns;
 const STATS_COLUMNS = TABLE_CONFIGS.board_climb_stats.localColumns;
+const GRADES_COLUMNS = TABLE_CONFIGS.board_climb_grades.localColumns;
 
 function ctx(): ConnectionContext {
   return {
@@ -75,6 +76,9 @@ async function graphqlFetch<T>(query: string, variables?: Record<string, unknown
   // 'syncClimbs' (capital S after 'syncClimb'), so ordering is unambiguous.
   if (query.includes('syncClimbStats')) {
     return { syncClimbStats: await syncQueries.syncClimbStats(undefined, resolverArgs, ctx()) } as T;
+  }
+  if (query.includes('syncClimbGrades')) {
+    return { syncClimbGrades: await syncQueries.syncClimbGrades(undefined, resolverArgs, ctx()) } as T;
   }
   if (query.includes('syncClimbs')) {
     return { syncClimbs: await syncQueries.syncClimbs(undefined, resolverArgs, ctx()) } as T;
@@ -138,6 +142,57 @@ async function insertStat(values: {
   `);
 }
 
+async function insertGrade(values: {
+  climbUuid: string;
+  angle: number;
+  localGrade?: number | null;
+  universalGrade?: number | null;
+  gradeLow?: number | null;
+  gradeHigh?: number | null;
+  confidence?: string | null;
+  ascensionistCount?: number | null;
+  computedAt: string;
+}): Promise<void> {
+  // confidence / ascensionist_count / model_version / coeff_version are NOT NULL
+  // in board_climb_grades (packages/db/src/schema/app/climb-grades.ts).
+  await db.execute(sql`
+    INSERT INTO board_climb_grades
+      (board_type, climb_uuid, angle, local_grade, universal_grade, grade_low, grade_high,
+       confidence, ascensionist_count, model_version, coeff_version, computed_at)
+    VALUES
+      (${BOARD_TYPE}, ${values.climbUuid}, ${values.angle}, ${values.localGrade ?? null},
+       ${values.universalGrade ?? null}, ${values.gradeLow ?? null}, ${values.gradeHigh ?? null},
+       ${values.confidence ?? 'low'}, ${values.ascensionistCount ?? 0}, 'test-model', 'test-coeff',
+       ${values.computedAt}::timestamp)
+  `);
+}
+
+function readArtifactTableNames(filePath: string): string[] {
+  const artifactDb = new DatabaseSync(filePath);
+  try {
+    return (
+      artifactDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as {
+        name: string;
+      }[]
+    ).map((row) => row.name);
+  } finally {
+    artifactDb.close();
+  }
+}
+
+function readArtifactMetaTableNames(filePath: string): string[] {
+  const artifactDb = new DatabaseSync(filePath);
+  try {
+    return (
+      artifactDb.prepare('SELECT table_name FROM snapshot_meta ORDER BY table_name').all() as {
+        table_name: string;
+      }[]
+    ).map((row) => row.table_name);
+  } finally {
+    artifactDb.close();
+  }
+}
+
 function readArtifactRows(filePath: string, table: string, columns: readonly string[]): Record<string, unknown>[] {
   const artifactDb = new DatabaseSync(filePath);
   try {
@@ -166,7 +221,7 @@ let workDir: string;
 
 beforeEach(async () => {
   workDir = mkdtempSync(join(tmpdir(), 'snapshot-golden-'));
-  await db.execute(sql`TRUNCATE TABLE board_climbs, board_climb_stats RESTART IDENTITY CASCADE`);
+  await db.execute(sql`TRUNCATE TABLE board_climbs, board_climb_stats, board_climb_grades RESTART IDENTITY CASCADE`);
 });
 
 afterEach(() => {
@@ -370,5 +425,219 @@ describe('board-snapshot export ↔ live pull parity', () => {
     expect(climbMeta.row_count).toBe(2);
     expect(climbMeta.watermark_sync_seq).toBe(String(stableWatermarkRow.sync_seq));
     expect(Number(climbMeta.watermark_sync_seq)).toBeLessThan(Number(recentRow.sync_seq));
+  });
+});
+
+// The SEPARATE per-layout grades artifact (issue #4310). Boardsesh grades are
+// the one per-board table the whole-layout artifact never carried, so every
+// Kilter/Tension download paid hundreds of serial authenticated GraphQL pages
+// for them — which is why a MoonBoard layout of the same byte size finishes
+// roughly six times faster.
+describe('board_climb_grades snapshot artifact', () => {
+  it('produces byte-identical grade rows via the export core and the real syncClimbGrades pull', async () => {
+    await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    await insertClimb({ uuid: 'c2', compatibleSizeIds: [5, 7], updatedAt: '2026-05-01T00:00:00Z' });
+    await insertGrade({
+      climbUuid: 'c1',
+      angle: 40,
+      localGrade: 21.5,
+      universalGrade: 19.25,
+      gradeLow: 20,
+      gradeHigh: 23,
+      confidence: 'high',
+      ascensionistCount: 1234,
+      computedAt: '2026-05-01T00:00:00Z',
+    });
+    await insertGrade({
+      climbUuid: 'c1',
+      angle: 50,
+      localGrade: null,
+      universalGrade: null,
+      confidence: 'low',
+      ascensionistCount: 0,
+      computedAt: '2026-05-01T00:00:01.5Z', // fractional seconds
+    });
+    await insertGrade({ climbUuid: 'c2', angle: 40, localGrade: 15, computedAt: '2026-05-02T09:30:00Z' });
+
+    const filePath = join(workDir, 'artifact.db');
+    const gradesFilePath = join(workDir, 'artifact-grades.db');
+    await exportLayoutSnapshot({
+      sqlClient: createPool(),
+      boardType: BOARD_TYPE,
+      layoutId: LAYOUT_ID,
+      filePath,
+      gradesFilePath,
+      builtAt: BUILT_AT,
+      stabilityWindowSeconds: 0,
+    });
+    const artifactGrades = readArtifactRows(gradesFilePath, 'board_climb_grades', GRADES_COLUMNS);
+
+    const clientDb = createTestDatabase();
+    await runMigrations(clientDb);
+    await pullSync(clientDb, noopQueryClient(), graphqlFetch, { enabledBoards: [SCOPE_KEY] });
+    const pulledGrades = await clientDb.getAllAsync<Record<string, unknown>>(
+      `SELECT ${GRADES_COLUMNS.join(', ')} FROM board_climb_grades ORDER BY climb_uuid, angle`,
+    );
+
+    expect(artifactGrades).toEqual(pulledGrades);
+    expect(artifactGrades).toHaveLength(3);
+  });
+
+  it('leaves the WHOLE-LAYOUT artifact untouched — same tables, same two snapshot_meta rows', async () => {
+    // Every already-shipped binary verifies the whole-layout artifact against
+    // its own two-table list and throws "snapshot_meta missing row for <table>"
+    // on a mismatch. That failure is COUNTED, and two of them settle the scope
+    // onto the paged crawl — so growing this file's meta would break the fleet.
+    await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    await insertGrade({ climbUuid: 'c1', angle: 40, localGrade: 20, computedAt: '2026-05-01T00:00:00Z' });
+
+    const filePath = join(workDir, 'artifact.db');
+    await exportLayoutSnapshot({
+      sqlClient: createPool(),
+      boardType: BOARD_TYPE,
+      layoutId: LAYOUT_ID,
+      filePath,
+      gradesFilePath: join(workDir, 'artifact-grades.db'),
+      builtAt: BUILT_AT,
+      stabilityWindowSeconds: 0,
+    });
+
+    expect(readArtifactMetaTableNames(filePath)).toEqual(['board_climb_stats', 'board_climbs']);
+    expect(readArtifactTableNames(filePath)).not.toContain('board_climb_grades');
+  });
+
+  it('carries ONLY board_climb_grades and its own one-row snapshot_meta', async () => {
+    await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    await insertGrade({ climbUuid: 'c1', angle: 40, localGrade: 20, computedAt: '2026-05-01T00:00:00Z' });
+
+    const gradesFilePath = join(workDir, 'artifact-grades.db');
+    await exportLayoutSnapshot({
+      sqlClient: createPool(),
+      boardType: BOARD_TYPE,
+      layoutId: LAYOUT_ID,
+      filePath: join(workDir, 'artifact.db'),
+      gradesFilePath,
+      builtAt: BUILT_AT,
+      stabilityWindowSeconds: 0,
+    });
+
+    const tables = readArtifactTableNames(gradesFilePath);
+    expect(tables).toContain('board_climb_grades');
+    expect(tables).not.toContain('board_climbs');
+    expect(tables).not.toContain('board_climb_stats');
+    expect(readArtifactMetaTableNames(gradesFilePath)).toEqual(['board_climb_grades']);
+  });
+
+  it('cursors the grades watermark on computed_at, not updated_at (the column grades do not have)', async () => {
+    await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    await insertGrade({ climbUuid: 'c1', angle: 40, localGrade: 20, computedAt: '2026-05-01T00:00:00Z' });
+    await insertGrade({ climbUuid: 'c1', angle: 50, localGrade: 22, computedAt: '2026-05-04T00:00:00Z' });
+
+    const gradesFilePath = join(workDir, 'artifact-grades.db');
+    const result = await exportLayoutSnapshot({
+      sqlClient: createPool(),
+      boardType: BOARD_TYPE,
+      layoutId: LAYOUT_ID,
+      filePath: join(workDir, 'artifact.db'),
+      gradesFilePath,
+      builtAt: BUILT_AT,
+      stabilityWindowSeconds: 0,
+    });
+
+    const latest = (
+      await db.execute(sql`
+        SELECT computed_at, sync_seq FROM board_climb_grades
+        WHERE board_type = ${BOARD_TYPE}
+        ORDER BY computed_at DESC, sync_seq DESC LIMIT 1
+      `)
+    )[0] as { computed_at: unknown; sync_seq: unknown };
+
+    const meta = readArtifactMeta(gradesFilePath, 'board_climb_grades')!;
+    expect(meta.row_count).toBe(2);
+    expect(meta.watermark_updated_at).toBe(toIso(latest.computed_at));
+    expect(meta.watermark_sync_seq).toBe(String(latest.sync_seq));
+    expect(result.grades?.tables.board_climb_grades.rowCount).toBe(2);
+  });
+
+  it('excludes a grade inside the stability window from the artifact AND its watermark', async () => {
+    await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    await insertGrade({ climbUuid: 'c1', angle: 40, localGrade: 20, computedAt: '2026-05-01T00:00:00Z' });
+    await db.execute(sql`
+      INSERT INTO board_climb_grades
+        (board_type, climb_uuid, angle, local_grade, confidence, model_version, coeff_version, computed_at)
+      VALUES (${BOARD_TYPE}, 'c1', 50, 22, 'low', 'test-model', 'test-coeff', now())
+    `);
+
+    const gradesFilePath = join(workDir, 'artifact-grades.db');
+    await exportLayoutSnapshot({
+      sqlClient: createPool(),
+      boardType: BOARD_TYPE,
+      layoutId: LAYOUT_ID,
+      filePath: join(workDir, 'artifact.db'),
+      gradesFilePath,
+      builtAt: BUILT_AT,
+      stabilityWindowSeconds: 30,
+    });
+
+    const angles = readArtifactRows(gradesFilePath, 'board_climb_grades', ['angle']).map((row) => row.angle);
+    expect(angles).toEqual([40]);
+    const meta = readArtifactMeta(gradesFilePath, 'board_climb_grades')!;
+    expect(meta.row_count).toBe(1);
+  });
+
+  it('scopes grades to the layout’s climbs — a grade for another layout never lands', async () => {
+    await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, compatible_size_ids, updated_at)
+      VALUES ('other-layout', ${BOARD_TYPE}, 99, '{5}'::int[], '2026-05-01T00:00:00Z'::timestamp)
+    `);
+    await insertGrade({ climbUuid: 'c1', angle: 40, localGrade: 20, computedAt: '2026-05-01T00:00:00Z' });
+    await insertGrade({ climbUuid: 'other-layout', angle: 40, localGrade: 20, computedAt: '2026-05-01T00:00:00Z' });
+
+    const gradesFilePath = join(workDir, 'artifact-grades.db');
+    await exportLayoutSnapshot({
+      sqlClient: createPool(),
+      boardType: BOARD_TYPE,
+      layoutId: LAYOUT_ID,
+      filePath: join(workDir, 'artifact.db'),
+      gradesFilePath,
+      builtAt: BUILT_AT,
+      stabilityWindowSeconds: 0,
+    });
+
+    const uuids = readArtifactRows(gradesFilePath, 'board_climb_grades', ['climb_uuid']).map((row) => row.climb_uuid);
+    expect(uuids).toEqual(['c1']);
+  });
+
+  it('publishes NO grades result for a layout with zero grade rows (every MoonBoard layout)', async () => {
+    await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+
+    const result = await exportLayoutSnapshot({
+      sqlClient: createPool(),
+      boardType: BOARD_TYPE,
+      layoutId: LAYOUT_ID,
+      filePath: join(workDir, 'artifact.db'),
+      gradesFilePath: join(workDir, 'artifact-grades.db'),
+      builtAt: BUILT_AT,
+      stabilityWindowSeconds: 0,
+    });
+
+    expect(result.grades).toBeUndefined();
+  });
+
+  it('omits grades entirely when no gradesFilePath is requested (the identity rollback pass)', async () => {
+    await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    await insertGrade({ climbUuid: 'c1', angle: 40, localGrade: 20, computedAt: '2026-05-01T00:00:00Z' });
+
+    const result = await exportLayoutSnapshot({
+      sqlClient: createPool(),
+      boardType: BOARD_TYPE,
+      layoutId: LAYOUT_ID,
+      filePath: join(workDir, 'artifact.db'),
+      builtAt: BUILT_AT,
+      stabilityWindowSeconds: 0,
+    });
+
+    expect(result.grades).toBeUndefined();
   });
 });

@@ -140,3 +140,113 @@ describe('parseSnapshotManifest', () => {
     expect(parseSnapshotManifest(withEntry({ contentEncoding: 'br' as unknown as 'gzip' }))).toBeNull();
   });
 });
+
+// Backward-compat gate for the additive `grades` block (issue #4310). The
+// validator below is a FROZEN COPY of the predicate that shipped before grades
+// existed, checked in rather than imported, so it keeps testing the old
+// behaviour even as the real one evolves. If a manifest carrying grades ever
+// stops parsing under it, every already-installed binary loses the snapshot
+// fast path the moment the export publishes.
+function parseWithShippedV1Validator(value: unknown): unknown | null {
+  const isRecord = (candidate: unknown): candidate is Record<string, unknown> =>
+    typeof candidate === 'object' && candidate !== null && !Array.isArray(candidate);
+  const isInteger = (candidate: unknown): boolean => typeof candidate === 'number' && Number.isInteger(candidate);
+  const isDecimalString = (candidate: unknown): boolean => typeof candidate === 'string' && /^\d+$/.test(candidate);
+  const isIso = (candidate: unknown): boolean =>
+    typeof candidate === 'string' &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/.test(candidate) &&
+    Number.isFinite(Date.parse(candidate));
+  const isTableStats = (candidate: unknown): boolean =>
+    isRecord(candidate) &&
+    isIso(candidate.watermarkUpdatedAt) &&
+    isDecimalString(candidate.watermarkSyncSeq) &&
+    isInteger(candidate.rowCount);
+  const isEntry = (candidate: unknown): boolean => {
+    if (!isRecord(candidate)) return false;
+    if (
+      typeof candidate.boardType !== 'string' ||
+      !isInteger(candidate.layoutId) ||
+      typeof candidate.key !== 'string' ||
+      typeof candidate.url !== 'string' ||
+      !isInteger(candidate.bytes) ||
+      (candidate.contentEncoding !== 'gzip' && candidate.contentEncoding !== 'identity') ||
+      !isIso(candidate.builtAt) ||
+      !isInteger(candidate.schemaVersion)
+    ) {
+      return false;
+    }
+    const tables = candidate.tables;
+    if (!isRecord(tables)) return false;
+    return ['board_climbs', 'board_climb_stats'].every((tableName) => isTableStats(tables[tableName]));
+  };
+
+  if (!isRecord(value)) return null;
+  if (value.formatVersion !== 1) return null;
+  if (!isIso(value.generatedAt)) return null;
+  if (!Array.isArray(value.entries)) return null;
+  if (!value.entries.every(isEntry)) return null;
+  return value;
+}
+
+function validGradesArtifact() {
+  return {
+    key: 'board-snapshots/v1-gzip/kilter/8/2026-06-01T00-00-00-000Z-grades.db',
+    url: 'https://cdn.example/board-snapshots/v1-gzip/kilter/8/2026-06-01T00-00-00-000Z-grades.db',
+    bytes: 2048,
+    contentEncoding: 'gzip' as const,
+    builtAt: '2026-06-01T00:00:00.000Z',
+    schemaVersion: 3,
+    tables: {
+      board_climb_grades: { watermarkUpdatedAt: '2026-05-30T08:00:00Z', watermarkSyncSeq: '777', rowCount: 5000 },
+    },
+  };
+}
+
+describe('parseSnapshotManifest — the optional grades artifact', () => {
+  it('accepts an entry with no grades block at all (MoonBoard, or the export rolled back)', () => {
+    expect(parseSnapshotManifest(validManifest())).not.toBeNull();
+  });
+
+  it('accepts and preserves a well-formed grades block', () => {
+    const manifest = withEntry({ grades: validGradesArtifact() });
+
+    const parsed = parseSnapshotManifest(JSON.parse(JSON.stringify(manifest)) as unknown);
+
+    expect(parsed?.entries[0].grades?.tables.board_climb_grades.rowCount).toBe(5000);
+  });
+
+  it('REJECTS a malformed grades block rather than trusting half of it', () => {
+    // A truncated grades block that still parsed would be trusted far enough to
+    // stamp a grades checkpoint over rows that never arrived.
+    for (const broken of [
+      { ...validGradesArtifact(), bytes: 1.5 },
+      { ...validGradesArtifact(), key: 42 },
+      { ...validGradesArtifact(), contentEncoding: 'br' },
+      { ...validGradesArtifact(), builtAt: 'not-a-timestamp' },
+      { ...validGradesArtifact(), tables: {} },
+      { ...validGradesArtifact(), tables: { board_climb_grades: { rowCount: 1 } } },
+      'not an object',
+    ]) {
+      expect(parseSnapshotManifest(withEntry({ grades: broken as never })), JSON.stringify(broken)).toBeNull();
+    }
+  });
+
+  it('parses under the FROZEN shipped v1 validator — no installed binary can choke on it', () => {
+    const manifest = JSON.parse(JSON.stringify(withEntry({ grades: validGradesArtifact() }))) as unknown;
+
+    expect(parseWithShippedV1Validator(manifest)).not.toBeNull();
+  });
+
+  it('keeps the grades artifact OUT of `entries` — a sibling entry would be picked as the whole layout', () => {
+    // findSnapshotEntry first-matches on (boardType, layoutId), so a grades
+    // artifact promoted to its own entry could be imported by an older client
+    // as if it carried the layout's climbs, stamping checkpoints past rows it
+    // never imported. Permanent loss, so pin the shape.
+    const manifest = parseSnapshotManifest(
+      JSON.parse(JSON.stringify(withEntry({ grades: validGradesArtifact() }))) as unknown,
+    );
+
+    expect(manifest?.entries).toHaveLength(1);
+    expect(manifest?.entries[0].tables).not.toHaveProperty('board_climb_grades');
+  });
+});
