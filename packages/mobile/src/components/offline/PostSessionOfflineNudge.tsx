@@ -39,7 +39,7 @@ export function PostSessionOfflineNudge({ storeReviewWillPrompt, style }: PostSe
   const handleDownload = useCallback(() => {
     if (!board) return;
     void confirmAndDownload(board).then((confirmed) => {
-      if (confirmed) nudge.accept();
+      if (confirmed) nudge.accept('download');
     });
   }, [board, nudge, confirmAndDownload]);
 
@@ -52,7 +52,7 @@ export function PostSessionOfflineNudge({ storeReviewWillPrompt, style }: PostSe
     if (!board) return;
     void confirmAndDownload(board).then((confirmed) => {
       if (!confirmed) return;
-      nudge.accept();
+      nudge.accept('download');
       setSetting('autoOfflineBoards', true);
     });
   }, [board, nudge, confirmAndDownload]);

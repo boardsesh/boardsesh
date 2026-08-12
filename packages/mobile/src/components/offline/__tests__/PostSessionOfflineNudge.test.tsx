@@ -164,6 +164,23 @@ describe('PostSessionOfflineNudge', () => {
     );
   });
 
+  // `armedOnly` reports the action taken, never a connectivity reading. The
+  // probe is a heuristic in both directions, so a confirmed download stays a
+  // download even on a device that reads offline — otherwise the funnel writes
+  // off a completion it should be counting.
+  it('reports a confirmed download as not arm-only even when the device reads offline', async () => {
+    state.isOffline = true;
+    await renderNudge();
+    fireEvent.click(screen.getByText('mobile.offline.nudge.postSession.cta'));
+
+    await waitFor(() =>
+      expect(spies.track).toHaveBeenCalledWith(
+        SHARED_EVENTS.OfflineNudgeAccepted,
+        expect.objectContaining({ surface: 'post_session', armedOnly: false }),
+      ),
+    );
+  });
+
   // The size dialog is the consent gate: counting a cancel as an accept would
   // inflate the funnel and start the 30-day quiet period on a "no".
   it('records nothing when the size dialog is cancelled', async () => {

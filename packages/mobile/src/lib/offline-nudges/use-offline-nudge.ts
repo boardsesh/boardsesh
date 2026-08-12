@@ -13,7 +13,6 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import { boardDownloadState } from '../../components/board-discovery/board-offline-state';
 import { useOfflineDownloadsEnabled, useOfflineNudgesEnabled } from '../../providers/feature-flags-provider';
 import { useDownloadedScopeKeys } from '../../offline/use-downloaded-scope-keys';
-import { useIsOffline } from '../../hooks/use-is-offline';
 import { offlineBoardKeyForBoard, useSetting } from '../../settings';
 import {
   emptyNudgeState,
@@ -25,7 +24,7 @@ import {
 import type { NudgeSurface, OfflineNudgeState } from './nudge-policy';
 import { loadNudgeState, saveNudgeState } from './nudge-storage';
 import { trackNudgeAccepted, trackNudgeDismissed, trackNudgeShown } from './nudge-analytics';
-import type { NudgeEventContext } from './nudge-analytics';
+import type { NudgeAcceptAction, NudgeEventContext } from './nudge-analytics';
 
 export type UseOfflineNudgeInput = {
   surface: NudgeSurface;
@@ -42,16 +41,18 @@ export type UseOfflineNudgeInput = {
 export type OfflineNudgeController = {
   /** Render the nudge. False until the persisted state has loaded. */
   visible: boolean;
-  /** True when accepting can only arm the scope, not start the download. */
-  armedOnly: boolean;
-  accept: () => void;
+  /**
+   * Record the accept. The caller passes what it actually did, because only the
+   * caller knows: the hook can see connectivity, and connectivity is exactly
+   * what lies on captive-portal wifi.
+   */
+  accept: (action: NudgeAcceptAction) => void;
   dismiss: (dismissKind: 'once' | 'forever') => void;
 };
 
 export function useOfflineNudge({ surface, board, storeReviewWillPrompt }: UseOfflineNudgeInput) {
   const offlineEngineEnabled = useOfflineDownloadsEnabled();
   const nudgesEnabled = useOfflineNudgesEnabled();
-  const isOffline = useIsOffline();
   const [enabledBoards] = useSetting('syncEnabledBoards');
   const [autoOfflineBoards] = useSetting('autoOfflineBoards');
   const { data: downloadedScopeKeys } = useDownloadedScopeKeys();
@@ -136,11 +137,14 @@ export function useOfflineNudge({ surface, board, storeReviewWillPrompt }: UseOf
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, eventContext, surface]);
 
-  const accept = useCallback(() => {
-    if (eventContext) trackNudgeAccepted(eventContext, isOffline);
-    void saveNudgeState(withNudgeAccepted(nudgeState ?? emptyNudgeState(), surface, Date.now()));
-    setNudgeState((previous) => withNudgeAccepted(previous ?? emptyNudgeState(), surface, Date.now()));
-  }, [eventContext, isOffline, nudgeState, surface]);
+  const accept = useCallback(
+    (action: NudgeAcceptAction) => {
+      if (eventContext) trackNudgeAccepted(eventContext, action);
+      void saveNudgeState(withNudgeAccepted(nudgeState ?? emptyNudgeState(), surface, Date.now()));
+      setNudgeState((previous) => withNudgeAccepted(previous ?? emptyNudgeState(), surface, Date.now()));
+    },
+    [eventContext, nudgeState, surface],
+  );
 
   const dismiss = useCallback(
     (dismissKind: 'once' | 'forever') => {
@@ -153,5 +157,5 @@ export function useOfflineNudge({ surface, board, storeReviewWillPrompt }: UseOf
     [eventContext, nudgeState, surface],
   );
 
-  return { visible, armedOnly: isOffline, accept, dismiss } satisfies OfflineNudgeController;
+  return { visible, accept, dismiss } satisfies OfflineNudgeController;
 }
