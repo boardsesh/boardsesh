@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import type {
   MoonBoardClimbDuplicateCandidateInput,
   MoonBoardClimbDuplicateMatch,
@@ -49,6 +49,23 @@ const MOONBOARD_COORDINATE_GROUPS: Array<{
 ];
 
 export const MOONBOARD_DUPLICATE_ERROR_PREFIX = 'A MoonBoard climb with the same holds already exists';
+
+/**
+ * Which existing climbs count as candidates when someone sets a new climb at
+ * `angle`.
+ *
+ * Catalog-imported MoonBoard problems are angle-agnostic: one climb row per
+ * problem with `board_climbs.angle IS NULL`, and one `board_climb_stats` row
+ * per graded angle (see the module header of
+ * packages/db/scripts/import-moonboard-catalog.ts). The same holds are on the
+ * wall whatever angle it is set to, so an angle-null row is a duplicate
+ * candidate at EVERY angle — filtering on `angle = ${angle}` alone would let
+ * the whole imported catalog past the gate. Legacy per-angle rows (the
+ * pre-rewrite importer wrote one per angle) still only match their own angle.
+ */
+function climbAngleMatches(angle: number): SQL {
+  return sql`(${dbSchema.boardClimbs.angle} = ${angle} OR ${dbSchema.boardClimbs.angle} IS NULL)`;
+}
 
 function coordinateToHoldId(coord: string): number {
   const colIndex = coord[0].toUpperCase().charCodeAt(0) - 'A'.charCodeAt(0);
@@ -175,7 +192,7 @@ export async function findMoonBoardDuplicateMatches(
        AND ${dbSchema.boardClimbStats.angle} = ${climbStatsEffectiveAngleSql}
       WHERE ${dbSchema.boardClimbs.boardType} = 'moonboard'
         AND ${dbSchema.boardClimbs.layoutId} = ${layoutId}
-        AND ${dbSchema.boardClimbs.angle} = ${angle}
+        AND ${climbAngleMatches(angle)}
         AND ${dbSchema.boardClimbs.isListed} = true
         AND ${dbSchema.boardClimbs.isDraft} = false
       GROUP BY
@@ -217,7 +234,7 @@ export async function findMoonBoardDuplicateMatches(
        AND ${dbSchema.boardClimbStats.angle} = ${climbStatsEffectiveAngleSql}
       WHERE ${dbSchema.boardClimbs.boardType} = 'moonboard'
         AND ${dbSchema.boardClimbs.layoutId} = ${layoutId}
-        AND ${dbSchema.boardClimbs.angle} = ${angle}
+        AND ${climbAngleMatches(angle)}
         AND ${dbSchema.boardClimbs.isListed} = true
         AND ${dbSchema.boardClimbs.isDraft} = false
         AND NOT EXISTS (
