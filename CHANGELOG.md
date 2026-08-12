@@ -4,6 +4,14 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-12
+
+### Fixed
+
+- Downloaded boards keep their "Your boards" and "Following" sections when you ([#4309](https://github.com/boardsesh/boardsesh/pull/4309))
+  open My Boards with no signal.
+  JS-only, no native deps, no fingerprint movement — rides OTA.
+
 ## 2026-08-11
 
 ### New
