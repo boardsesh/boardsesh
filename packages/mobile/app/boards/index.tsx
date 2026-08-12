@@ -28,6 +28,7 @@ import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metric
 import { useIsOffline } from '../../src/hooks/use-is-offline';
 import { useOfflineBoards } from '../../src/settings';
 import { useRememberDownloadedBoards } from '../../src/offline/use-remember-downloaded-boards';
+import { useOfflineSchemaReady } from '../../src/db/use-offline-schema-ready';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { setBoardRevealTipPending } from '../../src/lib/onboarding/onboarding-storage';
 import { track } from '../../src/lib/analytics';
@@ -82,8 +83,14 @@ export default function BoardSelection() {
   const db = useSQLiteContext();
   // Ungated by the offline-downloads flag: this reads rows already on disk, and a
   // flag flipped off must not strand a device that has downloads.
+  //
+  // Schema readiness is a KEY member, not an `enabled` gate. On a contended launch
+  // this connection has no tables yet, and the read lands in `isError` — the empty
+  // state, which is already the right answer. Gating instead would spin forever
+  // whenever init genuinely fails; keying makes a late readiness flip refetch.
+  const schemaReady = useOfflineSchemaReady();
   const { data: downloadedScopeKeys } = useQuery({
-    queryKey: ['downloadedScopeKeys'],
+    queryKey: ['downloadedScopeKeys', schemaReady],
     queryFn: () => getDownloadedScopeKeys(db),
   });
   const offlineCards = useOfflineBoards();

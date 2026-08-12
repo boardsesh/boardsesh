@@ -429,6 +429,16 @@ export const SHARED_EVENTS = {
   // 'reset' | 'probe_failed' }. Deduped once-per-launch-per-verdict in the
   // mobile binding, because the engine evaluates on every foreground.
   OfflineSyncCoverageEvaluated: 'Offline Sync Coverage Evaluated',
+  // Offline sync — the local SQLite setup lost the write lock at launch and a
+  // later retry won, so offline storage came up after all. Fired at most once
+  // per process, only when attempt 1 failed (a clean launch stays silent).
+  // Props: { attempts, phase: 'wal' | 'queue-table' | 'migrations', elapsedMs,
+  // sqliteCode }. Until this existed the lane was write-only: Sentry heard about
+  // a launch that ran out of retries and nothing at all about one that recovered,
+  // so "we fixed it" and "it still contends, it just retries its way out" looked
+  // identical. `elapsedMs` is the contention-duration measurement — its
+  // distribution is what sizes the retry window, which today is a guess.
+  OfflineSqliteInitRecovered: 'Offline SQLite Init Recovered',
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;

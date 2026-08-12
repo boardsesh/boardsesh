@@ -22,6 +22,7 @@ import { useSnapshotSource } from '../offline/use-snapshot-source';
 import { useStoredUserId } from '../hooks/use-current-user-id';
 import { clearUserData } from '../db/connection';
 import { reportError } from '../lib/error-reporting';
+import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
 
 /**
  * Publishes the offline-engine flag decision to the module-level store that
@@ -62,6 +63,10 @@ export function OfflineSyncBridge() {
   const { isAuthenticated } = useAuth();
   const offlineEnabled = useOfflineDownloadsEnabled();
   const snapshotSource = useSnapshotSource();
+  // `useSQLiteContext()` hands out a connection as soon as the launch gate opens,
+  // which is after the FIRST init attempt whatever it did — so on a contended launch
+  // this db has no tables yet. See src/db/schema-ready.ts.
+  const schemaReady = useOfflineSchemaReady();
 
   // getHttpClient() already carries auth + endpoint; binding .request keeps the
   // GraphQLFetch shape the scheduler and drainer expect.
@@ -77,9 +82,15 @@ export function OfflineSyncBridge() {
   // path that skips cleanup entirely. Re-run the wipe, report it, and only then
   // claim the device for this account. Until the stamp matches, every
   // user-scoped local read declines and falls through to the network.
+  //
+  // Waits for a stamped schema like every other db effect here: the stamp is a
+  // write, and on a contended launch there is no sync_meta table to write it
+  // into. Nothing reads local user data before the stamp lands either — those
+  // reads go through getDatabaseHandle(), which stays null until the same
+  // moment.
   const { userId: localUserId } = useStoredUserId(isAuthenticated);
   useEffect(() => {
-    if (!isAuthenticated || !localUserId) return;
+    if (!isAuthenticated || !localUserId || !schemaReady) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -112,7 +123,7 @@ export function OfflineSyncBridge() {
     return () => {
       cancelled = true;
     };
-  }, [db, isAuthenticated, localUserId]);
+  }, [db, isAuthenticated, localUserId, schemaReady]);
 
   // Unconditional (unlike the scheduler effect below): the offline-sync
   // engine's backgrounding guard must cover ad-hoc drainMutationQueue() calls
@@ -140,16 +151,24 @@ export function OfflineSyncBridge() {
   // letters) are exactly as stranded as a flag-on user's, and the bridge
   // already drains their leftovers. reportOutboxBacklogOnce self-guards against
   // this effect re-running on an auth or flag flip, and swallows its own errors.
+  // Gated on the schema like every other db effect: pending_mutations does not
+  // exist yet on a contended launch, and a gauge that throws there would report
+  // no backlog rather than the backlog it could not read.
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !schemaReady) return;
     void reportOutboxBacklogOnce(db);
-  }, [db, isAuthenticated]);
+  }, [db, isAuthenticated, schemaReady]);
 
   // Push-then-pull sync loop (foreground + reconnect triggers). Returns its own
   // teardown, so React calls it on unmount / dependency change — including the
   // isAuthenticated flip on sign-out, which stops the scheduler.
   useEffect(() => {
     if (!isAuthenticated) return undefined;
+    // Both branches below WRITE to the database — the scheduler pulls catalog rows
+    // and the leftover drain flushes queued mutations — so both wait for a stamped
+    // schema. Readiness usually lands before the first commit; when a contended
+    // launch makes it late, this effect re-runs on the flip and starts then.
+    if (!schemaReady) return undefined;
     if (offlineEnabled) {
       try {
         const stop = startSyncScheduler(
@@ -197,7 +216,7 @@ export function OfflineSyncBridge() {
     return () => {
       cancelled = true;
     };
-  }, [db, queryClient, graphqlFetch, offlineEnabled, snapshotSource, isAuthenticated]);
+  }, [db, queryClient, graphqlFetch, offlineEnabled, snapshotSource, isAuthenticated, schemaReady]);
 
   // Deep-link routing for tapped push notifications. Deliberately independent
   // of the offline flag — notifications ship inert for everyone today.

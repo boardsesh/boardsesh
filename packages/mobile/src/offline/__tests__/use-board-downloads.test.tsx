@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act } from 'react';
 import { cleanup, renderHook } from '@testing-library/react';
 import type { BootstrapMetadataChangedInfo, ScopeDownloadCompleteInfo } from '@boardsesh/offline-sync';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -47,6 +48,7 @@ import {
   notifyBootstrapMetadataChanged,
   notifyScopeDownloadComplete,
 } from '../../sync';
+import { setSchemaReady, __resetSchemaReadyForTests } from '../../db/schema-ready';
 import { useBoardDownloads } from '../use-board-downloads';
 
 const makeBoard = (uuid: string, boardType: 'kilter' | 'tension', layoutId: number, sizeId: number): UserBoard =>
@@ -55,9 +57,15 @@ const makeBoard = (uuid: string, boardType: 'kilter' | 'tension', layoutId: numb
 beforeEach(() => {
   vi.clearAllMocks();
   __resetSyncStatusForTests();
+  // The ordinary launch: init won on its first attempt, so the schema is stamped
+  // before any screen renders. The contended launch has its own case below.
+  setSchemaReady(true);
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  __resetSchemaReadyForTests();
+});
 
 describe('useBoardDownloads', () => {
   it('advances bootstrap and completion revisions for every scope in one ad-hoc multi-board sync', () => {
@@ -106,5 +114,42 @@ describe('useBoardDownloads', () => {
     // offline picker needs a row for each.
     expect(spies.rememberOfflineBoards).toHaveBeenCalledWith(boards);
     expect(spies.triggerSync).toHaveBeenCalledTimes(1);
+  });
+
+  // On a contended launch SQLiteProvider hands out a connection whose migrations
+  // never ran, so a download kicked then would import a snapshot into a file with
+  // no tables. The tap is held rather than dropped: a "Download" that visibly does
+  // nothing is worse than one that starts a moment later, and the discovery nudges
+  // aim people straight at this button.
+  it('holds a download kicked before the schema is ready, then fires it once readiness lands', () => {
+    setSchemaReady(false);
+    const board = makeBoard('garage', 'kilter', 1, 10);
+    const { result } = renderHook(() => useBoardDownloads());
+
+    result.current.enableBoardsOffline(board);
+
+    // The preference writes are pure settings state and must still land now — the
+    // board reads as "offline" in the UI immediately.
+    expect(spies.setOfflineBoardEnabled).toHaveBeenCalledTimes(1);
+    expect(spies.rememberOfflineBoards).toHaveBeenCalledWith([board]);
+    expect(spies.triggerSync).not.toHaveBeenCalled();
+
+    act(() => setSchemaReady(true));
+
+    expect(spies.triggerSync).toHaveBeenCalledTimes(1);
+    // Re-read at flush time, never replayed from the captured tap: someone who turns
+    // a board on and off again while the schema is unready gets a cycle that finds
+    // nothing to do, not the download they cancelled.
+    const enabledBoardsReader = spies.triggerSync.mock.calls[0]?.[3] as () => string[];
+    expect(enabledBoardsReader()).toEqual(['kilter:1:10', 'tension:2:11']);
+  });
+
+  it('does not kick a download on a readiness flip nobody asked for', () => {
+    setSchemaReady(false);
+    renderHook(() => useBoardDownloads());
+
+    act(() => setSchemaReady(true));
+
+    expect(spies.triggerSync).not.toHaveBeenCalled();
   });
 });

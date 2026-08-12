@@ -215,10 +215,12 @@ export { SCHEMA_STATEMENTS } from './db/schema';
 export { runMigrations, MIGRATIONS, LATEST_SCHEMA_VERSION } from './db/migrations';
 export type { Migration } from './db/migrations';
 export { OFFLINE_DB_BUSY_TIMEOUT_MS, applyBusyTimeout, configureMainConnection } from './db/pragmas';
-// Shared with the sqlite-lock workstream (#4314): one predicate for "was this
-// write-lock contention?", so reporting and any future retry/defer logic can
-// never disagree about which failures count.
-export { isDatabaseLockedError } from './db/lock-errors';
+// One predicate for "was this write-lock contention?", so reporting (#4329) and
+// the sqlite-init retry loop (#4314) can never disagree about which failures
+// count. `classifySqliteLockError` is the same verdict plus the SQLite result
+// code, for callers that tag telemetry with it.
+export { isDatabaseLockedError, classifySqliteLockError } from './db/lock-errors';
+export type { SqliteLockClassification } from './db/lock-errors';
 
 // --- Offline board scope keys ----------------------------------------------------
 export {
