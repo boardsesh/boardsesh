@@ -279,6 +279,14 @@ vi.mock('@boardsesh/offline-sync', () => ({
 vi.mock('../../offline/offline-sync-adapter', () => ({
   drainMutationQueue: (...args: unknown[]) => drainMutationQueueMock(...args),
 }));
+// The offline-usage rollup's suppression map is in-memory and not keyed by user,
+// so the sign-out paths reset it (#4317) — otherwise a same-day account switch
+// inherits the previous user's counters and the new user's first offline day
+// silently never fires.
+const resetOfflineUsageSignalMock = vi.hoisted(() => vi.fn());
+vi.mock('../../offline/offline-usage-signal', () => ({
+  resetOfflineUsageSignal: () => resetOfflineUsageSignalMock(),
+}));
 
 const stopTokenManagementMock = vi.fn(async () => {});
 vi.mock('../../notifications', () => ({
@@ -402,6 +410,9 @@ describe('AuthProvider.signOut', () => {
     // queryClient is the durable check.
     expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined();
     expect(queryClient.getQueryData(['betaLinks', 'kilter', 'climb-x'])).toBeUndefined();
+    // Same auth boundary, same reason: the next user must not inherit the
+    // previous one's offline-read rollup counters (#4317).
+    expect(resetOfflineUsageSignalMock).toHaveBeenCalled();
   });
 
   it('runs the auth-side cleanup before clearing the cache', async () => {

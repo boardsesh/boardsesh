@@ -8,6 +8,8 @@ import { getClimbLocal } from '../../db/queries/get-climb-local';
 import { getBoardseshGradeLocal, getBoardseshGradesForAnglesLocal } from '../../db/queries/get-boardsesh-grade-local';
 import { isBoardDownloadedLocally, isBoardTypeDownloadedLocally } from '../../db/queries/board-download-status';
 import { getHttpClient } from './client';
+import type { OfflineReadSurface, OfflineUnavailableReason } from '@boardsesh/offline-sync';
+import { recordOfflineRead, recordOfflineReadUnavailable } from '../../offline/offline-usage-signal';
 import {
   BOARDSESH_GRADE,
   BOARDSESH_GRADES_FOR_ANGLES,
@@ -51,6 +53,15 @@ function scopeOf(input: { boardName: string; layoutId: number; sizeId: number })
 
 type OfflineOperation<TVariables, TResponse> = {
   document: string;
+  // Offline-usage rollup (#4317): which read this is, and which board it is
+  // scoped to. The gate keys on (day, lane, board) and carries `surface` as a
+  // descriptive prop of the read that crossed a rung.
+  surface: OfflineReadSurface;
+  boardNameOf: (variables: TVariables) => string;
+  // Why an offline read came back empty, when the answer isn't simply "the
+  // board isn't downloaded". Only computed when the rollup gate has already
+  // decided to emit, so it costs nothing on the suppressed path.
+  unavailableReason?: (variables: TVariables) => OfflineUnavailableReason;
   canServeLocal: (db: SQLiteDatabase, variables: TVariables) => Promise<boolean>;
   // Returns the RAW GraphQL response shape (as if the server had answered).
   resolveLocal: (db: SQLiteDatabase, variables: TVariables) => Promise<TResponse>;
@@ -78,8 +89,20 @@ async function canServeSearchLocal(db: SQLiteDatabase, { input }: SearchClimbsQu
   return isOfflineSearchSupported(input) && (await isBoardDownloadedLocally(db, scopeOf(input)));
 }
 
+// A search can come back empty offline for two very different reasons, and the
+// difference decides who can be converted: a missing download is #4318's
+// audience, an unsupported filter is #4002's.
+function searchUnavailableReason({ input }: SearchClimbsQueryVariables): OfflineUnavailableReason {
+  return isOfflineSearchSupported(input) ? 'board_not_downloaded' : 'filter_unsupported';
+}
+
+const searchBoardName = ({ input }: SearchClimbsQueryVariables) => input.boardName;
+
 registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsQueryResponse>({
   document: SEARCH_CLIMBS,
+  surface: 'search',
+  boardNameOf: searchBoardName,
+  unavailableReason: searchUnavailableReason,
   canServeLocal: canServeSearchLocal,
   resolveLocal: async (db, { input }) => ({ searchClimbs: await searchClimbsLocal(db, input) }),
   offlineFallback: () => ({ searchClimbs: { climbs: [], hasMore: false } }),
@@ -87,6 +110,9 @@ registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsQueryResponse>(
 
 registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsCountQueryResponse>({
   document: SEARCH_CLIMBS_COUNT,
+  surface: 'search',
+  boardNameOf: searchBoardName,
+  unavailableReason: searchUnavailableReason,
   canServeLocal: canServeSearchLocal,
   resolveLocal: async (db, { input }) => ({ searchClimbs: { totalCount: await countClimbsLocal(db, input) } }),
   offlineFallback: () => ({ searchClimbs: { totalCount: 0 } }),
@@ -94,6 +120,8 @@ registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsCountQueryRespo
 
 registerOfflineOperation<GetClimbQueryVariables, GetClimbQueryResponse>({
   document: GET_CLIMB,
+  surface: 'climb_detail',
+  boardNameOf: (variables) => variables.boardName,
   // Detail has no filters — local whenever the exact scope is downloaded.
   canServeLocal: (db, variables) => isBoardDownloadedLocally(db, scopeOf(variables)),
   resolveLocal: async (db, variables) => ({
@@ -117,6 +145,8 @@ registerOfflineOperation<GetClimbQueryVariables, GetClimbQueryResponse>({
 // exactly like an empty search — no needless network retry.
 registerOfflineOperation<BoardseshGradeVariables, BoardseshGradeResponse>({
   document: BOARDSESH_GRADE,
+  surface: 'grade',
+  boardNameOf: ({ boardName }) => boardName,
   canServeLocal: (db, { boardName }) => isBoardTypeDownloadedLocally(db, boardName),
   resolveLocal: async (db, { boardName, climbUuid, angle }) => ({
     boardseshGrade: await getBoardseshGradeLocal(db, { boardName, climbUuid, angle }),
@@ -146,6 +176,8 @@ registerOfflineOperation<BoardseshGradeVariables, BoardseshGradeResponse>({
 // offline-request.test.ts's "does not retry an empty local list" case.
 registerOfflineOperation<BoardseshGradesForAnglesVariables, BoardseshGradesForAnglesResponse>({
   document: BOARDSESH_GRADES_FOR_ANGLES,
+  surface: 'grade',
+  boardNameOf: ({ boardName }) => boardName,
   canServeLocal: (db, { boardName }) => isBoardTypeDownloadedLocally(db, boardName),
   resolveLocal: async (db, { boardName, climbUuid }) => ({
     boardseshGradesForAngles: await getBoardseshGradesForAnglesLocal(db, { boardName, climbUuid }),
@@ -206,8 +238,29 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
         // may simply not have synced yet. Offline, the miss stands (it has the
         // same shape as offlineFallback).
         const retryOverNetwork = operation.isLocalMiss?.(localResponse) === true && isOnline;
-        if (!retryOverNetwork) return localResponse;
+        if (!retryOverNetwork) {
+          // Recorded on the RETURN path only, so the online miss-retry that
+          // continues to the network below is never counted as served (#4317).
+          recordOfflineRead({
+            lane: isOnline ? 'online_local' : 'offline_local',
+            surface: operation.surface,
+            boardName: operation.boardNameOf(variables as never),
+          });
+          return localResponse;
+        }
       } else if (!isOnline) {
+        // Offline with nothing local to serve — the surface gets an empty
+        // result. `variables` can legitimately be undefined here (a registered
+        // document called without them degrades to the fallback), and every
+        // accessor below destructures it, so skip the signal in that case
+        // rather than throw on a read path.
+        if (variables !== undefined) {
+          recordOfflineReadUnavailable({
+            reason: operation.unavailableReason?.(variables as never) ?? 'board_not_downloaded',
+            surface: operation.surface,
+            boardName: operation.boardNameOf(variables as never),
+          });
+        }
         return operation.offlineFallback() as TResponse;
       }
     }
@@ -226,6 +279,14 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
       // them; otherwise (flag off, or db not resolved above) probe now.
       const db = localDb ?? getDatabaseHandle();
       if (db && (localServiceable || (await operation.canServeLocal(db, variables as never)))) {
+        // Real offline value that `onlineManager` called online — counted as its
+        // own lane so the north-star doesn't lose captive-portal / dead-upstream
+        // sessions (#4317).
+        recordOfflineRead({
+          lane: 'network_error_local',
+          surface: operation.surface,
+          boardName: operation.boardNameOf(variables as never),
+        });
         return (await operation.resolveLocal(db, variables as never)) as TResponse;
       }
     }

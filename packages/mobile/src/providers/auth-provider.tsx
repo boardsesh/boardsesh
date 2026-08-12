@@ -22,6 +22,7 @@ import {
 } from '../lib/auth';
 import { SCREENSHOT_USER_EMAIL, SCREENSHOT_USER_PASSWORD } from '../lib/screenshot-mode';
 import { reset as resetAnalytics, track } from '../lib/analytics';
+import { resetOfflineUsageSignal } from '../offline/offline-usage-signal';
 import { reportError, reportHandledError } from '../lib/error-reporting';
 import { setOnForcedSignOut } from '../lib/auth-interceptor';
 import { getHttpClient, resetHttpClient } from '../lib/graphql/client';
@@ -162,6 +163,11 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     const authState = authStateRef.current;
     if (authState.isLoading || authState.isAuthenticated) {
       resetAnalytics();
+      // The offline-usage rollup's suppression map is in-memory and not keyed by
+      // user, so a same-day account switch would otherwise inherit the previous
+      // user's counters and the new user's first offline day would never fire
+      // (#4317).
+      resetOfflineUsageSignal();
     }
   }, []);
 
@@ -246,6 +252,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       const localDb = getDatabaseHandle();
       if (localDb) await reportOutboxDiscardedOnSignOut(localDb);
       resetAnalytics();
+      resetOfflineUsageSignal();
       const stopTokenCleanup = stopTokenManagement(async () => {});
       if (Platform.OS === 'web') await waitForCleanupPhase(stopTokenCleanup);
       else await stopTokenCleanup;

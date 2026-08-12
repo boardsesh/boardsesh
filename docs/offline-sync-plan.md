@@ -958,6 +958,79 @@ Three things are worth knowing before trusting a number derived from it:
   otherwise drop `connectivity` for the rest of the launch — the same trap
   `environment` and `$raw_user_agent` already document in `posthog-client.ts`.
 
+### The offline-read signal
+
+`connectivity` says whether the network was usable. It cannot say whether the
+local database actually answered anything — "offline and browsing my downloaded
+Kilter catalog" and "offline staring at an empty screen" look identical through
+it, and that distinction _is_ the value proposition. So the interceptor emits a
+second, narrower signal.
+
+Every offline-served read funnels through `offlineAwareRequest()` in
+`packages/mobile/src/lib/graphql/offline-request.ts`, which already knows which
+lane it took. Four terminal outcomes are worth measuring:
+
+| Outcome                           | Event                      | Lane / reason          |
+| --------------------------------- | -------------------------- | ---------------------- |
+| Offline, board downloaded         | `Offline Read Served`      | `offline_local`        |
+| Network threw, board downloaded   | `Offline Read Served`      | `network_error_local`  |
+| Online, flag on, board downloaded | `Offline Read Served`      | `online_local`         |
+| Offline, nothing local to serve   | `Offline Read Unavailable` | `board_not_downloaded` |
+| Offline, filter not expressible   | `Offline Read Unavailable` | `filter_unsupported`   |
+
+`network_error_local` is real offline value that `onlineManager` mislabels as
+online (captive portal, dead gym-wifi upstream, cold-start seed race), so it
+counts toward the north-star. `online_local` is the flag-on latency
+optimization — it proves the local path is exercised but it is **not** offline
+usage, and it is excluded from the north-star. Expect it to dominate the
+breakdown once #4312 bakes the engine flag on.
+
+**These events are rolled up, not per-read.** Search and its count fire on every
+keystroke, so a per-read event would be thousands per session — and PostHog's
+offline queue holds 1000 events and drops the _oldest_ when full, so a chatty
+read event captured offline would evict the ticks and screens sharing that
+queue. `createOfflineUsageSignal` (`@boardsesh/offline-sync`, pure TS with `emit`
+and `now` injected) counts reads per `(UTC epoch-day, lane, board)` and emits
+only when the count crosses a rung of `[1, 10, 100]`:
+
+- A suppressed read costs one integer compare, one `Map` lookup and one
+  increment. No I/O, no persistence, no battery.
+- Worst case for a pathological user is 3 lanes x 2 boards x 3 rungs = 18
+  events/day; typical is one or two. A `maxEmitsPerProcess` backstop (60) stops
+  any future call site turning it into a firehose.
+- Rung 1 fires on the _first_ qualifying read, so the north-star can never be
+  lost to an app kill. The deeper rungs only add depth.
+- `readCount` is therefore the **rung**, never a raw counter, and the absence of
+  a follow-up event means "fewer than the next rung", not "no more reads".
+- `surface` (`search` / `climb_detail` / `grade`) is a descriptive prop of the
+  read that crossed the rung, **not** part of the key — keying on it would
+  roughly triple the volume for a breakdown nobody has asked for yet.
+- The counter is in-memory and not persisted. A relaunch re-arms the day, which
+  can double-count a user; harmless for a unique-users metric. It is **not**
+  harmless across an account switch, so `resetOfflineUsageSignal()` runs on both
+  sign-out paths in `auth-provider.tsx` — without it the next user's first
+  offline day silently never fires.
+
+### North-star
+
+> **Weekly unique users who fire `Offline Read Served` with
+> `lane in ('offline_local', 'network_error_local')`.**
+
+Supporting tiles, in the order they answer questions about it:
+
+1. **Depth** — weekly median of the maximum `readCount` per user, same lane
+   filter. Distinguishes "opened the app once with no signal" from "climbed a
+   whole session off the local database".
+2. **The gap** — weekly unique users on `Offline Read Unavailable`, broken down
+   by `reason`. `board_not_downloaded` is the audience #4318's nudges exist to
+   convert; `filter_unsupported` is #4002's.
+3. **Conversion** — `Offline Board Download Completed` → `Offline Read Served`
+   (offline lanes) over 30 days: of the people who downloaded a board, how many
+   ever used it away from signal.
+4. **Any activity offline** — weekly unique users on any event with
+   `connectivity == 'offline'`. The loosest possible read of "did anyone use the
+   app with no network", and the sanity check on the three above.
+
 ## Performance targets
 
 | Metric                   | Target                | Notes                                     |

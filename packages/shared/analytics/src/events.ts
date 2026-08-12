@@ -439,6 +439,32 @@ export const SHARED_EVENTS = {
   // identical. `elapsedMs` is the contention-duration measurement — its
   // distribution is what sizes the retry window, which today is a guess.
   OfflineSqliteInitRecovered: 'Offline SQLite Init Recovered',
+  // Offline sync — someone read climb data from the on-device database. THE
+  // north-star signal for offline mode (issue #4317): weekly unique users firing
+  // this with `lane in ('offline_local', 'network_error_local')`.
+  //
+  // ROLLED UP, NOT PER-READ. Search fires on every keystroke, so a per-read
+  // event would be thousands per session and would evict other events from
+  // PostHog's 1000-slot offline queue. The gate (createOfflineUsageSignal in
+  // @boardsesh/offline-sync) counts reads per (UTC day, lane, board) and emits
+  // only when the count crosses 1, 10 or 100. So `readCount` is the RUNG that
+  // was crossed — 1 / 10 / 100 — never a raw per-read counter, and the absence
+  // of a follow-up event means "fewer than the next rung", not "no more reads".
+  //
+  // Props: { lane: 'offline_local' | 'network_error_local' | 'online_local',
+  //   surface: 'search' | 'climb_detail' | 'grade', boardName, readCount }.
+  // `lane` is the source: served while offline, served after the network threw
+  // (a lying connection — real offline value), or the online flag-on latency
+  // short-circuit (NOT offline usage; excluded from the north-star). `surface`
+  // is the read that crossed the rung, not an exhaustive list of what was used.
+  OfflineReadServed: 'Offline Read Served',
+  // Offline sync — the counterpart: the device was offline and there was nothing
+  // local to serve, so the surface got an empty result. The conversion pool that
+  // #4318 (discovery nudges) and #4002 (unsupported filters) exist to shrink.
+  // Same rollup contract and same readCount semantics as Offline Read Served.
+  // Props: { reason: 'board_not_downloaded' | 'filter_unsupported',
+  //   surface: 'search' | 'climb_detail' | 'grade', boardName, readCount }.
+  OfflineReadUnavailable: 'Offline Read Unavailable',
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;
