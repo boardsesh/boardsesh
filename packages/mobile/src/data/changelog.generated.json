@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-12T12:11:22.306Z",
+  "generatedAt": "2026-08-12T13:20:14.215Z",
   "entries": [
+    {
+      "prNumber": 4357,
+      "category": "fixed",
+      "title": "Removing a downloaded board could fail to hand its space back while the app was busy reading, and stop with a database error instead of just leaving the file a little larger. It now waits for the app to finish and reclaims the space properly.",
+      "mergedAt": "2026-08-12T13:18:55Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4357",
+      "body": "Downloads that get interrupted — by locking your phone, or by removing another board mid-download — are now recorded instead of vanishing, so we can see how often a board download stops short and why."
+    },
     {
       "prNumber": 4344,
       "category": "new",

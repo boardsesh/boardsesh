@@ -22,6 +22,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Removing a downloaded board could fail to hand its space back while the app was busy reading, and stop with a database error instead of just leaving the file a little larger. It now waits for the app to finish and reclaims the space properly. ([#4357](https://github.com/boardsesh/boardsesh/pull/4357))
+  Downloads that get interrupted — by locking your phone, or by removing another board mid-download — are now recorded instead of vanishing, so we can see how often a board download stops short and why.
 - The freshness fix is real but not observable on any surface that ships today; the surfaces that make it visible are PRs 2-4 in this stack. ([#4341](https://github.com/boardsesh/boardsesh/pull/4341))
 - A phone that's out of space no longer burns battery re-drawing board art it can't save — Boardsesh backs off, frees what it can, and keeps the wall photo on screen. ([#4339](https://github.com/boardsesh/boardsesh/pull/4339))
 - Board art no longer piles up during a long session — Boardsesh trims it as you browse instead of only at app start. Removing a downloaded board now clears the art it drew for that board, too. ([#4338](https://github.com/boardsesh/boardsesh/pull/4338))
