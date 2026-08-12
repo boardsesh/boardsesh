@@ -432,16 +432,25 @@ pre-import empty result set.
   a finished row. Every number on the frame is **wire scale**: `wireBytes` is `entry.bytes` and
   `wireBytesDone` is `fraction × entry.bytes`, so no renderer can reach the decoded size.
 
-  The denominator lives in `resolveDownloadFraction` (`snapshot-progress.ts`) and prefers, in order:
-  the platform's own reported total when positive (on iOS the total and the counter arrive in one
-  delegate callback, so their ratio is self-consistent whatever scale Foundation picked), then
-  `uncompressedBytes` for a gzip entry (Android — OkHttp gunzips transparently, so `contentLength()`
-  is -1 while the write loop counts decoded bytes), then `entry.bytes` for identity, then `null` =
-  indeterminate (byte counter, no bar). If the counter runs >2% past the denominator the two scales
-  disagree, so it **re-anchors** to `uncompressedBytes` when that is larger rather than pinning the bar
-  at 100%, and latches indeterminate when there is no larger candidate. expo's synthetic terminal frame
-  (`bytesWritten === totalBytes`, carrying the decoded on-disk size) is read as "complete", never as a
-  data point.
+  The denominator lives in `resolveDownloadFraction` (`snapshot-progress.ts`). The platform counter
+  counts bytes **written to disk**, so the denominator has to be the size of the file that ends up
+  there — decoded for a gzip entry — never the compressed transfer size, whoever reports it. In order:
+  `uncompressedBytes` for a gzip entry, floored against the platform's own total
+  (`max(uncompressedBytes, reportedTotalBytes)`); then the reported total when positive and not a gzip
+  entry's wire size; then `entry.bytes` for identity; then `null` = indeterminate (byte counter, no
+  bar). iOS is why the first rule exists: URLSession pairs a decoded `totalBytesWritten` with a
+  Content-Length `totalBytesExpectedToWrite`, so dividing by the reported total raced the bar to 100%
+  once 103 MB of a 271 MB stream had landed — about 38% in. Android has no total at all (OkHttp gunzips
+  transparently, so `contentLength()` is -1). A gzip artifact exported before `uncompressedBytes`
+  shipped stays indeterminate for the whole download rather than showing a bar 2.6× too fast; re-running
+  the export workflow closes that. The denominator is latched on the first frame that has a candidate
+  and never re-picked, which is what keeps the fraction monotonic — the throttle **drops** backwards
+  frames rather than clamping them, so a mid-download re-scale would freeze the row until the raw
+  fraction climbed back past its old high-water mark. If the counter still runs >2% past the
+  denominator, the download latches indeterminate rather than pinning at 100%. expo's synthetic terminal
+  frame (`bytesWritten === totalBytes`, carrying the decoded on-disk size) is read as "complete", never
+  as a data point — a gzip entry's wire-scale total is excluded from that check first, since the decoded
+  counter passes it mid-flight.
 
   Frames are throttled to one per 400 ms plus a rounded-percent/rounded-megabyte change gate — Android
   emits natively every 100 ms, which is ~5,300 events over an 8m52s Kilter download.

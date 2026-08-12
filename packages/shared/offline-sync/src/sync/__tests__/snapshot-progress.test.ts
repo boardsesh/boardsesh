@@ -56,10 +56,31 @@ function step(
 }
 
 describe('resolveDownloadFraction — denominator precedence', () => {
-  it('prefers the platform-reported total (iOS: total and counter arrive self-paired)', () => {
-    // Reported total is the compressed scale here; uncompressedBytes is bigger.
-    // Taking the reported one keeps the ratio internally consistent.
-    const { fraction } = step(gzipEntry(), createDownloadFractionAnchor(), WIRE_BYTES / 2, WIRE_BYTES);
+  it('ignores a gzip entry’s Content-Length total and divides by the decoded size (iOS)', () => {
+    // URLSession pairs a DECODED counter with a Content-Length (compressed)
+    // expected total. Dividing by that total is what raced the bar to 100% at
+    // ~38% of the transfer, so the decoded size wins.
+    const { fraction, anchor } = step(gzipEntry(), createDownloadFractionAnchor(), DECODED_BYTES / 2, WIRE_BYTES);
+    expect(anchor.denominator).toBe(DECODED_BYTES);
+    expect(fraction).toBeCloseTo(0.5, 5);
+  });
+
+  it('uses the platform-reported total when it is already on the on-disk scale', () => {
+    // A total bigger than the stored object size is the file being written, not
+    // the Content-Length — take it, so a stale uncompressedBytes cannot shrink
+    // the denominator below what the platform says it will write.
+    const { fraction, anchor } = step(
+      gzipEntry(),
+      createDownloadFractionAnchor(),
+      DECODED_BYTES / 2,
+      DECODED_BYTES + 4_000_000,
+    );
+    expect(anchor.denominator).toBe(DECODED_BYTES + 4_000_000);
+    expect(fraction!).toBeLessThan(0.5);
+  });
+
+  it('uses the platform-reported total for an identity entry (wire == decoded)', () => {
+    const { fraction } = step(identityEntry(), createDownloadFractionAnchor(), WIRE_BYTES / 2, WIRE_BYTES);
     expect(fraction).toBeCloseTo(0.5, 5);
   });
 
@@ -81,6 +102,20 @@ describe('resolveDownloadFraction — denominator precedence', () => {
     expect(fraction).toBeNull();
   });
 
+  it('is indeterminate for a pre-field gzip entry even when the platform reports its wire size', () => {
+    // The decoded size is genuinely unknown here, and the only total on offer is
+    // ~2.6× too small. A byte counter with no bar beats a bar that reaches 100%
+    // before a third of the artifact has landed. Closed by re-exporting the
+    // manifest with uncompressedBytes (#4335), not by guessing a ratio.
+    const legacy = gzipEntry({ uncompressedBytes: undefined });
+    let anchor = createDownloadFractionAnchor();
+    for (const written of [WIRE_BYTES / 4, WIRE_BYTES / 2, WIRE_BYTES]) {
+      const resolved = step(legacy, anchor, written, WIRE_BYTES);
+      anchor = resolved.anchor;
+      expect(resolved.fraction).toBeNull();
+    }
+  });
+
   it('treats a non-positive reported total as no total at all', () => {
     for (const reported of [0, -1]) {
       const { fraction } = step(gzipEntry(), createDownloadFractionAnchor(), DECODED_BYTES / 2, reported);
@@ -89,7 +124,7 @@ describe('resolveDownloadFraction — denominator precedence', () => {
   });
 
   it('latches the denominator so the bar cannot change scale mid-download', () => {
-    const entry = gzipEntry();
+    const entry = identityEntry();
     const first = step(entry, createDownloadFractionAnchor(), 1_000_000, WIRE_BYTES);
     expect(first.anchor.denominator).toBe(WIRE_BYTES);
     // A later frame that reports a different total does not re-pick.
@@ -100,34 +135,30 @@ describe('resolveDownloadFraction — denominator precedence', () => {
 });
 
 describe('resolveDownloadFraction — overshoot', () => {
-  it('re-anchors to the decoded size when the counter runs past a compressed total', () => {
-    // The iOS hazard: totalBytesWritten counting decoded bytes against a
-    // Content-Length-derived (compressed) expected total.
+  it('never anchors to a compressed total, so the decoded counter cannot overshoot it', () => {
+    // The iOS hazard, end to end: totalBytesWritten counting decoded bytes
+    // against a Content-Length-derived (compressed) expected total. Every frame
+    // divides by the decoded size, so the fraction tracks the real transfer and
+    // the bar is still moving well past the point the compressed total would
+    // have pinned it at 100%.
     const entry = gzipEntry();
     let anchor = createDownloadFractionAnchor();
 
     const early = step(entry, anchor, WIRE_BYTES / 2, WIRE_BYTES);
     anchor = early.anchor;
-    expect(early.fraction).toBeCloseTo(0.5, 5);
+    expect(early.fraction).toBeCloseTo(WIRE_BYTES / 2 / DECODED_BYTES, 5);
 
-    // Past 102% of the compressed total: the scales disagree.
-    const overshot = step(entry, anchor, Math.round(WIRE_BYTES * 1.5), WIRE_BYTES);
-    anchor = overshot.anchor;
+    // Past the compressed total: no overshoot, no re-anchor, no latch.
+    const pastWire = step(entry, anchor, Math.round(WIRE_BYTES * 1.5), WIRE_BYTES);
+    anchor = pastWire.anchor;
     expect(anchor.denominator).toBe(DECODED_BYTES);
     expect(anchor.latchedIndeterminate).toBe(false);
-    expect(overshot.fraction).toBeCloseTo((WIRE_BYTES * 1.5) / DECODED_BYTES, 4);
+    expect(pastWire.fraction!).toBeGreaterThan(early.fraction!);
+    expect(pastWire.fraction).toBeCloseTo((WIRE_BYTES * 1.5) / DECODED_BYTES, 4);
 
-    // And it keeps rising from there rather than freezing at 100%.
     const later = step(entry, anchor, Math.round(DECODED_BYTES * 0.8), WIRE_BYTES);
-    expect(later.fraction!).toBeGreaterThan(overshot.fraction!);
+    expect(later.fraction!).toBeGreaterThan(pastWire.fraction!);
     expect(later.fraction).toBeCloseTo(0.8, 4);
-  });
-
-  it('does not re-anchor inside the 2% tolerance', () => {
-    const entry = gzipEntry();
-    const result = step(entry, createDownloadFractionAnchor(), Math.round(WIRE_BYTES * 1.01), WIRE_BYTES);
-    expect(result.anchor.denominator).toBe(WIRE_BYTES);
-    expect(result.fraction).toBe(0.99); // pre-terminal cap
   });
 
   it('latches indeterminate for the rest of the download when no larger candidate exists', () => {
@@ -157,6 +188,15 @@ describe('resolveDownloadFraction — terminal frame and clamping', () => {
     // It must not have tripped the overshoot detector or moved the anchor.
     expect(terminal.anchor.denominator).toBe(WIRE_BYTES);
     expect(terminal.anchor.latchedIndeterminate).toBe(false);
+  });
+
+  it('does not read a decoded counter passing the compressed total as "complete"', () => {
+    // On iOS the decoded counter crosses the Content-Length total around 38% of
+    // a Kilter download; an exact hit must not be mistaken for the synthetic
+    // final frame, or the row reports 100% with 168 MB still to come.
+    const entry = gzipEntry();
+    const { fraction } = step(entry, createDownloadFractionAnchor(), WIRE_BYTES, WIRE_BYTES);
+    expect(fraction).toBeCloseTo(WIRE_BYTES / DECODED_BYTES, 5);
   });
 
   it('caps a pre-terminal fraction at 0.99 so the row never claims to be done early', () => {
@@ -283,5 +323,114 @@ describe('createSnapshotProgressThrottle', () => {
     throttle.cancel();
     time.advance(10_000);
     expect(throttle.offer(frame({ fraction: 0.99, wireBytesDone: 101_970_000 }))).toBeNull();
+  });
+
+  it('swallows everything after a fraction that steps back — why the resolver must not re-scale', () => {
+    // The composition hazard this file exists to pin: hand the throttle 0.99 and
+    // then a re-scaled 0.39 (what re-anchoring a compressed total to the decoded
+    // size used to produce) and the monotonic gate drops every frame until the
+    // raw fraction climbs back past 0.99 — i.e. the row freezes for the last
+    // ~60% of a 3–9 minute download. `resolveDownloadFraction` therefore latches
+    // one denominator instead of re-anchoring; see the composed run below.
+    const time = clock();
+    const throttle = createSnapshotProgressThrottle({ now: time.now });
+    expect(throttle.offer(frame({ fraction: 0.99, wireBytesDone: 101_970_000 }))).not.toBeNull();
+    for (const fraction of [0.39, 0.5, 0.7, 0.9, 0.98]) {
+      time.advance(1_000);
+      expect(throttle.offer(frame({ fraction, wireBytesDone: Math.round(fraction * WIRE_BYTES) }))).toBeNull();
+    }
+  });
+});
+
+describe('resolveDownloadFraction ∘ throttle — a whole iOS gzip download', () => {
+  const NATIVE_PROGRESS_INTERVAL_MS = 100;
+
+  /**
+   * Replay a download the way the engine does: resolve a fraction per native
+   * progress event, thread the anchor, render wire-scale bytes, throttle. What
+   * comes back is exactly the sequence of rows a climber would have watched.
+   */
+  function replay(
+    entry: SnapshotManifestEntry,
+    events: { bytesWritten: number; reportedTotalBytes: number | null }[],
+  ): { bytesWritten: number; fraction: number | null; wireBytesDone: number | null }[] {
+    let millis = 0;
+    const throttle = createSnapshotProgressThrottle({ now: () => millis });
+    let anchor = createDownloadFractionAnchor();
+    const shown: { bytesWritten: number; fraction: number | null; wireBytesDone: number | null }[] = [];
+
+    for (const event of events) {
+      const resolved = resolveDownloadFraction({
+        entry,
+        bytesWritten: event.bytesWritten,
+        reportedTotalBytes: event.reportedTotalBytes,
+        anchor,
+      });
+      anchor = resolved.anchor;
+      const emitted = throttle.offer({
+        scopeKey: 'kilter:1:5',
+        stage: 'download',
+        fraction: resolved.fraction,
+        ...toWireProgress(resolved.fraction, entry.bytes),
+      });
+      if (emitted) {
+        shown.push({
+          bytesWritten: event.bytesWritten,
+          fraction: emitted.fraction,
+          wireBytesDone: emitted.wireBytesDone,
+        });
+      }
+      millis += NATIVE_PROGRESS_INTERVAL_MS;
+    }
+    return shown;
+  }
+
+  /** Decoded bytes arriving at a steady rate, paired with a Content-Length total. */
+  function iosEvents(): { bytesWritten: number; reportedTotalBytes: number | null }[] {
+    const events: { bytesWritten: number; reportedTotalBytes: number | null }[] = [];
+    // ~1,800 events at 100 ms apart: a three-minute Kilter download, the p50.
+    const chunk = Math.round(DECODED_BYTES / 1_800);
+    for (let written = chunk; written < DECODED_BYTES; written += chunk) {
+      events.push({ bytesWritten: written, reportedTotalBytes: WIRE_BYTES });
+    }
+    // expo's JS wrapper closes with a synthetic frame carrying the on-disk size.
+    events.push({ bytesWritten: DECODED_BYTES, reportedTotalBytes: DECODED_BYTES });
+    return events;
+  }
+
+  it('keeps the row moving for the whole transfer instead of freezing at 99%', () => {
+    const shown = replay(gzipEntry(), iosEvents());
+
+    // Monotonic, and it finishes on a true 100% at the full wire size.
+    const fractions = shown.map((row) => row.fraction!);
+    expect(fractions.every((value) => value !== null)).toBe(true);
+    for (let index = 1; index < fractions.length; index += 1) {
+      expect(fractions[index]).toBeGreaterThanOrEqual(fractions[index - 1]);
+    }
+    expect(shown.at(-1)).toEqual({ bytesWritten: DECODED_BYTES, fraction: 1, wireBytesDone: WIRE_BYTES });
+
+    // The regression: the compressed total put the row at 99% / "102 MB of
+    // 103 MB" once 103 MB of the 271 MB stream had landed (~38%), and the
+    // monotonic gate then dropped every later frame. Nothing may claim ≥ 99%
+    // before the bytes are actually there.
+    const early = shown.filter((row) => row.bytesWritten < DECODED_BYTES * 0.9);
+    expect(early.every((row) => row.fraction! < 0.9)).toBe(true);
+    expect(early.some((row) => row.wireBytesDone! > WIRE_BYTES - 5_000_000)).toBe(false);
+
+    // And frames keep landing across the back half, not just before 38%.
+    const lateFrames = shown.filter((row) => row.bytesWritten > DECODED_BYTES * 0.4);
+    expect(lateFrames.length).toBeGreaterThan(20);
+    const distinctLatePercents = new Set(lateFrames.map((row) => Math.round(row.fraction! * 100)));
+    expect(distinctLatePercents.size).toBeGreaterThan(20);
+  });
+
+  it('shows a moving bar on Android too, where there is no reported total at all', () => {
+    const events = iosEvents().map((event, index, all) =>
+      index === all.length - 1 ? event : { ...event, reportedTotalBytes: null },
+    );
+    const shown = replay(gzipEntry(), events);
+    expect(shown.length).toBeGreaterThan(30);
+    expect(shown.at(-1)!.fraction).toBe(1);
+    expect(shown.map((row) => row.fraction!)).toEqual(shown.map((row) => row.fraction!).sort((a, b) => a - b));
   });
 });

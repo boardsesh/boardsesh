@@ -86,6 +86,14 @@ export function createDownloadFractionAnchor(): DownloadFractionAnchor {
 const OVERSHOOT_TOLERANCE = 1.02;
 
 /**
+ * A reported total for a gzip entry this close to (or below) the stored object
+ * size is the Content-Length, not the size of the file being written. Same slack
+ * as the overshoot tolerance, for the same reason: absorb rounding, catch a
+ * whole-scale mismatch.
+ */
+const WIRE_TOTAL_TOLERANCE = 1.02;
+
+/**
  * A pre-terminal frame is capped here so the row never claims to be finished
  * while bytes are still arriving. The terminal frame is recognised separately
  * (see `resolveDownloadFraction`) and gets a true 1.
@@ -107,48 +115,85 @@ export type DownloadFractionResult = {
 };
 
 /**
+ * The size the artifact will occupy on disk, when the manifest knows it, for a
+ * body the platform gunzips on the way in. Null when the entry is identity
+ * (`entry.bytes` already is the on-disk size) or predates `uncompressedBytes`.
+ */
+function decodedSizeBytes(entry: DownloadFractionInput['entry']): number | null {
+  if (entry.contentEncoding !== 'gzip') return null;
+  const decoded = entry.uncompressedBytes;
+  return typeof decoded === 'number' && decoded > 0 ? decoded : null;
+}
+
+/**
+ * True when a platform-reported total for a gzip entry is the COMPRESSED size —
+ * i.e. it came from Content-Length rather than from the file being written.
+ *
+ * The counter it is paired with always counts bytes written to disk, and for a
+ * gzip artifact those are decoded bytes: both platforms gunzip in the HTTP stack
+ * (an artifact that arrives still compressed is rejected outright by the mobile
+ * snapshot source), so a total on the wire scale is a scale mismatch, not a
+ * denominator.
+ */
+function isWireScaleTotal(entry: DownloadFractionInput['entry'], reportedTotalBytes: number): boolean {
+  if (entry.contentEncoding !== 'gzip') return false;
+  return reportedTotalBytes <= entry.bytes * WIRE_TOTAL_TOLERANCE;
+}
+
+/**
  * Pick the denominator for a download's byte counter and turn it into a
  * fraction.
  *
- * PRECEDENCE, and why it is this way round:
+ * ONE RULE UNDERNEATH ALL OF THIS: the platform counter counts bytes written to
+ * disk. So the denominator has to be the size of the file that will be on disk —
+ * decoded for a gzip entry, `entry.bytes` for an identity one — and never the
+ * compressed transfer size, whoever reports it.
  *
- * 1. The platform's own `reportedTotalBytes`, when > 0. On iOS the total and the
- *    counter arrive in the SAME delegate callback (`totalBytesWritten` /
- *    `totalBytesExpectedToWrite`), so their ratio is self-consistent whatever
- *    scale Foundation picked. Substituting our own denominator there would
- *    manufacture a mismatch. For identity artifacts every candidate agrees
- *    anyway.
- * 2. `entry.uncompressedBytes` for a gzip entry. This is Android: OkHttp gunzips
- *    transparently, so the write loop counts DECODED bytes while
- *    `body.contentLength()` is -1. The decoded size is the proven matching scale
- *    there. Absent on artifacts exported before the field shipped, which is why
- *    it is a fallback and not a requirement.
+ * PRECEDENCE:
+ *
+ * 1. `entry.uncompressedBytes` for a gzip entry, floored against the platform's
+ *    own total: `max(uncompressedBytes, reportedTotalBytes)`. Android has no
+ *    total at all (OkHttp gunzips transparently, so `body.contentLength()` is
+ *    -1) and iOS reports `totalBytesExpectedToWrite` straight off Content-Length
+ *    — the compressed size — while `totalBytesWritten` counts the decoded stream.
+ *    Dividing by that total is what raced the bar to 100% at ~38% of a Kilter
+ *    download. Taking the larger of the two keeps rule 2 whenever the platform
+ *    total IS on the decoded scale, and ignores it when it is the Content-Length.
+ * 2. The platform's own `reportedTotalBytes`, when > 0 and not a gzip entry's
+ *    wire size. For an identity artifact every candidate agrees anyway.
  * 3. `entry.bytes` for an identity entry — wire == decoded, so it is exact.
- * 4. Null: indeterminate. Show the byte counter, no bar.
+ * 4. Null: indeterminate. Show the byte counter, no bar. This is a gzip artifact
+ *    exported before `uncompressedBytes` shipped: the decoded size is genuinely
+ *    unknown, and a bar built on the compressed one would be off by ~2.6×.
  *
  * TERMINAL FRAME. expo-file-system's JS wrapper fires a synthetic final frame
  * `{ bytesWritten: fileSize, totalBytes: fileSize }` carrying the DECODED
- * on-disk size, so the last frame legitimately changes scale. Equal values mean
- * "complete", never "here is a data point" — treat it as fraction 1 and do not
- * let it re-anchor anything.
+ * on-disk size. Equal values mean "complete", never "here is a data point" —
+ * treat it as fraction 1. A gzip entry's wire-scale total is excluded from the
+ * check first: on iOS the decoded counter passes the compressed total mid-flight,
+ * and one unlucky exact hit would otherwise read as "done" at ~38%.
  *
- * OVERSHOOT. If the counter runs more than 2% past the denominator, our scales
- * disagree: re-anchor to `uncompressedBytes` when that is larger (exactly the
- * iOS decoded-counter/compressed-total case), so the bar keeps moving forward
- * instead of freezing at 100%. With no larger candidate, latch indeterminate for
- * the rest of the download rather than lie.
+ * OVERSHOOT. If the counter still runs more than 2% past the denominator, some
+ * scale we cannot name is in play. Latch indeterminate for the rest of the
+ * download — pinning the bar at 100% while bytes keep arriving is the frozen look
+ * this module exists to remove, and there is no honest number left to show.
  *
- * UNDERSHOOT is not a hazard by construction: the only way to park a bar at ~38%
- * is to divide platform bytes by a denominator on a LARGER scale, and rule 1
- * removes that case (a self-paired total can never exceed its own counter's
- * scale) while rule 2's fallback is the scale Android provably writes.
+ * MONOTONIC BY CONSTRUCTION: the denominator is chosen once, on the first frame
+ * that has a candidate, and latched in the anchor. Because the platform counter
+ * only rises, so does the fraction — nothing downstream has to repair a
+ * regression, which matters because the throttle drops backwards frames.
  */
 export function resolveDownloadFraction(input: DownloadFractionInput): DownloadFractionResult {
   const { entry, bytesWritten, reportedTotalBytes, anchor } = input;
 
+  const reportedTotal = reportedTotalBytes !== null && reportedTotalBytes > 0 ? reportedTotalBytes : null;
+  // A gzip entry's Content-Length is on the wrong scale for a decoded counter,
+  // so it is not a total as far as everything below is concerned.
+  const onDiskTotal = reportedTotal !== null && !isWireScaleTotal(entry, reportedTotal) ? reportedTotal : null;
+
   // The synthetic terminal frame. Recognised before anything else so it can
-  // neither re-anchor nor trip the overshoot detector.
-  if (reportedTotalBytes !== null && reportedTotalBytes > 0 && bytesWritten === reportedTotalBytes) {
+  // neither move the anchor nor trip the overshoot detector.
+  if (onDiskTotal !== null && bytesWritten === onDiskTotal) {
     return { fraction: 1, anchor };
   }
 
@@ -158,10 +203,11 @@ export function resolveDownloadFraction(input: DownloadFractionInput): DownloadF
 
   let denominator = anchor.denominator;
   if (denominator === null) {
-    if (reportedTotalBytes !== null && reportedTotalBytes > 0) {
-      denominator = reportedTotalBytes;
-    } else if (entry.contentEncoding === 'gzip' && typeof entry.uncompressedBytes === 'number') {
-      denominator = entry.uncompressedBytes;
+    const decodedSize = decodedSizeBytes(entry);
+    if (decodedSize !== null) {
+      denominator = Math.max(decodedSize, onDiskTotal ?? 0);
+    } else if (onDiskTotal !== null) {
+      denominator = onDiskTotal;
     } else if (entry.contentEncoding === 'identity') {
       denominator = entry.bytes;
     }
@@ -172,16 +218,6 @@ export function resolveDownloadFraction(input: DownloadFractionInput): DownloadF
   }
 
   if (bytesWritten > denominator * OVERSHOOT_TOLERANCE) {
-    const decodedSize = entry.uncompressedBytes;
-    if (typeof decodedSize === 'number' && decodedSize > denominator) {
-      // The counter is on the decoded scale and our total was compressed.
-      // Re-anchor rather than pin the bar at 100% for the rest of the download.
-      const reanchored: DownloadFractionAnchor = { denominator: decodedSize, latchedIndeterminate: false };
-      return {
-        fraction: Math.min(bytesWritten / decodedSize, PRE_TERMINAL_FRACTION_CAP),
-        anchor: reanchored,
-      };
-    }
     return { fraction: null, anchor: { denominator: null, latchedIndeterminate: true } };
   }
 
@@ -248,7 +284,11 @@ function toDisplayPercent(fraction: number | null): number | null {
  * Three gates, in order:
  * - MONOTONIC: a frame whose fraction is lower than the last emitted one is
  *   dropped. A retrying downloader that restarts its counter must not walk the
- *   bar backwards.
+ *   bar backwards. This gate SUPPRESSES rather than clamps, so it is only safe
+ *   because `resolveDownloadFraction` latches its denominator and can therefore
+ *   never hand back a smaller fraction for a larger byte count. Anything that
+ *   re-scaled a download mid-flight would freeze the row here until the raw
+ *   fraction climbed back past the old high-water mark.
  * - THROTTLE: at most one frame per 400 ms, except a stage change or a
  *   fraction of 1, both of which pass immediately.
  * - VISIBLE CHANGE: a frame where neither the rounded percent nor the rounded
