@@ -119,7 +119,18 @@
         "emptySubtitle": "Mach ein Board offline verfügbar, dann taucht es hier auf.",
         "errorTitle": "Deine Downloads ließen sich nicht messen",
         "errorSubtitle": "Beim Lesen dessen, was auf diesem Handy liegt, kam etwas dazwischen.",
-        "errorRetry": "Nochmal versuchen"
+        "errorRetry": "Nochmal versuchen",
+        "cachedImagesHeader": "Bilder im Cache",
+        "cachedImagesArtLabel": "Board-Grafik",
+        "cachedImagesPhotosLabel": "Fotos",
+        "cachedImagesNote": "Die Board-Grafik wird beim Stöbern neu gezeichnet und die Fotos kommen zurück, sobald du online bist — Leeren kostet dich also einen Moment, nicht deine Daten. Dein Handy kann den Cache auch von selbst leeren, wenn der Platz knapp wird.",
+        "clearCachedImages": "Bilder im Cache leeren",
+        "clearCachedImagesTitle": "Bilder im Cache leeren?",
+        "clearCachedImagesMessage": "Gibt etwa {{size}} frei. Die Board-Grafik wird beim Stöbern neu gezeichnet und die Fotos kommen zurück, sobald du online bist — deine Begehungen, Playlists und heruntergeladenen Boards bleiben.",
+        "clearCachedImagesConfirm": "Leeren",
+        "clearCachedImagesDone": "Bilder im Cache geleert.",
+        "clearCachedImagesPartial": "Die Board-Grafik ist weg, die Fotos sind geblieben. Öffne die App und versuch es nochmal.",
+        "clearCachedImagesError": "Die Bilder im Cache ließen sich nicht leeren. Versuch es nochmal."
       },
       "appearance": {
         "title": "Darstellung",

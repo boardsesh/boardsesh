@@ -119,7 +119,18 @@
         "emptySubtitle": "Make a board available offline and it'll show up here.",
         "errorTitle": "Couldn't measure your downloads",
         "errorSubtitle": "Something got in the way of reading what's on this phone.",
-        "errorRetry": "Try again"
+        "errorRetry": "Try again",
+        "cachedImagesHeader": "Cached images",
+        "cachedImagesArtLabel": "Board art",
+        "cachedImagesPhotosLabel": "Photos",
+        "cachedImagesNote": "Board art redraws as you browse and photos come back when you're online, so clearing this costs you a moment, not your data. Your phone can also clear it on its own when space runs low.",
+        "clearCachedImages": "Clear cached images",
+        "clearCachedImagesTitle": "Clear cached images?",
+        "clearCachedImagesMessage": "Frees about {{size}}. Board art redraws as you browse and photos come back when you're online — your sends, playlists and downloaded boards stay put.",
+        "clearCachedImagesConfirm": "Clear",
+        "clearCachedImagesDone": "Cleared the cached images.",
+        "clearCachedImagesPartial": "Cleared the board art, but the photos stayed put. Open the app and try again.",
+        "clearCachedImagesError": "Couldn't clear the cached images. Try again."
       },
       "appearance": {
         "title": "Appearance",

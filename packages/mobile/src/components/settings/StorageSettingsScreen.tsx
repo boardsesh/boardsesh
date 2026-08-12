@@ -45,6 +45,7 @@ import {
   isStorageScreenEmpty,
   RECLAIMABLE_VISIBLE_BYTES,
 } from '../../db/storage-usage';
+import { measureCachedImageBytes, clearCachedImages, type CachedImageMeasurement } from '../../lib/sweep-caches';
 import { removeOfflineBoard, compactOfflineDatabase } from '../../offline/remove-offline-board';
 import { formatStorageSize } from '../../lib/format-storage-size';
 import { reportError } from '../../lib/error-reporting';
@@ -56,8 +57,16 @@ type StorageMeasurement = {
   totalBytes: number;
   freeBytes: number | null;
   reclaimableBytes: number;
+  /** Null where there is no cache directory to measure at all — the browser build. */
+  cachedImages: CachedImageMeasurement | null;
   boards: { scopeKey: string; scope: OfflineBoardScope; climbCount: number; estimatedBytes: number }[];
 };
+
+/** Everything the Clear button reclaims, for the empty-state check and the button label. */
+function totalCachedImageBytes(cachedImages: CachedImageMeasurement | null): number {
+  if (!cachedImages) return 0;
+  return cachedImages.artBytes + (cachedImages.photoBytes ?? 0) + cachedImages.leftoverSnapshotBytes;
+}
 
 export function StorageSettingsScreen() {
   const { t } = useTranslation('common');
@@ -72,6 +81,7 @@ export function StorageSettingsScreen() {
   const [removingScopeKey, setRemovingScopeKey] = useState<string | null>(null);
   const [isRemovingAll, setIsRemovingAll] = useState(false);
   const [isCompacting, setIsCompacting] = useState(false);
+  const [isClearingCache, setIsClearingCache] = useState(false);
 
   const {
     data: measurement,
@@ -97,6 +107,9 @@ export function StorageSettingsScreen() {
         totalBytes: measureDatabaseBytes(),
         freeBytes: measureFreeDiskSpace(),
         reclaimableBytes: await measureReclaimableBytes(db),
+        // Memoized for a minute behind cache-size-meter, so the focus refetch
+        // above doesn't re-walk a few thousand PNGs every time you tab back.
+        cachedImages: await measureCachedImageBytes(),
         // A scope with no rows left is nothing to manage — don't offer a Remove that
         // would free nothing.
         boards: usage.filter((entry) => entry.climbCount > 0),
@@ -226,7 +239,42 @@ export function StorageSettingsScreen() {
     }
   }, [db, showToast, t, refetch]);
 
-  const isBusy = removingScopeKey !== null || isRemovingAll || isCompacting;
+  const cachedImages = measurement?.cachedImages ?? null;
+  const cachedImageBytes = totalCachedImageBytes(cachedImages);
+
+  const handleClearCachedImages = useCallback(async () => {
+    hapticLight();
+    const confirmed = await confirm({
+      title: t('mobile.more.storage.clearCachedImagesTitle'),
+      message: t('mobile.more.storage.clearCachedImagesMessage', { size: formatStorageSize(cachedImageBytes) }),
+      confirmLabel: t('mobile.more.storage.clearCachedImagesConfirm'),
+      cancelLabel: t('mobile.more.storage.cancel'),
+      destructive: true,
+    });
+    if (!confirmed) return;
+    setIsClearingCache(true);
+    try {
+      const result = await clearCachedImages();
+      // expo-image resolves FALSE rather than throwing when it declines to clear
+      // its disk cache (Android with no current activity), so the board art is
+      // gone but the photos are not. Saying "done" there would be a lie the next
+      // measurement immediately contradicts.
+      showToast(
+        result.photoCacheCleared
+          ? t('mobile.more.storage.clearCachedImagesDone')
+          : t('mobile.more.storage.clearCachedImagesPartial'),
+        result.photoCacheCleared ? 'success' : 'warning',
+      );
+    } catch (error) {
+      reportError(error, { tags: { source: 'offline-sync', kind: 'cache-clear' } });
+      showToast(t('mobile.more.storage.clearCachedImagesError'), 'error');
+    } finally {
+      setIsClearingCache(false);
+      await refetch();
+    }
+  }, [confirm, t, cachedImageBytes, showToast, refetch]);
+
+  const isBusy = removingScopeKey !== null || isRemovingAll || isCompacting || isClearingCache;
 
   // Also spin while re-measuring over an empty cached result: a board downloaded
   // while this screen was unmounted would otherwise flash "Nothing downloaded yet"
@@ -264,7 +312,13 @@ export function StorageSettingsScreen() {
   // reserved space, fall through to the full screen instead — that's the case where
   // a compaction failed after the last board was removed, and a bare empty state
   // would hide the total, the free-space figure, and the only way to retry.
-  if (isStorageScreenEmpty({ boardCount: rows.length, reclaimableBytes: measurement.reclaimableBytes })) {
+  if (
+    isStorageScreenEmpty({
+      boardCount: rows.length,
+      reclaimableBytes: measurement.reclaimableBytes,
+      cachedImageBytes,
+    })
+  ) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
@@ -341,6 +395,43 @@ export function StorageSettingsScreen() {
               />
             </View>
           </Card>
+        </>
+      ) : null}
+
+      {/* Board art and photos. Hidden entirely on the browser build, where there is
+          no cache directory to measure and the Cache API bounds overlays by count.
+          The Photos row is omitted (never rendered as 0 B) when expo-image's cache
+          directory isn't one we recognise — the button still works. */}
+      {cachedImages ? (
+        <>
+          <SectionHeader title={t('mobile.more.storage.cachedImagesHeader')} />
+          <Card style={styles.card}>
+            <ListRow
+              title={t('mobile.more.storage.cachedImagesArtLabel')}
+              haptic={false}
+              showSeparator={cachedImages.photoBytes !== null}
+              trailing={<Text variant="body">{formatStorageSize(cachedImages.artBytes)}</Text>}
+            />
+            {cachedImages.photoBytes !== null ? (
+              <ListRow
+                title={t('mobile.more.storage.cachedImagesPhotosLabel')}
+                haptic={false}
+                showSeparator={false}
+                trailing={<Text variant="body">{formatStorageSize(cachedImages.photoBytes)}</Text>}
+              />
+            ) : null}
+          </Card>
+          <Text variant="caption1" style={[styles.note, { color: systemColors.tertiaryLabel }]}>
+            {t('mobile.more.storage.cachedImagesNote')}
+          </Text>
+          <Button
+            title={t('mobile.more.storage.clearCachedImages')}
+            variant="outlined"
+            loading={isClearingCache}
+            disabled={removingScopeKey !== null || isRemovingAll || isCompacting}
+            onPress={() => void handleClearCachedImages()}
+            style={styles.clearCache}
+          />
         </>
       ) : null}
 
@@ -427,6 +518,11 @@ const styles = StyleSheet.create({
   },
   removeAll: {
     marginTop: spacing[4],
+    marginHorizontal: spacing[4],
+  },
+  clearCache: {
+    marginTop: spacing[3],
+    marginBottom: spacing[2],
     marginHorizontal: spacing[4],
   },
   reserved: {

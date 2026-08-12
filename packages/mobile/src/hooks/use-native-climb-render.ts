@@ -13,6 +13,14 @@ import {
 import { useAppColorScheme } from '../providers/theme-provider';
 import { reportError } from '../lib/error-reporting';
 import {
+  cacheRenderedOverlay,
+  getRenderedOverlay,
+  invalidateRenderedOverlay,
+  _renderedOverlaysForTests,
+  _resetOverlayIndexForTests,
+  type RenderedOverlayEntry,
+} from '../lib/overlay-index';
+import {
   DEFAULT_HOLD_COLOR_SIGNATURE,
   DEFAULT_HOLD_BRUSH_THICKNESS,
   DEFAULT_HOLD_MARKER_SHAPE,
@@ -127,10 +135,7 @@ type NativeClimbRenderResult = {
  * huge list scrolled before any render completes) leaving stale entries
  * if components unmount mid-render.
  */
-export type RenderedOverlayEntry = {
-  uri: string;
-  generation: number;
-};
+export type { RenderedOverlayEntry } from '../lib/overlay-index';
 
 type NativeRenderState = {
   key: string;
@@ -163,56 +168,11 @@ const unsupportedRenderSignatures = new Set<string>();
 
 const BOARD_CONFIG_CACHE_MAX = 20;
 
-/**
- * Synchronous lookup of already-rendered overlay PNGs keyed by cache key.
- * Populated when (a) any successful render completes, and (b) on first
- * module import we scan the on-disk cache directory to surface PNGs from
- * prior app sessions.
- *
- * This is the mechanism that makes drawer-open instant after the list
- * has scrolled past a climb: the hook's useState initial value reads
- * from this map, so a cache hit displays the overlay on the very first
- * render with no useEffect-driven update.
- */
-const renderedOverlays = new Map<string, RenderedOverlayEntry>();
-const RENDERED_OVERLAYS_MAX = 200;
-let nextOverlayGeneration = 1;
-
-/**
- * The only insertion path for the synchronous overlay cache. A generation is
- * minted even when native rewrites the same URI, which lets mounted consumers
- * distinguish the replacement from the missing file they just failed to load.
- */
-function cacheRenderedOverlay(cacheKey: string, uri: string): RenderedOverlayEntry {
-  const entry = { uri, generation: nextOverlayGeneration };
-  nextOverlayGeneration += 1;
-
-  // Delete first so replacing an entry also promotes it to most-recently used.
-  renderedOverlays.delete(cacheKey);
-  if (renderedOverlays.size >= RENDERED_OVERLAYS_MAX) {
-    const oldestKey = renderedOverlays.keys().next().value;
-    if (oldestKey !== undefined) renderedOverlays.delete(oldestKey);
-  }
-  renderedOverlays.set(cacheKey, entry);
-  return entry;
-}
-
-function getRenderedOverlay(cacheKey: string): RenderedOverlayEntry | undefined {
-  const entry = renderedOverlays.get(cacheKey);
-  if (!entry) return undefined;
-  // Map iteration order is the LRU order. Reads promote without changing the
-  // immutable entry identity used by exact failure guards.
-  renderedOverlays.delete(cacheKey);
-  renderedOverlays.set(cacheKey, entry);
-  return entry;
-}
-
-function invalidateRenderedOverlay(cacheKey: string, expected: RenderedOverlayEntry): boolean {
-  const current = renderedOverlays.get(cacheKey);
-  if (!current || current.uri !== expected.uri || current.generation !== expected.generation) return false;
-  renderedOverlays.delete(cacheKey);
-  return true;
-}
+// The synchronous overlay index (the `renderedOverlays` map, its insertion /
+// read / invalidation helpers, and the access clock the disk sweeper protects
+// live keys with) lives in ../lib/overlay-index. It was extracted so the sweeper
+// can forget keys whose PNG it just deleted without importing this hook — see
+// that module for why the cycle mattered.
 
 type OverlayLoadTelemetryKind =
   | 'cache_entry_missing'
@@ -304,8 +264,7 @@ onOverlayCacheHydrated(() => {
 /** Test-only handle for re-running the warm-up against a fresh mock list. */
 export function _resetWarmupForTests(): void {
   warmupRun = false;
-  renderedOverlays.clear();
-  nextOverlayGeneration = 1;
+  _resetOverlayIndexForTests();
   reportedOverlayLoadTelemetry.clear();
 }
 
@@ -354,7 +313,8 @@ export function getOrStartInflightRender(
 
 /** Test-only handles. Not part of the public API. */
 export const _inflightRendersForTests = inflightRenders;
-export const _renderedOverlaysForTests = renderedOverlays;
+// Re-exported from ../lib/overlay-index so the existing suites keep their imports.
+export { _renderedOverlaysForTests };
 export const _cacheRenderedOverlayForTests = cacheRenderedOverlay;
 export const _getRenderedOverlayForTests = getRenderedOverlay;
 export const _invalidateRenderedOverlayForTests = invalidateRenderedOverlay;

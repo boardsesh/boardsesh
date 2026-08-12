@@ -119,7 +119,18 @@
         "emptySubtitle": "Rends une board disponible hors ligne et elle apparaîtra ici.",
         "errorTitle": "Impossible de mesurer tes téléchargements",
         "errorSubtitle": "Quelque chose a empêché de lire ce qui se trouve sur ce téléphone.",
-        "errorRetry": "Réessayer"
+        "errorRetry": "Réessayer",
+        "cachedImagesHeader": "Images en cache",
+        "cachedImagesArtLabel": "Dessin de la board",
+        "cachedImagesPhotosLabel": "Photos",
+        "cachedImagesNote": "Le dessin de la board se refait au fil de ta navigation et les photos reviennent dès que tu es en ligne : vider ça te coûte un instant, pas tes données. Ton téléphone peut aussi le vider tout seul quand la place manque.",
+        "clearCachedImages": "Vider les images en cache",
+        "clearCachedImagesTitle": "Vider les images en cache ?",
+        "clearCachedImagesMessage": "Libère environ {{size}}. Le dessin de la board se refait au fil de ta navigation et les photos reviennent dès que tu es en ligne : tes croix, tes playlists et tes boards téléchargées restent en place.",
+        "clearCachedImagesConfirm": "Vider",
+        "clearCachedImagesDone": "Images en cache vidées.",
+        "clearCachedImagesPartial": "Le dessin de la board a été vidé, mais les photos sont restées. Ouvre l'app et réessaie.",
+        "clearCachedImagesError": "Impossible de vider les images en cache. Réessaie."
       },
       "appearance": {
         "title": "Apparence",

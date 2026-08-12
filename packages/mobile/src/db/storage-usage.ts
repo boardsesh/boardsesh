@@ -19,6 +19,17 @@ import { DATABASE_NAME } from './connection';
 export const RECLAIMABLE_VISIBLE_BYTES = 5_000_000;
 
 /**
+ * How much cached board art / photos is worth keeping the screen open for.
+ *
+ * Same reasoning as RECLAIMABLE_VISIBLE_BYTES, applied to the caches: a couple of
+ * megabytes of thumbnails is noise, but tens or hundreds of megabytes is the
+ * gap between this screen's number and the OS storage screen's — and it would be
+ * invisible behind a bare "Nothing downloaded yet" that also hides the only
+ * button that clears it.
+ */
+export const CACHED_IMAGES_VISIBLE_BYTES = 5_000_000;
+
+/**
  * Whether the Storage screen has genuinely nothing to show or do.
  *
  * Deliberately NOT just "no boards downloaded". Removing the last board and then
@@ -26,9 +37,20 @@ export const RECLAIMABLE_VISIBLE_BYTES = 5_000_000;
  * the rows are gone, the user's storage figure hasn't moved, and a bare empty state
  * would hide the total, the free-space figure, and the only button that can finish the
  * job — on the one screen whose entire purpose is reclaiming that space.
+ *
+ * Cached board art and photos count for the same reason (issue #3647): you can
+ * hold a few hundred megabytes of overlay PNGs having never downloaded a board.
  */
-export function isStorageScreenEmpty(params: { boardCount: number; reclaimableBytes: number }): boolean {
-  return params.boardCount === 0 && params.reclaimableBytes < RECLAIMABLE_VISIBLE_BYTES;
+export function isStorageScreenEmpty(params: {
+  boardCount: number;
+  reclaimableBytes: number;
+  cachedImageBytes?: number;
+}): boolean {
+  return (
+    params.boardCount === 0 &&
+    params.reclaimableBytes < RECLAIMABLE_VISIBLE_BYTES &&
+    (params.cachedImageBytes ?? 0) < CACHED_IMAGES_VISIBLE_BYTES
+  );
 }
 
 /**

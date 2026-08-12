@@ -20,6 +20,28 @@ import { tabsActiveSegment } from '../lib/route-segments';
  */
 export const IMAGE_MEMORY_CACHE_MAX_BYTES = 256 * 1024 * 1024;
 
+/**
+ * Ceiling for expo-image's ON-DISK cache, in bytes (issue #3647).
+ *
+ * `ImageCacheConfig.maxDiskSize` "defaults to 0, which means there is no cache
+ * size limit" and nothing ever set it, so until now every `memory-disk` surface
+ * — LayeredClimbImage, PlaylistBoardBackdrop, feed and beta cards — wrote into a
+ * cache bounded only by SDWebImage's 7-day age default. That is the genuinely
+ * unbounded cache on this device: `{cache}/board-thumbnails` has had a 200 MB cap
+ * in the native renderer all along.
+ *
+ * 150 MB is several thousand list thumbnails and a few hundred full-width photos
+ * — far past a session's working set, so the cap bites on accumulation rather
+ * than on use, and what it evicts re-downloads only if you scroll back to it.
+ *
+ * Two caveats worth knowing before reading this as an instantaneous cap:
+ * `ImageCacheConfig` is `@platform ios` (Android runs on Glide, which bounds its
+ * own disk cache by its device-derived policy), and SDWebImage enforces the
+ * ceiling during its background/terminate cleanup rather than continuously — so
+ * the bound is real but lagging.
+ */
+export const IMAGE_DISK_CACHE_MAX_BYTES = 150 * 1024 * 1024;
+
 // Bound and reclaim expo-image's in-memory decoded-bitmap cache.
 //
 // The ceiling is the load-bearing part. SDWebImage ships `maxMemoryCost = 0`
@@ -48,7 +70,10 @@ export function useImageCacheMemoryManagement(): void {
   // (docs/react-native-performance.md §7); web has no native cache to configure.
   useEffect(() => {
     if (Platform.OS !== 'ios') return;
-    Image.configureCache({ maxMemoryCost: IMAGE_MEMORY_CACHE_MAX_BYTES });
+    Image.configureCache({
+      maxMemoryCost: IMAGE_MEMORY_CACHE_MAX_BYTES,
+      maxDiskSize: IMAGE_DISK_CACHE_MAX_BYTES,
+    });
   }, []);
 
   useEffect(() => {
