@@ -220,6 +220,31 @@ The fix is a second, standalone artifact per layout:
 - Kill switch: publish a manifest with no `grades` anywhere (or roll back to the identity `v1` prefix,
   which never carries grades) and every client reverts to today's crawl with no deploy.
 
+Client side (`bootstrapScopeGradesFromSnapshot`), the grades file is imported in its **own** exclusive
+transaction immediately after the climbs/stats one, not merged into it. Merging would close a crash window
+but lengthen a single `BEGIN EXCLUSIVE` hold on a database the app is also reading (issue #4314); splitting
+keeps each hold short, and the worst case is exactly today's behaviour — no grades checkpoint gets stamped
+and the scope crawls grades as it always did. There is no reconcile step: `board_climb_grades` has no
+delete trigger at all, so `INSERT OR REPLACE` is the whole import, and `rewindDeletionsCheckpoint` stays
+`min(climbs, stats)`.
+
+Two entry points, both free to fail:
+
+1. Straight after a successful whole-layout import.
+2. **Retro-fit** — a scope whose climb catalog is already COMPLETE (`bootstrap-done:<scope>`: the
+   whole-layout artifact landed, or `scope-complete:<scope>`: the paged crawl reached every table's tail)
+   but whose `checkpoint:board_climb_grades:<scope>` is ABSENT. An absent grades checkpoint proves no grade
+   page was ever consumed (`syncTable` checkpoints per page), so importing and stamping at the artifact's
+   watermark cannot skip a row the crawl already had. This is what rescues every scope downloaded before
+   grades artifacts existed. The completeness gate is load-bearing: the import filters the artifact's grades
+   through `main.board_climbs`, so over a half-crawled catalog it would stamp the grades cursor past every
+   grade row whose climb has not been fetched yet, and the strict `>` delta never revisits those.
+
+Grades failures use their own budget (`grades-bootstrap-attempts:<scope>`, cap 2) and never touch
+`bootstrap-attempts` — losing the grades fast path must never cost a scope its snapshot fast path. A
+download that returns `null` counts against that budget exactly as a throw does; otherwise a source that
+signals failure by returning `null` would re-fetch the artifact every cycle forever.
+
 ## Client bootstrap flow
 
 Implemented in `snapshot-bootstrap.ts` (the ATTACH/import/verify mechanics) and orchestrated from

@@ -17,6 +17,9 @@ import { pullSync, type SyncProgress } from '../pull-client';
 import type { SnapshotBootstrapProgress } from '../snapshot-progress';
 import {
   bootstrapScopeFromSnapshot,
+  bootstrapScopeGradesFromSnapshot,
+  getGradesBootstrapAttempts,
+  markBootstrapDone,
   getBootstrapMetadataByScope,
   BOOTSTRAP_METADATA_QUERY,
   BOOTSTRAP_METADATA_PATTERNS,
@@ -32,15 +35,15 @@ import {
   MAX_STRUCTURAL_REARMS,
   MAX_TRANSPORT_DOWNLOAD_FAILURES,
 } from '../bootstrap-retry';
-import { getCheckpoint, setCheckpoint, DELETIONS_CHECKPOINT_KEY } from '../checkpoints';
+import { getCheckpoint, setCheckpoint, markScopeDownloadComplete, DELETIONS_CHECKPOINT_KEY } from '../checkpoints';
 import { removeBoardScopeData } from '../scope-teardown';
-import { runMigrations, LATEST_SCHEMA_VERSION } from '../../db/migrations';
+import { runMigrations, LATEST_SCHEMA_VERSION, MIGRATIONS } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
 import { setSigningOut, setBackgrounded, __resetDrainerStateForTests } from '../../mutation-queue/drainer';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
 import { SCHEMA_STATEMENTS } from '../../db/schema';
 import type { OfflineBoardScope } from '../../offline-board-key';
-import type { SnapshotManifest, SnapshotManifestEntry } from '../snapshot-manifest';
+import type { SnapshotGradesArtifact, SnapshotManifest, SnapshotManifestEntry } from '../snapshot-manifest';
 
 const SNAPSHOT_META_DDL = `
 CREATE TABLE IF NOT EXISTS snapshot_meta (
@@ -3237,5 +3240,615 @@ describe('pullSync scope-download phase breakdown', () => {
       'scope-download-started:kilter:1:5',
     ]);
     expect(row).toBeNull();
+  });
+});
+
+// Boardsesh grades from the separate artifact (issue #4310)
+// ---------------------------------------------------------------------------
+
+const GRADES_META_DDL = SNAPSHOT_META_DDL;
+
+type GradeInput = {
+  climbUuid: string;
+  boardType?: string;
+  angle?: number;
+  localGrade?: number | null;
+  computedAt?: string;
+  syncSeq?: number;
+};
+
+/** Builds a standalone grades artifact: one data table, one snapshot_meta row. */
+function buildGradesArtifact(spec: {
+  filePath: string;
+  grades: GradeInput[];
+  watermark: Cursor;
+  rowCountOverride?: number;
+  schemaVersion?: number;
+}): void {
+  const artifactDb = new DatabaseSync(spec.filePath);
+  try {
+    // board_climb_grades arrives in a later MIGRATION, not in the v1
+    // SCHEMA_STATEMENTS — the same source the export's DDL builder reads.
+    for (const migration of [...MIGRATIONS].sort((left, right) => left.version - right.version)) {
+      for (const statement of migration.statements) {
+        if (statement.includes('board_climb_grades')) artifactDb.exec(statement);
+      }
+    }
+    artifactDb.exec(GRADES_META_DDL);
+    for (const grade of spec.grades) {
+      artifactDb
+        .prepare(
+          `INSERT OR REPLACE INTO board_climb_grades
+            (board_type, climb_uuid, angle, local_grade, computed_at, sync_seq)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          grade.boardType ?? 'kilter',
+          grade.climbUuid,
+          grade.angle ?? 40,
+          grade.localGrade ?? 20,
+          grade.computedAt ?? spec.watermark.updatedAt,
+          grade.syncSeq ?? Number(spec.watermark.syncSeq),
+        );
+    }
+    artifactDb
+      .prepare(
+        `INSERT OR REPLACE INTO snapshot_meta
+          (table_name, watermark_updated_at, watermark_sync_seq, row_count, built_at, schema_version, format_version)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        'board_climb_grades',
+        spec.watermark.updatedAt,
+        spec.watermark.syncSeq,
+        spec.rowCountOverride ?? spec.grades.length,
+        '2026-06-01T00:00:00.000Z',
+        spec.schemaVersion ?? LATEST_SCHEMA_VERSION,
+        1,
+      );
+  } finally {
+    artifactDb.close();
+  }
+}
+
+function gradesArtifactBlock(overrides: Partial<SnapshotGradesArtifact> = {}): SnapshotGradesArtifact {
+  return {
+    key: 'board-snapshots/v1-gzip/kilter/1/2026-06-01-grades.db',
+    url: 'https://example.test/kilter-1-grades.db',
+    bytes: 2048,
+    contentEncoding: 'gzip',
+    builtAt: '2026-06-01T00:00:00.000Z',
+    schemaVersion: LATEST_SCHEMA_VERSION,
+    tables: { board_climb_grades: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '10', rowCount: 1 } },
+    ...overrides,
+  };
+}
+
+/** A source that also serves the layout's grades artifact. */
+function makeGradesSource(config: {
+  manifest: SnapshotManifest;
+  climbsFile: string;
+  gradesFile?: string | null;
+  gradesDownloadThrows?: boolean;
+}) {
+  const gradesDownloads: string[] = [];
+  const source = {
+    fetchManifest: vi.fn(async () => config.manifest),
+    downloadArtifact: vi.fn(async () => ({ filePath: config.climbsFile })),
+    downloadGradesArtifact: vi.fn(async (artifact: SnapshotGradesArtifact) => {
+      gradesDownloads.push(artifact.key);
+      if (config.gradesDownloadThrows) throw new Error('grades download failed');
+      return config.gradesFile ? { filePath: config.gradesFile } : null;
+    }),
+    deleteArtifact: vi.fn(async () => {}),
+  };
+  return { source: source as unknown as SnapshotSource, gradesDownloads };
+}
+
+async function seedScopeClimb(uuid: string): Promise<void> {
+  await db.runAsync(
+    `INSERT OR REPLACE INTO board_climbs (uuid, board_type, layout_id, name, is_draft, is_listed, compatible_size_ids, updated_at, sync_seq)
+     VALUES (?, 'kilter', 1, ?, 0, 1, ?, '2026-05-01T00:00:00Z', 10)`,
+    [uuid, `name-${uuid}`, JSON.stringify([5])],
+  );
+}
+
+describe('bootstrapScopeGradesFromSnapshot', () => {
+  const SCOPE: OfflineBoardScope = { boardType: 'kilter', layoutId: 1, sizeId: 5 };
+
+  it('imports the scope’s grades and stamps the checkpoint at their computed_at watermark', async () => {
+    await seedScopeClimb('c1');
+    const gradesPath = join(workDir, 'grades.db');
+    buildGradesArtifact({
+      filePath: gradesPath,
+      grades: [
+        { climbUuid: 'c1', angle: 40, computedAt: '2026-05-01T00:00:00Z', syncSeq: 10 },
+        { climbUuid: 'c1', angle: 50, computedAt: '2026-05-03T00:00:00Z', syncSeq: 44 },
+      ],
+      watermark: { updatedAt: '2026-05-03T00:00:00Z', syncSeq: '44' },
+    });
+
+    const result = await bootstrapScopeGradesFromSnapshot({
+      db,
+      scope: SCOPE,
+      scopeKey: 'kilter:1:5',
+      filePath: gradesPath,
+    });
+
+    expect(result.rowsImported).toBe(2);
+    expect(await countRows('board_climb_grades')).toBe(2);
+    // Stamped on computed_at, the column grades actually cursor on.
+    expect(await getCheckpoint(db, 'checkpoint:board_climb_grades:kilter:1:5')).toEqual({
+      updatedAt: '2026-05-03T00:00:00Z',
+      syncSeq: '44',
+    });
+  });
+
+  it('drops grades whose climb is outside the scope, and never stamps past them', async () => {
+    await seedScopeClimb('in-scope');
+    const gradesPath = join(workDir, 'grades-scoped.db');
+    buildGradesArtifact({
+      filePath: gradesPath,
+      grades: [
+        { climbUuid: 'in-scope', computedAt: '2026-05-01T00:00:00Z', syncSeq: 10 },
+        // No matching board_climbs row → outside this scope.
+        { climbUuid: 'other-layout', computedAt: '2026-05-09T00:00:00Z', syncSeq: 99 },
+      ],
+      watermark: { updatedAt: '2026-05-09T00:00:00Z', syncSeq: '99' },
+    });
+
+    await bootstrapScopeGradesFromSnapshot({ db, scope: SCOPE, scopeKey: 'kilter:1:5', filePath: gradesPath });
+
+    const rows = await db.getAllAsync<{ climb_uuid: string }>('SELECT climb_uuid FROM board_climb_grades');
+    expect(rows.map((row) => row.climb_uuid)).toEqual(['in-scope']);
+    // The stamped cursor covers only what landed — the artifact's snapshot_meta
+    // watermark (which covers the excluded row) would have skipped it forever.
+    expect(await getCheckpoint(db, 'checkpoint:board_climb_grades:kilter:1:5')).toEqual({
+      updatedAt: '2026-05-01T00:00:00Z',
+      syncSeq: '10',
+    });
+  });
+
+  it('stamps from the ARTIFACT rows, never from newer rows a sibling scope already crawled into main', async () => {
+    // board_climb_grades is shared across scopes. A sibling scope of the same
+    // layout (say kilter:1:7, synced for months) has already crawled rows for
+    // shared climbs with cursors far NEWER than this artifact. Stamping this
+    // scope's checkpoint off main would land at the sibling's tail, silently
+    // skipping every grade row computed since the artifact was built for
+    // climbs exclusive to THIS scope — the strict `>` delta never revisits
+    // anything at-or-below the stamp.
+    await seedScopeClimb('shared-climb');
+    await db.runAsync(
+      `INSERT INTO board_climb_grades (board_type, climb_uuid, angle, local_grade, computed_at, sync_seq)
+       VALUES ('kilter', 'shared-climb', 45, 21, '2026-08-01T00:00:00Z', 900)`,
+    );
+    const gradesPath = join(workDir, 'grades-sibling.db');
+    buildGradesArtifact({
+      filePath: gradesPath,
+      grades: [{ climbUuid: 'shared-climb', angle: 40, computedAt: '2026-05-03T00:00:00Z', syncSeq: 44 }],
+      watermark: { updatedAt: '2026-05-03T00:00:00Z', syncSeq: '44' },
+    });
+
+    await bootstrapScopeGradesFromSnapshot({ db, scope: SCOPE, scopeKey: 'kilter:1:5', filePath: gradesPath });
+
+    // The sibling's newer row is untouched, and the stamp stops at the
+    // artifact's own scoped watermark so the delta still covers
+    // (artifact, sibling-tail] for this scope's exclusive climbs.
+    expect(await countRows('board_climb_grades')).toBe(2);
+    expect(await getCheckpoint(db, 'checkpoint:board_climb_grades:kilter:1:5')).toEqual({
+      updatedAt: '2026-05-03T00:00:00Z',
+      syncSeq: '44',
+    });
+  });
+
+  it('stamps NOTHING and imports nothing when the artifact is corrupt', async () => {
+    await seedScopeClimb('c1');
+    const gradesPath = join(workDir, 'grades-corrupt.db');
+    writeFileSync(gradesPath, 'definitely not sqlite');
+
+    await expect(
+      bootstrapScopeGradesFromSnapshot({ db, scope: SCOPE, scopeKey: 'kilter:1:5', filePath: gradesPath }),
+    ).rejects.toThrow();
+
+    expect(await getCheckpoint(db, 'checkpoint:board_climb_grades:kilter:1:5')).toBeNull();
+    expect(await countRows('board_climb_grades')).toBe(0);
+  });
+
+  it('refuses an artifact whose snapshot_meta row_count disagrees with its actual rows', async () => {
+    await seedScopeClimb('c1');
+    const gradesPath = join(workDir, 'grades-truncated.db');
+    buildGradesArtifact({
+      filePath: gradesPath,
+      grades: [{ climbUuid: 'c1' }],
+      watermark: { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '10' },
+      rowCountOverride: 900,
+    });
+
+    await expect(
+      bootstrapScopeGradesFromSnapshot({ db, scope: SCOPE, scopeKey: 'kilter:1:5', filePath: gradesPath }),
+    ).rejects.toThrow(/row_count/);
+    expect(await getCheckpoint(db, 'checkpoint:board_climb_grades:kilter:1:5')).toBeNull();
+  });
+
+  it('leaves the deletions checkpoint alone — grades have no delete trigger to replay', async () => {
+    await seedScopeClimb('c1');
+    const deletionsCursor = { updatedAt: '2026-07-01T00:00:00Z', syncSeq: '500' };
+    await setCheckpoint(db, DELETIONS_CHECKPOINT_KEY, deletionsCursor);
+    const gradesPath = join(workDir, 'grades-deletions.db');
+    buildGradesArtifact({
+      filePath: gradesPath,
+      grades: [{ climbUuid: 'c1' }],
+      watermark: { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '10' },
+    });
+
+    await bootstrapScopeGradesFromSnapshot({ db, scope: SCOPE, scopeKey: 'kilter:1:5', filePath: gradesPath });
+
+    expect(await getCheckpoint(db, DELETIONS_CHECKPOINT_KEY)).toEqual(deletionsCursor);
+  });
+});
+
+describe('pullSync grades bootstrap', () => {
+  it('imports grades right after the whole-layout import and skips the crawl', async () => {
+    const climbsPath = join(workDir, 'grades-flow-climbs.db');
+    buildArtifact({
+      filePath: climbsPath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const gradesPath = join(workDir, 'grades-flow-grades.db');
+    buildGradesArtifact({
+      filePath: gradesPath,
+      grades: [{ climbUuid: 'c1', computedAt: '2026-05-02T00:00:00Z', syncSeq: 21 }],
+      watermark: { updatedAt: '2026-05-02T00:00:00Z', syncSeq: '21' },
+    });
+    const { source, gradesDownloads } = makeGradesSource({
+      manifest: makeManifest([makeEntry({ grades: gradesArtifactBlock() })]),
+      climbsFile: climbsPath,
+      gradesFile: gradesPath,
+    });
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+    });
+
+    expect(gradesDownloads).toEqual([gradesArtifactBlock().key]);
+    expect(await countRows('board_climb_grades')).toBe(1);
+    expect(await getCheckpoint(db, 'checkpoint:board_climb_grades:kilter:1:5')).toEqual({
+      updatedAt: '2026-05-02T00:00:00Z',
+      syncSeq: '21',
+    });
+  });
+
+  // Retention (#4310) keeps an UNIMPORTED whole-layout artifact for the next
+  // cycle and recognises a superseded build by the `<board>-<layout>` prefix in
+  // its filename. A grades file, named from its manifest key, matches no prefix
+  // — so a retained one would never be swept and would sit in the cache
+  // directory forever. It is deleted outright instead, on every exit path.
+  it('deletes the grades artifact rather than handing it to releaseArtifact', async () => {
+    const climbsPath = join(workDir, 'grades-release-climbs.db');
+    buildArtifact({
+      filePath: climbsPath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const gradesPath = join(workDir, 'grades-release-grades.db');
+    buildGradesArtifact({
+      filePath: gradesPath,
+      grades: [{ climbUuid: 'c1', computedAt: '2026-05-02T00:00:00Z', syncSeq: 21 }],
+      watermark: { updatedAt: '2026-05-02T00:00:00Z', syncSeq: '21' },
+    });
+    const { source } = makeGradesSource({
+      manifest: makeManifest([makeEntry({ grades: gradesArtifactBlock() })]),
+      climbsFile: climbsPath,
+      gradesFile: gradesPath,
+    });
+    const releaseArtifact = vi.fn(async () => {});
+    (source as unknown as { releaseArtifact: typeof releaseArtifact }).releaseArtifact = releaseArtifact;
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+    });
+
+    expect(source.deleteArtifact).toHaveBeenCalledWith(gradesPath);
+    expect(releaseArtifact).not.toHaveBeenCalledWith(gradesPath, expect.anything());
+    // The whole-layout artifact still goes through the retention seam.
+    expect(releaseArtifact).toHaveBeenCalledWith(climbsPath, { imported: true });
+  });
+
+  // A failed grades import must not strand the file either: the same finally
+  // runs on every exit path.
+  it('deletes the grades artifact when its import failed', async () => {
+    const climbsPath = join(workDir, 'grades-failed-climbs.db');
+    buildArtifact({
+      filePath: climbsPath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    // Not a grades artifact at all — ATTACH finds no board_climb_grades table.
+    const notAGradesFile = join(workDir, 'grades-failed-grades.db');
+    buildArtifact({
+      filePath: notAGradesFile,
+      climbs: [],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const { source } = makeGradesSource({
+      manifest: makeManifest([makeEntry({ grades: gradesArtifactBlock() })]),
+      climbsFile: climbsPath,
+      gradesFile: notAGradesFile,
+    });
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+    });
+
+    expect(source.deleteArtifact).toHaveBeenCalledWith(notAGradesFile);
+    // Proof the import really failed rather than the assertion above passing
+    // over a healthy run: a successful import stamps this.
+    expect(await getCheckpoint(db, 'checkpoint:board_climb_grades:kilter:1:5')).toBeNull();
+  });
+
+  it('takes today’s path verbatim when the manifest entry has no grades block', async () => {
+    const climbsPath = join(workDir, 'no-grades-climbs.db');
+    buildArtifact({
+      filePath: climbsPath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const { source, gradesDownloads } = makeGradesSource({
+      manifest: makeManifest([makeEntry()]),
+      climbsFile: climbsPath,
+      gradesFile: null,
+    });
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+    });
+
+    expect(gradesDownloads).toEqual([]);
+    // The paged crawl still stamps its own (empty-page) grades checkpoint.
+    expect(await countRows('board_climb_grades')).toBe(0);
+  });
+
+  it('retro-fits a scope that was bootstrapped BEFORE grades artifacts existed', async () => {
+    // Whole-layout artifact already imported (the catalog is complete) and the
+    // grades checkpoint absent = no grade page was ever consumed, so importing
+    // from the artifact cannot skip anything.
+    await seedScopeClimb('c1');
+    await setCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5', CLIMBS_WATERMARK);
+    await setCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5', STATS_WATERMARK);
+    await markBootstrapDone(db, 'kilter:1:5');
+    const gradesPath = join(workDir, 'retrofit-grades.db');
+    buildGradesArtifact({
+      filePath: gradesPath,
+      grades: [{ climbUuid: 'c1', computedAt: '2026-05-02T00:00:00Z', syncSeq: 21 }],
+      watermark: { updatedAt: '2026-05-02T00:00:00Z', syncSeq: '21' },
+    });
+    const { source, gradesDownloads } = makeGradesSource({
+      manifest: makeManifest([makeEntry({ grades: gradesArtifactBlock() })]),
+      climbsFile: join(workDir, 'never-downloaded.db'),
+      gradesFile: gradesPath,
+    });
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+    });
+
+    expect(gradesDownloads).toHaveLength(1);
+    expect(await countRows('board_climb_grades')).toBe(1);
+    // The whole-layout artifact is NOT re-downloaded — the scope is past that.
+    expect(source.downloadArtifact).not.toHaveBeenCalled();
+  });
+
+  it('retro-fits a scope whose PAGED crawl finished every table', async () => {
+    // scope-complete is the other proof of a whole catalog: the crawl reached
+    // every table's tail. (Its grades checkpoint is cleared below to model the
+    // pre-#4310 shape where grades were the term still missing.)
+    await seedScopeClimb('c1');
+    await setCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5', CLIMBS_WATERMARK);
+    await setCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5', STATS_WATERMARK);
+    await markScopeDownloadComplete(db, 'kilter:1:5');
+    const gradesPath = join(workDir, 'retrofit-complete-grades.db');
+    buildGradesArtifact({
+      filePath: gradesPath,
+      grades: [{ climbUuid: 'c1', computedAt: '2026-05-02T00:00:00Z', syncSeq: 21 }],
+      watermark: { updatedAt: '2026-05-02T00:00:00Z', syncSeq: '21' },
+    });
+    const { source, gradesDownloads } = makeGradesSource({
+      manifest: makeManifest([makeEntry({ grades: gradesArtifactBlock() })]),
+      climbsFile: join(workDir, 'never-downloaded-complete.db'),
+      gradesFile: gradesPath,
+    });
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+    });
+
+    expect(gradesDownloads).toHaveLength(1);
+    expect(await countRows('board_climb_grades')).toBe(1);
+  });
+
+  it('does NOT retro-fit a scope whose climb catalog is only half crawled', async () => {
+    // Board checkpoints exist (syncTable stamps one per page) but neither
+    // bootstrap-done nor scope-complete does, so main.board_climbs is a
+    // fraction of the layout. Importing here would stamp the grades cursor at
+    // the watermark of the grades whose climbs happen to be local, and the
+    // strict `>` delta would never fetch the rest.
+    await seedScopeClimb('c1');
+    await setCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5', CLIMBS_WATERMARK);
+    await setCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5', STATS_WATERMARK);
+    const gradesPath = join(workDir, 'retrofit-partial-grades.db');
+    buildGradesArtifact({
+      filePath: gradesPath,
+      grades: [{ climbUuid: 'c1', computedAt: '2026-05-02T00:00:00Z', syncSeq: 21 }],
+      watermark: { updatedAt: '2026-05-02T00:00:00Z', syncSeq: '21' },
+    });
+    const { source, gradesDownloads } = makeGradesSource({
+      manifest: makeManifest([makeEntry({ grades: gradesArtifactBlock() })]),
+      climbsFile: join(workDir, 'never-downloaded-partial.db'),
+      gradesFile: gradesPath,
+    });
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+    });
+
+    expect(gradesDownloads).toEqual([]);
+    // No artifact rows, and no artifact watermark stamped over the crawl.
+    expect(await countRows('board_climb_grades')).toBe(0);
+    expect(await getCheckpoint(db, 'checkpoint:board_climb_grades:kilter:1:5')).not.toEqual({
+      updatedAt: '2026-05-02T00:00:00Z',
+      syncSeq: '21',
+    });
+  });
+
+  it('does NOT retro-fit a scope that already has a grades checkpoint', async () => {
+    await seedScopeClimb('c1');
+    await setCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5', CLIMBS_WATERMARK);
+    await setCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5', STATS_WATERMARK);
+    await markBootstrapDone(db, 'kilter:1:5');
+    await setCheckpoint(db, 'checkpoint:board_climb_grades:kilter:1:5', {
+      updatedAt: '2026-04-01T00:00:00Z',
+      syncSeq: '3',
+    });
+    const { source, gradesDownloads } = makeGradesSource({
+      manifest: makeManifest([makeEntry({ grades: gradesArtifactBlock() })]),
+      climbsFile: join(workDir, 'unused.db'),
+      gradesFile: join(workDir, 'unused-grades.db'),
+    });
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+    });
+
+    expect(gradesDownloads).toEqual([]);
+  });
+
+  it('a failed grades import never costs the scope its whole-layout bootstrap attempt', async () => {
+    const climbsPath = join(workDir, 'grades-fail-climbs.db');
+    buildArtifact({
+      filePath: climbsPath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const gradesPath = join(workDir, 'grades-fail-grades.db');
+    writeFileSync(gradesPath, 'not sqlite');
+    const { source } = makeGradesSource({
+      manifest: makeManifest([makeEntry({ grades: gradesArtifactBlock() })]),
+      climbsFile: climbsPath,
+      gradesFile: gradesPath,
+    });
+    const onSnapshotBootstrapError = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+    });
+
+    // The climbs/stats import succeeded and stays intact.
+    expect(await countRows('board_climbs')).toBe(1);
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
+    expect(await getCheckpoint(db, 'checkpoint:board_climb_grades:kilter:1:5')).toBeNull();
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(expect.objectContaining({ stage: 'grades-import' }));
+    // Its own budget was spent instead.
+    const attempts = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
+      'grades-bootstrap-attempts:kilter:1:5',
+    ]);
+    expect(attempts?.value).toBe('1');
+  });
+
+  it('counts a grades download that returns null, so it cannot re-fetch forever', async () => {
+    const climbsPath = join(workDir, 'grades-null-climbs.db');
+    buildArtifact({
+      filePath: climbsPath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const { source, gradesDownloads } = makeGradesSource({
+      manifest: makeManifest([makeEntry({ grades: gradesArtifactBlock() })]),
+      climbsFile: climbsPath,
+      // A source that signals "unusable this cycle" by returning null rather
+      // than throwing — the same thing a throw means under SnapshotSource.
+      gradesFile: null,
+    });
+    const onSnapshotBootstrapError = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+    });
+
+    expect(gradesDownloads).toHaveLength(1);
+    expect(await getGradesBootstrapAttempts(db, 'kilter:1:5')).toBe(1);
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'grades-download', attempt: 1 }),
+    );
+    // The whole-layout budget is untouched, as ever.
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
+  });
+
+  it('stops trying grades once its own attempt budget is spent', async () => {
+    await seedScopeClimb('c1');
+    await setCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5', CLIMBS_WATERMARK);
+    await setCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5', STATS_WATERMARK);
+    await markBootstrapDone(db, 'kilter:1:5');
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      'grades-bootstrap-attempts:kilter:1:5',
+      '2',
+    ]);
+    const { source, gradesDownloads } = makeGradesSource({
+      manifest: makeManifest([makeEntry({ grades: gradesArtifactBlock() })]),
+      climbsFile: join(workDir, 'unused.db'),
+      gradesFile: join(workDir, 'unused-grades.db'),
+    });
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+    });
+
+    expect(gradesDownloads).toEqual([]);
+  });
+
+  it('skips a grades artifact built at an older client schema', async () => {
+    await seedScopeClimb('c1');
+    await setCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5', CLIMBS_WATERMARK);
+    await setCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5', STATS_WATERMARK);
+    await markBootstrapDone(db, 'kilter:1:5');
+    const { source, gradesDownloads } = makeGradesSource({
+      manifest: makeManifest([makeEntry({ grades: gradesArtifactBlock({ schemaVersion: 0 }) })]),
+      climbsFile: join(workDir, 'unused.db'),
+      gradesFile: join(workDir, 'unused-grades.db'),
+    });
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+    });
+
+    expect(gradesDownloads).toEqual([]);
   });
 });

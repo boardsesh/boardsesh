@@ -37,6 +37,10 @@ export type SnapshotDownloadEstimate =
    * Wire is deliberately the scale quoted here: it is the honest number for a
    * cellular-data prompt, and it is the same scale the download progress row
    * renders (issue #4311), so the dialog and the bar can never disagree.
+   *
+   * It includes the layout's separate Boardsesh-grades artifact when the
+   * manifest carries one (issue #4310): the scope downloads both, so quoting
+   * only the climbs file would under-promise what the user is about to spend.
    */
   | { kind: 'snapshot'; bytes: number; climbCount: number; builtAt: string }
   /** No trustworthy number — say nothing rather than guess. */
@@ -62,9 +66,11 @@ export function findSnapshotEntry(
  * schema OLDER than ours would NULL-fill the columns that migration added and
  * then stamp the resume cursor past those rows, which the strict `>` delta pull
  * would never backfill. Newer is fine — the import intersects columns.
- * Mirrors the pre-download gate in `runBootstrapPhase`.
+ * Mirrors the pre-download gate in `runBootstrapPhase`. Takes just the version
+ * field so the separate grades artifact — which carries its own
+ * `schemaVersion` — is held to the same rule.
  */
-export function isSnapshotEntryUsable(entry: SnapshotManifestEntry): boolean {
+export function isSnapshotEntryUsable(entry: Pick<SnapshotManifestEntry, 'schemaVersion'>): boolean {
   return entry.schemaVersion >= LATEST_SCHEMA_VERSION;
 }
 
@@ -113,7 +119,7 @@ export function estimateScopeDownload(input: {
 
   return {
     kind: 'snapshot',
-    bytes: entry.bytes,
+    bytes: entry.bytes + (entry.grades?.bytes ?? 0),
     climbCount: entry.tables.board_climbs.rowCount,
     builtAt: entry.builtAt,
   };

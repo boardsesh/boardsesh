@@ -277,3 +277,46 @@ describe('estimateScopeDownload parity with the engine gate', () => {
     });
   }
 });
+
+describe('estimateScopeDownload — the separate grades artifact (issue #4310)', () => {
+  it('adds the grades artifact’s bytes to the quoted figure', () => {
+    const withGrades = manifest([
+      entry({
+        bytes: 100_000_000,
+        grades: {
+          key: 'board-snapshots/v1-gzip/kilter/1/2026-06-01-grades.db',
+          url: 'https://cdn.example/grades.db',
+          bytes: 3_000_000,
+          contentEncoding: 'gzip',
+          builtAt: '2026-06-01T00:00:00.000Z',
+          schemaVersion: LATEST_SCHEMA_VERSION,
+          tables: {
+            board_climb_grades: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '1', rowCount: 900 },
+          },
+        },
+      }),
+    ]);
+
+    const estimate = eligible({ manifest: withGrades });
+
+    // The scope downloads BOTH files, so quoting only the climbs one would
+    // under-promise what the user is about to spend.
+    expect(estimate).toEqual({
+      kind: 'snapshot',
+      bytes: 103_000_000,
+      climbCount: 370497,
+      builtAt: '2026-07-15T02:31:02.103Z',
+    });
+  });
+
+  it('is unchanged when the entry has no grades block', () => {
+    const estimate = eligible({ manifest: manifest([entry({ bytes: 100_000_000 })]) });
+
+    expect(estimate).toEqual({
+      kind: 'snapshot',
+      bytes: 100_000_000,
+      climbCount: 370497,
+      builtAt: '2026-07-15T02:31:02.103Z',
+    });
+  });
+});

@@ -31,6 +31,7 @@ import {
   SnapshotPermanentMissError,
   type SnapshotArtifactHandle,
   type SnapshotDownloadOptions,
+  type SnapshotGradesArtifact,
   type SnapshotManifestEntry,
   type SnapshotSource,
 } from '@boardsesh/offline-sync';
@@ -88,6 +89,11 @@ const EXACT_FREE_SPACE_SLACK_BYTES = 32 * 1024 * 1024;
  * can both be on disk at once, so it is the sum plus slack — and a coarse
  * multiplier otherwise.
  */
+/** The coarse multiplier, for artifacts the manifest gives no decoded size for. */
+function gradesFreeSpaceMultiplier(contentEncoding: 'gzip' | 'identity'): number {
+  return contentEncoding === 'gzip' ? GZIP_FREE_SPACE_SAFETY_MULTIPLIER : IDENTITY_FREE_SPACE_SAFETY_MULTIPLIER;
+}
+
 function requiredFreeBytes(entry: SnapshotManifestEntry): number {
   if (typeof entry.uncompressedBytes === 'number' && entry.uncompressedBytes > 0) {
     return entry.uncompressedBytes + entry.bytes + EXACT_FREE_SPACE_SLACK_BYTES;
@@ -312,15 +318,38 @@ function formatError(error: unknown): string {
  * request timed out.")` is an offline user (a warning) or a real fault (an
  * error). Issue #4238.
  */
-async function downloadArtifact(
-  entry: SnapshotManifestEntry,
+/**
+ * The shared download body for BOTH artifact kinds: free-space check,
+ * content-addressed destination, download, and the gzip magic-byte sniff. The
+ * only differences between the whole-layout artifact and the separate grades
+ * artifact are the filename, the label in error messages, and retention — which
+ * only the whole-layout file gets (`retainAs`).
+ */
+async function downloadSnapshotFile(
+  artifact: {
+    label: string;
+    url: string;
+    requiredBytes: number;
+    contentEncoding: 'gzip' | 'identity';
+    fileName: string;
+    telemetryExtra: Record<string, unknown>;
+    /**
+     * Build stamp for the completeness sidecar. Present only for the
+     * whole-layout artifact: retention (#4310) is sized for its ~100 MB and its
+     * supersede sweep recognises a build by the `<board>-<layout>` filename
+     * prefix, which a grades file (named from its manifest key) does not carry.
+     * Without it this function writes no sidecar, reuses nothing, and runs no
+     * sweep — the engine deletes the file at the end of the cycle instead.
+     */
+    retainAs?: { builtAt: string };
+  },
   options?: SnapshotDownloadOptions,
 ): Promise<SnapshotArtifactHandle | null> {
-  const requiredBytes = requiredFreeBytes(entry);
+  const requiredBytes = artifact.requiredBytes;
   const availableBytes = Paths.availableDiskSpace;
   if (availableBytes < requiredBytes) {
     throw new Error(
-      `snapshot download: insufficient disk space for ${entry.boardType}:${entry.layoutId} ` +
+      `snapshot download: insufficient disk space for ${artifact.label} ` +
         `(need ~${requiredBytes} bytes, have ${availableBytes} bytes free)`,
     );
   }
@@ -332,18 +361,14 @@ async function downloadArtifact(
     throw new Error(`snapshot download: failed to create cache directory: ${formatError(error)}`, { cause: error });
   }
 
-  // Content-addressed filename (boardType/layoutId/builtAt) so a retried
-  // download for the same artifact overwrites cleanly (idempotent: true below)
-  // instead of accumulating orphaned files across bootstrap attempts.
-  const safeBuiltAt = entry.builtAt.replace(/[^a-zA-Z0-9]/g, '-');
-  const destination = new File(directory, `${entry.boardType}-${entry.layoutId}-${safeBuiltAt}.db`);
+  const destination = new File(directory, artifact.fileName);
 
   // A retained artifact from an earlier cycle, complete and for this exact
   // build: hand it straight back. The engine still runs quick_check and
   // verifySnapshotMeta over it before importing a single row, and treats an
   // import failure on a reused file as delete-and-refetch rather than a counted
   // bootstrap attempt — so trusting the sidecar here cannot strand a scope.
-  if (destination.exists && hasCompleteSidecar(destination, entry.builtAt)) {
+  if (artifact.retainAs && destination.exists && hasCompleteSidecar(destination, artifact.retainAs.builtAt)) {
     return { filePath: toSqlitePath(destination.uri), reused: true };
   }
   // A file with no (or a mismatched) sidecar is a half-written download, not a
@@ -361,7 +386,7 @@ async function downloadArtifact(
     // to the pre-#4311 one. `signal` rides both shapes: it only cancels the
     // transfer and does not switch implementations.
     downloaded = await File.downloadFileAsync(
-      entry.url,
+      artifact.url,
       destination,
       options?.onProgress
         ? {
@@ -377,13 +402,12 @@ async function downloadArtifact(
         : { idempotent: true, signal: options?.signal },
     );
   } catch (error) {
-    throw new Error(
-      `snapshot download: File.downloadFileAsync failed for ${entry.boardType}:${entry.layoutId}: ${formatError(error)}`,
-      { cause: error },
-    );
+    throw new Error(`snapshot download: File.downloadFileAsync failed for ${artifact.label}: ${formatError(error)}`, {
+      cause: error,
+    });
   }
 
-  if (entry.contentEncoding === 'gzip') {
+  if (artifact.contentEncoding === 'gzip') {
     let stillCompressed: boolean;
     try {
       stillCompressed = await looksGzipCompressed(downloaded);
@@ -393,7 +417,7 @@ async function downloadArtifact(
       // the one that reported `cause: null` to Sentry (issue #4238).
       safeDeleteFile(downloaded);
       throw new Error(
-        `snapshot download: could not verify artifact encoding for ${entry.boardType}:${entry.layoutId}: ${formatError(error)}`,
+        `snapshot download: could not verify artifact encoding for ${artifact.label}: ${formatError(error)}`,
         { cause: error },
       );
     }
@@ -410,7 +434,7 @@ async function downloadArtifact(
         new Error('snapshot artifact arrived still gzip-compressed (Content-Encoding was not auto-decoded)'),
         {
           tags: { source: 'offline-sync', kind: 'snapshot-bootstrap' },
-          extra: { boardType: entry.boardType, layoutId: entry.layoutId, url: entry.url },
+          extra: artifact.telemetryExtra,
         },
       );
       throw new SnapshotPermanentMissError('snapshot artifact arrived still gzip-compressed');
@@ -418,11 +442,60 @@ async function downloadArtifact(
   }
 
   // Only now is the file provably complete AND decoded, so only now may a
-  // later cycle reuse it.
-  writeCompleteSidecar(downloaded, entry.builtAt);
-  sweepRetainedArtifacts(downloaded);
+  // later cycle reuse it. Retained artifacts only: a grades file is deleted by
+  // the engine at the end of the cycle, so it neither claims a sidecar nor
+  // triggers a sweep.
+  if (artifact.retainAs) {
+    writeCompleteSidecar(downloaded, artifact.retainAs.builtAt);
+    sweepRetainedArtifacts(downloaded);
+  }
 
   return { filePath: toSqlitePath(downloaded.uri) };
+}
+
+async function downloadArtifact(
+  entry: SnapshotManifestEntry,
+  options?: SnapshotDownloadOptions,
+): Promise<SnapshotArtifactHandle | null> {
+  // Content-addressed filename (boardType/layoutId/builtAt) so a retried
+  // download for the same artifact overwrites cleanly (idempotent: true)
+  // instead of accumulating orphaned files across bootstrap attempts.
+  const safeBuiltAt = entry.builtAt.replace(/[^a-zA-Z0-9]/g, '-');
+  return downloadSnapshotFile(
+    {
+      label: `${entry.boardType}:${entry.layoutId}`,
+      url: entry.url,
+      requiredBytes: requiredFreeBytes(entry),
+      contentEncoding: entry.contentEncoding,
+      fileName: `${entry.boardType}-${entry.layoutId}-${safeBuiltAt}.db`,
+      telemetryExtra: { boardType: entry.boardType, layoutId: entry.layoutId, url: entry.url },
+      retainAs: { builtAt: entry.builtAt },
+    },
+    options,
+  );
+}
+
+/**
+ * The layout's separate Boardsesh-grades artifact (issue #4310). Small next to
+ * the climbs file — a few MB against ~100 — but it removes hundreds of serial
+ * authenticated GraphQL pages from every Kilter and Tension download.
+ *
+ * The filename is derived from the artifact KEY rather than from a board/layout
+ * pair, because the manifest's grades block does not carry them; the key is
+ * already content-addressed by build stamp, so it is unique per build.
+ */
+async function downloadGradesArtifact(artifact: SnapshotGradesArtifact): Promise<{ filePath: string } | null> {
+  const safeKey = artifact.key.replace(/[^a-zA-Z0-9]/g, '-');
+  return downloadSnapshotFile({
+    label: `grades ${artifact.key}`,
+    url: artifact.url,
+    // No `uncompressedBytes` in the manifest's grades block, so this is the
+    // coarse multiplier path — cheap either way at a few MB.
+    requiredBytes: artifact.bytes * gradesFreeSpaceMultiplier(artifact.contentEncoding),
+    contentEncoding: artifact.contentEncoding,
+    fileName: `${safeKey}.db`,
+    telemetryExtra: { gradesKey: artifact.key, url: artifact.url },
+  });
 }
 
 async function deleteArtifact(filePath: string): Promise<void> {
@@ -443,6 +516,7 @@ async function releaseArtifact(filePath: string, options: { imported: boolean })
 export const mobileSnapshotSource: SnapshotSource = {
   fetchManifest,
   downloadArtifact,
+  downloadGradesArtifact,
   deleteArtifact,
   releaseArtifact,
 };
