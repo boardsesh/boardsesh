@@ -121,6 +121,29 @@ export type CoverageResetInfo = {
 };
 export type CoverageResetReporter = (info: CoverageResetInfo) => void;
 
+/**
+ * Every deletions-coverage evaluation, not just the ones that force a reset.
+ *
+ * The reset event alone is a censored instrument. `enforceDeletionsCoverage`
+ * returns early on `coverageAt === null`, and the marker only exists after a
+ * COMPLETED deletions pull — so a device that can never finish one (the paged
+ * crawl stranded in #4313, say) stays `unknown` forever and emits nothing. The
+ * reset-only view therefore samples exactly the devices healthy enough not to
+ * be at risk. Reporting the verdict for every cycle makes `unknown` a
+ * first-class value and turns "zero resets" into evidence rather than a shrug.
+ *
+ * `markerAgeDays` is null for `unknown` (no marker) and `future` (a marker
+ * dated after now, i.e. a clock corrected backwards) — neither has a meaningful
+ * age. `outcome: 'probe_failed'` is the reachability probe rejecting on a stale
+ * device, which today vanishes into a dev-only console.warn.
+ */
+export type CoverageEvaluatedInfo = {
+  verdict: 'unknown' | 'future' | 'fresh' | 'stale';
+  markerAgeDays: number | null;
+  outcome: 'evaluated' | 'reset' | 'probe_failed';
+};
+export type CoverageEvaluatedReporter = (info: CoverageEvaluatedInfo) => void;
+
 export type SyncOptions = {
   /** Encoded board scope keys ("boardType:layoutId:sizeId") to download offline. */
   enabledBoards?: string[];
@@ -151,6 +174,12 @@ export type SyncOptions = {
   onScopeDownloadComplete?: ScopeDownloadCompleteReporter;
   /** Telemetry for a forced deletions-coverage resync. See CoverageResetInfo. */
   onCoverageReset?: CoverageResetReporter;
+  /**
+   * Telemetry for EVERY deletions-coverage evaluation. Fires once per pullSync
+   * cycle with no interval of its own — dedupe belongs in the platform binding,
+   * so the engine seam stays deterministic and testable.
+   */
+  onCoverageEvaluated?: CoverageEvaluatedReporter;
 };
 
 /** A per-board download target: the parsed scope plus its encoded key. */
@@ -968,16 +997,38 @@ async function enforceDeletionsCoverage(
   const coverageAt = await getDeletionsCoverageAt(db);
   const verdict = evaluateDeletionsCoverage(coverageAt, evaluatedAt);
 
+  // floor, not round, everywhere this age is reported: a 79.6-day marker must
+  // not read as 80 (the threshold value) when the decision was made on exact
+  // milliseconds. Null for the two verdicts with no meaningful age.
+  const markerAgeDays = coverageAt === null ? null : Math.floor((evaluatedAt - coverageAt) / 86_400_000);
+
+  // Reported BEFORE the early return below, so `unknown` and `future` are
+  // first-class values rather than silence. That is the whole point: the
+  // devices that never complete a deletions pull are the at-risk population,
+  // and a reset-only instrument can never see them.
+  options?.onCoverageEvaluated?.({ verdict, markerAgeDays, outcome: 'evaluated' });
+
   // Only 'stale' does anything. Keeping the explicit `coverageAt === null`
   // disjunct means an absent marker can never structurally reach the wipe below,
   // whatever the classifier is later taught to return — and it narrows
   // coverageAt to a number, so markerAgeDays needs no fallback for a case that
   // cannot happen.
-  if (coverageAt === null || verdict !== 'stale') return;
+  // (markerAgeDays is null exactly when coverageAt is; naming it in the guard
+  // narrows it to a number for the reset report below.)
+  if (coverageAt === null || markerAgeDays === null || verdict !== 'stale') return;
 
   // Reachability + auth probe. Its payload is irrelevant; only "did it resolve"
-  // matters, so it asks for a single row.
-  await graphqlFetch<{ syncDeletions: SyncDeletionsResult }>(SYNC_DELETIONS_QUERY, { cursor: undefined, limit: 1 });
+  // matters, so it asks for a single row. A rejection is reported and then
+  // RETHROWN unchanged: the throw is what leaves local data intact and defers
+  // to the next cycle, and swallowing it here would wipe a stale device's user
+  // data without a verified connection — the exact catastrophe the probe exists
+  // to prevent.
+  try {
+    await graphqlFetch<{ syncDeletions: SyncDeletionsResult }>(SYNC_DELETIONS_QUERY, { cursor: undefined, limit: 1 });
+  } catch (error) {
+    options?.onCoverageEvaluated?.({ verdict, markerAgeDays, outcome: 'probe_failed' });
+    throw error;
+  }
 
   // Re-check the teardown flags after the network await — the probe may have
   // been in flight across a sign-out or a backgrounding, and neither wants a
@@ -1008,10 +1059,11 @@ async function enforceDeletionsCoverage(
     queryClient.invalidateQueries({ queryKey: JSON.parse(serializedKey) as string[] });
   }
 
-  // floor, not round: a 79.6-day marker must not be reported as 80 (the
-  // threshold value) when the decision was made on exact milliseconds.
-  const markerAgeDays = Math.floor((evaluatedAt - coverageAt) / 86_400_000);
   options?.onCoverageReset?.({ markerAgeDays, rowsCleared, pendingMutations });
+  // Alongside the reset event, not instead of it: onCoverageReset stays the
+  // dedicated "a wipe happened" signal, while the verdict stream carries the
+  // denominator that makes its rate readable.
+  options?.onCoverageEvaluated?.({ verdict, markerAgeDays, outcome: 'reset' });
 }
 
 export async function pullSync(
