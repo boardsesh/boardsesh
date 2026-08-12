@@ -126,3 +126,119 @@ export function clearOfflineBoards(): void {
   if (Array.isArray(stored) && stored.length === 0) return;
   setSetting(SETTING_KEY, []);
 }
+
+// --- Download-trigger attribution (issue #4316) --------------------------------
+
+const TRIGGER_SETTING_KEY = 'offlineDownloadTriggers';
+
+/**
+ * Why a board's download was started. The split that matters is DELIBERATE vs
+ * AUTOMATIC — #4318's discovery nudges are measured against the deliberate taps,
+ * and lumping a settings-driven re-enable in with a real tap under a name that
+ * asserts a tap happened would make that measurement meaningless.
+ *
+ * - `toggle` — the My Boards per-row switch. A tap.
+ * - `download-all` — the "download all my boards" switch in More. A tap.
+ * - `auto-download-all` — the mount effect acting on the persisted
+ *   `autoOfflineBoards` setting. NOT a tap.
+ * - `adopt-auto` — a discovered board adopted because `autoOfflineBoards` is on.
+ *   NOT a tap.
+ * - `adopt-confirmed` — a discovered board the climber confirmed in the dialog.
+ * - `retry` — a manual re-run of a failed download.
+ * - `unknown` — no attribution recorded: a scope enabled by a build that predates
+ *   this, or one whose entry was already consumed. An explicit, expected value.
+ */
+export type OfflineDownloadTrigger =
+  | 'toggle'
+  | 'download-all'
+  | 'auto-download-all'
+  | 'adopt-auto'
+  | 'adopt-confirmed'
+  | 'retry'
+  | 'unknown';
+
+const KNOWN_TRIGGERS: readonly OfflineDownloadTrigger[] = [
+  'toggle',
+  'download-all',
+  'auto-download-all',
+  'adopt-auto',
+  'adopt-confirmed',
+  'retry',
+  'unknown',
+];
+
+function readTriggers(): Record<string, string> {
+  const stored = getSetting(TRIGGER_SETTING_KEY);
+  // A value written by a build with a different shape reads as empty rather than
+  // poisoning the event with garbage.
+  return stored !== null && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+}
+
+/**
+ * Record why `scopeKey`'s download is starting. Overwrites any earlier
+ * un-consumed entry: the most recent intent is the truthful one (a climber who
+ * toggles a board off and back on chose it deliberately the second time too).
+ */
+export function rememberDownloadTrigger(scopeKey: string, trigger: OfflineDownloadTrigger): void {
+  const current = readTriggers();
+  if (current[scopeKey] === trigger) return;
+  setSetting(TRIGGER_SETTING_KEY, { ...current, [scopeKey]: trigger });
+}
+
+/**
+ * Read and PRUNE `scopeKey`'s trigger. Consuming it is what keeps the store
+ * bounded — one entry lives from the enable until the download actually starts,
+ * which is the whole span the attribution is for.
+ *
+ * Returns `'unknown'` when there is no entry, or when the stored string isn't a
+ * trigger this build knows (a value written by a newer build after a downgrade).
+ */
+export function takeDownloadTrigger(scopeKey: string): OfflineDownloadTrigger {
+  const current = readTriggers();
+  const stored = current[scopeKey];
+  if (stored === undefined) return 'unknown';
+  const { [scopeKey]: _consumed, ...rest } = current;
+  setSetting(TRIGGER_SETTING_KEY, rest);
+  return KNOWN_TRIGGERS.includes(stored as OfflineDownloadTrigger) ? (stored as OfflineDownloadTrigger) : 'unknown';
+}
+
+/** Drop `scopeKey`'s pending attribution — the board was removed before it downloaded. */
+export function forgetDownloadTrigger(scopeKey: string): void {
+  const current = readTriggers();
+  if (!(scopeKey in current)) return;
+  const { [scopeKey]: _removed, ...rest } = current;
+  setSetting(TRIGGER_SETTING_KEY, rest);
+}
+
+const DOWNLOAD_ALL_TAP_SETTING_KEY = 'offlineDownloadAllTapPending';
+
+/**
+ * Arm the "download all my boards" attribution. The tap flips a persisted
+ * setting, but the enable it causes runs from a mount effect once `myBoards`
+ * resolves — which can be a different mount, or a different app launch, if the
+ * list is still in flight when the climber leaves the screen. Held in the same
+ * store as the per-scope triggers for the same reason: an in-memory ref loses
+ * exactly the case the split exists to measure, and every enable that ran
+ * without it would be filed as automatic.
+ */
+export function rememberDownloadAllTap(): void {
+  if (getSetting(DOWNLOAD_ALL_TAP_SETTING_KEY) === true) return;
+  setSetting(DOWNLOAD_ALL_TAP_SETTING_KEY, true);
+}
+
+/**
+ * Read and CLEAR the pending download-all tap. One tap attributes one batch:
+ * leaving it armed would let the next automatic enable on that screen inherit a
+ * tap that had already been spent.
+ */
+export function takeDownloadAllTap(): boolean {
+  if (getSetting(DOWNLOAD_ALL_TAP_SETTING_KEY) !== true) return false;
+  setSetting(DOWNLOAD_ALL_TAP_SETTING_KEY, false);
+  return true;
+}
+
+/** Disarm without consuming — the climber turned the switch back off. */
+export function forgetDownloadAllTap(): void {
+  if (getSetting(DOWNLOAD_ALL_TAP_SETTING_KEY) !== true) return;
+  setSetting(DOWNLOAD_ALL_TAP_SETTING_KEY, false);
+}

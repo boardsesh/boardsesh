@@ -127,6 +127,15 @@ export type SnapshotBootstrapErrorReporter = (report: {
 export type SnapshotBootstrapResult = {
   climbsWatermark: SyncCheckpoint;
   statsWatermark: SyncCheckpoint;
+  /**
+   * Rows this scope actually imported out of the layout artifact (issue #4316).
+   * Both are INSERT OR REPLACE `changes` counts, so a re-import of the same
+   * scope reports the same numbers rather than zero — they measure the work
+   * done, not the net row growth. Reported on the download-funnel's Completed
+   * event so a slow download can be normalised against payload size.
+   */
+  climbsImported: number;
+  statsImported: number;
 };
 
 /**
@@ -515,7 +524,7 @@ async function importScope(
   txn: SqlExecutor,
   scope: OfflineBoardScope,
   onSchemaDrift: SchemaDriftReporter | undefined,
-): Promise<void> {
+): Promise<{ climbsImported: number; statsImported: number }> {
   const climbColumns = await sharedColumns(txn, 'board_climbs', onSchemaDrift);
   const statsColumns = await sharedColumns(txn, 'board_climb_stats', onSchemaDrift);
   assertSafeColumns(climbColumns);
@@ -525,7 +534,7 @@ async function importScope(
 
   const climbScope = climbsScopeFilter(scope);
   const climbList = climbColumns.join(', ');
-  await txn.runAsync(
+  const climbsResult = await txn.runAsync(
     `INSERT OR REPLACE INTO main.board_climbs (${climbList})
      SELECT ${climbList} FROM ${SNAPSHOT_ALIAS}.board_climbs WHERE ${climbScope.sql}`,
     climbScope.params,
@@ -541,7 +550,7 @@ async function importScope(
     : '';
   const statsParams: (string | number)[] = [scope.boardType, scope.boardType, scope.layoutId];
   if (sizeScoped) statsParams.push(scope.sizeId);
-  await txn.runAsync(
+  const statsResult = await txn.runAsync(
     `INSERT OR REPLACE INTO main.board_climb_stats (${statsList})
      SELECT ${statsList} FROM ${SNAPSHOT_ALIAS}.board_climb_stats s
      WHERE s.board_type = ?
@@ -551,6 +560,8 @@ async function importScope(
        )`,
     statsParams,
   );
+
+  return { climbsImported: climbsResult.changes, statsImported: statsResult.changes };
 }
 
 // --- Verification -------------------------------------------------------------
@@ -689,6 +700,7 @@ export async function bootstrapScopeFromSnapshot(params: {
   const startEpoch = getWipeEpoch();
 
   let watermarks: Record<SnapshotTableName, SyncCheckpoint> | null = null;
+  let imported = { climbsImported: 0, statsImported: 0 };
   try {
     await db.withExclusiveTransactionAsync(async (txn) => {
       // Close the wrapper's (empty, deferred) transaction so ATTACH is legal,
@@ -734,7 +746,7 @@ export async function bootstrapScopeFromSnapshot(params: {
       }
 
       await reconcileScope(txn, scope, watermarks);
-      await importScope(txn, scope, onSchemaDrift);
+      imported = await importScope(txn, scope, onSchemaDrift);
 
       // Re-check after the (awaited) imports: abort before committing any rows or
       // checkpoints if a wipe landed while they ran.
@@ -765,5 +777,9 @@ export async function bootstrapScopeFromSnapshot(params: {
   // Unreachable null: the transaction either set watermarks or threw.
   if (!watermarks) throw new Error('snapshot bootstrap: transaction completed without watermarks');
   const finalWatermarks: Record<SnapshotTableName, SyncCheckpoint> = watermarks;
-  return { climbsWatermark: finalWatermarks.board_climbs, statsWatermark: finalWatermarks.board_climb_stats };
+  return {
+    climbsWatermark: finalWatermarks.board_climbs,
+    statsWatermark: finalWatermarks.board_climb_stats,
+    ...imported,
+  };
 }

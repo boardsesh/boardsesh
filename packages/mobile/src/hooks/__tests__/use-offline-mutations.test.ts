@@ -13,6 +13,20 @@ import type { QueryClient } from '@tanstack/react-query';
 
 // useCallback → identity; useQueryClient → stub. Only the follow hooks use them.
 const invalidateQueries = vi.fn();
+// The adapter reads the persisted download-trigger attribution (issue #4316),
+// which pulls the settings store — and its native MMKV entry breaks the test
+// bundler's scan. Same in-memory stand-in as remove-offline-board.test.ts.
+const mockSettingsStorage = new Map<string, string>();
+vi.mock('react-native-mmkv', () => {
+  const createMockInstance = () => ({
+    getString: (key: string) => mockSettingsStorage.get(key),
+    set: (key: string, value: string) => void mockSettingsStorage.set(key, value),
+    remove: (key: string) => void mockSettingsStorage.delete(key),
+    clearAll: () => mockSettingsStorage.clear(),
+  });
+  return { createMMKV: vi.fn(() => createMockInstance()) };
+});
+
 vi.mock('react', () => ({
   useCallback: <T>(callback: T) => callback,
 }));

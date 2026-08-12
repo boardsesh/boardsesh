@@ -33,6 +33,7 @@ import {
   MAX_TRANSPORT_DOWNLOAD_FAILURES,
 } from '../bootstrap-retry';
 import { getCheckpoint, setCheckpoint, DELETIONS_CHECKPOINT_KEY } from '../checkpoints';
+import { removeBoardScopeData } from '../scope-teardown';
 import { runMigrations, LATEST_SCHEMA_VERSION } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
 import { setSigningOut, setBackgrounded, __resetDrainerStateForTests } from '../../mutation-queue/drainer';
@@ -2599,5 +2600,195 @@ describe('pullSync bootstrap progress frames', () => {
     const frameCountAfterSync = collector.frames.length;
     lateEmit!();
     expect(collector.frames).toHaveLength(frameCountAfterSync);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// download-funnel Started anchor (issue #4316)
+// ---------------------------------------------------------------------------
+
+describe('pullSync onScopeDownloadStart', () => {
+  it('fires once with pathIntent snapshot and the artifact size for a fresh snapshot scope', async () => {
+    const filePath = join(workDir, 'started-snapshot.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const entry = makeEntry({ bytes: 103_000_000 });
+    const source = makeSnapshotSource({ manifest: makeManifest([entry]), fileForEntry: () => filePath });
+    const onScopeDownloadStart = vi.fn();
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onScopeDownloadStart,
+    });
+
+    expect(onScopeDownloadStart).toHaveBeenCalledTimes(1);
+    expect(onScopeDownloadStart).toHaveBeenCalledWith({
+      scopeKey: 'kilter:1:5',
+      pathIntent: 'snapshot',
+      // On Started specifically, because an ABANDONED download never emits
+      // Completed — without this the size of the downloads people give up on
+      // would be unknowable.
+      artifactBytes: 103_000_000,
+    });
+  });
+
+  it('fires once with pathIntent paged for a build with no snapshot source', async () => {
+    const onScopeDownloadStart = vi.fn();
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], onScopeDownloadStart });
+
+    expect(onScopeDownloadStart).toHaveBeenCalledTimes(1);
+    expect(onScopeDownloadStart).toHaveBeenCalledWith({
+      scopeKey: 'kilter:1:5',
+      pathIntent: 'paged',
+      artifactBytes: null,
+    });
+  });
+
+  it('DOES fire for a scope that already has a board checkpoint — the resumed multi-cycle crawl', async () => {
+    // This is the population the funnel most needs and the naive design dropped:
+    // a paged crawl writes a checkpoint on its FIRST page, and runBootstrapPhase
+    // treats any checkpoint as ineligible and skips the scope entirely.
+    await setCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5', { updatedAt: '2026-01-01T00:00:00Z', syncSeq: '5' });
+    const source = makeSnapshotSource({
+      manifest: makeManifest([makeEntry()]),
+      fileForEntry: () => join(workDir, 'never.db'),
+    });
+    const onScopeDownloadStart = vi.fn();
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onScopeDownloadStart,
+    });
+
+    expect(onScopeDownloadStart).toHaveBeenCalledTimes(1);
+    expect(onScopeDownloadStart.mock.calls[0][0].pathIntent).toBe('paged');
+  });
+
+  it('does NOT fire a second time on the next cycle, nor after a failed bootstrap retries', async () => {
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), downloadThrows: true });
+    const onScopeDownloadStart = vi.fn();
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onScopeDownloadStart,
+    });
+    expect(onScopeDownloadStart).toHaveBeenCalledTimes(1);
+
+    // A retry cycle: the download fails again and the scope is attempted afresh.
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onScopeDownloadStart,
+    });
+    expect(onScopeDownloadStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('fires again after scope teardown clears the marker, so a re-added board re-enters the funnel', async () => {
+    const onScopeDownloadStart = vi.fn();
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], onScopeDownloadStart });
+    expect(onScopeDownloadStart).toHaveBeenCalledTimes(1);
+
+    await removeBoardScopeData({
+      db,
+      scope: { boardType: 'kilter', layoutId: 1, sizeId: 5 },
+      scopeKey: 'kilter:1:5',
+      retainedScopes: [],
+    });
+
+    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], onScopeDownloadStart });
+    expect(onScopeDownloadStart).toHaveBeenCalledTimes(2);
+  });
+
+  it('carries bytes/rowCount/downloadMs/importMs on Completed when the import ran this cycle', async () => {
+    const filePath = join(workDir, 'complete-props.db');
+    buildArtifact({
+      filePath,
+      climbs: [
+        { uuid: 'c1', compatibleSizeIds: [5] },
+        { uuid: 'c2', compatibleSizeIds: [5] },
+      ],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const source = makeSnapshotSource({
+      manifest: makeManifest([makeEntry({ bytes: 103_000_000 })]),
+      fileForEntry: () => filePath,
+    });
+    const onScopeDownloadComplete = vi.fn();
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onScopeDownloadComplete,
+    });
+
+    const info = onScopeDownloadComplete.mock.calls[0][0];
+    expect(info.method).toBe('snapshot');
+    expect(info.bytes).toBe(103_000_000);
+    expect(info.rowCount).toBe(3); // two climbs + one stats row
+    expect(typeof info.downloadMs).toBe('number');
+    expect(typeof info.importMs).toBe('number');
+  });
+
+  it('stays SILENT for a board that already finished downloading before the marker existed', async () => {
+    // The upgrade case, and the one that would wreck the first weeks of funnel
+    // data: every board already downloaded on the device has a `scope-complete:`
+    // marker and no `scope-started:` one. It cannot emit Completed again (that
+    // event is once-ever too), so an unguarded Started here would show up as one
+    // phantom abandoned download per board, on every upgrading device at once.
+    const seed = vi.fn();
+    const { fetch } = makeGraphqlFetch();
+    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], onScopeDownloadStart: seed });
+    expect(seed).toHaveBeenCalledTimes(1);
+    // Roll the device back to the pre-#4316 state: complete, never "started".
+    await db.runAsync('DELETE FROM sync_meta WHERE key = ?', ['scope-started:kilter:1:5']);
+
+    const onScopeDownloadStart = vi.fn();
+    const onScopeDownloadComplete = vi.fn();
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      onScopeDownloadStart,
+      onScopeDownloadComplete,
+    });
+
+    expect(onScopeDownloadStart).not.toHaveBeenCalled();
+    expect(onScopeDownloadComplete).not.toHaveBeenCalled();
+    // The marker is still written, so the scope is settled rather than
+    // re-evaluated on every future cycle.
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['scope-started:kilter:1:5']),
+    ).not.toBeNull();
+  });
+
+  it('omits the payload props on a paged completion, rather than reporting zeroes', async () => {
+    // The engine has nothing honest to say about work it did not do.
+    const onScopeDownloadComplete = vi.fn();
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], onScopeDownloadComplete });
+
+    const info = onScopeDownloadComplete.mock.calls[0][0];
+    expect(info.method).toBe('paged');
+    expect(info.bytes).toBeUndefined();
+    expect(info.rowCount).toBeUndefined();
+    expect(info.downloadMs).toBeUndefined();
+    expect(info.importMs).toBeUndefined();
   });
 });

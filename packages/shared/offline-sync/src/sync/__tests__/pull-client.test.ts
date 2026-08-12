@@ -9,6 +9,8 @@ vi.mock('../checkpoints', () => ({
   ),
   markScopeDownloadComplete: vi.fn().mockResolvedValue(undefined),
   isScopeDownloadComplete: vi.fn().mockResolvedValue(false),
+  markScopeDownloadStarted: vi.fn().mockResolvedValue(undefined),
+  isScopeDownloadStarted: vi.fn().mockResolvedValue(false),
   rewindDeletionsCheckpoint: vi.fn().mockResolvedValue(undefined),
   compareCheckpoints: vi.fn().mockReturnValue(0),
   DELETIONS_CHECKPOINT_KEY: 'checkpoint:deletions',

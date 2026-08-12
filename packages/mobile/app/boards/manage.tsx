@@ -33,10 +33,14 @@ import { useRememberDownloadedBoards } from '../../src/offline/use-remember-down
 import { useSnapshotManifest } from '../../src/offline/use-snapshot-manifest';
 import { useSnapshotSource } from '../../src/offline/use-snapshot-source';
 import { formatBytes } from '../../src/lib/format-bytes';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { track } from '../../src/lib/analytics';
+import { isOfflineEngineEnabled } from '../../src/lib/offline-engine';
 import {
   getSetting,
   useSetting,
   setOfflineBoardEnabled,
+  forgetDownloadTrigger,
   forgetOfflineBoard,
   forgetOfflineBoardScope,
   useOfflineBoards,
@@ -135,6 +139,11 @@ export default function ManageBoards() {
   snapshotManifestRef.current = snapshotManifest;
   const db = useSQLiteContext();
   const syncStatus = useSyncStatus();
+  // Mirrored for the toggle-off handler, which only reads it at tap time: keeping
+  // the live status out of that callback's deps means a progress frame can't churn
+  // its identity and re-render every memoised row.
+  const syncStatusRef = useRef(syncStatus);
+  syncStatusRef.current = syncStatus;
   // This must be the same gate the sync bridge uses. A previous app version can
   // leave bootstrap markers in SQLite, but they are meaningless while this build
   // is intentionally running the ordinary paged downloader.
@@ -235,12 +244,47 @@ export default function ManageBoards() {
       const key = offlineBoardKeyForBoard(board);
       const alreadyEnabled = getSetting('syncEnabledBoards').includes(key);
       if (alreadyEnabled) {
+        // Was this download still in flight? Read BEFORE the setting write, so the
+        // cancel event carries how far it had got (issue #4316) — this is the
+        // abandonment the funnel exists to size, caught at the moment it happens.
+        const liveProgress = boardDownloadProgress({
+          scopeKey: key,
+          isSyncing: syncStatusRef.current.isSyncing,
+          currentTable: syncStatusRef.current.progress?.currentTable ?? null,
+          phase: syncStatusRef.current.progress?.phase ?? null,
+          snapshot: syncStatusRef.current.progress?.snapshot,
+          // With the progress kill switch off the frames still exist but carry no
+          // bytes, so a Cancelled event built from them would report a fake
+          // stage-and-zero. The abandonment itself is still counted — the
+          // Toggled(enabled:false) above always fires — just without the detail
+          // the progress feature is what supplies.
+          progressEnabled: downloadProgressEnabled,
+        });
         // Disabling just drops the setting entry; the cached rows + checkpoint stay
         // so re-enabling resumes instantly, so no confirm is needed.
         setOfflineBoardEnabled(scope, false);
         // Drop the offline picker's snapshots for this scope too, so it stops
         // offering a board the user just opted out of.
         forgetOfflineBoardScope(scope);
+        // …and its pending download attribution, so a later re-enable is attributed
+        // to the tap that actually caused it rather than to this abandoned one.
+        forgetDownloadTrigger(key);
+        track(SHARED_EVENTS.OfflineBoardToggled, {
+          scopeKey: key,
+          enabled: false,
+          source: 'manage',
+          offlineEngineEnabled: isOfflineEngineEnabled(),
+        });
+        if (liveProgress) {
+          track(SHARED_EVENTS.OfflineBoardDownloadCancelled, {
+            scopeKey: key,
+            source: 'manage',
+            stage: liveProgress.stage,
+            fraction: liveProgress.fraction,
+            bytesDone: liveProgress.bytesDone,
+            offlineEngineEnabled: isOfflineEngineEnabled(),
+          });
+        }
         return;
       }
       // How big is this download? Only the snapshot path can answer honestly, and
@@ -289,9 +333,9 @@ export default function ManageBoards() {
       if (!confirmed) return;
       // Enable + kick a download now via the shared hook (single-flight, reads the
       // latest syncEnabledBoards setting).
-      enableBoardsOffline(board);
+      enableBoardsOffline(board, { trigger: 'toggle', source: 'manage' });
     },
-    [confirm, t, i18n.language, db, enableBoardsOffline],
+    [confirm, t, i18n.language, db, enableBoardsOffline, downloadProgressEnabled],
   );
 
   // See boards/index.tsx: a hard 401 clears tokens without flipping

@@ -75,6 +75,8 @@ export type {
   BootstrapMetadataChangedReporter,
   ScopeDownloadCompleteInfo,
   ScopeDownloadCompleteReporter,
+  ScopeDownloadStartInfo,
+  ScopeDownloadStartReporter,
   CoverageResetInfo,
   CoverageResetReporter,
   CoverageEvaluatedInfo,

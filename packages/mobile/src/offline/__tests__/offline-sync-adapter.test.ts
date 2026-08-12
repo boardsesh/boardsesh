@@ -6,6 +6,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const onlineManagerIsOnline = vi.fn(() => true);
+// The adapter reads the persisted download-trigger attribution (issue #4316),
+// which pulls the settings store — and its native MMKV entry breaks the test
+// bundler's scan. Same in-memory stand-in as remove-offline-board.test.ts.
+const mockSettingsStorage = new Map<string, string>();
+vi.mock('react-native-mmkv', () => {
+  const createMockInstance = () => ({
+    getString: (key: string) => mockSettingsStorage.get(key),
+    set: (key: string, value: string) => void mockSettingsStorage.set(key, value),
+    remove: (key: string) => void mockSettingsStorage.delete(key),
+    clearAll: () => mockSettingsStorage.clear(),
+  });
+  return { createMMKV: vi.fn(() => createMockInstance()) };
+});
+
 vi.mock('@tanstack/react-query', () => ({
   onlineManager: { isOnline: () => onlineManagerIsOnline() },
 }));
@@ -56,6 +70,7 @@ const trackMock = vi.fn();
 vi.mock('../../lib/analytics', () => ({ track: (...args: unknown[]) => trackMock(...args) }));
 
 import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { rememberDownloadTrigger } from '../../settings';
 import {
   drainMutationQueue,
   startSyncScheduler,
@@ -85,6 +100,8 @@ beforeEach(() => {
   appStateListener = null;
   netInfoListener = null;
   onlineManagerIsOnline.mockReturnValue(true);
+  // The trigger store is persisted, so it survives between tests unless cleared.
+  mockSettingsStorage.clear();
 });
 
 describe('drainMutationQueue binding', () => {
@@ -454,6 +471,7 @@ describe('snapshot-bootstrap bindings', () => {
       scopeKey: 'kilter:1:5',
       method: 'snapshot',
       durationMs: 1234,
+      offlineEngineEnabled: false,
     });
   });
 
@@ -473,7 +491,10 @@ describe('snapshot-bootstrap bindings', () => {
     options.onScopeDownloadComplete?.(info);
 
     expect(onScopeDownloadComplete).toHaveBeenCalledWith(info);
-    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadCompleted, info);
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadCompleted, {
+      ...info,
+      offlineEngineEnabled: false,
+    });
   });
 
   it('captures a PostHog event — not a Sentry error — when the coverage guard forces a resync', () => {
@@ -532,6 +553,129 @@ describe('snapshot-bootstrap bindings', () => {
     expect(trackMock).toHaveBeenCalledTimes(3);
   });
 
+  it('fires the funnel Started event with the persisted trigger, then prunes it', () => {
+    rememberDownloadTrigger('kilter:1:5', 'download-all');
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+
+    options.onScopeDownloadStart?.({ scopeKey: 'kilter:1:5', pathIntent: 'snapshot', artifactBytes: 103_000_000 });
+
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadStarted, {
+      scopeKey: 'kilter:1:5',
+      pathIntent: 'snapshot',
+      artifactBytes: 103_000_000,
+      trigger: 'download-all',
+      offlineEngineEnabled: false,
+    });
+
+    // Consumed: a second Started for the same scope (which the engine's durable
+    // marker should prevent anyway) can't re-use a stale attribution.
+    trackMock.mockClear();
+    options.onScopeDownloadStart?.({ scopeKey: 'kilter:1:5', pathIntent: 'paged', artifactBytes: null });
+    expect(trackMock).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineBoardDownloadStarted,
+      expect.objectContaining({ trigger: 'unknown' }),
+    );
+  });
+
+  it('reports trigger "unknown" for a scope enabled by a build that predates the attribution', () => {
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+
+    options.onScopeDownloadStart?.({ scopeKey: 'tension:2:10', pathIntent: 'paged', artifactBytes: null });
+
+    expect(trackMock).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineBoardDownloadStarted,
+      expect.objectContaining({ trigger: 'unknown', artifactBytes: null }),
+    );
+  });
+
+  it('sends a bootstrap failure to BOTH the funnel and Sentry, keeping the expected-offline downgrade', () => {
+    // Sentry alone can't answer "what fraction of downloads fail, and where" —
+    // it groups by exception shape and deliberately downgrades transport
+    // failures. Same call site, so the two can never disagree.
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+
+    options.onSnapshotBootstrapError?.({
+      scopeKey: 'kilter:1:5',
+      stage: 'download',
+      attempt: 2,
+      cause: new Error('The request timed out.'),
+      expected: true,
+    });
+
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadFailed, {
+      scopeKey: 'kilter:1:5',
+      stage: 'download',
+      attempt: 2,
+      expected: true,
+      errorMessage: 'The request timed out.',
+      offlineEngineEnabled: false,
+    });
+    expect(reportHandledError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ level: 'warning' }));
+  });
+
+  it('carries the payload props on Completed, and omits them when the import ran in an earlier cycle', () => {
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+
+    options.onScopeDownloadComplete?.({
+      scopeKey: 'kilter:1:5',
+      method: 'snapshot',
+      durationMs: 1000,
+      bytes: 103_000_000,
+      rowCount: 40_000,
+      downloadMs: 800,
+      importMs: 150,
+    });
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadCompleted, {
+      scopeKey: 'kilter:1:5',
+      method: 'snapshot',
+      durationMs: 1000,
+      bytes: 103_000_000,
+      rowCount: 40_000,
+      downloadMs: 800,
+      importMs: 150,
+      offlineEngineEnabled: false,
+    });
+
+    // A cross-cycle completion: absent, never zero — a 0 would read as a real
+    // measurement of a download that took no time.
+    trackMock.mockClear();
+    options.onScopeDownloadComplete?.({ scopeKey: 'kilter:1:6', method: 'snapshot', durationMs: 2000 });
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadCompleted, {
+      scopeKey: 'kilter:1:6',
+      method: 'snapshot',
+      durationMs: 2000,
+      offlineEngineEnabled: false,
+    });
+  });
+
   it('pullSync binds the snapshot-bootstrap telemetry defaults but lets caller options win', async () => {
     const customBootstrapError = vi.fn();
     await pullSync(db, queryClient, graphqlFetch, { onSnapshotBootstrapError: customBootstrapError });
@@ -552,7 +696,15 @@ describe('snapshot-bootstrap bindings', () => {
       scopeKey: 'kilter:1:5',
       method: 'paged',
       durationMs: 500,
+      offlineEngineEnabled: false,
     });
+
+    // The Started reporter is bound by default too.
+    options.onScopeDownloadStart?.({ scopeKey: 'kilter:1:5', pathIntent: 'paged', artifactBytes: null });
+    expect(trackMock).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineBoardDownloadStarted,
+      expect.objectContaining({ scopeKey: 'kilter:1:5', pathIntent: 'paged' }),
+    );
   });
 });
 

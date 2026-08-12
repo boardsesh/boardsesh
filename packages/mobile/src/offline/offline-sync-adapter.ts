@@ -36,6 +36,7 @@ import {
   type CoverageEvaluatedReporter,
   type CoverageResetReporter,
   type ScopeDownloadCompleteReporter,
+  type ScopeDownloadStartReporter,
   type SchedulerTriggers,
   type SchemaDriftReporter,
   type SnapshotBootstrapErrorReporter,
@@ -45,6 +46,8 @@ import {
 } from '@boardsesh/offline-sync';
 import { SHARED_EVENTS, sanitizeErrorForAnalytics } from '@boardsesh/analytics';
 import { reportHandledError } from '../lib/error-reporting';
+import { isOfflineEngineEnabled } from '../lib/offline-engine';
+import { takeDownloadTrigger } from '../settings';
 import { track } from '../lib/analytics';
 
 // Exported so non-drain reporters can record the one dimension that decides
@@ -144,6 +147,19 @@ const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({
   cause,
   expected,
 }) => {
+  // The funnel's Failed leg (issue #4316). Sentry alone could never answer "what
+  // fraction of downloads fail, and at which stage" — it groups by exception
+  // shape, not by scope, and expected transport failures are deliberately
+  // downgraded there. Same call site, so the two can never disagree about
+  // whether a failure happened.
+  track(SHARED_EVENTS.OfflineBoardDownloadFailed, {
+    scopeKey,
+    stage,
+    attempt,
+    expected,
+    errorMessage: cause instanceof Error ? cause.message : String(cause),
+    offlineEngineEnabled: isOfflineEngineEnabled(),
+  });
   reportHandledError(
     new Error(`Snapshot bootstrap failed for ${scopeKey} at stage "${stage}" (attempt ${attempt})`, { cause }),
     {
@@ -164,8 +180,48 @@ const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({
 // Fired once per board scope's initial download so the snapshot-bootstrap
 // warm-up can be compared against the plain paged crawl in the field (which
 // path actually got used, and how long it took).
-const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({ scopeKey, method, durationMs }) => {
-  track(SHARED_EVENTS.OfflineBoardDownloadCompleted, { scopeKey, method, durationMs });
+const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
+  scopeKey,
+  method,
+  durationMs,
+  bytes,
+  rowCount,
+  downloadMs,
+  importMs,
+}) => {
+  track(SHARED_EVENTS.OfflineBoardDownloadCompleted, {
+    scopeKey,
+    method,
+    durationMs,
+    // Spread rather than set: the engine omits these when the completing delta
+    // pull landed in a later cycle than the import, and an omitted prop is the
+    // honest answer where a 0 would look like a real measurement.
+    ...(bytes === undefined ? {} : { bytes }),
+    ...(rowCount === undefined ? {} : { rowCount }),
+    ...(downloadMs === undefined ? {} : { downloadMs }),
+    ...(importMs === undefined ? {} : { importMs }),
+    // Stamped so the funnel stays readable once #4312 bakes the flag on: the
+    // engine gate, not the raw flag value.
+    offlineEngineEnabled: isOfflineEngineEnabled(),
+  });
+};
+
+// The funnel's missing anchor (issue #4316): without it, abandonment is
+// structurally unmeasurable — a download that is never finished emits nothing at
+// all. The engine guarantees this fires once ever per scope (durable
+// `scope-started:` marker), matching Completed, so the ratio is real.
+const reportScopeDownloadStart: ScopeDownloadStartReporter = ({ scopeKey, pathIntent, artifactBytes }) => {
+  track(SHARED_EVENTS.OfflineBoardDownloadStarted, {
+    scopeKey,
+    pathIntent,
+    artifactBytes,
+    // Consumed here, which both attributes the event and prunes the store. The
+    // attribution is persisted rather than in-memory precisely because the
+    // interesting case is a board enabled while offline whose download runs on a
+    // later launch — an in-memory map loses exactly that one.
+    trigger: takeDownloadTrigger(scopeKey),
+    offlineEngineEnabled: isOfflineEngineEnabled(),
+  });
 };
 
 function combinedScopeDownloadCompleteReporter(
@@ -304,6 +360,7 @@ export function startSyncScheduler(
     onSnapshotBootstrapError: reportSnapshotBootstrapError,
     onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
     onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),
+    onScopeDownloadStart: reportScopeDownloadStart,
     onCoverageReset: reportCoverageReset,
     onCoverageEvaluated: reportCoverageEvaluated,
   });
@@ -326,6 +383,7 @@ export function triggerSync(
     onSnapshotBootstrapError: reportSnapshotBootstrapError,
     onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
     onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),
+    onScopeDownloadStart: reportScopeDownloadStart,
     onCoverageReset: reportCoverageReset,
     onCoverageEvaluated: reportCoverageEvaluated,
   });
@@ -343,6 +401,7 @@ export function pullSync(
     onSchemaDrift: options?.onSchemaDrift ?? reportSchemaDrift,
     onSnapshotBootstrapError: options?.onSnapshotBootstrapError ?? reportSnapshotBootstrapError,
     onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),
+    onScopeDownloadStart: options?.onScopeDownloadStart ?? reportScopeDownloadStart,
     onCoverageReset: options?.onCoverageReset ?? reportCoverageReset,
     onCoverageEvaluated: options?.onCoverageEvaluated ?? reportCoverageEvaluated,
     // Caller-provided error/drift/coverage reporters keep their existing

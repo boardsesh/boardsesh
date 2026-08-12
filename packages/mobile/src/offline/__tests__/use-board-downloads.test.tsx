@@ -14,7 +14,9 @@ const spies = vi.hoisted(() => ({
   drainMutationQueue: vi.fn(),
   graphqlRequest: vi.fn(),
   rememberOfflineBoards: vi.fn(),
+  rememberDownloadTrigger: vi.fn(),
   setOfflineBoardEnabled: vi.fn(),
+  track: vi.fn(),
   triggerSync: vi.fn(),
 }));
 
@@ -30,10 +32,14 @@ vi.mock('../../lib/graphql/client', () => ({
 }));
 vi.mock('../../settings', () => ({
   getSetting: () => ['kilter:1:10', 'tension:2:11'],
+  offlineBoardKeyForBoard: (board: UserBoard) => `${board.boardType}:${board.layoutId}:${board.sizeId}`,
   offlineBoardScopeForBoard: (board: UserBoard) => `${board.boardType}:${board.layoutId}:${board.sizeId}`,
   rememberOfflineBoards: spies.rememberOfflineBoards,
+  rememberDownloadTrigger: spies.rememberDownloadTrigger,
   setOfflineBoardEnabled: spies.setOfflineBoardEnabled,
 }));
+vi.mock('../../lib/analytics', () => ({ track: spies.track }));
+vi.mock('../../lib/offline-engine', () => ({ isOfflineEngineEnabled: () => true }));
 
 import {
   __resetSyncStatusForTests,
@@ -80,5 +86,25 @@ describe('useBoardDownloads', () => {
 
     expect(getSyncStatusSnapshot().bootstrapMetadataRevision).toBe(2);
     expect(getSyncStatusSnapshot().scopeCompletionRevision).toBe(2);
+  });
+
+  it('enables and announces once per SCOPE when two boards share one', () => {
+    // Two gyms with the same wall are one offline scope and one download, so a
+    // per-board Toggled would count two enables against the downloader's single
+    // Started. Download-all is where this lands: its "missing" filter runs
+    // against the pre-batch enabled set, so both siblings come through.
+    const boards = [makeBoard('garage', 'kilter', 1, 10), makeBoard('gym', 'kilter', 1, 10)];
+    const { result } = renderHook(() => useBoardDownloads());
+
+    result.current.enableBoardsOffline(boards, { trigger: 'download-all', source: 'more' });
+
+    expect(spies.setOfflineBoardEnabled).toHaveBeenCalledTimes(1);
+    expect(spies.rememberDownloadTrigger).toHaveBeenCalledTimes(1);
+    expect(spies.rememberDownloadTrigger).toHaveBeenCalledWith('kilter:1:10', 'download-all');
+    expect(spies.track).toHaveBeenCalledTimes(1);
+    // Both board cards are still remembered — that list is per-board, and the
+    // offline picker needs a row for each.
+    expect(spies.rememberOfflineBoards).toHaveBeenCalledWith(boards);
+    expect(spies.triggerSync).toHaveBeenCalledTimes(1);
   });
 });

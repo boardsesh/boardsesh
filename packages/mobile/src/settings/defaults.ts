@@ -4,6 +4,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultBoardUuid: null,
   syncEnabledBoards: [],
   offlineBoardsV1: [],
+  offlineDownloadTriggers: {},
+  offlineDownloadAllTapPending: false,
   autoOfflineBoards: false,
   autoConnectBle: true,
   autoDisconnectBle: false,

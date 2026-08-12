@@ -105,6 +105,42 @@ export async function isScopeDownloadComplete(db: SqlExecutor, scopeKey: string)
 }
 
 /**
+ * The Started half of the download funnel (issue #4316) — the exact mirror of
+ * SCOPE_COMPLETE_PREFIX above, and durable for the same reason.
+ *
+ * Without a marker, Started is neither an upper nor a lower bound on the
+ * completion rate, and it fails in BOTH directions. A paged crawl that spans
+ * cycles writes a board-table checkpoint on its first page, and
+ * `runBootstrapPhase` treats any existing checkpoint as ineligible — so the
+ * slow, most-likely-abandoned population would emit Completed with no Started at
+ * all. Meanwhile a snapshot scope that fails and retries would emit one Started
+ * per cycle. The marker makes it once-ever per scope per download lifecycle,
+ * matching what `wasScopeComplete` already gives Completed, so Started →
+ * Completed is a real ratio.
+ *
+ * Same lifecycle rules as the completion marker, for the same reasons: NOT under
+ * the `checkpoint:` prefix, so the sign-out wipe leaves it alone (matching the
+ * board rows, which survive as a shared cache), and package-internal so
+ * scope-teardown can clear it in the same transaction as those rows — removing
+ * and re-adding a board must start a fresh funnel.
+ */
+export const SCOPE_STARTED_PREFIX = 'scope-started:';
+
+export async function markScopeDownloadStarted(db: SqlExecutor, scopeKey: string): Promise<void> {
+  await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+    `${SCOPE_STARTED_PREFIX}${scopeKey}`,
+    '1',
+  ]);
+}
+
+export async function isScopeDownloadStarted(db: SqlExecutor, scopeKey: string): Promise<boolean> {
+  const row = await db.getFirstAsync<{ key: string }>('SELECT key FROM sync_meta WHERE key = ?', [
+    `${SCOPE_STARTED_PREFIX}${scopeKey}`,
+  ]);
+  return row !== null;
+}
+
+/**
  * The encoded board scope keys ("boardType:layoutId:sizeId") whose initial
  * download completed — both reference tables pulled to the tail. Used by the
  * My Boards UI as the per-scope "available offline" signal (a completed

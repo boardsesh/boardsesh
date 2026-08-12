@@ -14,7 +14,16 @@ import { openExternalUrl } from '../../../src/lib/open-url';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { useProfile, useMyBoards } from '../../../src/lib/graphql/hooks';
 import { useBoardDownloads } from '../../../src/offline/use-board-downloads';
-import { useSetting, setSetting, getSetting, offlineBoardKeyForBoard } from '../../../src/settings';
+import { isOfflineEngineEnabled } from '../../../src/lib/offline-engine';
+import {
+  useSetting,
+  setSetting,
+  getSetting,
+  offlineBoardKeyForBoard,
+  rememberDownloadAllTap,
+  takeDownloadAllTap,
+  forgetDownloadAllTap,
+} from '../../../src/settings';
 import { useConfirm } from '../../../src/providers/dialog-provider';
 import { useIsOffline } from '../../../src/hooks/use-is-offline';
 import { RECLAIMABLE_VISIBLE_BYTES } from '../../../src/db/storage-usage';
@@ -115,10 +124,32 @@ export default function MoreScreen() {
   // resolves, so flipping the toggle before the list loaded still downloads
   // everything. Only enables boards not already opted in, so once they're all in
   // it's a no-op — no repeated sync kicks.
+  // A deliberate tap on the switch below hands this effect its attribution
+  // (issue #4316). Without the handoff every enable here would look automatic —
+  // the effect is also what runs on a plain app launch with the setting already
+  // on, and #4318's discovery work is measured against the deliberate half.
+  //
+  // The handoff is PERSISTED, not a ref. The tap can land before `useMyBoards`
+  // resolves, and this effect bails while the list is empty, so a ref would drop
+  // the attribution whenever the climber leaves the screen (or the app) in that
+  // window — and the enable that eventually ran would be filed as automatic,
+  // which is the one thing the split must not get wrong.
   useEffect(() => {
     if (!offlineEnabled || !autoOfflineBoards || myBoards.length === 0) return;
     const missing = missingOfflineBoards();
-    if (missing.length > 0) enableBoardsOffline(missing);
+    if (missing.length === 0) {
+      // A tap with nothing left to enable is fully handled here. Leaving the
+      // flag armed would let the next automatic re-enable on this screen (a
+      // board followed minutes later, say) inherit a `download-all` attribution
+      // for a tap that had already been spent.
+      forgetDownloadAllTap();
+      return;
+    }
+    const fromTap = takeDownloadAllTap();
+    enableBoardsOffline(missing, {
+      trigger: fromTap ? 'download-all' : 'auto-download-all',
+      source: 'more',
+    });
   }, [offlineEnabled, autoOfflineBoards, myBoards, missingOfflineBoards, enableBoardsOffline]);
 
   // Offline sync-issues surface. Poll the dead-letter count only while online (the
@@ -542,9 +573,22 @@ export default function MoreScreen() {
             setSetting('autoOfflineBoards', next);
             if (next) {
               const missing = missingOfflineBoards();
+              // Fired HERE, on the real tap, and once per tap rather than once
+              // per board. The effect above is a mount-time reaction to the
+              // persisted setting, so firing a "…Tapped" event from it would
+              // assert a tap that never happened.
+              rememberDownloadAllTap();
+              track(SHARED_EVENTS.OfflineDownloadAllTapped, {
+                boardCount: missing.length,
+                offlineEngineEnabled: isOfflineEngineEnabled(),
+              });
               if (missing.length > 0) {
                 showToast(t('mobile.more.offline.downloadingAll', { count: missing.length }), 'info');
               }
+            } else {
+              // Switched back off before the list ever resolved: the tap is spent,
+              // and leaving it armed would attribute a later automatic enable to it.
+              forgetDownloadAllTap();
             }
           },
         },
