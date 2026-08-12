@@ -365,8 +365,11 @@ export const SHARED_EVENTS = {
   OfflineBoardDownloadFailed: 'Offline Board Download Failed',
   // The climber turned a board OFF while its first download was still in flight
   // — the abandonment the funnel exists to size, caught at the moment it
-  // happens. Props: { scopeKey, source: 'manage' | 'storage', stage?, fraction?,
-  // bytesDone?, elapsedMs?, offlineEngineEnabled }.
+  // happens. Props: { scopeKey, source: 'manage', stage, fraction, bytesDone,
+  // offlineEngineEnabled }. It needs a live progress frame naming the scope, so
+  // today only the My Boards toggle mid-snapshot fires it: a paged crawl
+  // publishes no such frame, and removing a board from Storage reports its exit
+  // as `Offline Board Toggled { enabled: false, source: 'storage' }` instead.
   OfflineBoardDownloadCancelled: 'Offline Board Download Cancelled',
   // A board's offline switch was flipped, either way. Props: { scopeKey,
   // enabled: boolean, source: 'manage' | 'storage' | 'more' | 'adopt',

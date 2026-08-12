@@ -540,14 +540,14 @@ Five PostHog events (`@boardsesh/analytics`'s `SHARED_EVENTS`) make board downlo
 end-to-end (issue #4316). Before them the feature had exactly one — `Offline Board Download
 Completed` — so abandonment was structurally unmeasurable and failures went only to Sentry.
 
-| Event                              | When                                                   | Key props                                                                          |
-| ---------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `Offline Board Download Started`   | first time any cycle starts pulling a scope, once ever | `scopeKey`, `pathIntent`, `artifactBytes`, `trigger`, `offlineEngineEnabled`        |
-| `Offline Board Download Completed`  | both board tables reached the tail, once ever          | `scopeKey`, `method`, `durationMs`, `bytes?`, `rowCount?`, `downloadMs?`, `importMs?` |
-| `Offline Board Download Failed`     | a bootstrap stage threw                                | `scopeKey`, `stage`, `attempt`, `expected`, `errorMessage`                          |
-| `Offline Board Download Cancelled`  | the board was switched off mid-download                | `scopeKey`, `source`, `stage?`, `fraction?`, `bytesDone?`                           |
-| `Offline Board Toggled`             | the offline switch was flipped, either way             | `scopeKey`, `enabled`, `source`                                                     |
-| `Offline Download All Tapped`       | the "download all my boards" switch was TAPPED         | `boardCount`                                                                        |
+| Event                              | When                                                   | Key props                                                                             |
+| ---------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `Offline Board Download Started`   | first time any cycle starts pulling a scope, once ever | `scopeKey`, `pathIntent`, `artifactBytes`, `trigger`, `offlineEngineEnabled`          |
+| `Offline Board Download Completed` | both board tables reached the tail, once ever          | `scopeKey`, `method`, `durationMs`, `bytes?`, `rowCount?`, `downloadMs?`, `importMs?` |
+| `Offline Board Download Failed`    | a bootstrap stage threw                                | `scopeKey`, `stage`, `attempt`, `expected`, `errorMessage`                            |
+| `Offline Board Download Cancelled` | the board was switched off mid-download                | `scopeKey`, `source`, `stage?`, `fraction?`, `bytesDone?`                             |
+| `Offline Board Toggled`            | the offline switch was flipped, either way             | `scopeKey`, `enabled`, `source`                                                       |
+| `Offline Download All Tapped`      | the "download all my boards" switch was TAPPED         | `boardCount`                                                                          |
 
 **The once-ever contract.** Started and Completed are each guarded by a durable `sync_meta`
 marker — `scope-started:<scopeKey>` and `scope-complete:<scopeKey>` — so the funnel query is
@@ -561,6 +561,12 @@ paged crawl writes a board-table checkpoint on its **first page**, and `runBoots
 any existing checkpoint as ineligible — so a per-cycle Started gated on "no checkpoint yet" would
 emit **no Started at all** for the multi-cycle crawls that are the most likely to be abandoned,
 while a retrying snapshot would emit **several**.
+
+A scope that is **already complete** the first time this code sees it — every board on a device that
+upgrades into the funnel build — gets its `scope-started:` marker written but emits **no** Started.
+It can never emit Completed again either (that marker is already set), so announcing it would post
+one unmatched Started per already-downloaded board on the first cycle after release: a phantom
+abandonment spike in exactly the window the baseline is read from.
 
 > **If a future change wipes board data on logout** (issue #3621), it must clear both markers in the
 > same transaction as the rows. Otherwise the next sign-in emits Completed with no Started.

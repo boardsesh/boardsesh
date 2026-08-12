@@ -2747,6 +2747,36 @@ describe('pullSync onScopeDownloadStart', () => {
     expect(typeof info.importMs).toBe('number');
   });
 
+  it('stays SILENT for a board that already finished downloading before the marker existed', async () => {
+    // The upgrade case, and the one that would wreck the first weeks of funnel
+    // data: every board already downloaded on the device has a `scope-complete:`
+    // marker and no `scope-started:` one. It cannot emit Completed again (that
+    // event is once-ever too), so an unguarded Started here would show up as one
+    // phantom abandoned download per board, on every upgrading device at once.
+    const seed = vi.fn();
+    const { fetch } = makeGraphqlFetch();
+    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], onScopeDownloadStart: seed });
+    expect(seed).toHaveBeenCalledTimes(1);
+    // Roll the device back to the pre-#4316 state: complete, never "started".
+    await db.runAsync('DELETE FROM sync_meta WHERE key = ?', ['scope-started:kilter:1:5']);
+
+    const onScopeDownloadStart = vi.fn();
+    const onScopeDownloadComplete = vi.fn();
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      onScopeDownloadStart,
+      onScopeDownloadComplete,
+    });
+
+    expect(onScopeDownloadStart).not.toHaveBeenCalled();
+    expect(onScopeDownloadComplete).not.toHaveBeenCalled();
+    // The marker is still written, so the scope is settled rather than
+    // re-evaluated on every future cycle.
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['scope-started:kilter:1:5']),
+    ).not.toBeNull();
+  });
+
   it('omits the payload props on a paged completion, rather than reporting zeroes', async () => {
     // The engine has nothing honest to say about work it did not do.
     const onScopeDownloadComplete = vi.fn();

@@ -1585,6 +1585,15 @@ export async function pullSync(
   const emitScopeDownloadStartOnce = async (info: ScopeDownloadStartInfo): Promise<void> => {
     if (await isScopeDownloadStarted(db, info.scopeKey)) return;
     await markScopeDownloadStarted(db, info.scopeKey);
+    // BACKFILL, NOT A START. A scope whose download already completed — every
+    // board on a device that upgrades into this build — is not starting one now,
+    // and it can never emit Completed again either (that event is guarded by the
+    // `scope-complete:` marker it already carries). Emitting here would give the
+    // funnel one unmatched Started per already-downloaded board on the first
+    // cycle after release: a phantom abandonment spike, in exactly the window
+    // the baseline is read from. Write the marker (so this is still once-ever)
+    // and stay silent.
+    if (await isScopeDownloadComplete(db, info.scopeKey)) return;
     options?.onScopeDownloadStart?.(info);
   };
   // Per-scope payload size and stage timings, recorded by the bootstrap phase and

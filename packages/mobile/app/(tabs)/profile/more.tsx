@@ -124,7 +124,14 @@ export default function MoreScreen() {
   useEffect(() => {
     if (!offlineEnabled || !autoOfflineBoards || myBoards.length === 0) return;
     const missing = missingOfflineBoards();
-    if (missing.length === 0) return;
+    if (missing.length === 0) {
+      // A tap with nothing left to enable is fully handled here. Leaving the
+      // flag armed would let the next automatic re-enable on this screen (a
+      // board followed minutes later, say) inherit a `download-all` attribution
+      // for a tap that had already been spent.
+      downloadAllTapPendingRef.current = false;
+      return;
+    }
     const fromTap = downloadAllTapPendingRef.current;
     downloadAllTapPendingRef.current = false;
     enableBoardsOffline(missing, {
