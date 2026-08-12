@@ -46,6 +46,19 @@ describe('analytics reset', () => {
     expect(posthogClientMocks.registerAppSuperProperties).toHaveBeenCalledWith(fakeClient);
   });
 
+  // #4317: `connectivity` is registered once at startup and then only on a
+  // network transition, so a sign-out that dropped it would leave every
+  // remaining event of the launch unattributable to online or offline.
+  it('re-registers connectivity after resetting the client', async () => {
+    const fakeClient = { register: vi.fn() };
+    posthogClientMocks.getPostHogClient.mockReturnValue(fakeClient);
+    const { reset } = await import('../analytics');
+
+    expect(reset()).toBe(true);
+
+    expect(fakeClient.register).toHaveBeenCalledWith({ connectivity: 'online' });
+  });
+
   it('does not re-register when analytics is disabled (no client)', async () => {
     posthogClientMocks.getPostHogClient.mockReturnValue(null);
     const { reset } = await import('../analytics');

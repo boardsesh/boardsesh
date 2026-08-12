@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react';
 import { StyleSheet } from 'react-native';
 import { PostHogProvider } from 'posthog-react-native';
 import { getAnalyticsClient, setSessionRecordingEnabled } from '../../lib/analytics';
+import { startConnectivityTracking } from '../../lib/analytics-connectivity';
 import { loadSessionRecordingEnabled } from '../../lib/session-recording-preference';
 
 // PostHogProvider renders a touch-capturing View around its subtree; without
@@ -30,6 +31,12 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
         // A failed preference read leaves recording off (the safe default).
       });
   }, []);
+
+  // Stamp `connectivity` on every event and keep it current for the launch.
+  // Declared BEFORE the `!client` early return so the hook order stays stable
+  // when analytics is disabled; startConnectivityTracking is itself a no-op
+  // against a null client, so running it either way costs nothing.
+  useEffect(() => startConnectivityTracking(), []);
 
   if (!client) return <>{children}</>;
   return (
