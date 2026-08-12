@@ -1,6 +1,12 @@
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { applyBusyTimeout, enqueue, type GraphQLFetch, type OfflineDatabase } from '@boardsesh/offline-sync';
+import {
+  applyBusyTimeout,
+  enqueue,
+  getLocalUserId,
+  type GraphQLFetch,
+  type OfflineDatabase,
+} from '@boardsesh/offline-sync';
 import { drainMutationQueue } from '../offline/offline-sync-adapter';
 import type { SaveTickMutationVariables } from '../lib/graphql/operations';
 
@@ -33,13 +39,19 @@ export async function writeTickLocal(db: OfflineDatabase, input: SaveTickInput, 
     // Own connection, busy_timeout defaults to 0 — wait for a held write lock
     // instead of failing this offline write instantly (BOARDSESH-AB/AX).
     await applyBusyTimeout(txn);
+    // Stamp the owner so a local reader's `(user_id = ? OR user_id IS NULL)`
+    // predicate can tell this tick from a previous account's leftovers. Rows
+    // written before this existed stay NULL, which the `IS NULL` arm covers —
+    // that arm cannot be dropped until every such row has synced back down.
+    const ownerUserId = await getLocalUserId(txn);
     await txn.runAsync(
-      `INSERT INTO boardsesh_ticks (uuid, board_type, climb_uuid, angle, status,
+      `INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status,
        attempt_count, quality, difficulty, comment, climbed_at, session_id, is_mirror, is_benchmark,
        created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         tickUuid,
+        ownerUserId,
         input.boardType,
         input.climbUuid,
         input.angle,
@@ -74,10 +86,13 @@ export async function addFavoriteLocal(db: OfflineDatabase, input: FavoriteInput
 
   await db.withExclusiveTransactionAsync(async (txn) => {
     await applyBusyTimeout(txn);
+    // Same owner stamp as writeTickLocal — user_favorites has a user_id column
+    // the dual-write never filled.
+    const ownerUserId = await getLocalUserId(txn);
     await txn.runAsync(
-      `INSERT OR IGNORE INTO user_favorites (board_name, climb_uuid, angle, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?)`,
-      [input.boardName, input.climbUuid, input.angle, now, now],
+      `INSERT OR IGNORE INTO user_favorites (board_name, climb_uuid, angle, user_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [input.boardName, input.climbUuid, input.angle, ownerUserId, now, now],
     );
 
     await txn.runAsync(`DELETE FROM pending_mutations WHERE idempotency_key = ? AND status = 'pending'`, [

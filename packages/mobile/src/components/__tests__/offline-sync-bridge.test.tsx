@@ -38,8 +38,31 @@ vi.mock('../../offline/snapshot-source', () => ({
 }));
 
 const getPendingCountMock = vi.fn(async (..._args: unknown[]) => 0);
+// Owner-stamp plumbing: the bridge is where the device learns whose user-data
+// rows it holds, so a wrong-account stamp has to trigger the wipe from here.
+const assertLocalUserDataOwnerMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => 'ok'));
+const stampLocalUserIdMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
+const clearUserDataMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
 vi.mock('@boardsesh/offline-sync', () => ({
   getPendingCount: (...args: unknown[]) => getPendingCountMock(...args),
+  assertLocalUserDataOwner: (...args: unknown[]) => assertLocalUserDataOwnerMock(...args),
+  stampLocalUserId: (...args: unknown[]) => stampLocalUserIdMock(...args),
+}));
+
+// db/connection statically reaches expo-sqlite + the error reporter; the bridge
+// only needs the wipe callback, so stub the module rather than the world.
+vi.mock('../../db/connection', () => ({
+  clearUserData: (...args: unknown[]) => clearUserDataMock(...args),
+}));
+
+// use-current-user-id reads the JWT out of SecureStore via lib/auth-store, whose
+// react-native Flow entry breaks Rolldown's collection-time scan.
+vi.mock('../../hooks/use-current-user-id', () => ({
+  useStoredUserId: () => ({ userId: storedUserId, isLoading: false }),
+}));
+
+vi.mock('../../lib/error-reporting', () => ({
+  reportError: vi.fn(),
 }));
 
 // Stub the settings barrel so the static import graph never pulls
@@ -74,6 +97,7 @@ vi.mock('expo-router', () => ({
 // The bridge gates its sync effect on auth itself (it is mounted outside any
 // auth-gated subtree). Mutable so the signed-out test can flip it.
 let isAuthenticated = true;
+let storedUserId: string | undefined = 'user-1';
 vi.mock('../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated }),
 }));
@@ -150,11 +174,60 @@ beforeEach(() => {
   startSyncSchedulerMock.mockReturnValue(startSyncSchedulerStop);
   getPendingCountMock.mockResolvedValue(0);
   isAuthenticated = true;
+  storedUserId = 'user-1';
+  assertLocalUserDataOwnerMock.mockClear();
+  assertLocalUserDataOwnerMock.mockResolvedValue('ok');
+  stampLocalUserIdMock.mockClear();
+  clearUserDataMock.mockClear();
   snapshotBaseUrlConfigured.value = true;
 });
 
 afterEach(() => {
   __resetOfflineEngineForTests();
+});
+
+// The bridge owns the "whose rows are these?" stamp, which is the only defence
+// that survives a sign-out wipe that did not finish (a locked database — #4314 —
+// or a crash mid-sign-out). Without it, every user-scoped local read on the next
+// account reads the previous climber's data.
+describe('OfflineSyncBridge — local user-data owner stamp', () => {
+  it('claims a never-stamped device for the signed-in climber', async () => {
+    assertLocalUserDataOwnerMock.mockResolvedValue('unstamped');
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(stampLocalUserIdMock).toHaveBeenCalledTimes(1));
+    expect(stampLocalUserIdMock.mock.calls[0][1]).toBe('user-1');
+    expect(clearUserDataMock).not.toHaveBeenCalled();
+  });
+
+  it('wipes and re-stamps when the rows belong to another account', async () => {
+    assertLocalUserDataOwnerMock.mockResolvedValue('mismatch');
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(clearUserDataMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(stampLocalUserIdMock).toHaveBeenCalledTimes(1));
+    expect(stampLocalUserIdMock.mock.calls[0][1]).toBe('user-1');
+  });
+
+  it('leaves a matching stamp alone', async () => {
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(assertLocalUserDataOwnerMock).toHaveBeenCalled());
+    expect(stampLocalUserIdMock).not.toHaveBeenCalled();
+    expect(clearUserDataMock).not.toHaveBeenCalled();
+  });
+
+  it('stamps nothing while signed out — an unowned device must not claim an owner', async () => {
+    isAuthenticated = false;
+    storedUserId = undefined;
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(setupNotificationHandlersMock).toHaveBeenCalled());
+    expect(assertLocalUserDataOwnerMock).not.toHaveBeenCalled();
+    expect(stampLocalUserIdMock).not.toHaveBeenCalled();
+  });
+
+  it('runs regardless of the offline-downloads flag — the stamp guards reads, not downloads', async () => {
+    assertLocalUserDataOwnerMock.mockResolvedValue('unstamped');
+    render(<Harness flags={FLAG_OFF} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(stampLocalUserIdMock).toHaveBeenCalledTimes(1));
+  });
 });
 
 describe('OfflineSyncBridge — flag ON', () => {

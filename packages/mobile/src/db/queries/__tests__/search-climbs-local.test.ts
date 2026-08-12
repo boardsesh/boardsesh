@@ -1,9 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import { runMigrations } from '@boardsesh/offline-sync';
-import { ensureMutationQueueTable } from '@boardsesh/offline-sync';
+import { ensureMutationQueueTable, stampLocalUserId } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 import { searchClimbsLocal, countClimbsLocal, isOfflineSearchSupported } from '../search-climbs-local';
+
+// The climber whose rows this device holds — written into sync_meta by the
+// offline-sync bridge on sign-in, and the value every tick predicate binds.
+const LOCAL_OWNER = 'me';
 
 // A minimal, well-formed search input; individual tests override the pieces they exercise.
 function makeInput(overrides: Partial<ClimbSearchInput> = {}): ClimbSearchInput {
@@ -147,6 +151,10 @@ async function insertTick(
     // (latest rating wins).
     quality?: number | null;
     climbedAt?: string;
+    // Whose tick. Defaults to the stamped device owner; pass something else to
+    // stand in for rows a failed sign-out wipe left behind, or `null` for a row
+    // the offline dual-write inserted before it had a server user id.
+    userId?: string | null;
   },
 ): Promise<void> {
   const timestamp = opts.climbedAt ?? '2026-02-01T00:00:00Z';
@@ -155,7 +163,7 @@ async function insertTick(
      VALUES (?, ?, ?, ?, ?, 0, ?, 1, ?, 0, ?, ?, ?)`,
     [
       opts.uuid,
-      'me',
+      opts.userId === undefined ? LOCAL_OWNER : opts.userId,
       opts.boardType ?? 'kilter',
       opts.climbUuid,
       opts.angle ?? 40,
@@ -177,6 +185,7 @@ describe('searchClimbsLocal', () => {
     db = createTestDatabase();
     await ensureMutationQueueTable(db);
     await runMigrations(db);
+    await stampLocalUserId(db, LOCAL_OWNER);
   });
 
   it('scopes to board + layout, only listed non-drafts', async () => {
@@ -286,6 +295,72 @@ describe('searchClimbsLocal', () => {
   });
 
   // Same three-case matrix the server test asserts (packages/backend
+  // Cross-user leak guard. Sign-out's wipe is best-effort — a locked database
+  // (#4314) or a crash mid-sign-out leaves the previous account's ticks behind —
+  // and these reads used to carry no user predicate at all, so one failed wipe
+  // showed user A's send and attempt glyphs to user B.
+  describe('scopes ticks to the climber who owns the local rows', () => {
+    it("ignores another account's leftover ticks in the counts and the filters", async () => {
+      await insertClimb(db, { uuid: 'theirs' });
+      await insertTick(db, { uuid: 'their-tick', climbUuid: 'theirs', status: 'send', userId: 'someone-else' });
+
+      const result = await searchClimbsLocal(db, makeInput());
+      expect(result.climbs.find((climb) => climb.uuid === 'theirs')?.userAscents).toBe(0);
+
+      // The climb reads as unclimbed, so "hide completed" keeps it and
+      // "show only completed" drops it.
+      expect(uuids(await searchClimbsLocal(db, makeInput({ hideCompleted: true })))).toContain('theirs');
+      expect(uuids(await searchClimbsLocal(db, makeInput({ showOnlyCompleted: true })))).toEqual([]);
+    });
+
+    it("still counts this device's own offline write, which has no user_id yet", async () => {
+      // writeTickLocal now stamps the owner, but rows written before that (and
+      // any written while unstamped) are NULL. Dropping them would hide a tick
+      // the climber just logged with no signal.
+      await insertClimb(db, { uuid: 'mine-offline' });
+      await insertTick(db, { uuid: 'offline-tick', climbUuid: 'mine-offline', status: 'send', userId: null });
+
+      const result = await searchClimbsLocal(db, makeInput());
+      expect(result.climbs.find((climb) => climb.uuid === 'mine-offline')?.userAscents).toBe(1);
+      expect(uuids(await searchClimbsLocal(db, makeInput({ showOnlyCompleted: true })))).toEqual(['mine-offline']);
+    });
+
+    it("excludes another account's ratings from the personal-rating filters", async () => {
+      await insertClimb(db, { uuid: 'rated-by-them' });
+      await insertTick(db, {
+        uuid: 'their-rating',
+        climbUuid: 'rated-by-them',
+        status: 'send',
+        quality: 1,
+        userId: 'someone-else',
+      });
+
+      // Neither "I rated this" nor "drop what I rated below 3" may consult it.
+      expect(uuids(await searchClimbsLocal(db, makeInput({ onlyRatedByMe: true })))).toEqual([]);
+      expect(uuids(await searchClimbsLocal(db, makeInput({ minUserRating: 3 })))).toEqual(['rated-by-them']);
+    });
+
+    it('counts nothing but its own unsynced writes on a device with no owner stamp', async () => {
+      // A fresh or pre-upgrade database. Degrading to "this device's own writes"
+      // is the safe direction: never another account's rows.
+      await db.runAsync('DELETE FROM sync_meta WHERE key = ?', ['local_user_id']);
+      await insertClimb(db, { uuid: 'synced' });
+      await insertClimb(db, { uuid: 'written-here' });
+      await insertTick(db, { uuid: 'synced-tick', climbUuid: 'synced', status: 'send', userId: 'me' });
+      await insertTick(db, { uuid: 'local-tick', climbUuid: 'written-here', status: 'send', userId: null });
+
+      expect(uuids(await searchClimbsLocal(db, makeInput({ showOnlyCompleted: true })))).toEqual(['written-here']);
+    });
+
+    it('keeps countClimbsLocal in step with the scoped search', async () => {
+      await insertClimb(db, { uuid: 'theirs' });
+      await insertTick(db, { uuid: 'their-tick', climbUuid: 'theirs', status: 'send', userId: 'someone-else' });
+
+      await expect(countClimbsLocal(db, makeInput({ showOnlyCompleted: true }))).resolves.toBe(0);
+      await expect(countClimbsLocal(db, makeInput({ hideCompleted: true }))).resolves.toBe(1);
+    });
+  });
+
   // src/__tests__/climb-queries.test.ts), so an offline search returns the same
   // rows as an online one.
   describe('personal rating filters (#2645)', () => {

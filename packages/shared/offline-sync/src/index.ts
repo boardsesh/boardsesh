@@ -119,6 +119,18 @@ export type { SyncCheckpoint } from './sync/checkpoints';
 export { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './sync/table-config';
 export type { TableSyncConfig } from './sync/table-config';
 export { TABLE_INVALIDATE_KEYS, invalidateKeysForTable } from './sync/invalidate-keys';
+export {
+  LOCAL_USER_ID_KEY,
+  USER_DATA_COMPLETE_KEY,
+  getLocalUserId,
+  stampLocalUserId,
+  clearLocalUserId,
+  assertLocalUserDataOwner,
+  markUserDataComplete,
+  isUserDataComplete,
+  canServeLocalUserData,
+} from './sync/local-user-owner';
+export type { LocalUserOwnership } from './sync/local-user-owner';
 export type { InvalidateKeys } from './sync/invalidate-keys';
 
 // --- Reclaiming a downloaded board's disk space ----------------------------------

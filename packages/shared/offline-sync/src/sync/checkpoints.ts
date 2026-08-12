@@ -1,5 +1,6 @@
 import type { SqlExecutor } from '../database';
 import { DELETIONS_COVERAGE_KEY } from './retention';
+import { LOCAL_USER_ID_KEY } from './local-user-owner';
 import { BOARD_DATA_TABLES } from './table-config';
 
 export type SyncCheckpoint = {
@@ -177,4 +178,10 @@ export async function deleteUserCheckpoints(db: SqlExecutor): Promise<void> {
     preserveBoardTableParams,
   );
   await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [DELETIONS_COVERAGE_KEY]);
+  // The owner stamp goes too, for the same reason as the coverage marker: it
+  // describes the departing account's rows, which this sign-out is deleting.
+  // Left behind, it would vouch for a wipe that may have partly failed. Its
+  // companion `checkpoint:user_data_complete` is `checkpoint:`-prefixed and is
+  // therefore already covered by the DELETE above.
+  await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [LOCAL_USER_ID_KEY]);
 }
