@@ -994,6 +994,12 @@ async function runBootstrapPhase(params: {
   ): void => {
     // `expected: true` keeps the severity story consistent with transport
     // failures; `aborted: true` is what a failure-rate query filters on.
+    //
+    // `attempt: 0` is the field's established meaning, NOT a placeholder: every
+    // report site spells "nothing was burned" as zero — `reportSettledFailure`
+    // sends `settled.persisted ? burned : 0`, and the schema-stale arm sends a
+    // literal 0 for the same reason. A teardown spends no retry budget, so any
+    // other number here would claim a scope had used up an attempt it still has.
     onSnapshotBootstrapError?.({ scopeKey, stage, attempt: 0, cause, expected: true, aborted: true, reason });
   };
 
