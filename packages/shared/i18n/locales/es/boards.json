@@ -317,7 +317,17 @@
       "retryFastDownloadTitle": "¿Reintentar la descarga rápida?",
       "retryFastDownloadMessage": "Descarga los bloques de este plafón de una vez en lugar de con miles de peticiones pequeñas.",
       "retryFastDownloadMessageWithSize": "Unos {{size}}, descargados de una vez en lugar de con miles de peticiones pequeñas.",
-      "retryFastDownloadConfirm": "Reintentar"
+      "retryFastDownloadConfirm": "Reintentar",
+      "nudge": {
+        "notNow": "Ahora no",
+        "never": "No volver a mostrar",
+        "postSession": {
+          "title": "Ten {{name}} en tu móvil",
+          "body": "Descarga el catálogo completo una vez y tendrás todos los bloques la próxima vez que falle el wifi del rocódromo: buscar, filtrar y registrar encadenes, todo.",
+          "cta": "Descargar este plafón",
+          "allBoardsCta": "Mantener descargados todos mis plafones"
+        }
+      }
     },
     "gymPicker": {
       "title": "¿Dónde está este plafón?",

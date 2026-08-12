@@ -317,7 +317,17 @@
       "retryFastDownloadTitle": "Try the fast download again?",
       "retryFastDownloadMessage": "Downloads this board's climbs in one go instead of thousands of small requests.",
       "retryFastDownloadMessageWithSize": "About {{size}}, downloaded in one go instead of thousands of small requests.",
-      "retryFastDownloadConfirm": "Try again"
+      "retryFastDownloadConfirm": "Try again",
+      "nudge": {
+        "notNow": "Not now",
+        "never": "Don't show again",
+        "postSession": {
+          "title": "Keep {{name}} on your phone",
+          "body": "Download the whole catalog once and every climb is there next time the gym wifi isn't — browsing, filtering, logging sends, all of it.",
+          "cta": "Download this board",
+          "allBoardsCta": "Keep all my boards downloaded"
+        }
+      }
     },
     "gymPicker": {
       "title": "Where is this board?",
