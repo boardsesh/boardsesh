@@ -311,7 +311,13 @@
       "pickerNotice": "No signal — here are the boards you've downloaded.",
       "pickerNoticeUnreachable": "Can't reach your boards right now — here are the ones you've downloaded.",
       "pickerEmptyTitle": "Nothing downloaded yet",
-      "pickerEmptyBody": "Boards you make available offline show up here. Grab one while you have signal."
+      "pickerEmptyBody": "Boards you make available offline show up here. Grab one while you have signal.",
+      "retryFastDownload": "Try the fast download again",
+      "retryFastDownloadAria": "Try the fast download again for {{name}}",
+      "retryFastDownloadTitle": "Try the fast download again?",
+      "retryFastDownloadMessage": "Downloads this board's climbs in one go instead of thousands of small requests.",
+      "retryFastDownloadMessageWithSize": "About {{size}}, downloaded in one go instead of thousands of small requests.",
+      "retryFastDownloadConfirm": "Try again"
     },
     "gymPicker": {
       "title": "Where is this board?",

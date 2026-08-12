@@ -492,6 +492,20 @@ export const SHARED_EVENTS = {
   // pre-drain gauge every signed-out path emits, this one is what the full wipe
   // actually deleted, so the two differ by whatever the drain flushed in between.
   OfflineDataWipedOnSignOut: 'Offline Data Wiped On Sign Out',
+  // Offline sync — a snapshot-bootstrap failure scheduled the scope's next
+  // attempt (issue #4313). Operational, not an error: the failure itself still
+  // goes to Sentry at its own severity. Props: { scopeKey, boardType, stage,
+  // failureKind, retryAfterMs, transportFailures, structuralFailures,
+  // terminal }. `terminal` means both budgets are spent, so the board is on the
+  // slow crawl until the climber retries it or removes it.
+  OfflineSnapshotRetryScheduled: 'Offline Snapshot Retry Scheduled',
+  // Offline sync — a board that had previously failed the fast download got
+  // back onto it. Props: { scopeKey, boardType, trigger, hadBoardCheckpoint }.
+  // `trigger` says what revived it (a cooldown elapsing, a newly built
+  // artifact, the post-#4313 marker migration, or the climber tapping retry);
+  // `hadBoardCheckpoint` distinguishes a heal over a partly-crawled catalog
+  // from a fresh board's first attempt.
+  OfflineSnapshotPathRecovered: 'Offline Snapshot Path Recovered',
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;

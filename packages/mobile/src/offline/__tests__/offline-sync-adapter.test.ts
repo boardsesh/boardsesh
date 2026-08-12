@@ -36,15 +36,20 @@ vi.mock('react-native', () => ({
   },
 }));
 
-type NetInfoListener = (state: { isConnected: boolean | null }) => void;
+type NetInfoState = { isConnected: boolean | null; type?: string; details?: { isConnectionExpensive?: boolean } };
+type NetInfoListener = (state: NetInfoState) => void;
 let netInfoListener: NetInfoListener | null = null;
 const netInfoUnsubscribe = vi.fn();
+// The cold-launch read: NetInfo's listener has not fired yet, so the metered
+// probe asks for the state directly rather than assuming wifi.
+const netInfoFetch = vi.fn(async (): Promise<NetInfoState> => ({ isConnected: true, type: 'wifi' }));
 vi.mock('@react-native-community/netinfo', () => ({
   default: {
     addEventListener: (listener: NetInfoListener) => {
       netInfoListener = listener;
       return netInfoUnsubscribe;
     },
+    fetch: () => netInfoFetch(),
   },
 }));
 
@@ -79,6 +84,7 @@ import {
   startBackgroundTracking,
   subscribeMutationDelivery,
   __resetCoverageVerdictDedupeForTests,
+  __resetMeteredStateForTests,
 } from '../offline-sync-adapter';
 import type {
   OfflineDatabase,
@@ -495,6 +501,112 @@ describe('snapshot-bootstrap bindings', () => {
       ...info,
       offlineEngineEnabled: false,
     });
+  });
+
+  it('captures PostHog events for a scheduled snapshot retry and for a recovered board', () => {
+    // Operational, not errors: the failure itself already reached Sentry via
+    // onSnapshotBootstrapError, and what nobody could answer before #4313 is how
+    // often boards give up entirely versus find their way back.
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    const scheduled = {
+      scopeKey: 'kilter:1:5',
+      boardType: 'kilter',
+      stage: 'download' as const,
+      failureKind: 'transport' as const,
+      retryAfterMs: 120_000,
+      transportFailures: 1,
+      structuralFailures: 0,
+      terminal: false,
+    };
+    const recovered = {
+      scopeKey: 'kilter:1:5',
+      boardType: 'kilter',
+      trigger: 'cooldown' as const,
+      hadBoardCheckpoint: true,
+    };
+
+    options.onBootstrapRetryScheduled?.(scheduled);
+    options.onBootstrapPathRecovered?.(recovered);
+
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineSnapshotRetryScheduled, scheduled);
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineSnapshotPathRecovered, recovered);
+    expect(reportHandledError).not.toHaveBeenCalled();
+  });
+
+  it('treats a cellular link as metered and an unreported one as unmetered', async () => {
+    // Unknown must read as unmetered: a platform that never reports
+    // isConnectionExpensive would otherwise defer every automatic heal forever,
+    // leaving the board on the 400+-round-trip crawl with nothing saying why.
+    const stopTracking = startBackgroundTracking();
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+
+    netInfoListener?.({ isConnected: true, type: 'cellular' });
+    expect(await options.isOnUnmeteredNetwork?.()).toBe(false);
+    netInfoListener?.({ isConnected: true, type: 'wifi', details: { isConnectionExpensive: false } });
+    expect(await options.isOnUnmeteredNetwork?.()).toBe(true);
+    netInfoListener?.({ isConnected: true, type: 'wifi', details: { isConnectionExpensive: true } });
+    expect(await options.isOnUnmeteredNetwork?.()).toBe(false);
+    netInfoListener?.({ isConnected: true, type: 'wifi' });
+    expect(await options.isOnUnmeteredNetwork?.()).toBe(true);
+
+    stopTracking();
+  });
+
+  it('reads the link directly on the first cycle, before NetInfo has pushed anything', async () => {
+    // The cold-launch race: the scheduler runs its first cycle in the effect
+    // right after startBackgroundTracking's, and NetInfo emits asynchronously.
+    // Assuming wifi there would start a ~100 MB heal on cellular.
+    __resetMeteredStateForTests();
+    netInfoFetch.mockResolvedValueOnce({ isConnected: true, type: 'cellular' });
+    const stopTracking = startBackgroundTracking();
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+
+    expect(await options.isOnUnmeteredNetwork?.()).toBe(false);
+    expect(netInfoFetch).toHaveBeenCalledTimes(1);
+    // Seeded: later cycles answer from the cached state, not another fetch.
+    expect(await options.isOnUnmeteredNetwork?.()).toBe(false);
+    expect(netInfoFetch).toHaveBeenCalledTimes(1);
+
+    stopTracking();
+  });
+
+  it('reads an unavailable NetInfo as unmetered rather than deferring the heal forever', async () => {
+    __resetMeteredStateForTests();
+    netInfoFetch.mockRejectedValueOnce(new Error('NetInfo unavailable'));
+    const stopTracking = startBackgroundTracking();
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+
+    expect(await options.isOnUnmeteredNetwork?.()).toBe(true);
+
+    stopTracking();
   });
 
   it('captures a PostHog event — not a Sentry error — when the coverage guard forces a resync', () => {

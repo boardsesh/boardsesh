@@ -87,7 +87,7 @@ export type SchedulerOptions = {
    * Threaded through to pullSync's SyncOptions. Only the automatic heal of a
    * partly-crawled scope consults it (issue #4313).
    */
-  isOnUnmeteredNetwork?: () => boolean;
+  isOnUnmeteredNetwork?: () => boolean | Promise<boolean>;
 };
 
 let isSyncing = false;

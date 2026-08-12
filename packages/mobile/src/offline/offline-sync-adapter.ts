@@ -15,7 +15,7 @@
 // enabled-but-undownloaded board on the way.
 
 import { AppState, type AppStateStatus } from 'react-native';
-import NetInfo from '@react-native-community/netinfo';
+import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
 import { onlineManager, type QueryClient } from '@tanstack/react-query';
 // The adapter is the one sanctioned importer of the raw engine entry points.
 // oxlint-disable-next-line no-restricted-imports
@@ -34,6 +34,8 @@ import {
   type OfflineDatabase,
   type BootstrapMetadataChangedReporter,
   type CoverageEvaluatedReporter,
+  type BootstrapPathRecoveredReporter,
+  type BootstrapRetryScheduledReporter,
   type CoverageResetReporter,
   type ScopeDownloadCompleteReporter,
   type ScopeDownloadStartReporter,
@@ -267,6 +269,62 @@ export function __resetCoverageVerdictDedupeForTests(): void {
   reportedCoverageVerdicts.clear();
 }
 
+// The retry ladder scheduled another go at the fast download (issue #4313).
+// track(), not reportHandledError(): the failure itself already went to Sentry
+// via reportSnapshotBootstrapError at its own severity, and what nobody can
+// answer today is how often boards give up entirely versus recover.
+const reportBootstrapRetryScheduled: BootstrapRetryScheduledReporter = (info) => {
+  track(SHARED_EVENTS.OfflineSnapshotRetryScheduled, { ...info });
+};
+
+// The other half of that measurement: a board that had failed the fast download
+// is back on it, and what brought it back.
+const reportBootstrapPathRecovered: BootstrapPathRecoveredReporter = (info) => {
+  track(SHARED_EVENTS.OfflineSnapshotPathRecovered, { ...info });
+};
+
+// Last connectivity state NetInfo reported. `null` means it has not reported
+// yet, which on a cold launch is a real window and not a formality: the
+// scheduler's first cycle starts in the effect right after
+// startBackgroundTracking's, and NetInfo's first emission is asynchronous.
+// Updated by the listener there (one subscription for the app's lifetime) and
+// seeded by the probe below.
+let isConnectionMetered: boolean | null = null;
+
+const readMetered = (state: NetInfoState): boolean =>
+  state.type === 'cellular' || state.details?.isConnectionExpensive === true;
+
+/**
+ * Gates ONE decision in the engine: the automatic heal of a partly-crawled
+ * scope, which is a ~100 MB download the climber did not ask for that day
+ * (issue #4313). A fresh bootstrap — confirmed behind a size-disclosing dialog
+ * moments earlier — and a user-requested retry both ignore it.
+ *
+ * Async on purpose. Before the listener has fired there is nothing to answer
+ * from, and answering "unmetered" would hand the FIRST cycle of a cold cellular
+ * launch precisely the heal this probe exists to defer — so that once, it asks
+ * NetInfo directly and seeds the cache every later cycle reads.
+ *
+ * Unknown still reads as UNMETERED (a failed fetch, or a platform reporting
+ * neither `cellular` nor `isConnectionExpensive`). Deferring forever is the
+ * worse failure: the board stays on the 400+-round-trip crawl and nothing ever
+ * says why.
+ */
+const isOnUnmeteredNetwork = async (): Promise<boolean> => {
+  if (isConnectionMetered !== null) return !isConnectionMetered;
+  try {
+    isConnectionMetered = readMetered(await NetInfo.fetch());
+  } catch {
+    return true;
+  }
+  return !isConnectionMetered;
+};
+
+/** Cold-launch state is per-process; tests re-arm it between cases. */
+export function __resetMeteredStateForTests(): void {
+  isConnectionMetered = null;
+}
+
 // A failed cycle is routine for offline users (the reconnect trigger retries),
 // so production neither spams the console nor reports expected network errors
 // as handled exceptions.
@@ -276,13 +334,20 @@ const warnCycleError = (error: unknown) => {
   }
 };
 
-// Feeds setBackgrounded() (Sentry BOARDSESH-AN); call once for the app's lifetime — see OfflineSyncBridge.
+// Feeds setBackgrounded() (Sentry BOARDSESH-AN) and the metered-link flag above;
+// call once for the app's lifetime — see OfflineSyncBridge.
 export function startBackgroundTracking(): () => void {
   const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
     if (nextState === 'background') setBackgrounded(true);
     if (nextState === 'active') setBackgrounded(false);
   });
-  return () => subscription.remove();
+  const unsubscribeNetInfo = NetInfo.addEventListener((state) => {
+    isConnectionMetered = readMetered(state);
+  });
+  return () => {
+    subscription.remove();
+    unsubscribeNetInfo();
+  };
 }
 
 const schedulerTriggers: SchedulerTriggers = {
@@ -363,6 +428,9 @@ export function startSyncScheduler(
     onScopeDownloadStart: reportScopeDownloadStart,
     onCoverageReset: reportCoverageReset,
     onCoverageEvaluated: reportCoverageEvaluated,
+    onBootstrapRetryScheduled: reportBootstrapRetryScheduled,
+    onBootstrapPathRecovered: reportBootstrapPathRecovered,
+    isOnUnmeteredNetwork,
   });
 }
 
@@ -386,6 +454,9 @@ export function triggerSync(
     onScopeDownloadStart: reportScopeDownloadStart,
     onCoverageReset: reportCoverageReset,
     onCoverageEvaluated: reportCoverageEvaluated,
+    onBootstrapRetryScheduled: reportBootstrapRetryScheduled,
+    onBootstrapPathRecovered: reportBootstrapPathRecovered,
+    isOnUnmeteredNetwork,
   });
 }
 
@@ -404,6 +475,9 @@ export function pullSync(
     onScopeDownloadStart: options?.onScopeDownloadStart ?? reportScopeDownloadStart,
     onCoverageReset: options?.onCoverageReset ?? reportCoverageReset,
     onCoverageEvaluated: options?.onCoverageEvaluated ?? reportCoverageEvaluated,
+    onBootstrapRetryScheduled: options?.onBootstrapRetryScheduled ?? reportBootstrapRetryScheduled,
+    onBootstrapPathRecovered: options?.onBootstrapPathRecovered ?? reportBootstrapPathRecovered,
+    isOnUnmeteredNetwork: options?.isOnUnmeteredNetwork ?? isOnUnmeteredNetwork,
     // Caller-provided error/drift/coverage reporters keep their existing
     // override semantics; scope completion is the one callback deliberately
     // composed because both telemetry and per-scope UI invalidation are required.

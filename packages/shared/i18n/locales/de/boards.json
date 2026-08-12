@@ -311,7 +311,13 @@
       "pickerNotice": "Kein Empfang — hier sind deine heruntergeladenen Boards.",
       "pickerNoticeUnreachable": "Deine Boards sind gerade nicht erreichbar — hier sind die heruntergeladenen.",
       "pickerEmptyTitle": "Noch nichts heruntergeladen",
-      "pickerEmptyBody": "Boards, die du offline verfügbar machst, tauchen hier auf. Hol dir eins, solange du Empfang hast."
+      "pickerEmptyBody": "Boards, die du offline verfügbar machst, tauchen hier auf. Hol dir eins, solange du Empfang hast.",
+      "retryFastDownload": "Schnellen Download nochmal versuchen",
+      "retryFastDownloadAria": "Schnellen Download für {{name}} nochmal versuchen",
+      "retryFastDownloadTitle": "Schnellen Download nochmal versuchen?",
+      "retryFastDownloadMessage": "Lädt die Boulder dieses Boards am Stück statt über Tausende kleiner Anfragen.",
+      "retryFastDownloadMessageWithSize": "Etwa {{size}}, am Stück geladen statt über Tausende kleiner Anfragen.",
+      "retryFastDownloadConfirm": "Nochmal versuchen"
     },
     "gymPicker": {
       "title": "Wo steht dieses Board?",

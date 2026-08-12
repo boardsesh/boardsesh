@@ -81,7 +81,10 @@ export interface SnapshotSource {
    * Download (and decompress) one artifact to a local path ready to ATTACH as a
    * plain SQLite file. Return `null` or throw on retryable failure — both count
    * as a bootstrap attempt. Throw SnapshotPermanentMissError for a known
-   * unusable artifact that should fall through to the paged pull immediately.
+   * unusable artifact that should fall through to the paged pull immediately —
+   * the crawl runs in the same cycle, and the engine charges it to the scope's
+   * structural-device budget so an artifact this device can never use is not
+   * downloaded again on every cycle.
    *
    * `options.onProgress` (issue #4311) is optional on BOTH sides: an
    * implementation written against the one-argument signature keeps compiling
@@ -154,6 +157,11 @@ export class SnapshotWipedError extends Error {
  * Thrown by a SnapshotSource when an artifact is known unusable for this client
  * but the normal paged crawl should run in the same cycle. Example: a mobile
  * downloader persisted a raw gzip stream and the shared engine has no gunzipper.
+ *
+ * Raised at the DOWNLOAD stage this costs the scope a structural-device slot:
+ * the bytes were already spent, and the fault is the device's HTTP stack, which
+ * tonight's export cannot fix. Raised before any bytes move (a missing manifest
+ * entry) it is free — that is a different, cheap decision made by the caller.
  */
 export class SnapshotPermanentMissError extends Error {
   constructor(message: string) {
