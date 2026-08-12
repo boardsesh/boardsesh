@@ -336,7 +336,18 @@
         "emptySubtitle": "Haz que un plafón esté disponible sin conexión y aparecerá aquí.",
         "errorTitle": "No se pudo medir tus descargas",
         "errorSubtitle": "Algo impidió leer lo que hay en este teléfono.",
-        "errorRetry": "Inténtalo de nuevo"
+        "errorRetry": "Inténtalo de nuevo",
+        "cachedImagesHeader": "Imágenes en caché",
+        "cachedImagesArtLabel": "Dibujo del plafón",
+        "cachedImagesPhotosLabel": "Fotos",
+        "cachedImagesNote": "El dibujo del plafón se vuelve a generar mientras navegas y las fotos vuelven cuando tengas conexión, así que borrar esto te cuesta un momento, no tus datos. Tu teléfono también puede borrarlo por su cuenta cuando falte espacio.",
+        "clearCachedImages": "Borrar imágenes en caché",
+        "clearCachedImagesTitle": "¿Borrar las imágenes en caché?",
+        "clearCachedImagesMessage": "Libera unos {{size}}. El dibujo del plafón se vuelve a generar mientras navegas y las fotos vuelven cuando tengas conexión: tus ascensos, listas y plafones descargados se quedan como están.",
+        "clearCachedImagesConfirm": "Borrar",
+        "clearCachedImagesDone": "Imágenes en caché borradas.",
+        "clearCachedImagesPartial": "Se borró el dibujo del plafón, pero las fotos siguen ahí. Abre la app e inténtalo de nuevo.",
+        "clearCachedImagesError": "No se pudieron borrar las imágenes en caché. Inténtalo de nuevo."
       },
       "appearance": {
         "title": "Apariencia",

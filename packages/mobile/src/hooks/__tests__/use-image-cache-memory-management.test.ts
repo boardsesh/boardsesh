@@ -51,6 +51,7 @@ const deviceLayout = vi.hoisted(() => ({ isPad: true }));
 vi.mock('../use-device-layout', () => ({ useDeviceLayout: () => ({ isPad: deviceLayout.isPad }) }));
 
 import {
+  IMAGE_DISK_CACHE_MAX_BYTES,
   IMAGE_MEMORY_CACHE_MAX_BYTES,
   useImageCacheMemoryManagement,
   useIpadTabSwitchImageCacheSweep,
@@ -68,7 +69,10 @@ describe('image memory cache ceiling', () => {
     // Pins the wiring, not the arithmetic: it must be maxMemoryCost (the in-memory
     // bitmap budget), not maxDiskSize — capping the disk cache instead would evict
     // the very PNGs a re-decode reads back and would not bound memory at all.
-    expect(configureCache).toHaveBeenCalledWith({ maxMemoryCost: IMAGE_MEMORY_CACHE_MAX_BYTES });
+    expect(configureCache).toHaveBeenCalledWith({
+      maxMemoryCost: IMAGE_MEMORY_CACHE_MAX_BYTES,
+      maxDiskSize: IMAGE_DISK_CACHE_MAX_BYTES,
+    });
   });
 
   it('applies the cap once, not on every render', () => {
@@ -97,6 +101,15 @@ describe('image memory cache ceiling', () => {
     const fullResOverlayBytes = 8 * 1024 * 1024;
     expect(IMAGE_MEMORY_CACHE_MAX_BYTES).toBeGreaterThan(8 * fullResOverlayBytes);
     expect(IMAGE_MEMORY_CACHE_MAX_BYTES).toBeLessThan(512 * 1024 * 1024);
+  });
+
+  // The disk ceiling is the one that was genuinely missing (#3647): expo-image
+  // defaults maxDiskSize to 0, i.e. no limit at all. Any positive number fixes
+  // the defect; this guards the two ways to get it wrong — a value so small the
+  // cache thrashes and re-downloads over cellular, or one so large it never bites.
+  it('bounds the on-disk photo cache at something a phone can actually feel', () => {
+    expect(IMAGE_DISK_CACHE_MAX_BYTES).toBeGreaterThan(50 * 1024 * 1024);
+    expect(IMAGE_DISK_CACHE_MAX_BYTES).toBeLessThan(512 * 1024 * 1024);
   });
 });
 

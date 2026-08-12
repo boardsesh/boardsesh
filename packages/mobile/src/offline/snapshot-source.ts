@@ -38,7 +38,10 @@ const MANIFEST_URL = `${SNAPSHOT_BASE_URL}/manifest.json`;
 // it (in a `finally`) — nothing here is meant to persist across app launches,
 // so the OS is also free to reclaim it under storage pressure (Paths.cache,
 // not Paths.document).
-const SNAPSHOT_DIR_NAME = 'board-snapshots';
+// Exported so the cache sweeper (lib/sweep-caches.ts) reaps artifacts leaked by
+// a kill mid-bootstrap from the same directory this writes to, rather than
+// re-literalling the name and silently sweeping nothing if it ever moves.
+export const SNAPSHOT_DIR_NAME = 'board-snapshots';
 
 // Identity artifacts are already stored as SQLite files, so they only need room
 // for the download plus write overhead. Gzip artifacts may temporarily require
