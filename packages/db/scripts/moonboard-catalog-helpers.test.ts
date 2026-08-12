@@ -21,8 +21,13 @@ import {
   mapCatalogConfigStats,
   catalogProblemToClimbs,
   isBetterCatalogClimb,
+  catalogFingerprintKey,
   existingClimbUuidsForProblem,
+  hijackedClimbUuidsForProblem,
+  holdsBatchKey,
+  ownedClimbAngles,
   resolveIncumbentReplacement,
+  statsBatchKey,
   type MoonBoardCatalogProblem,
   type MappedCatalogClimb,
 } from './moonboard-catalog-helpers.js';
@@ -469,6 +474,134 @@ void test('existingClimbUuidsForProblem: drifted holds under legacy per-angle ro
       existingClimbUuids: new Set([legacy25, legacy40, 'unrelated']),
     }).sort(),
     [legacy25, legacy40].sort(),
+  );
+});
+
+void test("resolveIncumbentReplacement's stale keys hit the batch-map entries the importer actually wrote", () => {
+  // The importer (stageCatalogBatch) keys its staged rows with statsBatchKey /
+  // holdsBatchKey; resolveIncumbentReplacement reports the beaten incumbent's
+  // keys for deletion. If either side changed format, the loser's stats/holds
+  // would silently survive under the winner's uuid — so build the maps exactly
+  // as the importer does and prove every reported key deletes an entry.
+  const cfg = PORRIDGE.configurations![1];
+  const uuid = 'moonboard-batch-key-agreement';
+  const incumbent = makeMappedClimb({
+    holds: [
+      { holdId: 11, holdState: 'STARTING' },
+      { holdId: 196, holdState: 'FINISH' },
+    ],
+    stats: [mapCatalogConfigStats({ ...cfg, repeats: 10 }, 25), mapCatalogConfigStats({ ...cfg, repeats: 10 }, 40)],
+  });
+  const statsByUuidAngle = new Map(incumbent.stats.map((stat) => [statsBatchKey(uuid, stat.angle), stat]));
+  const holdsByKey = new Map(incumbent.holds.map((hold) => [holdsBatchKey(uuid, hold.holdId), hold]));
+
+  const stronger = makeMappedClimb({ stats: [mapCatalogConfigStats({ ...cfg, repeats: 5000 }, 40)] });
+  const decision = resolveIncumbentReplacement(uuid, stronger, incumbent);
+  assert.equal(decision.accept, true);
+  if (!decision.accept) return;
+
+  for (const key of decision.staleStatKeys) {
+    assert.equal(statsByUuidAngle.delete(key), true, `stale stats key ${key} must match a staged entry`);
+  }
+  for (const key of decision.staleHoldKeys) {
+    assert.equal(holdsByKey.delete(key), true, `stale hold key ${key} must match a staged entry`);
+  }
+  assert.equal(statsByUuidAngle.size, 0);
+  assert.equal(holdsByKey.size, 0);
+});
+
+void test('catalogFingerprintKey keeps identical holds on different layouts apart', () => {
+  assert.equal(catalogFingerprintKey(3, 'abc'), '3|abc');
+  assert.notEqual(catalogFingerprintKey(3, 'abc'), catalogFingerprintKey(4, 'abc'));
+});
+
+void test('ownedClimbAngles adds the legacy MoonBoard angles to the graded ones', () => {
+  // Only graded at 40° today, but a `moonboard:{id}:25` row can still exist
+  // from a snapshot where 25° was graded.
+  assert.deepEqual(
+    ownedClimbAngles([40]).sort((a, b) => a - b),
+    [25, 40],
+  );
+  assert.deepEqual(
+    ownedClimbAngles([25, 40]).sort((a, b) => a - b),
+    [25, 40],
+  );
+  assert.deepEqual(
+    ownedClimbAngles([]).sort((a, b) => a - b),
+    [25, 40],
+  );
+  // A future angle the catalog starts grading is kept as well.
+  assert.deepEqual(
+    ownedClimbAngles([15, 40]).sort((a, b) => a - b),
+    [15, 25, 40],
+  );
+});
+
+void test('hijackedClimbUuidsForProblem: the owned row IS the merge target — ordinary legacy merge', () => {
+  const resolvedUuid = legacyCatalogClimbUuid({ id: 541453, angle: 40 });
+  assert.deepEqual(
+    hijackedClimbUuidsForProblem({
+      problemId: 541453,
+      angles: [25, 40],
+      resolvedUuid,
+      existingClimbUuids: new Set([resolvedUuid]),
+      canonicalByAlias: new Map(),
+    }),
+    [],
+  );
+});
+
+void test('hijackedClimbUuidsForProblem: a foreign live row the merge would repoint is reported', () => {
+  const foreignUuid = legacyCatalogClimbUuid({ id: 541453, angle: 25 });
+  assert.deepEqual(
+    hijackedClimbUuidsForProblem({
+      problemId: 541453,
+      angles: [25, 40],
+      resolvedUuid: 'moonboard-matched-canonical',
+      existingClimbUuids: new Set([foreignUuid]),
+      canonicalByAlias: new Map(),
+    }),
+    [foreignUuid],
+  );
+});
+
+void test('hijackedClimbUuidsForProblem: an owned row already aliased to the target is not a hijack', () => {
+  const resolvedUuid = 'moonboard-matched-canonical';
+  const redirectedUuid = legacyCatalogClimbUuid({ id: 541453, angle: 25 });
+  const intermediateUuid = 'moonboard-intermediate';
+  assert.deepEqual(
+    hijackedClimbUuidsForProblem({
+      problemId: 541453,
+      angles: [25, 40],
+      resolvedUuid,
+      existingClimbUuids: new Set([redirectedUuid]),
+      // Chains resolve too, not just direct aliases.
+      canonicalByAlias: new Map([
+        [redirectedUuid, intermediateUuid],
+        [intermediateUuid, resolvedUuid],
+      ]),
+    }),
+    [],
+  );
+});
+
+void test('hijackedClimbUuidsForProblem: a cyclic alias chain counts as a hijack', () => {
+  // terminalCanonicalUuid gives up on a cycle; we refuse to write through a
+  // redirect we cannot follow rather than assume it is harmless.
+  const cycleA = legacyCatalogClimbUuid({ id: 541453, angle: 25 });
+  const cycleB = 'moonboard-cycle-partner';
+  assert.deepEqual(
+    hijackedClimbUuidsForProblem({
+      problemId: 541453,
+      angles: [25],
+      resolvedUuid: 'moonboard-matched-canonical',
+      existingClimbUuids: new Set([cycleA]),
+      canonicalByAlias: new Map([
+        [cycleA, cycleB],
+        [cycleB, cycleA],
+      ]),
+    }),
+    [cycleA],
   );
 });
 

@@ -7,6 +7,7 @@ import {
 } from './moonboard-helpers.js';
 import { fingerprintFromHolds, methodDescription } from './moonboard-2024-helpers.js';
 import { moonBoardMethodToCharacteristic } from '@boardsesh/shared-schema/characteristics';
+import { MOONBOARD_ANGLES } from '@boardsesh/board-config';
 import { sql } from 'drizzle-orm';
 
 // =============================================================================
@@ -111,7 +112,34 @@ type ExistingCatalogClimbRow = ExistingCatalogClimb & {
   isListed: boolean | null;
 };
 
-function terminalCanonicalUuid(uuid: string, canonicalByAlias: ReadonlyMap<string, string>): string | undefined {
+/**
+ * Match-index key. Hold fingerprints are only comparable within one layout (the
+ * same cells mean different holds on a different board), so every producer and
+ * consumer of the index — and the in-batch duplicate fold — goes through this.
+ */
+export function catalogFingerprintKey(layoutId: number, holdFingerprint: string): string {
+  return `${layoutId}|${holdFingerprint}`;
+}
+
+/**
+ * Batch-map keys for the importer's staged stats/holds rows. `resolveIncumbentReplacement`
+ * reports the beaten incumbent's keys for deletion, so the importer's map keys
+ * and those stale keys MUST use one format — both sides call these, and
+ * moonboard-catalog-batch.test.ts pins the agreement.
+ */
+export function statsBatchKey(uuid: string, angle: number): string {
+  return `${uuid}:${angle}`;
+}
+
+export function holdsBatchKey(uuid: string, holdId: number): string {
+  return `${uuid}:${holdId}`;
+}
+
+/**
+ * Follow an alias chain to the uuid it ultimately resolves to. Returns
+ * undefined for a cycle (a broken redirect we refuse to reason about).
+ */
+export function terminalCanonicalUuid(uuid: string, canonicalByAlias: ReadonlyMap<string, string>): string | undefined {
   const visited = new Set<string>();
   let currentUuid = uuid;
   while (!visited.has(currentUuid)) {
@@ -138,7 +166,7 @@ export function buildExistingCatalogMatchIndex(
     if (!fingerprint) continue;
     const canonicalUuid = terminalCanonicalUuid(row.uuid, canonicalByAlias);
     if (!canonicalUuid || !listedUuids.has(canonicalUuid)) continue;
-    const key = `${row.layoutId}|${fingerprint}`;
+    const key = catalogFingerprintKey(row.layoutId, fingerprint);
     const candidate = { uuid: canonicalUuid, name: row.name };
     const bucket = index.get(key);
     if (bucket) bucket.push(candidate);
@@ -170,7 +198,7 @@ export function resolveCatalogClimbUuid(
   mapped: MappedCatalogClimb,
   index: Map<string, ExistingCatalogClimb[]>,
 ): { uuid: string; matched: boolean; ambiguous: boolean } {
-  const candidates = index.get(`${mapped.layoutId}|${mapped.holdFingerprint}`);
+  const candidates = index.get(catalogFingerprintKey(mapped.layoutId, mapped.holdFingerprint));
   if (!candidates || candidates.length === 0) return { uuid: mapped.uuid, matched: false, ambiguous: false };
   const candidateUuids = new Set(candidates.map((candidate) => candidate.uuid));
   if (candidateUuids.size === 1) return { uuid: candidates[0].uuid, matched: true, ambiguous: false };
@@ -314,6 +342,49 @@ export function existingClimbUuidsForProblem(args: {
   return [...candidateUuids].filter((uuid) => existingClimbUuids.has(uuid));
 }
 
+/**
+ * The angles a problem may already own climb rows at: the ones the catalog
+ * grades it at TODAY, plus every angle MoonBoard problems have ever been
+ * imported at (`MOONBOARD_ANGLES`).
+ *
+ * The pre-rewrite importer minted one row per graded angle, and grades come and
+ * go between snapshots. A problem graded at 25° in an older dump but only at
+ * 40° now still owns a `moonboard:{id}:25` row, and checking only today's
+ * graded angles would miss it — the exact case the drift guard exists to catch.
+ */
+export function ownedClimbAngles(gradedAngles: readonly number[]): number[] {
+  return [...new Set([...gradedAngles, ...MOONBOARD_ANGLES])];
+}
+
+/**
+ * The uuids this problem owns that merging it onto `resolvedUuid` would HIJACK.
+ *
+ * On the matched branch the problem's holds DID match an existing climb, so
+ * "the problem already owns rows" is not by itself drift — the usual case is a
+ * legacy import where the owned uuid IS the matched row, which must stay a
+ * normal in-place merge. The destructive case is an owned uuid that is a live
+ * climb row somewhere ELSE: `catalogAliasRows` would emit it as an alias of
+ * `resolvedUuid`, and `catalogAliasConflictUpdate` overwrites canonical_uuid
+ * unconditionally, so that row's own resolution (and its ticks) would start
+ * redirecting at a climb it isn't, while it stays listed.
+ *
+ * Owned uuids already redirecting to `resolvedUuid` are fine: re-writing that
+ * alias is a no-op. A cyclic alias chain resolves to undefined and counts as a
+ * hijack — we refuse to write through a redirect we can't follow.
+ */
+export function hijackedClimbUuidsForProblem(args: {
+  problemId: number;
+  angles: number[];
+  resolvedUuid: string;
+  existingClimbUuids: ReadonlySet<string>;
+  canonicalByAlias: ReadonlyMap<string, string>;
+}): string[] {
+  const { problemId, angles, resolvedUuid, existingClimbUuids, canonicalByAlias } = args;
+  return existingClimbUuidsForProblem({ problemId, angles, existingClimbUuids }).filter(
+    (uuid) => uuid !== resolvedUuid && terminalCanonicalUuid(uuid, canonicalByAlias) !== resolvedUuid,
+  );
+}
+
 /** A problem is importable if it isn't soft-deleted and has holds + configs. */
 export function isImportableProblem(problem: MoonBoardCatalogProblem): boolean {
   if (problem.dateDeleted) return false;
@@ -433,7 +504,7 @@ export function resolveIncumbentReplacement(
   }
   return {
     accept: true,
-    staleStatKeys: (incumbent?.stats ?? []).map((stat) => `${uuid}:${stat.angle}`),
-    staleHoldKeys: (incumbent?.holds ?? []).map((hold) => `${uuid}:${hold.holdId}`),
+    staleStatKeys: (incumbent?.stats ?? []).map((stat) => statsBatchKey(uuid, stat.angle)),
+    staleHoldKeys: (incumbent?.holds ?? []).map((hold) => holdsBatchKey(uuid, hold.holdId)),
   };
 }
