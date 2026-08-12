@@ -298,14 +298,18 @@ describe('pullSync', () => {
 
     await pullSync(db, queryClient, graphqlFetch);
 
-    // Only the deletions-coverage marker is excused: an empty cycle legitimately
-    // stamps it (pinned by the test below). Checkpoints go through the same
-    // `INSERT OR REPLACE INTO sync_meta`, so excluding sync_meta wholesale would
-    // stop this from catching "an empty cycle advanced a cursor".
+    // Two markers are excused, both of which an empty cycle legitimately stamps:
+    // deletions-coverage (pinned by the test below) and user_data_complete —
+    // "every user table reached its tail" is true of a cycle that moved zero
+    // rows, which is exactly when a local reader may start serving. Checkpoints
+    // go through the same `INSERT OR REPLACE INTO sync_meta`, so excluding
+    // sync_meta wholesale would stop this catching "an empty cycle advanced a
+    // cursor".
+    const excusedMarkerKeys = new Set(['deletions-coverage', 'checkpoint:user_data_complete']);
     const insertCalls = sqlCalls.filter(
       (call) =>
         call.sql.includes('INSERT OR REPLACE') &&
-        !(call.sql.includes('sync_meta') && call.params?.[0] === 'deletions-coverage'),
+        !(call.sql.includes('sync_meta') && excusedMarkerKeys.has(String(call.params?.[0]))),
     );
     expect(insertCalls).toHaveLength(0);
   });

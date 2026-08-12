@@ -9,6 +9,7 @@ import {
   isScopeDownloadComplete,
   DELETIONS_CHECKPOINT_KEY,
 } from './checkpoints';
+import { markUserDataComplete } from './local-user-owner';
 import {
   bootstrapScopeFromSnapshot,
   getBootstrapAttempts,
@@ -1129,11 +1130,12 @@ export async function pullSync(
   // fresh retention window off it would hide a real gap. See deletions-coverage.ts.
   if (deletionsResult.reachedTail) await setDeletionsCoverageAt(db, Date.now());
 
+  let allUserTablesReachedTail = true;
   for (const tableName of USER_DATA_TABLES) {
     if (cycleAborted()) return;
     onProgress?.({ phase: 'user_data', currentTable: tableName, documentsProcessed: totalDocuments });
     const baseCount = totalDocuments;
-    await syncTable(
+    const userTableResult = await syncTable(
       db,
       queryClient,
       graphqlFetch,
@@ -1146,7 +1148,15 @@ export async function pullSync(
       },
       options?.onSchemaDrift,
     );
+    if (!userTableResult.reachedTail) allUserTablesReachedTail = false;
   }
+
+  // Only now are the user tables complete enough for a local reader to serve
+  // from — a checkpoint alone proves the first page landed, and a logbook built
+  // from a fraction of the rows reads as "you never climbed that". Mirrors
+  // markScopeDownloadComplete for board scopes. Cleared on sign-out for free:
+  // the key is `checkpoint:`-prefixed, so deleteUserCheckpoints takes it.
+  if (allUserTablesReachedTail) await markUserDataComplete(db);
 
   // Each enabled board is a "boardType:layoutId:sizeId" scope key (already parsed
   // into boardScopes). currentTable carries the full scope key so a per-board UI

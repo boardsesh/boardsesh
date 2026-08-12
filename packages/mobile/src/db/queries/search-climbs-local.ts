@@ -1,4 +1,4 @@
-import type { OfflineDatabase } from '@boardsesh/offline-sync';
+import { getLocalUserId, type OfflineDatabase } from '@boardsesh/offline-sync';
 import type { BoardName, Climb, ClimbSearchInput } from '@boardsesh/shared-schema';
 import { isNoMatch } from '@boardsesh/shared-schema';
 import { isSizeScopedBoard } from '@boardsesh/board-config';
@@ -31,7 +31,11 @@ import { getGradeLabel, getClimbStars } from '../../lib/grade-label';
 
 export type LocalSearchResult = { climbs: Climb[]; hasMore: boolean };
 
-type Bind = string | number;
+// `null` is a real bind value here, not an absence: with no `local_user_id`
+// stamp the owner predicate binds NULL, and `user_id = NULL` never matches — so
+// the read degrades to this device's own unsynced writes rather than to
+// everyone's rows.
+type Bind = string | number | null;
 
 const DEFAULT_PAGE_SIZE = 20;
 
@@ -136,16 +140,42 @@ export function isOfflineSearchSupported(input: ClimbSearchInput): boolean {
   return true;
 }
 
-// Per-status tick-count / existence fragments, all scoped to (climb, board, angle).
+// Per-status tick-count / existence fragments, all scoped to (climb, board,
+// angle) AND to the climber who owns the local rows.
 const COMPLETED_STATUSES = "('flash', 'send')";
+
+/**
+ * The row-level half of the auth-scoping contract (docs/offline-reads.md).
+ *
+ * Sign-out wipes the user tables, but best-effort: a locked database or a crash
+ * mid-sign-out leaves the previous account's ticks behind, and these reads used
+ * to have no user predicate at all — so one failed wipe showed user A's send
+ * and attempt glyphs to user B.
+ *
+ * `user_id IS NULL` is not a loophole, it is required: the offline dual-write
+ * (`writeTickLocal`) inserts the climber's own tick before it has a server row,
+ * and rows written before the writer started stamping `user_id` are still on
+ * disk. Both are this device's own writes, made while this account was signed
+ * in — the same account the stamp names.
+ *
+ * `ownerUserId` is the `local_user_id` stamp, not the live session id: the
+ * stamp IS the device's record of whose rows these are, and the reader-level
+ * `assertLocalUserDataOwner` is what checks it against the signed-in climber.
+ * With no stamp (a fresh or pre-upgrade database) the predicate degrades to
+ * "this device's own unsynced writes", which is the safe direction.
+ */
+function ownedTicks(alias: string): string {
+  return `(${alias}.user_id = ? OR ${alias}.user_id IS NULL)`;
+}
+
 function ticksExists(negated: boolean, statusSql: string): string {
   return `${negated ? 'NOT EXISTS' : 'EXISTS'} (SELECT 1 FROM boardsesh_ticks t
-    WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND ${statusSql})`;
+    WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND ${ownedTicks('t')} AND ${statusSql})`;
 }
 
 type JoinAndWhere = { joinSql: string; whereSql: string; joinBinds: Bind[]; whereBinds: Bind[] };
 
-function buildJoinAndWhere(input: ClimbSearchInput): JoinAndWhere {
+function buildJoinAndWhere(input: ClimbSearchInput, ownerUserId: string | null): JoinAndWhere {
   const boardType = input.boardName;
   const angle = input.angle;
   const setIds = parseSetIds(input.setIds);
@@ -295,33 +325,38 @@ function buildJoinAndWhere(input: ClimbSearchInput): JoinAndWhere {
   }
 
   // Personal progress against local ticks (device is single-user).
-  if (input.hideAttempted) push(ticksExists(true, "t.status = 'attempt'"), boardType, angle);
-  if (input.hideCompleted) push(ticksExists(true, `t.status IN ${COMPLETED_STATUSES}`), boardType, angle);
-  if (input.showOnlyAttempted) push(ticksExists(false, "t.status = 'attempt'"), boardType, angle);
-  if (input.showOnlyCompleted) push(ticksExists(false, `t.status IN ${COMPLETED_STATUSES}`), boardType, angle);
+  if (input.hideAttempted) push(ticksExists(true, "t.status = 'attempt'"), boardType, angle, ownerUserId);
+  if (input.hideCompleted) push(ticksExists(true, `t.status IN ${COMPLETED_STATUSES}`), boardType, angle, ownerUserId);
+  if (input.showOnlyAttempted) push(ticksExists(false, "t.status = 'attempt'"), boardType, angle, ownerUserId);
+  if (input.showOnlyCompleted)
+    push(ticksExists(false, `t.status IN ${COMPLETED_STATUSES}`), boardType, angle, ownerUserId);
 
   // Personal rating, mirroring create-climb-filters.ts case for case so an
   // offline search returns the same rows as an online one. The local ticks
   // table has no bigserial id, so the latest-rating tie-break falls back to
   // updated_at where the server uses id — only reachable when two ratings of
   // one climb share a climbed_at.
-  if (input.onlyRatedByMe) push(ticksExists(false, 't.quality IS NOT NULL'), boardType, angle);
+  if (input.onlyRatedByMe) push(ticksExists(false, 't.quality IS NOT NULL'), boardType, angle, ownerUserId);
   if (input.minUserRating) {
     push(
       `NOT EXISTS (SELECT 1 FROM boardsesh_ticks rating_below
         WHERE rating_below.climb_uuid = c.uuid AND rating_below.board_type = ? AND rating_below.angle = ?
+        AND ${ownedTicks('rating_below')}
         AND rating_below.quality IS NOT NULL AND rating_below.quality < ?
         AND NOT EXISTS (SELECT 1 FROM boardsesh_ticks rating_newer
           WHERE rating_newer.climb_uuid = rating_below.climb_uuid
           AND rating_newer.board_type = rating_below.board_type
           AND rating_newer.angle = rating_below.angle
+          AND ${ownedTicks('rating_newer')}
           AND rating_newer.quality IS NOT NULL
           AND (rating_newer.climbed_at > rating_below.climbed_at
             OR (rating_newer.climbed_at = rating_below.climbed_at
               AND rating_newer.updated_at > rating_below.updated_at))))`,
       boardType,
       angle,
+      ownerUserId,
       input.minUserRating,
+      ownerUserId,
     );
   }
 
@@ -432,6 +467,8 @@ export function mapRowToClimb(row: LocalClimbRow, boardType: string, layoutId: n
 }
 
 export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchInput): Promise<LocalSearchResult> {
+  // One indexed sync_meta read per search. See `ownedTicks`.
+  const ownerUserId = await getLocalUserId(db);
   const boardType = input.boardName;
   const angle = input.angle;
   const page = Math.max(0, Math.trunc(input.page ?? 0));
@@ -439,11 +476,11 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   const sortBy = normalizeSortBy(input.sortBy);
   const sortOrder = input.sortOrder === 'asc' ? 'ASC' : 'DESC';
 
-  const { joinSql, whereSql, joinBinds, whereBinds } = buildJoinAndWhere(input);
+  const { joinSql, whereSql, joinBinds, whereBinds } = buildJoinAndWhere(input, ownerUserId);
 
-  // SELECT-clause binds come first textually: the two per-climb tick counts, then
-  // the optional popular-total subquery.
-  const selectBinds: Bind[] = [boardType, angle, boardType, angle];
+  // SELECT-clause binds come first textually: the two per-climb tick counts
+  // (board, angle, owner each), then the optional popular-total subquery.
+  const selectBinds: Bind[] = [boardType, angle, ownerUserId, boardType, angle, ownerUserId];
   const popularSelect =
     sortBy === 'popular'
       ? `, (SELECT COALESCE(SUM(ps.ascensionist_count), 0) FROM board_climb_stats ps
@@ -452,9 +489,11 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   if (sortBy === 'popular') selectBinds.push(boardType);
 
   const userAscentsSelect = `(SELECT COUNT(*) FROM boardsesh_ticks t
-    WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND t.status IN ${COMPLETED_STATUSES}) AS user_ascents`;
+    WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND ${ownedTicks('t')}
+    AND t.status IN ${COMPLETED_STATUSES}) AS user_ascents`;
   const userAttemptsSelect = `(SELECT COUNT(*) FROM boardsesh_ticks t
-    WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND t.status = 'attempt') AS user_attempts`;
+    WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND ${ownedTicks('t')}
+    AND t.status = 'attempt') AS user_attempts`;
 
   // Random uses the seeded mixer (order direction is meaningless); every other
   // sort uses its column + direction. Both keep the c.uuid DESC secondary tiebreak.
@@ -496,7 +535,8 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
 }
 
 export async function countClimbsLocal(db: OfflineDatabase, input: ClimbSearchInput): Promise<number> {
-  const { joinSql, whereSql, joinBinds, whereBinds } = buildJoinAndWhere(input);
+  const ownerUserId = await getLocalUserId(db);
+  const { joinSql, whereSql, joinBinds, whereBinds } = buildJoinAndWhere(input, ownerUserId);
   const query = `
     SELECT COUNT(*) AS total
     FROM board_climbs c

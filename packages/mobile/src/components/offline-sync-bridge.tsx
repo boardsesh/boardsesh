@@ -3,7 +3,13 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
-import { getPendingCount, type GraphQLFetch } from '@boardsesh/offline-sync';
+import {
+  assertLocalUserDataOwner,
+  beginLocalPurge,
+  getPendingCount,
+  stampLocalUserId,
+  type GraphQLFetch,
+} from '@boardsesh/offline-sync';
 import { startSyncScheduler, drainMutationQueue, startBackgroundTracking } from '../offline/offline-sync-adapter';
 import { getSetting } from '../settings';
 import { setupNotificationHandlers } from '../notifications';
@@ -12,6 +18,9 @@ import { setOfflineEngineEnabled } from '../lib/offline-engine';
 import { useAuth } from '../providers/auth-provider';
 import { useOfflineDownloadsEnabled } from '../providers/feature-flags-provider';
 import { useSnapshotSource } from '../offline/use-snapshot-source';
+import { useStoredUserId } from '../hooks/use-current-user-id';
+import { clearUserData } from '../db/connection';
+import { reportError } from '../lib/error-reporting';
 
 /**
  * Publishes the offline-engine flag decision to the module-level store that
@@ -56,6 +65,53 @@ export function OfflineSyncBridge() {
   // getHttpClient() already carries auth + endpoint; binding .request keeps the
   // GraphQLFetch shape the scheduler and drainer expect.
   const graphqlFetch = useMemo<GraphQLFetch>(() => (query, variables) => getHttpClient().request(query, variables), []);
+
+  // Who the local user-data rows belong to. Written here rather than inside
+  // pullSync because this is the layer that knows the signed-in climber, and
+  // the stamp has to exist before the FIRST local read, not after the first
+  // successful pull.
+  //
+  // A stamp naming somebody else means the sign-out wipe did not finish — a
+  // locked database (#4314), a crash mid-sign-out, or the logged-out cold-start
+  // path that skips cleanup entirely. Re-run the wipe, report it, and only then
+  // claim the device for this account. Until the stamp matches, every
+  // user-scoped local read declines and falls through to the network.
+  const { userId: localUserId } = useStoredUserId(isAuthenticated);
+  useEffect(() => {
+    if (!isAuthenticated || !localUserId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const ownership = await assertLocalUserDataOwner(db, localUserId);
+        if (cancelled) return;
+        if (ownership === 'mismatch') {
+          reportError(new Error('Local offline user data belonged to a different account'), {
+            tags: { source: 'offline-sync', op: 'owner-stamp-mismatch' },
+          });
+          // Same hazard every other wipe path guards against (sign-out uses
+          // setSigningOut, board removal uses beginLocalPurge): the scheduler
+          // effect below may already have a pull cycle mid-table, and a page
+          // that was on the wire when clearUserData ran would land AFTER the
+          // wipe — resurrecting rows with a checkpoint past them, which the
+          // strict `>` delta pull never revisits and `user_data_complete` would
+          // then vouch for. Bumping the epoch makes syncTable's post-await
+          // re-check discard that page; the next cycle restarts from the
+          // now-empty checkpoints.
+          beginLocalPurge();
+          await clearUserData(db);
+          if (cancelled) return;
+        }
+        if (ownership !== 'ok') await stampLocalUserId(db, localUserId);
+      } catch (error) {
+        if (__DEV__) {
+          console.warn('[OfflineSyncBridge] failed to stamp the local user-data owner:', error);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [db, isAuthenticated, localUserId]);
 
   // Unconditional (unlike the scheduler effect below): the offline-sync
   // engine's backgrounding guard must cover ad-hoc drainMutationQueue() calls
