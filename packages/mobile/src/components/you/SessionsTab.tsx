@@ -10,6 +10,7 @@ import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { Card } from '../Card';
 import { ActivityIndicator } from '../ActivityIndicator';
+import { OfflineState } from '../OfflineState';
 import { SessionFeedCard } from './SessionFeedCard';
 import { SessionsFeedHeader } from './SessionsFeedHeader';
 import { FeedSectionLabel } from './FeedSectionLabel';
@@ -19,6 +20,7 @@ import { useSessionGroupedFeed, useBulkVoteSummaries } from '../../lib/graphql/h
 import { navigateToSessionFeedItem } from '../../lib/session-feed-navigation';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
@@ -98,6 +100,9 @@ export function SessionsTab({ userId, topInset = 0 }: SessionsTabProps) {
   const [commentTarget, setCommentTarget] = useState<CommentTarget | null>(null);
 
   const feed = useSessionGroupedFeed({ userId }, !!userId);
+  // `networkMode: 'offlineFirst'` pauses an offline fetch instead of failing it,
+  // so `feed.isPending` below would hold the skeleton up for good.
+  const offline = useOfflineQueryState(feed);
   // De-dupe across pages: the OFFSET-paginated feed can return the same session
   // on two adjacent pages when its rank shifts mid-refetch, which would
   // otherwise produce duplicate FlashList keys (keyExtractor returns sessionId).
@@ -215,6 +220,14 @@ export function SessionsTab({ userId, topInset = 0 }: SessionsTabProps) {
     return (
       <View style={[styles.centered, { paddingTop: topInset }]}>
         <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (offline.isBlocked && offline.reason) {
+    return (
+      <View style={[styles.centered, { paddingTop: topInset }]}>
+        <OfflineState reason={offline.reason} onRetry={() => void feed.refetch()} />
       </View>
     );
   }

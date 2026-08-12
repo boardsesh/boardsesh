@@ -333,6 +333,13 @@
       "manualHint": "Couldn't load the preview list. Enter a channel name (like pr-1234) to switch manually.",
       "manualPlaceholder": "channel name",
       "manualInputA11y": "Channel name to switch to"
+    },
+    "offlineState": {
+      "title": "No signal",
+      "body": "This one needs a connection. Boards you've downloaded still browse, search and log offline.",
+      "errorTitle": "Couldn't load this",
+      "errorBody": "That didn't come through. Give it another go.",
+      "retry": "Try again"
     }
   },
   "lightControl": {

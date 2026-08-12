@@ -13,6 +13,8 @@ import type { PublicUserProfile } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
+import { OfflineState } from '../OfflineState';
+import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
 import { SegmentedControl } from '../SegmentedControl';
 import {
   ClimberSearchEmptyState,
@@ -89,8 +91,15 @@ export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop 
   const showSearchHint = mode === 'search' && trimmedSearchQuery.length < 2;
   const canRefetchActiveQuery = mode !== 'search' || canUseSearchQuery;
   const isSearchDebouncing = mode === 'search' && searchIsDebouncing;
-  const showInitialSpinner = isSearchDebouncing || (!showSearchHint && activeQuery.isPending && people.length === 0);
-  const showError = !showSearchHint && !isSearchDebouncing && activeQuery.isError && people.length === 0;
+  // An offline fetch pauses instead of erroring (`networkMode: 'offlineFirst'`),
+  // so it satisfies neither branch below and the spinner never clears. `offline`
+  // outranks both.
+  const offlineState = useOfflineQueryState(activeQuery);
+  const showOffline = !showSearchHint && !isSearchDebouncing && offlineState.isBlocked && people.length === 0;
+  const showInitialSpinner =
+    !showOffline && (isSearchDebouncing || (!showSearchHint && activeQuery.isPending && people.length === 0));
+  const showError =
+    !showOffline && !showSearchHint && !isSearchDebouncing && activeQuery.isError && people.length === 0;
   const isRefreshing = publicProfile.isRefetching || (canRefetchActiveQuery && activeQuery.isRefetching);
 
   const segmentOptions = useMemo(
@@ -189,7 +198,7 @@ export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop 
     <View style={styles.flex}>
       <FlashList
         ref={listRef}
-        data={showInitialSpinner || showSearchHint || showError ? EMPTY_PEOPLE : people}
+        data={showInitialSpinner || showSearchHint || showError || showOffline ? EMPTY_PEOPLE : people}
         renderItem={renderItem}
         keyExtractor={(person) => person.id}
         onScroll={onScroll}
@@ -204,7 +213,9 @@ export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop 
           <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={brandColors.primary} />
         }
         ListEmptyComponent={
-          showInitialSpinner ? (
+          showOffline && offlineState.reason ? (
+            <OfflineState reason={offlineState.reason} onRetry={handleRefresh} />
+          ) : showInitialSpinner ? (
             <View style={styles.stateBlock}>
               <ActivityIndicator size="large" />
             </View>

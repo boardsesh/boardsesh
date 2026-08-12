@@ -159,7 +159,11 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
 vi.mock('@boardsesh/board-react', () => ({ useDeleteTick: () => ({ mutate: vi.fn(), isPending: false }) }));
 vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => vi.fn(async () => false) }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
-vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ setQueriesData: vi.fn() }) }));
+// onlineManager is what `useIsOffline` (via useOfflineQueryState) reads.
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({ setQueriesData: vi.fn() }),
+  onlineManager: { isOnline: () => true, subscribe: () => () => {} },
+}));
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useFeatureFlag: (key: string) => (key === 'logbook-filters' ? flagState.logbookFilters : undefined),
 }));

@@ -550,6 +550,13 @@
       "manualHint": "No se pudo cargar la lista de versiones de prueba. Introduce un nombre de canal (como pr-1234) para cambiar manualmente.",
       "manualPlaceholder": "nombre del canal",
       "manualInputA11y": "Nombre del canal al que cambiar"
+    },
+    "offlineState": {
+      "title": "Sin conexión",
+      "body": "Esto necesita conexión. Los plafones que has descargado se siguen explorando, buscando y registrando sin conexión.",
+      "errorTitle": "No hemos podido cargarlo",
+      "errorBody": "No ha llegado. Vuelve a intentarlo.",
+      "retry": "Reintentar"
     }
   },
   "lightControl": {

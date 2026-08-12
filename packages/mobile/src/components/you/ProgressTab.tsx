@@ -7,6 +7,7 @@ import { Icon } from '../Icon';
 import { Card } from '../Card';
 import { SectionHeader } from '../SectionHeader';
 import { ActivityIndicator } from '../ActivityIndicator';
+import { OfflineState } from '../OfflineState';
 import { ProfileBetaShelf } from './ProfileBetaShelf';
 import { StatsSummaryCard } from './StatsSummaryCard';
 import { StackedBarChart, GroupedBarChart, TotalAreaChart, type ChartLegendItem } from './YouCharts';
@@ -81,6 +82,16 @@ export const ProgressTab = memo(function ProgressTab({ data, topInset, userId }:
       })),
     [data.aggregatedFlashRedpointBars, colorScheme],
   );
+
+  // Offline (or a hard fetch failure) with nothing cached: say so rather than
+  // spin forever on a paused query or chart an empty climber.
+  if (data.offline.isBlocked && data.offline.reason) {
+    return (
+      <View style={[styles.centered, { paddingTop: topInset }]}>
+        <OfflineState reason={data.offline.reason} onRetry={data.refetch} />
+      </View>
+    );
+  }
 
   if (data.loading) {
     return (
