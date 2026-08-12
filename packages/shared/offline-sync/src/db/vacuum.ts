@@ -22,6 +22,71 @@
 // forever, and INCREMENTAL still needs an explicit `PRAGMA incremental_vacuum(N)`.
 
 import type { OfflineDatabase } from '../database';
+import { classifySqliteLockError } from './lock-errors';
+
+/**
+ * Tries at the post-VACUUM WAL truncation before settling for "the file may not
+ * have shrunk". The blocker is a live reader that finishes in milliseconds — a
+ * board row re-reading `downloadedScopeKeys`, a search query, the sync engine's
+ * own next statement — so a couple of short waits usually turn a `false` into a
+ * `true` and the user's storage figure actually moves.
+ */
+const CHECKPOINT_ATTEMPTS = 3;
+
+/** Base gap between truncation tries; multiplied by the attempt number. */
+const CHECKPOINT_RETRY_DELAY_MS = 120;
+
+const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Test seams for the truncation retry loop; every field is optional. */
+export type VacuumOptions = {
+  /** How many times to try `wal_checkpoint(TRUNCATE)`. Default CHECKPOINT_ATTEMPTS. */
+  checkpointAttempts?: number;
+  /** Injected sleep so a test does not pay the real backoff. */
+  sleep?: (ms: number) => Promise<void>;
+};
+
+/**
+ * Hand the WAL back to the filesystem after a VACUUM, reporting whether it
+ * actually happened.
+ *
+ * SQLite says "I could not truncate" in TWO different shapes, and only one of
+ * them used to be handled:
+ *
+ *  - `busy = 1` in the returned row — ANOTHER connection held a read lock.
+ *  - a THROW carrying SQLITE_LOCKED (6) / SQLITE_BUSY (5) — most often because
+ *    THIS connection has an open transaction. `sqlite3BtreeCheckpoint()` returns
+ *    SQLITE_LOCKED outright when `pBt->inTransaction != TRANS_NONE`, and on the
+ *    app's main connection that is true for as long as any other statement is in
+ *    flight on the same handle. The offline database has exactly that shape: the
+ *    engine, every `useSQLiteContext()` screen, and this call all share one
+ *    connection, so removing a board while My Boards re-reads its rows raced
+ *    straight into it (Sentry BOARDSESH-D7, "Error code 6: database table is
+ *    locked", reported against `finalizeAsync` because expo-sqlite's
+ *    `getFirstAsync` re-throws the same code from its `finally`).
+ *
+ * Both mean the same thing to the user — the rows are gone, the file may not
+ * have shrunk — so both now resolve `false` instead of one of them escaping as
+ * an exception. Anything that is NOT lock contention still throws: a genuinely
+ * broken database must not be reported as a cosmetic miss.
+ */
+async function truncateWal(db: OfflineDatabase, options: VacuumOptions | undefined): Promise<boolean> {
+  const attempts = Math.max(1, options?.checkpointAttempts ?? CHECKPOINT_ATTEMPTS);
+  const sleep = options?.sleep ?? wait;
+
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      // The pragma returns (busy, log, checkpointed). A non-WAL database returns
+      // no row at all; nothing was blocked, so that is a success.
+      const checkpoint = await db.getFirstAsync<{ busy: number }>('PRAGMA wal_checkpoint(TRUNCATE)');
+      if ((checkpoint?.busy ?? 0) === 0) return true;
+    } catch (error) {
+      if (!classifySqliteLockError(error).locked) throw error;
+    }
+    if (attempt >= attempts) return false;
+    await sleep(CHECKPOINT_RETRY_DELAY_MS * attempt);
+  }
+}
 
 /**
  * Bytes SQLite would hand back to the filesystem if `vacuumDatabase` ran now — the
@@ -57,19 +122,15 @@ export async function measureReclaimableBytes(db: OfflineDatabase): Promise<numb
  * (SQLITE_FULL, SQLITE_BUSY, app killed) still leaves a valid database with the rows
  * deleted and the space merely still on the freelist.
  */
-export async function vacuumDatabase(db: OfflineDatabase): Promise<boolean> {
+export async function vacuumDatabase(db: OfflineDatabase, options?: VacuumOptions): Promise<boolean> {
   await db.execAsync('VACUUM');
   // In WAL mode VACUUM writes the whole rebuilt database through the WAL, leaving a
   // -wal file at roughly the database's size — which would eat the reclaimed bytes
   // straight back, since the user's storage figure counts the sidecars. TRUNCATE (not
   // PASSIVE/FULL) is the checkpoint mode that actually shrinks the -wal file.
   //
-  // The pragma returns (busy, log, checkpointed) and does NOT throw when it can't
-  // finish: `busy = 1` means a reader held it off, the -wal stayed large, and the
-  // user's storage figure won't have improved despite a clean VACUUM. Silent, so
-  // report it rather than claiming success. Not fatal either way — the rows are gone
-  // and the next checkpoint truncates.
-  const checkpoint = await db.getFirstAsync<{ busy: number }>('PRAGMA wal_checkpoint(TRUNCATE)');
-  // A non-WAL database returns no row; nothing was blocked, so that's a success.
-  return (checkpoint?.busy ?? 0) === 0;
+  // Blocked truncation is reported, never thrown — the rows are gone either way and
+  // the next checkpoint truncates. See truncateWal for the two shapes SQLite uses to
+  // say "blocked" and why only reporting one of them was a bug.
+  return truncateWal(db, options);
 }

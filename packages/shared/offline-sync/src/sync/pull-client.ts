@@ -31,8 +31,18 @@ import {
   SnapshotPermanentMissError,
   type SnapshotSource,
   type SnapshotArtifactHandle,
+  type SnapshotBootstrapErrorReport,
   type SnapshotBootstrapErrorReporter,
 } from './snapshot-bootstrap';
+import { classifySnapshotBootstrapFailure, type SnapshotBootstrapFailureReason } from './bootstrap-failure-reason';
+
+/**
+ * What a report site inside the phase supplies. `reason` and `aborted` are filled
+ * in by the wrapper in `runBootstrapPhase`, so an arm that has nothing special to
+ * say about either simply leaves them out.
+ */
+type BootstrapErrorInput = Omit<SnapshotBootstrapErrorReport, 'reason' | 'aborted'> &
+  Partial<Pick<SnapshotBootstrapErrorReport, 'reason' | 'aborted'>>;
 import {
   classifyBootstrapFailure,
   clearBootstrapPagedFallback,
@@ -950,7 +960,43 @@ async function runBootstrapPhase(params: {
   } = params;
   const onProgress = options?.onProgress;
   const onSchemaDrift = options?.onSchemaDrift;
-  const onSnapshotBootstrapError = options?.onSnapshotBootstrapError;
+  // Wrapped ONCE here rather than at each of the eight report sites: every one of
+  // them already builds a payload with the cause in hand, so deriving `reason` and
+  // defaulting `aborted` centrally keeps them untouched and makes it impossible for
+  // a future arm to forget either field (issue #4314).
+  const rawSnapshotBootstrapError = options?.onSnapshotBootstrapError;
+  const onSnapshotBootstrapError = rawSnapshotBootstrapError
+    ? (report: BootstrapErrorInput): void =>
+        rawSnapshotBootstrapError({
+          ...report,
+          reason: report.reason ?? classifySnapshotBootstrapFailure(report.cause),
+          aborted: report.aborted ?? false,
+        })
+    : undefined;
+
+  /**
+   * Why the phase is being torn down, or null when it is not. Read at each of the
+   * bail-out points below, which used to `break`/`return` in silence — the reason
+   * `Offline Board Download Started` could be followed by nothing at all.
+   */
+  const teardownReason = (): SnapshotBootstrapFailureReason | null => {
+    if (isSigningOut() || getWipeEpoch() !== cycleEpoch) return 'aborted-wipe';
+    if (isBackgrounded()) return 'aborted-background';
+    return null;
+  };
+
+  /** Close the funnel for a scope whose work this cycle was cut short. */
+  const reportBootstrapAbort = (
+    scopeKey: string,
+    stage: BootstrapErrorInput['stage'],
+    reason: SnapshotBootstrapFailureReason,
+    cause: unknown,
+  ): void => {
+    // `expected: true` keeps the severity story consistent with transport
+    // failures; `aborted: true` is what a failure-rate query filters on.
+    onSnapshotBootstrapError?.({ scopeKey, stage, attempt: 0, cause, expected: true, aborted: true, reason });
+  };
+
   const onBootstrapMetadataChanged = options?.onBootstrapMetadataChanged;
   const isOnUnmeteredNetwork = options?.isOnUnmeteredNetwork ?? (() => true);
 
@@ -1356,7 +1402,13 @@ async function runBootstrapPhase(params: {
           pathIntent: 'snapshot',
           artifactBytes: entry.bytes,
         });
-        if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) break;
+        // Started fired on the line above, so a silent bail here is the tightest
+        // possible dangling-Started window. Close it too (issue #4314).
+        const preDownloadTeardown = teardownReason();
+        if (preDownloadTeardown) {
+          reportBootstrapAbort(scope.scopeKey, 'download', preDownloadTeardown, null);
+          break;
+        }
 
         const layoutKey = `${scope.boardType}:${scope.layoutId}`;
         // The failure cause is cached alongside the result so a second size of the
@@ -1444,7 +1496,16 @@ async function runBootstrapPhase(params: {
         cachedDownload.downloadMs = 0;
         // Re-check after the (potentially multi-MB) artifact download await, same
         // reason as the manifest check above.
-        if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) break;
+        //
+        // This is the bail that swallowed the field reports behind issue #4314: a
+        // 100 MB Kilter transfer aborted by a board removal elsewhere in the app
+        // landed here and returned nothing, so the funnel showed a Started with no
+        // terminal event and the climber saw the download silently restart.
+        const downloadTeardown = teardownReason();
+        if (downloadTeardown) {
+          reportBootstrapAbort(scope.scopeKey, 'download', downloadTeardown, cachedDownload.cause);
+          break;
+        }
         const download = cachedDownload.file;
         if (!download) {
           if (cachedDownload.permanentMiss) {
@@ -1569,14 +1630,13 @@ async function runBootstrapPhase(params: {
         } catch (error) {
           phases.importMs += Date.now() - importStartedAt;
           // A wipe mid-import rolls the transaction back and bails the phase — no
-          // burn (the pull is being torn down, not failing).
-          if (
-            error instanceof SnapshotWipedError ||
-            isSigningOut() ||
-            getWipeEpoch() !== cycleEpoch ||
-            isBackgrounded()
-          )
+          // burn (the pull is being torn down, not failing). Reported all the
+          // same, so the scope's Started is not left dangling (issue #4314).
+          const importTeardown = error instanceof SnapshotWipedError ? 'aborted-wipe' : teardownReason();
+          if (importTeardown) {
+            reportBootstrapAbort(scope.scopeKey, 'import', importTeardown, error);
             break;
+          }
           if (error instanceof SnapshotSchemaStaleError) {
             // Permanent miss for this run, no burn: the artifact predates this
             // client's schema and tonight's export rebuilds it at the new one, so

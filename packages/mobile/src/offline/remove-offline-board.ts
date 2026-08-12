@@ -121,7 +121,15 @@ export async function compactOfflineDatabase(db: OfflineDatabase): Promise<boole
     // (the data is gone, the number may not have moved), so it's reported the same way.
     const truncated = await vacuumDatabase(db);
     if (!truncated) {
+      // A warning, not an error: the VACUUM landed and the rows are gone — a
+      // reader simply held the WAL open, which on a connection the whole app
+      // shares is routine and self-corrects at the next checkpoint. It used to
+      // arrive as an `error`-level SQLITE_LOCKED exception from inside
+      // vacuumDatabase instead (Sentry BOARDSESH-D7), which read as a broken
+      // database when nothing was broken. Still reported: a PERSISTENT failure
+      // means users cannot actually reclaim space.
       reportHandledError(new Error('wal_checkpoint(TRUNCATE) was busy after VACUUM; -wal not truncated'), {
+        level: 'warning',
         tags: { source: 'offline-sync', kind: 'vacuum' },
       });
     }

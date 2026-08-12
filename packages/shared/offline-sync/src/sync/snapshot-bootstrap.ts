@@ -45,6 +45,7 @@ import {
   type BootstrapRetryState,
 } from './bootstrap-retry';
 import type { SchemaDriftReporter } from './pull-client';
+import type { SnapshotBootstrapFailureReason } from './bootstrap-failure-reason';
 
 /**
  * The two reference tables a WHOLE-LAYOUT snapshot carries; import order is
@@ -195,11 +196,30 @@ export interface SnapshotSource {
 }
 
 /** Where a bootstrap failed, for telemetry. */
-export type SnapshotBootstrapErrorReporter = (report: {
+export type SnapshotBootstrapErrorReport = {
   scopeKey: string;
   stage: 'manifest' | 'download' | 'import' | 'grades-download' | 'grades-import';
   attempt: number;
   cause: unknown;
+  /**
+   * The coarse "why" (issue #4314). Always set — the engine fills it in from the
+   * cause when a call site does not name one — so the funnel's Failed leg can be
+   * grouped by reason instead of by unbounded error text.
+   */
+  reason: SnapshotBootstrapFailureReason;
+  /**
+   * True when the phase BAILED rather than failed: a sign-out, a board removal
+   * (any `beginLocalPurge`), or the app backgrounding. Nothing is broken and no
+   * retry budget was spent — the same scope resumes on the next cycle.
+   *
+   * These used to emit NOTHING at all, which is why a download that stopped was
+   * structurally invisible: `Offline Board Download Started` fired, the cycle was
+   * torn down, and no terminal event ever arrived (issue #4314). They are
+   * reported now so every Started has a terminal event, but they are NOT defects:
+   * a consumer computing a failure RATE must exclude them, and the mobile
+   * reporter deliberately keeps them out of Sentry.
+   */
+  aborted: boolean;
   /**
    * True when the failure is a transport/reachability one — the device was
    * offline or the connection dropped, which is the normal state of a phone on
@@ -215,7 +235,9 @@ export type SnapshotBootstrapErrorReporter = (report: {
    * 272 MB retry loop is worse than the paged crawl).
    */
   expected: boolean;
-}) => void;
+};
+
+export type SnapshotBootstrapErrorReporter = (report: SnapshotBootstrapErrorReport) => void;
 
 export type SnapshotBootstrapResult = {
   climbsWatermark: SyncCheckpoint;

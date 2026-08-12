@@ -39,7 +39,12 @@ import { getCheckpoint, setCheckpoint, markScopeDownloadComplete, DELETIONS_CHEC
 import { removeBoardScopeData } from '../scope-teardown';
 import { runMigrations, LATEST_SCHEMA_VERSION, MIGRATIONS } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
-import { setSigningOut, setBackgrounded, __resetDrainerStateForTests } from '../../mutation-queue/drainer';
+import {
+  setSigningOut,
+  setBackgrounded,
+  beginLocalPurge,
+  __resetDrainerStateForTests,
+} from '../../mutation-queue/drainer';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
 import { SCHEMA_STATEMENTS } from '../../db/schema';
 import type { OfflineBoardScope } from '../../offline-board-key';
@@ -1392,6 +1397,10 @@ describe('pullSync bootstrap: transport failures never spend the structural budg
       attempt: 0,
       cause,
       expected: true,
+      // A real failure, not a teardown — the engine fills both fields in for every
+      // report site (issue #4314).
+      reason: 'network',
+      aborted: false,
     });
     // Nothing was persisted, so there is no settled decision to re-read.
     expect(onBootstrapMetadataChanged).not.toHaveBeenCalled();

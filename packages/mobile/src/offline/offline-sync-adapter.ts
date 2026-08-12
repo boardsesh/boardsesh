@@ -148,30 +148,52 @@ const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({
   attempt,
   cause,
   expected,
+  reason,
+  aborted,
 }) => {
   // The funnel's Failed leg (issue #4316). Sentry alone could never answer "what
   // fraction of downloads fail, and at which stage" — it groups by exception
   // shape, not by scope, and expected transport failures are deliberately
   // downgraded there. Same call site, so the two can never disagree about
   // whether a failure happened.
+  //
+  // `aborted` rides along so a failure-RATE query can exclude the teardowns (a
+  // pocketed phone, a board removed elsewhere in the app) that are now reported
+  // here for funnel completeness rather than because anything broke.
   track(SHARED_EVENTS.OfflineBoardDownloadFailed, {
     scopeKey,
     stage,
     attempt,
     expected,
+    reason,
+    aborted,
     errorMessage: cause instanceof Error ? cause.message : String(cause),
     offlineEngineEnabled: isOfflineEngineEnabled(),
   });
+  // A teardown is not a defect and there are as many of them as there are lock
+  // screens, so it stops at the funnel. Sending them would bury the artifact and
+  // database failures this issue exists to surface.
+  if (aborted) return;
   reportHandledError(
     new Error(`Snapshot bootstrap failed for ${scopeKey} at stage "${stage}" (attempt ${attempt})`, { cause }),
     {
       ...(expected ? { level: 'warning' as const } : {}),
-      tags: { source: 'offline-sync', kind: 'snapshot-bootstrap', ...(expected ? { expected_offline: true } : {}) },
+      // `stage` and `reason` are TAGS, not just extras: Sentry can only search and
+      // group on tags, and chasing BOARDSESH-D7 through `extra.stage` is exactly
+      // what made "which phase is this?" unanswerable from the issue page.
+      tags: {
+        source: 'offline-sync',
+        kind: 'snapshot-bootstrap',
+        stage,
+        reason,
+        ...(expected ? { expected_offline: true } : {}),
+      },
       extra: {
         scopeKey,
         stage,
         attempt,
         expected,
+        reason,
         cause: cause instanceof Error ? cause.message : cause,
         causeName: cause instanceof Error ? cause.name : null,
       },

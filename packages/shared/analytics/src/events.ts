@@ -357,11 +357,26 @@ export const SHARED_EVENTS = {
   // funnel ratio are unaffected. Mobile-only today (the engine is shared, so a
   // future web offline consumer would fire this too).
   OfflineBoardDownloadCompleted: 'Offline Board Download Completed',
-  // A bootstrap stage failed. Props: { scopeKey, stage: 'manifest' | 'download'
-  // | 'import', attempt, expected, errorMessage, offlineEngineEnabled }.
+  // A bootstrap stage failed, or was cut short. Props: { scopeKey, stage:
+  // 'manifest' | 'download' | 'import' | 'grades-download' | 'grades-import',
+  // attempt, expected, reason, aborted, errorMessage, offlineEngineEnabled }.
   // `expected: true` is a transport/reachability failure — a phone in a tunnel,
   // not a defect — and is the normal case, not an alarm. These previously went
   // only to Sentry, where they could not be joined to the funnel.
+  //
+  // READ `aborted` BEFORE COMPUTING A FAILURE RATE (issue #4314). `aborted: true`
+  // means the cycle was TORN DOWN — the app backgrounded, or a sign-out/board
+  // removal bumped the wipe epoch — not that anything broke; the same scope
+  // resumes next cycle and can still emit Completed. Those teardowns are reported
+  // so every Started has a terminal event (they used to emit nothing at all,
+  // which made an interrupted 100 MB download structurally invisible), and they
+  // are deliberately kept out of Sentry. A failure rate is
+  // `Failed where aborted = false` over Started.
+  //
+  // `reason` is a closed, low-cardinality bucket — 'aborted-wipe' |
+  // 'aborted-background' | 'database-locked' | 'schema-stale' |
+  // 'watermark-regression' | 'permanent-miss' | 'artifact-invalid' | 'network' |
+  // 'unknown' — for grouping. The verbatim text stays on `errorMessage`.
   OfflineBoardDownloadFailed: 'Offline Board Download Failed',
   // The climber turned a board OFF while its first download was still in flight
   // — the abandonment the funnel exists to size, caught at the moment it

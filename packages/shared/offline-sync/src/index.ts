@@ -117,9 +117,12 @@ export type {
   SnapshotDownloadOptions,
   SnapshotDownloadProgress,
   SnapshotBootstrapResult,
+  SnapshotBootstrapErrorReport,
   SnapshotBootstrapErrorReporter,
   BootstrapScopeMetadata,
 } from './sync/snapshot-bootstrap';
+export { classifySnapshotBootstrapFailure } from './sync/bootstrap-failure-reason';
+export type { SnapshotBootstrapFailureReason } from './sync/bootstrap-failure-reason';
 
 // --- Bootstrap retry budgets + cooldowns (issue #4313) ---------------------------
 // The failure taxonomy that decides whether a snapshot failure is worth another
