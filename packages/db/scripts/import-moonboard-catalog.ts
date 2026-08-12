@@ -19,7 +19,7 @@ import {
   type MoonBoardCatalogFile,
   type MappedCatalogClimb,
 } from './moonboard-catalog-helpers.js';
-import { getScriptDatabaseUrl } from './db-connection.js';
+import { describeDatabaseHost, getScriptDatabaseUrl } from './db-connection.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -45,9 +45,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 //
 // The ~390 MB of catalog files are NOT committed. Point the script at a local
 // copy of the app-catalog directory:
-//   DB_URL=<target> vp run db:import-moonboard-catalog "/path/to/app-catalog"
-// (DB_URL must be set inline — it beats the dev-db .env override and is how you
-// target prod vs local.)
+//   DB_URL=<target> vp run '@boardsesh/db#db:import-moonboard-catalog' "/path/to/app-catalog"
+// (The package-scoped task name is required — plain `vp run
+// db:import-moonboard-catalog` resolves no task. DB_URL must be set inline: it
+// beats the dev-db .env override and is how you target prod vs local.)
 // =============================================================================
 
 const DEFAULT_DIR = path.join(__dirname, '../data/moonboard/app-catalog');
@@ -133,7 +134,7 @@ async function importMoonBoardCatalog() {
 
   if (!fs.existsSync(catalogDir) || !fs.statSync(catalogDir).isDirectory()) {
     console.error(`❌ Catalog directory not found: ${catalogDir}`);
-    console.error('   Usage: vp run db:import-moonboard-catalog [/path/to/app-catalog]');
+    console.error("   Usage: vp run '@boardsesh/db#db:import-moonboard-catalog' [/path/to/app-catalog]");
     process.exit(1);
   }
 
@@ -147,8 +148,7 @@ async function importMoonBoardCatalog() {
   }
 
   const databaseUrl = getScriptDatabaseUrl();
-  const dbHost = databaseUrl.split('@')[1]?.split('/')[0] || 'unknown';
-  console.info(`🔄 Importing MoonBoard catalog to: ${dbHost}`);
+  console.info(`🔄 Importing MoonBoard catalog to: ${describeDatabaseHost(databaseUrl)}`);
   console.info(`📂 Reading catalog from: ${catalogDir} (${files.length} files)`);
 
   const client = postgres(databaseUrl, { max: 1 });
