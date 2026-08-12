@@ -185,9 +185,11 @@
         "retry": "Réessayer la synchronisation"
       },
       "signOut": {
-        "pendingTitle": "Se déconnecter ?",
-        "pendingMessage_one": "Tu as 1 modification pas encore synchronisée. La déconnexion la supprimera.",
-        "pendingMessage_other": "Tu as {{count}} modifications pas encore synchronisées. La déconnexion les supprimera.",
+        "title": "Se déconnecter ?",
+        "message": "Tu devras te reconnecter pour retrouver ton carnet et tes boards.",
+        "messageOffline": "La déconnexion supprime de ce téléphone les boards que tu as téléchargées et ton carnet hors ligne. Tu les retéléchargeras à ta prochaine connexion.",
+        "pendingMessage_one": "1 modification n'est pas encore synchronisée. On essaie de l'envoyer d'abord, et ce qui reste est supprimé.",
+        "pendingMessage_other": "{{count}} modifications ne sont pas encore synchronisées. On essaie de les envoyer d'abord, et ce qui reste est supprimé.",
         "confirm": "Se déconnecter",
         "cancel": "Annuler",
         "failureTitle": "Déconnexion non confirmée",

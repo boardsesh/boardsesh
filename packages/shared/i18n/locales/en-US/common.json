@@ -185,9 +185,11 @@
         "retry": "Retry sync"
       },
       "signOut": {
-        "pendingTitle": "Sign out?",
-        "pendingMessage_one": "You have 1 change that hasn't synced yet. Signing out discards it.",
-        "pendingMessage_other": "You have {{count}} changes that haven't synced yet. Signing out discards them.",
+        "title": "Sign out?",
+        "message": "You'll need to sign in again to get back to your logbook and boards.",
+        "messageOffline": "Signing out removes the boards you downloaded and your offline logbook from this phone. You'll download them again next time you sign in.",
+        "pendingMessage_one": "1 change hasn't synced yet. We'll try to send it first, and anything left over is dropped.",
+        "pendingMessage_other": "{{count}} changes haven't synced yet. We'll try to send them first, and anything left over is dropped.",
         "confirm": "Sign out",
         "cancel": "Cancel",
         "failureTitle": "Sign-out wasn't confirmed",

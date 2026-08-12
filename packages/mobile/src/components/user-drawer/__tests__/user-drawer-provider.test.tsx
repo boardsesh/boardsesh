@@ -6,6 +6,7 @@ import { createElement, type ReactNode } from 'react';
 const browser = vi.hoisted(() => ({ openBrowserAsync: vi.fn().mockResolvedValue(undefined) }));
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn() }));
 const signOutMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const confirmSignOutMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 // Mutable so a test can set the focused tab before openUserDrawer captures the
 // board returnTo (the capture happens at open time, while the tab is still focused).
 const segmentsMock = vi.hoisted(() => ({ current: [] as string[] }));
@@ -94,6 +95,12 @@ vi.mock('../../../lib/graphql/hooks', () => ({
 vi.mock('../../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true, signOut: signOutMock }),
 }));
+// Raising the dialog and running the wipe is the hook's job, covered by its own
+// test. What matters here is that Log out routes through it at all — the drawer used
+// to sign out directly, with no confirmation — and only once the drawer has closed.
+vi.mock('../../../hooks/use-confirm-sign-out', () => ({
+  useConfirmSignOut: () => confirmSignOutMock,
+}));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     brandColors: { error: '#c00', primary: '#6D28D9' },
@@ -175,6 +182,8 @@ beforeEach(() => {
   routerMock.back.mockClear();
   signOutMock.mockClear();
   signOutMock.mockResolvedValue(undefined);
+  confirmSignOutMock.mockClear();
+  confirmSignOutMock.mockResolvedValue(undefined);
   signOutFailureAlertMock.mockClear();
   feedbackPresent.mockClear();
   reanimated.closeCallbacks.length = 0;
@@ -335,32 +344,30 @@ describe('user-drawer route defers each action until the route unmounts', () => 
     expect(feedbackPresent).toHaveBeenCalled();
   });
 
-  it('Log out closes the drawer, then signs out', () => {
+  // The dialog is a native Alert on iOS, so raising it before the drawer has slid
+  // away would put it over a half-dismissed drawer.
+  it('Log out closes the drawer, then asks to confirm', () => {
     const { rerender } = render(<Harness showScreen />);
 
     fireEvent.click(screen.getByText('Log out'));
 
-    expect(signOutMock).not.toHaveBeenCalled();
+    expect(confirmSignOutMock).not.toHaveBeenCalled();
     flushDrawerClose();
     rerender(<Harness showScreen={false} />);
-    expect(signOutMock).toHaveBeenCalledWith('manual');
+    expect(confirmSignOutMock).toHaveBeenCalledTimes(1);
   });
 
-  it('surfaces a durable manual sign-out failure after local cleanup', async () => {
-    const signOutError = new Error('cookie revocation failed');
-    signOutMock.mockRejectedValueOnce(signOutError);
+  // The regression that motivated issue #3621: this row used to call signOut
+  // directly, so one tap wiped the offline logbook and the downloaded boards with no
+  // warning. The confirm now sits between the tap and any sign-out.
+  it('never signs out without going through the confirm', () => {
     const { rerender } = render(<Harness showScreen />);
 
     fireEvent.click(screen.getByText('Log out'));
     flushDrawerClose();
     rerender(<Harness showScreen={false} />);
 
-    await waitFor(() =>
-      expect(signOutFailureAlertMock).toHaveBeenCalledWith(
-        'Sign-out was not confirmed',
-        'Reconnect and sign out again',
-      ),
-    );
+    expect(signOutMock).not.toHaveBeenCalled();
   });
 
   it('does not pop the route if the slide-out settles after the screen has unmounted (mountedRef guard)', () => {

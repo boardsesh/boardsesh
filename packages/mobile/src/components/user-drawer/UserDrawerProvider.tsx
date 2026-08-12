@@ -1,10 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
 import { router, useSegments } from 'expo-router';
-import { useTranslation } from 'react-i18next';
 import { openDiscordInvite } from '../../lib/discord';
-import { reportError } from '../../lib/error-reporting';
-import { showSignOutFailure } from '../../lib/sign-out-failure-alert';
-import { useAuth } from '../../providers/auth-provider';
+import { useConfirmSignOut } from '../../hooks/use-confirm-sign-out';
 import type { ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
 import { FeedbackSheet, type FeedbackSheetMode } from './FeedbackSheet';
 
@@ -47,8 +44,7 @@ function currentBoardReturnTo(segments: readonly string[]): BoardReturnTo {
 }
 
 export function UserDrawerProvider({ children }: { children: ReactNode }) {
-  const { signOut } = useAuth();
-  const { t } = useTranslation('common');
+  const confirmSignOut = useConfirmSignOut();
   const segments = useSegments();
   const feedbackSheetRef = useRef<ManagedSheetHandle>(null);
   const [feedbackMode, setFeedbackMode] = useState<FeedbackSheetMode>('rating');
@@ -110,12 +106,14 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
     void openDiscordInvite('user-drawer');
   }, []);
 
+  // The drawer row calls this via the route's animated `close(after)`, so the confirm
+  // is raised only once the drawer has slid away and its route popped — on iOS the
+  // dialog is a native Alert, which would otherwise sit over a half-dismissed drawer.
+  // This row used to call `signOut` straight through: one tap discarded the downloaded
+  // boards and any unsynced writes with no warning at all (issue #3621).
   const signOutAction = useCallback(() => {
-    void signOut('manual').catch((error) => {
-      reportError(error);
-      showSignOutFailure(t('mobile.more.signOut.failureTitle'), t('mobile.more.signOut.failure'));
-    });
-  }, [signOut, t]);
+    void confirmSignOut();
+  }, [confirmSignOut]);
 
   const presentFeedback = useCallback(() => {
     feedbackSheetRef.current?.present();

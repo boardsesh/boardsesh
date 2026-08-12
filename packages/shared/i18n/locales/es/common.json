@@ -402,9 +402,11 @@
         "retry": "Reintentar sincronización"
       },
       "signOut": {
-        "pendingTitle": "¿Cerrar sesión?",
-        "pendingMessage_one": "Tienes 1 cambio sin sincronizar. Al cerrar sesión se descartará.",
-        "pendingMessage_other": "Tienes {{count}} cambios sin sincronizar. Al cerrar sesión se descartarán.",
+        "title": "¿Cerrar sesión?",
+        "message": "Tendrás que iniciar sesión otra vez para volver a tu logbook y tus plafones.",
+        "messageOffline": "Al cerrar sesión se eliminan de este teléfono los plafones que descargaste y tu logbook sin conexión. Los volverás a descargar la próxima vez que inicies sesión.",
+        "pendingMessage_one": "1 cambio sigue sin sincronizar. Intentaremos enviarlo primero; lo que quede se descarta.",
+        "pendingMessage_other": "{{count}} cambios siguen sin sincronizar. Intentaremos enviarlos primero; lo que quede se descarta.",
         "confirm": "Cerrar sesión",
         "cancel": "Cancelar",
         "failureTitle": "No se confirmó el cierre de sesión",

@@ -11,7 +11,7 @@ import { useTheme } from '../../../src/providers/theme-provider';
 import { useLocalePreference } from '../../../src/providers/i18n-provider';
 import { resolveLanguage, type LocaleOverride } from '../../../src/lib/i18n/locale-preference';
 import { openExternalUrl } from '../../../src/lib/open-url';
-import { useAuth } from '../../../src/providers/auth-provider';
+import { useConfirmSignOut } from '../../../src/hooks/use-confirm-sign-out';
 import { useProfile, useMyBoards } from '../../../src/lib/graphql/hooks';
 import { useBoardDownloads } from '../../../src/offline/use-board-downloads';
 import { isOfflineEngineEnabled } from '../../../src/lib/offline-engine';
@@ -25,14 +25,12 @@ import {
   takeDownloadAllTap,
   forgetDownloadAllTap,
 } from '../../../src/settings';
-import { useConfirm } from '../../../src/providers/dialog-provider';
 import { useIsOffline } from '../../../src/hooks/use-is-offline';
 import { RECLAIMABLE_VISIBLE_BYTES } from '../../../src/db/storage-usage';
 import {
   getDeadLetterCount,
   getDeadLetters,
   retryDeadLetter,
-  getPendingCount,
   getDownloadedScopeKeys,
   measureReclaimableBytes,
   type GraphQLFetch,
@@ -61,7 +59,6 @@ import {
 } from '../../../src/providers/feature-flags-provider';
 import { replayOnboarding } from '../../../src/lib/onboarding/onboarding-storage';
 import { reportError } from '../../../src/lib/error-reporting';
-import { showSignOutFailure } from '../../../src/lib/sign-out-failure-alert';
 import { AUTO_DISCONNECT_TIMEOUT_OPTIONS } from '../../../src/lib/ble/auto-disconnect-controller';
 import { useAutoDisconnectTimeoutLabels } from '../../../src/components/ble/use-auto-disconnect-timeout-labels';
 
@@ -82,7 +79,7 @@ export default function MoreScreen() {
   const { t: tPlaylists } = useTranslation('playlists');
   const { t: tSettings } = useTranslation('settings');
   const { t: tBoards } = useTranslation('boards');
-  const { signOut } = useAuth();
+  const confirmSignOut = useConfirmSignOut();
   const { data: profile } = useProfile();
   const { gradeFormat, setGradeFormat } = useGradeFormat();
   const { localePreference, setLocalePreference } = useLocalePreference();
@@ -99,7 +96,6 @@ export default function MoreScreen() {
   // Off until the Connect IQ watch app ships — nothing to pair to before then.
   const garminWatchEnabled = useFeatureFlag('garmin-watch') === true;
   const offlineEnabled = useOfflineDownloadsEnabled();
-  const confirm = useConfirm();
 
   // "Keep boards offline by default" toggle. Turning it on downloads every board
   // already in My Boards now (user chose this over a future-only default), and the
@@ -224,35 +220,6 @@ export default function MoreScreen() {
     }
   };
 
-  // Sign-out wipes the local queue, so warn before dropping any not-yet-synced
-  // writes. No pending writes → sign out straight away (pre-offline behaviour
-  // for everyone whose queue is empty, i.e. every normal flag-off user).
-  // Deliberately NOT gated on the offline flag: after a kill-switch rollback a
-  // flag-off user can still hold queued writes, and those deserve the same
-  // warning — the count is one local SQLite read.
-  const handleSignOut = async () => {
-    let pending = 0;
-    try {
-      pending = await getPendingCount(db);
-    } catch {
-      pending = 0;
-    }
-    if (pending > 0) {
-      const confirmed = await confirm({
-        title: t('mobile.more.signOut.pendingTitle'),
-        message: t('mobile.more.signOut.pendingMessage', { count: pending }),
-        confirmLabel: t('mobile.more.signOut.confirm'),
-        cancelLabel: t('mobile.more.signOut.cancel'),
-        destructive: true,
-      });
-      if (!confirmed) return;
-    }
-    void signOut().catch((error) => {
-      reportError(error);
-      showSignOutFailure(t('mobile.more.signOut.failureTitle'), t('mobile.more.signOut.failure'));
-    });
-  };
-
   // Live Metro dev-server switching needs expo-dev-client's native launcher, which
   // is only linked into dev-client / Debug builds — never the App Store / TestFlight
   // binary (where it would throw "Dev launcher unavailable"). Show the row only where
@@ -333,7 +300,9 @@ export default function MoreScreen() {
       role: 'destructive',
       emphasis: 'primary',
       onPress: () => {
-        void handleSignOut();
+        // The warning + the wipe both live in the hook, shared with the user
+        // drawer's Log out row so the two can't drift apart (issue #3621).
+        void confirmSignOut();
       },
     },
     {

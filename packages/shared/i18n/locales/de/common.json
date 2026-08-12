@@ -185,9 +185,11 @@
         "retry": "Sync wiederholen"
       },
       "signOut": {
-        "pendingTitle": "Abmelden?",
-        "pendingMessage_one": "1 Änderung ist noch nicht synchronisiert. Beim Abmelden geht sie verloren.",
-        "pendingMessage_other": "{{count}} Änderungen sind noch nicht synchronisiert. Beim Abmelden gehen sie verloren.",
+        "title": "Abmelden?",
+        "message": "Du musst dich neu anmelden, um wieder an dein Logbuch und deine Boards zu kommen.",
+        "messageOffline": "Beim Abmelden werden die heruntergeladenen Boards und dein Offline-Logbuch von diesem Handy gelöscht. Beim nächsten Anmelden lädst du sie neu herunter.",
+        "pendingMessage_one": "1 Änderung ist noch nicht synchronisiert. Wir versuchen sie zuerst zu senden, der Rest geht verloren.",
+        "pendingMessage_other": "{{count}} Änderungen sind noch nicht synchronisiert. Wir versuchen sie zuerst zu senden, der Rest geht verloren.",
         "confirm": "Abmelden",
         "cancel": "Abbrechen",
         "failureTitle": "Abmeldung nicht bestätigt",
