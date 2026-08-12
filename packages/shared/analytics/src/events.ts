@@ -331,6 +331,18 @@ export const SHARED_EVENTS = {
   // as a shared cache) and are cleared by scope teardown, so removing and
   // re-adding a board starts a fresh funnel.
   //
+  // THE INVARIANT: every Started has exactly one terminal event — Completed when
+  // the scope finishes, Failed for everything else, teardowns included. It is
+  // enforced structurally rather than site by site: the snapshot bootstrap phase
+  // arms a guard at the Started emission and closes it from a `finally`
+  // (`offline-sync/src/sync/download-funnel-guard.ts`), so an exit nobody
+  // registered — a new `break`, a SQLite lock thrown outside the import's own
+  // catch — still reports, as `reason: 'unknown-exit'`. A Started followed by
+  // silence is therefore a bug in the guard, not a shape to design queries
+  // around. The paged crawl is the one carve-out: it spans cycles by design, so
+  // its Started stays open until Completed and abandonment there is measured as
+  // "no Completed after N days".
+  //
   // Fired the first time any cycle starts pulling a scope. Props: { scopeKey,
   // pathIntent: 'snapshot' | 'paged', artifactBytes: number | null, trigger,
   // offlineEngineEnabled }.
@@ -376,7 +388,15 @@ export const SHARED_EVENTS = {
   // `reason` is a closed, low-cardinality bucket — 'aborted-wipe' |
   // 'aborted-background' | 'database-locked' | 'schema-stale' |
   // 'watermark-regression' | 'permanent-miss' | 'artifact-invalid' | 'network' |
-  // 'unknown' — for grouping. The verbatim text stays on `errorMessage`.
+  // 'unknown' | 'unknown-exit' — for grouping. The verbatim text stays on
+  // `errorMessage`.
+  //
+  // 'unknown-exit' should sit at ZERO: it means the bootstrap phase ended an
+  // attempt in a way it cannot explain — no teardown, no error anyone caught —
+  // and the guard's `finally` closed the funnel on its behalf. Alone among the
+  // abort-shaped outcomes it goes to Sentry, because it says the code has a hole
+  // rather than the phone went in a pocket. `attempt: 0` on any guard-emitted
+  // report: it never spends the scope's retry budget.
   OfflineBoardDownloadFailed: 'Offline Board Download Failed',
   // The climber turned a board OFF while its first download was still in flight
   // — the abandonment the funnel exists to size, caught at the moment it

@@ -573,7 +573,7 @@ Completed` — so abandonment was structurally unmeasurable and failures went on
 | ---------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------- |
 | `Offline Board Download Started`   | first time any cycle starts pulling a scope, once ever | `scopeKey`, `pathIntent`, `artifactBytes`, `trigger`, `offlineEngineEnabled`          |
 | `Offline Board Download Completed` | both board tables reached the tail, once ever          | `scopeKey`, `method`, `durationMs`, `bytes?`, `rowCount?`, `downloadMs?`, `importMs?` |
-| `Offline Board Download Failed`    | a bootstrap stage threw                                | `scopeKey`, `stage`, `attempt`, `expected`, `errorMessage`                            |
+| `Offline Board Download Failed`    | a bootstrap attempt ended without succeeding           | `scopeKey`, `stage`, `attempt`, `expected`, `reason`, `aborted`, `errorMessage`       |
 | `Offline Board Download Cancelled` | the board was switched off mid-download                | `scopeKey`, `source`, `stage?`, `fraction?`, `bytesDone?`                             |
 | `Offline Board Toggled`            | the offline switch was flipped, either way             | `scopeKey`, `enabled`, `source`                                                       |
 | `Offline Download All Tapped`      | the "download all my boards" switch was TAPPED         | `boardCount`                                                                          |
@@ -599,6 +599,42 @@ abandonment spike in exactly the window the baseline is read from.
 
 > **If a future change wipes board data on logout** (issue #3621), it must clear both markers in the
 > same transaction as the rows. Otherwise the next sign-in emits Completed with no Started.
+
+**The terminal-event invariant: every Started has exactly one terminal event.** A snapshot bootstrap
+attempt ends in `Offline Board Download Completed` (its scope finished) or `Offline Board Download
+Failed` (everything else, teardowns included) — never in silence. Field reports kept arriving that
+looked impossible: a Started carrying a 103 MB `artifactBytes`, then nothing at all — no Completed,
+no Failed, no Sentry event — and the cycle moving on to the next board two minutes later.
+
+`runBootstrapPhase` has a dozen ways out (`break`, `continue`, a `throw` from any of the ~15 awaited
+SQLite writes that sit **outside** the import's own `try`, a consumer callback like `onProgress`
+raising back into the loop), and reporting them one site at a time only ever covers the sites
+somebody remembered. So the invariant is structural: the phase arms
+`createDownloadFunnelGuard` (`packages/shared/offline-sync/src/sync/download-funnel-guard.ts`) at the
+Started emission and closes it from a `finally`. An attempt that reaches that `finally` with no
+terminal event recorded emits one:
+
+| Exit                                         | `reason`                          | `aborted` | Sentry |
+| -------------------------------------------- | --------------------------------- | --------- | ------ |
+| sign-out / wipe epoch bump / board removal   | `aborted-wipe`                    | `true`    | no     |
+| app backgrounded                             | `aborted-background`              | `true`    | no     |
+| an exception unwinding the phase             | classified (`database-locked`, …) | `false`   | yes    |
+| anything else — a bail-out nobody registered | `unknown-exit`                    | `false`   | yes    |
+
+Two rules keep it honest. **No double-emit**: every explicit report settles the guard through the
+shared wrapper in `runBootstrapPhase`, and a successful import settles it too — its terminal event is
+the Completed the board-data loop fires once the delta pull reaches every table's tail, which on
+Kilter is usually cycles later. **No burn**: every guard-emitted report carries `attempt: 0`; the
+guard is a bystander and never spends the scope's retry budget.
+
+`unknown-exit` should sit at **zero**. Anything else means an exit path exists that the phase cannot
+explain, and it is the one abort-shaped outcome that still goes to Sentry (`source: offline-sync`,
+`kind: snapshot-bootstrap`, `reason: unknown-exit`) for exactly that reason.
+
+**The invariant is scoped to the snapshot bootstrap.** A paged crawl is multi-cycle by design — an
+interrupted one has not failed, it is simply not finished — so the board-data loop does not report
+per-cycle aborts, and a paged Started legitimately stays open until its Completed lands. Abandonment
+on that path is measured as a Started with no Completed after N days, not as a Failed.
 
 **Reading the props.** `pathIntent` on Started is an INTENT from cheap local facts, not an outcome —
 a snapshot-eligible scope can still fall back to the paged crawl after the manifest resolves. Split

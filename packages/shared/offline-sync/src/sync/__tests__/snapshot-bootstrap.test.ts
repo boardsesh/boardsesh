@@ -29,6 +29,7 @@ import {
 } from '../snapshot-bootstrap';
 import {
   getBootstrapAttempts,
+  readBootstrapRetryState,
   restoreBootstrapRetryBudget,
   EMPTY_BOOTSTRAP_RETRY_STATE,
   MAX_BOOTSTRAP_ATTEMPTS,
@@ -4079,6 +4080,174 @@ describe('pullSync bootstrap teardown reporting', () => {
       onSnapshotBootstrapError,
     });
 
+    expect(onSnapshotBootstrapError).not.toHaveBeenCalled();
+    expect(await countRows('board_climbs')).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The funnel's terminal-event invariant (issue #4316)
+//
+// EVERY `Offline Board Download Started` gets exactly one terminal event. #4314
+// wired the three teardown bail-outs by hand and a device still went silent —
+// six Starteds carrying a 103 MB artifactBytes, no Completed, no Failed, no
+// Sentry. Per-site reporting only ever covers the sites somebody remembered, so
+// the phase now arms a guard at the Started emission and closes it from a
+// `finally`. These pin the two exit classes that were still silent afterwards,
+// plus the no-double-emit rule. The guard's own exit matrix — including the
+// unregistered `break` that can no longer be written by construction — is
+// covered in download-funnel-guard.test.ts.
+// ---------------------------------------------------------------------------
+
+describe('pullSync bootstrap funnel invariant', () => {
+  function buildScopeArtifact(filePath: string): void {
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+  }
+
+  it('reports an exception thrown outside the import try instead of unwinding in silence', async () => {
+    // Everything between the Started emission and `bootstrapScopeFromSnapshot`
+    // sits outside any catch: the retry-state writes, the paged-fallback markers,
+    // and the two consumer callbacks. A SQLITE_BUSY on any of them used to end
+    // the phase with no terminal event at all. The progress sink stands in for
+    // that whole region here because it is the one seam a test can throw from.
+    const filePath = join(workDir, 'locked-after-download.db');
+    buildScopeArtifact(filePath);
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const onSnapshotBootstrapError = vi.fn();
+    const lockError = new Error("Calling the 'execAsync' function has failed", {
+      cause: new Error('Error code 5: database is locked'),
+    });
+
+    await expect(
+      pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+        onSnapshotBootstrapError,
+        onProgress: (progress) => {
+          if (progress.snapshot?.stage === 'import') throw lockError;
+        },
+      }),
+    ).rejects.toBe(lockError);
+
+    expect(onSnapshotBootstrapError).toHaveBeenCalledTimes(1);
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scopeKey: 'kilter:1:5',
+        stage: 'import',
+        // Classified off the real cause, so the Sentry issue lands under
+        // reason:database-locked instead of a blank unknown.
+        reason: 'database-locked',
+        aborted: false,
+        expected: false,
+        // A bystander never spends the scope's retry budget.
+        attempt: 0,
+      }),
+    );
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
+  });
+
+  it('does not burn an attempt when a backgrounded phone returns before the abort is handled', async () => {
+    // The race a review flagged on #4345: the teardown flags are LIVE, so a phone
+    // that woke between our own AbortController firing and the throw being
+    // handled read as "no teardown" — and the download we cancelled ourselves was
+    // settled as a real transport failure, burning an attempt and scheduling a
+    // cooldown. A pocketed phone is not a failure (#4326's taxonomy), so the
+    // reason is now latched at the moment we abort.
+    const filePath = join(workDir, 'backgrounded-then-foregrounded.db');
+    buildScopeArtifact(filePath);
+    const source: SnapshotSource = {
+      fetchManifest: async () => makeManifest([makeEntry()]),
+      downloadArtifact: async (_entry, options) => {
+        // Backgrounding notifies the teardown listeners synchronously, which is
+        // what aborts the transfer.
+        setBackgrounded(true);
+        expect(options?.signal?.aborted).toBe(true);
+        // ...and the climber pulls the phone back out before the rejection is
+        // handled, so every live flag reads clean at the check below.
+        setBackgrounded(false);
+        throw new Error('Aborted');
+      },
+      deleteArtifact: vi.fn(async () => {}),
+    };
+    const onSnapshotBootstrapError = vi.fn();
+    const onBootstrapRetryScheduled = vi.fn();
+
+    try {
+      await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+        onSnapshotBootstrapError,
+        onBootstrapRetryScheduled,
+      });
+    } finally {
+      setBackgrounded(false);
+    }
+
+    expect(onSnapshotBootstrapError).toHaveBeenCalledTimes(1);
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scopeKey: 'kilter:1:5',
+        stage: 'download',
+        reason: 'aborted-background',
+        aborted: true,
+        attempt: 0,
+      }),
+    );
+    // Nothing was spent and no cooldown was scheduled: the same scope simply runs
+    // again on the next foreground.
+    expect(onBootstrapRetryScheduled).not.toHaveBeenCalled();
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
+    const { state } = await readBootstrapRetryState(db, 'kilter:1:5', { now: BASE_NOW, random: () => 0 }, false);
+    expect(state.transportFailures).toBe(0);
+    expect(state.structuralFailures).toBe(0);
+  });
+
+  it('emits exactly one terminal event for a download that genuinely failed', async () => {
+    // The no-double-emit rule at the engine level: the settled failure reports,
+    // and the guard's finally must add nothing on top of it.
+    const source = makeSnapshotSource({
+      manifest: makeManifest([makeEntry()]),
+      downloadError: new Error('Network request failed'),
+    });
+    const onSnapshotBootstrapError = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+    });
+
+    expect(onSnapshotBootstrapError).toHaveBeenCalledTimes(1);
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'download', reason: 'network', aborted: false }),
+    );
+  });
+
+  it('adds nothing to a successful import, whose terminal event is the later Completed', async () => {
+    // The one settlement the guard cannot read off a report: a scope that
+    // imported owes the funnel a Completed from the board-data loop — on Kilter
+    // usually cycles later, once the grades crawl finishes — so a Failed here
+    // would be a second terminal event for the same Started.
+    const filePath = join(workDir, 'clean-funnel.db');
+    buildScopeArtifact(filePath);
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const onSnapshotBootstrapError = vi.fn();
+    const onScopeDownloadStart = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+      onScopeDownloadStart,
+    });
+
+    expect(onScopeDownloadStart).toHaveBeenCalledTimes(1);
     expect(onSnapshotBootstrapError).not.toHaveBeenCalled();
     expect(await countRows('board_climbs')).toBe(1);
   });
