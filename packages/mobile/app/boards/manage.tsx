@@ -120,12 +120,13 @@ export default function ManageBoards() {
   // ONCE here (not per row) and derive a primitive state per row, so a download's
   // frequent progress frames only re-render the one row that's changing.
   //
-  // This surface is behind the offline-board-downloads flag: off (or absent)
-  // hides the per-row toggle + status caption. The flag gates the entire offline
-  // engine, not just this screen — with it off the sync scheduler never starts,
-  // reads/writes stay network-only, and only previously-queued writes still
-  // flush (see OfflineSyncBridge). This screen stays the only writer of
-  // syncEnabledBoards.
+  // This surface is behind the offline-board-downloads flag, which since #4312 is
+  // a kill switch rather than a rollout gate: only an EXPLICIT false hides the
+  // per-row toggle + status caption; an unresolved flag reads as on. The flag
+  // gates the entire offline engine, not just this screen — killed, the sync
+  // scheduler never starts, reads/writes stay network-only, and only
+  // previously-queued writes still flush (see OfflineSyncBridge). This screen
+  // stays the only writer of syncEnabledBoards.
   const offlineDownloadsEnabled = useOfflineDownloadsEnabled();
   const { enableBoardsOffline } = useBoardDownloads();
   // Warmed here on mount so the download-size estimate is already in cache when a

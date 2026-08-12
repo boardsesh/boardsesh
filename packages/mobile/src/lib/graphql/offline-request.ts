@@ -166,8 +166,12 @@ registerOfflineOperation<BoardseshGradesForAnglesVariables, BoardseshGradesForAn
  * from local SQLite — or the per-op empty fallback when nothing is downloaded —
  * regardless of the flag. The flag only decides whether we ALSO short-circuit to
  * local while ONLINE (a latency optimization); with it off, an online request is
- * a straight network passthrough that never even probes local, so the majority
- * who never enabled the engine keep exactly the pre-offline behavior and its cost.
+ * a straight network passthrough that never even probes local, so a killed
+ * device keeps exactly the pre-offline behavior and its cost. Since #4312 that
+ * is the minority — an unresolved flag reads as ON, so the online local-first
+ * probe is now the default. It stays cheap for a user with nothing downloaded:
+ * `canServeLocal` short-circuits on the in-memory enabled-boards setting before
+ * it ever touches SQLite (see db/queries/board-download-status.ts).
  *
  * Belt-and-braces for a lying connection: `onlineManager` can read "online" when
  * the network can't actually serve the request — its NetInfo seed is async and
