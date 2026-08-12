@@ -37,7 +37,11 @@ import {
   SCOPE_STARTED_PREFIX,
   SCOPE_DOWNLOAD_STARTED_PREFIX,
 } from './checkpoints';
-import { BOOTSTRAP_DONE_PREFIX, REUSED_IMPORT_FAILED_PREFIX } from './snapshot-bootstrap';
+import {
+  BOOTSTRAP_DONE_PREFIX,
+  REUSED_IMPORT_FAILED_PREFIX,
+  GRADES_BOOTSTRAP_ATTEMPTS_PREFIX,
+} from './snapshot-bootstrap';
 import {
   BOOTSTRAP_ATTEMPTS_HEALED_PREFIX,
   BOOTSTRAP_ATTEMPTS_PREFIX,
@@ -97,6 +101,10 @@ export function scopeSyncMetaKeys(scopeKey: string): string[] {
     // Same clean-slate rule as the budgets above: a re-added board must not
     // inherit a round it spent before removal.
     `${REUSED_IMPORT_FAILED_PREFIX}${scopeKey}`,
+    // The grades import's own attempt budget. Re-adding a removed board must
+    // give it a clean counter, and a stale one over emptied tables would keep
+    // the scope on the grades crawl for no reason.
+    `${GRADES_BOOTSTRAP_ATTEMPTS_PREFIX}${scopeKey}`,
   ];
 }
 

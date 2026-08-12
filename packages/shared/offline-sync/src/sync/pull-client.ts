@@ -16,6 +16,10 @@ import {
 import { markUserDataComplete } from './local-user-owner';
 import {
   bootstrapScopeFromSnapshot,
+  bootstrapScopeGradesFromSnapshot,
+  getGradesBootstrapAttempts,
+  recordGradesBootstrapAttempt,
+  MAX_GRADES_BOOTSTRAP_ATTEMPTS,
   markBootstrapDone,
   isBootstrapDone,
   wasBootstrapHealed,
@@ -46,7 +50,7 @@ import {
   type BootstrapFailureKind,
   type BootstrapRetryState,
 } from './bootstrap-retry';
-import { parseSnapshotManifest, type SnapshotManifest } from './snapshot-manifest';
+import { parseSnapshotManifest, type SnapshotManifest, type SnapshotManifestEntry } from './snapshot-manifest';
 import { findSnapshotEntry, isSnapshotEntryUsable } from './snapshot-estimate';
 import {
   createDownloadFractionAnchor,
@@ -974,6 +978,103 @@ async function runBootstrapPhase(params: {
   // never consumed (backgrounded cycle, wipe, aborted transfer) is handed back
   // with `imported: false` so a retention-capable source can keep it.
   const artifactImported = new Map<string, boolean>();
+  // Grades artifacts are tracked apart from `artifactImported` because they are
+  // never retained: the retention seam above keeps an UNIMPORTED whole-layout
+  // file for the next cycle, and its supersede sweep recognises a build by the
+  // `<board>-<layout>` prefix in the filename — which a grades file, named from
+  // its manifest key, does not have. A retained one would therefore never be
+  // recognised as superseded and would sit in the cache directory forever, so
+  // these are deleted outright in the finally below. Re-fetching a few MB next
+  // cycle is the cheaper failure.
+  const gradesArtifactPaths = new Set<string>();
+  // Absent = not yet attempted for this layout; null = unavailable this cycle.
+  const gradesDownloadByLayout = new Map<string, { filePath: string } | null>();
+
+  /**
+   * Import the layout's Boardsesh grades from its separate artifact, replacing
+   * the paged crawl of `board_climb_grades` — the term the whole-layout
+   * artifact never covered, and the reason a Kilter/Tension download takes ~6x
+   * a MoonBoard layout of the same size (issue #4310).
+   *
+   * Called on two paths: straight after a successful whole-layout import, and
+   * — for a scope that was bootstrapped before this shipped, or crashed between
+   * the two transactions — whenever the grades checkpoint is ABSENT on a scope
+   * whose climb catalog is already COMPLETE (`bootstrap-done` or
+   * `scope-complete`). An absent grades checkpoint is proof no grade page was
+   * ever consumed (`syncTable` checkpoints per page), so importing and stamping
+   * at the artifact's watermark cannot skip a row the crawl already had; the
+   * completeness gate is what stops the stamp landing above grade rows whose
+   * climbs a half-finished crawl has not fetched yet.
+   *
+   * Every failure here is free: it never touches the whole-layout attempt
+   * counter, and the worst case is that the scope crawls grades exactly as it
+   * does today.
+   */
+  const importGradesForScope = async (scope: BoardScope, entry: SnapshotManifestEntry): Promise<void> => {
+    const gradesArtifact = entry.grades;
+    if (!gradesArtifact || !source.downloadGradesArtifact) return;
+    // A grades artifact built at an older client schema would NULL-fill columns
+    // this app added and then stamp the cursor past them — same permanent-miss
+    // rule the whole-layout artifact gets.
+    if (!isSnapshotEntryUsable(gradesArtifact)) return;
+    if ((await getGradesBootstrapAttempts(db, scope.scopeKey)) >= MAX_GRADES_BOOTSTRAP_ATTEMPTS) return;
+
+    const layoutKey = `${scope.boardType}:${scope.layoutId}`;
+    let gradesDownload = gradesDownloadByLayout.get(layoutKey);
+    if (gradesDownload === undefined) {
+      let downloadCause: unknown = null;
+      try {
+        gradesDownload = (await source.downloadGradesArtifact(gradesArtifact)) ?? null;
+      } catch (error) {
+        gradesDownload = null;
+        downloadCause = error;
+      }
+      // A NULL return counts exactly as a throw does. `SnapshotSource` lets a
+      // source signal "unusable this cycle" either way (see downloadArtifact's
+      // contract), and the whole-layout path settles a failure on both — so
+      // leaving the null arm uncounted here would let a null-returning source
+      // re-fetch the artifact on every cycle for the life of the install,
+      // straight past MAX_GRADES_BOOTSTRAP_ATTEMPTS.
+      if (!gradesDownload) {
+        const attempt = await recordGradesBootstrapAttempt(db, scope.scopeKey);
+        onSnapshotBootstrapError?.({
+          scopeKey: scope.scopeKey,
+          stage: 'grades-download',
+          attempt,
+          cause: downloadCause,
+          expected: isNetworkError(downloadCause),
+        });
+      }
+      gradesDownloadByLayout.set(layoutKey, gradesDownload);
+      if (gradesDownload) gradesArtifactPaths.add(gradesDownload.filePath);
+    }
+    if (!gradesDownload) return;
+    if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) return;
+
+    try {
+      await bootstrapScopeGradesFromSnapshot({
+        db,
+        scope,
+        scopeKey: scope.scopeKey,
+        filePath: gradesDownload.filePath,
+        onSchemaDrift,
+      });
+      for (const key of TABLE_CONFIGS.board_climb_grades.invalidateKeys) {
+        queryClient.invalidateQueries({ queryKey: key });
+      }
+    } catch (error) {
+      // A wipe rolls the transaction back; no checkpoint, nothing to count.
+      if (error instanceof SnapshotWipedError || isSigningOut() || getWipeEpoch() !== cycleEpoch) return;
+      const attempt = await recordGradesBootstrapAttempt(db, scope.scopeKey);
+      onSnapshotBootstrapError?.({
+        scopeKey: scope.scopeKey,
+        stage: 'grades-import',
+        attempt,
+        cause: error,
+        expected: false,
+      });
+    }
+  };
 
   const reportSettledFailure = (
     scope: BoardScope,
@@ -1064,6 +1165,42 @@ async function runBootstrapPhase(params: {
           metadataSettled = true;
           if (shouldSkipPagedPull({ retryState, hasBoardCheckpoint, now: evaluatedAt })) {
             skipPagedPull.add(scope.scopeKey);
+          }
+          // RETRO-FIT (issue #4310): a scope with a COMPLETE climb catalog but
+          // NO grades checkpoint has never consumed a single grade page
+          // (`syncTable` checkpoints per page), so it is still facing the full
+          // crawl — every scope bootstrapped before grades artifacts existed is
+          // in exactly this state. Import them from the artifact instead. Gated
+          // on the local checkpoint read, so once a scope has grades this costs
+          // nothing, and the manifest is only fetched for scopes that need it.
+          //
+          // COMPLETENESS IS THE GATE, not the mere presence of a board
+          // checkpoint. The import filters the artifact's grade rows through
+          // `main.board_climbs` and stamps the grades cursor at THAT subset's
+          // watermark, so running it over a half-crawled catalog would stamp
+          // past every grade row belonging to a climb the crawl has not fetched
+          // yet — and the strict `>` delta never revisits them. `bootstrap-done`
+          // (the artifact carried the whole layout, heal included) and
+          // `scope-complete` (the paged crawl reached every table's tail) are
+          // the two proofs of a whole catalog; a scope mid-crawl waits until it
+          // has one, at which point this branch picks it up.
+          //
+          // Deliberately NOT run for a scope with no board data at all: that one
+          // is either fresh (the eligible path below imports its grades right
+          // after the whole-layout artifact) or serving a snapshot cooldown the
+          // retry taxonomy imposed (#4313), and a cooldown means no artifact
+          // bytes for this scope this cycle — grades included.
+          if ((isAlreadyBootstrapped || isScopeComplete) && source.downloadGradesArtifact) {
+            const gradesCheckpoint = await getCheckpoint(db, getCheckpointKey('board_climb_grades', scope.scopeKey));
+            if (!gradesCheckpoint) {
+              const retrofitResolution = await resolveManifestOnce(source, manifestCache);
+              if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) break;
+              const retrofitEntry =
+                retrofitResolution.status === 'ok'
+                  ? findSnapshotEntry(retrofitResolution.manifest, scope.boardType, scope.layoutId)
+                  : null;
+              if (retrofitEntry) await importGradesForScope(scope, retrofitEntry);
+            }
           }
           continue;
         }
@@ -1423,6 +1560,10 @@ async function runBootstrapPhase(params: {
               queryClient.invalidateQueries({ queryKey: key });
             }
           }
+          // Grades ride a second, small artifact and a second short exclusive
+          // transaction, right after the climbs/stats one. See
+          // importGradesForScope — every failure here is free.
+          await importGradesForScope(scope, entry);
           // Not skipped: the board-data phase delta-pulls from the watermark
           // checkpoints and fires markScopeDownloadComplete through the tail logic.
         } catch (error) {
@@ -1533,6 +1674,12 @@ async function runBootstrapPhase(params: {
         ? source.releaseArtifact(filePath, { imported })
         : source.deleteArtifact(filePath);
       await release.catch(() => {});
+    }
+    // Deleted, never released: see gradesArtifactPaths. Deterministic on every
+    // exit path — imported, failed, or torn down — so a grades file can never
+    // outlive the cycle that fetched it.
+    for (const filePath of gradesArtifactPaths) {
+      await source.deleteArtifact(filePath).catch(() => {});
     }
   }
 

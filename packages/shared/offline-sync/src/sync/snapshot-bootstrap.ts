@@ -20,9 +20,10 @@
 
 import type { OfflineDatabase, SqlExecutor } from '../database';
 import type { OfflineBoardScope } from '../offline-board-key';
-import type { SnapshotManifestEntry, SnapshotTableName } from './snapshot-manifest';
+import type { SnapshotGradesArtifact, SnapshotManifestEntry, SnapshotTableName } from './snapshot-manifest';
 import { SNAPSHOT_MANIFEST_FORMAT_VERSION } from './snapshot-manifest';
 import { climbsScopeFilter, isSizeScopedBoard } from './board-scope-sql';
+import { TABLE_CONFIGS } from './table-config';
 import {
   compareCheckpoints,
   getCheckpointKey,
@@ -45,11 +46,39 @@ import {
 } from './bootstrap-retry';
 import type { SchemaDriftReporter } from './pull-client';
 
-/** The two reference tables a snapshot carries; import order is climbs → stats. */
+/**
+ * The two reference tables a WHOLE-LAYOUT snapshot carries; import order is
+ * climbs → stats.
+ *
+ * Stays exactly two. `verifySnapshotMeta` iterates this list and throws
+ * `snapshot_meta missing row for <table>` on a miss, and an import failure is
+ * COUNTED — so widening it would make every newly-updated client reject every
+ * artifact published before the change (live for the 14-day prune grace, plus
+ * CDN-cached manifests), twice, and settle the scope onto the paged crawl.
+ * Boardsesh grades therefore arrive in their OWN file, verified against their
+ * own one-element list. See GRADES_SNAPSHOT_TABLES.
+ */
 const SNAPSHOT_TABLES = ['board_climbs', 'board_climb_stats'] as const;
+
+/** The single table the separate per-layout grades artifact carries. */
+const GRADES_SNAPSHOT_TABLES = ['board_climb_grades'] as const;
 
 /** The ATTACH alias for the artifact; the only ATTACH the DB lifecycle performs. */
 const SNAPSHOT_ALIAS = 'bs_snapshot';
+
+/** The ATTACH alias for the separate grades artifact (its own transaction, its own connection). */
+const GRADES_ALIAS = 'bs_grades';
+
+/**
+ * Two grades-import attempts, counted SEPARATELY from the whole-layout
+ * bootstrap's retry budgets (bootstrap-retry.ts). A grades import that fails
+ * must never cost the scope its snapshot fast path: the worst case here is
+ * exactly today's behaviour — the scope crawls `board_climb_grades` page by
+ * page — so it gets its own plain counter rather than spending the transport or
+ * structural budget the whole-layout artifact is bounded by.
+ */
+export const MAX_GRADES_BOOTSTRAP_ATTEMPTS = 2;
+export const GRADES_BOOTSTRAP_ATTEMPTS_PREFIX = 'grades-bootstrap-attempts:';
 
 // Package-internal (deliberately NOT re-exported from index.ts, same posture as
 // checkpoints.ts's DELETIONS_CHECKPOINT_KEY): scope-teardown.ts must clear this
@@ -133,6 +162,22 @@ export interface SnapshotSource {
     entry: SnapshotManifestEntry,
     options?: SnapshotDownloadOptions,
   ): Promise<SnapshotArtifactHandle | null>;
+  /**
+   * Download the layout's SEPARATE Boardsesh-grades artifact (issue #4310).
+   * Same failure contract as `downloadArtifact` — but NOT the same retention
+   * contract: a grades file is never handed to `releaseArtifact`. The engine
+   * deletes it through `deleteArtifact` at the end of every cycle, because
+   * retention is sized and keyed for the ~100 MB whole-layout file (its
+   * supersede sweep pairs a build with a `<board>-<layout>` filename prefix a
+   * grades name does not carry). Re-fetching a few MB is the cheaper failure.
+   *
+   * OPTIONAL: a source that does not implement it — or a manifest entry with no
+   * `grades` block — makes the engine take today's path verbatim, crawling
+   * `board_climb_grades` page by page. An updated engine against an old
+   * manifest and a new manifest against an old engine therefore both behave
+   * exactly as before.
+   */
+  downloadGradesArtifact?(artifact: SnapshotGradesArtifact): Promise<{ filePath: string } | null>;
   /** Delete a downloaded artifact once the run is done with it. Best-effort. */
   deleteArtifact(filePath: string): Promise<void>;
   /**
@@ -152,7 +197,7 @@ export interface SnapshotSource {
 /** Where a bootstrap failed, for telemetry. */
 export type SnapshotBootstrapErrorReporter = (report: {
   scopeKey: string;
-  stage: 'manifest' | 'download' | 'import';
+  stage: 'manifest' | 'download' | 'import' | 'grades-download' | 'grades-import';
   attempt: number;
   cause: unknown;
   /**
@@ -354,6 +399,23 @@ export async function getBootstrapMetadataByScope(
   return metadataByScope;
 }
 
+/** Counted grades-import failures for this scope (separate budget — see MAX_GRADES_BOOTSTRAP_ATTEMPTS). */
+export async function getGradesBootstrapAttempts(db: SqlExecutor, scopeKey: string): Promise<number> {
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
+    `${GRADES_BOOTSTRAP_ATTEMPTS_PREFIX}${scopeKey}`,
+  ]);
+  return row ? parseBootstrapAttempts(row.value) : 0;
+}
+
+export async function recordGradesBootstrapAttempt(db: SqlExecutor, scopeKey: string): Promise<number> {
+  const next = (await getGradesBootstrapAttempts(db, scopeKey)) + 1;
+  await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+    `${GRADES_BOOTSTRAP_ATTEMPTS_PREFIX}${scopeKey}`,
+    String(next),
+  ]);
+  return next;
+}
+
 /** The `bootstrap-done:` value that records a heal over a partly-crawled catalog. */
 const BOOTSTRAP_DONE_HEAL_VALUE = 'heal';
 
@@ -449,11 +511,7 @@ function assertSafeColumns(columns: readonly string[]): void {
 }
 
 /** Column names of a table for the given schema (`main` or the snapshot alias). */
-async function tableColumns(
-  db: SqlExecutor,
-  tableName: string,
-  schema: 'main' | typeof SNAPSHOT_ALIAS,
-): Promise<string[]> {
+async function tableColumns(db: SqlExecutor, tableName: string, schema: string): Promise<string[]> {
   const rows =
     schema === 'main'
       ? await db.getAllAsync<{ name: string }>('SELECT name FROM pragma_table_info(?)', [tableName])
@@ -472,9 +530,10 @@ async function sharedColumns(
   db: SqlExecutor,
   tableName: string,
   onSchemaDrift: SchemaDriftReporter | undefined,
+  alias: string = SNAPSHOT_ALIAS,
 ): Promise<string[]> {
   const mainColumns = await tableColumns(db, tableName, 'main');
-  const snapshotColumns = await tableColumns(db, tableName, SNAPSHOT_ALIAS);
+  const snapshotColumns = await tableColumns(db, tableName, alias);
   const mainSet = new Set(mainColumns);
   const snapshotSet = new Set(snapshotColumns);
   for (const column of snapshotColumns) {
@@ -716,11 +775,15 @@ export class SnapshotWatermarkRegressionError extends Error {
  * imported). Artifact-level watermarks are validation/export metadata; the
  * imported scope's checkpoints are computed from scoped artifact rows.
  */
-async function verifySnapshotMeta(db: SqlExecutor): Promise<void> {
-  for (const tableName of SNAPSHOT_TABLES) {
+async function verifySnapshotMeta(
+  db: SqlExecutor,
+  alias: string = SNAPSHOT_ALIAS,
+  tables: readonly string[] = SNAPSHOT_TABLES,
+): Promise<void> {
+  for (const tableName of tables) {
     const meta = await db.getFirstAsync<SnapshotMetaRow>(
       `SELECT table_name, watermark_updated_at, watermark_sync_seq, row_count, schema_version, format_version
-       FROM ${SNAPSHOT_ALIAS}.snapshot_meta WHERE table_name = ?`,
+       FROM ${alias}.snapshot_meta WHERE table_name = ?`,
       [tableName],
     );
     if (!meta) throw new Error(`snapshot bootstrap: snapshot_meta missing row for ${tableName}`);
@@ -734,7 +797,7 @@ async function verifySnapshotMeta(db: SqlExecutor): Promise<void> {
     if (meta.schema_version < LATEST_SCHEMA_VERSION) {
       throw new SnapshotSchemaStaleError(meta.schema_version);
     }
-    const actual = await db.getFirstAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM ${SNAPSHOT_ALIAS}.${tableName}`);
+    const actual = await db.getFirstAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM ${alias}.${tableName}`);
     const actualCount = actual?.n ?? 0;
     if (actualCount !== meta.row_count) {
       throw new Error(
@@ -874,4 +937,155 @@ export async function bootstrapScopeFromSnapshot(params: {
     statsWatermark: finalWatermarks.board_climb_stats,
     ...imported,
   };
+}
+
+// --- Grades bootstrap (issue #4310) -------------------------------------------
+
+const GRADES_TABLE = 'board_climb_grades';
+const GRADES_CURSOR_COLUMN = TABLE_CONFIGS[GRADES_TABLE].cursorColumn;
+
+/**
+ * The scope filter for `board_climb_grades`, evaluated against the layout's
+ * climbs. Grades carry no `layout_id`, so this is the same correlated EXISTS
+ * over `board_climbs` that `syncClimbGrades` uses (queries.ts) — and it MUST
+ * NOT be narrower: a grade row inside the stamped watermark that this import
+ * dropped is lost forever, because the strict `>` delta never revisits it.
+ *
+ * `climbsSchema` is `main` for both the import and the watermark (the climbs
+ * this scope just committed); the watermark additionally reads its ROWS from
+ * the attached artifact, not from main, so what gets stamped can only cover
+ * what this import actually selected — see the comment at the watermark query.
+ */
+function gradesScopeFilter(
+  scope: OfflineBoardScope,
+  gradesTableRef: string,
+  climbsSchema: string,
+): { sql: string; params: (string | number)[] } {
+  const sizeScoped = isSizeScopedBoard(scope.boardType);
+  const innerSize = sizeScoped
+    ? ' AND bc.compatible_size_ids IS NOT NULL AND EXISTS (SELECT 1 FROM json_each(bc.compatible_size_ids) WHERE value = ?)'
+    : '';
+  const params: (string | number)[] = [scope.boardType, scope.boardType, scope.layoutId];
+  if (sizeScoped) params.push(scope.sizeId);
+  return {
+    sql: `${gradesTableRef}.board_type = ?
+       AND EXISTS (
+         SELECT 1 FROM ${climbsSchema}.board_climbs bc
+         WHERE bc.uuid = ${gradesTableRef}.climb_uuid AND bc.board_type = ? AND bc.layout_id = ?${innerSize}
+       )`,
+    params,
+  };
+}
+
+/**
+ * Warm one scope's `board_climb_grades` rows from the layout's separate grades
+ * artifact, and stamp the grades resume checkpoint at the imported rows'
+ * watermark — replacing hundreds of serial authenticated GraphQL pages with one
+ * file and one transaction.
+ *
+ * DELIBERATELY ITS OWN EXCLUSIVE TRANSACTION, not merged into
+ * `bootstrapScopeFromSnapshot`'s. Merging would close a crash window but
+ * lengthen a single `BEGIN EXCLUSIVE` hold on a database the app is also
+ * reading (issue #4314). Splitting keeps each hold short, and the worst case is
+ * exactly today's behaviour: if this fails, or the app dies between the two
+ * transactions, no grades checkpoint is stamped and the scope crawls grades as
+ * it always did. No data is at risk either way, so the shorter lock wins.
+ *
+ * No reconcile: `board_climb_grades` has no delete trigger at all (see
+ * deletions-coverage.ts), so there is no tombstone stream to reconcile against
+ * and `INSERT OR REPLACE` is the whole import. `rewindDeletionsCheckpoint` is
+ * likewise untouched — it stays min(climbs, stats) on purpose.
+ *
+ * Same per-connection ATTACH invariant as `bootstrapScopeFromSnapshot`
+ * (BOARDSESH-AA): everything touching the alias runs inside the transaction
+ * task, on the transaction's own connection.
+ */
+export async function bootstrapScopeGradesFromSnapshot(params: {
+  db: OfflineDatabase;
+  scope: OfflineBoardScope;
+  scopeKey: string;
+  filePath: string;
+  onSchemaDrift?: SchemaDriftReporter;
+}): Promise<{ gradesWatermark: SyncCheckpoint; rowsImported: number }> {
+  const { db, scope, scopeKey, filePath, onSchemaDrift } = params;
+  const startEpoch = getWipeEpoch();
+
+  let watermark: SyncCheckpoint | null = null;
+  let rowsImported = 0;
+  try {
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      await txn.execAsync('COMMIT');
+      try {
+        await txn.execAsync(`ATTACH DATABASE '${filePath.replace(/'/g, "''")}' AS ${GRADES_ALIAS}`);
+
+        const integrity = await txn.getAllAsync<{ quick_check: string }>(`PRAGMA ${GRADES_ALIAS}.quick_check`);
+        if (integrity.length !== 1 || integrity[0].quick_check !== 'ok') {
+          throw new Error(
+            `snapshot grades bootstrap: quick_check failed: ${integrity.map((row) => row.quick_check).join('; ')}`,
+          );
+        }
+
+        // Verified against the ONE-ELEMENT grades list. The client's
+        // whole-layout SNAPSHOT_TABLES is untouched, which is what keeps this
+        // change invisible to every pre-change artifact still on the CDN.
+        await verifySnapshotMeta(txn, GRADES_ALIAS, GRADES_SNAPSHOT_TABLES);
+
+        if (isSigningOut() || getWipeEpoch() !== startEpoch) throw new SnapshotWipedError();
+
+        await applyBusyTimeout(txn);
+        await txn.execAsync('BEGIN EXCLUSIVE');
+      } catch (preTransactionError) {
+        await txn.execAsync('BEGIN').catch(() => {});
+        throw preTransactionError;
+      }
+
+      const gradeColumns = await sharedColumns(txn, GRADES_TABLE, onSchemaDrift, GRADES_ALIAS);
+      assertSafeColumns(gradeColumns);
+      if (gradeColumns.length === 0) throw new Error('snapshot grades bootstrap: no shared board_climb_grades columns');
+      const columnList = gradeColumns.join(', ');
+
+      const importFilter = gradesScopeFilter(scope, 'g', 'main');
+      const inserted = await txn.runAsync(
+        `INSERT OR REPLACE INTO main.${GRADES_TABLE} (${columnList})
+         SELECT ${columnList} FROM ${GRADES_ALIAS}.${GRADES_TABLE} g
+         WHERE ${importFilter.sql}`,
+        importFilter.params,
+      );
+      rowsImported = inserted.changes;
+
+      // Stamp at the watermark of the rows the INSERT above actually selected:
+      // the ARTIFACT's rows, under the same scope filter (mirroring
+      // scopedWatermarks' artifact-side reads for climbs/stats). Two wrong
+      // alternatives, both a permanent silent gap because the strict `>` delta
+      // never revisits anything at-or-below the stamp:
+      //  - the artifact's snapshot_meta watermark could stamp past a row the
+      //    scope filter excluded (its climb outside this scope);
+      //  - main.board_climb_grades could stamp past rows this scope NEVER
+      //    received — the table is shared across scopes, so a sibling scope's
+      //    earlier crawl (e.g. kilter:1:7 synced for months when kilter:1:10 is
+      //    added) leaves rows for shared climbs with cursors far beyond this
+      //    artifact, and stamping there skips every grade row computed since
+      //    the artifact was built for climbs exclusive to THIS scope.
+      const watermarkRow = await txn.getFirstAsync<{ cursor_at: string; sync_seq: number | string }>(
+        `SELECT ${GRADES_CURSOR_COLUMN} AS cursor_at, sync_seq
+         FROM ${GRADES_ALIAS}.${GRADES_TABLE} g
+         WHERE ${importFilter.sql}
+         ORDER BY ${GRADES_CURSOR_COLUMN} DESC, sync_seq DESC
+         LIMIT 1`,
+        importFilter.params,
+      );
+      watermark = watermarkRow
+        ? { updatedAt: String(watermarkRow.cursor_at), syncSeq: String(watermarkRow.sync_seq) }
+        : EPOCH_WATERMARK;
+
+      if (isSigningOut() || getWipeEpoch() !== startEpoch) throw new SnapshotWipedError();
+
+      await setCheckpoint(txn, getCheckpointKey(GRADES_TABLE, scopeKey), watermark);
+    });
+  } finally {
+    await db.execAsync(`DETACH DATABASE ${GRADES_ALIAS}`).catch(() => {});
+  }
+
+  if (!watermark) throw new Error('snapshot grades bootstrap: transaction completed without a watermark');
+  return { gradesWatermark: watermark, rowsImported };
 }

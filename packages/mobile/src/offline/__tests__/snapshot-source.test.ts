@@ -621,3 +621,64 @@ describe('retention and reuse', () => {
     expect(state.files.has(SIDECAR_URI)).toBe(true);
   });
 });
+
+// The layout's separate Boardsesh-grades artifact (issue #4310). Small next to
+// the ~100 MB climbs file, but it removes hundreds of serial authenticated
+// GraphQL pages from every Kilter and Tension download.
+describe('downloadGradesArtifact', () => {
+  const GRADES_ARTIFACT = {
+    key: 'board-snapshots/v1-gzip/kilter/8/2026-06-01T00-00-00-000Z-grades.db',
+    url: 'https://example.test/artifacts/kilter-8-grades.db',
+    bytes: 2_000_000,
+    contentEncoding: 'gzip' as const,
+    builtAt: '2026-06-01T00:00:00.000Z',
+    schemaVersion: 1,
+    tables: {
+      board_climb_grades: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '10', rowCount: 900 },
+    },
+  };
+
+  it('downloads to a key-derived filename and returns a plain filesystem path', async () => {
+    const result = await mobileSnapshotSource.downloadGradesArtifact?.(GRADES_ARTIFACT);
+
+    expect(state.downloadCalls).toEqual([
+      { url: GRADES_ARTIFACT.url, idempotent: true, hasOnProgress: false, hasSignal: false },
+    ]);
+    expect(result?.filePath.startsWith('file://')).toBe(false);
+    // Key-derived: the manifest's grades block carries no board/layout pair,
+    // and the key is already content-addressed by build stamp.
+    expect(result?.filePath).toContain('board-snapshots-v1-gzip-kilter-8');
+    // No completeness sidecar: a grades file is never retained across cycles
+    // (the engine deletes it in its finally), so nothing may mark it reusable.
+    expect([...state.files.keys()].some((uri) => uri.endsWith('.complete'))).toBe(false);
+  });
+
+  it('applies the same free-space guard as the whole-layout artifact', async () => {
+    state.availableDiskSpace = GRADES_ARTIFACT.bytes * 2; // under the 6x gzip multiple
+
+    await expect(mobileSnapshotSource.downloadGradesArtifact?.(GRADES_ARTIFACT)).rejects.toThrow(
+      /insufficient disk space/,
+    );
+    expect(state.downloadCalls).toHaveLength(0);
+  });
+
+  it('permanently misses (and deletes) a body that arrived still gzip-compressed', async () => {
+    state.downloadBytes = GZIP_BYTES;
+
+    await expect(mobileSnapshotSource.downloadGradesArtifact?.(GRADES_ARTIFACT)).rejects.toThrow(
+      SnapshotPermanentMissError,
+    );
+    expect(state.deletedUris).toHaveLength(1);
+  });
+
+  it('keeps the underlying download exception as `cause` for the transport classifier', async () => {
+    const downloadError = Object.assign(new Error('The request timed out.'), {
+      name: 'UnableToDownloadException',
+    });
+    state.downloadError = downloadError;
+
+    const rejection = await mobileSnapshotSource.downloadGradesArtifact?.(GRADES_ARTIFACT).catch((error) => error);
+
+    expect((rejection as Error).cause).toBe(downloadError);
+  });
+});

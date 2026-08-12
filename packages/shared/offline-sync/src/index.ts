@@ -101,9 +101,11 @@ export {
 } from './sync/retention';
 export {
   bootstrapScopeFromSnapshot,
+  bootstrapScopeGradesFromSnapshot,
   getBootstrapMetadataByScope,
   markBootstrapDone,
   isBootstrapDone,
+  MAX_GRADES_BOOTSTRAP_ATTEMPTS,
   SnapshotWipedError,
   SnapshotSchemaStaleError,
   SnapshotPermanentMissError,
