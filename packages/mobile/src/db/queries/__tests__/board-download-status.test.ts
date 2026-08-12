@@ -13,7 +13,7 @@ vi.mock('react-native-mmkv', () => {
 
 import { runMigrations } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
-import { isBoardDownloadedLocally } from '../board-download-status';
+import { isBoardDownloadedLocally, hasDownloadedBoardData } from '../board-download-status';
 import { markScopeDownloadComplete } from '@boardsesh/offline-sync';
 import { setSetting, resetAllSettings } from '../../../settings/hooks';
 
@@ -81,5 +81,41 @@ describe('isBoardDownloadedLocally', () => {
     setSetting('syncEnabledBoards', ['moonboard:1:99']);
     await markScopeDownloadComplete(db, 'moonboard:1:99');
     expect(await isBoardDownloadedLocally(db, { boardType: 'moonboard', layoutId: 1, sizeId: 99 })).toBe(true);
+  });
+});
+
+describe('hasDownloadedBoardData', () => {
+  let db: TestSqliteDb;
+
+  beforeEach(async () => {
+    mockStorage.clear();
+    resetAllSettings();
+    db = createTestDatabase();
+    await runMigrations(db);
+  });
+
+  it('is false on an empty catalog', async () => {
+    expect(await hasDownloadedBoardData(db)).toBe(false);
+  });
+
+  it('is true whenever board_climbs holds any row', async () => {
+    await insertClimb(db, { uuid: 'a' });
+    expect(await hasDownloadedBoardData(db)).toBe(true);
+  });
+
+  // Why the sign-out warning probes rows instead of syncEnabledBoards: a feature-flag
+  // rollback clears the toggle list while the catalog rows survive on disk. Those
+  // rows still get wiped, so the warning still has to fire.
+  it('is true even when syncEnabledBoards is empty (a flag rollback left the rows)', async () => {
+    await insertClimb(db, { uuid: 'a' });
+    setSetting('syncEnabledBoards', []);
+    expect(await hasDownloadedBoardData(db)).toBe(true);
+  });
+
+  // A download killed part-way never wrote a scope-complete marker, but it still has
+  // rows to lose.
+  it('is true for a partial download with no scope-complete marker', async () => {
+    await insertClimb(db, { uuid: 'a' });
+    expect(await hasDownloadedBoardData(db)).toBe(true);
   });
 });

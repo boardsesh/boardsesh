@@ -478,6 +478,14 @@ export const SHARED_EVENTS = {
   // `board_not_downloaded`, since fixing filters would still serve that read
   // nothing.
   OfflineReadUnavailable: 'Offline Read Unavailable',
+  // Offline sync — an explicit, confirmed sign-out (or an account deletion) wiped
+  // the device's local data, downloaded board catalogs included (issue #3621).
+  // Fired only on the paths the user chose: a forced 401, a token expiry or a
+  // confirmed identity change keep their catalogs and never emit this. Props:
+  // { pendingDiscarded, hadDownloads, vacuumed, bytesBefore?, bytesAfter? }.
+  // `pendingDiscarded` is the exact post-drain queue depth, so it is the honest
+  // "offline writes lost at sign-out" counter.
+  OfflineDataWipedOnSignOut: 'Offline Data Wiped On Sign Out',
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;

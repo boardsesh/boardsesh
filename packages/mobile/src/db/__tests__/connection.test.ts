@@ -16,11 +16,21 @@ vi.mock('../../lib/error-reporting', () => ({ reportError: reportErrorMock }));
 
 const trackMock = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/analytics', () => ({ track: trackMock }));
+// Only vacuumDatabase is stubbed; everything else in the engine stays real, since
+// the point of this suite is what the REAL DDL ends up holding. VACUUM is separately
+// covered by db/vacuum's own tests, and stubbing it is the only way to exercise the
+// "rows are gone but the file didn't shrink" branch.
+const vacuumDatabaseMock = vi.hoisted(() => vi.fn(async (): Promise<boolean> => true));
+vi.mock('@boardsesh/offline-sync', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@boardsesh/offline-sync')>();
+  return { ...actual, vacuumDatabase: vacuumDatabaseMock };
+});
 
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import {
   clearUserData,
+  purgeLocalDataForSignOut,
   getDatabaseHandle,
   initializeDatabase,
   INIT_RETRY_DELAYS_MS,
@@ -35,6 +45,10 @@ import {
   getCheckpointKey,
   enqueue,
   getPendingCount,
+  markScopeDownloadComplete,
+  isScopeDownloadComplete,
+  getDownloadedScopeKeys,
+  BOARD_DATA_TABLES,
 } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 
@@ -45,11 +59,44 @@ async function countRows(table: string): Promise<number> {
   return row?.count ?? 0;
 }
 
+// One signed-in device: the user's own rows, a queued write, a downloaded catalog
+// with its markers, and a checkpoint per board table.
+async function seedSignedInDevice(): Promise<void> {
+  const now = '2024-06-01T00:00:00Z';
+  await db.runAsync(`INSERT INTO boardsesh_ticks (uuid, board_type, climb_uuid, angle) VALUES (?, ?, ?, ?)`, [
+    'tick-1',
+    'kilter',
+    'climb-1',
+    40,
+  ]);
+  await db.runAsync(`INSERT INTO playlists (uuid, name) VALUES (?, ?)`, ['pl-1', 'Projects']);
+  await db.runAsync(`INSERT INTO user_favorites (board_name, climb_uuid, angle) VALUES (?, ?, ?)`, [
+    'kilter',
+    'climb-1',
+    40,
+  ]);
+  await enqueue(db, 'boardsesh_ticks', 'create', { climbUuid: 'climb-1' }, 'tick-1');
+  await enqueue(db, 'boardsesh_ticks', 'create', { climbUuid: 'climb-2' }, 'tick-2');
+  await setCheckpoint(db, getCheckpointKey('boardsesh_ticks'), { updatedAt: now, syncSeq: '5' });
+
+  await db.runAsync(`INSERT INTO board_climbs (uuid, board_type) VALUES (?, ?)`, ['climb-1', 'kilter']);
+  await db.runAsync(
+    `INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count) VALUES (?, ?, ?, ?)`,
+    ['kilter', 'climb-1', 40, 12],
+  );
+  for (const tableName of BOARD_DATA_TABLES) {
+    await setCheckpoint(db, getCheckpointKey(tableName, 'kilter:1:1'), { updatedAt: now, syncSeq: '9' });
+  }
+  await markScopeDownloadComplete(db, 'kilter:1:1');
+}
+
 beforeEach(async () => {
   // connection.ts is the expo lifecycle seam, so its API is typed against the
   // real SQLiteDatabase; the node adapter satisfies the used surface.
   db = createTestDatabase() as unknown as TestSqliteDb & SQLiteDatabase;
   await runMigrations(db);
+  vacuumDatabaseMock.mockClear();
+  vacuumDatabaseMock.mockResolvedValue(true);
 });
 
 describe('clearUserData', () => {
@@ -104,6 +151,109 @@ describe('clearUserData', () => {
 
     expect(await countRows('boardsesh_ticks')).toBe(0);
     expect(await getPendingCount(db)).toBe(0);
+  });
+
+  // The guarantee that keeps a token-refresh glitch from costing someone a 271MB
+  // download: the forced/expiry paths still run this wipe, and it still spares the
+  // catalog and the checkpoints that let the next sign-in resume instead of re-crawl.
+  it('leaves the downloaded catalog and its board checkpoints alone', async () => {
+    await seedSignedInDevice();
+
+    await clearUserData(db);
+
+    expect(await countRows('board_climbs')).toBe(1);
+    expect(await countRows('board_climb_stats')).toBe(1);
+    for (const tableName of BOARD_DATA_TABLES) {
+      expect(await getCheckpoint(db, getCheckpointKey(tableName, 'kilter:1:1'))).not.toBeNull();
+    }
+    expect(await isScopeDownloadComplete(db, 'kilter:1:1')).toBe(true);
+  });
+});
+
+describe('purgeLocalDataForSignOut', () => {
+  it('clears the user rows, the queue AND the downloaded board catalog', async () => {
+    await seedSignedInDevice();
+
+    await purgeLocalDataForSignOut(db);
+
+    expect(await countRows('boardsesh_ticks')).toBe(0);
+    expect(await countRows('playlists')).toBe(0);
+    expect(await countRows('user_favorites')).toBe(0);
+    expect(await getPendingCount(db)).toBe(0);
+    // Derived from BOARD_DATA_TABLES, not hardcoded, so a future per-board table
+    // cannot fall through the way board_climb_grades once did.
+    for (const tableName of BOARD_DATA_TABLES) {
+      expect(await countRows(tableName)).toBe(0);
+    }
+  });
+
+  // The trap this wipe exists to avoid. `scope-complete:` and the bootstrap markers
+  // sit OUTSIDE the `checkpoint:` prefix, so a prefix sweep would leave them past the
+  // rows they describe — and isBoardDownloadedLocally would then serve an empty
+  // catalog to local-first search as though it were the whole board.
+  it('leaves no sync_meta marker describing rows it deleted', async () => {
+    await seedSignedInDevice();
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-done:kilter:1:1', '1']);
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-attempts:kilter:1:1', '2']);
+
+    await purgeLocalDataForSignOut(db);
+
+    expect(await isScopeDownloadComplete(db, 'kilter:1:1')).toBe(false);
+    expect(await getDownloadedScopeKeys(db)).toEqual([]);
+    expect(await countRows('sync_meta')).toBe(0);
+  });
+
+  // schema_version is its own table. Losing it would replay every migration over a
+  // live database on the next launch.
+  it('preserves the migration state', async () => {
+    await seedSignedInDevice();
+
+    await purgeLocalDataForSignOut(db);
+
+    expect(await countRows('schema_version')).toBeGreaterThan(0);
+  });
+
+  // Counted inside the wipe's transaction, which is the only place it can be honest:
+  // the dialog's number was read before sign-out's bounded 3s drain.
+  it('reports the queue depth it discarded and whether a catalog was present', async () => {
+    await seedSignedInDevice();
+
+    const result = await purgeLocalDataForSignOut(db);
+
+    expect(result.pendingDiscarded).toBe(2);
+    expect(result.hadDownloads).toBe(true);
+    expect(result.vacuumed).toBe(true);
+  });
+
+  it('reports no downloads when only user data was present', async () => {
+    await db.runAsync(`INSERT INTO playlists (uuid, name) VALUES (?, ?)`, ['pl-1', 'Projects']);
+
+    const result = await purgeLocalDataForSignOut(db);
+
+    expect(result.hadDownloads).toBe(false);
+    expect(result.pendingDiscarded).toBe(0);
+  });
+
+  // The rows are already gone by the time VACUUM runs, so a SQLITE_FULL means "the
+  // file didn't shrink", never data loss. Failing a sign-out over that would be worse.
+  it('still resolves when the VACUUM fails, and reports it', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vacuumDatabaseMock.mockRejectedValue(new Error('database or disk is full'));
+    await seedSignedInDevice();
+
+    const result = await purgeLocalDataForSignOut(db);
+
+    expect(result.vacuumed).toBe(false);
+    expect(result.pendingDiscarded).toBe(2);
+    expect(await countRows('board_climbs')).toBe(0);
+    expect(reportErrorMock).toHaveBeenCalled();
+  });
+
+  it('is a no-op on an already-empty database', async () => {
+    const result = await purgeLocalDataForSignOut(db);
+
+    expect(result).toMatchObject({ pendingDiscarded: 0, hadDownloads: false });
+    expect(await countRows('board_climbs')).toBe(0);
   });
 });
 

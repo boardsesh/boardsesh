@@ -10,14 +10,18 @@ import {
   ensureMutationQueueTable,
   runMigrations,
   deleteUserCheckpoints,
+  deleteAllSyncMeta,
   applyBusyTimeout,
   classifySqliteLockError,
   configureMainConnection,
+  vacuumDatabase,
+  BOARD_DATA_TABLES,
 } from '@boardsesh/offline-sync';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { reportError } from '../lib/error-reporting';
 import { track } from '../lib/analytics';
 import { setSchemaReady } from './schema-ready';
+import { measureDatabaseBytes } from './storage-usage';
 
 export const DATABASE_NAME = 'boardsesh.db';
 
@@ -381,10 +385,15 @@ export function resetDatabaseInitializationForTests(): void {
 }
 
 /**
- * Wipes the current user's local data on sign-out (account lifecycle, I11).
- * Runs every delete plus the checkpoint reset inside one transaction so the
- * device is left in a clean, internally-consistent state for the next account:
- * either everything is cleared or nothing is.
+ * Wipes the current user's local data on sign-out (account lifecycle, I11), keeping
+ * the downloaded board catalogs. Runs every delete plus the checkpoint reset inside
+ * one transaction so the device is left in a clean, internally-consistent state for
+ * the next account: either everything is cleared or nothing is.
+ *
+ * This is the wipe the sign-out paths the user did NOT choose take — the auth
+ * interceptor's failed-refresh 401, checkAuth's proactive expiry, a confirmed
+ * identity change. A token glitch must not cost someone a 271MB Kilter download.
+ * An explicit, confirmed sign-out runs `purgeLocalDataForSignOut` below instead.
  *
  * Board reference data is intentionally left in place (see
  * USER_DATA_TABLES_TO_CLEAR), and so are the board download checkpoints — the rows
@@ -405,4 +414,104 @@ export async function clearUserData(db: SQLiteDatabase): Promise<void> {
     }
     await deleteUserCheckpoints(txn);
   });
+}
+
+/** What an explicit sign-out's wipe actually removed, for telemetry. */
+export type SignOutPurgeResult = {
+  /** Queued writes still unsent when the wipe ran — counted inside the transaction. */
+  pendingDiscarded: number;
+  /** Whether a downloaded board catalog was on disk before the wipe. */
+  hadDownloads: boolean;
+  /** Whether the VACUUM handed the freed pages back to the filesystem. */
+  vacuumed: boolean;
+  /** Database bytes on disk before / after, or undefined where the stat isn't available. */
+  bytesBefore?: number;
+  bytesAfter?: number;
+};
+
+/**
+ * The wipe an EXPLICIT sign-out runs: everything `clearUserData` deletes, plus the
+ * downloaded board catalogs and every sync_meta marker, then a VACUUM so the freed
+ * pages actually leave the file (issue #3621).
+ *
+ * The board tables used to be spared on the grounds that a catalog is public
+ * reference data, identical whoever is signed in. That traded a signed-out user's
+ * ~200k rows per board of disk for a faster re-enable, and it reads as a bug from the
+ * outside: "log out" left a 271MB download on the phone that nothing could reach and
+ * the OS storage screen still counted. `BOARD_DATA_TABLES` is spread rather than
+ * listed so a future per-board table (`isPerBoard: true` in TABLE_CONFIGS) is covered
+ * automatically — `board_climb_grades` fell through exactly this kind of hardcoded
+ * list once.
+ *
+ * Rows and the markers describing them dying together is the load-bearing part, which
+ * is why this uses `deleteAllSyncMeta` and not the selective reset: a surviving
+ * `scope-complete:` would make `isBoardDownloadedLocally` serve an empty catalog to
+ * local-first search as a whole board, and a surviving checkpoint would make the
+ * strict `>` delta pull resume past rows that are gone.
+ *
+ * The caller MUST have aborted in-flight pulls first — a page already on the wire
+ * would otherwise land after the delete and resurrect part of a catalog, complete
+ * with a checkpoint past it. AuthProvider's `setSigningOut(true)` does that (it bumps
+ * the monotonic wipe epoch every long-running pull re-checks across its awaits) and
+ * is what this runs inside.
+ *
+ * The VACUUM is what makes the deletes visible to the user: without it SQLite parks
+ * the freed pages on its freelist and the file keeps its old size forever. It is
+ * cheap in this particular case — VACUUM's cost tracks LIVE data, and every table has
+ * just been emptied, so it rebuilds a near-empty file rather than the 5-20s exclusive
+ * rebuild the same call costs when a teardown leaves the rest of a catalog in place.
+ * It runs outside the transaction because SQLite rejects VACUUM inside one, and its
+ * failure is swallowed: the rows are already gone by then, so a SQLITE_FULL means
+ * "the file didn't shrink", never data loss — and failing a sign-out over cosmetics
+ * would be the worse bug.
+ */
+export async function purgeLocalDataForSignOut(db: SQLiteDatabase): Promise<SignOutPurgeResult> {
+  const bytesBefore = measureDatabaseBytesQuietly();
+
+  let pendingDiscarded = 0;
+  let hadDownloads = false;
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    // Same lock guard as clearUserData: this runs on its own connection alongside
+    // in-flight sync reads/writes, so wait for the write lock rather than failing
+    // instantly with SQLITE_BUSY (BOARDSESH-A9).
+    await applyBusyTimeout(txn);
+    // Counted here, inside the transaction and immediately before the DELETE, because
+    // this is the only place the number is both post-drain and exact. The count the
+    // confirmation dialog showed was taken before sign-out's bounded 3s drain, so it
+    // can be larger than what was really lost.
+    const pendingRow = await txn.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM pending_mutations');
+    pendingDiscarded = pendingRow?.count ?? 0;
+    const downloadRow = await txn.getFirstAsync<{ has_rows: number }>(
+      'SELECT EXISTS(SELECT 1 FROM board_climbs LIMIT 1) AS has_rows',
+    );
+    hadDownloads = (downloadRow?.has_rows ?? 0) === 1;
+    for (const table of [...USER_DATA_TABLES_TO_CLEAR, ...BOARD_DATA_TABLES]) {
+      await txn.runAsync(`DELETE FROM ${table}`);
+    }
+    await deleteAllSyncMeta(txn);
+  });
+
+  let vacuumed = false;
+  try {
+    vacuumed = await vacuumDatabase(db);
+  } catch (error) {
+    if (__DEV__) {
+      console.warn('[SQLite] post-sign-out VACUUM failed; data is cleared but the file did not shrink:', error);
+    }
+    reportError(error, { tags: { source: 'offline-sync', kind: 'sign-out-vacuum' } });
+  }
+
+  return { pendingDiscarded, hadDownloads, vacuumed, bytesBefore, bytesAfter: measureDatabaseBytesQuietly() };
+}
+
+/**
+ * The on-disk size, or undefined when the platform can't say. Expo web has no usable
+ * `Paths.document`, and a telemetry figure is never a reason to fail a sign-out.
+ */
+function measureDatabaseBytesQuietly(): number | undefined {
+  try {
+    return measureDatabaseBytes();
+  } catch {
+    return undefined;
+  }
 }

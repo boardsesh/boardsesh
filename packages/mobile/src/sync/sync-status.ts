@@ -96,10 +96,19 @@ export function notifyScopeDownloadComplete(_info: ScopeDownloadCompleteInfo): v
   emit();
 }
 
-/** Test-only: drop back to the never-synced state between cases. */
-export function __resetSyncStatusForTests(): void {
+/**
+ * Drop back to the never-synced state. Sign-out calls this so the next account on
+ * the device doesn't open Settings to "last synced 5 minutes ago" — a timestamp
+ * describing somebody else's sync, over data that is gone.
+ */
+export function resetSyncStatus(): void {
   currentStatus = IDLE_STATUS;
   emit();
+}
+
+/** Test-only: drop back to the never-synced state between cases. */
+export function __resetSyncStatusForTests(): void {
+  resetSyncStatus();
 }
 
 /** Subscribe a React component to the live sync status. */

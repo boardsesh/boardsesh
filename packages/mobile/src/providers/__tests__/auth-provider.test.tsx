@@ -265,10 +265,21 @@ vi.mock('../../lib/graphql/use-active-board', () => ({
 }));
 
 const getDatabaseHandleMock = vi.fn((): unknown => null);
+// Two different wipes: the selective one (downloaded board catalogs kept) and the
+// full one an explicit sign-out runs. Which one a given path picks is the regression
+// guard of issue #3621, so both are recorded rather than stubbed anonymously.
+const clearUserDataMock = vi.hoisted(() => vi.fn(async () => {}));
+const purgeLocalDataForSignOutMock = vi.hoisted(() =>
+  vi.fn(async () => ({ pendingDiscarded: 0, hadDownloads: false, vacuumed: true })),
+);
 vi.mock('../../db', () => ({
   getDatabaseHandle: () => getDatabaseHandleMock(),
-  clearUserData: vi.fn(),
+  clearUserData: clearUserDataMock,
+  purgeLocalDataForSignOut: purgeLocalDataForSignOutMock,
 }));
+
+const resetSyncStatusMock = vi.hoisted(() => vi.fn());
+vi.mock('../../sync/sync-status', () => ({ resetSyncStatus: resetSyncStatusMock }));
 
 const drainMutationQueueMock = vi.fn(async (..._args: unknown[]) => {});
 const getPendingCountMock = vi.fn(async (..._args: unknown[]) => 0);
@@ -1067,6 +1078,168 @@ describe('AuthProvider.signOut mutation-queue drain gating', () => {
     });
 
     expect(reportOutboxDiscardedOnSignOutMock).not.toHaveBeenCalled();
+  });
+});
+
+// Issue #3621. An explicit sign-out deletes the downloaded board catalogs; every
+// other signed-out path keeps them. Getting that split wrong in either direction is
+// a user-visible bug — one leaves a 271MB orphan on the phone, the other eats it on
+// a token-refresh glitch — so each path asserts WHICH wipe it ran, not just that it
+// cleaned up.
+describe('AuthProvider sign-out offline data wipe', () => {
+  beforeEach(() => {
+    getAuthTokenMock.mockReset();
+    isTokenExpiringSoonMock.mockReset();
+    authSignOutMock.mockReset();
+    getDatabaseHandleMock.mockReset();
+    clearUserDataMock.mockClear();
+    purgeLocalDataForSignOutMock.mockClear();
+    purgeLocalDataForSignOutMock.mockResolvedValue({
+      pendingDiscarded: 0,
+      hadDownloads: false,
+      vacuumed: true,
+    });
+    resetSyncStatusMock.mockClear();
+    drainMutationQueueMock.mockReset();
+    getPendingCountMock.mockReset();
+    setOnForcedSignOutMock.mockReset();
+    deduplicatedRefreshMock.mockReset();
+    deduplicatedRefreshMock.mockResolvedValue({ status: 'refreshed', generation: 1 });
+    getAuthTokenMock.mockResolvedValue('jwt-token');
+    isTokenExpiringSoonMock.mockResolvedValue(false);
+    authSignOutMock.mockResolvedValue(true);
+    clearStoredSessionIdMock.mockResolvedValue(undefined);
+    clearStoredActiveBoardMock.mockResolvedValue(undefined);
+    getPendingCountMock.mockResolvedValue(0);
+    getDatabaseHandleMock.mockReturnValue({ tag: 'db' });
+  });
+
+  async function renderSignedIn() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    return result;
+  }
+
+  it('wipes the downloaded catalogs on an explicit sign-out', async () => {
+    const result = await renderSignedIn();
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(purgeLocalDataForSignOutMock).toHaveBeenCalledTimes(1);
+    expect(clearUserDataMock).not.toHaveBeenCalled();
+  });
+
+  it('wipes the downloaded catalogs when the account is deleted', async () => {
+    const result = await renderSignedIn();
+
+    await act(async () => {
+      await result.current.signOut('account_deleted');
+    });
+
+    expect(purgeLocalDataForSignOutMock).toHaveBeenCalledTimes(1);
+    expect(clearUserDataMock).not.toHaveBeenCalled();
+  });
+
+  // The guard that matters most: a failed token refresh is not a decision the user
+  // made, so it must never cost them a download they waited minutes for.
+  it('keeps the downloaded catalogs when a 401 forces a sign-out', async () => {
+    await renderSignedIn();
+    await waitFor(() => expect(setOnForcedSignOutMock).toHaveBeenCalled());
+    const forceSignOut = setOnForcedSignOutMock.mock.calls.at(-1)?.[0] as (() => void) | undefined;
+    expect(typeof forceSignOut).toBe('function');
+
+    await act(async () => {
+      forceSignOut?.();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(clearUserDataMock).toHaveBeenCalled());
+
+    expect(purgeLocalDataForSignOutMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps the downloaded catalogs when checkAuth finds the session expired', async () => {
+    const result = await renderSignedIn();
+
+    deduplicatedRefreshMock.mockResolvedValue({ status: 'rejected', generation: 1 });
+    isTokenExpiringSoonMock.mockResolvedValue(true);
+    await act(async () => {
+      await result.current.refreshAuthState();
+    });
+
+    expect(clearUserDataMock).toHaveBeenCalled();
+    expect(purgeLocalDataForSignOutMock).not.toHaveBeenCalled();
+  });
+
+  it('reports what the wipe actually removed, once', async () => {
+    purgeLocalDataForSignOutMock.mockResolvedValue({
+      pendingDiscarded: 4,
+      hadDownloads: true,
+      vacuumed: true,
+    });
+    const result = await renderSignedIn();
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    const wipeEvents = trackMock.mock.calls.filter((call) => call[0] === 'Offline Data Wiped On Sign Out');
+    expect(wipeEvents).toHaveLength(1);
+    expect(wipeEvents[0][1]).toMatchObject({ pendingDiscarded: 4, hadDownloads: true, vacuumed: true });
+  });
+
+  it('does not report the wipe on a path that kept the catalogs', async () => {
+    const result = await renderSignedIn();
+
+    deduplicatedRefreshMock.mockResolvedValue({ status: 'rejected', generation: 1 });
+    isTokenExpiringSoonMock.mockResolvedValue(true);
+    await act(async () => {
+      await result.current.refreshAuthState();
+    });
+
+    expect(trackMock.mock.calls.some((call) => call[0] === 'Offline Data Wiped On Sign Out')).toBe(false);
+  });
+
+  // A wedged SQLite file must not strand someone in a half-signed-out app.
+  it('completes the sign-out even when the wipe throws', async () => {
+    purgeLocalDataForSignOutMock.mockRejectedValue(new Error('database is locked'));
+    const result = await renderSignedIn();
+
+    await act(async () => {
+      await expect(result.current.signOut()).resolves.toBeUndefined();
+    });
+
+    expect(setSettingMock).toHaveBeenCalledWith('syncEnabledBoards', []);
+  });
+
+  // "Last synced 5 minutes ago" belonged to the account that just left.
+  it('resets the sync status so the next account starts from never-synced', async () => {
+    const result = await renderSignedIn();
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(resetSyncStatusMock).toHaveBeenCalled();
+  });
+
+  it('drains the queue exactly once per sign-out', async () => {
+    getPendingCountMock.mockResolvedValue(2);
+    drainMutationQueueMock.mockResolvedValue(undefined);
+    const result = await renderSignedIn();
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(drainMutationQueueMock).toHaveBeenCalledTimes(1);
   });
 });
 

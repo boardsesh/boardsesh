@@ -34,7 +34,8 @@ import { clearAllCreateClimbDrafts } from '../lib/create-climb-draft-store';
 import { clearSessionCommentDraft } from '../lib/session-comment-draft-store';
 import { setCurrentUserStorageOwner, type UserStorageOwner } from '../lib/user-storage-owner';
 import { ACTIVE_BOARD_QUERY_KEY } from '../lib/graphql/use-active-board';
-import { clearUserData, getDatabaseHandle } from '../db';
+import { clearUserData, purgeLocalDataForSignOut, getDatabaseHandle } from '../db';
+import { resetSyncStatus } from '../sync/sync-status';
 import { setSetting, clearOfflineBoards } from '../settings';
 import { getPendingCount, setSigningOut } from '@boardsesh/offline-sync';
 import { drainMutationQueue } from '../offline/offline-sync-adapter';
@@ -216,13 +217,25 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     }
   }, [queryClient]);
 
-  const clearLocalOfflineUserData = useCallback(async () => {
+  // `purgeOfflineBoards` picks the FULL wipe (downloaded board catalogs included)
+  // over the selective one. Only an explicit, confirmed sign-out asks for it — see
+  // runSignedOutCleanup's option — so a token-refresh glitch can never cost someone
+  // a 271MB Kilter download (issue #3621). setSigningOut bumps the wipe epoch around
+  // either wipe, so in-flight pulls bail before the DELETEs land.
+  const clearLocalOfflineUserData = useCallback(async (purgeOfflineBoards: boolean) => {
     const localDb = getDatabaseHandle();
     if (!localDb) return;
 
     setSigningOut(true);
     try {
-      await clearUserData(localDb);
+      if (purgeOfflineBoards) {
+        // Reported from here rather than the caller because the counts only exist
+        // inside the wipe's own transaction: pending_mutations is emptied by it.
+        const purge = await purgeLocalDataForSignOut(localDb);
+        track(SHARED_EVENTS.OfflineDataWipedOnSignOut, { ...purge });
+      } else {
+        await clearUserData(localDb);
+      }
     } catch (error) {
       if (__DEV__) {
         console.warn('[Auth] local offline data cleanup during sign-out failed:', error);
@@ -238,8 +251,16 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // the manual `Logout` analytics event, and `authSignOut()` (the token revoke +
   // clear) — the forced/expiry paths' token is already revoked, so running it
   // here would double-revoke.
+  //
+  // `purgeOfflineBoards` is opt-in and defaults to false: only the explicit
+  // `signOut()` passes it, so the forced 401, the expiry and the identity-change
+  // paths keep the downloaded catalogs they always kept.
   const runSignedOutCleanup = useCallback(
-    async (transitionEpoch: number, storageOwner?: UserStorageOwner | null): Promise<boolean> => {
+    async (
+      transitionEpoch: number,
+      storageOwner?: UserStorageOwner | null,
+      { purgeOfflineBoards = false }: { purgeOfflineBoards?: boolean } = {},
+    ): Promise<boolean> => {
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
       // What the wipe below is about to delete. clearUserData DELETEs
       // pending_mutations wholesale — dead letters included, and those never get
@@ -261,15 +282,19 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       if (Platform.OS === 'web') await waitForCleanupPhase(persistedStoreCleanup);
       else await persistedStoreCleanup;
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
-      const offlineUserDataCleanup = clearLocalOfflineUserData();
+      const offlineUserDataCleanup = clearLocalOfflineUserData(purgeOfflineBoards);
       if (Platform.OS === 'web') await waitForCleanupPhase(offlineUserDataCleanup);
       else await offlineUserDataCleanup;
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
       // Reset the per-user "downloaded boards" list so the next account on a shared
-      // device doesn't inherit the previous user's offline selection. The cached board
-      // rows + checkpoints survive (clearUserData preserves them), so if the next user
-      // enables the same board the download resumes instantly.
+      // device doesn't inherit the previous user's offline selection. After a
+      // selective wipe the cached board rows + checkpoints survive, so if the next
+      // user enables the same board the download resumes instantly; after a purge
+      // the rows those keys point at are gone, so leaving the list populated would
+      // advertise boards as available offline over an empty catalog.
       setSetting('syncEnabledBoards', []);
+      // "Last synced 5 minutes ago" belonged to the account that just left.
+      resetSyncStatus();
       // ...and the board snapshots the offline picker replays. These carry the
       // previous account's board NAMES, so on a shared device a missed clear would
       // show one user's walls in the next user's picker.
@@ -299,7 +324,11 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // normal logged-out launch from churning an empty cache. Both branches flip
   // isAuthenticated → false, so checkAuth doesn't repeat it.
   const handleSignedOutTransition = useCallback(
-    async (transitionEpoch: number, forceFullCleanup = false): Promise<boolean> => {
+    async (
+      transitionEpoch: number,
+      forceFullCleanup = false,
+      { purgeOfflineBoards = false }: { purgeOfflineBoards?: boolean } = {},
+    ): Promise<boolean> => {
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
       updateNativeSessionDegraded(false);
       const previousStorageOwner = Platform.OS === 'web' ? authenticatedStorageOwnerRef.current : undefined;
@@ -325,7 +354,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
 
       let completed: boolean;
       if (needsFullCleanup) {
-        completed = await runSignedOutCleanup(transitionEpoch, previousStorageOwner);
+        completed = await runSignedOutCleanup(transitionEpoch, previousStorageOwner, { purgeOfflineBoards });
       } else {
         if (!isAuthTransitionCurrent(transitionEpoch)) return false;
         resetAnalyticsForSignedOutTransition();
@@ -791,7 +820,13 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // ownership between SecureStore rejecting and this continuation running.
       const signOutStillOwnsCredentialState = isAuthCredentialGenerationCurrent(isolatedCredentialGeneration);
       if (signOutStillOwnsCredentialState && (signOutPerformed || durableSignOutError)) {
-        await enqueueAuthTransition(() => handleSignedOutTransition(transitionEpoch, true));
+        // The one call site that asks for the full wipe. This is the deliberate,
+        // confirmed "I'm done on this device" — both 'manual' (behind
+        // useConfirmSignOut's dialog) and 'account_deleted' (behind its own typed
+        // DELETE gate) — so the downloaded catalogs go with the rest of the data.
+        await enqueueAuthTransition(() =>
+          handleSignedOutTransition(transitionEpoch, true, { purgeOfflineBoards: true }),
+        );
       }
 
       if (durableSignOutError) {
