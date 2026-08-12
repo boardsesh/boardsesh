@@ -502,12 +502,29 @@ export const MOONBOARD_DEDUP_REPLAY_SCHEMA_SQL = `
   END;
   $$ LANGUAGE plpgsql;
 
+  -- 0144: no WHEN on either of these two, so they are ported bare.
   CREATE TRIGGER trg_user_favorites_set_updated_at BEFORE UPDATE ON user_favorites
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
   CREATE TRIGGER trg_playlist_climbs_set_updated_at BEFORE UPDATE ON playlist_climbs
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+  -- 0146:74-83 (supersedes 0144's bare version). The WHEN guard is copied
+  -- column-for-column rather than dropped: without it this fixture would report
+  -- a cursor bump for a bookkeeping-only tick write that prod deliberately does
+  -- NOT re-ship, so a future repoint that moved only an excluded column would
+  -- look propagated here and strand the row on every device. Naming a column
+  -- this fixture's table doesn't have is a no-op for the jsonb subtraction, so
+  -- the real list ports verbatim.
   CREATE TRIGGER trg_boardsesh_ticks_set_updated_at BEFORE UPDATE ON boardsesh_ticks
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+    FOR EACH ROW
+    WHEN ((to_jsonb(OLD) - ARRAY['id','board_id','updated_at',
+            'aurora_type','aurora_id','aurora_synced_at','aurora_sync_error',
+            'kilter_type','kilter_id','kilter_synced_at','kilter_sync_error'])
+          IS DISTINCT FROM
+          (to_jsonb(NEW) - ARRAY['id','board_id','updated_at',
+            'aurora_type','aurora_id','aurora_synced_at','aurora_sync_error',
+            'kilter_type','kilter_id','kilter_synced_at','kilter_sync_error']))
+    EXECUTE FUNCTION set_updated_at();
 
   CREATE OR REPLACE FUNCTION set_board_climbs_sync_fields() RETURNS TRIGGER AS $$
   BEGIN
@@ -517,9 +534,14 @@ export const MOONBOARD_DEDUP_REPLAY_SCHEMA_SQL = `
   END;
   $$ LANGUAGE plpgsql;
 
+  -- 0146:47-53. Same verbatim port: 'synced'/'sync_error' are kilter-sync
+  -- bookkeeping columns this fixture's board_climbs doesn't carry, and
+  -- subtracting an absent key changes nothing.
   CREATE TRIGGER trg_board_climbs_set_sync_fields BEFORE UPDATE ON board_climbs
     FOR EACH ROW
-    WHEN ((to_jsonb(OLD) - ARRAY['updated_at','sync_seq']) IS DISTINCT FROM (to_jsonb(NEW) - ARRAY['updated_at','sync_seq']))
+    WHEN ((to_jsonb(OLD) - ARRAY['synced','sync_error','updated_at','sync_seq'])
+          IS DISTINCT FROM
+          (to_jsonb(NEW) - ARRAY['synced','sync_error','updated_at','sync_seq']))
     EXECUTE FUNCTION set_board_climbs_sync_fields();
 
   CREATE OR REPLACE FUNCTION set_board_climb_stats_sync_fields() RETURNS TRIGGER AS $$
@@ -536,7 +558,7 @@ export const MOONBOARD_DEDUP_REPLAY_SCHEMA_SQL = `
 `;
 
 /**
- * Seed covers six cases:
+ * Seed covers seven cases:
  *  - CASE A ("p25"/"p40"): the expected shape — one problem graded at two
  *    distinct angles, exercising every repoint/collision/merge path plus the
  *    offline tombstones a repoint owes.
@@ -556,6 +578,9 @@ export const MOONBOARD_DEDUP_REPLAY_SCHEMA_SQL = `
  *    angle, including one climber who ticked both — the case where merging
  *    the stored counts arithmetically is wrong however you do it, and only a
  *    recount from the repointed ticks lands on the right number.
+ *  - CASE G ("v25"/"v40"): a merged key carrying a STALE Boardsesh half with
+ *    no ticks behind it — the shape an EXISTS(tick)-gated recompute skips, so
+ *    the phantom count would land on the surviving climb permanently.
  */
 export const MOONBOARD_DEDUP_REPLAY_SEED_SQL = `
   INSERT INTO playlists (id, uuid) VALUES (100, 'playlist-a-uuid'), (300, 'playlist-e-uuid');
@@ -641,6 +666,12 @@ export const MOONBOARD_DEDUP_REPLAY_SEED_SQL = `
   -- the latest-wins policy is directly observable: an implementation that
   -- keeps the canonical's own row (as an earlier version did) leaves u4 at
   -- +1 and lands vote_counts on 2/1/+1 instead of 1/2/-1.
+  -- u17/u18 exist only to push |score| to 3. At |score| = 1 the magnitude term
+  -- LN(GREATEST(ABS(score), 1)) is exactly 0, so the whole SIGN/ABS/LN half of
+  -- the hot_score formula was multiplied out of the assertion and dropping any
+  -- of it passed. CASE E keeps a |score| = 1 group and asserts hot_score there
+  -- too, which is what pins the GREATEST(…, 1) floor — the two magnitudes catch
+  -- different mutations and both are needed.
   -- Seeded with the trigger suppressed so pre-migration vote_counts land at
   -- these exact, deterministic values regardless of trigger timing/ordering —
   -- the migration's OWN rebuild (step 6) is what's under test, not the seed.
@@ -649,7 +680,9 @@ export const MOONBOARD_DEDUP_REPLAY_SEED_SQL = `
     ('u2','climb','p25',1,'2024-02-01T00:00:00Z'),
     ('u3','climb','p40',-1,'2024-02-01T00:00:00Z'),
     ('u4','climb','p40',1,'2024-02-01T00:00:00Z'),
-    ('u4','climb','p25',-1,'2024-07-01T00:00:00Z');
+    ('u4','climb','p25',-1,'2024-07-01T00:00:00Z'),
+    ('u17','climb','p40',-1,'2024-03-01T00:00:00Z'),
+    ('u18','climb','p25',-1,'2024-03-02T00:00:00Z');
   INSERT INTO vote_counts (entity_type, entity_id, upvotes, downvotes, score, hot_score, created_at) VALUES
     ('climb','p25',2,0,2,1.0,'2024-01-15T00:00:00Z'),
     ('climb','p40',1,0,1,1.0,'2024-06-01T00:00:00Z');
@@ -717,11 +750,36 @@ export const MOONBOARD_DEDUP_REPLAY_SEED_SQL = `
     ('moonboard','w25',40,'STARTING'), ('moonboard','w25',41,'FINISH'),
     ('moonboard','w40',40,'STARTING'), ('moonboard','w40',41,'FINISH'),
     ('moonboard','w55',40,'STARTING'), ('moonboard','w55',41,'FINISH');
+  -- w25 ALSO carries a stats row at 55° — a non-native angle for it, the shape
+  -- the tick recompute mints when someone logs at an angle their climb isn't
+  -- graded at. It collides with w55's OWN 55° row once both re-key onto w40, so
+  -- this is the only seed that exercises _mad_stats_src's ranked alias-vs-alias
+  -- fold. Values are chosen so every leg of that rank is observable: w25's row
+  -- carries MORE upstream ascents (9 vs 7) but is at a non-native angle, so
+  -- the (s.angle = m.angle) DESC leg must hand the first-non-null columns
+  -- (display_difficulty, the quality averages) to w55's row in spite of the
+  -- ascent count, while max(upstream_ascensionist_count) still takes w25's 9.
+  -- Without the pre-fold this pair feeds one target key twice and the whole
+  -- migration aborts with "ON CONFLICT DO UPDATE command cannot affect row a
+  -- second time".
   INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count,
-         upstream_ascensionist_count, boardsesh_ascensionist_count) VALUES
-    ('moonboard','w25',25,3,3,0),
-    ('moonboard','w40',40,50,50,0),
-    ('moonboard','w55',55,7,7,0);
+         upstream_ascensionist_count, boardsesh_ascensionist_count, display_difficulty,
+         quality_average, upstream_quality_average) VALUES
+    ('moonboard','w25',25,3,3,0,NULL,NULL,NULL),
+    ('moonboard','w25',55,9,9,0,11,2.2,2.2),
+    ('moonboard','w40',40,50,50,0,NULL,NULL,NULL),
+    ('moonboard','w55',55,7,7,0,21,4.4,4.4);
+
+  -- board_climb_send_stats on BOTH aliases plus the canonical. The two alias
+  -- rows are what exercises step 7's pre-fold (SUM/MAX per column) — with only
+  -- one alias row SUM, MAX and MIN are indistinguishable — and the canonical's
+  -- row keeps the ON CONFLICT branch running on top of the folded value.
+  -- Asymmetric on purpose: w25 leads on senders, w55 on sends and recency, so
+  -- swapping any aggregate changes the asserted result.
+  INSERT INTO board_climb_send_stats (board_type, climb_uuid, send_count_30d, sender_count_30d, send_count_90d, last_sent_at) VALUES
+    ('moonboard','w25',2,5,3,'2024-01-01T00:00:00Z'),
+    ('moonboard','w55',4,1,6,'2024-05-01T00:00:00Z'),
+    ('moonboard','w40',10,2,20,'2023-01-01T00:00:00Z');
 
   -- Every collision below is between the two ALIASES (w25/w55), never with the
   -- canonical, and each pair is seeded so the LOSER is the one a naive
@@ -826,8 +884,48 @@ export const MOONBOARD_DEDUP_REPLAY_SEED_SQL = `
     -- that was deleted.
     ('tick-s25-u13','u13','moonboard','s25',40,'native','attempt',5,'2024-04-10T00:00:00Z'),
     ('tick-s25-u14','u14','moonboard','s25',40,'moonboard_import','send',5,'2024-04-11T00:00:00Z'),
-    ('tick-s40-u15','u15','moonboard','s40',40,'native','send',5,'2024-04-12T00:00:00Z');
+    ('tick-s40-u15','u15','moonboard','s40',40,'native','send',5,'2024-04-12T00:00:00Z'),
+    -- u16 is the ONLY climber who exercises the disqualifier itself: a real
+    -- native send AND an imported send at the same post-merge key. u14 (above)
+    -- is disqualified in name only — with no native send of their own they fail
+    -- has_unabsorbed_native_send first, so deleting the NOT has_upstream term from
+    -- step 3b changed no count and survived as a mutant. u16's native send
+    -- would count on its own, so the disqualifier is what keeps the answer at
+    -- 3; without it this climber is double-counted, because their ascent is
+    -- already inside upstream_ascensionist_count. The native tick is
+    -- deliberately unrated (quality NULL) so it stays out of the quality blend
+    -- and the sum/count assertions keep testing the LATEST-rating rule alone.
+    ('tick-s25-u16','u16','moonboard','s25',40,'native','send',NULL,'2024-04-13T00:00:00Z'),
+    ('tick-s40-u16','u16','moonboard','s40',40,'moonboard_import','send',NULL,'2024-04-14T00:00:00Z');
   UPDATE boardsesh_ticks SET kilter_detached_at = '2024-05-01T00:00:00Z' WHERE uuid = 'tick-s40-u15';
+
+  -- CASE G: problem V, graded at 25° and 40° (canonical v40), where the ALIAS
+  -- carries a STALE Boardsesh half at a non-native angle: v25 holds a 40° stats
+  -- row claiming 2 Boardsesh ascensionists and a quality sum of 8 over 2
+  -- ratings, with no ticks anywhere behind it. Prod carries this shape —
+  -- deleteAccount cascade-deletes a climber's boardsesh_ticks with no recompute
+  -- on that path, and selfHealStaleClimbStats only re-derives keys that still
+  -- have a surviving send, so the row is structurally unrepairable.
+  --
+  -- Merging that half onto the canonical publishes 2 phantom ascents on the
+  -- SURVIVING climb (30 -> 32) and leaves quality_average off its own blend
+  -- inputs ((3.0*30 + 8)/(30 + 2) = 3.0625, not the stored 3.0) — staleness
+  -- that used to sit on a hidden duplicate moved onto the climb everyone sees.
+  -- Nothing here has a tick, so this key is exactly the one an
+  -- EXISTS(tick)-gated step 3b never revisits. The correct end state is
+  -- boardsesh 0 with an upstream-only blend.
+  INSERT INTO board_climbs (uuid, board_type, layout_id, angle, user_id, is_draft, is_listed, created_at) VALUES
+    ('v25', 'moonboard', 1, 25, NULL, false, true, '2024-01-01T00:00:00Z'),
+    ('v40', 'moonboard', 1, 40, NULL, false, true, '2024-01-02T00:00:00Z');
+  INSERT INTO board_climb_holds (board_type, climb_uuid, hold_id, hold_state) VALUES
+    ('moonboard','v25',60,'STARTING'), ('moonboard','v25',61,'FINISH'),
+    ('moonboard','v40',60,'STARTING'), ('moonboard','v40',61,'FINISH');
+  INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count, upstream_ascensionist_count,
+         boardsesh_ascensionist_count, boardsesh_quality_sum, boardsesh_quality_count,
+         quality_average, upstream_quality_average) VALUES
+    ('moonboard','v25',25,5,5,0,NULL,NULL,2.0,2.0),
+    ('moonboard','v25',40,2,0,2,8,2,4.0,NULL),
+    ('moonboard','v40',40,30,30,0,NULL,NULL,3.0,3.0);
 
   -- CASE B: problem Q, two catalog rows BOTH at 25° (identical holds) — a
   -- residual same-angle duplicate this migration must NOT auto-merge.
@@ -855,10 +953,46 @@ export const MOONBOARD_DEDUP_REPLAY_SEED_SQL = `
     ('moonboard','r25',25,1,1,0);
 `;
 
+/**
+ * Freezes every offline sync cursor the migration is supposed to move, taken
+ * AFTER the seed and BEFORE the migration so "did this row's cursor advance?"
+ * is answerable at all. Repoints reach a device only through
+ * (updated_at, sync_seq) — the migration header's whole propagation argument —
+ * and until this existed the only cursor assertion in the file was
+ * board_climbs.sync_seq for the delist.
+ *
+ * Not a temp table: it has to outlive the connection-scoped session the
+ * assertions run in. Named with the same `_replay_` prefix as nothing else in
+ * the synthetic schema so the migration can never see it.
+ */
+export const MOONBOARD_DEDUP_REPLAY_PRE_CURSORS_SQL = `
+  CREATE TABLE _replay_pre_cursors AS
+    SELECT 'boardsesh_ticks' AS table_name, uuid AS record_key,
+           updated_at, NULL::bigint AS sync_seq
+      FROM boardsesh_ticks
+    UNION ALL
+    -- Keyed by surrogate id, not by the client key: a repoint MOVES
+    -- (board_name, climb_uuid, angle) / (playlist_uuid, climb_uuid), which is
+    -- the whole reason these two owe a tombstone, so the client key cannot join
+    -- a row to its own pre-migration cursor.
+    SELECT 'user_favorites', id::text, updated_at, NULL::bigint FROM user_favorites
+    UNION ALL
+    SELECT 'playlist_climbs', id::text, updated_at, NULL::bigint FROM playlist_climbs
+    UNION ALL
+    SELECT 'board_climb_stats', board_type || ':' || climb_uuid || ':' || angle::text,
+           updated_at, sync_seq
+      FROM board_climb_stats;
+`;
+
 /** Build the synthetic schema, seed every case, and apply the migration verbatim. */
 export async function prepareMoonboardDedupReplayDatabase(db: postgres.Sql): Promise<void> {
   await db.unsafe(MOONBOARD_DEDUP_REPLAY_SCHEMA_SQL);
   await db.unsafe(MOONBOARD_DEDUP_REPLAY_SEED_SQL);
+  // Separate statement, and separate implicit transaction, from the migration
+  // below: NOW() is transaction-start time, so a snapshot taken inside the
+  // migration's own transaction would record the very timestamps the migration
+  // is about to stamp and every "advanced" assertion would be vacuous.
+  await db.unsafe(MOONBOARD_DEDUP_REPLAY_PRE_CURSORS_SQL);
   await db.unsafe(moonboardDedupReplayMigrationSql());
 }
 
@@ -1060,6 +1194,10 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
       assert.deepEqual(
         rows.map((r) => [r.user_id, r.value]),
         [
+          // u17/u18 carry no policy weight — they are here so the merged
+          // canonical lands on |score| = 3 for the hot_score check below.
+          ['u17', -1],
+          ['u18', -1],
           ['u2', 1],
           ['u3', -1],
           // u4 voted +1 on the canonical in February and -1 on the alias in
@@ -1079,8 +1217,8 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
         FROM vote_counts WHERE entity_type = 'climb' AND entity_id = 'p40'`;
       assert.equal(rows.length, 1);
       assert.equal(rows[0].upvotes, 1);
-      assert.equal(rows[0].downvotes, 2);
-      assert.equal(rows[0].score, -1);
+      assert.equal(rows[0].downvotes, 4);
+      assert.equal(rows[0].score, -3);
       // created_at is `timestamp without time zone`; cast to text above (rather
       // than letting postgres.js auto-parse it into a Date) so this assertion
       // doesn't depend on the test runner's local timezone.
@@ -1097,10 +1235,17 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
       // (0053/0130) exact formula, verified against the live trigger this fixture
       // now includes: an earlier version of this migration subtracted
       // TIMESTAMP '2005-12-08', which doesn't appear anywhere in the trigger.
-      const expectedHot = Math.sign(-1) * Math.log(Math.max(Math.abs(-1), 1)) + createdAt.getTime() / 1000 / 45000;
+      //
+      // score is -3 rather than -1 so the magnitude term actually contributes:
+      // at |score| = 1, LN(GREATEST(ABS(score), 1)) is exactly 0 and this whole
+      // half of the formula multiplies out — replacing it with 0, dropping SIGN
+      // or dropping ABS all passed. At -3 the term is -ln(3) ≈ -1.0986 and all
+      // three of those mutations fail. The GREATEST(…, 1) floor only bites
+      // below 2, so CASE E pins that separately at |score| = 1.
+      const expectedHot = Math.sign(-3) * Math.log(Math.max(Math.abs(-3), 1)) + createdAt.getTime() / 1000 / 45000;
       assert.ok(
         Math.abs((rows[0].hot_score as number) - expectedHot) < 1e-6,
-        'hot_score matches update_vote_counts() formula exactly',
+        `hot_score matches update_vote_counts() formula exactly; got ${rows[0].hot_score}, expected ${expectedHot}`,
       );
 
       const orphaned = await db`SELECT 1 FROM vote_counts WHERE entity_type = 'climb' AND entity_id = 'p25'`;
@@ -1327,14 +1472,85 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
       assert.equal(votes[0].user_id, 'u7');
       assert.equal(votes[0].value, -1, "u7's August downvote on w55 supersedes their February upvote on w25");
 
-      const counts = await db`SELECT upvotes, downvotes, score FROM vote_counts
-        WHERE entity_type = 'climb' AND entity_id = 'w40'`;
+      const counts = await db`SELECT upvotes, downvotes, score, hot_score, created_at::text AS created_at_text
+        FROM vote_counts WHERE entity_type = 'climb' AND entity_id = 'w40'`;
       assert.equal(counts.length, 1);
       assert.equal(counts[0].upvotes, 0);
       assert.equal(counts[0].downvotes, 1);
       assert.equal(counts[0].score, -1);
 
+      // w40 has no feed_items row, so the created_at chain falls through to
+      // MIN(votes.created_at) over the SURVIVING votes — the middle link CASE A
+      // never reaches (it stops at the feed_items row).
+      const createdAt = new Date(`${(counts[0].created_at_text as string).replace(' ', 'T')}Z`);
+      assert.equal(
+        createdAt.toISOString(),
+        new Date('2024-08-02T00:00:00Z').toISOString(),
+        "no feed_items row for w40, so the rebuild falls back to the earliest surviving vote's created_at",
+      );
+      // |score| = 1 is the only magnitude where the GREATEST(…, 1) floor is
+      // load-bearing: it clamps LN's argument to 1 so the term is exactly 0.
+      // Raising the floor to 2 would put -ln(2) here, which CASE A's |score| = 3
+      // cannot see. Both magnitudes are needed.
+      const expectedHot = Math.sign(-1) * Math.log(Math.max(Math.abs(-1), 1)) + createdAt.getTime() / 1000 / 45000;
+      assert.ok(
+        Math.abs((counts[0].hot_score as number) - expectedHot) < 1e-6,
+        `hot_score clamps the magnitude term to LN(1) = 0 at |score| = 1; got ${counts[0].hot_score}, expected ${expectedHot}`,
+      );
+
       const orphaned = await db`SELECT 1 FROM vote_counts WHERE entity_type = 'climb' AND entity_id IN ('w25','w55')`;
+      assert.equal(orphaned.length, 0);
+    },
+  },
+  {
+    name: 'CASE E: two aliases holding a stats row at the SAME target angle fold by the documented rank',
+    run: async (db) => {
+      // w25@55 (a non-native angle for w25) and w55@55 both re-key onto
+      // (w40, 55). Without _mad_stats_src's pre-fold this pair feeds one target
+      // key twice and the migration aborts on deploy; with it, the ranked fold
+      // decides which row's values are published.
+      const rows = await db`SELECT display_difficulty, upstream_ascensionist_count, upstream_quality_average,
+          ascensionist_count, boardsesh_ascensionist_count
+        FROM board_climb_stats WHERE board_type = 'moonboard' AND climb_uuid = 'w40' AND angle = 55`;
+      assert.equal(rows.length, 1, 'the two colliding alias rows folded into exactly one row');
+      assert.equal(
+        rows[0].display_difficulty,
+        21,
+        "rank leads on (s.angle = m.angle): w55 is the member the catalog graded at 55, so its grade wins even though w25's row carries more upstream ascents (9 vs 7)",
+      );
+      assert.equal(rows[0].upstream_quality_average, 4.4, "same rank, same winner — w55's quality average");
+      assert.equal(
+        Number(rows[0].upstream_ascensionist_count),
+        9,
+        'upstream ascents are max()ed across BOTH rows, not taken from the rank-1 row',
+      );
+      assert.equal(Number(rows[0].boardsesh_ascensionist_count), 0, 'no ticks at this key, so the recount lands on 0');
+      assert.equal(Number(rows[0].ascensionist_count), 9);
+    },
+  },
+  {
+    name: 'CASE E: send stats fold two alias rows together before merging onto the canonical',
+    run: async (db) => {
+      const rows =
+        await db`SELECT send_count_30d, sender_count_30d, send_count_90d, last_sent_at::text AS last_sent_text
+        FROM board_climb_send_stats WHERE board_type = 'moonboard' AND climb_uuid = 'w40'`;
+      assert.equal(rows.length, 1);
+      // Pre-fold over w25 (2/5/3) and w55 (4/1/6): SUM 6, MAX 5, SUM 9, MAX the
+      // later last_sent_at. Then the ON CONFLICT branch merges w40's own row.
+      assert.equal(rows[0].send_count_30d, 16, 'w40 10 + folded 6 — send counts are true event counts, so they sum');
+      assert.equal(
+        rows[0].sender_count_30d,
+        5,
+        "distinct senders can't be deduplicated across rows, so both the fold and the merge take the conservative MAX (w25's 5), never a sum",
+      );
+      assert.equal(rows[0].send_count_90d, 29, 'w40 20 + folded 9');
+      assert.equal(
+        new Date(`${(rows[0].last_sent_text as string).replace(' ', 'T')}Z`).toISOString(),
+        new Date('2024-05-01T00:00:00Z').toISOString(),
+        "the most recent send across all three rows, so the fold's MAX and the merge's GREATEST both bite",
+      );
+      const orphaned = await db`SELECT 1 FROM board_climb_send_stats
+        WHERE board_type = 'moonboard' AND climb_uuid IN ('w25','w55')`;
       assert.equal(orphaned.length, 0);
     },
   },
@@ -1348,7 +1564,10 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
         Number(rows[0].boardsesh_ascensionist_count),
         3,
         'u10 (both aliases), u11 and u12 are three distinct climbers; ' +
-          'summing the stored 2 + 2 gives 4 and taking GREATEST gives 2 — both wrong',
+          'summing the stored 2 + 2 gives 4 and taking GREATEST gives 2 — both wrong. ' +
+          'u16 has a real native send here too and is still excluded, because their ' +
+          'imported send means that ascent is already inside upstream_ascensionist_count: ' +
+          'drop `AND NOT has_upstream` from step 3b and this reads 4',
       );
       assert.equal(Number(rows[0].upstream_ascensionist_count), 20);
       assert.equal(Number(rows[0].ascensionist_count), 23, 'materialized total = upstream + boardsesh');
@@ -1376,9 +1595,47 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
       // a regression names the reason rather than just an off-by-N.
       const ticks = await db`SELECT uuid FROM boardsesh_ticks
         WHERE board_type = 'moonboard' AND climb_uuid = 's40' AND angle = 40 ORDER BY uuid`;
-      assert.equal(ticks.length, 7, 'every tick was repointed; none were deleted or left behind');
+      assert.equal(ticks.length, 9, 'every tick was repointed; none were deleted or left behind');
       const orphaned = await db`SELECT 1 FROM boardsesh_ticks WHERE board_type = 'moonboard' AND climb_uuid = 's25'`;
       assert.equal(orphaned.length, 0);
+    },
+  },
+  {
+    name: 'CASE G: a stale tick-less Boardsesh half is recounted away, not promoted onto the canonical',
+    run: async (db) => {
+      const rows = await db`SELECT ascensionist_count, upstream_ascensionist_count, boardsesh_ascensionist_count,
+          boardsesh_quality_sum, boardsesh_quality_count, quality_average, upstream_quality_average
+        FROM board_climb_stats WHERE board_type = 'moonboard' AND climb_uuid = 'v40' AND angle = 40`;
+      assert.equal(rows.length, 1);
+      assert.equal(
+        Number(rows[0].boardsesh_ascensionist_count),
+        0,
+        "v25's 40° row claimed 2 Boardsesh ascensionists with no ticks behind them; merging that half " +
+          'onto the canonical would publish 2 phantom ascents on the surviving climb',
+      );
+      assert.equal(Number(rows[0].ascensionist_count), 30, 'the headline count stays the catalog total, not 32');
+      assert.equal(rows[0].boardsesh_quality_sum, null, 'no ticks, so the blend has no Boardsesh numerator');
+      assert.equal(rows[0].boardsesh_quality_count, null);
+      assert.equal(
+        rows[0].quality_average,
+        3.0,
+        'the blend collapses to the upstream average; importing the stale sum 8 over 2 ratings would ' +
+          'have left it at 3.0 while its own inputs said (3.0*30 + 8)/(30 + 2) = 3.0625',
+      );
+      assert.equal(rows[0].upstream_quality_average, 3.0);
+
+      // The 25° row rides along on the same ungated recompute: nothing merged
+      // into it and it has no ticks, so it must re-blend back to exactly its
+      // upstream average rather than drift.
+      const alias25 = await db`SELECT ascensionist_count, boardsesh_ascensionist_count, quality_average
+        FROM board_climb_stats WHERE board_type = 'moonboard' AND climb_uuid = 'v40' AND angle = 25`;
+      assert.equal(alias25.length, 1);
+      assert.equal(Number(alias25[0].ascensionist_count), 5);
+      assert.equal(Number(alias25[0].boardsesh_ascensionist_count), 0);
+      assert.equal(alias25[0].quality_average, 2.0);
+
+      const orphaned = await db`SELECT 1 FROM board_climb_stats WHERE board_type = 'moonboard' AND climb_uuid = 'v25'`;
+      assert.equal(orphaned.length, 0, 'no stats rows left under the retired uuid');
     },
   },
   {
@@ -1427,6 +1684,156 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
         rows.every((row) => row.user_id === null),
         'catalog stats are reference data: the tombstone is global, not per-user',
       );
+    },
+  },
+  {
+    name: 'no tombstone this migration wrote names a client key a surviving row still occupies',
+    run: async (db) => {
+      // The single most destructive thing this migration could do to a phone.
+      // sync_deletions is applied on a cursor independent of the table pulls
+      // (pull-client.ts applies deletions FIRST), so a tombstone naming a live
+      // client key deletes that row on every device — and if the surviving row
+      // was never re-stamped, no later pull brings it back. The hand-written
+      // tombstones guard against exactly this with
+      // `AND old_climb_uuid <> canonical_uuid`, whose whole job is to stay
+      // silent when the survivor IS the canonical's own physical row.
+      //
+      // Deliberately an anti-join over the trigger's own record_id formats
+      // rather than per-case LIKE checks: every previous tombstone assertion in
+      // this file is scoped to one uuid prefix or one user, so a spurious
+      // tombstone for a DIFFERENT key was invisible to all of them. This is
+      // scoped only by the key format, so it sees every row.
+      const live = await db`
+        SELECT sd.table_name, sd.record_id
+          FROM sync_deletions sd
+         WHERE sd.table_name = 'user_favorites'
+           AND EXISTS (
+             SELECT 1 FROM user_favorites uf
+              WHERE uf.user_id = sd.user_id
+                AND uf.board_name || ':' || uf.climb_uuid || ':' || uf.angle::text = sd.record_id
+           )
+        UNION ALL
+        SELECT sd.table_name, sd.record_id
+          FROM sync_deletions sd
+         WHERE sd.table_name = 'playlist_climbs'
+           AND EXISTS (
+             SELECT 1 FROM playlist_climbs pc
+               JOIN playlists pl ON pl.id = pc.playlist_id
+              WHERE pl.uuid || ':' || pc.climb_uuid = sd.record_id
+           )
+        UNION ALL
+        SELECT sd.table_name, sd.record_id
+          FROM sync_deletions sd
+         WHERE sd.table_name = 'board_climb_stats'
+           AND EXISTS (
+             SELECT 1 FROM board_climb_stats s
+              WHERE s.board_type || ':' || s.climb_uuid || ':' || s.angle::text = sd.record_id
+           )
+        ORDER BY 1, 2`;
+      assert.equal(
+        live.length,
+        0,
+        `a tombstone names a key that a surviving row still occupies — every device would delete it: ${JSON.stringify(live)}`,
+      );
+    },
+  },
+  {
+    name: 'every repointed or re-keyed row is pushed past every client cursor',
+    run: async (db) => {
+      // Repoints reach a device ONLY through (updated_at, sync_seq) — there is
+      // no delete/insert pair for the client to notice. Pre-migration values
+      // come from _replay_pre_cursors, captured between the seed and the
+      // migration (see MOONBOARD_DEDUP_REPLAY_PRE_CURSORS_SQL).
+
+      // Ticks: climb_uuid is outside 0146's WHEN exclusion list, so a repoint
+      // must stamp updated_at. tick-p40-u1 was already on the canonical and is
+      // the negative control — re-shipping every untouched tick would be a
+      // regression of its own.
+      const ticks = await db`SELECT t.uuid, (t.updated_at > p.updated_at) AS advanced
+          FROM boardsesh_ticks t
+          JOIN _replay_pre_cursors p ON p.table_name = 'boardsesh_ticks' AND p.record_key = t.uuid
+         WHERE t.uuid IN ('tick-p25-u1','tick-s25-u10','tick-s25-u11','tick-p40-u1','tick-s40-u10')
+         ORDER BY t.uuid`;
+      assert.deepEqual(
+        ticks.map((row) => [row.uuid, row.advanced]),
+        [
+          ['tick-p25-u1', true],
+          ['tick-p40-u1', false],
+          ['tick-s25-u10', true],
+          ['tick-s25-u11', true],
+          ['tick-s40-u10', false],
+        ],
+        'every repointed tick moved its cursor; ticks already on the canonical did not',
+      );
+
+      // Favourites and playlist rows that survived but MOVED. u1's p40@40 row
+      // is deliberately absent: it is a single-row partition already holding the
+      // winning values, so the IS DISTINCT FROM guard skips it and its cursor
+      // correctly stays put (which is also why the tombstone guard above matters
+      // — that row would never be re-delivered).
+      const favourites = await db`SELECT f.user_id, f.climb_uuid, f.angle, (f.updated_at > p.updated_at) AS advanced
+          FROM user_favorites f
+          JOIN _replay_pre_cursors p ON p.table_name = 'user_favorites' AND p.record_key = f.id::text
+         ORDER BY f.user_id, f.angle`;
+      assert.deepEqual(
+        favourites.map((row) => [row.user_id, row.climb_uuid, row.angle, row.advanced]),
+        [
+          ['u1', 'p40', 25, true],
+          ['u1', 'p40', 40, false],
+          ['u7', 'w40', 25, true],
+          ['u9', 'p40', 40, true],
+        ],
+      );
+
+      const playlistRows = await db`SELECT pc.playlist_id, pc.climb_uuid, (pc.updated_at > p.updated_at) AS advanced
+          FROM playlist_climbs pc
+          JOIN _replay_pre_cursors p ON p.table_name = 'playlist_climbs' AND p.record_key = pc.id::text
+         ORDER BY pc.playlist_id`;
+      assert.deepEqual(
+        playlistRows.map((row) => [Number(row.playlist_id), row.climb_uuid, row.advanced]),
+        [
+          [100, 'p40', true],
+          [300, 'w40', true],
+        ],
+        'both survivors took the earliest added_at/position, so both had to be re-stamped',
+      );
+
+      // Stats rows the migration merged into or recomputed, against rows whose
+      // published values it left alone. Both triggers are value-guarded
+      // (`OLD.* IS DISTINCT FROM NEW.*`), so "was it written" is not the same
+      // question as "did anything change":
+      //   s40@40 — merged AND recounted (2 -> 3 ascensionists), so it ships.
+      //   v40@40 — CASE G. Step 2 touched the row and step 3b recounted it, but
+      //            the whole point is that nothing the client can see moved, so
+      //            it correctly ships nothing. If this ever reads true, the
+      //            stale Boardsesh half is being promoted again.
+      //   q25a@25 — CASE B, never touched at all.
+      const stats = await db`SELECT p.record_key, (s.updated_at > p.updated_at) AS updated_advanced,
+             (s.sync_seq > p.sync_seq) AS seq_advanced
+          FROM _replay_pre_cursors p
+          JOIN board_climb_stats s
+            ON s.board_type || ':' || s.climb_uuid || ':' || s.angle::text = p.record_key
+         WHERE p.table_name = 'board_climb_stats'
+           AND p.record_key IN ('moonboard:s40:40','moonboard:v40:40','moonboard:q25a:25')
+         ORDER BY p.record_key`;
+      assert.deepEqual(
+        stats.map((row) => [row.record_key, row.updated_advanced, row.seq_advanced]),
+        [
+          ['moonboard:q25a:25', false, false],
+          ['moonboard:s40:40', true, true],
+          ['moonboard:v40:40', false, false],
+        ],
+      );
+
+      // Rows step 2 created under the canonical uuid are brand new, so they sit
+      // above every pre-existing sync_seq by construction.
+      const inserted = await db`SELECT min(s.sync_seq) > (
+             SELECT max(p.sync_seq) FROM _replay_pre_cursors p WHERE p.table_name = 'board_climb_stats'
+           ) AS ahead
+          FROM board_climb_stats s
+         WHERE s.board_type = 'moonboard'
+           AND (s.climb_uuid, s.angle) IN (('p40', 25), ('t40', 25), ('t40', 55), ('w40', 55), ('v40', 25))`;
+      assert.equal(inserted[0].ahead, true, 're-keyed stats rows are ahead of every pre-migration cursor');
     },
   },
   {
