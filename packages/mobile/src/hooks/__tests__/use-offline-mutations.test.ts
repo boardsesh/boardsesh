@@ -30,6 +30,13 @@ vi.mock('@react-native-community/netinfo', () => ({
   default: { addEventListener: () => () => {} },
 }));
 
+// The reporter itself is unit-tested in offline/__tests__/outbox-telemetry.test.ts;
+// here we prove the write primitives feed it the right enqueue outcome.
+const reportEnqueueSuppressedMock = vi.hoisted(() => vi.fn());
+vi.mock('../../offline/outbox-telemetry', () => ({
+  reportEnqueueSuppressed: reportEnqueueSuppressedMock,
+}));
+
 import {
   writeTickLocal,
   addFavoriteLocal,
@@ -71,6 +78,7 @@ let db: TestSqliteDb;
 
 beforeEach(async () => {
   invalidateQueries.mockClear();
+  reportEnqueueSuppressedMock.mockClear();
   __resetDrainerStateForTests();
   db = createTestDatabase();
   await runMigrations(db);
@@ -236,5 +244,70 @@ describe('useOfflineUnfollowUser', () => {
     const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations WHERE operation = ?', ['delete']);
     expect(queued).toHaveLength(1);
     expect(queued[0].idempotency_key).toBe('del:user_follows:user-42');
+  });
+});
+
+// Issue #4315. `enqueue` is INSERT OR IGNORE against a UNIQUE idempotency key,
+// and the cancel DELETEs in these primitives match only status = 'pending'. So
+// once a favorite/follow key dead-letters it owns that key forever: every later
+// tap writes the local row, gets silently dropped at enqueue time, and produces
+// no queue row to drain and therefore no dead-letter event anywhere. Making the
+// swallow countable is the point; reviving the row is a separate behaviour
+// change with its own issue.
+describe('enqueue suppressed by a dead-lettered key', () => {
+  const favorite = { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 };
+
+  async function deadLetterExistingRow(idempotencyKey: string) {
+    await db.runAsync("UPDATE pending_mutations SET status = 'dead_letter' WHERE idempotency_key = ?", [
+      idempotencyKey,
+    ]);
+  }
+
+  it('reports when a favorite add is swallowed by a dead-lettered row', async () => {
+    await addFavoriteLocal(db, favorite);
+    await deadLetterExistingRow(favoriteAddKey(favorite));
+    reportEnqueueSuppressedMock.mockClear();
+
+    await addFavoriteLocal(db, favorite);
+
+    expect(reportEnqueueSuppressedMock).toHaveBeenCalledWith('user_favorites', 'create', 'dead_letter');
+    // The local row still exists, so the UI shows a favorite that will never sync.
+    const rows = await db.getAllAsync<Row>('SELECT * FROM user_favorites');
+    expect(rows).toHaveLength(1);
+  });
+
+  it('reports when a favorite remove is swallowed', async () => {
+    await removeFavoriteLocal(db, favorite);
+    await deadLetterExistingRow(favoriteRemoveKey(favorite));
+    reportEnqueueSuppressedMock.mockClear();
+
+    await removeFavoriteLocal(db, favorite);
+
+    expect(reportEnqueueSuppressedMock).toHaveBeenCalledWith('user_favorites', 'delete', 'dead_letter');
+  });
+
+  it('reports when a follow is swallowed', async () => {
+    const followUser = useOfflineFollowUser(db, parkedGraphqlFetch);
+    await followUser('user-42');
+    await deadLetterExistingRow('add:user_follows:user-42');
+    reportEnqueueSuppressedMock.mockClear();
+
+    await followUser('user-42');
+
+    expect(reportEnqueueSuppressedMock).toHaveBeenCalledWith('user_follows', 'create', 'dead_letter');
+  });
+
+  it('reports a live pending duplicate as pending, not as a loss', async () => {
+    await addFavoriteLocal(db, favorite);
+    reportEnqueueSuppressedMock.mockClear();
+
+    await addFavoriteLocal(db, favorite);
+
+    expect(reportEnqueueSuppressedMock).toHaveBeenCalledWith('user_favorites', 'create', 'pending');
+  });
+
+  it('never fires on a fresh insert', async () => {
+    await addFavoriteLocal(db, favorite);
+    expect(reportEnqueueSuppressedMock).not.toHaveBeenCalled();
   });
 });

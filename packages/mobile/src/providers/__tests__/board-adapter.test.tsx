@@ -75,25 +75,35 @@ vi.mock('../../lib/graphql/ws-client', () => ({
   getWsClient: wsMocks.getClient,
 }));
 
+const reportHandledErrorMock = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/error-reporting', () => ({
-  reportHandledError: vi.fn(),
+  reportHandledError: reportHandledErrorMock,
 }));
 
+const trackMock = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/analytics', () => ({ track: trackMock }));
+
+const isOnlineMock = vi.hoisted(() => vi.fn(() => true));
 vi.mock('../../offline/offline-sync-adapter', () => ({
   drainMutationQueue: vi.fn(async () => {}),
   subscribeMutationDelivery: vi.fn(() => () => {}),
+  isOnline: isOnlineMock,
 }));
 
+const writeTickLocalMock = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('../../hooks/use-offline-mutations', () => ({
-  writeTickLocal: vi.fn(async () => {}),
+  writeTickLocal: writeTickLocalMock,
 }));
 
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { BoardAdapterWrapper } from '../board-adapter';
 
 beforeEach(() => {
   vi.clearAllMocks();
   offlineEnabled = false;
   capturedAdapter = undefined;
+  isOnlineMock.mockReturnValue(true);
+  writeTickLocalMock.mockResolvedValue(undefined);
 });
 
 describe('BoardAdapterWrapper offline gating', () => {
@@ -145,5 +155,69 @@ describe('BoardAdapterWrapper offline gating', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// Issue #4315. When the local write throws, saveTickOffline returns null and
+// useSaveTick falls through to a direct network save. Online that still lands;
+// OFFLINE the network save fails and the tick is gone. Nothing in the old
+// report distinguished those two, so the Sentry count could not tell us how
+// many ticks were actually lost.
+describe('BoardAdapterWrapper tick-local-write telemetry', () => {
+  async function saveTickWithLocalWriteError(error: unknown) {
+    offlineEnabled = true;
+    writeTickLocalMock.mockRejectedValue(error);
+    render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+    const queryClient = { invalidateQueries: vi.fn() };
+    return capturedAdapter?.saveTickOffline?.(
+      { input: { climbUuid: 'climb-1', angle: 40 } } as never,
+      { queryClient, executeHttp: vi.fn() } as never,
+    );
+  }
+
+  it('keeps returning null so the network fall-through is unchanged', async () => {
+    await expect(saveTickWithLocalWriteError(new Error('disk I/O error'))).resolves.toBeNull();
+  });
+
+  it.each([
+    ['a lock error while offline', new Error('database is locked'), false, true, true],
+    ['a lock error while online', new Error('database is locked'), true, false, true],
+    ['a non-lock error while offline', new Error('disk I/O error'), false, true, false],
+    ['a non-lock error while online', new Error('disk I/O error'), true, false, false],
+  ])('tags %s', async (_label, error, online, expectedWasOffline, expectedIsLockError) => {
+    isOnlineMock.mockReturnValue(online);
+
+    await saveTickWithLocalWriteError(error);
+
+    expect(reportHandledErrorMock).toHaveBeenCalledWith(
+      error,
+      expect.objectContaining({
+        tags: {
+          source: 'offline-sync',
+          // Unchanged so the existing 90-day Sentry trend stays comparable.
+          kind: 'tick-local-write',
+          was_offline: expectedWasOffline,
+          is_lock_error: expectedIsLockError,
+        },
+      }),
+    );
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineTickLocalWriteFailed, {
+      isLockError: expectedIsLockError,
+      wasOffline: expectedWasOffline,
+      error: expect.any(String),
+    });
+  });
+
+  it('emits nothing when the local write succeeds', async () => {
+    offlineEnabled = true;
+    render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+
+    await capturedAdapter?.saveTickOffline?.(
+      { input: { climbUuid: 'climb-1', angle: 40 } } as never,
+      { queryClient: { invalidateQueries: vi.fn() }, executeHttp: vi.fn() } as never,
+    );
+
+    expect(reportHandledErrorMock).not.toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalled();
   });
 });

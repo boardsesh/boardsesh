@@ -31,11 +31,13 @@ export {
   getPendingCount,
   getDeadLetterCount,
   getDeadLetters,
+  getOutboxSummary,
   retryDeadLetter,
   discardDeadLetter,
   clearAll,
 } from './mutation-queue/queue';
-export type { PendingMutation } from './mutation-queue/queue';
+export type { PendingMutation, EnqueueResult, OutboxSummary } from './mutation-queue/queue';
+export { parseQueueTimestamp, queueTimestampAgeDays } from './mutation-queue/queue-timestamps';
 export {
   drainMutationQueue,
   isDraining,
@@ -46,7 +48,13 @@ export {
   setBackgrounded,
   isBackgrounded,
 } from './mutation-queue/drainer';
-export type { DrainOptions, MutationDeliveryEvent, MutationStatusListenerFailure } from './mutation-queue/drainer';
+export type {
+  DrainOptions,
+  MutationDeliveryEvent,
+  MutationStatusListenerFailure,
+  MutationDeadLetterInfo,
+  MutationDeadLetterReporter,
+} from './mutation-queue/drainer';
 export { ensureMutationQueueTable, MUTATION_QUEUE_SCHEMA } from './mutation-queue/schema';
 export { processMutation } from './mutation-queue/handlers';
 export type { GraphQLFetch } from './mutation-queue/handlers';
@@ -159,6 +167,10 @@ export { SCHEMA_STATEMENTS } from './db/schema';
 export { runMigrations, MIGRATIONS, LATEST_SCHEMA_VERSION } from './db/migrations';
 export type { Migration } from './db/migrations';
 export { OFFLINE_DB_BUSY_TIMEOUT_MS, applyBusyTimeout, configureMainConnection } from './db/pragmas';
+// Shared with the sqlite-lock workstream (#4314): one predicate for "was this
+// write-lock contention?", so reporting and any future retry/defer logic can
+// never disagree about which failures count.
+export { isDatabaseLockedError } from './db/lock-errors';
 
 // --- Offline board scope keys ----------------------------------------------------
 export {

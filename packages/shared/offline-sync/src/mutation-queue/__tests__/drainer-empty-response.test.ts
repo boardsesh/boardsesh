@@ -5,7 +5,7 @@ import type { PendingMutation } from '../queue';
 vi.mock('../queue', () => ({
   peekPending: vi.fn(),
   markCompleted: vi.fn().mockResolvedValue(undefined),
-  recordFailure: vi.fn().mockResolvedValue(undefined),
+  recordFailure: vi.fn().mockResolvedValue({ status: 'pending', retryCount: 1 }),
   markDeadLetter: vi.fn().mockResolvedValue(undefined),
 }));
 

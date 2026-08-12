@@ -2,8 +2,9 @@ import type { OfflineDatabase, QueryInvalidator } from '../database';
 import type { GraphQLFetch } from './handlers';
 import { processMutation } from './handlers';
 import { peekPending, markCompleted, recordFailure, markDeadLetter } from './queue';
-import { isGraphQLEmptyResponseError, isRetryable, isNetworkError } from './error-classification';
+import { isGraphQLEmptyResponseError, isRetryable, isNetworkError, getErrorStatus } from './error-classification';
 import { invalidateKeysForTable } from '../sync/invalidate-keys';
+import { parseQueueTimestamp } from './queue-timestamps';
 
 // Module-level singletons (drain flag, sign-out guard, wipe epoch): correct as
 // long as exactly one app runtime consumes this package per JS context — the
@@ -104,6 +105,38 @@ export type MutationStatusListenerFailure = {
   event: MutationDeliveryEvent;
 };
 
+/**
+ * A queued user write that will never reach the server. Deliberately NOT folded
+ * into MutationDeliveryEvent: that type is mirrored field-for-field by
+ * OfflineMutationDelivery in @boardsesh/board-react (see the note above it), so
+ * widening it forces a lockstep edit in a second package for data no UI
+ * consumer wants. A separate seam matches the engine's other telemetry hooks
+ * (onSchemaDrift, onCoverageReset, onScopeDownloadComplete).
+ *
+ * A dead letter is by construction NOT a connectivity problem — a network error
+ * takes the networkStop branch without burning retry_count — so every one of
+ * these is a permanent loss of something the user did.
+ */
+export type MutationDeadLetterInfo = {
+  tableName: string;
+  operation: string;
+  /** Raw entity uuid or a deterministic key; keep it out of analytics props. */
+  idempotencyKey: string;
+  /** `retries_exhausted` burned the whole budget; `non_retryable` was a 4xx. */
+  reason: 'retries_exhausted' | 'non_retryable';
+  retryCount: number;
+  maxRetries: number;
+  /** How long the write sat in the outbox before it was given up on. */
+  queuedForMs: number | null;
+  /** Resolved HTTP / GraphQL status, when the failure carried one. */
+  status: number | null;
+  errorMessage: string;
+  /** The original throw, so the platform reporter can attach it as `cause`. */
+  error: unknown;
+};
+
+export type MutationDeadLetterReporter = (info: MutationDeadLetterInfo) => void;
+
 export type DrainOptions = {
   /** Injectable sleep for deterministic tests. Defaults to setTimeout. */
   sleep?: (ms: number) => Promise<void>;
@@ -131,6 +164,13 @@ export type DrainOptions = {
   onMutationStatus?: (event: MutationDeliveryEvent) => void;
   /** Platform-owned telemetry for a throwing delivery callback. */
   onMutationStatusError?: (failure: MutationStatusListenerFailure) => void;
+  /**
+   * Telemetry seam for a permanently lost write. Fires once per row that
+   * reaches dead_letter, from BOTH the exhausted-retries and non-retryable
+   * branches. Failure-isolated like onMutationStatus: a throwing reporter can
+   * never abort a drain or prevent the dead-letter write committing.
+   */
+  onMutationDeadLettered?: MutationDeadLetterReporter;
 };
 
 function notifyMutationStatus(options: DrainOptions, event: MutationDeliveryEvent): void {
@@ -146,6 +186,16 @@ function notifyMutationStatus(options: DrainOptions, event: MutationDeliveryEven
     }
     if (!options.onMutationStatusError && process.env.NODE_ENV !== 'production') {
       console.warn('[MutationQueue] mutation-status listener failed:', error);
+    }
+  }
+}
+
+function notifyDeadLetter(options: DrainOptions, info: MutationDeadLetterInfo): void {
+  try {
+    options.onMutationDeadLettered?.(info);
+  } catch (reportingError) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[MutationQueue] dead-letter reporter failed:', reportingError);
     }
   }
 }
@@ -183,6 +233,12 @@ function invalidateForTable(queryClient: QueryInvalidator, tableName: string): v
 function formatError(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+/** How long a row sat in the outbox, or null when created_at won't parse. */
+function queuedForMs(createdAt: string): number | null {
+  const queuedAt = parseQueueTimestamp(createdAt);
+  return queuedAt === null ? null : Math.max(0, Date.now() - queuedAt);
 }
 
 export async function drainMutationQueue(
@@ -282,7 +338,7 @@ export async function drainMutationQueue(
             // One atomic UPDATE bumps the retry and, when the bumped count hits
             // max_retries, flips to dead_letter — no window where the row is
             // exhausted-but-still-pending.
-            const status = await recordFailure(db, mutation.id, errorMessage);
+            const { status, retryCount } = await recordFailure(db, mutation.id, errorMessage);
             // The row may have just flipped to dead_letter; refresh the pending
             // badges either way (an extra COUNT requery is harmless).
             invalidateForTable(queryClient, mutation.table_name);
@@ -292,6 +348,18 @@ export async function drainMutationQueue(
                 operation: mutation.operation,
                 idempotencyKey: mutation.idempotency_key,
                 status,
+              });
+              notifyDeadLetter(options, {
+                tableName: mutation.table_name,
+                operation: mutation.operation,
+                idempotencyKey: mutation.idempotency_key,
+                reason: 'retries_exhausted',
+                retryCount,
+                maxRetries: mutation.max_retries,
+                queuedForMs: queuedForMs(mutation.created_at),
+                status: getErrorStatus(error),
+                errorMessage,
+                error,
               });
             }
             retryableHit = true;
@@ -306,6 +374,18 @@ export async function drainMutationQueue(
               operation: mutation.operation,
               idempotencyKey: mutation.idempotency_key,
               status: 'dead_letter',
+            });
+            notifyDeadLetter(options, {
+              tableName: mutation.table_name,
+              operation: mutation.operation,
+              idempotencyKey: mutation.idempotency_key,
+              reason: 'non_retryable',
+              retryCount: mutation.retry_count,
+              maxRetries: mutation.max_retries,
+              queuedForMs: queuedForMs(mutation.created_at),
+              status: getErrorStatus(error),
+              errorMessage,
+              error,
             });
           }
         }

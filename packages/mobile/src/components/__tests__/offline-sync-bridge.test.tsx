@@ -67,6 +67,13 @@ vi.mock('../../lib/error-reporting', () => ({
   reportError: vi.fn(),
 }));
 
+// The gauge itself is unit-tested in offline/__tests__/outbox-telemetry.test.ts;
+// what matters here is WHERE the bridge calls it from — both flag branches, once.
+const reportOutboxBacklogOnceMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
+vi.mock('../../offline/outbox-telemetry', () => ({
+  reportOutboxBacklogOnce: reportOutboxBacklogOnceMock,
+}));
+
 // Stub the settings barrel so the static import graph never pulls
 // react-native-mmkv (its react-native Flow entry breaks Rolldown's scan).
 vi.mock('../../settings', () => ({
@@ -377,6 +384,43 @@ describe('OfflineSyncBridge — mid-session flag flips', () => {
 
     await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
     expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+});
+
+// Issue #4315: a kill-switched user's queued writes are exactly as stranded as a
+// flag-on user's — and sign-out deletes them all — so the launch gauge has to
+// run on both sides of the flag, and never on a signed-out launch.
+describe('OfflineSyncBridge — outbox backlog gauge', () => {
+  it('reads the backlog once with the flag ON', async () => {
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+
+    await waitFor(() => expect(reportOutboxBacklogOnceMock).toHaveBeenCalledTimes(1));
+    expect(reportOutboxBacklogOnceMock).toHaveBeenCalledWith(fakeDb);
+  });
+
+  it('reads the backlog with the flag OFF too', async () => {
+    render(<Harness flags={FLAG_OFF} queryClient={makeQueryClient()} />);
+
+    await waitFor(() => expect(reportOutboxBacklogOnceMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not read anything while signed out', async () => {
+    isAuthenticated = false;
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+
+    await waitFor(() => expect(startBackgroundTrackingMock).toHaveBeenCalled());
+    expect(reportOutboxBacklogOnceMock).not.toHaveBeenCalled();
+  });
+
+  it('does not re-read when the flag flips mid-session', async () => {
+    const queryClient = makeQueryClient();
+    const { rerender } = render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    await waitFor(() => expect(reportOutboxBacklogOnceMock).toHaveBeenCalledTimes(1));
+
+    rerender(<Harness flags={FLAG_OFF} queryClient={queryClient} />);
+    await waitFor(() => expect(getPendingCountMock).toHaveBeenCalled());
+
+    expect(reportOutboxBacklogOnceMock).toHaveBeenCalledTimes(1);
   });
 });
 
