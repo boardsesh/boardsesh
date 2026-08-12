@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { OfflineDatabase } from '../../database';
 
-import { peekPending, recordFailure, type PendingMutation } from '../queue';
+import { enqueue, getOutboxSummary, markDeadLetter, peekPending, recordFailure, type PendingMutation } from '../queue';
 import { ensureMutationQueueTable } from '../schema';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
 
@@ -62,6 +62,82 @@ describe('peekPending FIFO ordering', () => {
       'same-a',
       'same-b',
     ]);
+  });
+});
+
+// Issue #4315. Both of these are read by telemetry whose failure mode is
+// SILENCE — the outbox gauge swallows its own errors and the suppressed-enqueue
+// report only fires on `inserted: false` — so a wrong SQL string or a driver
+// that reports `changes` differently would look exactly like "nothing to
+// report" forever. The sibling queue.test.ts only proves the code against a
+// hand-written double that returns whatever the implementation expects; these
+// run the same calls through a real SQLite engine.
+describe('enqueue suppression against real SQLite', () => {
+  const key = 'add:user_favorites:kilter:climb-1:40';
+
+  it('reports a fresh insert', async () => {
+    await expect(enqueue(db, 'user_favorites', 'create', { climbUuid: 'climb-1' }, key)).resolves.toEqual({
+      inserted: true,
+      existingStatus: null,
+    });
+  });
+
+  // The load-bearing one: INSERT OR IGNORE must actually surface changes = 0 on
+  // the real driver, or the whole dead-letter-swallow instrument is dead code.
+  it('reports the existing row status when the UNIQUE key is already taken', async () => {
+    await enqueue(db, 'user_favorites', 'create', {}, key);
+
+    await expect(enqueue(db, 'user_favorites', 'create', {}, key)).resolves.toEqual({
+      inserted: false,
+      existingStatus: 'pending',
+    });
+
+    const rows = await db.getAllAsync<PendingMutation>('SELECT * FROM pending_mutations');
+    expect(rows).toHaveLength(1);
+  });
+
+  it('reports dead_letter once the row that owns the key has been given up on', async () => {
+    await enqueue(db, 'user_favorites', 'create', {}, key);
+    const row = await db.getFirstAsync<{ id: number }>('SELECT id FROM pending_mutations WHERE idempotency_key = ?', [
+      key,
+    ]);
+    await markDeadLetter(db, row!.id, '400 Bad Request');
+
+    await expect(enqueue(db, 'user_favorites', 'create', {}, key)).resolves.toEqual({
+      inserted: false,
+      existingStatus: 'dead_letter',
+    });
+  });
+});
+
+describe('getOutboxSummary against real SQLite', () => {
+  it('splits counts and oldest created_at per status', async () => {
+    await insertPending(db, 'pending-newer', '2026-08-02T10:00:00');
+    await insertPending(db, 'pending-older', '2026-08-01T10:00:00');
+    await insertPending(db, 'dead-older', '2026-07-20T08:30:00');
+    await insertPending(db, 'dead-newer', '2026-07-25T08:30:00');
+    for (const deadKey of ['dead-older', 'dead-newer']) {
+      const row = await db.getFirstAsync<{ id: number }>('SELECT id FROM pending_mutations WHERE idempotency_key = ?', [
+        deadKey,
+      ]);
+      await markDeadLetter(db, row!.id, 'gone');
+    }
+
+    await expect(getOutboxSummary(db)).resolves.toEqual({
+      pendingCount: 2,
+      deadLetterCount: 2,
+      oldestPendingAt: '2026-08-01T10:00:00',
+      oldestDeadLetterAt: '2026-07-20T08:30:00',
+    });
+  });
+
+  it('reads an empty outbox as zeros and nulls, not as an error', async () => {
+    await expect(getOutboxSummary(db)).resolves.toEqual({
+      pendingCount: 0,
+      deadLetterCount: 0,
+      oldestPendingAt: null,
+      oldestDeadLetterAt: null,
+    });
   });
 });
 
