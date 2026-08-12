@@ -24,10 +24,10 @@ import {
   isScopeDownloadComplete,
   readBootstrapRetryState,
 } from '@boardsesh/offline-sync';
-import { offlineBoardKeyForBoard, offlineBoardScopeForBoard } from '../settings';
+import { offlineBoardKeyForBoard, offlineBoardScopeForBoard, type OfflineDownloadTrigger } from '../settings';
 import { useConfirm } from '../providers/dialog-provider';
 import { formatBytes } from '../lib/format-bytes';
-import { useBoardDownloads } from './use-board-downloads';
+import { useBoardDownloads, type ToggleSource } from './use-board-downloads';
 import { useSnapshotManifest } from './use-snapshot-manifest';
 
 export function useConfirmBoardDownload() {
@@ -44,9 +44,16 @@ export function useConfirmBoardDownload() {
   /**
    * Quote the download size, ask, and start it. Resolves to whether the user
    * confirmed.
+   *
+   * `options` is the funnel attribution (issue #4316) — which surface asked and
+   * what triggered it — forwarded to the enable so the eventual Started event
+   * says where the download came from. Every nudge surface passes its own.
    */
   const confirmAndDownload = useCallback(
-    async (board: UserBoard): Promise<boolean> => {
+    async (
+      board: UserBoard,
+      options?: { trigger?: OfflineDownloadTrigger; source?: ToggleSource },
+    ): Promise<boolean> => {
       const scope = offlineBoardScopeForBoard(board);
       const key = offlineBoardKeyForBoard(board);
       // How big is this download? Only the snapshot path can answer honestly, and
@@ -97,7 +104,7 @@ export function useConfirmBoardDownload() {
       if (!confirmed) return false;
       // Enable + kick a download now via the shared hook (single-flight, reads the
       // latest syncEnabledBoards setting).
-      enableBoardsOffline(board);
+      enableBoardsOffline(board, options);
       return true;
     },
     [confirm, t, i18n.language, db, enableBoardsOffline],
@@ -105,8 +112,8 @@ export function useConfirmBoardDownload() {
 
   /** Mark the board for offline; the scheduler pulls it on the next reconnect. */
   const armWithoutConfirm = useCallback(
-    (board: UserBoard): void => {
-      armBoardsOffline(board);
+    (board: UserBoard, options?: { trigger?: OfflineDownloadTrigger; source?: ToggleSource }): void => {
+      armBoardsOffline(board, options);
     },
     [armBoardsOffline],
   );

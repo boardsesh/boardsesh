@@ -163,16 +163,21 @@ export function useBoardDownloads() {
    * pinned to the multi-minute paged crawl forever (issue #4313).
    *
    * Nothing is lost by waiting: the scheduler's own connectivity trigger
-   * (`subscribeConnectivity` in this adapter) runs a cycle the moment the device
-   * reconnects, and that cycle reads the latest `syncEnabledBoards`. The board
-   * sits in the documented `'pending'` state until then, which the My Boards row
-   * already renders as "Waiting to download".
+   * (`subscribeConnectivity` in the adapter) runs a cycle the moment the device
+   * reconnects, and that cycle reads the latest `syncEnabledBoards`. That
+   * trigger forwards NetInfo REACHABILITY rather than bare `isConnected`,
+   * precisely so the connection that produced this arm counts: on a captive
+   * portal `isConnected` never stops being true, so the reachability edge is the
+   * only signal that the upstream came back without the user changing networks
+   * or backgrounding the app. The board sits in the documented `'pending'` state
+   * until then, which the My Boards row already renders as "Waiting to
+   * download".
    */
   const armBoardsOffline = useCallback(
-    (boards: UserBoard | UserBoard[]) => {
+    (boards: UserBoard | UserBoard[], options?: { trigger?: OfflineDownloadTrigger; source?: ToggleSource }) => {
       const list = Array.isArray(boards) ? boards : [boards];
       if (list.length === 0) return;
-      markBoardsEnabled(list);
+      markBoardsEnabled(list, options);
     },
     [markBoardsEnabled],
   );

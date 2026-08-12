@@ -12,6 +12,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useSQLiteContext } from 'expo-sqlite';
 import { getDownloadedScopeKeys } from '@boardsesh/offline-sync';
+import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
 
 export const DOWNLOADED_SCOPE_KEYS_QUERY_KEY = ['downloadedScopeKeys'] as const;
 
@@ -25,8 +26,14 @@ export const DOWNLOADED_SCOPE_KEYS_QUERY_KEY = ['downloadedScopeKeys'] as const;
  */
 export function useDownloadedScopeKeys() {
   const db = useSQLiteContext();
+  // Schema readiness is a KEY member, not an `enabled` gate. On a contended launch
+  // this connection has no tables yet, and the read lands in `isError` — the empty
+  // state, which is already the right answer. Gating instead would spin forever
+  // whenever init genuinely fails; keying makes a late readiness flip refetch.
+  // The invalidations above target the prefix, so they still reach every variant.
+  const schemaReady = useOfflineSchemaReady();
   return useQuery({
-    queryKey: DOWNLOADED_SCOPE_KEYS_QUERY_KEY,
+    queryKey: [...DOWNLOADED_SCOPE_KEYS_QUERY_KEY, schemaReady],
     queryFn: () => getDownloadedScopeKeys(db),
   });
 }

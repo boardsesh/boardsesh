@@ -36,7 +36,12 @@ vi.mock('react-native', () => ({
   },
 }));
 
-type NetInfoState = { isConnected: boolean | null; type?: string; details?: { isConnectionExpensive?: boolean } };
+type NetInfoState = {
+  isConnected: boolean | null;
+  isInternetReachable?: boolean | null;
+  type?: string;
+  details?: { isConnectionExpensive?: boolean };
+};
 type NetInfoListener = (state: NetInfoState) => void;
 let netInfoListener: NetInfoListener | null = null;
 const netInfoUnsubscribe = vi.fn();
@@ -342,6 +347,31 @@ describe('scheduler trigger bindings', () => {
 
     unsubscribe();
     expect(netInfoUnsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  // The lying connection: `isConnected` stays true across a captive portal, so
+  // without reachability the scheduler never sees an offline→online edge and a
+  // board armed there waits for a network change (issue #4318).
+  it('reports an unreachable connection as disconnected, so recovery is an edge', () => {
+    const { triggers } = startAndGetTriggers();
+    const callback = vi.fn();
+    triggers.subscribeConnectivity(callback);
+
+    netInfoListener?.({ isConnected: true, isInternetReachable: false });
+    netInfoListener?.({ isConnected: true, isInternetReachable: true });
+    expect(callback).toHaveBeenNthCalledWith(1, false);
+    expect(callback).toHaveBeenNthCalledWith(2, true);
+  });
+
+  // Not-probed-yet is not unreachable — inventing a disconnect there would fake
+  // an edge on every platform that answers the reachability probe late.
+  it('treats unknown reachability as connected', () => {
+    const { triggers } = startAndGetTriggers();
+    const callback = vi.fn();
+    triggers.subscribeConnectivity(callback);
+
+    netInfoListener?.({ isConnected: true, isInternetReachable: null });
+    expect(callback).toHaveBeenCalledWith(true);
   });
 
   it('binds schema-drift telemetry to Sentry with the offline-sync tags', () => {
@@ -682,7 +712,12 @@ describe('snapshot-bootstrap bindings', () => {
       name === 'startSyncScheduler' ? startSyncSchedulerCore.mock.calls[0][6] : triggerSyncCore.mock.calls[0][5]
     ) as SchedulerOptions;
 
-    options.onScopeDownloadComplete?.({ scopeKey: 'kilter:1:5', method: 'snapshot', durationMs: 10 });
+    options.onScopeDownloadComplete?.({
+      scopeKey: 'kilter:1:5',
+      method: 'snapshot',
+      durationMs: 10,
+      phases: NO_PHASES,
+    });
 
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['downloadedScopeKeys'] });
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['offlineStorage'] });

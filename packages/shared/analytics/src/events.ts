@@ -429,7 +429,6 @@ export const SHARED_EVENTS = {
   // 'reset' | 'probe_failed' }. Deduped once-per-launch-per-verdict in the
   // mobile binding, because the engine evaluates on every foreground.
   OfflineSyncCoverageEvaluated: 'Offline Sync Coverage Evaluated',
-<<<<<<< HEAD
   // Offline sync — the local SQLite setup lost the write lock at launch and a
   // later retry won, so offline storage came up after all. Fired at most once
   // per process, only when attempt 1 failed (a clean launch stays silent).
@@ -516,8 +515,6 @@ export const SHARED_EVENTS = {
   // filesDeleted }. Mobile-only: web's overlay store is the Cache API, already
   // bounded by entry count.
   CachedImagesSwept: 'Cached Images Swept',
-||||||| parent of 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
-=======
   // Offline discovery nudges (issue #4318) — the app suggesting a board download
   // rather than waiting to be found. One event trio across every nudge surface,
   // separated by `surface`, so the funnel reads shown → accepted → (#4316's
@@ -531,7 +528,6 @@ export const SHARED_EVENTS = {
   OfflineNudgeAccepted: 'Offline Nudge Accepted',
   // Plus { dismissKind: 'once' | 'forever' }.
   OfflineNudgeDismissed: 'Offline Nudge Dismissed',
->>>>>>> 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;

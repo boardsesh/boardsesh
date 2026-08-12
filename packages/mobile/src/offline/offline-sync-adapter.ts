@@ -395,7 +395,18 @@ const schedulerTriggers: SchedulerTriggers = {
   },
   subscribeConnectivity(callback) {
     return NetInfo.addEventListener((state) => {
-      callback(state.isConnected ?? false);
+      // Reachability, not just "a network is attached". `isConnected` is TRUE
+      // for the whole of a captive portal or gym wifi with a dead upstream —
+      // the exact connection `armBoardsOffline` exists for — so forwarding it
+      // alone gives the scheduler no offline→online edge when that link starts
+      // working again: an armed scope would sit pending until the user changed
+      // networks or backgrounded and reopened the app. NetInfo's reachability
+      // probe is what actually flips there, and that false→true edge is the
+      // retry.
+      //
+      // `null` is "not probed yet", never "unreachable" — treating it as a
+      // disconnect would invent an edge on every platform that answers late.
+      callback((state.isConnected ?? false) && state.isInternetReachable !== false);
     });
   },
 };
@@ -460,14 +471,8 @@ export function startSyncScheduler(
     snapshotSource: options?.snapshotSource,
     onSnapshotBootstrapError: reportSnapshotBootstrapError,
     onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
-<<<<<<< HEAD
-    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),
-    onScopeDownloadStart: reportScopeDownloadStart,
-||||||| parent of 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
-    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),
-=======
     onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete, queryClient),
->>>>>>> 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
+    onScopeDownloadStart: reportScopeDownloadStart,
     onCoverageReset: reportCoverageReset,
     onCoverageEvaluated: reportCoverageEvaluated,
     onBootstrapRetryScheduled: reportBootstrapRetryScheduled,
@@ -492,14 +497,8 @@ export function triggerSync(
     snapshotSource: options?.snapshotSource,
     onSnapshotBootstrapError: reportSnapshotBootstrapError,
     onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
-<<<<<<< HEAD
-    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),
-    onScopeDownloadStart: reportScopeDownloadStart,
-||||||| parent of 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
-    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),
-=======
     onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete, queryClient),
->>>>>>> 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
+    onScopeDownloadStart: reportScopeDownloadStart,
     onCoverageReset: reportCoverageReset,
     onCoverageEvaluated: reportCoverageEvaluated,
     onBootstrapRetryScheduled: reportBootstrapRetryScheduled,
@@ -519,14 +518,8 @@ export function pullSync(
     isOnline: options?.isOnline ?? isOnline,
     onSchemaDrift: options?.onSchemaDrift ?? reportSchemaDrift,
     onSnapshotBootstrapError: options?.onSnapshotBootstrapError ?? reportSnapshotBootstrapError,
-<<<<<<< HEAD
-    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),
-    onScopeDownloadStart: options?.onScopeDownloadStart ?? reportScopeDownloadStart,
-||||||| parent of 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
-    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),
-=======
     onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete, queryClient),
->>>>>>> 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
+    onScopeDownloadStart: options?.onScopeDownloadStart ?? reportScopeDownloadStart,
     onCoverageReset: options?.onCoverageReset ?? reportCoverageReset,
     onCoverageEvaluated: options?.onCoverageEvaluated ?? reportCoverageEvaluated,
     onBootstrapRetryScheduled: options?.onBootstrapRetryScheduled ?? reportBootstrapRetryScheduled,

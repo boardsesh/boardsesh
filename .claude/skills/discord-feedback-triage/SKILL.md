@@ -25,17 +25,17 @@ The invoking prompt gives you the bundle path and the decisions path. Each bundl
 
 One decision per message. Every message in the bundle gets exactly one.
 
-| Verdict | When | Result |
-|---|---|---|
-| `bug` | A concrete thing that is broken — has a symptom, and ideally a surface or device | Issue, labelled `bug` |
-| `feature` | A specific missing capability | Issue, labelled `enhancement` |
-| `question` | Asking how something works, or for support | Reaction only |
-| `noise` | Chatter, praise, off-topic, or too vague to act on | Reaction only |
-| `duplicate` | Already tracked, or repeats another message in this same bundle | Reaction + reply linking the existing issue |
+| Verdict     | When                                                                             | Result                                      |
+| ----------- | -------------------------------------------------------------------------------- | ------------------------------------------- |
+| `bug`       | A concrete thing that is broken — has a symptom, and ideally a surface or device | Issue, labelled `bug`                       |
+| `feature`   | A specific missing capability                                                    | Issue, labelled `enhancement`               |
+| `question`  | Asking how something works, or for support                                       | Reaction only                               |
+| `noise`     | Chatter, praise, off-topic, or too vague to act on                               | Reaction only                               |
+| `duplicate` | Already tracked, or repeats another message in this same bundle                  | Reaction + reply linking the existing issue |
 
 **Default to `noise` when uncertain.** A tracker full of unactionable issues is worse than missing one report — the reporter is still in Discord and will say it again.
 
-The line: *"the app is slow"* is `noise`. *"the board list takes 30s on my Pixel 8"* is a `bug`. *"would be nice if it did more"* is `noise`. *"let me sort the queue by grade"* is a `feature`.
+The line: _"the app is slow"_ is `noise`. _"the board list takes 30s on my Pixel 8"_ is a `bug`. _"would be nice if it did more"_ is `noise`. _"let me sort the queue by grade"_ is a `feature`.
 
 Weigh `threadContext` — the back-and-forth after a message usually contains the repro steps and the device, and often reveals the original report was user error.
 

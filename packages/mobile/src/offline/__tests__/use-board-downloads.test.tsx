@@ -110,7 +110,6 @@ describe('useBoardDownloads', () => {
     expect(getSyncStatusSnapshot().scopeCompletionRevision).toBe(2);
   });
 
-<<<<<<< HEAD
   it('enables and announces once per SCOPE when two boards share one', () => {
     // Two gyms with the same wall are one offline scope and one download, so a
     // per-board Toggled would count two enables against the downloader's single
@@ -165,8 +164,9 @@ describe('useBoardDownloads', () => {
 
     act(() => setSchemaReady(true));
 
-||||||| parent of 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
-=======
+    expect(spies.triggerSync).not.toHaveBeenCalled();
+  });
+
   // This assertion is the guard, not a description: `onlineManager.isOnline()` is
   // TRUE on captive-portal wifi, so a cycle kicked from an offline surface would
   // run, fail, and spend one of the two MAX_BOOTSTRAP_ATTEMPTS per tap — pinning
@@ -191,7 +191,6 @@ describe('useBoardDownloads', () => {
 
     expect(spies.setOfflineBoardEnabled).not.toHaveBeenCalled();
     expect(spies.rememberOfflineBoards).not.toHaveBeenCalled();
->>>>>>> 10230768c (fix(mobile): refresh downloaded-board state on scope completion and add the offline nudge policy)
     expect(spies.triggerSync).not.toHaveBeenCalled();
   });
 });
