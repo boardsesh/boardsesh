@@ -11,6 +11,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { BoardImageNative } from '../BoardImageNative';
+import type { BoardDownloadState } from './board-offline-state';
 
 /** The minimal board shape the card renders. UserBoard, PopularBoardConfig, and
  *  BLE-resolved boards all map onto this so one card serves every section. */
@@ -28,6 +29,11 @@ export type DiscoveryBoardItem = {
   distanceMeters?: number | null;
   /** When true, marks this as the currently-active board. */
   isActive?: boolean;
+  /**
+   * Offline download state for this board's scope. Absent on cards that cannot
+   * be downloaded as a board (popular configs — see `popularConfigToItem`).
+   */
+  offlineState?: BoardDownloadState;
 };
 
 export const DISCOVERY_CARD_WIDTH = 168;
@@ -43,9 +49,18 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 type BoardDiscoveryCardProps = {
   item: DiscoveryBoardItem;
   onPress: (item: DiscoveryBoardItem) => void;
+  /**
+   * Offer a one-tap download for an un-downloaded board. Passed only by the
+   * carousel that renders boards the user owns or follows; Nearby (other
+   * people's boards), Popular (no uuid) and the offline rows (already on the
+   * device, and there is no connection) never get one.
+   */
+  onDownload?: (item: DiscoveryBoardItem) => void;
+  /** Accessibility label for the download glyph. */
+  downloadLabel?: string;
 };
 
-export function BoardDiscoveryCard({ item, onPress }: BoardDiscoveryCardProps) {
+export function BoardDiscoveryCard({ item, onPress, onDownload, downloadLabel }: BoardDiscoveryCardProps) {
   const { systemColors, brandColors } = useTheme();
   const scale = useSharedValue(1);
 
@@ -110,6 +125,34 @@ export function BoardDiscoveryCard({ item, onPress }: BoardDiscoveryCardProps) {
           </View>
         ) : null}
 
+        {/* At-a-glance "is this board on my phone". A downloaded or in-flight
+            board is a status badge with no press target; only 'off' is
+            actionable, and only where the host passed a handler. */}
+        {item.offlineState === 'downloaded' ? (
+          <View style={styles.offlineBadge}>
+            <Icon name="offline.downloaded" size={15} color={brandColors.primary} />
+          </View>
+        ) : item.offlineState === 'downloading' || item.offlineState === 'pending' ? (
+          <View style={styles.offlineBadge}>
+            <Icon name="offline.pending" size={15} color={systemColors.secondaryLabel} />
+          </View>
+        ) : item.offlineState === 'off' && onDownload ? (
+          <Pressable
+            onPress={() => {
+              hapticLight();
+              onDownload(item);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={downloadLabel}
+            style={styles.offlineBadge}
+            // The glyph is a 26pt target inside a 168pt card, so widen the touch
+            // area rather than the visual.
+            hitSlop={8}
+          >
+            <Icon name="offline.download" size={15} color={brandColors.primary} />
+          </Pressable>
+        ) : null}
+
         {item.distanceMeters != null ? (
           <View style={styles.distanceBadge}>
             <Icon name="location" size={11} color={overlays.onScrim} />
@@ -158,6 +201,21 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: spacing[2],
     right: spacing[2],
+    width: 26,
+    height: 26,
+    borderRadius: borderRadius.full,
+    backgroundColor: iosSystemColors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.15, shadowRadius: 2 },
+      android: { elevation: 2 },
+    }),
+  },
+  offlineBadge: {
+    position: 'absolute',
+    top: spacing[2],
+    left: spacing[2],
     width: 26,
     height: 26,
     borderRadius: borderRadius.full,

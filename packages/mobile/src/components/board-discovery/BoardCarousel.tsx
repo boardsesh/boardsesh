@@ -11,6 +11,10 @@ const SNAP_INTERVAL = DISCOVERY_CARD_WIDTH + CARD_GAP;
 type BoardCarouselProps = {
   items: DiscoveryBoardItem[];
   onSelect: (item: DiscoveryBoardItem) => void;
+  /** See BoardDiscoveryCard — only the user's own boards carousel passes one. */
+  onDownload?: (item: DiscoveryBoardItem) => void;
+  /** Per-item accessibility label for the download glyph. Memoize it. */
+  downloadLabelFor?: (item: DiscoveryBoardItem) => string;
   contentStyle?: ViewStyle;
 };
 
@@ -20,10 +24,17 @@ type BoardCarouselProps = {
  * board scroller. Built on FlashList so long sections (popular/nearby) stay
  * cheap to render.
  */
-export function BoardCarousel({ items, onSelect, contentStyle }: BoardCarouselProps) {
+export function BoardCarousel({ items, onSelect, onDownload, downloadLabelFor, contentStyle }: BoardCarouselProps) {
   const renderItem = useCallback(
-    ({ item }: { item: DiscoveryBoardItem }) => <BoardDiscoveryCard item={item} onPress={onSelect} />,
-    [onSelect],
+    ({ item }: { item: DiscoveryBoardItem }) => (
+      <BoardDiscoveryCard
+        item={item}
+        onPress={onSelect}
+        onDownload={onDownload}
+        downloadLabel={downloadLabelFor?.(item)}
+      />
+    ),
+    [onSelect, onDownload, downloadLabelFor],
   );
 
   return (

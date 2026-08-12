@@ -9,6 +9,7 @@ import { Button } from '../src/components/Button';
 import { Icon } from '../src/components/Icon';
 import { PressableSurface } from '../src/components/PressableSurface';
 import { Text } from '../src/components/Text';
+import { OfflineSpotlightCard } from '../src/components/offline/OfflineSpotlightCard';
 import { useBottomChromeMetrics } from '../src/hooks/use-bottom-chrome-metrics';
 import { useStackScreenOptions } from '../src/hooks/use-stack-screen-options';
 import {
@@ -307,6 +308,10 @@ export default function ChangelogScreen() {
                 <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.intro}>
                   {t('mobile.changelog.intro')}
                 </Text>
+                {/* Pinned above the generated timeline — see OfflineSpotlightCard
+                    for why it isn't a changelog entry. Renders itself away once
+                    the user has a board offline. */}
+                <OfflineSpotlightCard style={styles.spotlight} />
                 <View style={styles.headerMeta}>
                   <CurrentBuildChip />
                   <CheckForUpdatesButton />
@@ -329,6 +334,9 @@ const Separator = memo(function Separator() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+  },
+  spotlight: {
+    marginBottom: spacing[4],
   },
   listHeader: {
     gap: spacing[3],

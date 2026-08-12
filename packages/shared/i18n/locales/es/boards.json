@@ -333,6 +333,11 @@
           "body": "Todavía no tienes {{name}} en el móvil, así que aquí abajo no hay nada que buscar.",
           "cta": "Descargarlo cuando tenga cobertura",
           "armedToast": "{{name}} está en cola: se descarga en cuanto vuelvas a tener conexión."
+        },
+        "spotlight": {
+          "title": "Escala donde no llega el wifi",
+          "body": "Descarga un plafón una vez y todo su catálogo queda en tu móvil: la búsqueda, los filtros y registrar encadenes funcionan en un sótano sin cobertura.",
+          "cta": "Elegir un plafón para descargar"
         }
       }
     },

@@ -16,6 +16,7 @@ import { ListRow } from '../src/components/ListRow';
 import { useUserDrawer } from '../src/components/user-drawer/UserDrawerProvider';
 import { latestEntryDate } from '../src/lib/changelog';
 import { getLastSeenChangelogDate, hasUnseenChangelog } from '../src/lib/changelog-seen';
+import { hasUnseenOfflineSpotlight } from '../src/lib/offline-nudges/spotlight-unseen';
 
 const DRAWER_MAX_WIDTH = 320;
 const DRAWER_SCREEN_FRACTION = 0.86;
@@ -50,11 +51,13 @@ export default function UserDrawerScreen() {
   // the "New" pill on the What's New row. The drawer is a fresh route push every
   // time it opens, so a one-shot mount read is enough; opening the changelog clears
   // the marker and the next drawer open re-reads it.
+  // ...OR'd with the curated offline spotlight pinned inside that screen, which
+  // is otherwise unreachable for anyone whose changelog is already read.
   const [changelogUnseen, setChangelogUnseen] = useState(false);
   useEffect(() => {
     let active = true;
-    void getLastSeenChangelogDate().then((lastSeen) => {
-      if (active) setChangelogUnseen(hasUnseenChangelog(latestEntryDate, lastSeen));
+    void Promise.all([getLastSeenChangelogDate(), hasUnseenOfflineSpotlight()]).then(([lastSeen, spotlightUnseen]) => {
+      if (active) setChangelogUnseen(hasUnseenChangelog(latestEntryDate, lastSeen) || spotlightUnseen);
     });
     return () => {
       active = false;

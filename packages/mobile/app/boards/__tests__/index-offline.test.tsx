@@ -28,6 +28,7 @@ const state = vi.hoisted(() => ({
   isOffline: false,
   offlineCards: [] as unknown[],
   downloadedScopeKeys: [] as string[],
+  enabledScopeKeys: [] as string[],
   // What the active board's catalog looks like on this device: the offline
   // empty state reads differently for "never asked for" vs "already queued".
   offlineCatalog: null as 'missing' | 'queued' | null,
@@ -140,13 +141,22 @@ vi.mock('../../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
 }));
 vi.mock('../../../src/hooks/use-is-offline', () => ({ useIsOffline: () => state.isOffline }));
-vi.mock('../../../src/settings', () => ({ useOfflineBoards: () => state.offlineCards }));
+vi.mock('../../../src/settings', () => ({
+  useOfflineBoards: () => state.offlineCards,
+  useSetting: () => [state.enabledScopeKeys, vi.fn()],
+  offlineBoardKeyForBoard: (board: { boardType: string; layoutId: number; sizeId: number }) =>
+    `${board.boardType}:${board.layoutId}:${board.sizeId}`,
+}));
 // Has its own render suite (src/components/offline/__tests__); the screen only
 // needs to know it renders in the empty state.
 vi.mock('../../../src/components/offline/OfflineCatalogCta', () => ({
   OfflineCatalogCta: ({ board }: { board: unknown }) =>
     board ? createElement('div', { 'data-testid': 'offline-catalog-cta' }) : null,
 }));
+vi.mock('../../../src/offline/use-confirm-board-download', () => ({
+  useConfirmBoardDownload: () => ({ confirmAndDownload: vi.fn(), armWithoutConfirm: vi.fn() }),
+}));
+vi.mock('../../../src/providers/feature-flags-provider', () => ({ useOfflineDownloadsEnabled: () => true }));
 vi.mock('../../../src/offline/use-downloaded-scope-keys', () => ({
   useDownloadedScopeKeys: () => ({ data: state.downloadedScopeKeys }),
 }));

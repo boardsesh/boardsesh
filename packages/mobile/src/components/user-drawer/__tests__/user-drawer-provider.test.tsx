@@ -89,6 +89,10 @@ const changelogSeen = vi.hoisted(() => ({
 }));
 vi.mock('../../../lib/changelog', () => ({ latestEntryDate: '2026-01-01T00:00:00.000Z' }));
 vi.mock('../../../lib/changelog-seen', () => changelogSeen);
+// Reads MMKV-backed settings; the pill's spotlight half has its own suite.
+vi.mock('../../../lib/offline-nudges/spotlight-unseen', () => ({
+  hasUnseenOfflineSpotlight: async () => false,
+}));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: { id: 'user-1', displayName: 'Alex', email: 'alex@example.com', avatarUrl: null } }),
 }));

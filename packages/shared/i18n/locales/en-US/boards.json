@@ -333,6 +333,11 @@
           "body": "{{name}} isn't on your phone yet, so there's nothing to search down here.",
           "cta": "Grab it when I have signal",
           "armedToast": "{{name}} is queued — it downloads the moment you're back online."
+        },
+        "spotlight": {
+          "title": "Climb where the wifi does not reach",
+          "body": "Download a board once and its whole catalog lives on your phone — search, filters and logging sends all work in a basement gym with no bars.",
+          "cta": "Pick a board to download"
         }
       }
     },
