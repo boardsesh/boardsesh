@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-12T11:14:48.025Z",
+  "generatedAt": "2026-08-12T11:28:16.973Z",
   "entries": [
+    {
+      "prNumber": 4345,
+      "category": "improved",
+      "title": "Downloading a board no longer starts over when you lock your phone — a finished download is kept and picked up on the next sync instead of being thrown away.",
+      "mergedAt": "2026-08-12T11:27:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4345"
+    },
     {
       "prNumber": 4333,
       "category": "new",

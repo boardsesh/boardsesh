@@ -12,6 +12,10 @@ manual changes). See docs/mobile-ota-updates.md.
 - Logging out now asks first, and tells you what it clears — the boards you downloaded, your offline logbook, and any sends still waiting to sync, including the ones that already failed to send. The Log out button in the side menu used to do all that on the first tap with no warning at all. The downloaded boards actually come off the phone now instead of sitting there invisible, and the space comes back. A dropped connection that signs you out on its own leaves your downloads alone. ([#4328](https://github.com/boardsesh/boardsesh/pull/4328))
 - Watch your board actually come down. Enabling a board offline now shows the megabytes, a percentage and whether it's downloading or unpacking, instead of a spinner that looked like the app had hung. Kilter takes about three minutes on a good connection — now you can see it happening. ([#4355](https://github.com/boardsesh/boardsesh/pull/4355))
 
+### Improved
+
+- Downloading a board no longer starts over when you lock your phone — a finished download is kept and picked up on the next sync instead of being thrown away. ([#4345](https://github.com/boardsesh/boardsesh/pull/4345))
+
 ### Fixed
 
 - Offline board downloads now survive a launch with no signal. The app used to check with our servers whether offline mode was switched on for you, and if that check never came back, offline mode switched itself off. Now it stays on unless we deliberately turn it off, so a send logged in a basement gym still gets saved and syncs when you're back on data. ([#4323](https://github.com/boardsesh/boardsesh/pull/4323))
