@@ -20,6 +20,14 @@ export type AppSettings = {
    * short-lived entries.
    */
   offlineDownloadTriggers: Record<string, string>;
+  /**
+   * A "download all my boards" tap waiting for My Boards to resolve (issue
+   * #4316). Same reason as the map above: the enable it causes runs from a mount
+   * effect, so a ref would lose the attribution whenever the screen unmounts or
+   * the app restarts before the list lands, and the batch would be filed as
+   * automatic. Cleared the moment it is consumed.
+   */
+  offlineDownloadAllTapPending: boolean;
   /** Keep every board the user follows/uses available offline by default. */
   autoOfflineBoards: boolean;
   autoConnectBle: boolean;

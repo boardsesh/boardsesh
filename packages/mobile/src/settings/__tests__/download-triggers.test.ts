@@ -17,7 +17,14 @@ vi.mock('react-native-mmkv', () => {
   return { createMMKV: vi.fn(() => createMockInstance()) };
 });
 
-import { rememberDownloadTrigger, takeDownloadTrigger, forgetDownloadTrigger } from '../offline-boards';
+import {
+  rememberDownloadTrigger,
+  takeDownloadTrigger,
+  forgetDownloadTrigger,
+  rememberDownloadAllTap,
+  takeDownloadAllTap,
+  forgetDownloadAllTap,
+} from '../offline-boards';
 
 beforeEach(() => {
   mockStorage.clear();
@@ -69,5 +76,34 @@ describe('download-trigger attribution', () => {
     forgetDownloadTrigger('kilter:1:5');
 
     expect(takeDownloadTrigger('kilter:1:5')).toBe('unknown');
+  });
+});
+
+describe('download-all tap attribution', () => {
+  it('survives the window between the tap and My Boards resolving', () => {
+    // The tap persists; the effect that consumes it only runs once the board
+    // list lands, which can be a later mount or a later app launch entirely.
+    rememberDownloadAllTap();
+
+    expect(takeDownloadAllTap()).toBe(true);
+  });
+
+  it('spends the tap exactly once, so a later automatic enable stays automatic', () => {
+    rememberDownloadAllTap();
+
+    expect(takeDownloadAllTap()).toBe(true);
+    expect(takeDownloadAllTap()).toBe(false);
+  });
+
+  it('reports no tap when nothing armed it', () => {
+    expect(takeDownloadAllTap()).toBe(false);
+  });
+
+  it('disarms without consuming when the switch goes back off', () => {
+    rememberDownloadAllTap();
+
+    forgetDownloadAllTap();
+
+    expect(takeDownloadAllTap()).toBe(false);
   });
 });

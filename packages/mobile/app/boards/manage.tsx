@@ -253,6 +253,12 @@ export default function ManageBoards() {
           currentTable: syncStatusRef.current.progress?.currentTable ?? null,
           phase: syncStatusRef.current.progress?.phase ?? null,
           snapshot: syncStatusRef.current.progress?.snapshot,
+          // With the progress kill switch off the frames still exist but carry no
+          // bytes, so a Cancelled event built from them would report a fake
+          // stage-and-zero. The abandonment itself is still counted — the
+          // Toggled(enabled:false) above always fires — just without the detail
+          // the progress feature is what supplies.
+          progressEnabled: downloadProgressEnabled,
         });
         // Disabling just drops the setting entry; the cached rows + checkpoint stay
         // so re-enabling resumes instantly, so no confirm is needed.
@@ -329,7 +335,7 @@ export default function ManageBoards() {
       // latest syncEnabledBoards setting).
       enableBoardsOffline(board, { trigger: 'toggle', source: 'manage' });
     },
-    [confirm, t, i18n.language, db, enableBoardsOffline],
+    [confirm, t, i18n.language, db, enableBoardsOffline, downloadProgressEnabled],
   );
 
   // See boards/index.tsx: a hard 401 clears tokens without flipping

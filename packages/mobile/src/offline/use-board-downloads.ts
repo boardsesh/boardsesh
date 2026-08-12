@@ -54,8 +54,19 @@ export function useBoardDownloads() {
       if (list.length === 0) return;
       const trigger = options?.trigger ?? 'unknown';
       const source = options?.source ?? 'manage';
+      // Two boards can share one offline scope — the key is board type + layout +
+      // size, so a climber who follows two gyms with the same wall gets one entry
+      // in `syncEnabledBoards` and ONE download for both. The enable work is
+      // per-scope for that reason: emitting a Toggled per board would count two
+      // enables against the single Started the downloader emits, and the
+      // download-all path is exactly where the duplicates arrive (its "missing"
+      // filter runs against the pre-batch enabled set, so siblings all pass).
+      // Every board card is still remembered below — that list is per-board.
+      const seenScopeKeys = new Set<string>();
       for (const board of list) {
         const scopeKey = offlineBoardKeyForBoard(board);
+        if (seenScopeKeys.has(scopeKey)) continue;
+        seenScopeKeys.add(scopeKey);
         setOfflineBoardEnabled(offlineBoardScopeForBoard(board), true);
         // Persisted, then consumed when the download actually starts — which can
         // be a later app launch entirely if the board was enabled with no signal.

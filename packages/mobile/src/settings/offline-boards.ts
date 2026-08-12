@@ -209,3 +209,36 @@ export function forgetDownloadTrigger(scopeKey: string): void {
   const { [scopeKey]: _removed, ...rest } = current;
   setSetting(TRIGGER_SETTING_KEY, rest);
 }
+
+const DOWNLOAD_ALL_TAP_SETTING_KEY = 'offlineDownloadAllTapPending';
+
+/**
+ * Arm the "download all my boards" attribution. The tap flips a persisted
+ * setting, but the enable it causes runs from a mount effect once `myBoards`
+ * resolves — which can be a different mount, or a different app launch, if the
+ * list is still in flight when the climber leaves the screen. Held in the same
+ * store as the per-scope triggers for the same reason: an in-memory ref loses
+ * exactly the case the split exists to measure, and every enable that ran
+ * without it would be filed as automatic.
+ */
+export function rememberDownloadAllTap(): void {
+  if (getSetting(DOWNLOAD_ALL_TAP_SETTING_KEY) === true) return;
+  setSetting(DOWNLOAD_ALL_TAP_SETTING_KEY, true);
+}
+
+/**
+ * Read and CLEAR the pending download-all tap. One tap attributes one batch:
+ * leaving it armed would let the next automatic enable on that screen inherit a
+ * tap that had already been spent.
+ */
+export function takeDownloadAllTap(): boolean {
+  if (getSetting(DOWNLOAD_ALL_TAP_SETTING_KEY) !== true) return false;
+  setSetting(DOWNLOAD_ALL_TAP_SETTING_KEY, false);
+  return true;
+}
+
+/** Disarm without consuming — the climber turned the switch back off. */
+export function forgetDownloadAllTap(): void {
+  if (getSetting(DOWNLOAD_ALL_TAP_SETTING_KEY) !== true) return;
+  setSetting(DOWNLOAD_ALL_TAP_SETTING_KEY, false);
+}
