@@ -108,6 +108,45 @@ describe('reportHandledError', () => {
     },
   );
 
+  it('drops a duplicate-board create refusal (the caller uses the board it names)', () => {
+    // createBoard rejects with the existing board attached; the create screen
+    // offers it and a deep link adopts it outright. Nothing failed, but the
+    // rejection still reaches here via MutationCache.onError.
+    const duplicate = Object.assign(new Error('You already have this board'), {
+      response: {
+        status: 200,
+        errors: [
+          {
+            message: 'You already have this board',
+            extensions: {
+              code: 'BOARD_DUPLICATE_CONFIG',
+              existingBoardUuid: 'b2f1c0de-0000-4000-8000-000000000000',
+              existingBoardName: "Marco's garage",
+            },
+          },
+        ],
+      },
+    });
+    reportHandledError(duplicate, { tags: { source: 'react-query', kind: 'mutation' } });
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+  });
+
+  it('still reports a duplicate-shaped rejection that names no board', () => {
+    // `readDuplicateBoardError` requires `existingBoardUuid` — without it the
+    // caller has nothing to recover to, so it is a genuine create failure.
+    const unusable = Object.assign(new Error('You already have this board'), {
+      response: {
+        status: 200,
+        errors: [{ message: 'You already have this board', extensions: { code: 'BOARD_DUPLICATE_CONFIG' } }],
+      },
+    });
+    reportHandledError(unusable, { tags: { source: 'react-query', kind: 'mutation' } });
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(unusable, {
+      level: 'error',
+      tags: { source: 'react-query', kind: 'mutation' },
+    });
+  });
+
   it('downgrades a RATE_LIMITED GraphQL rejection to a warning and tags it (expected backpressure — #3285)', () => {
     const rateLimited = Object.assign(new Error('Rate limit exceeded. Try again in 7 seconds.'), {
       response: {

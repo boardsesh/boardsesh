@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { createElement } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { BoardRouteTarget } from '../board-route-target';
@@ -27,11 +27,31 @@ const climbQuery = vi.hoisted(() => ({
 // Mirrors AuthProvider: `isLoading` starts true and the session resolves async.
 const authState = vi.hoisted(() => ({ current: { isAuthenticated: true, isLoading: false } }));
 // The hook reads connectivity straight off React Query's onlineManager (the
-// resolve runs once, so a reactive hook would be the wrong shape).
-const connectivity = vi.hoisted(() => ({ isOnline: true }));
+// resolve runs once, so a reactive hook would be the wrong shape) and subscribes
+// to it to heal a resolve that failed offline. `goOnline` drives that transition
+// the way NetInfo would.
+const connectivity = vi.hoisted(() => {
+  const listeners = new Set<(online: boolean) => void>();
+  return {
+    isOnline: true,
+    listeners,
+    goOnline() {
+      this.isOnline = true;
+      for (const listener of listeners) listener(true);
+    },
+  };
+});
 
 vi.mock('expo-router', () => ({ useRouter: () => router }));
-vi.mock('@tanstack/react-query', () => ({ onlineManager: { isOnline: () => connectivity.isOnline } }));
+vi.mock('@tanstack/react-query', () => ({
+  onlineManager: {
+    isOnline: () => connectivity.isOnline,
+    subscribe: (listener: (online: boolean) => void) => {
+      connectivity.listeners.add(listener);
+      return () => connectivity.listeners.delete(listener);
+    },
+  },
+}));
 vi.mock('../../graphql/hooks', () => ({
   useClimb: (variables: unknown) =>
     variables ? climbQuery.current : { data: undefined, isError: false, isSuccess: false },
@@ -120,6 +140,7 @@ beforeEach(() => {
   climbQuery.current = { data: undefined, isError: false, isSuccess: false };
   authState.current = { isAuthenticated: true, isLoading: false };
   connectivity.isOnline = true;
+  connectivity.listeners.clear();
 });
 
 describe('useBoardRouteTarget', () => {
@@ -330,20 +351,21 @@ describe('useBoardRouteTarget', () => {
     expect(resolveBoardForSession).not.toHaveBeenCalled();
   });
 
-  // `myBoards` pages at 50 rows. Reading only the first page made a board on page
-  // two read as "you don't own this", and the URL minted a duplicate of the
-  // user's own wall (or dead-ended on the backend's duplicate guard).
-  it('reuses an owned board that sits past the first page of myBoards', async () => {
+  // The pagination itself is pinned in `fetch-all-my-boards.test.ts`; what this
+  // pins is the hook end: the whole list `fetchAllMyBoards` returns is threaded
+  // into the resolver un-sliced, so a match anywhere in it reuses that board
+  // instead of minting one, and it lands at the URL's angle.
+  it('reuses a matching owned board from anywhere in the list, at the URL angle', async () => {
     useRealResolver();
-    const pageTwoBoard = board({ uuid: 'page-two' });
-    const pageOne = Array.from({ length: 50 }, (_, index) => board({ uuid: `other-${index}`, sizeId: 99 }));
-    fetchAllMyBoards.mockResolvedValue([...pageOne, pageTwoBoard]);
+    const lastBoard = board({ uuid: 'last-in-list' });
+    const nonMatching = Array.from({ length: 50 }, (_, index) => board({ uuid: `other-${index}`, sizeId: 99 }));
+    fetchAllMyBoards.mockResolvedValue([...nonMatching, lastBoard]);
 
     render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
 
     await waitFor(() => expect(setActiveBoard).toHaveBeenCalledTimes(1));
     // Adopted at the URL's angle, not the board's stored 20.
-    expect(setActiveBoard).toHaveBeenCalledWith({ ...pageTwoBoard, angle: 40 });
+    expect(setActiveBoard).toHaveBeenCalledWith({ ...lastBoard, angle: 40 });
     expect(createBoardMutateAsync).not.toHaveBeenCalled();
   });
 
@@ -364,6 +386,21 @@ describe('useBoardRouteTarget', () => {
     expect(fetchBoardByUuid).toHaveBeenCalledWith('existing-uuid');
     expect(setActiveBoard).toHaveBeenCalledWith({ ...existingBoard, angle: 40 });
     expect(statusOf(container)).toBe('resolving');
+  });
+
+  // The headline optimization: the deep link almost always names the wall the
+  // user is already on, and matching it skips the owned-list round trip
+  // entirely. Asserting the SKIP is the point — resolving correctly via the
+  // server list would pass without the shortcut existing at all.
+  it('adopts a matching stored active board online without fetching the owned list', async () => {
+    const activeBoard = board({ uuid: 'active-uuid' });
+    getStoredActiveBoard.mockResolvedValue(activeBoard);
+
+    render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith({ ...activeBoard, angle: 40 }));
+    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+    expect(resolveBoardForSession).not.toHaveBeenCalled();
   });
 
   // The stored active board is the board the rest of the app is already pointed
@@ -458,5 +495,104 @@ describe('useBoardRouteTarget', () => {
     render(createElement(Harness, { target: { kind: 'slug-list', slug: 'the-gym', angle: null } as BoardRouteTarget }));
 
     await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(namedBoard));
+  });
+
+  // Failing fast offline replaced a paused React Query retryer that used to
+  // resume on reconnect. The redirector renders a static not-found with no retry
+  // affordance, so without healing here the first tap with no signal would be a
+  // permanent dead end.
+  it('re-resolves when the network comes back after an offline failure', async () => {
+    connectivity.isOnline = false;
+
+    const { container } = render(
+      createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+
+    fetchAllMyBoards.mockResolvedValue([RESOLVED_BOARD]);
+    act(() => connectivity.goOnline());
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(RESOLVED_BOARD));
+    expect(fetchAllMyBoards).toHaveBeenCalledTimes(1);
+    expect(statusOf(container)).toBe('resolving');
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs'));
+  });
+
+  // A dead slug fails while ONLINE, so no offline→online transition can follow
+  // it. Only a device that was genuinely offline gets a retry.
+  it('leaves an online not-found alone when the online signal fires again', async () => {
+    resolveBoardForSession.mockRejectedValue(new Error('dead slug'));
+
+    const { container } = render(
+      createElement(Harness, { target: { kind: 'slug-list', slug: 'gone', angle: null } as BoardRouteTarget }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+    act(() => connectivity.goOnline());
+
+    await waitFor(() => expect(resolveBoardForSession).toHaveBeenCalledTimes(1));
+    expect(statusOf(container)).toBe('not-found');
+  });
+
+  // `onlineManager` reads online whenever NetInfo says `isConnected` — a captive
+  // portal, a dead gym uplink, or a lost cold-start seed race all pass that test
+  // while no request can actually reach the server. A walk that provably failed
+  // to reach it is better evidence than the flag.
+  it('probes downloaded cards when the owned-list walk fails on a lying connection', async () => {
+    const downloadedBoard = board({ uuid: 'downloaded-uuid' });
+    getOfflineBoards.mockReturnValue([downloadedBoard]);
+    fetchAllMyBoards.mockRejectedValue(new TypeError('Network request failed'));
+
+    render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith({ ...downloadedBoard, angle: 40 }));
+    expect(resolveBoardForSession).not.toHaveBeenCalled();
+  });
+
+  // A rejection carrying a server status is the server's verdict, not a
+  // reachability problem — adopting a stale card over it would hand back a board
+  // the backend has disowned.
+  it('does not adopt a downloaded card when the walk fails with a server status', async () => {
+    getOfflineBoards.mockReturnValue([board({ uuid: 'stale-card' })]);
+    fetchAllMyBoards.mockRejectedValue(
+      Object.assign(new Error('Forbidden'), { response: { status: 403, errors: [{ message: 'Forbidden' }] } }),
+    );
+
+    const { container } = render(
+      createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+    expect(setActiveBoard).not.toHaveBeenCalled();
+    expect(resolveBoardForSession).not.toHaveBeenCalled();
+  });
+
+  it('probes downloaded cards when the slug lookup fails on a lying connection', async () => {
+    useRealResolver();
+    const namedBoard = board({ uuid: 'gym-uuid', slug: 'the-gym', angle: 25 });
+    getOfflineBoards.mockReturnValue([namedBoard]);
+    fetchBoardBySlug.mockRejectedValue(new TypeError('Network request failed'));
+
+    render(createElement(Harness, { target: { kind: 'slug-list', slug: 'the-gym', angle: 40 } as BoardRouteTarget }));
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith({ ...namedBoard, angle: 40 }));
+    expect(fetchBoardBySlug).toHaveBeenCalledWith('the-gym');
+  });
+
+  it('does not adopt a downloaded card when the slug lookup fails with a server status', async () => {
+    useRealResolver();
+    getOfflineBoards.mockReturnValue([board({ uuid: 'gym-uuid', slug: 'the-gym', angle: 25 })]);
+    fetchBoardBySlug.mockRejectedValue(
+      Object.assign(new Error('Forbidden'), { response: { status: 403, errors: [{ message: 'Forbidden' }] } }),
+    );
+
+    const { container } = render(
+      createElement(Harness, { target: { kind: 'slug-list', slug: 'the-gym', angle: 40 } as BoardRouteTarget }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+    expect(setActiveBoard).not.toHaveBeenCalled();
   });
 });

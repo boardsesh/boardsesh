@@ -35,16 +35,20 @@ beforeEach(() => {
 });
 
 describe('fetchAllMyBoards', () => {
+  // The first page is deliberately SHORT (30 rows, `hasMore` still set) — a
+  // full-page fixture can't tell "offset += rows received" apart from
+  // "offset = page * limit", and the server is free to return fewer rows than
+  // asked for. Getting that wrong silently skips or repeats boards.
   it('walks every page until hasMore clears, advancing the offset by rows received', async () => {
-    requestMock.mockResolvedValueOnce(myBoardsPage(50, true)).mockResolvedValueOnce(myBoardsPage(3, false, 50));
+    requestMock.mockResolvedValueOnce(myBoardsPage(30, true)).mockResolvedValueOnce(myBoardsPage(3, false, 30));
 
     const ownedBoards = await fetchAllMyBoards();
 
-    expect(ownedBoards).toHaveLength(53);
-    expect(ownedBoards[52].uuid).toBe('board-52');
+    expect(ownedBoards).toHaveLength(33);
+    expect(ownedBoards[32].uuid).toBe('board-32');
     expect(requestMock).toHaveBeenCalledTimes(2);
     expect(requestMock).toHaveBeenNthCalledWith(1, GET_MY_BOARDS, { input: { limit: 50, offset: 0 } });
-    expect(requestMock).toHaveBeenNthCalledWith(2, GET_MY_BOARDS, { input: { limit: 50, offset: 50 } });
+    expect(requestMock).toHaveBeenNthCalledWith(2, GET_MY_BOARDS, { input: { limit: 50, offset: 30 } });
   });
 
   it('asks once when the first page is the whole list', async () => {
