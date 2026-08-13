@@ -15,6 +15,11 @@ function wrapper(flagValue: boolean | undefined) {
 }
 
 describe('useBoardAngleOptions', () => {
+  it('returns an empty list when boardName is undefined', () => {
+    const { result } = renderHook(() => useBoardAngleOptions(undefined), { wrapper: wrapper(true) });
+    expect(result.current).toEqual([]);
+  });
+
   it('returns the narrow MoonBoard angle list when the flag is undefined (default OFF)', () => {
     const { result } = renderHook(() => useBoardAngleOptions('moonboard'), { wrapper: wrapper(undefined) });
     expect(result.current).toEqual([25, 40]);

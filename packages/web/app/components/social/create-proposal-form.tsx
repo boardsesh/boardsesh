@@ -58,8 +58,7 @@ export default function CreateProposalForm({
   const [loading, setLoading] = useState(false);
   const [snackbar, setSnackbar] = useState('');
 
-  const angleOptions = useBoardAngleOptions((boardName as BoardName | undefined) ?? 'kilter');
-  const boardAngles = boardName ? angleOptions : [];
+  const boardAngles = useBoardAngleOptions(boardName as BoardName | undefined);
 
   const handleClose = useCallback(() => {
     setOpen(false);

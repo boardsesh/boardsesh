@@ -44,7 +44,7 @@ export default function BoardConfigSelects({
   onAngleChange,
 }: BoardConfigSelectsProps) {
   const { t } = useTranslation('boards');
-  const angleOptions = useBoardAngleOptions(selectedBoard ?? 'kilter');
+  const angleOptions = useBoardAngleOptions(selectedBoard);
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
       <FormControl fullWidth size="small">
