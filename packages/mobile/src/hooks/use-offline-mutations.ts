@@ -4,12 +4,19 @@ import {
   applyBusyTimeout,
   enqueue,
   getLocalUserId,
+  runLocalWriteWithRetry,
+  OFFLINE_DB_BUSY_TIMEOUT_MS,
+  OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS,
+  OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS,
   type EnqueueResult,
   type GraphQLFetch,
   type OfflineDatabase,
+  type SqlExecutor,
 } from '@boardsesh/offline-sync';
 import { drainMutationQueue } from '../offline/offline-sync-adapter';
 import { reportEnqueueSuppressed } from '../offline/outbox-telemetry';
+import { localWriteRetryOptions } from '../offline/local-write-telemetry';
+import { takeInjectedWriteFault } from '../offline/dev/write-fault-injection';
 import type { SaveTickMutationVariables } from '../lib/graphql/operations';
 
 export type SaveTickInput = SaveTickMutationVariables['input'];
@@ -32,51 +39,141 @@ function scheduleDrain(
   });
 }
 
-export async function writeTickLocal(db: OfflineDatabase, input: SaveTickInput, tickUuid: string): Promise<void> {
+/**
+ * Run one local write through the shared retry ladder (issue #4315).
+ *
+ * Every write in this file is a single `withExclusiveTransactionAsync` task, so
+ * losing the single-writer lock rolls back both the data row and the outbox row
+ * it would have queued — the whole write vanishes and, for a tick, the send is
+ * gone. Attempt 1 keeps the shipped 5s `busy_timeout`; a retry gets the shorter
+ * one, because a first-attempt failure already means a five-second holder.
+ *
+ * Every statement inside `task` MUST be safe to re-run: a `SQLITE_BUSY` can
+ * surface at COMMIT, so a retry can follow an attempt that actually landed.
+ */
+function runLocalWrite(
+  db: OfflineDatabase,
+  tableName: string,
+  operation: 'create' | 'delete',
+  task: (txn: SqlExecutor) => Promise<void>,
+  budgetMs?: number,
+): Promise<void> {
+  return runLocalWriteWithRetry(
+    async (attempt) => {
+      if (__DEV__) {
+        const injectedFault = takeInjectedWriteFault('before-task');
+        if (injectedFault) throw injectedFault;
+      }
+      await db.withExclusiveTransactionAsync(async (txn) => {
+        // Own connection, busy_timeout defaults to 0 — wait for a held write lock
+        // instead of failing this offline write instantly (BOARDSESH-AB/AX).
+        await applyBusyTimeout(txn, attempt === 1 ? OFFLINE_DB_BUSY_TIMEOUT_MS : OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS);
+        await task(txn);
+      });
+      if (__DEV__) {
+        const injectedFault = takeInjectedWriteFault('after-commit');
+        if (injectedFault) throw injectedFault;
+      }
+    },
+    {
+      ...localWriteRetryOptions(tableName, operation),
+      ...(budgetMs === undefined ? {} : { budgetMs }),
+    },
+  );
+}
+
+export async function writeTickLocal(
+  db: OfflineDatabase,
+  input: SaveTickInput,
+  tickUuid: string,
+  budgetMs?: number,
+): Promise<void> {
   const now = new Date().toISOString();
   const climbedAt = input.climbedAt ?? now;
   const sessionId = input.sessionId ?? null;
 
-  await db.withExclusiveTransactionAsync(async (txn) => {
-    // Own connection, busy_timeout defaults to 0 — wait for a held write lock
-    // instead of failing this offline write instantly (BOARDSESH-AB/AX).
-    await applyBusyTimeout(txn);
-    // Stamp the owner so a local reader's `(user_id = ? OR user_id IS NULL)`
-    // predicate can tell this tick from a previous account's leftovers. Rows
-    // written before this existed stay NULL, which the `IS NULL` arm covers —
-    // that arm cannot be dropped until every such row has synced back down.
-    const ownerUserId = await getLocalUserId(txn);
-    await txn.runAsync(
-      `INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status,
+  await runLocalWrite(
+    db,
+    'boardsesh_ticks',
+    'create',
+    async (txn) => {
+      // Stamp the owner so a local reader's `(user_id = ? OR user_id IS NULL)`
+      // predicate can tell this tick from a previous account's leftovers. Rows
+      // written before this existed stay NULL, which the `IS NULL` arm covers —
+      // that arm cannot be dropped until every such row has synced back down.
+      const ownerUserId = await getLocalUserId(txn);
+      // OR IGNORE so a retried attempt is a no-op against a row the previous
+      // attempt already committed: a `SQLITE_BUSY` can surface at COMMIT, which
+      // makes "the transaction landed and still threw" a real shape. `uuid` is
+      // the PRIMARY KEY, and every other statement here is already idempotent.
+      await txn.runAsync(
+        `INSERT OR IGNORE INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status,
        attempt_count, quality, difficulty, comment, climbed_at, session_id, is_mirror, is_benchmark,
        created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        tickUuid,
-        ownerUserId,
-        input.boardType,
-        input.climbUuid,
-        input.angle,
-        input.status,
-        input.attemptCount,
-        input.quality ?? null,
-        input.difficulty ?? null,
-        input.comment,
-        climbedAt,
-        sessionId,
-        input.isMirror ? 1 : 0,
-        input.isBenchmark ? 1 : 0,
-        now,
-        now,
-      ],
-    );
+        [
+          tickUuid,
+          ownerUserId,
+          input.boardType,
+          input.climbUuid,
+          input.angle,
+          input.status,
+          input.attemptCount,
+          input.quality ?? null,
+          input.difficulty ?? null,
+          input.comment,
+          climbedAt,
+          sessionId,
+          input.isMirror ? 1 : 0,
+          input.isBenchmark ? 1 : 0,
+          now,
+          now,
+        ],
+      );
 
-    // No suppressed-enqueue check here, and that is a property of the key, not
-    // an oversight: every tick gets a fresh uuid, so this INSERT OR IGNORE can
-    // never collide with an existing row. A future tick key derived from
-    // climb+angle would inherit the favorites blind spot below — re-check then.
-    await enqueue(txn, 'boardsesh_ticks', 'create', input, tickUuid);
-  });
+      // No suppressed-enqueue check here, and that is a property of the key, not
+      // an oversight: every tick gets a fresh uuid, so this INSERT OR IGNORE can
+      // never collide with an existing row. A future tick key derived from
+      // climb+angle would inherit the favorites blind spot below — re-check then.
+      await enqueue(txn, 'boardsesh_ticks', 'create', input, tickUuid);
+    },
+    budgetMs,
+  );
+}
+
+/**
+ * Last-chance tick write: the outbox row ONLY, no `boardsesh_ticks` row (issue
+ * #4315).
+ *
+ * Called when `writeTickLocal` has already lost the lock. A queued mutation is
+ * self-contained — the drainer replays it from the payload alone — so an
+ * outbox-only row is enough for the send to reach the server. It is also a
+ * strictly smaller target than the full write: one `INSERT OR IGNORE`, no owner
+ * read, at a later instant with its own (shorter) `busy_timeout`.
+ *
+ * No owner stamp is needed: the server derives ownership from the authenticated
+ * call. What the user gives up is documented at the call site — no local tick
+ * row means no "waiting to sync" badge, and the tick is missing from the local
+ * logbook if the app is killed before it drains.
+ *
+ * The payload and key are byte-identical to what `writeTickLocal` would have
+ * queued, so the drain path is unchanged.
+ */
+export async function enqueueTickOutboxOnly(
+  db: OfflineDatabase,
+  input: SaveTickInput,
+  tickUuid: string,
+  budgetMs: number,
+): Promise<void> {
+  await runLocalWriteWithRetry(
+    async () => {
+      await db.withExclusiveTransactionAsync(async (txn) => {
+        await applyBusyTimeout(txn, OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS);
+        await enqueue(txn, 'boardsesh_ticks', 'create', input, tickUuid);
+      });
+    },
+    { ...localWriteRetryOptions('boardsesh_ticks', 'create'), maxAttempts: 2, budgetMs },
+  );
 }
 
 export function favoriteAddKey(input: FavoriteInput): string {
@@ -95,8 +192,7 @@ export async function addFavoriteLocal(db: OfflineDatabase, input: FavoriteInput
   // inside a callback.
   const enqueueOutcome = newEnqueueOutcome();
 
-  await db.withExclusiveTransactionAsync(async (txn) => {
-    await applyBusyTimeout(txn);
+  await runLocalWrite(db, 'user_favorites', 'create', async (txn) => {
     // Same owner stamp as writeTickLocal — user_favorites has a user_id column
     // the dual-write never filled.
     const ownerUserId = await getLocalUserId(txn);
@@ -109,6 +205,10 @@ export async function addFavoriteLocal(db: OfflineDatabase, input: FavoriteInput
     await txn.runAsync(`DELETE FROM pending_mutations WHERE idempotency_key = ? AND status = 'pending'`, [
       favoriteRemoveKey(input),
     ]);
+    // A retry re-runs this and reassigns the holder — last attempt wins, which
+    // is the outcome that matters. Re-running `enqueue` against a row a previous
+    // attempt committed reports `pending`, and reportEnqueueSuppressed only
+    // fires on `dead_letter`, so a retry can never fake a suppressed-enqueue.
     enqueueOutcome.result = await enqueue(txn, 'user_favorites', 'create', input, favoriteAddKey(input));
   });
 
@@ -135,8 +235,7 @@ function reportSuppressedEnqueue(tableName: string, operation: 'create' | 'delet
 export async function removeFavoriteLocal(db: OfflineDatabase, input: FavoriteInput): Promise<void> {
   const enqueueOutcome = newEnqueueOutcome();
 
-  await db.withExclusiveTransactionAsync(async (txn) => {
-    await applyBusyTimeout(txn);
+  await runLocalWrite(db, 'user_favorites', 'delete', async (txn) => {
     await txn.runAsync(`DELETE FROM user_favorites WHERE board_name = ? AND climb_uuid = ? AND angle = ?`, [
       input.boardName,
       input.climbUuid,
@@ -167,8 +266,7 @@ export function useOfflineFollowUser(db: OfflineDatabase, graphqlFetch: GraphQLF
       const idempotencyKey = `add:user_follows:${followingId}`;
       const enqueueOutcome = newEnqueueOutcome();
 
-      await db.withExclusiveTransactionAsync(async (txn) => {
-        await applyBusyTimeout(txn);
+      await runLocalWrite(db, 'user_follows', 'create', async (txn) => {
         await txn.runAsync(
           `INSERT OR IGNORE INTO user_follows (following_id, created_at, updated_at)
            VALUES (?, ?, ?)`,
@@ -204,8 +302,7 @@ export function useOfflineUnfollowUser(db: OfflineDatabase, graphqlFetch: GraphQ
       const idempotencyKey = `del:user_follows:${followingId}`;
       const enqueueOutcome = newEnqueueOutcome();
 
-      await db.withExclusiveTransactionAsync(async (txn) => {
-        await applyBusyTimeout(txn);
+      await runLocalWrite(db, 'user_follows', 'delete', async (txn) => {
         await txn.runAsync(`DELETE FROM user_follows WHERE following_id = ?`, [followingId]);
 
         // Cancel a not-yet-drained follow, but ALWAYS enqueue the unfollow —

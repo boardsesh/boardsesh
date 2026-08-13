@@ -155,6 +155,50 @@ describe('useSaveTick (shared)', () => {
     expect(cache?.[0].uuid).toBe('local-1');
   });
 
+  // Issue #4315. The offline adapter may stamp `variables.input.uuid` with the id
+  // it queued under, and useSaveTick sends the SAME object on the fall-through —
+  // so a write that queued the tick and still threw cannot deliver it twice.
+  it('sends the adapter-stamped uuid on the network fall-through', async () => {
+    const executeHttp = vi.fn().mockResolvedValue({ saveTick: savedTick({ uuid: 'stamped-1' }) });
+    const saveTickOffline = vi.fn().mockImplementation(async (variables: { input: { uuid?: string } }) => {
+      variables.input.uuid = 'stamped-1';
+      return null;
+    });
+    const { wrapper, queryClient } = createWrapper({
+      executeHttp: executeHttp as unknown as ExecuteHttp,
+      saveTickOffline,
+    });
+    queryClient.setQueryData(accumulatedLogbookQueryKey('kilter'), []);
+
+    const { result } = renderHook(() => useSaveTick('kilter'), { wrapper });
+    await act(async () => {
+      result.current.mutate(tickOptions());
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(executeHttp).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ input: expect.objectContaining({ uuid: 'stamped-1' }) }),
+    );
+  });
+
+  // Web omits saveTickOffline entirely, so nothing stamps a uuid and the server
+  // mints one exactly as before.
+  it('sends no uuid when the adapter has no offline save path', async () => {
+    const executeHttp = vi.fn().mockResolvedValue({ saveTick: savedTick() });
+    const { wrapper, queryClient } = createWrapper({ executeHttp: executeHttp as unknown as ExecuteHttp });
+    queryClient.setQueryData(accumulatedLogbookQueryKey('kilter'), []);
+
+    const { result } = renderHook(() => useSaveTick('kilter'), { wrapper });
+    await act(async () => {
+      result.current.mutate(tickOptions());
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const [, sentVariables] = executeHttp.mock.calls[0] as [string, { input: Record<string, unknown> }];
+    expect(sentVariables.input.uuid).toBeUndefined();
+  });
+
   it('schedules the exact post-ack repair when an eager drain wins the queued-token race', async () => {
     const scheduledTasks: Array<() => void> = [];
     const saveTickOffline = vi.fn().mockImplementation(async () => {

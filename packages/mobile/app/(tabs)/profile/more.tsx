@@ -228,10 +228,15 @@ export default function MoreScreen() {
   // wherever the dev section is allowed — for testers and in dev.
   const showFeatureFlags = __DEV__ || Boolean(profile?.isTester);
 
+  // The offline-write harness (hold a real SQLite write lock, inject fault
+  // shapes, inspect the outbox). Same audience as the flag overrides.
+  const showOfflineWrites = __DEV__ || Boolean(profile?.isTester);
+
   // Don't render an empty "Development" section header when no tool applies.
   // (The OTA channel switcher moved to an everyone-facing "Try a preview" entry
   // on the changelog screen, so it's no longer listed here.)
-  const showDevSection = (__DEV__ || Boolean(profile?.isTester)) && (showDevServerSwitcher || showFeatureFlags);
+  const showDevSection =
+    (__DEV__ || Boolean(profile?.isTester)) && (showDevServerSwitcher || showFeatureFlags || showOfflineWrites);
 
   // 'System' follows the device language; the rest are the supported locales,
   // labelled in their own script (English / Español / Français) from
@@ -724,6 +729,18 @@ export default function MoreScreen() {
         subtitle: 'Force feature flags on or off',
         icon: 'featureFlags',
         onPress: navAction(() => router.push('/(tabs)/profile/feature-flags')),
+      });
+    }
+    if (showOfflineWrites) {
+      devRows.push({
+        kind: 'nav',
+        key: 'offlineWrites',
+        // i18n-ignore-next-line — tester-only dev tooling
+        label: 'Offline Writes',
+        // i18n-ignore-next-line
+        subtitle: 'Hold the SQLite write lock, inject faults, inspect the outbox',
+        icon: 'featureFlags',
+        onPress: navAction(() => router.push('/(tabs)/profile/dev-offline-writes')),
       });
     }
     sections.push({ key: 'development', title: t('mobile.more.development'), rows: devRows });

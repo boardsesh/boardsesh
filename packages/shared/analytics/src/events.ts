@@ -449,11 +449,29 @@ export const SHARED_EVENTS = {
   // so neither a drain nor a dead-letter event can ever report it. Props:
   // { tableName, operation, existingStatus }.
   OfflineMutationEnqueueSuppressed: 'Offline Mutation Enqueue Suppressed',
-  // Offline sync — the local SQLite write behind an offline tick threw, so the
-  // tick fell through to a direct network save. Online that still lands;
-  // offline it is a lost tick. `wasOffline` is the dimension that splits those
-  // two, and `isLockError` says whether it was write-lock contention (#4314)
-  // rather than a broken database. Props: { isLockError, wasOffline, error }.
+  // Offline sync — the FIRST attempt of a local SQLite write (tick, favorite,
+  // follow) threw, so the retry ladder ran. Silent on a clean write, so its raw
+  // count is the contention rate. `outcome: 'recovered'` means a later attempt
+  // landed and the user lost nothing; 'exhausted' means the ladder gave up and
+  // the caller saw the throw. `attempts: 1` + 'exhausted' means the error was not
+  // lock contention (disk full, corruption) and was therefore never retried.
+  // `elapsedMs` is the contention-duration measurement — its distribution is what
+  // should size the ladder, which today rests on an estimate. This is the ONLY
+  // signal for a lost favorite/follow; those paths have no Sentry report at all.
+  // Props: { tableName, operation, attempts, outcome: 'recovered' | 'exhausted',
+  // isLockError, wasOffline, elapsedMs }.
+  OfflineLocalWriteAttemptFailed: 'Offline Local Write Attempt Failed',
+  // Offline sync — the local SQLite write behind an offline tick threw. `outcome`
+  // says what happened next: 'queued' means the outbox-only fallback still saved
+  // the tick and it will sync; 'fell_through' means it did not, and the direct
+  // network save is the last chance (fine online, a lost tick offline).
+  // `wasOffline` is the dimension that splits those two, and `isLockError` says
+  // whether it was write-lock contention (#4314) rather than a broken database.
+  // Exactly one per failed local write, on every exit path. A failed write also
+  // emits one `Offline Local Write Attempt Failed` — two layers of one story (the
+  // write ladder and the degrade), not a double count. A RECOVERED write emits
+  // only that one, never this. Props: { isLockError, wasOffline, error,
+  // outcome: 'queued' | 'fell_through' }.
   OfflineTickLocalWriteFailed: 'Offline Tick Local Write Failed',
   // Offline sync — the deletions-coverage verdict for one sync cycle, reported
   // whatever it is. The reset event above only fires on the rare wipe, and a

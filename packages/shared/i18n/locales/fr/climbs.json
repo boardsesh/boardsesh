@@ -648,6 +648,7 @@
     },
     "logAscent": {
       "errorMessage": "Impossible de sauvegarder votre ascension. Veuillez réessayer.",
+      "offlineErrorMessage": "Impossible d'enregistrer votre ascension hors ligne. Le stockage du téléphone était occupé, réessayez dans un instant.",
       "savedToast": "Tick enregistré"
     },
     "tick": {
