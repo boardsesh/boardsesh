@@ -5,14 +5,14 @@ import {
   execute,
   subscribe,
   GraphQLOperationError,
-} from '../../graphql-queue/graphql-client';
+} from '@/app/lib/realtime/graphql-client';
 import {
   INITIAL_RETRY_DELAY_MS,
   MAX_RETRY_DELAY_MS,
   BACKOFF_MULTIPLIER,
   MAX_TRANSIENT_RETRIES,
   // Imported from the shared package directly (not the web re-export) so the
-  // many web tests that vi.mock('../../graphql-queue/graphql-client') don't
+  // many web tests that vi.mock('@/app/lib/realtime/graphql-client') don't
   // each need to add this export to their factory — @boardsesh/graphql-client
   // is never mocked in web tests.
   isNotSessionMemberError,

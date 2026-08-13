@@ -4,7 +4,7 @@ import { serverMyBoards, serverUserPlaylists, cachedDiscoverPlaylists } from '@/
 import LibraryPageContent from './library-page-content';
 import { getPlaylistLcpPreloadUrl } from '@/app/lib/lcp-preload-url';
 import { getAllBoardConfigs } from '@/app/lib/server-board-configs';
-import styles from '@/app/components/library/library.module.css';
+import styles from '@/app/components/ui/page-container.module.css';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
@@ -39,7 +39,7 @@ export default async function PlaylistsPage() {
   return (
     <I18nProvider locale={locale} namespaces={['playlists', 'climbs', 'feed']}>
       {lcpPreloadUrl && <link rel="preload" as="image" href={lcpPreloadUrl} fetchPriority="high" />}
-      <div className={styles.pageContainer}>
+      <div className={styles.libraryPageContainer}>
         <LibraryPageContent
           initialMyBoards={initialMyBoards}
           initialPlaylists={initialPlaylists}

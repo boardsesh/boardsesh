@@ -18,8 +18,8 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { BoardPresenceProvider } from '@boardsesh/board-presence-react';
-import { createGraphQLClient, type Client } from '../../graphql-queue/graphql-client';
-import { createWebBoardPresenceClient, type WebBoardPresenceClient } from '../../board-presence/board-presence-client';
+import { createGraphQLClient, type Client } from '@/app/lib/realtime/graphql-client';
+import { createWebBoardPresenceClient, type WebBoardPresenceClient } from '@/app/lib/realtime/board-presence-client';
 import { getBackendWsUrl } from '@/app/lib/backend-url';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { KioskBoardFeedBridge } from '../kiosk-reliability';

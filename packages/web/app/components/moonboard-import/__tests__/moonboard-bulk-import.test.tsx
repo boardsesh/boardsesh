@@ -72,8 +72,9 @@ vi.mock('../moonboard-edit-modal', () => ({
   default: () => null,
 }));
 
-vi.mock('@/app/components/connection-manager/connection-settings-context', () => ({
-  useBackendUrl: () => ({ backendUrl: null }),
+vi.mock('@/app/lib/backend-url', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/app/lib/backend-url')>()),
+  getBackendWsUrl: () => null,
 }));
 
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({

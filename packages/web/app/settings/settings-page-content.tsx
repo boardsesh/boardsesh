@@ -24,10 +24,10 @@ import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from '@/app/lib/i18n/c
 import { useTranslation } from 'react-i18next';
 import Logo from '@/app/components/brand/logo';
 import AuroraCredentialsSection from '@/app/components/settings/aurora-credentials-section';
-import ControllersSection from '@/app/components/settings/controllers-section';
+import ControllersSection from '@/app/components/account/controllers-section';
 import WatchPairingSection from '@/app/components/settings/watch-pairing-section';
 import DeleteAccountSection from '@/app/components/settings/delete-account-section';
-import SetPasswordSection from '@/app/components/settings/set-password-section';
+import SetPasswordSection from '@/app/components/account/set-password-section';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import BackButton from '@/app/components/back-button';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';

@@ -107,7 +107,7 @@ vi.mock('@boardsesh/board-constants/led-placements', () => ({
   getLedPlacements: mockGetLedPlacements,
 }));
 
-vi.mock('../use-wake-lock', () => ({
+vi.mock('@/app/lib/hooks/use-wake-lock', () => ({
   useWakeLock: vi.fn(),
 }));
 

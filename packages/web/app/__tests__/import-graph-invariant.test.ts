@@ -213,6 +213,7 @@ const KEPT_COMPONENT_DIRS = [
   'loading',
   'collapsible-section',
   'auth',
+  'account',
   'providers',
   'swipeable-drawer',
   'stats-filter-drawer',

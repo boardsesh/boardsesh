@@ -28,7 +28,7 @@ import { LightControlDrawer } from '../board-page/light-control-drawer';
 import { useBoardProvider } from '../board-provider/board-provider-context';
 import SwipeBoardCarousel from '../board-renderer/swipe-board-carousel';
 import { PlaybackControls } from '../playback/playback-controls';
-import { useWakeLock } from '../board-bluetooth-control/use-wake-lock';
+import { useWakeLock } from '@/app/lib/hooks/use-wake-lock';
 import { useBluetoothContext } from '../board-bluetooth-control/bluetooth-context';
 import { isNativeApp } from '@/app/lib/ble/capacitor-utils';
 import { useWallConfirmFallback } from './use-wall-confirm-fallback';

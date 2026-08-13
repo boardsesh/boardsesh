@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useWsAuthToken } from './use-ws-auth-token';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import { createGraphQLClient, subscribe } from '@/app/components/graphql-queue/graphql-client';
+import { createGraphQLClient, subscribe } from '@/app/lib/realtime/graphql-client';
 import { getBackendWsUrl } from '@/app/lib/backend-url';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import {

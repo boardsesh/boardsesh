@@ -1,6 +1,6 @@
 import { useCallback, useRef, useEffect, useMemo } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { PAGE_LIMIT } from '../../board-page/constants';
+import { PAGE_LIMIT } from '@/app/lib/climb-list-constants';
 import type { ClimbQueue } from '../types';
 import type { ParsedBoardRouteParameters, SearchRequestPagination, SearchClimbsResult } from '@/app/lib/types';
 import { useOptionalBoardProvider } from '../../board-provider/board-provider-context';

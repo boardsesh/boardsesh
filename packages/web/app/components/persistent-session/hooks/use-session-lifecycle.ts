@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
-import { type Client } from '../../graphql-queue/graphql-client';
+import { type Client } from '@/app/lib/realtime/graphql-client';
 import {
   createSessionConnectionController,
   hasContiguousReplayCoverage,

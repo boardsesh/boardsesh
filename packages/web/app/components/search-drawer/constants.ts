@@ -1,5 +1,5 @@
 import type { SearchRequestPagination } from '@/app/lib/types';
-import { PAGE_LIMIT } from '../board-page/constants';
+import { PAGE_LIMIT } from '@/app/lib/climb-list-constants';
 
 // Default climb search parameters
 export const defaultClimbSearchParameters: SearchRequestPagination = {

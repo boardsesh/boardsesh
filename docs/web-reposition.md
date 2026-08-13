@@ -22,11 +22,11 @@ The mobile app reaches the climbing backend through **GraphQL**, not the Next.js
 web proxies. The only web endpoints `packages/mobile/src` fetches are
 `/api/auth/session`, `/api/internal/ws-auth`, and `/api/internal/beta-link-thumbnail`.
 
-| Route                                                                     | Runtime callers                                                                                                    | Verdict                               |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------- |
-| `/api/v1/[board]/proxy/{login,saveAscent,saveClimb,getLogbook,user-sync}` | **None** — already migrated to GraphQL (see `docs/branch-deploys.md`)                                              | delete (dead code)                    |
-| `/api/internal/{join,controllers,favorites}`                              | Only web session-app UI slated for teardown (`join/*` page, `settings/controllers-section.tsx`, `climb-actions/*`) | delete with that UI                   |
-| `/api/internal/ws-auth`                                                   | `use-ws-auth-token.ts` → ~85 web files incl. kiosk presence; mobile `auth-store.web.ts:343`                        | **KEEP** — `/app` + kiosk auth bridge |
+| Route                                                                     | Runtime callers                                                                                                   | Verdict                               |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `/api/v1/[board]/proxy/{login,saveAscent,saveClimb,getLogbook,user-sync}` | **None** — already migrated to GraphQL (see `docs/branch-deploys.md`)                                             | delete (dead code)                    |
+| `/api/internal/{join,controllers,favorites}`                              | Only web session-app UI slated for teardown (`join/*` page, `account/controllers-section.tsx`, `climb-actions/*`) | delete with that UI                   |
+| `/api/internal/ws-auth`                                                   | `use-ws-auth-token.ts` → ~85 web files incl. kiosk presence; mobile `auth-store.web.ts:343`                       | **KEEP** — `/app` + kiosk auth bridge |
 
 Loose ends to clean when the routes go (not runtime callers, but they'd go stale):
 `app/lib/api-docs/openapi-routes.ts` (documents `proxy/login`, `proxy/saveAscent`),
@@ -76,16 +76,17 @@ things. Neither is fixable by us for the copies already in the field.
 - **Slug tree:** no `[board_slug]`-level layout — `b/[board_slug]/[angle]/layout.tsx` mounts `BoardProvider` **and** all the session providers together (nested inside `I18nProvider`).
 - **Coupling to break first:** `b/[board_slug]/[angle]/list/layout.tsx` imports `ListLayoutClient` from the **legacy** tree (`[board_name]/…/list/layout-client.tsx`), and that client consumes the queue (`useQueueActions`/`useQueueList`). The static `/list` (A3) must replace this before the legacy tree can be deleted.
 
-### Kiosk / embed presence dependencies (relocate before A5 deletes them)
+### Kiosk / embed presence dependencies (clients relocated; login-less query still open)
 
-`components/kiosk/presence/kiosk-presence-hub.tsx` imports, from dirs slated for
-deletion: `graphql-queue/graphql-client` (`createGraphQLClient`),
-`board-presence/board-presence-client` (`createWebBoardPresenceClient`, which
-also pulls `board-presence/board-presence-events` + `-context`), and
-`useWsAuthToken` (kept). The hub renders on `/kiosk/*`, `/embed/board/*`, and the
+`components/kiosk/presence/kiosk-presence-hub.tsx` imports
+`app/lib/realtime/graphql-client` (`createGraphQLClient`) and
+`app/lib/realtime/board-presence-client` (`createWebBoardPresenceClient`), plus
+`useWsAuthToken` (kept) — both clients were lifted out of the delete-candidate
+dirs by W-11 (#4364). The hub renders on `/kiosk/*`, `/embed/board/*`, and the
 gym-manage `kiosk-preview.tsx`. **Not** on `/embed/gym/*/leaderboard` (that's a
-historical period leaderboard, no presence socket). A5-pre relocates the two
-clients into a kept module and builds the login-less "now on the wall" query.
+historical period leaderboard, no presence socket). A5-pre's other half — the
+login-less "now on the wall" query, so an anonymous kiosk/embed load needs no
+`ws-auth` token — is **still outstanding**: #4408.
 
 ### `/playlists` is NOT clean (blocks the `climb-actions/*` delete)
 

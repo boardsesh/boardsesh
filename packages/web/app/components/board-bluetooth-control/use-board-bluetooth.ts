@@ -21,7 +21,7 @@ import { getAuroraBluetoothPacket, parseApiLevel, parseSerialNumber, type LedCol
 import { getMoonboardBluetoothPacket } from './bluetooth-moonboard';
 import { getMoonBoardGeometryByLayoutId } from '@/app/lib/moonboard-config';
 import type { HoldRenderData } from '../board-renderer/types';
-import { useWakeLock } from './use-wake-lock';
+import { useWakeLock } from '@/app/lib/hooks/use-wake-lock';
 import type { BluetoothAdapter, DevicePickerFn, DiscoveredDevice } from '@/app/lib/ble/types';
 import { createBluetoothAdapter } from '@/app/lib/ble/adapter-factory';
 import { incrementBluetoothSends, maybeFireFeedbackPromptEvent } from '@/app/lib/feedback-prompt-db';

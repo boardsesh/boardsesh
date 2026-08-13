@@ -1,6 +1,6 @@
 // GraphQL Queue - New graphql-ws based queue management
-export { createGraphQLClient, execute, subscribe } from './graphql-client';
-export type { Client } from './graphql-client';
+export { createGraphQLClient, execute, subscribe } from '@/app/lib/realtime/graphql-client';
+export type { Client } from '@/app/lib/realtime/graphql-client';
 
 export {
   GraphQLQueueProvider,

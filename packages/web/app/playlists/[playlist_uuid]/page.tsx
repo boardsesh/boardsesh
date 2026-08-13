@@ -6,7 +6,7 @@ import { generatePlaylistMetadata } from '@/app/lib/seo/playlist-metadata';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import PlaylistDetailContent from './playlist-detail-content';
-import styles from '@/app/components/library/playlist-view.module.css';
+import styles from '@/app/components/ui/page-container.module.css';
 
 export async function generateMetadata({ params }: { params: Promise<{ playlist_uuid: string }> }): Promise<Metadata> {
   const { playlist_uuid } = await params;

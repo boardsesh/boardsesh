@@ -7,7 +7,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import { useInfiniteQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
-import { type Client, createGraphQLClient, subscribe } from '../graphql-queue/graphql-client';
+import { type Client, createGraphQLClient, subscribe } from '@/app/lib/realtime/graphql-client';
 import { getBackendWsUrl } from '@/app/lib/backend-url';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import {

@@ -18,7 +18,7 @@ const transport = vi.hoisted(() => ({
   >(() => () => {}),
 }));
 
-vi.mock('../../graphql-queue/graphql-client', () => ({
+vi.mock('../graphql-client', () => ({
   execute: transport.execute,
   subscribe: transport.subscribe,
 }));

@@ -3,13 +3,16 @@ import {
   type BaseClientOptions,
   type ExtendedClient,
 } from '@boardsesh/graphql-client';
-import { connectionManager } from '../connection-manager/websocket-connection-manager';
+import { connectionManager } from './websocket-connection-manager';
 
 const DEBUG = process.env.NODE_ENV === 'development';
 let safeWsCounter = 0;
 
-// Re-export shared primitives so existing relative imports under
-// `app/components/graphql-queue/graphql-client` keep working.
+// Re-export shared primitives so every importer of this module keeps getting
+// `execute`/`subscribe` and friends from one place. The legacy
+// `components/graphql-queue` tree still imports them from here rather than from
+// `@boardsesh/graphql-client` directly, so the re-exports stay until that tree
+// is deleted (W-16).
 export {
   execute,
   subscribe,

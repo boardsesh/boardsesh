@@ -78,7 +78,7 @@ vi.mock('@/app/lib/graphql/client', () => ({
 }));
 
 // CSS module proxy
-vi.mock('@/app/components/library/library.module.css', () => ({
+vi.mock('@/app/components/ui/page-container.module.css', () => ({
   default: new Proxy({}, { get: (_t, prop) => String(prop) }),
 }));
 

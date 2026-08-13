@@ -8,13 +8,13 @@
 // instead of drifting. This file only supplies the web graphql-ws `Client`
 // (the same one the persistent-session provider uses) as the three transport
 // primitives the factory needs — reusing the shared `execute`/`subscribe`
-// helpers re-exported from the web graphql-queue client.
+// helpers re-exported from the web `app/lib/realtime/graphql-client` client.
 //
 // Web now implements the full client, including `onReconnect` (reconnect
 // catch-up — web's `ExtendedClient` supports `.on('connected', ...)` the same
 // as mobile), `fetchConnection` (cold-join holder seed), and `fetchHistory`.
 
-import { type Client, execute, subscribe } from '../graphql-queue/graphql-client';
+import { type Client, execute, subscribe } from './graphql-client';
 import {
   createBoardPresenceClient,
   type BoardPresenceOperation,

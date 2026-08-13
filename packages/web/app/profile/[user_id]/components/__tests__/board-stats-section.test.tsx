@@ -16,7 +16,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('server-only', () => ({}));
 
 // Mock BoardImportPrompt to a simple stub so we can detect when it renders
-vi.mock('@/app/components/settings/board-import-prompt', () => ({
+vi.mock('@/app/components/board-entity/board-import-prompt', () => ({
   default: ({ boardType }: { boardType: string }) => (
     <div data-testid="board-import-prompt" data-board-type={boardType} />
   ),

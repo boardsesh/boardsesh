@@ -33,7 +33,7 @@ import {
 } from '@boardsesh/graphql/operations';
 import { KIOSK_HEARTBEAT_INTERVAL_MS } from '@boardsesh/kiosk';
 import { executeGraphQL } from '@/app/lib/graphql/client';
-import { useWakeLock } from '../board-bluetooth-control/use-wake-lock';
+import { useWakeLock } from '@/app/lib/hooks/use-wake-lock';
 import { evaluateKioskConfigPoll } from './kiosk-config-poll';
 import type { KioskBoardSnapshot } from './presence/use-kiosk-board-presence';
 

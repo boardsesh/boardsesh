@@ -28,7 +28,7 @@ vi.mock('@/app/components/providers/auth-modal-provider', () => ({
   useAuthModal: () => ({ openAuthModal: mockOpenAuthModal }),
 }));
 
-vi.mock('@/app/components/settings/board-import-prompt', () => ({
+vi.mock('@/app/components/board-entity/board-import-prompt', () => ({
   default: ({ boardType }: { boardType: string }) => (
     <div data-testid={`board-import-prompt-${boardType}`}>Import {boardType}</div>
   ),

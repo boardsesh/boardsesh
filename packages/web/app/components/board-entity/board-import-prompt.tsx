@@ -33,14 +33,14 @@ import {
   ImportProgressSteps,
   type ImportPhase,
   type ImportProgress,
-} from './aurora-credentials-section';
+} from '@/app/components/settings/aurora-credentials-section';
 import {
   parseAuroraExport,
   type AuroraExportPreview,
   type StrippedExportData,
 } from '@/app/lib/data-sync/aurora/parse-aurora-export';
 import type { AuroraBoardName } from '@boardsesh/shared-schema';
-import styles from './aurora-credentials-section.module.css';
+import styles from '@/app/components/settings/aurora-credentials-section.module.css';
 
 type BoardImportPromptProps = {
   boardType: AuroraBoardName;

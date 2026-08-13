@@ -34,7 +34,7 @@ import BoardFilterStrip from '@/app/components/board-scroll/board-filter-strip';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { BoardConfigData } from '@/app/lib/server-board-configs';
 import type { StoredBoardConfig } from '@/app/lib/saved-boards-db';
-import styles from '@/app/components/library/library.module.css';
+import styles from '@/app/components/ui/page-container.module.css';
 
 type SelectedBoardForCreate = { boardType: string; layoutId: number };
 
@@ -561,8 +561,8 @@ export default function LibraryPageContent({
           aria-label={t('library.createFab.ariaLabel')}
           sx={{
             position: 'fixed',
-            // Anchor the FAB to the right edge of .pageContainer (see --library-page-max-width
-            // in library.module.css) so it doesn't drift to the browser edge on wide viewports.
+            // Anchor the FAB to the right edge of .libraryPageContainer (see --library-page-max-width
+            // in ui/page-container.module.css) so it doesn't drift to the browser edge on wide viewports.
             right: `max(${themeTokens.spacing[4]}px, calc((100vw - var(--library-page-max-width)) / 2 + ${themeTokens.spacing[4]}px))`,
             // --bottom-bar-height is set by persistent-session-wrapper after hydration with the
             // measured queue-control + tab-bar height; the 145px fallback matches the SSR estimate

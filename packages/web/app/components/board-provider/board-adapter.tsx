@@ -12,7 +12,7 @@ import { useMemo, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSession } from 'next-auth/react';
 import { BoardAdapterProvider, type BoardAdapter } from '@boardsesh/board-react';
-import { execute, createGraphQLClient } from '@/app/components/graphql-queue/graphql-client';
+import { execute, createGraphQLClient } from '@/app/lib/realtime/graphql-client';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { getBackendWsUrl } from '@/app/lib/backend-url';

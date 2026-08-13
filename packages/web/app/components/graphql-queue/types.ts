@@ -1,5 +1,5 @@
 import type { QueueActionsType, QueueDataType, ClimbQueueItem, ClimbQueue } from '../queue-control/types';
-import type { ConnectionState } from '../connection-manager/websocket-connection-manager';
+import type { ConnectionState } from '@/app/lib/realtime/websocket-connection-manager';
 import type { SessionUser } from '@boardsesh/shared-schema';
 import type { ReactNode } from 'react';
 import type { ParsedBoardRouteParameters, BoardDetails, Climb, SearchRequestPagination } from '@/app/lib/types';

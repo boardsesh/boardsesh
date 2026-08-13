@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vite-plus/test';
-import { MAX_PAGE_SIZE, SSR_INITIAL_PAGE_SIZE, resolveSsrInitialPageSize } from '../constants';
+import { MAX_PAGE_SIZE, SSR_INITIAL_PAGE_SIZE, resolveSsrInitialPageSize } from '@/app/lib/climb-list-constants';
 
 describe('resolveSsrInitialPageSize', () => {
   it('returns the small initial batch on page=0 with a default page size', () => {
