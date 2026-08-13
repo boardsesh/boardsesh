@@ -485,7 +485,8 @@ pre-import empty result set.
   restores the static caption, and stops passing `onProgress` into `File.downloadFileAsync` at the
   source (`use-snapshot-source.ts`) — that callback makes expo take a different **native** download
   implementation, so the flag has to restore the original call exactly, not just hide the UI. It drops
-  the progress **option** and nothing else: the wrapper still forwards `releaseArtifact` and
+  the download **options** (`onProgress`, and with it `signal` — pre-existing and deliberate, since the
+  restored call must be byte-identical) but never a capability: the wrapper still forwards `releaseArtifact` and
   `downloadGradesArtifact`, because omitting `releaseArtifact` made the engine fall back to
   `deleteArtifact` and throw away a completed-but-unimported artifact at the end of every cycle —
   silently opting this cohort out of retention (#4310) and out of the backgrounding fix below.

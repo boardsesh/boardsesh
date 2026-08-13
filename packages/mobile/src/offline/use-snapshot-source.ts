@@ -24,8 +24,10 @@ import { mobileSnapshotSource } from './snapshot-source';
  * to stay, or the row sits on "Downloading 0 MB of 103 MB" for the whole
  * download with the switch supposedly off.
  *
- * The ONLY thing this wrapper drops is the `onProgress` OPTION — never a
- * capability. It used to omit `releaseArtifact` and `downloadGradesArtifact`
+ * This wrapper drops the download OPTIONS — `onProgress`, and with it `signal`,
+ * which is pre-existing and deliberate (the first paragraph: the restored call
+ * must be byte-identical) — never a CAPABILITY. It used to omit
+ * `releaseArtifact` and `downloadGradesArtifact`
  * too, which silently opted this cohort out of artifact retention (#4310): the
  * engine falls back to `deleteArtifact`, so a download that completed while the
  * phone was in a pocket was deleted at the end of the cycle and re-fetched from
