@@ -10,11 +10,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { createDownloadFunnelGuard } from '../download-funnel-guard';
 import { SnapshotWipedError } from '../snapshot-bootstrap';
 
-function makeGuard(
-  teardown: () => ReturnType<Parameters<typeof createDownloadFunnelGuard>[0]['teardownReason']> = () => null,
-) {
+function makeGuard(teardown: Parameters<typeof createDownloadFunnelGuard>[0]['teardownReason'] = () => null) {
   const report = vi.fn();
-  return { report, guard: createDownloadFunnelGuard({ report, teardownReason: teardown }) };
+  const teardownReason = vi.fn(teardown);
+  return { report, teardownReason, guard: createDownloadFunnelGuard({ report, teardownReason }) };
 }
 
 describe('download funnel guard', () => {
@@ -173,5 +172,62 @@ describe('download funnel guard', () => {
     const guard = createDownloadFunnelGuard({ report: undefined, teardownReason: () => null });
     guard.arm('kilter:1:5', 'download');
     expect(() => guard.close()).not.toThrow();
+  });
+});
+
+// A board purge is per namespace now (issue #4370), so the guard has to ask about
+// THE ARMED SCOPE rather than about the cycle as a whole.
+describe('download funnel guard — scoped teardown', () => {
+  it('asks about the armed scope, not about the cycle', () => {
+    const { guard, teardownReason } = makeGuard(() => null);
+    guard.arm('kilter:1:5', 'download');
+    guard.close();
+
+    expect(teardownReason).toHaveBeenCalledWith('kilter:1:5');
+  });
+
+  it('passes the armed scope on the uncaught path too', () => {
+    const { guard, teardownReason } = makeGuard(() => null);
+    guard.arm('tension:2:8', 'import');
+    guard.settleUncaught(new Error('SQLITE_BUSY'));
+
+    expect(teardownReason).toHaveBeenCalledWith('tension:2:8');
+  });
+
+  // The truth improvement: an unexplained exit that merely COINCIDES with another
+  // board's removal used to be laundered as an expected `aborted-wipe` and kept out
+  // of Sentry. Only a teardown that could touch the armed scope launders it now.
+  it('still reports unknown-exit when a DIFFERENT scope is the one being torn down', () => {
+    const { report, guard } = makeGuard((scopeKey) => (scopeKey === 'tension:2:8' ? 'aborted-wipe' : null));
+    guard.arm('kilter:1:5', 'download');
+    guard.close();
+
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({ scopeKey: 'kilter:1:5', reason: 'unknown-exit', aborted: false, expected: false }),
+    );
+  });
+
+  it('launders the exit when the armed scope IS the one being torn down', () => {
+    const { report, guard } = makeGuard((scopeKey) => (scopeKey === 'kilter:1:5' ? 'aborted-wipe' : null));
+    guard.arm('kilter:1:5', 'download');
+    guard.close();
+
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({ scopeKey: 'kilter:1:5', reason: 'aborted-wipe', aborted: true, expected: true }),
+    );
+  });
+});
+
+// A SnapshotWipedError classifies itself regardless of scope — it is proof the
+// transaction rolled back, not a guess about why.
+describe('download funnel guard — wiped error keeps its own classification', () => {
+  it('reports aborted-wipe even when no teardown is live for the armed scope', () => {
+    const { report, guard } = makeGuard(() => null);
+    guard.arm('kilter:1:5', 'import');
+    guard.settleUncaught(new SnapshotWipedError());
+
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'aborted-wipe', aborted: true, expected: true }),
+    );
   });
 });

@@ -22,10 +22,18 @@
 //    of a layout via compatible_size_ids, so removing "Kilter 12x12" must not gut a
 //    still-downloaded "Kilter 8x12". See orphanClimbsPredicate.
 //
-// The caller is responsible for aborting in-flight pulls before calling this
-// (beginLocalPurge in mutation-queue/drainer.ts) — a page already on the wire would
+// The caller is responsible for aborting this scope's in-flight pull before calling
+// this: `beginScopePurge(purgeNamespaceKey(scope))` in mutation-queue/drainer.ts,
+// with its release called from a `finally`. A page already on the wire would
 // otherwise land after the delete and resurrect part of the catalog, complete with
 // a checkpoint past it.
+//
+// The RELEASE is what covers the delete window, not just the epoch bump: this
+// transaction runs for seconds on a 40k-climb layout, and while it is latched every
+// check for that namespace reads "purged", so no page and no marker write can be
+// dispatched into it. Only THIS namespace is aborted — every other board's download,
+// the mutation drain, the user-data pull and the deletions pull keep running (issue
+// #4370).
 
 import type { OfflineDatabase, SqlExecutor, SqlValue } from '../database';
 import { applyBusyTimeout } from '../db/pragmas';

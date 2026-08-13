@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
 import {
   assertLocalUserDataOwner,
-  beginLocalPurge,
+  beginGlobalPurge,
   getPendingCount,
   stampLocalUserId,
   type GraphQLFetch,
@@ -140,7 +140,7 @@ export function OfflineSyncBridge() {
             tags: { source: 'offline-sync', op: 'owner-stamp-mismatch' },
           });
           // Same hazard every other wipe path guards against (sign-out uses
-          // setSigningOut, board removal uses beginLocalPurge): the scheduler
+          // setSigningOut, a board removal uses beginScopePurge): the scheduler
           // effect below may already have a pull cycle mid-table, and a page
           // that was on the wire when clearUserData ran would land AFTER the
           // wipe — resurrecting rows with a checkpoint past them, which the
@@ -148,7 +148,10 @@ export function OfflineSyncBridge() {
           // then vouch for. Bumping the epoch makes syncTable's post-await
           // re-check discard that page; the next cycle restarts from the
           // now-empty checkpoints.
-          beginLocalPurge();
+          // GLOBAL, unlike a board removal: clearUserData DELETEs every user
+          // table plus deleteUserCheckpoints, so there is nothing scope-shaped to
+          // narrow it to.
+          beginGlobalPurge();
           await clearUserData(db);
           if (cancelled) return;
         }

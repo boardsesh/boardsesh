@@ -185,8 +185,13 @@ export function StorageSettingsScreen() {
         // Once, after every teardown — it rebuilds the whole file. Cosmetic by
         // design: a failure means the rows are gone but the file didn't shrink, so it
         // must never read as "the removal failed".
-        const compacted = await compactOfflineDatabase(db);
-        if (!compacted) showToast(t('mobile.more.storage.compactFailed'), 'error');
+        //
+        // Deferred while a pull is in flight: VACUUM's exclusive lock would fail a
+        // concurrent import (issue #4370), and a board removal must not cost the
+        // boards it deliberately spared. 'deferred' is silent — the reclaimable
+        // banner below offers the manual Compact.
+        const compacted = await compactOfflineDatabase(db, { deferWhileSyncing: true });
+        if (compacted === 'not-truncated') showToast(t('mobile.more.storage.compactFailed'), 'error');
         await refetch();
         return true;
       } catch (error) {
@@ -250,8 +255,11 @@ export function StorageSettingsScreen() {
     hapticLight();
     setIsCompacting(true);
     try {
-      const compacted = await compactOfflineDatabase(db);
-      if (!compacted) showToast(t('mobile.more.storage.compactFailed'), 'error');
+      // Deliberate and blocking, so it aborts in-flight cycles rather than
+      // deferring: they resume from their checkpoints next foreground with no
+      // burned bootstrap attempt.
+      const compacted = await compactOfflineDatabase(db, { deferWhileSyncing: false });
+      if (compacted === 'not-truncated') showToast(t('mobile.more.storage.compactFailed'), 'error');
       await refetch();
     } finally {
       setIsCompacting(false);

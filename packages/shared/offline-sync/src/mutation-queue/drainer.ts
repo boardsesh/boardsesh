@@ -20,13 +20,76 @@ let _isDraining = false;
 // itself performs runs BEFORE the flag is set, so it isn't blocked.
 let _isSigningOut = false;
 
-// Monotonic wipe generation. The boolean above is true only for the
+// Monotonic GLOBAL wipe generation. The boolean above is true only for the
 // milliseconds clearUserData takes, so an async operation whose network await
 // was in flight during that window sees `false` on both sides of it and would
 // happily write the old user's data back after the wipe (or, in a drain, post
 // the old user's queued writes under the NEXT user's token). Long-running
 // operations capture the epoch at start and abort when it has moved.
-let _wipeEpoch = 0;
+//
+// GLOBAL means "nothing local survives this": sign-out, the owner-stamp
+// mismatch wipe, and the manual database compaction. Removing ONE board's
+// catalog bumps a per-namespace epoch instead (see beginScopePurge) so it stops
+// only the work it can actually invalidate (issue #4370).
+let _globalWipeEpoch = 0;
+
+/**
+ * Per-namespace purge generation, keyed by `purgeNamespaceKey(scope)` —
+ * `boardType:layoutId`, exactly removeBoardScopeData's DELETE predicate. A
+ * namespace absent from the map has never been purged this app session.
+ */
+const _purgeEpochs = new Map<string, number>();
+
+/**
+ * Namespaces whose delete transaction is running RIGHT NOW, refcounted so two
+ * removals of the same layout (Remove-all iterating two sizes) cannot unlatch
+ * each other. removeBoardScopeData holds an exclusive transaction for seconds
+ * on a 40k-climb layout; the epoch alone only tells a check "a purge happened",
+ * while this tells it "a purge is in progress", which is what keeps a marker
+ * write from being dispatched INTO the delete window.
+ */
+const _purgesInFlight = new Map<string, number>();
+
+/**
+ * What a long-running operation captures once, at its start, to detect a purge
+ * that landed while it was awaiting.
+ */
+export type PurgeToken = {
+  readonly global: number;
+  /** A COPY of every namespace epoch known at capture time. */
+  readonly namespaces: ReadonlyMap<string, number>;
+};
+
+/**
+ * Capture once, at the start of a long-running operation; never re-capture
+ * mid-flight. Re-capturing would re-baseline against a purge that has already
+ * landed and let the operation carry on writing rows that are being deleted.
+ *
+ * Takes no argument list and copies the whole map deliberately, which makes
+ * `hasPurgeLanded` total: a namespace never purged reads `0 !== 0`, one purged
+ * before capture reads `n !== n`, one purged after capture reads `n !== n+1`.
+ * There is no "did you remember to register this namespace" footgun. The map
+ * holds at most one entry per layout the user removed this app session.
+ */
+export function capturePurgeToken(): PurgeToken {
+  return { global: _globalWipeEpoch, namespaces: new Map(_purgeEpochs) };
+}
+
+/**
+ * Has a purge that could touch `namespace` landed since the token was captured?
+ *
+ * Omit `namespace` for work no board purge can invalidate — the user tables, the
+ * mutation outbox, the global deletions cursor — and only the global epoch
+ * counts. A board-scoped caller that forgets the argument degrades to
+ * global-only (i.e. it does not abort), so derive the namespace in ONE place per
+ * call path rather than at every check site.
+ */
+export function hasPurgeLanded(token: PurgeToken, namespace?: string): boolean {
+  if (token.global !== _globalWipeEpoch) return true;
+  if (namespace === undefined) return false;
+  if (_purgesInFlight.has(namespace)) return true;
+  return (token.namespaces.get(namespace) ?? 0) !== (_purgeEpochs.get(namespace) ?? 0);
+}
 
 /**
  * Fired the instant a teardown transition happens — sign-out starts, a local
@@ -63,36 +126,70 @@ function notifyTeardown(): void {
 }
 
 export function setSigningOut(value: boolean): void {
-  if (value && !_isSigningOut) _wipeEpoch += 1;
+  if (value && !_isSigningOut) _globalWipeEpoch += 1;
   _isSigningOut = value;
   if (value) notifyTeardown();
 }
 
 /**
- * Bump the wipe epoch WITHOUT asserting sign-out.
+ * Purge ONE board namespace — removing a downloaded catalog (issues #3617,
+ * #4370).
  *
- * A local purge — removing one board scope's downloaded catalog (issue #3617) — has
- * the same hazard sign-out does: a pull page already on the wire lands after the
- * delete and resurrects part of the catalog, complete with a checkpoint past it,
- * which the strict `>` delta pull then never revisits. Every long-running pull path
- * already re-checks getWipeEpoch() across its awaits (syncTable checks at each page
- * top AND again right after the fetch await, before upsertDocuments — that second
- * check is the one that discards the in-flight page), so bumping the epoch reuses
- * those guards verbatim rather than inventing a second mechanism for one hazard.
+ * The hazard is the one sign-out has: a pull page already on the wire lands
+ * after the delete and resurrects part of the catalog, complete with a
+ * checkpoint past it, which the strict `>` delta pull then never revisits. Every
+ * long-running pull path re-checks across its awaits (syncTable checks at each
+ * page top AND again right after the fetch await, before upsertDocuments — that
+ * second check is the one that discards the in-flight page), so bumping an epoch
+ * reuses those guards rather than inventing a second mechanism.
  *
- * Deliberately not setSigningOut(true): that also flips _isSigningOut, which halts
- * drainMutationQueue (the user's unsynced ticks have nothing to do with a board
- * catalog) and would need a paired setSigningOut(false) that races a real concurrent
- * sign-out and clears ITS flag.
+ * The epoch is PER NAMESPACE because removeBoardScopeData's blast radius is:
+ * `board_type = ? AND layout_id = ?` and nothing else. Bumping a global counter
+ * for it aborted every other board's download, the mutation-queue drain, the
+ * user-data pull and the deletions pull — a Remove tap cost the whole engine a
+ * cycle (#4370).
  *
- * There is no endLocalPurge: the epoch is monotonic, so there's no flag to unset,
- * nothing to leak, and no cleanup that a throw could skip. In-flight cycles captured
- * the old value and bail; the next cycle captures the new one and proceeds normally.
- * It does abort other scopes' pulls too — they resume from intact checkpoints on the
- * next trigger, so the cost is one cycle.
+ * Deliberately not setSigningOut(true): that also flips _isSigningOut, which
+ * halts drainMutationQueue (the user's unsynced ticks have nothing to do with a
+ * board catalog) and would need a paired setSigningOut(false) that races a real
+ * concurrent sign-out and clears ITS flag.
+ *
+ * Returns the latch release. Call it from a `finally`, never conditionally: the
+ * epoch bump alone leaves a window where a check made INSIDE the seconds-long
+ * delete transaction reads "no purge" unless the bump happened to precede it,
+ * and that is exactly the window a `scope-complete:` marker write must not be
+ * dispatched into. The release is idempotent, so a double call cannot unlatch a
+ * second concurrent purge of the same namespace.
  */
-export function beginLocalPurge(): void {
-  _wipeEpoch += 1;
+export function beginScopePurge(namespace: string): () => void {
+  _purgeEpochs.set(namespace, (_purgeEpochs.get(namespace) ?? 0) + 1);
+  _purgesInFlight.set(namespace, (_purgesInFlight.get(namespace) ?? 0) + 1);
+  notifyTeardown();
+
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const inFlight = _purgesInFlight.get(namespace) ?? 0;
+    if (inFlight <= 1) _purgesInFlight.delete(namespace);
+    else _purgesInFlight.set(namespace, inFlight - 1);
+  };
+}
+
+/**
+ * Bump the GLOBAL epoch: a wipe that is not scoped to one board, so every
+ * in-flight operation must bail whatever it is working on. Three callers — the
+ * owner-stamp mismatch wipe, and the manual database compaction (VACUUM takes an
+ * exclusive lock for 5-20s, which a concurrent import would meet as SQLITE_BUSY
+ * and charge itself a structural failure for). Sign-out goes through
+ * setSigningOut, which bumps this too.
+ *
+ * There is no endGlobalPurge: the epoch is monotonic, so there's no flag to
+ * unset, nothing to leak, and no cleanup a throw could skip. In-flight cycles
+ * captured the old value and bail; the next cycle captures the new one.
+ */
+export function beginGlobalPurge(): void {
+  _globalWipeEpoch += 1;
   notifyTeardown();
 }
 
@@ -103,8 +200,9 @@ export function isSigningOut(): boolean {
   return _isSigningOut;
 }
 
+/** The GLOBAL epoch only — a board purge never moves it. See beginGlobalPurge. */
 export function getWipeEpoch(): number {
-  return _wipeEpoch;
+  return _globalWipeEpoch;
 }
 
 // Backgrounding guard (Sentry BOARDSESH-AN), same shape as the sign-out guard above.
@@ -307,11 +405,11 @@ export async function drainMutationQueue(
   // being replayed belong to the signing-out user, and graphqlFetch resolves
   // the CURRENT token per request — a drain tail that outlives the account
   // switch would post the old user's writes into the new user's account.
-  const startEpoch = _wipeEpoch;
+  const startEpoch = _globalWipeEpoch;
 
   try {
     while (true) {
-      if (_isSigningOut || _wipeEpoch !== startEpoch || _isBackgrounded) break;
+      if (_isSigningOut || _globalWipeEpoch !== startEpoch || _isBackgrounded) break;
       const batch = await peekPending(db, 10);
       if (batch.length === 0) break;
 
@@ -319,7 +417,7 @@ export async function drainMutationQueue(
       let networkStop = false;
 
       for (const mutation of batch) {
-        if (_isSigningOut || _wipeEpoch !== startEpoch || _isBackgrounded) {
+        if (_isSigningOut || _globalWipeEpoch !== startEpoch || _isBackgrounded) {
           networkStop = true; // reuse the "end cycle now" path
           break;
         }
@@ -330,7 +428,7 @@ export async function drainMutationQueue(
           // reached the server, but the local bookkeeping write must not — leave
           // the row pending (idempotency_key makes a resend on the next drain
           // safe) rather than dispatch a SQLite call right as iOS suspends.
-          if (_isSigningOut || _wipeEpoch !== startEpoch || _isBackgrounded) {
+          if (_isSigningOut || _globalWipeEpoch !== startEpoch || _isBackgrounded) {
             networkStop = true; // reuse the "end cycle now" path
             break;
           }
@@ -367,7 +465,7 @@ export async function drainMutationQueue(
 
           // Same re-check as the success path above, before the retry/dead-letter
           // bookkeeping writes below.
-          if (_isSigningOut || _wipeEpoch !== startEpoch || _isBackgrounded) {
+          if (_isSigningOut || _globalWipeEpoch !== startEpoch || _isBackgrounded) {
             networkStop = true;
             break;
           }
@@ -438,12 +536,12 @@ export async function drainMutationQueue(
         if (retryAttempts >= maxCycleAttempts) break;
         // Lifecycle/connectivity may change after the failed request but before
         // backoff starts. Avoid sleeping when this cycle can no longer retry.
-        if (_isSigningOut || _wipeEpoch !== startEpoch || _isBackgrounded || !options.isOnline()) break;
+        if (_isSigningOut || _globalWipeEpoch !== startEpoch || _isBackgrounded || !options.isOnline()) break;
         await sleep(backoffDelay(retryAttempts, baseDelayMs, maxDelayMs));
         retryAttempts += 1;
         // The app may sign out, background, or lose connectivity during the
         // sleep. Re-check before touching SQLite or sending the mutation again.
-        if (_isSigningOut || _wipeEpoch !== startEpoch || _isBackgrounded || !options.isOnline()) break;
+        if (_isSigningOut || _globalWipeEpoch !== startEpoch || _isBackgrounded || !options.isOnline()) break;
         continue;
       }
 
@@ -466,7 +564,10 @@ export function __resetDrainerStateForTests(): void {
   _isBackgrounded = false;
   // Epoch checks are relative (capture-then-compare), so a residual value is
   // technically harmless — reset anyway so no test inherits another's wipes.
-  _wipeEpoch = 0;
+  _globalWipeEpoch = 0;
+  _purgeEpochs.clear();
+  // A leaked latch would block that namespace's work for every later test.
+  _purgesInFlight.clear();
   // A listener leaked by an aborted run would otherwise fire into the next test.
   teardownListeners.clear();
 }

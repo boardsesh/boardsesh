@@ -49,7 +49,8 @@ import { ensureMutationQueueTable } from '../../mutation-queue/schema';
 import {
   setSigningOut,
   setBackgrounded,
-  beginLocalPurge,
+  beginGlobalPurge,
+  beginScopePurge,
   __resetDrainerStateForTests,
 } from '../../mutation-queue/drainer';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
@@ -3149,7 +3150,7 @@ describe('artifact release and reuse', () => {
       fetchManifest: vi.fn(async () => makeManifest([makeEntry()])),
       downloadArtifact: vi.fn(async (_entry: SnapshotManifestEntry, options?: { signal?: AbortSignal }) => {
         seenSignal = options?.signal;
-        beginLocalPurge();
+        beginGlobalPurge();
         return { filePath };
       }),
       deleteArtifact: vi.fn(async () => {}),
@@ -4455,8 +4456,8 @@ describe('pullSync grades bootstrap', () => {
 // Teardown reporting (issue #4314)
 //
 // Every one of these used to `break` in SILENCE: `Offline Board Download
-// Started` fired, the cycle was torn down by a sign-out / a `beginLocalPurge`
-// from removing any board / the app backgrounding, and no terminal event ever
+// Started` fired, the cycle was torn down by a sign-out / a global wipe / a purge
+// of this board's own namespace / the app backgrounding, and no terminal event ever
 // followed. The funnel could not tell an abandoned 100 MB transfer from a
 // download that is still running. They report through the same
 // `onSnapshotBootstrapError` seam now, marked `aborted: true` so a failure RATE
@@ -4475,15 +4476,16 @@ describe('pullSync bootstrap teardown reporting', () => {
     });
   }
 
-  it('reports a board removal that lands while the artifact is downloading', async () => {
+  it("reports a removal of this board's own layout that lands while the artifact is downloading", async () => {
     const filePath = join(workDir, 'purged-mid-download.db');
     buildScopeArtifact(filePath);
     const source: SnapshotSource = {
       fetchManifest: async () => makeManifest([makeEntry()]),
       downloadArtifact: async () => {
-        // Removing ANY board bumps the wipe epoch — the field report behind
-        // #4314, where a Kilter transfer died to a Tension removal.
-        beginLocalPurge();
+        // The scope being downloaded is the one being removed, so this transfer
+        // SHOULD die. A removal of a different layout must not (issue #4370) —
+        // see the scoped-purge suite below.
+        beginScopePurge('kilter:1')();
         return { filePath };
       },
       deleteArtifact: vi.fn(async () => {}),
@@ -4558,7 +4560,7 @@ describe('pullSync bootstrap teardown reporting', () => {
       snapshotSource: source,
       // Fired on the line directly above the bail, so this is a teardown landing
       // in the gap between Started and the first byte.
-      onScopeDownloadStart: () => beginLocalPurge(),
+      onScopeDownloadStart: () => beginScopePurge('kilter:1')(),
       onSnapshotBootstrapError,
     });
 
@@ -4587,7 +4589,7 @@ describe('pullSync bootstrap teardown reporting', () => {
     ) {
       if (!purged && source.includes('INSERT OR REPLACE INTO main.board_climb_stats')) {
         purged = true;
-        beginLocalPurge();
+        beginScopePurge('kilter:1')();
       }
       return realRunAsync.call(this, source, ...(rest as never[]));
     } as typeof db.runAsync);
@@ -4838,5 +4840,286 @@ describe('pullSync bootstrap funnel invariant', () => {
     expect(onScopeDownloadStart).toHaveBeenCalledTimes(1);
     expect(onSnapshotBootstrapError).not.toHaveBeenCalled();
     expect(await countRows('board_climbs')).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-board purge scoping (issue #4370)
+//
+// Removing one board used to bump ONE global epoch, so a Tension removal killed
+// a 100 MB Kilter transfer mid-flight and the climber watched it restart from
+// zero on the next foreground. The epoch is now per `boardType:layoutId` — the
+// exact predicate removeBoardScopeData deletes on, and the exact key both
+// snapshot artifacts are already cached under.
+// ---------------------------------------------------------------------------
+
+describe('pullSync bootstrap purge scoping', () => {
+  const KILTER_KEY = 'kilter:1:5';
+  const TENSION_KEY = 'tension:2:8';
+
+  function buildTwoLayoutArtifacts(): { kilterFile: string; tensionFile: string; manifest: SnapshotManifest } {
+    const kilterFile = join(workDir, 'scoped-kilter.db');
+    const tensionFile = join(workDir, 'scoped-tension.db');
+    buildArtifact({
+      filePath: kilterFile,
+      climbs: [{ uuid: 'kilter-c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'kilter-c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    buildArtifact({
+      filePath: tensionFile,
+      climbs: [{ uuid: 'tension-c1', boardType: 'tension', layoutId: 2, compatibleSizeIds: [8] }],
+      stats: [{ climbUuid: 'tension-c1', boardType: 'tension', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const manifest = makeManifest([
+      makeEntry(),
+      makeEntry({
+        boardType: 'tension',
+        layoutId: 2,
+        key: 'board-snapshots/v1/tension/2/2026-06-01.db',
+        url: 'https://example.test/tension-2.db',
+      }),
+    ]);
+    return { kilterFile, tensionFile, manifest };
+  }
+
+  /** A source serving both layouts, with a hook that fires per downloaded layout. */
+  function makeTwoLayoutSource(
+    files: { kilterFile: string; tensionFile: string; manifest: SnapshotManifest },
+    onDownload: (boardType: string) => void,
+  ): SnapshotSource {
+    return {
+      fetchManifest: async () => files.manifest,
+      downloadArtifact: async (entry: SnapshotManifestEntry) => {
+        onDownload(entry.boardType);
+        return { filePath: entry.boardType === 'tension' ? files.tensionFile : files.kilterFile };
+      },
+      deleteArtifact: vi.fn(async () => {}),
+    } as unknown as SnapshotSource;
+  }
+
+  // THE WIN. Before this, the Kilter transfer died to the Tension removal.
+  it("imports the untouched layout while another layout's board is removed mid-download", async () => {
+    const files = buildTwoLayoutArtifacts();
+    const source = makeTwoLayoutSource(files, (boardType) => {
+      if (boardType === 'kilter') beginScopePurge('tension:2')();
+    });
+    const onSnapshotBootstrapError = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: [KILTER_KEY, TENSION_KEY],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+    });
+
+    // Kilter imported, which is the whole point: before #4370 this row count was 0.
+    expect(await countRows('board_climbs')).toBe(1);
+    expect(await getCheckpoint(db, `checkpoint:board_climbs:${KILTER_KEY}`)).not.toBeNull();
+
+    // Tension is processed AFTER kilter, so its purge lands before it ever arms
+    // the funnel: it bails at the phase's loop top having emitted no Started, so
+    // it is owed no terminal event and nothing at all is reported. (A scope
+    // already armed when its own layout is purged DOES report — see the next
+    // test.) Its budget is untouched either way.
+    expect(onSnapshotBootstrapError).not.toHaveBeenCalled();
+    expect(await getCheckpoint(db, `checkpoint:board_climbs:${TENSION_KEY}`)).toBeNull();
+    expect(await getBootstrapAttempts(db, TENSION_KEY)).toBe(0);
+  });
+
+  // The other half: the removed layout's own transfer must still die.
+  it("aborts the removed layout's own download and still imports the other", async () => {
+    const files = buildTwoLayoutArtifacts();
+    const source = makeTwoLayoutSource(files, (boardType) => {
+      if (boardType === 'kilter') beginScopePurge('kilter:1')();
+    });
+    const onSnapshotBootstrapError = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: [KILTER_KEY, TENSION_KEY],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+    });
+
+    expect(await getCheckpoint(db, `checkpoint:board_climbs:${KILTER_KEY}`)).toBeNull();
+    expect(await getBootstrapAttempts(db, KILTER_KEY)).toBe(0);
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({ scopeKey: KILTER_KEY, stage: 'download', aborted: true, reason: 'aborted-wipe' }),
+    );
+    // Tension was never touched by the purge, so it imported.
+    expect(await getCheckpoint(db, `checkpoint:board_climbs:${TENSION_KEY}`)).not.toBeNull();
+  });
+
+  // Pins the scoping of the two guards inside the import transaction: a purge of
+  // a DIFFERENT namespace must not raise SnapshotWipedError and roll this back.
+  it("does not roll back an import when a different layout's board is purged", async () => {
+    const filePath = join(workDir, 'other-layout-purged-mid-import.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const adapterPrototype = Object.getPrototypeOf(db) as { runAsync: typeof db.runAsync };
+    const realRunAsync = adapterPrototype.runAsync;
+    let purged = false;
+    vi.spyOn(adapterPrototype, 'runAsync').mockImplementation(async function (
+      this: unknown,
+      sql: string,
+      ...rest: unknown[]
+    ) {
+      if (!purged && sql.includes('INSERT OR REPLACE INTO main.board_climb_stats')) {
+        purged = true;
+        beginScopePurge('tension:2')();
+      }
+      return realRunAsync.call(this, sql, ...(rest as never[]));
+    } as typeof db.runAsync);
+
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const onSnapshotBootstrapError = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: [KILTER_KEY],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+    });
+
+    expect(purged).toBe(true);
+    expect(await countRows('board_climbs')).toBe(1);
+    expect(await getCheckpoint(db, `checkpoint:board_climbs:${KILTER_KEY}`)).not.toBeNull();
+    expect(onSnapshotBootstrapError).not.toHaveBeenCalled();
+  });
+
+  // The grades artifact rides the same namespace key, so a sibling layout's
+  // removal must not stop it either — and it must not burn a grades attempt.
+  it("imports grades through another layout's purge without burning an attempt", async () => {
+    const climbsFile = join(workDir, 'grades-scoped-climbs.db');
+    const gradesFile = join(workDir, 'grades-scoped-grades.db');
+    buildArtifact({
+      filePath: climbsFile,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    buildGradesArtifact({
+      filePath: gradesFile,
+      grades: [{ climbUuid: 'c1', angle: 40 }],
+      watermark: { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '10' },
+    });
+    const { source } = makeGradesSource({
+      manifest: makeManifest([makeEntry({ grades: gradesArtifactBlock() })]),
+      climbsFile,
+      gradesFile,
+    });
+    const originalDownloadGrades = source.downloadGradesArtifact?.bind(source);
+    source.downloadGradesArtifact = async (artifact) => {
+      beginScopePurge('tension:2')();
+      return originalDownloadGrades ? originalDownloadGrades(artifact) : null;
+    };
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: [KILTER_KEY],
+      snapshotSource: source,
+    });
+
+    expect(await getCheckpoint(db, `checkpoint:board_climb_grades:${KILTER_KEY}`)).not.toBeNull();
+    expect(await getGradesBootstrapAttempts(db, KILTER_KEY)).toBe(0);
+  });
+
+  // Term-count regression guard for the whole rewrite: every guard is
+  // `isSigningOut() || <purge> || isBackgrounded()`, and only the middle term
+  // changed. Dropping isBackgrounded() in front of the grades import would
+  // reopen the BOARDSESH-AN class of bug.
+  it('still bails the grades import when the app backgrounds and nothing was purged', async () => {
+    const climbsFile = join(workDir, 'grades-bg-climbs.db');
+    const gradesFile = join(workDir, 'grades-bg-grades.db');
+    buildArtifact({
+      filePath: climbsFile,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    buildGradesArtifact({
+      filePath: gradesFile,
+      grades: [{ climbUuid: 'c1', angle: 40 }],
+      watermark: { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '10' },
+    });
+    const { source } = makeGradesSource({
+      manifest: makeManifest([makeEntry({ grades: gradesArtifactBlock() })]),
+      climbsFile,
+      gradesFile,
+    });
+    const originalDownloadGrades = source.downloadGradesArtifact?.bind(source);
+    source.downloadGradesArtifact = async (artifact) => {
+      const result = originalDownloadGrades ? await originalDownloadGrades(artifact) : null;
+      setBackgrounded(true);
+      return result;
+    };
+
+    try {
+      await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+        enabledBoards: [KILTER_KEY],
+        snapshotSource: source,
+      });
+    } finally {
+      setBackgrounded(false);
+    }
+
+    expect(await getCheckpoint(db, `checkpoint:board_climb_grades:${KILTER_KEY}`)).toBeNull();
+    expect(await getGradesBootstrapAttempts(db, KILTER_KEY)).toBe(0);
+  });
+
+  // THE FUNNEL INVARIANT under `break` → `continue`: every Started still gets
+  // exactly one terminal event. The per-scope `finally` closes the guard once per
+  // scope now instead of once per cycle, which is what preserves it.
+  it('emits exactly one terminal event per Started across a mid-flight scope purge', async () => {
+    const files = buildTwoLayoutArtifacts();
+    const source = makeTwoLayoutSource(files, (boardType) => {
+      if (boardType === 'kilter') beginScopePurge('tension:2')();
+    });
+    const started: string[] = [];
+    const terminals: string[] = [];
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: [KILTER_KEY, TENSION_KEY],
+      snapshotSource: source,
+      onScopeDownloadStart: (info) => started.push(info.scopeKey),
+      onSnapshotBootstrapError: (report) => terminals.push(report.scopeKey),
+      onScopeDownloadComplete: (info) => terminals.push(info.scopeKey),
+    });
+
+    // The purged scope never announced a Started, so it is owed nothing; the
+    // surviving one announced exactly one and got exactly one terminal.
+    expect(started).toEqual([KILTER_KEY]);
+    for (const scopeKey of started) {
+      expect(terminals.filter((key) => key === scopeKey)).toHaveLength(1);
+    }
+    expect(terminals).not.toContain(TENSION_KEY);
+  });
+
+  it('emits exactly one terminal event per Started across a mid-flight GLOBAL purge', async () => {
+    const files = buildTwoLayoutArtifacts();
+    const source = makeTwoLayoutSource(files, (boardType) => {
+      if (boardType === 'kilter') beginGlobalPurge();
+    });
+    const started: string[] = [];
+    const terminals: string[] = [];
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: [KILTER_KEY, TENSION_KEY],
+      snapshotSource: source,
+      onScopeDownloadStart: (info) => started.push(info.scopeKey),
+      onSnapshotBootstrapError: (report) => terminals.push(report.scopeKey),
+      onScopeDownloadComplete: (info) => terminals.push(info.scopeKey),
+    });
+
+    for (const scopeKey of started) {
+      expect(terminals.filter((key) => key === scopeKey)).toHaveLength(1);
+    }
   });
 });

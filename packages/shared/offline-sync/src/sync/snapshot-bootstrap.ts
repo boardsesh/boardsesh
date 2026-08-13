@@ -19,7 +19,7 @@
 // rows are harmless because reads are scoped.
 
 import type { OfflineDatabase, SqlExecutor } from '../database';
-import type { OfflineBoardScope } from '../offline-board-key';
+import { purgeNamespaceKey, type OfflineBoardScope } from '../offline-board-key';
 import type { SnapshotGradesArtifact, SnapshotManifestEntry, SnapshotTableName } from './snapshot-manifest';
 import { SNAPSHOT_MANIFEST_FORMAT_VERSION } from './snapshot-manifest';
 import { climbsScopeFilter, isSizeScopedBoard } from './board-scope-sql';
@@ -32,7 +32,7 @@ import {
   setCheckpoint,
   type SyncCheckpoint,
 } from './checkpoints';
-import { getWipeEpoch, isSigningOut } from '../mutation-queue/drainer';
+import { capturePurgeToken, hasPurgeLanded, isSigningOut } from '../mutation-queue/drainer';
 import { LATEST_SCHEMA_VERSION } from '../db/migrations';
 import { applyBusyTimeout } from '../db/pragmas';
 import {
@@ -209,7 +209,7 @@ export type SnapshotBootstrapErrorReport = {
   reason: SnapshotBootstrapFailureReason;
   /**
    * True when the phase BAILED rather than failed: a sign-out, a board removal
-   * (any `beginLocalPurge`), or the app backgrounding. Nothing is broken and no
+   * (any purge of its namespace), or the app backgrounding. Nothing is broken and no
    * retry budget was spent — the same scope resumes on the next cycle.
    *
    * These used to emit NOTHING at all, which is why a download that stopped was
@@ -890,9 +890,16 @@ export async function bootstrapScopeFromSnapshot(params: {
   // (or starts AND finishes) across ANY await below — including the ATTACH,
   // quick_check, and snapshot_meta reads — would otherwise resurrect the
   // artifact's rows into a wiped DB and write checkpoints past the next
-  // account's data. Capture the monotonic epoch before the FIRST await so even
-  // a wipe cycle that completes during the integrity checks is caught.
-  const startEpoch = getWipeEpoch();
+  // account's data. Capture the token before the FIRST await so even a wipe
+  // cycle that completes during the integrity checks is caught.
+  //
+  // SCOPED (issue #4370): this transaction writes only rows filtered through
+  // climbsScopeFilter(scope), this scope's two checkpoints, and a deletions
+  // rewind that moves the global cursor BACKWARDS (replaying more tombstones is
+  // always safe under any purge). Only a purge covering this scope's layout can
+  // invalidate any of it.
+  const startToken = capturePurgeToken();
+  const purgeKey = purgeNamespaceKey(scope);
 
   let watermarks: Record<SnapshotTableName, SyncCheckpoint> | null = null;
   let imported = { climbsImported: 0, statsImported: 0 };
@@ -929,7 +936,7 @@ export async function bootstrapScopeFromSnapshot(params: {
           }
         }
 
-        if (isSigningOut() || getWipeEpoch() !== startEpoch) throw new SnapshotWipedError();
+        if (isSigningOut() || hasPurgeLanded(startToken, purgeKey)) throw new SnapshotWipedError();
 
         // The import can take seconds on a big layout; don't let a concurrent
         // write on the app's main connection fail it with SQLITE_BUSY.
@@ -945,7 +952,7 @@ export async function bootstrapScopeFromSnapshot(params: {
 
       // Re-check after the (awaited) imports: abort before committing any rows or
       // checkpoints if a wipe landed while they ran.
-      if (isSigningOut() || getWipeEpoch() !== startEpoch) throw new SnapshotWipedError();
+      if (isSigningOut() || hasPurgeLanded(startToken, purgeKey)) throw new SnapshotWipedError();
 
       await setCheckpoint(txn, getCheckpointKey('board_climbs', scopeKey), watermarks.board_climbs);
       await setCheckpoint(txn, getCheckpointKey('board_climb_stats', scopeKey), watermarks.board_climb_stats);
@@ -1048,7 +1055,11 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
   onSchemaDrift?: SchemaDriftReporter;
 }): Promise<{ gradesWatermark: SyncCheckpoint; rowsImported: number }> {
   const { db, scope, scopeKey, filePath, onSchemaDrift } = params;
-  const startEpoch = getWipeEpoch();
+  // Same scoping argument as bootstrapScopeFromSnapshot: the INSERT is filtered
+  // through gradesScopeFilter(scope) and the only checkpoint stamped is this
+  // scope's grades cursor.
+  const startToken = capturePurgeToken();
+  const purgeKey = purgeNamespaceKey(scope);
 
   let watermark: SyncCheckpoint | null = null;
   let rowsImported = 0;
@@ -1070,7 +1081,7 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
         // change invisible to every pre-change artifact still on the CDN.
         await verifySnapshotMeta(txn, GRADES_ALIAS, GRADES_SNAPSHOT_TABLES);
 
-        if (isSigningOut() || getWipeEpoch() !== startEpoch) throw new SnapshotWipedError();
+        if (isSigningOut() || hasPurgeLanded(startToken, purgeKey)) throw new SnapshotWipedError();
 
         await applyBusyTimeout(txn);
         await txn.execAsync('BEGIN EXCLUSIVE');
@@ -1118,7 +1129,7 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
         ? { updatedAt: String(watermarkRow.cursor_at), syncSeq: String(watermarkRow.sync_seq) }
         : EPOCH_WATERMARK;
 
-      if (isSigningOut() || getWipeEpoch() !== startEpoch) throw new SnapshotWipedError();
+      if (isSigningOut() || hasPurgeLanded(startToken, purgeKey)) throw new SnapshotWipedError();
 
       await setCheckpoint(txn, getCheckpointKey(GRADES_TABLE, scopeKey), watermark);
     });

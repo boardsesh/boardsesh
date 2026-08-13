@@ -28,7 +28,12 @@ const onSchemaDrift = vi.fn();
 
 import { pullSync } from '../pull-client';
 import { enqueue } from '../../mutation-queue/queue';
-import { setBackgrounded, beginLocalPurge, __resetDrainerStateForTests } from '../../mutation-queue/drainer';
+import {
+  setBackgrounded,
+  beginGlobalPurge,
+  beginScopePurge,
+  __resetDrainerStateForTests,
+} from '../../mutation-queue/drainer';
 import { processMutation, type GraphQLFetch } from '../../mutation-queue/handlers';
 import { runMigrations } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
@@ -940,19 +945,19 @@ describe('sync layer — real-DDL integration', () => {
       expect(onCoverageReset).not.toHaveBeenCalled();
     });
 
-    it('wipes NOTHING when a local purge lands while the probe is on the wire', async () => {
-      // removeBoardScopeData (Storage → Remove board) calls beginLocalPurge(),
-      // which bumps the wipe epoch to abort the whole cycle. The probe is a real
-      // network round-trip, so that purge can land mid-flight — and a wipe
-      // dispatched after it would clear user data with no rebuild behind it,
-      // because every phase below bails at its first cycleAborted().
+    it('wipes NOTHING when a GLOBAL purge lands while the probe is on the wire', async () => {
+      // The owner-stamp wipe (and sign-out) bump the global epoch to abort the
+      // whole cycle. The probe is a real network round-trip, so that wipe can land
+      // mid-flight — and a reset dispatched after it would clear user data with no
+      // rebuild behind it, because every phase below bails at its first
+      // cycleAborted().
       await seedStaleDevice();
       const staleAt = Date.now() - 100 * DAY_MS;
       await setCoverage(staleAt);
       const onCoverageReset = vi.fn();
       const { fetch } = makeCoverageFetch([{ uuid: 'fresh-tick', status: 'send' }]);
       const purgingFetch = (async (query: string, variables?: Record<string, unknown>) => {
-        if (variables?.limit === 1) beginLocalPurge();
+        if (variables?.limit === 1) beginGlobalPurge();
         return fetch(query, variables);
       }) as unknown as GraphQLFetch;
 
@@ -963,6 +968,25 @@ describe('sync layer — real-DDL integration', () => {
       expect(await readCheckpoint(db, 'checkpoint:deletions')).not.toBeNull();
       expect(await readCoverage()).toBe(staleAt);
       expect(onCoverageReset).not.toHaveBeenCalled();
+    });
+
+    // The behaviour change (issue #4370): a BOARD purge no longer aborts this
+    // cycle, so the rebuild does happen and the reset must run. A stale-coverage
+    // device used to skip its reset because somebody removed a board.
+    it('still resets when a BOARD purge lands while the probe is on the wire', async () => {
+      await seedStaleDevice();
+      await setCoverage(Date.now() - 100 * DAY_MS);
+      const onCoverageReset = vi.fn();
+      const { fetch } = makeCoverageFetch([{ uuid: 'fresh-tick', status: 'send' }]);
+      const purgingFetch = (async (query: string, variables?: Record<string, unknown>) => {
+        if (variables?.limit === 1) beginScopePurge('kilter:1')();
+        return fetch(query, variables);
+      }) as unknown as GraphQLFetch;
+
+      await pullSync(db, queryClient, purgingFetch, { onCoverageReset });
+
+      expect(onCoverageReset).toHaveBeenCalledTimes(1);
+      expect(await readCoverage()).toBeGreaterThan(Date.now() - 60_000);
     });
 
     it('does not wipe again on the next cycle (no probe, no second reset)', async () => {
