@@ -40,7 +40,7 @@ const MOON_PHANTOM_25 = `${PREFIX}MOON-PHANTOM`; // graded 40, phantom stats row
 const MOON_BOTH_ANGLES = `${PREFIX}MOON-BOTH`; // graded 40, REAL catalog data at 25 too (post-#3849)
 const MOON_NULL_ANGLE = `${PREFIX}MOON-NULLANGLE`; // angle-agnostic climb row (post-#3851)
 const MOON_UNKNOWN = `${PREFIX}MOON-NOT-IN-CATALOG`; // never inserted into board_climbs
-const MOON_USER_CREATED = `${PREFIX}MOON-USERSET`; // a climber's own problem, re-angled to 40 (migration 0188 fences this off)
+const MOON_USER_CREATED = `${PREFIX}MOON-USERSET`; // a climber's own problem, re-angled to 40 (the moonboard_wrong_angle_stats_cleanup migration fences this off)
 const MOON_BENCHMARK_ONLY = `${PREFIX}MOON-BENCH`; // graded 40; at 25 ONLY benchmark_difficulty is set
 const MOON_QUALITY_ONLY = `${PREFIX}MOON-QUAL`; // graded 40; at 25 ONLY upstream_quality_average is set
 const KILTER_NULL_ANGLE = `${PREFIX}KILTER-NULLANGLE`;
@@ -313,7 +313,7 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
     expect(snapEvents()).toHaveLength(0);
   });
 
-  // 5b. USER-CREATED climbs are fenced off, matching migration 0188's
+  // 5b. USER-CREATED climbs are fenced off, matching the moonboard_wrong_angle_stats_cleanup migration's
   // `bc.user_id IS NULL` on statements A and B. createClimb writes a non-null
   // board_climbs.angle plus an fa_username-only stats row, and editClimb changes
   // the angle while deliberately leaving the old angle's row behind — so this

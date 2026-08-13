@@ -109,7 +109,7 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
  *   - board_type = 'moonboard'  (Kilter/Tension are byte-for-byte unaffected —
  *     their catalog grades every angle independently)
  *   - board_climbs.user_id IS NULL — CATALOG climbs only, the same fence
- *     resolveMoonBoardTickAngle and migration 0188 carry. Nothing grades a
+ *     resolveMoonBoardTickAngle and the moonboard_wrong_angle_stats_cleanup migration carry. Nothing grades a
  *     climber's own problem per angle, so a tick at any angle on one is
  *     legitimate and must still seed
  *   - board_climbs.angle IS NOT NULL and differs from the tick's angle
@@ -140,7 +140,7 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
  * set the flag TRUE on insert AND on conflict. Leaving it at the column default
  * FALSE is what stranded a growing set of MoonBoard rows outside the "all
  * normalized" invariant (#3529, seed half — 44 at the audit, 101 by the time
- * migration 0188 backfilled them).
+ * the moonboard_wrong_angle_stats_cleanup migration backfilled them).
  */
 
 export type DiffRow = {
@@ -221,7 +221,7 @@ export async function recomputeClimbStats(
     // cost more clarity than the diff-cleanliness buys.
     //
     // `bc.user_id IS NOT NULL` short-circuits the guard for USER-CREATED climbs,
-    // matching both resolveMoonBoardTickAngle and migration 0188's `bc.user_id
+    // matching both resolveMoonBoardTickAngle and the moonboard_wrong_angle_stats_cleanup migration's `bc.user_id
     // IS NULL` fence: editClimb leaves a stats row behind at the old angle by
     // design, so a tick at that angle is legitimate and must still seed.
     await tx.execute(sql`
@@ -496,7 +496,7 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
     // seed above carries the identical predicate with board_climbs in its outer
     // FROM. Leg for leg, including `bc.user_id IS NOT NULL`: a USER-CREATED climb
     // is outside the guard entirely, matching resolveMoonBoardTickAngle and
-    // migration 0188's `bc.user_id IS NULL` fence. editClimb leaves a stats row
+    // the moonboard_wrong_angle_stats_cleanup migration's `bc.user_id IS NULL` fence. editClimb leaves a stats row
     // behind at the old angle by design, so a tick at that angle is legitimate
     // and must still seed. The bulk path reaches the same ticks the single-key
     // one does (self-heal, backfills), so a leg missing here would re-open the

@@ -1238,7 +1238,7 @@ export const tickMutations = {
       const updatedTarget = updatedTicks.find((tick) => tick.uuid === uuid)!;
 
       // This symmetry is a RUNTIME one only — do not assume the #3529 repair
-      // migration matches it. 0188's statement A updates boardsesh_ticks.angle and
+      // migration matches it. the moonboard_wrong_angle_stats_cleanup migration's statement A updates boardsesh_ticks.angle and
       // nothing else, so a historical tick it moves keeps its beta pinned at the
       // pre-move angle until someone edits that tick's angle by hand and lands
       // here. Accepted deliberately on 2026-08-02 rather than widening a migration

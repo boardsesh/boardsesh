@@ -47,7 +47,7 @@ export type MoonBoardTickAngleInput = {
  *       requestedAngle unchanged.
  *   (d) otherwise → return board_climbs.angle.
  *
- * The user-created fence in rule (c) is the same fence migration 0188 puts on
+ * The user-created fence in rule (c) is the same fence the moonboard_wrong_angle_stats_cleanup migration puts on
  * statements A and B (`bc.user_id IS NULL`), and it is here for the same reason:
  * createClimb writes a non-null board_climbs.angle plus a stats row carrying
  * only fa_username, and editClimb changes board_climbs.angle while deliberately

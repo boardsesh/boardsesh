@@ -11,7 +11,7 @@ import { getWorkerDatabaseUrl, setupWorkerDatabase } from './worker-db';
 // the test does what the SQL in the test does, and the shipped file could say
 // anything. Same pattern as moonboard-fa-cleanup-migration.test.ts.
 const drizzleDir = fileURLToPath(new URL('../../../db/drizzle/', import.meta.url));
-const MIGRATION_0188 = readFileSync(`${drizzleDir}0194_moonboard_wrong_angle_stats_cleanup.sql`, 'utf8');
+const WRONG_ANGLE_CLEANUP_MIGRATION = readFileSync(`${drizzleDir}0194_moonboard_wrong_angle_stats_cleanup.sql`, 'utf8');
 
 type TickRow = { climb_uuid: string; angle: number; origin: string };
 type StatsRow = {
@@ -34,7 +34,7 @@ function rowsFromResult<T>(result: unknown): T[] {
   return [];
 }
 
-describe('MoonBoard wrong-angle cleanup migration 0188 — real DB replay (#3529)', () => {
+describe('MoonBoard wrong-angle cleanup migration — real DB replay (#3529)', () => {
   let client: ReturnType<typeof postgres>;
   let db: ReturnType<typeof drizzle>;
 
@@ -138,7 +138,7 @@ describe('MoonBoard wrong-angle cleanup migration 0188 — real DB replay (#3529
   }
 
   async function applyMigration(): Promise<void> {
-    await client.unsafe(MIGRATION_0188);
+    await client.unsafe(WRONG_ANGLE_CLEANUP_MIGRATION);
   }
 
   const PHANTOM = 'MOON-PHANTOM';

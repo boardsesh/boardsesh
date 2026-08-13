@@ -1537,7 +1537,7 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
   });
 
   // USER-CREATED climbs are outside the guard entirely, matching
-  // resolveMoonBoardTickAngle and migration 0188's `bc.user_id IS NULL` fence.
+  // resolveMoonBoardTickAngle and the moonboard_wrong_angle_stats_cleanup migration's `bc.user_id IS NULL` fence.
   // Nothing grades a climber's own problem per angle, so a tick at any angle is
   // legitimate and must seed a row. Deliberately NO stats row is pre-seeded at
   // 25: with one present, ON CONFLICT DO NOTHING makes the assertion pass
