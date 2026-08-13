@@ -8,6 +8,11 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- MoonBoard sends now land on the angle the problem is graded at, so your send turns up on the page everyone else is looking at instead of vanishing into an angle nobody browses ([#4054](https://github.com/boardsesh/boardsesh/pull/4054))
+  The trade: the send lands on the problem's canonical angle, so it stops reading as ticked at the angle your board was physically set to. It still counts, it still shows in your logbook — it just lives at the angle the problem is graded at
+  Your recommended climbs stop handing you MoonBoard problems you've already done. A send filed at the angle your board sat at read as unsent to the recommender, so the same problem kept coming back around
+  Cleared out the ghost entries that wrong-angle sends had been leaving in MoonBoard search results
+  Fixes #3529
 - Lock your phone mid-download and the board keeps downloading. Before, the transfer was thrown away the moment the app went in your pocket and started again from zero next time you opened it — on a slow connection the big Kilter board could never finish. ([#4400](https://github.com/boardsesh/boardsesh/pull/4400))
 
 ## 2026-08-12

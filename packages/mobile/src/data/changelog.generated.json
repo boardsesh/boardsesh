@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-13T02:28:28.276Z",
+  "generatedAt": "2026-08-13T08:45:46.375Z",
   "entries": [
+    {
+      "prNumber": 4054,
+      "category": "fixed",
+      "title": "MoonBoard sends now land on the angle the problem is graded at, so your send turns up on the page everyone else is looking at instead of vanishing into an angle nobody browses",
+      "mergedAt": "2026-08-13T08:44:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4054",
+      "body": "The trade: the send lands on the problem's canonical angle, so it stops reading as ticked at the angle your board was physically set to. It still counts, it still shows in your logbook — it just lives at the angle the problem is graded at\nYour recommended climbs stop handing you MoonBoard problems you've already done. A send filed at the angle your board sat at read as unsent to the recommender, so the same problem kept coming back around\nCleared out the ghost entries that wrong-angle sends had been leaving in MoonBoard search results\nFixes #3529"
+    },
     {
       "prNumber": 4400,
       "category": "fixed",
