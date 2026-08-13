@@ -15,7 +15,10 @@
 //                       touches the structural budget. 3 consecutive failures,
 //                       reset to 0 by any successful download. (The MANIFEST
 //                       stage stays entirely free — a few KB of JSON, and it is
-//                       where an offline launch dies. Issue #4238.)
+//                       where an offline launch dies. Issue #4238.) A transfer
+//                       the OS killed by suspending us is free for its first
+//                       three tries and charged here after that — see
+//                       `recordBackgroundPause` (issue #4390).
 //   structural-artifact the bytes are on disk and provably bad (quick_check,
 //                       snapshot_meta mismatch, import throw). Tonight's export
 //                       might fix it, so a NEW `builtAt` may re-arm the budget —
@@ -79,6 +82,19 @@ export const MAX_BOOTSTRAP_ATTEMPTS = 2;
  */
 export const MAX_TRANSPORT_DOWNLOAD_FAILURES = 3;
 
+/**
+ * Consecutive download-stage backgrounding pauses a scope gets for free before
+ * the transport ladder takes over (issue #4390).
+ *
+ * A pocketed phone is not a broken device, so a transfer the OS suspended must
+ * not burn an attempt or schedule a cooldown. Four in a row with zero bytes
+ * retained is a different thing: it is a device that cannot finish a ~100 MB
+ * unresumable GET, and leaving it uncharged would re-fetch the whole artifact on
+ * every foreground, forever, straight past the 3-strikes ladder that exists to
+ * stop exactly that.
+ */
+export const MAX_FREE_BACKGROUND_PAUSES = 3;
+
 /** Lifetime re-arms of the structural budget on a newly built artifact. */
 export const MAX_STRUCTURAL_REARMS = 1;
 
@@ -111,6 +127,13 @@ export type BootstrapFailureKind = 'transport' | 'structural-artifact' | 'struct
 export type BootstrapRetryState = {
   /** Consecutive download-stage transport failures; any success resets it to 0. */
   readonly transportFailures: number;
+  /**
+   * Consecutive download-stage backgrounding pauses since the last completed
+   * download. Free up to `MAX_FREE_BACKGROUND_PAUSES`, then charged as
+   * `transport` on its ladder; `clearTransportFailures` resets it, because a
+   * download that finished proves the device can finish one.
+   */
+  readonly backgroundPauses: number;
   /** Structural failures spent from the current (possibly re-armed) budget. */
   readonly structuralFailures: number;
   /** Structural budgets granted by a newly built artifact, lifetime. */
@@ -146,6 +169,7 @@ export type BootstrapRetryState = {
 
 export const EMPTY_BOOTSTRAP_RETRY_STATE: BootstrapRetryState = {
   transportFailures: 0,
+  backgroundPauses: 0,
   structuralFailures: 0,
   structuralRearms: 0,
   lastFailureKind: null,
@@ -260,10 +284,48 @@ export function rearmForNewArtifact(state: BootstrapRetryState, builtAt: string)
   };
 }
 
-/** A successful download clears the consecutive-transport counter and its cooldown. */
+/**
+ * Fold one download-stage backgrounding pause into the scope's retry state.
+ *
+ * The first `MAX_FREE_BACKGROUND_PAUSES` cost nothing at all — no attempt, no
+ * cooldown, no budget — and only advance the counter. The next one is charged to
+ * the TRANSPORT budget on its ladder, which is precisely what that budget is
+ * for: bounding total spend on a device where the unresumable GET never
+ * completes. The counter resets as it charges, so the pattern that terminates is
+ * 3 free + 3 transport, after which the scope settles onto the paged crawl and
+ * "Try the fast download again" is the consented escape.
+ */
+export function recordBackgroundPause(input: {
+  state: BootstrapRetryState;
+  /** `builtAt` of the artifact the pause happened against, when known. */
+  builtAt: string | null;
+  now: number;
+  random: () => number;
+}): { state: BootstrapRetryState; charged: boolean } {
+  const backgroundPauses = input.state.backgroundPauses + 1;
+  if (backgroundPauses <= MAX_FREE_BACKGROUND_PAUSES) {
+    return { state: { ...input.state, backgroundPauses }, charged: false };
+  }
+  return {
+    state: nextRetryState({
+      state: { ...input.state, backgroundPauses: 0 },
+      failureKind: 'transport',
+      builtAt: input.builtAt,
+      now: input.now,
+      random: input.random,
+    }),
+    charged: true,
+  };
+}
+
+/**
+ * A successful download clears the consecutive-transport counter and its
+ * cooldown — and the free-pause counter with them: bytes that landed are proof
+ * this device can finish a transfer, whatever happened on the way there.
+ */
 export function clearTransportFailures(state: BootstrapRetryState): BootstrapRetryState {
-  if (state.transportFailures === 0 && state.retryAfter === null) return state;
-  return { ...state, transportFailures: 0, retryAfter: null };
+  if (state.transportFailures === 0 && state.backgroundPauses === 0 && state.retryAfter === null) return state;
+  return { ...state, transportFailures: 0, backgroundPauses: 0, retryAfter: null };
 }
 
 /**
@@ -424,6 +486,10 @@ export function parseBootstrapRetryState(raw: string): BootstrapRetryState | nul
   const lastFailureKind = parsed.lastFailureKind;
   return {
     transportFailures: readNumber(parsed.transportFailures, 0),
+    // Absent on every row written before #4390, and on any row an older bundle
+    // rewrote after a rollback: 0 is exactly the pre-#4390 behaviour (unbounded
+    // free pauses), not a corruption.
+    backgroundPauses: readNumber(parsed.backgroundPauses, 0),
     structuralFailures: readNumber(parsed.structuralFailures, 0),
     structuralRearms: readNumber(parsed.structuralRearms, 0),
     lastFailureKind:

@@ -33,6 +33,7 @@ import {
   restoreBootstrapRetryBudget,
   EMPTY_BOOTSTRAP_RETRY_STATE,
   MAX_BOOTSTRAP_ATTEMPTS,
+  MAX_FREE_BACKGROUND_PAUSES,
   MAX_STRUCTURAL_REARMS,
   MAX_TRANSPORT_DOWNLOAD_FAILURES,
 } from '../bootstrap-retry';
@@ -3051,9 +3052,12 @@ describe('artifact release and reuse', () => {
     expect(signals[0]?.aborted).toBe(false);
   });
 
-  it('aborts an in-flight transfer that emits no progress when the app backgrounds', async () => {
-    // The teardown EVENT drives the abort, not the progress callback: a stalled
-    // transfer emits nothing, and that is exactly when cancelling matters.
+  it('does NOT abort an in-flight transfer when the app backgrounds', async () => {
+    // Issue #4390, and the inverse of what this file used to pin. Start new work
+    // only in the foreground; never kill work already in flight. Cancelling on a
+    // screen lock threw away up to 103 MB and restarted from byte 0 on the next
+    // wake — the phone can keep the transfer alive, the engine cannot get the
+    // bytes back.
     const filePath = join(workDir, 'stalled.db');
     buildArtifact({
       filePath,
@@ -3075,12 +3079,306 @@ describe('artifact release and reuse', () => {
       releaseArtifact: vi.fn(async () => {}),
     } as unknown as SnapshotSource;
 
+    try {
+      await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+      });
+    } finally {
+      setBackgrounded(false);
+    }
+
+    expect(seenSignal?.aborted).toBe(false);
+  });
+
+  it('aborts an in-flight transfer when a wipe starts', async () => {
+    // The other half of the same rule: the rows this artifact is for are being
+    // deleted, so its bytes are worthless and the native session must stop now.
+    const filePath = join(workDir, 'wiped-mid-transfer.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    let seenSignal: AbortSignal | undefined;
+    const source = {
+      fetchManifest: vi.fn(async () => makeManifest([makeEntry()])),
+      downloadArtifact: vi.fn(async (_entry: SnapshotManifestEntry, options?: { signal?: AbortSignal }) => {
+        seenSignal = options?.signal;
+        beginLocalPurge();
+        return { filePath };
+      }),
+      deleteArtifact: vi.fn(async () => {}),
+      releaseArtifact: vi.fn(async () => {}),
+    } as unknown as SnapshotSource;
+
     await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
       enabledBoards: ['kilter:1:5'],
       snapshotSource: source,
     });
 
     expect(seenSignal?.aborted).toBe(true);
+  });
+
+  it('a download that completes while backgrounded is retained and reused next cycle', async () => {
+    const filePath = join(workDir, 'completed-while-backgrounded.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const retained = new Set<string>();
+    const firstCycle = makeRetainingSource({
+      manifest: makeManifest([makeEntry()]),
+      fileForEntry: () => filePath,
+      retained,
+    });
+    const backgroundingSource = {
+      ...firstCycle.source,
+      downloadArtifact: vi.fn(async () => {
+        setBackgrounded(true);
+        return { filePath };
+      }),
+    } as unknown as SnapshotSource;
+
+    try {
+      await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: backgroundingSource,
+      });
+    } finally {
+      setBackgrounded(false);
+    }
+
+    // Handed back unimported, so a retention-capable source keeps the bytes.
+    expect(firstCycle.released).toEqual([{ filePath, imported: false }]);
+    expect(await countRows('board_climbs')).toBe(0);
+
+    // Next foreground cycle: the same file comes back as reused, no re-fetch.
+    retained.add(filePath);
+    const secondCycle = makeRetainingSource({
+      manifest: makeManifest([makeEntry()]),
+      fileForEntry: () => filePath,
+      retained,
+    });
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: secondCycle.source,
+    });
+
+    expect(secondCycle.downloadedUrls).toEqual([]);
+    expect(await countRows('board_climbs')).toBe(1);
+  });
+
+  it('a transfer that fails while suspended does not burn a transport attempt', async () => {
+    const source = {
+      fetchManifest: vi.fn(async () => makeManifest([makeEntry()])),
+      downloadArtifact: vi.fn(async () => {
+        setBackgrounded(true);
+        // The shape iOS produces when it suspends the app mid-transfer.
+        throw new Error('The network connection was lost.');
+      }),
+      deleteArtifact: vi.fn(async () => {}),
+      releaseArtifact: vi.fn(async () => {}),
+    } as unknown as SnapshotSource;
+    const onSnapshotBootstrapError = vi.fn();
+    const onBootstrapRetryScheduled = vi.fn();
+
+    try {
+      await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+        onSnapshotBootstrapError,
+        onBootstrapRetryScheduled,
+      });
+    } finally {
+      setBackgrounded(false);
+    }
+
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'download', aborted: true, reason: 'aborted-background', attempt: 0 }),
+    );
+    expect(onBootstrapRetryScheduled).not.toHaveBeenCalled();
+    const { state } = await readBootstrapRetryState(db, 'kilter:1:5', { now: BASE_NOW, random: () => 0 }, false);
+    expect(state.transportFailures).toBe(0);
+    expect(state.retryAfter).toBeNull();
+    expect(state.backgroundPauses).toBe(1);
+  });
+
+  it('a backgrounded blip, a foreground recovery, then a real network failure still burns a transport attempt', async () => {
+    // The masked-failure case the suspension window exists to prevent: one
+    // pocketed moment during a nine-minute transfer must not launder every later
+    // wifi drop into a free, cooldown-free 100 MB retry loop.
+    const source = {
+      fetchManifest: vi.fn(async () => makeManifest([makeEntry()])),
+      downloadArtifact: vi.fn(
+        async (
+          _entry: SnapshotManifestEntry,
+          options?: { onProgress?: (progress: { bytesWritten: number; totalBytes: number | null }) => void },
+        ) => {
+          setBackgrounded(true);
+          // Back in the foreground, and a byte lands: the transfer demonstrably
+          // survived, so the suspension window closes.
+          setBackgrounded(false);
+          options?.onProgress?.({ bytesWritten: 4096, totalBytes: null });
+          throw new Error('The network connection was lost.');
+        },
+      ),
+      deleteArtifact: vi.fn(async () => {}),
+      releaseArtifact: vi.fn(async () => {}),
+    } as unknown as SnapshotSource;
+    const onSnapshotBootstrapError = vi.fn();
+    const onBootstrapRetryScheduled = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+      onBootstrapRetryScheduled,
+    });
+
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'download', aborted: false, reason: 'network', attempt: 1 }),
+    );
+    expect(onBootstrapRetryScheduled).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'download', failureKind: 'transport', transportFailures: 1 }),
+    );
+    const { state } = await readBootstrapRetryState(db, 'kilter:1:5', { now: BASE_NOW, random: () => 0 }, false);
+    expect(state.transportFailures).toBe(1);
+    expect(state.backgroundPauses).toBe(0);
+  });
+
+  it('a non-network failure that arrives after a foreground byte still burns, even though the app backgrounded', async () => {
+    // A disk-full is not a suspension kill. Once a byte has arrived in the
+    // foreground the window is shut, so `isNetworkError` never even gets asked —
+    // this settles on the structural-device ladder like any other on-device fault.
+    const source = {
+      fetchManifest: vi.fn(async () => makeManifest([makeEntry()])),
+      downloadArtifact: vi.fn(
+        async (
+          _entry: SnapshotManifestEntry,
+          options?: { onProgress?: (progress: { bytesWritten: number; totalBytes: number | null }) => void },
+        ) => {
+          setBackgrounded(true);
+          setBackgrounded(false);
+          options?.onProgress?.({ bytesWritten: 4096, totalBytes: null });
+          throw new Error('snapshot download: insufficient disk space for kilter:1');
+        },
+      ),
+      deleteArtifact: vi.fn(async () => {}),
+      releaseArtifact: vi.fn(async () => {}),
+    } as unknown as SnapshotSource;
+    const onSnapshotBootstrapError = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+    });
+
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'download', aborted: false, attempt: 1 }),
+    );
+    const { state } = await readBootstrapRetryState(db, 'kilter:1:5', { now: BASE_NOW, random: () => 0 }, false);
+    expect(state.structuralFailures).toBe(1);
+    expect(state.backgroundPauses).toBe(0);
+  });
+
+  it('charges the FOURTH consecutive background pause to the transport budget', async () => {
+    const onSnapshotBootstrapError = vi.fn();
+    const onBootstrapRetryScheduled = vi.fn();
+    const runSuspendedCycle = async () => {
+      const source = {
+        fetchManifest: vi.fn(async () => makeManifest([makeEntry()])),
+        downloadArtifact: vi.fn(async () => {
+          setBackgrounded(true);
+          throw new Error('The network connection was lost.');
+        }),
+        deleteArtifact: vi.fn(async () => {}),
+        releaseArtifact: vi.fn(async () => {}),
+      } as unknown as SnapshotSource;
+      try {
+        await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+          enabledBoards: ['kilter:1:5'],
+          snapshotSource: source,
+          onSnapshotBootstrapError,
+          onBootstrapRetryScheduled,
+        });
+      } finally {
+        setBackgrounded(false);
+      }
+    };
+
+    for (let pause = 0; pause < MAX_FREE_BACKGROUND_PAUSES; pause += 1) await runSuspendedCycle();
+
+    const afterFreePauses = await readBootstrapRetryState(db, 'kilter:1:5', { now: BASE_NOW, random: () => 0 }, false);
+    expect(afterFreePauses.state.backgroundPauses).toBe(MAX_FREE_BACKGROUND_PAUSES);
+    expect(afterFreePauses.state.transportFailures).toBe(0);
+    expect(onBootstrapRetryScheduled).not.toHaveBeenCalled();
+    expect(onSnapshotBootstrapError).toHaveBeenCalledTimes(MAX_FREE_BACKGROUND_PAUSES);
+
+    await runSuspendedCycle();
+
+    const afterCharge = await readBootstrapRetryState(db, 'kilter:1:5', { now: BASE_NOW, random: () => 0 }, false);
+    expect(afterCharge.state.backgroundPauses).toBe(0);
+    expect(afterCharge.state.transportFailures).toBe(1);
+    expect(afterCharge.state.retryAfter).not.toBeNull();
+    // Still an abort — the phone went in a pocket, that IS what happened — but
+    // the attempt number now tells the truth about the budget.
+    expect(onSnapshotBootstrapError).toHaveBeenLastCalledWith(
+      expect.objectContaining({ stage: 'download', aborted: true, reason: 'aborted-background', attempt: 1 }),
+    );
+    expect(onBootstrapRetryScheduled).toHaveBeenCalledTimes(1);
+    expect(onBootstrapRetryScheduled).toHaveBeenCalledWith(
+      expect.objectContaining({ failureKind: 'transport', transportFailures: 1, terminal: false }),
+    );
+  });
+
+  it('a completed download resets the free-pause counter', async () => {
+    const filePath = join(workDir, 'pause-then-complete.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const suspendedSource = {
+      fetchManifest: vi.fn(async () => makeManifest([makeEntry()])),
+      downloadArtifact: vi.fn(async () => {
+        setBackgrounded(true);
+        throw new Error('The network connection was lost.');
+      }),
+      deleteArtifact: vi.fn(async () => {}),
+      releaseArtifact: vi.fn(async () => {}),
+    } as unknown as SnapshotSource;
+
+    try {
+      await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: suspendedSource,
+      });
+    } finally {
+      setBackgrounded(false);
+    }
+    const afterPause = await readBootstrapRetryState(db, 'kilter:1:5', { now: BASE_NOW, random: () => 0 }, false);
+    expect(afterPause.state.backgroundPauses).toBe(1);
+
+    const { source } = makeRetainingSource({
+      manifest: makeManifest([makeEntry()]),
+      fileForEntry: () => filePath,
+    });
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+    });
+
+    const afterSuccess = await readBootstrapRetryState(db, 'kilter:1:5', { now: BASE_NOW, random: () => 0 }, false);
+    expect(afterSuccess.state.backgroundPauses).toBe(0);
   });
 
   it('charges the SECOND failed import of the same reused build, so an undeletable file cannot loop', async () => {
@@ -3818,6 +4116,45 @@ describe('pullSync grades bootstrap', () => {
     );
     // The whole-layout budget is untouched, as ever.
     expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
+  });
+
+  it('a grades download that fails during a teardown does not burn a grades attempt', async () => {
+    // The grades artifact only ever gets three tries, and a pocketed phone was
+    // spending them: three screen locks left a Kilter board crawling grades over
+    // GraphQL for the life of the install (issue #4390).
+    const climbsPath = join(workDir, 'grades-teardown-climbs.db');
+    buildArtifact({
+      filePath: climbsPath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const source = {
+      fetchManifest: vi.fn(async () => makeManifest([makeEntry({ grades: gradesArtifactBlock() })])),
+      downloadArtifact: vi.fn(async () => ({ filePath: climbsPath })),
+      downloadGradesArtifact: vi.fn(async () => {
+        setBackgrounded(true);
+        throw new Error('The network connection was lost.');
+      }),
+      deleteArtifact: vi.fn(async () => {}),
+    } as unknown as SnapshotSource;
+    const onSnapshotBootstrapError = vi.fn();
+
+    try {
+      await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+        onSnapshotBootstrapError,
+      });
+    } finally {
+      setBackgrounded(false);
+    }
+
+    expect(await getGradesBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'grades-download', attempt: 0, aborted: true, reason: 'aborted-background' }),
+    );
   });
 
   it('stops trying grades once its own attempt budget is spent', async () => {

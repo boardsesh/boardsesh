@@ -47,6 +47,7 @@ import {
   nextRetryState,
   readBootstrapRetryState,
   rearmForNewArtifact,
+  recordBackgroundPause,
   shouldSkipPagedPull,
   spendUserRequest,
   writeBootstrapRetryState,
@@ -1036,18 +1037,22 @@ async function runBootstrapPhase(params: {
       snapshot: frame,
     });
   };
+  type LayoutDownloadRecord = {
+    file: SnapshotArtifactHandle | null;
+    cause: unknown;
+    permanentMiss: boolean;
+    downloadMs: number;
+    /** Set when THIS phase cancelled the transfer, so a cleared flag can't relabel it a failure. */
+    abortedReason: SnapshotBootstrapFailureReason | null;
+    /**
+     * Telemetry only (issue #4390): the app went to the background at some
+     * point during this transfer. Deliberately NOT part of the pause/failure
+     * decision — see `suspensionWindowOpen` below for the narrow test that is.
+     */
+    backgroundedDuringTransfer: boolean;
+  };
   // Absent = not yet attempted; `file: null` = download failed (with its cause).
-  const downloadByLayout = new Map<
-    string,
-    {
-      file: SnapshotArtifactHandle | null;
-      cause: unknown;
-      permanentMiss: boolean;
-      downloadMs: number;
-      /** Set when THIS phase cancelled the transfer, so a cleared flag can't relabel it a failure. */
-      abortedReason: SnapshotBootstrapFailureReason | null;
-    }
-  >();
+  const downloadByLayout = new Map<string, LayoutDownloadRecord>();
   // filePath → whether any scope managed to import it. An artifact the phase
   // never consumed (backgrounded cycle, wipe, aborted transfer) is handed back
   // with `imported: false` so a retention-capable source can keep it.
@@ -1110,6 +1115,17 @@ async function runBootstrapPhase(params: {
       // re-fetch the artifact on every cycle for the life of the install,
       // straight past MAX_GRADES_BOOTSTRAP_ATTEMPTS.
       if (!gradesDownload) {
+        // A cycle that is being torn down did not fail — it was interrupted.
+        // Charging a grades attempt here spent one of the three tries this
+        // artifact ever gets on a pocketed phone, and three screen locks left a
+        // Kilter board crawling grades over GraphQL for the life of the install
+        // (issue #4390).
+        const gradesTeardown = teardownReason();
+        if (gradesTeardown) {
+          reportBootstrapAbort(scope.scopeKey, 'grades-download', gradesTeardown, downloadCause);
+          gradesDownloadByLayout.set(layoutKey, null);
+          return;
+        }
         const attempt = await recordGradesBootstrapAttempt(db, scope.scopeKey);
         onSnapshotBootstrapError?.({
           scopeKey: scope.scopeKey,
@@ -1451,23 +1467,33 @@ async function runBootstrapPhase(params: {
         // reports the real error, not null.
         let cachedDownload = downloadByLayout.get(layoutKey);
         if (!cachedDownload) {
-          cachedDownload = {
+          // A const alias, not the `let` above: the teardown listener below
+          // closes over it, and TypeScript widens a reassignable binding back to
+          // `| undefined` inside a callback.
+          const transfer: LayoutDownloadRecord = {
             file: null,
             cause: null,
             permanentMiss: false,
             downloadMs: 0,
             abortedReason: null,
+            backgroundedDuringTransfer: false,
           };
-          // The transfer runs for minutes on a 100 MB artifact. Cancelling it
-          // when the cycle is torn down (sign-out, purge, backgrounding) stops
-          // the native session from carrying on over a metered connection long
-          // after the engine stopped caring — the phase's own `break` below
-          // only stops the JS loop, not the download.
+          cachedDownload = transfer;
+          // The rule this encodes (issue #4390): START new work only in the
+          // foreground, NEVER kill work already in flight.
           //
-          // The abort is driven by the teardown EVENT, not by progress: a
+          // A wipe / sign-out / board removal still cancels immediately — the
+          // rows the artifact is for are being deleted, so its bytes are
+          // worthless and a native session must not keep pulling ~100 MB for
+          // them. A BACKGROUNDING does not: on iOS with a background URLSession
+          // the transfer keeps running while the process is suspended, and on
+          // Android the process simply stays alive. Cancelling here is what made
+          // a 103 MB Kilter artifact restart from byte 0 on every screen lock.
+          //
+          // The decision is driven by the teardown EVENT, not by progress: a
           // stalled transfer emits no further progress, which is exactly the
           // case where cancelling matters most. The progress callback stays a
-          // pure reporter.
+          // pure reporter apart from closing the suspension window below.
           const abortController = new AbortController();
           // LATCHED, unlike `isBackgrounded()` itself. The teardown flags are
           // live: a phone that woke, aborted a 100 MB transfer, and came back to
@@ -1478,16 +1504,28 @@ async function runBootstrapPhase(params: {
           // Latching the reason at the moment we abort is what makes that race
           // unwinnable.
           let selfAbortedReason: SnapshotBootstrapFailureReason | null = null;
-          const abortIfTornDown = (): void => {
+          // Open while an OS suspension might still be what kills this transfer.
+          // CLOSED by the first byte delivered in the foreground: after that a
+          // failure belongs to the network or the device, not to the pocket.
+          // Without that closing rule, one screen lock during a nine-minute
+          // Android transfer would launder every later wifi drop, HTTP 500 or
+          // disk error into a free, cooldown-free 100 MB retry loop.
+          let suspensionWindowOpen = false;
+          const onTeardownNotice = (): void => {
             const reason = teardownReason();
             if (!reason) return;
+            if (reason === 'aborted-background') {
+              transfer.backgroundedDuringTransfer = true;
+              suspensionWindowOpen = true;
+              return;
+            }
             selfAbortedReason ??= reason;
             abortController.abort();
           };
-          const unsubscribeTeardown = onTeardown(abortIfTornDown);
+          const unsubscribeTeardown = onTeardown(onTeardownNotice);
           // Covers a teardown that landed between the guard check above and the
           // subscription: the listener only sees transitions after this point.
-          abortIfTornDown();
+          onTeardownNotice();
           // Stage 2 of 3, the multi-minute one. A second SIZE of the same layout
           // reuses this cache entry, so it never re-runs and never re-emits
           // download frames for bytes that already came down.
@@ -1507,6 +1545,10 @@ async function runBootstrapPhase(params: {
               (await source.downloadArtifact(entry, {
                 signal: abortController.signal,
                 onProgress: ({ bytesWritten, totalBytes }) => {
+                  // A byte arrived while nothing is tearing us down: this
+                  // transfer demonstrably survived the pocket, so a later
+                  // failure is not the suspension's doing (issue #4390).
+                  if (suspensionWindowOpen && !teardownReason()) suspensionWindowOpen = false;
                   const resolved = resolveDownloadFraction({
                     entry,
                     bytesWritten,
@@ -1533,7 +1575,20 @@ async function runBootstrapPhase(params: {
           // Only when the transfer actually died. A download that finished
           // despite a teardown landing late is still importable, and calling it
           // an abort here would throw away bytes that are already on disk.
-          if (!cachedDownload.file) cachedDownload.abortedReason = selfAbortedReason;
+          //
+          // Two ways a dead transfer counts as a pause rather than a failure:
+          // we cancelled it ourselves (a wipe — latched, so a cleared flag
+          // cannot relabel it), or the OS suspension plausibly killed it. The
+          // second test is deliberately narrow: the suspension window must still
+          // be open (no byte since the app backgrounded) AND the cause must be
+          // network-shaped, which is what a suspension kill produces
+          // ("The network connection was lost", a timeout, a SocketException)
+          // and what a disk-full, an HTTP 500 or a programmer error is not.
+          if (!cachedDownload.file) {
+            cachedDownload.abortedReason =
+              selfAbortedReason ??
+              (suspensionWindowOpen && isNetworkError(cachedDownload.cause) ? 'aborted-background' : null);
+          }
           cachedDownload.downloadMs = Date.now() - downloadStartedAt;
           downloadByLayout.set(layoutKey, cachedDownload);
           // Registered even on the reuse path: the phase still owns the file for
@@ -1565,7 +1620,60 @@ async function runBootstrapPhase(params: {
         // failure (and a 2-minute cooldown) for its own cancellation.
         const downloadTeardown = teardownReason() ?? cachedDownload.abortedReason;
         if (downloadTeardown) {
-          reportBootstrapAbort(scope.scopeKey, 'download', downloadTeardown, cachedDownload.cause);
+          // A transfer that FINISHED is never a pause — the file is on disk, the
+          // source's sidecar is written, and the next foreground cycle reuses it
+          // for free (issue #4310). Only a dead transfer costs anything.
+          //
+          // The free path is bounded (issue #4390). Before this, a self-aborted
+          // background transfer was free with no bound at all: a device that can
+          // never finish the unresumable GET re-fetched ~100 MB on every
+          // foreground, forever. Three per scope stay free; the fourth is
+          // charged to the TRANSPORT budget on its ladder, so the pattern
+          // terminates at 3 free + 3 transport and the board still arrives via
+          // the paged crawl.
+          if (downloadTeardown === 'aborted-background' && !cachedDownload.file) {
+            const pause = recordBackgroundPause({
+              state: retryState,
+              builtAt: entry.builtAt,
+              now: evaluatedAt,
+              random,
+            });
+            retryState = await writeBootstrapRetryState(db, scope.scopeKey, pause.state);
+            metadataSettled = true;
+            if (pause.charged) {
+              // Still `aborted: true` — the climber's phone went in a pocket,
+              // that is what happened — but `attempt` tells the truth about the
+              // budget, exactly as reportSettledFailure spells it, and the retry
+              // ladder now applies.
+              onSnapshotBootstrapError?.({
+                scopeKey: scope.scopeKey,
+                stage: 'download',
+                attempt: retryState.transportFailures,
+                cause: cachedDownload.cause,
+                expected: true,
+                aborted: true,
+                reason: 'aborted-background',
+              });
+              options?.onBootstrapRetryScheduled?.({
+                scopeKey: scope.scopeKey,
+                boardType: scope.boardType,
+                stage: 'download',
+                failureKind: 'transport',
+                retryAfterMs:
+                  isTerminal(retryState) || retryState.retryAfter === null
+                    ? 0
+                    : Math.max(0, retryState.retryAfter - evaluatedAt),
+                transportFailures: retryState.transportFailures,
+                structuralFailures: retryState.structuralFailures,
+                terminal: isTerminal(retryState),
+              });
+              if (isTerminal(retryState)) await markBootstrapPagedFallback(db, scope.scopeKey);
+            } else {
+              reportBootstrapAbort(scope.scopeKey, 'download', downloadTeardown, cachedDownload.cause);
+            }
+          } else {
+            reportBootstrapAbort(scope.scopeKey, 'download', downloadTeardown, cachedDownload.cause);
+          }
           break;
         }
         const download = cachedDownload.file;
