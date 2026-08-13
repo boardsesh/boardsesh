@@ -125,6 +125,17 @@ describe('buildSlugListTarget', () => {
     expect(buildSlugListTarget('crux-club-kilter', 'forty')).toBeNull();
   });
 
+  // All digits, so the regex passes — but `Number()` gives 1e+22, which
+  // `toBoardPath` serialises in exponential form and `parseNamedBoardPath` then
+  // rejects, quietly substituting the board's stored angle. That silent fallback
+  // is the thing this parser exists to prevent, so the target has to fail here.
+  it.each(['9999999999999999999999', '-9999999999999999999999', '9007199254740993'])(
+    'is not found for an angle too large to survive the round trip (%s)',
+    (angle) => {
+      expect(buildSlugListTarget('crux-club-kilter', angle)).toBeNull();
+    },
+  );
+
   it('is not found without a slug', () => {
     expect(buildSlugListTarget(undefined)).toBeNull();
   });

@@ -170,6 +170,22 @@ async function createBoardOrAdoptDuplicate(
 }
 
 /**
+ * A finished resolve, tagged with the path it finished for. `board: null` means
+ * that path is unresolvable.
+ *
+ * The tag is load-bearing. When a second URL lands on the same mounted screen,
+ * the new `boardPath` is visible a full render before the resolve effect can
+ * clear anything, so an untagged board would still read as the PREVIOUS target's
+ * — and the hand-off effect, which only asks whether *a* board exists, would
+ * fire for the new target with the old board adopted: drawer on climb B, Climbs
+ * tab and BLE still on board A, and B's in-flight create minting a server board
+ * nobody ever adopts. Comparing the tag makes "resolved for the path being asked
+ * about" the only way to read a board out of here, and retires the stale-error
+ * flash on the same edge.
+ */
+type AdoptedBoardState = { path: string; board: UserBoard | null };
+
+/**
  * Resolve the URL's board to a `UserBoard` and adopt it as active. Runs once
  * per target; `null` while resolving, and `error` once the board can't be
  * resolved at all (dead slug, board config that no longer exists, offline with
@@ -183,8 +199,7 @@ function useAdoptedBoard(
   const createBoard = useCreateBoard();
   const setActiveBoard = useSetActiveBoard();
 
-  const [board, setBoard] = useState<UserBoard | null>(null);
-  const [error, setError] = useState(false);
+  const [adopted, setAdopted] = useState<AdoptedBoardState | null>(null);
   // Bumped by the reconnect watcher below to re-enter the resolve effect for a
   // path it has already run — the only thing that distinguishes a retry from the
   // re-renders the effect deliberately ignores.
@@ -206,6 +221,11 @@ function useAdoptedBoard(
   // re-render with an equivalent target doesn't re-run board creation.
   const boardPath = enabled && target && !waitingForAuth ? toBoardPath(target) : null;
   const resolvedPathRef = useRef<string | null>(null);
+
+  // Only a resolve that finished for THIS path may be read; see AdoptedBoardState.
+  const settled = adopted && adopted.path === boardPath ? adopted : null;
+  const board = settled?.board ?? null;
+  const error = settled?.board === null;
 
   // The resolve effect deliberately runs once per path, so it must not close
   // over the first render's values — the session is exactly the one that lands
@@ -240,25 +260,20 @@ function useAdoptedBoard(
       // Clearing the ref is what lets the effect re-enter for the same path;
       // the nonce is what re-runs it at all.
       resolvedPathRef.current = null;
-      setError(false);
+      setAdopted(null);
       setRetryNonce((previousNonce) => previousNonce + 1);
     });
   }, []);
 
   useEffect(() => {
     if (!boardPath || resolvedPathRef.current === boardPath) return;
-    // A second URL through the same mounted route (tapping a link to another
-    // climb on the web build reuses the screen) has to start from a clean slate,
-    // or a stale board hands off for the new target and a stale error shows a
-    // not-found over a URL that resolves fine.
-    const hadPreviousPath = resolvedPathRef.current !== null;
+    // The marker claims the path for the duration of the run so re-renders don't
+    // re-enter it. A run that never finishes gives the claim back in the cleanup
+    // below — nothing else does, and a stale claim is unrecoverable.
     resolvedPathRef.current = boardPath;
-    if (hadPreviousPath) {
-      setBoard(null);
-      setError(false);
-    }
 
     let cancelled = false;
+    let settledThisRun = false;
     void (async () => {
       try {
         const { createBoard: createBoardMutation, isAuthenticated: signedIn } = queriesRef.current;
@@ -317,15 +332,26 @@ function useAdoptedBoard(
         if (cancelled) return;
         await setActiveBoard(resolved);
         if (cancelled) return;
-        setBoard(resolved);
+        settledThisRun = true;
+        setAdopted({ path: boardPath, board: resolved });
       } catch (resolveError) {
         if (__DEV__) console.warn('[board-route] could not resolve board from URL', boardPath, resolveError);
-        if (!cancelled) setError(true);
+        if (cancelled) return;
+        settledThisRun = true;
+        setAdopted({ path: boardPath, board: null });
       }
     })();
 
     return () => {
       cancelled = true;
+      // Give the claim back when the run was cut short, or the path is marked
+      // resolved while nothing ever resolved it: a re-run with the SAME path
+      // early-returns on the marker and the redirector sits on its spinner with
+      // no way out. StrictMode replays every dev mount, Fast Refresh does the
+      // same, and `authIsLoading` flipping true mid-resolve blanks `boardPath`
+      // and restores it — all three land here. A replayed run can double-fire
+      // CREATE_BOARD in a narrow race, which the duplicate recovery absorbs.
+      if (!settledThisRun && resolvedPathRef.current === boardPath) resolvedPathRef.current = null;
     };
     // `retryNonce` is a dep purely so a reconnect re-enters this effect; nothing
     // in the body reads it.
@@ -387,8 +413,17 @@ export function useBoardRouteTarget(
     // drawer renders whatever the active board is.
     if (adoptsBoard && !board) return;
 
+    // How this screen gets out of the way decides the hand-off order below, and
+    // it's a question about the HISTORY STACK, not about the mode: `in-app` only
+    // pops because something pushed it. The legacy `climbs/[climbUuid]`
+    // redirector is `in-app` and gets cold-opened directly — the expo-web
+    // rollout 307s the whole cohort's numeric climb URLs straight at it — so it
+    // has nothing behind it and must replace like a deep link. Asked before the
+    // drawer opens, because opening navigates and would make `canGoBack` true.
+    const canPop = !adoptsBoard && router.canGoBack();
+
     const leave = () => {
-      if (!adoptsBoard && router.canGoBack()) {
+      if (canPop) {
         router.back();
         return;
       }
@@ -409,15 +444,13 @@ export function useBoardRouteTarget(
     const openDrawer = () =>
       openClimbInPlayDrawer({ kind: 'climb', climb, boardConfig }, { openPlayDrawer, router }, { preview: true });
 
-    // Order matters, and it's opposite for the two modes. `openPlayDrawer`
-    // navigates to `/play`, so on a deep link (which leaves by *replacing* the
-    // redirector — there's nothing behind it on a cold open) opening first would
-    // put `/play` on top and then replace `/play` itself: the drawer never
-    // appears and the user lands on a bare Climbs tab. Replace first, then push
-    // the drawer over the tab. The in-app mode pops instead of replacing, and
-    // popping before the push would take the screen the drawer is meant to
-    // return to with it, so it keeps opening first.
-    if (adoptsBoard) {
+    // Order matters and follows `canPop`. `openPlayDrawer` navigates to `/play`,
+    // so a screen that leaves by *replacing* itself must replace FIRST: replacing
+    // after the open would replace `/play` itself, the drawer would never appear,
+    // and the user would land on a bare Climbs tab. A screen that pops is the
+    // mirror image — popping first would take the screen the drawer is meant to
+    // return to with it — so it opens first.
+    if (!canPop) {
       leave();
       openDrawer();
       return;

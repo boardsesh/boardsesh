@@ -78,7 +78,14 @@ export function buildBoardClimbTarget(
 function parseSlugAngle(angle: string | undefined): { angle: number | null } | null {
   if (angle === undefined || angle === '') return { angle: null };
   if (!integerSegmentRegex.test(angle)) return null;
-  return { angle: Number(angle) };
+  const parsed = Number(angle);
+  // The digits have to survive a round trip: `toBoardPath` serialises this back
+  // into a path, and anything past the safe-integer range comes out in
+  // exponential form (`1e+22`), which `parseNamedBoardPath` then rejects and
+  // silently replaces with the board's own stored angle. That is the exact
+  // quiet fallback this parser exists to prevent.
+  if (!Number.isSafeInteger(parsed)) return null;
+  return { angle: parsed };
 }
 
 function isUsableSlug(slug: string | undefined): slug is string {

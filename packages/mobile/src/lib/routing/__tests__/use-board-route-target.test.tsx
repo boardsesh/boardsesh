@@ -109,6 +109,15 @@ function useRealResolver() {
   resolveBoardForSession.mockImplementation(realResolveBoardForSession);
 }
 
+/** A promise the test releases, for holding a resolve open across re-renders. */
+function deferredBoard(board: UserBoard) {
+  let release = () => {};
+  const promise = new Promise<UserBoard>((resolve) => {
+    release = () => resolve(board);
+  });
+  return { promise, release: () => release() };
+}
+
 /** The BOARD_DUPLICATE_CONFIG shape graphql-request throws, as the backend sends it. */
 function duplicateBoardRejection(existingBoardUuid: string) {
   return {
@@ -593,6 +602,107 @@ describe('useBoardRouteTarget', () => {
     );
 
     await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+    expect(setActiveBoard).not.toHaveBeenCalled();
+  });
+
+  // A run cut short leaves the path marked resolved by nothing. Re-running with
+  // the SAME path then early-returns on that marker and the redirector sits on
+  // its spinner with no way out. StrictMode replays every dev mount, Fast
+  // Refresh does the same, and the auth flip below is the production route in.
+  it('restarts a resolve that was cancelled before it finished', async () => {
+    const held = deferredBoard(RESOLVED_BOARD);
+    resolveBoardForSession.mockImplementationOnce(() => held.promise);
+    const listTarget = { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget;
+
+    const { container, rerender } = render(createElement(Harness, { target: listTarget }));
+    await waitFor(() => expect(resolveBoardForSession).toHaveBeenCalledTimes(1));
+
+    // The session going unsettled blanks boardPath, which cancels the run.
+    authState.current = { isAuthenticated: false, isLoading: true };
+    rerender(createElement(Harness, { target: listTarget }));
+    expect(statusOf(container)).toBe('resolving');
+
+    // ...and the same path comes back.
+    authState.current = { isAuthenticated: true, isLoading: false };
+    rerender(createElement(Harness, { target: listTarget }));
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(RESOLVED_BOARD));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs'));
+    held.release();
+  });
+
+  // The new target is visible a render before the resolve effect can clear the
+  // old board, so an untagged board would hand off climb B while board A is
+  // still the active board — drawer on B, Climbs tab and BLE on A. Both targets
+  // must name DIFFERENT boards for this to bite, which is why the same-board
+  // re-target test above can't catch it.
+  it('waits for the new board before handing off a second, different-board target', async () => {
+    useRealResolver();
+    const boardA = board({ uuid: 'gym-a-uuid', slug: 'gym-a', angle: 25 });
+    const boardB = board({ uuid: 'gym-b-uuid', slug: 'gym-b', layoutId: 7, angle: 30 });
+    fetchBoardBySlug.mockImplementation(async (slug: string) => (slug === 'gym-a' ? boardA : boardB));
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    const { rerender } = render(
+      createElement(Harness, {
+        target: { kind: 'slug-climb', slug: 'gym-a', angle: 40, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+    await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
+
+    // Board B's resolve is held open; its climb is already cached, so nothing but
+    // the tagged board state stops the hand-off from firing on board A.
+    const heldB = deferredBoard(boardB);
+    fetchBoardBySlug.mockImplementation(() => heldB.promise);
+    climbQuery.current = { data: { uuid: OTHER_CLIMB_UUID }, isError: false, isSuccess: true };
+    rerender(
+      createElement(Harness, {
+        target: { kind: 'slug-climb', slug: 'gym-b', angle: 40, climbUuid: OTHER_CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    // Re-render again to give a stale board every chance to leak through.
+    rerender(
+      createElement(Harness, {
+        target: { kind: 'slug-climb', slug: 'gym-b', angle: 40, climbUuid: OTHER_CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+    expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      heldB.release();
+    });
+
+    await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(2));
+    expect(setActiveBoard).toHaveBeenNthCalledWith(2, { ...boardB, angle: 40 });
+    // The drawer opened on board B's layout, not board A's.
+    expect(openClimbInPlayDrawer.mock.calls[1][0]).toMatchObject({
+      climb: { uuid: OTHER_CLIMB_UUID },
+      boardConfig: { layoutId: 7, angle: 40 },
+    });
+  });
+
+  // The legacy `climbs/[climbUuid]` redirector is in-app AND cold-openable — the
+  // expo-web rollout 307s the whole cohort's numeric climb URLs at it. With
+  // nothing behind it, opening first then "leaving" replaces `/play` itself and
+  // the drawer never appears. Ordering follows the stack, not the mode.
+  it('replaces before opening for an in-app target with nothing to pop back to', async () => {
+    router.canGoBack.mockReturnValue(false);
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+        mode: 'in-app',
+      }),
+    );
+
+    await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
+    const [replaceOrder] = router.replace.mock.invocationCallOrder;
+    const [openOrder] = openClimbInPlayDrawer.mock.invocationCallOrder;
+    expect(replaceOrder).toBeLessThan(openOrder);
+    expect(router.back).not.toHaveBeenCalled();
+    // Still in-app: a cold open must not adopt (or mint) the URL's board.
     expect(setActiveBoard).not.toHaveBeenCalled();
   });
 });
