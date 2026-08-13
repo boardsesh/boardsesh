@@ -21,7 +21,8 @@ import type { Climb, BoardDetails } from '@/app/lib/types';
 import { useBoardProvider } from '../board-provider/board-provider-context';
 import { useBoardPresenceControls } from '../board-presence/board-presence-context';
 import type { TickStatus } from '@boardsesh/board-react';
-import { getGradesForBoard, ANGLES } from '@/app/lib/board-data';
+import { getGradesForBoard } from '@/app/lib/board-data';
+import { useBoardAngleOptions } from '@/app/hooks/use-board-angles';
 import { isBetaVideoUrl, BETA_VIDEO_URL_VALIDATION_MESSAGE } from '@/app/lib/beta-video-url';
 import { useEffectiveAngle } from '@/app/hooks/use-effective-angle';
 import { useOptionalCurrentClimb } from '../graphql-queue/QueueContext';
@@ -107,7 +108,7 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({
   const { saveTick, isAuthenticated } = useBoardProvider();
   const { boardId: presenceBoardId } = useBoardPresenceControls();
   const grades = useMemo(() => getGradesForBoard(boardDetails.board_name), [boardDetails.board_name]);
-  const angleOptions = ANGLES[boardDetails.board_name];
+  const angleOptions = useBoardAngleOptions(boardDetails.board_name);
   // Resolve the wall's current angle (route → party session → climb record).
   // Never `|| 0` here — group-session feedback fix. If nothing resolves the
   // submit action stays disabled until the user picks one in the angle Select.

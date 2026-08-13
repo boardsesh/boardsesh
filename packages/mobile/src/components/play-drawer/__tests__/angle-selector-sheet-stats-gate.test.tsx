@@ -74,7 +74,13 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 
-vi.mock('@boardsesh/board-config', () => ({ ANGLES: { kilter: [20, 25, 30, 40] } }));
+vi.mock('@boardsesh/board-config', () => {
+  const angles: Record<string, number[]> = { kilter: [20, 25, 30, 40] };
+  return {
+    ANGLES: angles,
+    getBoardAngleOptions: (boardName: string) => angles[boardName] ?? [],
+  };
+});
 
 vi.mock('../../../hooks/use-grade-format', () => ({
   useGradeFormat: () => ({ gradeFormat: 'v_grade' }),

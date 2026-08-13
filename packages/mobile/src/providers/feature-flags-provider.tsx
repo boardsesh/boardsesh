@@ -88,6 +88,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description:
       'Show the data-science "Boardsesh grade" section in the play drawer (cross-board grade, confidence tier, send counts). Off hides the section.',
   },
+  {
+    key: 'moonboard-wide-angles',
+    label: 'MoonBoard wide angles',
+    description:
+      'Offer the full 0-70° MoonBoard angle range (matching Kilter/Tension) in angle pickers instead of just the 25°/40° Moon Climbing grades. Nothing server-side enforces the narrow range, so this is purely a UI rollout control.',
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the

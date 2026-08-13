@@ -299,6 +299,22 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
     expect(snapEvents()).toHaveLength(0);
   });
 
+  // 4b. #3852 (moonboard-wide-angles): a tick at an angle outside MOONBOARD_ANGLES
+  // (25°/40°) can only have come from the wide-angle picker, which only exists
+  // behind the feature flag — there's no "stale narrow-UI mismatch" to correct at
+  // 35°, so rule (d) must not fire even though the climb is graded at 40 with no
+  // stats yet at 35.
+  it('leaves a MoonBoard tick alone at an angle outside the narrow 25/40 set', async () => {
+    await tickMutations.saveTick(
+      undefined,
+      { input: tickInput({ boardType: 'moonboard', climbUuid: MOON_GRADED_40, angle: 35 }) },
+      authCtx(),
+    );
+
+    expect(await storedAngles(MOON_GRADED_40)).toEqual([35]);
+    expect(snapEvents()).toHaveLength(0);
+  });
+
   // 5. The OTHER forward-compat guard, and the real removal trigger: #3851 sets
   // board_climbs.angle = NULL on the canonical climb, at which point rule (d)
   // must go inert on its own with no code change and no flag.

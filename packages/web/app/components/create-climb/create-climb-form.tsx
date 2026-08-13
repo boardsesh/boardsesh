@@ -48,7 +48,8 @@ import { CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 import type { BoardDetails, BoardName, Climb } from '@/app/lib/types';
 import { convertLitUpHoldsStringToMap } from '../board-renderer/util';
 import type { LitUpHoldsMap } from '../board-renderer/types';
-import { getMoonBoardGradeLabel, MOONBOARD_GRADES, MOONBOARD_ANGLES } from '@/app/lib/moonboard-config';
+import { getMoonBoardGradeLabel, MOONBOARD_GRADES } from '@/app/lib/moonboard-config';
+import { useBoardAngleOptions } from '@/app/hooks/use-board-angles';
 import { getSoftGradeColor } from '@/app/lib/grade-colors';
 import { useColorMode } from '@/app/hooks/use-color-mode';
 import { parseScreenshot } from '@boardsesh/moonboard-ocr/browser';
@@ -353,6 +354,7 @@ export default function CreateClimbForm({
   const [method, setMethod] = useState<MoonBoardMethodToken | ''>('');
   const userGradeLabel = useMemo(() => (userGrade ? getMoonBoardGradeLabel(userGrade) : undefined), [userGrade]);
   const [selectedAngle, setSelectedAngle] = useState<number>(angle);
+  const moonBoardAngleOptions = useBoardAngleOptions('moonboard');
   const [moonBoardDuplicateMatch, setMoonBoardDuplicateMatch] = useState<MoonBoardClimbDuplicateMatch | null>(null);
   const [isCheckingMoonBoardDuplicate, setIsCheckingMoonBoardDuplicate] = useState(false);
   // Set when a publish attempt is rejected by the server because the holds
@@ -1939,7 +1941,7 @@ export default function CreateClimbForm({
                   className={styles.settingsGradeField}
                   size="small"
                 >
-                  {MOONBOARD_ANGLES.map((a) => (
+                  {moonBoardAngleOptions.map((a) => (
                     <MenuItem key={a} value={a}>
                       {`${a}°`}
                     </MenuItem>
