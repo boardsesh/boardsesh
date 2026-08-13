@@ -14,7 +14,28 @@ import type { Climb, ParsedBoardRouteParametersWithUuid, BoardName, LayoutId, Si
 import { getSizesForLayoutId, getAllLayouts, getSetsForLayoutAndSize } from '@/app/lib/board-constants';
 import { isNoMatchClimb, isNoMatch } from '@/app/lib/no-match-climb';
 
+// Resolves an old/bookmarked/shared climb link through board_climb_aliases:
+// a climb that's since been merged into another (e.g. the MoonBoard
+// angle-dedup migration 0193_moonboard_angle_dedup_backfill) must still
+// resolve to where its stats/ticks/favorites actually live now, not render an
+// empty husk. A miss returns the input uuid unchanged, mirroring
+// resolveCanonicalClimbUuid in
+// packages/db/src/queries/aliases.ts (not reused directly — that helper
+// takes a drizzle db handle and this file's queries are raw postgres-js sql).
+async function resolveCanonicalClimbUuidWeb(boardName: BoardName, climbUuid: string): Promise<string> {
+  const result = rowsFromResult<{ canonical_uuid: string }>(
+    await sql`
+      SELECT canonical_uuid FROM board_climb_aliases
+      WHERE board_type = ${boardName} AND alias_uuid = ${climbUuid}
+      LIMIT 1
+    `,
+  );
+  return result[0]?.canonical_uuid ?? climbUuid;
+}
+
 async function fetchClimbFromDb(params: ParsedBoardRouteParametersWithUuid): Promise<Climb> {
+  const climbUuid = await resolveCanonicalClimbUuidWeb(params.board_name, params.climb_uuid);
+
   // Direct-by-UUID lookups intentionally do NOT filter `frames_count = 1`.
   // Search/dedupe still skip multi-frame climbs (see queries/climbs/*),
   // but the player needs to be able to render them when a URL points at one.
@@ -36,7 +57,7 @@ async function fetchClimbFromDb(params: ParsedBoardRouteParametersWithUuid): Pro
           AND climb_stats.board_type = ${params.board_name}
         WHERE climbs.board_type = ${params.board_name}
         AND climbs.layout_id = ${params.layout_id}
-        AND climbs.uuid = ${params.climb_uuid}
+        AND climbs.uuid = ${climbUuid}
         limit 1
       `,
   );

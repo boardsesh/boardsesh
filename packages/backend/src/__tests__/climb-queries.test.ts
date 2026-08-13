@@ -269,6 +269,44 @@ describe('Climb Query Functions', () => {
       expect(kilterResult === null || typeof kilterResult === 'object').toBe(true);
       expect(tensionResult === null || typeof tensionResult === 'object').toBe(true);
     });
+
+    describe('alias resolution', () => {
+      const ALIAS_PREFIX = 'gcbu-alias-test-';
+      const canonicalUuid = `${ALIAS_PREFIX}canonical`;
+      const oldAliasUuid = `${ALIAS_PREFIX}old-merged-away`;
+
+      beforeAll(async () => {
+        await db.execute(sql`
+          INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, frames_count, is_draft, is_listed, edge_left, edge_right, edge_bottom, edge_top, created_at)
+          VALUES (${canonicalUuid}, 'kilter', 1, 's', 'Canonical Climb', 'p1r12p2r13', 1, false, true, 0, 11, 0, 18, '2024-01-01')
+          ON CONFLICT DO NOTHING
+        `);
+        await db.execute(sql`
+          INSERT INTO board_climb_aliases (board_type, alias_uuid, canonical_uuid, source)
+          VALUES ('kilter', ${oldAliasUuid}, ${canonicalUuid}, 'test-fixture')
+          ON CONFLICT DO NOTHING
+        `);
+      });
+
+      afterAll(async () => {
+        await db.execute(sql`DELETE FROM board_climb_aliases WHERE alias_uuid = ${oldAliasUuid}`);
+        await db.execute(sql`DELETE FROM board_climbs WHERE uuid = ${canonicalUuid}`);
+      });
+
+      it('resolves an old/merged uuid to the canonical climb instead of returning null', async () => {
+        const result = await getClimbByUuid({
+          board_name: 'kilter',
+          layout_id: 1,
+          size_id: 1,
+          angle: 40,
+          climb_uuid: oldAliasUuid,
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.uuid).toBe(canonicalUuid);
+        expect(result?.name).toBe('Canonical Climb');
+      });
+    });
   });
 
   describe('set_ids filtering', () => {

@@ -56,6 +56,11 @@
       "import": "./src/testing/dedup-replay.ts",
       "default": "./src/testing/dedup-replay.ts"
     },
+    "./testing/moonboard-angle-dedup-replay": {
+      "types": "./src/testing/moonboard-angle-dedup-replay.ts",
+      "import": "./src/testing/moonboard-angle-dedup-replay.ts",
+      "default": "./src/testing/moonboard-angle-dedup-replay.ts"
+    },
     "./test-utils": {
       "types": "./src/test-utils/sql-text.ts",
       "import": "./src/test-utils/sql-text.ts",

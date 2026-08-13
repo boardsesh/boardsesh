@@ -37,6 +37,7 @@ import {
   isDirectAuroraTwin,
   isRealAuroraPullRow,
   notAuroraTwinDuplicate,
+  resolveCanonicalClimbUuid,
 } from '@boardsesh/db/queries';
 
 // Beta links are only attached on successful ascents (flash / send), never
@@ -703,6 +704,34 @@ export const tickMutations = {
       validatedInput.angle,
     );
 
+    // Land the tick on the CANONICAL climb, not on whatever UUID the client
+    // happened to be holding. Dedup migrations retire catalog UUIDs and record
+    // the mapping in board_climb_aliases, but a phone carries an offline board
+    // catalog and only learns a climb was retired on its next pull — so a send
+    // logged from a stale catalog, or replayed by the offline drainer, arrives
+    // naming a retired UUID. Stored verbatim it is stranded: every read path
+    // resolves alias -> canonical FORWARD (get-climb.ts, web queries.ts), never
+    // tick -> canonical backward, so the ascent never reaches the canonical's
+    // board_climb_stats and never shows on the climb page, while the recompute
+    // seeds a fresh stats row under the retired UUID.
+    //
+    // The lookup is a primary-key hit on (board_type, alias_uuid) and a miss
+    // returns the input unchanged, so a non-aliased climb pays one index probe
+    // and nothing else. A DB error propagates rather than falling back — that is
+    // resolveCanonicalClimbUuid's documented contract, and it is the right call
+    // here: a silent fallback would let a wave of ticks land on retired rows,
+    // which is the failure this resolves.
+    //
+    // Resolved BEFORE the angle snap below on purpose: the angle resolution
+    // reads the catalog rows for the climb the tick will actually land on, and
+    // a retired alias row is delisted with its per-angle grades merged away —
+    // probing it would resolve against a husk. Costs one serialized PK probe
+    // before the angle query can start.
+    //
+    // updateTick needs no counterpart: UpdateTickInputSchema carries no
+    // climbUuid, so an edit can never move a tick to a different climb.
+    const climbUuid = await resolveCanonicalClimbUuid(db, validatedInput.boardType, validatedInput.climbUuid);
+
     // Which angle this tick actually belongs at (#3529). Started here, next to
     // the catalog probe, so it overlaps the board/session round-trips below;
     // awaited immediately before the transaction because the insert needs the
@@ -710,10 +739,11 @@ export const tickMutations = {
     //
     // Deliberately NOT folded into the probe above: the probe reports what the
     // CLIENT sent (an observation of the client, per #3528/#3942) and must keep
-    // reporting the client's angle even when we then move the tick.
+    // reporting the client's angle — and the client's uuid — even when we then
+    // move the tick.
     const effectiveAnglePromise = resolveMoonBoardTickAngle(db, {
       boardType: validatedInput.boardType,
-      climbUuid: validatedInput.climbUuid,
+      climbUuid,
       requestedAngle: validatedInput.angle,
       onError: (error) => logger.error('[saveTick] moonboard tick angle resolution failed:', error),
     });
@@ -874,16 +904,10 @@ export const tickMutations = {
     const tickVideoUrl = videoUrlForTickStatus(validatedInput.status, validatedInput.videoUrl);
     const attachedVideoUrl = tickVideoUrl ? normalizeBetaVideoUrl(tickVideoUrl) : tickVideoUrl;
     const betaPlan: BetaLinkInsertPlan = attachedVideoUrl
-      ? await validateAndEnrichBetaLinkInsert(
-          ctx,
-          validatedInput.boardType,
-          validatedInput.climbUuid,
-          attachedVideoUrl,
-          {
-            onSameClimbDup: 'skip',
-            onCrossBoardDup: 'skip',
-          },
-        )
+      ? await validateAndEnrichBetaLinkInsert(ctx, validatedInput.boardType, climbUuid, attachedVideoUrl, {
+          onSameClimbDup: 'skip',
+          onCrossBoardDup: 'skip',
+        })
       : { action: 'no-url' };
 
     // Settle the angle resolution started before the board/session lookups — the
@@ -907,7 +931,7 @@ export const tickMutations = {
           uuid,
           userId,
           boardType: validatedInput.boardType,
-          climbUuid: validatedInput.climbUuid,
+          climbUuid,
           angle: effectiveAngle,
           isMirror: validatedInput.isMirror,
           status: validatedInput.status,
@@ -947,7 +971,7 @@ export const tickMutations = {
           .insert(dbSchema.boardBetaLinks)
           .values({
             boardType: validatedInput.boardType,
-            climbUuid: validatedInput.climbUuid,
+            climbUuid,
             link: attachedVideoUrl,
             shortcode: getInstagramMediaId(attachedVideoUrl),
             videoIdentity: betaLinkIdentity(attachedVideoUrl),

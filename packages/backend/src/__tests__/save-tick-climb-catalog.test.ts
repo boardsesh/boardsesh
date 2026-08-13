@@ -133,11 +133,18 @@ describe('saveTick climb-catalog check (#3528, log-only)', () => {
   // of the predicate is dropped, this trips the counter — which would poison the
   // observation window #3942 depends on and make the "is it safe to reject?"
   // question unanswerable.
+  //
+  // The counter deliberately reads the UUID the CLIENT sent, before saveTick
+  // resolves it to the canonical: what #3942 has to decide is whether it is safe
+  // to reject an incoming UUID, so measuring the resolved one would answer a
+  // different question. The row itself lands on CANONICAL_CLIMB — see
+  // save-tick-alias-resolution.test.ts.
   it('does not fire the counter for a deduped-away UUID that only board_climb_aliases knows', async () => {
     await tickMutations.saveTick(undefined, { input: tickInput(ALIAS_CLIMB) }, authCtx());
 
     expect(unknownCatalogEvents()).toHaveLength(0);
-    expect(await tickCountFor(ALIAS_CLIMB)).toBe(1);
+    expect(await tickCountFor(ALIAS_CLIMB)).toBe(0);
+    expect(await tickCountFor(CANONICAL_CLIMB)).toBe(1);
   });
 
   it('fires the counter once for a UUID neither table has ever heard of', async () => {
