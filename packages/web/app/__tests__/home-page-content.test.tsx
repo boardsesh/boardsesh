@@ -255,4 +255,22 @@ describe('HomePageContent', () => {
       expect(await screen.findByRole('button', { name: /install from app store/i })).toBeTruthy();
     });
   });
+
+  describe('heading semantics', () => {
+    it('gives the hero title a real <h1>, not just h5 styling', () => {
+      // MUI maps variant="h5" to a literal <h5>, so this shipped with no <h1>
+      // anywhere on the site's highest-traffic indexable page. The fix is
+      // `component="h1"` — visually identical, semantically correct — and this
+      // pins it, because nothing visual changes if it regresses.
+      render(<HomePageContent {...defaultProps} />);
+
+      // jsdom, so this pins the element the component *renders*, not what the
+      // deployed HTML contains. The SSR half is covered by the `/` check in
+      // scripts/production-smoke.ts, which reads the real response body — this
+      // one would still pass if the component became client-only.
+      const levelOneHeadings = screen.getAllByRole('heading', { level: 1 });
+      expect(levelOneHeadings.length, 'homepage must render exactly one <h1>').toBe(1);
+      expect(levelOneHeadings[0].textContent?.trim().length ?? 0).toBeGreaterThan(0);
+    });
+  });
 });

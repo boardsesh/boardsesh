@@ -1,12 +1,15 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SQL } from 'drizzle-orm';
+import { MOONBOARD_GRADES } from '@boardsesh/board-config';
 import {
   coordinateToHoldId,
+  formatUnmappedMoonBoardGrades,
   movesToFrames,
   moveToHoldState,
   moonBoardGradeToDifficultyId,
   moonBoardGradeConflictFields,
+  recordUnmappedMoonBoardGrade,
   uuidv5,
   MOONBOARD_UUID_NAMESPACE,
   HOLD_STATE_CODES,
@@ -142,8 +145,35 @@ void describe('moonBoardGradeToDifficultyId', () => {
     assert.equal(moonBoardGradeToDifficultyId('8B+'), 31);
   });
 
+  void it('maps 8C and 8C+ into the shared difficulty ids', () => {
+    assert.equal(moonBoardGradeToDifficultyId('8C'), 32);
+    assert.equal(moonBoardGradeToDifficultyId('8C+'), 33);
+    assert.equal(moonBoardGradeToDifficultyId('8c'), 32);
+    assert.equal(moonBoardGradeToDifficultyId('8c+'), 33);
+  });
+
+  void it('keeps every shared MoonBoard grade aligned with the database importer', () => {
+    for (const grade of MOONBOARD_GRADES) {
+      assert.equal(moonBoardGradeToDifficultyId(grade.value), grade.difficultyId, grade.value);
+      assert.equal(moonBoardGradeToDifficultyId(grade.value.toLowerCase()), grade.difficultyId, grade.value);
+    }
+  });
+
   void it('returns undefined for unknown grades', () => {
     assert.equal(moonBoardGradeToDifficultyId('9A'), undefined);
+  });
+});
+
+void describe('unmapped MoonBoard grade warnings', () => {
+  void it('names and counts unknown non-empty grades in a stable order', () => {
+    const counts = new Map<string, number>();
+    recordUnmappedMoonBoardGrade(counts, '9A');
+    recordUnmappedMoonBoardGrade(counts, ' 9A ');
+    recordUnmappedMoonBoardGrade(counts, '8D');
+    recordUnmappedMoonBoardGrade(counts, '');
+    recordUnmappedMoonBoardGrade(counts, null);
+
+    assert.equal(formatUnmappedMoonBoardGrades(counts), '9A (2), 8D (1)');
   });
 });
 

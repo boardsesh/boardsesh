@@ -423,6 +423,26 @@ jobs:
           echo "Deployment URL: $URL"
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
+      - name: Post-deploy smoke against www.boardsesh.com
+        # Skipped when a rollback is pinned: `--skip-domain` means this deploy
+        # is uploaded but NOT serving, so www is still the rolled-back build.
+        # Smoking it would report on a deployment this job did not promote.
+        #
+        # This runs AFTER the deploy, so it is a detector, not a gate — it can
+        # turn the job red (and fire notify-failure) but can never block a
+        # deploy from going out. That asymmetry is deliberate: a fail-closed
+        # deploy gate stopped production deploys for two days once already.
+        if: needs.check-rollback.outputs.active != 'true'
+        env:
+          SMOKE_KIOSK_GYM_SLUG: ${{ vars.SMOKE_KIOSK_GYM_SLUG }}
+          SMOKE_EMBED_BOARD_UUID: ${{ vars.SMOKE_EMBED_BOARD_UUID }}
+        # Bun executes the TypeScript directly — no `bunx`, no `tsx`, nothing
+        # fetched at deploy time. `vp run smoke:production` is the same script
+        # and is how to run it by hand, but no deploy job has vp, and
+        # curl-installing the toolchain here would put a network dependency on
+        # the production deploy path that could red a deploy that shipped fine.
+        run: bun scripts/production-smoke.ts
+
   deploy-production-backend:
     needs: [detect-changes, check-rollback, build-backend, migrate]
     if: always() && needs.detect-changes.outputs.backend_changed == 'true' && needs.build-backend.result == 'success' && needs.migrate.result == 'success'
@@ -717,6 +737,26 @@ jobs:
           retry "wasm binary → 200 wasm/octet-stream"     check_wasm
           retry "index.html is NOT immutable-cached"      check_index_not_immutable
           retry "hashed _expo asset is immutable-cached"  check_hashed_asset_immutable
+
+      - name: Install Playwright chromium
+        run: cd packages/web && bunx playwright install --with-deps chromium
+
+      - name: Browser boot check against app.boardsesh.com
+        # The curl smoke above proves the transport layer; it cannot prove the
+        # bundle evaluates. A JS chunk can serve with perfect headers and still
+        # throw on boot, and `_redirects`' `/* /index.html 200` means a missing
+        # route answers 200 too. Both look healthy to curl and blank to a user.
+        # This puts a real browser in front of the deploy and confirms React
+        # mounted into #root. Read-only — it never signs in, and it runs under
+        # playwright.production.config.ts, which declares no globalSetup.
+        #
+        # No rollback guard here, unlike the www smoke. Pages has no instant-
+        # rollback signal to read; the subdomain's equivalent is the job-level
+        # APP_WEB_DEPLOY_HOLD `if:` above, which skips this whole job — this
+        # step included — so there is nothing left to guard at step level.
+        env:
+          PLAYWRIGHT_TEST_BASE_URL: https://app.boardsesh.com
+        run: cd packages/web && bunx playwright test --config=playwright.production.config.ts
 
   # Homelab staging-backend deploy is currently broken — re-enable once the
   # self-hosted runner is healthy. It deploys the same :staging image and is

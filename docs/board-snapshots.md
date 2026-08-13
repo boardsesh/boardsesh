@@ -484,7 +484,44 @@ pre-import empty result set.
   in `feature-flags-provider.tsx`, because the frozen spinner is the bug). Off does two things:
   restores the static caption, and stops passing `onProgress` into `File.downloadFileAsync` at the
   source (`use-snapshot-source.ts`) — that callback makes expo take a different **native** download
-  implementation, so the flag has to restore the original call exactly, not just hide the UI.
+  implementation, so the flag has to restore the original call exactly, not just hide the UI. It drops
+  the download **options** (`onProgress`, and with it `signal` — pre-existing and deliberate, since the
+  restored call must be byte-identical) but never a capability: the wrapper still forwards `releaseArtifact` and
+  `downloadGradesArtifact`, because omitting `releaseArtifact` made the engine fall back to
+  `deleteArtifact` and throw away a completed-but-unimported artifact at the end of every cycle —
+  silently opting this cohort out of retention (#4310) and out of the backgrounding fix below.
+
+- **Backgrounding: a pocketed phone pauses a download, it does not kill it (issue #4390)**. The rule
+  `runBootstrapPhase` encodes is **start new work only in the foreground; never kill work already in
+  flight**. A wipe / sign-out / board removal still aborts the transfer the instant it lands — the rows
+  the artifact is for are being deleted, so its bytes are worthless — but a backgrounding does not. On
+  Android the process stays alive, so simply not cancelling is the whole fix there.
+
+  Whether a dead transfer counts as a free **pause** or a real transport failure is a deliberately
+  narrow test, and both halves matter:
+  - the **suspension window** must still be open. It opens when the app backgrounds mid-transfer and
+    **closes on the first byte delivered in the foreground** — after that the transfer demonstrably
+    survived the pocket, so a later failure belongs to the network or the device. Without the closing
+    rule, one screen lock during a nine-minute Android transfer would launder every subsequent wifi
+    drop, HTTP 500 or disk error into a free, cooldown-free 100 MB retry loop.
+  - the cause must be **network-shaped** (`isNetworkError`), which is what a suspension kill produces
+    (`NSURLErrorNetworkConnectionLost`, a timeout, a `SocketException`) and what a disk-full or an
+    HTTP 500 is not.
+
+  Free pauses are **bounded at three per scope** (`MAX_FREE_BACKGROUND_PAUSES`, persisted as
+  `BootstrapRetryState.backgroundPauses`). The fourth is charged to the **transport** budget on its
+  ladder, so the worst case terminates at 3 free + 3 transport restarts, after which the board still
+  arrives via the paged crawl and "Try the fast download again" is the consented escape. Any completed
+  download resets the counter (`clearTransportFailures`) — landed bytes prove the device can finish one.
+  The bound also closes a hole that predates this work: a self-aborted background transfer used to be
+  free with no bound at all. An older bundle rolled back onto the new row reads the missing key as 0 and
+  simply loses the bound, which is the pre-#4390 behaviour, not a corruption.
+
+  A transfer that **finishes** while backgrounded is never a pause. The file is on disk with its
+  `.complete` sidecar, the phase hands it back through `releaseArtifact({ imported: false })`, and the
+  next foreground cycle returns it as `reused: true` with zero bytes re-fetched. The grades stage
+  follows the same rule: `importGradesForScope` checks the teardown reason before spending one of the
+  three attempts that artifact ever gets.
 
 - **Download fallback status**: My Boards keeps the normal per-row download state (`pending`,
   `downloading`, or `downloaded`) and separately derives a `BoardDownloadNotice` from the persisted
@@ -573,7 +610,7 @@ Completed` — so abandonment was structurally unmeasurable and failures went on
 | ---------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------- |
 | `Offline Board Download Started`   | first time any cycle starts pulling a scope, once ever | `scopeKey`, `pathIntent`, `artifactBytes`, `trigger`, `offlineEngineEnabled`          |
 | `Offline Board Download Completed` | both board tables reached the tail, once ever          | `scopeKey`, `method`, `durationMs`, `bytes?`, `rowCount?`, `downloadMs?`, `importMs?` |
-| `Offline Board Download Failed`    | a bootstrap stage threw                                | `scopeKey`, `stage`, `attempt`, `expected`, `errorMessage`                            |
+| `Offline Board Download Failed`    | a bootstrap attempt ended without succeeding           | `scopeKey`, `stage`, `attempt`, `expected`, `reason`, `aborted`, `errorMessage`       |
 | `Offline Board Download Cancelled` | the board was switched off mid-download                | `scopeKey`, `source`, `stage?`, `fraction?`, `bytesDone?`                             |
 | `Offline Board Toggled`            | the offline switch was flipped, either way             | `scopeKey`, `enabled`, `source`                                                       |
 | `Offline Download All Tapped`      | the "download all my boards" switch was TAPPED         | `boardCount`                                                                          |
@@ -599,6 +636,42 @@ abandonment spike in exactly the window the baseline is read from.
 
 > **If a future change wipes board data on logout** (issue #3621), it must clear both markers in the
 > same transaction as the rows. Otherwise the next sign-in emits Completed with no Started.
+
+**The terminal-event invariant: every Started has exactly one terminal event.** A snapshot bootstrap
+attempt ends in `Offline Board Download Completed` (its scope finished) or `Offline Board Download
+Failed` (everything else, teardowns included) — never in silence. Field reports kept arriving that
+looked impossible: a Started carrying a 103 MB `artifactBytes`, then nothing at all — no Completed,
+no Failed, no Sentry event — and the cycle moving on to the next board two minutes later.
+
+`runBootstrapPhase` has a dozen ways out (`break`, `continue`, a `throw` from any of the ~15 awaited
+SQLite writes that sit **outside** the import's own `try`, a consumer callback like `onProgress`
+raising back into the loop), and reporting them one site at a time only ever covers the sites
+somebody remembered. So the invariant is structural: the phase arms
+`createDownloadFunnelGuard` (`packages/shared/offline-sync/src/sync/download-funnel-guard.ts`) at the
+Started emission and closes it from a `finally`. An attempt that reaches that `finally` with no
+terminal event recorded emits one:
+
+| Exit                                         | `reason`                          | `aborted` | Sentry |
+| -------------------------------------------- | --------------------------------- | --------- | ------ |
+| sign-out / wipe epoch bump / board removal   | `aborted-wipe`                    | `true`    | no     |
+| app backgrounded                             | `aborted-background`              | `true`    | no     |
+| an exception unwinding the phase             | classified (`database-locked`, …) | `false`   | yes    |
+| anything else — a bail-out nobody registered | `unknown-exit`                    | `false`   | yes    |
+
+Two rules keep it honest. **No double-emit**: every explicit report settles the guard through the
+shared wrapper in `runBootstrapPhase`, and a successful import settles it too — its terminal event is
+the Completed the board-data loop fires once the delta pull reaches every table's tail, which on
+Kilter is usually cycles later. **No burn**: every guard-emitted report carries `attempt: 0`; the
+guard is a bystander and never spends the scope's retry budget.
+
+`unknown-exit` should sit at **zero**. Anything else means an exit path exists that the phase cannot
+explain, and it is the one abort-shaped outcome that still goes to Sentry (`source: offline-sync`,
+`kind: snapshot-bootstrap`, `reason: unknown-exit`) for exactly that reason.
+
+**The invariant is scoped to the snapshot bootstrap.** A paged crawl is multi-cycle by design — an
+interrupted one has not failed, it is simply not finished — so the board-data loop does not report
+per-cycle aborts, and a paged Started legitimately stays open until its Completed lands. Abandonment
+on that path is measured as a Started with no Completed after N days, not as a Failed.
 
 **Reading the props.** `pathIntent` on Started is an INTENT from cheap local facts, not an outcome —
 a snapshot-eligible scope can still fall back to the paged crawl after the manifest resolves. Split

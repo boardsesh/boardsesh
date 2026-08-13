@@ -11,6 +11,7 @@ import {
   BOOTSTRAP_RETRY_GRACE_WINDOW_MS,
   EMPTY_BOOTSTRAP_RETRY_STATE,
   MAX_BOOTSTRAP_ATTEMPTS,
+  MAX_FREE_BACKGROUND_PAUSES,
   MAX_STRUCTURAL_REARMS,
   MAX_TRANSPORT_DOWNLOAD_FAILURES,
   canRearmOnNewArtifact,
@@ -23,6 +24,7 @@ import {
   nextRetryState,
   readBootstrapRetryState,
   rearmForNewArtifact,
+  recordBackgroundPause,
   restoreBootstrapRetryBudget,
   shouldSkipPagedPull,
   spendUserRequest,
@@ -140,6 +142,49 @@ describe('budgets', () => {
     for (let failure = 0; failure < MAX_BOOTSTRAP_ATTEMPTS; failure += 1)
       current = burn(current, 'structural-artifact');
     expect(isTerminal(current)).toBe(true);
+  });
+});
+
+describe('recordBackgroundPause', () => {
+  const pause = (from: BootstrapRetryState) =>
+    recordBackgroundPause({ state: from, builtAt: null, now: NOW, random: noJitter });
+
+  it('costs nothing for the first MAX_FREE_BACKGROUND_PAUSES — a pocketed phone is not a fault', () => {
+    let current = state();
+    for (let count = 1; count <= MAX_FREE_BACKGROUND_PAUSES; count += 1) {
+      const result = pause(current);
+      expect(result.charged).toBe(false);
+      expect(result.state.backgroundPauses).toBe(count);
+      expect(result.state.transportFailures).toBe(0);
+      expect(result.state.retryAfter).toBeNull();
+      expect(result.state.hasPriorSnapshotFailure).toBe(false);
+      current = result.state;
+    }
+  });
+
+  it('charges the next one to the transport budget on its ladder', () => {
+    let current = state();
+    for (let count = 0; count < MAX_FREE_BACKGROUND_PAUSES; count += 1) current = pause(current).state;
+
+    const charged = pause(current);
+
+    expect(charged.charged).toBe(true);
+    expect(charged.state.transportFailures).toBe(1);
+    expect(charged.state.lastFailureKind).toBe('transport');
+    expect(charged.state.retryAfter).toBe(NOW + 2 * MINUTE);
+    // Reset as it charges, so the pattern terminates at 3 free + 3 transport
+    // rather than charging every pause from here on.
+    expect(charged.state.backgroundPauses).toBe(0);
+  });
+
+  it('is cleared by a completed download — landed bytes prove the device can finish', () => {
+    const paused = pause(pause(state()).state).state;
+    expect(clearTransportFailures(paused).backgroundPauses).toBe(0);
+  });
+
+  it('is cleared by the user tapping "Try the fast download again"', () => {
+    const paused = pause(pause(state()).state).state;
+    expect(clearRetryStateForUserRequest(paused).backgroundPauses).toBe(0);
   });
 });
 
@@ -506,6 +551,7 @@ describe('bootstrap-retry persistence', () => {
       'kilter:1:5',
       state({
         transportFailures: 2,
+        backgroundPauses: 2,
         structuralFailures: 1,
         structuralRearms: 1,
         lastFailureKind: 'structural-artifact',
@@ -522,6 +568,24 @@ describe('bootstrap-retry persistence', () => {
     );
     expect(migratedFromLegacy).toBe(false);
     expect(reread).toEqual(written);
+  });
+
+  it('defaults a missing backgroundPauses to 0, so a rolled-back bundle only loses the bound', async () => {
+    // The shape an older bundle writes: no `backgroundPauses` key at all. Zero
+    // is the pre-#4390 behaviour (unbounded free pauses), not a corruption.
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      'bootstrap-retry:kilter:1:5',
+      JSON.stringify({ transportFailures: 1, structuralFailures: 0, hasPriorSnapshotFailure: true }),
+    ]);
+    const { state: recovered, migratedFromLegacy } = await readBootstrapRetryState(
+      db,
+      'kilter:1:5',
+      { now: NOW, random: noJitter },
+      false,
+    );
+    expect(migratedFromLegacy).toBe(false);
+    expect(recovered.backgroundPauses).toBe(0);
+    expect(recovered.transportFailures).toBe(1);
   });
 
   it('treats a corrupt retry row as an un-migrated scope rather than crashing the cycle', async () => {

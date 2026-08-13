@@ -55,6 +55,10 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
       locale,
       imagePath: ogImagePath,
       imageAlt: t('metadata.view.imageAlt', { climbName, grade: climbGrade, boardName: boardDetails.board_name }),
+      // Unlisted is link-only by design, and a private board is readable to a
+      // slug holder until #4087 masks it — neither belongs in the index. This
+      // is indexation only; it is not the access control, which #4087 owns.
+      robots: board.isUnlisted || !board.isPublic ? { index: false, follow: true } : undefined,
     });
   } catch {
     return createPageMetadata({

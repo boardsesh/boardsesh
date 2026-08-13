@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import { v5 as uuidv5 } from 'uuid';
 import type { MoonBoardExportLogRow, StrippedMoonBoardExportData } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
-import { importMoonBoardExportData } from '../services/moonboard-import';
+import { importMoonBoardExportData, moonBoardGradeToDifficultyId } from '../services/moonboard-import';
 
 const TEST_USER_ID = 'moonboard-import-test-user';
 const UUID_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
@@ -11,6 +11,16 @@ const SIX_A_PLUS_DIFFICULTY_ID = 17;
 const SIX_B_DIFFICULTY_ID = 18;
 
 const describeWithDatabase = process.env.SKIP_TEST_INFRA === '1' ? describe.skip : describe;
+
+describe('MoonBoard CSV grade mapping', () => {
+  it('maps 8C/8C+ case-insensitively and leaves unknown future grades unresolved', () => {
+    expect(moonBoardGradeToDifficultyId('8C')).toBe(32);
+    expect(moonBoardGradeToDifficultyId('8c')).toBe(32);
+    expect(moonBoardGradeToDifficultyId('8C+')).toBe(33);
+    expect(moonBoardGradeToDifficultyId('8c+')).toBe(33);
+    expect(moonBoardGradeToDifficultyId('9A')).toBeUndefined();
+  });
+});
 
 type ImportedTickRow = {
   climb_uuid: string;

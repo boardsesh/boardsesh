@@ -1,0 +1,714 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homepage Reposition Wireframe</title>
+<style>
+  /* ============================================================
+     Velvet Send web palette (light scheme), per docs/ai-design-guidelines.md
+     brandColors + androidFallbackColors[light]. Wireframe is single-light-theme
+     by design (hard rule). All colors below are Velvet tokens, MUI-plausible.
+     ============================================================ */
+  :root {
+    --bg: #F4F1FB;               /* systemColors.background (light) */
+    --surface: #FFFFFF;          /* secondaryBackground / cards */
+    --surface-2: #FBFAFE;        /* subtle alt surface */
+    --label: #16111F;            /* systemColors.label */
+    --label-2: #5B5563;          /* secondaryLabel */
+    --label-3: #8E8898;          /* tertiaryLabel */
+    --separator: rgba(60,55,75,0.18);
+    --fill: rgba(109,40,217,0.10);       /* faint violet fill */
+    --primary: #6D28D9;          /* brand foreground (tint) */
+    --primary-fill: #6D28D9;     /* brand filled surface (light) */
+    --on-primary: #FFFFFF;
+    --accent: #FF8A3D;           /* amber spark — fill-only, dark text */
+    --success: #047857;
+    --warning: #B45309;
+    --error: #C81E1E;
+    --radius-card: 12px;         /* borderRadius.lg — cards */
+    --radius-btn: 10px;
+    --radius-pill: 9999px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--label);
+    line-height: 1.5;
+    font-size: 16px;
+  }
+  a { color: var(--primary); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .container { max-width: 1160px; margin: 0 auto; padding: 0 20px; }
+
+  /* ---- wireframe scaffolding (banner, badges, annotation chips) ---- */
+  .wf-banner {
+    background: var(--label); color: #F5F2FB; padding: 10px 20px;
+    font-size: 13px; line-height: 1.6;
+  }
+  .wf-banner strong { color: #FFFFFF; }
+  .wf-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; align-items: center; }
+  .tag {
+    display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+    padding: 2px 8px; border-radius: var(--radius-pill); text-transform: uppercase;
+    vertical-align: middle; white-space: nowrap;
+  }
+  .tag-exists   { background: rgba(60,55,75,0.12); color: #3C374B; border: 1px solid var(--separator); }
+  .tag-revised  { background: var(--accent); color: #16111F; }             /* accent fill + dark text */
+  .tag-new      { background: var(--primary-fill); color: var(--on-primary); }
+  .tag-epic1    { background: rgba(4,120,87,0.10); color: var(--success); border: 1px solid rgba(4,120,87,0.45); }
+  .tag-aspire   { background: var(--fill); color: var(--primary); border: 1px dashed var(--primary); }
+  .ann {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 20px; height: 20px; padding: 0 5px; margin-left: 6px;
+    border-radius: var(--radius-pill); background: var(--primary-fill); color: var(--on-primary);
+    font-size: 12px; font-weight: 700; vertical-align: middle; text-decoration: none;
+  }
+  .ann:hover { text-decoration: none; background: #5B21B6; }
+
+  section.region { padding: 40px 0; border-bottom: 1px solid var(--separator); }
+  .region-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 6px; }
+  h2 { font-size: 26px; font-weight: 700; }
+  .region-sub { color: var(--label-2); max-width: 640px; margin-bottom: 22px; }
+
+  /* ---- mock global nav ---- */
+  header.nav {
+    background: var(--surface); border-bottom: 1px solid var(--separator);
+  }
+  .nav-inner { display: flex; align-items: center; gap: 18px; padding: 12px 20px; max-width: 1160px; margin: 0 auto; }
+  .brand-mark {
+    width: 34px; height: 34px; border-radius: 8px; background: var(--primary-fill);
+    color: var(--on-primary); display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 14px; flex-shrink: 0;
+  }
+  .nav-links { display: flex; gap: 16px; font-size: 15px; flex-wrap: wrap; }
+  .nav-spacer { flex: 1; }
+  .btn {
+    display: inline-block; border-radius: var(--radius-btn); padding: 8px 16px;
+    font-size: 15px; font-weight: 600; border: 1px solid transparent; cursor: pointer;
+    text-align: center;
+  }
+  .btn-primary { background: var(--primary-fill); color: var(--on-primary); }
+  .btn-primary:hover { text-decoration: none; background: #5B21B6; }
+  .btn-outline { background: transparent; color: var(--primary); border-color: var(--primary); }
+  .btn-outline:hover { text-decoration: none; background: var(--fill); }
+  .btn-pill { border-radius: var(--radius-pill); padding: 12px 28px; font-size: 17px; }
+  .btn-glow { box-shadow: 0 6px 18px rgba(255,138,61,0.35); } /* hero amber glow, per HERO_CTA_SX */
+
+  /* ---- hero ---- */
+  .hero { text-align: center; padding: 56px 0 48px; background: linear-gradient(180deg, rgba(109,40,217,0.06), rgba(109,40,217,0)); }
+  .hero .brand-mark { width: 84px; height: 84px; border-radius: 20px; font-size: 30px; margin: 0 auto 18px; display: flex; }
+  .hero h1 { font-size: 38px; font-weight: 800; letter-spacing: -0.01em; }
+  .hero p.sub { color: var(--label-2); font-size: 18px; max-width: 560px; margin: 12px auto 26px; }
+  .hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+  .hero-tertiary { margin-top: 16px; font-size: 15px; }
+
+  /* ---- gym discovery ---- */
+  .gym-search {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    background: var(--surface); border: 1px solid var(--separator);
+    border-radius: var(--radius-card); padding: 14px; margin-bottom: 14px;
+  }
+  .gym-search input {
+    flex: 1 1 260px; min-width: 0; font-size: 16px; padding: 11px 14px;
+    border: 1px solid var(--separator); border-radius: var(--radius-btn);
+    background: #FFFFFF; color: var(--label);
+  }
+  .gym-search input:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+  .facets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; align-items: center; }
+  .chip {
+    border: 1px solid var(--separator); border-radius: var(--radius-pill);
+    background: var(--surface); color: var(--label-2); font-size: 14px; padding: 5px 14px; cursor: pointer;
+  }
+  .chip.on { background: var(--fill); color: var(--primary); border-color: var(--primary); font-weight: 600; }
+  .facet-note { font-size: 13px; color: var(--label-3); }
+
+  .gym-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); gap: 16px; }
+  .gym-card {
+    background: var(--surface); border: 1px solid var(--separator);
+    border-radius: var(--radius-card); padding: 16px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .gym-card.aspiration { border: 2px dashed var(--primary); background: var(--surface-2); }
+  .gym-card-top { display: flex; align-items: flex-start; gap: 8px; justify-content: space-between; }
+  .gym-card h3 { font-size: 17px; font-weight: 700; line-height: 1.3; }
+  .badge {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
+    border-radius: var(--radius-pill); padding: 2px 9px; white-space: nowrap; flex-shrink: 0;
+  }
+  .badge-claimed { background: rgba(4,120,87,0.10); color: var(--success); }
+  .badge-unclaimed { background: rgba(60,55,75,0.10); color: var(--label-2); }
+  .loc { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--label-2); }
+  .loc svg { flex-shrink: 0; }
+  .loc .dist { font-weight: 700; color: var(--label); white-space: nowrap; }
+  .loc.muted { color: var(--label-3); font-style: italic; }
+  .board-list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+  .board-list li {
+    font-size: 14px; color: var(--label); background: var(--fill);
+    border-radius: 6px; padding: 3px 9px; width: fit-content;
+  }
+  .gym-card .cta { margin-top: auto; font-size: 14px; font-weight: 600; }
+  .claim-line { font-size: 13px; color: var(--label-2); }
+  .claim-line a { font-weight: 700; }
+  .aspire-extra { font-size: 14px; color: var(--label-2); }
+  .aspire-hours { font-size: 13px; color: var(--success); font-weight: 600; }
+  .grid-footnote { font-size: 13px; color: var(--label-3); margin-top: 14px; max-width: 720px; }
+  .browse-all { margin-top: 18px; font-size: 16px; font-weight: 600; display: inline-block; }
+
+  /* ---- board-config grid (Epic 1 W-13) ---- */
+  .board-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 14px; }
+  .board-card {
+    background: var(--surface); border: 1px solid var(--separator); border-radius: var(--radius-card);
+    padding: 14px 16px; display: block; color: var(--label);
+  }
+  .board-card:hover { text-decoration: none; border-color: var(--primary); }
+  .board-card .bname { font-weight: 700; font-size: 15px; }
+  .board-card .bmeta { font-size: 13px; color: var(--label-2); margin-top: 2px; }
+  .board-card .bhref { font-size: 11px; color: var(--label-3); margin-top: 8px; word-break: break-all; font-family: ui-monospace, Menlo, monospace; }
+
+  /* ---- feature strip ---- */
+  .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px; }
+  .feature { text-align: center; }
+  .phone {
+    width: 150px; aspect-ratio: 9 / 18; margin: 0 auto 14px;
+    border: 2px solid var(--separator); border-radius: 22px; background: var(--surface);
+    display: flex; align-items: center; justify-content: center; padding: 12px;
+  }
+  .phone span { font-size: 11px; color: var(--label-3); text-align: center; }
+  .feature h3 { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+  .feature p { font-size: 15px; color: var(--label-2); max-width: 280px; margin: 0 auto; }
+  .feature-cta { text-align: center; margin-top: 28px; }
+
+  /* ---- footer ---- */
+  footer.site {
+    background: var(--surface); border-top: 1px solid var(--separator);
+    padding: 40px 0 28px; margin-top: 0;
+  }
+  .footer-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 28px; }
+  .footer-cols h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--label-3); margin-bottom: 10px; }
+  .footer-cols ul { list-style: none; display: flex; flex-direction: column; gap: 7px; font-size: 14px; }
+  .disclaimer { font-size: 12px; color: var(--label-3); margin-top: 28px; max-width: 760px; line-height: 1.6; }
+  .locale-row { margin-top: 14px; font-size: 13px; color: var(--label-2); }
+
+  /* ---- annotations panel ---- */
+  .notes { background: #16111F; color: #E9E4F4; padding: 48px 0 64px; }
+  .notes h2 { color: #FFFFFF; margin-bottom: 6px; }
+  .notes .intro { color: #A9A2B6; margin-bottom: 26px; max-width: 760px; }
+  .note {
+    display: grid; grid-template-columns: 34px 1fr; gap: 12px;
+    padding: 14px 0; border-bottom: 1px solid rgba(180,168,205,0.2);
+  }
+  .note .num {
+    width: 26px; height: 26px; border-radius: var(--radius-pill); background: #A78BFA; color: #16111F;
+    font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: center; margin-top: 2px;
+  }
+  .note h3 { font-size: 15px; color: #FFFFFF; margin-bottom: 3px; }
+  .note p { font-size: 14px; color: #C9C2D8; margin-bottom: 4px; }
+  .note .bind { font-size: 13px; color: #A78BFA; }
+  .note .oq { font-size: 13px; color: #FBBF24; }
+  .cite { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: rgba(167,139,250,0.14); padding: 1px 5px; border-radius: 4px; color: #CDBBFA; white-space: nowrap; }
+  .notes .oq-block { margin-top: 30px; }
+  .notes .oq-block h3 { color: #FBBF24; font-size: 16px; margin-bottom: 10px; }
+  .notes .oq-block li { font-size: 14px; color: #C9C2D8; margin: 0 0 8px 18px; }
+
+  @media (max-width: 480px) {
+    .hero h1 { font-size: 29px; }
+    h2 { font-size: 22px; }
+    .nav-links { display: none; } /* wireframe shorthand for the existing mobile menu */
+    .note { grid-template-columns: 30px 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ================= WIREFRAME BANNER (not part of the shipped page) ================= -->
+<div class="wf-banner">
+  <strong>WIREFRAME — Epic 2, Design 2: repositioned www homepage (post-Epic-1).</strong>
+  The climbing UI is gone from www; the homepage becomes marketing + gym discovery first, app install second.
+  Numbered violet chips link to the design notes at the bottom — delegated implementers: read them before building.
+  <div class="wf-legend">
+    <span>Region status:</span>
+    <span class="tag tag-exists">exists today</span>
+    <span class="tag tag-revised">exists — revised</span>
+    <span class="tag tag-new">new</span>
+    <span class="tag tag-epic1">built by Epic 1 · W-13</span>
+    <span class="tag tag-aspire">aspiration variant</span>
+  </div>
+</div>
+
+<!-- ================= 1 · GLOBAL NAV ================= -->
+<header class="nav">
+  <div class="nav-inner">
+    <span class="brand-mark">BS</span>
+    <strong>Boardsesh</strong>
+    <nav class="nav-links">
+      <a href="#a3">Gyms <span class="tag tag-new">new</span></a>
+      <a href="#a4">Boards</a>
+      <a href="#">Playlists</a>
+      <a href="#">About</a>
+      <a href="#">Help</a>
+    </nav>
+    <span class="nav-spacer"></span>
+    <a class="btn btn-outline" href="#">Open the app</a>
+    <a class="ann" href="#n1">1</a>
+  </div>
+</header>
+
+<!-- ================= 2 · MARKETING HERO ================= -->
+<section class="region hero" id="a2">
+  <div class="container">
+    <div class="region-head" style="justify-content:center;">
+      <span class="tag tag-revised">exists — revised</span>
+      <a class="ann" href="#n2">2</a>
+    </div>
+    <span class="brand-mark">BS</span>
+    <h1>One app for your boards</h1>
+    <p class="sub">Queue up climbs, light the wall, and log your sends with the crew.
+      Works with Kilter, Tension, and MoonBoard.</p>
+    <div class="hero-ctas">
+      <a class="btn btn-primary btn-pill btn-glow" href="#">Install from App Store</a>
+      <a class="btn btn-primary btn-pill btn-glow" href="#">Get it on Google Play</a>
+    </div>
+    <div class="hero-tertiary">
+      <a href="#">Start climbing on the web &rarr;</a>
+      <a class="ann" href="#n3">3</a>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 3 · GYM DISCOVERY ENTRY ================= -->
+<section class="region" id="a3">
+  <div class="container">
+    <div class="region-head">
+      <h2>Find a board near you</h2>
+      <span class="tag tag-new">new</span>
+      <a class="ann" href="#n4">4</a>
+    </div>
+    <p class="region-sub">Thousands of gyms, clubs, and home walls with a Kilter, Tension, or MoonBoard
+      are already listed. Search by name or place, or use your location.</p>
+
+    <form class="gym-search" action="/gyms" method="get">
+      <input type="search" name="q" placeholder="Gym name, city, or postcode" aria-label="Search gyms">
+      <button class="btn btn-primary" type="submit">Search</button>
+      <button class="btn btn-outline" type="button">Use my location</button>
+    </form>
+    <div class="facets">
+      <span class="chip on">All boards</span>
+      <span class="chip">Kilter Board</span>
+      <span class="chip">Tension Board</span>
+      <span class="chip">MoonBoard</span>
+      <span class="facet-note">facet chips pre-filter /gyms (board_type)</span>
+    </div>
+
+    <div class="gym-grid">
+
+      <!-- DEFAULT state: claimed, has pin + address, one board. This sparse card IS the design. -->
+      <article class="gym-card">
+        <div class="gym-card-top">
+          <h3>Crimp City Boulders <a class="ann" href="#n5">5</a></h3>
+          <span class="badge badge-claimed">Claimed</span>
+        </div>
+        <p class="loc">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 21s-7-6.1-7-11a7 7 0 1 1 14 0c0 4.9-7 11-7 11z" stroke="#5B5563" stroke-width="2"/><circle cx="12" cy="10" r="2.5" fill="#5B5563"/></svg>
+          14 Crux Lane, Fakeston <span class="dist">2.1 km</span>
+        </p>
+        <ul class="board-list">
+          <li>Kilter Board &middot; 40&deg;</li>
+        </ul>
+        <a class="cta" href="#">See the gym &rarr;</a>
+      </article>
+
+      <!-- Unclaimed + multi-board (rare: ~25 gyms have 3+, DB-04) with claim prompt -->
+      <article class="gym-card">
+        <div class="gym-card-top">
+          <h3>Granite Barn Bouldering</h3>
+          <span class="badge badge-unclaimed">Unclaimed</span>
+        </div>
+        <p class="loc">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 21s-7-6.1-7-11a7 7 0 1 1 14 0c0 4.9-7 11-7 11z" stroke="#5B5563" stroke-width="2"/><circle cx="12" cy="10" r="2.5" fill="#5B5563"/></svg>
+          <span class="dist">5.4 km</span>
+        </p>
+        <ul class="board-list">
+          <li>Kilter Board &middot; 40&deg;</li>
+          <li>Tension Board &middot; 45&deg;</li>
+          <li>MoonBoard &middot; 25&deg;</li>
+        </ul>
+        <p class="claim-line">Run this place? <a href="#">Claim the page &rarr;</a> <a class="ann" href="#n7">7</a></p>
+        <a class="cta" href="#">See the gym &rarr;</a>
+      </article>
+
+      <!-- Unclaimed, NO map pin, NO address: the 37%-no-coords fallback. Still listed, never ranked down. -->
+      <article class="gym-card">
+        <div class="gym-card-top">
+          <h3>Northgate Uni Climbing Wall <a class="ann" href="#n6">6</a></h3>
+          <span class="badge badge-unclaimed">Unclaimed</span>
+        </div>
+        <p class="loc muted">No map pin yet</p>
+        <ul class="board-list">
+          <li>MoonBoard &middot; 40&deg;</li>
+        </ul>
+        <p class="claim-line">Your wall? <a href="#">Claim it and add the pin &rarr;</a></p>
+        <a class="cta" href="#">See the gym &rarr;</a>
+      </article>
+
+      <!-- ASPIRATION variant: same card AFTER enrichment fields exist. Not buildable today. -->
+      <article class="gym-card aspiration">
+        <div class="gym-card-top">
+          <h3>Crimp City Boulders</h3>
+          <span class="tag tag-aspire">aspiration</span>
+        </div>
+        <p class="loc">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 21s-7-6.1-7-11a7 7 0 1 1 14 0c0 4.9-7 11-7 11z" stroke="#5B5563" stroke-width="2"/><circle cx="12" cy="10" r="2.5" fill="#5B5563"/></svg>
+          14 Crux Lane, Fakeston <span class="dist">2.1 km</span>
+        </p>
+        <p class="aspire-hours">Open today 10:00&ndash;22:00</p>
+        <p class="aspire-extra">40&deg; Kilter up front, quiet MoonBoard in the back room. Day passes at the desk.</p>
+        <ul class="board-list">
+          <li>Kilter Board &middot; 40&deg;</li>
+        </ul>
+        <p class="claim-line"><a class="ann" href="#n8">8</a> requires hours + description fields that are ~empty platform-wide today</p>
+      </article>
+    </div>
+
+    <p class="grid-footnote">Card contract: name + claim state always; pin/distance and address only when present;
+      boards with type + angle. No photos anywhere on the card — the long tail will never have them.
+      Sparse and unclaimed listings render at full rank.</p>
+    <a class="browse-all" href="/gyms">Browse the full gym directory &rarr;</a>
+  </div>
+</section>
+
+<!-- ================= 4 · STATIC BOARD-CONFIG GRID (Epic 1 · W-13) ================= -->
+<section class="region" id="a4">
+  <div class="container">
+    <div class="region-head">
+      <h2>Jump straight onto a board</h2>
+      <span class="tag tag-epic1">built by Epic 1 · W-13 (#4366)</span>
+      <a class="ann" href="#n9">9</a>
+    </div>
+    <p class="region-sub">Popular board setups as static, crawlable links. This slot is reserved for the grid
+      W-13 ships — incorporate it here as built, do not redesign it in Epic 2.</p>
+    <div class="board-grid">
+      <a class="board-card" href="#">
+        <span class="bname">Kilter Board</span>
+        <p class="bmeta">Original &middot; 12&times;12 Bolt-ons + Screw-ons &middot; 40&deg;</p>
+        <p class="bhref">/kilter/original/12x12-bolt-ons-screw-ons/40/list</p>
+      </a>
+      <a class="board-card" href="#">
+        <span class="bname">Tension Board 2</span>
+        <p class="bmeta">Spray &middot; 12&times;10 &middot; 45&deg;</p>
+        <p class="bhref">/tension/tb2-spray/12x10/45/list</p>
+      </a>
+      <a class="board-card" href="#">
+        <span class="bname">MoonBoard</span>
+        <p class="bmeta">2024 &middot; 25&deg;</p>
+        <p class="bhref">/moonboard/2024/25/list</p>
+      </a>
+      <a class="board-card" href="#">
+        <span class="bname">Kilter Board</span>
+        <p class="bmeta">Homewall &middot; 10&times;10 &middot; 30&deg;</p>
+        <p class="bhref">/kilter/homewall/10x10/30/list</p>
+      </a>
+      <a class="board-card" href="#">
+        <span class="bname">MoonBoard</span>
+        <p class="bmeta">2019 &middot; 40&deg;</p>
+        <p class="bhref">/moonboard/2019/40/list</p>
+      </a>
+      <a class="board-card" href="#">
+        <span class="bname">Tension Board</span>
+        <p class="bmeta">Original &middot; 12&times;10 &middot; 40&deg;</p>
+        <p class="bhref">/tension/original/12x10/40/list</p>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 5 · FEATURE STRIP (app features, driving install) ================= -->
+<section class="region" id="a5">
+  <div class="container">
+    <div class="region-head">
+      <h2>Board night, sorted</h2>
+      <span class="tag tag-revised">exists — revised</span>
+      <a class="ann" href="#n10">10</a>
+    </div>
+    <p class="region-sub">These live in the app. Every block ends in an install prompt, not a web feature.</p>
+    <div class="feature-grid">
+      <div class="feature">
+        <div class="phone"><span>App screenshot placeholder<br>(real capture only —<br>repo rule: no AI images)</span></div>
+        <h3>Shared queue</h3>
+        <p>Take turns without the awkward &ldquo;who&rsquo;s next?&rdquo;</p>
+      </div>
+      <div class="feature">
+        <div class="phone"><span>App screenshot placeholder<br>(real capture only —<br>repo rule: no AI images)</span></div>
+        <h3>Party Mode</h3>
+        <p>One queue for the whole crew, live on every phone.</p>
+      </div>
+      <div class="feature">
+        <div class="phone"><span>App screenshot placeholder<br>(real capture only —<br>repo rule: no AI images)</span></div>
+        <h3>Logbook</h3>
+        <p>Log sends and attempts, and bring your Kilter or Tension history with you.</p>
+      </div>
+    </div>
+    <div class="feature-cta">
+      <a class="btn btn-primary btn-pill" href="#">Get the app</a>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 6 · FOOTER (SEO internal links) ================= -->
+<footer class="site" id="a6">
+  <div class="container">
+    <div class="region-head">
+      <span class="tag tag-new">new</span>
+      <a class="ann" href="#n11">11</a>
+    </div>
+    <div class="footer-cols">
+      <div>
+        <h4>Find a gym</h4>
+        <ul>
+          <li><a href="/gyms?board=kilter">Gyms with a Kilter Board</a></li>
+          <li><a href="/gyms?board=tension">Gyms with a Tension Board</a></li>
+          <li><a href="/gyms?board=moonboard">Gyms with a MoonBoard</a></li>
+          <li><a href="/gyms">All gyms and walls</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Popular boards</h4>
+        <ul>
+          <li><a href="#">Kilter Board Original 40&deg; climbs</a></li>
+          <li><a href="#">Tension Board 2 climbs</a></li>
+          <li><a href="#">MoonBoard 2024 climbs</a></li>
+          <li><a href="#">Build a playlist</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Boardsesh</h4>
+        <ul>
+          <li><a href="#">About</a></li>
+          <li><a href="#">Help</a></li>
+          <li><a href="#">API documentation</a></li>
+          <li><a href="#">Legal &amp; IP policy</a></li>
+          <li><a href="#">Privacy</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Get the app</h4>
+        <ul>
+          <li><a href="#">iOS — App Store</a></li>
+          <li><a href="#">Android — Google Play</a></li>
+          <li><a href="#">GitHub</a></li>
+          <li><a href="#">Discord</a></li>
+        </ul>
+      </div>
+    </div>
+    <p class="disclaimer">Kilter Board, Tension Board, and MoonBoard are trademarks of their respective owners.
+      Boardsesh describes hardware compatibility only and is not affiliated with, endorsed by, or sponsored by
+      Aurora Climbing, Moon Climbing, or any board manufacturer.</p>
+    <p class="locale-row">English &middot; <a href="/es">Español</a> &middot; <a href="/fr">Français</a> &middot; <a href="/de">Deutsch</a></p>
+  </div>
+</footer>
+
+<!-- ================= DESIGN NOTES (for delegated implementers) ================= -->
+<section class="notes" id="annotations">
+  <div class="container">
+    <h2>Design notes</h2>
+    <p class="intro">Each note: what the region is, what data it binds to (with dossier citations
+      <span class="cite">PH-nn</span> / <span class="cite">DB-nn</span> / <span class="cite">DOC-nn</span>),
+      and what is still open. SPECULATIVE items from the persona synthesis are never acceptance criteria.
+      All PostHog figures are the 90-day window 2026-05-14 &rarr; 2026-08-12.</p>
+
+    <div class="note" id="n1">
+      <span class="num">1</span>
+      <div>
+        <h3>Global nav — exists today; add a "Gyms" link (new)</h3>
+        <p>The persistent header survives the Epic 1 teardown as chrome; the only change here is a crawlable
+          "Gyms" link to <code>/gyms</code>. "Open the app" is the Expo-web hand-off that already exists.</p>
+        <p class="bind">Binds: nothing new. Nav link target is the Epic 2 <code>/gyms</code> directory
+          (<span class="cite">DOC-08</span>: searchGyms backend ready; after Epic 1, www has no gym-discovery UI unless Epic 2 ships one).</p>
+        <p class="oq">Open: confirm exactly which header chrome survives Epic 1 W-17 (layout strip) before styling against it.</p>
+      </div>
+    </div>
+
+    <div class="note" id="n2">
+      <span class="num">2</span>
+      <div>
+        <h3>Marketing hero — exists today, revised copy; install CTAs stay prominent</h3>
+        <p>The hero remains the top install driver: 250 of 445 App Install Clicks came from hero placement
+          (<span class="cite">PH-13</span>: hero|google-play 135 + hero|app-store 115). Keep both store CTAs
+          above the fold with the existing violet-fill pill + amber glow treatment (HERO_CTA_SX in
+          <code>home-page-content.tsx</code>). New: the H1/subtitle say what Boardsesh IS (marketing), because the
+          climbing UI below it is gone. Copy shown is a proposal in climber voice; compatibility-not-endorsement
+          wording is mandatory ("Works with Kilter…", never "Kilter app").</p>
+        <p class="bind">Binds: static i18n strings (marketing namespace, all 4 locales). Install buttons keep firing
+          <code>App Install Click</code> with <code>placement: 'hero'</code> (<span class="cite">PH-13</span>).</p>
+        <p class="oq">Open: exact H1/subtitle wording — must pass the i18n glossaries (es "plafón", fr "croix/enchaîné", de "Getoppt").</p>
+      </div>
+    </div>
+
+    <div class="note" id="n3">
+      <span class="num">3</span>
+      <div>
+        <h3>"Start climbing on the web" — exists today (StartClimbingButton)</h3>
+        <p>Hands off to the Expo-web app (SSO when signed in). Wireframe demotes it to a tertiary text link under
+          the install pills; installs are the measured winner, web hand-off click volume is not in the dossier.</p>
+        <p class="bind">Binds: existing <code>start-climbing-button.tsx</code>. Install intent context:
+          445 install clicks / 362 users; 991 attributed installs (<span class="cite">PH-13</span>, <span class="cite">PH-14</span>).</p>
+        <p class="oq">Open: CTA hierarchy (install-first vs web-first) — no dossier fact settles it; instrument the web hand-off click before deciding.</p>
+      </div>
+    </div>
+
+    <div class="note" id="n4">
+      <span class="num">4</span>
+      <div>
+        <h3>Gym search entry — NEW; the homepage's replacement gym-discovery affordance</h3>
+        <p>Epic 1 deletes the old home-gym-card + search drawer (5 clicks / 4 users in 90d, dismissals beat
+          engagements — <span class="cite">PH-11</span>, <span class="cite">DOC-08</span>). This search field is a plain
+          GET form to <code>/gyms</code> — no drawer, no client JS required, SSR-friendly. Facet chips pre-filter by
+          board type. "Use my location" is optional; text search is the primary path because only 63.1% of gyms
+          have coordinates (<span class="cite">DB-06</span>).</p>
+        <p class="bind">Binds: <code>searchGyms</code> (free-text + PostGIS ST_DWithin, default radius 50 km, board-type
+          facets, offset paging — <span class="cite">DOC-08</span>). Submits <code>?q=&amp;board=</code> (+ <code>near</code> when geolocation granted).</p>
+        <p class="oq">Open: gym search is completely uninstrumented today (<span class="cite">PH-12</span>) — this PR must add
+          events (Gym Search Performed, Gym Teaser Click). Also: keep the map itself on /gyms, not the homepage
+          (Leaflet exists in-repo via map-location-picker, but the homepage should stay static/SSR).</p>
+      </div>
+    </div>
+
+    <div class="note" id="n5">
+      <span class="num">5</span>
+      <div>
+        <h3>Directory teaser card — the sparse card IS the default design</h3>
+        <p>Every field on the card exists in the schema TODAY: name (100% filled), claim badge, board type + angle,
+          and — only when present — address (23.8%) and a distance chip from lat/lng (63.1%). Board mix to expect:
+          moonboard 52.5% / kilter 36.3% / tension 9.4%; 96% of gyms have exactly one board, ~25 gyms have 3+
+          (multi-board card two). No photos, no logos, no descriptions on cards — image_url is 0 of 4,740,
+          logo 1, description 5 (<span class="cite">DB-09</span>). There is no city/country column
+          (<span class="cite">DB-06</span>) — the location line is the free-text address or nothing.</p>
+        <p class="bind">Binds: <code>gyms.name</code>, <code>gyms.address</code>, <code>gyms.latitude/longitude</code>
+          (<span class="cite">DB-09</span>, <span class="cite">DB-06</span>); <code>user_boards.board_type + angle</code>
+          (<span class="cite">DB-04</span>); claim state from <code>owner_id</code> = SYSTEM vs user
+          (<span class="cite">DB-01</span>, <span class="cite">DB-10</span>). Card links to <code>/gym/&lt;slug&gt;</code> —
+          merged slugs 308-redirect and never 404 (<span class="cite">DOC-03</span>; printed QRs exist in the field).</p>
+        <p class="oq">Open: which gyms populate the homepage teasers when no geolocation is granted — any default set
+          must not bury sparse/unclaimed listings (university-wall constraint). Dedup gate: ~46–60 physical dupes,
+          8 merges ever (<span class="cite">DOC-03</span>, <span class="cite">DB-07</span>) — teasers ship behind the same
+          dedup sequencing as /gyms.</p>
+      </div>
+    </div>
+
+    <div class="note" id="n6">
+      <span class="num">6</span>
+      <div>
+        <h3>No-pin fallback state — 36.9% of gyms render like this</h3>
+        <p>No distance chip, no map affordance, a muted "No map pin yet" line, and the claim prompt doubles as the
+          fix ("claim it and add the pin"). The card is otherwise identical and ranks equally — never hide or
+          rank-down sparse listings.</p>
+        <p class="bind">Binds: <code>latitude/longitude IS NULL</code> (<span class="cite">DB-06</span>: 2,991 of 4,740 have coords).</p>
+      </div>
+    </div>
+
+    <div class="note" id="n7">
+      <span class="num">7</span>
+      <div>
+        <h3>Claim prompt on unclaimed cards — NEW, feeds the claim funnel</h3>
+        <p>2,896 unclaimed board-equipped gyms exist (<span class="cite">DB-10</span>); all 26 claims ever were
+          admin-processed with zero self-serve funnel traffic (<span class="cite">DB-02</span>,
+          <span class="cite">PH-09</span>, <span class="cite">PH-10</span>). The chip deep-links to the gym page's claim CTA.
+          Whether a visible claim prompt converts is hypothesis H4 — record it, don't promise it.</p>
+        <p class="bind">Binds: claim state (<span class="cite">DB-01</span>/<span class="cite">DB-10</span>). New event required:
+          Gym Claim CTA Click (<span class="cite">PH-15</span> — no claim/scan/CTA events exist anywhere today).</p>
+        <p class="oq">Open: target of the prompt — the gym page's existing claim CTA is signed-in-only; the signed-out
+          claim CTA is still open as #3672 (<span class="cite">DOC-07</span>). Claim copy must state sync-freeze out loud
+          (<span class="cite">DOC-09</span>).</p>
+      </div>
+    </div>
+
+    <div class="note" id="n8">
+      <span class="num">8</span>
+      <div>
+        <h3>Aspiration variant — clearly labeled, NOT buildable today</h3>
+        <p>Shows the same card after gym-page enrichment ships: an hours line and a one-sentence description.
+          Today description is filled for 5 of 4,740 gyms and hours columns do not exist at all — the planned
+          migration 0187 never landed (<span class="cite">DB-09</span>, <span class="cite">DOC-09</span>). The homepage must
+          ship with the sparse default; this variant activates per-gym as fields appear. Hours must resist staleness
+          (import/sync or free-text — hypothesis H7); still no photos.</p>
+        <p class="bind">Binds (future): enrichment fields from the Epic 2 gym-page-enrichment work item. Never an
+          acceptance criterion for the homepage PR.</p>
+      </div>
+    </div>
+
+    <div class="note" id="n9">
+      <span class="num">9</span>
+      <div>
+        <h3>Static board-config grid — built by Epic 1 W-13 (#4366); slot reserved, not redesigned</h3>
+        <p>W-13 rebuilds the board rail as static crawlable LocaleLink cards from <code>getPopularBoardConfigs()</code>
+          (already SSR-fetched), using <code>constructClimbListWithSlugs(...)</code> — PopularBoardConfig has no slug/angle,
+          so the slug-based builder cannot be used. Epic 2 places that grid here, below gym discovery. Sample
+          hrefs in the wireframe are illustrative of the /board/layout/size/sets/angle/list shape only.</p>
+        <p class="bind">Binds: <code>getPopularBoardConfigs()</code>; URL shape per W-13's verify step ("an
+          <code>&lt;a href=&quot;/kilter/…/list&quot;&gt;</code>-shaped link per popular board" on / and each locale root).</p>
+        <p class="oq">Open: ordering between this grid and the feature strip is Epic 2's one degree of freedom here —
+          the grid itself (card content, links, copy) is W-13's.</p>
+      </div>
+    </div>
+
+    <div class="note" id="n10">
+      <span class="num">10</span>
+      <div>
+        <h3>Feature strip — repositioned as APP marketing with screenshot placeholders</h3>
+        <p>Queue / Party Mode / Logbook presented as app features that end in an install prompt — on www these
+          features no longer exist as UI post-Epic-1. Frames are real app screenshots (repo rule: no AI-generated
+          images; capture via the screenshot tooling). Copy reuses the existing about.features voice
+          ("Take turns without the awkward 'who's next?'").</p>
+        <p class="bind">Binds: static i18n + screenshot assets. Install CTA fires <code>App Install Click</code> with a new
+          <code>placement: 'feature-strip'</code> so it's distinguishable from hero (<span class="cite">PH-13</span>).</p>
+      </div>
+    </div>
+
+    <div class="note" id="n11">
+      <span class="num">11</span>
+      <div>
+        <h3>Footer — NEW: SEO internal-link surface</h3>
+        <p>Per-board directory links ("Gyms with a Kilter Board" &rarr; /gyms?board=kilter) create the crawl path for
+          "kilter board near me"-shaped queries — near-zero organic today is surface absence, not proven no-demand
+          (<span class="cite">PH-07</span>; hypothesis H5). Descriptive anchor text, real <code>&lt;a href&gt;</code> via LocaleLink,
+          trademark disclaimer verbatim from the compatibility-not-endorsement rule, locale switcher for /es /fr /de.</p>
+        <p class="bind">Binds: static links + <code>/gyms</code> facet params (<span class="cite">DOC-08</span>). Gyms sitemap
+          entries ship behind the dedup gate (<span class="cite">DOC-03</span>, <span class="cite">DB-07</span>); update
+          <code>packages/web/app/sitemap.ts</code> in the same wave.</p>
+      </div>
+    </div>
+
+    <div class="note" id="n12">
+      <span class="num">12</span>
+      <div>
+        <h3>Page-wide rules (SEO / i18n / instrumentation)</h3>
+        <p>The homepage is a search surface: unique title/description/canonical, one H1, server-rendered copy,
+          JSON-LD Organization + WebSite. Every string is an i18n key in the marketing namespace, landed in all
+          four locales in the same commit. Every gym URL rendered here obeys never-404 (<span class="cite">DOC-03</span>).
+          New events this design requires: Gym Search Performed, Gym Teaser Click, Gym Claim CTA Click, plus the
+          feature-strip install placement — the gym funnel is currently unmeasurable and every gym-owner persona
+          conditions participation on a number (<span class="cite">PH-15</span>, <span class="cite">PH-13</span>).</p>
+      </div>
+    </div>
+
+    <div class="oq-block">
+      <h3>Open questions (carry into the PM review)</h3>
+      <ul>
+        <li>Default teaser population without geolocation: nearest-by-IP is unreliable (no country column,
+          <span class="cite">DB-06</span>; PostHog geo has known fake-cluster traps). Candidate: recently claimed +
+          random rotation — must not systematically bury unclaimed/sparse gyms.</li>
+        <li>Hero CTA order: install pills vs "Start climbing on the web" — instrument first, decide later.</li>
+        <li>Gym count in section copy: "thousands" used deliberately — 4,740 live gyms (<span class="cite">DB-01</span>)
+          includes ~46–60 known physical dupes (<span class="cite">DOC-03</span>); avoid a precise number until dedup settles.</li>
+        <li>Claim chip target: gym page anchor vs dedicated claim route — depends on #3672 resolution
+          (<span class="cite">DOC-07</span>).</li>
+        <li>Does the feature strip earn its screenshots from the App Store screenshot pipeline
+          (locale-matched captures exist for en/es/fr/de) or fresh web-specific captures?</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

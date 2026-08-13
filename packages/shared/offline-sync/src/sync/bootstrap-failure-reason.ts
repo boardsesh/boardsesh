@@ -38,7 +38,16 @@ export type SnapshotBootstrapFailureReason =
   /** Offline, or the connection dropped. The normal state of a phone on a plane. */
   | 'network'
   /** Nothing above matched — the bucket that should stay near zero. */
-  | 'unknown';
+  | 'unknown'
+  /**
+   * The bootstrap phase left a scope with no terminal event, and nothing explains
+   * it: no teardown, and no error anyone caught (issue #4316). Never returned by
+   * the classifier below — only `download-funnel-guard.ts` sets it, from its
+   * `finally`, when a `break` / `continue` / `return` nobody registered ends an
+   * attempt. It is the one reason that means "the code has a hole", which is why
+   * it is the one abort-shaped exit that still goes to Sentry.
+   */
+  | 'unknown-exit';
 
 /** Substrings of the errors `verifySnapshotMeta` and the integrity check raise. */
 const ARTIFACT_INVALID_MARKERS = [

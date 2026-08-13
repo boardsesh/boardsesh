@@ -1,5 +1,5 @@
 /**
- * TEST-ONLY fixture for replaying migration 0190_moonboard_angle_dedup_backfill
+ * TEST-ONLY fixture for replaying migration 0193_moonboard_angle_dedup_backfill
  * against a scratch Postgres. Never import from production code.
  *
  * Shared by two harnesses so the replay runs BOTH in CI and locally, mirroring
@@ -27,7 +27,7 @@ import type postgres from 'postgres';
 /** packages/db/drizzle, resolved from this file's location. */
 export const MOONBOARD_DEDUP_REPLAY_DRIZZLE_DIR = path.resolve(import.meta.dirname, '../../drizzle');
 
-export const MOONBOARD_DEDUP_REPLAY_MIGRATION_TAG = '0190_moonboard_angle_dedup_backfill';
+export const MOONBOARD_DEDUP_REPLAY_MIGRATION_TAG = '0193_moonboard_angle_dedup_backfill';
 
 export function moonboardDedupReplayMigrationSql(): string {
   return readFileSync(

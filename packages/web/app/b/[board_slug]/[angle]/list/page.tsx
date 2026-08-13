@@ -7,6 +7,7 @@ import BoardPageClimbsList from '@/app/components/board-page/board-page-climbs-l
 import { fetchListPageData } from '@/app/lib/data/list-page-data.server';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
+import { hasListFilterParams, type ListPageSearchParams } from '@/app/lib/seo/list-page-robots';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 
 type BoardSlugListPageProps = {
@@ -15,7 +16,7 @@ type BoardSlugListPageProps = {
 };
 
 export async function generateMetadata(props: BoardSlugListPageProps): Promise<Metadata> {
-  const params = await props.params;
+  const [params, searchParams] = await Promise.all([props.params, props.searchParams]);
   const { t, locale } = await getServerTranslation('climbs');
 
   try {
@@ -30,12 +31,18 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
 
     const boardName = formatBoardDisplayName(board.boardType);
     const angle = params.angle;
+    // Unlisted is link-only by design, and a private board is readable to a
+    // slug holder until #4087 masks it — neither belongs in the index. This is
+    // indexation only; it is not the access control, which #4087 owns.
+    const listShouldNoindex =
+      board.isUnlisted || !board.isPublic || hasListFilterParams(searchParams as unknown as ListPageSearchParams);
 
     return createPageMetadata({
       title: t('metadata.list.title', { boardName, angle }),
       description: t('metadata.list.description', { boardName, angle }),
       path: `/b/${params.board_slug}/${angle}/list`,
       locale,
+      robots: listShouldNoindex ? { index: false, follow: true } : undefined,
     });
   } catch {
     return createPageMetadata({

@@ -47,6 +47,10 @@ export {
   beginLocalPurge,
   setBackgrounded,
   isBackgrounded,
+  // Subscribed by the mobile downloader so a transfer can record that the app
+  // was suspended while it ran without opening a second AppState listener
+  // (issue #4390).
+  onTeardown,
 } from './mutation-queue/drainer';
 export type {
   DrainOptions,

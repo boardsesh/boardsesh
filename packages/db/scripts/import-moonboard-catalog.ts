@@ -15,6 +15,7 @@ import {
 } from './moonboard-catalog-helpers.js';
 import { stageCatalogBatch } from './moonboard-catalog-batch.js';
 import { describeDatabaseHost, getScriptDatabaseUrl } from './db-connection.js';
+import { formatUnmappedMoonBoardGrades } from './moonboard-helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -192,6 +193,7 @@ async function importMoonBoardCatalog() {
         holds: holdsRecords,
         aliases: aliasRecords,
         counters,
+        unmappedGrades,
       } = stageCatalogBatch({
         problems: dump.problems,
         layoutId,
@@ -208,6 +210,11 @@ async function importMoonBoardCatalog() {
           `${counters.skippedDrifted} skipped as drifted (holds changed under an imported climb), ` +
           `${counters.skippedHijacked} skipped to protect climb rows a merge would repoint`,
       );
+      if (unmappedGrades.size > 0) {
+        console.warn(
+          `   ⚠️  Unmapped MoonBoard grades, imported with a NULL grade — add them to MOONBOARD_GRADE_TO_DIFFICULTY: ${formatUnmappedMoonBoardGrades(unmappedGrades)}`,
+        );
+      }
 
       // One transaction per board: a crash mid-file never leaves a climb without
       // its holds/aliases, and completed boards stay committed for an idempotent

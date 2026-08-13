@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { SnapshotManifestEntry, SnapshotSource } from '@boardsesh/offline-sync';
+import type { SnapshotGradesArtifact, SnapshotManifestEntry, SnapshotSource } from '@boardsesh/offline-sync';
 import { isSnapshotBaseUrlConfigured } from '../lib/env';
 import {
   useOfflineDownloadProgressEnabled,
@@ -23,12 +23,29 @@ import { mobileSnapshotSource } from './snapshot-source';
  * any of them — see `snapshotFrame` in `app/boards/manage.tsx`. Both reads have
  * to stay, or the row sits on "Downloading 0 MB of 103 MB" for the whole
  * download with the switch supposedly off.
+ *
+ * This wrapper drops the download OPTIONS — `onProgress`, and with it `signal`,
+ * which is pre-existing and deliberate (the first paragraph: the restored call
+ * must be byte-identical) — never a CAPABILITY. It used to omit
+ * `releaseArtifact` and `downloadGradesArtifact`
+ * too, which silently opted this cohort out of artifact retention (#4310): the
+ * engine falls back to `deleteArtifact`, so a download that completed while the
+ * phone was in a pocket was deleted at the end of the cycle and re-fetched from
+ * byte 0 on the next wake — exactly the failure #4390 exists to remove, aimed at
+ * exactly the users who turned the switch off because their downloads are slow.
  */
 function withoutDownloadProgress(source: SnapshotSource): SnapshotSource {
+  const { downloadGradesArtifact, releaseArtifact } = source;
   return {
     fetchManifest: () => source.fetchManifest(),
     downloadArtifact: (entry: SnapshotManifestEntry) => source.downloadArtifact(entry),
     deleteArtifact: (filePath: string) => source.deleteArtifact(filePath),
+    ...(downloadGradesArtifact
+      ? { downloadGradesArtifact: (artifact: SnapshotGradesArtifact) => downloadGradesArtifact(artifact) }
+      : {}),
+    ...(releaseArtifact
+      ? { releaseArtifact: (filePath: string, options: { imported: boolean }) => releaseArtifact(filePath, options) }
+      : {}),
   };
 }
 

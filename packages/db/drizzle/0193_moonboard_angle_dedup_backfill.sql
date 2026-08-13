@@ -260,15 +260,17 @@
 -- re-application.
 --
 -- ⚠️ DEPLOY ORDERING (A): AGAINST PR #4054's PROD-DATA MIGRATIONS.
--- THIS MIGRATION MUST APPLY AFTER 0193_backfill_moonboard_ascensionist_invariant
--- AND 0194_moonboard_wrong_angle_stats_cleanup (PR #4054, branch
--- fix/3529-moonboard-tick-angle, open as of 2026-08-12 and not on main). Both
--- rewrite exactly the rows this migration moves. Order comes from the journal's
--- `when`, not from the filename number (docs/db-migrations.md), so this is a
--- NUMBERING constraint on a fresh database, not just a merge-order preference:
--- this file is renumbered ABOVE #4054's stack at merge time.
+-- THIS MIGRATION MUST APPLY AFTER 0191_backfill_moonboard_ascensionist_invariant
+-- AND 0192_moonboard_wrong_angle_stats_cleanup (both landed via PR #4054's
+-- stack, merged 2026-08-13; they were numbered 0193/0194 while that PR was
+-- open, and the analysis below keeps those historical numbers). Both rewrite
+-- exactly the rows this migration moves. Order comes from the journal's
+-- `when`, not from the filename number (docs/db-migrations.md), so this was a
+-- NUMBERING constraint on a fresh database, not just a merge-order
+-- preference. SATISFIED as merged: this file sits above both by filename
+-- number AND journal `when`.
 --
---   0193 — repairs 8 prod-verified MoonBoard rows (all angle=40, listed by
+--   0193 (today's 0191) — repairs 8 prod-verified MoonBoard rows (all angle=40, listed by
 --   exact PK) where ascensionist_count is the June 2026 catalog total but
 --   upstream_ascensionist_count is a stale February leftover, by raising
 --   upstream to `ascensionist_count - COALESCE(boardsesh, 0)`.
@@ -292,7 +294,7 @@
 --       upstream_ascensionist_count and _mad_canon orders on it, so a row whose
 --       real total is 64 loses canonical to a 25° partner over a stale 3.
 --
---   0194 — moves MoonBoard ticks sitting at an angle their climb is not graded
+--   0194 (today's 0192) — moves MoonBoard ticks sitting at an angle their climb is not graded
 --   at onto the graded angle (statement A), then deletes the phantom stats rows
 --   that leaves behind (statement B), each fenced by "does this stats row carry
 --   real catalog data?".
@@ -307,11 +309,13 @@
 --       merged tick satisfies statement A's `bt.angle <> bc.angle` on a
 --       user_id IS NULL row. A's fence saves the normal case — the re-keyed
 --       stats row carries display_difficulty — but not a problem the catalog
---       importer could not grade: MOONBOARD_GRADE_TO_DIFFICULTY
---       (packages/db/scripts/moonboard-helpers.ts) tops out at 8B+ and
---       import-moonboard-catalog.ts writes `displayDifficulty: mapped.difficultyId
---       ?? null`, so an 8C/8C+ problem with no repeats and no rating has all
---       four fence columns empty. For those, A rewrites a climber's send to an
+--       importer could not grade: when this was analysed
+--       MOONBOARD_GRADE_TO_DIFFICULTY (packages/db/scripts/moonboard-helpers.ts)
+--       topped out at 8B+ (the same #4054 stack has since extended it to
+--       8C/8C+, shrinking but not deleting this class — a future unmappable
+--       grade recreates it) and import-moonboard-catalog.ts writes
+--       `displayDifficulty: mapped.difficultyId ?? null`, so such a problem
+--       with no repeats and no rating has all four fence columns empty. For those, A rewrites a climber's send to an
 --       angle they did not climb and B then deletes the second-angle stats row
 --       this migration's header promises survives. Second, and unconditionally:
 --       statement B's candidate set stops being the 100 rows #4054's 2026-07-31
@@ -429,8 +433,8 @@ BEGIN
   -- count zero. The surrogate id is exact and has no such trap.
   SELECT COALESCE(max(id), 0) INTO v_tombstone_watermark FROM sync_deletions;
 
-  IF EXISTS (SELECT 1 FROM _bs_migration_guards WHERE tag = '0190_moonboard_angle_dedup_backfill') THEN
-    RAISE NOTICE '0190 moonboard angle dedup already applied — skipping (guard row present)';
+  IF EXISTS (SELECT 1 FROM _bs_migration_guards WHERE tag = '0193_moonboard_angle_dedup_backfill') THEN
+    RAISE NOTICE '0193 moonboard angle dedup already applied — skipping (guard row present)';
     RETURN;
   END IF;
 
@@ -1233,7 +1237,7 @@ BEGIN
      AND is_listed IS DISTINCT FROM false
      AND uuid IN (SELECT alias_uuid FROM _mad_map);
 
-  INSERT INTO _bs_migration_guards (tag) VALUES ('0190_moonboard_angle_dedup_backfill');
+  INSERT INTO _bs_migration_guards (tag) VALUES ('0193_moonboard_angle_dedup_backfill');
 
   SELECT count(*) INTO v_recomputed FROM _mad_recompute_keys;
   SELECT count(*) INTO v_tombstones FROM sync_deletions WHERE id > v_tombstone_watermark;

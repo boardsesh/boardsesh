@@ -679,9 +679,9 @@ export const isUuidOnly = (slugOrUuid: string): boolean => {
 };
 
 // Helper to determine if a parameter is numeric (old format) or slug (new
-// format). Canonical definition lives in board-route-paths.ts so the edge
-// middleware (Expo-web rollout map) can use it without pulling this module
-// into the edge bundle; re-exported here for the rest of the app.
+// format). Canonical definition lives in board-route-paths.ts so edge-safe
+// callers can use it without pulling this module into the edge bundle;
+// re-exported here for the rest of the app.
 export { isNumericId };
 
 const decodeRouteSegment = (value: string): string => {

@@ -16,7 +16,7 @@ import { isNoMatchClimb, isNoMatch } from '@/app/lib/no-match-climb';
 
 // Resolves an old/bookmarked/shared climb link through board_climb_aliases:
 // a climb that's since been merged into another (e.g. the MoonBoard
-// angle-dedup migration 0190_moonboard_angle_dedup_backfill) must still
+// angle-dedup migration 0193_moonboard_angle_dedup_backfill) must still
 // resolve to where its stats/ticks/favorites actually live now, not render an
 // empty husk. A miss returns the input uuid unchanged, mirroring
 // resolveCanonicalClimbUuid in

@@ -20,7 +20,7 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
   try {
     // Resolve through board_climb_aliases first: an old/bookmarked/shared
     // link to a climb that's since been merged into another (e.g. the
-    // MoonBoard angle-dedup migration 0190_moonboard_angle_dedup_backfill)
+    // MoonBoard angle-dedup migration 0193_moonboard_angle_dedup_backfill)
     // must still resolve to where its stats/ticks/favorites actually live now,
     // not render an empty husk.
     const climbUuid = await resolveCanonicalClimbUuid(db, params.board_name, params.climb_uuid);

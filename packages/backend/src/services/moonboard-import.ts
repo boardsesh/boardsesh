@@ -68,7 +68,7 @@ const GRADE_TO_DIFFICULTY_ID = new Map<string, number>(
 
 GRADE_TO_DIFFICULTY_ID.set('5A', 13);
 
-function moonBoardGradeToDifficultyId(grade: string): number | undefined {
+export function moonBoardGradeToDifficultyId(grade: string): number | undefined {
   return GRADE_TO_DIFFICULTY_ID.get(grade.trim().toUpperCase());
 }
 

@@ -35,6 +35,7 @@ import {
   type SnapshotBootstrapErrorReporter,
 } from './snapshot-bootstrap';
 import { classifySnapshotBootstrapFailure, type SnapshotBootstrapFailureReason } from './bootstrap-failure-reason';
+import { createDownloadFunnelGuard } from './download-funnel-guard';
 import {
   classifyBootstrapFailure,
   clearBootstrapPagedFallback,
@@ -46,6 +47,7 @@ import {
   nextRetryState,
   readBootstrapRetryState,
   rearmForNewArtifact,
+  recordBackgroundPause,
   shouldSkipPagedPull,
   spendUserRequest,
   writeBootstrapRetryState,
@@ -960,19 +962,7 @@ async function runBootstrapPhase(params: {
   } = params;
   const onProgress = options?.onProgress;
   const onSchemaDrift = options?.onSchemaDrift;
-  // Wrapped ONCE here rather than at each of the eight report sites: every one of
-  // them already builds a payload with the cause in hand, so deriving `reason` and
-  // defaulting `aborted` centrally keeps them untouched and makes it impossible for
-  // a future arm to forget either field (issue #4314).
   const rawSnapshotBootstrapError = options?.onSnapshotBootstrapError;
-  const onSnapshotBootstrapError = rawSnapshotBootstrapError
-    ? (report: BootstrapErrorInput): void =>
-        rawSnapshotBootstrapError({
-          ...report,
-          reason: report.reason ?? classifySnapshotBootstrapFailure(report.cause),
-          aborted: report.aborted ?? false,
-        })
-    : undefined;
 
   /**
    * Why the phase is being torn down, or null when it is not. Read at each of the
@@ -984,6 +974,32 @@ async function runBootstrapPhase(params: {
     if (isBackgrounded()) return 'aborted-background';
     return null;
   };
+
+  // The terminal-event invariant, enforced structurally rather than site by site
+  // (issue #4316). Armed at the Started emission below and closed from the
+  // per-scope `finally`, so an exit nobody registered — a future `break`, a
+  // `throw` from any of the awaited SQLite writes that sit outside the import's
+  // own catch, a consumer callback blowing up — still closes the funnel. See
+  // download-funnel-guard.ts for what counts as settled and why only a genuinely
+  // unexplained exit reaches Sentry.
+  const funnelGuard = createDownloadFunnelGuard({ report: rawSnapshotBootstrapError, teardownReason });
+
+  // Wrapped ONCE here rather than at each of the eight report sites: every one of
+  // them already builds a payload with the cause in hand, so deriving `reason` and
+  // defaulting `aborted` centrally keeps them untouched and makes it impossible for
+  // a future arm to forget either field (issue #4314). The guard is settled from
+  // the same place for the same reason: a report site cannot forget to mark itself
+  // terminal if marking itself is not something it does.
+  const onSnapshotBootstrapError = rawSnapshotBootstrapError
+    ? (report: BootstrapErrorInput): void => {
+        funnelGuard.settle(report.scopeKey);
+        rawSnapshotBootstrapError({
+          ...report,
+          reason: report.reason ?? classifySnapshotBootstrapFailure(report.cause),
+          aborted: report.aborted ?? false,
+        });
+      }
+    : undefined;
 
   /** Close the funnel for a scope whose work this cycle was cut short. */
   const reportBootstrapAbort = (
@@ -1021,11 +1037,22 @@ async function runBootstrapPhase(params: {
       snapshot: frame,
     });
   };
+  type LayoutDownloadRecord = {
+    file: SnapshotArtifactHandle | null;
+    cause: unknown;
+    permanentMiss: boolean;
+    downloadMs: number;
+    /** Set when THIS phase cancelled the transfer, so a cleared flag can't relabel it a failure. */
+    abortedReason: SnapshotBootstrapFailureReason | null;
+    /**
+     * Telemetry only (issue #4390): the app went to the background at some
+     * point during this transfer. Deliberately NOT part of the pause/failure
+     * decision — see `suspensionWindowOpen` below for the narrow test that is.
+     */
+    backgroundedDuringTransfer: boolean;
+  };
   // Absent = not yet attempted; `file: null` = download failed (with its cause).
-  const downloadByLayout = new Map<
-    string,
-    { file: SnapshotArtifactHandle | null; cause: unknown; permanentMiss: boolean; downloadMs: number }
-  >();
+  const downloadByLayout = new Map<string, LayoutDownloadRecord>();
   // filePath → whether any scope managed to import it. An artifact the phase
   // never consumed (backgrounded cycle, wipe, aborted transfer) is handed back
   // with `imported: false` so a retention-capable source can keep it.
@@ -1088,6 +1115,17 @@ async function runBootstrapPhase(params: {
       // re-fetch the artifact on every cycle for the life of the install,
       // straight past MAX_GRADES_BOOTSTRAP_ATTEMPTS.
       if (!gradesDownload) {
+        // A cycle that is being torn down did not fail — it was interrupted.
+        // Charging a grades attempt here spent one of the three tries this
+        // artifact ever gets on a pocketed phone, and three screen locks left a
+        // Kilter board crawling grades over GraphQL for the life of the install
+        // (issue #4390).
+        const gradesTeardown = teardownReason();
+        if (gradesTeardown) {
+          reportBootstrapAbort(scope.scopeKey, 'grades-download', gradesTeardown, downloadCause);
+          gradesDownloadByLayout.set(layoutKey, null);
+          return;
+        }
         const attempt = await recordGradesBootstrapAttempt(db, scope.scopeKey);
         onSnapshotBootstrapError?.({
           scopeKey: scope.scopeKey,
@@ -1403,6 +1441,13 @@ async function runBootstrapPhase(params: {
         // board-data loop's emission below a no-op for this scope; every path
         // that `continue`s above (including the metered heal defer) reaches that
         // one instead and is correctly attributed to the paged crawl.
+        //
+        // The guard is armed BEFORE the emission, not after: the emitter writes
+        // the durable `scope-started:` marker, and a SQLite lock thrown between
+        // that write and the event is the one window where a Started could be
+        // owed a terminal event that no later cycle would ever emit (the marker
+        // makes the emission once-ever).
+        funnelGuard.arm(scope.scopeKey, 'download');
         await emitScopeDownloadStartOnce({
           scopeKey: scope.scopeKey,
           pathIntent: 'snapshot',
@@ -1422,25 +1467,65 @@ async function runBootstrapPhase(params: {
         // reports the real error, not null.
         let cachedDownload = downloadByLayout.get(layoutKey);
         if (!cachedDownload) {
-          cachedDownload = { file: null, cause: null, permanentMiss: false, downloadMs: 0 };
-          // The transfer runs for minutes on a 100 MB artifact. Cancelling it
-          // when the cycle is torn down (sign-out, purge, backgrounding) stops
-          // the native session from carrying on over a metered connection long
-          // after the engine stopped caring — the phase's own `break` below
-          // only stops the JS loop, not the download.
+          // A const alias, not the `let` above: the teardown listener below
+          // closes over it, and TypeScript widens a reassignable binding back to
+          // `| undefined` inside a callback.
+          const transfer: LayoutDownloadRecord = {
+            file: null,
+            cause: null,
+            permanentMiss: false,
+            downloadMs: 0,
+            abortedReason: null,
+            backgroundedDuringTransfer: false,
+          };
+          cachedDownload = transfer;
+          // The rule this encodes (issue #4390): START new work only in the
+          // foreground, NEVER kill work already in flight.
           //
-          // The abort is driven by the teardown EVENT, not by progress: a
+          // A wipe / sign-out / board removal still cancels immediately — the
+          // rows the artifact is for are being deleted, so its bytes are
+          // worthless and a native session must not keep pulling ~100 MB for
+          // them. A BACKGROUNDING does not: on iOS with a background URLSession
+          // the transfer keeps running while the process is suspended, and on
+          // Android the process simply stays alive. Cancelling here is what made
+          // a 103 MB Kilter artifact restart from byte 0 on every screen lock.
+          //
+          // The decision is driven by the teardown EVENT, not by progress: a
           // stalled transfer emits no further progress, which is exactly the
           // case where cancelling matters most. The progress callback stays a
-          // pure reporter.
+          // pure reporter apart from closing the suspension window below.
           const abortController = new AbortController();
-          const abortIfTornDown = (): void => {
-            if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) abortController.abort();
+          // LATCHED, unlike `isBackgrounded()` itself. The teardown flags are
+          // live: a phone that woke, aborted a 100 MB transfer, and came back to
+          // the foreground before the throw was handled read as "no teardown" at
+          // the check below — and the download we cancelled ourselves was then
+          // settled as a real transport failure, burning a bootstrap attempt and
+          // scheduling a cooldown for a pocketed phone (review note on #4345).
+          // Latching the reason at the moment we abort is what makes that race
+          // unwinnable.
+          let selfAbortedReason: SnapshotBootstrapFailureReason | null = null;
+          // Open while an OS suspension might still be what kills this transfer.
+          // CLOSED by the first byte delivered in the foreground: after that a
+          // failure belongs to the network or the device, not to the pocket.
+          // Without that closing rule, one screen lock during a nine-minute
+          // Android transfer would launder every later wifi drop, HTTP 500 or
+          // disk error into a free, cooldown-free 100 MB retry loop.
+          let suspensionWindowOpen = false;
+          const onTeardownNotice = (): void => {
+            const reason = teardownReason();
+            if (!reason) return;
+            if (reason === 'aborted-background') {
+              transfer.backgroundedDuringTransfer = true;
+              suspensionWindowOpen = true;
+              return;
+            }
+            selfAbortedReason ??= reason;
+            abortController.abort();
           };
-          const unsubscribeTeardown = onTeardown(abortIfTornDown);
+          const unsubscribeTeardown = onTeardown(onTeardownNotice);
           // Covers a teardown that landed between the guard check above and the
           // subscription: the listener only sees transitions after this point.
-          abortIfTornDown();
+          onTeardownNotice();
           // Stage 2 of 3, the multi-minute one. A second SIZE of the same layout
           // reuses this cache entry, so it never re-runs and never re-emits
           // download frames for bytes that already came down.
@@ -1460,6 +1545,10 @@ async function runBootstrapPhase(params: {
               (await source.downloadArtifact(entry, {
                 signal: abortController.signal,
                 onProgress: ({ bytesWritten, totalBytes }) => {
+                  // A byte arrived while nothing is tearing us down: this
+                  // transfer demonstrably survived the pocket, so a later
+                  // failure is not the suspension's doing (issue #4390).
+                  if (suspensionWindowOpen && !teardownReason()) suspensionWindowOpen = false;
                   const resolved = resolveDownloadFraction({
                     entry,
                     bytesWritten,
@@ -1482,6 +1571,23 @@ async function runBootstrapPhase(params: {
             cachedDownload.permanentMiss = error instanceof SnapshotPermanentMissError;
           } finally {
             unsubscribeTeardown();
+          }
+          // Only when the transfer actually died. A download that finished
+          // despite a teardown landing late is still importable, and calling it
+          // an abort here would throw away bytes that are already on disk.
+          //
+          // Two ways a dead transfer counts as a pause rather than a failure:
+          // we cancelled it ourselves (a wipe — latched, so a cleared flag
+          // cannot relabel it), or the OS suspension plausibly killed it. The
+          // second test is deliberately narrow: the suspension window must still
+          // be open (no byte since the app backgrounded) AND the cause must be
+          // network-shaped, which is what a suspension kill produces
+          // ("The network connection was lost", a timeout, a SocketException)
+          // and what a disk-full, an HTTP 500 or a programmer error is not.
+          if (!cachedDownload.file) {
+            cachedDownload.abortedReason =
+              selfAbortedReason ??
+              (suspensionWindowOpen && isNetworkError(cachedDownload.cause) ? 'aborted-background' : null);
           }
           cachedDownload.downloadMs = Date.now() - downloadStartedAt;
           downloadByLayout.set(layoutKey, cachedDownload);
@@ -1507,9 +1613,67 @@ async function runBootstrapPhase(params: {
         // 100 MB Kilter transfer aborted by a board removal elsewhere in the app
         // landed here and returned nothing, so the funnel showed a Started with no
         // terminal event and the climber saw the download silently restart.
-        const downloadTeardown = teardownReason();
+        //
+        // `abortedReason` is the latched half: WE cancelled this transfer, so it
+        // is an abort even if the flag that caused it has since cleared. Without
+        // it a phone that unlocked at the wrong moment charged itself a transport
+        // failure (and a 2-minute cooldown) for its own cancellation.
+        const downloadTeardown = teardownReason() ?? cachedDownload.abortedReason;
         if (downloadTeardown) {
-          reportBootstrapAbort(scope.scopeKey, 'download', downloadTeardown, cachedDownload.cause);
+          // A transfer that FINISHED is never a pause — the file is on disk, the
+          // source's sidecar is written, and the next foreground cycle reuses it
+          // for free (issue #4310). Only a dead transfer costs anything.
+          //
+          // The free path is bounded (issue #4390). Before this, a self-aborted
+          // background transfer was free with no bound at all: a device that can
+          // never finish the unresumable GET re-fetched ~100 MB on every
+          // foreground, forever. Three per scope stay free; the fourth is
+          // charged to the TRANSPORT budget on its ladder, so the pattern
+          // terminates at 3 free + 3 transport and the board still arrives via
+          // the paged crawl.
+          if (downloadTeardown === 'aborted-background' && !cachedDownload.file) {
+            const pause = recordBackgroundPause({
+              state: retryState,
+              builtAt: entry.builtAt,
+              now: evaluatedAt,
+              random,
+            });
+            retryState = await writeBootstrapRetryState(db, scope.scopeKey, pause.state);
+            metadataSettled = true;
+            if (pause.charged) {
+              // Still `aborted: true` — the climber's phone went in a pocket,
+              // that is what happened — but `attempt` tells the truth about the
+              // budget, exactly as reportSettledFailure spells it, and the retry
+              // ladder now applies.
+              onSnapshotBootstrapError?.({
+                scopeKey: scope.scopeKey,
+                stage: 'download',
+                attempt: retryState.transportFailures,
+                cause: cachedDownload.cause,
+                expected: true,
+                aborted: true,
+                reason: 'aborted-background',
+              });
+              options?.onBootstrapRetryScheduled?.({
+                scopeKey: scope.scopeKey,
+                boardType: scope.boardType,
+                stage: 'download',
+                failureKind: 'transport',
+                retryAfterMs:
+                  isTerminal(retryState) || retryState.retryAfter === null
+                    ? 0
+                    : Math.max(0, retryState.retryAfter - evaluatedAt),
+                transportFailures: retryState.transportFailures,
+                structuralFailures: retryState.structuralFailures,
+                terminal: isTerminal(retryState),
+              });
+              if (isTerminal(retryState)) await markBootstrapPagedFallback(db, scope.scopeKey);
+            } else {
+              reportBootstrapAbort(scope.scopeKey, 'download', downloadTeardown, cachedDownload.cause);
+            }
+          } else {
+            reportBootstrapAbort(scope.scopeKey, 'download', downloadTeardown, cachedDownload.cause);
+          }
           break;
         }
         const download = cachedDownload.file;
@@ -1571,6 +1735,9 @@ async function runBootstrapPhase(params: {
 
         // Stage 3 of 3. Indeterminate by construction: the import is one
         // exclusive SQLite transaction with no safe place to emit from inside it.
+        // The guard moves first so anything thrown from here on — including the
+        // progress consumer on the next line — is attributed to the import.
+        funnelGuard.enterStage('import');
         emitSnapshotFrame(
           progressThrottle.flush({
             scopeKey: scope.scopeKey,
@@ -1618,6 +1785,12 @@ async function runBootstrapPhase(params: {
           // reports false for exactly the runs the flag exists to filter out.
           await markBootstrapDone(db, scope.scopeKey, { healed: hasBoardCheckpoint });
           metadataSettled = true;
+          // The one settlement the guard cannot infer from a report: the scope's
+          // terminal event is the Completed the board-data loop fires once the
+          // delta pull reaches every table's tail — possibly cycles from now, on
+          // Kilter usually after the grades crawl. Nothing failed, so nothing
+          // should be reported.
+          funnelGuard.settle(scope.scopeKey);
           // Bust the board-table query caches now: if the snapshot fully satisfies
           // the scope, the delta pull returns zero documents and syncTable's
           // arrivals-only invalidation never fires — an active search/detail query
@@ -1722,7 +1895,21 @@ async function runBootstrapPhase(params: {
             skipPagedPull.add(scope.scopeKey);
           }
         }
+      } catch (error) {
+        // Everything between the Started emission and the import's own try sits
+        // OUTSIDE any catch: ~15 awaited SQLite writes (the retry-state writes,
+        // the paged-fallback markers, `clearTransportFailures` right after a
+        // 100 MB transfer lands) plus two consumer callbacks. A single
+        // SQLITE_BUSY on any of them unwound the whole phase in silence — the
+        // leading candidate for the device that emitted six Starteds and nothing
+        // else. Reported, classified, then rethrown: the control flow is
+        // unchanged, only the silence is gone.
+        funnelGuard.settleUncaught(error);
+        throw error;
       } finally {
+        // Un-bypassable: a `break` or `continue` a future change adds below the
+        // Started emission closes the funnel here whether or not it remembers to.
+        funnelGuard.close();
         if (metadataSettled) onBootstrapMetadataChanged?.({ scopeKey: scope.scopeKey });
       }
     }
