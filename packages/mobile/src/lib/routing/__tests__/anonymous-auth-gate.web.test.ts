@@ -83,6 +83,16 @@ describe('readPostLoginReturnHref', () => {
     goTo('/auth/login');
     expect(readPostLoginReturnHref()).toBeNull();
   });
+
+  // Login forwards `next` to the sign-up screen as an Expo Router param, which
+  // lands in the address bar. Reading it back is what makes "register instead of
+  // signing in" return to the same climb — and it is also what
+  // `startWebOAuth` reads when someone taps "Continue with Google" from there.
+  it('reads the same next off the register screen', () => {
+    const next = `/b/the-gym/40/view/${CLIMB_SEGMENT}`;
+    goTo(`/auth/register?next=${encodeURIComponent(next)}`);
+    expect(readPostLoginReturnHref()).toBe(next);
+  });
 });
 
 // `EXPO_BASE_URL` is `/app` on the www-mounted export and `/` on the

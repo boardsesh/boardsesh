@@ -427,6 +427,22 @@ describe('AuthProvider anonymous read-only gate (web)', () => {
     expect(redirectMock).not.toHaveBeenCalledWith('/(tabs)/home');
   });
 
+  // The register branch of the same flow: login forwards `next` to the sign-up
+  // screen as a router param, so someone who creates an account instead of
+  // signing in lands on the climb too. The provider navigates in both cases —
+  // `register.tsx` needs no change of its own.
+  it('lands a freshly registered visitor on the climb their next= names', async () => {
+    const next = '/b/the-gym/40/view/crimpy-thing-0A1B2C3D4E5F60718293A4B5C6D7E8F9';
+    getAuthTokenMock.mockResolvedValue('jwt-token');
+    routerState.segments = ['auth', 'register'];
+    window.history.replaceState({}, '', `/auth/register?next=${encodeURIComponent(next)}`);
+
+    renderGate();
+
+    await waitFor(() => expect(redirectMock).toHaveBeenCalledWith(next));
+    expect(redirectMock).not.toHaveBeenCalledWith('/(tabs)/home');
+  });
+
   it('drops a hostile next= and falls back to the home tab', async () => {
     getAuthTokenMock.mockResolvedValue('jwt-token');
     routerState.segments = ['auth', 'login'];

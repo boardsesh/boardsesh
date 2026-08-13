@@ -1,4 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Vitest resolves `anonymous-auth-gate` to the NATIVE fork, whose
+// `readPostLoginReturnHref()` is a constant `null` — so without this the wiring
+// from the address bar into the OAuth callback can't be exercised at all. The
+// default matches that native constant, leaving every other test in this file
+// untouched.
+const returnHrefState = vi.hoisted(() => ({ current: null as string | null }));
+vi.mock('../routing/anonymous-auth-gate', () => ({
+  readPostLoginReturnHref: () => returnHrefState.current,
+}));
+
 import { captureAuthCredentialGeneration, clearTokens, getAuthToken, synchronizeWebSession } from '../auth-store.web';
 import {
   buildWebOAuthStartUrl,
@@ -46,6 +57,7 @@ beforeEach(async () => {
   // the NextAuth callback from it. The standalone subdomain export case
   // (no base path → '/') has its own test below.
   vi.stubEnv('EXPO_BASE_URL', '/app');
+  returnHrefState.current = null;
   await clearTokens();
 });
 
@@ -96,6 +108,35 @@ describe('Expo web OAuth', () => {
     // And the OAuth return markers are untouched.
     expect(callbackUrl.searchParams.get('boardseshOAuthProvider')).toBe('google');
     expect(callbackUrl.searchParams.get('boardseshOAuthAttempt')).toBe('attempt-google-2');
+  });
+
+  // The wiring, not just the builder: tapping "Continue with Google" on a login
+  // (or sign-up) screen that carries a `next` must put that value on the
+  // callback URL, because the document unloads and the address bar does not
+  // come back.
+  it('puts the return path of the current screen on the OAuth start URL', async () => {
+    const next = '/b/the-gym/40/view/crimpy-thing-0A1B2C3D4E5F60718293A4B5C6D7E8F9';
+    returnHrefState.current = next;
+    const assign = vi.fn();
+    vi.stubGlobal('window', { location: { origin: 'https://app.boardsesh.com', assign } });
+
+    await signInWithGoogle('attempt-google-3');
+
+    const startUrl = new URL(assign.mock.calls[0]?.[0] as string);
+    const callbackUrl = new URL(startUrl.searchParams.get('callbackUrl') ?? '');
+    expect(callbackUrl.searchParams.get('next')).toBe(next);
+  });
+
+  it('leaves the OAuth start URL alone when there is no return path', async () => {
+    const assign = vi.fn();
+    vi.stubGlobal('window', { location: { origin: 'https://app.boardsesh.com', assign } });
+
+    await signInWithGoogle('attempt-google-4');
+
+    const startUrl = new URL(assign.mock.calls[0]?.[0] as string);
+    expect(startUrl.searchParams.get('callbackUrl')).toBe(
+      'https://app.boardsesh.com/app/auth/login?boardseshOAuthProvider=google&boardseshOAuthAttempt=attempt-google-4',
+    );
   });
 
   it('reports browser navigation failures without throwing', async () => {

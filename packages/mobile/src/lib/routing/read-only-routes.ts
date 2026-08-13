@@ -15,7 +15,15 @@
 
 import { stripLocalePrefix } from './strip-locale-prefix';
 
-/** Longest `?next=` we will carry. Comfortably above any board URL we emit. */
+/**
+ * Longest `?next=` we will carry, comfortably above any board URL we emit.
+ *
+ * Measured against the WHOLE value, query and fragment included — unlike the
+ * shape matcher below, which drops that tail before matching. That asymmetry is
+ * deliberate: this cap is on the string we would hand the router, so its full
+ * length is what matters, and a `next` padded out with query junk is one we
+ * would rather refuse than truncate.
+ */
 export const MAX_RETURN_HREF_LENGTH = 512;
 
 /** An angle segment: `40`, `-15`. */

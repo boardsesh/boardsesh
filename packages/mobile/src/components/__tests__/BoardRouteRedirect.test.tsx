@@ -6,6 +6,11 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { BoardRouteTarget } from '../../lib/routing/board-route-target';
 import type { BoardRouteStatus } from '../../lib/routing/use-board-route-target';
 
+// What the gate hands back, as a sentinel. This suite asserts the component
+// forwards that value VERBATIM; whether the value itself is right for a given
+// location is `anonymous-auth-gate.web.test.ts`'s job.
+const LOGIN_HREF = vi.hoisted(() => '/auth/login?next=%2Fb%2Fthe-gym%2F40%2Flist');
+
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 const routeStatus = vi.hoisted(() => ({ current: 'resolving' as BoardRouteStatus }));
 const redirect = vi.hoisted(() => ({ hrefs: [] as string[] }));
@@ -40,7 +45,7 @@ vi.mock('../Button', () => ({
 
 vi.mock('../../lib/analytics', () => ({ track: analytics.track }));
 vi.mock('../../lib/routing/anonymous-auth-gate', () => ({
-  buildLoginHrefWithReturn: () => '/auth/login?next=%2Fb%2Fthe-gym%2F40%2Flist',
+  buildLoginHrefWithReturn: () => LOGIN_HREF,
 }));
 vi.mock('../../lib/routing/use-board-route-target', () => ({
   useBoardRouteTarget: () => routeStatus.current,
@@ -86,13 +91,14 @@ describe('BoardRouteRedirect', () => {
   });
 
   // Web only in practice: the signed-out visitor goes to login carrying the path
-  // so the climb survives the round trip.
-  it('redirects to the login href with the return path at auth-required', () => {
+  // so the climb survives the round trip. The claim under test is that the
+  // component forwards the gate's href unchanged — it must not rebuild one.
+  it('redirects to the login href the gate hands back at auth-required', () => {
     const { queryByTestId } = render(
       createElement(BoardRouteRedirect, { status: 'auth-required' as BoardRouteStatus }),
     );
 
-    expect(redirect.hrefs).toEqual(['/auth/login?next=%2Fb%2Fthe-gym%2F40%2Flist']);
+    expect(redirect.hrefs).toEqual([LOGIN_HREF]);
     expect(queryByTestId('spinner')).toBeNull();
     expect(queryByTestId('error-icon')).toBeNull();
   });
