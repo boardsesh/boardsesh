@@ -255,6 +255,7 @@ import {
   __resetSnapshotDownloadStrategyForTests,
 } from '../snapshot-source';
 import {
+  setBackgrounded,
   SnapshotArtifactTruncatedError,
   SnapshotPermanentMissError,
   type SnapshotManifestEntry,
@@ -743,6 +744,20 @@ describe('superseded-partial sweep', () => {
     expect(state.files.has(`${stalePartial}.complete`)).toBe(false);
   });
 
+  it('sweeps the stale build even when the free-space precheck then refuses — the ordering is the point', async () => {
+    // The fake's availableDiskSpace is static, so the precheck still refuses
+    // here — but the stale bytes are already gone, which on a real device is
+    // exactly what lets the retry pass. Sweep BEFORE precheck is the invariant.
+    const stalePartial = 'file://cache-root/board-snapshots/kilter-8-2026-05-01T00-00-00-000Z.db';
+    seedRetainedArtifact(stalePartial, '2026-05-01T00:00:00.000Z', 271_000_000);
+    state.availableDiskSpace = 1;
+
+    await expect(mobileSnapshotSource.downloadArtifact(ENTRY)).rejects.toThrow(/insufficient disk space/);
+
+    expect(state.files.has(stalePartial)).toBe(false);
+    expect(state.files.has(`${stalePartial}.complete`)).toBe(false);
+  });
+
   it('leaves a DIFFERENT layout alone — the sweep is per (board, layout)', async () => {
     const otherLayout = 'file://cache-root/board-snapshots/kilter-9-2026-05-01T00-00-00-000Z.db';
     seedRetainedArtifact(otherLayout, '2026-05-01T00:00:00.000Z');
@@ -796,6 +811,27 @@ describe('Offline Artifact Transfer telemetry', () => {
     });
     expect(typeof report.wallMs).toBe('number');
     expect(typeof report.firstByteMs).toBe('number');
+  });
+
+  it('latches backgroundedDuringTransfer through the real teardown wiring, per transfer not per process', async () => {
+    // The app pockets mid-transfer: the source's own onTeardown subscription
+    // (not a second AppState listener) must record it on THIS transfer's event —
+    // and the next transfer, run in the foreground, must not inherit the latch.
+    state.downloadProgressFrames = [{ bytesWritten: 1_000, totalBytes: -1 }];
+    try {
+      await mobileSnapshotSource.downloadArtifact(ENTRY, { onProgress: () => setBackgrounded(true) });
+    } finally {
+      setBackgrounded(false);
+    }
+
+    expect(reportArtifactTransfer).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'completed', backgroundedDuringTransfer: true }),
+    );
+
+    reportArtifactTransfer.mockClear();
+    await mobileSnapshotSource.downloadArtifact({ ...ENTRY, builtAt: '2026-06-02T00:00:00.000Z' });
+
+    expect(reportArtifactTransfer).toHaveBeenCalledWith(expect.objectContaining({ backgroundedDuringTransfer: false }));
   });
 
   it('omits firstByteMs when no progress callback ever fired', async () => {
