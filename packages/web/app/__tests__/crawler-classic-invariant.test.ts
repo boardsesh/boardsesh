@@ -163,10 +163,17 @@ const LegacyPlayPage = (
   await import('@/app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/play/[climb_uuid]/page')
 ).default;
 const SlugPlayPage = (await import('@/app/b/[board_slug]/[angle]/play/[climb_uuid]/page')).default;
+const { getClimb } = await import('@/app/lib/data/queries');
 
 const PROD_HOST = 'www.boardsesh.com';
 const PROD_ORIGIN = `https://${PROD_HOST}`;
 const REDIRECT_STATUSES = [301, 302, 307, 308];
+// Test requests ride on the dev origin (see `makeRequest`), and the vacuity
+// self-tests below construct rewrites against PROD_ORIGIN. A legitimate
+// middleware rewrite never leaves those hosts — `app.boardsesh.com` under a
+// clean pathname is the same crawler harm with the `/app` prefix laundered off.
+const REQUEST_ORIGIN = 'http://localhost:3000';
+const ALLOWED_REWRITE_HOSTS = [new URL(REQUEST_ORIGIN).host, PROD_HOST];
 
 // The rewrite target, when there is one. `next.config.mjs` serves `/app` by
 // REWRITE, so a status-only invariant leaves the same crawler harm reachable by
@@ -180,10 +187,13 @@ function expectNoRedirect(response: ReturnType<typeof middleware>): void {
   expect(REDIRECT_STATUSES).not.toContain(response.status);
   expect(response.headers.get('location')).toBeNull();
   // Not-a-redirect is not enough: the surface must also not be rewritten onto
-  // the `/app` SPA.
-  const rewrittenPathname = rewriteTargetPathname(response);
-  if (rewrittenPathname !== null) {
-    expect(rewrittenPathname === '/app' || rewrittenPathname.startsWith('/app/')).toBe(false);
+  // the `/app` SPA, nor onto a foreign host. `x-middleware-rewrite` carries an
+  // absolute URL, so the host is checked before the pathname.
+  const rewriteTarget = response.headers.get('x-middleware-rewrite');
+  if (rewriteTarget !== null) {
+    const resolved = new URL(rewriteTarget, PROD_ORIGIN);
+    expect(ALLOWED_REWRITE_HOSTS).toContain(resolved.host);
+    expect(resolved.pathname === '/app' || resolved.pathname.startsWith('/app/')).toBe(false);
   }
 }
 
@@ -200,7 +210,7 @@ function expectSameTree(sourcePath: string, target: string): void {
 }
 
 function makeRequest(url: string): NextRequest {
-  return new NextRequest(new URL(url, 'http://localhost:3000'));
+  return new NextRequest(new URL(url, REQUEST_ORIGIN));
 }
 
 const ORIGINAL_EXPO_WEB_FLAG = process.env.BOARDSESH_WEB;
@@ -379,6 +389,52 @@ describe('the three legitimate redirect classes stay on www.boardsesh.com', () =
     expect(target).toContain('/view/');
     expect(target).not.toContain('/play/');
   });
+
+  // Both play pages wrap `getClimb` in try/catch and fall back to the bare-uuid
+  // `/view/` URL when the climb has no resolvable name. With `getClimb` always
+  // resolving a name, that fallback branch of the URL builders is dead code
+  // under this suite — so a regression confined to it (a `/play` self-redirect
+  // loop) would ship green. These two exercise it for real.
+  it('(C1n) /play→/view still holds when the climb name cannot be resolved (config-tuple tree)', async () => {
+    const sourcePath = `/kilter/1/10/1,20/40/play/${CLIMB_UUID}`;
+    vi.mocked(getClimb).mockRejectedValueOnce(new Error('db unavailable'));
+    await expect(
+      LegacyPlayPage({
+        params: Promise.resolve({
+          board_name: 'kilter',
+          layout_id: '1',
+          size_id: '10',
+          set_ids: '1,20',
+          angle: '40',
+          climb_uuid: CLIMB_UUID,
+        }),
+        searchParams: Promise.resolve({}),
+      }),
+    ).rejects.toThrow('NEXT_REDIRECT');
+
+    const target = permanentRedirect.mock.calls[0]![0];
+    expectSameHostRedirectTarget(target);
+    expectSameTree(sourcePath, target);
+    expect(target).toContain(`/view/${CLIMB_UUID}`);
+    expect(target).not.toContain('/play/');
+  });
+
+  it('(C2n) /play→/view still holds when the climb name cannot be resolved (/b tree)', async () => {
+    const sourcePath = `/b/kilter-original-12x12/40/play/${CLIMB_UUID}`;
+    vi.mocked(getClimb).mockRejectedValueOnce(new Error('db unavailable'));
+    await expect(
+      SlugPlayPage({
+        params: Promise.resolve({ board_slug: 'kilter-original-12x12', angle: '40', climb_uuid: CLIMB_UUID }),
+        searchParams: Promise.resolve({}),
+      }),
+    ).rejects.toThrow('NEXT_REDIRECT');
+
+    const target = permanentRedirect.mock.calls[0]![0];
+    expectSameHostRedirectTarget(target);
+    expectSameTree(sourcePath, target);
+    expect(target).toContain(`/view/${CLIMB_UUID}`);
+    expect(target).not.toContain('/play/');
+  });
 });
 
 describe('the guard is not vacuous: it catches what the pre-teardown helper missed', () => {
@@ -397,6 +453,17 @@ describe('the guard is not vacuous: it catches what the pre-teardown helper miss
     expect(() =>
       expectNoRedirect(NextResponse.rewrite(new URL('/kilter/original/12x12-square/screw_bolt/40/list', PROD_ORIGIN))),
     ).not.toThrow();
+  });
+
+  it('expectNoRedirect rejects a CROSS-HOST rewrite even under a clean pathname', () => {
+    // The `/app` pathname check alone is launderable: serve the SPA from the
+    // app host under the canonical pathname and no `/app` prefix ever appears.
+    expect(() => expectNoRedirect(NextResponse.rewrite(new URL('https://app.boardsesh.com/climbs')))).toThrow();
+    expect(() =>
+      expectNoRedirect(
+        NextResponse.rewrite(new URL('/kilter/original/12x12-square/screw_bolt/40/list', 'https://app.boardsesh.com')),
+      ),
+    ).toThrow();
   });
 
   it('expectSameHostRedirectTarget rejects a cross-host Location', () => {
