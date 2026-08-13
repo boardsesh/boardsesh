@@ -47,6 +47,21 @@ function jobCondition(jobId: string): string | undefined {
   return jobBlock(jobId).match(/^ {4}if: (.+)$/m)?.[1];
 }
 
+/**
+ * The shell body of a job's `run: |` step, with the surrounding YAML (the job's
+ * own `if:`, its `env:` keys) stripped off. Assertions about what an operator
+ * reads on Discord must run against this, not the whole job block: the block
+ * quotes `APP_WEB_DEPLOY_HOLD` in the gate condition and the webhook name in
+ * `env:`, so a whole-block `toContain` for either passes even after the message
+ * and the POST are deleted.
+ */
+function jobRunScript(jobId: string): string {
+  const block = jobBlock(jobId);
+  const marker = block.indexOf('run: |');
+  if (marker === -1) throw new Error(`production-deploy.yml's \`${jobId}:\` job has no \`run: |\` step`);
+  return block.slice(marker + 'run: |'.length);
+}
+
 describe('production-deploy.yml: the app.boardsesh.com deploy hold', () => {
   it('skips deploy-app-web while APP_WEB_DEPLOY_HOLD is set', () => {
     const condition = jobCondition('deploy-app-web');
@@ -71,10 +86,16 @@ describe('production-deploy.yml: the app.boardsesh.com deploy hold', () => {
   it('announces every held run on Discord', () => {
     // A skipped job is only grey in the run summary, so without the ping a
     // forgotten hold strands the browser app on an old bundle unnoticed.
-    const notifyJob = jobBlock('notify-app-web-held');
     expect(jobCondition('notify-app-web-held')).toContain(HOLD_SET);
-    expect(notifyJob).toContain('DISCORD_DEPLOY_WEBHOOK');
-    expect(notifyJob, 'the message must name the variable to clear').toContain('APP_WEB_DEPLOY_HOLD');
+    expect(jobBlock('notify-app-web-held'), 'the job must wire in the webhook secret').toContain(
+      'DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}',
+    );
+
+    const notifyScript = jobRunScript('notify-app-web-held');
+    expect(notifyScript, 'and the step must actually POST to it').toMatch(/curl[^\n]*"\$DISCORD_DEPLOY_WEBHOOK"/);
+    expect(notifyScript, 'the posted message must tell the operator which variable to clear').toContain(
+      'Clear the `APP_WEB_DEPLOY_HOLD` repo variable',
+    );
   });
 
   it('pairs the gate and the ping on one condition, so neither can drift', () => {
@@ -85,10 +106,26 @@ describe('production-deploy.yml: the app.boardsesh.com deploy hold', () => {
   });
 
   it('reports a hold in the success notification instead of "unchanged"', () => {
-    const successJob = jobBlock('notify-success');
-    expect(successJob, 'notify-success must read the hold').toContain('APP_WEB_HELD:');
-    expect(successJob, 'and print it rather than claiming the subdomain was unchanged').toContain(
-      'held (APP_WEB_DEPLOY_HOLD set)',
+    const heldEnv = jobBlock('notify-success').match(/^ +APP_WEB_HELD: (.+)$/m)?.[1];
+    expect(heldEnv, 'notify-success must compute a held flag for the subdomain line').toBeTruthy();
+
+    // Read off the observed outcome, never by re-reading the variable here.
+    // notify-success declares `environment: Production`, so a step-level `vars.`
+    // lookup resolves environment-scoped variables that the job-level gate on
+    // deploy-app-web never sees — a hold scoped to the environment would then
+    // print "held" for a deploy that actually shipped.
+    expect(heldEnv, 'derive the hold from what deploy-app-web did').toContain(
+      "needs.deploy-app-web.result == 'skipped'",
+    );
+    expect(heldEnv, 'and only claim a hold when this push would have deployed the subdomain').toContain(APP_CHANGED);
+    expect(heldEnv, 'a step in an `environment:` job must not re-read the repo variable').not.toContain(
+      'vars.APP_WEB_DEPLOY_HOLD',
+    );
+
+    // An `if`/`elif` chain, not two independent `if`s: an unconditional override
+    // after the success branch prints "held" for a deploy that shipped.
+    expect(jobRunScript('notify-success'), 'a successful deploy must win over the held line').toMatch(
+      /if \[ "\$APP_WEB_RESULT" = "success" \]; then\s+APP_WEB_LINE="deployed"\s+elif \[ "\$APP_WEB_HELD" = "true" \]; then\s+APP_WEB_LINE="held \(APP_WEB_DEPLOY_HOLD set\)"/,
     );
   });
 

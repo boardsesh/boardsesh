@@ -958,11 +958,22 @@ jobs:
           BACKEND_RESULT: ${{ needs.deploy-production-backend.result }}
           APP_WEB_RESULT: ${{ needs.deploy-app-web.result }}
           # A held deploy is a skip, which would otherwise print as "unchanged" —
-          # the exact invisibility notify-app-web-held exists to prevent. True
-          # only when the hold is set AND this push would have deployed the
-          # subdomain; with the variable unset this renders "false" and the
-          # message is byte-identical to before.
-          APP_WEB_HELD: ${{ vars.APP_WEB_DEPLOY_HOLD != '' && needs.detect-changes.outputs.app_changed == 'true' }}
+          # the exact invisibility notify-app-web-held exists to prevent.
+          #
+          # Read off what deploy-app-web actually did, NOT by re-reading
+          # vars.APP_WEB_DEPLOY_HOLD here. This job declares
+          # `environment: Production`, so a step-level `vars.` lookup resolves
+          # Production environment variables as well as repository ones, while
+          # the gate on deploy-app-web is a job-level `if:` that only ever sees
+          # repository variables. Re-reading would print "held" for a deploy that
+          # actually shipped whenever an operator scoped the variable to the
+          # environment — the worst-direction lie to hand an incident responder.
+          # The hold is the only reason deploy-app-web skips while app_changed is
+          # 'true'; a cancellation short-circuits this job via its own
+          # `!contains(needs.*.result, 'cancelled')`. With no hold set the
+          # expression renders "false" and the message is byte-identical to
+          # before.
+          APP_WEB_HELD: ${{ needs.deploy-app-web.result == 'skipped' && needs.detect-changes.outputs.app_changed == 'true' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT_SHA: ${{ github.sha }}
           BEFORE_SHA: ${{ github.event.before }}
@@ -977,9 +988,15 @@ jobs:
           if [ "$WEB_RESULT" = "success" ]; then WEB_LINE="deployed"; fi
           BACKEND_LINE="unchanged"
           if [ "$BACKEND_RESULT" = "success" ]; then BACKEND_LINE="deployed"; fi
+          # elif, not a second `if`: an override would let "held" win over a
+          # deploy that demonstrably shipped, which is the inversion this line
+          # exists to prevent.
           APP_WEB_LINE="unchanged"
-          if [ "$APP_WEB_RESULT" = "success" ]; then APP_WEB_LINE="deployed"; fi
-          if [ "$APP_WEB_HELD" = "true" ]; then APP_WEB_LINE="held (APP_WEB_DEPLOY_HOLD set)"; fi
+          if [ "$APP_WEB_RESULT" = "success" ]; then
+            APP_WEB_LINE="deployed"
+          elif [ "$APP_WEB_HELD" = "true" ]; then
+            APP_WEB_LINE="held (APP_WEB_DEPLOY_HOLD set)"
+          fi
 
           # Pull PR numbers from merge-commit subjects in BEFORE..SHA. Skip the
           # section entirely if BEFORE is missing/zero (workflow_dispatch, first
