@@ -35,20 +35,6 @@ export const gyms = pgTable(
       .notNull(),
     address: text('address'),
     website: text('website'),
-    // True when the current `website` value was written by the gym's own owner
-    // (createGym, or an updateGym whose caller is ownerId). A website typed by a
-    // gym editor / gym admin / covering community leader is fine for display but
-    // is NOT trusted for the self-verifying domain-claim path — otherwise an
-    // edit-access holder could point it at a domain they control and a second
-    // account of theirs would self-verify into ownership (#3431).
-    //
-    // The location sync never writes this column or `website`.
-    //
-    // INVARIANT: `website` and `website_vouched_by_owner` must always be written
-    // in the same statement — any future writer of `gyms.website` (a sync
-    // importer, a merge that starts copying `website`, an admin script) MUST set
-    // this column in the same UPDATE, defaulting to false.
-    websiteVouchedByOwner: boolean('website_vouched_by_owner').default(false).notNull(),
     contactEmail: text('contact_email'),
     contactPhone: text('contact_phone'),
     latitude: doublePrecision('latitude'),

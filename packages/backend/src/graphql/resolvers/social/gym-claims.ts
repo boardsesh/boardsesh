@@ -387,19 +387,6 @@ export const socialGymClaimMutations = {
       if (!isClaimableDomain(gym.website)) {
         throw new Error('This gym has no verifiable website domain on file. Request admin review instead.');
       }
-      // #3431: only a website the gym's OWNER put on the listing can auto-transfer
-      // ownership. A website typed by an editor / gym admin / covering community
-      // leader is display-only here — otherwise that person could point it at a
-      // domain they control and a second account of theirs would self-verify in.
-      // Checked before the email match so a prober can't learn whether their
-      // address would have matched.
-      // TODO(#4018): both claim dialogs still offer the email form on an
-      // un-vouched gym, so this refusal only surfaces after submit.
-      if (!gym.websiteVouchedByOwner) {
-        throw new Error(
-          "This gym's website hasn't been confirmed by the gym's owner, so we can't verify you by email. Request admin review instead.",
-        );
-      }
       if (!emailDomainMatchesWebsite(validatedInput.claimEmail, gym.website)) {
         throw new Error("That email's domain doesn't match the gym's website.");
       }
