@@ -9,7 +9,7 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { track } from '@/app/lib/analytics';
 import { useSession } from 'next-auth/react';
 import type { ClimbActionProps, ClimbActionResult } from '../types';
-import { constructCreateClimbUrl } from '@/app/lib/url-utils';
+import { constructCreateClimbUrl, tryConstructSlugCreateUrl } from '@/app/lib/url-utils';
 import { themeTokens } from '@/app/theme/theme-config';
 import { buildActionResult, computeActionDisplay } from '../action-view-renderer';
 
@@ -35,23 +35,35 @@ export function ForkAction({
 
   const isEdit = !!climb.is_draft && !!climb.userId && climb.userId === session?.user?.id;
 
+  const forkParams = isEdit
+    ? {
+        frames: climb.frames,
+        name: climb.name,
+        description: climb.description ?? undefined,
+        editClimbUuid: climb.uuid,
+      }
+    : { frames: climb.frames, name: climb.name };
+  // Id-aware first so a shadowed size (Kilter 12x12 without kickboard) forks
+  // onto its own board rather than the bare slug's first match; names stay as
+  // the fallback for a board the static tables don't carry.
   const url = canFork
-    ? constructCreateClimbUrl(
+    ? (tryConstructSlugCreateUrl(
+        boardDetails.board_name,
+        boardDetails.layout_id,
+        boardDetails.size_id,
+        boardDetails.set_ids,
+        angle,
+        forkParams,
+      ) ??
+      constructCreateClimbUrl(
         boardDetails.board_name,
         boardDetails.layout_name!,
         boardDetails.size_name!,
         boardDetails.size_description,
         boardDetails.set_names!,
         angle,
-        isEdit
-          ? {
-              frames: climb.frames,
-              name: climb.name,
-              description: climb.description ?? undefined,
-              editClimbUuid: climb.uuid,
-            }
-          : { frames: climb.frames, name: climb.name },
-      )
+        forkParams,
+      ))
     : null;
 
   const handleClick = () => {

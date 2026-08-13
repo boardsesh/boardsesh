@@ -631,6 +631,25 @@ export const layoutOwnsNumericSlugRedirect = (pathname: string): boolean => {
   return !pathname.includes('/view/') && !pathname.includes('/play/');
 };
 
+/** The prefill the create form reads when forking or editing an existing climb. */
+export type ForkClimbParams = { frames: string; name: string; description?: string; editClimbUuid?: string };
+
+/**
+ * One definition of the create form's fork/edit query contract, shared by the
+ * name-based and id-aware create builders so the two URL forms can't disagree
+ * about what the form receives.
+ */
+const appendForkParams = (createUrl: string, forkParams?: ForkClimbParams): string => {
+  if (!forkParams) return createUrl;
+  const params = new URLSearchParams({
+    forkFrames: forkParams.frames,
+    forkName: forkParams.name,
+  });
+  if (forkParams.description) params.set('forkDescription', forkParams.description);
+  if (forkParams.editClimbUuid) params.set('editClimbUuid', forkParams.editClimbUuid);
+  return `${createUrl}?${params.toString()}`;
+};
+
 export const constructCreateClimbUrl = (
   board_name: string,
   layoutName: string,
@@ -638,24 +657,14 @@ export const constructCreateClimbUrl = (
   sizeDescription: string | undefined,
   setNames: string[],
   angle: number,
-  forkParams?: { frames: string; name: string; description?: string; editClimbUuid?: string },
+  forkParams?: ForkClimbParams,
 ) => {
   const layoutSlug = generateLayoutSlug(layoutName);
   const sizeSlug = generateSizeSlug(sizeName, sizeDescription);
   const setSlug = generateSetSlug(setNames);
   const baseUrl = `/${board_name}/${layoutSlug}/${sizeSlug}/${setSlug}/${angle}/create`;
 
-  if (forkParams) {
-    const params = new URLSearchParams({
-      forkFrames: forkParams.frames,
-      forkName: forkParams.name,
-    });
-    if (forkParams.description) params.set('forkDescription', forkParams.description);
-    if (forkParams.editClimbUuid) params.set('editClimbUuid', forkParams.editClimbUuid);
-    return `${baseUrl}?${params.toString()}`;
-  }
-
-  return baseUrl;
+  return appendForkParams(baseUrl, forkParams);
 };
 
 /**
@@ -719,8 +728,14 @@ export const tryConstructSlugCreateUrl = (
   size_id: number,
   set_ids: number[],
   angle: number,
-): string | null =>
-  tryConstructSlugListUrl(board_name, layout_id, size_id, set_ids, angle)?.replace(/\/list$/, '/create') ?? null;
+  forkParams?: ForkClimbParams,
+): string | null => {
+  const createUrl = tryConstructSlugListUrl(board_name, layout_id, size_id, set_ids, angle)?.replace(
+    /\/list$/,
+    '/create',
+  );
+  return createUrl ? appendForkParams(createUrl, forkParams) : null;
+};
 
 /**
  * Extracts the base board configuration path from a full pathname.

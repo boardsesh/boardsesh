@@ -1746,6 +1746,27 @@ describe('qualified size slugs for a shadowed size (Kilter layout 1, sizes 10/27
       expect(tryConstructSlugCreateUrl('kilter', 9999, 9999, [9999], 40)).toBeNull();
     });
 
+    it('carries fork params on the qualified create URL with the same query contract as the name-based builder', () => {
+      const forkParams = { frames: 'p1r1p2r2', name: 'Moon Landing', editClimbUuid: 'ABC123' };
+      const qualifiedForkUrl = tryConstructSlugCreateUrl('kilter', 1, 27, KILTER_SQUARE_SETS, 40, forkParams);
+      expect(qualifiedForkUrl).toBe(
+        '/kilter/original/12x12-square-without-kickboard/screw_bolt/40/create' +
+          '?forkFrames=p1r1p2r2&forkName=Moon+Landing&editClimbUuid=ABC123',
+      );
+      // The name-based fallback must append the identical query string, or a
+      // fork would prefill differently depending on which builder produced it.
+      const nameBasedForkUrl = constructCreateClimbUrl(
+        'kilter',
+        'Original',
+        '12 x 12 with kickboard',
+        'Square',
+        ['Screw-Ons', 'Bolt Ons'],
+        40,
+        forkParams,
+      );
+      expect(nameBasedForkUrl?.split('?')[1]).toBe(qualifiedForkUrl?.split('?')[1]);
+    });
+
     it('leaves the size that owns the bare slug on it, so existing links keep meaning what they meant', () => {
       expect(tryConstructSlugViewUrl('kilter', 1, 10, KILTER_SQUARE_SETS, 40, 'ABC123', 'Moon Landing')).toBe(
         BARE_VIEW_URL,

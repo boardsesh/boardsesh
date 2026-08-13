@@ -73,6 +73,8 @@ vi.mock('@/app/lib/analytics', () => ({
 vi.mock('@/app/lib/url-utils', () => ({
   constructCreateClimbUrl: vi.fn(() => '/create-climb-url'),
   constructClimbInfoUrl: vi.fn(() => 'https://app.example.com/climb/info'),
+  // null → ForkAction falls through to the name-based builder mocked above.
+  tryConstructSlugCreateUrl: vi.fn(() => null),
 }));
 
 vi.mock('@/app/lib/open-external-url', () => ({
