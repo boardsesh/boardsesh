@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-13T08:45:46.375Z",
+  "generatedAt": "2026-08-13T10:15:49.879Z",
   "entries": [
+    {
+      "prNumber": 3823,
+      "category": "new",
+      "title": "Paste a Boardsesh climb link into the app and it opens the climb — the long board URLs the web app hands out now work in the app itself, including localized links and boards like a 12x12 Kilter without a kickboard that previously couldn't be linked at all. Deep links to downloaded boards now open offline too, and a link opened with no signal picks itself up when the connection returns. On the web side, sharing, forking, or switching to that 12x12-without-kickboard now keeps you on the right wall instead of its look-alike.",
+      "mergedAt": "2026-08-13T10:14:52Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3823"
+    },
     {
       "prNumber": 4054,
       "category": "fixed",

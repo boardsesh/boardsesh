@@ -6,6 +6,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-08-13
 
+### New
+
+- Paste a Boardsesh climb link into the app and it opens the climb — the long board URLs the web app hands out now work in the app itself, including localized links and boards like a 12x12 Kilter without a kickboard that previously couldn't be linked at all. Deep links to downloaded boards now open offline too, and a link opened with no signal picks itself up when the connection returns. On the web side, sharing, forking, or switching to that 12x12-without-kickboard now keeps you on the right wall instead of its look-alike. ([#3823](https://github.com/boardsesh/boardsesh/pull/3823))
+
 ### Fixed
 
 - MoonBoard sends now land on the angle the problem is graded at, so your send turns up on the page everyone else is looking at instead of vanishing into an angle nobody browses ([#4054](https://github.com/boardsesh/boardsesh/pull/4054))
