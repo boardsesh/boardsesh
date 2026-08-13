@@ -2,6 +2,28 @@ export const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? 'https://ws.bo
 export const WEB_BASE_URL = process.env.EXPO_PUBLIC_WEB_URL ?? 'https://www.boardsesh.com';
 
 /**
+ * Which origin a shared climb link points at — `EXPO_PUBLIC_APP_URL` (the
+ * standalone Expo-web export, i.e. this app in a browser) when set, otherwise
+ * the Next.js app.
+ *
+ * Deliberately still WEB_BASE_URL by default. A shared link is permanent once
+ * it lands in someone's chat thread, and app.boardsesh.com only resolves for
+ * everyone once it serves both the export and its own
+ * /.well-known/apple-app-site-association (Universal Links are per-host, and
+ * that host is not claimed yet — see NEXT_APP_LINK_HOSTS in app.config.ts). So
+ * with the var unset we emit exactly what we emit today, and setting it in the
+ * build env moves every share link to the app subdomain in one flip.
+ */
+export function resolveClimbShareBaseUrl(appUrlOverride: string, webBaseUrl: string): string {
+  return appUrlOverride.length > 0 ? appUrlOverride : webBaseUrl;
+}
+
+export const CLIMB_SHARE_BASE_URL = resolveClimbShareBaseUrl(
+  process.env.EXPO_PUBLIC_APP_URL?.trim() ?? '',
+  WEB_BASE_URL,
+);
+
+/**
  * Resolve a Next.js web API path (e.g. `/api/auth/session`) to the URL the
  * Expo-web app should fetch.
  *

@@ -54,6 +54,9 @@ vi.mock('@/app/lib/url-utils', () => ({
   getContextAwareClimbViewUrl: vi.fn(() => '/climb/view-context'),
   constructCreateClimbUrl: vi.fn(() => '/climb/create'),
   constructClimbInfoUrl: vi.fn(() => '/climb/info'),
+  // null → the hook falls through to the name-based builder mocked above, so
+  // the fixtures (which don't resolve in the static tables anyway) stay valid.
+  tryConstructSlugCreateUrl: vi.fn(() => null),
 }));
 
 // --- Test data ---

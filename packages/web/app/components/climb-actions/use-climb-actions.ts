@@ -7,7 +7,12 @@ import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { track } from '@/app/lib/analytics';
 import { useQueueActions } from '../graphql-queue';
 import { useFavorite } from './use-favorite';
-import { constructCreateClimbUrl, constructClimbInfoUrl, getContextAwareClimbViewUrl } from '@/app/lib/url-utils';
+import {
+  constructCreateClimbUrl,
+  constructClimbInfoUrl,
+  getContextAwareClimbViewUrl,
+  tryConstructSlugCreateUrl,
+} from '@/app/lib/url-utils';
 import type { Climb, BoardDetails } from '@/app/lib/types';
 import type { UseClimbActionsReturn } from './types';
 import { openExternalUrl } from '@/app/lib/open-external-url';
@@ -65,14 +70,28 @@ export function useClimbActions({
   const forkUrl = useMemo(() => {
     if (!climb || !canFork) return null;
 
-    return constructCreateClimbUrl(
-      boardDetails.board_name,
-      boardDetails.layout_name!,
-      boardDetails.size_name!,
-      boardDetails.size_description,
-      boardDetails.set_names!,
-      angle,
-      { frames: climb.frames, name: climb.name },
+    const forkParams = { frames: climb.frames, name: climb.name };
+    // Id-aware first so a shadowed size (Kilter 12x12 without kickboard) forks
+    // onto its own board rather than the bare slug's first match; names stay as
+    // the fallback for a board the static tables don't carry.
+    return (
+      tryConstructSlugCreateUrl(
+        boardDetails.board_name,
+        boardDetails.layout_id,
+        boardDetails.size_id,
+        boardDetails.set_ids,
+        angle,
+        forkParams,
+      ) ??
+      constructCreateClimbUrl(
+        boardDetails.board_name,
+        boardDetails.layout_name!,
+        boardDetails.size_name!,
+        boardDetails.size_description,
+        boardDetails.set_names!,
+        angle,
+        forkParams,
+      )
     );
   }, [climb, canFork, boardDetails, angle]);
 

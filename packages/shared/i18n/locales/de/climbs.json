@@ -644,7 +644,8 @@
       }
     },
     "detail": {
-      "notFound": "Boulder nicht gefunden"
+      "notFound": "Boulder nicht gefunden",
+      "backToHome": "Zurück zum Start"
     },
     "logAscent": {
       "errorMessage": "Deine Begehung konnte nicht gespeichert werden. Versuch es nochmal.",

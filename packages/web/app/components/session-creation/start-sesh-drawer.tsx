@@ -30,12 +30,7 @@ import { useSession } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import { useTranslation } from 'react-i18next';
-import {
-  constructBoardSlugListUrl,
-  getBaseBoardPath,
-  constructClimbListWithSlugs,
-  tryConstructSlugListUrl,
-} from '@/app/lib/url-utils';
+import { constructBoardSlugListUrl, getBaseBoardPath, popularConfigListUrl } from '@/app/lib/url-utils';
 import { getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
 import { useBoardDetails } from '@/app/components/board-scroll/board-thumbnail';
 import { PlaylistGeneratorDrawer, type WorkoutType } from '@/app/components/playlist-generator';
@@ -209,22 +204,7 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
   const handleConfigClick = useCallback((config: PopularBoardConfig) => {
     // For popular configs in the session drawer, navigate to that board config
     const angle = getDefaultAngleForBoard(config.boardType);
-    let url: string;
-    if (config.layoutName && config.sizeName && config.setNames.length > 0) {
-      url = constructClimbListWithSlugs(
-        config.boardType,
-        config.layoutName,
-        config.sizeName,
-        config.sizeDescription ?? undefined,
-        config.setNames,
-        angle,
-      );
-    } else {
-      const setIds = config.setIds.join(',');
-      url =
-        tryConstructSlugListUrl(config.boardType, config.layoutId, config.sizeId, config.setIds, angle) ??
-        `/${config.boardType}/${config.layoutId}/${config.sizeId}/${setIds}/${angle}/list`;
-    }
+    const url = popularConfigListUrl(config, angle);
     // Store as custom path selection
     setSelectedCustomPath(url);
     setSelectedCustomConfig({

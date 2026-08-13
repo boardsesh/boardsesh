@@ -644,7 +644,8 @@
       }
     },
     "detail": {
-      "notFound": "Bloque no encontrado"
+      "notFound": "Bloque no encontrado",
+      "backToHome": "Volver al inicio"
     },
     "logAscent": {
       "errorMessage": "No se pudo guardar tu ascenso. Inténtalo de nuevo.",

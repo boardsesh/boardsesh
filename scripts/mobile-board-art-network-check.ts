@@ -98,6 +98,11 @@ function readSourceFiles(rootDir: string): SourceFile[] {
     }
 
     for (const entry of entries) {
+      // Dependencies are not our source, and walking them also walks each
+      // package's `node_modules/.bin`, where a stale symlink to a binary a
+      // dependency no longer ships (typescript 7 dropped `bin/tsserver`) makes
+      // the statSync below throw ENOENT and takes the whole guard down.
+      if (entry === 'node_modules') continue;
       const absolutePath = join(directory, entry);
       const stats = statSync(absolutePath);
       if (stats.isDirectory()) {

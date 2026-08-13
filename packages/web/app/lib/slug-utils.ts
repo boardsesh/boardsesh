@@ -2,6 +2,7 @@ import { dbz } from '@/app/lib/db/db';
 import type { BoardName, LayoutId, Size } from '@/app/lib/types';
 import { matchSetNameToSlugParts } from './slug-matching';
 import { generateSlugFromText, generateDescriptionSlug, generateLayoutSlug } from './url-utils';
+import { resolveSizeSlugToId } from '@boardsesh/play-view/readable-url-utils';
 import { UNIFIED_TABLES } from '@/app/lib/db/queries/util/table-select';
 import { eq, and, isNull } from 'drizzle-orm';
 import { getAllLayouts, getSetsForLayoutAndSize, getSizesForLayoutId } from './board-constants';
@@ -137,8 +138,23 @@ export const getSizeBySlug = async (
   layout_id: LayoutId,
   slug: string,
 ): Promise<SizeRow | null> => {
+  const sizesOnLayout = getSizesForLayoutId(board_name, layout_id);
+
+  // Two sizes on one layout can share a base slug (Kilter "12 x 12 with/without
+  // kickboard", both `12x12-square`), which used to leave the second one with no
+  // reachable URL. `resolveSizeSlugToId` is the shared resolver the Expo app
+  // uses: it keeps the bare slug pointing at the size every existing link
+  // already meant and understands the qualified form for the other. Checked
+  // first so a qualified slug can't be swallowed by findSizeBySlug's looser
+  // dimension matching.
+  const qualifiedSizeId = resolveSizeSlugToId(board_name, layout_id, slug);
+  const qualifiedSize = sizesOnLayout.find((size) => size.id === qualifiedSizeId);
+  if (qualifiedSize) {
+    return { id: qualifiedSize.id, name: qualifiedSize.name, description: qualifiedSize.description };
+  }
+
   const staticSize = findSizeBySlug(
-    getSizesForLayoutId(board_name, layout_id).map((size) => ({
+    sizesOnLayout.map((size) => ({
       id: size.id,
       name: size.name,
       description: size.description,

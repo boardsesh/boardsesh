@@ -5,6 +5,7 @@ import {
   isExpectedAuthError,
   isExpectedBetaValidationError,
   isGraphqlRateLimitedError,
+  readDuplicateBoardError,
 } from './graphql/extract-error-message';
 
 // Re-exported so the public reporting surface (`{ ErrorReportContext }` from
@@ -80,6 +81,19 @@ function isExpectedBoardAccountError(error: unknown): boolean {
 }
 
 /**
+ * `createBoard`'s BOARD_DUPLICATE_CONFIG refusal, which is a routing decision
+ * rather than a fault: the rejection names the board that already exists, and
+ * every caller either offers it to the user (the create screen's prompt) or
+ * adopts it outright (a deep link resolving a board someone made on another
+ * device). Nothing is lost and nobody needs paging, so it must not reach error
+ * tracking — but it arrives through `MutationCache.onError`, which reports every
+ * mutation rejection, so the drop has to happen here.
+ */
+function isExpectedDuplicateBoardError(error: unknown): boolean {
+  return readDuplicateBoardError(error) !== null;
+}
+
+/**
  * Report a *handled* error — one the app caught and surfaced as UX (a toast,
  * inline message, or degraded state) rather than letting crash. Applies the
  * noise policy so error tracking stays signal-rich:
@@ -88,6 +102,8 @@ function isExpectedBoardAccountError(error: unknown): boolean {
  *   - expected beta-attach validation rejections are dropped entirely,
  *   - expected board-account credential rejections (wrong password, already
  *     linked, rate-limited) are dropped entirely — already surfaced as a toast,
+ *   - duplicate-board create refusals are dropped entirely — the rejection names
+ *     the existing board and the caller uses it,
  *   - GraphQL rate-limit rejections (RATE_LIMITED) are downgraded to `warning`
  *     and tagged `rate_limited` — expected backpressure from typing/panning
  *     discovery searches too fast, not a bug (#3285),
@@ -104,6 +120,7 @@ export function reportHandledError(error: unknown, context?: ErrorReportContext)
   if (isExpectedAuthError(error)) return;
   if (isExpectedBetaValidationError(error)) return;
   if (isExpectedBoardAccountError(error)) return;
+  if (isExpectedDuplicateBoardError(error)) return;
   if (isGraphqlRateLimitedError(error)) {
     reportError(error, {
       ...context,

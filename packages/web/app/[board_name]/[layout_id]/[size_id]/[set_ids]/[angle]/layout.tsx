@@ -1,7 +1,11 @@
 import React, { type PropsWithChildren } from 'react';
 import { headers } from 'next/headers';
 import type { BoardRouteParameters } from '@/app/lib/types';
-import { constructClimbListWithSlugs, layoutOwnsNumericSlugRedirect } from '@/app/lib/url-utils';
+import {
+  constructClimbListWithSlugs,
+  layoutOwnsNumericSlugRedirect,
+  tryConstructSlugListUrl,
+} from '@/app/lib/url-utils';
 import { parseRouteParams } from '@/app/lib/url-utils.server';
 import { PATHNAME_HEADER } from '@/app/lib/request-pathname-header';
 import { permanentRedirect } from 'next/navigation';
@@ -58,14 +62,27 @@ export default async function BoardLayout(props: PropsWithChildren<BoardLayoutPr
     const boardDetails = getBoardDetailsForBoard(parsedParams);
 
     if (boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names) {
-      const newUrl = constructClimbListWithSlugs(
-        boardDetails.board_name,
-        boardDetails.layout_name,
-        boardDetails.size_name,
-        boardDetails.size_description,
-        boardDetails.set_names,
-        parsedParams.angle,
-      );
+      // Id-aware first: the name-based builder only knows the bare size slug, so
+      // a numeric URL for a size that shares one with another on the same layout
+      // (Kilter layout 1 sizes 10/27) would 308 — and the browser caches that
+      // permanently — onto the other board. Names remain the fallback for a
+      // board the static tables don't carry.
+      const newUrl =
+        tryConstructSlugListUrl(
+          parsedParams.board_name,
+          parsedParams.layout_id,
+          parsedParams.size_id,
+          parsedParams.set_ids,
+          parsedParams.angle,
+        ) ??
+        constructClimbListWithSlugs(
+          boardDetails.board_name,
+          boardDetails.layout_name,
+          boardDetails.size_name,
+          boardDetails.size_description,
+          boardDetails.set_names,
+          parsedParams.angle,
+        );
 
       permanentRedirect(newUrl);
     }
@@ -76,9 +93,19 @@ export default async function BoardLayout(props: PropsWithChildren<BoardLayoutPr
   // Fetch the board details server-side
   const boardDetails = getBoardDetailsForBoard(parsedParams);
 
-  // Compute the list URL for last-used-board tracking
+  // Compute the list URL for last-used-board tracking. Persisted and navigated
+  // to later, so it takes the id-aware builder for the same reason the redirect
+  // above does — a bare size slug would send the climber back to a board that
+  // isn't the one they were on.
   const listUrl =
-    boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names
+    tryConstructSlugListUrl(
+      parsedParams.board_name,
+      parsedParams.layout_id,
+      parsedParams.size_id,
+      parsedParams.set_ids,
+      angle,
+    ) ??
+    (boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names
       ? constructClimbListWithSlugs(
           boardDetails.board_name,
           boardDetails.layout_name,
@@ -87,7 +114,7 @@ export default async function BoardLayout(props: PropsWithChildren<BoardLayoutPr
           boardDetails.set_names,
           angle,
         )
-      : `/${boardDetails.board_name}`;
+      : `/${boardDetails.board_name}`);
 
   const locale = await getLocale();
 

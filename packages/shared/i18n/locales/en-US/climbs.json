@@ -644,7 +644,8 @@
       }
     },
     "detail": {
-      "notFound": "Climb not found"
+      "notFound": "Climb not found",
+      "backToHome": "Back to Home"
     },
     "logAscent": {
       "errorMessage": "Could not save your ascent. Please try again.",

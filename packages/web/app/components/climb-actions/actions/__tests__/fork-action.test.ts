@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { ForkAction } from '../fork-action';
-import { constructCreateClimbUrl } from '@/app/lib/url-utils';
+import { constructCreateClimbUrl, tryConstructSlugCreateUrl } from '@/app/lib/url-utils';
 import type { ClimbActionProps } from '../../types';
 import type { BoardDetails, Climb } from '@/app/lib/types';
 
@@ -15,6 +15,9 @@ vi.mock('next/link', () => ({
 
 vi.mock('@/app/lib/url-utils', () => ({
   constructCreateClimbUrl: vi.fn(() => '/mocked-fork-url'),
+  // null → ForkAction falls through to the name-based builder above; the
+  // id-aware preference is pinned separately below.
+  tryConstructSlugCreateUrl: vi.fn(() => null),
 }));
 
 vi.mock('@/app/theme/theme-config', () => ({
@@ -68,7 +71,7 @@ function createTestBoardDetails(overrides?: Partial<BoardDetails>): BoardDetails
     board_name: 'kilter',
     layout_id: 1,
     size_id: 10,
-    set_ids: '1,2',
+    set_ids: [1, 2],
     images_to_holds: {},
     holdsData: {},
     edge_left: 0,
@@ -171,6 +174,22 @@ describe('ForkAction', () => {
       });
       ForkAction(props);
 
+      expect(constructCreateClimbUrl).not.toHaveBeenCalled();
+    });
+
+    it('prefers the id-aware create URL when the static tables resolve the board', () => {
+      vi.mocked(tryConstructSlugCreateUrl).mockReturnValueOnce(
+        '/kilter/original/12x12-square-without-kickboard/screw_bolt/40/create?forkFrames=p1r12p2r13&forkName=Test+Climb',
+      );
+      const props = createTestProps();
+      ForkAction(props);
+
+      expect(tryConstructSlugCreateUrl).toHaveBeenCalledWith('kilter', 1, 10, [1, 2], 40, {
+        frames: 'p1r12p2r13',
+        name: 'Test Climb',
+      });
+      // The name-based builder must not run when the id-aware one resolved —
+      // its bare slug would point a shadowed size at the wrong board.
       expect(constructCreateClimbUrl).not.toHaveBeenCalled();
     });
   });

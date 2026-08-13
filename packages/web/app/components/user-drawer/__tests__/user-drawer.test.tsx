@@ -12,8 +12,7 @@ import UserDrawer from '../user-drawer';
 const mockPush = vi.fn();
 const mockGuardBoardSwitch = vi.fn();
 const mockConstructBoardSlugListUrl = vi.fn();
-const mockConstructClimbListWithSlugs = vi.fn();
-const mockTryConstructSlugListUrl = vi.fn();
+const mockPopularConfigListUrl = vi.fn();
 const mockGuardedSignOut = vi.fn();
 const mockShowMessage = vi.fn();
 let mockSessionData: {
@@ -98,8 +97,7 @@ vi.mock('@/app/lib/board-config-for-playlist', () => ({
 vi.mock('@/app/lib/url-utils', () => ({
   getPlaylistsBasePath: () => '/playlists',
   constructBoardSlugListUrl: (...args: unknown[]) => mockConstructBoardSlugListUrl(...args),
-  constructClimbListWithSlugs: (...args: unknown[]) => mockConstructClimbListWithSlugs(...args),
-  tryConstructSlugListUrl: (...args: unknown[]) => mockTryConstructSlugListUrl(...args),
+  popularConfigListUrl: (...args: unknown[]) => mockPopularConfigListUrl(...args),
 }));
 
 vi.mock('@/app/components/swipeable-drawer/swipeable-drawer', () => ({
@@ -211,8 +209,7 @@ describe('UserDrawer', () => {
     captured.onConfigClick = null;
     mockSessionData = null;
     mockConstructBoardSlugListUrl.mockImplementation((slug: string, angle: number) => `/b/${slug}/${angle}/list`);
-    mockConstructClimbListWithSlugs.mockReturnValue('/slug-based-url');
-    mockTryConstructSlugListUrl.mockReturnValue('/try-slug-url');
+    mockPopularConfigListUrl.mockReturnValue('/popular-config-url');
   });
 
   it('uses client navigation for the signed-in profile link', async () => {
@@ -377,8 +374,7 @@ describe('UserDrawer', () => {
   describe('handleChangeConfigClick', () => {
     it('navigates directly without calling the guard when boardType is unsupported', async () => {
       await openBoardSelector();
-      // Default config has layoutName/sizeName/setNames set, so constructClimbListWithSlugs is used
-      mockConstructClimbListWithSlugs.mockReturnValue('/unsupported/original/full/holds/40/list');
+      mockPopularConfigListUrl.mockReturnValue('/unsupported/original/full/holds/40/list');
 
       act(() => {
         captured.onConfigClick!(makePopularConfig({ boardType: 'unsupported-board' }));
@@ -410,68 +406,29 @@ describe('UserDrawer', () => {
       expect(mockPush).not.toHaveBeenCalled();
     });
 
-    it('uses slug-based URL when layoutName, sizeName, and setNames are all present', async () => {
+    it('navigates to the URL popularConfigListUrl builds from the config, at the default angle', async () => {
+      // The id-aware/name-based/numeric priority lives in popularConfigListUrl
+      // itself (pinned in url-utils.test.ts); this component's contract is only
+      // that it hands the whole config over and navigates to the result.
       await openBoardSelector();
-      mockConstructClimbListWithSlugs.mockReturnValue('/kilter/original/full-48/original-holds/40/list');
+      mockPopularConfigListUrl.mockReturnValue('/kilter/original/full-48/original-holds/40/list');
+      const clickedConfig = makePopularConfig({
+        boardType: 'kilter',
+        layoutName: 'Original',
+        sizeName: 'Full (48")',
+        setNames: ['Original Holds'],
+      });
 
       act(() => {
-        captured.onConfigClick!(
-          makePopularConfig({
-            boardType: 'kilter',
-            layoutName: 'Original',
-            sizeName: 'Full (48")',
-            setNames: ['Original Holds'],
-          }),
-        );
+        captured.onConfigClick!(clickedConfig);
       });
 
       const [, navigate] = mockGuardBoardSwitch.mock.calls[0] as [unknown, () => void];
       act(() => navigate());
 
-      expect(mockConstructClimbListWithSlugs).toHaveBeenCalledOnce();
-      expect(mockTryConstructSlugListUrl).not.toHaveBeenCalled();
+      expect(mockPopularConfigListUrl).toHaveBeenCalledOnce();
+      expect(mockPopularConfigListUrl).toHaveBeenCalledWith(clickedConfig, 40);
       expect(mockPush).toHaveBeenCalledWith('/kilter/original/full-48/original-holds/40/list');
-    });
-
-    it('falls back to tryConstructSlugListUrl when slug names are absent', async () => {
-      await openBoardSelector();
-      mockTryConstructSlugListUrl.mockReturnValue('/kilter/1/2/1,2,3/40/list');
-
-      act(() => {
-        captured.onConfigClick!(makePopularConfig({ layoutName: null, sizeName: null, setNames: [] }));
-      });
-
-      const [, navigate] = mockGuardBoardSwitch.mock.calls[0] as [unknown, () => void];
-      act(() => navigate());
-
-      expect(mockConstructClimbListWithSlugs).not.toHaveBeenCalled();
-      expect(mockTryConstructSlugListUrl).toHaveBeenCalledOnce();
-      expect(mockPush).toHaveBeenCalledWith('/kilter/1/2/1,2,3/40/list');
-    });
-
-    it('falls back to ID-based URL when tryConstructSlugListUrl returns null', async () => {
-      await openBoardSelector();
-      mockTryConstructSlugListUrl.mockReturnValue(null);
-
-      act(() => {
-        captured.onConfigClick!(
-          makePopularConfig({
-            boardType: 'kilter',
-            layoutId: 1,
-            sizeId: 2,
-            setIds: [1, 2, 3],
-            layoutName: null,
-            sizeName: null,
-            setNames: [],
-          }),
-        );
-      });
-
-      const [, navigate] = mockGuardBoardSwitch.mock.calls[0] as [unknown, () => void];
-      act(() => navigate());
-
-      // Fallback: /${boardType}/${layoutId}/${sizeId}/${setIds.join(',')}/${angle}/list
-      expect(mockPush).toHaveBeenCalledWith('/kilter/1/2/1,2,3/40/list');
     });
 
     it('navigate callback closes the board selector', async () => {

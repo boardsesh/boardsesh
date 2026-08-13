@@ -95,16 +95,32 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
         // 404 rather than silently falling through to render an empty list.
         notFound();
       }
-      const newUrl = constructClimbViewUrlWithSlugs(
-        parsedParams.board_name,
-        layout.name,
-        size.name,
-        size.description,
-        selectedSets.map((s) => s.name),
-        parsedParams.angle,
-        parsedParams.climb_uuid,
-        currentClimb.name,
-      );
+      // Id-aware, and it has to be: a 308 is cached by the browser forever, so
+      // the bare size slug the name-based builder emits would permanently pin
+      // /kilter/1/27/... to size 10 — a different physical board — and disagree
+      // with the canonical `generateMetadata` above builds from the same ids.
+      // The name-based builder stays as the fallback for a board the static
+      // tables don't carry but the queries above resolved.
+      const newUrl =
+        tryConstructSlugViewUrl(
+          parsedParams.board_name,
+          parsedParams.layout_id,
+          parsedParams.size_id,
+          parsedParams.set_ids,
+          parsedParams.angle,
+          parsedParams.climb_uuid,
+          currentClimb.name,
+        ) ??
+        constructClimbViewUrlWithSlugs(
+          parsedParams.board_name,
+          layout.name,
+          size.name,
+          size.description,
+          selectedSets.map((s) => s.name),
+          parsedParams.angle,
+          parsedParams.climb_uuid,
+          currentClimb.name,
+        );
       permanentRedirect(newUrl);
     }
 

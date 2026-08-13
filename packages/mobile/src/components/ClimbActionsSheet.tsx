@@ -15,7 +15,7 @@ import { Icon } from './Icon';
 import { useToast } from '../providers/toast-provider';
 import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
-import { WEB_BASE_URL } from '../lib/env';
+import { CLIMB_SHARE_BASE_URL } from '../lib/env';
 import { track } from '../lib/analytics';
 import { dismissManagedSheetAndWait, type ManagedSheetHandle } from '../providers/sheet-presentation-provider';
 
@@ -130,7 +130,7 @@ function ClimbActionsSheet({
   const handleCopyLink = useCallback(async () => {
     if (!climb) return;
     try {
-      const url = `${WEB_BASE_URL}${buildReadableClimbViewPath({
+      const url = `${CLIMB_SHARE_BASE_URL}${buildReadableClimbViewPath({
         boardName,
         layoutId,
         sizeId,

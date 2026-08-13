@@ -6,7 +6,7 @@ import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 // path stable.
 import { parseSetIds, normaliseSetIds } from '@boardsesh/board-config';
 import { getBoardDetails } from '@/app/lib/board-constants';
-import { constructBoardSlugListUrl, constructClimbListWithSlugs } from '@/app/lib/url-utils';
+import { constructBoardSlugListUrl, constructClimbListWithSlugs, tryConstructSlugListUrl } from '@/app/lib/url-utils';
 import { parseSerialNumber } from '@/app/components/board-bluetooth-control/bluetooth-aurora';
 import type { DiscoveredDevice } from '@/app/lib/ble/types';
 import type { ResolvedBoardEntry } from './resolve-serials';
@@ -119,11 +119,20 @@ export function buildSwitchUrl(config: ResolvedBoardConfig, currentAngle: number
     return null;
   }
   try {
+    const setIds = parseSetIds(config.setIds);
+    // Id-aware first: this URL exists to correct a config mismatch, so it must
+    // name the exact size — the name-based form collapses a shadowed size
+    // (Kilter 12x12 without kickboard) onto the other board's bare slug,
+    // "switching" the user to the wrong wall.
+    const idAwareListUrl = tryConstructSlugListUrl(boardName, config.layoutId, config.sizeId, setIds, currentAngle);
+    if (idAwareListUrl) {
+      return idAwareListUrl;
+    }
     const details = getBoardDetails({
       board_name: boardName,
       layout_id: config.layoutId,
       size_id: config.sizeId,
-      set_ids: parseSetIds(config.setIds),
+      set_ids: setIds,
     });
     if (details.layout_name && details.size_name && details.set_names) {
       return constructClimbListWithSlugs(

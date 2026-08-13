@@ -3,7 +3,7 @@ import React from 'react';
 import { notFound, permanentRedirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import type { BoardRouteParameters, BoardRouteParametersWithUuid, SearchRequestPagination } from '@/app/lib/types';
-import { constructClimbListWithSlugs } from '@/app/lib/url-utils';
+import { constructClimbListWithSlugs, tryConstructSlugListUrl } from '@/app/lib/url-utils';
 import { parseRouteParams } from '@/app/lib/url-utils.server';
 import BoardPageClimbsList from '@/app/components/board-page/board-page-climbs-list';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
@@ -56,14 +56,27 @@ export default async function DynamicResultsPage(props: {
     const boardDetails = getBoardDetailsForBoard(parsedParams);
 
     if (boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names) {
-      const newUrl = constructClimbListWithSlugs(
-        boardDetails.board_name,
-        boardDetails.layout_name,
-        boardDetails.size_name,
-        boardDetails.size_description,
-        boardDetails.set_names,
-        parsedParams.angle,
-      );
+      // Id-aware first: the name-based builder can only emit the bare size slug,
+      // so a numeric URL for a size that shares one with another on the same
+      // layout (Kilter layout 1 sizes 10/27) would 308 — permanently, from the
+      // browser cache — onto the other board. Names stay as the fallback for a
+      // board the static tables don't carry.
+      const newUrl =
+        tryConstructSlugListUrl(
+          parsedParams.board_name,
+          parsedParams.layout_id,
+          parsedParams.size_id,
+          parsedParams.set_ids,
+          parsedParams.angle,
+        ) ??
+        constructClimbListWithSlugs(
+          boardDetails.board_name,
+          boardDetails.layout_name,
+          boardDetails.size_name,
+          boardDetails.size_description,
+          boardDetails.set_names,
+          parsedParams.angle,
+        );
 
       // Preserve search parameters
       const searchString = new URLSearchParams(

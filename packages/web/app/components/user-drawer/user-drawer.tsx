@@ -30,12 +30,7 @@ import { useColorMode } from '@/app/hooks/use-color-mode';
 import { usePathname } from 'next/navigation';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
-import {
-  getPlaylistsBasePath,
-  constructBoardSlugListUrl,
-  constructClimbListWithSlugs,
-  tryConstructSlugListUrl,
-} from '@/app/lib/url-utils';
+import { getPlaylistsBasePath, constructBoardSlugListUrl, popularConfigListUrl } from '@/app/lib/url-utils';
 import { getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
 import DashboardOutlined from '@mui/icons-material/DashboardOutlined';
 import FitnessCenterOutlined from '@mui/icons-material/FitnessCenterOutlined';
@@ -191,22 +186,7 @@ export default function UserDrawer({ boardDetails, boardConfigs }: UserDrawerPro
   const handleChangeConfigClick = useCallback(
     (config: PopularBoardConfig) => {
       const angle = getDefaultAngleForBoard(config.boardType);
-      let url: string;
-      if (config.layoutName && config.sizeName && config.setNames.length > 0) {
-        url = constructClimbListWithSlugs(
-          config.boardType,
-          config.layoutName,
-          config.sizeName,
-          config.sizeDescription ?? undefined,
-          config.setNames,
-          angle,
-        );
-      } else {
-        const setIds = config.setIds.join(',');
-        url =
-          tryConstructSlugListUrl(config.boardType, config.layoutId, config.sizeId, config.setIds, angle) ??
-          `/${config.boardType}/${config.layoutId}/${config.sizeId}/${setIds}/${angle}/list`;
-      }
+      const url = popularConfigListUrl(config, angle);
       const navigate = () => {
         router.push(url);
         setShowBoardSelector(false);

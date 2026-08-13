@@ -16,10 +16,10 @@ import type { BoardDetails, BoardName, BoardRouteIdentity } from '@/app/lib/type
 import {
   constructClimbListWithSlugs,
   constructBoardSlugListUrl,
+  constructCreateClimbUrl,
   tryConstructSlugListUrl,
-  generateLayoutSlug,
-  generateSizeSlug,
-  generateSetSlug,
+  popularConfigListUrl,
+  tryConstructSlugCreateUrl,
   getPlaylistsBasePath,
 } from '@/app/lib/url-utils';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -145,25 +145,32 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
       }
     }
     if (!effectiveBoardDetails) return null;
-    const { board_name, layout_name, size_name, size_description, set_names } = effectiveBoardDetails;
+    const { board_name, layout_id, size_id, set_ids, layout_name, size_name, size_description, set_names } =
+      effectiveBoardDetails;
     if (layout_name && size_name && set_names) {
-      return constructClimbListWithSlugs(
-        board_name,
-        layout_name,
-        size_name,
-        size_description,
-        set_names,
-        effectiveAngle,
+      // Id-aware first: the name-based builder only knows the bare size slug, so
+      // on a size that shares one with another on the same layout (Kilter layout
+      // 1 sizes 10/27) the Climbs tab would open the other board. Names stay as
+      // the fallback for a board the static tables don't carry.
+      return (
+        tryConstructSlugListUrl(board_name, layout_id, size_id, set_ids, effectiveAngle) ??
+        constructClimbListWithSlugs(board_name, layout_name, size_name, size_description, set_names, effectiveAngle)
       );
     }
     return null;
   })();
 
+  // Built from the canonical board form rather than from `listUrl`, which may be
+  // a /b/{slug} route the create form doesn't serve.
   const createClimbUrl = (() => {
     if (!effectiveBoardDetails) return null;
-    const { board_name, layout_name, size_name, size_description, set_names } = effectiveBoardDetails;
+    const { board_name, layout_id, size_id, set_ids, layout_name, size_name, size_description, set_names } =
+      effectiveBoardDetails;
     if (layout_name && size_name && set_names) {
-      return `/${board_name}/${generateLayoutSlug(layout_name)}/${generateSizeSlug(size_name, size_description)}/${generateSetSlug(set_names)}/${effectiveAngle}/create`;
+      return (
+        tryConstructSlugCreateUrl(board_name, layout_id, size_id, set_ids, effectiveAngle) ??
+        constructCreateClimbUrl(board_name, layout_name, size_name, size_description, set_names, effectiveAngle)
+      );
     }
     return null;
   })();
@@ -277,22 +284,7 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
   const handleDiscoveryConfigClick = useCallback(
     (config: PopularBoardConfig) => {
       const angle = getDefaultAngleForBoard(config.boardType);
-      let url: string;
-      if (config.layoutName && config.sizeName && config.setNames.length > 0) {
-        url = constructClimbListWithSlugs(
-          config.boardType,
-          config.layoutName,
-          config.sizeName,
-          config.sizeDescription ?? undefined,
-          config.setNames,
-          angle,
-        );
-      } else {
-        const setIds = config.setIds.join(',');
-        url =
-          tryConstructSlugListUrl(config.boardType, config.layoutId, config.sizeId, config.setIds, angle) ??
-          `/${config.boardType}/${config.layoutId}/${config.sizeId}/${setIds}/${angle}/list`;
-      }
+      const url = popularConfigListUrl(config, angle);
       const storedConfig: StoredBoardConfig = {
         name: config.layoutName ?? `${config.boardType} board`,
         board: config.boardType as BoardName,
