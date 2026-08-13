@@ -271,11 +271,38 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
     expect(mobileFilter, 'ci.yml must retain a mobile paths-filter mapping').toBeTruthy();
     expect(mobileFilter).toContain("- 'patches/**'");
 
-    const mobileBundleJob = ci.match(/^  mobile-bundle:\n[\s\S]*?(?=^  [a-z][a-z0-9-]*:\n|(?![\s\S]))/m)?.[0];
-    expect(mobileBundleJob, 'ci.yml must retain the mobile-bundle job').toBeTruthy();
-    expect(mobileBundleJob).toMatch(/if:.*needs\.changes\.outputs\.mobile == 'true'/);
-    expect(mobileBundleJob).toContain('run: vp run check:mobile-patches');
-    expect(mobileBundleJob).toContain('run: vp run check:mobile-fingerprint-inputs');
+    // Assert the PROPERTY (a patch-only PR reaches both sentinels), not the
+    // address. These guards used to live in mobile-bundle and now run in `lint`
+    // — they sat in front of Metro and cost ~24s on the critical path. Pinning
+    // the assertion to a job name meant a pure relocation reddened CI while the
+    // contract still held, so find whichever job hosts each guard and check
+    // THAT job is gated on the mobile filter.
+    const jobs = [...ci.matchAll(/^ {2}([a-z][a-z0-9-]*):\n([\s\S]*?)(?=^ {2}[a-z][a-z0-9-]*:\n|(?![\s\S]))/gm)];
+    expect(jobs.length, 'ci.yml must parse into jobs').toBeGreaterThan(0);
+
+    for (const guard of ['check:mobile-patches', 'check:mobile-fingerprint-inputs']) {
+      const hosts = jobs.filter(([, , body]) => body.includes(`run: vp run ${guard}`));
+      expect(hosts.length, `exactly one ci.yml job must run ${guard}`).toBe(1);
+
+      const [, hostName, hostBody] = hosts[0];
+      // The JOB-level gate only — four-space indent. Step-level `if:`s sit at
+      // eight spaces, and matching one of those instead makes this assertion
+      // inert: the lint job already has a step gated on `mobile`, so a loose
+      // /if:.*mobile/ passes even after the job gate drops the term.
+      const jobGate = hostBody.match(/^ {4}if: (.*)$/m)?.[1] ?? '';
+      // Whatever job hosts it must run on a patches-only PR. `mobile` is the
+      // only filter term that matches `patches/**`, so its absence would skip
+      // the guard on exactly the PR shape it exists for.
+      expect(jobGate, `the ${hostName} job runs ${guard}, so its job gate must include the mobile filter`).toContain(
+        "needs.changes.outputs.mobile == 'true'",
+      );
+
+      // ...and the guard's own step must not re-narrow what the job gate allows.
+      const guardStep =
+        hostBody.match(new RegExp(`^ {6}- name: [^\\n]*\\n(?: {8}[^\\n]*\\n)*? {8}run: vp run ${guard}$`, 'm'))?.[0] ??
+        '';
+      expect(guardStep, `the ${guard} step must not carry its own narrowing if:`).not.toMatch(/^ {8}if:/m);
+    }
   });
 
   it('forces the binary onto the gate fingerprint, and the OTA publish resolves fresh (never pinned)', () => {

@@ -2,6 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# CI points TMPDIR at a restored cache directory (see the Expo web bundle check
+# step in ci.yml), which does not exist yet on a cold cache — mktemp would fail
+# before the guard ever ran. Create it rather than trust the caller.
+mkdir -p "${TMPDIR:-/tmp}"
 OUTPUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/boardsesh-mobile-web-export.XXXXXX")"
 SOURCE_GLUE="$ROOT_DIR/packages/board-renderer/wasm/pkg/board_renderer_wasm.js"
 SOURCE_WASM="$ROOT_DIR/packages/board-renderer/wasm/pkg/board_renderer_wasm_bg.wasm"
@@ -34,7 +38,19 @@ verify_synced_artifact "$SOURCE_WASM" "$PUBLIC_WASM" "WASM"
 
 # Single export recipe shared with the production build path (Dockerfile.web /
 # `vp run build:expo-web`); it also asserts the shell and WASM assets landed.
-bash "$ROOT_DIR/scripts/build-expo-web-export.sh" "$OUTPUT_DIR"
+#
+# This is the ONE caller that opts out of the export's `--clear` cache wipe. The
+# wipe exists because expo export reuses Metro's transform cache across
+# EXPO_PUBLIC_* changes and once shipped a bundle with stale origins inlined
+# (2026-07-18) — but this check bakes no EXPO_PUBLIC_*, asserts no baked URLs,
+# and throws the export away below. It only proves the web graph still resolves,
+# transforms and serializes, so a cold Metro was ~95s of CI spent on nothing.
+# In exchange the export script scopes its transform store by a hash of every
+# env value it inlines, so a change in baked env lands in a different cache
+# directory instead of hitting a stale shard. Do not set this anywhere an
+# artifact is kept.
+BOARDSESH_EXPORT_KEEP_METRO_CACHE=1 \
+  bash "$ROOT_DIR/scripts/build-expo-web-export.sh" "$OUTPUT_DIR"
 
 # The off-main-thread render worker is a static asset loaded by runtime URL, so
 # it must be copied into the export verbatim (Metro never bundles it).
