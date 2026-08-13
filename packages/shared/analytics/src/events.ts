@@ -359,15 +359,34 @@ export const SHARED_EVENTS = {
   // expected value — the trigger is persisted per scope, but a scope enabled by
   // a build that predates this event has none.
   OfflineBoardDownloadStarted: 'Offline Board Download Started',
-  // Fired once per board scope when its INITIAL download completes (both tables
-  // reached the tail), so the snapshot-bootstrap warm-up can be compared against
-  // the plain paged crawl in the field. Props: { scopeKey,
+  // Fired once per board scope when its INITIAL download completes (every board
+  // table reached the tail), so the snapshot-bootstrap warm-up can be compared
+  // against the plain paged crawl in the field. Props: { scopeKey,
   // method: 'snapshot' | 'paged', durationMs, bytes?, rowCount?, downloadMs?,
-  // importMs?, offlineEngineEnabled }. The four optional props are ABSENT rather
-  // than faked when the completing delta pull lands in a later cycle than the
-  // import, which biases them toward the healthy population; durationMs and the
-  // funnel ratio are unaffected. Mobile-only today (the engine is shared, so a
-  // future web offline consumer would fire this too).
+  // importMs?, bootstrapHealed?, manifestMs, artifactReused, climbsPullMs,
+  // statsPullMs, gradesPullMs, gradesRows?, gradesArtifactRows?,
+  // offlineEngineEnabled }.
+  // Every optional prop is ABSENT rather than faked when this cycle cannot vouch
+  // for it — most often because the completing delta pull landed in a later cycle
+  // than the import. That biases those props toward the healthy population;
+  // durationMs and the funnel ratio are unaffected. Read a missing value as
+  // UNKNOWN, never as 0.
+  // Grade rows a completion landed this cycle = (gradesArtifactRows ?? 0) +
+  // (gradesRows ?? 0), meaningful only when at least one key is present.
+  // `gradesRows` counts the paged crawl and is present only when that crawl
+  // started from a cursor no earlier cycle advanced; `gradesArtifactRows` counts
+  // the grades artifact's own import and is what makes a truthful `gradesRows: 0`
+  // (the artifact left the crawl nothing to fetch) readable next to a board that
+  // genuinely has no grades. Events from before issue #4393 shipped carry a
+  // fabricated `gradesRows: 0`, so window those series from that merge date.
+  // Filter on `bootstrapHealed != true` before comparing snapshot-vs-paged
+  // durationMs percentiles: a healed scope (#4313) reports method 'snapshot' but
+  // a duration that excludes the paged work earlier cycles did.
+  // Deliberately NOT emitted: the breakdown's own `downloadMs`, `importMs` and
+  // `artifactBytes` — the per-scope timings above carry the honest,
+  // absent-when-unknown versions of the same numbers, so re-adding the phase
+  // copies would put a cycle-scoped 0 next to them. Mobile-only today (the engine
+  // is shared, so a future web offline consumer would fire this too).
   OfflineBoardDownloadCompleted: 'Offline Board Download Completed',
   // A bootstrap stage failed, or was cut short. Props: { scopeKey, stage:
   // 'manifest' | 'download' | 'import' | 'grades-download' | 'grades-import',
