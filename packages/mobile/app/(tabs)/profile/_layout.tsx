@@ -32,6 +32,8 @@ export default function ProfileLayout() {
         <Stack.Screen name="dev-servers" options={{ title: t('mobile.more.metroServersTitle') }} />
         {/* i18n-ignore-next-line — tester-only screen */}
         <Stack.Screen name="feature-flags" options={{ title: 'Feature Flags' }} />
+        {/* i18n-ignore-next-line — tester-only screen */}
+        <Stack.Screen name="dev-offline-writes" options={{ title: 'Offline Writes' }} />
         <Stack.Screen name="delete-account" options={{ title: tSettings('deleteAccount.title') }} />
       </Stack>
     </BoardArtVisibilityProvider>

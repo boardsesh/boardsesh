@@ -84,8 +84,9 @@ const trackMock = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/analytics', () => ({ track: trackMock }));
 
 const isOnlineMock = vi.hoisted(() => vi.fn(() => true));
+const drainMutationQueueMock = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('../../offline/offline-sync-adapter', () => ({
-  drainMutationQueue: vi.fn(async () => {}),
+  drainMutationQueue: drainMutationQueueMock,
   subscribeMutationDelivery: vi.fn(() => () => {}),
   isOnline: isOnlineMock,
 }));
@@ -236,9 +237,23 @@ describe('BoardAdapterWrapper tick degrade + telemetry', () => {
     // No local tick row exists, so the badge query's JOIN returns 0 either way —
     // invalidating it would be a no-op that reads as intent.
     expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
+    // The queued row should not wait for the next app-driven drain trigger.
+    expect(drainMutationQueueMock).toHaveBeenCalledTimes(1);
   });
 
   it('falls through to the network when the degrade also fails', async () => {
+    writeTickLocalMock.mockRejectedValue(new Error('database is locked'));
+    enqueueTickOutboxOnlyMock.mockRejectedValue(new Error('still locked'));
+    isOnlineMock.mockReturnValue(false);
+
+    const { savedTick } = await saveTick();
+
+    expect(savedTick).toBeNull();
+    // Nothing was queued, so there is nothing to drain.
+    expect(drainMutationQueueMock).not.toHaveBeenCalled();
+  });
+
+  it('reports fell_through when the degrade also fails', async () => {
     writeTickLocalMock.mockRejectedValue(new Error('database is locked'));
     enqueueTickOutboxOnlyMock.mockRejectedValue(new Error('still locked'));
     isOnlineMock.mockReturnValue(false);
