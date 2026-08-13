@@ -32,6 +32,7 @@ import {
   type BootstrapFailureKind,
   type BootstrapRetryState,
 } from '../bootstrap-retry';
+import { SnapshotArtifactTruncatedError } from '../snapshot-bootstrap';
 import { runMigrations } from '../../db/migrations';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
 
@@ -76,6 +77,19 @@ describe('classifyBootstrapFailure', () => {
     expect(classifyBootstrapFailure({ cause: new Error('quick_check failed'), stage: 'import' })).toBe(
       'structural-artifact',
     );
+  });
+
+  it('routes a SHORT body at the download stage to the transport budget', () => {
+    // A cut-short response is a transport symptom. `structural-device` would
+    // durably settle the scope onto the paged crawl after two occurrences with
+    // no `builtAt` re-arm — far too harsh for what is at least as likely a
+    // one-off network fluke as a systematic device fault (issue #4394).
+    const cause = new SnapshotArtifactTruncatedError(
+      'snapshot download: short body for kilter:1 (expected 269316096 bytes, got 4096)',
+    );
+    expect(classifyBootstrapFailure({ cause, stage: 'download' })).toBe('transport');
+    // At the IMPORT stage every failure is artifact-attributable, unchanged.
+    expect(classifyBootstrapFailure({ cause, stage: 'import' })).toBe('structural-artifact');
   });
 
   it('attributes an unclassifiable download failure to the DEVICE, not the artifact', () => {

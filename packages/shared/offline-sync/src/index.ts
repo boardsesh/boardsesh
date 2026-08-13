@@ -114,6 +114,7 @@ export {
   SnapshotSchemaStaleError,
   SnapshotPermanentMissError,
   SnapshotWatermarkRegressionError,
+  SnapshotArtifactTruncatedError,
 } from './sync/snapshot-bootstrap';
 export type {
   SnapshotSource,

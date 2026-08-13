@@ -282,6 +282,24 @@ export class SnapshotPermanentMissError extends Error {
   }
 }
 
+/**
+ * The transfer finished but wrote a different number of bytes than the manifest
+ * promises (issue #4394). `entry.uncompressedBytes` is exact — the export writes
+ * the SQLite file's own byte length — so this is an unambiguous integrity gate
+ * that the gzip magic-byte sniff (two bytes) and `quick_check` (after the file
+ * has been retained and ATTACHed) do not give.
+ *
+ * Charged to the TRANSPORT budget, not `structural-device`: a short body IS a
+ * cut-short response, and the structural ladder would durably settle a scope
+ * onto the paged crawl after two occurrences with no `builtAt` re-arm.
+ */
+export class SnapshotArtifactTruncatedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SnapshotArtifactTruncatedError';
+  }
+}
+
 // --- Attempt / done markers (sync_meta, NOT under the checkpoint: prefix so the
 // sign-out checkpoint wipe leaves them alone, matching the board rows they
 // describe, which survive as the shared cache) ---------------------------------

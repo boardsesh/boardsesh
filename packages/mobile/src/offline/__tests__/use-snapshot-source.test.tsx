@@ -13,6 +13,7 @@ const flags = vi.hoisted(() => ({
   offlineDownloadsEnabled: true,
   snapshotBootstrapEnabled: true,
   downloadProgressEnabled: true,
+  raw: {} as Record<string, boolean | undefined>,
 }));
 
 const sourceSpies = vi.hoisted(() => ({
@@ -22,14 +23,19 @@ const sourceSpies = vi.hoisted(() => ({
   deleteArtifact: vi.fn(async () => {}),
   releaseArtifact: vi.fn(async () => {}),
 }));
+const setSnapshotDownloadStrategyFromFlags = vi.hoisted(() => vi.fn());
 
 vi.mock('../../lib/env', () => ({ isSnapshotBaseUrlConfigured: () => true }));
 vi.mock('../../providers/feature-flags-provider', () => ({
   useOfflineDownloadsEnabled: () => flags.offlineDownloadsEnabled,
   useSnapshotBootstrapEnabled: () => flags.snapshotBootstrapEnabled,
   useOfflineDownloadProgressEnabled: () => flags.downloadProgressEnabled,
+  useFeatureFlag: (key: string) => flags.raw[key],
 }));
-vi.mock('../snapshot-source', () => ({ mobileSnapshotSource: sourceSpies }));
+vi.mock('../snapshot-source', () => ({
+  mobileSnapshotSource: sourceSpies,
+  setSnapshotDownloadStrategyFromFlags: (value: unknown) => setSnapshotDownloadStrategyFromFlags(value),
+}));
 
 import { useSnapshotSource } from '../use-snapshot-source';
 
@@ -42,6 +48,7 @@ beforeEach(() => {
   flags.offlineDownloadsEnabled = true;
   flags.snapshotBootstrapEnabled = true;
   flags.downloadProgressEnabled = true;
+  flags.raw = {};
 });
 
 afterEach(() => {
@@ -61,6 +68,18 @@ describe('useSnapshotSource', () => {
   it('withholds snapshot I/O when the offline kill switch is off', () => {
     flags.offlineDownloadsEnabled = false;
     expect(renderSource()).toBeUndefined();
+  });
+
+  it('pushes the transport flags into module state WITHOUT rebuilding the source', () => {
+    // The source's identity is a dependency of the scheduler effect, so a
+    // transport flag resolving must not churn it (issue #4394).
+    flags.raw = { 'offline-download-task-api': true, 'offline-download-background-session': false };
+
+    expect(renderSource()).toBe(sourceSpies);
+    expect(setSnapshotDownloadStrategyFromFlags).toHaveBeenCalledWith({
+      taskApiFlag: true,
+      backgroundSessionFlag: false,
+    });
   });
 
   describe('with download progress off', () => {

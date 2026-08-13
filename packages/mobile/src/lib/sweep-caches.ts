@@ -44,7 +44,7 @@ import {
   resetOverlayWriteOdometer,
 } from './overlay-index';
 import { track } from './analytics';
-import { SNAPSHOT_DIR_NAME } from '../offline/snapshot-source';
+import { SNAPSHOT_DIR_NAME } from '../offline/snapshot-paths';
 
 /** Must match the directory the native BoardRenderer modules write PNGs into. */
 export const OVERLAY_CACHE_DIR_NAME = 'board-thumbnails';

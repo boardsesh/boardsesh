@@ -77,6 +77,18 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'DEFAULT: ON — unlike every other flag here, absent/undefined means enabled. Real byte + percent progress on a downloading board instead of a static spinner. Off restores the old caption AND stops passing a progress callback to the native downloader, so it doubles as the kill switch if the progress-enabled download path ever proves slower.',
   },
   {
+    key: 'offline-download-task-api',
+    label: 'Offline download: DownloadTask transport',
+    description:
+      "Download board artifacts through expo-file-system's DownloadTask instead of downloadFileAsync. DEFAULT OFF, including unset: the new transports are the #4394 speed experiment and roll out by SETTING this flag after on-device QA, never by shipping a build. On + iOS gives a background URLSession (the only way a transfer survives suspension) unless the background-session flag below is explicitly off. Android ignores the session type and gets a different OkHttp client.",
+  },
+  {
+    key: 'offline-download-background-session',
+    label: 'Offline download: background URLSession',
+    description:
+      'iOS only, and only when the DownloadTask transport is on: use a background URLSession so the transfer keeps running while the app is suspended. Off pins it to a foreground session.',
+  },
+  {
     key: 'offline-discovery-nudges',
     label: 'Offline discovery nudges',
     description:

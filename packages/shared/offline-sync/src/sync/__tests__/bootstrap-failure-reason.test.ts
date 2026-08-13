@@ -11,6 +11,7 @@ import {
   SnapshotSchemaStaleError,
   SnapshotPermanentMissError,
   SnapshotWatermarkRegressionError,
+  SnapshotArtifactTruncatedError,
 } from '../snapshot-bootstrap';
 
 describe('classifySnapshotBootstrapFailure', () => {
@@ -63,6 +64,24 @@ describe('classifySnapshotBootstrapFailure', () => {
     for (const message of cases) {
       expect(classifySnapshotBootstrapFailure(new Error(message)), message).toBe('artifact-invalid');
     }
+  });
+
+  it('separates a SHORT body from a corrupt one', () => {
+    // A cut-short response is a transport symptom, not bad bytes, and the two
+    // spend different budgets — so they must not share a bucket either.
+    expect(
+      classifySnapshotBootstrapFailure(
+        new SnapshotArtifactTruncatedError(
+          'snapshot download: short body for kilter:1 (expected 269316096 bytes, got 4096)',
+        ),
+      ),
+    ).toBe('artifact-truncated');
+    // The pre-existing `truncated artifact` marker on a plain Error is untouched.
+    expect(
+      classifySnapshotBootstrapFailure(
+        new Error('snapshot bootstrap: board_climbs row_count 900 != actual 12 (truncated artifact?)'),
+      ),
+    ).toBe('artifact-invalid');
   });
 
   it('buckets a dropped connection as network', () => {

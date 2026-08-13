@@ -35,6 +35,8 @@ export type SnapshotBootstrapFailureReason =
   | 'permanent-miss'
   /** `quick_check` failed, `snapshot_meta` was missing/mismatched, or the row count did not add up. */
   | 'artifact-invalid'
+  /** The transfer finished but the body was the wrong length — a cut-short response, not corrupt bytes. */
+  | 'artifact-truncated'
   /** Offline, or the connection dropped. The normal state of a phone on a plane. */
   | 'network'
   /** Nothing above matched — the bucket that should stay near zero. */
@@ -72,6 +74,7 @@ export function classifySnapshotBootstrapFailure(cause: unknown): SnapshotBootst
   if (name === 'SnapshotSchemaStaleError') return 'schema-stale';
   if (name === 'SnapshotWatermarkRegressionError') return 'watermark-regression';
   if (name === 'SnapshotPermanentMissError') return 'permanent-miss';
+  if (name === 'SnapshotArtifactTruncatedError') return 'artifact-truncated';
 
   if (classifySqliteLockError(cause).locked) return 'database-locked';
 

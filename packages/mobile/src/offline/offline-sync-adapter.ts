@@ -378,6 +378,16 @@ const isOnUnmeteredNetwork = async (): Promise<boolean> => {
   return !isConnectionMetered;
 };
 
+/**
+ * The cached verdict WITHOUT the probe — `null` until NetInfo has reported.
+ * Telemetry-only (issue #4394's `Offline Artifact Transfer`), which is why it
+ * never falls back to "unmetered" the way the gate above does: an absent prop is
+ * honest, a fabricated `false` is not.
+ */
+export function getLastKnownMetered(): boolean | null {
+  return isConnectionMetered;
+}
+
 /** Cold-launch state is per-process; tests re-arm it between cases. */
 export function __resetMeteredStateForTests(): void {
   isConnectionMetered = null;
