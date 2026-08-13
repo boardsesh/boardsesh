@@ -490,3 +490,72 @@ describe('BottomTabBar locale-aware pathname matching', () => {
     expect(getTab('Climb').classList.contains('Mui-selected')).toBe(false);
   });
 });
+
+/**
+ * Kilter layout 1 carries two "12 x 12" squares — id 10 ("with kickboard") and
+ * id 27 ("without kickboard") — that both name-slug to `12x12-square`. The tab
+ * bar holds the numeric ids on `boardDetails`, so the Climb and Create tabs can
+ * and must address the exact one rather than whichever owns the bare slug.
+ */
+describe('BottomTabBar shadowed size slugs', () => {
+  const squareBoard = {
+    ...boardDetails,
+    layout_id: 1,
+    set_ids: [1, 20],
+    layout_name: 'Kilter Board Original',
+    size_description: 'Square',
+    set_names: ['Bolt Ons', 'Screw Ons'],
+  };
+  const squareWithoutKickboard = {
+    ...squareBoard,
+    size_id: 27,
+    size_name: '12 x 12 without kickboard',
+  } as BoardDetails;
+  const squareWithKickboard = {
+    ...squareBoard,
+    size_id: 10,
+    size_name: '12 x 12 with kickboard',
+  } as BoardDetails;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPathname = '/kilter/1/27/1,20/40/list';
+    mockActiveSession = null;
+    mockSessionData = null;
+    mockSessionStatus = 'unauthenticated';
+    mockLanguage = 'en-US';
+    mockLastUsedBoard = null;
+  });
+
+  it('emits the qualified size slug on both tabs for the shadowed size', () => {
+    render(<BottomTabBar boardDetails={squareWithoutKickboard} angle={40} boardConfigs={boardConfigs} />);
+
+    expect(climbHref()).toBe('/kilter/original/12x12-square-without-kickboard/screw_bolt/40/list');
+    expect(createHref()).toBe('/kilter/original/12x12-square-without-kickboard/screw_bolt/40/create');
+  });
+
+  it('leaves the size that owns the bare slug on it', () => {
+    render(<BottomTabBar boardDetails={squareWithKickboard} angle={40} boardConfigs={boardConfigs} />);
+
+    expect(climbHref()).toBe('/kilter/original/12x12-square/screw_bolt/40/list');
+    expect(createHref()).toBe('/kilter/original/12x12-square/screw_bolt/40/create');
+  });
+
+  it('falls back to the name-based URLs for a board the static tables do not carry', () => {
+    const dbOnlyBoard = {
+      ...boardDetails,
+      layout_id: 9999,
+      size_id: 9999,
+      set_ids: [9999],
+      layout_name: 'Kilter Board Homewall',
+      size_name: '8 x 12',
+      size_description: 'Home',
+      set_names: ['Mainline'],
+    } as BoardDetails;
+
+    render(<BottomTabBar boardDetails={dbOnlyBoard} angle={40} boardConfigs={boardConfigs} />);
+
+    expect(climbHref()).toBe('/kilter/homewall/8x12-home/main/40/list');
+    expect(createHref()).toBe('/kilter/homewall/8x12-home/main/40/create');
+  });
+});

@@ -29,6 +29,7 @@ import {
   constructBoardSlugPlaylistsUrl,
   tryConstructSlugViewUrl,
   tryConstructSlugListUrl,
+  tryConstructSlugCreateUrl,
   DEFAULT_SEARCH_PARAMS,
   constructCreateClimbUrl,
 } from '../url-utils';
@@ -1720,7 +1721,7 @@ describe('qualified size slugs for a shadowed size (Kilter layout 1, sizes 10/27
     size_name: '12 x 12 without kickboard',
   } as unknown as BoardDetails;
 
-  describe('tryConstructSlugViewUrl / tryConstructSlugListUrl', () => {
+  describe('tryConstructSlugViewUrl / tryConstructSlugListUrl / tryConstructSlugCreateUrl', () => {
     it('emits the qualified size slug for the shadowed size', () => {
       expect(tryConstructSlugViewUrl('kilter', 1, 27, KILTER_SQUARE_SETS, 40, 'ABC123', 'Moon Landing')).toBe(
         QUALIFIED_VIEW_URL,
@@ -1728,6 +1729,21 @@ describe('qualified size slugs for a shadowed size (Kilter layout 1, sizes 10/27
       expect(tryConstructSlugListUrl('kilter', 1, 27, KILTER_SQUARE_SETS, 40)).toBe(
         '/kilter/original/12x12-square-without-kickboard/screw_bolt/40/list',
       );
+      expect(tryConstructSlugCreateUrl('kilter', 1, 27, KILTER_SQUARE_SETS, 40)).toBe(
+        '/kilter/original/12x12-square-without-kickboard/screw_bolt/40/create',
+      );
+    });
+
+    it('swaps only the trailing surface segment when building the create URL', () => {
+      // A board whose slugs themselves contain "list" would break a naive
+      // replace; the anchor keeps the swap to the final segment.
+      const listUrl = tryConstructSlugListUrl('kilter', 1, 27, KILTER_SQUARE_SETS, 40);
+      const createUrl = tryConstructSlugCreateUrl('kilter', 1, 27, KILTER_SQUARE_SETS, 40);
+      expect(createUrl).toBe(`${listUrl?.slice(0, -'/list'.length)}/create`);
+    });
+
+    it('returns null from the create builder when static data lookup fails', () => {
+      expect(tryConstructSlugCreateUrl('kilter', 9999, 9999, [9999], 40)).toBeNull();
     });
 
     it('leaves the size that owns the bare slug on it, so existing links keep meaning what they meant', () => {
@@ -1736,6 +1752,9 @@ describe('qualified size slugs for a shadowed size (Kilter layout 1, sizes 10/27
       );
       expect(tryConstructSlugListUrl('kilter', 1, 10, KILTER_SQUARE_SETS, 40)).toBe(
         '/kilter/original/12x12-square/screw_bolt/40/list',
+      );
+      expect(tryConstructSlugCreateUrl('kilter', 1, 10, KILTER_SQUARE_SETS, 40)).toBe(
+        '/kilter/original/12x12-square/screw_bolt/40/create',
       );
     });
 

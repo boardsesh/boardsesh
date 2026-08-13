@@ -703,6 +703,26 @@ export const tryConstructSlugListUrl = (
   });
 
 /**
+ * Try to construct a slug-based create URL. Returns null if resolution fails.
+ *
+ * `/create` and `/list` share the whole board prefix, so this swaps the surface
+ * segment instead of re-deriving the slugs — the create form then inherits the
+ * id-aware size slug that keeps a shadowed size addressable (see
+ * `resolveSizeSlug`), and there is one definition of the prefix rather than two
+ * that can drift. It is the same swap `listUrlToCreateUrl` in the bottom tab bar
+ * applies to a stored last-used-board URL. `constructCreateClimbUrl` stays as
+ * the name-based fallback.
+ */
+export const tryConstructSlugCreateUrl = (
+  board_name: string,
+  layout_id: number,
+  size_id: number,
+  set_ids: number[],
+  angle: number,
+): string | null =>
+  tryConstructSlugListUrl(board_name, layout_id, size_id, set_ids, angle)?.replace(/\/list$/, '/create') ?? null;
+
+/**
  * Extracts the base board configuration path from a full pathname.
  * This removes dynamic segments that can change during a session:
  * - /view/[climb_slug] - viewing climb details

@@ -10,7 +10,7 @@ import UnifiedSearchDrawer from '../search-drawer/unified-search-drawer';
 import AccordionSearchForm from '../search-drawer/accordion-search-form';
 import { SearchDrawerBridgeInjector } from '../search-drawer/search-drawer-bridge-context';
 import type { BoardDetails } from '@/app/lib/types';
-import { generateLayoutSlug, generateSizeSlug, generateSetSlug } from '@/app/lib/url-utils';
+import { constructCreateClimbUrl, tryConstructSlugCreateUrl } from '@/app/lib/url-utils';
 import { useCurrentClimb, useSearchData } from '../graphql-queue';
 import { useUISearchParams } from '../queue-control/ui-searchparams-provider';
 import {
@@ -68,9 +68,29 @@ export default function BoardSeshHeader({ boardDetails, angle, isAngleAdjustable
     return null;
   }
 
+  // Id-aware first: the name-based builder only knows the bare size slug, so on a
+  // size that shares one with another on the same layout (Kilter layout 1 sizes
+  // 10/27) the Create button would open the form on the other board. `boardDetails`
+  // carries the numeric ids alongside the names, so the exact form is always
+  // reachable here; names stay as the fallback for a board the static tables
+  // don't carry.
   const createClimbUrl =
     angle !== undefined && boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names
-      ? `/${boardDetails.board_name}/${generateLayoutSlug(boardDetails.layout_name)}/${generateSizeSlug(boardDetails.size_name, boardDetails.size_description)}/${generateSetSlug(boardDetails.set_names)}/${angle}/create`
+      ? (tryConstructSlugCreateUrl(
+          boardDetails.board_name,
+          boardDetails.layout_id,
+          boardDetails.size_id,
+          boardDetails.set_ids,
+          angle,
+        ) ??
+        constructCreateClimbUrl(
+          boardDetails.board_name,
+          boardDetails.layout_name,
+          boardDetails.size_name,
+          boardDetails.size_description,
+          boardDetails.set_names,
+          angle,
+        ))
       : null;
 
   // Angle selector is only needed on the climb-view drawer surface
