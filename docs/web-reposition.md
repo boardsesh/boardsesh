@@ -99,10 +99,18 @@ plus `useOptionalPlaylistActivation`. Refactor `multiboard-climb-list.tsx` and
 
 ## Phase A0 — invariant tests added
 
-- `app/__tests__/crawler-classic-invariant.test.ts` — an anonymous request (no
-  session cookie) never redirects to `/app` on any board surface, even with
-  `BOARDSESH_WEB=1` + the flag cookie on. Protects the SEO/crawler audience
-  through the teardown.
+- `app/__tests__/crawler-classic-invariant.test.ts` — a cookie-less request to a
+  canonical board URL (`/b/**`, a config-tuple `.../list`, or a config-tuple
+  `.../view/**`, in every locale prefix) gets no 3xx at all from middleware, and
+  the three legitimate redirect classes (numeric→slug in the `[angle]` and
+  `[angle]/list` layouts, bare-uuid/numeric→slug at `view/[climb_uuid]`, and
+  `/play`→`/view` on both trees) are asserted on `Location` **host**
+  (`www.boardsesh.com`), never pathname — a pathname check can't tell a
+  cross-host redirect from a legitimate same-host one when they share a
+  pathname shape, and a blanket ban on redirect statuses would wrongly outlaw
+  those correct same-host 308s. Protects the SEO/crawler audience through the
+  teardown. W-09 deleted the `bs_expo_web` cookie, the `bs_classic`/`?classic=1`
+  hatch and `mapToExpoWebTarget`; `docs/expo-web-rollout.md` is gone.
 - `app/__tests__/climb-canonical-parity.test.ts` — documents that the legacy and
   `/b` view trees self-canonicalize into different URLs today (split PageRank).
   **Flip at A1:** the consolidation target is the config-tuple tree (route
