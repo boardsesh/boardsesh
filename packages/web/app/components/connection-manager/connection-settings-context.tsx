@@ -39,8 +39,3 @@ export function useConnectionSettings() {
   }
   return context;
 }
-
-export function useBackendUrl() {
-  const { backendUrl } = useConnectionSettings();
-  return { backendUrl };
-}

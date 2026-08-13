@@ -130,10 +130,17 @@ vi.mock('@/app/lib/graphql/client', () => ({
   createGraphQLHttpClient: () => ({ request: mockRequest }),
 }));
 
-vi.mock('@/app/lib/realtime/graphql-client', () => ({
-  createGraphQLClient: vi.fn(),
-  execute: vi.fn(),
-}));
+// `GraphQLOperationError` is the REAL class — create-climb-form branches on
+// `instanceof` for the duplicate-climb path — pulled from the pure shared
+// package so importing it doesn't drag in browser globals.
+vi.mock('@/app/lib/realtime/graphql-client', async () => {
+  const shared = await vi.importActual<typeof import('@boardsesh/graphql-client')>('@boardsesh/graphql-client');
+  return {
+    createGraphQLClient: vi.fn(),
+    execute: vi.fn(),
+    GraphQLOperationError: shared.GraphQLOperationError,
+  };
+});
 
 vi.mock('@/app/components/providers/auth-modal-provider', () => ({
   useAuthModal: () => ({ openAuthModal: mockOpenAuthModal }),
