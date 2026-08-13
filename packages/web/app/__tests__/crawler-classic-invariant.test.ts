@@ -207,12 +207,12 @@ describe("middleware: a cookie-less request to a canonical board URL never 3xx's
   });
 
   const LOCALE_PREFIXED_CASES: [string, string][] = CANONICAL_SURFACES.flatMap((surface) =>
-    ['es', 'fr', 'de'].map((locale): [string, string] => [surface, locale]),
+    ['es', 'fr', 'de'].map((locale): [string, string] => [locale, surface]),
   );
 
   it.each(LOCALE_PREFIXED_CASES)(
     'a locale-prefixed cookie-less request is a rewrite, never a redirect: /%s%s',
-    (surface, locale) => {
+    (locale, surface) => {
       const response = middleware(makeRequest(`/${locale}${surface}`));
       expectNoRedirect(response);
       expect(response.headers.has('x-middleware-rewrite')).toBe(true);
