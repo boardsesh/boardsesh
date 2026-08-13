@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { NextRequest, NextResponse } from 'next/server';
 import { PATHNAME_HEADER } from '@/app/lib/request-pathname-header';
 
@@ -51,16 +51,26 @@ vi.mock('next/headers', () => ({
   headers: vi.fn(async () => ({ get: (name: string) => requestHeaders.get(name) ?? null })),
 }));
 
-// `@/app/lib/url-utils.server` is mocked WHOLESALE — never via `importOriginal`.
-// The real module imports `./slug-utils`, which imports `@/app/lib/db/db`,
-// whose module body calls `createPool()`/`createDb()` at load time.
-// `@/app/lib/url-utils` is deliberately left REAL: the redirect targets these
-// tests assert on are built there (`constructClimbListWithSlugs`,
-// `constructClimbViewUrlWithSlugs`, `constructBoardSlugViewUrl`), so the
-// host-preservation property is exercised for real rather than re-asserted
-// against a rebuilt predicate. Trade-off: `redirectWithQuery`'s own query-string
-// handling is not exercised for real — unavoidable given the db-import trap.
-vi.mock('@/app/lib/url-utils.server', () => ({
+// `@/app/lib/slug-utils` is the db-import trap, NOT `@/app/lib/url-utils.server`:
+// slug-utils imports `@/app/lib/db/db`, whose module body calls
+// `createPool()`/`createDb()` at load time. Mocking the actual offender keeps
+// the REAL `redirectWithQuery` in the graph. `url-utils.server` pulls exactly
+// these three from here, and no other module this test imports touches it.
+vi.mock('@/app/lib/slug-utils', () => ({
+  getLayoutBySlug: vi.fn(async () => null),
+  getSizeBySlug: vi.fn(async () => null),
+  getSetsBySlug: vi.fn(async () => null),
+}));
+
+// Only `parseRouteParams` is stubbed, via `importOriginal`, so the rest of the
+// module stays real — crucially `redirectWithQuery`, which is what actually
+// emits the `/play`→`/view` `Location` in (C1)/(C2). Asserting against a
+// test-local copy of it would make those two cases a rebuilt predicate.
+// `@/app/lib/url-utils` is left REAL for the same reason: the redirect targets
+// these tests assert on are built there (`constructClimbListWithSlugs`,
+// `constructClimbViewUrlWithSlugs`, `constructBoardSlugViewUrl`).
+vi.mock('@/app/lib/url-utils.server', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/app/lib/url-utils.server')>()),
   parseRouteParams: vi.fn(async () => ({
     parsedParams: {
       board_name: 'kilter',
@@ -72,14 +82,6 @@ vi.mock('@/app/lib/url-utils.server', () => ({
     },
     isNumericFormat: true,
   })),
-  redirectWithQuery: vi.fn((viewUrl: string, searchParams: Record<string, string | string[]>) => {
-    const query = new URLSearchParams(
-      Object.entries(searchParams).flatMap(([key, value]) =>
-        Array.isArray(value) ? value.map((v) => [key, v]) : [[key, value]],
-      ),
-    ).toString();
-    permanentRedirect(query ? `${viewUrl}?${query}` : viewUrl);
-  }),
 }));
 
 vi.mock('@/app/lib/board-utils', () => ({
@@ -161,14 +163,38 @@ const LegacyPlayPage = (
   await import('@/app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/play/[climb_uuid]/page')
 ).default;
 const SlugPlayPage = (await import('@/app/b/[board_slug]/[angle]/play/[climb_uuid]/page')).default;
+const { getClimb } = await import('@/app/lib/data/queries');
 
 const PROD_HOST = 'www.boardsesh.com';
 const PROD_ORIGIN = `https://${PROD_HOST}`;
 const REDIRECT_STATUSES = [301, 302, 307, 308];
+// Test requests ride on the dev origin (see `makeRequest`), and the vacuity
+// self-tests below construct rewrites against PROD_ORIGIN. A legitimate
+// middleware rewrite never leaves those hosts — `app.boardsesh.com` under a
+// clean pathname is the same crawler harm with the `/app` prefix laundered off.
+const REQUEST_ORIGIN = 'http://localhost:3000';
+const ALLOWED_REWRITE_HOSTS = [new URL(REQUEST_ORIGIN).host, PROD_HOST];
+
+// The rewrite target, when there is one. `next.config.mjs` serves `/app` by
+// REWRITE, so a status-only invariant leaves the same crawler harm reachable by
+// a different mechanism: the noindex SPA rendered at a canonical board URL.
+function rewriteTargetPathname(response: ReturnType<typeof middleware>): string | null {
+  const rewriteTarget = response.headers.get('x-middleware-rewrite');
+  return rewriteTarget === null ? null : new URL(rewriteTarget, PROD_ORIGIN).pathname;
+}
 
 function expectNoRedirect(response: ReturnType<typeof middleware>): void {
   expect(REDIRECT_STATUSES).not.toContain(response.status);
   expect(response.headers.get('location')).toBeNull();
+  // Not-a-redirect is not enough: the surface must also not be rewritten onto
+  // the `/app` SPA, nor onto a foreign host. `x-middleware-rewrite` carries an
+  // absolute URL, so the host is checked before the pathname.
+  const rewriteTarget = response.headers.get('x-middleware-rewrite');
+  if (rewriteTarget !== null) {
+    const resolved = new URL(rewriteTarget, PROD_ORIGIN);
+    expect(ALLOWED_REWRITE_HOSTS).toContain(resolved.host);
+    expect(resolved.pathname === '/app' || resolved.pathname.startsWith('/app/')).toBe(false);
+  }
 }
 
 // A relative target resolves to the prod host; an absolute
@@ -184,8 +210,10 @@ function expectSameTree(sourcePath: string, target: string): void {
 }
 
 function makeRequest(url: string): NextRequest {
-  return new NextRequest(new URL(url, 'http://localhost:3000'));
+  return new NextRequest(new URL(url, REQUEST_ORIGIN));
 }
+
+const ORIGINAL_EXPO_WEB_FLAG = process.env.BOARDSESH_WEB;
 
 beforeEach(() => {
   // clearAllMocks clears call records, not implementations — mirrors the
@@ -194,13 +222,40 @@ beforeEach(() => {
   requestHeaders.clear();
 });
 
-describe("middleware: a cookie-less request to a canonical board URL never 3xx's", () => {
-  const CANONICAL_SURFACES = [
-    '/kilter/original/12x12-square/screw_bolt/40/list',
-    '/b/kilter-original-12x12/40/list',
-    '/kilter/original/12x12-square/screw_bolt/40/view/test-climb-abcdef1234567890abcdef1234567890',
-    '/b/kilter-original-12x12/40/view/test-climb-abcdef1234567890abcdef1234567890',
-  ];
+afterEach(() => {
+  if (ORIGINAL_EXPO_WEB_FLAG === undefined) {
+    delete process.env.BOARDSESH_WEB;
+  } else {
+    process.env.BOARDSESH_WEB = ORIGINAL_EXPO_WEB_FLAG;
+  }
+});
+
+const CANONICAL_SURFACES = [
+  '/kilter/original/12x12-square/screw_bolt/40/list',
+  '/b/kilter-original-12x12/40/list',
+  '/kilter/original/12x12-square/screw_bolt/40/view/test-climb-abcdef1234567890abcdef1234567890',
+  '/b/kilter-original-12x12/40/view/test-climb-abcdef1234567890abcdef1234567890',
+];
+
+// `middleware.ts` reads `BOARDSESH_WEB` at REQUEST time (the `/app` and
+// `/assets` carve-outs), and `Dockerfile.web` sets it in both the builder and
+// the runner stage — flag-ON is production's shipped configuration, not an
+// exotic case. The deleted rollout redirect was gated on exactly this flag, so
+// run the whole invariant under both states: an env-gated re-arm has to fail
+// this suite rather than slip past because the flag happened to be unset.
+// Only board surfaces are asserted here — the `/app` carve-out itself is
+// legitimate behaviour and is owned by middleware.test.ts.
+describe.each([
+  ['BOARDSESH_WEB=1 (production default)', '1'],
+  ['BOARDSESH_WEB unset', undefined],
+] as const)("middleware, %s: a cookie-less request to a canonical board URL never 3xx's", (_label, flagValue) => {
+  beforeEach(() => {
+    if (flagValue === undefined) {
+      delete process.env.BOARDSESH_WEB;
+    } else {
+      process.env.BOARDSESH_WEB = flagValue;
+    }
+  });
 
   it.each(CANONICAL_SURFACES)('no cookies at all: %s', (surface) => {
     expectNoRedirect(middleware(makeRequest(surface)));
@@ -211,11 +266,13 @@ describe("middleware: a cookie-less request to a canonical board URL never 3xx's
   );
 
   it.each(LOCALE_PREFIXED_CASES)(
-    'a locale-prefixed cookie-less request is a rewrite, never a redirect: /%s%s',
+    'a locale-prefixed cookie-less request is a rewrite to the locale-stripped surface, never a redirect: /%s%s',
     (locale, surface) => {
       const response = middleware(makeRequest(`/${locale}${surface}`));
       expectNoRedirect(response);
-      expect(response.headers.has('x-middleware-rewrite')).toBe(true);
+      // WHERE the rewrite points, not merely that one exists: a rewrite onto
+      // the noindex `/app` SPA is the same crawler harm as a redirect to it.
+      expect(rewriteTargetPathname(response)).toBe(surface);
     },
   );
 
@@ -264,6 +321,9 @@ describe('the three legitimate redirect classes stay on www.boardsesh.com', () =
     const target = permanentRedirect.mock.calls[0]![0];
     expectSameHostRedirectTarget(target);
     expectSameTree(sourcePath, target);
+    // Same destination assertion as (A1): host + tree alone are satisfied by a
+    // self-redirect, which is a loop, not a canonicalisation.
+    expect(target).toContain('/list');
   });
 
   it('(B) bare-uuid/numeric→slug at the climb view page', async () => {
@@ -324,6 +384,56 @@ describe('the three legitimate redirect classes stay on www.boardsesh.com', () =
     // Stays inside /b/ — the mirror of the legacy→/b negative case below.
     expectSameHostRedirectTarget(target);
     expectSameTree(sourcePath, target);
+    // Mirrors (C1). Without these, a `/b` play page redirecting to ITSELF — an
+    // infinite loop — satisfies host + tree and passes.
+    expect(target).toContain('/view/');
+    expect(target).not.toContain('/play/');
+  });
+
+  // Both play pages wrap `getClimb` in try/catch and fall back to the bare-uuid
+  // `/view/` URL when the climb has no resolvable name. With `getClimb` always
+  // resolving a name, that fallback branch of the URL builders is dead code
+  // under this suite — so a regression confined to it (a `/play` self-redirect
+  // loop) would ship green. These two exercise it for real.
+  it('(C1n) /play→/view still holds when the climb name cannot be resolved (config-tuple tree)', async () => {
+    const sourcePath = `/kilter/1/10/1,20/40/play/${CLIMB_UUID}`;
+    vi.mocked(getClimb).mockRejectedValueOnce(new Error('db unavailable'));
+    await expect(
+      LegacyPlayPage({
+        params: Promise.resolve({
+          board_name: 'kilter',
+          layout_id: '1',
+          size_id: '10',
+          set_ids: '1,20',
+          angle: '40',
+          climb_uuid: CLIMB_UUID,
+        }),
+        searchParams: Promise.resolve({}),
+      }),
+    ).rejects.toThrow('NEXT_REDIRECT');
+
+    const target = permanentRedirect.mock.calls[0]![0];
+    expectSameHostRedirectTarget(target);
+    expectSameTree(sourcePath, target);
+    expect(target).toContain(`/view/${CLIMB_UUID}`);
+    expect(target).not.toContain('/play/');
+  });
+
+  it('(C2n) /play→/view still holds when the climb name cannot be resolved (/b tree)', async () => {
+    const sourcePath = `/b/kilter-original-12x12/40/play/${CLIMB_UUID}`;
+    vi.mocked(getClimb).mockRejectedValueOnce(new Error('db unavailable'));
+    await expect(
+      SlugPlayPage({
+        params: Promise.resolve({ board_slug: 'kilter-original-12x12', angle: '40', climb_uuid: CLIMB_UUID }),
+        searchParams: Promise.resolve({}),
+      }),
+    ).rejects.toThrow('NEXT_REDIRECT');
+
+    const target = permanentRedirect.mock.calls[0]![0];
+    expectSameHostRedirectTarget(target);
+    expectSameTree(sourcePath, target);
+    expect(target).toContain(`/view/${CLIMB_UUID}`);
+    expect(target).not.toContain('/play/');
   });
 });
 
@@ -332,6 +442,28 @@ describe('the guard is not vacuous: it catches what the pre-teardown helper miss
     for (const status of REDIRECT_STATUSES) {
       expect(() => expectNoRedirect(NextResponse.redirect('https://www.boardsesh.com/app/climbs', status))).toThrow();
     }
+  });
+
+  it('expectNoRedirect rejects a same-host REWRITE onto the /app SPA', () => {
+    // `next.config.mjs` serves `/app` by rewrite, so this is the realistic way
+    // to regress the invariant without emitting any 3xx at all.
+    expect(() => expectNoRedirect(NextResponse.rewrite(new URL('/app/climbs', PROD_ORIGIN)))).toThrow();
+    expect(() => expectNoRedirect(NextResponse.rewrite(new URL('/app', PROD_ORIGIN)))).toThrow();
+    // A rewrite to a real board surface — what locale-stripping does — is fine.
+    expect(() =>
+      expectNoRedirect(NextResponse.rewrite(new URL('/kilter/original/12x12-square/screw_bolt/40/list', PROD_ORIGIN))),
+    ).not.toThrow();
+  });
+
+  it('expectNoRedirect rejects a CROSS-HOST rewrite even under a clean pathname', () => {
+    // The `/app` pathname check alone is launderable: serve the SPA from the
+    // app host under the canonical pathname and no `/app` prefix ever appears.
+    expect(() => expectNoRedirect(NextResponse.rewrite(new URL('https://app.boardsesh.com/climbs')))).toThrow();
+    expect(() =>
+      expectNoRedirect(
+        NextResponse.rewrite(new URL('/kilter/original/12x12-square/screw_bolt/40/list', 'https://app.boardsesh.com')),
+      ),
+    ).toThrow();
   });
 
   it('expectSameHostRedirectTarget rejects a cross-host Location', () => {

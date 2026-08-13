@@ -161,9 +161,11 @@ const nextConfig = {
         // frameable by ANY origin, hence `frame-ancestors *` and NO
         // X-Frame-Options (frame-ancestors takes precedence over XFO in
         // modern browsers; omitting XFO keeps legacy browsers from denying).
-        // The middleware 308s locale-prefixed /es|fr/embed/** to the
-        // un-prefixed path because this matcher sees the ORIGINAL request
-        // path — a prefixed variant would fall into the SAMEORIGIN rule above.
+        // The middleware 308s every locale-prefixed /embed/** (es, fr, de —
+        // the pattern derives from SUPPORTED_LOCALES, so a new locale can't
+        // silently drift out of it) to the un-prefixed path, because this
+        // matcher sees the ORIGINAL request path — a prefixed variant would
+        // fall into the SAMEORIGIN rule above.
         // `:path+` (one or more segments), NOT `:path*`: the exclusion regex
         // above only skips paths starting `embed/` (with slash), so a bare
         // `/embed` matches the SAMEORIGIN rule — with `:path*` it would match
