@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vite-plus/test';
+import { generateSetNameSlug, generateSetSlug } from '@boardsesh/play-view/readable-url-utils';
 import { matchSetNameToSlugParts } from '../slug-matching';
 
 describe('matchSetNameToSlugParts', () => {
@@ -515,6 +516,50 @@ describe('matchSetNameToSlugParts', () => {
       it('should match Screw Ons', () => {
         expect(matchSetNameToSlugParts('Screw Ons', slugParts)).toBe(true);
       });
+    });
+  });
+
+  /**
+   * Matching is the inverse of building, and both directions must stay one rule
+   * set: web resolves a URL's set slug here, the URL builders (web and the Expo
+   * app) emit it with `generateSetNameSlug`. When this file kept its own copy of
+   * the aux/main/kicker/bolt/screw heuristics the two agreed by hand — the next
+   * tweak to either would have lit different holds on the two hosts.
+   */
+  describe('delegation to the shared set-name slugger', () => {
+    const setNames = [
+      'Auxiliary Kickboard',
+      'Mainline Kickboard',
+      'Auxiliary',
+      'Mainline',
+      'Aux Kicker',
+      'Main Kicker',
+      'Aux',
+      'Main',
+      'Bolt Ons',
+      'Screw Ons',
+      'Custom Set',
+    ];
+
+    it('matches exactly the slug the builder emits for the same name', () => {
+      for (const setName of setNames) {
+        const emittedSlug = generateSetNameSlug(setName);
+        expect(matchSetNameToSlugParts(setName, [emittedSlug])).toBe(true);
+        expect(
+          matchSetNameToSlugParts(
+            setName,
+            setNames.map(generateSetNameSlug).filter((s) => s !== emittedSlug),
+          ),
+        ).toBe(false);
+      }
+    });
+
+    it('re-selects every set a built set slug was built from', () => {
+      const selected = ['Bolt Ons', 'Screw Ons'];
+      const slugParts = generateSetSlug(selected).split('_');
+
+      expect(selected.every((setName) => matchSetNameToSlugParts(setName, slugParts))).toBe(true);
+      expect(matchSetNameToSlugParts('Auxiliary', slugParts)).toBe(false);
     });
   });
 });

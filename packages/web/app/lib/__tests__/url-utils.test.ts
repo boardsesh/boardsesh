@@ -32,6 +32,7 @@ import {
   DEFAULT_SEARCH_PARAMS,
   constructCreateClimbUrl,
 } from '../url-utils';
+import { resolveSizeSlugToId } from '@boardsesh/play-view/readable-url-utils';
 import type { SearchRequestPagination, BoardDetails } from '../types';
 
 describe('searchParamsToUrlParams', () => {
@@ -1685,6 +1686,116 @@ describe('tryConstructSlugListUrl', () => {
   it('should return null when static data lookup fails', () => {
     const result = tryConstructSlugListUrl('kilter', 9999, 9999, [9999], 40);
     expect(result).toBeNull();
+  });
+});
+
+/**
+ * Kilter layout 1 carries two "12 x 12" squares — id 10 ("with kickboard") and
+ * id 27 ("without kickboard") — and both name-slug to `12x12-square`. Only a
+ * builder that has the size *id* can tell them apart, so every web surface that
+ * canonicalises, redirects, or hands out a link has to go through the id-aware
+ * builders. These pin that: id 10 keeps the bare slug every existing link
+ * already means, id 27 gets the qualified one, and the two forms resolve back
+ * to the sizes they were built from.
+ */
+describe('qualified size slugs for a shadowed size (Kilter layout 1, sizes 10/27)', () => {
+  const KILTER_SQUARE_SETS = [1, 20];
+  const BARE_VIEW_URL = '/kilter/original/12x12-square/screw_bolt/40/view/moon-landing-ABC123';
+  const QUALIFIED_VIEW_URL = '/kilter/original/12x12-square-without-kickboard/screw_bolt/40/view/moon-landing-ABC123';
+
+  const squareWithKickboard = {
+    board_name: 'kilter',
+    layout_id: 1,
+    size_id: 10,
+    set_ids: KILTER_SQUARE_SETS,
+    layout_name: 'Kilter Board Original',
+    size_name: '12 x 12 with kickboard',
+    size_description: 'Square',
+    set_names: ['Bolt Ons', 'Screw Ons'],
+  } as unknown as BoardDetails;
+
+  const squareWithoutKickboard = {
+    ...squareWithKickboard,
+    size_id: 27,
+    size_name: '12 x 12 without kickboard',
+  } as unknown as BoardDetails;
+
+  describe('tryConstructSlugViewUrl / tryConstructSlugListUrl', () => {
+    it('emits the qualified size slug for the shadowed size', () => {
+      expect(tryConstructSlugViewUrl('kilter', 1, 27, KILTER_SQUARE_SETS, 40, 'ABC123', 'Moon Landing')).toBe(
+        QUALIFIED_VIEW_URL,
+      );
+      expect(tryConstructSlugListUrl('kilter', 1, 27, KILTER_SQUARE_SETS, 40)).toBe(
+        '/kilter/original/12x12-square-without-kickboard/screw_bolt/40/list',
+      );
+    });
+
+    it('leaves the size that owns the bare slug on it, so existing links keep meaning what they meant', () => {
+      expect(tryConstructSlugViewUrl('kilter', 1, 10, KILTER_SQUARE_SETS, 40, 'ABC123', 'Moon Landing')).toBe(
+        BARE_VIEW_URL,
+      );
+      expect(tryConstructSlugListUrl('kilter', 1, 10, KILTER_SQUARE_SETS, 40)).toBe(
+        '/kilter/original/12x12-square/screw_bolt/40/list',
+      );
+    });
+
+    it('round-trips both forms back to the size each was built from', () => {
+      expect(resolveSizeSlugToId('kilter', 1, '12x12-square-without-kickboard')).toBe(27);
+      expect(resolveSizeSlugToId('kilter', 1, '12x12-square')).toBe(10);
+    });
+  });
+
+  describe('getContextAwareClimbViewUrl', () => {
+    it('emits the qualified slug for the shadowed size even though slug names are present', () => {
+      // Server-hydrated pages always carry layout_name/size_name/set_names, so
+      // this is the case that used to silently take the name-based path.
+      expect(
+        getContextAwareClimbViewUrl('/kilter/1/27/1,20/40/list', squareWithoutKickboard, 40, 'ABC123', 'Moon Landing'),
+      ).toBe(QUALIFIED_VIEW_URL);
+    });
+
+    it('is byte-identical to the name-based builder for a size that is not shadowed', () => {
+      expect(
+        getContextAwareClimbViewUrl('/kilter/1/10/1,20/40/list', squareWithKickboard, 40, 'ABC123', 'Moon Landing'),
+      ).toBe(BARE_VIEW_URL);
+      expect(
+        constructClimbViewUrlWithSlugs(
+          'kilter',
+          'Kilter Board Original',
+          '12 x 12 with kickboard',
+          'Square',
+          ['Bolt Ons', 'Screw Ons'],
+          40,
+          'ABC123',
+          'Moon Landing',
+        ),
+      ).toBe(BARE_VIEW_URL);
+    });
+
+    it('still falls back to the name-based builder when the ids resolve to nothing', () => {
+      // A DB-only board the static tables don't carry: ids are unresolvable, so
+      // the names are the only thing left to slugify.
+      const dbOnlyBoard = {
+        board_name: 'kilter',
+        layout_id: 9999,
+        size_id: 9999,
+        set_ids: [9999],
+        layout_name: 'Kilter Board Homewall',
+        size_name: '8 x 12',
+        size_description: 'Home',
+        set_names: ['Mainline'],
+      } as unknown as BoardDetails;
+
+      expect(
+        getContextAwareClimbViewUrl('/kilter/9999/9999/9999/40/list', dbOnlyBoard, 40, 'ABC123', 'Moon Landing'),
+      ).toBe('/kilter/homewall/8x12-home/main/40/view/moon-landing-ABC123');
+    });
+
+    it('preserves /b/{slug} routing context ahead of either builder', () => {
+      expect(
+        getContextAwareClimbViewUrl('/b/moonrise-gym/40/list', squareWithoutKickboard, 40, 'ABC123', 'Moon Landing'),
+      ).toBe('/b/moonrise-gym/40/view/moon-landing-ABC123');
+    });
   });
 });
 

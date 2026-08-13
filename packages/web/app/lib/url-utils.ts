@@ -477,10 +477,12 @@ export const constructClimbViewUrl = (
  * Name-based, so it emits the *bare* size slug even for a size that shares one
  * with another on the same layout (Kilter "12 x 12 without kickboard" — see
  * `resolveSizeSlug` in @boardsesh/play-view). Such a link still resolves, just
- * to the first match, exactly as it did before. The Expo app's builders take
- * ids and emit the qualified slug; `getSizeBySlug` resolves both. Threading ids
- * through here would let web emit the exact form too — worth doing when these
- * call sites next get touched.
+ * to the first match, which for a shadowed size is the wrong physical board.
+ *
+ * Prefer `tryConstructSlugViewUrl` wherever the numeric ids are in hand; it
+ * takes them and emits the qualified slug, and `getSizeBySlug` resolves both
+ * forms. This stays as the fallback for a board the static tables don't carry,
+ * where names are all a caller has.
  */
 export const constructClimbViewUrlWithSlugs = (
   board_name: string,
@@ -916,6 +918,24 @@ export const getContextAwareClimbViewUrl = (
     return constructBoardSlugViewUrl(boardSlugRoute.slug, boardSlugRoute.angle, climbUuid, climbName);
   }
 
+  // Ids first. Only the id-aware builder can emit the qualified size slug for a
+  // size that shares its base slug with another on the same layout (Kilter
+  // layout 1 sizes 10/27 — see `resolveSizeSlug`); the name-based builder below
+  // would hand a sharer a URL that resolves to the *other* board. For every
+  // other size the two agree byte for byte, so nothing else moves.
+  const slugUrl = tryConstructSlugViewUrl(
+    boardDetails.board_name,
+    boardDetails.layout_id,
+    boardDetails.size_id,
+    boardDetails.set_ids,
+    angle,
+    climbUuid,
+    climbName,
+  );
+  if (slugUrl) return slugUrl;
+
+  // Names are the fallback for a board the static tables don't carry (a DB-only
+  // layout), where the ids resolve to nothing to slugify.
   if (boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names) {
     return constructClimbViewUrlWithSlugs(
       boardDetails.board_name,
@@ -928,18 +948,6 @@ export const getContextAwareClimbViewUrl = (
       climbName,
     );
   }
-
-  // Try resolving names from static data
-  const slugUrl = tryConstructSlugViewUrl(
-    boardDetails.board_name,
-    boardDetails.layout_id,
-    boardDetails.size_id,
-    boardDetails.set_ids,
-    angle,
-    climbUuid,
-    climbName,
-  );
-  if (slugUrl) return slugUrl;
 
   return constructClimbViewUrl(
     {
