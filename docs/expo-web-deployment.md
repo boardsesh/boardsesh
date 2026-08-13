@@ -177,27 +177,45 @@ Three things to get right:
   `environment: Production` is resolved — a variable scoped to that environment
   is not reliably visible there, and a hold that silently does nothing is worse
   than no hold at all.
-- **Not a secret.** Only its presence is read, never its value, so spend the body
-  on the incident reference: it is what the next person sees in Settings.
+- **Not a secret, but never empty.** The gate reads
+  `vars.APP_WEB_DEPLOY_HOLD == ''`, so what holds the deploy is a **non-empty
+  value**, not the variable merely existing — set it with an empty body (the
+  `gh variable set` prompt accepts one) and you get a hold that does nothing at
+  all. Always pass `--body`, and spend it on the incident reference: it is what
+  the next person sees in Settings. The value is only ever compared against the
+  empty string, never used as a credential, so it needs no secret handling.
 - **Clear it before the next intended deploy.** The hold is not time-boxed and
   nothing queues behind it. Every qualifying merge while it is set skips the
   subdomain and pings Discord, and those commits stay unshipped until it is
   cleared.
 
-Releasing does not redeploy by itself. After `gh variable delete`, either wait
-for the next qualifying merge or ship current `main` immediately with
-`gh workflow run production-deploy.yml` — a manual dispatch marks web, backend
-and app as changed (see `detect-changes`), so it rebuilds and republishes the
-subdomain.
+Releasing does not redeploy by itself. After `gh variable delete`, in order of
+blast radius:
+
+1. **Re-run the held run** — Actions → the run that was held → _Re-run all jobs_.
+   This is what the held-run Discord ping tells you to do. `detect-changes` and
+   every job `if:` re-evaluate on a re-run, so it ships exactly what that push
+   qualified for: after a mobile-only merge, the subdomain and nothing else.
+2. **Wait for the next qualifying merge**, if nothing is urgent.
+3. **`gh workflow run production-deploy.yml`** to ship current `main` now. Mind
+   the blast radius: a manual dispatch marks web, backend _and_ app as changed
+   (see `detect-changes`), so it redeploys Vercel and Railway as well, not just
+   the subdomain.
 
 The hold covers `app.boardsesh.com` only. `deploy-web` (Vercel) and
 `deploy-production-backend` (Railway) still deploy while it is set; their own
 guard is `check-rollback`.
 
+`notify-success` reports a held subdomain as `held (APP_WEB_DEPLOY_HOLD set)`
+instead of `unchanged`. It derives that from `deploy-app-web` skipping, not by
+re-reading the variable: that job declares `environment: Production`, where a
+step-level `vars.` lookup would also resolve environment-scoped variables the
+job-level gate cannot see, and print "held" for a deploy that actually shipped.
+
 `deploy/app-subdomain/__tests__/production-deploy-hold.test.ts` asserts the gate,
-its Discord counterpart, and that the export's `EXPO_PUBLIC_*` stay at workflow
-level. The `deploy-config` job in `.github/workflows/ci.yml` runs it on every PR
-touching `production-deploy.yml`.
+its Discord counterpart, that held line, and that the export's `EXPO_PUBLIC_*`
+stay at workflow level. The `deploy-config` job in `.github/workflows/ci.yml`
+runs it on every PR touching `production-deploy.yml`.
 
 ### Infra follow-ups (not provisioned here)
 

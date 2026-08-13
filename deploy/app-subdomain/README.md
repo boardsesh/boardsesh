@@ -3,9 +3,9 @@
 `_redirects` and `_headers` are copied into the standalone Expo web export at
 deploy time and shipped to the `boardsesh-app` Cloudflare Pages project. They
 are the only deployed files here; the rest of the directory is this README plus
-the CI tests that guard them — and the deploy job that ships them
-(`__tests__/`, `vite.config.ts`). They are **not**
-part of the export itself — the export recipe
+the CI tests that guard both these files and the deploy job that ships them
+(`__tests__/`, `tsconfig.json`, `vite.config.ts`). They are **not** part of the
+export itself — the export recipe
 (`scripts/build-expo-web-export.sh --subdomain`) emits a `baseUrl /` static SPA;
 this directory adds the host-level SPA fallback and caching rules Pages needs.
 
@@ -66,8 +66,11 @@ export script, `Dockerfile.web`, or the deploy workflow.
 config files: it asserts the `APP_WEB_DEPLOY_HOLD` freeze on `deploy-app-web`,
 the Discord ping that makes a held run visible, and that the export's
 `EXPO_PUBLIC_*` stay at workflow level. It lives here because the `deploy-config`
-job already runs this project unfiltered on any `production-deploy.yml` change,
-which is the only CI gate that fires for a workflow-only diff. See
+job already runs this project unfiltered on any `production-deploy.yml` change —
+the only gate that selects a test suite for a workflow-only diff, since Vitest's
+`--changed` can never relate an fs read to a diff of the file being read. (Other
+gates do fire on such a diff — `service-deploy-inputs.yml` lists the workflow in
+its paths filter — they just run no tests over it.) See
 `docs/expo-web-deployment.md`.
 
 ## Why `EXPO_PUBLIC_WEB_URL` is www, not app
