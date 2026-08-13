@@ -4,19 +4,15 @@ import type { ReactNode } from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-const { getAuthToken } = vi.hoisted(() => ({ getAuthToken: vi.fn<() => Promise<string | null>>() }));
+const { readLocalUserId } = vi.hoisted(() => ({
+  readLocalUserId: vi.fn<() => Promise<string | undefined>>(),
+}));
 
-vi.mock('../../lib/auth-store', () => ({ getAuthToken }));
+// The platform fork under this hook is covered by `local-user-id.test.ts` and
+// `local-user-id.web.test.ts`; here only the React Query wrapper is under test.
+vi.mock('../../lib/local-user-id', () => ({ readLocalUserId }));
 
 import { useStoredUserId } from '../use-current-user-id';
-
-function base64Url(value: string): string {
-  return Buffer.from(value, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-function tokenForUser(userId: string): string {
-  return `${base64Url('{"alg":"HS256"}')}.${base64Url(JSON.stringify({ sub: userId }))}.signature`;
-}
 
 function wrapper() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -27,34 +23,34 @@ function wrapper() {
 
 describe('useStoredUserId', () => {
   beforeEach(() => {
-    getAuthToken.mockReset();
+    readLocalUserId.mockReset();
   });
 
-  it('resolves the id from the stored JWT', async () => {
-    getAuthToken.mockResolvedValue(tokenForUser('user-42'));
+  it('resolves the id the device can answer locally', async () => {
+    readLocalUserId.mockResolvedValue('user-42');
     const { result } = renderHook(() => useStoredUserId(true).userId, { wrapper: wrapper() });
     await waitFor(() => expect(result.current).toBe('user-42'));
   });
 
-  it('stays undefined when the keychain has no token', async () => {
-    getAuthToken.mockResolvedValue(null);
+  it('stays undefined when the device has no id to answer with', async () => {
+    readLocalUserId.mockResolvedValue(undefined);
     const { result } = renderHook(() => useStoredUserId(true).userId, { wrapper: wrapper() });
-    await waitFor(() => expect(getAuthToken).toHaveBeenCalled());
+    await waitFor(() => expect(readLocalUserId).toHaveBeenCalled());
     expect(result.current).toBeUndefined();
   });
 
-  it('stays undefined when the stored token is malformed', async () => {
-    getAuthToken.mockResolvedValue('not-a-jwt');
-    const { result } = renderHook(() => useStoredUserId(true).userId, { wrapper: wrapper() });
-    await waitFor(() => expect(getAuthToken).toHaveBeenCalled());
-    expect(result.current).toBeUndefined();
+  it('caches "no id" as a real answer instead of failing the query', async () => {
+    readLocalUserId.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useStoredUserId(true), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.userId).toBeUndefined();
   });
 
-  it('never touches the keychain while disabled (signed out, or the profile already answered)', async () => {
-    getAuthToken.mockResolvedValue(tokenForUser('user-42'));
+  it('never reads while disabled (signed out, or the profile already answered)', async () => {
+    readLocalUserId.mockResolvedValue('user-42');
     const { result } = renderHook(() => useStoredUserId(false), { wrapper: wrapper() });
     await Promise.resolve();
-    expect(getAuthToken).not.toHaveBeenCalled();
+    expect(readLocalUserId).not.toHaveBeenCalled();
     expect(result.current.userId).toBeUndefined();
     // A disabled query is "pending" in React Query terms; callers gate their
     // loading state on this, so it must read as settled.
@@ -62,16 +58,16 @@ describe('useStoredUserId', () => {
   });
 
   it('reports the in-flight read so callers can hold their loading state', async () => {
-    let releaseToken!: (token: string) => void;
-    getAuthToken.mockReturnValue(
+    let releaseUserId!: (userId: string) => void;
+    readLocalUserId.mockReturnValue(
       new Promise<string>((resolve) => {
-        releaseToken = resolve;
+        releaseUserId = resolve;
       }),
     );
     const { result } = renderHook(() => useStoredUserId(true), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isLoading).toBe(true));
 
-    releaseToken(tokenForUser('user-7'));
+    releaseUserId('user-7');
     await waitFor(() => expect(result.current.userId).toBe('user-7'));
     expect(result.current.isLoading).toBe(false);
   });
