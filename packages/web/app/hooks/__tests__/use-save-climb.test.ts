@@ -42,7 +42,7 @@ const { mockExecute, mockDispose, FakeGraphQLOperationError } = vi.hoisted(() =>
   }
   return { mockExecute: vi.fn(), mockDispose: vi.fn(), FakeGraphQLOperationError };
 });
-vi.mock('@/app/components/graphql-queue/graphql-client', () => ({
+vi.mock('@/app/lib/realtime/graphql-client', () => ({
   createGraphQLClient: () => ({ dispose: mockDispose }),
   execute: (...args: unknown[]) => mockExecute(...args),
   GraphQLOperationError: FakeGraphQLOperationError,

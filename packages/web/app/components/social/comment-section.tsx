@@ -10,7 +10,7 @@ import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { getBackendWsUrl } from '@/app/lib/backend-url';
-import { createGraphQLClient, subscribe } from '@/app/components/graphql-queue/graphql-client';
+import { createGraphQLClient, subscribe } from '@/app/lib/realtime/graphql-client';
 import {
   ADD_COMMENT,
   type AddCommentMutationVariables,

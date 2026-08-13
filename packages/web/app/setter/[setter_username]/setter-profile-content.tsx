@@ -24,7 +24,7 @@ import {
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { shareWithFallback } from '@/app/lib/share-utils';
 import type { SetterProfile } from '@boardsesh/shared-schema';
-import styles from '@/app/components/library/playlist-view.module.css';
+import styles from '@/app/components/ui/page-container.module.css';
 
 type SetterProfileContentProps = {
   username: string;

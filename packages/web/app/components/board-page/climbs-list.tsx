@@ -21,7 +21,7 @@ import { ClimbCardSkeleton, ClimbListItemSkeleton } from './board-page-skeleton'
 import { themeTokens } from '@/app/theme/theme-config';
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
 import { useInfiniteScroll } from '@/app/hooks/use-infinite-scroll';
-import { LIST_ROW_HEIGHT } from './constants';
+import { LIST_ROW_HEIGHT } from '@/app/lib/climb-list-constants';
 import { classifyClimbListChange } from './climb-list-utils';
 import SwipeHintOrchestrator from './swipe-hint-orchestrator';
 import { getExcludedClimbActions } from '@/app/lib/climb-action-utils';

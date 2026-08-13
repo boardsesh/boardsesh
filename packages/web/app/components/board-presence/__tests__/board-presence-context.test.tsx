@@ -29,7 +29,7 @@ vi.mock('@/app/lib/backend-url', () => ({
   getBackendWsUrl: () => 'ws://localhost/graphql',
 }));
 
-vi.mock('../../graphql-queue/graphql-client', () => ({
+vi.mock('@/app/lib/realtime/graphql-client', () => ({
   createGraphQLClient: () => {
     wsClient.created += 1;
     wsClient.lastId += 1;
@@ -37,7 +37,7 @@ vi.mock('../../graphql-queue/graphql-client', () => ({
   },
 }));
 
-vi.mock('../board-presence-client', () => ({
+vi.mock('@/app/lib/realtime/board-presence-client', () => ({
   createWebBoardPresenceClient: (getClient: () => unknown) => ({
     wsClient: getClient(),
     resolveBoardForSerial: transport.resolveBoardForSerial,

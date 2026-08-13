@@ -13,7 +13,7 @@ import { PersistentSessionProvider, usePersistentSession } from '../persistent-s
 // ---------------------------------------------------------------------------
 
 // Mock the WebSocket/GraphQL layer — we don't want real connections in tests
-vi.mock('../../graphql-queue/graphql-client', () => ({
+vi.mock('@/app/lib/realtime/graphql-client', () => ({
   createGraphQLClient: vi.fn(() => ({
     dispose: vi.fn(),
   })),

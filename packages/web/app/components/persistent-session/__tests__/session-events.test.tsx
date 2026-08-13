@@ -23,7 +23,7 @@ const { mockExecute, mockSubscribe, mockCreateGraphQLClient } = vi.hoisted(() =>
   mockCreateGraphQLClient: vi.fn(() => ({ dispose: vi.fn() })),
 }));
 
-vi.mock('../../graphql-queue/graphql-client', () => ({
+vi.mock('@/app/lib/realtime/graphql-client', () => ({
   createGraphQLClient: mockCreateGraphQLClient,
   execute: mockExecute,
   subscribe: mockSubscribe,

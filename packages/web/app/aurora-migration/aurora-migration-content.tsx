@@ -14,7 +14,7 @@ import { CheckCircleOutlined, GitHub } from '@mui/icons-material';
 import { useSession } from 'next-auth/react';
 import { useTranslation } from 'react-i18next';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
-import BoardImportPrompt from '@/app/components/settings/board-import-prompt';
+import BoardImportPrompt from '@/app/components/board-entity/board-import-prompt';
 import UserSmartCard from '@/app/components/social/user-smart-card';
 import styles from './aurora-migration.module.css';
 

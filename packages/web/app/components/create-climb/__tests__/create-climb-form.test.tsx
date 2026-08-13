@@ -130,7 +130,7 @@ vi.mock('@/app/lib/graphql/client', () => ({
   createGraphQLHttpClient: () => ({ request: mockRequest }),
 }));
 
-vi.mock('../graphql-queue/graphql-client', () => ({
+vi.mock('@/app/lib/realtime/graphql-client', () => ({
   createGraphQLClient: vi.fn(),
   execute: vi.fn(),
 }));

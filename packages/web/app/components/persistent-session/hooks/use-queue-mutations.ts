@@ -4,7 +4,7 @@ import {
   type QueueMutationsActions as SharedQueueMutationsActions,
 } from '@boardsesh/queue-react';
 import type { RateLimitRetryEvent } from '@boardsesh/graphql-client';
-import type { Client } from '../../graphql-queue/graphql-client';
+import type { Client } from '@/app/lib/realtime/graphql-client';
 import type { ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/types';
 import { type Session, toClimbQueueItemInput } from '../types';
 

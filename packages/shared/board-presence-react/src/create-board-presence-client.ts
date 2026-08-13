@@ -10,7 +10,7 @@
 // the actual wire I/O is entirely the caller's — see `BoardPresenceTransport`.
 //
 // Both platform adapters (`packages/mobile/src/lib/board-presence/board-presence-client.ts`,
-// `packages/web/app/components/board-presence/board-presence-client.ts`) are
+// `packages/web/app/lib/realtime/board-presence-client.ts`) are
 // thin wrappers around this factory now — one place owns the operation
 // strings, the response-unwrapping, and the reconnect-catch-up semantics, so a
 // fix here (e.g. the reconnect catch-up mobile already had) lands on both

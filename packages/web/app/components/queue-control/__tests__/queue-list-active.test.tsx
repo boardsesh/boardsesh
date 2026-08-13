@@ -192,7 +192,7 @@ vi.mock('@/app/lib/climb-action-utils', () => ({
   getExcludedClimbActions: () => [],
 }));
 
-vi.mock('../../board-page/constants', () => ({
+vi.mock('@/app/lib/climb-list-constants', () => ({
   SUGGESTIONS_THRESHOLD: 5,
   PAGE_LIMIT: 20,
   MAX_PAGE_SIZE: 100,

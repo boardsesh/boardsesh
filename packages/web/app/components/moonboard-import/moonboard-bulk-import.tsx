@@ -25,7 +25,7 @@ import type { MoonBoardClimbDuplicateMatch } from '@boardsesh/shared-schema';
 import MoonBoardImportCard from './moonboard-import-card';
 import MoonBoardEditModal from './moonboard-edit-modal';
 import { convertOcrHoldsToMap } from '@/app/lib/moonboard-climbs-db';
-import { useBackendUrl } from '@/app/components/connection-manager/connection-settings-context';
+import { getBackendWsUrl } from '@/app/lib/backend-url';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { uploadOcrTestDataBatch } from '@/app/lib/moonboard-ocr-upload';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -175,7 +175,7 @@ export default function MoonBoardBulkImport({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Backend URL and auth token for OCR upload
-  const { backendUrl } = useBackendUrl();
+  const backendUrl = getBackendWsUrl();
   const { token: authToken } = useWsAuthToken();
   const listUrl = pathname.replace(/\/import$/, '/list');
 

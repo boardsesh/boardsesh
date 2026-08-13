@@ -45,11 +45,11 @@ import {
 } from '@boardsesh/board-presence-react';
 import type { ClimbQueueItemInput, ResolvedBoard } from '@boardsesh/shared-schema';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { createGraphQLClient, type Client } from '../graphql-queue/graphql-client';
+import { createGraphQLClient, type Client } from '@/app/lib/realtime/graphql-client';
 import { getBackendWsUrl } from '@/app/lib/backend-url';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { track } from '@/app/lib/analytics';
-import { createWebBoardPresenceClient, type WebBoardPresenceClient } from './board-presence-client';
+import { createWebBoardPresenceClient, type WebBoardPresenceClient } from '@/app/lib/realtime/board-presence-client';
 
 /** Board config needed to find-or-bind the shared board on first sighting. */
 export type ResolveBoardArgs = {

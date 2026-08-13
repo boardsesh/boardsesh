@@ -5,7 +5,7 @@ import type { BoardDetails, Climb, ParsedBoardRouteParameters, SearchRequestPagi
 import { cachedSearchClimbs } from '@/app/lib/db/queries/climbs/search-climbs';
 import { hasUserSpecificFilters } from '@/app/lib/list-page-cache';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
-import { resolveSsrInitialPageSize } from '@/app/components/board-page/constants';
+import { resolveSsrInitialPageSize } from '@/app/lib/climb-list-constants';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import { scheduleOverlayWarming } from '@/app/lib/warm-overlay-cache';
 import { buildOverlayUrl } from '@/app/components/board-renderer/util';

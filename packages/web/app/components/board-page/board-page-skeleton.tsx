@@ -12,7 +12,7 @@ import CallSplitOutlined from '@mui/icons-material/CallSplitOutlined';
 import FavoriteBorderOutlined from '@mui/icons-material/FavoriteBorderOutlined';
 import AddCircleOutlined from '@mui/icons-material/AddCircleOutlined';
 import { themeTokens } from '@/app/theme/theme-config';
-import { LIST_ROW_HEIGHT } from './constants';
+import { LIST_ROW_HEIGHT } from '@/app/lib/climb-list-constants';
 import styles from './board-page-skeleton.module.css';
 
 type BoardPageSkeletonProps = {

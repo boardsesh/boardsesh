@@ -1,6 +1,6 @@
 import type { Climb, SearchRequestPagination, ParsedBoardRouteParameters } from '@/app/lib/types';
 import type { SessionUser } from '@boardsesh/shared-schema';
-import type { ConnectionState } from '../connection-manager/websocket-connection-manager';
+import type { ConnectionState } from '@/app/lib/realtime/websocket-connection-manager';
 import type {
   QueueState as SharedQueueState,
   QueueAction as SharedQueueAction,

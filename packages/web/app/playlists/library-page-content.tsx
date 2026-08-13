@@ -34,7 +34,7 @@ import BoardFilterStrip from '@/app/components/board-scroll/board-filter-strip';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { BoardConfigData } from '@/app/lib/server-board-configs';
 import type { StoredBoardConfig } from '@/app/lib/saved-boards-db';
-import styles from '@/app/components/library/library.module.css';
+import styles from '@/app/components/ui/page-container.module.css';
 
 type SelectedBoardForCreate = { boardType: string; layoutId: number };
 

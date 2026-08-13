@@ -53,7 +53,7 @@ import { getSoftGradeColor } from '@/app/lib/grade-colors';
 import { useColorMode } from '@/app/hooks/use-color-mode';
 import { parseScreenshot } from '@boardsesh/moonboard-ocr/browser';
 import { convertOcrHoldsToMap } from '@/app/lib/moonboard-climbs-db';
-import { createGraphQLClient, execute, GraphQLOperationError, type Client } from '../graphql-queue/graphql-client';
+import { createGraphQLClient, execute, GraphQLOperationError, type Client } from '@/app/lib/realtime/graphql-client';
 import SimilarClimbsList from '@/app/components/similar-climbs/similar-climbs-list';
 import { getBackendWsUrl } from '@/app/lib/backend-url';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';

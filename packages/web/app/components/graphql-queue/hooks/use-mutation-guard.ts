@@ -1,6 +1,6 @@
 import { useMemo, useCallback, useRef } from 'react';
 import { useSnackbar } from '../../providers/snackbar-provider';
-import type { ConnectionState } from '../../connection-manager/websocket-connection-manager';
+import type { ConnectionState } from '@/app/lib/realtime/websocket-connection-manager';
 
 type UseMutationGuardParams = {
   sessionId: string | null;

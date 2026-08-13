@@ -83,7 +83,7 @@ import { useMyBoards } from '@/app/hooks/use-my-boards';
 import { findMatchingBoard, type BoardConfig } from '@/app/lib/find-matching-board';
 import { ssrSeedMatchesQueryKey } from '@/app/lib/graphql/ssr-query-seed';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import styles from '@/app/components/library/playlist-view.module.css';
+import styles from '@/app/components/ui/page-container.module.css';
 
 // Validate hex color format
 const isValidHexColor = (color: string): boolean => {

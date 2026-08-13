@@ -21,7 +21,7 @@ const mockCreateGraphQLClient = vi.fn(() => ({
 }));
 const mockSubscribe = vi.fn(() => mockUnsub);
 
-vi.mock('@/app/components/graphql-queue/graphql-client', () => ({
+vi.mock('@/app/lib/realtime/graphql-client', () => ({
   createGraphQLClient: (...args: Parameters<typeof mockCreateGraphQLClient>) => mockCreateGraphQLClient(...args),
   subscribe: (...args: Parameters<typeof mockSubscribe>) => mockSubscribe(...args),
 }));

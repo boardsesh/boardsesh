@@ -7,7 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
 import type { BoardDetails } from '@/app/lib/types';
 import { PersistentSessionProvider, usePersistentSession } from '../persistent-session-context';
-import { execute, GraphQLOperationError } from '../../graphql-queue/graphql-client';
+import { execute, GraphQLOperationError } from '@/app/lib/realtime/graphql-client';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -17,7 +17,7 @@ import { execute, GraphQLOperationError } from '../../graphql-queue/graphql-clie
 // the server refusing an ended-session join. `GraphQLOperationError` is the
 // REAL class (the source branches on `instanceof`), pulled from the pure shared
 // package so importing it doesn't drag in browser globals.
-vi.mock('../../graphql-queue/graphql-client', async () => {
+vi.mock('@/app/lib/realtime/graphql-client', async () => {
   const shared = await vi.importActual<typeof import('@boardsesh/graphql-client')>('@boardsesh/graphql-client');
   return {
     createGraphQLClient: vi.fn(() => ({ dispose: vi.fn() })),

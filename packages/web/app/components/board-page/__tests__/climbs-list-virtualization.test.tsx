@@ -5,7 +5,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import type { Climb, BoardDetails } from '@/app/lib/types';
 import ClimbsList from '../climbs-list';
-import { LIST_ROW_HEIGHT } from '../constants';
+import { LIST_ROW_HEIGHT } from '@/app/lib/climb-list-constants';
 
 // --- Mocks ---
 

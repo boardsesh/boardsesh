@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { type ConnectionState, connectionManager } from './websocket-connection-manager';
+import { type ConnectionState, connectionManager } from '@/app/lib/realtime/websocket-connection-manager';
 
 type ConnectionContextValue = {
   state: ConnectionState;

@@ -5,7 +5,7 @@ import { useIsomorphicLayoutEffect } from '@/app/lib/hooks/use-isomorphic-layout
 import { usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import { PartyProfileProvider } from '../party-manager/party-profile-context';
 import { PersistentSessionProvider, usePersistentSession, usePersistentSessionState } from '../persistent-session';
-import { useWakeLock } from '../board-bluetooth-control/use-wake-lock';
+import { useWakeLock } from '@/app/lib/hooks/use-wake-lock';
 import { QueueBridgeProvider, useQueueBridgeBoardInfo } from '../queue-control/queue-bridge-context';
 import { useCurrentClimb, useQueueList } from '../graphql-queue';
 import QueueControlBar from '../queue-control/queue-control-bar';

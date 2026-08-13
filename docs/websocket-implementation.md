@@ -1297,7 +1297,7 @@ The React Native app and its Expo-web build share one GraphQL-WS transport (`pac
 
 ## Client-Side Connection Supervisor
 
-The `WebSocketConnectionManager` (`packages/web/app/components/connection-manager/websocket-connection-manager.ts`) is a singleton that sits between the raw `graphql-ws` clients and the React UI. It provides health monitoring, staleness detection, and a unified connection state for the reconnect UX.
+The `WebSocketConnectionManager` (`packages/web/app/lib/realtime/websocket-connection-manager.ts`) is a singleton that sits between the raw `graphql-ws` clients and the React UI. It provides health monitoring, staleness detection, and a unified connection state for the reconnect UX.
 
 ### Architecture
 
@@ -2128,8 +2128,8 @@ All except `/api/watch/pair` take `Authorization: Bearer <mobile JWT>`. `navigat
 
 - `packages/web/app/lib/backend-url.ts` - Runtime backend URL resolver (preview deploys, dev overrides)
 - `packages/shared/graphql-client/` - Platform-agnostic `graphql-ws` helpers (`execute`, `subscribe`, `createGraphQLClient`, `GraphQLOperationError`). Web and the React Native mobile app both consume this; web passes its `SafeWebSocket` wrapper + `connectionManager` registration via the `webSocketImpl` / `onClientCreated` hooks.
-- `packages/web/app/components/graphql-queue/graphql-client.ts` - Thin web wrapper around `@boardsesh/graphql-client` that adds the `SafeWebSocket` DOM-error suppression and `connectionManager` registration. Also re-exports the shared primitives for legacy relative imports.
-- `packages/web/app/components/connection-manager/websocket-connection-manager.ts` - Connection state tracking
+- `packages/web/app/lib/realtime/graphql-client.ts` - Thin web wrapper around `@boardsesh/graphql-client` that adds the `SafeWebSocket` DOM-error suppression and `connectionManager` registration. Also re-exports the shared primitives for legacy relative imports.
+- `packages/web/app/lib/realtime/websocket-connection-manager.ts` - Connection state tracking
 - `packages/shared/queue-runtime/src/session-connection.ts` - `createSessionConnectionController`: the pure-TS connect/join/subscribe/reconnect/retry state machine (Workstream W4)
 - `packages/web/app/components/persistent-session/hooks/use-session-lifecycle.ts` - Session lifecycle: React binding around the controller (state, activate/deactivate, IndexedDB persistence, auto-finish pre-flight)
 - `packages/web/app/components/persistent-session/hooks/session-connection-ports.ts` - Web's `SessionConnectionDeps` port implementations (GraphQL operations, `applySessionEvent` roster application)

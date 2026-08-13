@@ -20,7 +20,7 @@ import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { MOONBOARD_LAYOUTS } from '@/app/lib/moonboard-config';
 import { normalizeMinAscentsFilter, normalizeMinRatingFilter } from '@/app/lib/climb-quality-filter-options';
 import { detectLocale } from '@/app/lib/i18n/detect-locale';
-import { PAGE_LIMIT } from '../components/board-page/constants';
+import { PAGE_LIMIT } from './climb-list-constants';
 
 export const DEFAULT_ZONE_MODE: ZoneMatchMode = 'allHolds';
 

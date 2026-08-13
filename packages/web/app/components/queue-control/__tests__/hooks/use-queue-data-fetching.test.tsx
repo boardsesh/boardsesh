@@ -31,7 +31,7 @@ vi.mock('@/app/hooks/use-ws-auth-token', () => ({
   })),
 }));
 
-vi.mock('../../board-page/constants', () => ({
+vi.mock('@/app/lib/climb-list-constants', () => ({
   PAGE_LIMIT: 20,
 }));
 

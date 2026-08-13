@@ -8,7 +8,7 @@ import NotificationsActiveOutlined from '@mui/icons-material/NotificationsActive
 import CircularProgress from '@mui/material/CircularProgress';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
-import { createGraphQLClient, execute, type Client } from '@/app/components/graphql-queue/graphql-client';
+import { createGraphQLClient, execute, type Client } from '@/app/lib/realtime/graphql-client';
 import { getBackendWsUrl } from '@/app/lib/backend-url';
 import {
   SUBSCRIBE_NEW_CLIMBS,

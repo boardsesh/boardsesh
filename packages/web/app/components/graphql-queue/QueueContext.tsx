@@ -23,7 +23,7 @@ import { useWebSocketConnection } from '../connection-manager/websocket-connecti
 import { FavoritesProvider } from '../climb-actions/favorites-batch-context';
 import { PlaylistsProvider } from '../climb-actions/playlists-batch-context';
 import { useClimbActionsData } from '@/app/hooks/use-climb-actions-data';
-import { SUGGESTIONS_THRESHOLD } from '../board-page/constants';
+import { SUGGESTIONS_THRESHOLD } from '@/app/lib/climb-list-constants';
 import { useSnackbar } from '../providers/snackbar-provider';
 import { trackQueueOperation, trackQueueOperationError } from '@/app/lib/queue-metrics';
 

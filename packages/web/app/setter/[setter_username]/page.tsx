@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Metadata } from 'next';
 import SetterProfileContent from './setter-profile-content';
-import styles from '@/app/components/library/playlist-view.module.css';
+import styles from '@/app/components/ui/page-container.module.css';
 import { buildVersionedOgImagePath, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
 import { getSetterOgSummary } from '@/app/lib/seo/dynamic-og-data';
 import { getServerTranslation } from '@/app/lib/i18n/server';
