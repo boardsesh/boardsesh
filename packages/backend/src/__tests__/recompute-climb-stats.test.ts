@@ -75,6 +75,14 @@ describe('recomputeClimbStats', () => {
     expect(seedSql).toContain("seed_tick.status IN ('flash','send')");
     expect(seedSql).toContain('seed_tick.kilter_detached_at IS NULL');
     expect(seedSql).toContain('quality_normalized');
+    // MoonBoard wrong-angle guard (#3529). Behaviour is asserted against real
+    // Postgres further down; what this pins is that the guard reads
+    // board_climbs.angle from the OUTER FROM (the single-key seed's shape) and
+    // tests for real catalog data rather than a bare stats row.
+    expect(seedSql).toMatch(/bc\.angle IS NULL/);
+    expect(seedSql).toMatch(/bc\.angle =/);
+    expect(seedSql).toMatch(/COALESCE\(s\.upstream_ascensionist_count, 0\) > 0/);
+    expect(seedSql).toMatch(/s\.upstream_quality_average IS NOT NULL/);
   });
 
   it('runs the guard, seed and recompute SQL inside one transaction', async () => {
@@ -316,10 +324,13 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     `);
   }
 
-  async function seedClimb(boardType: string, uuid: string, ownerUserId: string | null) {
+  // `angle` is the MoonBoard-shaped case (#3529): the catalog mints one
+  // board_climbs row per (problem, angle), so those rows carry a non-null angle.
+  // Kilter/Tension catalog rows leave it null, which is why it defaults to null.
+  async function seedClimb(boardType: string, uuid: string, ownerUserId: string | null, angle: number | null = null) {
     await db.execute(sql`
-      INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, description, frames, is_listed, user_id)
-      VALUES (${uuid}, ${boardType}, 1, 'setter', 'Test Climb', '', 'p1r1', true, ${ownerUserId})
+      INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, description, frames, is_listed, user_id, angle)
+      VALUES (${uuid}, ${boardType}, 1, 'setter', 'Test Climb', '', 'p1r1', true, ${ownerUserId}, ${angle})
     `);
   }
 
@@ -1420,5 +1431,208 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
 
     expect(await normalizedFlags('CLIMB-NORM-SINGLE', 30)).toEqual([true]);
     expect(await normalizedFlags('CLIMB-NORM-BULK', 30)).toEqual([true]);
+  });
+
+  // -------------------------------------------------------------------------
+  // MoonBoard wrong-angle seed guard (#3529)
+  //
+  // MoonBoard identity is angle-bearing (one board_climbs row per problem AND
+  // angle, each with a non-null board_climbs.angle), so a tick logged from a
+  // board set to the other angle names a climb the catalog does not grade at
+  // that angle. Seeding there mints a row nothing can render. This is the
+  // defence-in-depth layer for ticks that did NOT come through saveTick:
+  // pre-fix rows, bulk/self-heal recomputes over them, future importers.
+  //
+  // "Carries real catalog data" — not "a row exists" — is the whole predicate.
+  // Every affected climb in prod already has a stats row at the wrong angle.
+  // -------------------------------------------------------------------------
+
+  it('single-key: does NOT seed a MoonBoard stats row at an angle the climb is not graded at', async () => {
+    await seedUser('u-moon-wrong', 'Mira');
+    await seedClimb('moonboard', 'MOON-WRONG', null, 40);
+    await seedStats('moonboard', 'MOON-WRONG', 40, { upstream: 6 });
+    // Tick inserted directly, bypassing saveTick — this is a pre-migration prod
+    // row, or anything else that writes boardsesh_ticks without the resolver.
+    await seedTick({
+      boardType: 'moonboard',
+      climbUuid: 'MOON-WRONG',
+      angle: 25,
+      userId: 'u-moon-wrong',
+      status: 'send',
+      origin: 'native',
+      climbedAt: '2026-01-01 00:00:00',
+    });
+
+    await recomputeClimbStatsCore(db, 'moonboard', 'MOON-WRONG', 25);
+
+    expect(await statsRowCount('moonboard', 'MOON-WRONG', 25)).toBe(0);
+    // And the graded angle is untouched by the refusal.
+    const graded = await statsRow('moonboard', 'MOON-WRONG', 40);
+    expect(Number(graded.total)).toBe(6);
+  });
+
+  it('bulk: does NOT seed a MoonBoard stats row at an angle the climb is not graded at', async () => {
+    await seedUser('u-moon-wrong-bulk', 'Milo');
+    await seedClimb('moonboard', 'MOON-WRONG-BULK', null, 40);
+    await seedStats('moonboard', 'MOON-WRONG-BULK', 40, { upstream: 6 });
+    await seedTick({
+      boardType: 'moonboard',
+      climbUuid: 'MOON-WRONG-BULK',
+      angle: 25,
+      userId: 'u-moon-wrong-bulk',
+      status: 'send',
+      origin: 'native',
+      climbedAt: '2026-01-01 00:00:00',
+    });
+
+    await recomputeClimbStatsBulk(db, [{ boardType: 'moonboard', climbUuid: 'MOON-WRONG-BULK', angle: 25 }]);
+
+    expect(await statsRowCount('moonboard', 'MOON-WRONG-BULK', 25)).toBe(0);
+  });
+
+  // The refusal must not extend to an angle the catalog actually grades. Note
+  // the fixture has NO stats row anywhere, so the seed genuinely has to fire —
+  // a fixture that already had a row would pass whatever the guard did, since
+  // the seed is ON CONFLICT DO NOTHING.
+  it('single-key: STILL seeds a MoonBoard row at the angle the climb IS graded at', async () => {
+    await seedUser('u-moon-right', 'Moe');
+    await seedClimb('moonboard', 'MOON-RIGHT', null, 40);
+    await seedTick({
+      boardType: 'moonboard',
+      climbUuid: 'MOON-RIGHT',
+      angle: 40,
+      userId: 'u-moon-right',
+      status: 'send',
+      origin: 'native',
+      climbedAt: '2026-01-01 00:00:00',
+    });
+
+    await recomputeClimbStatsCore(db, 'moonboard', 'MOON-RIGHT', 40);
+
+    const seeded = await statsRow('moonboard', 'MOON-RIGHT', 40);
+    expect(Number(seeded.bs)).toBe(1);
+    expect(Number(seeded.total)).toBe(1);
+  });
+
+  // The post-#3851 shape: an angle-agnostic canonical climb (angle IS NULL)
+  // seeds at whatever angle the climber ticked, exactly like Kilter/Tension.
+  // This is what makes the guard remove itself once the re-import lands.
+  it('single-key: STILL seeds when the MoonBoard climb row carries no angle (post-#3851)', async () => {
+    await seedUser('u-moon-null', 'Nell');
+    await seedClimb('moonboard', 'MOON-NULLANGLE', null, null);
+    await seedTick({
+      boardType: 'moonboard',
+      climbUuid: 'MOON-NULLANGLE',
+      angle: 25,
+      userId: 'u-moon-null',
+      status: 'send',
+      origin: 'native',
+      climbedAt: '2026-01-01 00:00:00',
+    });
+
+    await recomputeClimbStatsCore(db, 'moonboard', 'MOON-NULLANGLE', 25);
+
+    const seeded = await statsRow('moonboard', 'MOON-NULLANGLE', 25);
+    expect(Number(seeded.bs)).toBe(1);
+  });
+
+  // USER-CREATED climbs are outside the guard entirely, matching
+  // resolveMoonBoardTickAngle and the moonboard_wrong_angle_stats_cleanup migration's `bc.user_id IS NULL` fence.
+  // Nothing grades a climber's own problem per angle, so a tick at any angle is
+  // legitimate and must seed a row. Deliberately NO stats row is pre-seeded at
+  // 25: with one present, ON CONFLICT DO NOTHING makes the assertion pass
+  // whether the guard fires or not. Deleting `bc.user_id IS NOT NULL` from the
+  // seed guard turns this red.
+  it('single-key: STILL seeds a user-created MoonBoard climb at an angle it is not set at', async () => {
+    await seedUser('u-moon-owner', 'Ona');
+    await seedClimb('moonboard', 'MOON-USER-SET', 'u-moon-owner', 40);
+    await seedTick({
+      boardType: 'moonboard',
+      climbUuid: 'MOON-USER-SET',
+      angle: 25,
+      userId: 'u-moon-owner',
+      status: 'send',
+      origin: 'native',
+      climbedAt: '2026-01-01 00:00:00',
+    });
+
+    await recomputeClimbStatsCore(db, 'moonboard', 'MOON-USER-SET', 25);
+
+    const seeded = await statsRow('moonboard', 'MOON-USER-SET', 25);
+    expect(Number(seeded.bs)).toBe(1);
+  });
+
+  // The bulk twin of the case above. The bulk seed carries the same predicate in
+  // a different SHAPE (board_climbs lives inside an EXISTS rather than the outer
+  // FROM), so a leg can go missing from one statement while the other keeps it —
+  // which is exactly what happened to `bc.user_id IS NOT NULL` until QA caught
+  // it. Every self-heal and backfill runs through this path, so the hole here is
+  // wider than the single-key one. Same no-pre-seeded-row discipline: with a row
+  // present, ON CONFLICT DO NOTHING would pass whatever the guard did.
+  it('bulk: STILL seeds a user-created MoonBoard climb at an angle it is not set at', async () => {
+    await seedUser('u-moon-owner-bulk', 'Obi');
+    await seedClimb('moonboard', 'MOON-USER-SET-BULK', 'u-moon-owner-bulk', 40);
+    await seedTick({
+      boardType: 'moonboard',
+      climbUuid: 'MOON-USER-SET-BULK',
+      angle: 25,
+      userId: 'u-moon-owner-bulk',
+      status: 'send',
+      origin: 'native',
+      climbedAt: '2026-01-01 00:00:00',
+    });
+
+    await recomputeClimbStatsBulk(db, [{ boardType: 'moonboard', climbUuid: 'MOON-USER-SET-BULK', angle: 25 }]);
+
+    // Row count first, so dropping the fence reads as "expected 0 to be 1"
+    // rather than as an undefined-property TypeError one line further down.
+    expect(await statsRowCount('moonboard', 'MOON-USER-SET-BULK', 25)).toBe(1);
+    const seeded = await statsRow('moonboard', 'MOON-USER-SET-BULK', 25);
+    expect(Number(seeded.bs)).toBe(1);
+  });
+
+  // The post-#3849 shape: once the catalog grades BOTH angles, a per-angle tick
+  // seeds normally again. Dropping the "carries real catalog data" leg for a
+  // blunt `bc.angle = angle` equality turns this red.
+  it('single-key: STILL seeds at a second angle that carries real catalog data', async () => {
+    await seedUser('u-moon-both', 'Bex');
+    await seedClimb('moonboard', 'MOON-BOTH-ANGLES', null, 40);
+    await seedStats('moonboard', 'MOON-BOTH-ANGLES', 25, { upstream: 4 });
+    await seedTick({
+      boardType: 'moonboard',
+      climbUuid: 'MOON-BOTH-ANGLES',
+      angle: 25,
+      userId: 'u-moon-both',
+      status: 'send',
+      origin: 'native',
+      climbedAt: '2026-01-01 00:00:00',
+    });
+
+    await recomputeClimbStatsCore(db, 'moonboard', 'MOON-BOTH-ANGLES', 25);
+
+    const row = await statsRow('moonboard', 'MOON-BOTH-ANGLES', 25);
+    expect(Number(row.bs)).toBe(1);
+    expect(Number(row.total)).toBe(5); // upstream 4 + 1 native
+  });
+
+  // Blast-radius fence, the mirror of the KEEP test above: a Kilter climb whose
+  // catalog row happens to carry an angle must still seed at any ticked angle.
+  it('single-key: a Kilter climb with an angle on its climb row still seeds at another angle', async () => {
+    await seedUser('u-kilter-angled', 'Kit');
+    await seedClimb('kilter', 'KILTER-ANGLED', null, 40);
+    await seedTick({
+      boardType: 'kilter',
+      climbUuid: 'KILTER-ANGLED',
+      angle: 25,
+      userId: 'u-kilter-angled',
+      status: 'send',
+      origin: 'native',
+      climbedAt: '2026-01-01 00:00:00',
+    });
+
+    await recomputeClimbStatsCore(db, 'kilter', 'KILTER-ANGLED', 25);
+
+    const seeded = await statsRow('kilter', 'KILTER-ANGLED', 25);
+    expect(Number(seeded.bs)).toBe(1);
   });
 });

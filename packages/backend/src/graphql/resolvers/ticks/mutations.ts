@@ -29,6 +29,7 @@ import {
 import { cacheInstagramThumbnail, isS3Configured } from '../../../lib/beta-link-thumbnails';
 import { invalidateRecentBetaLinksCache } from '../beta-videos/queries';
 import { resolveClimbCatalogPresence } from '../../../db/queries/climbs';
+import { resolveMoonBoardTickAngle } from '@boardsesh/db/queries';
 import { captureBackendEvent } from '../../../services/analytics/posthog';
 import { logger } from '../../../utils/logger';
 import {
@@ -702,6 +703,21 @@ export const tickMutations = {
       validatedInput.angle,
     );
 
+    // Which angle this tick actually belongs at (#3529). Started here, next to
+    // the catalog probe, so it overlaps the board/session round-trips below;
+    // awaited immediately before the transaction because the insert needs the
+    // answer. Non-MoonBoard ticks resolve instantly with no query at all.
+    //
+    // Deliberately NOT folded into the probe above: the probe reports what the
+    // CLIENT sent (an observation of the client, per #3528/#3942) and must keep
+    // reporting the client's angle even when we then move the tick.
+    const effectiveAnglePromise = resolveMoonBoardTickAngle(db, {
+      boardType: validatedInput.boardType,
+      climbUuid: validatedInput.climbUuid,
+      requestedAngle: validatedInput.angle,
+      onError: (error) => logger.error('[saveTick] moonboard tick angle resolution failed:', error),
+    });
+
     // A stale/unknown sessionId (session ended, or never existed on this
     // backend — e.g. an offline-replayed tick) would otherwise FK-violate the
     // insert and lose the whole tick (#2386). Same best-effort drop-the-ref
@@ -870,6 +886,17 @@ export const tickMutations = {
         )
       : { action: 'no-url' };
 
+    // Settle the angle resolution started before the board/session lookups — the
+    // insert below needs it. By now it has overlapped every round-trip since.
+    //
+    // The snap is only REPORTED after the transaction commits (below), never
+    // here. Unlike the #3528 catalog probe — which counts what the client sent
+    // and is deliberately independent of the tick surviving — this counter
+    // measures ticks we actually moved, so it must not fire for a tick that
+    // never landed: a concurrent replay of the same uuid (onConflictDoNothing
+    // no-op) or a transaction that rolls back would otherwise each inflate it.
+    const effectiveAngle = await effectiveAnglePromise;
+
     // Insert into database. When the client supplied a uuid that already exists
     // (offline replay), the insert is a no-op and `createdTick` is undefined —
     // we detect that, return the original row, and skip every side effect below.
@@ -881,7 +908,7 @@ export const tickMutations = {
           userId,
           boardType: validatedInput.boardType,
           climbUuid: validatedInput.climbUuid,
-          angle: validatedInput.angle,
+          angle: effectiveAngle,
           isMirror: validatedInput.isMirror,
           status: validatedInput.status,
           attemptCount: validatedInput.attemptCount,
@@ -926,7 +953,11 @@ export const tickMutations = {
             videoIdentity: betaLinkIdentity(attachedVideoUrl),
             tickUuid: createdTick.uuid,
             boardId: createdTick.boardId,
-            angle: validatedInput.angle,
+            // The beta row's angle must move with the tick: the mobile home feed
+            // opens the video at THIS angle, so a beta pinned to 25° on a
+            // 40°-graded problem opens a page the problem isn't graded at. Same
+            // reasoning as the updateTick beta-angle move below.
+            angle: effectiveAngle,
             isListed: true,
             thumbnail: betaPlan.thumbnail,
             foreignUsername: betaPlan.foreignUsername,
@@ -954,6 +985,32 @@ export const tickMutations = {
       if (existingTick?.userId === userId) return tickResult(existingTick);
       throw new GraphQLError('Tick UUID is already in use', {
         extensions: { code: 'TICK_UUID_CONFLICT' },
+      });
+    }
+
+    // Report the #3529 snap only now — past the commit and past the
+    // "already existed, nothing was written" return above, so this row provably
+    // landed. Compared and reported off `tick.angle` (the RETURNING value)
+    // rather than the local, so the log and the counter can only ever say what
+    // the database actually holds.
+    if (tick.angle !== validatedInput.angle) {
+      logger.warn(
+        `[saveTick] moonboard tick angle snapped to the climb's graded angle (#3529): ` +
+          `${validatedInput.boardType}/${validatedInput.climbUuid} requested=${validatedInput.angle} ` +
+          `effective=${tick.angle} user=${userId}`,
+      );
+      // Mirrors the Tick Climb Not In Catalog counter: if this stays hot, a
+      // client surface is sending the wrong angle and that client wants fixing
+      // too. Counting USERS (distinctId) keeps one looping client from reading
+      // as a fleet-wide problem.
+      captureBackendEvent('MoonBoard Tick Angle Snapped', {
+        distinctId: userId,
+        properties: {
+          climbUuid: validatedInput.climbUuid,
+          requestedAngle: validatedInput.angle,
+          effectiveAngle: tick.angle,
+        },
+        processPersonProfile: false,
       });
     }
 
@@ -1129,7 +1186,34 @@ export const tickMutations = {
       if (validatedInput.isBenchmark !== undefined) updates.isBenchmark = validatedInput.isBenchmark;
       if (validatedInput.comment !== undefined) updates.comment = validatedInput.comment;
       if (canonicalClimbedAt !== undefined) updates.climbedAt = canonicalClimbedAt;
-      if (validatedInput.angle !== undefined) updates.angle = validatedInput.angle;
+      // Angle edits go through the same #3529 resolution as saveTick, against the
+      // tick's OWN climb — an edit to 25° on a 40°-graded MoonBoard problem would
+      // otherwise strand the tick exactly the way a fresh save used to.
+      //
+      // Resolved here, REPORTED after the UPDATE lands (below) — the same stance
+      // saveTick takes, so the counter means one thing at both call sites: ticks
+      // we actually moved.
+      //
+      // KNOWN, and an open question rather than a settled design: this branch keys
+      // off the field being PRESENT, not off it having changed, and the two shipped
+      // clients disagree about that. Web's logbook edit
+      // (packages/web/app/components/library/logbook-feed-item.tsx, handleSave)
+      // omits `angle` entirely, so a web edit never resolves. Mobile's
+      // LogbookEditSheet (packages/mobile/src/components/you/LogbookEditSheet.tsx)
+      // puts the tick's CURRENT angle in every save, so any edit from that sheet —
+      // comment-only included — resolves, and on a historical wrong-angle tick it
+      // moves the tick and fires the counter. Tightening this to
+      // `validatedInput.angle !== targetTick.angle` would make an unchanged angle
+      // field behave like an absent one; that is a behaviour decision, deliberately
+      // not taken here.
+      if (validatedInput.angle !== undefined) {
+        updates.angle = await resolveMoonBoardTickAngle(tx, {
+          boardType: targetTick.boardType,
+          climbUuid: targetTick.climbUuid,
+          requestedAngle: validatedInput.angle,
+          onError: (error) => logger.error('[updateTick] moonboard tick angle resolution failed:', error),
+        });
+      }
 
       const finalStatus = validatedInput.status ?? targetTick.status;
       const finalAttemptCount = validatedInput.attemptCount ?? targetTick.attemptCount;
@@ -1153,6 +1237,12 @@ export const tickMutations = {
         .returning();
       const updatedTarget = updatedTicks.find((tick) => tick.uuid === uuid)!;
 
+      // This symmetry is a RUNTIME one only — do not assume the #3529 repair
+      // migration matches it. the moonboard_wrong_angle_stats_cleanup migration's statement A updates boardsesh_ticks.angle and
+      // nothing else, so a historical tick it moves keeps its beta pinned at the
+      // pre-move angle until someone edits that tick's angle by hand and lands
+      // here. Accepted deliberately on 2026-08-02 rather than widening a migration
+      // that was already signed off; the reasoning is in that file's header.
       let movedBetaLinks = false;
       if (existingTicks.some((tick) => tick.angle !== updatedTarget.angle)) {
         const moved = await tx
@@ -1187,6 +1277,30 @@ export const tickMutations = {
     }
 
     const updated = mutationResult.updatedTarget;
+
+    // Report the #3529 snap only once the UPDATE has landed, off the RETURNING
+    // row — the saveTick stance, applied here so one `MoonBoard Tick Angle
+    // Snapped` event means the same thing whichever mutation emitted it. The
+    // `angle !== undefined` guard keeps an edit that omits the field silent (the
+    // web logbook edit's shape); an edit that carries the field reports whenever
+    // the stored angle came back different, which includes the mobile sheet's
+    // comment-only save on an already-stranded tick — see the note on the
+    // resolve branch above.
+    if (validatedInput.angle !== undefined && updated.angle !== validatedInput.angle) {
+      logger.warn(
+        `[updateTick] moonboard tick angle snapped to the climb's graded angle (#3529): ` +
+          `tick=${uuid} requested=${validatedInput.angle} effective=${updated.angle} user=${userId}`,
+      );
+      captureBackendEvent('MoonBoard Tick Angle Snapped', {
+        distinctId: userId,
+        properties: {
+          climbUuid: updated.climbUuid,
+          requestedAngle: validatedInput.angle,
+          effectiveAngle: updated.angle,
+        },
+        processPersonProfile: false,
+      });
+    }
 
     logger.info(
       `[updateTick] updated tick=${updated.uuid} user=${userId} ` +

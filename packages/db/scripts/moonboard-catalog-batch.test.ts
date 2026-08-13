@@ -336,3 +336,50 @@ void test('unimportable problems are counted, not staged', () => {
   assert.equal(counters.skippedProblems, 2);
   assert.equal(climbs.length, 0);
 });
+
+// #3531 / #4025: a grade MOONBOARD_GRADE_TO_DIFFICULTY cannot resolve still
+// imports, but with a NULL difficulty — indistinguishable from an ungraded
+// project once it is in the table. Staging names those grade strings so the run
+// log can tell an operator which map entry is missing, instead of the next grade
+// MoonBoard invents disappearing silently the way 8C/8C+ did.
+void test('unmappable grades are named and counted per graded configuration', () => {
+  const { unmappedGrades, climbs } = stage({
+    problems: [
+      problem({ id: 700130, configurations: [config({ grade: '9A' })] }),
+      problem({
+        id: 700131,
+        moves: MOVES_OTHER,
+        configurations: [config({ grade: '9A' }), config({ grade: '9B', configuration: '25°' })],
+      }),
+    ],
+  });
+
+  // Counted per configuration, not per problem: 9A appears at one angle on each
+  // of the two problems.
+  assert.deepEqual(
+    [...unmappedGrades.entries()].sort(([leftGrade], [rightGrade]) => leftGrade.localeCompare(rightGrade)),
+    [
+      ['9A', 2],
+      ['9B', 1],
+    ],
+  );
+  // The point of the warning: they were imported anyway, with a null grade.
+  assert.equal(climbs.length, 2);
+});
+
+void test('grades the map resolves are never reported as unmapped', () => {
+  // 8C/8C+ are the grades #4025 added to the map. If that extension regresses,
+  // they land here instead of in a stats row's difficulty.
+  const { unmappedGrades, stats } = stage({
+    problems: [
+      problem({ id: 700140, configurations: [config({ grade: '8C' })] }),
+      problem({ id: 700141, moves: MOVES_OTHER, configurations: [config({ grade: '8C+' })] }),
+    ],
+  });
+
+  assert.equal(unmappedGrades.size, 0);
+  assert.deepEqual(
+    stats.map((row) => row.displayDifficulty).sort((left, right) => Number(left) - Number(right)),
+    [32, 33],
+  );
+});

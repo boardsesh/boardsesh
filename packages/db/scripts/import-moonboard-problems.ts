@@ -12,6 +12,8 @@ import {
   MOONBOARD_UUID_NAMESPACE,
   moonBoardGradeToDifficultyId,
   moonBoardGradeConflictFields,
+  formatUnmappedMoonBoardGrades,
+  recordUnmappedMoonBoardGrade,
   type MoonBoardMove,
 } from './moonboard-helpers.js';
 import { createScriptDb, getScriptDatabaseUrl, describeDatabaseHost } from './db-connection.js';
@@ -177,6 +179,10 @@ async function importMoonBoardProblems() {
       const holdsRecords: (typeof boardClimbHolds.$inferInsert)[] = [];
       let skippedGrade = 0;
       let skippedLayout = 0;
+      // Grade strings the shared map has no difficulty id for, kept so the next
+      // grade MoonBoard adds (9A…) shows up in the run log instead of silently
+      // dropping problems.
+      const unmappedGrades = new Map<string, number>();
 
       for (const problem of problems) {
         const layoutId = HOLDSETUP_TO_LAYOUT[problem.holdsetup.apiId];
@@ -188,6 +194,7 @@ async function importMoonBoardProblems() {
         const difficultyId = moonBoardGradeToDifficultyId(problem.grade);
         if (difficultyId === undefined) {
           skippedGrade++;
+          recordUnmappedMoonBoardGrade(unmappedGrades, problem.grade);
           continue;
         }
 
@@ -261,6 +268,11 @@ async function importMoonBoardProblems() {
       }
 
       if (skippedGrade > 0) console.info(`   Skipped ${skippedGrade} problems with unknown grade`);
+      if (unmappedGrades.size > 0) {
+        console.warn(
+          `   ⚠️  Unmapped MoonBoard grades, problems skipped — add them to MOONBOARD_GRADE_TO_DIFFICULTY: ${formatUnmappedMoonBoardGrades(unmappedGrades)}`,
+        );
+      }
       if (skippedLayout > 0) console.info(`   Skipped ${skippedLayout} problems with unknown holdsetup`);
 
       // Batch insert climbs

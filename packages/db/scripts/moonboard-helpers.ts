@@ -43,6 +43,8 @@ export const MOONBOARD_GRADE_TO_DIFFICULTY = {
   '8A+': 29,
   '8B': 30,
   '8B+': 31,
+  '8C': 32,
+  '8C+': 33,
 } as const;
 
 // =============================================================================
@@ -62,6 +64,27 @@ export function moonBoardGradeToDifficultyId(grade: string): number | undefined 
   const trimmedGrade = grade.trim();
   const normalizedGrade = trimmedGrade === '5+' ? trimmedGrade : trimmedGrade.toUpperCase();
   return MOONBOARD_GRADE_TO_DIFFICULTY[normalizedGrade as keyof typeof MOONBOARD_GRADE_TO_DIFFICULTY];
+}
+
+/** Record a non-empty source grade that the shared MoonBoard map cannot resolve. */
+export function recordUnmappedMoonBoardGrade(
+  counts: Map<string, number>,
+  sourceGrade: string | null | undefined,
+): void {
+  const normalizedSourceGrade = (sourceGrade ?? '').trim();
+  if (normalizedSourceGrade.length === 0) return;
+  counts.set(normalizedSourceGrade, (counts.get(normalizedSourceGrade) ?? 0) + 1);
+}
+
+/** Stable operator-facing summary for unmapped-grade warnings. */
+export function formatUnmappedMoonBoardGrades(counts: ReadonlyMap<string, number>): string {
+  return [...counts.entries()]
+    .sort(
+      ([leftGrade, leftCount], [rightGrade, rightCount]) =>
+        rightCount - leftCount || leftGrade.localeCompare(rightGrade),
+    )
+    .map(([grade, count]) => `${grade} (${count})`)
+    .join(', ');
 }
 
 // =============================================================================
