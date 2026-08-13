@@ -539,7 +539,11 @@ describe('useBoardRouteTarget', () => {
     fetchAllMyBoards.mockResolvedValue([RESOLVED_BOARD]);
     act(() => connectivity.goOnline());
 
-    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(RESOLVED_BOARD));
+    // The healed resolve is the longest await chain in this file — a local-board
+    // probe, the owned-list walk and the resolver all have to settle before the
+    // board is adopted. `waitFor`'s 1s default loses that race on a loaded CI
+    // box (observed on PR #4418), so this one gets room.
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(RESOLVED_BOARD), { timeout: 5000 });
     expect(fetchAllMyBoards).toHaveBeenCalledTimes(1);
     // The healed resolve hands off; the stale not-found is gone either way.
     expect(statusOf(container)).not.toBe('not-found');
