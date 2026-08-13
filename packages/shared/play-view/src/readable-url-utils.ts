@@ -175,10 +175,19 @@ export function resolveSizeSlug(boardName: BoardName, layoutId: number, sizeId: 
  * one. Append-only — deleting an entry 404s links that are already out there.
  */
 export const PERMANENT_SIZE_SLUG_ALIASES: Partial<Record<BoardName, Readonly<Record<number, readonly string[]>>>> = {
-  // Kilter layout 1 size 27, "12 x 12 without kickboard": shadowed by size 10
-  // ("12 x 12 with kickboard"), which owns the bare `12x12-square` slug, so 27
-  // is only ever addressable through its qualified form.
-  kilter: { 27: ['12x12-square-without-kickboard'] },
+  kilter: {
+    // Kilter layout 1 size 10, "12 x 12 with kickboard": owns the bare
+    // `12x12-square` slug by being first on the layout. Pinned so an upstream
+    // RENAME of the size (generated slug changes, bare form stops matching)
+    // keeps every bare link in the wild resolving here. Note the pin cannot
+    // guard against a lower-id 12x12 size appearing on the layout — generated
+    // slugs are checked first by design, so the newcomer would win the bare
+    // form; only the size-slug uniqueness test would catch that.
+    10: ['12x12-square'],
+    // Kilter layout 1 size 27, "12 x 12 without kickboard": shadowed by size
+    // 10, so 27 is only ever addressable through its qualified form.
+    27: ['12x12-square-without-kickboard'],
+  },
 };
 
 /**

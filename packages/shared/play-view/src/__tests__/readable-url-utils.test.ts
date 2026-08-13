@@ -480,8 +480,11 @@ describe('permanently pinned qualified size slugs', () => {
     ),
   );
 
-  it('has the one qualified form we have shipped', () => {
-    expect(pinnedEntries).toEqual([{ boardName: 'kilter', sizeId: 27, alias: '12x12-square-without-kickboard' }]);
+  it('has exactly the forms we have shipped', () => {
+    expect(pinnedEntries).toEqual([
+      { boardName: 'kilter', sizeId: 10, alias: '12x12-square' },
+      { boardName: 'kilter', sizeId: 27, alias: '12x12-square-without-kickboard' },
+    ]);
   });
 
   it.each(pinnedEntries)(

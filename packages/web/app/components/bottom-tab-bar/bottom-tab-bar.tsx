@@ -18,6 +18,7 @@ import {
   constructBoardSlugListUrl,
   constructCreateClimbUrl,
   tryConstructSlugListUrl,
+  popularConfigListUrl,
   tryConstructSlugCreateUrl,
   getPlaylistsBasePath,
 } from '@/app/lib/url-utils';
@@ -283,22 +284,7 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
   const handleDiscoveryConfigClick = useCallback(
     (config: PopularBoardConfig) => {
       const angle = getDefaultAngleForBoard(config.boardType);
-      let url: string;
-      if (config.layoutName && config.sizeName && config.setNames.length > 0) {
-        url = constructClimbListWithSlugs(
-          config.boardType,
-          config.layoutName,
-          config.sizeName,
-          config.sizeDescription ?? undefined,
-          config.setNames,
-          angle,
-        );
-      } else {
-        const setIds = config.setIds.join(',');
-        url =
-          tryConstructSlugListUrl(config.boardType, config.layoutId, config.sizeId, config.setIds, angle) ??
-          `/${config.boardType}/${config.layoutId}/${config.sizeId}/${setIds}/${angle}/list`;
-      }
+      const url = popularConfigListUrl(config, angle);
       const storedConfig: StoredBoardConfig = {
         name: config.layoutName ?? `${config.boardType} board`,
         board: config.boardType as BoardName,

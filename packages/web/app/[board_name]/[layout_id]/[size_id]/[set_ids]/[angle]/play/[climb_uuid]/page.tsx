@@ -3,7 +3,12 @@ import type { BoardRouteParametersWithUuid } from '@/app/lib/types';
 import { parseRouteParams, redirectWithQuery } from '@/app/lib/url-utils.server';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { getClimb } from '@/app/lib/data/queries';
-import { constructClimbViewUrl, constructClimbViewUrlWithSlugs, isUuidOnly } from '@/app/lib/url-utils';
+import {
+  constructClimbViewUrl,
+  constructClimbViewUrlWithSlugs,
+  isUuidOnly,
+  tryConstructSlugViewUrl,
+} from '@/app/lib/url-utils';
 
 /**
  * Old `/play/[climb_uuid]` URLs 301-redirect to the equivalent `/view/[climb_uuid]`.
@@ -40,8 +45,21 @@ export default async function PlayRedirectPage(props: {
     climbName = undefined;
   }
 
+  // Id-aware first: this page 308s EVERY form of the /play URL — including an
+  // already-canonical qualified one — so building the target name-based would
+  // permanently re-point a shadowed size (Kilter 12x12 without kickboard) at
+  // the bare slug's first match, the other physical board.
   const viewUrl =
-    boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names
+    tryConstructSlugViewUrl(
+      parsedParams.board_name,
+      parsedParams.layout_id,
+      parsedParams.size_id,
+      parsedParams.set_ids,
+      parsedParams.angle,
+      parsedParams.climb_uuid,
+      climbName,
+    ) ??
+    (boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names
       ? constructClimbViewUrlWithSlugs(
           parsedParams.board_name,
           boardDetails.layout_name,
@@ -52,7 +70,7 @@ export default async function PlayRedirectPage(props: {
           parsedParams.climb_uuid,
           climbName,
         )
-      : constructClimbViewUrl(parsedParams, parsedParams.climb_uuid, climbName);
+      : constructClimbViewUrl(parsedParams, parsedParams.climb_uuid, climbName));
 
   redirectWithQuery(viewUrl, searchParams);
 }

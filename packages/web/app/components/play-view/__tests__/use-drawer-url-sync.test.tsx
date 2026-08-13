@@ -132,6 +132,37 @@ describe('useDrawerUrlSync — list-tap flow', () => {
     expect(backSpy).not.toHaveBeenCalled();
     backSpy.mockRestore();
   });
+
+  it('closes onto the qualified size slug for a shadowed size (id-aware, not name-based)', () => {
+    // Kilter layout 1 size 27 shares its name-derived slug with size 10; the
+    // close URL must come from the ids or every drawer close would rewrite the
+    // address bar onto the other physical board.
+    const shadowedBoardDetails = {
+      ...makeBoardDetails(),
+      size_id: 27,
+      size_name: '12 x 12 without kickboard',
+      size_description: 'Square',
+    } as BoardDetails;
+    mockPathname = '/kilter/original/12x12-square-without-kickboard/screw_bolt/40/list';
+    setLocation(mockPathname);
+
+    const { rerender } = renderHook(
+      ({ isOpen, climb }: { isOpen: boolean; climb: Climb | null }) =>
+        useDrawerUrlSync({
+          isOpen,
+          displayedClimb: climb,
+          boardDetails: shadowedBoardDetails,
+          angle: 40,
+          onClose,
+        }),
+      { initialProps: initialClosed },
+    );
+
+    rerender({ isOpen: true, climb: CLIMB_A });
+    rerender({ isOpen: false, climb: CLIMB_A });
+
+    expect(getPath()).toBe('/kilter/original/12x12-square-without-kickboard/screw_bolt/40/list');
+  });
 });
 
 describe('useDrawerUrlSync — enabled=false', () => {

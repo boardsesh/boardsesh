@@ -25,6 +25,7 @@ import {
   tryBuildReadableClimbListPath,
 } from '@boardsesh/play-view/readable-url-utils';
 import { isNumericId } from './board-route-paths';
+import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { MOONBOARD_LAYOUTS } from '@/app/lib/moonboard-config';
 import { normalizeMinAscentsFilter, normalizeMinRatingFilter } from '@/app/lib/climb-quality-filter-options';
 import { detectLocale } from '@/app/lib/i18n/detect-locale';
@@ -710,6 +711,30 @@ export const tryConstructSlugListUrl = (
     setIds: set_ids.join(','),
     angle,
   });
+
+/**
+ * The climbs-list URL for a popular board config, id-aware first.
+ *
+ * A popular-config row carries both the numeric ids and the display names, and
+ * the ids must win: slugging from the names collapses a shadowed size (Kilter
+ * 12x12 without kickboard) onto the bare slug's first match — the other
+ * physical board. The name-based form covers a row the static tables don't
+ * resolve, and the numeric form is the last resort that always exists. One
+ * definition, because this decision used to live as four hand-copied blocks
+ * whose priority had drifted to names-first.
+ */
+export const popularConfigListUrl = (config: PopularBoardConfig, angle: number): string =>
+  tryConstructSlugListUrl(config.boardType, config.layoutId, config.sizeId, config.setIds, angle) ??
+  (config.layoutName && config.sizeName && config.setNames.length > 0
+    ? constructClimbListWithSlugs(
+        config.boardType,
+        config.layoutName,
+        config.sizeName,
+        config.sizeDescription ?? undefined,
+        config.setNames,
+        angle,
+      )
+    : `/${config.boardType}/${config.layoutId}/${config.sizeId}/${config.setIds.join(',')}/${angle}/list`);
 
 /**
  * Try to construct a slug-based create URL. Returns null if resolution fails.

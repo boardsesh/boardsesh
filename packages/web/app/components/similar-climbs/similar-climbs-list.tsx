@@ -28,7 +28,7 @@ import {
   type SimilarClimbsVariables,
 } from '@boardsesh/graphql/operations/new-climb-feed';
 import type { BoardDetails, BoardName, Climb } from '@/app/lib/types';
-import { constructClimbViewUrlWithSlugs } from '@/app/lib/url-utils';
+import { constructClimbViewUrlWithSlugs, tryConstructSlugViewUrl } from '@/app/lib/url-utils';
 import styles from './similar-climbs-list.module.css';
 
 type SimilarClimbsListProps = {
@@ -252,6 +252,21 @@ function SimilarClimbCard({
   // Fallback link path for when the queue isn't available — preserves the
   // original navigation behaviour for the duplicate-resolution drawer.
   const climbViewPath = useMemo(() => {
+    // Id-aware first: boardDetails can be the viewer's REAL board (not just the
+    // layout default), so a shadowed size (Kilter 12x12 without kickboard) must
+    // not be slugged from names onto the other board's bare slug.
+    if (boardDetails) {
+      const idAwarePath = tryConstructSlugViewUrl(
+        boardType,
+        boardDetails.layout_id,
+        boardDetails.size_id,
+        boardDetails.set_ids,
+        angle,
+        climb.uuid,
+        climb.name || undefined,
+      );
+      if (idAwarePath) return idAwarePath;
+    }
     if (boardDetails?.layout_name && boardDetails.size_name && boardDetails.set_names) {
       return constructClimbViewUrlWithSlugs(
         boardType,

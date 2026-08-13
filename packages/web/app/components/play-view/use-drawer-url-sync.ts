@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import type { BoardDetails, Climb } from '@/app/lib/types';
-import { constructClimbListWithSlugs, getContextAwareClimbViewUrl } from '@/app/lib/url-utils';
+import { constructClimbListWithSlugs, getContextAwareClimbViewUrl, tryConstructSlugListUrl } from '@/app/lib/url-utils';
 import { detectLocale } from '@/app/lib/i18n/detect-locale';
 
 type DrawerUrlSyncSource = 'list-tap' | 'direct';
@@ -167,6 +167,20 @@ function getListUrl(boardDetails: BoardDetails, angle: number, pathname: string)
     return `${localePrefix}/b/${boardSlugMatch[1]}/${boardSlugMatch[2]}/list`;
   }
   const { board_name, layout_name, size_name, size_description, set_names } = boardDetails;
+  // Id-aware first: this URL replaces the address bar when the drawer closes,
+  // and the name-based form would silently rewrite a shadowed size (Kilter
+  // 12x12 without kickboard) onto the other board's bare slug — corrupting any
+  // bookmark, refresh, or share taken from there.
+  const idAwareListUrl = tryConstructSlugListUrl(
+    board_name,
+    boardDetails.layout_id,
+    boardDetails.size_id,
+    boardDetails.set_ids,
+    angle,
+  );
+  if (idAwareListUrl) {
+    return `${localePrefix}${idAwareListUrl}`;
+  }
   if (layout_name && size_name && set_names) {
     return `${localePrefix}${constructClimbListWithSlugs(board_name, layout_name, size_name, size_description, set_names, angle)}`;
   }

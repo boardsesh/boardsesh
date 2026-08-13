@@ -27,7 +27,7 @@ import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import { useTranslation } from 'react-i18next';
 import { themeTokens } from '@/app/theme/theme-config';
 import BoardDiscoveryScroll from '@/app/components/board-scroll/board-discovery-scroll';
-import { constructBoardSlugListUrl, constructClimbListWithSlugs, tryConstructSlugListUrl } from '@/app/lib/url-utils';
+import { constructBoardSlugListUrl, popularConfigListUrl } from '@/app/lib/url-utils';
 import { getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
 import type { BoardConfigData } from '@/app/lib/server-board-configs';
 import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
@@ -363,25 +363,7 @@ export default function HomePageContent({
   const handleConfigClick = useCallback(
     (config: PopularBoardConfig) => {
       const angle = getDefaultAngleForBoard(config.boardType);
-      if (config.layoutName && config.sizeName && config.setNames.length > 0) {
-        router.push(
-          constructClimbListWithSlugs(
-            config.boardType,
-            config.layoutName,
-            config.sizeName,
-            config.sizeDescription ?? undefined,
-            config.setNames,
-            angle,
-          ),
-        );
-      } else {
-        const setIds = config.setIds.join(',');
-        const numericFallback = `/${config.boardType}/${config.layoutId}/${config.sizeId}/${setIds}/${angle}/list`;
-        router.push(
-          tryConstructSlugListUrl(config.boardType, config.layoutId, config.sizeId, config.setIds, angle) ??
-            numericFallback,
-        );
-      }
+      router.push(popularConfigListUrl(config, angle));
     },
     [router],
   );

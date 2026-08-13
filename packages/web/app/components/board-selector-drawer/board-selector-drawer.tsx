@@ -16,7 +16,7 @@ import type { BoardConfigData } from '@/app/lib/server-board-configs';
 import type { BoardName, BoardRouteIdentity } from '@/app/lib/types';
 import { BOARD_NAME_PREFIX_REGEX, getDefaultSizeForLayout } from '@/app/lib/board-constants';
 import { SUPPORTED_BOARDS } from '@/app/lib/board-data';
-import { constructClimbListWithSlugs, constructBoardSlugListUrl } from '@/app/lib/url-utils';
+import { constructClimbListWithSlugs, constructBoardSlugListUrl, tryConstructSlugListUrl } from '@/app/lib/url-utils';
 import { type StoredBoardConfig, saveBoardConfig } from '@/app/lib/saved-boards-db';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useBoardSwitchGuard } from '@/app/components/board-lock/use-board-switch-guard';
@@ -143,13 +143,20 @@ export default function BoardSelectorDrawer({
     const size = sizes.find((s) => s.id === selectedSize);
     const selectedSetNames = sets.filter((s) => selectedSets.includes(s.id)).map((s) => s.name);
     if (layout && size && selectedSetNames.length > 0) {
-      return constructClimbListWithSlugs(
-        selectedBoard,
-        layout.name,
-        size.name,
-        size.description,
-        selectedSetNames,
-        selectedAngle,
+      // Id-aware first: the picker holds the numeric ids, and slugging from
+      // names collapses a shadowed size (Kilter 12x12 without kickboard) onto
+      // the bare slug's first match — making that size unselectable from the
+      // very surface that lists it.
+      return (
+        tryConstructSlugListUrl(selectedBoard, selectedLayout, selectedSize, selectedSets, selectedAngle) ??
+        constructClimbListWithSlugs(
+          selectedBoard,
+          layout.name,
+          size.name,
+          size.description,
+          selectedSetNames,
+          selectedAngle,
+        )
       );
     }
     return null;
