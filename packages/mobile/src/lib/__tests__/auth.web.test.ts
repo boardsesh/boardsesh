@@ -77,6 +77,27 @@ describe('Expo web OAuth', () => {
     );
   });
 
+  // Without this the W-06 fix is dead on the most common signed-out login:
+  // "Continue with Google" navigates the document away, and the callback URL is
+  // rebuilt from scratch on the way back — dropping any `next` in the address
+  // bar. The two tests above are the regression lock for the no-`next` case:
+  // that callbackUrl stays byte-identical to what ships today.
+  it('carries a read-only return path through the OAuth callback', () => {
+    const next = '/b/the-gym/40/view/crimpy-thing-0A1B2C3D4E5F60718293A4B5C6D7E8F9';
+    const url = new URL(
+      buildWebOAuthStartUrl('google', 'https://app.boardsesh.com', 'attempt-google-2', false, '', next),
+    );
+
+    const callbackUrl = new URL(url.searchParams.get('callbackUrl') ?? '');
+    expect(callbackUrl.pathname).toBe('/auth/login');
+    // Verbatim: validation is `readPostLoginReturnHref`'s job on the way back
+    // in, not this builder's.
+    expect(callbackUrl.searchParams.get('next')).toBe(next);
+    // And the OAuth return markers are untouched.
+    expect(callbackUrl.searchParams.get('boardseshOAuthProvider')).toBe('google');
+    expect(callbackUrl.searchParams.get('boardseshOAuthAttempt')).toBe('attempt-google-2');
+  });
+
   it('reports browser navigation failures without throwing', async () => {
     vi.stubGlobal('window', {
       location: {

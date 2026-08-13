@@ -18,6 +18,7 @@ import {
   WEB_OAUTH_RETURN_ATTEMPT_PARAM,
   WEB_OAUTH_RETURN_PROVIDER_PARAM,
 } from './oauth-return-marker';
+import { readPostLoginReturnHref } from './routing/anonymous-auth-gate';
 
 export type AuthProvider = 'google' | 'apple';
 
@@ -505,6 +506,17 @@ export function isGoogleSignInConfigured(): boolean {
  * runs on WEB_BASE_URL (www in production), while the callback returns to the
  * exact auth route that initiated it: `/app/auth/...` for the same-origin build
  * and `/auth/...` for app.boardsesh.com.
+ *
+ * `returnHref` is the read-only board path a signed-out visitor arrived on. It
+ * has to ride the callback URL rather than the address bar, because "Continue
+ * with Google" navigates the document away and this function rebuilds the return
+ * URL from scratch on the way back — without it, the most common signed-out
+ * login silently drops the climb. Carrying it is safe with no www change: www's
+ * NextAuth redirect callback returns an allowed app-origin URL verbatim
+ * (`packages/web/app/lib/auth/auth-options.ts`), and `consumeWebOAuthReturn()`
+ * strips only the three `bs_oauth_*` params on arrival, so `next` is still in
+ * `window.location.search` when AuthProvider's authenticated branch reads it.
+ * The value is validated where it is consumed, not here.
  */
 export function buildWebOAuthStartUrl(
   provider: AuthProvider,
@@ -512,11 +524,13 @@ export function buildWebOAuthStartUrl(
   attemptId: string,
   isRegistration = false,
   exportBasePath = process.env.EXPO_BASE_URL || '/',
+  returnHref: string | null = null,
 ): string {
   const normalizedBasePath = exportBasePath === '/' ? '' : exportBasePath.replace(/\/$/, '');
   const callbackUrl = new URL(`${normalizedBasePath}/auth/${isRegistration ? 'register' : 'login'}`, appOrigin);
   callbackUrl.searchParams.set(WEB_OAUTH_RETURN_PROVIDER_PARAM, provider);
   callbackUrl.searchParams.set(WEB_OAUTH_RETURN_ATTEMPT_PARAM, attemptId);
+  if (returnHref) callbackUrl.searchParams.set('next', returnHref);
   const startUrl = new URL('/auth/native-start', WEB_BASE_URL);
   startUrl.searchParams.set('provider', provider);
   startUrl.searchParams.set('callbackUrl', callbackUrl.toString());
@@ -530,7 +544,16 @@ function startWebOAuth(provider: AuthProvider, attemptId?: string, isRegistratio
 
   try {
     const resolvedAttemptId = attemptId ?? createWebOAuthAttemptId();
-    window.location.assign(buildWebOAuthStartUrl(provider, window.location.origin, resolvedAttemptId, isRegistration));
+    window.location.assign(
+      buildWebOAuthStartUrl(
+        provider,
+        window.location.origin,
+        resolvedAttemptId,
+        isRegistration,
+        process.env.EXPO_BASE_URL || '/',
+        readPostLoginReturnHref(),
+      ),
+    );
     // The document is about to unload. This distinct result prevents the
     // in-process native flow from reporting success or checking the old cookie
     // before the provider round-trip returns.

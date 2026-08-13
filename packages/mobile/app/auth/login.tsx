@@ -17,12 +17,21 @@ import { reportError } from '../../src/lib/error-reporting';
 import { hapticLight } from '../../src/lib/haptics';
 import { openDiscordInvite } from '../../src/lib/discord';
 import { OAuthProviderButtons, useOAuthProviders } from '../../src/components/auth/OAuthProviderButtons';
+import { readPostLoginReturnHref } from '../../src/lib/routing/anonymous-auth-gate';
 
 export default function LoginScreen() {
   const { signInWithCredentials } = useAuth();
   const { t } = useTranslation('auth');
   const theme = useTheme();
   const router = useRouter();
+  // Web only: the climb a signed-out visitor arrived for, carried here as
+  // `?next=`. This screen deliberately never navigates with it — AuthProvider's
+  // `isAuthenticated && inAuthGroup` redirect reads the same value off the
+  // location in the same commit, and a `router.replace` here would race it. The
+  // one thing it owns is the sign-up hop, so someone who registers instead of
+  // signing in comes back to the same climb. Constant `null` on native, which
+  // keeps the call below literally `router.push('/auth/register')` there.
+  const returnHref = readPostLoginReturnHref();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -235,7 +244,7 @@ export default function LoginScreen() {
           <Pressable
             onPress={() => {
               hapticLight();
-              router.push('/auth/register');
+              router.push(returnHref ? { pathname: '/auth/register', params: { next: returnHref } } : '/auth/register');
             }}
             hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
             style={styles.footerLinkHit}
