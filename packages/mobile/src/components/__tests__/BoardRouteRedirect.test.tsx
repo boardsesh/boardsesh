@@ -146,4 +146,21 @@ describe('Board Route Handoff event', () => {
 
     expect(analytics.track).toHaveBeenCalledTimes(1);
   });
+
+  // The web build reuses the mounted route component when a second link is
+  // tapped, and two climbs on the same board settle to an identical `{ kind,
+  // status, source }` — so deduplicating on the event props alone would silently
+  // undercount every board-route open after the first.
+  it('reports a second URL through the same mounted screen', () => {
+    routeStatus.current = 'resolved';
+
+    const { rerender } = render(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
+    rerender(
+      createElement(BoardRouteHandoff, {
+        target: { ...CLIMB_TARGET, climbUuid: 'F9E8D7C6B5A4938271605F4E3D2C1B0A' } as BoardRouteTarget,
+      }),
+    );
+
+    expect(analytics.track).toHaveBeenCalledTimes(2);
+  });
 });

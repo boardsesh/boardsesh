@@ -18,7 +18,7 @@ import { Text } from './Text';
 import { useTheme } from '../providers/theme-provider';
 import { track } from '../lib/analytics';
 import { buildLoginHrefWithReturn } from '../lib/routing/anonymous-auth-gate';
-import type { BoardRouteTarget } from '../lib/routing/board-route-target';
+import { toBoardPath, type BoardRouteTarget } from '../lib/routing/board-route-target';
 import { useBoardRouteTarget, type BoardRouteMode, type BoardRouteStatus } from '../lib/routing/use-board-route-target';
 
 /** Where `app/+not-found.tsx` sends people; the dead end below has to match it. */
@@ -31,14 +31,23 @@ const HANDOFF_EVENT_STATUS = {
   'auth-required': 'auth_required',
 } as const satisfies Partial<Record<BoardRouteStatus, string>>;
 
+/** The URL a report is about, so two different climbs each get their own event. */
+function targetIdentity(target: BoardRouteTarget | null): string {
+  if (!target) return 'unparsed';
+  const climbUuid = target.kind === 'climb' || target.kind === 'slug-climb' ? target.climbUuid : '';
+  return `${toBoardPath(target)}#${climbUuid}`;
+}
+
 /**
  * One `Board Route Handoff` per board-route open, at the moment it settles.
  *
  * Deliberately cross-platform. It is the only signal for whether deep links
  * resolve on the native fleet as well as on app.boardsesh.com, and it is
- * additive telemetry rather than a behaviour change. The ref keys on what is
- * reported, not on a bare flag, so a second URL through the same mounted screen
- * still reports — and a re-render at the same status does not double-fire.
+ * additive telemetry rather than a behaviour change. The ref keys on the URL and
+ * the outcome — not a bare flag, and not the coarse event props — so a second
+ * URL through the same mounted screen reports even when it settles the same way,
+ * while a re-render at the same status does not double-fire. The URL never
+ * leaves this file: the event itself carries only `{ kind, status, source }`.
  */
 function useBoardRouteHandoffEvent(
   target: BoardRouteTarget | null,
@@ -49,13 +58,14 @@ function useBoardRouteHandoffEvent(
   const eventStatus = HANDOFF_EVENT_STATUS[status as keyof typeof HANDOFF_EVENT_STATUS];
   const kind = target?.kind ?? 'unparsed';
   const source = mode ?? 'deep-link';
+  const identity = targetIdentity(target);
   useEffect(() => {
     if (!eventStatus) return;
-    const reportKey = `${kind}#${source}#${eventStatus}`;
+    const reportKey = `${identity}#${source}#${eventStatus}`;
     if (reportedRef.current === reportKey) return;
     reportedRef.current = reportKey;
     track(SHARED_EVENTS.BoardRouteHandoff, { kind, status: eventStatus, source });
-  }, [eventStatus, kind, source]);
+  }, [eventStatus, identity, kind, source]);
 }
 
 export function BoardRouteRedirect({ status }: { status: BoardRouteStatus }) {
