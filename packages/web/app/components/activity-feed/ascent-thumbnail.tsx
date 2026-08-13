@@ -9,7 +9,7 @@ import { useCanvasRendererReady } from '@/app/lib/board-render-worker/worker-man
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { getDefaultBoardConfig } from '@/app/lib/default-board-configs';
 import type { RenderBoardConfig } from '@boardsesh/shared-schema';
-import { constructClimbViewUrlWithSlugs, constructClimbViewUrl } from '@/app/lib/url-utils';
+import { constructClimbViewUrlWithSlugs, constructClimbViewUrl, tryConstructSlugViewUrl } from '@/app/lib/url-utils';
 import styles from './ascents-feed.module.css';
 
 type AscentThumbnailProps = {
@@ -66,6 +66,23 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
   // Reuse the already-memoized boardDetails to build the climb view URL
   const climbViewPath = useMemo(() => {
     if (!boardDetails || !layoutId) return null;
+
+    // Id-aware first: `renderBoard` is the board this ascent was actually
+    // logged on, which can be a size that shares its base slug with another
+    // on the same layout (Kilter layout 1 sizes 10/27 — see `resolveSizeSlug`).
+    // Slugging from names alone would link this climber's own thumbnail to
+    // the OTHER physical board. Names stay the fallback for a board the
+    // static tables don't carry.
+    const idAwarePath = tryConstructSlugViewUrl(
+      boardDetails.board_name,
+      boardDetails.layout_id,
+      boardDetails.size_id,
+      boardDetails.set_ids,
+      angle,
+      climbUuid,
+      climbName,
+    );
+    if (idAwarePath) return idAwarePath;
 
     if (boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names) {
       return constructClimbViewUrlWithSlugs(

@@ -527,6 +527,17 @@ export const constructSetterStatsUrl = (
   return searchQuery ? `${baseUrl}?search=${encodeURIComponent(searchQuery)}` : baseUrl;
 };
 
+/**
+ * Name-based, so it emits the *bare* size slug even for a size that shares one
+ * with another on the same layout (Kilter "12 x 12 without kickboard" — see
+ * `resolveSizeSlug` in @boardsesh/play-view). Such a link still resolves, just
+ * to the first match, which for a shadowed size is the wrong physical board.
+ *
+ * Prefer `tryConstructSlugListUrl` wherever the numeric ids are in hand; it
+ * takes them and emits the qualified slug, and `getSizeBySlug` resolves both
+ * forms. This stays as the fallback for a board the static tables don't carry,
+ * where names are all a caller has.
+ */
 export const constructClimbListWithSlugs = (
   board_name: string,
   layoutName: string,
@@ -651,6 +662,17 @@ const appendForkParams = (createUrl: string, forkParams?: ForkClimbParams): stri
   return `${createUrl}?${params.toString()}`;
 };
 
+/**
+ * Name-based, so it emits the *bare* size slug even for a size that shares one
+ * with another on the same layout (Kilter "12 x 12 without kickboard" — see
+ * `resolveSizeSlug` in @boardsesh/play-view). Such a link still resolves, just
+ * to the first match, which for a shadowed size is the wrong physical board.
+ *
+ * Prefer `tryConstructSlugCreateUrl` wherever the numeric ids are in hand; it
+ * takes them and emits the qualified slug, and `getSizeBySlug` resolves both
+ * forms. This stays as the fallback for a board the static tables don't carry,
+ * where names are all a caller has.
+ */
 export const constructCreateClimbUrl = (
   board_name: string,
   layoutName: string,

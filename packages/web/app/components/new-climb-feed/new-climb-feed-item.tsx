@@ -15,7 +15,7 @@ import AscentThumbnail from '@/app/components/activity-feed/ascent-thumbnail';
 import ClimbIcons from '@/app/components/climb-card/climb-icons';
 import { getDefaultBoardConfig, getDefaultClimbViewPath } from '@/app/lib/default-board-configs';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
-import { constructClimbViewUrlWithSlugs } from '@/app/lib/url-utils';
+import { constructClimbViewUrlWithSlugs, tryConstructSlugViewUrl } from '@/app/lib/url-utils';
 import type { BoardName } from '@/app/lib/types';
 import LocaleLink from '@/app/components/i18n/locale-link';
 
@@ -34,6 +34,21 @@ export default function NewClimbFeedItem({ item }: NewClimbFeedItemProps) {
     // Try to build friendly slug path using board details
     const defaultConfig = getDefaultBoardConfig(boardName, item.layoutId);
     if (defaultConfig) {
+      // Id-aware first: this matches every other view-URL call site. The
+      // layout default isn't a shadowed size today, but building from names
+      // is the shape that silently points at the wrong board the moment it
+      // becomes one (see `resolveSizeSlug`).
+      const idAwarePath = tryConstructSlugViewUrl(
+        boardName,
+        item.layoutId,
+        defaultConfig.sizeId,
+        defaultConfig.setIds,
+        angle,
+        item.uuid,
+        item.name || undefined,
+      );
+      if (idAwarePath) return idAwarePath;
+
       const details = getBoardDetailsForBoard({
         board_name: boardName,
         layout_id: item.layoutId,
