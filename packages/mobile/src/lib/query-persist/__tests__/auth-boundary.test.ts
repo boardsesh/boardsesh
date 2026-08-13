@@ -149,6 +149,11 @@ describe('adoptPersistedQueryCache (native, restore already done at mount)', () 
     expect(clearPersistedQueryCacheMock).toHaveBeenCalledTimes(1);
     expect(reportHandledErrorMock).toHaveBeenCalledTimes(1);
     expect(getPersistOwner()).toBe(OWNER);
+    // The event reports the DISAGREEMENT, not the restore's own 'hydrated':
+    // those entries were evicted moments later, so calling the launch hydrated
+    // would hide the alarm from the funnel.
+    expect(trackMock).toHaveBeenCalledTimes(1);
+    expect(trackMock.mock.calls[0][1]).toEqual({ outcome: 'owner_mismatch' });
   });
 
   it('stays silent for a torn write with no owner sentinel', async () => {
