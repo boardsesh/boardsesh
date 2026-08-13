@@ -178,11 +178,11 @@ export function beginScopePurge(namespace: string): () => void {
 
 /**
  * Bump the GLOBAL epoch: a wipe that is not scoped to one board, so every
- * in-flight operation must bail whatever it is working on. Three callers — the
- * owner-stamp mismatch wipe, and the manual database compaction (VACUUM takes an
- * exclusive lock for 5-20s, which a concurrent import would meet as SQLITE_BUSY
- * and charge itself a structural failure for). Sign-out goes through
- * setSigningOut, which bumps this too.
+ * in-flight operation must bail whatever it is working on. Two callers — the
+ * owner-stamp mismatch wipe, and compactOfflineDatabase before a VACUUM (an
+ * exclusive lock held for 5-20s, which a concurrent import would meet as
+ * SQLITE_BUSY and charge itself a structural failure for). Sign-out bumps the
+ * same epoch through setSigningOut rather than calling this.
  *
  * There is no endGlobalPurge: the epoch is monotonic, so there's no flag to
  * unset, nothing to leak, and no cleanup a throw could skip. In-flight cycles
