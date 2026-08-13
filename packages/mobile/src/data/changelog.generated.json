@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-12T23:14:06.355Z",
+  "generatedAt": "2026-08-13T02:28:28.276Z",
   "entries": [
+    {
+      "prNumber": 4400,
+      "category": "fixed",
+      "title": "Lock your phone mid-download and the board keeps downloading. Before, the transfer was thrown away the moment the app went in your pocket and started again from zero next time you opened it — on a slow connection the big Kilter board could never finish.",
+      "mergedAt": "2026-08-13T02:27:24Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4400"
+    },
     {
       "prNumber": 4167,
       "category": "fixed",

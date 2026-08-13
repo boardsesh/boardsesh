@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-13
+
+### Fixed
+
+- Lock your phone mid-download and the board keeps downloading. Before, the transfer was thrown away the moment the app went in your pocket and started again from zero next time you opened it — on a slow connection the big Kilter board could never finish. ([#4400](https://github.com/boardsesh/boardsesh/pull/4400))
+
 ## 2026-08-12
 
 ### New
