@@ -132,6 +132,13 @@ export default function BoardSelection() {
   // real, and retries never pause. Same belt-and-braces reasoning as
   // offlineAwareRequest's network-failure catch.
   const isLocalOnly = isOffline || (isError && myBoards.length === 0);
+  // PRECEDENCE, three tiers: live `myBoards` query > persisted `myBoards` cache >
+  // `offlineBoardsV1` MMKV cards. Tier 2 is `cachedMyBoards` below, warm on a cold
+  // start since #4353 (`src/lib/query-persist`), so board names and owned/followed
+  // grouping are fresher offline. Tier 3 stays the last resort: it outlives the
+  // cache's 14-day maxAge and is pruned deliberately, so it is the only tier that
+  // still answers once the persisted cache expires. No logic changes here — the
+  // persisted cache only makes the middle tier warm.
   const offlineRows = useMemo(
     () =>
       isLocalOnly

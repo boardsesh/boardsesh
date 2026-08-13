@@ -26,6 +26,26 @@ Only for keys that have no local table and do not deserve one: `['profile']`, `[
 
 Budgets: target under 100 KB serialized, hard cap 512 KB with lowest-priority-first eviction, 64 KB per entry, `maxAge` 14 days for identity and config keys and 24 hours for `publicProfile`.
 
+#### How the persisted cache works
+
+Shipped in [#4353](https://github.com/boardsesh/boardsesh/issues/4353) as `packages/mobile/src/lib/query-persist/`.
+
+**The envelope.** `{ version, userId, savedAt, evicted?, queries }`. There is deliberately **no `mutations` field**: `pending_mutations` in SQLite is the one outbox, and a second persisted outbox is a double-submit hazard. The type makes it unrepresentable, and `dehydrateAllowlisted` additionally hard-codes `shouldDehydrateMutation: () => false` — two independent defences, one test each. `version` is bumped only when the persisted _value_ shape breaks; a changed query key yields a different `queryHash`, so a stale entry is simply never found and ages out.
+
+**The six rules.** Each pins an exact head **and an exact arity**, which is what makes the allowlist a gate rather than a prefix filter (`['profile', x]` misses; a future `['profileSettings']` cannot slip through). Priorities, lowest evicting first: `profile` 60, `myBoards` 50, `myGyms` 40, `grades` 30, `angles` 20, `publicProfile` 10. `publicProfile` also carries a guard rejecting any id but the blob owner's. The allowlist is re-applied on the **restore** path, not only on dehydrate, so a future or tampered blob cannot smuggle a non-allowlisted key — or another climber's public profile — into memory.
+
+**Native restores synchronously, web asynchronously.** On native, MMKV's read is synchronous, so `QueryProvider`'s `useState` lazy initializer hydrates before React's first render: no `isRestoring` frame, no `IsRestoringProvider`, no splash flicker. On web the storage key is `userScopedStorageKey(...)`, which returns `null` until `setCurrentUserStorageOwner` runs, so there is genuinely nothing readable before auth resolves — the restore is awaited inside `handleResolvedAuthenticatedTransition`, which precedes `setIsLoading(false)` while children sit behind `AppLoadingSplash`. `hydrate`'s `dataUpdatedAt >` guard means a late restore can never clobber a live fetch either way.
+
+**The native owner sentinel.** A short `queryCacheOwnerV1` key holds the user id next to the blob, in a **dedicated** `boardsesh-query-cache` MMKV instance (so a 512 KB blob never lands in `boardsesh-settings`, whose `clearAll()` would take it with it). A blob with no sentinel hydrates **nothing** and is deleted. That is not fussiness: `persistedQueryCacheExists` answers from the sentinel rather than reading up to 512 KB of JSON, so allowing a sentinel-less blob to hydrate would let hydrated data be invisible to the sign-out wipe. Presence and hydratability have to agree exactly.
+
+**Merge-on-write.** React Query's 30-minute `gcTime` deletes any entry with no observer, so a replace-on-write persister would erode toward "only what you looked at in the last 30 minutes" — `['angles', board, layout]` for a board you did not open today would vanish. Each write merges: fresh entries win by `queryHash`, previously written entries survive when absent from the fresh set and still inside their rule's `maxAge`. The merge set is **seeded from what the restore hydrated**, which closes the same hole at the other end.
+
+**The writer is paused, never stopped.** It subscribes to the query cache once for the app's lifetime and is gated purely by a runtime owner read at **write-fire time**, never at schedule time. `suspendCacheWriter()` clears the owner, the pending throttle and the merge set; `setPersistOwner(userId)` at the auth boundary re-arms it. A latched stop would be unshippable: `clearPersistedUserStores` runs on the light signed-out path too, which fires on every logged-out cold start and every anonymous foreground check, so the writer would be dead from the first anonymous launch and the first sign-in would persist nothing. Reading the owner at fire time also closes the race a stop was meant to cover — a write queued mid-sign-out finds a null owner and does nothing.
+
+**The sign-out contract.** The blob is deleted **inside `clearPersistedUserStores`** — one call site, cross-platform, not a parallel delete that can drift. `suspendCacheWriter()` is its first synchronous statement. And `handleSignedOutTransition`'s `needsFullCleanup` now also fires when a persisted blob exists, so a token that expired while the app was killed no longer relaunches into the previous session's cached profile. That widening is safe because it can only fire on a **confirmed** logout: `resolveAuthSession` returns `anonymous` only for an absent token or a server-rejected refresh, while an unreachable refresh stays authenticated-degraded — so an offline cold start still restores normally.
+
+**Telemetry.** One event, `Offline Query Cache Restored`, at most once per launch and only when a blob existed. `outcome` is one of `hydrated | unreadable | owner_mismatch | owner_missing | empty`; `owner_mismatch` is also a Sentry report (`source: 'query-persist'`) and should be ~0, while `owner_missing` is a torn write and deliberately silent.
+
 ### Bucket 3 — honest offline states, no storage at all
 
 Feeds (`sessionGroupedFeed`, `activityFeed`), session detail, board presence, `searchUsers`, `bulkVoteSummaries`, `comments`, `gymMembers`, `nearbyBoards`/`nearbyGyms`, `betaLinkPreview`.
@@ -110,11 +130,11 @@ Invalidation stays gated on rows actually landing (`if (totalProcessed > 0)`), a
 
 ## Delivery
 
-| Step                                                                     | State                                                                                                                                                     |
-| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| This decision                                                            | shipped                                                                                                                                                   |
-| Honest offline states on network-only screens                            | shipped                                                                                                                                                   |
-| One invalidation map for sync and the drainer                            | shipped                                                                                                                                                   |
-| User scoping: owner stamp, completeness marker, row predicates           | shipped                                                                                                                                                   |
-| `localFirstWhileOnline` + the local logbook, playlists and likes readers | [#4352](https://github.com/boardsesh/boardsesh/issues/4352) — ordering constraint against [#4312](https://github.com/boardsesh/boardsesh/issues/4312)     |
-| The allowlisted persisted cache                                          | [#4353](https://github.com/boardsesh/boardsesh/issues/4353) — follows the logout-wipe work in [#3621](https://github.com/boardsesh/boardsesh/issues/3621) |
+| Step                                                                     | State                                                                                                                                                 |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| This decision                                                            | shipped                                                                                                                                               |
+| Honest offline states on network-only screens                            | shipped                                                                                                                                               |
+| One invalidation map for sync and the drainer                            | shipped                                                                                                                                               |
+| User scoping: owner stamp, completeness marker, row predicates           | shipped                                                                                                                                               |
+| `localFirstWhileOnline` + the local logbook, playlists and likes readers | [#4352](https://github.com/boardsesh/boardsesh/issues/4352) — ordering constraint against [#4312](https://github.com/boardsesh/boardsesh/issues/4312) |
+| The allowlisted persisted cache                                          | shipped — [#4353](https://github.com/boardsesh/boardsesh/issues/4353); see "How the persisted cache works" above                                      |

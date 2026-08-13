@@ -836,6 +836,19 @@ export const SHARED_EVENTS = {
   // the funnel can never read a climber who backed out as one who never arrived.
   BoardLookStepShown: 'Board Look Step Shown',
   BoardLookStepResolved: 'Board Look Step Resolved',
+  // Offline — the allowlisted persisted React Query cache (issue #4353) at cold
+  // start. Fired at most ONCE per launch, and only when a blob existed at all,
+  // so a first-run or signed-out launch emits nothing. This is how the
+  // cold-start win is judged from fleet data: the share of launches reaching
+  // `outcome: 'hydrated'` with a `['profile']` entry is the same population that
+  // used to hit "Something went wrong" on My Boards with no signal.
+  // Props, absent-when-unknown: { outcome: 'hydrated' | 'unreadable' |
+  // 'owner_mismatch' | 'owner_missing' | 'empty', entryCount, bytes,
+  // droppedCount, oldestEntryAgeHours, evicted }. `entryCount`/`bytes` are
+  // present only when the blob was parsed and owned ('hydrated' / 'empty');
+  // `droppedCount` only when > 0; `oldestEntryAgeHours` only on 'hydrated';
+  // `evicted` only when the previous write hit the 512 KB cap.
+  OfflineQueryCacheRestored: 'Offline Query Cache Restored',
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;
