@@ -30,11 +30,13 @@ import {
   tryConstructSlugViewUrl,
   tryConstructSlugListUrl,
   tryConstructSlugCreateUrl,
+  popularConfigListUrl,
   DEFAULT_SEARCH_PARAMS,
   constructCreateClimbUrl,
 } from '../url-utils';
 import { resolveSizeSlugToId } from '@boardsesh/play-view/readable-url-utils';
 import type { SearchRequestPagination, BoardDetails } from '../types';
+import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 
 describe('searchParamsToUrlParams', () => {
   it('should return empty URLSearchParams when all values are defaults', () => {
@@ -1782,6 +1784,57 @@ describe('qualified size slugs for a shadowed size (Kilter layout 1, sizes 10/27
     it('round-trips both forms back to the size each was built from', () => {
       expect(resolveSizeSlugToId('kilter', 1, '12x12-square-without-kickboard')).toBe(27);
       expect(resolveSizeSlugToId('kilter', 1, '12x12-square')).toBe(10);
+    });
+  });
+
+  describe('popularConfigListUrl', () => {
+    const shadowedConfig = {
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 27,
+      setIds: KILTER_SQUARE_SETS,
+      layoutName: 'Kilter Board Original',
+      sizeName: '12 x 12 without kickboard',
+      sizeDescription: 'Square',
+      setNames: ['Bolt Ons', 'Screw Ons'],
+      displayName: 'Kilter 12x12 without kickboard',
+      boardCount: 1,
+    } as unknown as PopularBoardConfig;
+
+    it('lets the ids win over the names on a shadowed size', () => {
+      // The names alone slug to the bare 12x12-square — size 10's board. The
+      // whole point of the helper is that a row carrying both never uses them.
+      expect(popularConfigListUrl(shadowedConfig, 40)).toBe(
+        '/kilter/original/12x12-square-without-kickboard/screw_bolt/40/list',
+      );
+    });
+
+    it('falls back to the names when the static tables cannot resolve the ids', () => {
+      const unresolvableIds = { ...shadowedConfig, layoutId: 9999, sizeId: 9999, setIds: [9999] };
+      const nameBasedUrl = popularConfigListUrl(unresolvableIds, 40);
+      expect(nameBasedUrl).toBe(
+        constructClimbListWithSlugs(
+          'kilter',
+          'Kilter Board Original',
+          '12 x 12 without kickboard',
+          'Square',
+          ['Bolt Ons', 'Screw Ons'],
+          40,
+        ),
+      );
+    });
+
+    it('falls back to the numeric form when neither ids nor names resolve', () => {
+      const bareConfig = {
+        ...shadowedConfig,
+        layoutId: 9999,
+        sizeId: 9999,
+        setIds: [9999],
+        layoutName: null,
+        sizeName: null,
+        setNames: [],
+      } as unknown as PopularBoardConfig;
+      expect(popularConfigListUrl(bareConfig, 40)).toBe('/kilter/9999/9999/9999/40/list');
     });
   });
 
