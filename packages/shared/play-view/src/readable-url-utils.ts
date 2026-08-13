@@ -5,7 +5,13 @@ import {
   getSetsForLayoutAndSize,
   getSizesForLayoutId,
 } from '@boardsesh/board-constants/product-sizes';
-import { getMoonBoardDetails, MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE } from '@boardsesh/board-config';
+import {
+  getMoonBoardDetails,
+  MOONBOARD_LAYOUTS,
+  MOONBOARD_SETS,
+  MOONBOARD_SIZE,
+  type MoonBoardLayoutKey,
+} from '@boardsesh/board-config';
 import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
 
 export type BuildReadableClimbViewPathArgs = {
@@ -153,16 +159,61 @@ export function resolveSizeSlug(boardName: BoardName, layoutId: number, sizeId: 
 }
 
 /**
- * Inverse of {@link resolveSizeSlug}. Accepts a qualified slug and the bare
- * legacy one, which keeps resolving to the first match. Exported so the web
- * app's `getSizeBySlug` resolves the qualified form identically — a link has to
- * mean the same board on both hosts.
+ * Qualified size slugs that must keep resolving forever, keyed by board and then
+ * by size id.
+ *
+ * The qualifier {@link sizeSlugsForLayout} appends is derived from the upstream
+ * size *name*, and upstream renames sizes — the July 2026 sync audit caught
+ * several. A rename re-mints the qualifier, so the slug generated after it and
+ * the slug already sitting in every shared link, chat message and search index
+ * are different strings. Nothing about a link in the wild changes when Aurora
+ * edits a row, so pinning is the only thing that keeps it working: a qualified
+ * form is recorded here by *id* the moment it ships, and resolves from then on
+ * whatever the size ends up being called.
+ *
+ * Consulted only after the generated slugs, so an alias can never shadow a live
+ * one. Append-only — deleting an entry 404s links that are already out there.
+ */
+export const PERMANENT_SIZE_SLUG_ALIASES: Partial<Record<BoardName, Readonly<Record<number, readonly string[]>>>> = {
+  // Kilter layout 1 size 27, "12 x 12 without kickboard": shadowed by size 10
+  // ("12 x 12 with kickboard"), which owns the bare `12x12-square` slug, so 27
+  // is only ever addressable through its qualified form.
+  kilter: { 27: ['12x12-square-without-kickboard'] },
+};
+
+/**
+ * The size id a pinned slug names, with no reference to what the size is called
+ * upstream today. Exported so the permanence contract in
+ * {@link PERMANENT_SIZE_SLUG_ALIASES} can be asserted on its own, independently
+ * of whatever qualifier the current board data happens to generate.
+ */
+export function resolvePermanentSizeSlugAlias(boardName: BoardName, sizeSlug: string): number | null {
+  const aliasesForBoard = PERMANENT_SIZE_SLUG_ALIASES[boardName];
+  if (!aliasesForBoard) return null;
+
+  for (const [sizeId, aliases] of Object.entries(aliasesForBoard)) {
+    if (aliases.includes(sizeSlug)) return Number(sizeId);
+  }
+  return null;
+}
+
+/**
+ * Inverse of {@link resolveSizeSlug}. Accepts a qualified slug, the bare legacy
+ * one (which keeps resolving to the first match), and any qualified form pinned
+ * in {@link PERMANENT_SIZE_SLUG_ALIASES}. Exported so the web app's
+ * `getSizeBySlug` resolves the qualified form identically — a link has to mean
+ * the same board on both hosts.
  */
 export function resolveSizeSlugToId(boardName: BoardName, layoutId: number, sizeSlug: string): number | null {
   const entries = sizeSlugsForLayout(boardName, layoutId);
-  return (
-    (entries.find((entry) => entry.slug === sizeSlug) ?? entries.find((entry) => entry.base === sizeSlug))?.id ?? null
-  );
+  const generatedMatch =
+    entries.find((entry) => entry.slug === sizeSlug) ?? entries.find((entry) => entry.base === sizeSlug);
+  if (generatedMatch) return generatedMatch.id;
+
+  const pinnedSizeId = resolvePermanentSizeSlugAlias(boardName, sizeSlug);
+  // A pinned slug still only means this board config if that size is actually on
+  // the layout the URL named — the table is keyed by board, not by layout.
+  return pinnedSizeId != null && entries.some((entry) => entry.id === pinnedSizeId) ? pinnedSizeId : null;
 }
 
 /**
@@ -362,7 +413,16 @@ export type ParsedClimbRoutePath = ParsedBoardConfigPath & {
 };
 
 const numericSegmentRegex = /^\d+$/;
-const climbUuidRegex = /[0-9A-F]{32}/i;
+/**
+ * Anchored to the end of the segment because {@link buildClimbSegment} always
+ * puts the uuid last (`<name-slug>-<uuid>`). Unanchored, the first 32-hex run
+ * won — and a climb whose *name* slugs to a contiguous 32-character hex run
+ * ("Beefcafe0ff1ce…" and friends do exist) handed back the name fragment, so a
+ * perfectly valid shared link queried a uuid nobody has and rendered
+ * not-found. A bare uuid still matches: the whole segment is then the run at
+ * the end.
+ */
+const climbUuidRegex = /[0-9A-F]{32}$/i;
 
 function isNumericSegment(value: string): boolean {
   return numericSegmentRegex.test(value);
@@ -384,14 +444,18 @@ function decodeSegment(value: string): string {
  */
 function toRouteSegments(path: string): string[] {
   if (!path) return [];
-  let pathname = path;
+  // Hash and query come off *before* the scheme sniff. A relative path can carry
+  // an absolute URL inside its query (`/kilter/…/view/<uuid>?next=https://x/y`);
+  // sniffing for `://` first read that as the origin, cut everything up to the
+  // query's own first slash, and threw the real path away.
+  let pathname = path.split('#')[0].split('?')[0];
+
   const schemeIndex = pathname.indexOf('://');
   if (schemeIndex !== -1) {
     const afterScheme = pathname.slice(schemeIndex + 3);
     const firstSlash = afterScheme.indexOf('/');
     pathname = firstSlash === -1 ? '' : afterScheme.slice(firstSlash);
   }
-  pathname = pathname.split('#')[0].split('?')[0];
 
   const segments = pathname.split('/').filter((segment) => segment.length > 0);
   if (segments.length > 0 && /^[a-z]{2}$/.test(segments[0])) {
@@ -410,6 +474,45 @@ export function extractUuidFromClimbSegment(segment: string): string {
   return match ? match[0] : segment;
 }
 
+/** A slug with its hyphens dropped and case folded — see {@link moonBoardLayoutSlugForms}. */
+function toHyphenlessSlug(value: string): string {
+  return value.replace(/-/g, '').toLowerCase();
+}
+
+/**
+ * Every layout-slug form a MoonBoard URL may legitimately carry, one entry per
+ * layout, in the order `MOONBOARD_LAYOUTS` declares them — the same order the
+ * web app's `getMoonBoardLayoutBySlug` walks, so both hosts pick the same layout
+ * if two ever became ambiguous.
+ *
+ * Web accepts three forms and has since MoonBoard shipped, so older web builds
+ * minted links in all of them:
+ *
+ *   - `generateLayoutSlug(layout.name)` — canonical, what we emit (`2016`)
+ *   - the config key verbatim (`moonboard-2016`)
+ *   - the config key however it is hyphenated, in any case (`moonboard2016`) —
+ *     web compares the key and the incoming slug with hyphens stripped
+ *
+ * Only accepting the canonical form here 404'd every legacy MoonBoard link the
+ * moment the Expo app started parsing these URLs, while www kept serving them.
+ * The alternates are derived from the same two inputs web derives them from
+ * (the key and the layout name) rather than hand-listed, so a new layout picks
+ * up its legacy forms for free.
+ */
+const moonBoardLayoutSlugForms: {
+  layoutKey: MoonBoardLayoutKey;
+  layoutId: number;
+  /** Matched verbatim: the canonical slug, and the config key. */
+  exactForms: ReadonlySet<string>;
+  /** Matched against the incoming slug once both have their hyphens dropped. */
+  hyphenlessKey: string;
+}[] = Object.entries(MOONBOARD_LAYOUTS).map(([layoutKey, layout]) => ({
+  layoutKey: layoutKey as MoonBoardLayoutKey,
+  layoutId: layout.id,
+  exactForms: new Set([generateLayoutSlug(layout.name), layoutKey]),
+  hyphenlessKey: toHyphenlessSlug(layoutKey),
+}));
+
 function resolveMoonBoardSegmentsToIds({
   layoutSlug,
   sizeSlug,
@@ -419,12 +522,25 @@ function resolveMoonBoardSegmentsToIds({
   sizeSlug: string;
   setSlug: string;
 }): Omit<ParsedBoardConfigPath, 'angle'> | null {
-  if (sizeSlug !== generateSizeSlug(MOONBOARD_SIZE.name, MOONBOARD_SIZE.description)) return null;
+  // MoonBoard's size segment carries no information: the board has exactly one
+  // size, so every MoonBoard URL means `MOONBOARD_SIZE` whatever the segment
+  // says. Web's `getMoonBoardSizeBySlug` ignores it outright, which is why links
+  // minted before today's `standard-11x18-grid` form still resolve on www.
+  // Matching that costs nothing — there is no other size to resolve to, so a
+  // stale spelling can't point at the wrong board — but demanding the canonical
+  // string turned those same links into not-founds in the Expo app.
+  if (!sizeSlug) return null;
 
-  for (const [layoutKey, layout] of Object.entries(MOONBOARD_LAYOUTS)) {
-    if (generateLayoutSlug(layout.name) !== layoutSlug) continue;
+  for (const { layoutKey, layoutId, exactForms, hyphenlessKey } of moonBoardLayoutSlugForms) {
+    if (!exactForms.has(layoutSlug) && hyphenlessKey !== toHyphenlessSlug(layoutSlug)) continue;
 
-    const sets = MOONBOARD_SETS[layoutKey as keyof typeof MOONBOARD_SETS] ?? [];
+    // Sets stay exact, deliberately unlike web. `getMoonBoardSetsBySlug` splits
+    // the slug on `-` (canonical set slugs join on `_`), substring-matches the
+    // pieces against set names, and falls back to *every* set on the layout when
+    // nothing matches — so it cannot tell one subset from another and would
+    // light holds the URL never asked for. Both hosts generate set slugs with
+    // the functions above, so anything either host emitted rebuilds exactly.
+    const sets = MOONBOARD_SETS[layoutKey] ?? [];
     const setSlugParts = new Set(setSlug.split('_'));
     const selectedSets = sets.filter((set) => setSlugParts.has(generateSetNameSlug(set.name)));
     if (selectedSets.length === 0) continue;
@@ -432,7 +548,7 @@ function resolveMoonBoardSegmentsToIds({
 
     return {
       boardName: 'moonboard',
-      layoutId: layout.id,
+      layoutId,
       sizeId: MOONBOARD_SIZE.id,
       setIds: selectedSets.map((set) => set.id).join(','),
     };

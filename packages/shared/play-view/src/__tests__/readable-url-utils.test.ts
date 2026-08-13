@@ -1,21 +1,35 @@
 import { describe, expect, it } from 'vitest';
 import { getAllLayouts, getSetsForLayoutAndSize, getSizesForLayoutId } from '@boardsesh/board-constants/product-sizes';
-import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE } from '@boardsesh/board-config';
-import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE, type MoonBoardLayoutKey } from '@boardsesh/board-config';
+import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
 import {
   buildReadableClimbListPath,
   buildReadableClimbViewPath,
   extractUuidFromClimbSegment,
+  generateLayoutSlug,
+  generateSetSlug,
+  generateSizeSlug,
   parseBoardListPath,
   parseBoardRoutePath,
   parseClimbRoutePath,
+  PERMANENT_SIZE_SLUG_ALIASES,
   resolveBoardSegmentsToIds,
+  resolvePermanentSizeSlugAlias,
   resolveSizeSlug,
+  resolveSizeSlugToId,
   tryBuildReadableClimbListPath,
   tryBuildReadableClimbViewPath,
 } from '../readable-url-utils';
 
 const CLIMB_UUID = '0A1B2C3D4E5F60718293A4B5C6D7E8F9';
+
+/**
+ * A climb name that slugs to a contiguous 32-character hex run all by itself.
+ * Nothing stops a setter naming a climb this — and while the uuid regex was
+ * unanchored, the *first* run won and the app queried this fragment instead of
+ * the real uuid, so a valid shared link rendered not-found.
+ */
+const HEX_RUN_CLIMB_NAME_SLUG = 'beefcafe0ff1cedeadbeefcafe0ff1ce';
 
 describe('extractUuidFromClimbSegment', () => {
   it('pulls the uuid out of a name-slugged segment', () => {
@@ -32,6 +46,21 @@ describe('extractUuidFromClimbSegment', () => {
 
   it('returns the segment unchanged when there is no uuid in it', () => {
     expect(extractUuidFromClimbSegment('not-a-climb')).toBe('not-a-climb');
+  });
+
+  it('takes the uuid at the end, not a hex run in the climb name', () => {
+    expect(HEX_RUN_CLIMB_NAME_SLUG).toMatch(/^[0-9a-f]{32}$/);
+    expect(extractUuidFromClimbSegment(`${HEX_RUN_CLIMB_NAME_SLUG}-${CLIMB_UUID}`)).toBe(CLIMB_UUID);
+  });
+
+  it('takes the uuid at the end even when the name runs longer than a uuid', () => {
+    expect(extractUuidFromClimbSegment(`${HEX_RUN_CLIMB_NAME_SLUG}deadbeef-${CLIMB_UUID}`)).toBe(CLIMB_UUID);
+  });
+
+  it('carries the hex-named climb through a whole route parse', () => {
+    expect(parseClimbRoutePath(`/kilter/1/10/1,20/40/view/${HEX_RUN_CLIMB_NAME_SLUG}-${CLIMB_UUID}`)?.climbUuid).toBe(
+      CLIMB_UUID,
+    );
   });
 });
 
@@ -74,6 +103,22 @@ describe('parseClimbRoutePath', () => {
 
   it('accepts a negative angle', () => {
     expect(parseClimbRoutePath(`/kilter/1/10/1,20/-5/view/${CLIMB_UUID}`)?.angle).toBe(-5);
+  });
+
+  it('keeps the path when the query carries an absolute URL of its own', () => {
+    // The `://` in `?next=` used to be read as this path's origin, so everything
+    // up to the *query's* first slash was cut and the real path thrown away.
+    expect(parseClimbRoutePath(`/kilter/1/10/1,20/40/view/${CLIMB_UUID}?next=https://example.com/somewhere`)).toEqual(
+      expect.objectContaining({ boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: CLIMB_UUID }),
+    );
+  });
+
+  it('still strips a real origin, query and hash together', () => {
+    expect(
+      parseClimbRoutePath(
+        `https://www.boardsesh.com/kilter/1/10/1,20/40/view/${CLIMB_UUID}?next=https://example.com/x#holds`,
+      ),
+    ).toEqual(expect.objectContaining({ boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: CLIMB_UUID }));
   });
 
   it('rejects paths that are not climb routes', () => {
@@ -179,6 +224,9 @@ describe('the previously-lossy size slug', () => {
     expect(parseBoardListPath('/kilter/original/12x12-square/screw_bolt/40/list')?.sizeId).toBe(10);
   });
 
+  // If an upstream rename ever turns this expectation red, the string below is
+  // still live in shared links: add it to PERMANENT_SIZE_SLUG_ALIASES *before*
+  // updating the expectation, or every qualified link already out there 404s.
   it('gives the shadowed size a qualified slug that now resolves', () => {
     expect(resolveSizeSlug('kilter', 1, 27)).toBe('12x12-square-without-kickboard');
     expect(parseBoardListPath('/kilter/original/12x12-square-without-kickboard/screw_bolt/40/list')?.sizeId).toBe(27);
@@ -304,5 +352,188 @@ describe('resolveBoardSegmentsToIds', () => {
         setSlug: 'screw_bolt',
       }),
     ).toBeNull();
+  });
+});
+
+describe('legacy MoonBoard URL forms', () => {
+  const canonicalMoonBoardSizeSlug = generateSizeSlug(MOONBOARD_SIZE.name, MOONBOARD_SIZE.description);
+
+  /**
+   * The layout-slug acceptance set, spelled out. Web's `getMoonBoardLayoutBySlug`
+   * has always taken three forms per layout — the canonical slug, the
+   * `MOONBOARD_LAYOUTS` key, and that key with its hyphens dropped — and older
+   * web builds minted links in all of them. Every form here that isn't the
+   * canonical slug (twelve of them) kept working on www while the shared parser
+   * returned null, so an old MoonBoard link 404'd in the Expo app.
+   */
+  const legacyLayoutForms: { layoutKey: MoonBoardLayoutKey; layoutId: number; layoutSlugs: string[] }[] = [
+    { layoutKey: 'moonboard-2010', layoutId: 1, layoutSlugs: ['2010', 'moonboard-2010', 'moonboard2010'] },
+    { layoutKey: 'moonboard-2016', layoutId: 2, layoutSlugs: ['2016', 'moonboard-2016', 'moonboard2016'] },
+    { layoutKey: 'moonboard-2024', layoutId: 3, layoutSlugs: ['2024', 'moonboard-2024', 'moonboard2024'] },
+    {
+      layoutKey: 'moonboard-masters-2017',
+      layoutId: 4,
+      layoutSlugs: ['masters-2017', 'moonboard-masters-2017', 'moonboardmasters2017'],
+    },
+    {
+      layoutKey: 'moonboard-masters-2019',
+      layoutId: 5,
+      layoutSlugs: ['masters-2019', 'moonboard-masters-2019', 'moonboardmasters2019'],
+    },
+    { layoutKey: 'mini-moonboard-2020', layoutId: 6, layoutSlugs: ['mini-moonboard-2020', 'minimoonboard2020'] },
+    { layoutKey: 'mini-moonboard-2025', layoutId: 7, layoutSlugs: ['mini-moonboard-2025', 'minimoonboard2025'] },
+  ];
+
+  it('pins the acceptance set to the one web derives from the same config', () => {
+    const derived = Object.entries(MOONBOARD_LAYOUTS).map(([layoutKey, layout]) => ({
+      layoutKey,
+      layoutId: layout.id,
+      // Exactly what getMoonBoardLayoutBySlug compares against: the generated
+      // slug, the key, and the key normalised of hyphens.
+      layoutSlugs: [...new Set([generateLayoutSlug(layout.name), layoutKey, layoutKey.replace(/-/g, '')])].sort(),
+    }));
+
+    expect(legacyLayoutForms.map((form) => ({ ...form, layoutSlugs: [...form.layoutSlugs].sort() }))).toEqual(derived);
+  });
+
+  const layoutSlugCases = legacyLayoutForms.flatMap(({ layoutKey, layoutId, layoutSlugs }) =>
+    layoutSlugs.map((layoutSlug) => ({ layoutKey, layoutId, layoutSlug })),
+  );
+
+  it.each(layoutSlugCases)(
+    'resolves $layoutKey from the URL form "$layoutSlug"',
+    ({ layoutKey, layoutId, layoutSlug }) => {
+      const sets = MOONBOARD_SETS[layoutKey];
+      expect(
+        resolveBoardSegmentsToIds({
+          boardName: 'moonboard',
+          layoutSlug,
+          sizeSlug: canonicalMoonBoardSizeSlug,
+          setSlug: generateSetSlug(sets.map((set) => set.name)),
+        }),
+      ).toEqual({
+        boardName: 'moonboard',
+        layoutId,
+        sizeId: MOONBOARD_SIZE.id,
+        setIds: sets.map((set) => set.id).join(','),
+      });
+    },
+  );
+
+  it('parses a whole legacy climb URL, not just the segments', () => {
+    const sets = MOONBOARD_SETS['moonboard-2016'];
+    expect(
+      parseClimbRoutePath(
+        `/moonboard/moonboard-2016/${canonicalMoonBoardSizeSlug}/${generateSetSlug(sets.map((set) => set.name))}/40/view/crimpy-${CLIMB_UUID}`,
+      ),
+    ).toEqual({
+      boardName: 'moonboard',
+      layoutId: 2,
+      sizeId: MOONBOARD_SIZE.id,
+      setIds: sets.map((set) => set.id).join(','),
+      angle: 40,
+      climbUuid: CLIMB_UUID,
+      surface: 'view',
+    });
+  });
+
+  // MoonBoard has one size, so web resolves the size segment by ignoring it —
+  // which is why links minted before today's slug form still work there.
+  it.each([canonicalMoonBoardSizeSlug, 'standard', '11x18', 'standard-11x18'])(
+    'accepts the size segment spelled "%s", as www always has',
+    (sizeSlug) => {
+      expect(
+        resolveBoardSegmentsToIds({
+          boardName: 'moonboard',
+          layoutSlug: '2010',
+          sizeSlug,
+          setSlug: 'original-school-holds',
+        })?.sizeId,
+      ).toBe(MOONBOARD_SIZE.id);
+    },
+  );
+
+  it('still rejects an unknown layout and a set slug that does not rebuild', () => {
+    expect(
+      resolveBoardSegmentsToIds({
+        boardName: 'moonboard',
+        layoutSlug: 'moonboard-2015',
+        sizeSlug: canonicalMoonBoardSizeSlug,
+        setSlug: 'original-school-holds',
+      }),
+    ).toBeNull();
+    expect(
+      resolveBoardSegmentsToIds({
+        boardName: 'moonboard',
+        layoutSlug: '2016',
+        sizeSlug: canonicalMoonBoardSizeSlug,
+        setSlug: 'hold-set-a_nonsense',
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('permanently pinned qualified size slugs', () => {
+  const pinnedEntries = Object.entries(PERMANENT_SIZE_SLUG_ALIASES).flatMap(([boardName, aliasesBySizeId]) =>
+    Object.entries(aliasesBySizeId ?? {}).flatMap(([sizeId, aliases]) =>
+      aliases.map((alias) => ({ boardName: boardName as BoardName, sizeId: Number(sizeId), alias })),
+    ),
+  );
+
+  it('has the one qualified form we have shipped', () => {
+    expect(pinnedEntries).toEqual([{ boardName: 'kilter', sizeId: 27, alias: '12x12-square-without-kickboard' }]);
+  });
+
+  it.each(pinnedEntries)(
+    'resolves $boardName "$alias" to size $sizeId without consulting the size name',
+    ({ boardName, sizeId, alias }) => {
+      // The alias path is name-blind: it maps the string straight to an id. That
+      // is what keeps a link alive when upstream renames the size and the
+      // generated qualifier moves out from under it — no need to mutate the
+      // board data to prove it, the lookup never reads a name in the first place.
+      expect(resolvePermanentSizeSlugAlias(boardName, alias)).toBe(sizeId);
+    },
+  );
+
+  it.each(pinnedEntries)(
+    'resolves $boardName "$alias" on every layout that has size $sizeId',
+    ({ boardName, sizeId, alias }) => {
+      const layoutsWithSize = getAllLayouts(boardName).filter((layout) =>
+        getSizesForLayoutId(boardName, layout.id).some((size) => size.id === sizeId),
+      );
+      expect(layoutsWithSize.length).toBeGreaterThan(0);
+
+      for (const layout of layoutsWithSize) {
+        expect(resolveSizeSlugToId(boardName, layout.id, alias)).toBe(sizeId);
+      }
+    },
+  );
+
+  it.each(pinnedEntries)(
+    'does not let $boardName "$alias" resolve on a layout without size $sizeId',
+    ({ boardName, sizeId, alias }) => {
+      const layoutWithoutSize = getAllLayouts(boardName).find(
+        (layout) => !getSizesForLayoutId(boardName, layout.id).some((size) => size.id === sizeId),
+      );
+      expect(layoutWithoutSize).toBeDefined();
+      if (!layoutWithoutSize) return;
+
+      expect(resolveSizeSlugToId(boardName, layoutWithoutSize.id, alias)).toBeNull();
+    },
+  );
+
+  it('never lets a pinned slug shadow a slug the generator still owns', () => {
+    for (const { boardName, sizeId, alias } of pinnedEntries) {
+      for (const layout of getAllLayouts(boardName)) {
+        const generatedOwner = getSizesForLayoutId(boardName, layout.id).find(
+          (size) => resolveSizeSlug(boardName, layout.id, size.id) === alias,
+        );
+        if (generatedOwner) {
+          expect(generatedOwner.id, `${boardName} layout ${layout.id}: "${alias}" is generated for another size`).toBe(
+            sizeId,
+          );
+        }
+      }
+    }
   });
 });
