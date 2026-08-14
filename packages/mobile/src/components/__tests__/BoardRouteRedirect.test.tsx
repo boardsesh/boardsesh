@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -15,6 +15,13 @@ const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 const routeStatus = vi.hoisted(() => ({ current: 'resolving' as BoardRouteStatus }));
 const redirect = vi.hoisted(() => ({ hrefs: [] as string[] }));
 const router = vi.hoisted(() => ({ replace: vi.fn() }));
+// The hand-off callback the hook holds. A successful hand-off never becomes a
+// status — the real hook navigates the screen away in the same batch — so this
+// is the only handle a test has on the `resolved` leg.
+const handoff = vi.hoisted(() => ({ current: null as (() => void) | null }));
+// Whatever `onlineManager` reports when the not-found lands. An offline
+// not-found is the transient state a reconnect heals, not a dead link.
+const connectivity = vi.hoisted(() => ({ isOnline: true }));
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -47,8 +54,12 @@ vi.mock('../../lib/analytics', () => ({ track: analytics.track }));
 vi.mock('../../lib/routing/anonymous-auth-gate', () => ({
   buildLoginHrefWithReturn: () => LOGIN_HREF,
 }));
+vi.mock('@tanstack/react-query', () => ({ onlineManager: { isOnline: () => connectivity.isOnline } }));
 vi.mock('../../lib/routing/use-board-route-target', () => ({
-  useBoardRouteTarget: () => routeStatus.current,
+  useBoardRouteTarget: (_target: unknown, options?: { onHandedOff?: () => void }) => {
+    handoff.current = options?.onHandedOff ?? null;
+    return routeStatus.current;
+  },
 }));
 
 const { BoardRouteHandoff, BoardRouteRedirect } = await import('../BoardRouteRedirect');
@@ -69,13 +80,15 @@ beforeEach(() => {
   vi.clearAllMocks();
   redirect.hrefs = [];
   routeStatus.current = 'resolving';
+  handoff.current = null;
+  connectivity.isOnline = true;
 });
 
 describe('BoardRouteRedirect', () => {
-  // A handed-off screen is navigating away. Flashing the not-found on its way
-  // out would read as a broken link for a link that worked.
-  it.each(['resolving', 'resolved'] as const)('draws the spinner at %s', (status) => {
-    const { queryByTestId } = render(createElement(BoardRouteRedirect, { status }));
+  // A handed-off screen keeps this spinner on its way out. Flashing the
+  // not-found would read as a broken link for a link that worked.
+  it('draws the spinner while resolving', () => {
+    const { queryByTestId } = render(createElement(BoardRouteRedirect, { status: 'resolving' as BoardRouteStatus }));
 
     expect(queryByTestId('spinner')).not.toBeNull();
     expect(queryByTestId('error-icon')).toBeNull();
@@ -105,8 +118,33 @@ describe('BoardRouteRedirect', () => {
 });
 
 describe('Board Route Handoff event', () => {
+  /** Fire the hand-off the way the real hook does: from inside its effect. */
+  function handOff() {
+    if (!handoff.current) throw new Error('the hook was never handed an onHandedOff callback');
+    act(() => handoff.current?.());
+  }
+
+  // The success leg never arrives as a status: the hand-off effect navigates the
+  // screen out of the tree in the same React batch, so a render carrying
+  // `resolved` would be discarded with the fiber. It is reported imperatively
+  // instead, and this is what proves the wiring survives.
+  it('fires for a hand-off that the screen never renders a status for', () => {
+    routeStatus.current = 'resolving';
+
+    render(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
+    expect(analytics.track).not.toHaveBeenCalled();
+
+    handOff();
+
+    expect(analytics.track).toHaveBeenCalledTimes(1);
+    expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.BoardRouteHandoff, {
+      kind: 'climb',
+      status: 'resolved',
+      source: 'deep-link',
+    });
+  });
+
   it.each([
-    ['resolved', CLIMB_TARGET, { kind: 'climb', status: 'resolved', source: 'deep-link' }],
     ['auth-required', SLUG_CLIMB_TARGET, { kind: 'slug-climb', status: 'auth_required', source: 'deep-link' }],
     ['not-found', null, { kind: 'unparsed', status: 'not_found', source: 'deep-link' }],
   ] as const)('fires once for the %s terminal status', (status, target, expected) => {
@@ -119,9 +157,8 @@ describe('Board Route Handoff event', () => {
   });
 
   it('tags an in-app open as its own source', () => {
-    routeStatus.current = 'resolved';
-
     render(createElement(BoardRouteHandoff, { target: CLIMB_TARGET, mode: 'in-app' }));
+    handOff();
 
     expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.BoardRouteHandoff, {
       kind: 'climb',
@@ -139,10 +176,18 @@ describe('Board Route Handoff event', () => {
   });
 
   it('does not double-fire when the same status re-renders', () => {
-    routeStatus.current = 'resolved';
+    routeStatus.current = 'not-found';
 
     const { rerender } = render(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
     rerender(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
+
+    expect(analytics.track).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not double-fire when a hand-off is reported twice', () => {
+    render(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
+    handOff();
+    handOff();
 
     expect(analytics.track).toHaveBeenCalledTimes(1);
   });
@@ -152,15 +197,65 @@ describe('Board Route Handoff event', () => {
   // status, source }` — so deduplicating on the event props alone would silently
   // undercount every board-route open after the first.
   it('reports a second URL through the same mounted screen', () => {
-    routeStatus.current = 'resolved';
-
     const { rerender } = render(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
+    handOff();
     rerender(
       createElement(BoardRouteHandoff, {
         target: { ...CLIMB_TARGET, climbUuid: 'F9E8D7C6B5A4938271605F4E3D2C1B0A' } as BoardRouteTarget,
       }),
     );
+    handOff();
 
     expect(analytics.track).toHaveBeenCalledTimes(2);
+  });
+
+  // A parsed URL that fails with no signal is the transient state the hook heals
+  // on reconnect, not a dead link. Reporting it would inflate `not_found` with
+  // every offline cold open that later succeeds — and count that open twice,
+  // since the `resolved` follows under a different report key.
+  it('holds the not-found back while the device is offline', () => {
+    connectivity.isOnline = false;
+    routeStatus.current = 'not-found';
+
+    render(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
+
+    expect(analytics.track).not.toHaveBeenCalled();
+  });
+
+  // Nothing about the network can turn an unparsed URL into a climb.
+  it('reports an unparsed URL offline all the same', () => {
+    connectivity.isOnline = false;
+    routeStatus.current = 'not-found';
+
+    render(createElement(BoardRouteHandoff, { target: null }));
+
+    expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.BoardRouteHandoff, {
+      kind: 'unparsed',
+      status: 'not_found',
+      source: 'deep-link',
+    });
+  });
+
+  // The held-back not-found is not lost — a retry that fails with the network up
+  // is the verdict this event is meant to carry.
+  it('reports the not-found once the retry fails online', () => {
+    connectivity.isOnline = false;
+    routeStatus.current = 'not-found';
+
+    const { rerender } = render(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
+    expect(analytics.track).not.toHaveBeenCalled();
+
+    connectivity.isOnline = true;
+    routeStatus.current = 'resolving';
+    rerender(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
+    routeStatus.current = 'not-found';
+    rerender(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
+
+    expect(analytics.track).toHaveBeenCalledTimes(1);
+    expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.BoardRouteHandoff, {
+      kind: 'climb',
+      status: 'not_found',
+      source: 'deep-link',
+    });
   });
 });

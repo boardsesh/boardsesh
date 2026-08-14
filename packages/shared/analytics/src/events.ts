@@ -112,8 +112,10 @@ export const SHARED_EVENTS = {
   // App-only today: the native fleet and app.boardsesh.com both fire it, www
   // does not. Props: { kind: 'list' | 'climb' | 'slug-list' | 'slug-climb' |
   // 'unparsed', status: 'resolved' | 'not_found' | 'auth_required', source:
-  // 'deep-link' | 'in-app' }. The www-side counterpart, `Climb Handoff Clicked`,
-  // arrives with W-15 (#4369).
+  // 'deep-link' | 'in-app' }. `not_found` is held back for a parsed URL that
+  // failed while the device was offline — that one heals on reconnect and would
+  // otherwise double-count as a failure and a success. The www-side counterpart,
+  // `Climb Handoff Clicked`, arrives with W-15 (#4369).
   BoardRouteHandoff: 'Board Route Handoff',
   // Logbook
   LogbookRowClicked: 'Logbook Row Clicked',

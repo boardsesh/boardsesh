@@ -54,12 +54,16 @@ import { openClimbInPlayDrawer } from '../open-climb-in-play-drawer';
 /**
  * What the entry route should draw.
  *
- * `resolved` renders identically to `resolving` — the screen is already
- * navigating away — and exists so the hand-off telemetry has a terminal state to
- * report. `auth-required` is reachable on web only: the browser export serves
- * these routes to signed-out visitors, and board adoption needs an account.
+ * A successful hand-off has no status of its own. The screen keeps its spinner
+ * right up to the moment it leaves the tree, and a status that says "handed off"
+ * could not be observed anyway — the hand-off effect navigates this screen away
+ * in the same React batch a state update would land in, so the render carrying
+ * it never commits. `onHandedOff` is how a caller hears about it instead.
+ *
+ * `auth-required` is reachable on web only: the browser export serves these
+ * routes to signed-out visitors, and board adoption needs an account.
  */
-export type BoardRouteStatus = 'resolving' | 'resolved' | 'not-found' | 'auth-required';
+export type BoardRouteStatus = 'resolving' | 'not-found' | 'auth-required';
 
 /**
  * Where the target came from, which decides two things the caller can't:
@@ -379,7 +383,7 @@ function useAdoptedBoard(
  */
 export function useBoardRouteTarget(
   target: BoardRouteTarget | null,
-  options?: { mode?: BoardRouteMode },
+  options?: { mode?: BoardRouteMode; onHandedOff?: () => void },
 ): BoardRouteStatus {
   const mode = options?.mode ?? 'deep-link';
   const adoptsBoard = mode === 'deep-link';
@@ -417,7 +421,10 @@ export function useBoardRouteTarget(
   );
   const boardConfig = configFromUrl ?? configFromBoard;
 
-  const climbQuery = useClimb(boardConfig && climbUuid ? { ...boardConfig, climbUuid } : null);
+  // `!authRequired` is what makes the short-circuit below true to its word: the
+  // tuple form carries its whole config in the URL, so without this the climb
+  // query would fire for a visitor we have already decided to send to login.
+  const climbQuery = useClimb(!authRequired && boardConfig && climbUuid ? { ...boardConfig, climbUuid } : null);
   const climb = climbQuery.data;
 
   // Hand off exactly once per target. The ref guards a re-render firing the open
@@ -426,10 +433,18 @@ export function useBoardRouteTarget(
   // screen still gets its hand-off instead of sitting on the spinner forever.
   const targetKey = target ? `${toBoardPath(target)}#${wantsClimb ? climbUuid : ''}` : null;
   const handedOffRef = useRef<string | null>(null);
-  // The ref is what guards the hand-off; this mirror is what the status below
-  // reads, because a ref write doesn't re-render and `resolved` has to be
-  // observable.
-  const [handedOffTargetKey, setHandedOffTargetKey] = useState<string | null>(null);
+  // The hand-off is reported imperatively, from inside the effect, rather than
+  // through a status the caller could watch. It has to be: the same effect body
+  // calls `router.replace` / `router.back`, React batches that with anything
+  // else queued in the flush, and the navigator drops this screen in the very
+  // render that would have carried the new status — the update is discarded with
+  // the fiber and never commits. `join/[sessionId]` fires `Session Joined` the
+  // same way, immediately before replacing itself. Held in a ref so a caller
+  // passing a fresh closure each render can't re-enter the effect.
+  const onHandedOffRef = useRef(options?.onHandedOff);
+  useEffect(() => {
+    onHandedOffRef.current = options?.onHandedOff;
+  });
   useEffect(() => {
     if (!target || !targetKey || handedOffRef.current === targetKey) return;
     if (authRequired) return;
@@ -456,14 +471,14 @@ export function useBoardRouteTarget(
 
     if (!wantsClimb) {
       handedOffRef.current = targetKey;
-      setHandedOffTargetKey(targetKey);
+      onHandedOffRef.current?.();
       leave();
       return;
     }
 
     if (!climb || !boardConfig) return;
     handedOffRef.current = targetKey;
-    setHandedOffTargetKey(targetKey);
+    onHandedOffRef.current?.();
     // preview:true so a deep-linked climb doesn't disturb the queue — in a
     // session it would change the shared current climb for everyone. The drawer
     // shows a "Preview" badge with "Set active" to opt into playing it.
@@ -489,7 +504,6 @@ export function useBoardRouteTarget(
   // Before every resolution check: a signed-out visitor has no board to fail on,
   // and nothing was asked of the server on their behalf.
   if (authRequired) return 'auth-required';
-  if (handedOffTargetKey !== null && handedOffTargetKey === targetKey) return 'resolved';
   if (boardError) return 'not-found';
   // Only a settled query says the climb is gone: `isLoading` briefly reads false
   // in the render where the query switches on, which would flash a not-found

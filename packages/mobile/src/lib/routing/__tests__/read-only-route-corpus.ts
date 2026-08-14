@@ -56,6 +56,12 @@ export const GATED_PATHS: readonly string[] = [
   // Prefixes that carry no destination of their own.
   '/b',
   '/es',
+  // Right segment count, routing syntax where a board identifier belongs. The
+  // group folder never appears in a browser URL and the relative segment is one
+  // the browser would have normalised away — neither is a path this gate could
+  // have produced, so neither is one it will follow back.
+  '/(tabs)/profile/a/b/40/list',
+  '/b/..',
 ];
 
 export { CLIMB_UUID, CLIMB_SEGMENT, TUPLE };

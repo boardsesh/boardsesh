@@ -57,6 +57,19 @@ function pathSegments(path: string): string[] {
 }
 
 /**
+ * Routing syntax rather than a board identifier: an Expo Router group folder
+ * (`(tabs)`) or a relative segment the browser would have normalised away.
+ *
+ * Neither can appear in a URL this app hands out — a board name, slug, layout,
+ * size, set list, angle and climb segment are all plain identifiers — and
+ * without this the segment-count rules below would accept shapes the gate itself
+ * can never produce, like `/(tabs)/profile/a/b/40/list`.
+ */
+function isStructuralSegment(segment: string): boolean {
+  return segment === '.' || segment === '..' || segment.includes('(') || segment.includes(')');
+}
+
+/**
  * Is `path` one of the read-only board URLs the app serves to a signed-out
  * visitor? Locale-prefixed forms (`/es/kilter/…`, `/fr/b/{slug}/…`) count — web
  * keeps the locale in the path, and those links are the whole reason this
@@ -67,6 +80,7 @@ function pathSegments(path: string): string[] {
  */
 export function isReadOnlyAnonymousPath(path: string): boolean {
   const segments = pathSegments(path);
+  if (segments.some(isStructuralSegment)) return false;
 
   // `/b/{slug}` and its angle-scoped children.
   if (segments[0] === 'b') {

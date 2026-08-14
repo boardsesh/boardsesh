@@ -147,7 +147,21 @@ the address bar does not survive the round trip on its own.
 
 `Board Route Handoff` fires once per board-route open on **both** platforms with
 `{ kind, status, source }`; it is the only signal for whether deep links resolve
-on the native fleet as well as on `app.boardsesh.com`.
+on the native fleet as well as on `app.boardsesh.com`. Two things about the
+wiring are load-bearing for reading the funnel:
+
+- `status: 'resolved'` is fired **imperatively** from inside the hand-off, not
+  derived from a rendered status. The hand-off effect calls
+  `router.replace` / `router.back` in the same body, React batches that with any
+  state update queued in the same flush, and the navigator drops the redirector
+  in the very render that would have carried the new status — so a
+  status-derived success leg never commits and the funnel reads as ~100%
+  failure. `join/[sessionId]` fires `Session Joined` the same way.
+- `status: 'not_found'` is **held back** for a parsed URL while the device is
+  offline. That state is the transient one `useAdoptedBoard`'s reconnect watcher
+  heals, so reporting it would file a failure for every offline cold open that
+  later lands, and count the same open twice. A URL that did not parse reports
+  either way.
 
 ### Telemetry (baked at build time)
 

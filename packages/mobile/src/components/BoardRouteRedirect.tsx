@@ -6,10 +6,11 @@
 // not-found. Keeping that here means the seven route files stay at "read params,
 // build a target" and can't drift from each other.
 
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Redirect, Stack, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
+import { onlineManager } from '@tanstack/react-query';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { ActivityIndicator } from './ActivityIndicator';
 import { Button } from './Button';
@@ -24,12 +25,20 @@ import { useBoardRouteTarget, type BoardRouteMode, type BoardRouteStatus } from 
 /** Where `app/+not-found.tsx` sends people; the dead end below has to match it. */
 const HOME_TAB = '/(tabs)/home' as const;
 
-/** The terminal statuses worth a hand-off event, in the wire spelling. */
-const HANDOFF_EVENT_STATUS = {
-  resolved: 'resolved',
+/** How a board-route open ended, in the wire spelling. */
+type HandoffEventStatus = 'resolved' | 'not_found' | 'auth_required';
+
+/**
+ * The terminal statuses the screen SITS on, in the wire spelling.
+ *
+ * A successful hand-off is not among them — it has no status at all, because the
+ * effect that performs it also navigates this screen out of the tree. See
+ * `useBoardRouteHandoffReporter`.
+ */
+const RENDERED_EVENT_STATUS = {
   'not-found': 'not_found',
   'auth-required': 'auth_required',
-} as const satisfies Partial<Record<BoardRouteStatus, string>>;
+} as const satisfies Partial<Record<BoardRouteStatus, HandoffEventStatus>>;
 
 /** The URL a report is about, so two different climbs each get their own event. */
 function targetIdentity(target: BoardRouteTarget | null): string {
@@ -46,26 +55,33 @@ function targetIdentity(target: BoardRouteTarget | null): string {
  * additive telemetry rather than a behaviour change. The ref keys on the URL and
  * the outcome — not a bare flag, and not the coarse event props — so a second
  * URL through the same mounted screen reports even when it settles the same way,
- * while a re-render at the same status does not double-fire. The URL never
+ * while a re-render at the same outcome does not double-fire. The URL never
  * leaves this file: the event itself carries only `{ kind, status, source }`.
+ *
+ * Returns the reporter rather than firing on a status, because the outcomes
+ * arrive by two different routes. `not-found` and `auth-required` are statuses
+ * the screen sits on, so watching the status is enough. A successful hand-off
+ * never becomes a status: the effect that performs it calls `router.replace` /
+ * `router.back` in the same body, React batches that with anything else queued
+ * in the flush, and the navigator drops this screen in the very render that
+ * would have carried it — so `resolved` is fired imperatively from inside the
+ * hand-off, the way `join/[sessionId]` fires `Session Joined` before it replaces
+ * itself. Whichever route reports first, the key dedupes the other.
  */
-function useBoardRouteHandoffEvent(
-  target: BoardRouteTarget | null,
-  mode: BoardRouteMode | undefined,
-  status: BoardRouteStatus,
-) {
+function useBoardRouteHandoffReporter(target: BoardRouteTarget | null, mode: BoardRouteMode | undefined) {
   const reportedRef = useRef<string | null>(null);
-  const eventStatus = HANDOFF_EVENT_STATUS[status as keyof typeof HANDOFF_EVENT_STATUS];
   const kind = target?.kind ?? 'unparsed';
   const source = mode ?? 'deep-link';
   const identity = targetIdentity(target);
-  useEffect(() => {
-    if (!eventStatus) return;
-    const reportKey = `${identity}#${source}#${eventStatus}`;
-    if (reportedRef.current === reportKey) return;
-    reportedRef.current = reportKey;
-    track(SHARED_EVENTS.BoardRouteHandoff, { kind, status: eventStatus, source });
-  }, [eventStatus, identity, kind, source]);
+  return useCallback(
+    (eventStatus: HandoffEventStatus) => {
+      const reportKey = `${identity}#${source}#${eventStatus}`;
+      if (reportedRef.current === reportKey) return;
+      reportedRef.current = reportKey;
+      track(SHARED_EVENTS.BoardRouteHandoff, { kind, status: eventStatus, source });
+    },
+    [identity, kind, source],
+  );
 }
 
 export function BoardRouteRedirect({ status }: { status: BoardRouteStatus }) {
@@ -84,10 +100,10 @@ export function BoardRouteRedirect({ status }: { status: BoardRouteStatus }) {
       {/* Headerless: a redirector that shows a back chevron for the split second
           before it navigates away just looks like a broken screen. */}
       <Stack.Screen options={{ headerShown: false }} />
-      {/* `resolved` draws the same spinner as `resolving`: the screen has handed
-          off and is navigating away, and flashing the not-found on its way out
-          would be a lie. */}
-      {status === 'resolving' || status === 'resolved' ? (
+      {/* A handed-off screen keeps this spinner on its way out — nothing flips it
+          to the not-found, because the board and climb it handed off with are
+          both still there. */}
+      {status === 'resolving' ? (
         <ActivityIndicator size="large" />
       ) : (
         <>
@@ -112,8 +128,24 @@ export function BoardRouteRedirect({ status }: { status: BoardRouteStatus }) {
  * `target` is `null` when the URL didn't parse, which renders the not-found.
  */
 export function BoardRouteHandoff({ target, mode }: { target: BoardRouteTarget | null; mode?: BoardRouteMode }) {
-  const status = useBoardRouteTarget(target, { mode });
-  useBoardRouteHandoffEvent(target, mode, status);
+  const report = useBoardRouteHandoffReporter(target, mode);
+  const onHandedOff = useCallback(() => report('resolved'), [report]);
+  const status = useBoardRouteTarget(target, { mode, onHandedOff });
+
+  const renderedStatus = RENDERED_EVENT_STATUS[status as keyof typeof RENDERED_EVENT_STATUS];
+  const parsedUrl = target !== null;
+  useEffect(() => {
+    if (!renderedStatus) return;
+    // A parsed URL that fails with no network is not a dead link. The hook
+    // watches `onlineManager` and re-resolves when the signal comes back, and
+    // that second pass hands off — so reporting here would file a `not_found`
+    // for every offline cold open that later succeeds, and count the same open
+    // twice once the `resolved` follows it. A URL that didn't parse is a dead
+    // end whatever the network is doing.
+    if (renderedStatus === 'not_found' && parsedUrl && !onlineManager.isOnline()) return;
+    report(renderedStatus);
+  }, [parsedUrl, renderedStatus, report]);
+
   return <BoardRouteRedirect status={status} />;
 }
 
