@@ -112,25 +112,36 @@ plus `useOptionalPlaylistActivation`. Refactor `multiboard-climb-list.tsx` and
   those correct same-host 308s. Protects the SEO/crawler audience through the
   teardown. W-09 deleted the `bs_expo_web` cookie, the `bs_classic`/`?classic=1`
   hatch and `mapToExpoWebTarget`; `docs/expo-web-rollout.md` is gone.
-- `app/__tests__/climb-canonical-parity.test.ts` — documents that the legacy and
-  `/b` view trees self-canonicalize into different URLs today (split PageRank).
-  **Flip at A1:** the consolidation target is the config-tuple tree (route
-  segments `/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/…`, served in
-  its named-slug form — `/kilter/original/12x12/screw_bolt/40/…`), not `/b`.
-  `/b/{slug}` resolves through `boardBySlug`
-  (`packages/backend/src/graphql/resolvers/social/boards.ts:786-800`), which
-  reads `user_boards` scoped only by `slug` and `deletedAt` — a board a specific
-  user owns, not a climb config. Most climbs have no `/b` URL at all, and popular
+- `app/__tests__/climb-canonical-parity.test.ts` — **A1 landed in W-15 (#4369).**
+  The two view trees used to self-canonicalize into different URLs for one climb
+  (split PageRank). Both now emit the identical string, because both call
+  `buildCanonicalClimbViewUrl`; the test asserts that equality rather than
+  documenting the split. The consolidation target is the config-tuple tree
+  (route segments `/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/…`,
+  served in its named-slug form — `/kilter/original/12x12/screw_bolt/40/…`), not
+  `/b`. `/b/{slug}` resolves through `boardBySlug`
+  (`packages/backend/src/graphql/resolvers/social/boards.ts`), which reads
+  `user_boards` scoped only by `slug` and `deletedAt` — a board a specific user
+  owns, not a climb config. Most climbs have no `/b` URL at all, and popular
   configs have many (one per owning user), so `/b` can't be the canonical for a
-  climb config. The `url-utils` helpers already emit the config-tuple form, so A1
-  has no work there; what changes is the `/b` pages' inline canonical literal,
-  which reaches `createPageMetadata` without touching `url-utils` —
+  climb config. What changed at A1 was the `/b` pages' inline canonical literals,
+  which reached `createPageMetadata` without touching `url-utils`:
   `b/[board_slug]/[angle]/view/[climb_uuid]/page.tsx:54` and
-  `b/[board_slug]/[angle]/list/page.tsx:37`. Point those at the legacy tree's
-  canonical, then flip the `/b`-tree assertion to match and assert parity.
+  `b/[board_slug]/[angle]/list/page.tsx:43`. **The sharp edge, also pinned:** an
+  unlisted or private `/b` board is `noindex`, and it now passes NO `path` at
+  all, so `createPageMetadata` emits no `alternates`. A canonical pointing from a
+  noindex URL at an indexable twin is a conflicting signal Google can resolve by
+  propagating the noindex — deindexing a public config-tuple climb page because
+  one private board happens to share its configuration. The legacy `/list` page's
+  `generateMetadata` stopped returning a bare `{}` in the same PR: with `/b` no
+  longer self-canonicalising, claiming the self-canonical no longer widens
+  anything.
 - `b/[board_slug]/[angle]/view/[climb_uuid]/__tests__/view-seo-fragment.test.tsx`
-  — the climb-view page SSR-emits `ClimbViewSeoFragment` (the crawlable payload).
-  Guards A2's drawer→static swap from dropping it.
+  — grew from the A0 identity guard into the front door's acceptance suite: the
+  page still SSR-emits `ClimbViewSeoFragment` (by element identity), and the
+  rendered HTML carries exactly one `<h1>`, the board `<img>` with explicit
+  width/height, a setter link, angle cross-links, ≥3 internal links, and a CTA
+  whose href is `APP_URL` + the same pathname.
 
 **W-06 (#4361) — the SPA end of the hand-off.** A front door that links into
 `app.boardsesh.com` is only worth building if the arrival works signed-out, so
@@ -141,6 +152,45 @@ the native gate a constant `false`, and why `auth_required` is a relaxed route's
 terminal status today are recorded in
 [`docs/expo-web-deployment.md`](./expo-web-deployment.md) under "Signed-out
 read-only routes".
+
+## The front door (W-15, #4369)
+
+Four surfaces are now server-rendered front doors with no interactive climbing
+UI: the climb view and `/list` on the config-tuple tree, and their `/b/{slug}`
+twins. What each one is, and the two constraints that shaped them:
+
+**The climb front door** (`app/components/climb-front-door/`) renders a
+breadcrumb, the promoted `ClimbViewSeoFragment` heading, the board art as a
+plain `<img>` at the `/api/internal/board-render` overlay URL with explicit
+dimensions, a facts `<dl>`, a setter link, angle cross-links, beta videos,
+similar climbs, the community section, and one CTA — "Climb this", a real
+server-rendered `<a href>` at `APP_URL` + the same pathname, firing
+`Climb Handoff Clicked`. Not `BoardRenderer` or `BoardImageLayers`: both are
+hook-bearing client components, and this image is the page's LCP.
+
+**The `/list` front door** renders `StaticClimbList` with `virtualize={false}`.
+The virtualized path emits a 375×812-worth of rows on the server (~18), and the
+bar here is ≥50 crawlable climb links per page. `?page=N` is 1-based and clamped;
+`?page=1` canonicalises onto the bare path (same page, one URL); pages 1–10 are
+indexable with real prev/next anchors; `?page=11` and beyond is
+`noindex, follow`, so crawlers keep walking the climb links without indexing the
+container. The contract lives in `app/lib/seo/list-page-robots.ts` and is pinned
+by `list/__tests__/list-front-door.test.tsx`.
+
+**Both render anonymously, and must.** `middleware.ts` puts a shared
+`Vercel-CDN-Cache-Control: s-maxage` on every climb-view and `/list` URL with no
+session-cookie check, on the documented premise that these pages are
+personalization-free. Server-rendering one viewer's ascent badges or logbook
+would cache them for every later visitor and for Googlebot.
+`ascent-status.tsx` states the same contract from the other end: anonymous SSR
+renders no badge at all. If personalised badges are ever wanted here, the only
+safe shapes are a post-hydration client island, or middleware emitting
+`private, no-store` when a session cookie is present — which costs cache hit
+rate on the highest-traffic pages.
+
+**The Boardsesh-grade section is deliberately absent.** That flag is a live,
+staged PostHog rollout; SSR-ing the section would end it for every visitor and
+crawler in a single deploy, irreversibly without another one.
 
 ## Phase A0 — blocking pre-delete QA gate (real devices)
 

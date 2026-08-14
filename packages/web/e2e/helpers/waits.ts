@@ -1,6 +1,9 @@
 import { expect, type Page, type Locator } from '@playwright/test';
 
-const CLIMB_CARD_OR_ONBOARDING = '#onboarding-climb-card, [data-testid="climb-card"]';
+// Three shapes of "a climb row is on screen": the classic list's onboarding
+// anchor and card, and `static-climb-row.tsx`'s thumbnail — the only one the
+// SSR front doors emit (W-15).
+const CLIMB_CARD_OR_ONBOARDING = '#onboarding-climb-card, [data-testid="climb-card"], [data-testid="climb-thumbnail"]';
 const SWIPEABLE_DRAWER_VISIBLE = '[data-swipeable-drawer="true"]:visible';
 const SKELETON = '.MuiSkeleton-root';
 

@@ -9,7 +9,8 @@ import { resolveSsrInitialPageSize } from '@/app/lib/climb-list-constants';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import { scheduleOverlayWarming } from '@/app/lib/warm-overlay-cache';
 import { buildOverlayUrl } from '@/app/components/board-renderer/util';
-import { parsedRouteSearchParamsToSearchParams } from '@/app/lib/url-utils';
+import { DEFAULT_SEARCH_PARAMS, parsedRouteSearchParamsToSearchParams } from '@/app/lib/url-utils';
+import { FRONT_DOOR_PAGE_SIZE } from '@/app/lib/seo/list-page-robots';
 
 export type ListPageData = {
   boardDetails: BoardDetails;
@@ -90,4 +91,70 @@ export async function fetchListPageData(
   const preloadUrl = firstClimb?.frames ? buildOverlayUrl(boardDetails, firstClimb.frames, true) : null;
 
   return { boardDetails, searchResponse, preloadUrl };
+}
+
+export type FrontDoorListPage = {
+  boardDetails: BoardDetails;
+  climbs: Climb[];
+  hasMore: boolean;
+  /** Pre-resolved overlay URL for the first climb so the page can `<link rel="preload">` it. */
+  preloadUrl: string | null;
+};
+
+/**
+ * The `/list` front door's fetch: exactly one page of `FRONT_DOOR_PAGE_SIZE`
+ * climbs at the default sort (most ascents first), no filters, no session.
+ *
+ * Deliberately NOT `fetchListPageData`. That one pins `page = 0` and derives
+ * its page size from `resolveSsrInitialPageSize` — an aggregated 0..N window
+ * sized for an infinite-scrolling client list, which can neither serve `?page=3`
+ * nor hand back a clean 50-row slice.
+ *
+ * It also never calls `getServerSession`. `middleware.ts` puts a shared
+ * `s-maxage` on these URLs with no session split, on the premise that they are
+ * personalization-free; reading the cookie here would be the first step toward
+ * caching one viewer's page for everyone.
+ *
+ * `page` is the 1-based `?page=N` from the URL. Callers clamp it; anything at
+ * or below 1 is the first page.
+ */
+export async function fetchFrontDoorListPage(
+  parsedParams: ParsedBoardRouteParameters,
+  page: number,
+): Promise<FrontDoorListPage | null> {
+  let boardDetails: BoardDetails;
+  try {
+    boardDetails = getBoardDetailsForBoard(parsedParams);
+  } catch (error) {
+    console.error('Error resolving board details:', error);
+    return null;
+  }
+
+  const zeroBasedPage = Math.max(0, Math.trunc(page) - 1);
+  const searchParams: SearchRequestPagination = {
+    ...DEFAULT_SEARCH_PARAMS,
+    page: zeroBasedPage,
+    pageSize: FRONT_DOOR_PAGE_SIZE,
+  };
+
+  let searchResponse: { climbs: Climb[]; hasMore: boolean };
+  try {
+    // `isDefaultSearch` is true by construction here — no filters are ever
+    // applied — which is what lets the query ride the shared cache.
+    searchResponse = await cachedSearchClimbs(parsedParams, searchParams, true, undefined, { cacheable: true });
+  } catch (error) {
+    console.error(
+      'Error fetching front-door climbs (degrading to empty results for SSR):',
+      { boardName: parsedParams.board_name, page: zeroBasedPage },
+      error,
+    );
+    searchResponse = { climbs: [], hasMore: false };
+  }
+
+  scheduleOverlayWarming({ boardDetails, climbs: searchResponse.climbs, variant: 'thumbnail' });
+
+  const firstClimb = searchResponse.climbs[0];
+  const preloadUrl = firstClimb?.frames ? buildOverlayUrl(boardDetails, firstClimb.frames, true) : null;
+
+  return { boardDetails, climbs: searchResponse.climbs, hasMore: searchResponse.hasMore, preloadUrl };
 }

@@ -5,7 +5,6 @@ import { constructClimbListWithSlugs, tryConstructSlugListUrl } from '@/app/lib/
 import { parseRouteParams } from '@/app/lib/url-utils.server';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { permanentRedirect } from 'next/navigation';
-import ListLayoutClient from './layout-client';
 
 type LayoutProps = {
   params: Promise<BoardRouteParameters>;
@@ -52,8 +51,10 @@ export default async function ListLayout(props: PropsWithChildren<LayoutProps>) 
     }
   }
 
-  // Fetch the climbs and board details server-side
-  const boardDetails = getBoardDetailsForBoard(parsedParams);
-
-  return <ListLayoutClient boardDetails={boardDetails}>{children}</ListLayoutClient>;
+  // The queue/search sider this layout used to mount is gone with the rest of
+  // the classic climbing UI (W-15); the page below is a server-rendered front
+  // door and needs no shell. The module itself must survive, though: it carries
+  // the (A2) numeric→slug redirect above, which
+  // `crawler-classic-invariant.test.ts` imports and pins.
+  return <>{children}</>;
 }

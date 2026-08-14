@@ -209,7 +209,12 @@ test.describe('Bottom Tab Bar - Active State', () => {
   });
 });
 
-test.describe('Bottom Tab Bar - Queue Integration', () => {
+// W-16 (#4358) owns the queue bar's removal from www. These two tests
+// double-click a climb card on `/kilter/…/40/list` to push it into the queue,
+// and W-15 replaced that page with a server-rendered front door that has no
+// queue and no interactive card. The tab-bar visibility and navigation blocks
+// above still exercise the front door and stay live.
+test.describe.skip('Bottom Tab Bar - Queue Integration', () => {
   test('queue bar and bottom tab bar should coexist with correct climb', async ({ page }) => {
     await page.goto(boardUrl);
     await waitForBoardListReady(page);

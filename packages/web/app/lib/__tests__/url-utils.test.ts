@@ -28,6 +28,7 @@ import {
   constructBoardSlugViewUrl,
   constructBoardSlugPlaylistsUrl,
   tryConstructSlugViewUrl,
+  buildCanonicalClimbListUrl,
   tryConstructSlugListUrl,
   tryConstructSlugCreateUrl,
   popularConfigListUrl,
@@ -2071,5 +2072,56 @@ describe('replaceAngleInPathname', () => {
     expect(replaceAngleInPathname('/kilter/8/25/28,29,26,27', 40)).toBeNull(); // no angle segment
     expect(replaceAngleInPathname('/b/marcos-wall', 40)).toBeNull(); // no angle segment
     expect(replaceAngleInPathname('/kilter/8/25/28,29,26,27/notanangle/list', 40)).toBeNull();
+  });
+});
+
+/**
+ * `buildCanonicalClimbListUrl` is the list twin of `buildCanonicalClimbViewUrl`,
+ * and both `/list` front doors call it — the config-tuple tree's page and
+ * `/b/{slug}/{angle}/list`, which cross-canonicalises into that tree (A1,
+ * #4369). One function is what makes "both trees emit the identical canonical"
+ * a fact rather than a hope.
+ */
+describe('buildCanonicalClimbListUrl', () => {
+  const KILTER_SQUARE_SETS = [1, 20];
+
+  const namesOnlyBoard = {
+    board_name: 'kilter',
+    layout_id: 1,
+    size_id: 10,
+    set_ids: KILTER_SQUARE_SETS,
+    layout_name: 'Kilter Board Original',
+    size_name: '12 x 12 with kickboard',
+    size_description: 'Square',
+    set_names: ['Bolt Ons', 'Screw Ons'],
+  } as unknown as BoardDetails;
+
+  it('emits the id-aware named-slug list URL', () => {
+    expect(buildCanonicalClimbListUrl(namesOnlyBoard, 40)).toBe('/kilter/original/12x12-square/screw_bolt/40/list');
+  });
+
+  it('emits the QUALIFIED size slug for a shadowed size, not the bare one', () => {
+    // Kilter layout 1 sizes 10 and 27 both name-slug to `12x12-square`. Only the
+    // id-aware path can tell them apart; a name-slugged canonical for size 27
+    // would point at size 10 — a different physical board.
+    const shadowed = { ...namesOnlyBoard, size_id: 27, size_name: '12 x 12 without kickboard' } as BoardDetails;
+    expect(buildCanonicalClimbListUrl(shadowed, 40)).toBe(
+      '/kilter/original/12x12-square-without-kickboard/screw_bolt/40/list',
+    );
+  });
+
+  it('falls back to the numeric form for a config the static tables and names cannot resolve', () => {
+    const unknownBoard = {
+      board_name: 'kilter',
+      layout_id: 9999,
+      size_id: 8888,
+      set_ids: [7777],
+    } as unknown as BoardDetails;
+    expect(buildCanonicalClimbListUrl(unknownBoard, 25)).toBe('/kilter/9999/8888/7777/25/list');
+  });
+
+  it('carries the angle through', () => {
+    expect(buildCanonicalClimbListUrl(namesOnlyBoard, 25)).toContain('/25/list');
+    expect(buildCanonicalClimbListUrl(namesOnlyBoard, 70)).toContain('/70/list');
   });
 });

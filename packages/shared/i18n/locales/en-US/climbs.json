@@ -6,7 +6,8 @@
       "title": "{{boardName}} climbs at {{angle}}°",
       "description": "Browse climbs on {{boardName}} at {{angle}}°",
       "fallbackTitle": "Climbs",
-      "fallbackDescription": "Browse climbs"
+      "fallbackDescription": "Browse climbs",
+      "paginatedTitle": "{{boardName}} Climbs at {{angle}}° — Page {{page}}"
     },
     "view": {
       "title": "{{climbName}} - {{grade}}",
@@ -57,6 +58,18 @@
       "reshuffle": "Shuffle again",
       "ascending": "Asc",
       "descending": "Desc"
+    },
+    "frontDoor": {
+      "heading": "{{boardName}} climbs at {{angle}}°",
+      "intro": "Every climb set on this {{boardName}} configuration at {{angle}}°, most-climbed first. Tap any of them for the board render, the grade at every angle and the beta.",
+      "empty": "No climbs on this board yet.",
+      "cta": "Climb this board",
+      "pagination": {
+        "aria": "Pagination",
+        "previous": "Previous page",
+        "next": "Next page",
+        "pageLabel": "Page {{page}}"
+      }
     }
   },
   "header": {
@@ -418,9 +431,7 @@
     "emptyDefault": "No similar climbs yet.",
     "emptyOnLayout": "No similar climbs on this layout.",
     "emptyIdentical": "No identical climbs found right now.",
-    "untitledClimb": "Untitled climb",
-    "openActions": "More actions",
-    "actionsUnavailable": "Can't open actions for this climb — board configuration unavailable."
+    "untitledClimb": "Untitled climb"
   },
   "multiboardList": {
     "noClimbsFound": "No climbs found",
@@ -962,6 +973,50 @@
       "switchBoard": "Switch to {{board}}",
       "switchFailed": "Couldn't switch to {{board}}. Try again.",
       "cancel": "Cancel"
+    }
+  },
+  "frontDoor": {
+    "breadcrumb": {
+      "aria": "Breadcrumb",
+      "home": "Boardsesh",
+      "board": "{{boardName}}",
+      "list": "Climbs at {{angle}}°"
+    },
+    "boardImageAlt": "{{climbName}} lit up on the {{boardName}} {{layoutName}} at {{angle}}°",
+    "setterLink": "More climbs from {{setter}}",
+    "facts": {
+      "grade": "Grade",
+      "setter": "Setter",
+      "ascents": "Sends",
+      "quality": "Quality",
+      "angle": "Angle",
+      "board": "Board",
+      "firstAscent": "First ascent",
+      "firstAscentUnknown": "Not recorded",
+      "unknown": "Unknown",
+      "angleValue": "{{angle}}°",
+      "qualityValue": "{{quality}} out of 5",
+      "firstAscentValue": "{{setter}}, {{date}}"
+    },
+    "angles": {
+      "heading": "Same climb, other angles",
+      "link": "{{angle}}° · {{grade}}",
+      "current": "{{angle}}° · {{grade}} — you are here"
+    },
+    "beta": {
+      "heading": "Beta videos",
+      "empty": "No beta filmed yet."
+    },
+    "community": {
+      "heading": "Community"
+    },
+    "similar": {
+      "heading": "Climbs like this one"
+    },
+    "cta": {
+      "climbThis": "Climb this",
+      "ariaLabel": "Open {{climbName}} in the Boardsesh app",
+      "helper": "Opens the app, lights the holds, logs the send."
     }
   }
 }

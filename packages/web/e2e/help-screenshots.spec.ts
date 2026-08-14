@@ -27,7 +27,13 @@ const boardUrl = '/kilter/original/12x12-square/screw_bolt/40/list';
 // Viewport (390×844) is set at the project level in playwright.config.ts.
 // Both describe blocks here inherit it without needing their own test.use() calls.
 
-test.describe('Help Page Screenshots', () => {
+// W-16 (#4358) owns the /help rewrite and the replacement screenshots. These
+// steps drive the filters drawer, the heatmap and the play drawer off
+// `/kilter/…/40/list`, none of which exist on the SSR front door W-15 put
+// there. Skipped rather than deleted so the pipeline still has a home when its
+// successor lands; the committed `public/help/*.png` are untouched, so /help
+// keeps rendering — only regeneration pauses.
+test.describe.skip('Help Page Screenshots', () => {
   // Serial mode so multiple tests don't race on the same onboarding IDs /
   // drawer animations — much less flaky than 4-wide parallelism.
   test.describe.configure({ mode: 'serial' });

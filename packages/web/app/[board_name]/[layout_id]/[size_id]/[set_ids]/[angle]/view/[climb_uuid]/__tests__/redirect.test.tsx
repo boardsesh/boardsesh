@@ -36,8 +36,11 @@ vi.mock('@/app/lib/url-utils.server', () => ({
   })),
 }));
 
+vi.mock('server-only', () => ({}));
+
 vi.mock('@/app/lib/data/queries', () => ({
   getClimb: vi.fn(async () => ({ name: 'My Test Climb', frames: 'p1r12' })),
+  getClimbStatsForAllAngles: vi.fn(async () => []),
   getLayouts: vi.fn(async () => [{ id: 1, name: 'Kilter Board Original' }]),
   getSizes: vi.fn(async () => [{ id: 10, name: '12 x 12', description: 'Commercial' }]),
   getSets: vi.fn(async () => [
@@ -60,8 +63,11 @@ vi.mock('@/app/components/board-renderer/util', () => ({
   buildOgBoardRenderUrl: vi.fn(() => 'https://ws.boardsesh.com/og/climb'),
   buildOverlayUrl: vi.fn(() => '/api/internal/board-render'),
 }));
-vi.mock('@/app/components/board-page/board-page-climbs-list', () => ({ default: () => null }));
-vi.mock('@/app/components/climb-detail/climb-view-seo-fragment', () => ({ default: () => null }));
+vi.mock('@/app/lib/data/front-door-data.server', () => ({
+  getFrontDoorSimilarClimbs: vi.fn(async () => []),
+  getFrontDoorBetaLinks: vi.fn(async () => []),
+}));
+vi.mock('@/app/components/climb-front-door/climb-front-door', () => ({ default: () => null }));
 
 const pageModule = await import('../page');
 

@@ -85,36 +85,6 @@
       "cutBy": "teardown:components-library"
     },
     {
-      "from": "app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/layout-client.tsx",
-      "to": "app/components/graphql-queue/index.ts",
-      "reason": "GraphQL-WS queue client; the browser app owns realtime after the SPA cutover",
-      "cutBy": "teardown:components-graphql-queue"
-    },
-    {
-      "from": "app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/layout-client.tsx",
-      "to": "app/components/onboarding/tour-queue-watcher.tsx",
-      "reason": "classic onboarding tour, replaced by the SPA tour",
-      "cutBy": "teardown:components-onboarding"
-    },
-    {
-      "from": "app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/layout-client.tsx",
-      "to": "app/components/queue-control/queue-list.tsx",
-      "reason": "queue reducer, drawer and provider; the SPA owns the queue",
-      "cutBy": "teardown:components-queue-control"
-    },
-    {
-      "from": "app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/layout-client.tsx",
-      "to": "app/components/search-drawer/accordion-search-form.tsx",
-      "reason": "unified search drawer; the SPA has its own search sheet",
-      "cutBy": "teardown:components-search-drawer"
-    },
-    {
-      "from": "app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/layout-client.tsx",
-      "to": "app/components/search-drawer/search-results-footer.tsx",
-      "reason": "unified search drawer; the SPA has its own search sheet",
-      "cutBy": "teardown:components-search-drawer"
-    },
-    {
       "from": "app/b/[board_slug]/[angle]/create/page.tsx",
       "to": "app/components/create-climb/create-climb-form.tsx",
       "reason": "climb builder; moves to the SPA",
@@ -181,12 +151,6 @@
       "cutBy": "teardown:components-library"
     },
     {
-      "from": "app/b/[board_slug]/[angle]/list/page.tsx",
-      "to": "app/components/board-page/board-page-climbs-list.tsx",
-      "reason": "classic board page shell, climbs list and skeletons",
-      "cutBy": "teardown:components-board-page"
-    },
-    {
       "from": "app/b/[board_slug]/[angle]/logbook/page.tsx",
       "to": "app/components/library/library.module.css",
       "reason": "library/playlist stylesheets and views that move to the SPA library surface",
@@ -203,12 +167,6 @@
       "to": "app/components/library/library.module.css",
       "reason": "library/playlist stylesheets and views that move to the SPA library surface",
       "cutBy": "teardown:components-library"
-    },
-    {
-      "from": "app/b/[board_slug]/[angle]/view/[climb_uuid]/page.tsx",
-      "to": "app/components/board-page/board-page-climbs-list.tsx",
-      "reason": "classic board page shell, climbs list and skeletons",
-      "cutBy": "teardown:components-board-page"
     },
     {
       "from": "app/components/climb-detail/build-climb-detail-sections.tsx",
@@ -425,18 +383,6 @@
       "to": "app/hooks/use-climb-actions-data.tsx",
       "reason": "climb action data hook feeding the SPA-bound action sheets",
       "cutBy": "teardown:hooks-use-climb-actions-data"
-    },
-    {
-      "from": "app/components/similar-climbs/similar-climbs-list.tsx",
-      "to": "app/components/climb-actions/index.ts",
-      "reason": "like/playlist/tick action sheets that move to the SPA",
-      "cutBy": "teardown:components-climb-actions"
-    },
-    {
-      "from": "app/components/similar-climbs/similar-climbs-list.tsx",
-      "to": "app/components/graphql-queue/index.ts",
-      "reason": "GraphQL-WS queue client; the browser app owns realtime after the SPA cutover",
-      "cutBy": "teardown:components-graphql-queue"
     },
     {
       "from": "app/layout.tsx",

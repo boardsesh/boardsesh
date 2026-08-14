@@ -67,7 +67,10 @@ vi.mock('@/app/lib/board-utils', () => ({
   })),
 }));
 
+vi.mock('server-only', () => ({}));
+
 vi.mock('@/app/lib/data/queries', () => ({
+  getClimbStatsForAllAngles: vi.fn(async () => []),
   getClimb: vi.fn(async () => ({
     name: 'Test Climb',
     difficulty: 'V5',
@@ -84,6 +87,12 @@ vi.mock('@/app/lib/warm-overlay-cache', () => ({
 
 vi.mock('@/app/lib/url-utils', () => ({
   extractUuidFromSlug: vi.fn((value: string) => value),
+  // A1: the page now builds its canonical with the config-tuple builder rather
+  // than interpolating a `/b/…` literal.
+  buildCanonicalClimbViewUrl: vi.fn(
+    (_boardDetails: unknown, angle: number, climbUuid: string) =>
+      `/kilter/kilter-board-original/12x12/bolt-ons/${angle}/view/${climbUuid}`,
+  ),
 }));
 
 vi.mock('@/app/components/board-renderer/util', () => ({
@@ -93,10 +102,11 @@ vi.mock('@/app/components/board-renderer/util', () => ({
 
 // Stubs for the page body's imports — generateMetadata never uses them, but
 // importing the page module pulls them in.
-vi.mock('@/app/components/board-page/board-page-climbs-list', () => ({
-  default: () => null,
+vi.mock('@/app/lib/data/front-door-data.server', () => ({
+  getFrontDoorSimilarClimbs: vi.fn(async () => []),
+  getFrontDoorBetaLinks: vi.fn(async () => []),
 }));
-vi.mock('@/app/components/climb-detail/climb-view-seo-fragment', () => ({
+vi.mock('@/app/components/climb-front-door/climb-front-door', () => ({
   default: () => null,
 }));
 
@@ -189,6 +199,8 @@ describe('board slug climb metadata', () => {
 
     expect(metadata.robots).toEqual({ index: false, follow: true });
     expect(metadata.description).toContain('Test Climb');
+    // No canonical at all on a noindex page — see the A1 case below.
+    expect(metadata.alternates).toBeUndefined();
   });
 
   it('keeps an unlisted (but public) board readable, but noindexes the climb page', async () => {
@@ -212,5 +224,23 @@ describe('board slug climb metadata', () => {
 
     expect(metadata.robots).toEqual({ index: false, follow: true });
     expect(metadata.description).toContain('Test Climb');
+    expect(metadata.alternates).toBeUndefined();
+  });
+
+  it('canonicalises a public, listed board INTO the config-tuple tree (A1)', async () => {
+    const metadata = await pageModule.generateMetadata({
+      params: Promise.resolve({
+        board_slug: 'my-board',
+        angle: '40',
+        climb_uuid: 'test-climb',
+      }),
+    });
+
+    const canonical = metadata.alternates?.canonical;
+    const canonicalUrl =
+      typeof canonical === 'object' && canonical && 'url' in canonical ? String(canonical.url) : String(canonical);
+    expect(canonicalUrl).not.toContain('/b/my-board');
+    expect(canonicalUrl).toContain('/40/view/test-climb');
+    expect(metadata.robots).toBeUndefined();
   });
 });

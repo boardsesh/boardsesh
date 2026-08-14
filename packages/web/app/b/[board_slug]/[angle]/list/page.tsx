@@ -3,11 +3,19 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import type { SearchRequestPagination } from '@/app/lib/types';
 import { resolveBoardBySlug, boardToRouteParams } from '@/app/lib/board-slug-utils';
-import BoardPageClimbsList from '@/app/components/board-page/board-page-climbs-list';
-import { fetchListPageData } from '@/app/lib/data/list-page-data.server';
+import StaticListFrontDoor from '@/app/components/climb-front-door/static-list-front-door';
+import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import { fetchFrontDoorListPage } from '@/app/lib/data/list-page-data.server';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
+import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
-import { hasListFilterParams, type ListPageSearchParams } from '@/app/lib/seo/list-page-robots';
+import {
+  frontDoorPagePath,
+  hasListFilterParams,
+  isIndexableFrontDoorPage,
+  parseFrontDoorPage,
+  type ListPageSearchParams,
+} from '@/app/lib/seo/list-page-robots';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 
 type BoardSlugListPageProps = {
@@ -30,17 +38,36 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
     }
 
     const boardName = formatBoardDisplayName(board.boardType);
-    const angle = params.angle;
+    const angle = Number(params.angle);
+    const page = parseFrontDoorPage(searchParams.page);
     // Unlisted is link-only by design, and a private board is readable to a
     // slug holder until #4087 masks it — neither belongs in the index. This is
     // indexation only; it is not the access control, which #4087 owns.
     const listShouldNoindex =
-      board.isUnlisted || !board.isPublic || hasListFilterParams(searchParams as unknown as ListPageSearchParams);
+      board.isUnlisted ||
+      !board.isPublic ||
+      hasListFilterParams(searchParams as unknown as ListPageSearchParams) ||
+      !isIndexableFrontDoorPage(page);
+
+    // A1: canonicalise into the config-tuple tree via the same builder that
+    // tree's own `/list` page calls, so one board config emits one canonical.
+    //
+    // A noindex page passes NO `path`, so `createPageMetadata` emits no
+    // `alternates`: a canonical from a noindex URL onto an indexable twin is a
+    // conflicting signal Google can resolve by propagating the noindex to the
+    // target.
+    const parsedParams = boardToRouteParams(board, angle);
+    const canonicalPath = listShouldNoindex
+      ? undefined
+      : frontDoorPagePath(buildCanonicalClimbListUrl(getBoardDetailsForBoard(parsedParams), angle), page);
 
     return createPageMetadata({
-      title: t('metadata.list.title', { boardName, angle }),
-      description: t('metadata.list.description', { boardName, angle }),
-      path: `/b/${params.board_slug}/${angle}/list`,
+      title:
+        page > 1
+          ? t('metadata.list.paginatedTitle', { boardName, angle: params.angle, page })
+          : t('metadata.list.title', { boardName, angle: params.angle }),
+      description: t('metadata.list.description', { boardName, angle: params.angle }),
+      path: canonicalPath,
       locale,
       robots: listShouldNoindex ? { index: false, follow: true } : undefined,
     });
@@ -62,18 +89,25 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
   }
 
   const parsedParams = boardToRouteParams(board, Number(params.angle));
-  const listData = await fetchListPageData(parsedParams, searchParams as SearchRequestPagination);
+  const page = parseFrontDoorPage(searchParams.page);
+  const listData = await fetchFrontDoorListPage(parsedParams, page);
   if (!listData) return notFound();
-  const { boardDetails, searchResponse, preloadUrl } = listData;
+  const { boardDetails, climbs, hasMore, preloadUrl } = listData;
 
   return (
     <>
       {preloadUrl && <link rel="preload" as="image" href={preloadUrl} fetchPriority="high" />}
-      <BoardPageClimbsList
-        {...parsedParams}
+      <StaticListFrontDoor
         boardDetails={boardDetails}
-        initialClimbs={searchResponse.climbs}
-        initialHasMore={searchResponse.hasMore}
+        angle={parsedParams.angle}
+        climbs={climbs}
+        hasMore={hasMore}
+        page={page}
+        // Pagination and the CTA stay on the `/b` pathname the reader is on —
+        // the canonical points at the config-tuple tree, the navigation does
+        // not move them off the board they arrived through.
+        basePath={`/b/${params.board_slug}/${params.angle}/list`}
+        tree="slug"
       />
     </>
   );

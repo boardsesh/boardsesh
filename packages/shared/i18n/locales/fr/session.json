@@ -280,9 +280,6 @@
   },
   "queueDrawer": {
     "title": "File d'attente",
-    "clearTitle": "Vider la file d'attente",
-    "clearDescription": "Tu veux vraiment vider tous les éléments de la file d'attente ?",
-    "clearConfirm": "Vider",
     "clear": "Vider",
     "removeItems_one": "Retirer {{count}} élément",
     "removeItems_other": "Retirer {{count}} éléments"

@@ -32,18 +32,19 @@ vi.mock('@/app/lib/url-utils.server', () => ({
 }));
 
 vi.mock('@/app/lib/board-utils', () => ({
-  getBoardDetailsForBoard: vi.fn(() => ({ board_name: 'kilter' })),
+  getBoardDetailsForBoard: vi.fn(() => ({ board_name: 'kilter', layout_id: 1, size_id: 7, set_ids: [1, 20] })),
 }));
 
 vi.mock('@/app/lib/data/list-page-data.server', () => ({
-  fetchListPageData: vi.fn(async () => ({
-    boardDetails: { board_name: 'kilter' },
-    searchResponse: { climbs: [], hasMore: false },
+  fetchFrontDoorListPage: vi.fn(async () => ({
+    boardDetails: { board_name: 'kilter', layout_id: 1, size_id: 7, set_ids: [1, 20] },
+    climbs: [],
+    hasMore: false,
     preloadUrl: null,
   })),
 }));
 
-vi.mock('@/app/components/board-page/board-page-climbs-list', () => ({
+vi.mock('@/app/components/climb-front-door/static-list-front-door', () => ({
   default: () => null,
 }));
 
@@ -61,24 +62,52 @@ function emptySearchParams() {
   return Promise.resolve({} as never);
 }
 
+function canonicalOf(metadata: Awaited<ReturnType<typeof pageModule.generateMetadata>>) {
+  const canonical = metadata.alternates?.canonical;
+  return typeof canonical === 'object' && canonical && 'url' in canonical ? String(canonical.url) : String(canonical);
+}
+
 describe('legacy board list metadata', () => {
-  it('leaves an unfiltered request alone rather than minting a second canonical for the same list', async () => {
+  it('claims the self-canonical for an unfiltered request (A1: /b now points here)', async () => {
     const metadata = await pageModule.generateMetadata({ params, searchParams: emptySearchParams() });
 
-    // `/b/{slug}/{angle}/list` is the canonical home for this content. Emitting
-    // a canonical here too would split PageRank across both trees, which is the
-    // regression climb-canonical-parity.test.ts guards for the view route.
-    expect(metadata.alternates).toBeUndefined();
+    // This used to return a bare `{}`: `/b/{slug}/{angle}/list` was ALSO
+    // self-canonicalising, and a second canonical would have widened the split.
+    // W-15 flipped `/b` to canonicalise into this tree, so this page is now the
+    // one URL for the config and says so.
+    expect(canonicalOf(metadata)).toContain('/kilter/kilter-original/12x12/bolt-ons/40/list');
+    expect(canonicalOf(metadata)).not.toContain('?page');
     expect(metadata.robots).toBeUndefined();
   });
 
-  it('keeps pagination-only requests out of the noindex bucket', async () => {
+  it('keeps pagination-only requests indexable, with the page in the canonical', async () => {
     const metadata = await pageModule.generateMetadata({
       params,
       searchParams: Promise.resolve({ page: '2' } as never),
     });
 
     expect(metadata.robots).toBeUndefined();
+    expect(canonicalOf(metadata)).toContain('/kilter/kilter-original/12x12/bolt-ons/40/list?page=2');
+  });
+
+  it('canonicalises ?page=1 onto the bare path — same page, one URL', async () => {
+    const metadata = await pageModule.generateMetadata({
+      params,
+      searchParams: Promise.resolve({ page: '1' } as never),
+    });
+
+    expect(canonicalOf(metadata)).not.toContain('?page');
+    expect(metadata.robots).toBeUndefined();
+  });
+
+  it('noindexes past the last indexable page but keeps crawlers following the climb links', async () => {
+    const metadata = await pageModule.generateMetadata({
+      params,
+      searchParams: Promise.resolve({ page: '11' } as never),
+    });
+
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    expect(canonicalOf(metadata)).toContain('?page=11');
   });
 
   it('noindexes filtered list requests and canonicalizes to the clean base URL', async () => {

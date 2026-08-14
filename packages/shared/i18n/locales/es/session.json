@@ -280,9 +280,6 @@
   },
   "queueDrawer": {
     "title": "Cola",
-    "clearTitle": "Vaciar cola",
-    "clearDescription": "¿Seguro que quieres vaciar la cola?",
-    "clearConfirm": "Vaciar",
     "clear": "Vaciar",
     "removeItems_one": "Eliminar {{count}} elemento",
     "removeItems_other": "Eliminar {{count}} elementos"

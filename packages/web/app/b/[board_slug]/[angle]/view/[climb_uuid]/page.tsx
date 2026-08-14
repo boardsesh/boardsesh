@@ -3,14 +3,14 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { resolveBoardBySlug, boardToRouteParams } from '@/app/lib/board-slug-utils';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
-import { getClimb } from '@/app/lib/data/queries';
-import BoardPageClimbsList from '@/app/components/board-page/board-page-climbs-list';
-import { extractUuidFromSlug } from '@/app/lib/url-utils';
+import { getClimb, getClimbStatsForAllAngles } from '@/app/lib/data/queries';
+import { getFrontDoorBetaLinks, getFrontDoorSimilarClimbs } from '@/app/lib/data/front-door-data.server';
+import ClimbFrontDoor from '@/app/components/climb-front-door/climb-front-door';
+import { buildCanonicalClimbViewUrl, extractUuidFromSlug } from '@/app/lib/url-utils';
 import { buildOgBoardRenderUrl, buildOverlayUrl } from '@/app/components/board-renderer/util';
 import { scheduleOverlayWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
-import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-fragment';
 
 type BoardSlugViewRouteParams = { board_slug: string; angle: string; climb_uuid: string };
 
@@ -48,17 +48,33 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
     const ascents = currentClimb.ascensionist_count || 0;
     const ogImagePath = buildOgBoardRenderUrl(boardDetails, currentClimb.frames);
 
+    // Unlisted is link-only by design, and a private board is readable to a
+    // slug holder until #4087 masks it — neither belongs in the index. This is
+    // indexation only; it is not the access control, which #4087 owns.
+    const shouldNoindex = board.isUnlisted || !board.isPublic;
+
+    // A1: this page canonicalises INTO the config-tuple tree rather than
+    // self-canonicalising, via the same builder that tree uses — `/b/{slug}`
+    // names a board a user owns, not a climb config, so most climbs have no
+    // `/b` URL and popular configs have many. One climb, one canonical.
+    //
+    // A noindex page gets NO `path` at all, so `createPageMetadata` emits no
+    // `alternates`. A canonical pointing from a noindex URL at an indexable
+    // twin is a conflicting signal Google can resolve by propagating the
+    // noindex — deindexing a public config-tuple climb page because one private
+    // board happens to share its configuration.
+    const canonicalPath = shouldNoindex
+      ? undefined
+      : buildCanonicalClimbViewUrl(boardDetails, Number(params.angle), parsedParams.climb_uuid, climbName);
+
     return createPageMetadata({
       title: t('metadata.view.title', { climbName, grade: climbGrade }),
       description: t('metadata.view.description', { climbName, grade: climbGrade, setter, quality, ascents }),
-      path: `/b/${params.board_slug}/${params.angle}/view/${params.climb_uuid}`,
+      path: canonicalPath,
       locale,
       imagePath: ogImagePath,
       imageAlt: t('metadata.view.imageAlt', { climbName, grade: climbGrade, boardName: boardDetails.board_name }),
-      // Unlisted is link-only by design, and a private board is readable to a
-      // slug holder until #4087 masks it — neither belongs in the index. This
-      // is indexation only; it is not the access control, which #4087 owns.
-      robots: board.isUnlisted || !board.isPublic ? { index: false, follow: true } : undefined,
+      robots: shouldNoindex ? { index: false, follow: true } : undefined,
     });
   } catch {
     return createPageMetadata({
@@ -88,19 +104,36 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
     if (!currentClimb) notFound();
 
     const boardDetails = getBoardDetailsForBoard(parsedParams);
+
+    const [angleStats, similarClimbs, betaLinks] = await Promise.all([
+      getClimbStatsForAllAngles(parsedParams),
+      getFrontDoorSimilarClimbs({
+        boardType: parsedParams.board_name,
+        layoutId: parsedParams.layout_id,
+        climbUuid: parsedParams.climb_uuid,
+        angle: parsedParams.angle,
+      }),
+      getFrontDoorBetaLinks({ boardType: parsedParams.board_name, climbUuid: parsedParams.climb_uuid }),
+    ]);
+
     scheduleOverlayWarming({ boardDetails, climbs: [currentClimb], variant: 'full' });
     const preloadUrl = currentClimb.frames ? buildOverlayUrl(boardDetails, currentClimb.frames, false) : null;
 
     return (
       <>
         {preloadUrl && <link rel="preload" as="image" href={preloadUrl} fetchPriority="high" />}
-        <ClimbViewSeoFragment climb={currentClimb} boardDetails={boardDetails} />
-        <BoardPageClimbsList
-          {...parsedParams}
+        <ClimbFrontDoor
+          climb={currentClimb}
           boardDetails={boardDetails}
-          initialClimbs={[]}
-          initialHasMore
-          initialOpenClimb={currentClimb}
+          angle={parsedParams.angle}
+          angleStats={angleStats}
+          similarClimbs={similarClimbs}
+          betaLinks={betaLinks}
+          // The CTA hands off the `/b` pathname the reader is actually on: the
+          // app serves both URL shapes (post-#3823), and rewriting it to the
+          // config-tuple twin would drop the board context they arrived with.
+          canonicalPath={`/b/${params.board_slug}/${params.angle}/view/${params.climb_uuid}`}
+          tree="slug"
         />
       </>
     );
