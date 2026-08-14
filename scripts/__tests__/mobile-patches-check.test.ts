@@ -197,24 +197,41 @@ describe('checkPatchesApplied on a scoped package', () => {
 });
 
 // Mutation tests on the shipped rule, not a synthetic one: the sentinel list
-// must distinguish the current patch from both the pre-#4108 patch and the
-// short-circuiting hide helper. `swallowMissingNativeHandler` alone is satisfied
-// by all three, so a regenerated patch could otherwise keep this check green
-// while the dismiss guard or its null-ref cleanup silently disappeared.
+// must distinguish the current patch from the pre-#4108 patch, the
+// short-circuiting hide helper, and a helper that normalizes a missing ref but
+// drops only the hide rejection guard. The expand catches remain in every
+// relevant fixture so none can masquerade as proof that hide itself is guarded.
 describe('the shipped @expo/ui Android rule', () => {
   const androidRule = REAL_RULES.find((rule) => rule.package === SCOPED_PKG && rule.file === SCOPED_FILE);
 
   const PRE_4108_SOURCE = `
 function swallowMissingNativeHandler(error: unknown): void { /* ... */ }
 sheetRef.current?.expand()?.catch(swallowMissingNativeHandler);
+sheetRef.current?.partialExpand()?.catch(swallowMissingNativeHandler);
 sheetRef.current?.hide().then(() => { setIsOpen(false); fireCloseCallbacks(); });
 `;
 
   const SHORT_CIRCUITING_HIDE_SOURCE = `
 function swallowMissingNativeHandler(error: unknown): void { /* ... */ }
-function hideSwallowingMissingNativeHandler(): void {
-  sheetRef.current?.hide().catch(swallowMissingNativeHandler).then(runCleanup);
-}
+sheetRef.current?.expand()?.catch(swallowMissingNativeHandler);
+sheetRef.current?.partialExpand()?.catch(swallowMissingNativeHandler);
+const hideSwallowingMissingNativeHandler = () => {
+  void sheetRef.current?.hide().catch(swallowMissingNativeHandler).then(runCleanup);
+};
+hideSwallowingMissingNativeHandler();
+const close = hideSwallowingMissingNativeHandler;
+`;
+
+  const HIDE_WITHOUT_CATCH_SOURCE = `
+function swallowMissingNativeHandler(error: unknown): void { /* ... */ }
+sheetRef.current?.expand()?.catch(swallowMissingNativeHandler);
+sheetRef.current?.partialExpand()?.catch(swallowMissingNativeHandler);
+const hideSwallowingMissingNativeHandler = () => {
+  const hidePromise = sheetRef.current?.hide();
+  void Promise.resolve(hidePromise).then(runCleanup);
+};
+hideSwallowingMissingNativeHandler();
+const close = hideSwallowingMissingNativeHandler;
 `;
 
   it('is registered', () => {
@@ -249,6 +266,23 @@ function hideSwallowingMissingNativeHandler(): void {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain('patch NOT applied');
     expect(result.errors[0]).toContain('Promise.resolve(hidePromise)');
+  });
+
+  it('goes red when only the hide rejection catch is removed', () => {
+    if (!androidRule) throw new Error('no @expo/ui Android rule registered');
+    const env = makeEnv({
+      patchedDependencies: { [androidRule.patchedKey]: SCOPED_PATCH_PATH },
+      versions: { [androidRule.package]: versionFromKey(androidRule.patchedKey) },
+      files: { [`${androidRule.package}::${androidRule.file}`]: HIDE_WITHOUT_CATCH_SOURCE },
+    });
+
+    const result = checkPatchesApplied([androidRule], env);
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('patch NOT applied');
+    expect(result.errors[0]).toContain('.catch(swallowMissingNativeHandler)');
+    expect(result.errors[0]).not.toContain('hideSwallowingMissingNativeHandler();');
+    expect(result.errors[0]).not.toContain('const close = hideSwallowingMissingNativeHandler;');
   });
 });
 

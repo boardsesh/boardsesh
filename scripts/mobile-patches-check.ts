@@ -145,18 +145,26 @@ export const RULES: readonly PatchRule[] = [
   // unavailable or the native ExpoUI layer predates expand()/partialExpand()/hide().
   // Types are unchanged, so typecheck and the Metro bundle stay green without them.
   //
-  // The first two sentinels cover two independently-losable halves:
-  // `swallowMissingNativeHandler` is the #3478 expand()/partialExpand() guard,
-  // and `hideSwallowingMissingNativeHandler` is the #4108 dismiss path (the
-  // helper both snapToIndex(-1) and close()/forceClose()/dismiss() funnel
-  // through). A regenerated patch that reinstates only #3478 would otherwise
-  // keep this rule green while the dismiss guard silently disappeared — which
-  // is exactly the partial-coverage failure #4108 fixed. The third pins the
-  // null-ref normalization so an already-unmounted sheet still runs JS cleanup.
+  // Pin both independently-losable halves: the #3478 expand()/partialExpand()
+  // guards, and the complete #4108 dismiss path. The multi-line sentinel ties
+  // `.catch(swallowMissingNativeHandler)` to the normalized hide promise inside
+  // the helper rather than accepting one of the expand catches as proof. The
+  // final two sentinels prove snapToIndex(-1) and close()/forceClose()/dismiss()
+  // still funnel through that helper.
   {
     package: '@expo/ui',
     file: 'src/community/bottom-sheet/BottomSheet.android.tsx',
-    sentinels: ['swallowMissingNativeHandler', 'hideSwallowingMissingNativeHandler', 'Promise.resolve(hidePromise)'],
+    sentinels: [
+      'function swallowMissingNativeHandler(error: unknown): void',
+      'sheetRef.current?.expand()?.catch(swallowMissingNativeHandler)',
+      'sheetRef.current?.partialExpand()?.catch(swallowMissingNativeHandler)',
+      `const hideSwallowingMissingNativeHandler = () => {
+      const hidePromise = sheetRef.current?.hide();
+      void Promise.resolve(hidePromise)
+        .catch(swallowMissingNativeHandler)`,
+      'hideSwallowingMissingNativeHandler();',
+      'const close = hideSwallowingMissingNativeHandler;',
+    ],
     patchedKey: '@expo/ui@57.0.8',
   },
   // The iOS half wires the native post-animation dismiss signal through to the

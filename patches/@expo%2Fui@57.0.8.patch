@@ -18,7 +18,7 @@ index 72fc6becbc414c318799e28103d15484ed86f703..d1cf11e93b0c0d8dc77abddaafc89e14
       * Whether the sheet can be dismissed by panning down.
       * @default false
 diff --git a/src/community/bottom-sheet/BottomSheet.android.tsx b/src/community/bottom-sheet/BottomSheet.android.tsx
-index f60ae61bf0c9023d41c55cdca2d9af0de7291a92..772f369cf121ca1a1fdd283f81f1326b8bfb4710 100644
+index f60ae61bf0c9023d41c55cdca2d9af0de7291a92..9d317d23a9dce0d20ad6377d9b2a2cbdc2ad60ab 100644
 --- a/src/community/bottom-sheet/BottomSheet.android.tsx
 +++ b/src/community/bottom-sheet/BottomSheet.android.tsx
 @@ -11,6 +11,26 @@ import { RNHostView } from '../../jetpack-compose/RNHostView';
