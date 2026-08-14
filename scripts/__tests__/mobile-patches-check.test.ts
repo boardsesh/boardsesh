@@ -651,6 +651,33 @@ describe('the shipped RULES', () => {
 
     expect(pinnedVersion, 'expo-image must stay a direct packages/mobile dependency').toBeDefined();
     expect(versionFromKey(expoImageRule?.patchedKey ?? '')).toBe(pinnedVersion);
-    expect(expoImageRule?.sentinels).toEqual(expect.arrayContaining(['boardsesh/boardsesh#3928']));
+    expect(expoImageRule?.sentinels).toEqual(
+      expect.arrayContaining(['boardsesh/boardsesh#3928', 'url.baseURL == nil && path.contains("/")', 'Images/MyIcon']),
+    );
+  });
+
+  it('rejects the slash-only guard that breaks namespaced asset-catalog names', () => {
+    const expoImageRule = REAL_RULES.find((rule) => rule.package === 'expo-image');
+    if (!expoImageRule) throw new Error('no expo-image rule registered');
+
+    const slashOnlyGuardSource = `
+// boardsesh/boardsesh#3928
+// Namespaced asset name: Images/MyIcon
+if url.scheme == "file" {
+  if let host = url.host, !host.isEmpty { return nil }
+  if path.contains("/") { return nil }
+}
+`;
+    const env = makeEnv({
+      patchedDependencies: { [expoImageRule.patchedKey]: 'patches/expo-image@57.0.1.patch' },
+      versions: { [expoImageRule.package]: versionFromKey(expoImageRule.patchedKey) },
+      files: { [`${expoImageRule.package}::${expoImageRule.file}`]: slashOnlyGuardSource },
+    });
+
+    const result = checkPatchesApplied([expoImageRule], env);
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('patch NOT applied');
+    expect(result.errors[0]).toContain('url.baseURL == nil && path.contains');
   });
 });

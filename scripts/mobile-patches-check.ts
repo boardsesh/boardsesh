@@ -185,13 +185,20 @@ export const RULES: readonly PatchRule[] = [
   // main-thread bundle-directory enumeration on every reload (#3928). The
   // patch rejects `file://` URLs that resolve to an absolute filesystem path
   // (or carry a host) so `reload` falls straight through to SDWebImage's disk
-  // loader instead. Silently dropping this patch on the next expo-image bump
-  // wouldn't fail typecheck or the bundle — board art would just resume the
-  // per-reload main-thread stall.
+  // loader instead. It must preserve ExpoModulesCore's relative file URLs for
+  // asset-catalog names such as `Images/MyIcon`, which retain a base URL.
+  // Silently dropping this patch on the next expo-image bump wouldn't fail
+  // typecheck or the bundle — board art would just resume the per-reload
+  // main-thread stall.
   {
     package: 'expo-image',
     file: 'ios/ImageView.swift',
-    sentinels: ['boardsesh/boardsesh#3928', 'host, !host.isEmpty', 'path.contains("/")'],
+    sentinels: [
+      'boardsesh/boardsesh#3928',
+      'host, !host.isEmpty',
+      'url.baseURL == nil && path.contains("/")',
+      'Images/MyIcon',
+    ],
     patchedKey: 'expo-image@57.0.1',
   },
 ];

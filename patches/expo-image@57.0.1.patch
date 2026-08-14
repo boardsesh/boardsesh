@@ -1,8 +1,8 @@
 diff --git a/ios/ImageView.swift b/ios/ImageView.swift
-index cccedd7adf7328b18bb61333c3fe2473c79e72cd..ebbb17024da36fd5c07d6f98ef064234cd3f5a0a 100644
+index cccedd7adf7328b18bb61333c3fe2473c79e72cd..986ac82e9b89e227aa34d516358092fafd4bf130 100644
 --- a/ios/ImageView.swift
 +++ b/ios/ImageView.swift
-@@ -871,5 +871,25 @@ func localAssetName(from url: URL?) -> String? {
+@@ -871,5 +871,32 @@ func localAssetName(from url: URL?) -> String? {
    if path.hasPrefix("/") {
      path.removeFirst()
    }
@@ -14,14 +14,21 @@ index cccedd7adf7328b18bb61333c3fe2473c79e72cd..ebbb17024da36fd5c07d6f98ef064234
 +  // synchronous main-thread bundle-directory enumeration on every `reload`
 +  // (boardsesh/boardsesh#3928). Reject those here so `reload(force:)` falls
 +  // through to SDWebImage's disk loader instead, which handles `file://` URLs
-+  // correctly off the main thread. A scheme-less local asset name like
-+  // "my_image" has exactly one path component (no `/` once the leading slash
-+  // is stripped) and is left untouched.
++  // correctly off the main thread.
++  //
++  // ExpoModulesCore also wraps scheme-less JS asset names with
++  // `URL(fileURLWithPath:)`. Relative names retain the current directory as
++  // their base URL, including supported namespaced catalog names such as
++  // "Images/MyIcon"; keep those eligible for `UIImage(named:)`. Explicit file
++  // URIs and absolute file paths have no base URL, so a remaining `/` after
++  // stripping the leading slash identifies the real multi-component paths we
++  // need to bypass. (A root-level `file:///image.png` is intentionally left
++  // unchanged because Foundation loses the original JS spelling there.)
 +  if url.scheme == "file" {
 +    if let host = url.host, !host.isEmpty {
 +      return nil
 +    }
-+    if path.contains("/") {
++    if url.baseURL == nil && path.contains("/") {
 +      return nil
 +    }
 +  }
