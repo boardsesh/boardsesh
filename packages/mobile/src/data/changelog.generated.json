@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-08-13T10:15:49.879Z",
+  "generatedAt": "2026-08-14T01:30:53.483Z",
   "entries": [
+    {
+      "prNumber": 4418,
+      "category": "new",
+      "title": "No user-visible native change. The gate relaxation and the `?next=` return are web-fork-only, asserted inert on native by the two suites above. What does reach the store fleet is one additive analytics capture per board-route open — no navigation, no copy, nothing on screen — so there is nothing for the \"What's New\" screen. The user-visible copy for this flow ships with the www front door in #4369.",
+      "mergedAt": "2026-08-14T01:29:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4418"
+    },
+    {
+      "prNumber": 4417,
+      "category": "fixed",
+      "title": "Feed thumbnails now open the board the send actually happened on.",
+      "mergedAt": "2026-08-14T01:28:58Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4417"
+    },
     {
       "prNumber": 3823,
       "category": "new",

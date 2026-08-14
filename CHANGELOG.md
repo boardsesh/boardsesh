@@ -4,6 +4,16 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-14
+
+### New
+
+- No user-visible native change. The gate relaxation and the `?next=` return are web-fork-only, asserted inert on native by the two suites above. What does reach the store fleet is one additive analytics capture per board-route open — no navigation, no copy, nothing on screen — so there is nothing for the "What's New" screen. The user-visible copy for this flow ships with the www front door in #4369. ([#4418](https://github.com/boardsesh/boardsesh/pull/4418))
+
+### Fixed
+
+- Feed thumbnails now open the board the send actually happened on. ([#4417](https://github.com/boardsesh/boardsesh/pull/4417))
+
 ## 2026-08-13
 
 ### New
