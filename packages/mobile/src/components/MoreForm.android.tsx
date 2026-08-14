@@ -48,6 +48,7 @@ import type { MoreFormProps, MoreIconName, MoreRow, MoreSelectRow } from './More
 // the Compose `Icon` a vector-drawable source it tints itself. White-filled
 // (#FFFFFFFF) so the `tint` recolours them; a missing `icon` renders no leading slot.
 const MORE_ICON_SOURCE: Record<MoreIconName, ImageSourcePropType> = {
+  notifications: require('../../assets/material-icons/notifications.xml'),
   playlists: require('../../assets/material-icons/playlists.xml'),
   gyms: require('../../assets/material-icons/gyms.xml'),
   integrations: require('../../assets/material-icons/integrations.xml'),

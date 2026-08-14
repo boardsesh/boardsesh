@@ -7,6 +7,7 @@ import { BoardArtVisibilityProvider } from '../../../src/providers/board-art-vis
 export default function ProfileLayout() {
   const { t } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
+  const { t: tNotifications } = useTranslation('notifications');
   const screenOptions = useStackScreenOptions();
 
   return (
@@ -21,6 +22,9 @@ export default function ProfileLayout() {
           pushed-route accessory/queue chrome unmounts. It sets its own header
           title from the loaded session. */}
         <Stack.Screen name="session/[sessionId]" options={{ headerShown: true }} />
+        {/* Same screen component as the Home tab's notifications route, registered
+          here too so a push from this tab keeps its own back stack. */}
+        <Stack.Screen name="notifications" options={{ headerShown: true, title: tNotifications('title') }} />
         <Stack.Screen name="more" options={{ title: t('mobile.more.title') }} />
         <Stack.Screen name="accessibility" options={{ title: t('mobile.more.accessibility.title') }} />
         <Stack.Screen name="storage" options={{ title: t('mobile.more.storage.title') }} />

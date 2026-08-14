@@ -60,6 +60,9 @@ export const iconMap = {
   share: { ios: 'square.and.arrow.up', android: 'share-variant-outline' },
   comment: { ios: 'bubble.left', android: 'comment-outline' },
   'comment.fill': { ios: 'bubble.left.fill', android: 'comment' },
+  // The "someone liked this" cue on notification rows — a thumbs-up, matching
+  // web's ThumbUpOutlined for vote_on_tick / vote_on_comment.
+  'hand.thumbsup': { ios: 'hand.thumbsup', android: 'thumb-up-outline' },
   'more.actions': { ios: 'ellipsis.circle', android: 'dots-horizontal-circle-outline' },
   'more.actions.fill': { ios: 'ellipsis.circle.fill', android: 'dots-horizontal-circle' },
   // Vertical kebab. Android has a native vertical glyph; SF Symbols has no vertical
@@ -176,6 +179,8 @@ export const iconMap = {
   'checkmark.seal.fill': { ios: 'checkmark.seal.fill', android: 'check-decagram' },
 
   // Misc
+  // A gym / climbing venue — the glyph on a "you now manage this gym" row.
+  gym: { ios: 'building.2', android: 'office-building' },
   star: { ios: 'star', android: 'star-outline' },
   'star.fill': { ios: 'star.fill', android: 'star' },
   crown: { ios: 'crown.fill', android: 'crown' },

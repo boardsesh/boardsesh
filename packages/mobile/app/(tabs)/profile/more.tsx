@@ -79,6 +79,7 @@ export default function MoreScreen() {
   const { t: tPlaylists } = useTranslation('playlists');
   const { t: tSettings } = useTranslation('settings');
   const { t: tBoards } = useTranslation('boards');
+  const { t: tNotifications } = useTranslation('notifications');
   const confirmSignOut = useConfirmSignOut();
   const { data: profile } = useProfile();
   const { gradeFormat, setGradeFormat } = useGradeFormat();
@@ -350,6 +351,17 @@ export default function MoreScreen() {
       key: 'library',
       title: t('mobile.more.library'),
       rows: [
+        {
+          // The You tab's way in to notifications, and the only entry point for
+          // `(tabs)/profile/notifications` — the Home chrome's bell pushes Home's
+          // own copy of the screen so Back lands on the feed. Without this row the
+          // profile route ships registered but unreachable.
+          kind: 'nav',
+          key: 'notifications',
+          label: tNotifications('title'),
+          icon: 'notifications',
+          onPress: navAction(() => router.push('/(tabs)/profile/notifications')),
+        },
         {
           kind: 'nav',
           key: 'allPlaylists',

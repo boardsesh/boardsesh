@@ -2295,6 +2295,18 @@ export type GroupedNotification = {
   actors: Array<GroupedNotificationActor>;
   /** Board type */
   boardType?: Maybe<Scalars['String']['output']>;
+  /**
+   * Angle the climb was set at, when the setter fixed one. Null for the many
+   * climbs that carry no angle; clients fall back to the reader's own board.
+   */
+  climbAngle?: Maybe<Scalars['Int']['output']>;
+  /**
+   * Layout the climb was set on. Clients need this to build a board URL that
+   * actually resolves: the climb query filters on layoutId, so guessing the
+   * board's first layout misses every Kilter Homewall / Tension Board 2 climb.
+   * Web reads the same column server-side in /api/internal/climb-redirect.
+   */
+  climbLayoutId?: Maybe<Scalars['Int']['output']>;
   /** Climb name */
   climbName?: Maybe<Scalars['String']['output']>;
   /** Climb UUID */
@@ -9806,6 +9818,8 @@ export type GroupedNotificationResolvers<
   actorCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   actors?: Resolver<Array<ResolversTypes['GroupedNotificationActor']>, ParentType, ContextType>;
   boardType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  climbAngle?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  climbLayoutId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   climbName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   climbUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   commentBody?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;

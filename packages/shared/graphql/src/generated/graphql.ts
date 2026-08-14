@@ -2292,6 +2292,18 @@ export type GroupedNotification = {
   actors: Array<GroupedNotificationActor>;
   /** Board type */
   boardType?: Maybe<Scalars['String']['output']>;
+  /**
+   * Angle the climb was set at, when the setter fixed one. Null for the many
+   * climbs that carry no angle; clients fall back to the reader's own board.
+   */
+  climbAngle?: Maybe<Scalars['Int']['output']>;
+  /**
+   * Layout the climb was set on. Clients need this to build a board URL that
+   * actually resolves: the climb query filters on layoutId, so guessing the
+   * board's first layout misses every Kilter Homewall / Tension Board 2 climb.
+   * Web reads the same column server-side in /api/internal/climb-redirect.
+   */
+  climbLayoutId?: Maybe<Scalars['Int']['output']>;
   /** Climb name */
   climbName?: Maybe<Scalars['String']['output']>;
   /** Climb UUID */
@@ -8780,6 +8792,8 @@ export type GetGroupedNotificationsQuery = {
       climbName?: string | null;
       climbUuid?: string | null;
       boardType?: string | null;
+      climbLayoutId?: number | null;
+      climbAngle?: number | null;
       proposalUuid?: string | null;
       setterUsername?: string | null;
       gymName?: string | null;
@@ -12918,6 +12932,8 @@ export const GetGroupedNotificationsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbLayoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbAngle' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'gymName' } },
