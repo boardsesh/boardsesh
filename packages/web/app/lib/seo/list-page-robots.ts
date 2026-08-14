@@ -27,24 +27,58 @@ export function hasListFilterParams(searchParams: ListPageSearchParams): boolean
 export const FRONT_DOOR_PAGE_SIZE = 50;
 
 /**
- * The last `?page` that stays indexable. Ten pages is 500 climbs — deep enough
- * that everything worth crawling on a board is reachable, shallow enough that
- * the tail of a six-figure catalog isn't thousands of thin near-duplicate
- * pages. Beyond it the page is `noindex, follow`: crawlers keep walking the
- * climb links, they just don't index the container.
+ * The last `?page` that stays indexable — and the last one the front door links
+ * to. Ten pages is 500 climbs — deep enough that everything worth crawling on a
+ * board is reachable, shallow enough that the tail of a six-figure catalog isn't
+ * thousands of thin near-duplicate pages. `StaticListFrontDoor` stops emitting
+ * `rel="next"` here, so the crawl corridor we publish is exactly pages 1..10.
+ * That gating is the load-bearing half: `noindex, follow` on page 11 is an
+ * explicit instruction to keep walking, so a `next` chain that ran past the cap
+ * would invite crawlers down a corridor whose per-request `OFFSET` grows without
+ * limit (and on MoonBoard, `cachedSearchClimbs` bypasses the server cache, so
+ * every hop would be an uncached origin query).
  */
 export const FRONT_DOOR_MAX_INDEXABLE_PAGE = 10;
+
+/**
+ * The last `?page` that renders at all.
+ *
+ * Nothing we publish links past `FRONT_DOOR_MAX_INDEXABLE_PAGE`, so pages above
+ * it are only ever reached by a hand-typed URL, an old external link, or a
+ * crawler guessing. Those deserve real content and a `rel="prev"` back into the
+ * indexable set rather than a dead end, so a grace band of twice the indexable
+ * cap still renders — `noindex, follow`, self-canonical. Past THAT the URL is
+ * not a page of this front door and the page bodies 404, which is what stops
+ * `?page=50000` from becoming a 2.5-million-row `OFFSET` (and its own CDN entry)
+ * on demand.
+ */
+export const FRONT_DOOR_MAX_PAGE = FRONT_DOOR_MAX_INDEXABLE_PAGE * 2;
+
+/** The `?page=N` as asked for, 1-based and unclamped above. */
+function requestedFrontDoorPage(rawPage: string | string[] | number | undefined): number {
+  const first = Array.isArray(rawPage) ? rawPage[0] : rawPage;
+  const parsed = Number(first);
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.max(1, Math.trunc(parsed));
+}
 
 /**
  * The `?page=N` a front door should render, 1-based. Anything unparseable,
  * missing or below 1 is page 1 — `?page=1` and the bare path are the same page,
  * which is why page 1 canonicalises to the path with no query.
+ *
+ * Clamped to `FRONT_DOOR_MAX_PAGE` at the top. Pages check
+ * `isFrontDoorPageOutOfRange` and 404 before they ever get here, so the clamp is
+ * defence in depth: no caller can turn a raw `?page` into an unbounded database
+ * offset by forgetting the range check.
  */
 export function parseFrontDoorPage(rawPage: string | string[] | number | undefined): number {
-  const first = Array.isArray(rawPage) ? rawPage[0] : rawPage;
-  const parsed = Number(first);
-  if (!Number.isFinite(parsed)) return 1;
-  return Math.max(1, Math.trunc(parsed));
+  return Math.min(FRONT_DOOR_MAX_PAGE, requestedFrontDoorPage(rawPage));
+}
+
+/** True when `?page=N` is past `FRONT_DOOR_MAX_PAGE` — the page bodies 404 on it. */
+export function isFrontDoorPageOutOfRange(rawPage: string | string[] | number | undefined): boolean {
+  return requestedFrontDoorPage(rawPage) > FRONT_DOOR_MAX_PAGE;
 }
 
 /** True while `?page=N` is still worth indexing (1..FRONT_DOOR_MAX_INDEXABLE_PAGE). */
@@ -106,6 +140,13 @@ export type ListPageIndexation = {
  *    classic pagination anti-pattern. Past `FRONT_DOOR_MAX_INDEXABLE_PAGE` it
  *    goes `noindex, follow` but keeps canonicalising to itself — a self-
  *    canonical carries no conflicting signal.
+ *
+ * The `?page` bounds are enforced in two places that have to agree, and both
+ * are here: the front door stops emitting `rel="next"` at
+ * `FRONT_DOOR_MAX_INDEXABLE_PAGE`, and the page bodies 404 past
+ * `FRONT_DOOR_MAX_PAGE`. `page` arrives already through `parseFrontDoorPage`,
+ * so the `noindex` branch below only ever fires for the grace band between the
+ * two — never for a page a crawler was invited to.
  */
 export function resolveListPageIndexation({
   cleanPath,

@@ -5,7 +5,7 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import StaticClimbList from '@/app/components/climb-list/static-climb-list';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
-import { frontDoorPagePath } from '@/app/lib/seo/list-page-robots';
+import { frontDoorPagePath, isIndexableFrontDoorPage } from '@/app/lib/seo/list-page-robots';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { BoardDetails, Climb } from '@/app/lib/types';
 import ClimbHandoffCta, { type HandoffTree } from './climb-handoff-cta';
@@ -91,7 +91,15 @@ export default async function StaticListFrontDoor({
           <span />
         )}
         <span>{t('list.frontDoor.pagination.pageLabel', { page })}</span>
-        {hasMore ? (
+        {/*
+          The walk stops at the last indexable page, not at the last page with
+          climbs behind it. `noindex, follow` past the cap tells a crawler to
+          keep following links, so a `next` chain that ran on `hasMore` alone
+          would hand it a corridor thousands of pages deep, each hop a deeper
+          `OFFSET` over the climb/stats join. Deep climbs stay reachable through
+          the sitemap and the per-climb cross-links.
+        */}
+        {hasMore && isIndexableFrontDoorPage(page + 1) ? (
           <LocaleLink href={frontDoorPagePath(basePath, page + 1)} rel="next">
             {t('list.frontDoor.pagination.next')}
           </LocaleLink>

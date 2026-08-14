@@ -1,11 +1,16 @@
-import { describe, expect, it } from 'vite-plus/test';
+import React from 'react';
+import { describe, expect, it, vi } from 'vite-plus/test';
+import { renderToString } from 'react-dom/server';
 import {
   FRONT_DOOR_MAX_INDEXABLE_PAGE,
+  FRONT_DOOR_MAX_PAGE,
   FRONT_DOOR_PAGE_SIZE,
   frontDoorPagePath,
+  isFrontDoorPageOutOfRange,
   isIndexableFrontDoorPage,
   parseFrontDoorPage,
 } from '@/app/lib/seo/list-page-robots';
+import type { BoardDetails } from '@/app/lib/types';
 
 /**
  * The `/list` front door's `?page` contract, which both trees' pages consume.
@@ -46,5 +51,90 @@ describe('front door pagination contract', () => {
     }
     expect(isIndexableFrontDoorPage(FRONT_DOOR_MAX_INDEXABLE_PAGE + 1)).toBe(false);
     expect(isIndexableFrontDoorPage(500)).toBe(false);
+  });
+
+  it('clamps ?page above the hard ceiling instead of turning it into an unbounded offset', () => {
+    // `fetchFrontDoorListPage` derives its OFFSET straight from this number, so
+    // an unclamped `?page` is an unbounded `OFFSET` over the climb/stats join.
+    expect(FRONT_DOOR_MAX_PAGE).toBeGreaterThan(FRONT_DOOR_MAX_INDEXABLE_PAGE);
+    expect(parseFrontDoorPage(String(FRONT_DOOR_MAX_PAGE))).toBe(FRONT_DOOR_MAX_PAGE);
+    expect(parseFrontDoorPage('5000')).toBe(FRONT_DOOR_MAX_PAGE);
+    expect(parseFrontDoorPage('999999999')).toBe(FRONT_DOOR_MAX_PAGE);
+  });
+
+  it('reports anything past the hard ceiling as out of range, so the pages can 404 it', () => {
+    expect(isFrontDoorPageOutOfRange(undefined)).toBe(false);
+    expect(isFrontDoorPageOutOfRange('banana')).toBe(false);
+    expect(isFrontDoorPageOutOfRange('1')).toBe(false);
+    expect(isFrontDoorPageOutOfRange(String(FRONT_DOOR_MAX_PAGE))).toBe(false);
+    expect(isFrontDoorPageOutOfRange(String(FRONT_DOOR_MAX_PAGE + 1))).toBe(true);
+    expect(isFrontDoorPageOutOfRange('5000')).toBe(true);
+    expect(isFrontDoorPageOutOfRange(['5000', '2'])).toBe(true);
+  });
+});
+
+vi.mock('@/app/lib/i18n/server', () => ({
+  getServerTranslation: vi.fn(async () => ({ t: (key: string) => key, locale: 'en-US' })),
+}));
+
+vi.mock('@/app/components/i18n/locale-link', () => ({
+  default: ({ href, rel, children }: { href: string; rel?: string; children: React.ReactNode }) => (
+    <a href={href} rel={rel}>
+      {children}
+    </a>
+  ),
+}));
+
+// Neither is what this block asserts, and both would drag client-side
+// providers into a node render.
+vi.mock('@/app/components/climb-list/static-climb-list', () => ({ default: () => null }));
+vi.mock('@/app/components/climb-front-door/climb-handoff-cta', () => ({ default: () => null }));
+
+const StaticListFrontDoor = (await import('@/app/components/climb-front-door/static-list-front-door')).default;
+
+const boardDetails = {
+  board_name: 'kilter',
+  layout_id: 1,
+  size_id: 10,
+  set_ids: [1, 20],
+} as unknown as BoardDetails;
+
+async function renderPagination(page: number, hasMore: boolean): Promise<string> {
+  const tree = await StaticListFrontDoor({
+    boardDetails,
+    angle: 40,
+    climbs: [],
+    hasMore,
+    page,
+    basePath: BASE,
+    tree: 'config-tuple',
+  });
+  return renderToString(<>{tree}</>);
+}
+
+describe('front door pagination anchors', () => {
+  it('links onward while the next page is still indexable', async () => {
+    const html = await renderPagination(FRONT_DOOR_MAX_INDEXABLE_PAGE - 1, true);
+
+    expect(html).toContain(`rel="next"`);
+    expect(html).toContain(`href="${BASE}?page=${FRONT_DOOR_MAX_INDEXABLE_PAGE}"`);
+  });
+
+  it('stops the walk at the last indexable page even when more climbs exist', async () => {
+    const html = await renderPagination(FRONT_DOOR_MAX_INDEXABLE_PAGE, true);
+
+    // `noindex, follow` past the cap is an explicit "keep following links", so a
+    // `next` chain gated on `hasMore` alone would invite crawlers into a
+    // corridor thousands of pages deep, each hop a deeper OFFSET.
+    expect(html).not.toContain('rel="next"');
+    expect(html).toContain(`href="${BASE}?page=${FRONT_DOOR_MAX_INDEXABLE_PAGE - 1}"`);
+  });
+
+  it('still walks a deep grace-band page BACK into the indexable set', async () => {
+    const html = await renderPagination(FRONT_DOOR_MAX_INDEXABLE_PAGE + 1, true);
+
+    expect(html).not.toContain('rel="next"');
+    expect(html).toContain('rel="prev"');
+    expect(html).toContain(`href="${BASE}?page=${FRONT_DOOR_MAX_INDEXABLE_PAGE}"`);
   });
 });

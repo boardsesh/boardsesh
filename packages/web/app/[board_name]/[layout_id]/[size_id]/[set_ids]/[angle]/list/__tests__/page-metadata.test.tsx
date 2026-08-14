@@ -75,6 +75,7 @@ vi.mock('@/app/components/climb-front-door/static-list-front-door', () => ({
 const pageModule = await import('../page');
 const { buildCanonicalClimbListUrl } = await import('@/app/lib/url-utils');
 const { getBoardDetailsForBoard } = await import('@/app/lib/board-utils');
+const { FRONT_DOOR_MAX_PAGE } = await import('@/app/lib/seo/list-page-robots');
 
 /** What the resolved ids canonically are, straight from the shared builder. */
 const RESOLVED_CANONICAL = buildCanonicalClimbListUrl(
@@ -84,13 +85,19 @@ const RESOLVED_CANONICAL = buildCanonicalClimbListUrl(
 
 // An alias spelling of the same board config. `parseRouteParams` above resolves
 // it to layout 1 / size 10 / sets [1,20] regardless.
-const params = Promise.resolve({
+const ROUTE_PARAMS = {
   board_name: 'kilter',
   layout_id: 'kilter-original',
   size_id: '12x12',
   set_ids: 'bolt_screw',
   angle: '40',
-});
+};
+
+const params = Promise.resolve(ROUTE_PARAMS);
+// The page body's props are typed `BoardRouteParametersWithUuid`, which the
+// `/list` route never actually carries — `generateMetadata` on the same file
+// takes the uuid-free type.
+const bodyParams = Promise.resolve({ ...ROUTE_PARAMS, climb_uuid: '' });
 
 function emptySearchParams() {
   return Promise.resolve({} as never);
@@ -154,6 +161,50 @@ describe('legacy board list metadata', () => {
     expect(metadata.robots).toEqual({ index: false, follow: true });
     // Self-canonical, not pointed at page 1: `?page=11` is different climbs.
     expect(canonicalOf(metadata)).toBe(`${RESOLVED_CANONICAL}?page=11`);
+  });
+
+  it('never claims an indexable canonical for a ?page past the hard ceiling', async () => {
+    const metadata = await pageModule.generateMetadata({
+      params,
+      searchParams: Promise.resolve({ page: '5000' } as never),
+    });
+
+    // The body 404s this URL (below). The clamp lands it in the noindex grace
+    // band, so even if a not-found response carries this metadata it can't read
+    // as an invitation.
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    expect(canonicalOf(metadata)).toBe(`${RESOLVED_CANONICAL}?page=${FRONT_DOOR_MAX_PAGE}`);
+  });
+});
+
+describe('legacy board list page ?page bounds', () => {
+  it('404s past the hard ceiling without running the query', async () => {
+    const { notFound } = await import('next/navigation');
+    const { fetchFrontDoorListPage } = await import('@/app/lib/data/list-page-data.server');
+    vi.mocked(notFound).mockClear();
+    vi.mocked(fetchFrontDoorListPage).mockClear();
+
+    await pageModule.default({ params: bodyParams, searchParams: Promise.resolve({ page: '5000' } as never) });
+
+    // Not a thin duplicate to consolidate — nothing links past page 10, so a
+    // page number this deep is a guess and must not cost a deep OFFSET.
+    expect(notFound).toHaveBeenCalled();
+    expect(fetchFrontDoorListPage).not.toHaveBeenCalled();
+  });
+
+  it('still serves a deep page inside the grace band', async () => {
+    const { notFound } = await import('next/navigation');
+    const { fetchFrontDoorListPage } = await import('@/app/lib/data/list-page-data.server');
+    vi.mocked(notFound).mockClear();
+    vi.mocked(fetchFrontDoorListPage).mockClear();
+
+    await pageModule.default({
+      params: bodyParams,
+      searchParams: Promise.resolve({ page: String(FRONT_DOOR_MAX_PAGE) } as never),
+    });
+
+    expect(notFound).not.toHaveBeenCalled();
+    expect(fetchFrontDoorListPage).toHaveBeenCalledWith(expect.anything(), FRONT_DOOR_MAX_PAGE);
   });
 
   it('noindexes filtered list requests and canonicalizes to the clean base URL', async () => {

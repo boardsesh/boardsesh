@@ -128,6 +128,17 @@ test.describe.skip('Help Page Screenshots', () => {
 // Authenticated tests - requires TEST_USER_EMAIL and TEST_USER_PASSWORD env vars.
 // The seeded dev user (test@boardsesh.com / test) is exported by
 // `vp run test:e2e:setup`, so no 1Password roundtrip is required.
+//
+// This block stays LIVE where the unauthenticated one above is skipped, so
+// three of the help PNGs keep regenerating. It survives the W-15 cut because
+// nothing here needs the interactive climbing surface the page body used to be:
+// the beforeEach only waits for a climb row, which the SSR front door emits;
+// the filters drawer and the header button that opens it are mounted by the
+// untouched parent `[angle]/layout.tsx`; `/settings` is its own route; and the
+// party-mode shot dispatches the dummy-sesh event at the root layout's
+// `OnboardingDummySeshMount`. W-17 removes that header and takes
+// `personal progress filters` with it — expect this block to shrink to the two
+// route-independent tests then, and W-16 to re-home the drawer shots.
 test.describe('Help Page Screenshots - Authenticated', () => {
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(120_000);

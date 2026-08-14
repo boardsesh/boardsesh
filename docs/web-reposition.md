@@ -181,10 +181,15 @@ hook-bearing client components, and this image is the page's LCP.
 The virtualized path emits a 375×812-worth of rows on the server (~18), and the
 bar here is ≥50 crawlable climb links per page. `?page=N` is 1-based and clamped;
 `?page=1` canonicalises onto the bare path (same page, one URL); pages 1–10 are
-indexable with real prev/next anchors; `?page=11` and beyond is
-`noindex, follow`, so crawlers keep walking the climb links without indexing the
-container. Filter/sort variants (`?minGrade=`, `?sortBy=`, …) are `noindex,
-follow` too and canonicalise onto the clean base URL; pagination stays
+indexable with real prev/next anchors, and the `next` anchor **stops at page
+10** — `noindex, follow` past the cap is an explicit "keep walking", so a chain
+gated on "more climbs exist" would hand crawlers a corridor thousands of pages
+deep, each hop a deeper `OFFSET` over the climb/stats join. Pages 11–20 still
+render for a hand-typed or externally-linked URL — `noindex, follow`,
+self-canonical, with a `prev` anchor back into the indexable set — and `?page=21`
+and beyond 404s before any query runs. Filter/sort variants (`?minGrade=`,
+`?sortBy=`, …) are `noindex, follow` too and canonicalise onto the clean base
+URL; pagination stays
 self-canonical, because `?page=3` is different climbs rather than a duplicate of
 page 1. The one case that emits no canonical at all is an unlisted or private
 `/b` board, where the noindex is about the board and its clean base is a public

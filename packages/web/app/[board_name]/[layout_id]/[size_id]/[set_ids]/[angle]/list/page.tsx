@@ -11,6 +11,7 @@ import { fetchFrontDoorListPage } from '@/app/lib/data/list-page-data.server';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import {
+  isFrontDoorPageOutOfRange,
   parseFrontDoorPage,
   resolveListPageIndexation,
   type ListPageSearchParams,
@@ -132,6 +133,12 @@ export default async function DynamicResultsPage(props: {
       permanentRedirect(finalUrl);
     }
   }
+
+  // Past the hard ceiling there is no page to render — the front door links no
+  // further than `FRONT_DOOR_MAX_INDEXABLE_PAGE`, so `?page=5000` is a guess, not
+  // a thin duplicate to consolidate. 404 before the query so a crawler walking
+  // made-up page numbers costs one not-found, not one deep `OFFSET` each.
+  if (isFrontDoorPageOutOfRange(searchParams.page)) return notFound();
 
   const page = parseFrontDoorPage(searchParams.page);
   const listData = await fetchFrontDoorListPage(parsedParams, page);

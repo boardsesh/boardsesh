@@ -10,6 +10,7 @@ import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import {
+  isFrontDoorPageOutOfRange,
   parseFrontDoorPage,
   resolveListPageIndexation,
   type ListPageSearchParams,
@@ -82,6 +83,11 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
   if (!board) {
     return notFound();
   }
+
+  // Same ceiling as the config-tuple twin: nothing links past
+  // `FRONT_DOOR_MAX_INDEXABLE_PAGE`, so a page number beyond the grace band is a
+  // guess and gets a 404 rather than a deep `OFFSET`.
+  if (isFrontDoorPageOutOfRange(searchParams.page)) return notFound();
 
   const parsedParams = boardToRouteParams(board, Number(params.angle));
   const page = parseFrontDoorPage(searchParams.page);

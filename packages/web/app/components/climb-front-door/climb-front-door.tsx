@@ -60,8 +60,9 @@ const containerSx = {
  *     the other end: anonymous SSR renders no badge at all.
  *  3. **No Boardsesh-grade section.** That flag is a live staged PostHog
  *     rollout, and SSR-ing the section would end it for every visitor and
- *     crawler in a single deploy. The decision is recorded on the QA gate
- *     (#4359).
+ *     crawler in a single deploy. Recorded as a comment on the QA gate (#4359):
+ *     this PR holds the section out and the rollout continues unchanged. The
+ *     call to SSR it for everyone stays with the maintainer at gate-signing.
  */
 export default async function ClimbFrontDoor({
   climb,

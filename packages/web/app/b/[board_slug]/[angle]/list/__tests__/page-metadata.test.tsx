@@ -178,3 +178,39 @@ describe('board slug list page — unresolvable board', () => {
     expect(notFound).toHaveBeenCalled();
   });
 });
+
+describe('board slug list page — ?page bounds', () => {
+  async function renderPage(searchParams: Record<string, string>) {
+    return pageModule.default({
+      params: Promise.resolve({ board_slug: 'my-board', angle: '40' }),
+      searchParams: Promise.resolve(searchParams as never),
+    });
+  }
+
+  it('404s past the hard ceiling without running the query', async () => {
+    const { notFound } = await import('next/navigation');
+    const { fetchFrontDoorListPage } = await import('@/app/lib/data/list-page-data.server');
+    vi.mocked(notFound).mockClear();
+    vi.mocked(fetchFrontDoorListPage).mockClear();
+
+    await renderPage({ page: '5000' });
+
+    // Same ceiling as the config-tuple twin: nothing links past page 10, so a
+    // page number this deep must not cost a deep OFFSET per guessed URL.
+    expect(notFound).toHaveBeenCalled();
+    expect(fetchFrontDoorListPage).not.toHaveBeenCalled();
+  });
+
+  it('still serves a deep page inside the grace band', async () => {
+    const { notFound } = await import('next/navigation');
+    const { fetchFrontDoorListPage } = await import('@/app/lib/data/list-page-data.server');
+    const { FRONT_DOOR_MAX_PAGE } = await import('@/app/lib/seo/list-page-robots');
+    vi.mocked(notFound).mockClear();
+    vi.mocked(fetchFrontDoorListPage).mockClear();
+
+    await renderPage({ page: String(FRONT_DOOR_MAX_PAGE) });
+
+    expect(notFound).not.toHaveBeenCalled();
+    expect(fetchFrontDoorListPage).toHaveBeenCalledWith(expect.anything(), FRONT_DOOR_MAX_PAGE);
+  });
+});

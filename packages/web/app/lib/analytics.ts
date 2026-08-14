@@ -120,6 +120,47 @@ export function track(name: string, properties?: EventProperties, options?: { fl
   core.track(name, properties);
 }
 
+/**
+ * How long a click may hold the browser before we give up and navigate anyway.
+ * A quarter of a second is under the ~300ms a cross-origin document swap costs
+ * on its own, and the flush is a single small POST that normally lands well
+ * inside it.
+ */
+const NAVIGATION_FLUSH_BUDGET_MS = 250;
+
+/**
+ * Track an event whose page is about to be replaced — a link to another origin,
+ * a full page reload — and resolve once the event is on the wire (or the budget
+ * runs out). Callers navigate in `.finally()`.
+ *
+ * Plain `track()` does not survive that: `posthog-js-lite` batches through
+ * `@posthog/core`, which flushes at 20 queued events or every 10s, and neither
+ * bundle registers a `pagehide`/`beforeunload` handler or uses `sendBeacon`, so
+ * a capture in the click handler of a cross-origin `<a>` is discarded with the
+ * document about a millisecond later.
+ *
+ * The full `posthog-js` SDK solves this at the capture site with
+ * `{ transport: 'sendBeacon' }` / `send_instantly`. posthog-js-lite@4.10.1 has
+ * neither — its `PostHogCaptureOptions` is `{ uuid, timestamp, disableGeoip }`
+ * — so `flush()` is the only delivery lever it exposes, and holding the
+ * navigation for it is the only way to guarantee the event leaves. Keep the
+ * caller's real `href` on the anchor so crawlers and JS-off readers are
+ * unaffected.
+ */
+export async function trackBeforeNavigation(name: string, properties?: EventProperties): Promise<void> {
+  track(name, properties);
+
+  const posthog = getPosthog();
+  if (!posthog) return;
+
+  const budget = new Promise<void>((resolve) => {
+    window.setTimeout(resolve, NAVIGATION_FLUSH_BUDGET_MS);
+  });
+  // A flush rejection (ad-blocker, proxy down) must never strand the reader on
+  // the page they clicked away from.
+  await Promise.race([posthog.flush().catch(() => {}), budget]);
+}
+
 export function capturePosthog(name: string, properties?: PosthogProperties): boolean {
   return core.capture(name, properties);
 }
