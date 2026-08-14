@@ -1,0 +1,63 @@
+/* Playlist Preview Square — copied verbatim from components/library/library.module.css
+   so the kept playlists surfaces keep their artwork after W-16 deletes that directory. */
+.previewContainer {
+  position: relative;
+  width: 100%;
+  align-self: stretch;
+  overflow: hidden;
+  border-radius: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.previewBoardLayer {
+  position: absolute;
+  inset: 0;
+  filter: grayscale(100%);
+  opacity: 0.35;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.previewFrostedOverlay {
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.previewIconLayer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.previewIcon {
+  font-size: 32px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.previewEmoji {
+  font-size: 32px;
+  line-height: 1;
+}
+
+/* Compact size (grid variant, 48px square) */
+.previewCompact .previewIcon {
+  font-size: 20px;
+}
+
+.previewCompact .previewEmoji {
+  font-size: 20px;
+}
+
+/* Liked Climbs Card */
+.likedGradient {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.08) 100%),
+    linear-gradient(135deg, var(--color-error), #e57373);
+}

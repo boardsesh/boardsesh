@@ -3,7 +3,6 @@ import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { serverMyBoards, serverUserPlaylists, cachedDiscoverPlaylists } from '@/app/lib/graphql/server-cached-client';
 import LibraryPageContent from './library-page-content';
 import { getPlaylistLcpPreloadUrl } from '@/app/lib/lcp-preload-url';
-import { getAllBoardConfigs } from '@/app/lib/server-board-configs';
 import styles from '@/app/components/ui/page-container.module.css';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import { getServerTranslation } from '@/app/lib/i18n/server';
@@ -25,11 +24,10 @@ export default async function PlaylistsPage() {
   const authToken = await getServerAuthToken();
   const locale = await getLocale();
 
-  const [initialMyBoards, initialPlaylists, initialDiscoverPlaylists, boardConfigs] = await Promise.all([
+  const [initialMyBoards, initialPlaylists, initialDiscoverPlaylists] = await Promise.all([
     authToken ? serverMyBoards(authToken) : null,
     authToken ? serverUserPlaylists(authToken) : null,
     cachedDiscoverPlaylists(),
-    getAllBoardConfigs(),
   ]);
 
   const lcpPreloadUrl = getPlaylistLcpPreloadUrl(
@@ -44,7 +42,6 @@ export default async function PlaylistsPage() {
           initialMyBoards={initialMyBoards}
           initialPlaylists={initialPlaylists}
           initialDiscoverPlaylists={initialDiscoverPlaylists}
-          boardConfigs={boardConfigs}
         />
       </div>
     </I18nProvider>

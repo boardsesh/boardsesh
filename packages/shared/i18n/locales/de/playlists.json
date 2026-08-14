@@ -20,11 +20,11 @@
     "sections": {
       "jumpBackIn": "Weitermachen",
       "pinned": "Angepinnt",
-      "smart": "Deine Auswahl",
       "discover": "Entdecken",
       "forYou": "Für dich",
       "community": "Community-Playlists"
     },
+    "showMore": "Mehr anzeigen",
     "communityByline": "{{creatorName}} - {{climbCount}}",
     "allPlaylists": {
       "title": "Meine Playlists",
@@ -94,7 +94,6 @@
     "createFab": {
       "ariaLabel": "Playlist erstellen"
     },
-    "customUnavailable": "Wähl eins deiner Boards oder eine beliebte Konfiguration und leg los.",
     "errors": {
       "loadTitle": "Bibliothek lädt nicht",
       "loadDescription": "Beim Laden deiner Bibliothek ist etwas schiefgegangen. Versuch's nochmal.",
@@ -114,7 +113,6 @@
       "subtitle": "Für diesen Boulder fehlen die Board-Daten."
     },
     "menu": {
-      "generate": "Generieren",
       "editClimbs": "Boulder bearbeiten",
       "edit": "Bearbeiten",
       "delete": "Löschen"
@@ -147,6 +145,7 @@
     "empty": "Noch keine Boulder in dieser Playlist",
     "climbCount_one": "{{count}} Boulder",
     "climbCount_other": "{{count}} Boulder",
+    "openInApp": "Kletter das in der App",
     "followerCount_one": "{{count}} Follower",
     "followerCount_other": "{{count}} Follower",
     "followFailed": "Der Folgen-Status ließ sich nicht ändern",
@@ -289,10 +288,7 @@
       "configurePrompt": "Stell die Optionen ein für die Vorschau"
     },
     "messages": {
-      "noClimbs": "Keine Boulder zum Generieren",
-      "addedAll": "{{count}} Boulder zur Playlist hinzugefügt",
-      "addedPartial": "{{added}} Boulder hinzugefügt. {{failed}} Plätze blieben leer.",
-      "failed": "Die Playlist ließ sich nicht generieren. Keine passenden Boulder gefunden."
+      "noClimbs": "Keine Boulder zum Generieren"
     }
   },
   "bottomTabBar": {

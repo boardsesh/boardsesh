@@ -8,7 +8,6 @@ import { serverMyBoards, serverUserPlaylists, cachedDiscoverPlaylists } from '@/
 import LibraryPageContent from '@/app/playlists/library-page-content';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import { getServerTranslation } from '@/app/lib/i18n/server';
-import { getAllBoardConfigs } from '@/app/lib/server-board-configs';
 import styles from '@/app/components/library/library.module.css';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -30,11 +29,10 @@ export default async function BoardLogbookPage(props: { params: Promise<BoardRou
     const authToken = await getServerAuthToken();
     const playlistFilter = { boardType: parsed.board_name, layoutId: parsed.layout_id };
 
-    const [initialMyBoards, initialPlaylists, initialDiscoverPlaylists, boardConfigs] = await Promise.all([
+    const [initialMyBoards, initialPlaylists, initialDiscoverPlaylists] = await Promise.all([
       authToken ? serverMyBoards(authToken) : null,
       authToken ? serverUserPlaylists(authToken, playlistFilter) : null,
       cachedDiscoverPlaylists(playlistFilter),
-      getAllBoardConfigs(),
     ]);
 
     return (
@@ -44,8 +42,6 @@ export default async function BoardLogbookPage(props: { params: Promise<BoardRou
           initialMyBoards={initialMyBoards}
           initialPlaylists={initialPlaylists}
           initialDiscoverPlaylists={initialDiscoverPlaylists}
-          boardConfigs={boardConfigs}
-          createSource="board-route-logbook-fab"
         />
       </div>
     );

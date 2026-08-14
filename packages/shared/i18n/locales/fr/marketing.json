@@ -44,8 +44,6 @@
       "androidLiveDescription": "Disponible sur Google Play"
     },
     "cards": {
-      "tourTitle": "Faites le tour",
-      "tourDescription": "Une minute pour voir comment ça marche : file, carnet et sessions avec votre crew",
       "auroraTitle": "Vous venez de Kilter ?",
       "auroraDescription": "Importez votre carnet et votre historique en une étape",
       "crewTitle": "Trouvez votre crew",
@@ -60,12 +58,7 @@
     "gymCard": {
       "ownerSubtitle": "La salle de votre crew, à portée de main",
       "manage": "Gérer",
-      "viewPage": "Voir la page",
-      "andMore": "et {{count}} de plus",
-      "findTitle": "Vous grimpez dans une salle avec des boards ?",
-      "findDescription": "Trouvez-la sur Boardsesh : ouvrez ses boards et notez vos croix avec votre crew.",
-      "findCta": "Trouvez votre salle",
-      "dismiss": "Masquer"
+      "viewPage": "Voir la page"
     },
     "feed": {
       "callout": "Vos potes sont en train de grimper.",

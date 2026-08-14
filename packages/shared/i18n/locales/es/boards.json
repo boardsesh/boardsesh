@@ -3,6 +3,10 @@
     "section": {
       "nearby": "Plafones cerca de ti"
     },
+    "popular": {
+      "title": "Plafones populares",
+      "meta": "{{boards}} plafones · {{sends}} encadenes"
+    },
     "findNearby": {
       "loading": "Buscando plafones...",
       "geoDenied": "Ubicación no disponible",

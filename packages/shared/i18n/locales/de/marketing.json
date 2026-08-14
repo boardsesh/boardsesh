@@ -44,8 +44,6 @@
       "androidLiveDescription": "Jetzt bei Google Play"
     },
     "cards": {
-      "tourTitle": "Mach die Tour",
-      "tourDescription": "Eine Minute durch Warteschlange, Loggen und Sessions mit deiner Crew",
       "auroraTitle": "Kommst du von Kilter?",
       "auroraDescription": "Hol Routenbuch und Historie in einem Schritt rüber",
       "crewTitle": "Find deine Crew",
@@ -60,12 +58,7 @@
     "gymCard": {
       "ownerSubtitle": "Die Halle deiner Crew, nur einen Fingertipp entfernt",
       "manage": "Verwalten",
-      "viewPage": "Seite ansehen",
-      "andMore": "und {{count}} weitere",
-      "findTitle": "Kletterst du in einer Halle mit Boards?",
-      "findDescription": "Find sie auf Boardsesh — hol dir ihre Boards und logg mit deiner Crew.",
-      "findCta": "Find deine Halle",
-      "dismiss": "Ausblenden"
+      "viewPage": "Seite ansehen"
     },
     "feed": {
       "callout": "Deine Leute klettern gerade.",
