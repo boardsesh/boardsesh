@@ -90,6 +90,11 @@ void test('classifies changed paths with the production workflow semantics', () 
     backend: true,
     app: false,
   });
+  assert.deepEqual(classifyChangedFiles(['scripts/production-backend-smoke.test.mjs']), {
+    web: true,
+    backend: false,
+    app: false,
+  });
 });
 
 void test('treats the production workflow and its detector as affecting every target', () => {

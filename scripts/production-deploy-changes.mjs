@@ -55,7 +55,6 @@ function isBackendAffecting(filePath) {
     filePath === 'Dockerfile.backend' ||
     filePath === 'scripts/create-service-docker-context.mjs' ||
     filePath === 'scripts/production-backend-smoke.mjs' ||
-    filePath === 'scripts/production-backend-smoke.test.mjs' ||
     filePath === 'scripts/railway-deployment-status.mjs' ||
     filePath === 'railway.toml' ||
     filePath === 'bun.lock' ||

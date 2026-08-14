@@ -116,11 +116,13 @@ void test('passes for generated Docker context inputs, including newly added wor
   });
 });
 
-void test('requires cumulative production detection permissions and the live backend schema smoke', () => {
+void test('requires cumulative production detection outputs, permissions, notification range, and schema smoke', () => {
   withFixtureRepo((repoRoot) => {
     const workflowPath = join(repoRoot, '.github/workflows/production-deploy.yml');
     const weakenedWorkflow = readFileSync(workflowPath, 'utf8')
       .replace('  actions: read\n', '')
+      .replace('  deployment_base_sha: example\n', '')
+      .replace('BEFORE_SHA: ${{ needs.detect-changes.outputs.deployment_base_sha }}\n', '')
       .replace('run: node scripts/production-deploy-changes.mjs --runs-json "$RUNS_JSON"\n', '')
       .replace('node scripts/production-backend-smoke.mjs\n', '');
     writeFileSync(workflowPath, weakenedWorkflow, 'utf8');
@@ -128,6 +130,8 @@ void test('requires cumulative production detection permissions and the live bac
     const failures = createServiceDeployInputFailures({ repoRoot }).join('\n');
     assert.match(failures, /tested cumulative change detector/);
     assert.match(failures, /read prior workflow runs/);
+    assert.match(failures, /expose its cumulative baseline/);
+    assert.match(failures, /report the same cumulative range/);
     assert.match(failures, /verify the live GraphQL schema/);
   });
 });
