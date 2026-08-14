@@ -206,6 +206,12 @@ export function CreateDrawer({
             onUndo={controller.undo}
             onRedo={controller.redo}
             onClear={controller.handleClear}
+            frameCount={controller.frameCount}
+            currentFrameIndex={controller.currentFrameIndex}
+            onDuplicateFrame={controller.duplicateFrame}
+            onDeleteFrame={controller.deleteFrame}
+            onPrevFrame={controller.prevFrame}
+            onNextFrame={controller.nextFrame}
             canSetActive={controller.canSetActive}
             onSetActive={controller.handleSetActive}
             saveState={controller.saveState}

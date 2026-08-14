@@ -223,6 +223,12 @@
       "title": "Boulder leeren",
       "description": "Das entfernt alle Griffe und setzt das Formular zurück. Sicher?",
       "tooltip": "Alle Griffe entfernen"
+    },
+    "frames": {
+      "duplicateTooltip": "Bild duplizieren",
+      "deleteTooltip": "Bild löschen",
+      "deleteTitle": "Bild löschen",
+      "deleteDescription": "Das aktuelle Bild wird gelöscht. Sicher?"
     }
   },
   "actions": {
@@ -866,6 +872,13 @@
         "setActive": "Als aktiven Boulder setzen",
         "undo": "Rückgängig",
         "redo": "Wiederholen"
+      },
+      "frames": {
+        "duplicate": "Bild duplizieren",
+        "delete": "Bild löschen",
+        "prev": "Vorheriges Bild",
+        "next": "Nächstes Bild",
+        "counter": "{{index}}/{{total}}"
       },
       "holdRole": {
         "title": "Griff-Rolle festlegen",

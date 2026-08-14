@@ -29,13 +29,23 @@ const appState = vi.hoisted(() => ({
 
 const createClimb = vi.hoisted(() => ({
   litUpHoldsMap: {} as Record<number, { state: string }>,
+  frames: [{} as Record<number, { state: string }>],
+  frameCount: 1,
+  currentFrameIndex: 0,
   setHoldState: vi.fn(),
   generateFramesString: vi.fn(() => ''),
+  currentFrameBleString: vi.fn(() => ''),
   startingCount: 0,
   finishCount: 0,
   isValid: false,
   resetHolds: vi.fn(),
   loadHolds: vi.fn(),
+  loadFrames: vi.fn(),
+  duplicateFrame: vi.fn(),
+  deleteFrame: vi.fn(),
+  goToFrame: vi.fn(),
+  nextFrame: vi.fn(),
+  prevFrame: vi.fn(),
   undo: vi.fn(),
   redo: vi.fn(),
   canUndo: false,
@@ -60,7 +70,7 @@ vi.mock('@boardsesh/create-climb-react', () => ({
   useCreateClimb: () => createClimb,
   computeCanUpdate: (savedClimb: unknown) => savedClimb != null,
   computeEditLocked: () => false,
-  buildInitialHoldsMap: () => ({}),
+  buildInitialFrames: () => [{}],
 }));
 vi.mock('@boardsesh/board-react', () => ({
   useBoardActions: () => ({

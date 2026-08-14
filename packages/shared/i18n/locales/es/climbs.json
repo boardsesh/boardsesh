@@ -223,6 +223,12 @@
       "title": "Borrar bloque",
       "description": "Esto borrará todas las presas y reiniciará el formulario. ¿Seguro?",
       "tooltip": "Borrar todas las presas"
+    },
+    "frames": {
+      "duplicateTooltip": "Duplicar cuadro",
+      "deleteTooltip": "Eliminar cuadro",
+      "deleteTitle": "Eliminar cuadro",
+      "deleteDescription": "Esto eliminará el cuadro actual. ¿Seguro?"
     }
   },
   "actions": {
@@ -866,6 +872,13 @@
         "setActive": "Fijar como vía activa",
         "undo": "Deshacer",
         "redo": "Rehacer"
+      },
+      "frames": {
+        "duplicate": "Duplicar cuadro",
+        "delete": "Eliminar cuadro",
+        "prev": "Cuadro anterior",
+        "next": "Cuadro siguiente",
+        "counter": "{{index}}/{{total}}"
       },
       "holdRole": {
         "title": "Asignar rol de presa",

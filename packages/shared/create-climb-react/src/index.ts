@@ -8,6 +8,6 @@ export {
   EDIT_WINDOW_MS,
   computeCanUpdate,
   computeEditLocked,
-  buildInitialHoldsMap,
+  buildInitialFrames,
   type SavedClimbSnapshot,
 } from './helpers';

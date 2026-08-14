@@ -1,42 +1,50 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useCreateClimb, holdsReducer, HISTORY_LIMIT } from '../use-create-climb';
-import type { HoldsHistory } from '../use-create-climb';
+import { useCreateClimb, framesReducer, HISTORY_LIMIT } from '../use-create-climb';
+import type { FramesHistory, FramesSnapshot } from '../use-create-climb';
 import type { LitUpHoldsMap } from '@boardsesh/shared-schema';
 
-vi.mock('@boardsesh/board-constants/hold-states', () => ({
-  HOLD_STATE_MAP: {
-    kilter: {
-      42: { name: 'STARTING', color: '#00FF00', displayColor: '#00FF00' },
-      43: { name: 'HAND', color: '#00FFFF', displayColor: '#00FFFF' },
-      44: { name: 'FINISH', color: '#FF00FF', displayColor: '#FF00FF' },
-      45: { name: 'FOOT', color: '#FFA500', displayColor: '#FFA500' },
+vi.mock('@boardsesh/board-constants/hold-states', async () => {
+  const actual = await vi.importActual<typeof import('@boardsesh/board-constants/hold-states')>(
+    '@boardsesh/board-constants/hold-states',
+  );
+  return {
+    ...actual,
+    HOLD_STATE_MAP: {
+      kilter: {
+        42: { name: 'STARTING', color: '#00FF00', displayColor: '#00FF00' },
+        43: { name: 'HAND', color: '#00FFFF', displayColor: '#00FFFF' },
+        44: { name: 'FINISH', color: '#FF00FF', displayColor: '#FF00FF' },
+        45: { name: 'FOOT', color: '#FFA500', displayColor: '#FFA500' },
+      },
+      tension: {
+        1: { name: 'STARTING', color: '#00FF00', displayColor: '#00FF00' },
+        2: { name: 'HAND', color: '#00FFFF', displayColor: '#00FFFF' },
+        3: { name: 'FINISH', color: '#FF00FF', displayColor: '#FF00FF' },
+        4: { name: 'FOOT', color: '#FFA500', displayColor: '#FFA500' },
+      },
+      moonboard: {
+        1: { name: 'STARTING', color: '#00FF00', displayColor: '#00FF00' },
+        2: { name: 'HAND', color: '#00FFFF', displayColor: '#00FFFF' },
+        3: { name: 'FINISH', color: '#FF00FF', displayColor: '#FF00FF' },
+      },
     },
-    tension: {
-      1: { name: 'STARTING', color: '#00FF00', displayColor: '#00FF00' },
-      2: { name: 'HAND', color: '#00FFFF', displayColor: '#00FFFF' },
-      3: { name: 'FINISH', color: '#FF00FF', displayColor: '#FF00FF' },
-      4: { name: 'FOOT', color: '#FFA500', displayColor: '#FFA500' },
+    STATE_TO_PRIMARY_CODE: {
+      kilter: { STARTING: 42, HAND: 43, FINISH: 44, FOOT: 45 },
+      tension: { STARTING: 1, HAND: 2, FINISH: 3, FOOT: 4 },
+      moonboard: { STARTING: 42, HAND: 43, FINISH: 44 },
     },
-    moonboard: {
-      1: { name: 'STARTING', color: '#00FF00', displayColor: '#00FF00' },
-      2: { name: 'HAND', color: '#00FFFF', displayColor: '#00FFFF' },
-      3: { name: 'FINISH', color: '#FF00FF', displayColor: '#FF00FF' },
-    },
-  },
-  STATE_TO_PRIMARY_CODE: {
-    kilter: { STARTING: 42, HAND: 43, FINISH: 44, FOOT: 45 },
-    tension: { STARTING: 1, HAND: 2, FINISH: 3, FOOT: 4 },
-    moonboard: { STARTING: 42, HAND: 43, FINISH: 44 },
-  },
-}));
+  };
+});
 
 describe('useCreateClimb', () => {
   describe('initial state', () => {
-    it('has empty holdsMap', () => {
+    it('has empty holdsMap and a single frame', () => {
       const { result } = renderHook(() => useCreateClimb('kilter'));
 
       expect(result.current.litUpHoldsMap).toEqual({});
+      expect(result.current.frameCount).toBe(1);
+      expect(result.current.currentFrameIndex).toBe(0);
       expect(result.current.totalHolds).toBe(0);
       expect(result.current.startingCount).toBe(0);
       expect(result.current.finishCount).toBe(0);
@@ -119,6 +127,27 @@ describe('useCreateClimb', () => {
 
       expect(result.current.litUpHoldsMap[100]).toBeUndefined();
       expect(result.current.totalHolds).toBe(0);
+    });
+
+    it('only edits the active frame, not other frames in the route', () => {
+      const { result } = renderHook(() => useCreateClimb('kilter'));
+
+      act(() => {
+        result.current.setHoldState(100, 'STARTING');
+      });
+      act(() => {
+        result.current.duplicateFrame();
+      });
+      act(() => {
+        result.current.setHoldState(200, 'HAND');
+      });
+
+      // Frame 1 (active) has both holds; frame 0 is untouched.
+      expect(Object.keys(result.current.litUpHoldsMap).sort()).toEqual(['100', '200']);
+      act(() => {
+        result.current.prevFrame();
+      });
+      expect(Object.keys(result.current.litUpHoldsMap)).toEqual(['100']);
     });
   });
 
@@ -212,6 +241,44 @@ describe('useCreateClimb', () => {
       const frames = result.current.generateFramesString();
       expect(frames).toBe('');
     });
+
+    it('encodes a multi-frame route with delta frames', () => {
+      const { result } = renderHook(() => useCreateClimb('kilter'));
+
+      act(() => {
+        result.current.setHoldState(100, 'STARTING');
+      });
+      act(() => {
+        result.current.duplicateFrame();
+      });
+      act(() => {
+        result.current.setHoldState(200, 'HAND');
+      });
+
+      expect(result.current.generateFramesString()).toBe('p100r42,"p200r43');
+    });
+  });
+
+  describe('currentFrameBleString', () => {
+    it('only encodes the active frame, never multi-frame syntax', () => {
+      const { result } = renderHook(() => useCreateClimb('kilter'));
+
+      act(() => {
+        result.current.setHoldState(100, 'STARTING');
+      });
+      act(() => {
+        result.current.duplicateFrame();
+      });
+      act(() => {
+        result.current.setHoldState(200, 'HAND');
+      });
+
+      expect(result.current.currentFrameBleString()).toBe('p100r42p200r43');
+      act(() => {
+        result.current.prevFrame();
+      });
+      expect(result.current.currentFrameBleString()).toBe('p100r42');
+    });
   });
 
   describe('resetHolds', () => {
@@ -235,6 +302,25 @@ describe('useCreateClimb', () => {
       expect(result.current.startingCount).toBe(0);
       expect(result.current.finishCount).toBe(0);
       expect(result.current.isValid).toBe(false);
+    });
+
+    it('collapses a multi-frame route back to a single empty frame', () => {
+      const { result } = renderHook(() => useCreateClimb('kilter'));
+
+      act(() => {
+        result.current.setHoldState(100, 'STARTING');
+      });
+      act(() => {
+        result.current.duplicateFrame();
+      });
+      expect(result.current.frameCount).toBe(2);
+
+      act(() => {
+        result.current.resetHolds();
+      });
+
+      expect(result.current.frameCount).toBe(1);
+      expect(result.current.currentFrameIndex).toBe(0);
     });
   });
 
@@ -289,30 +375,75 @@ describe('useCreateClimb', () => {
 
       expect(result.current.isValid).toBe(true);
     });
+
+    it('are computed over the union of every frame, not just the active one', () => {
+      const { result } = renderHook(() => useCreateClimb('kilter'));
+
+      act(() => {
+        result.current.setHoldState(100, 'STARTING');
+      });
+      act(() => {
+        result.current.duplicateFrame();
+      });
+      act(() => {
+        result.current.setHoldState(100, 'OFF');
+      });
+      act(() => {
+        result.current.setHoldState(200, 'FINISH');
+      });
+
+      // Frame 0: {100: STARTING}. Frame 1 (active): {200: FINISH}. Neither
+      // frame alone has both, but the route as a whole does.
+      expect(result.current.startingCount).toBe(1);
+      expect(result.current.finishCount).toBe(1);
+      expect(result.current.totalHolds).toBe(2);
+      expect(result.current.isValid).toBe(true);
+    });
   });
 
-  describe('initial holds map', () => {
-    it('works with initial holds map', () => {
-      const initialHoldsMap = {
-        100: { state: 'STARTING' as const, color: '#00FF00', displayColor: '#00FF00' },
-        200: { state: 'HAND' as const, color: '#00FFFF', displayColor: '#00FFFF' },
-      };
+  describe('initialFrames', () => {
+    it('works with a single initial frame', () => {
+      const initialFrames = [
+        {
+          100: { state: 'STARTING' as const, color: '#00FF00', displayColor: '#00FF00' },
+          200: { state: 'HAND' as const, color: '#00FFFF', displayColor: '#00FFFF' },
+        },
+      ];
 
-      const { result } = renderHook(() => useCreateClimb('kilter', { initialHoldsMap }));
+      const { result } = renderHook(() => useCreateClimb('kilter', { initialFrames }));
 
-      expect(result.current.litUpHoldsMap).toEqual(initialHoldsMap);
+      expect(result.current.litUpHoldsMap).toEqual(initialFrames[0]);
+      expect(result.current.frameCount).toBe(1);
       expect(result.current.totalHolds).toBe(2);
       expect(result.current.startingCount).toBe(1);
       expect(result.current.isValid).toBe(true);
     });
 
-    it('drops initial holds whose state cannot be saved for the board', () => {
-      const initialHoldsMap = {
-        100: { state: 'STARTING' as const, color: '#00FF00', displayColor: '#00FF00' },
-        200: { state: 'FOOT' as const, color: '#FFA500', displayColor: '#FFA500' },
-      };
+    it('preserves frame separation across multiple initial frames', () => {
+      const initialFrames: LitUpHoldsMap[] = [
+        { 100: { state: 'STARTING', color: '#00FF00', displayColor: '#00FF00' } },
+        { 200: { state: 'HAND', color: '#00FFFF', displayColor: '#00FFFF' } },
+      ];
 
-      const { result } = renderHook(() => useCreateClimb('moonboard', { initialHoldsMap }));
+      const { result } = renderHook(() => useCreateClimb('kilter', { initialFrames }));
+
+      expect(result.current.frameCount).toBe(2);
+      expect(result.current.litUpHoldsMap).toEqual(initialFrames[0]);
+      act(() => {
+        result.current.nextFrame();
+      });
+      expect(result.current.litUpHoldsMap).toEqual(initialFrames[1]);
+    });
+
+    it('drops initial holds whose state cannot be saved for the board', () => {
+      const initialFrames = [
+        {
+          100: { state: 'STARTING' as const, color: '#00FF00', displayColor: '#00FF00' },
+          200: { state: 'FOOT' as const, color: '#FFA500', displayColor: '#FFA500' },
+        },
+      ];
+
+      const { result } = renderHook(() => useCreateClimb('moonboard', { initialFrames }));
 
       expect(result.current.litUpHoldsMap).toEqual({
         100: { state: 'STARTING', color: '#00FF00', displayColor: '#00FF00' },
@@ -326,12 +457,14 @@ describe('useCreateClimb', () => {
     // during render, where nothing can catch it (#3804). 'decoy' is a real
     // BoardName that this file's STATE_TO_PRIMARY_CODE mock deliberately omits.
     it('seeds no holds for a board missing from the role table instead of throwing', () => {
-      const initialHoldsMap = {
-        100: { state: 'STARTING' as const, color: '#00FF00', displayColor: '#00FF00' },
-        200: { state: 'HAND' as const, color: '#00FFFF', displayColor: '#00FFFF' },
-      };
+      const initialFrames = [
+        {
+          100: { state: 'STARTING' as const, color: '#00FF00', displayColor: '#00FF00' },
+          200: { state: 'HAND' as const, color: '#00FFFF', displayColor: '#00FFFF' },
+        },
+      ];
 
-      const { result } = renderHook(() => useCreateClimb('decoy', { initialHoldsMap }));
+      const { result } = renderHook(() => useCreateClimb('decoy', { initialFrames }));
 
       expect(result.current.litUpHoldsMap).toEqual({});
       expect(result.current.totalHolds).toBe(0);
@@ -339,12 +472,15 @@ describe('useCreateClimb', () => {
     });
   });
 
-  describe('loadHolds', () => {
-    it('replaces the entire holds map', () => {
+  describe('loadHolds / loadFrames', () => {
+    it('loadHolds replaces the entire holds map with a single frame', () => {
       const { result } = renderHook(() => useCreateClimb('kilter'));
 
       act(() => {
         result.current.setHoldState(100, 'STARTING');
+      });
+      act(() => {
+        result.current.duplicateFrame();
       });
 
       const next = {
@@ -355,6 +491,7 @@ describe('useCreateClimb', () => {
         result.current.loadHolds(next);
       });
 
+      expect(result.current.frameCount).toBe(1);
       expect(result.current.litUpHoldsMap).toEqual(next);
       expect(result.current.litUpHoldsMap[100]).toBeUndefined();
     });
@@ -374,6 +511,26 @@ describe('useCreateClimb', () => {
       });
       expect(result.current.generateFramesString()).toBe('p100r43');
     });
+
+    it('loadFrames replaces the whole sequence, preserving frame separation', () => {
+      const { result } = renderHook(() => useCreateClimb('kilter'));
+
+      act(() => {
+        result.current.setHoldState(100, 'STARTING');
+      });
+
+      const next: LitUpHoldsMap[] = [
+        { 200: { state: 'HAND', color: '#00FFFF', displayColor: '#00FFFF' } },
+        { 300: { state: 'FINISH', color: '#FF00FF', displayColor: '#FF00FF' } },
+      ];
+      act(() => {
+        result.current.loadFrames(next);
+      });
+
+      expect(result.current.frameCount).toBe(2);
+      expect(result.current.currentFrameIndex).toBe(0);
+      expect(result.current.litUpHoldsMap).toEqual(next[0]);
+    });
   });
 
   describe('tension board', () => {
@@ -386,6 +543,85 @@ describe('useCreateClimb', () => {
 
       const frames = result.current.generateFramesString();
       expect(frames).toBe('p100r1');
+    });
+  });
+
+  describe('frame navigation', () => {
+    it('duplicateFrame inserts a copy right after the active frame and moves there', () => {
+      const { result } = renderHook(() => useCreateClimb('kilter'));
+
+      act(() => {
+        result.current.setHoldState(100, 'STARTING');
+      });
+      act(() => {
+        result.current.duplicateFrame();
+      });
+
+      expect(result.current.frameCount).toBe(2);
+      expect(result.current.currentFrameIndex).toBe(1);
+      expect(result.current.litUpHoldsMap[100].state).toBe('STARTING');
+    });
+
+    it('deleteFrame is a no-op with only one frame', () => {
+      const { result } = renderHook(() => useCreateClimb('kilter'));
+
+      act(() => {
+        result.current.setHoldState(100, 'STARTING');
+      });
+      act(() => {
+        result.current.deleteFrame();
+      });
+
+      expect(result.current.frameCount).toBe(1);
+      expect(result.current.litUpHoldsMap[100]).toBeDefined();
+    });
+
+    it('deleteFrame removes the active frame and clamps the index', () => {
+      const { result } = renderHook(() => useCreateClimb('kilter'));
+
+      act(() => {
+        result.current.setHoldState(100, 'STARTING');
+      });
+      act(() => {
+        result.current.duplicateFrame();
+      });
+      act(() => {
+        result.current.setHoldState(200, 'HAND');
+      });
+      // Now on frame 1 ({100, 200}); deleting it should land back on frame 0.
+      act(() => {
+        result.current.deleteFrame();
+      });
+
+      expect(result.current.frameCount).toBe(1);
+      expect(result.current.currentFrameIndex).toBe(0);
+      expect(Object.keys(result.current.litUpHoldsMap)).toEqual(['100']);
+    });
+
+    it('nextFrame / prevFrame clamp at the ends and are not undoable', () => {
+      const { result } = renderHook(() => useCreateClimb('kilter'));
+
+      act(() => {
+        result.current.prevFrame();
+      });
+      expect(result.current.currentFrameIndex).toBe(0);
+      expect(result.current.canUndo).toBe(false);
+
+      act(() => {
+        result.current.setHoldState(100, 'STARTING');
+      });
+      act(() => {
+        result.current.duplicateFrame();
+      });
+      act(() => {
+        result.current.nextFrame();
+      });
+      expect(result.current.currentFrameIndex).toBe(1);
+
+      act(() => {
+        result.current.goToFrame(99);
+      });
+      expect(result.current.currentFrameIndex).toBe(1);
     });
   });
 
@@ -480,6 +716,31 @@ describe('useCreateClimb', () => {
       expect(result.current.litUpHoldsMap[200].state).toBe('HAND');
     });
 
+    it('duplicateFrame and deleteFrame are undoable', () => {
+      const { result } = renderHook(() => useCreateClimb('kilter'));
+
+      act(() => {
+        result.current.setHoldState(100, 'STARTING');
+      });
+      act(() => {
+        result.current.duplicateFrame();
+      });
+      expect(result.current.frameCount).toBe(2);
+
+      act(() => {
+        result.current.undo();
+      });
+      expect(result.current.frameCount).toBe(1);
+      // Undoing the duplicate clamps the index back into range.
+      expect(result.current.currentFrameIndex).toBe(0);
+
+      act(() => {
+        result.current.redo();
+      });
+      expect(result.current.frameCount).toBe(2);
+      expect(result.current.currentFrameIndex).toBe(1);
+    });
+
     it('a new edit after undo clears the redo branch', () => {
       const { result } = renderHook(() => useCreateClimb('kilter'));
 
@@ -566,11 +827,9 @@ describe('useCreateClimb', () => {
       expect(result.current.totalHolds).toBe(10);
     });
 
-    it('with an initial holds map, undo cannot cross below the seed', () => {
-      const initialHoldsMap = {
-        100: { state: 'STARTING' as const, color: '#00FF00', displayColor: '#00FF00' },
-      };
-      const { result } = renderHook(() => useCreateClimb('kilter', { initialHoldsMap }));
+    it('with initial frames, undo cannot cross below the seed', () => {
+      const initialFrames = [{ 100: { state: 'STARTING' as const, color: '#00FF00', displayColor: '#00FF00' } }];
+      const { result } = renderHook(() => useCreateClimb('kilter', { initialFrames }));
 
       expect(result.current.canUndo).toBe(false);
 
@@ -598,17 +857,19 @@ describe('useCreateClimb', () => {
       const foot = (id: number): LitUpHoldsMap => ({
         [id]: { state: 'FOOT', color: '#FFA500', displayColor: '#FFA500' },
       });
+      const snapshot = (id: number): FramesSnapshot => ({ present: [foot(id)], currentFrameIndex: 0 });
 
-      const edgeState: HoldsHistory = {
-        past: Array.from({ length: HISTORY_LIMIT }, (_, i) => foot(i + 1)),
-        present: foot(HISTORY_LIMIT + 1),
-        future: [foot(HISTORY_LIMIT + 2)],
+      const edgeState: FramesHistory = {
+        past: Array.from({ length: HISTORY_LIMIT }, (_, i) => snapshot(i + 1)),
+        present: [foot(HISTORY_LIMIT + 1)],
+        future: [snapshot(HISTORY_LIMIT + 2)],
+        currentFrameIndex: 0,
       };
 
-      const next = holdsReducer(edgeState, { type: 'REDO' });
+      const next = framesReducer(edgeState, { type: 'REDO' });
 
       expect(next.past.length).toBeLessThanOrEqual(HISTORY_LIMIT);
-      expect(next.present).toEqual(foot(HISTORY_LIMIT + 2));
+      expect(next.present).toEqual([foot(HISTORY_LIMIT + 2)]);
       expect(next.future).toHaveLength(0);
     });
   });

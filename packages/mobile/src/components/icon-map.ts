@@ -103,6 +103,9 @@ export const iconMap = {
   // mirrors the circled check used for `send`, so the climb-row status glyphs
   // (bolt / check / x) read as one matched set.
   'ascent.attempt': { ios: 'xmark.circle', android: 'close-circle-outline' },
+  // Remove-one-frame in the create-climb route editor — a circled X, distinct
+  // from the trash-can `delete` glyph the Clear-all-holds action already uses.
+  'frame.remove': { ios: 'xmark.circle', android: 'close-circle-outline' },
   // Intrinsic climb-attribute glyphs shown after the name (web parity:
   // climb-card/climb-icons.tsx © benchmark + ⊘ no-match).
   'no.match': { ios: 'hand.raised.slash', android: 'hand-back-right-off-outline' },

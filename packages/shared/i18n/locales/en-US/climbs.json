@@ -223,6 +223,12 @@
       "title": "Clear climb",
       "description": "This will clear all holds and reset the form. Are you sure?",
       "tooltip": "Clear all holds"
+    },
+    "frames": {
+      "duplicateTooltip": "Duplicate frame",
+      "deleteTooltip": "Delete frame",
+      "deleteTitle": "Delete frame",
+      "deleteDescription": "This will delete the current frame. Are you sure?"
     }
   },
   "actions": {
@@ -866,6 +872,13 @@
         "setActive": "Set as active climb",
         "undo": "Undo",
         "redo": "Redo"
+      },
+      "frames": {
+        "duplicate": "Duplicate frame",
+        "delete": "Delete frame",
+        "prev": "Previous frame",
+        "next": "Next frame",
+        "counter": "{{index}}/{{total}}"
       },
       "holdRole": {
         "title": "Set hold role",
