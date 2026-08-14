@@ -157,16 +157,16 @@ read-only routes".
 
 Four **page subtrees** are now server-rendered front doors with no interactive
 climbing UI: the climb view and `/list` on the config-tuple tree, and their
-`/b/{slug}` twins. The page subtree is what changed — on the config-tuple pair
-the surrounding board shell
-(`app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout.tsx`) still
-renders `BoardSeshHeader` above the front door and still mounts the queue and
-WebSocket providers. That shell comes down in W-16/W-17, and until it does the
-import-graph invariant walks the three promoted page files but not their parent
-layout (the `KEPT_ENTRY_FILES` docblock in
-`app/__tests__/import-graph-invariant.test.ts` spells out which eight edges that
-leaves unwalked, and why adding them would grow the allowlist W-15 shrinks).
-What each front door is, and the two constraints that shaped them:
+`/b/{slug}` twins. W-15 changed the page subtrees; the surrounding board shells
+(`app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout.tsx` and its
+`/b` twin) still rendered `BoardSeshHeader` and still mounted the queue and
+WebSocket providers until **W-17 (#4433)** deleted the sibling routes that
+consumed them and stripped both shells. They are now server-only apart from
+`LastUsedBoardTracker`, so the import-graph invariant walks the config-tuple
+shell too (`KEPT_ENTRY_FILES` in
+`app/__tests__/import-graph-invariant.test.ts`), leaving that one allowlisted
+edge for W-16 to cut with `components/board-page`. What each front door is, and
+the two constraints that shaped them:
 
 **The climb front door** (`app/components/climb-front-door/`) renders a
 breadcrumb, the promoted `ClimbViewSeoFragment` heading, the board art as a

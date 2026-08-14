@@ -171,23 +171,6 @@ describe('GlobalHeader', () => {
     expect(screen.getByTestId('unified-search-drawer').getAttribute('data-category')).toBe('climbs');
   });
 
-  it('renders nothing on board create routes', () => {
-    mockPathname = '/b/test-board/40/create';
-
-    const { container } = render(<GlobalHeader boardConfigs={mockBoardConfigs} />);
-
-    // The header should be completely hidden (returns null)
-    expect(container.innerHTML).toBe('');
-  });
-
-  it('renders nothing on MoonBoard create routes', () => {
-    mockPathname = '/moonboard/moonboard-2024/standard-11x18-grid/wooden-holds/40/create';
-
-    const { container } = render(<GlobalHeader boardConfigs={mockBoardConfigs} />);
-
-    expect(container.innerHTML).toBe('');
-  });
-
   // -----------------------------------------------------------------------
   // Board list pages (post-W-17: no in-place filter, no bridge)
   // -----------------------------------------------------------------------

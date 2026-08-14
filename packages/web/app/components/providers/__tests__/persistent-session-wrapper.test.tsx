@@ -134,14 +134,17 @@ describe('RootBottomBar', () => {
     };
   });
 
-  it('renders the empty queue shell on board routes before queue bridge hydration completes', () => {
+  it('renders no queue shell on a board route — nothing publishes board details there any more', () => {
+    // The shell existed to cover the gap before the board route's queue bridge
+    // hydrated. W-17 (#4433) removed that bridge, so on a board route the gap
+    // is permanent and the placeholder would never resolve into a real bar.
     mockPathname = '/b/test-board/40/list';
 
     render(<RootBottomBar boardConfigs={mockBoardConfigs} />);
 
-    expect(screen.getByTestId('queue-control-bar-shell')).toBeTruthy();
-    expect(screen.getByText('No climb selected')).toBeTruthy();
+    expect(screen.queryByTestId('queue-control-bar-shell')).toBeNull();
     expect(screen.queryByTestId('queue-control-bar')).toBeNull();
+    expect(screen.getByTestId('bottom-tab-bar')).toBeTruthy();
   });
 
   it('does not render the queue shell on non-board routes when there is no active queue', () => {
