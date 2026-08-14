@@ -596,6 +596,11 @@
     }
   },
   "moonboardImport": {
+    "picker": {
+      "title": "Choisissez votre MoonBoard",
+      "hint": "Choisissez la board et l'angle depuis lesquels vous importez, puis déposez vos captures d'écran.",
+      "angleOption": "{{angle}}°"
+    },
     "card": {
       "skipping": "Ignoré",
       "duplicate": "Ignoré : existe déjà",
