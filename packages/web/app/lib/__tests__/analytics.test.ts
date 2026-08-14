@@ -191,10 +191,20 @@ describe('analytics wrapper', () => {
     // what the front-door CTA uses instead; if this stops awaiting the flush,
     // `Climb Handoff Clicked` goes dark and the hand-off funnel reads as broken.
     let flushed = false;
-    mocks.posthog.flush.mockImplementationOnce(async () => {
-      await Promise.resolve();
-      flushed = true;
-    });
+    mocks.posthog.flush.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          // A macrotask, deliberately. A microtask here would run during ANY
+          // `await` in this test, so a fire-and-forget flush would still see
+          // `flushed === true` and the await-the-flush property would go
+          // unpinned. A timer callback only runs before the assertion if
+          // `trackBeforeNavigation` genuinely awaits the flush promise.
+          setTimeout(() => {
+            flushed = true;
+            resolve();
+          }, 0);
+        }),
+    );
     const { trackBeforeNavigation } = await import('../analytics');
 
     await trackBeforeNavigation('Climb Handoff Clicked', { environment: 'production-web' });
