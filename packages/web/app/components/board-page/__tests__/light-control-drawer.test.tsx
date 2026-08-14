@@ -27,6 +27,7 @@ const mockSendFramesToBoard =
 const mockSetPartyMode = vi.fn();
 const mockClearBoard = vi.fn<() => Promise<boolean | undefined>>();
 const mockDisconnect = vi.fn();
+const mockReassertWall = vi.fn();
 
 let mockBtContext: Record<string, unknown>;
 vi.mock('../../board-bluetooth-control/bluetooth-context', () => ({
@@ -92,6 +93,7 @@ function baseContext(overrides: Record<string, unknown> = {}): Record<string, un
     setLedColorOverrides: vi.fn(),
     moonboardLightAdjacentHolds: false,
     setMoonboardLightAdjacentHolds: vi.fn(),
+    reassertWall: mockReassertWall,
     ...overrides,
   };
 }
@@ -325,6 +327,7 @@ describe('LightControlDrawer MoonBoard light-adjacent-holds toggle', () => {
 
     fireEvent.click(toggle);
     expect(setMoonboardLightAdjacentHolds).toHaveBeenCalledWith(true);
+    expect(mockReassertWall).toHaveBeenCalledTimes(1);
   });
 
   it('starts checked when the preference is already enabled', () => {

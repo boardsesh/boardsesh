@@ -96,6 +96,7 @@ export const LightControlDrawer: React.FC<LightControlDrawerProps> = ({ open, on
     setLedColorOverrides,
     moonboardLightAdjacentHolds,
     setMoonboardLightAdjacentHolds,
+    reassertWall,
   } = useBluetoothContext();
   const { currentClimbQueueItem } = useCurrentClimb();
 
@@ -340,6 +341,7 @@ export const LightControlDrawer: React.FC<LightControlDrawerProps> = ({ open, on
 
   const handleToggleLightAdjacentHolds = () => {
     setMoonboardLightAdjacentHolds(!moonboardLightAdjacentHolds);
+    reassertWall();
   };
 
   return (

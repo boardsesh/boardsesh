@@ -46,6 +46,7 @@ export function BleControlSheetHost({ visible, onClose }: BleControlSheetHostPro
   const handleToggleLightAdjacentHolds = useCallback(
     (enabled: boolean) => {
       bluetooth?.setMoonboardLightAdjacentHolds(enabled);
+      bluetooth?.reassertWall();
     },
     [bluetooth],
   );
