@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-14T01:30:53.483Z",
+  "generatedAt": "2026-08-14T01:40:46.228Z",
   "entries": [
+    {
+      "prNumber": 4419,
+      "category": "new",
+      "title": "Set up any MoonBoard at more than the usual 25° and 40° — grade and log it there like any other angle, on web or in the app. *(Rolling out gradually — ask if you don't see it yet.)*",
+      "mergedAt": "2026-08-14T01:39:33Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4419"
+    },
     {
       "prNumber": 4418,
       "category": "new",
