@@ -1,5 +1,5 @@
 {
-  "//": "Typechecks the repo-root scripts, which were previously never validated by CI — `vp run typecheck` only covered packages/*. Wired in via the `typecheck:scripts` task. Scoped to the Discord feedback pipeline for now; widen `include` as other scripts are made type-clean.",
+  "//": "Typechecks the repo-root scripts, which were previously never validated by CI — `vp run typecheck` only covered packages/*. Wired in via the `typecheck:scripts` task. Scoped to the Discord feedback pipeline and the dev-db discovery watchdog for now; widen `include` as other scripts are made type-clean.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -16,6 +16,8 @@
     "discord-feedback-scan.ts",
     "lib/discord-feedback.ts",
     "lib/discord-feedback-issue.ts",
-    "__tests__/discord-feedback-scan.test.ts"
+    "__tests__/discord-feedback-scan.test.ts",
+    "dev-db-discover.ts",
+    "__tests__/dev-db-discover-watchdog.test.ts"
   ]
 }
