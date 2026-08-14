@@ -46,12 +46,28 @@ export const userBoards = pgTable(
     serialNumber: text('serial_number'),
     timerName: text('timer_name'),
     gymId: bigint('gym_id', { mode: 'number' }).references(() => gyms.id, { onDelete: 'set null' }),
+    // Authoritative board-presence sequence reservation. Redis supplies a fast
+    // candidate, but every allocation atomically advances this durable counter.
+    // Merge jobs lock these rows and raise the survivor past moved event seqs,
+    // so an expired/stale Redis key can never reuse a durable sequence.
+    presenceSeq: bigint('presence_seq', { mode: 'number' }).default(0).notNull(),
     deletedAt: timestamp('deleted_at'),
     // Human-curation marker. Non-null means someone with edit access changed this
     // row (edited, claimed, or soft-deleted it), so the location sync must never
     // overwrite its metadata again — the sync engine skips its ON CONFLICT SET
     // when this is set. Sync still keeps the board→gym link current.
     syncFrozenAt: timestamp('sync_frozen_at'),
+    // Merge tombstone: when the serial-board dedupe consolidates duplicate
+    // rows for the same physical wall, losers are soft-deleted with this set
+    // to the canonical board's uuid. Lookups (boardBySlug/boardByUuid, serial
+    // pointers) follow it so stale links and bindings land on the survivor.
+    // NULL for ordinary soft-deletes — those must NOT redirect.
+    // Deliberately NO FK to user_boards.uuid: boards are never hard-deleted
+    // (nothing can orphan the pointer through normal operation), the only
+    // writer is the dedupe script (which reads the survivor from a locked
+    // row), and readers tolerate + log a dangling pointer. A self-referential
+    // FK would only add write overhead for a failure mode we already surface.
+    mergedIntoBoardUuid: text('merged_into_board_uuid'),
   },
   (table) => ({
     // Gym lookup
@@ -99,6 +115,12 @@ export const userBoards = pgTable(
     serialLookupIdx: index('user_boards_serial_idx')
       .on(table.serialNumber)
       .where(sql`${table.serialNumber} IS NOT NULL AND ${table.serialNumber} <> '' AND ${table.deletedAt} IS NULL`),
+    // boardBySlug's merge-tombstone fallback looks up soft-deleted losers by
+    // slug — those rows are excluded from the active-only unique slug index,
+    // so give the fallback its own small partial index.
+    mergedSlugIdx: index('user_boards_merged_slug_idx')
+      .on(table.slug)
+      .where(sql`${table.mergedIntoBoardUuid} IS NOT NULL`),
   }),
 );
 

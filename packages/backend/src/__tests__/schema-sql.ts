@@ -747,8 +747,10 @@ export const schemaSQL = `
     "serial_number" text,
     "timer_name" text,
     "gym_id" bigint,
+    "presence_seq" bigint DEFAULT 0 NOT NULL,
     "deleted_at" timestamp,
-    "sync_frozen_at" timestamp
+    "sync_frozen_at" timestamp,
+    "merged_into_board_uuid" text
   );
   -- Board presence: serials are not globally unique (the supplier reuses them),
   -- so a serial may map to many active boards. We only forbid one owner binding

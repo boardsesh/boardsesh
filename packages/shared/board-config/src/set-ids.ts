@@ -18,6 +18,13 @@ export function parseSetIds(setIds: string | number[]): number[] {
  * representation so order/whitespace differences don't trigger spurious
  * mismatches. Sorts numerically (not lexicographically) so multi-digit ids
  * compare the same way the write-path emits them: ["10","2"] → "2,10".
+ *
+ * MIRRORED in @boardsesh/shared-schema's `normalizeSetIdsForCompare` (which
+ * cannot import this package — board-config depends on shared-schema, so the
+ * import back would form a cycle). If you change the behaviour here, change it
+ * there too; the parity test in
+ * packages/db/src/queries/boards/__tests__/serial-dedupe.test.ts fails when
+ * the two disagree.
  */
 export function normaliseSetIds(setIds: string): string {
   return [

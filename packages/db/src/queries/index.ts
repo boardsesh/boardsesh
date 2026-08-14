@@ -1,4 +1,5 @@
 export * from './boards/clear-aurora-board';
+export * from './boards/index';
 export * from './climbs/index';
 export * from './climb-stats/index';
 export * from './sync/credential-backoff';

@@ -455,6 +455,15 @@
       "duplicateBodyGeneric": "Avec ce changement, la board devient identique à une autre que son propriétaire a déjà.",
       "saveAnyway": "Enregistrer quand même",
       "cancel": "Annuler"
+    },
+    "serialReuse": {
+      "warning": "Ce numéro de série appartient déjà à « {{name}} ». Rejoindre cette board garde les croix et les stats de tout le monde sur un seul mur.",
+      "warningPrivate": "Ce numéro de série est déjà enregistré pour la board privée d'un autre grimpeur.",
+      "dialogTitle": "Ce mur est déjà sur Boardsesh",
+      "dialogBody": "Le numéro de série {{serial}} est enregistré pour « {{name}} ». Si vous créez un doublon, vos croix et vos sessions seront séparées du groupe qui y grimpe déjà.",
+      "dialogBodyPrivate": "Le numéro de série {{serial}} est déjà enregistré pour la board privée d'un autre grimpeur. Si c'est vraiment un mur différent, vous pouvez quand même créer le vôtre.",
+      "useExisting": "Utiliser la board existante",
+      "createAnyway": "Créer quand même un doublon"
     }
   },
   "editBoard": {

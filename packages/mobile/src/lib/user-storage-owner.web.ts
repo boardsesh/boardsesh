@@ -80,6 +80,11 @@ export function setCurrentUserStorageOwner(owner: UserStorageOwner | null): void
   void sweepOrphanedUserStorage(owner).catch(() => {});
 }
 
+/** Snapshot the owner synchronously before an async queued storage write. */
+export function getCurrentUserStorageOwner(): UserStorageOwner | null {
+  return currentUserStorageOwner;
+}
+
 /**
  * Resolve an account-specific key once, at operation start. Passing an explicit
  * owner lets auth cleanup target the account that is leaving while another tab

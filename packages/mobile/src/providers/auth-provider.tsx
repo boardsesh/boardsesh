@@ -28,12 +28,12 @@ import { setOnForcedSignOut } from '../lib/auth-interceptor';
 import { getHttpClient, resetHttpClient } from '../lib/graphql/client';
 import { disposeWsClient } from '../lib/graphql/ws-client';
 import { clearStoredSessionId } from '../lib/session-store';
-import { clearStoredActiveBoard } from '../lib/active-board-store';
 import { clearStoredQueueSnapshot } from '../lib/queue-snapshot-store';
 import { clearAllCreateClimbDrafts } from '../lib/create-climb-draft-store';
 import { clearSessionCommentDraft } from '../lib/session-comment-draft-store';
 import { setCurrentUserStorageOwner, type UserStorageOwner } from '../lib/user-storage-owner';
-import { ACTIVE_BOARD_QUERY_KEY } from '../lib/graphql/use-active-board';
+import { ACTIVE_BOARD_QUERY_KEY, clearStoredActiveBoardCoordinated } from '../lib/graphql/use-active-board';
+import { resetActiveBoardSelfHealValidationCache } from '../lib/boards/active-board-self-heal-validation-cache';
 import { clearUserData, purgeLocalDataForSignOut, getDatabaseHandle } from '../db';
 import { resetSyncStatus } from '../sync/sync-status';
 import { setSetting, clearOfflineBoards } from '../settings';
@@ -178,20 +178,24 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // These are the only sign-out leftovers that can carry a previous user across
   // a cold start on a shared device, so a signed-out checkAuth clears them even
   // when there's no live in-session cache to wipe (see handleSignedOutTransition).
-  const clearPersistedUserStores = useCallback(
-    (owner?: UserStorageOwner | null) =>
-      Promise.allSettled([
-        clearStoredSessionId(owner),
-        clearStoredActiveBoard(owner),
-        clearStoredQueueSnapshot(owner),
-        // Create-climb and session-recap drafts are wiped for account
-        // isolation only on web (the new surface). Native sign-out keeps its
-        // origin behavior and leaves these drafts intact, so shipping this via
-        // OTA doesn't change what a native sign-out touches.
-        ...(Platform.OS === 'web' ? [clearAllCreateClimbDrafts(owner), clearSessionCommentDraft(owner)] : []),
-      ]),
-    [],
-  );
+  const clearPersistedUserStores = useCallback((owner?: UserStorageOwner | null) => {
+    // This is the shared confirmed account boundary for manual/forced sign-out,
+    // expiry, remote sign-out, and authenticated identity changes. Invalidate
+    // cached tombstone checks before the coordinated clear synchronously bumps
+    // the active-board write generation, so neither validation nor storage
+    // state can leak into the next account.
+    resetActiveBoardSelfHealValidationCache();
+    return Promise.allSettled([
+      clearStoredSessionId(owner),
+      clearStoredActiveBoardCoordinated(owner),
+      clearStoredQueueSnapshot(owner),
+      // Create-climb and session-recap drafts are wiped for account
+      // isolation only on web (the new surface). Native sign-out keeps its
+      // origin behavior and leaves these drafts intact, so shipping this via
+      // OTA doesn't change what a native sign-out touches.
+      ...(Platform.OS === 'web' ? [clearAllCreateClimbDrafts(owner), clearSessionCommentDraft(owner)] : []),
+    ]);
+  }, []);
 
   const drainLocalMutationQueueBestEffort = useCallback(async () => {
     const localDb = getDatabaseHandle();

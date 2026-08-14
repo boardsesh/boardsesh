@@ -204,7 +204,9 @@ describe('user_boards serial uniqueness — system catalog exemption', () => {
         serial: sharedSerial,
         layoutId: 1,
       });
-      // ...but a second one for the same owner must violate the unique index.
+      // ...but a second one for the same owner must violate the serial unique
+      // index. A different layout keeps the per-owner config index out of the
+      // way, so this assertion exercises the serial index alone.
       await assert.rejects(
         () =>
           insertBoard(db, {
