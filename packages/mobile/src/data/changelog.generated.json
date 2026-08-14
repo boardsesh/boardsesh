@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-14T10:03:03.947Z",
+  "generatedAt": "2026-08-14T11:30:11.165Z",
   "entries": [
+    {
+      "prNumber": 4424,
+      "category": "improved",
+      "title": "The homepage board rail is real links now — open any board in a new tab or straight from search.",
+      "mergedAt": "2026-08-14T11:29:03Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4424",
+      "body": "Playlists open in the app with one tap."
+    },
     {
       "prNumber": 4425,
       "category": "fixed",
