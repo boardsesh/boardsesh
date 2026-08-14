@@ -110,8 +110,17 @@ export async function measureReclaimableBytes(db: OfflineDatabase): Promise<numb
  * so this belongs on the main connection, never inside that wrapper (the same trap
  * snapshot-bootstrap.ts's CONNECTION INVARIANT comment describes for ATTACH).
  *
- * MUST NOT run concurrently with a sync cycle — callers bump the wipe epoch
- * (beginLocalPurge) first so in-flight pulls bail.
+ * MUST NOT run concurrently with a sync cycle. A snapshot import that meets this
+ * exclusive lock raises SQLITE_BUSY past the 5s busy_timeout, which
+ * bootstrap-retry classifies as a structural failure — two of those and the scope
+ * is stranded on the paged crawl for a lock we took ourselves. Callers get this
+ * right in one of two ways (see compactOfflineDatabase in
+ * packages/mobile/src/offline/remove-offline-board.ts):
+ *  - DEFER while `isSyncInFlight()`, for the automatic post-removal compaction,
+ *    which must not abort the downloads a board removal deliberately spared; or
+ *  - bump the GLOBAL epoch (`beginGlobalPurge`) first, for the deliberate,
+ *    spinner-backed manual Compact, so in-flight pulls bail cleanly (no burned
+ *    attempt, resumed from checkpoints next cycle).
  *
  * Costs, for callers deciding how to present this: it builds a complete new file
  * before swapping, so peak disk is roughly original + final (SQLite documents up to

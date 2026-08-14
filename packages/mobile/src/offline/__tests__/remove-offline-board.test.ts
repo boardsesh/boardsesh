@@ -30,7 +30,10 @@ const removeBoardScopeData = vi.fn(async () => ({
   gradesDeleted: 0,
   removedAnyRows: true,
 }));
-const beginLocalPurge = vi.fn();
+const releasePurge = vi.fn();
+const beginScopePurge = vi.fn((_namespace: string) => releasePurge);
+const beginGlobalPurge = vi.fn();
+const isSyncInFlight = vi.fn(() => false);
 const vacuumDatabase = vi.fn(async () => true);
 
 vi.mock('@boardsesh/offline-sync', async (importOriginal) => {
@@ -38,7 +41,9 @@ vi.mock('@boardsesh/offline-sync', async (importOriginal) => {
   return {
     ...actual,
     removeBoardScopeData: (...args: unknown[]) => removeBoardScopeData(...(args as [])),
-    beginLocalPurge: () => beginLocalPurge(),
+    beginScopePurge: (namespace: string) => beginScopePurge(namespace),
+    beginGlobalPurge: () => beginGlobalPurge(),
+    isSyncInFlight: () => isSyncInFlight(),
     vacuumDatabase: () => vacuumDatabase(),
   };
 });
@@ -72,6 +77,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockStorage.clear();
   resetAllSettings();
+  // clearAllMocks drops the factory implementations above, so restore the two
+  // whose RETURN value the code under test depends on.
+  beginScopePurge.mockImplementation(() => releasePurge);
+  isSyncInFlight.mockImplementation(() => false);
+  vacuumDatabase.mockImplementation(async () => true);
 });
 
 describe('removeOfflineBoard', () => {
@@ -94,11 +104,16 @@ describe('removeOfflineBoard', () => {
   });
 
   // Without this an in-flight pull's page lands after the delete and resurrects rows,
-  // stamping a checkpoint past them that the strict `>` delta never revisits.
-  it('aborts in-flight pulls before deleting', async () => {
+  // stamping a checkpoint past them that the strict `>` delta never revisits. The
+  // namespace is the LAYOUT, not the scope key: that is exactly the DELETE predicate
+  // and exactly the artifact cache key (issue #4370).
+  it("aborts this layout's in-flight pull before deleting, and only this layout's", async () => {
     setSetting('syncEnabledBoards', ['kilter:1:7']);
     const callOrder: string[] = [];
-    beginLocalPurge.mockImplementationOnce(() => callOrder.push('purge'));
+    beginScopePurge.mockImplementationOnce((namespace: string) => {
+      callOrder.push(`purge:${namespace}`);
+      return releasePurge;
+    });
     removeBoardScopeData.mockImplementationOnce(async () => {
       callOrder.push('delete');
       return { climbsDeleted: 1, statsDeleted: 0, gradesDeleted: 0, removedAnyRows: true };
@@ -106,7 +121,31 @@ describe('removeOfflineBoard', () => {
 
     await removeOfflineBoard({ db, queryClient, scope: KILTER_12X14 });
 
-    expect(callOrder).toEqual(['purge', 'delete']);
+    expect(callOrder).toEqual(['purge:kilter:1', 'delete']);
+  });
+
+  // The latch covers the seconds the delete transaction holds; leaving it set would
+  // block this layout's downloads for the rest of the app session.
+  it('releases the purge latch after the delete resolves', async () => {
+    setSetting('syncEnabledBoards', ['kilter:1:7']);
+    const callOrder: string[] = [];
+    releasePurge.mockImplementation(() => callOrder.push('release'));
+    removeBoardScopeData.mockImplementationOnce(async () => {
+      callOrder.push('delete');
+      return { climbsDeleted: 1, statsDeleted: 0, gradesDeleted: 0, removedAnyRows: true };
+    });
+
+    await removeOfflineBoard({ db, queryClient, scope: KILTER_12X14 });
+
+    expect(callOrder).toEqual(['delete', 'release']);
+  });
+
+  it('releases the purge latch when the delete throws, and still propagates', async () => {
+    setSetting('syncEnabledBoards', ['kilter:1:7']);
+    removeBoardScopeData.mockRejectedValueOnce(new Error('disk went away'));
+
+    await expect(removeOfflineBoard({ db, queryClient, scope: KILTER_12X14 })).rejects.toThrow('disk went away');
+    expect(releasePurge).toHaveBeenCalledTimes(1);
   });
 
   it('retains every other enabled scope, and never the one being removed', async () => {
@@ -181,21 +220,55 @@ describe('removeOfflineBoard cached art', () => {
 describe('compactOfflineDatabase', () => {
   // The teardown already committed, so a failed VACUUM means "the data is gone but
   // the file didn't shrink" — reportable, never an error that implies data loss.
-  it('reports false instead of throwing when the vacuum fails', async () => {
+  it("reports 'not-truncated' instead of throwing when the vacuum fails", async () => {
     vacuumDatabase.mockRejectedValueOnce(new Error('SQLITE_FULL'));
 
-    await expect(compactOfflineDatabase(db)).resolves.toBe(false);
+    await expect(compactOfflineDatabase(db, { deferWhileSyncing: false })).resolves.toBe('not-truncated');
   });
 
   // The rebuild landed but a reader blocked the WAL truncation, so the -wal stayed
   // large and the user's number won't have moved. Silent otherwise — pragma, not throw.
-  it('reports false when the WAL truncation was blocked', async () => {
+  it("reports 'not-truncated' when the WAL truncation was blocked", async () => {
     vacuumDatabase.mockResolvedValueOnce(false);
 
-    await expect(compactOfflineDatabase(db)).resolves.toBe(false);
+    await expect(compactOfflineDatabase(db, { deferWhileSyncing: false })).resolves.toBe('not-truncated');
   });
 
-  it('reports true on success', async () => {
-    await expect(compactOfflineDatabase(db)).resolves.toBe(true);
+  it("reports 'truncated' on success", async () => {
+    await expect(compactOfflineDatabase(db, { deferWhileSyncing: false })).resolves.toBe('truncated');
+  });
+
+  // VACUUM's exclusive lock would fail a concurrent snapshot import with
+  // SQLITE_BUSY, which the retry ladder charges as a structural failure — two of
+  // those strand a board on the paged crawl (issue #4370). The post-removal
+  // compaction defers instead; the manual Compact button does not.
+  it("returns 'deferred' without touching the database while a pull is in flight", async () => {
+    isSyncInFlight.mockReturnValue(true);
+
+    await expect(compactOfflineDatabase(db, { deferWhileSyncing: true })).resolves.toBe('deferred');
+    expect(vacuumDatabase).not.toHaveBeenCalled();
+    expect(beginGlobalPurge).not.toHaveBeenCalled();
+  });
+
+  it('compacts anyway when nothing is syncing', async () => {
+    isSyncInFlight.mockReturnValue(false);
+
+    await expect(compactOfflineDatabase(db, { deferWhileSyncing: true })).resolves.toBe('truncated');
+    expect(vacuumDatabase).toHaveBeenCalledTimes(1);
+  });
+
+  // db/vacuum.ts has always required this: the rebuild holds an exclusive lock for
+  // 5-20s, so in-flight cycles must bail BEFORE it starts, not meet it.
+  it('bumps the global epoch before vacuuming when it does not defer', async () => {
+    isSyncInFlight.mockReturnValue(true);
+    const callOrder: string[] = [];
+    beginGlobalPurge.mockImplementationOnce(() => callOrder.push('global-purge'));
+    vacuumDatabase.mockImplementationOnce(async () => {
+      callOrder.push('vacuum');
+      return true;
+    });
+
+    await expect(compactOfflineDatabase(db, { deferWhileSyncing: false })).resolves.toBe('truncated');
+    expect(callOrder).toEqual(['global-purge', 'vacuum']);
   });
 });

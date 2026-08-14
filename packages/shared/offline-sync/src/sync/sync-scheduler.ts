@@ -93,6 +93,18 @@ export type SchedulerOptions = {
 let isSyncing = false;
 let pendingTrigger = false;
 
+/**
+ * Is a drain+pull cycle running right now? The scheduler's single-flight latch,
+ * exposed so a caller can decide whether an exclusive-lock operation is safe to
+ * start. `compactOfflineDatabase` is the one consumer: VACUUM holds an exclusive
+ * lock for 5-20s on a 200-400MB database, which a concurrent snapshot import
+ * would meet as SQLITE_BUSY and charge itself a structural failure for (issue
+ * #4370).
+ */
+export function isSyncInFlight(): boolean {
+  return isSyncing;
+}
+
 export function __resetSyncSchedulerStateForTests(): void {
   isSyncing = false;
   pendingTrigger = false;

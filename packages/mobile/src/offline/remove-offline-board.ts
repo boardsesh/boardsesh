@@ -6,7 +6,10 @@
 
 import type { QueryClient } from '@tanstack/react-query';
 import {
-  beginLocalPurge,
+  beginScopePurge,
+  beginGlobalPurge,
+  isSyncInFlight,
+  purgeNamespaceKey,
   removeBoardScopeData,
   offlineBoardKey,
   parseOfflineBoardKey,
@@ -60,8 +63,13 @@ function invalidateBoardReaders(queryClient: QueryClient): void {
  *    and no scope-complete marker — i.e. a brand-new board — and re-download the whole
  *    catalog on cellular without asking. The user taps Remove, watches the number hit
  *    zero, and watches it climb straight back.
- * 2. `beginLocalPurge()` aborts any in-flight pull, so a page already on the wire
- *    can't land after the delete and resurrect rows with a checkpoint past them.
+ * 2. `beginScopePurge(namespace)` aborts THIS layout's in-flight pull, so a page
+ *    already on the wire can't land after the delete and resurrect rows with a
+ *    checkpoint past them. Its release is called from a `finally` — the latch, not
+ *    just the epoch bump, is what covers the seconds the delete transaction holds.
+ *    It deliberately does NOT abort other boards' downloads, the mutation drain,
+ *    the user-data pull or the deletions pull: none of them writes a row this
+ *    delete can touch (issue #4370).
  * 3. The retained set is read AFTER step 1, so it's exactly "every scope that must
  *    survive" — this scope has already dropped out of it.
  *
@@ -81,13 +89,20 @@ export async function removeOfflineBoard(params: {
   // The offline picker's snapshots for this scope go with the data. Left behind,
   // they'd offer a board whose climbs have just been deleted.
   forgetOfflineBoardScope(scope);
-  beginLocalPurge();
+  const releasePurge = beginScopePurge(purgeNamespaceKey(scope));
 
   const retainedScopes = getSetting('syncEnabledBoards')
     .map(parseOfflineBoardKey)
     .filter((parsed): parsed is OfflineBoardScope => parsed !== null);
 
-  const result = await removeBoardScopeData({ db, scope, scopeKey: offlineBoardKey(scope), retainedScopes });
+  let result: ScopeTeardownResult;
+  try {
+    result = await removeBoardScopeData({ db, scope, scopeKey: offlineBoardKey(scope), retainedScopes });
+  } finally {
+    // Unconditional: a latch left set would block this layout's downloads for the
+    // rest of the app session.
+    releasePurge();
+  }
 
   // The rendered PNGs for this board are cache, not data, so they are swept
   // AFTER the rows are gone and never allowed to change the teardown result —
@@ -104,6 +119,9 @@ export async function removeOfflineBoard(params: {
   return result;
 }
 
+/** What a compaction attempt actually did. `deferred` never touched the database. */
+export type CompactionOutcome = 'truncated' | 'not-truncated' | 'deferred';
+
 /**
  * Hand the freed pages back to the filesystem.
  *
@@ -113,8 +131,29 @@ export async function removeOfflineBoard(params: {
  * failure means users can't actually reclaim space) but never worth surfacing as an
  * error that implies the removal didn't work. Runs once after all teardowns, not per
  * scope: it rebuilds the entire file each time.
+ *
+ * VACUUM takes an exclusive lock for 5-20s on a 200-400MB database, and a snapshot
+ * import that meets it raises SQLITE_BUSY — which the bootstrap retry ladder charges
+ * as a structural failure, two of which strand a board on the paged crawl. Before
+ * #4370 a removal's global epoch bump guaranteed every in-flight import had already
+ * bailed for free before this ran; now that a removal spares the other boards, the
+ * two calling surfaces need different answers:
+ *
+ *  - `deferWhileSyncing: true` (the automatic post-removal compaction) returns
+ *    'deferred' without touching the database while a cycle is in flight. The
+ *    storage figure not moving is exactly what the reclaimable banner and the manual
+ *    Compact button already exist for.
+ *  - `deferWhileSyncing: false` (the deliberate, spinner-backed Compact button) bumps
+ *    the GLOBAL epoch first, so in-flight cycles abort cleanly — no burned attempt,
+ *    resumed from checkpoints next cycle — which is what db/vacuum.ts has always
+ *    required.
  */
-export async function compactOfflineDatabase(db: OfflineDatabase): Promise<boolean> {
+export async function compactOfflineDatabase(
+  db: OfflineDatabase,
+  options: { deferWhileSyncing: boolean },
+): Promise<CompactionOutcome> {
+  if (options.deferWhileSyncing && isSyncInFlight()) return 'deferred';
+  beginGlobalPurge();
   try {
     // False = the rebuild landed but a reader blocked the WAL truncation, so the file
     // may not have shrunk as far as it should. Same user-facing story as a throw
@@ -133,9 +172,9 @@ export async function compactOfflineDatabase(db: OfflineDatabase): Promise<boole
         tags: { source: 'offline-sync', kind: 'vacuum' },
       });
     }
-    return truncated;
+    return truncated ? 'truncated' : 'not-truncated';
   } catch (error) {
     reportHandledError(error, { tags: { source: 'offline-sync', kind: 'vacuum' } });
-    return false;
+    return 'not-truncated';
   }
 }

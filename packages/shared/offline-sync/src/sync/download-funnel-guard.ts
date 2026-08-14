@@ -49,11 +49,16 @@ export type DownloadFunnelGuardOptions = {
    */
   report: ((report: SnapshotBootstrapErrorReport) => void) | undefined;
   /**
-   * Why the cycle is being torn down AT THIS INSTANT, or null. Read at close
-   * time rather than latched, so an unexplained exit during a sign-out is
-   * attributed to the sign-out instead of being filed as a defect.
+   * Why the armed scope's work is being torn down AT THIS INSTANT, or null. Read
+   * at close time rather than latched, so an unexplained exit during a sign-out
+   * is attributed to the sign-out instead of being filed as a defect.
+   *
+   * Takes the scope key because a board purge is per namespace (issue #4370): an
+   * unexplained exit that merely coincides with ANOTHER board's removal must
+   * still report `unknown-exit` and reach Sentry, rather than being laundered as
+   * an expected abort.
    */
-  teardownReason: () => SnapshotBootstrapFailureReason | null;
+  teardownReason: (scopeKey: string) => SnapshotBootstrapFailureReason | null;
 };
 
 export type DownloadFunnelGuard = {
@@ -113,7 +118,7 @@ export function createDownloadFunnelGuard(options: DownloadFunnelGuardOptions): 
       const classified = classifySnapshotBootstrapFailure(error);
       // A SnapshotWipedError classifies itself; anything else is only an abort if
       // the cycle is being torn down right now.
-      const abortReason = classified === 'aborted-wipe' ? classified : options.teardownReason();
+      const abortReason = classified === 'aborted-wipe' ? classified : options.teardownReason(attempt.scopeKey);
       if (abortReason) {
         emit({ reason: abortReason, cause: error, aborted: true, expected: true });
         return;
@@ -130,7 +135,7 @@ export function createDownloadFunnelGuard(options: DownloadFunnelGuardOptions): 
         attempt = null;
         return;
       }
-      const teardown = options.teardownReason();
+      const teardown = options.teardownReason(closing.scopeKey);
       if (teardown) {
         // A known bail-out that forgot to report. Same shape #4314's hand-written
         // sites emit, so the two can never disagree.

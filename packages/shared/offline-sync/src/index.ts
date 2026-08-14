@@ -44,7 +44,10 @@ export {
   setSigningOut,
   isSigningOut,
   getWipeEpoch,
-  beginLocalPurge,
+  capturePurgeToken,
+  hasPurgeLanded,
+  beginScopePurge,
+  beginGlobalPurge,
   setBackgrounded,
   isBackgrounded,
   // Subscribed by the mobile downloader so a transfer can record that the app
@@ -53,6 +56,7 @@ export {
   onTeardown,
 } from './mutation-queue/drainer';
 export type {
+  PurgeToken,
   DrainOptions,
   MutationDeliveryEvent,
   MutationStatusListenerFailure,
@@ -151,7 +155,7 @@ export type {
   BootstrapRetryRead,
   BootstrapEligibility,
 } from './sync/bootstrap-retry';
-export { startSyncScheduler, triggerSync } from './sync/sync-scheduler';
+export { startSyncScheduler, triggerSync, isSyncInFlight } from './sync/sync-scheduler';
 export type { SyncProgressSink, SchedulerTriggers, SchedulerOptions, DrainQueue } from './sync/sync-scheduler';
 export {
   getCheckpoint,
@@ -272,5 +276,7 @@ export {
   offlineBoardKeyForBoard,
   offlineBoardScopeForBoard,
   parseOfflineBoardKey,
+  purgeNamespaceKey,
+  purgeNamespaceForScopeKey,
 } from './offline-board-key';
 export type { OfflineBoardScope, OfflineBoardLike } from './offline-board-key';
