@@ -9,11 +9,11 @@ const MOONBOARD_FRAME_SUFFIX = '#';
 // baked into the board's own `additionalledmapping[]` table (typically the
 // hold above), lit yellow; finish holds never get one. Boardsesh has no way to
 // know that table's contents, so this only toggles the firmware's own
-// behaviour — it doesn't compute a position itself. The firmware's parser
-// treats `~` as an optional config marker before `l`, so a `~D` prefix is
-// purely additive: firmware that doesn't understand it never receives it, and
-// firmware that does resets the flag after every frame (one write, one
-// effect). See docs/MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md.
+// behaviour — it doesn't compute a position itself. The community firmware's
+// parser treats `~` as an optional config marker before `l` and resets the flag
+// after every frame (one write, one effect). Official-controller handling of
+// this prefix is unverified, so the feature stays opt-in and requires real-
+// device coverage. See docs/MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md.
 const MOONBOARD_V2_ADDITIONAL_LED_PREFIX = '~D';
 
 // Boardsesh persists MoonBoard frames with the shared basic role codes only.

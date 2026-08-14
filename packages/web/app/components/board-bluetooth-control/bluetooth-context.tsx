@@ -150,8 +150,17 @@ function presenceClimbToQueueItemInput(presenceClimb: BoardPresenceClimb): Climb
   };
 }
 
+type SendFramesToBoard = BluetoothContextValue['sendFramesToBoard'];
+
+type AutoSendRequest = {
+  item: ClimbQueueItem;
+  sendFramesToBoard: SendFramesToBoard;
+  encodingSignature: string;
+};
+
 function BluetoothAutoSender({
   sendFramesToBoard,
+  encodingSignature,
   lastSendFailureReasonRef,
   layoutName,
   boardName,
@@ -161,12 +170,11 @@ function BluetoothAutoSender({
   activeConfig,
   onSkipSpillClimb,
 }: {
-  sendFramesToBoard: (
-    frames: string,
-    mirrored?: boolean,
-    signal?: AbortSignal,
-    sendContext?: BleSendContext,
-  ) => Promise<boolean | undefined>;
+  sendFramesToBoard: SendFramesToBoard;
+  /** BLE-visible settings that can change the encoded packet without changing
+   * the climb. Kept separate from the wall-presence signature so a settings-
+   * only re-write does not report a different climb to the wall feed. */
+  encodingSignature: string;
   /**
    * The reason the hook's most recent `sendFramesToBoard` returned `false`,
    * read synchronously on the `false` branch below to label the failure with
@@ -231,13 +239,14 @@ function BluetoothAutoSender({
   // lightbulb re-assert re-broadcasts of the same climb), this hits
   // any time two broadcasts land in quick succession.
   //
-  // Pattern: while a write is in flight, store the most recent pending
-  // climb. When the current write resolves, the drain loop picks up
-  // whatever's pending and sends that, repeating until pending is empty.
-  // Intermediate climbs that got overwritten are skipped — same end state
-  // as the old abort-and-restart pattern, but no overlapping GATT calls.
+  // Pattern: while a write is in flight, store the most recent request,
+  // including the encoder callback and settings that produced it. When the
+  // current write resolves, the drain loop picks up that complete snapshot.
+  // Intermediate requests that got overwritten are skipped — same end state
+  // as the old abort-and-restart pattern, but no overlapping GATT calls and no
+  // stale callback after an encoder-setting change.
   const isWritingRef = useRef(false);
-  const pendingClimbRef = useRef<ClimbQueueItem | null>(null);
+  const pendingSendRef = useRef<AutoSendRequest | null>(null);
   // Deduplicate truly-identical re-broadcasts. The reducer lets duplicate
   // CurrentClimbChanged events through (so the BLE phone re-sends on each
   // event) — but the wall is already showing those exact pixels, so re-sending
@@ -249,12 +258,18 @@ function BluetoothAutoSender({
   // ref — exactly the regression users reported). A genuine duplicate (same
   // uuid, frames, and mirror) still skips the write but re-emits the wall-confirm
   // so a hand-off taker's 2s timer clears even though no physical re-send ran.
+  // Includes both the climb payload and BLE encoder settings. The latter can
+  // change the actual packet while the climb stays identical (for example
+  // MoonBoard adjacent LEDs or a hydrated colour preference).
   const lastSentSignatureRef = useRef<string | null>(null);
   // Last `reassertNonce` we've acted on. When the incoming nonce differs, the
-  // send effect clears the dedup signature once so the current climb is
-  // physically re-written even if its pixels are byte-identical to the last
-  // send (the solo lightbulb "re-take" path).
+  // send effect latches a one-shot re-write so the current climb is physically
+  // re-sent even if its packet is byte-identical (the solo lightbulb "re-take"
+  // path). The latch is consumed inside the drain loop, after any in-flight
+  // write completes, so that older write cannot restore a signature and swallow
+  // the reassert request.
   const lastReassertNonceRef = useRef(reassertNonce);
+  const reassertPendingRef = useRef(false);
   // Single AbortController lives across the AutoSender's lifetime. Aborted
   // exactly once on unmount so the in-flight drain loop (a) cancels the
   // underlying adapter.write via the signal, and (b) returns before firing
@@ -275,23 +290,33 @@ function BluetoothAutoSender({
     const signal = abortControllerRef.current?.signal;
     if (signal?.aborted) return;
     // A reassert request (lightbulb re-take) forces a fresh write of the
-    // current climb: drop the dedup signature so the byte-identical skip below
-    // doesn't suppress it. Record the nonce so we punch through exactly once.
+    // current climb. Latch it until the serialized drain reaches that request;
+    // clearing the signature here races with an older in-flight write restoring
+    // its signature before the queued reassert is considered.
     if (reassertNonce !== lastReassertNonceRef.current) {
       lastReassertNonceRef.current = reassertNonce;
-      lastSentSignatureRef.current = null;
+      reassertPendingRef.current = true;
     }
+    const sendRequest: AutoSendRequest = {
+      item: currentClimbQueueItem,
+      sendFramesToBoard,
+      encodingSignature,
+    };
     if (isWritingRef.current) {
-      pendingClimbRef.current = currentClimbQueueItem;
+      pendingSendRef.current = sendRequest;
       return;
     }
     isWritingRef.current = true;
     const drain = async () => {
-      let toSend: ClimbQueueItem | null = currentClimbQueueItem;
+      let request: AutoSendRequest | null = sendRequest;
       try {
-        while (toSend) {
+        while (request) {
           if (signal?.aborted) return;
-          const item = toSend;
+          const {
+            item,
+            sendFramesToBoard: requestSendFramesToBoard,
+            encodingSignature: requestEncodingSignature,
+          } = request;
           // Spill guard (issue #3193): only a KNOWN board/layout mismatch is
           // skipped (unknown metadata sends as today), and no onWallConfirmed —
           // the climb never reached the wall.
@@ -310,8 +335,8 @@ function BluetoothAutoSender({
               );
               onSkipSpillClimbRef.current({ skipped: item, next: nextItem, skippedCount });
             }
-            toSend = pendingClimbRef.current;
-            pendingClimbRef.current = null;
+            request = pendingSendRef.current;
+            pendingSendRef.current = null;
             continue;
           }
           // Reaching here means the item is compatible/unknown and will be sent —
@@ -336,20 +361,25 @@ function BluetoothAutoSender({
           // Skip only a byte-identical re-broadcast (same climb, same frames,
           // same mirror). A changed climb, an edited hold, or a flipped mirror
           // all change this signature and fall through to a real write.
-          const sendSignature = getSendSignature(item);
-          if (sendSignature === lastSentSignatureRef.current) {
+          const climbSignature = getSendSignature(item);
+          const physicalSendSignature = `${climbSignature}::${requestEncodingSignature}`;
+          if (reassertPendingRef.current) {
+            reassertPendingRef.current = false;
+            lastSentSignatureRef.current = null;
+          }
+          if (physicalSendSignature === lastSentSignatureRef.current) {
             // Same pixels already on the wall — skip the physical write (so we
             // don't double-count analytics) but still confirm so a hand-off
             // taker's 2s wall-confirm timer clears; the wall already shows it.
-            onWallConfirmedRef.current(item, sendSignature);
-            toSend = pendingClimbRef.current;
-            pendingClimbRef.current = null;
+            onWallConfirmedRef.current(item, climbSignature);
+            request = pendingSendRef.current;
+            pendingSendRef.current = null;
             continue;
           }
           const firstFrame = getFirstBleFrame(rawFrames, boardName);
           const climbHoldCount = countClimbHolds(firstFrame);
           try {
-            const result = await sendFramesToBoard(firstFrame, mirrored, signal, {
+            const result = await requestSendFramesToBoard(firstFrame, mirrored, signal, {
               climbUuid: item.climb.uuid,
               climbBoardType: item.climb.boardType,
               climbLayoutId: item.climb.layoutId,
@@ -359,7 +389,7 @@ function BluetoothAutoSender({
             // analytics or confirmClimbOnWall for a session the user has left.
             if (signal?.aborted) return;
             if (result === true) {
-              lastSentSignatureRef.current = sendSignature;
+              lastSentSignatureRef.current = physicalSendSignature;
               track('Climb Sent to Board Success', {
                 climbUuid: item.climb?.uuid,
                 boardLayout: layoutName,
@@ -368,7 +398,7 @@ function BluetoothAutoSender({
               // Wall actually received the climb — emit confirmation so the
               // drawer's lightbulb timer dismisses (locally on this phone,
               // and via WS broadcast for other party members).
-              onWallConfirmedRef.current(item, sendSignature);
+              onWallConfirmedRef.current(item, climbSignature);
             } else if (result === false) {
               // The hook set this synchronously on its failing path right before
               // returning false; we read it here in the same microtask the await
@@ -395,15 +425,15 @@ function BluetoothAutoSender({
               climbHoldCount,
             });
           }
-          toSend = pendingClimbRef.current;
-          pendingClimbRef.current = null;
+          request = pendingSendRef.current;
+          pendingSendRef.current = null;
         }
       } finally {
         isWritingRef.current = false;
       }
     };
     void drain();
-  }, [currentClimbQueueItem, sendFramesToBoard, layoutName, boardName, boardId, reassertNonce]);
+  }, [currentClimbQueueItem, sendFramesToBoard, encodingSignature, layoutName, boardName, boardId, reassertNonce]);
 
   return null;
 }
@@ -422,6 +452,15 @@ export function BluetoothProvider({
 }) {
   const [ledColorOverrides, setLedColorOverrides] = useLedColorOverrides();
   const [moonboardLightAdjacentHolds, setMoonboardLightAdjacentHolds] = useMoonboardLightAdjacentHolds();
+  const bleEncodingSignature = useMemo(() => {
+    const colorSignature = JSON.stringify({
+      hand: ledColorOverrides.HAND ?? null,
+      foot: ledColorOverrides.FOOT ?? null,
+      finish: ledColorOverrides.FINISH ?? null,
+    });
+    const adjacentLedMode = boardDetails?.board_name === 'moonboard' && moonboardLightAdjacentHolds ? 1 : 0;
+    return `${boardDetails?.board_name ?? 'none'}|${colorSignature}|moonboard-adjacent:${adjacentLedMode}`;
+  }, [boardDetails?.board_name, ledColorOverrides, moonboardLightAdjacentHolds]);
 
   // Party-session hooks pulled here so the AutoSender (mounted only when
   // connected) and the connect callback share the same references. The
@@ -1040,6 +1079,7 @@ export function BluetoothProvider({
       {isConnected && partyMode === 'off' && boardDetails && (
         <BluetoothAutoSender
           sendFramesToBoard={sendFramesToBoard}
+          encodingSignature={bleEncodingSignature}
           lastSendFailureReasonRef={lastSendFailureReasonRef}
           layoutName={boardDetails.layout_name ?? ''}
           boardName={boardDetails.board_name}

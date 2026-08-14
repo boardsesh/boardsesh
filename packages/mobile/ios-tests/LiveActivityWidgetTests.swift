@@ -151,6 +151,25 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertFalse(item.mirrored)
     }
 
+    func testBoardBleConfigurationDecodesPayloadWithoutAdjacentHoldField() throws {
+        let json = """
+        {
+          "boardName": "moonboard",
+          "layoutId": 1,
+          "sizeId": 2,
+          "apiLevel": null,
+          "deviceName": "MoonBoard",
+          "colorOverrides": {},
+          "numRows": 18
+        }
+        """
+
+        let configuration = try JSONDecoder().decode(BoardBleConfiguration.self, from: Data(json.utf8))
+
+        XCTAssertNil(configuration.lightAdjacentHolds)
+        XCTAssertFalse(configuration.lightAdjacentHolds ?? false)
+    }
+
     func testSharedQueueStateCurrentItemRequiresValidIndex() {
         let items = [
             makeQueueItem(uuid: "queue-1", climbUuid: "climb-1", climbName: "First"),

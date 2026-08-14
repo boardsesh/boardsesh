@@ -374,7 +374,7 @@
     "customizeColorsHelp": "Pick the colors your board lights up for hands, feet, and the finish hold. Start holds keep their default green.",
     "resetColors": "Reset",
     "lightAdjacentHolds": "Light the hold above",
-    "lightAdjacentHoldsHelp": "Dims a second LED above every lit hold. Needs a MoonBoard controller with the additional-LED feature.",
+    "lightAdjacentHoldsHelp": "Adds a dimmer LED above each lit start and hand hold. Needs a MoonBoard controller with the additional-LED feature.",
     "disconnect": "Disconnect board",
     "role": {
       "HAND": "Hands",
