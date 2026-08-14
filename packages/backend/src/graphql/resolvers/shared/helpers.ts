@@ -436,9 +436,15 @@ export async function isSessionMember(ctx: ConnectionContext, sessionId: string)
  * 2. **Redis** (authenticated callers and anonymous WebSockets): Distributed
  *    enforcement across multiple backend instances. Authenticated callers key
  *    on userId; anonymous WebSockets key on the trusted-hop clientIp resolved
- *    during upgrade. Anonymous HTTP stays on Tier 1 because its separate proxy
- *    trust boundary is not equivalent yet. Uses an atomic Lua script (INCR +
- *    EXPIRE) so counts are consistent cluster-wide.
+ *    during upgrade. Uses an atomic Lua script (INCR + EXPIRE) so counts are
+ *    consistent cluster-wide.
+ *
+ *    Anonymous HTTP deliberately stays on Tier 1 only. Since issue #4034 both
+ *    transports resolve clientIp through the same trusted-hop resolver, so the
+ *    trust boundary no longer blocks it — extending Tier 2 to anonymous HTTP is
+ *    now a cost/benefit call (one Redis round-trip on every anonymous HTTP
+ *    request vs. limits that currently scale with instance count) and is left
+ *    open on #4034 rather than folded into that fix.
  *
  * Callers are checked by *both* tiers intentionally:
  * the in-memory check is a fast short-circuit that avoids a Redis
