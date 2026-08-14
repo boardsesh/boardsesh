@@ -229,6 +229,18 @@ describe('cleanup-merged-worktrees open PR handling', () => {
     expect(result.stdout).toContain('Skipped — dirty:      1');
   });
 
+  it('fails closed when status cannot be read for an open PR worktree', async () => {
+    const fixture = await createFixture(72 * 60 * 60);
+    await rm(fixture.candidateWorktree, { force: true, recursive: true });
+
+    const result = runCleanup(fixture, [openPullRequest(fixture.candidateHead)]);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('PR #42 OPEN; failed to read status');
+    expect(result.stdout).toContain('Eligible for removal: 0');
+    expect(result.stdout).toContain('Skipped — open PR:    1');
+  });
+
   it('keeps an in-sync open PR worktree whose HEAD timestamp is in the future', async () => {
     const fixture = await createFixture(-90 * 60);
 
@@ -244,6 +256,18 @@ describe('cleanup-merged-worktrees open PR handling', () => {
     const fixture = await createFixture(72 * 60 * 60);
     const triggerWorktree = join(dirname(fixture.primaryWorktree), 'trigger');
     runGit(['worktree', 'add', '-b', 'trigger', triggerWorktree, 'main'], fixture.primaryWorktree);
+
+    // The gh stub advances feature when the later trigger entry is scanned, so
+    // feature must be queued first for this test to exercise apply-time revalidation.
+    const worktreeListing = runGit(['worktree', 'list', '--porcelain'], fixture.primaryWorktree);
+    const candidateEntryIndex = worktreeListing.indexOf(`worktree ${fixture.candidateWorktree}`);
+    const triggerEntryIndex = worktreeListing.indexOf(`worktree ${triggerWorktree}`);
+    expect(candidateEntryIndex, 'race fixture is missing the feature worktree entry').toBeGreaterThanOrEqual(0);
+    expect(triggerEntryIndex, 'race fixture is missing the trigger worktree entry').toBeGreaterThanOrEqual(0);
+    expect(
+      candidateEntryIndex,
+      'race fixture requires feature to be scanned before trigger mutates its HEAD',
+    ).toBeLessThan(triggerEntryIndex);
 
     const result = runCleanup(fixture, [openPullRequest(fixture.candidateHead)], ['--apply'], {
       GH_MUTATE_WORKTREE: fixture.candidateWorktree,
