@@ -5,7 +5,6 @@ import type { GroupedNotification } from '@boardsesh/shared-schema';
 import { formatTickRelativeTime } from '@boardsesh/profile-stats';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
-import { Badge } from '../Badge';
 import { Avatar } from '../Avatar';
 import { PressableSurface } from '../PressableSurface';
 import { AvatarGroup } from '../you/AvatarGroup';
@@ -15,6 +14,8 @@ import { actorSummary, notificationCopy, notificationIconName } from './notifica
 
 const AVATAR_SIZE = 40;
 const GROUP_AVATAR_SIZE = 28;
+/** Matches `Badge`'s `size="small"` dot, which this row used to render. */
+const UNREAD_DOT_SIZE = 8;
 
 type NotificationRowProps = {
   notification: GroupedNotification;
@@ -97,10 +98,16 @@ export const NotificationRow = memo(function NotificationRow({ notification, onP
         </Text>
       </View>
 
+      {/* A plain View, deliberately NOT `Badge`. Badge's Liquid Glass variant is
+          an `Animated.View` carrying `entering={FadeIn.springify()}` and
+          `exiting={FadeOut.duration(150)}` — right for the toolbar bell, wrong
+          inside a virtualized list. FlashList reuses a cell's subtree for a
+          different item, so a recycled cell whose notification flips read↔unread
+          mounts/unmounts this node mid-scroll: a spring entrance per recycled
+          unread row, and on the exit a dot that lingers 150ms over a row already
+          showing a READ notification. Same 8px dot, no layout animation. */}
       {isRead ? null : (
-        <View style={styles.unreadDot} pointerEvents="none">
-          <Badge visible color={brandColors.primary} size="small" />
-        </View>
+        <View style={[styles.unreadDot, { backgroundColor: brandColors.primary }]} pointerEvents="none" />
       )}
     </PressableSurface>
   );
@@ -141,5 +148,8 @@ const styles = StyleSheet.create({
   },
   unreadDot: {
     alignSelf: 'center',
+    width: UNREAD_DOT_SIZE,
+    height: UNREAD_DOT_SIZE,
+    borderRadius: UNREAD_DOT_SIZE / 2,
   },
 });

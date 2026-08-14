@@ -106,6 +106,18 @@ export const notificationsTypeDefs = /* GraphQL */ `
     climbUuid: String
     "Board type"
     boardType: String
+    """
+    Layout the climb was set on. Clients need this to build a board URL that
+    actually resolves: the climb query filters on layoutId, so guessing the
+    board's first layout misses every Kilter Homewall / Tension Board 2 climb.
+    Web reads the same column server-side in /api/internal/climb-redirect.
+    """
+    climbLayoutId: Int
+    """
+    Angle the climb was set at, when the setter fixed one. Null for the many
+    climbs that carry no angle; clients fall back to the reader's own board.
+    """
+    climbAngle: Int
     "Proposal UUID (for deep-linking to a specific proposal)"
     proposalUuid: String
     "Setter username (for new_climbs_synced notifications)"

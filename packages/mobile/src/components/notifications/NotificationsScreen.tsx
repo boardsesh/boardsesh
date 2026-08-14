@@ -44,35 +44,53 @@ export default function NotificationsScreen() {
   const navigation = useNavigation();
   const bottomChrome = useBottomChromeMetrics();
 
-  const query = useGroupedNotifications();
+  // Destructured, not held as `query`: React Query mints a fresh result object
+  // on every render, so a callback listing the whole object as a dep gets a new
+  // identity each pass and its `useCallback` buys nothing. These members are
+  // stable across renders.
+  const {
+    data,
+    status,
+    fetchStatus,
+    isPending,
+    isError,
+    isRefetching,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+    refetch,
+  } = useGroupedNotifications();
   const unreadCount = useUnreadNotificationCount();
   const { mutate: markAllAsRead } = useMarkAllAsRead();
   const handlePress = useNotificationNavigation();
 
-  const groups = useMemo(() => query.data?.pages.flatMap((page) => page.groups) ?? EMPTY_GROUPS, [query.data]);
+  const groups = useMemo(() => data?.pages.flatMap((page) => page.groups) ?? EMPTY_GROUPS, [data]);
 
   // Notifications are network-only. `query-provider` runs React Query in
   // `offlineFirst`, so an offline fetch PAUSES rather than failing: `isPending`
   // never clears and the screen would spin forever without this branch.
-  const offline = useOfflineQueryState(query);
+  const offline = useOfflineQueryState({ status, fetchStatus, data });
   const showOffline = offline.isBlocked && groups.length === 0;
-  const showSpinner = !showOffline && query.isPending && groups.length === 0;
-  const showError = !showOffline && query.isError && groups.length === 0;
+  const showSpinner = !showOffline && isPending && groups.length === 0;
+  const showError = !showOffline && isError && groups.length === 0;
 
   const handleMarkAllAsRead = useCallback(() => markAllAsRead(), [markAllAsRead]);
-  const handleRefresh = useCallback(() => void query.refetch(), [query]);
+  const handleRefresh = useCallback(() => void refetch(), [refetch]);
 
   const handleEndReached = useCallback(() => {
-    if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
-  }, [query]);
+    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // "Mark all as read" lives in the native header rather than the list body, so
   // it stays reachable while the list is scrolled (the `setters` / `zone` filter
-  // screens set the precedent). Shown only when there is something to mark.
+  // screens set the precedent). Shown only when there is something to mark AND
+  // something on screen to mark it against — mirrors web's
+  // `groupedNotifications.length > 0 && unreadCount > 0`, which keeps the action
+  // off a first paint where the count query has resolved but the list has not.
   useEffect(() => {
     navigation.setOptions({
       headerRight:
-        unreadCount > 0
+        unreadCount > 0 && groups.length > 0
           ? () => (
               <Pressable onPress={handleMarkAllAsRead} hitSlop={8} accessibilityRole="button">
                 <Text variant="subheadline" color={brandColors.primary}>
@@ -82,7 +100,10 @@ export default function NotificationsScreen() {
             )
           : undefined,
     });
-  }, [navigation, unreadCount, handleMarkAllAsRead, brandColors.primary, t]);
+    // `groups.length` is a dep here on purpose. The perf playbook's ban on array
+    // `.length` deps is about `renderItem` (it re-renders every row); this effect
+    // only re-runs `setOptions` on the native header.
+  }, [navigation, unreadCount, groups.length, handleMarkAllAsRead, brandColors.primary, t]);
 
   const renderItem = useCallback(
     ({ item }: { item: GroupedNotification }) => <NotificationRow notification={item} onPress={handlePress} />,
@@ -92,7 +113,10 @@ export default function NotificationsScreen() {
   return (
     <View style={[styles.flex, { backgroundColor: systemColors.background }]}>
       <FlashList
-        data={showSpinner || showError || showOffline ? EMPTY_GROUPS : groups}
+        // No state ternary here: every one of showSpinner/showError/showOffline
+        // is itself conjoined with `groups.length === 0`, so the list is already
+        // empty whenever one is set and the state placards below own the screen.
+        data={groups}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
         contentInsetAdjustmentBehavior="automatic"
@@ -126,14 +150,22 @@ export default function NotificationsScreen() {
           )
         }
         ListFooterComponent={
-          query.isFetchingNextPage ? (
+          isFetchingNextPage ? (
             <View style={styles.footer}>
               <ActivityIndicator size="small" />
             </View>
           ) : null
         }
         refreshControl={
-          <RefreshControl refreshing={query.isRefetching} onRefresh={handleRefresh} tintColor={brandColors.primary} />
+          // `isRefetching` is `isFetching && !isPending`, which is also true while
+          // a NEXT page loads — so without the guard the pull-to-refresh spinner
+          // pops at the top of the list every time the user paginates at the
+          // bottom. The footer spinner already owns that state.
+          <RefreshControl
+            refreshing={isRefetching && !isFetchingNextPage}
+            onRefresh={handleRefresh}
+            tintColor={brandColors.primary}
+          />
         }
       />
     </View>

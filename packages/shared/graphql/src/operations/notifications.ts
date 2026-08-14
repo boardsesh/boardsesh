@@ -55,6 +55,8 @@ export const GET_GROUPED_NOTIFICATIONS = gql`
         climbName
         climbUuid
         boardType
+        climbLayoutId
+        climbAngle
         proposalUuid
         setterUsername
         gymName

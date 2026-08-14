@@ -24,6 +24,42 @@ type NotificationRow = {
   commentBody: string | null;
 };
 
+/**
+ * The `board_climbs` columns every climb-bearing notification needs. `layoutId`
+ * and `angle` are the two that let a client build a board URL that resolves:
+ * `climb(uuid, layoutId)` filters on the layout, so a client that guesses the
+ * board's first layout misses every Kilter Homewall / Tension Board 2 climb.
+ * Web reads the same pair in `/api/internal/climb-redirect`.
+ */
+const NOTIFICATION_CLIMB_COLUMNS = {
+  uuid: dbSchema.boardClimbs.uuid,
+  name: dbSchema.boardClimbs.name,
+  boardType: dbSchema.boardClimbs.boardType,
+  setterUsername: dbSchema.boardClimbs.setterUsername,
+  layoutId: dbSchema.boardClimbs.layoutId,
+  angle: dbSchema.boardClimbs.angle,
+} as const;
+
+type NotificationClimb = {
+  uuid: string;
+  name: string | null;
+  boardType: string;
+  setterUsername: string | null;
+  layoutId: number;
+  angle: number | null;
+};
+
+/**
+ * Copy the climb's board coordinates onto the group. `angle` is nullable in
+ * `board_climbs` (most climbs carry none), so it stays `undefined` rather than
+ * collapsing to 0 — clients fall back to the reader's own board angle, which is
+ * a better guess than flat.
+ */
+function applyClimbBoardFields(group: { climbLayoutId?: number; climbAngle?: number }, climb: NotificationClimb): void {
+  group.climbLayoutId = climb.layoutId;
+  group.climbAngle = climb.angle ?? undefined;
+}
+
 function truncateCommentBody(commentBody: string | null): string | undefined {
   if (!commentBody) return undefined;
   if (commentBody.length > 100) return commentBody.slice(0, 100) + '...';
@@ -212,6 +248,8 @@ export const socialNotificationQueries = {
         climbName: undefined as string | undefined,
         climbUuid: undefined as string | undefined,
         boardType: undefined as string | undefined,
+        climbLayoutId: undefined as number | undefined,
+        climbAngle: undefined as number | undefined,
         proposalUuid: undefined as string | undefined,
         setterUsername: undefined as string | undefined,
         gymName: undefined as string | undefined,
@@ -240,24 +278,19 @@ export const socialNotificationQueries = {
       }
     }
 
-    // Batch-fetch climbs
-    const climbMap = new Map<string, { name: string | null; boardType: string; setterUsername: string | null }>();
+    // Batch-fetch climbs. `layoutId` + `angle` ride along because a client can't
+    // open a climb without them: `climb(uuid, layoutId)` filters on the layout,
+    // so a client guessing the board's first layout misses every Kilter Homewall
+    // and Tension Board 2 climb. Web reads the same two columns server-side in
+    // `/api/internal/climb-redirect`; this is that resolution for GraphQL clients.
+    const climbMap = new Map<string, NotificationClimb>();
     if (climbEntityIds.length > 0) {
       const climbRows = await db
-        .select({
-          uuid: dbSchema.boardClimbs.uuid,
-          name: dbSchema.boardClimbs.name,
-          boardType: dbSchema.boardClimbs.boardType,
-          setterUsername: dbSchema.boardClimbs.setterUsername,
-        })
+        .select(NOTIFICATION_CLIMB_COLUMNS)
         .from(dbSchema.boardClimbs)
         .where(inArray(dbSchema.boardClimbs.uuid, climbEntityIds));
       for (const row of climbRows) {
-        climbMap.set(row.uuid, {
-          name: row.name,
-          boardType: row.boardType,
-          setterUsername: row.setterUsername,
-        });
+        climbMap.set(row.uuid, row);
       }
     }
 
@@ -280,21 +313,12 @@ export const socialNotificationQueries = {
       const proposalClimbUuids = [...new Set([...proposalMap.values()].map((p) => p.climbUuid))];
       if (proposalClimbUuids.length > 0) {
         const proposalClimbRows = await db
-          .select({
-            uuid: dbSchema.boardClimbs.uuid,
-            name: dbSchema.boardClimbs.name,
-            boardType: dbSchema.boardClimbs.boardType,
-            setterUsername: dbSchema.boardClimbs.setterUsername,
-          })
+          .select(NOTIFICATION_CLIMB_COLUMNS)
           .from(dbSchema.boardClimbs)
           .where(inArray(dbSchema.boardClimbs.uuid, proposalClimbUuids));
         for (const row of proposalClimbRows) {
           if (!climbMap.has(row.uuid)) {
-            climbMap.set(row.uuid, {
-              name: row.name,
-              boardType: row.boardType,
-              setterUsername: row.setterUsername,
-            });
+            climbMap.set(row.uuid, row);
           }
         }
       }
@@ -325,6 +349,7 @@ export const socialNotificationQueries = {
           group.climbName = climb.name ?? undefined;
           group.boardType = climb.boardType;
           group.setterUsername = climb.setterUsername ?? undefined;
+          applyClimbBoardFields(group, climb);
         }
       } else if (climbTypes.includes(group.type)) {
         const climb = climbMap.get(group.entityId);
@@ -332,6 +357,7 @@ export const socialNotificationQueries = {
           group.climbUuid = group.entityId;
           group.climbName = climb.name ?? undefined;
           group.boardType = climb.boardType;
+          applyClimbBoardFields(group, climb);
         }
       } else if (proposalTypes.includes(group.type)) {
         const proposal = proposalMap.get(group.entityId);
@@ -341,6 +367,7 @@ export const socialNotificationQueries = {
           group.boardType = proposal.boardType;
           const climb = climbMap.get(proposal.climbUuid);
           group.climbName = climb?.name ?? undefined;
+          if (climb) applyClimbBoardFields(group, climb);
         }
       }
     }

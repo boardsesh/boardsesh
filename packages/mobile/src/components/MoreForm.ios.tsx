@@ -51,6 +51,9 @@ type SystemImageName = NonNullable<ComponentProps<typeof Image>['systemName']>;
 // prior `sfSymbol` field was a string too) so an SF Symbol name that isn't in the
 // `sf-symbols-typescript` union doesn't fail the type-check.
 const IOS_SF_SYMBOL: Record<MoreIconName, string> = {
+  // Matches the Home chrome's bell, so the two ways into notifications read as
+  // the same destination.
+  notifications: 'bell',
   playlists: 'music.note.list',
   gyms: 'building.2',
   integrations: 'heart',

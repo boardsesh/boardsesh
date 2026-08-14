@@ -8,10 +8,10 @@ import { ANGLES } from '@boardsesh/board-config';
  * Tension), otherwise the board's first supported angle — which is how
  * angle-agnostic boards like the MoonBoard land on their single value.
  *
- * Lifted out of the board builder once a second caller needed it: notification
- * rows carry a climb uuid but no angle (web resolves one server-side via
- * `/api/internal/climb-redirect`, which mobile has no equivalent of), so they
- * fall back to the user's active board angle and then to this.
+ * Lifted out of the board builder once a second caller needed it: a notification
+ * row only carries the setter's angle when the setter fixed one, which most
+ * climbs don't, so it falls back to the reader's active board angle and then to
+ * this.
  */
 export function defaultAngle(boardName: BoardName): number {
   const angles = ANGLES[boardName] ?? [];

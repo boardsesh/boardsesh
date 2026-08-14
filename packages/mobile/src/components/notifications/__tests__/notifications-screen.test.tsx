@@ -121,7 +121,9 @@ vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemRed: '#FF
 // the real implementation. Its own dependencies are.
 // One stable result object, matching React Query: `.data` keeps its identity
 // until the cache entry actually changes.
-const activeBoardMock = vi.hoisted(() => ({ data: { boardType: 'kilter', angle: 45 } }));
+const activeBoardMock = vi.hoisted(() => ({
+  data: { boardType: 'kilter', angle: 45, layoutId: 8, sizeId: 25, setIds: '1,20' },
+}));
 vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => activeBoardMock }));
 vi.mock('../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => ({ openPlayDrawer }) }));
 vi.mock('../../../lib/open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer }));
@@ -248,8 +250,19 @@ describe('NotificationsScreen mark all as read', () => {
 
   it('offers the headerRight action once something is unread', () => {
     state.unreadCount = 3;
+    state.query = makeQuery({ data: { pages: [{ groups: [makeNotification()], hasMore: false, unreadCount: 3 }] } });
     render(<NotificationsScreen />);
     expect(lastHeaderRight()).toBeTypeOf('function');
+  });
+
+  it('withholds the action while the count has resolved but the list has not', () => {
+    // Mirrors web's `groupedNotifications.length > 0 && unreadCount > 0`: the
+    // unread count is its own query and settles first, so without the list gate
+    // "Mark all as read" floats over an empty screen on first paint.
+    state.unreadCount = 3;
+    state.query = makeQuery({ data: undefined, isPending: true, status: 'pending', fetchStatus: 'fetching' });
+    render(<NotificationsScreen />);
+    expect(lastHeaderRight()).toBeUndefined();
   });
 });
 
@@ -276,23 +289,104 @@ describe('NotificationsScreen row taps', () => {
     expect(routerMock.push).toHaveBeenCalledTimes(1);
   });
 
-  it('opens a climb notification in the play drawer at the active board angle', () => {
+  it("opens a climb notification on the CLIMB's layout, not the board's first layout", () => {
+    // The regression this guards: dropping `climbLayoutId` sends every climb
+    // through `getDefaultRenderBoard`, which falls back to `getAllLayouts(board)[0]`
+    // — layout 9 for tension. `climb(uuid, layoutId)` filters on the layout, so a
+    // Tension Board 2 climb (layout 10) would resolve to null and dead-end the
+    // user on "climb not found".
     const notification = makeNotification({
-      uuid: 'climb-1',
+      uuid: 'climb-tb2',
+      type: 'new_climb',
+      climbUuid: 'C-TB2',
+      boardType: 'tension',
+      climbLayoutId: 10,
+      isRead: true,
+    });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="climb-tb2"]')!);
+
+    // A different board from the reader's kilter, so no size/sets ride along and
+    // the angle falls to the tension default.
+    expect(openClimbInPlayDrawer).toHaveBeenCalledWith(
+      {
+        kind: 'ref',
+        climbUuid: 'C-TB2',
+        boardType: 'tension',
+        layoutId: 10,
+        angle: 40,
+        sizeId: undefined,
+        setIds: undefined,
+      },
+      expect.objectContaining({ openPlayDrawer }),
+    );
+  });
+
+  it("carries the reader's own size and sets when the climb is on their layout", () => {
+    const notification = makeNotification({
+      uuid: 'climb-mine',
       type: 'new_climb',
       climbUuid: 'C1',
+      boardType: 'kilter',
+      climbLayoutId: 8,
+      isRead: true,
+    });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="climb-mine"]')!);
+
+    // Same board AND same layout as the active board, so the climb draws on the
+    // reader's actual wall rather than the layout's biggest size. The climb
+    // carries no angle of its own, so the reader's 45° wins.
+    expect(openClimbInPlayDrawer).toHaveBeenCalledWith(
+      { kind: 'ref', climbUuid: 'C1', boardType: 'kilter', layoutId: 8, angle: 45, sizeId: 25, setIds: '1,20' },
+      expect.objectContaining({ openPlayDrawer }),
+    );
+  });
+
+  it("prefers the setter's fixed angle over the reader's board angle", () => {
+    const notification = makeNotification({
+      uuid: 'climb-angled',
+      type: 'new_climb',
+      climbUuid: 'C2',
+      boardType: 'kilter',
+      climbLayoutId: 8,
+      climbAngle: 50,
+      isRead: true,
+    });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="climb-angled"]')!);
+
+    // 50 is where this climb's grade and stats live; the reader's 45 would render
+    // it ungraded.
+    expect(openClimbInPlayDrawer).toHaveBeenCalledWith(
+      expect.objectContaining({ climbUuid: 'C2', angle: 50 }),
+      expect.objectContaining({ openPlayDrawer }),
+    );
+  });
+
+  it("falls back to the reader's board layout when the server sends no climbLayoutId", () => {
+    // An OTA'd client briefly ahead of the backend deploy: the field is absent,
+    // so the same-board fallback still beats guessing layout 1.
+    const notification = makeNotification({
+      uuid: 'climb-legacy',
+      type: 'new_climb',
+      climbUuid: 'C3',
       boardType: 'kilter',
       isRead: true,
     });
     state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
 
     const { container } = render(<NotificationsScreen />);
-    fireEvent.click(container.querySelector('[data-row="climb-1"]')!);
+    fireEvent.click(container.querySelector('[data-row="climb-legacy"]')!);
 
-    // GroupedNotification carries no angle; the active board is the same board,
-    // so its 45° wins over the board default.
     expect(openClimbInPlayDrawer).toHaveBeenCalledWith(
-      { kind: 'ref', climbUuid: 'C1', boardType: 'kilter', angle: 45 },
+      expect.objectContaining({ climbUuid: 'C3', layoutId: 8, angle: 45 }),
       expect.objectContaining({ openPlayDrawer }),
     );
   });

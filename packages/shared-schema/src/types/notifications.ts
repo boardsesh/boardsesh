@@ -61,6 +61,10 @@ export type GroupedNotification = {
   climbName?: string | null;
   climbUuid?: string | null;
   boardType?: string | null;
+  /** Layout the climb was set on — clients need it to build a resolvable board URL. */
+  climbLayoutId?: number | null;
+  /** Angle the climb was set at, when the setter fixed one (often null). */
+  climbAngle?: number | null;
   proposalUuid?: string | null;
   setterUsername?: string | null;
   /** Gym name (for gym_claim_approved notifications). */

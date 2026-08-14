@@ -24,6 +24,7 @@ import type { MoreFormProps, MoreIconName, MoreRow, MoreSelectRow } from './More
 // through the app's MDI font). Minimal-functional: each glyph reads sensibly for
 // its row; exact parity with the bundled Android vector set is a Phase-1 item.
 const MORE_ICON: Record<MoreIconName, string> = {
+  notifications: 'bell-outline',
   playlists: 'playlist-music',
   gyms: 'office-building',
   integrations: 'puzzle-outline',

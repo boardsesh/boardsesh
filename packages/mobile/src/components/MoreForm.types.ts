@@ -24,6 +24,7 @@
  * screen and both renderers.
  */
 export type MoreIconName =
+  | 'notifications'
   | 'playlists'
   | 'gyms'
   | 'integrations'
