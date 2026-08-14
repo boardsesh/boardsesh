@@ -145,7 +145,7 @@
     "empty": "Aucun bloc dans cette playlist pour l'instant",
     "climbCount_one": "{{count}} bloc",
     "climbCount_other": "{{count}} blocs",
-    "openInApp": "Grimpe ça dans l'app",
+    "openInApp": "Grimpez ça dans l'app",
     "followerCount_one": "{{count}} abonné",
     "followerCount_other": "{{count}} abonnés",
     "followFailed": "Impossible de mettre à jour le suivi",

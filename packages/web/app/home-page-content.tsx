@@ -474,9 +474,10 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
 
           <InstallAppCard platform={installPlatform} />
 
-          {/* Signed-in only: owner's gym (Manage / View) or a low-key
-              dismissible "Find your gym" nudge. Self-gates to null for
-              signed-out visitors. */}
+          {/* Signed-in only: the gym you help run, with Manage / View links.
+              Self-gates to null for signed-out visitors and for climbers with
+              no gym — the "Find your gym" nudge left with the drawers it
+              opened, and comes back when #4372 builds the gyms directory. */}
           <HomeGymCard />
 
           <OnboardingCard

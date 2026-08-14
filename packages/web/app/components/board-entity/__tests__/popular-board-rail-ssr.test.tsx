@@ -63,6 +63,17 @@ describe('PopularBoardRail server HTML', () => {
     expect(renderToString(<PopularBoardRail configs={[]} />)).toBe('');
   });
 
+  it('renders nothing when the board tables resolve none of the configs', () => {
+    // The realistic case: a layout/size live in the DB before the generated
+    // hold tables catch up. Every card drops inside the map, so a guard on the
+    // input array would leave the heading standing over an empty grid.
+    const html = renderToString(
+      <PopularBoardRail configs={[{ ...makeConfig(0), layoutId: 999_999, sizeId: 999_999, setIds: [1] }]} />,
+    );
+
+    expect(html).toBe('');
+  });
+
   it('uses displayName as the anchor text and adds no aria-label to override it', () => {
     const html = renderToString(<PopularBoardRail configs={[makeConfig(0)]} />);
 

@@ -51,9 +51,17 @@ export type PopularBoardRailProps = {
 export default function PopularBoardRail({ configs }: PopularBoardRailProps) {
   const { t } = useTranslation('boards');
 
-  // `getPopularBoardConfigs()` returns [] when the backend is unreachable, so
-  // an empty rail renders nothing at all rather than an empty section heading.
-  if (configs.length === 0) return null;
+  // Resolve first, render second. `getPopularBoardConfigs()` returns [] when the
+  // backend is unreachable, and a config the static hold tables don't resolve
+  // drops out one by one — so the guard counts the cards that will actually
+  // paint, not the configs that came in. Guarding on the input array would ship
+  // a lone section heading over an empty grid the day every config drops.
+  const cards = configs.flatMap((config) => {
+    const boardDetails = resolveBoardDetails(config);
+    return boardDetails ? [{ config, boardDetails }] : [];
+  });
+
+  if (cards.length === 0) return null;
 
   return (
     <Box component="section">
@@ -61,9 +69,7 @@ export default function PopularBoardRail({ configs }: PopularBoardRailProps) {
         {t('discovery.popular.title')}
       </Typography>
       <div className={styles.grid}>
-        {configs.map((config) => {
-          const boardDetails = resolveBoardDetails(config);
-          if (!boardDetails) return null;
+        {cards.map(({ config, boardDetails }) => {
           const href = popularConfigListUrl(config, getDefaultAngleForBoard(config.boardType));
           return (
             <MuiLink
