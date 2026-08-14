@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
-import type { Climb, BoardDetails } from '@/app/lib/types';
+import type { BoardName, Climb, BoardDetails } from '@/app/lib/types';
+import type { LogbookEntry } from '@boardsesh/board-react';
 import ClimbListItem from '../climb-list-item';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
@@ -45,8 +46,12 @@ vi.mock('../../board-page/selected-climb-store', () => ({
   useIsClimbSelected: () => false,
 }));
 
+// The badge reads no context of its own any more — the row hands it the
+// viewer's ticks — so this mock is what stands in for a signed-in session.
+let mockBoardProvider: { logbook: LogbookEntry[]; boardName: BoardName } | null = null;
+
 vi.mock('../../board-provider/board-provider-context', () => ({
-  useOptionalBoardProvider: () => null,
+  useOptionalBoardProvider: () => mockBoardProvider,
 }));
 
 vi.mock('../../providers/snackbar-provider', () => ({
@@ -149,8 +154,13 @@ vi.mock('../../swipeable-drawer/swipeable-drawer', () => ({
   default: ({ children }: { children: React.ReactNode }) => <div data-testid="swipeable-drawer">{children}</div>,
 }));
 
+let capturedAscentStatusProps: { logbook?: readonly LogbookEntry[]; boardName?: BoardName } | null = null;
+
 vi.mock('../ascent-status', () => ({
-  AscentStatus: () => <span data-testid="ascent-status" />,
+  AscentStatus: (props: { logbook?: readonly LogbookEntry[]; boardName?: BoardName }) => {
+    capturedAscentStatusProps = props;
+    return <span data-testid="ascent-status" />;
+  },
 }));
 
 vi.mock('../climb-list-item.module.css', () => ({
@@ -228,6 +238,8 @@ describe('ClimbListItem', () => {
     vi.clearAllMocks();
     capturedSwipeOptions = null;
     capturedDoubleTapCallback = undefined;
+    capturedAscentStatusProps = null;
+    mockBoardProvider = null;
     // Reset to default state
     mockDoubleTapFavorite.handleDoubleTap = vi.fn();
     mockDoubleTapFavorite.showHeart = false;
@@ -271,6 +283,43 @@ describe('ClimbListItem', () => {
         />,
       );
       expect(screen.getByText('V5')).toBeTruthy();
+    });
+
+    /**
+     * The ascent badge stopped reading BoardContext for itself (it is a
+     * front-door survivor and the provider is not), so this row is what feeds
+     * it. Drop either prop and every list badge silently disappears for
+     * signed-in climbers — which is what this asserts.
+     */
+    it('feeds the ascent badge the viewer ticks and board from the provider', () => {
+      const logbook = [{ climb_uuid: 'climb-1', angle: 40, is_ascent: true }] as unknown as LogbookEntry[];
+      mockBoardProvider = { logbook, boardName: 'tension' };
+
+      render(
+        <ClimbListItem
+          pathname={defaultPathname}
+          isDark={defaultIsDark}
+          climb={makeClimb()}
+          boardDetails={makeBoardDetails()}
+        />,
+      );
+
+      expect(capturedAscentStatusProps?.logbook).toBe(logbook);
+      expect(capturedAscentStatusProps?.boardName).toBe('tension');
+    });
+
+    it('leaves the ascent badge tickless when there is no board provider', () => {
+      render(
+        <ClimbListItem
+          pathname={defaultPathname}
+          isDark={defaultIsDark}
+          climb={makeClimb()}
+          boardDetails={makeBoardDetails()}
+        />,
+      );
+
+      expect(capturedAscentStatusProps?.logbook).toBeUndefined();
+      expect(capturedAscentStatusProps?.boardName).toBeUndefined();
     });
 
     it('renders thumbnail', () => {

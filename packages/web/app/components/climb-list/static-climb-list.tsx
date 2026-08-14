@@ -175,7 +175,13 @@ export default function StaticClimbList({
                     minHeight: LIST_ROW_HEIGHT,
                     boxSizing: 'border-box',
                     transform: `translateY(${virtualItem.start}px)`,
-                    contain: 'layout style paint',
+                    // No `paint` here, unlike the classic list: paint
+                    // containment clips descendants to this box, and the row
+                    // is one big anchor whose keyboard focus ring is drawn
+                    // *outside* its border box (`outline-offset: 2px`, in
+                    // components/index.css). With `paint` the ring is clipped
+                    // away and tabbing through the list shows nothing.
+                    contain: 'layout style',
                   }}
                 >
                   <StaticClimbRow

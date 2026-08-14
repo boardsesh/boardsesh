@@ -13,6 +13,7 @@ import BoardFilterStrip from '@/app/components/board-scroll/board-filter-strip';
 import StaticClimbList from '@/app/components/climb-list/static-climb-list';
 import type { SessionBoardConfig } from '@/app/lib/board-config-for-playlist';
 import { usePersistentSessionState } from '@/app/components/persistent-session/persistent-session-context';
+import { themeTokens } from '@/app/theme/theme-config';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { Climb } from '@/app/lib/types';
 
@@ -119,7 +120,10 @@ export default function MultiboardClimbList({
     }
   };
 
-  // Sort toggle and count, rendered above the rows
+  // Sort toggle and count, rendered above the rows. Carries its own padding and
+  // 40px floor: it used to be handed to ClimbsList as `headerInline`, which sat
+  // it inside a padded header container. In the static list it is the header, so
+  // without this it would sit flush at x=0 above rows inset by 8px.
   const sortControls = showSortToggle ? (
     <Box
       sx={{
@@ -127,8 +131,8 @@ export default function MultiboardClimbList({
         alignItems: 'center',
         gap: 1.5,
         flexWrap: 'wrap',
-        flex: 1,
-        minWidth: 0,
+        padding: `${themeTokens.spacing[2]}px ${themeTokens.spacing[3]}px`,
+        minHeight: 40,
       }}
     >
       <ToggleButtonGroup exclusive size="small" value={sortBy} onChange={handleSortChange}>

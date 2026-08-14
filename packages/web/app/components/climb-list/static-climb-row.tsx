@@ -104,10 +104,14 @@ const StaticClimbRow = ({
           />
         </Box>
         <Box sx={centerSx}>
+          {/* showGradeWhileLoading is load-bearing for the crawl: the reader's
+              grade format resolves from IndexedDB inside an effect, so without
+              it the server HTML carries a Skeleton where the grade belongs. */}
           <ClimbTitle
             climb={climb}
             gradePosition="right"
             showSetterInfo
+            showGradeWhileLoading
             titleFontSize={themeTokens.typography.fontSize.xl}
             isNoMatch={!!climb.is_no_match}
           />
