@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- We now measure how fast every board download actually runs, so we can chase the slow ones instead of guessing, and we check each downloaded board is complete before using it. ([#4405](https://github.com/boardsesh/boardsesh/pull/4405))
+  Faster download paths for iPhone are behind a switch we'll turn on once we've timed them on real phones.
 - Set up any MoonBoard at more than the usual 25° and 40° — grade and log it there like any other angle, on web or in the app. *(Rolling out gradually — ask if you don't see it yet.)* ([#4419](https://github.com/boardsesh/boardsesh/pull/4419))
 - No user-visible native change. The gate relaxation and the `?next=` return are web-fork-only, asserted inert on native by the two suites above. What does reach the store fleet is one additive analytics capture per board-route open — no navigation, no copy, nothing on screen — so there is nothing for the "What's New" screen. The user-visible copy for this flow ships with the www front door in #4369. ([#4418](https://github.com/boardsesh/boardsesh/pull/4418))
 

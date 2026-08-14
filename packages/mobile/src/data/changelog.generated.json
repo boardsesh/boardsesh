@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-14T01:40:46.228Z",
+  "generatedAt": "2026-08-14T01:46:54.159Z",
   "entries": [
+    {
+      "prNumber": 4405,
+      "category": "new",
+      "title": "We now measure how fast every board download actually runs, so we can chase the slow ones instead of guessing, and we check each downloaded board is complete before using it.",
+      "mergedAt": "2026-08-14T01:44:49Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4405",
+      "body": "Faster download paths for iPhone are behind a switch we'll turn on once we've timed them on real phones."
+    },
     {
       "prNumber": 4419,
       "category": "new",
