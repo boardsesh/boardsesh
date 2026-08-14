@@ -38,8 +38,17 @@ export default function CommentSection({ entityType, entityId, title }: CommentS
   const wsClientRef = useRef<ReturnType<typeof createGraphQLClient> | null>(null);
   const resolvedTitle = title ?? t('comment.discussionTitle');
 
-  // Set up live comment updates subscription
+  // Live comment updates, for the readers who can actually take part.
+  //
+  // Anonymous visitors get the thread over HTTP — `CommentList` fetches it on
+  // mount and on every `refreshKey` bump — and the composer below is already
+  // gated on `isAuthenticated`, so all a signed-out reader loses is live push.
+  // Opening the socket for them meant every crawler and every drive-by reader
+  // of a climb page held a backend connection: the last eager socket on the
+  // board front doors (#4433).
   useEffect(() => {
+    if (!isAuthenticated) return;
+
     const wsUrl = getBackendWsUrl();
     if (!wsUrl) return;
 
@@ -73,7 +82,7 @@ export default function CommentSection({ entityType, entityId, title }: CommentS
       void wsClient.dispose();
       wsClientRef.current = null;
     };
-  }, [entityType, entityId, token]);
+  }, [entityType, entityId, token, isAuthenticated]);
 
   const handleAddComment = useCallback(
     async (body: string) => {
