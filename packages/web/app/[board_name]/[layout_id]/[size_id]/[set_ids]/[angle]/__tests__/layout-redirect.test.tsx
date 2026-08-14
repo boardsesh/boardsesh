@@ -41,19 +41,8 @@ vi.mock('@/app/lib/board-utils', () => ({
   generateBoardTitle: vi.fn(() => 'Kilter Board'),
 }));
 
-// The layout's JSX pulls in client providers; none render in this test — the
-// layout function only constructs the element tree — but the modules must load.
-vi.mock('@/app/components/board-page/header', () => ({ default: () => null }));
-vi.mock('@/app/components/graphql-queue', () => ({ GraphQLQueueProvider: () => null }));
-vi.mock('@/app/components/connection-manager/connection-settings-context', () => ({
-  ConnectionSettingsProvider: () => null,
-}));
-vi.mock('@/app/components/connection-manager/websocket-connection-provider', () => ({
-  WebSocketConnectionProvider: () => null,
-}));
-vi.mock('@/app/components/persistent-session', () => ({ BoardSessionBridge: () => null }));
-vi.mock('@/app/components/queue-control/ui-searchparams-provider', () => ({ UISearchParamsProvider: () => null }));
-vi.mock('@/app/components/queue-control/queue-bridge-context', () => ({ QueueBridgeInjector: () => null }));
+// The two client modules the shell still pulls in. Neither renders here — the
+// layout function only constructs the element tree — but both must load.
 vi.mock('@/app/components/board-page/last-used-board-tracker', () => ({ default: () => null }));
 vi.mock('@/app/components/providers/i18n-provider', () => ({ default: () => null }));
 

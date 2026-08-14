@@ -129,16 +129,14 @@ test.describe.skip('Help Page Screenshots', () => {
 // The seeded dev user (test@boardsesh.com / test) is exported by
 // `vp run test:e2e:setup`, so no 1Password roundtrip is required.
 //
-// This block stays LIVE where the unauthenticated one above is skipped, so
-// three of the help PNGs keep regenerating. It survives the W-15 cut because
-// nothing here needs the interactive climbing surface the page body used to be:
-// the beforeEach only waits for a climb row, which the SSR front door emits;
-// the filters drawer and the header button that opens it are mounted by the
-// untouched parent `[angle]/layout.tsx`; `/settings` is its own route; and the
-// party-mode shot dispatches the dummy-sesh event at the root layout's
-// `OnboardingDummySeshMount`. W-17 removes that header and takes
-// `personal progress filters` with it — expect this block to shrink to the two
-// route-independent tests then, and W-16 to re-home the drawer shots.
+// This block stays LIVE where the unauthenticated one above is skipped, so the
+// remaining help PNGs keep regenerating. Everything left here is
+// route-independent: the beforeEach only waits for a climb row, which the SSR
+// front door emits; `/settings` is its own route; and the party-mode shot
+// dispatches the dummy-sesh event at the root layout's
+// `OnboardingDummySeshMount`. `personal progress filters` is gone — W-17
+// (#4433) removed the board header that mounted the filters drawer, and W-16
+// re-homes the drawer shots.
 test.describe('Help Page Screenshots - Authenticated', () => {
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(120_000);
@@ -168,14 +166,6 @@ test.describe('Help Page Screenshots - Authenticated', () => {
 
     // Wait for the auth modal to close (login succeeded).
     await page.waitForSelector('input#login_email', { state: 'hidden', timeout: 15_000 });
-  });
-
-  test('personal progress filters', async ({ page }) => {
-    await page.getByRole('button', { name: 'Open filters' }).click();
-    await waitForDrawerOpen(page);
-    // Expand the Progress accordion (user-specific filters: attempts, completions).
-    await page.getByText('Progress', { exact: true }).click();
-    await page.screenshot({ path: `${SCREENSHOT_DIR}/personal-progress.png` });
   });
 
   // TODO: UserDrawer's "Classify Holds" button is gated on a `boardDetails`

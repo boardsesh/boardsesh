@@ -155,26 +155,6 @@ test.describe('Bottom Tab Bar - Navigation', () => {
     await expect(page).toHaveURL(/\/you$/, { timeout: 15000 });
     await expect(page.locator(bottomTabBar)).toBeVisible();
   });
-
-  test('Create tab should navigate to create climb page', async ({ page }) => {
-    await page.goto(boardUrl);
-    await waitForPageReady(page);
-
-    // The Create tab has two render branches in bottom-tab-bar.tsx: when
-    // `createClimbUrl` is computable (board context is known) it renders as
-    // a NextLink anchor that navigates to `.../create`; otherwise it falls
-    // back to a button that opens a board-selector drawer. boardDetails on
-    // this route is plumbed through the QueueBridge, not SSR props, so on
-    // a fresh navigation there's a brief window where the fallback button
-    // is rendered. Wait for the link variant specifically so the click
-    // never lands on the drawer-opening fallback.
-    const createLink = page.locator(bottomTabBar).getByRole('link', { name: 'Create' });
-    await expect(createLink).toBeVisible({ timeout: 15_000 });
-    await createLink.click();
-
-    await expect(page).toHaveURL(/\/create$/, { timeout: 15000 });
-    await expect(page.locator(bottomTabBar)).toBeVisible();
-  });
 });
 
 test.describe('Bottom Tab Bar - Active State', () => {
