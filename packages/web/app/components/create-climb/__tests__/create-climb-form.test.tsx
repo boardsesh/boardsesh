@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { act, render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { FeatureFlagsProvider } from '../../providers/feature-flags-provider';
+import { MOONBOARD_WIDE_ANGLES_FLAG } from '@/app/flags';
 import CreateClimbForm from '../create-climb-form';
 import { useBoardProvider } from '../../board-provider/board-provider-context';
 import { useCreateClimb } from '@boardsesh/create-climb-react';
@@ -197,6 +199,8 @@ vi.mock('@/app/lib/backend-url', () => ({
 
 vi.mock('@/app/lib/analytics', () => ({
   track: vi.fn(),
+  readPosthogFeatureFlags: () => ({}),
+  subscribePosthogFeatureFlags: () => () => {},
 }));
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -621,6 +625,29 @@ describe('CreateClimbForm — MoonBoard rendering', () => {
     expect(screen.getByText('createClimbForm.fields.angle')).toBeTruthy();
     expect(screen.getByText('createClimbForm.fields.grade')).toBeTruthy();
     expect(screen.queryByText('createClimbForm.fields.benchmark')).toBeNull();
+  });
+
+  it('angle picker offers only 25°/40° when moonboard-wide-angles is off (default)', () => {
+    renderMoonboard();
+    fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+    const angleField = screen.getByText('createClimbForm.fields.angle').closest('div') as HTMLElement;
+    fireEvent.mouseDown(within(angleField).getByRole('combobox'));
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+  });
+
+  it('angle picker offers the full 15-value range when moonboard-wide-angles is on', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <FeatureFlagsProvider flags={{ [MOONBOARD_WIDE_ANGLES_FLAG]: true }}>
+          <CreateClimbForm {...MOONBOARD_PROPS} />
+        </FeatureFlagsProvider>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+    const angleField = screen.getByText('createClimbForm.fields.angle').closest('div') as HTMLElement;
+    fireEvent.mouseDown(within(angleField).getByRole('combobox'));
+    expect(screen.getAllByRole('option')).toHaveLength(15);
   });
 
   it('has Draft toggle checked by default', () => {

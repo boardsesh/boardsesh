@@ -8,5 +8,6 @@ export {
   getGradesForBoard,
   fontGradeToDifficultyId,
   getGradeByDifficultyId,
+  getBoardAngleOptions,
 } from '@boardsesh/board-config';
 export type { BoulderGrade, SetIdList } from '@boardsesh/board-config';

@@ -1,7 +1,10 @@
 import { and, eq, exists, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
+import { MOONBOARD_ANGLES } from '@boardsesh/board-config';
 import { boardClimbs, boardClimbStats } from '../../schema/boards/unified';
 import { statsRowCarriesRealCatalogData } from '../climb-stats/real-catalog-data';
+
+const MOONBOARD_ANGLE_SET: ReadonlySet<number> = new Set(MOONBOARD_ANGLES);
 
 // Same handle type the recompute core takes: any drizzle PgDatabase (postgres-js,
 // the script client, the Neon HTTP client) and the PgTransaction the backend
@@ -43,7 +46,8 @@ export type MoonBoardTickAngleInput = {
  *       carrying REAL CATALOG DATA already exists at requestedAngle.
  *   (c) climb not in board_climbs, OR the climb is USER-CREATED
  *       (board_climbs.user_id IS NOT NULL), OR board_climbs.angle IS NULL, OR a
- *       catalog-data stats row already exists at requestedAngle → return
+ *       catalog-data stats row already exists at requestedAngle, OR
+ *       requestedAngle is not one of MOONBOARD_ANGLES (25°/40°) → return
  *       requestedAngle unchanged.
  *   (d) otherwise → return board_climbs.angle.
  *
@@ -82,9 +86,14 @@ export type MoonBoardTickAngleInput = {
  *     row, and rule (d) will snap a legitimate 25° tick on it. Whoever lands the
  *     re-import closes that window; until then this is the known cost, and it is
  *     the same cost as today's behaviour being wrong in the other direction.
- *   - #3852 (moonboard-wide-angles, flag off) deliberately lets climbers tick
- *     angles the catalog does not grade. Under rule (d) the first such tick is
- *     snapped back. Whoever lands #3852 must drop rule (d) or make it flag-aware.
+ *   - #3852 (moonboard-wide-angles) deliberately lets climbers tick angles the
+ *     catalog does not grade, once the feature flag is on. Resolved: rule (c)'s
+ *     new leg exempts any requestedAngle outside MOONBOARD_ANGLES from rule (d)
+ *     entirely. The narrow picker can only ever request 25 or 40, so a
+ *     non-catalog angle only reaches here via the wide picker — there's no
+ *     legitimate "stale narrow-UI mismatch" to correct at those angles, only a
+ *     deliberate wide-angle tick that must be left alone. No PostHog read is
+ *     needed server-side: the angle domain itself is the signal.
  *
  * NEVER THROWS on any path, and that is load-bearing: a non-retryable GraphQL
  * error dead-letters immediately in the offline drainer, so a hiccup here would
@@ -124,6 +133,7 @@ export async function resolveMoonBoardTickAngle(
     if (climb.ownerUserId != null) return requestedAngle;
     if (climb.gradedAngle == null) return requestedAngle;
     if (climb.catalogDataAtRequestedAngle) return requestedAngle;
+    if (!MOONBOARD_ANGLE_SET.has(requestedAngle)) return requestedAngle;
 
     return climb.gradedAngle;
   } catch (error) {

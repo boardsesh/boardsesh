@@ -4,7 +4,8 @@ import { type BottomSheet } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import { useUpdateTick, useDeleteTick } from '@boardsesh/board-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { ANGLES, formatBoardDisplayName } from '@boardsesh/board-config';
+import { formatBoardDisplayName } from '@boardsesh/board-config';
+import { useBoardAngleOptions } from '../../hooks/use-board-angle-options';
 import { getGradeColor } from '@boardsesh/board-constants/grade-colors';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { track } from '../../lib/analytics';
@@ -86,7 +87,7 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
   // Valid angles come from the static per-board table (what web and the
   // play-drawer angle selector use) — robust and offline, unlike a per-board
   // query.
-  const angles = useMemo<number[]>(() => ANGLES[ascent?.boardType as BoardName] ?? [], [ascent?.boardType]);
+  const angles = useBoardAngleOptions(ascent?.boardType as BoardName | undefined);
 
   // Re-seed the form whenever a different ascent opens the sheet.
   useEffect(() => {

@@ -17,7 +17,7 @@ import {
   CLIMB_STATS_FOR_ANGLES,
   type ClimbStatsForAnglesResponse,
 } from '@boardsesh/graphql/operations/climb-stats-for-angles';
-import { ANGLES } from '@/app/lib/board-data';
+import { useBoardAngleOptions } from '@/app/hooks/use-board-angles';
 import type { BoardName, BoardDetails, Climb } from '@/app/lib/types';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
@@ -51,6 +51,7 @@ export default function AngleSelector({
   const currentAngleRef = useRef<HTMLDivElement>(null);
   const isDark = useIsDarkMode();
   const { activeSession, setSessionBoardPath } = usePersistentSession();
+  const angleOptions = useBoardAngleOptions(boardName);
 
   // Fetch climb stats for all angles when there's a current climb.
   // Runs through the GraphQL backend (graphql-request HTTP) rather than a
@@ -275,7 +276,7 @@ export default function AngleSelector({
             gap: 1,
           }}
         >
-          {ANGLES[boardName].map(renderAngleCard)}
+          {angleOptions.map(renderAngleCard)}
         </Box>
       </SwipeableDrawer>
     </>

@@ -4,8 +4,8 @@ import { BottomSheetModal, BottomSheetView } from '@expo/ui/community/bottom-she
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
-import { ANGLES } from '@boardsesh/board-config';
 import { Text } from '../Text';
+import { useBoardAngleOptions } from '../../hooks/use-board-angle-options';
 import { androidSafeSnapPoints } from '../sheet-snap-points';
 import { useClimbStatsHistory } from '../../lib/graphql/hooks';
 import { useGradeFormat } from '../../hooks/use-grade-format';
@@ -50,8 +50,9 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
   const snapPoints = useMemo(() => androidSafeSnapPoints(['90%']), []);
 
   // Valid angles come from the static per-board table (what web uses) — robust
-  // and offline, unlike a per-board query.
-  const angles = useMemo<number[]>(() => ANGLES[boardName as BoardName] ?? [], [boardName]);
+  // and offline, unlike a per-board query. MoonBoard swaps in the full
+  // Kilter/Tension-style range when the moonboard-wide-angles flag is on.
+  const angles = useBoardAngleOptions(boardName as BoardName);
 
   // Live preview angle. Applied to the board only when "Done" is pressed; the
   // diagram, grade, stars and sends all reflect this as the user slides.

@@ -9,7 +9,8 @@ import MuiSelect, { type SelectChangeEvent } from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 
 import type { BoardName } from '@/app/lib/types';
-import { SUPPORTED_BOARDS, ANGLES } from '@/app/lib/board-data';
+import { SUPPORTED_BOARDS } from '@/app/lib/board-data';
+import { useBoardAngleOptions } from '@/app/hooks/use-board-angles';
 
 export type BoardConfigSelectsProps = {
   selectedBoard: BoardName | undefined;
@@ -43,6 +44,7 @@ export default function BoardConfigSelects({
   onAngleChange,
 }: BoardConfigSelectsProps) {
   const { t } = useTranslation('boards');
+  const angleOptions = useBoardAngleOptions(selectedBoard);
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
       <FormControl fullWidth size="small">
@@ -118,7 +120,7 @@ export default function BoardConfigSelects({
           disabled={!selectedBoard}
         >
           {selectedBoard &&
-            ANGLES[selectedBoard].map((angle) => (
+            angleOptions.map((angle) => (
               <MenuItem key={angle} value={angle}>
                 {angle}
               </MenuItem>

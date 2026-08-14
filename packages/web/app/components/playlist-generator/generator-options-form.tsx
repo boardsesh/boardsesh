@@ -12,7 +12,8 @@ import MuiButton from '@mui/material/Button';
 import type { SxProps, Theme } from '@mui/material/styles';
 import { RemoveOutlined, AddOutlined, RefreshOutlined } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
-import { ANGLES, getGradesForBoard } from '@/app/lib/board-data';
+import { getGradesForBoard } from '@/app/lib/board-data';
+import { useBoardAngleOptions } from '@/app/hooks/use-board-angles';
 import MinAscentsBucketPicker from '@/app/components/climb-quality-filter/min-ascents-bucket-picker';
 import { InlineGradePicker } from '@/app/components/grade-picker/inline-grade-picker';
 import { InlineStarPicker } from '@/app/components/logbook/tick-controls';
@@ -70,7 +71,7 @@ const GeneratorOptionsForm: React.FC<GeneratorOptionsFormProps> = ({
 }) => {
   const { t } = useTranslation('playlists');
   const grades = getGradesForBoard(boardDetails.board_name);
-  const angles = ANGLES[boardDetails.board_name] ?? [];
+  const angles = useBoardAngleOptions(boardDetails.board_name);
 
   const warmUpOptions = WARM_UP_OPTIONS.map((value) => ({
     value,

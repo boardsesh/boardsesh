@@ -1,7 +1,7 @@
 import { AURORA_BOARDS, SUPPORTED_BOARDS as ALL_SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import type { BoardName } from '@boardsesh/shared-schema';
 import type { Angle } from './types';
-import { MOONBOARD_ENABLED, MOONBOARD_ANGLES } from './moonboard-config';
+import { MOONBOARD_ENABLED, MOONBOARD_ANGLES, MOONBOARD_WIDE_ANGLES } from './moonboard-config';
 
 type ImageDimensions = Record<
   string,
@@ -219,6 +219,21 @@ export const ANGLES: Record<BoardName, Angle[]> = {
   grasshopper: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70],
   soill: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70],
 };
+
+// Module scope so every call returns the same array reference (a stable dep/memo key).
+const MOONBOARD_WIDE_ANGLE_OPTIONS: Angle[] = [...MOONBOARD_WIDE_ANGLES];
+
+// Angle options for `boardName`: ANGLES[boardName], except MoonBoard swaps in
+// the full Kilter/Tension-style range when `wideAnglesEnabled` is true (the
+// `moonboard-wide-angles` feature flag, read by the platform-specific
+// `useBoardAngleOptions` hooks in web and mobile). Pure so it's shared as-is
+// by both platforms instead of duplicating the branch.
+export function getBoardAngleOptions(boardName: BoardName, wideAnglesEnabled: boolean): Angle[] {
+  if (boardName === 'moonboard' && wideAnglesEnabled) {
+    return MOONBOARD_WIDE_ANGLE_OPTIONS;
+  }
+  return ANGLES[boardName];
+}
 
 // BOULDER_GRADES + BoulderGrade live in @boardsesh/board-constants so display
 // utilities can depend on the grade taxonomy without pulling in the rest of
