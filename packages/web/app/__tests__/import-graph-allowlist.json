@@ -5,8 +5,9 @@
     "recording every edge it found. Each entry is one importer/target pair; the test keys",
     "on from+to, so the line number is not stored (it drifts) but is printed on failure.",
     "cutBy is the W-item that removes the edge when that is known \u2014 W-17 deletes the",
-    "board-route siblings (the climb-card interactive trio goes with the `liked` route)",
-    "and W-16 deletes the climbing UI and the last BoardProvider mount \u2014 otherwise",
+    "board-route siblings, and the three edges into the climb-card interactive trio go",
+    "with the `liked` route it also deletes (the trio's own files die in W-16, with the",
+    "rest of the climbing UI and the last BoardProvider mount) \u2014 otherwise",
     "teardown:<group>, which names the delete-set directory whose removal cuts the edge.",
     "When a teardown PR lands, delete its entries here. Leaving a stale one fails the test."
   ],

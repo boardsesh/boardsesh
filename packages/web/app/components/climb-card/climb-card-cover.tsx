@@ -33,10 +33,16 @@ const ClimbCardCover = ({
   const { ref, onDoubleClick: handleDoubleClick } = useDoubleTap(onDoubleClick);
   const canvasReady = useCanvasRendererReady();
 
-  const boardStyle: React.CSSProperties = {
-    aspectRatio: `${boardDetails.boardWidth} / ${boardDetails.boardHeight}`,
-    width: '100%',
-  };
+  // Both renderers below are React.memo'd, and a fresh style object defeats
+  // that memo — every board re-renders whenever anything above re-renders the
+  // cover (a logbook fetch resolving, a tick save, auth settling).
+  const boardStyle: React.CSSProperties = React.useMemo(
+    () => ({
+      aspectRatio: `${boardDetails.boardWidth} / ${boardDetails.boardHeight}`,
+      width: '100%',
+    }),
+    [boardDetails.boardWidth, boardDetails.boardHeight],
+  );
 
   let renderContent: React.ReactNode;
   if (!climb) {
@@ -89,4 +95,9 @@ const ClimbCardCover = ({
   );
 };
 
-export default ClimbCardCover;
+/**
+ * Memoized because the card above now reads BoardContext on the badge's behalf:
+ * without this, every board context change (logbook fetch, tick save, auth
+ * settling) walks the whole grid down to the renderers.
+ */
+export default React.memo(ClimbCardCover);

@@ -61,6 +61,12 @@ export type ClimbTitleProps = {
   /** When true, the climb name marquees if it overflows. Used for the "active" climb
    *  (selected list item, current queue climb, drawer/detail header). */
   isActive?: boolean;
+  /** Render the grade in the default format instead of a Skeleton while the reader's stored
+   *  preference is still loading. That preference lives in IndexedDB and only resolves in an
+   *  effect, so on the server the Skeleton is all there is — crawlable surfaces set this so
+   *  the HTML carries a grade, the single most-searched climb attribute. A reader who picked
+   *  Font (or both) sees the V-grade for one frame before it swaps. */
+  showGradeWhileLoading?: boolean;
 };
 
 // --- Static sx objects hoisted to module scope (no reactive deps) ---
@@ -192,6 +198,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
     isNoMatch = false,
     subtitleOverride,
     isActive = false,
+    showGradeWhileLoading = false,
   }) => {
     const { t } = useTranslation('climbs');
     const isDark = useIsDarkMode();
@@ -287,7 +294,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
     );
 
     let largeGradeContent: React.ReactNode = null;
-    if (!gradeFormatLoaded) {
+    if (!gradeFormatLoaded && !showGradeWhileLoading) {
       largeGradeContent = (
         <Skeleton variant="rounded" width={nameFontSize * 2.2} height={nameFontSize} sx={{ flexShrink: 0 }} />
       );

@@ -2,24 +2,31 @@ import { describe, it, expect } from 'vite-plus/test';
 import { buildAppHandoffUrl } from '../app-handoff';
 
 /**
- * The "Climb this" hand-off (#4369) is APP_URL plus the same pathname, with the
+ * The "Climb this" hand-off (#4369) is APP_URL plus the same pathname, with any
  * locale prefix stripped. It replaces `mapToExpoWebTarget`, which returned
- * `null` for every `/b` and named-slug form — case 4 below is exactly that gap.
+ * `null` for every `/b` and named-slug form — the `/b` case below is that gap.
  */
 const CLIMB_PATH = '/kilter/original/12x12-square/screw_bolt/40/view/test-climb-ABC123';
 const EXPECTED_CLIMB_URL = `https://app.boardsesh.com${CLIMB_PATH}`;
 
 describe('buildAppHandoffUrl', () => {
-  it('joins APP_URL to a canonical climb-view path on the default locale', () => {
+  it('joins APP_URL to a canonical climb-view path', () => {
     expect(buildAppHandoffUrl(CLIMB_PATH)).toBe(EXPECTED_CLIMB_URL);
   });
 
-  it('strips the locale prefix so a Spanish reader lands on the same climb', () => {
-    expect(buildAppHandoffUrl(`/es${CLIMB_PATH}`, 'es')).toBe(EXPECTED_CLIMB_URL);
+  /**
+   * The reason the helper takes no locale argument: the app has no `/es`, `/fr`
+   * or `/de` routes, and a caller that had to thread the active locale could
+   * leak one into the URL by forgetting to.
+   */
+  it('strips every supported locale prefix, not just one', () => {
+    for (const prefix of ['/es', '/fr', '/de']) {
+      expect(buildAppHandoffUrl(`${prefix}${CLIMB_PATH}`)).toBe(EXPECTED_CLIMB_URL);
+    }
   });
 
   it('maps a bare locale root to the app root', () => {
-    expect(buildAppHandoffUrl('/fr', 'fr')).toBe('https://app.boardsesh.com/');
+    expect(buildAppHandoffUrl('/fr')).toBe('https://app.boardsesh.com/');
   });
 
   it('carries a /b board-slug path through instead of dropping it', () => {
@@ -32,20 +39,27 @@ describe('buildAppHandoffUrl', () => {
     );
   });
 
+  it('drops a query string or fragment, keeping the pathname contract', () => {
+    expect(buildAppHandoffUrl('/kilter/original/12x12-square/screw_bolt/40/list?sort=new&page=2')).toBe(
+      'https://app.boardsesh.com/kilter/original/12x12-square/screw_bolt/40/list',
+    );
+    expect(buildAppHandoffUrl(`/es${CLIMB_PATH}#beta`)).toBe(EXPECTED_CLIMB_URL);
+  });
+
   it('never produces a protocol-relative double slash', () => {
-    const paths: [string, 'en-US' | 'es' | 'fr' | 'de'][] = [
-      [CLIMB_PATH, 'en-US'],
-      [`/es${CLIMB_PATH}`, 'es'],
-      ['/fr', 'fr'],
-      ['/b/my-kilter/40/list', 'en-US'],
-      ['kilter/original/12x12-square/screw_bolt/40/list', 'en-US'],
+    const paths = [
+      CLIMB_PATH,
+      `/es${CLIMB_PATH}`,
+      '/fr',
+      '/b/my-kilter/40/list',
+      'kilter/original/12x12-square/screw_bolt/40/list',
     ];
-    for (const [path, locale] of paths) {
-      expect(new URL(buildAppHandoffUrl(path, locale)).pathname.startsWith('//')).toBe(false);
+    for (const path of paths) {
+      expect(new URL(buildAppHandoffUrl(path)).pathname.startsWith('//')).toBe(false);
     }
   });
 
   it('is idempotent on a path that carries no locale prefix', () => {
-    expect(buildAppHandoffUrl(CLIMB_PATH, 'de')).toBe(EXPECTED_CLIMB_URL);
+    expect(buildAppHandoffUrl(CLIMB_PATH)).toBe(buildAppHandoffUrl(`/es${CLIMB_PATH}`));
   });
 });
