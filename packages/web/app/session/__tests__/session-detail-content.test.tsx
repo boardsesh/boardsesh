@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import type { SessionDetail } from '@boardsesh/shared-schema';
@@ -18,21 +18,9 @@ vi.mock('next/link', () => ({
   default: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a>,
 }));
 
-const mockRouterPush = vi.fn();
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: mockRouterPush }),
-}));
-
 let mockSession: { data: unknown; status: string } = { data: null, status: 'unauthenticated' };
 vi.mock('next-auth/react', () => ({
   useSession: () => mockSession,
-}));
-
-// Stub the edit dialog so the owner-gating tests don't pull in the real
-// useUpdateSession hook (which needs a QueryClient provider). Dialog behavior
-// is covered by edit-session-dialog.test.tsx.
-vi.mock('@/app/components/session-details/edit-session-dialog', () => ({
-  default: ({ open }: { open: boolean }) => (open ? <div data-testid="edit-session-dialog" /> : null),
 }));
 
 vi.mock('@/app/hooks/use-session-detail', () => ({
@@ -101,14 +89,6 @@ vi.mock('@/app/hooks/use-board-details-map', () => ({
   }),
 }));
 
-vi.mock('@/app/components/board-renderer/board-renderer', () => ({
-  default: () => <div data-testid="board-renderer" />,
-}));
-
-vi.mock('@/app/components/board-page/angle-selector', () => ({
-  default: () => <div data-testid="angle-selector" />,
-}));
-
 vi.mock('@/app/components/collapsible-section/collapsible-section', () => ({
   default: ({
     title,
@@ -152,10 +132,6 @@ vi.mock('@/app/lib/session-utils', () => ({
 
 vi.mock('@/app/components/ui/confirm-popover', () => ({
   ConfirmPopover: () => null,
-}));
-
-vi.mock('@/app/components/healthkit/save-to-healthkit-button', () => ({
-  default: () => null,
 }));
 
 vi.mock('@/app/components/charts/css-bar-chart', () => ({
@@ -206,62 +182,35 @@ vi.mock('@/app/components/social/comment-section', () => ({
   ),
 }));
 
-// Mock ClimbsList to render a testable placeholder with climb data
-vi.mock('@/app/components/board-page/climbs-list', () => ({
+// Mock StaticClimbList to render a testable placeholder with climb data.
+// `renderItemExtra` is invoked per row exactly as the real component does
+// (inside the measured wrapper), which is what the tick-detail cases assert.
+// No `onClimbSelect`: on the read-only page the row itself is the link.
+const staticClimbListProps: Array<Record<string, unknown>> = [];
+vi.mock('@/app/components/climb-list/static-climb-list', () => ({
   default: (props: {
     climbs: Array<{ uuid: string; name: string }>;
     renderItemExtra?: (climb: { uuid: string; name: string }) => React.ReactNode;
     boardDetails?: unknown;
     boardDetailsByClimb?: unknown;
-    unsupportedClimbs?: unknown;
-    upsizedClimbs?: unknown;
     isFetching?: boolean;
     hasMore?: boolean;
-    onClimbSelect?: (climb: { uuid: string; name: string }) => void;
     onLoadMore?: unknown;
     hideEndMessage?: boolean;
     showBottomSpacer?: boolean;
-  }) => (
-    <div data-testid="climbs-list">
-      {props.climbs.map((climb) => (
-        <div
-          key={climb.uuid}
-          data-testid="climb-item"
-          data-climb-name={climb.name}
-          onClick={() => props.onClimbSelect?.(climb)}
-        >
-          {climb.name}
-          {props.renderItemExtra?.(climb)}
-        </div>
-      ))}
-    </div>
-  ),
-}));
-
-// Mock graphql-queue to expose a controllable useOptionalQueueActions for the
-// click-handler tests below. The default export returns null (no provider),
-// matching production behavior on /session/[sessionId] standalone pages.
-const mockSetCurrentClimb = vi.fn();
-let mockQueueActions: { setCurrentClimb: typeof mockSetCurrentClimb } | null = null;
-let mockSessionDataValue: { isPersistentSessionActive: boolean } | null = null;
-vi.mock('@/app/components/graphql-queue', () => ({
-  useOptionalQueueActions: () => mockQueueActions,
-  useOptionalSessionData: () => mockSessionDataValue,
-}));
-
-vi.mock('@/app/components/climb-actions/favorites-batch-context', () => ({
-  FavoritesProvider: ({ children }: { children: React.ReactNode }) => children,
-}));
-
-vi.mock('@/app/components/climb-actions/playlists-batch-context', () => ({
-  PlaylistsProvider: ({ children }: { children: React.ReactNode }) => children,
-}));
-
-vi.mock('@/app/hooks/use-climb-actions-data', () => ({
-  useClimbActionsData: () => ({
-    favoritesProviderProps: {},
-    playlistsProviderProps: {},
-  }),
+  }) => {
+    staticClimbListProps.push(props as unknown as Record<string, unknown>);
+    return (
+      <div data-testid="static-climb-list">
+        {props.climbs.map((climb) => (
+          <div key={climb.uuid} data-testid="climb-item" data-climb-name={climb.name}>
+            {climb.name}
+            {props.renderItemExtra?.(climb)}
+          </div>
+        ))}
+      </div>
+    );
+  },
 }));
 
 vi.mock('@/app/hooks/use-my-boards', () => ({
@@ -273,23 +222,6 @@ vi.mock('@/app/hooks/use-delete-tick', () => ({
     mutate: vi.fn(),
     isPending: false,
   }),
-}));
-
-vi.mock('@/app/lib/board-config-for-playlist', () => ({
-  getBoardDetailsForPlaylist: () => ({
-    board_name: 'kilter',
-    layout_id: 1,
-    size_id: 1,
-    set_ids: [1],
-    boardWidth: 100,
-    boardHeight: 200,
-  }),
-  getDefaultAngleForBoard: () => 40,
-  getUserBoardDetails: () => null,
-}));
-
-vi.mock('@/app/components/board-renderer/util', () => ({
-  convertLitUpHoldsStringToMap: () => [{}],
 }));
 
 function makeSession(overrides: Partial<SessionDetail> = {}): SessionDetail {
@@ -355,6 +287,7 @@ describe('SessionDetailContent', () => {
   beforeEach(() => {
     // Default to anonymous; owner-gating tests opt into an authenticated user.
     mockSession = { data: null, status: 'unauthenticated' };
+    staticClimbListProps.length = 0;
   });
 
   it('shows "not found" when session is null', () => {
@@ -371,11 +304,28 @@ describe('SessionDetailContent', () => {
     expect(screen.getByText('8 climbs')).toBeTruthy();
   });
 
-  it('renders ClimbsList with converted climbs', () => {
+  it('renders StaticClimbList with converted climbs', () => {
     render(<SessionDetailContent session={makeSession()} />);
-    expect(screen.getByTestId('climbs-list')).toBeTruthy();
+    expect(screen.getByTestId('static-climb-list')).toBeTruthy();
     expect(screen.getByText('Test Climb')).toBeTruthy();
     expect(screen.getByText('Climbs (1)')).toBeTruthy();
+  });
+
+  it('renders the tick details inside the static list rows', () => {
+    // renderItemExtra has to reach the rows through the list's measured
+    // wrapper — that is the whole contract StaticClimbList exposes for this page.
+    render(<SessionDetailContent session={makeSession()} />);
+    const row = screen.getByTestId('climb-item');
+    expect(row.querySelector('[data-testid="vote-button"]')).toBeTruthy();
+    expect(screen.getByText('send')).toBeTruthy();
+  });
+
+  it('renders a fixed session list with no paging affordance', () => {
+    render(<SessionDetailContent session={makeSession()} />);
+    const listProps = staticClimbListProps.at(-1)!;
+    expect(listProps.hasMore).toBe(false);
+    expect(listProps.hideEndMessage).toBe(true);
+    expect(listProps.isFetching).toBe(false);
   });
 
   it('updates rendered climbs when session prop changes without remount', () => {
@@ -805,129 +755,25 @@ describe('SessionDetailContent', () => {
     expect(screen.getByText('Great beta!')).toBeTruthy();
   });
 
-  describe('owner edit gating', () => {
-    it('shows the edit button to the session owner', () => {
-      mockSession = { data: { user: { id: 'user-1' } }, status: 'authenticated' };
-      render(<SessionDetailContent session={makeSession({ ownerUserId: 'user-1' })} />);
-      expect(screen.getByTestId('edit-session-button')).toBeTruthy();
-    });
-
-    it('hides the edit button from a non-owner', () => {
-      mockSession = { data: { user: { id: 'user-2' } }, status: 'authenticated' };
-      render(<SessionDetailContent session={makeSession({ ownerUserId: 'user-1' })} />);
-      expect(screen.queryByTestId('edit-session-button')).toBeNull();
-    });
-
-    it('hides the edit button from anonymous visitors', () => {
-      mockSession = { data: null, status: 'unauthenticated' };
-      render(<SessionDetailContent session={makeSession({ ownerUserId: 'user-1' })} />);
-      expect(screen.queryByTestId('edit-session-button')).toBeNull();
-    });
-
-    it('opens the edit dialog when the owner clicks edit', () => {
-      mockSession = { data: { user: { id: 'user-1' } }, status: 'authenticated' };
-      render(<SessionDetailContent session={makeSession({ ownerUserId: 'user-1' })} />);
-      expect(screen.queryByTestId('edit-session-dialog')).toBeNull();
-      fireEvent.click(screen.getByTestId('edit-session-button'));
-      expect(screen.getByTestId('edit-session-dialog')).toBeTruthy();
-    });
-
-    it('updates the header title when the session name changes without remount', () => {
-      // Mirrors the real flow: useUpdateSession patches the sessionDetail cache,
-      // useSessionDetail re-emits, and the header re-renders from that source.
-      const { rerender } = render(<SessionDetailContent session={makeSession({ sessionName: null })} />);
-      // 2024-01-15 is a Monday, boardTypes is ['kilter'] -> generated fallback.
-      expect(screen.getByText('Monday Kilter Session')).toBeTruthy();
-
-      rerender(<SessionDetailContent session={makeSession({ sessionName: 'Renamed Session' })} />);
-      expect(screen.getByText('Renamed Session')).toBeTruthy();
-      expect(screen.queryByText('Monday Kilter Session')).toBeNull();
-    });
+  it('shows no edit affordance to the session owner', () => {
+    // Renaming a sesh and writing its recap moved to the app
+    // (SessionEditSheet). This case guards the removal against a
+    // well-meaning revert that re-adds a write button to the share page.
+    mockSession = { data: { user: { id: 'user-1' } }, status: 'authenticated' };
+    render(<SessionDetailContent session={makeSession({ ownerUserId: 'user-1' })} />);
+    expect(screen.queryByTestId('edit-session-button')).toBeNull();
+    expect(screen.queryByTestId('edit-session-dialog')).toBeNull();
   });
 
-  describe('climb click handler', () => {
-    const originalFetch = global.fetch;
+  it('updates the header title when the session name changes without remount', () => {
+    // Mirrors the real flow: the app patches the sessionDetail cache,
+    // useSessionDetail re-emits, and the header re-renders from that source.
+    const { rerender } = render(<SessionDetailContent session={makeSession({ sessionName: null })} />);
+    // 2024-01-15 is a Monday, boardTypes is ['kilter'] -> generated fallback.
+    expect(screen.getByText('Monday Kilter Session')).toBeTruthy();
 
-    beforeEach(() => {
-      mockSetCurrentClimb.mockReset();
-      mockRouterPush.mockReset();
-      mockQueueActions = null;
-      // Default to solo (no party session active) — preserves today's
-      // "click a session climb → sets active + navigates" behavior. Tests
-      // that exercise the party fork flip this on explicitly.
-      mockSessionDataValue = { isPersistentSessionActive: false };
-      global.fetch = vi.fn(() =>
-        Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ url: '/kilter/1/10/1/40/view/climb-1' }),
-        }),
-      ) as unknown as typeof fetch;
-    });
-
-    afterEach(() => {
-      global.fetch = originalFetch;
-    });
-
-    it('calls setCurrentClimb when clicking a climb with a queue context', async () => {
-      mockQueueActions = { setCurrentClimb: mockSetCurrentClimb };
-      render(<SessionDetailContent session={makeSession()} />);
-      fireEvent.click(screen.getByTestId('climb-item'));
-      await waitFor(() => expect(mockSetCurrentClimb).toHaveBeenCalledTimes(1));
-      expect(mockSetCurrentClimb.mock.calls[0][0].uuid).toBe('climb-1');
-    });
-
-    it('navigates after setting current climb when not embedded', async () => {
-      mockQueueActions = { setCurrentClimb: mockSetCurrentClimb };
-      render(<SessionDetailContent session={makeSession()} />);
-      fireEvent.click(screen.getByTestId('climb-item'));
-      await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith('/kilter/1/10/1/40/view/climb-1'));
-    });
-
-    it('skips navigation in embedded mode but still sets current climb', async () => {
-      mockQueueActions = { setCurrentClimb: mockSetCurrentClimb };
-      render(<SessionDetailContent session={makeSession()} embedded />);
-      fireEvent.click(screen.getByTestId('climb-item'));
-      await waitFor(() => expect(mockSetCurrentClimb).toHaveBeenCalledTimes(1));
-      expect(mockRouterPush).not.toHaveBeenCalled();
-      expect(global.fetch).not.toHaveBeenCalled();
-    });
-
-    it('still navigates when no queue context is available (legacy fallback)', async () => {
-      mockQueueActions = null;
-      render(<SessionDetailContent session={makeSession()} />);
-      fireEvent.click(screen.getByTestId('climb-item'));
-      await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith('/kilter/1/10/1/40/view/climb-1'));
-      expect(mockSetCurrentClimb).not.toHaveBeenCalled();
-    });
-
-    it('skips navigation when setCurrentClimb rejects validation (returns null)', async () => {
-      // setCurrentClimb resolves to null when validateClimbForQueue fires the
-      // snackbar — the user shouldn't land on a climb page the board can't take.
-      mockSetCurrentClimb.mockResolvedValueOnce(null);
-      mockQueueActions = { setCurrentClimb: mockSetCurrentClimb };
-      render(<SessionDetailContent session={makeSession()} />);
-      fireEvent.click(screen.getByTestId('climb-item'));
-      await waitFor(() => expect(mockSetCurrentClimb).toHaveBeenCalledTimes(1));
-      // Wait for the click handler's awaited promise to actually resolve, then
-      // drain one more microtask so the synchronous code following the await
-      // (the `if (result === null) return` early-out) has run. Deterministic —
-      // no real timers involved.
-      await mockSetCurrentClimb.mock.results[0]!.value;
-      await Promise.resolve();
-      expect(global.fetch).not.toHaveBeenCalled();
-      expect(mockRouterPush).not.toHaveBeenCalled();
-    });
-
-    it('does NOT call setCurrentClimb in a party session, but still navigates', async () => {
-      // In an active party session, clicking a session climb shouldn't yank
-      // the wall away from whoever's climbing. The user still navigates to
-      // the climb's board page, where they can preview or explicitly send.
-      mockSessionDataValue = { isPersistentSessionActive: true };
-      mockQueueActions = { setCurrentClimb: mockSetCurrentClimb };
-      render(<SessionDetailContent session={makeSession()} />);
-      fireEvent.click(screen.getByTestId('climb-item'));
-      await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith('/kilter/1/10/1/40/view/climb-1'));
-      expect(mockSetCurrentClimb).not.toHaveBeenCalled();
-    });
+    rerender(<SessionDetailContent session={makeSession({ sessionName: 'Renamed Session' })} />);
+    expect(screen.getByText('Renamed Session')).toBeTruthy();
+    expect(screen.queryByText('Monday Kilter Session')).toBeNull();
   });
 });

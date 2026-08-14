@@ -83,8 +83,7 @@
         "title": "Smart playlist not found",
         "description": "This smart playlist doesn't exist."
       },
-      "empty": "No climbs in this smart playlist yet.",
-      "shareText": "Check out {{name}}'s climbs on Boardsesh"
+      "empty": "No climbs in this smart playlist yet."
     },
     "empty": {
       "title": "No playlists yet",

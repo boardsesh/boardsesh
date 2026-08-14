@@ -20,7 +20,7 @@ import type { BoardDetails, Climb } from '@/app/lib/types';
  *
  * Two consumers shape this prop surface; don't narrow it without checking both.
  *  - `climb-list/multiboard-climb-list.tsx` serves `/playlists/[uuid]`,
- *    `/setter/[username]`, `/profile/{id}/climbs` and `/discover/*`, and needs
+ *    `/setter/[username]` and `/profile/{id}/climbs`, and needs
  *    `boardDetailsByClimb` because its climbs span boards.
  *  - `session/[sessionId]/session-detail-content.tsx` (W-13a) renders the list
  *    twice with `renderItemExtra` for tick details — rows that legitimately
@@ -37,6 +37,13 @@ export type StaticClimbListProps = {
   boardDetails: BoardDetails;
   /** Per-climb board override, keyed by climb uuid — cross-board lists need it. */
   boardDetailsByClimb?: Record<string, BoardDetails>;
+  /**
+   * Climbs with no resolvable canonical URL, keyed by uuid. Their rows render
+   * as plain rows instead of anchors. The session page needs it: a tick whose
+   * catalog lookup missed carries no name, layout or frames, so a link would
+   * point at an invented board and a climb that doesn't resolve.
+   */
+  unlinkedClimbUuids?: ReadonlySet<string>;
   /** Viewer's ticks for the ascent badges. Absent on anonymous/crawler renders. */
   logbook?: readonly LogbookEntry[];
   isFetching: boolean;
@@ -72,6 +79,7 @@ export default function StaticClimbList({
   climbs,
   boardDetails,
   boardDetailsByClimb,
+  unlinkedClimbUuids,
   logbook,
   isFetching,
   hasMore,
@@ -187,6 +195,7 @@ export default function StaticClimbList({
                   <StaticClimbRow
                     climb={climb}
                     boardDetails={resolveBoardDetails(climb)}
+                    unlinked={unlinkedClimbUuids?.has(climb.uuid)}
                     pathname={pathname}
                     logbook={logbook}
                     preferImageLayers={virtualItem.index < initialImageCount}

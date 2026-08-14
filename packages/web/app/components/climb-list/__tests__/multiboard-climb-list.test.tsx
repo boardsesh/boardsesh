@@ -8,9 +8,8 @@ import MultiboardClimbList from '../multiboard-climb-list';
 
 /**
  * Delete-safety oracle for the W-12 repoint. This surface serves
- * `/playlists/[uuid]`, `/setter/[username]`, `/profile/{id}/climbs` and
- * `/discover/*`, and its rows are now crawlable links rather than click
- * handlers.
+ * `/playlists/[uuid]`, `/setter/[username]` and `/profile/{id}/climbs`, and its
+ * rows are now crawlable links rather than click handlers.
  *
  * There is deliberately no `vi.mock` for `climb-actions/*`, `graphql-queue` or
  * `board-page/climbs-list` here: the file no longer imports any of them, and

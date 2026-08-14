@@ -83,8 +83,7 @@
         "title": "Playlist intelligente introuvable",
         "description": "Cette playlist intelligente n'existe pas."
       },
-      "empty": "Aucune voie dans cette playlist intelligente pour l'instant.",
-      "shareText": "Découvrez les voies de {{name}} sur Boardsesh"
+      "empty": "Aucune voie dans cette playlist intelligente pour l'instant."
     },
     "empty": {
       "title": "Aucune playlist pour l'instant",
