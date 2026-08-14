@@ -319,8 +319,14 @@ export const playlistMutations = {
     // attempts share one transaction so the position assignment and the
     // insert stay atomic; the second attempt only runs in the rare
     // vanished-row window.
+    // The insert-vs-conflict branch is the only place that knows whether this
+    // call actually added the climb, so it rides back to the caller as
+    // `wasAlreadyInPlaylist`. Mobile's picker can't tell on its own — it writes
+    // its optimistic membership before invoking the mutation — and without this
+    // it bumps the cached climbCount on every tap, inflating the count when a
+    // climb that was already in the playlist is "added" again (#4014).
     const maxInsertAttempts = 2;
-    const playlistClimb = await db.transaction(
+    const { playlistClimb, wasAlreadyInPlaylist } = await db.transaction(
       async (tx) => {
         for (let attempt = 0; attempt < maxInsertAttempts; attempt += 1) {
           const maxPosition = await tx
@@ -352,7 +358,7 @@ export const playlistMutations = {
               .set({ updatedAt: now, lastAccessedAt: now })
               .where(eq(dbSchema.playlists.id, playlistId));
 
-            return insertedClimb;
+            return { playlistClimb: insertedClimb, wasAlreadyInPlaylist: false };
           }
 
           // Conflict hit: a concurrent insert won the race. Re-select the
@@ -370,7 +376,7 @@ export const playlistMutations = {
             .limit(1);
 
           if (existingClimb) {
-            return existingClimb;
+            return { playlistClimb: existingClimb, wasAlreadyInPlaylist: true };
           }
         }
 
@@ -386,6 +392,7 @@ export const playlistMutations = {
       angle: playlistClimb.angle,
       position: playlistClimb.position,
       addedAt: playlistClimb.addedAt.toISOString(),
+      wasAlreadyInPlaylist,
     };
   },
 
@@ -427,19 +434,31 @@ export const playlistMutations = {
     // Note: Position gaps are acceptable after deletion. The position field is only used
     // for ordering (ORDER BY position), so gaps don't affect functionality. Reordering
     // positions after each deletion would be expensive for large playlists.
-    await db
+    //
+    // `.returning()` so the boolean means "a row was actually deleted" rather
+    // than the constant `true` it used to be. Removing a climb that isn't in
+    // the playlist stays a successful no-op (no error), but the caller can now
+    // tell the two apart — mobile skips its optimistic climbCount decrement on
+    // a no-op remove (#4014).
+    const deletedRows = await db
       .delete(dbSchema.playlistClimbs)
       .where(
         and(
           eq(dbSchema.playlistClimbs.playlistId, playlistId),
           eq(dbSchema.playlistClimbs.climbUuid, validatedInput.climbUuid),
         ),
-      );
+      )
+      .returning({ id: dbSchema.playlistClimbs.id });
 
-    // Update playlist updatedAt
-    await db.update(dbSchema.playlists).set({ updatedAt: new Date() }).where(eq(dbSchema.playlists.id, playlistId));
+    const removed = deletedRows.length > 0;
 
-    return true;
+    // Update playlist updatedAt — only when the playlist's contents actually
+    // changed, so a no-op remove doesn't bump it.
+    if (removed) {
+      await db.update(dbSchema.playlists).set({ updatedAt: new Date() }).where(eq(dbSchema.playlists.id, playlistId));
+    }
+
+    return removed;
   },
 
   /**

@@ -4429,6 +4429,13 @@ export type PlaylistClimb = {
   playlistId: Scalars['ID']['output'];
   /** Position in playlist */
   position: Scalars['Int']['output'];
+  /**
+   * Populated only by addClimbToPlaylist: true when the climb was already in the
+   * playlist and the add was an idempotent no-op, false when this call inserted
+   * the row. Null everywhere else (list/detail reads never set it). Clients read
+   * it to skip the optimistic climb-count bump on a duplicate add.
+   */
+  wasAlreadyInPlaylist?: Maybe<Scalars['Boolean']['output']>;
 };
 
 /** Result of fetching playlist climbs. */
@@ -9096,6 +9103,7 @@ export type AddClimbToPlaylistMutation = {
     angle?: number | null;
     position: number;
     addedAt: string;
+    wasAlreadyInPlaylist?: boolean | null;
   };
 };
 
@@ -13714,6 +13722,7 @@ export const AddClimbToPlaylistDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'position' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'addedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'wasAlreadyInPlaylist' } },
               ],
             },
           },

@@ -38,7 +38,7 @@ async function playlistClimbRows(climbUuid: string): Promise<{ id: string; posit
   return Array.from(result as Iterable<{ id: string; position: number }>);
 }
 
-describe('addClimbToPlaylist — real DB (#3993)', () => {
+describe('playlist climb add/remove — real DB (#3993, #4014)', () => {
   // Playlist tables aren't in setup.ts's per-file reset list, so own the reset.
   // RESTART IDENTITY frees id=1 for a stable, trivially-referenced playlist.
   beforeEach(async () => {
@@ -140,5 +140,84 @@ describe('addClimbToPlaylist — real DB (#3993)', () => {
 
     const rows = await playlistClimbRows('climb-existing');
     expect(rows).toHaveLength(1);
+  });
+
+  // #4014: mobile's picker can't tell an add from a re-add (it writes its
+  // optimistic membership before calling the mutation), so it bumped the cached
+  // climbCount on every tap. The resolver reports which branch it took.
+  describe('wasAlreadyInPlaylist', () => {
+    it('is false on the inserting add and true on a duplicate add of the same climb', async () => {
+      const firstAdd = (await playlistMutations.addClimbToPlaylist(
+        null,
+        { input: { playlistId: PLAYLIST_UUID, climbUuid: 'climb-dup', angle: 40 } },
+        makeCtx(),
+      )) as { wasAlreadyInPlaylist: boolean };
+      expect(firstAdd.wasAlreadyInPlaylist).toBe(false);
+
+      const secondAdd = (await playlistMutations.addClimbToPlaylist(
+        null,
+        { input: { playlistId: PLAYLIST_UUID, climbUuid: 'climb-dup', angle: 40 } },
+        makeCtx(),
+      )) as { wasAlreadyInPlaylist: boolean };
+      expect(secondAdd.wasAlreadyInPlaylist).toBe(true);
+
+      expect(await playlistClimbRows('climb-dup')).toHaveLength(1);
+    });
+
+    it('marks exactly one of two concurrent adds as the inserter', async () => {
+      const results = (await Promise.all([
+        playlistMutations.addClimbToPlaylist(
+          null,
+          { input: { playlistId: PLAYLIST_UUID, climbUuid: 'climb-concurrent', angle: 40 } },
+          makeCtx(),
+        ),
+        playlistMutations.addClimbToPlaylist(
+          null,
+          { input: { playlistId: PLAYLIST_UUID, climbUuid: 'climb-concurrent', angle: 40 } },
+          makeCtx(),
+        ),
+      ])) as { wasAlreadyInPlaylist: boolean }[];
+
+      expect(results.map((result) => result.wasAlreadyInPlaylist).sort()).toEqual([false, true]);
+    });
+  });
+
+  describe('removeClimbFromPlaylist', () => {
+    it('returns true when a row was deleted and false when the climb was not in the playlist', async () => {
+      await playlistMutations.addClimbToPlaylist(
+        null,
+        { input: { playlistId: PLAYLIST_UUID, climbUuid: 'climb-removable', angle: 40 } },
+        makeCtx(),
+      );
+
+      await expect(
+        playlistMutations.removeClimbFromPlaylist(
+          null,
+          { input: { playlistId: PLAYLIST_UUID, climbUuid: 'climb-removable' } },
+          makeCtx(),
+        ),
+      ).resolves.toBe(true);
+      expect(await playlistClimbRows('climb-removable')).toHaveLength(0);
+
+      // Removing it again is still a success, but nothing was deleted — the
+      // client must not decrement its cached count for this one.
+      await expect(
+        playlistMutations.removeClimbFromPlaylist(
+          null,
+          { input: { playlistId: PLAYLIST_UUID, climbUuid: 'climb-removable' } },
+          makeCtx(),
+        ),
+      ).resolves.toBe(false);
+    });
+
+    it('returns false for a climb that was never in the playlist', async () => {
+      await expect(
+        playlistMutations.removeClimbFromPlaylist(
+          null,
+          { input: { playlistId: PLAYLIST_UUID, climbUuid: 'climb-never-added' } },
+          makeCtx(),
+        ),
+      ).resolves.toBe(false);
+    });
   });
 });

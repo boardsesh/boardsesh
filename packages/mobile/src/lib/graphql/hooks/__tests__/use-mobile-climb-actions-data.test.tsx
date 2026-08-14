@@ -266,7 +266,7 @@ describe('useMobileClimbActionsData', () => {
   describe('addToPlaylist + removeFromPlaylist', () => {
     it('addToPlaylist forwards { playlistId, climbUuid, angle } to ADD_CLIMB_TO_PLAYLIST', async () => {
       requestMock.mockResolvedValueOnce({ allUserPlaylists: { playlists: [] } });
-      requestMock.mockResolvedValueOnce({ addClimbToPlaylist: {} });
+      requestMock.mockResolvedValueOnce({ addClimbToPlaylist: { wasAlreadyInPlaylist: false } });
 
       const { Wrapper } = makeWrapper();
       const { result } = renderHook(() => useMobileClimbActionsData(), { wrapper: Wrapper });
@@ -297,7 +297,7 @@ describe('useMobileClimbActionsData', () => {
       requestMock.mockResolvedValueOnce({
         allUserPlaylists: { playlists: [mkPlaylist('p-1', 'Hard sends')] },
       });
-      requestMock.mockResolvedValueOnce({ addClimbToPlaylist: {} });
+      requestMock.mockResolvedValueOnce({ addClimbToPlaylist: { wasAlreadyInPlaylist: false } });
 
       const { queryClient, Wrapper } = makeWrapper();
       const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -351,6 +351,83 @@ describe('useMobileClimbActionsData', () => {
       });
 
       expect(queryClient.getQueryData<Playlist[]>(['userPlaylists'])?.[0].climbCount).toBe(0);
+    });
+
+    // #4014: the picker sends an add whenever its (possibly stale) membership
+    // cache says "not a member", so re-adding a climb the playlist already
+    // holds is a normal tap, not an error. The server reports the no-op and the
+    // cached count must stay put.
+    it('leaves climbCount alone when the server reports the climb was already in the playlist', async () => {
+      requestMock.mockResolvedValueOnce({
+        allUserPlaylists: { playlists: [{ ...mkPlaylist('p-1', 'Hard sends'), climbCount: 4 }] },
+      });
+      requestMock.mockResolvedValueOnce({ addClimbToPlaylist: { wasAlreadyInPlaylist: true } });
+
+      const { queryClient, Wrapper } = makeWrapper();
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+      const { result } = renderHook(() => useMobileClimbActionsData(), { wrapper: Wrapper });
+      await waitFor(() => expect(result.current.playlistsProviderProps.playlists.length).toBe(1));
+
+      await act(async () => {
+        await result.current.playlistsProviderProps.addToPlaylist('p-1', 'climb-x', 50);
+      });
+
+      expect(queryClient.getQueryData<Playlist[]>(['userPlaylists'])?.[0].climbCount).toBe(4);
+      // The detail caches still refresh — the climb list may have been changed
+      // by whoever inserted the row.
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['playlistClimbs', 'p-1'] });
+    });
+
+    it('leaves climbCount alone when removeFromPlaylist deleted nothing', async () => {
+      requestMock.mockResolvedValueOnce({
+        allUserPlaylists: { playlists: [{ ...mkPlaylist('p-1', 'Hard sends'), climbCount: 3 }] },
+      });
+      requestMock.mockResolvedValueOnce({ removeClimbFromPlaylist: false });
+
+      const { queryClient, Wrapper } = makeWrapper();
+      const { result } = renderHook(() => useMobileClimbActionsData(), { wrapper: Wrapper });
+      await waitFor(() => expect(result.current.playlistsProviderProps.playlists.length).toBe(1));
+
+      await act(async () => {
+        await result.current.playlistsProviderProps.removeFromPlaylist('p-1', 'climb-x');
+      });
+
+      expect(queryClient.getQueryData<Playlist[]>(['userPlaylists'])?.[0].climbCount).toBe(3);
+    });
+
+    // A server that predates `wasAlreadyInPlaylist` (or a bundle whose
+    // selection set omits it) returns undefined; keep the pre-#4014 +1.
+    it('still bumps climbCount when the response omits wasAlreadyInPlaylist', async () => {
+      requestMock.mockResolvedValueOnce({
+        allUserPlaylists: { playlists: [{ ...mkPlaylist('p-1', 'Hard sends'), climbCount: 1 }] },
+      });
+      requestMock.mockResolvedValueOnce({ addClimbToPlaylist: {} });
+
+      const { queryClient, Wrapper } = makeWrapper();
+      const { result } = renderHook(() => useMobileClimbActionsData(), { wrapper: Wrapper });
+      await waitFor(() => expect(result.current.playlistsProviderProps.playlists.length).toBe(1));
+
+      await act(async () => {
+        await result.current.playlistsProviderProps.addToPlaylist('p-1', 'climb-x', 50);
+      });
+
+      expect(queryClient.getQueryData<Playlist[]>(['userPlaylists'])?.[0].climbCount).toBe(2);
+    });
+  });
+
+  // #4014: the hook used to hand PlaylistsProvider a freshly allocated empty Map
+  // every render, busting the provider's `getPlaylistsForClimb` memo (and the
+  // context value built on it) on every parent render. Real memberships come
+  // from `playlistMembershipStore` / the picker's per-climb query instead.
+  describe('playlistsProviderProps stability', () => {
+    it('does not pass a playlistMemberships map', async () => {
+      requestMock.mockResolvedValue({ allUserPlaylists: { playlists: [] } });
+
+      const { Wrapper } = makeWrapper();
+      const { result } = renderHook(() => useMobileClimbActionsData(), { wrapper: Wrapper });
+      await waitFor(() => expect(requestMock).toHaveBeenCalledWith(GET_ALL_USER_PLAYLISTS, expect.anything()));
+
+      expect('playlistMemberships' in result.current.playlistsProviderProps).toBe(false);
     });
   });
 
