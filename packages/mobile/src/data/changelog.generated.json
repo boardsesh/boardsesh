@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-14T09:30:43.388Z",
+  "generatedAt": "2026-08-14T10:03:03.947Z",
   "entries": [
+    {
+      "prNumber": 4425,
+      "category": "fixed",
+      "title": "Fixed: holds can be tapped again when creating or editing a climb on Android.",
+      "mergedAt": "2026-08-14T10:01:36Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4425"
+    },
     {
       "prNumber": 4422,
       "category": "new",
