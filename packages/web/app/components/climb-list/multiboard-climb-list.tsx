@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useCallback, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -9,14 +9,9 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import ToggleButton from '@mui/material/ToggleButton';
 import { useMyBoards } from '@/app/hooks/use-my-boards';
 import { useBoardDetailsMap } from '@/app/hooks/use-board-details-map';
-import { useClimbActionsData } from '@/app/hooks/use-climb-actions-data';
 import BoardFilterStrip from '@/app/components/board-scroll/board-filter-strip';
-import ClimbsList from '@/app/components/board-page/climbs-list';
-import { FavoritesProvider } from '@/app/components/climb-actions/favorites-batch-context';
-import { PlaylistsProvider } from '@/app/components/climb-actions/playlists-batch-context';
-import { getDefaultAngleForBoard, type SessionBoardConfig } from '@/app/lib/board-config-for-playlist';
-import { useOptionalQueueActions } from '@/app/components/graphql-queue';
-import { useOptionalPlaylistActivation } from '@/app/components/climb-actions/playlist-activation-context';
+import StaticClimbList from '@/app/components/climb-list/static-climb-list';
+import type { SessionBoardConfig } from '@/app/lib/board-config-for-playlist';
 import { usePersistentSessionState } from '@/app/components/persistent-session/persistent-session-context';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { Climb } from '@/app/lib/types';
@@ -40,9 +35,6 @@ type MultiboardClimbListProps = {
   sortBy?: SortBy;
   onSortChange?: (sortBy: SortBy) => void;
   totalCount?: number;
-  // Climb interaction
-  onClimbSelect?: (climb: Climb) => void;
-  selectedClimbUuid?: string | null;
   // Optional header content
   header?: React.ReactNode;
   hideEndMessage?: boolean;
@@ -75,8 +67,6 @@ export default function MultiboardClimbList({
   sortBy = 'popular',
   onSortChange,
   totalCount,
-  onClimbSelect,
-  selectedClimbUuid,
   header,
   hideEndMessage = true,
   showBottomSpacer = true,
@@ -112,71 +102,15 @@ export default function MultiboardClimbList({
     };
   }, [activeSession]);
 
-  const { boardDetailsByClimb, defaultBoardDetails, unsupportedClimbs, upsizedClimbs } = useBoardDetailsMap(
+  // `unsupportedClimbs` / `upsizedClimbs` are intentionally not destructured:
+  // the static rows carry no "needs a bigger board" affordance. The hook call
+  // stays because it also produces `boardDetailsByClimb`.
+  const { boardDetailsByClimb, defaultBoardDetails } = useBoardDetailsMap(
     climbs,
     myBoards,
     selectedBoard,
     sessionBoard,
     fallbackBoardTypes,
-  );
-
-  // Climb action data for favorites/playlists context
-  const climbUuids = useMemo(() => climbs.map((c) => c.uuid), [climbs]);
-  const actionsBoardName = selectedBoard?.boardType || (climbs[0]?.boardType ?? 'kilter');
-  const actionsLayoutId = selectedBoard?.layoutId || (climbs[0]?.layoutId ?? 1);
-  const actionsAngle = selectedBoard?.angle || getDefaultAngleForBoard(actionsBoardName);
-
-  const { favoritesProviderProps, playlistsProviderProps } = useClimbActionsData({
-    boardName: actionsBoardName,
-    layoutId: actionsLayoutId,
-    angle: actionsAngle,
-    climbUuids,
-  });
-  const queueActions = useOptionalQueueActions();
-  const playlistActivation = useOptionalPlaylistActivation();
-
-  // Fallback for the rare case with no queue bridge (e.g. mid-hydration): navigate
-  // to the climb's view page so the user is never stranded.
-  const navigateToClimb = useCallback(
-    async (climb: Climb) => {
-      try {
-        const bt = climb.boardType || selectedBoard?.boardType;
-        if (!bt) return;
-        const params = new URLSearchParams({ boardType: bt, climbUuid: climb.uuid });
-        const res = await fetch(`/api/internal/climb-redirect?${params}`);
-        if (!res.ok) return;
-        const { url } = await res.json();
-        if (url) window.location.href = url;
-      } catch (error) {
-        console.error('Failed to navigate to climb:', error);
-      }
-    },
-    [selectedBoard],
-  );
-
-  // Internal selection state drives the visual highlight. A caller-supplied
-  // selectedClimbUuid takes precedence so controlled usage still works.
-  const [internalSelectedUuid, setInternalSelectedUuid] = useState<string | null>(null);
-  const effectiveSelectedUuid = selectedClimbUuid ?? internalSelectedUuid;
-
-  // Row click: opens the play drawer for the tapped climb. In solo, also
-  // sends to the wall (via previewClimbFromBrowse → setCurrentClimb). In a
-  // party session, the drawer shows the climb locally without yanking the
-  // wall. When no queue context is mounted (e.g. cross-board feed outside a
-  // board page), fall back to navigating to the climb's own board page.
-  const handleClimbSelect = useCallback(
-    (climb: Climb) => {
-      setInternalSelectedUuid(climb.uuid);
-      if (playlistActivation) {
-        void playlistActivation.activatePlaylistClimb(climb);
-      } else if (queueActions?.previewClimbFromBrowse) {
-        queueActions.previewClimbFromBrowse(climb);
-      } else {
-        void navigateToClimb(climb);
-      }
-      onClimbSelect?.(climb);
-    },
-    [playlistActivation, queueActions, navigateToClimb, onClimbSelect],
   );
 
   const handleSortChange = (_: React.MouseEvent<HTMLElement>, value: SortBy | null) => {
@@ -185,8 +119,8 @@ export default function MultiboardClimbList({
     }
   };
 
-  // Header with sort toggle and count
-  const headerInline = showSortToggle ? (
+  // Sort toggle and count, rendered above the rows
+  const sortControls = showSortToggle ? (
     <Box
       sx={{
         display: 'flex',
@@ -226,27 +160,22 @@ export default function MultiboardClimbList({
     );
   } else if (defaultBoardDetails) {
     climbListContent = (
-      <FavoritesProvider {...favoritesProviderProps}>
-        <PlaylistsProvider {...playlistsProviderProps}>
-          <ClimbsList
-            boardDetails={defaultBoardDetails}
-            boardDetailsByClimb={boardDetailsByClimb}
-            unsupportedClimbs={unsupportedClimbs}
-            upsizedClimbs={upsizedClimbs}
-            climbs={climbs}
-            selectedClimbUuid={effectiveSelectedUuid}
-            isFetching={isFetching}
-            hasMore={hasMore}
-            onClimbSelect={handleClimbSelect}
-            onLoadMore={onLoadMore}
-            addToQueue={queueActions?.addToQueue}
-            header={header}
-            headerInline={headerInline}
-            hideEndMessage={hideEndMessage}
-            showBottomSpacer={showBottomSpacer}
-          />
-        </PlaylistsProvider>
-      </FavoritesProvider>
+      <StaticClimbList
+        climbs={climbs}
+        boardDetails={defaultBoardDetails}
+        boardDetailsByClimb={boardDetailsByClimb}
+        isFetching={isFetching}
+        hasMore={hasMore}
+        onLoadMore={onLoadMore}
+        header={
+          <>
+            {header}
+            {sortControls}
+          </>
+        }
+        hideEndMessage={hideEndMessage}
+        showBottomSpacer={showBottomSpacer}
+      />
     );
   } else {
     climbListContent = null;

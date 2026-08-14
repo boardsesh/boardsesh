@@ -597,6 +597,8 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
                 <AscentStatus
                   climbUuid={climb.uuid}
                   angle={climb.angle}
+                  logbook={boardProvider?.logbook}
+                  boardName={boardProvider?.boardName}
                   fontSize={12}
                   className={ascentStyles.badge}
                   mirroredClassName={ascentStyles.badgeMirrored}

@@ -8,16 +8,20 @@ import {
   pickHighestAscentStatus,
   type AscentStatusValue,
 } from '@/app/components/ascent-status/ascent-status-utils';
-import type { ClimbUuid } from '@/app/lib/types';
-import { useOptionalBoardProvider } from '../board-provider/board-provider-context';
+import type { BoardName, ClimbUuid } from '@/app/lib/types';
 
-const EMPTY_LOGBOOK: LogbookEntry[] = [];
+const EMPTY_LOGBOOK: readonly LogbookEntry[] = [];
 
 type AscentStatusProps = {
   climbUuid: ClimbUuid;
   /** Currently selected board angle. Badges only reflect ticks logged at this angle
    *  so a send at 30° doesn't display when the user is viewing the climb at 50°. */
   angle: number;
+  /** The viewer's ticks. Optional: anonymous SSR — crawlers and the front door —
+   *  renders no badge at all, and every caller that has a logbook passes it in. */
+  logbook?: readonly LogbookEntry[];
+  /** Board being viewed; decides whether mirrored ticks get their own badge. */
+  boardName?: BoardName;
   fontSize?: number;
   /** Class for the badge wrapper (e.g. positioning on a thumbnail).
    *  For mirroring boards this is applied to each individual badge. */
@@ -26,7 +30,7 @@ type AscentStatusProps = {
   mirroredClassName?: string;
 };
 
-function getHighestStatus(entries: LogbookEntry[]): AscentStatusValue | null {
+function getHighestStatus(entries: readonly LogbookEntry[]): AscentStatusValue | null {
   return pickHighestAscentStatus(
     entries.map((entry) =>
       normalizeAscentStatus({
@@ -38,14 +42,22 @@ function getHighestStatus(entries: LogbookEntry[]): AscentStatusValue | null {
   );
 }
 
-export const AscentStatus = ({ climbUuid, angle, fontSize, className, mirroredClassName }: AscentStatusProps) => {
-  const boardProvider = useOptionalBoardProvider();
-  const logbook = boardProvider?.logbook ?? EMPTY_LOGBOOK;
-  const boardName = boardProvider?.boardName ?? 'kilter';
+export const AscentStatus = ({
+  climbUuid,
+  angle,
+  logbook,
+  // 'kilter' keeps the pre-props behaviour for a caller that has no board in
+  // hand: a non-mirroring board, so one badge.
+  boardName = 'kilter',
+  fontSize,
+  className,
+  mirroredClassName,
+}: AscentStatusProps) => {
+  const entries = logbook ?? EMPTY_LOGBOOK;
 
   const ascentsForClimb = useMemo(
-    () => logbook.filter((ascent) => ascent.climb_uuid === climbUuid && ascent.angle === angle),
-    [logbook, climbUuid, angle],
+    () => entries.filter((ascent) => ascent.climb_uuid === climbUuid && ascent.angle === angle),
+    [entries, climbUuid, angle],
   );
 
   const overallStatus = useMemo(() => getHighestStatus(ascentsForClimb), [ascentsForClimb]);

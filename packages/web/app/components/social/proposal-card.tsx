@@ -33,8 +33,7 @@ import { VOTE_ON_PROPOSAL, RESOLVE_PROPOSAL, DELETE_PROPOSAL } from '@boardsesh/
 import type { Proposal } from '@boardsesh/shared-schema';
 import { usePathname } from 'next/navigation';
 import type { Climb, BoardDetails, BoardName } from '@/app/lib/types';
-import ClimbListItem from '@/app/components/climb-card/climb-list-item';
-import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
+import StaticClimbRow from '@/app/components/climb-list/static-climb-row';
 
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { getDefaultBoardConfig } from '@/app/lib/default-board-configs';
@@ -59,7 +58,6 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
   const { t } = useTranslation('common');
   const theme = useTheme();
   const pathname = usePathname();
-  const isDark = useIsDarkMode();
   const { token } = useWsAuthToken();
   const [loading, setLoading] = useState(false);
   const [snackbar, setSnackbar] = useState('');
@@ -198,12 +196,10 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
         <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
           {/* Climb preview */}
           {climbAndBoardDetails && (
-            <ClimbListItem
+            <StaticClimbRow
               climb={climbAndBoardDetails.climb}
               boardDetails={climbAndBoardDetails.boardDetails}
               pathname={pathname}
-              isDark={isDark}
-              disableSwipe
             />
           )}
 

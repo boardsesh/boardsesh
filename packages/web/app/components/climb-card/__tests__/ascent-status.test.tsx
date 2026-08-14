@@ -7,14 +7,9 @@ import { createBoardAdapterWrapper, createTestQueryClient } from '@/app/test-uti
 import type { ExecuteHttp } from '@boardsesh/board-react';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { useSession } from 'next-auth/react';
-import {
-  useLogbook,
-  accumulatedLogbookQueryKey,
-  logbookClimbAngleKey,
-  type LogbookEntry,
-} from '@boardsesh/board-react';
+import { useLogbook, accumulatedLogbookQueryKey, type LogbookEntry } from '@boardsesh/board-react';
+import type { BoardName } from '@/app/lib/types';
 import { AscentStatus } from '../ascent-status';
-import { BoardContext, type BoardContextType } from '../../board-provider/board-provider-context';
 
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({
   useWsAuthToken: vi.fn(),
@@ -36,67 +31,28 @@ vi.mock('@boardsesh/graphql/operations', () => ({
 const mockUseWsAuthToken = vi.mocked(useWsAuthToken);
 const mockUseSession = vi.mocked(useSession);
 
-function createBoardContextValue({
+/**
+ * The badge takes its ticks as a prop (W-12) rather than reading
+ * `useOptionalBoardProvider`, so the front door can render it for an anonymous
+ * visitor with no provider anywhere in the tree. Every case here therefore
+ * passes the logbook directly — no BoardContext is mounted at all.
+ */
+function renderWithLogbook({
   boardName = 'kilter',
   logbook = [],
-  fetchedClimbUuids,
+  angle = 40,
 }: {
-  boardName?: BoardContextType['boardName'];
+  boardName?: BoardName;
   logbook?: LogbookEntry[];
-  /**
-   * Climbs whose logbook is considered already fetched. Defaults to the climbs
-   * present in `logbook`, which is enough for these tests because nothing on
-   * web reads `fetchedLogbookClimbUuids` — only mobile's quick-tick gates Flash
-   * on it. A web test that starts gating on it must pass this explicitly:
-   * deriving it from an empty `logbook` would say "not fetched yet", not
-   * "fetched, no ticks".
-   */
-  fetchedClimbUuids?: string[];
-} = {}): BoardContextType {
-  const logbookByClimbAngle = new Map<string, LogbookEntry[]>();
-  for (const tick of logbook) {
-    const key = logbookClimbAngleKey(tick.climb_uuid, tick.angle);
-    const bucket = logbookByClimbAngle.get(key);
-    if (bucket) bucket.push(tick);
-    else logbookByClimbAngle.set(key, [tick]);
-  }
-  return {
-    boardName,
-    boardUuid: null,
-    isAuthenticated: true,
-    isLoading: false,
-    error: null,
-    isInitialized: true,
-    logbook,
-    logbookByClimbAngle,
-    fetchedLogbookClimbUuids: new Set(fetchedClimbUuids ?? logbook.map((tick) => tick.climb_uuid)),
-    getLogbook: async () => {},
-    saveTick: async () => {},
-    saveClimb: async () => {
-      throw new Error('unused in test');
-    },
-    updateClimb: async () => {
-      throw new Error('unused in test');
-    },
-  };
-}
-
-function renderWithBoardContext(contextValue: BoardContextType, angle = 40) {
-  return render(
-    <BoardContext.Provider value={contextValue}>
-      <AscentStatus climbUuid="climb-1" angle={angle} />
-    </BoardContext.Provider>,
-  );
+  angle?: number;
+} = {}) {
+  return render(<AscentStatus climbUuid="climb-1" angle={angle} logbook={logbook} boardName={boardName} />);
 }
 
 function AscentStatusHarness({ angle = 40 }: { angle?: number } = {}) {
   const { logbook } = useLogbook('kilter', ['climb-1']);
 
-  return (
-    <BoardContext.Provider value={createBoardContextValue({ logbook })}>
-      <AscentStatus climbUuid="climb-1" angle={angle} />
-    </BoardContext.Provider>
-  );
+  return <AscentStatus climbUuid="climb-1" angle={angle} logbook={logbook} boardName="kilter" />;
 }
 
 describe('AscentStatus', () => {
@@ -117,184 +73,183 @@ describe('AscentStatus', () => {
   });
 
   it('renders nothing when the climb has no logbook entries', () => {
+    const { container } = render(<AscentStatus climbUuid="climb-1" angle={40} logbook={[]} />);
+    expect(container.innerHTML).toBe('');
+  });
+
+  // The anonymous/crawler path: the front door renders climb rows with no
+  // signed-in viewer and no BoardProvider anywhere in the tree.
+  it('renders nothing with no logbook prop and no board provider mounted', () => {
     const { container } = render(<AscentStatus climbUuid="climb-1" angle={40} />);
     expect(container.innerHTML).toBe('');
   });
 
   it('hides the badge when the only ticks are at a different angle than the current view', () => {
-    renderWithBoardContext(
-      createBoardContextValue({
-        boardName: 'kilter',
-        logbook: [
-          {
-            uuid: '1',
-            climb_uuid: 'climb-1',
-            angle: 30,
-            is_mirror: false,
-            tries: 1,
-            quality: null,
-            difficulty: null,
-            comment: '',
-            climbed_at: '2025-01-01T00:00:00.000Z',
-            is_ascent: true,
-            status: 'send',
-            upvotes: 0,
-            downvotes: 0,
-            commentCount: 0,
-          },
-        ],
-      }),
-      50,
-    );
+    renderWithLogbook({
+      boardName: 'kilter',
+      logbook: [
+        {
+          uuid: '1',
+          climb_uuid: 'climb-1',
+          angle: 30,
+          is_mirror: false,
+          tries: 1,
+          quality: null,
+          difficulty: null,
+          comment: '',
+          climbed_at: '2025-01-01T00:00:00.000Z',
+          is_ascent: true,
+          status: 'send',
+          upvotes: 0,
+          downvotes: 0,
+          commentCount: 0,
+        },
+      ],
+      angle: 50,
+    });
 
     expect(screen.queryByTestId('ascent-badge')).toBeNull();
   });
 
   it('shows the badge only for ticks at the current angle', () => {
-    renderWithBoardContext(
-      createBoardContextValue({
-        boardName: 'kilter',
-        logbook: [
-          {
-            uuid: '1',
-            climb_uuid: 'climb-1',
-            angle: 30,
-            is_mirror: false,
-            tries: 1,
-            quality: null,
-            difficulty: null,
-            comment: '',
-            climbed_at: '2025-01-01T00:00:00.000Z',
-            is_ascent: true,
-            status: 'flash',
-            upvotes: 0,
-            downvotes: 0,
-            commentCount: 0,
-          },
-          {
-            uuid: '2',
-            climb_uuid: 'climb-1',
-            angle: 50,
-            is_mirror: false,
-            tries: 4,
-            quality: null,
-            difficulty: null,
-            comment: '',
-            climbed_at: '2025-01-02T00:00:00.000Z',
-            is_ascent: false,
-            status: 'attempt',
-            upvotes: 0,
-            downvotes: 0,
-            commentCount: 0,
-          },
-        ],
-      }),
-      50,
-    );
+    renderWithLogbook({
+      boardName: 'kilter',
+      logbook: [
+        {
+          uuid: '1',
+          climb_uuid: 'climb-1',
+          angle: 30,
+          is_mirror: false,
+          tries: 1,
+          quality: null,
+          difficulty: null,
+          comment: '',
+          climbed_at: '2025-01-01T00:00:00.000Z',
+          is_ascent: true,
+          status: 'flash',
+          upvotes: 0,
+          downvotes: 0,
+          commentCount: 0,
+        },
+        {
+          uuid: '2',
+          climb_uuid: 'climb-1',
+          angle: 50,
+          is_mirror: false,
+          tries: 4,
+          quality: null,
+          difficulty: null,
+          comment: '',
+          climbed_at: '2025-01-02T00:00:00.000Z',
+          is_ascent: false,
+          status: 'attempt',
+          upvotes: 0,
+          downvotes: 0,
+          commentCount: 0,
+        },
+      ],
+      angle: 50,
+    });
 
     expect(screen.getByTestId('ascent-badge').getAttribute('data-status')).toBe('attempt');
   });
 
   it('prefers flash over send and attempt for the same climb', () => {
-    renderWithBoardContext(
-      createBoardContextValue({
-        boardName: 'kilter',
-        logbook: [
-          {
-            uuid: '1',
-            climb_uuid: 'climb-1',
-            angle: 40,
-            is_mirror: false,
-            tries: 3,
-            quality: null,
-            difficulty: null,
-            comment: '',
-            climbed_at: '2025-01-01T00:00:00.000Z',
-            is_ascent: true,
-            status: 'send',
-            upvotes: 0,
-            downvotes: 0,
-            commentCount: 0,
-          },
-          {
-            uuid: '2',
-            climb_uuid: 'climb-1',
-            angle: 40,
-            is_mirror: false,
-            tries: 1,
-            quality: null,
-            difficulty: null,
-            comment: '',
-            climbed_at: '2025-01-02T00:00:00.000Z',
-            is_ascent: true,
-            status: 'flash',
-            upvotes: 0,
-            downvotes: 0,
-            commentCount: 0,
-          },
-          {
-            uuid: '3',
-            climb_uuid: 'climb-1',
-            angle: 40,
-            is_mirror: false,
-            tries: 2,
-            quality: null,
-            difficulty: null,
-            comment: '',
-            climbed_at: '2025-01-03T00:00:00.000Z',
-            is_ascent: false,
-            status: 'attempt',
-            upvotes: 0,
-            downvotes: 0,
-            commentCount: 0,
-          },
-        ],
-      }),
-    );
+    renderWithLogbook({
+      boardName: 'kilter',
+      logbook: [
+        {
+          uuid: '1',
+          climb_uuid: 'climb-1',
+          angle: 40,
+          is_mirror: false,
+          tries: 3,
+          quality: null,
+          difficulty: null,
+          comment: '',
+          climbed_at: '2025-01-01T00:00:00.000Z',
+          is_ascent: true,
+          status: 'send',
+          upvotes: 0,
+          downvotes: 0,
+          commentCount: 0,
+        },
+        {
+          uuid: '2',
+          climb_uuid: 'climb-1',
+          angle: 40,
+          is_mirror: false,
+          tries: 1,
+          quality: null,
+          difficulty: null,
+          comment: '',
+          climbed_at: '2025-01-02T00:00:00.000Z',
+          is_ascent: true,
+          status: 'flash',
+          upvotes: 0,
+          downvotes: 0,
+          commentCount: 0,
+        },
+        {
+          uuid: '3',
+          climb_uuid: 'climb-1',
+          angle: 40,
+          is_mirror: false,
+          tries: 2,
+          quality: null,
+          difficulty: null,
+          comment: '',
+          climbed_at: '2025-01-03T00:00:00.000Z',
+          is_ascent: false,
+          status: 'attempt',
+          upvotes: 0,
+          downvotes: 0,
+          commentCount: 0,
+        },
+      ],
+    });
 
     expect(screen.getByTestId('ascent-badge').getAttribute('data-status')).toBe('flash');
   });
 
   it('renders separate mirrored and regular statuses on mirroring boards', () => {
-    renderWithBoardContext(
-      createBoardContextValue({
-        boardName: 'tension',
-        logbook: [
-          {
-            uuid: '1',
-            climb_uuid: 'climb-1',
-            angle: 40,
-            is_mirror: false,
-            tries: 2,
-            quality: null,
-            difficulty: null,
-            comment: '',
-            climbed_at: '2025-01-01T00:00:00.000Z',
-            is_ascent: true,
-            status: 'send',
-            upvotes: 0,
-            downvotes: 0,
-            commentCount: 0,
-          },
-          {
-            uuid: '2',
-            climb_uuid: 'climb-1',
-            angle: 40,
-            is_mirror: true,
-            tries: 1,
-            quality: null,
-            difficulty: null,
-            comment: '',
-            climbed_at: '2025-01-02T00:00:00.000Z',
-            is_ascent: true,
-            status: 'flash',
-            upvotes: 0,
-            downvotes: 0,
-            commentCount: 0,
-          },
-        ],
-      }),
-    );
+    renderWithLogbook({
+      boardName: 'tension',
+      logbook: [
+        {
+          uuid: '1',
+          climb_uuid: 'climb-1',
+          angle: 40,
+          is_mirror: false,
+          tries: 2,
+          quality: null,
+          difficulty: null,
+          comment: '',
+          climbed_at: '2025-01-01T00:00:00.000Z',
+          is_ascent: true,
+          status: 'send',
+          upvotes: 0,
+          downvotes: 0,
+          commentCount: 0,
+        },
+        {
+          uuid: '2',
+          climb_uuid: 'climb-1',
+          angle: 40,
+          is_mirror: true,
+          tries: 1,
+          quality: null,
+          difficulty: null,
+          comment: '',
+          climbed_at: '2025-01-02T00:00:00.000Z',
+          is_ascent: true,
+          status: 'flash',
+          upvotes: 0,
+          downvotes: 0,
+          commentCount: 0,
+        },
+      ],
+    });
 
     expect(screen.getByTestId('ascent-badge').getAttribute('data-status')).toBe('send');
     expect(screen.getByTestId('ascent-badge-mirrored').getAttribute('data-status')).toBe('flash');

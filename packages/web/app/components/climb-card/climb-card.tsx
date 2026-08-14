@@ -18,6 +18,7 @@ import { getGradeTintColor } from '@/app/lib/grade-colors';
 import { useColorMode } from '@/app/hooks/use-color-mode';
 import { getExcludedClimbActions } from '@/app/lib/climb-action-utils';
 import { useIsClimbSelected } from '../board-page/selected-climb-store';
+import { useOptionalBoardProvider } from '../board-provider/board-provider-context';
 
 type ClimbCardProps = {
   climb?: Climb;
@@ -76,6 +77,10 @@ function ClimbCardWithActions({
   const { mode } = useColorMode();
   const isDark = mode === 'dark';
   const selected = useIsClimbSelected(climb.uuid);
+  // The cover's ascent badge takes the viewer's ticks as a prop now, so the
+  // card reads the provider on its behalf (the badge itself must stay
+  // provider-free — it is a front-door survivor and the card is not).
+  const boardProvider = useOptionalBoardProvider();
 
   const { handleDoubleTap, showHeart, dismissHeart } = useDoubleTapFavorite({
     climbUuid: climb.uuid,
@@ -88,6 +93,8 @@ function ClimbCardWithActions({
       onClick={onCoverClick}
       onDoubleClick={onCoverDoubleClick ?? handleDoubleTap}
       preferImageLayers={preferImageLayers}
+      logbook={boardProvider?.logbook}
+      boardName={boardProvider?.boardName}
     />
   );
   const cardTitle = <ClimbTitle climb={climb} layout="horizontal" showSetterInfo />;
@@ -154,6 +161,7 @@ const ClimbCardStatic = React.memo(
     const { mode } = useColorMode();
     const isDark = mode === 'dark';
     const selected = useIsClimbSelected(climb?.uuid ?? '');
+    const boardProvider = useOptionalBoardProvider();
     const cover = (
       <ClimbCardCover
         climb={climb}
@@ -161,6 +169,8 @@ const ClimbCardStatic = React.memo(
         onClick={onCoverClick}
         onDoubleClick={onCoverDoubleClick}
         preferImageLayers={preferImageLayers}
+        logbook={boardProvider?.logbook}
+        boardName={boardProvider?.boardName}
       />
     );
     const cardTitle = climb ? <ClimbTitle climb={climb} layout="horizontal" showSetterInfo /> : 'Loading...';
