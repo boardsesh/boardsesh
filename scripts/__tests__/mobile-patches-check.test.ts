@@ -146,6 +146,42 @@ const SCOPED_PATCH_PATH = 'patches/@expo%2Fui@57.0.8.patch';
 const SCOPED_RULES: PatchRule[] = [
   { package: SCOPED_PKG, file: SCOPED_FILE, sentinels: ['swallowMissingNativeHandler'], patchedKey: SCOPED_KEY },
 ];
+
+type ExpoImageUrlShape = {
+  scheme: string | null;
+  host: string | null;
+  relativePath: string;
+};
+
+// Portable model of the Foundation URL properties consumed by the Swift
+// patch. These cases mirror Expo's relative xcasset URL representation and the
+// absolute/hosted filesystem URLs that must bypass UIImage(named:).
+function modelPatchedLocalAssetName({ scheme, host, relativePath }: ExpoImageUrlShape): string | null {
+  if (scheme !== null && scheme !== 'file') return null;
+
+  const hasFileHost = scheme === 'file' && host !== null && host.length > 0;
+  const hasAbsoluteFilePath = scheme === 'file' && relativePath.startsWith('/');
+  if (hasFileHost || hasAbsoluteFilePath) return null;
+
+  const assetName = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
+  return assetName.length > 0 ? assetName : null;
+}
+
+function expoImageGuardRunsBeforeSlashStripping(source: string): boolean {
+  const functionIndex = source.indexOf('func localAssetName(from url: URL?)');
+  const hostGuardIndex = source.indexOf('let hasFileHost', functionIndex);
+  const absolutePathGuardIndex = source.indexOf('let hasAbsoluteFilePath', functionIndex);
+  const combinedGuardIndex = source.indexOf('if hasFileHost || hasAbsoluteFilePath', functionIndex);
+  const stripLeadingSlashIndex = source.indexOf('if path.hasPrefix("/")', functionIndex);
+
+  return (
+    functionIndex >= 0 &&
+    hostGuardIndex > functionIndex &&
+    absolutePathGuardIndex > hostGuardIndex &&
+    combinedGuardIndex > absolutePathGuardIndex &&
+    stripLeadingSlashIndex > combinedGuardIndex
+  );
+}
 const SCOPED_PATCHED_SOURCE = `
 function swallowMissingNativeHandler(error: unknown): void { /* ... */ }
 sheetRef.current?.expand()?.catch(swallowMissingNativeHandler);
@@ -286,6 +322,92 @@ const close = hideSwallowingMissingNativeHandler;
     expect(result.errors[0]).not.toContain('hideSwallowingMissingNativeHandler();');
     expect(result.errors[0]).not.toContain('const close = hideSwallowingMissingNativeHandler;');
   });
+});
+
+describe('the shipped expo-image local-asset guard', () => {
+  const imageViewSource = readFileSync(
+    resolve(import.meta.dirname, '../../packages/mobile/node_modules/expo-image/ios/ImageView.swift'),
+    'utf8',
+  );
+
+  it('rejects filesystem URLs before stripping the leading slash', () => {
+    expect(expoImageGuardRunsBeforeSlashStripping(imageViewSource)).toBe(true);
+    expect(imageViewSource).not.toContain('url.baseURL == nil');
+    expect(imageViewSource).not.toContain('path.contains("/")');
+  });
+
+  it('goes red if the leading-slash normalization moves ahead of the filesystem guard', () => {
+    const guardBlock = `  let hasFileHost = url.scheme == "file" && !(url.host?.isEmpty ?? true)
+  let hasAbsoluteFilePath = url.scheme == "file" && path.hasPrefix("/")
+  if hasFileHost || hasAbsoluteFilePath {
+    return nil
+  }
+`;
+    const slashNormalizationBlock = `  if path.hasPrefix("/") {
+    path.removeFirst()
+  }
+`;
+    const reorderedSource = imageViewSource.replace(
+      `${guardBlock}${slashNormalizationBlock}`,
+      `${slashNormalizationBlock}${guardBlock}`,
+    );
+
+    expect(reorderedSource).not.toBe(imageViewSource);
+    expect(expoImageGuardRunsBeforeSlashStripping(reorderedSource)).toBe(false);
+  });
+
+  it.each([
+    {
+      name: 'keeps relative URL(fileURLWithPath:) asset names',
+      url: { scheme: 'file', host: null, relativePath: 'app_icon' },
+      expected: 'app_icon',
+    },
+    {
+      name: 'keeps nested xcasset URL(fileURLWithPath:) names',
+      url: { scheme: 'file', host: null, relativePath: 'Images/MyIcon' },
+      expected: 'Images/MyIcon',
+    },
+    {
+      name: 'keeps a scheme-less /app_icon name',
+      url: { scheme: null, host: null, relativePath: '/app_icon' },
+      expected: 'app_icon',
+    },
+    {
+      name: 'rejects file:///private paths',
+      url: { scheme: 'file', host: '', relativePath: '/private/var/mobile/board.png' },
+      expected: null,
+    },
+    {
+      name: 'rejects root-level file:///app_icon URLs',
+      url: { scheme: 'file', host: '', relativePath: '/app_icon' },
+      expected: null,
+    },
+    {
+      name: 'rejects absolute URL(fileURLWithPath:) values',
+      url: { scheme: 'file', host: null, relativePath: '/app_icon' },
+      expected: null,
+    },
+    {
+      name: 'rejects file://host paths',
+      url: { scheme: 'file', host: 'board-cache', relativePath: '/board.png' },
+      expected: null,
+    },
+    {
+      name: 'rejects non-file schemes',
+      url: { scheme: 'https', host: 'example.com', relativePath: '/app_icon' },
+      expected: null,
+    },
+    {
+      name: 'rejects an empty asset name',
+      url: { scheme: null, host: null, relativePath: '' },
+      expected: null,
+    },
+  ] satisfies readonly { name: string; url: ExpoImageUrlShape; expected: string | null }[])(
+    '$name',
+    ({ url, expected }) => {
+      expect(modelPatchedLocalAssetName(url)).toBe(expected);
+    },
+  );
 });
 
 describe('checkPatchesApplied across several packages', () => {
@@ -652,32 +774,38 @@ describe('the shipped RULES', () => {
     expect(pinnedVersion, 'expo-image must stay a direct packages/mobile dependency').toBeDefined();
     expect(versionFromKey(expoImageRule?.patchedKey ?? '')).toBe(pinnedVersion);
     expect(expoImageRule?.sentinels).toEqual(
-      expect.arrayContaining(['boardsesh/boardsesh#3928', 'url.baseURL == nil && path.contains("/")', 'Images/MyIcon']),
+      expect.arrayContaining([
+        'boardsesh/boardsesh#3928',
+        'let hasFileHost = url.scheme == "file" && !(url.host?.isEmpty ?? true)',
+        'let hasAbsoluteFilePath = url.scheme == "file" && path.hasPrefix("/")',
+        'if hasFileHost || hasAbsoluteFilePath',
+        'Images/MyIcon',
+      ]),
     );
   });
 
-  it('rejects the slash-only guard that breaks namespaced asset-catalog names', () => {
+  it('rejects the old post-normalization guard that leaks root-level file URLs', () => {
     const expoImageRule = REAL_RULES.find((rule) => rule.package === 'expo-image');
     if (!expoImageRule) throw new Error('no expo-image rule registered');
 
-    const slashOnlyGuardSource = `
+    const postNormalizationGuardSource = `
 // boardsesh/boardsesh#3928
 // Namespaced asset name: Images/MyIcon
 if url.scheme == "file" {
   if let host = url.host, !host.isEmpty { return nil }
-  if path.contains("/") { return nil }
+  if url.baseURL == nil && path.contains("/") { return nil }
 }
 `;
     const env = makeEnv({
       patchedDependencies: { [expoImageRule.patchedKey]: 'patches/expo-image@57.0.1.patch' },
       versions: { [expoImageRule.package]: versionFromKey(expoImageRule.patchedKey) },
-      files: { [`${expoImageRule.package}::${expoImageRule.file}`]: slashOnlyGuardSource },
+      files: { [`${expoImageRule.package}::${expoImageRule.file}`]: postNormalizationGuardSource },
     });
 
     const result = checkPatchesApplied([expoImageRule], env);
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain('patch NOT applied');
-    expect(result.errors[0]).toContain('url.baseURL == nil && path.contains');
+    expect(result.errors[0]).toContain('hasAbsoluteFilePath');
   });
 });

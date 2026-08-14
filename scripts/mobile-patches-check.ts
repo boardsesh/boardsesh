@@ -177,26 +177,20 @@ export const RULES: readonly PatchRule[] = [
     sentinels: ['onFullyDismissedRef', 'handleNativeDismiss'],
     patchedKey: '@expo/ui@57.0.8',
   },
-  // `localAssetName` accepted `file://` URLs alongside genuinely scheme-less
-  // JS asset names, so every board-art `file://` source (LayeredClimbImage's
-  // bundled photos, the Rust renderer's holds-overlay PNGs) was routed through
-  // `UIImage(named: <absolute path>)` on `reload(force:)` — a guaranteed miss
-  // that still pays for `_UIImageCollectImagePathsForPath`'s synchronous
-  // main-thread bundle-directory enumeration on every reload (#3928). The
-  // patch rejects `file://` URLs that resolve to an absolute filesystem path
-  // (or carry a host) so `reload` falls straight through to SDWebImage's disk
-  // loader instead. It must preserve ExpoModulesCore's relative file URLs for
-  // asset-catalog names such as `Images/MyIcon`, which retain a base URL.
-  // Silently dropping this patch on the next expo-image bump wouldn't fail
-  // typecheck or the bundle — board art would just resume the per-reload
-  // main-thread stall.
+  // ExpoModulesCore uses relative file URLs for xcasset names, so
+  // `localAssetName` must keep those while rejecting absolute/hosted file URLs
+  // before the leading slash is stripped and `UIImage(named:)` synchronously
+  // enumerates the bundle for a guaranteed board-art miss (#3928). Silently
+  // dropping this patch on the next expo-image bump wouldn't fail typecheck or
+  // the bundle — board art would just resume the per-reload main-thread stall.
   {
     package: 'expo-image',
     file: 'ios/ImageView.swift',
     sentinels: [
       'boardsesh/boardsesh#3928',
-      'host, !host.isEmpty',
-      'url.baseURL == nil && path.contains("/")',
+      'let hasFileHost = url.scheme == "file" && !(url.host?.isEmpty ?? true)',
+      'let hasAbsoluteFilePath = url.scheme == "file" && path.hasPrefix("/")',
+      'if hasFileHost || hasAbsoluteFilePath',
       'Images/MyIcon',
     ],
     patchedKey: 'expo-image@57.0.1',

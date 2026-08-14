@@ -1,37 +1,21 @@
 diff --git a/ios/ImageView.swift b/ios/ImageView.swift
-index cccedd7adf7328b18bb61333c3fe2473c79e72cd..986ac82e9b89e227aa34d516358092fafd4bf130 100644
+index cccedd7adf7328b18bb61333c3fe2473c79e72cd..cb69b1b60b491d3da3df1202509e136041cfc739 100644
 --- a/ios/ImageView.swift
 +++ b/ios/ImageView.swift
-@@ -871,5 +871,32 @@ func localAssetName(from url: URL?) -> String? {
-   if path.hasPrefix("/") {
-     path.removeFirst()
-   }
+@@ -868,4 +868,16 @@ func localAssetName(from url: URL?) -> String? {
+   // Use `relativePath` so we recover the original input ("my_image") instead of
+   // the absolute path it resolves to against the file:// base
+   var path = url.relativePath
 +
-+  // A genuine filesystem URL — `file:///private/var/.../board.png`, or a
-+  // `file://host/...` — can never resolve via `UIImage(named:)`: that API only
-+  // looks in asset catalogs and bundle resources, so handing it a real path is
-+  // a guaranteed miss that still pays for `_UIImageCollectImagePathsForPath`'s
-+  // synchronous main-thread bundle-directory enumeration on every `reload`
-+  // (boardsesh/boardsesh#3928). Reject those here so `reload(force:)` falls
-+  // through to SDWebImage's disk loader instead, which handles `file://` URLs
-+  // correctly off the main thread.
-+  //
-+  // ExpoModulesCore also wraps scheme-less JS asset names with
-+  // `URL(fileURLWithPath:)`. Relative names retain the current directory as
-+  // their base URL, including supported namespaced catalog names such as
-+  // "Images/MyIcon"; keep those eligible for `UIImage(named:)`. Explicit file
-+  // URIs and absolute file paths have no base URL, so a remaining `/` after
-+  // stripping the leading slash identifies the real multi-component paths we
-+  // need to bypass. (A root-level `file:///image.png` is intentionally left
-+  // unchanged because Foundation loses the original JS spelling there.)
-+  if url.scheme == "file" {
-+    if let host = url.host, !host.isEmpty {
-+      return nil
-+    }
-+    if url.baseURL == nil && path.contains("/") {
-+      return nil
-+    }
++  // ExpoModulesCore represents scheme-less xcasset names with relative file
++  // URLs. Keep those (including "Images/MyIcon"), but skip absolute file URLs
++  // and file URLs with hosts: neither can resolve through UIImage(named:), and
++  // probing them triggers synchronous bundle scans (boardsesh/boardsesh#3928).
++  // This check must run before the leading slash is removed so root-level file
++  // URLs such as `file:///app_icon` cannot masquerade as an asset name.
++  let hasFileHost = url.scheme == "file" && !(url.host?.isEmpty ?? true)
++  let hasAbsoluteFilePath = url.scheme == "file" && path.hasPrefix("/")
++  if hasFileHost || hasAbsoluteFilePath {
++    return nil
 +  }
-+
-   return path.isEmpty ? nil : path
- }
+   if path.hasPrefix("/") {
