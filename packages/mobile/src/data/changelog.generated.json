@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-14T11:30:11.165Z",
+  "generatedAt": "2026-08-14T11:36:20.962Z",
   "entries": [
+    {
+      "prNumber": 4423,
+      "category": "improved",
+      "title": "Session share pages load lighter — the climb list and comments, without the whole queue stack.",
+      "mergedAt": "2026-08-14T11:30:50Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4423",
+      "body": "Every climb in a shared sesh is a real link, pointing at the board it was actually climbed on. Paste one to a mate or open it in a new tab."
+    },
     {
       "prNumber": 4424,
       "category": "improved",

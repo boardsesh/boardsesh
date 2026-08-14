@@ -18,6 +18,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Improved
 
+- Session share pages load lighter — the climb list and comments, without the whole queue stack. ([#4423](https://github.com/boardsesh/boardsesh/pull/4423))
+  Every climb in a shared sesh is a real link, pointing at the board it was actually climbed on. Paste one to a mate or open it in a new tab.
 - The homepage board rail is real links now — open any board in a new tab or straight from search. ([#4424](https://github.com/boardsesh/boardsesh/pull/4424))
   Playlists open in the app with one tap.
 
