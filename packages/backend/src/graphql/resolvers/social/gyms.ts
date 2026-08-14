@@ -24,6 +24,7 @@ import {
 import { distanceMeters } from '@boardsesh/db/queries';
 import { logger } from '../../../utils/logger';
 import { PROXIMITY_MATCH_RADIUS_METERS } from './gym-matching';
+import { syncLocationGeography } from './location-geography';
 
 // ============================================
 // Helpers
@@ -959,11 +960,15 @@ export const socialGymMutations = {
       })
       .returning();
 
-    // Populate PostGIS location column if lat/lon provided
+    // Populate PostGIS location column if lat/lon provided (guarded — see syncLocationGeography)
     if (validatedInput.latitude != null && validatedInput.longitude != null) {
-      await db.execute(
-        sql`UPDATE gyms SET location = ST_MakePoint(${validatedInput.longitude}, ${validatedInput.latitude})::geography WHERE id = ${gym.id}`,
-      );
+      await syncLocationGeography({
+        table: 'gyms',
+        id: gym.id,
+        latitude: validatedInput.latitude,
+        longitude: validatedInput.longitude,
+        operation: 'createGym',
+      });
     }
 
     // Optionally link a board
@@ -1039,17 +1044,15 @@ export const socialGymMutations = {
 
     const [updated] = await db.update(dbSchema.gyms).set(updateValues).where(eq(dbSchema.gyms.id, gym.id)).returning();
 
-    // Update PostGIS location column
+    // Update PostGIS location column (guarded — see syncLocationGeography)
     if (validatedInput.latitude !== undefined || validatedInput.longitude !== undefined) {
-      const lat = validatedInput.latitude ?? updated.latitude;
-      const lon = validatedInput.longitude ?? updated.longitude;
-      if (lat != null && lon != null) {
-        await db.execute(
-          sql`UPDATE gyms SET location = ST_MakePoint(${lon}, ${lat})::geography WHERE id = ${updated.id}`,
-        );
-      } else {
-        await db.execute(sql`UPDATE gyms SET location = NULL WHERE id = ${updated.id}`);
-      }
+      await syncLocationGeography({
+        table: 'gyms',
+        id: updated.id,
+        latitude: validatedInput.latitude ?? updated.latitude,
+        longitude: validatedInput.longitude ?? updated.longitude,
+        operation: 'updateGym',
+      });
     }
 
     return enrichGym(updated, userId);

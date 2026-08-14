@@ -24,6 +24,7 @@ import { generateUniqueGymSlug, requireBoardGymLinkAccess, userCanEditGym } from
 import { resolveAutoGymForBoard } from './gym-matching';
 import { findBlockingDuplicate, type BoardLocation } from './board-duplicates';
 import { assertBoardCapNotReached } from './board-limits';
+import { syncLocationGeography } from './location-geography';
 import { getUserCommunityRoles, hasAdminOrLeader, rolesGrantAdminOrLeader } from './roles';
 import { SYSTEM_BOARD_OWNER_ID, isRowAnonReadable, requireAnonReadableBoard } from '../board-presence/shared';
 import { assertKnownBoardConfig } from '../board-presence/board-catalog';
@@ -1879,39 +1880,29 @@ export const socialBoardMutations = {
       }
     }
 
-    // Populate the PostGIS `location` columns. These are denormalizations used by
-    // proximity search, and they run AFTER the transaction, each guarded on its
-    // own. Inside the transaction a PostGIS failure (the column is absent in the
-    // backend test DB, and the extension can be missing anywhere) rolled the
-    // whole thing back and silently cost the user their gym; out here the worst
-    // case is a null `location` that a backfill can repair. The board id is
-    // logged so that backfill is a one-liner.
+    // Populate the PostGIS `location` columns. These run AFTER the transaction,
+    // each guarded on its own inside syncLocationGeography — see that helper for
+    // why a failure here must never fail the mutation.
     if (incomingLocation.latitude != null && incomingLocation.longitude != null) {
       const { latitude, longitude } = incomingLocation;
 
       if (mintedGymId != null) {
-        try {
-          await db.execute(
-            sql`UPDATE gyms SET location = ST_MakePoint(${longitude}, ${latitude})::geography WHERE id = ${mintedGymId}`,
-          );
-        } catch (error) {
-          logger.warn('createBoard: failed to set gym location geography; leaving it null', {
-            gymId: mintedGymId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-
-      try {
-        await db.execute(
-          sql`UPDATE user_boards SET location = ST_MakePoint(${longitude}, ${latitude})::geography WHERE id = ${board.id}`,
-        );
-      } catch (error) {
-        logger.warn('createBoard: failed to set board location geography; leaving it null', {
-          boardId: board.id,
-          error: error instanceof Error ? error.message : String(error),
+        await syncLocationGeography({
+          table: 'gyms',
+          id: mintedGymId,
+          latitude,
+          longitude,
+          operation: 'createBoard',
         });
       }
+
+      await syncLocationGeography({
+        table: 'user_boards',
+        id: board.id,
+        latitude,
+        longitude,
+        operation: 'createBoard',
+      });
     }
 
     return enrichBoard(board, userId);
@@ -2131,17 +2122,15 @@ export const socialBoardMutations = {
       }
     }
 
-    // Update PostGIS location column
+    // Update PostGIS location column (guarded — see syncLocationGeography)
     if (validatedInput.latitude !== undefined || validatedInput.longitude !== undefined) {
-      const lat = validatedInput.latitude ?? updated.latitude;
-      const lon = validatedInput.longitude ?? updated.longitude;
-      if (lat != null && lon != null) {
-        await db.execute(
-          sql`UPDATE user_boards SET location = ST_MakePoint(${lon}, ${lat})::geography WHERE id = ${updated.id}`,
-        );
-      } else {
-        await db.execute(sql`UPDATE user_boards SET location = NULL WHERE id = ${updated.id}`);
-      }
+      await syncLocationGeography({
+        table: 'user_boards',
+        id: updated.id,
+        latitude: validatedInput.latitude ?? updated.latitude,
+        longitude: validatedInput.longitude ?? updated.longitude,
+        operation: 'updateBoard',
+      });
     }
 
     return enrichBoard(updated, userId);
