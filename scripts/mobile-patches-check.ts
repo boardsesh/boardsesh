@@ -32,6 +32,10 @@
  * every autolinked native module for a nested node_modules directory and hashes
  * the source as null; peer-resolution store suffixes also leak into hash ids.
  *
+ * For expo-image, the patch keeps filesystem-backed board art out of
+ * `UIImage(named:)`, avoiding a synchronous bundle-directory scan on every
+ * reload before SDWebImage handles the file URL.
+ *
  * This check resolves the COPY packages/mobile actually uses (the same one
  * CocoaPods compiles) and asserts the patch's sentinel symbols are present in
  * the installed source. It fails the PR on a cheap Linux runner the instant a
@@ -91,13 +95,13 @@ export const RULES: readonly PatchRule[] = [
     package: '@expo/fingerprint',
     file: 'build/utils/Path.js',
     sentinels: ['normalizeBunIsolatedModulePath', 'BUN_ISOLATED_MODULE_ROOT_REGEX'],
-    patchedKey: '@expo/fingerprint@0.20.6',
+    patchedKey: '@expo/fingerprint@0.20.7',
   },
   {
     package: '@expo/fingerprint',
     file: 'build/hash/Hash.js',
     sentinels: ['normalizeBunIsolatedModulePath'],
-    patchedKey: '@expo/fingerprint@0.20.6',
+    patchedKey: '@expo/fingerprint@0.20.7',
   },
   {
     package: 'react-native-screens',
@@ -165,7 +169,7 @@ export const RULES: readonly PatchRule[] = [
       'hideSwallowingMissingNativeHandler();',
       'const close = hideSwallowingMissingNativeHandler;',
     ],
-    patchedKey: '@expo/ui@57.0.8',
+    patchedKey: '@expo/ui@57.0.11',
   },
   // The iOS half wires the native post-animation dismiss signal through to the
   // `onFullyDismissed` prop. Drop it and the prop still TYPE-checks (the types
@@ -174,8 +178,8 @@ export const RULES: readonly PatchRule[] = [
   {
     package: '@expo/ui',
     file: 'src/community/bottom-sheet/BottomSheet.ios.tsx',
-    sentinels: ['onFullyDismissedRef', 'handleNativeDismiss'],
-    patchedKey: '@expo/ui@57.0.8',
+    sentinels: ['onFullyDismissedRef', 'onDismiss={fireCloseCallbacks}', 'coordinator must observe index -1'],
+    patchedKey: '@expo/ui@57.0.11',
   },
   // ExpoModulesCore uses relative file URLs for xcasset names, so
   // `localAssetName` must keep those while rejecting absolute/hosted file URLs
@@ -193,7 +197,7 @@ export const RULES: readonly PatchRule[] = [
       'if hasFileHost || hasAbsoluteFilePath',
       'Images/MyIcon',
     ],
-    patchedKey: 'expo-image@57.0.1',
+    patchedKey: 'expo-image@57.0.3',
   },
 ];
 
@@ -204,7 +208,7 @@ export const RULES: readonly PatchRule[] = [
  * of quietly landing unguarded.
  */
 export const UNGUARDED_PATCHES: Readonly<Record<string, string>> = {
-  'expo-dev-launcher@57.0.10':
+  'expo-dev-launcher@57.0.12':
     "raises the iOS dev-launcher request timeout from 10s to 120s. Under Bun's isolated linker the package is " +
     'only reachable through expo-dev-client, so createNodeEnv cannot resolve it from packages/mobile. It is also ' +
     'dev-client-only — it never ships in a store binary.',

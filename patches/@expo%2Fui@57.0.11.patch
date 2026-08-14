@@ -1,24 +1,21 @@
 diff --git a/build/community/bottom-sheet/types.d.ts b/build/community/bottom-sheet/types.d.ts
-index 72fc6becbc414c318799e28103d15484ed86f703..d1cf11e93b0c0d8dc77abddaafc89e14d34faccc 100644
+index 72fc6becbc414c318799e28103d15484ed86f703..5a7de2dbd66a19851a8c4e83990ee9e1c6008c5d 100644
 --- a/build/community/bottom-sheet/types.d.ts
 +++ b/build/community/bottom-sheet/types.d.ts
-@@ -159,6 +159,14 @@ export interface BottomSheetProps {
+@@ -159,6 +159,11 @@ export interface BottomSheetProps {
       * Alias for `onClose`.
       */
      onDismiss?: () => void;
 +    /**
-+     * Callback fired AFTER the dismiss animation has fully settled, driven by the
-+     * native post-animation signal (iOS SwiftUI `.sheet(onDismiss:)`). Unlike
-+     * `onClose`/`onDismiss` — which fire synchronously when the close is requested
-+     * — this reflects the real end of the animation. iOS only: Android's Compose
-+     * sheet has no equivalent post-animation event.
++     * Callback fired after the native dismiss animation has fully settled.
++     * iOS only: Android uses the Boardsesh coordinator's bounded fallback timer.
 +     */
 +    onFullyDismissed?: () => void;
      /**
       * Whether the sheet can be dismissed by panning down.
       * @default false
 diff --git a/src/community/bottom-sheet/BottomSheet.android.tsx b/src/community/bottom-sheet/BottomSheet.android.tsx
-index f60ae61bf0c9023d41c55cdca2d9af0de7291a92..9d317d23a9dce0d20ad6377d9b2a2cbdc2ad60ab 100644
+index f60ae61bf0c9023d41c55cdca2d9af0de7291a92..772f369cf121ca1a1fdd283f81f1326b8bfb4710 100644
 --- a/src/community/bottom-sheet/BottomSheet.android.tsx
 +++ b/src/community/bottom-sheet/BottomSheet.android.tsx
 @@ -11,6 +11,26 @@ import { RNHostView } from '../../jetpack-compose/RNHostView';
@@ -105,7 +102,7 @@ index f60ae61bf0c9023d41c55cdca2d9af0de7291a92..9d317d23a9dce0d20ad6377d9b2a2cbd
      return {
        snapToIndex,
 diff --git a/src/community/bottom-sheet/BottomSheet.ios.tsx b/src/community/bottom-sheet/BottomSheet.ios.tsx
-index d9de442f1efd51749ff9a0e661e6979e7915fef1..5cd8c129ae199edc83733d7617d4b8c32611fc03 100644
+index edd61228b9881de7ab542e535124fef67fc0b6ec..575185c2de34fb09c20f5b40ab4575def0985f24 100644
 --- a/src/community/bottom-sheet/BottomSheet.ios.tsx
 +++ b/src/community/bottom-sheet/BottomSheet.ios.tsx
 @@ -87,6 +87,7 @@ export function BottomSheet(props: BottomSheetProps) {
@@ -116,44 +113,35 @@ index d9de442f1efd51749ff9a0e661e6979e7915fef1..5cd8c129ae199edc83733d7617d4b8c3
      onDismiss,
      enablePanDownToClose = false,
      enableDynamicSizing = true,
-@@ -109,6 +110,15 @@ export function BottomSheet(props: BottomSheetProps) {
-   const onCloseRef = useRef(onClose);
+@@ -110,6 +111,8 @@ export function BottomSheet(props: BottomSheetProps) {
    onCloseRef.current = onClose;
    const onDismissRef = useRef(onDismiss);
+   onDismissRef.current = onDismiss;
 +  const onFullyDismissedRef = useRef(onFullyDismissed);
 +  onFullyDismissedRef.current = onFullyDismissed;
-+
-+  // The native post-animation dismiss signal (SwiftUI `.sheet(onDismiss:)`),
-+  // forwarded from the swift-ui layer. Distinct from `fireCloseCallbacks` (the
-+  // synchronous close path) — this fires once the animation has really settled.
-+  const handleNativeDismiss = useCallback(() => {
-+    onFullyDismissedRef.current?.();
-+  }, []);
-   onDismissRef.current = onDismiss;
  
    const detents = useMemo<PresentationDetent[]>(() => {
-@@ -236,6 +246,7 @@ export function BottomSheet(props: BottomSheetProps) {
-         <Host style={{ position: 'absolute', width }} pointerEvents="none">
-           <NativeBottomSheet
-             isPresented={isPresented}
-+            onDismiss={handleNativeDismiss}
-             onIsPresentedChange={handlePresentedChange}
-             fitToContents={fitToContents}>
-             <Group modifiers={modifiers}>
+     if (!snapPointsProp || snapPointsProp.length === 0) return ['medium', 'large'];
+@@ -126,4 +129,8 @@ export function BottomSheet(props: BottomSheetProps) {
+     onCloseRef.current?.();
+     onDismissRef.current?.();
+     onChangeRef.current?.(-1);
++    // Unlike onClose/onDismiss, this Boardsesh compatibility callback is
++    // intentionally last: the coordinator must observe index -1 and open its
++    // settle window before the native post-animation signal resolves it.
++    onFullyDismissedRef.current?.();
+   }, []);
 diff --git a/src/community/bottom-sheet/types.ts b/src/community/bottom-sheet/types.ts
-index d7372fcb72e3717329ee8df4e27e2f537f17decb..efcf4256103d5b9f1a068e32778a92efc6fa30bc 100644
+index d7372fcb72e3717329ee8df4e27e2f537f17decb..ef095b2ab24003458c259b335f9f6aae137345bf 100644
 --- a/src/community/bottom-sheet/types.ts
 +++ b/src/community/bottom-sheet/types.ts
-@@ -178,6 +178,15 @@ export interface BottomSheetProps {
+@@ -178,6 +178,12 @@ export interface BottomSheetProps {
     */
    onDismiss?: () => void;
  
 +  /**
-+   * Callback fired AFTER the dismiss animation has fully settled, driven by the
-+   * native post-animation signal (iOS SwiftUI `.sheet(onDismiss:)`). Unlike
-+   * `onClose`/`onDismiss` — which fire synchronously when the close is requested
-+   * — this reflects the real end of the animation. iOS only: Android's Compose
-+   * sheet has no equivalent post-animation event.
++   * Callback fired after the native dismiss animation has fully settled.
++   * iOS only: Android uses the Boardsesh coordinator's bounded fallback timer.
 +   */
 +  onFullyDismissed?: () => void;
 +
