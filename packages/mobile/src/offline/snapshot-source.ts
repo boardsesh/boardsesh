@@ -26,8 +26,12 @@
 // the message, so the classifier could not see them and every offline user's
 // failure landed as a Sentry `error`).
 
+import { Platform } from 'react-native';
 import { Directory, File, Paths } from 'expo-file-system';
 import {
+  isBackgrounded,
+  onTeardown,
+  SnapshotArtifactTruncatedError,
   SnapshotPermanentMissError,
   type SnapshotArtifactHandle,
   type SnapshotDownloadOptions,
@@ -36,20 +40,47 @@ import {
   type SnapshotSource,
 } from '@boardsesh/offline-sync';
 import { SNAPSHOT_BASE_URL } from '../lib/env';
+import { SNAPSHOT_DIR_NAME } from './snapshot-paths';
 import { reportHandledError } from '../lib/error-reporting';
+import { resolveSnapshotDownloadStrategy, type SnapshotDownloadStrategy } from './download-strategy';
+import { reportArtifactTransfer, type ArtifactTransferOutcome } from './artifact-transfer-telemetry';
+
+// Which transport the next transfer rides (issue #4394). MODULE STATE rather
+// than a factory on purpose: `mobileSnapshotSource`'s object identity is a
+// dependency of the scheduler effect in offline-sync-bridge.tsx, so rebuilding
+// the source when a PostHog flag resolves would restart the whole sync scheduler
+// mid-download. Mirrors the `isConnectionMetered` pattern in
+// offline-sync-adapter.ts.
+let activeStrategy: SnapshotDownloadStrategy = resolveSnapshotDownloadStrategy({
+  taskApiFlag: undefined,
+  backgroundSessionFlag: undefined,
+  platform: Platform.OS,
+});
+
+/** Called from `useSnapshotSource`'s effect whenever either flag resolves or changes. */
+export function setSnapshotDownloadStrategyFromFlags(flags: {
+  taskApiFlag: boolean | undefined;
+  backgroundSessionFlag: boolean | undefined;
+}): void {
+  activeStrategy = resolveSnapshotDownloadStrategy({ ...flags, platform: Platform.OS });
+}
+
+export function __resetSnapshotDownloadStrategyForTests(): void {
+  activeStrategy = resolveSnapshotDownloadStrategy({
+    taskApiFlag: undefined,
+    backgroundSessionFlag: undefined,
+    platform: Platform.OS,
+  });
+}
 
 const MANIFEST_URL = `${SNAPSHOT_BASE_URL}/manifest.json`;
 
-// Cache-dir subfolder for downloaded artifacts. The engine ATTACHes the file,
-// imports the scope's rows, then hands it back through `releaseArtifact`.
-// Since issue #4310 a file the engine did NOT import survives to the next
-// cycle (see the retention notes below), but it still lives under Paths.cache,
-// not Paths.document: the OS may reclaim it under storage pressure and losing
-// it costs a re-download, never data.
-// Exported so the cache sweeper (lib/sweep-caches.ts) reaps artifacts leaked by
-// a kill mid-bootstrap from the same directory this writes to, rather than
-// re-literalling the name and silently sweeping nothing if it ever moves.
-export const SNAPSHOT_DIR_NAME = 'board-snapshots';
+// The directory name lives in `snapshot-paths.ts` — an import-free module — so
+// the cache sweeper can reap artifacts from the same directory this writes to
+// without dragging `react-native` (imported above for `Platform.OS`) into its
+// module graph. Re-exported here because this is where callers expect to find
+// it, and re-literalling the name would silently sweep nothing if it ever moved.
+export { SNAPSHOT_DIR_NAME } from './snapshot-paths';
 
 // Written next to `<artifact>.db` once the download AND the gzip sniff have
 // both passed, holding the artifact's `builtAt`. Retention is only useful if a
@@ -280,6 +311,82 @@ function artifactNamePrefix(uri: string): string | null {
 }
 
 /**
+ * Drop artifacts for a SUPERSEDED build of this (board, layout) BEFORE the
+ * download starts (issue #4390 asks for partials to be discarded by `builtAt`).
+ *
+ * `sweepRetainedArtifacts` already does this after a successful download, which
+ * is one download too late: a 271 MB partial from an older build sits in the
+ * cache until the NEXT download succeeds — and it may not, because that partial
+ * counts against the free-space precheck the new download has to pass. Sweeping
+ * first both discards the stale bytes and frees the space the new one needs.
+ *
+ * Whole-layout artifacts only: a grades file is named from its manifest key and
+ * carries no `<board>-<layout>` prefix, so it is never recognised here.
+ */
+function sweepSupersededArtifacts(keepFileName: string): void {
+  const keepPrefix = artifactNamePrefix(keepFileName);
+  if (keepPrefix === null) return;
+  let entries: (File | Directory)[];
+  try {
+    entries = snapshotDirectory().list();
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!(entry instanceof File)) continue;
+    if (entry.uri.endsWith(COMPLETE_SIDECAR_SUFFIX)) continue;
+    const name = entry.uri.slice(entry.uri.lastIndexOf('/') + 1);
+    if (name === keepFileName) continue;
+    if (artifactNamePrefix(entry.uri) !== keepPrefix) continue;
+    deleteArtifactWithSidecar(entry);
+  }
+}
+
+/**
+ * The one place the two download APIs differ.
+ *
+ * `download-file-async` is byte-for-byte today's shipped call, including the
+ * exact options object shape the `offline-download-progress` kill switch
+ * restores. The task strategies pass `sessionType` EXPLICITLY on both arms
+ * rather than relying on expo's `.background` default, so the telemetry label
+ * and the native behaviour can never drift.
+ */
+async function runTransfer(args: {
+  strategy: SnapshotDownloadStrategy;
+  url: string;
+  destination: File;
+  onProgress?: (progress: { bytesWritten: number; totalBytes: number }) => void;
+  signal?: AbortSignal;
+}): Promise<File> {
+  if (args.strategy === 'download-file-async') {
+    return File.downloadFileAsync(
+      args.url,
+      args.destination,
+      args.onProgress
+        ? { idempotent: true, signal: args.signal, onProgress: args.onProgress }
+        : { idempotent: true, signal: args.signal },
+    );
+  }
+  const task = File.createDownloadTask(args.url, args.destination, {
+    sessionType: args.strategy === 'task-background' ? 'background' : 'foreground',
+    ...(args.signal ? { signal: args.signal } : {}),
+    ...(args.onProgress ? { onProgress: args.onProgress } : {}),
+  });
+  try {
+    const file = await task.downloadAsync();
+    // `downloadAsync` resolves null ONLY when `pause()` was called, which we
+    // never do. Treat it as a failed transfer rather than a silent success that
+    // would hand the engine a handle to a file nobody wrote.
+    if (!file) throw new Error('snapshot download: transfer ended without a file');
+    return file;
+  } finally {
+    // Only after the promise settles: `release()` frees the native shared
+    // object, and `sharedObjectDidRelease` cancels an in-flight call.
+    task.release();
+  }
+}
+
+/**
  * Fetch the manifest JSON. Returns `null` only when the manifest is genuinely
  * absent or unparseable (permanent miss this cycle, no attempt). HTTP outages
  * throw so the engine treats them as retryable manifest errors.
@@ -318,139 +425,258 @@ function formatError(error: unknown): string {
  * request timed out.")` is an offline user (a warning) or a real fault (an
  * error). Issue #4238.
  */
+/** Everything `downloadSnapshotFile` needs that differs between the two artifact kinds. */
+type SnapshotArtifactRequest = {
+  label: string;
+  url: string;
+  requiredBytes: number;
+  contentEncoding: 'gzip' | 'identity';
+  fileName: string;
+  telemetryExtra: Record<string, unknown>;
+  /** Telemetry dimension on `Offline Artifact Transfer`. */
+  kind: 'layout' | 'grades';
+  /** The stored object size — what the confirm dialog and the progress bar quote. */
+  wireBytes: number;
+  /**
+   * The exact byte length the finished file must have, when the manifest can
+   * say. Absent for a gzip artifact with no `uncompressedBytes` (every grades
+   * block, and pre-#4311 layout entries), where there is nothing to compare to.
+   */
+  expectedDecodedBytes?: number;
+  boardType?: string;
+  layoutId?: number;
+  /**
+   * Build stamp for the completeness sidecar. Present only for the
+   * whole-layout artifact: retention (#4310) is sized for its ~100 MB and its
+   * supersede sweep recognises a build by the `<board>-<layout>` filename
+   * prefix, which a grades file (named from its manifest key) does not carry.
+   * Without it this function writes no sidecar, reuses nothing, and runs no
+   * sweep — the engine deletes the file at the end of the cycle instead.
+   */
+  retainAs?: { builtAt: string };
+};
+
 /**
- * The shared download body for BOTH artifact kinds: free-space check,
- * content-addressed destination, download, and the gzip magic-byte sniff. The
- * only differences between the whole-layout artifact and the separate grades
- * artifact are the filename, the label in error messages, and retention — which
- * only the whole-layout file gets (`retainAs`).
+ * The shared download body for BOTH artifact kinds: superseded-partial sweep,
+ * free-space check, content-addressed destination, transfer, the gzip magic-byte
+ * sniff, and the exact decoded-size gate. The only differences between the
+ * whole-layout artifact and the separate grades artifact are the filename, the
+ * label in error messages, and retention — which only the whole-layout file gets
+ * (`retainAs`).
  */
 async function downloadSnapshotFile(
-  artifact: {
-    label: string;
-    url: string;
-    requiredBytes: number;
-    contentEncoding: 'gzip' | 'identity';
-    fileName: string;
-    telemetryExtra: Record<string, unknown>;
-    /**
-     * Build stamp for the completeness sidecar. Present only for the
-     * whole-layout artifact: retention (#4310) is sized for its ~100 MB and its
-     * supersede sweep recognises a build by the `<board>-<layout>` filename
-     * prefix, which a grades file (named from its manifest key) does not carry.
-     * Without it this function writes no sidecar, reuses nothing, and runs no
-     * sweep — the engine deletes the file at the end of the cycle instead.
-     */
-    retainAs?: { builtAt: string };
-  },
+  artifact: SnapshotArtifactRequest,
   options?: SnapshotDownloadOptions,
 ): Promise<SnapshotArtifactHandle | null> {
-  const requiredBytes = artifact.requiredBytes;
-  const availableBytes = Paths.availableDiskSpace;
-  if (availableBytes < requiredBytes) {
-    throw new Error(
-      `snapshot download: insufficient disk space for ${artifact.label} ` +
-        `(need ~${requiredBytes} bytes, have ${availableBytes} bytes free)`,
-    );
-  }
-
-  const directory = snapshotDirectory();
-  try {
-    directory.create({ intermediates: true, idempotent: true });
-  } catch (error) {
-    throw new Error(`snapshot download: failed to create cache directory: ${formatError(error)}`, { cause: error });
-  }
-
-  const destination = new File(directory, artifact.fileName);
-
-  // A retained artifact from an earlier cycle, complete and for this exact
-  // build: hand it straight back. The engine still runs quick_check and
-  // verifySnapshotMeta over it before importing a single row, and treats an
-  // import failure on a reused file as delete-and-refetch rather than a counted
-  // bootstrap attempt — so trusting the sidecar here cannot strand a scope.
-  if (artifact.retainAs && destination.exists && hasCompleteSidecar(destination, artifact.retainAs.builtAt)) {
-    return { filePath: toSqlitePath(destination.uri), reused: true };
-  }
-  // A file with no (or a mismatched) sidecar is a half-written download, not a
-  // shortcut. Clear it so `idempotent: true` below never writes over a body it
-  // cannot verify.
-  if (destination.exists) deleteArtifactWithSidecar(destination);
-
-  let downloaded: File;
-  try {
-    // `onProgress` is only passed when the caller asked for it (the engine
-    // omits it when the kill switch is off), because supplying it makes
-    // expo-file-system take a different native download implementation — an
-    // 8 KB streaming copy loop on Android, a delegate-driven URLSession on iOS
-    // — rather than its plain path. Omitting it keeps the call byte-identical
-    // to the pre-#4311 one. `signal` rides both shapes: it only cancels the
-    // transfer and does not switch implementations.
-    downloaded = await File.downloadFileAsync(
-      artifact.url,
-      destination,
-      options?.onProgress
-        ? {
-            idempotent: true,
-            signal: options.signal,
-            onProgress: ({ bytesWritten, totalBytes }) => {
-              // Android reports -1 for a gzip body (OkHttp gunzips transparently,
-              // so Content-Length is meaningless); the engine expects null for
-              // "no usable total" and resolves the denominator itself.
-              options.onProgress?.({ bytesWritten, totalBytes: totalBytes > 0 ? totalBytes : null });
-            },
-          }
-        : { idempotent: true, signal: options?.signal },
-    );
-  } catch (error) {
-    throw new Error(`snapshot download: File.downloadFileAsync failed for ${artifact.label}: ${formatError(error)}`, {
-      cause: error,
+  // Latched for this transfer, so a flag resolving mid-download cannot mislabel
+  // the measurement it produces.
+  const strategy = activeStrategy;
+  const startedAt = Date.now();
+  let firstByteMs: number | undefined;
+  let backgroundedDuringTransfer = isBackgrounded();
+  // The engine's own teardown subscription drives the pause/failure decision;
+  // this one only records the fact for telemetry, which is why it reads the
+  // guard rather than trusting the transition — and why there is no second
+  // react-native AppState listener anywhere in this file.
+  const unsubscribeTeardown = onTeardown(() => {
+    if (isBackgrounded()) backgroundedDuringTransfer = true;
+  });
+  const emitTransfer = (
+    outcome: ArtifactTransferOutcome,
+    extra?: { bytesOnDisk?: number; sizeMismatch?: boolean },
+  ): void => {
+    reportArtifactTransfer({
+      strategy,
+      artifact: artifact.kind,
+      ...(artifact.boardType !== undefined ? { boardType: artifact.boardType } : {}),
+      ...(artifact.layoutId !== undefined ? { layoutId: artifact.layoutId } : {}),
+      outcome,
+      wireBytes: artifact.wireBytes,
+      ...(artifact.expectedDecodedBytes !== undefined ? { expectedDecodedBytes: artifact.expectedDecodedBytes } : {}),
+      ...(extra?.bytesOnDisk !== undefined ? { bytesOnDisk: extra.bytesOnDisk } : {}),
+      wallMs: Date.now() - startedAt,
+      ...(firstByteMs !== undefined ? { firstByteMs } : {}),
+      backgroundedDuringTransfer,
+      resumed: false,
+      ...(extra?.sizeMismatch !== undefined ? { sizeMismatch: extra.sizeMismatch } : {}),
     });
-  }
+  };
 
-  if (artifact.contentEncoding === 'gzip') {
-    let stillCompressed: boolean;
-    try {
-      stillCompressed = await looksGzipCompressed(downloaded);
-    } catch (error) {
-      // Can't verify the body — treat it as untrustworthy, same as a failed
-      // download. This was the last path that still `return null`ed, and it is
-      // the one that reported `cause: null` to Sentry (issue #4238).
-      safeDeleteFile(downloaded);
+  try {
+    // Superseded partials FIRST (issue #4390 asks for stale partials to be
+    // discarded by `builtAt`), because they are counted by the free-space check
+    // on the very next line — a 271 MB leftover could otherwise fail the
+    // precheck for the download that would have replaced it.
+    if (artifact.retainAs) sweepSupersededArtifacts(artifact.fileName);
+
+    const requiredBytes = artifact.requiredBytes;
+    const availableBytes = Paths.availableDiskSpace;
+    if (availableBytes < requiredBytes) {
       throw new Error(
-        `snapshot download: could not verify artifact encoding for ${artifact.label}: ${formatError(error)}`,
-        { cause: error },
+        `snapshot download: insufficient disk space for ${artifact.label} ` +
+          `(need ~${requiredBytes} bytes, have ${availableBytes} bytes free)`,
       );
     }
-    if (stillCompressed) {
+
+    const directory = snapshotDirectory();
+    try {
+      directory.create({ intermediates: true, idempotent: true });
+    } catch (error) {
+      throw new Error(`snapshot download: failed to create cache directory: ${formatError(error)}`, { cause: error });
+    }
+
+    const destination = new File(directory, artifact.fileName);
+
+    // A retained artifact from an earlier cycle, complete and for this exact
+    // build: hand it straight back, no event (no bytes moved). The engine still
+    // runs quick_check and verifySnapshotMeta over it before importing a single
+    // row, and treats an import failure on a reused file as delete-and-refetch
+    // rather than a counted bootstrap attempt — so trusting the sidecar here
+    // cannot strand a scope. The size is re-checked all the same: a survivor the
+    // OS truncated under storage pressure carries a sidecar that now lies.
+    if (artifact.retainAs && destination.exists && hasCompleteSidecar(destination, artifact.retainAs.builtAt)) {
+      if (artifact.expectedDecodedBytes === undefined || destination.size === artifact.expectedDecodedBytes) {
+        return { filePath: toSqlitePath(destination.uri), reused: true };
+      }
+      deleteArtifactWithSidecar(destination);
+    }
+    // A file with no (or a mismatched) sidecar is a half-written download, not a
+    // shortcut. Clear it so `idempotent: true` below never writes over a body it
+    // cannot verify.
+    if (destination.exists) deleteArtifactWithSidecar(destination);
+
+    let downloaded: File;
+    try {
+      // `onProgress` is only passed when the caller asked for it (the engine
+      // omits it when the kill switch is off), because supplying it makes
+      // expo-file-system take a different native download implementation — an
+      // 8 KB streaming copy loop on Android, a delegate-driven URLSession on iOS
+      // — rather than its plain path. Omitting it keeps the call byte-identical
+      // to the pre-#4311 one. `signal` rides both shapes: it only cancels the
+      // transfer and does not switch implementations.
+      downloaded = await runTransfer({
+        strategy,
+        url: artifact.url,
+        destination,
+        signal: options?.signal,
+        ...(options?.onProgress
+          ? {
+              onProgress: ({ bytesWritten, totalBytes }: { bytesWritten: number; totalBytes: number }) => {
+                // Separates slow-to-start (DNS/TLS/CDN) from slow-throughput —
+                // three lines that answer the first half of #4394 without a
+                // second round trip to the CDN.
+                if (firstByteMs === undefined && bytesWritten > 0) firstByteMs = Date.now() - startedAt;
+                // Android reports -1 for a gzip body (OkHttp gunzips transparently,
+                // so Content-Length is meaningless); the engine expects null for
+                // "no usable total" and resolves the denominator itself.
+                options.onProgress?.({ bytesWritten, totalBytes: totalBytes > 0 ? totalBytes : null });
+              },
+            }
+          : {}),
+      });
+    } catch (error) {
+      emitTransfer(options?.signal?.aborted === true ? 'aborted' : 'failed');
+      throw new Error(`snapshot download: transfer failed for ${artifact.label}: ${formatError(error)}`, {
+        cause: error,
+      });
+    }
+
+    if (artifact.contentEncoding === 'gzip') {
+      let stillCompressed: boolean;
+      try {
+        stillCompressed = await looksGzipCompressed(downloaded);
+      } catch (error) {
+        // Can't verify the body — treat it as untrustworthy, same as a failed
+        // download. This was the last path that still `return null`ed, and it is
+        // the one that reported `cause: null` to Sentry (issue #4238).
+        safeDeleteFile(downloaded);
+        emitTransfer('failed');
+        throw new Error(
+          `snapshot download: could not verify artifact encoding for ${artifact.label}: ${formatError(error)}`,
+          { cause: error },
+        );
+      }
+      if (stillCompressed) {
+        safeDeleteFile(downloaded);
+        // Expected behaviour is that the native HTTP stack (NSURLSession /
+        // OkHttp) auto-decodes a gzip Content-Encoding while downloading — this
+        // path should be rare-to-never (validated on Android/OkHttp and iOS 26.5.2
+        // before the fleet was cut over to the gzip prefix). Report it as a handled
+        // error (not just a dev warning) so a real pattern shows up in Sentry —
+        // it's now the live download path, and a spike here is the cutover's
+        // rollback signal, including for the background-URLSession rollout (a
+        // background session runs out of nsurlsessiond, a different process from
+        // the in-process sessions the gzip cutover was validated against).
+        reportHandledError(
+          new Error('snapshot artifact arrived still gzip-compressed (Content-Encoding was not auto-decoded)'),
+          {
+            tags: { source: 'offline-sync', kind: 'snapshot-bootstrap' },
+            extra: { ...artifact.telemetryExtra, strategy },
+          },
+        );
+        emitTransfer('failed');
+        throw new SnapshotPermanentMissError('snapshot artifact arrived still gzip-compressed');
+      }
+    }
+
+    // The exact decoded-size gate (issue #4394). `uncompressedBytes` is the
+    // SQLite file's own byte length (the export writes `rawBuffer.length`), so
+    // this is unambiguous — and it is the one check that fires BEFORE the
+    // sidecar is written, so a short or mixed-byte-space body can never be
+    // retained, reused or ATTACHed. Deliberately AFTER the gzip sniff: a body
+    // that is still compressed must keep reporting `permanent-miss`.
+    const bytesOnDisk = downloaded.size;
+    if (artifact.expectedDecodedBytes !== undefined && bytesOnDisk !== artifact.expectedDecodedBytes) {
       safeDeleteFile(downloaded);
-      // Expected behaviour is that the native HTTP stack (NSURLSession /
-      // OkHttp) auto-decodes a gzip Content-Encoding while downloading — this
-      // path should be rare-to-never (validated on Android/OkHttp and iOS 26.5.2
-      // before the fleet was cut over to the gzip prefix). Report it as a handled
-      // error (not just a dev warning) so a real pattern shows up in Sentry —
-      // it's now the live download path, and a spike here is the cutover's
-      // rollback signal.
-      reportHandledError(
-        new Error('snapshot artifact arrived still gzip-compressed (Content-Encoding was not auto-decoded)'),
-        {
-          tags: { source: 'offline-sync', kind: 'snapshot-bootstrap' },
-          extra: artifact.telemetryExtra,
+      reportHandledError(new Error('snapshot artifact size mismatch'), {
+        tags: { source: 'offline-sync', kind: 'snapshot-bootstrap' },
+        extra: {
+          ...artifact.telemetryExtra,
+          strategy,
+          expectedDecodedBytes: artifact.expectedDecodedBytes,
+          bytesOnDisk,
         },
+      });
+      emitTransfer('failed', { bytesOnDisk, sizeMismatch: true });
+      throw new SnapshotArtifactTruncatedError(
+        `snapshot download: short body for ${artifact.label} ` +
+          `(expected ${artifact.expectedDecodedBytes} bytes, got ${bytesOnDisk})`,
       );
-      throw new SnapshotPermanentMissError('snapshot artifact arrived still gzip-compressed');
     }
-  }
 
-  // Only now is the file provably complete AND decoded, so only now may a
-  // later cycle reuse it. Retained artifacts only: a grades file is deleted by
-  // the engine at the end of the cycle, so it neither claims a sidecar nor
-  // triggers a sweep.
-  if (artifact.retainAs) {
-    writeCompleteSidecar(downloaded, artifact.retainAs.builtAt);
-    sweepRetainedArtifacts(downloaded);
-  }
+    // Only now is the file provably complete AND decoded, so only now may a
+    // later cycle reuse it. Retained artifacts only: a grades file is deleted by
+    // the engine at the end of the cycle, so it neither claims a sidecar nor
+    // triggers a sweep.
+    if (artifact.retainAs) {
+      writeCompleteSidecar(downloaded, artifact.retainAs.builtAt);
+      sweepRetainedArtifacts(downloaded);
+    }
 
-  return { filePath: toSqlitePath(downloaded.uri) };
+    emitTransfer('completed', {
+      bytesOnDisk,
+      ...(artifact.expectedDecodedBytes !== undefined ? { sizeMismatch: false } : {}),
+    });
+    return { filePath: toSqlitePath(downloaded.uri) };
+  } finally {
+    unsubscribeTeardown();
+  }
+}
+
+/**
+ * The exact byte length a finished artifact must have, or undefined when the
+ * manifest cannot say. An `identity` entry's `bytes` IS the decoded size (the
+ * `board-snapshots/v1/` rollback prefix); a gzip entry needs
+ * `uncompressedBytes`, which every live grades block and every pre-#4311 layout
+ * entry lacks.
+ */
+function expectedDecodedBytesFor(entry: {
+  bytes: number;
+  contentEncoding: 'gzip' | 'identity';
+  uncompressedBytes?: number;
+}): number | undefined {
+  if (typeof entry.uncompressedBytes === 'number' && entry.uncompressedBytes > 0) return entry.uncompressedBytes;
+  return entry.contentEncoding === 'identity' ? entry.bytes : undefined;
 }
 
 async function downloadArtifact(
@@ -469,6 +695,11 @@ async function downloadArtifact(
       contentEncoding: entry.contentEncoding,
       fileName: `${entry.boardType}-${entry.layoutId}-${safeBuiltAt}.db`,
       telemetryExtra: { boardType: entry.boardType, layoutId: entry.layoutId, url: entry.url },
+      kind: 'layout',
+      wireBytes: entry.bytes,
+      ...(expectedDecodedBytesFor(entry) !== undefined ? { expectedDecodedBytes: expectedDecodedBytesFor(entry) } : {}),
+      boardType: entry.boardType,
+      layoutId: entry.layoutId,
       retainAs: { builtAt: entry.builtAt },
     },
     options,
@@ -495,6 +726,15 @@ async function downloadGradesArtifact(artifact: SnapshotGradesArtifact): Promise
     contentEncoding: artifact.contentEncoding,
     fileName: `${safeKey}.db`,
     telemetryExtra: { gradesKey: artifact.key, url: artifact.url },
+    kind: 'grades',
+    wireBytes: artifact.bytes,
+    // A gzip grades block carries no `uncompressedBytes` (verified against the
+    // live manifest), so the size gate applies to layout artifacts by
+    // construction — and to an identity grades artifact, where `bytes` IS the
+    // decoded size.
+    ...(expectedDecodedBytesFor(artifact) !== undefined
+      ? { expectedDecodedBytes: expectedDecodedBytesFor(artifact) }
+      : {}),
   });
 }
 

@@ -1,12 +1,13 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import type { SnapshotGradesArtifact, SnapshotManifestEntry, SnapshotSource } from '@boardsesh/offline-sync';
 import { isSnapshotBaseUrlConfigured } from '../lib/env';
 import {
+  useFeatureFlag,
   useOfflineDownloadProgressEnabled,
   useOfflineDownloadsEnabled,
   useSnapshotBootstrapEnabled,
 } from '../providers/feature-flags-provider';
-import { mobileSnapshotSource } from './snapshot-source';
+import { mobileSnapshotSource, setSnapshotDownloadStrategyFromFlags } from './snapshot-source';
 
 /**
  * The kill-switch wrapper for download progress (issue #4311). Passing an
@@ -69,6 +70,16 @@ export function useSnapshotSource(): SnapshotSource | undefined {
   const offlineDownloadsEnabled = useOfflineDownloadsEnabled();
   const snapshotBootstrapEnabled = useSnapshotBootstrapEnabled();
   const downloadProgressEnabled = useOfflineDownloadProgressEnabled();
+  // The transport choice (issue #4394) is pushed into module state rather than
+  // folded into the memo below on purpose: the source's object IDENTITY is a
+  // dependency of the scheduler effect in offline-sync-bridge.tsx, so rebuilding
+  // it when a PostHog flag resolves would restart the sync scheduler
+  // mid-download. Neither flag belongs in the memo deps.
+  const taskApiFlag = useFeatureFlag('offline-download-task-api');
+  const backgroundSessionFlag = useFeatureFlag('offline-download-background-session');
+  useEffect(() => {
+    setSnapshotDownloadStrategyFromFlags({ taskApiFlag, backgroundSessionFlag });
+  }, [taskApiFlag, backgroundSessionFlag]);
   return useMemo(() => {
     if (!offlineDownloadsEnabled || !snapshotBootstrapEnabled || !isSnapshotBaseUrlConfigured()) return undefined;
     return downloadProgressEnabled ? mobileSnapshotSource : withoutDownloadProgress(mobileSnapshotSource);

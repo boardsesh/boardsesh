@@ -198,6 +198,13 @@ export function classifyBootstrapFailure(input: {
   stage: 'manifest' | 'download' | 'import';
 }): BootstrapFailureKind {
   if (input.stage === 'import') return 'structural-artifact';
+  // A short body is a cut-short RESPONSE, so it belongs on the transport ladder
+  // (3 tries, cleared by any success) rather than `structural-device`, where two
+  // occurrences would durably settle the scope onto the paged crawl with no
+  // `builtAt` re-arm — far too harsh for what is at least as likely a one-off
+  // network fluke as a systematic device fault. Ahead of `isNetworkError`, which
+  // does not match it. Issue #4394.
+  if (input.cause instanceof Error && input.cause.name === 'SnapshotArtifactTruncatedError') return 'transport';
   if (isNetworkError(input.cause)) return 'transport';
   return 'structural-device';
 }

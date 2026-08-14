@@ -397,9 +397,17 @@ export const SHARED_EVENTS = {
   //
   // `reason` is a closed, low-cardinality bucket — 'aborted-wipe' |
   // 'aborted-background' | 'database-locked' | 'schema-stale' |
-  // 'watermark-regression' | 'permanent-miss' | 'artifact-invalid' | 'network' |
-  // 'unknown' | 'unknown-exit' — for grouping. The verbatim text stays on
-  // `errorMessage`.
+  // 'watermark-regression' | 'permanent-miss' | 'artifact-invalid' |
+  // 'artifact-truncated' | 'network' | 'unknown' | 'unknown-exit' — for
+  // grouping. The verbatim text stays on `errorMessage`. Dashboards that
+  // ENUMERATE reasons need 'artifact-truncated' added (issue #4394's exact
+  // decoded-size gate); failure-rate queries (`aborted = false`) pick it up on
+  // their own.
+  //
+  // One pairing changed with #4390: `aborted: true` can now arrive alongside an
+  // `Offline Snapshot Retry Scheduled` with `failureKind: 'transport'` — the
+  // 4th-and-beyond charged background pause. Every prior pairing had
+  // `aborted: false`.
   //
   // 'unknown-exit' should sit at ZERO: it means the bootstrap phase ended an
   // attempt in a way it cannot explain — no teardown, no error anyone caught —
@@ -416,6 +424,48 @@ export const SHARED_EVENTS = {
   // publishes no such frame, and removing a board from Storage reports its exit
   // as `Offline Board Toggled { enabled: false, source: 'storage' }` instead.
   OfflineBoardDownloadCancelled: 'Offline Board Download Cancelled',
+  // One artifact transfer that actually moved bytes — the per-download
+  // throughput measurement the funnel could not give us (issue #4394). Completed
+  // fires at SCOPE completion, omits `downloadMs` whenever the delta pull lands
+  // in a later cycle, and carries no transport dimension, so a slow transfer was
+  // invisible unless the whole scope finished in one cycle. A REUSED artifact
+  // fires nothing, so the denominator is always real network work.
+  //
+  // Named for the transfer, not for the strategy experiment: event names are
+  // permanent and the experiment is not. The props carry the dimensions.
+  //
+  // Props, all absent-when-unknown and never 0-when-unknown:
+  //   strategy: 'download-file-async' | 'task-foreground' | 'task-background' —
+  //     latched at transfer start, so a flag resolving mid-transfer cannot
+  //     mislabel it.
+  //   artifact: 'layout' | 'grades'.
+  //   boardType, layoutId — layout artifacts only (bounded cardinality); absent
+  //     for grades, whose manifest block carries neither.
+  //   outcome: 'completed' | 'failed' | 'aborted' ('aborted' = we cancelled it).
+  //   wireBytes — the stored object size, the same scale the confirm dialog and
+  //     the progress bar quote.
+  //   expectedDecodedBytes — `entry.uncompressedBytes`; absent on grades
+  //     artifacts and pre-#4311 manifest entries.
+  //   bytesOnDisk — the finished file's size; absent when there is no file.
+  //   wallMs — start of transfer to settle. INCLUDES suspension time when
+  //     `backgroundedDuringTransfer` is true.
+  //   firstByteMs — start to the first progress callback carrying bytes; absent
+  //     when none fired. Separates slow-to-start (DNS/TLS/CDN) from
+  //     slow-throughput.
+  //   wireKbps — wireBytes * 8 / wallMs, completed transfers only. WIRE scale
+  //     deliberately: it is the number directly comparable to the 15 Mbit/s
+  //     Safari and 1.3 Mbit/s in-app figures in #4394. Only meaningful when
+  //     `backgroundedDuringTransfer` is false — a suspended transfer's wallMs
+  //     includes wall-clock time nobody was downloading.
+  //   backgroundedDuringTransfer: boolean.
+  //   resumed: boolean — always false today; reserved so the resume follow-up
+  //     needs no new prop.
+  //   sizeMismatch: boolean — only present when expectedDecodedBytes was known
+  //     and could be compared.
+  //   metered: boolean — the adapter's cached NetInfo verdict; absent before
+  //     NetInfo has reported.
+  //   offlineEngineEnabled: boolean.
+  OfflineArtifactTransfer: 'Offline Artifact Transfer',
   // A board's offline switch was flipped, either way. Props: { scopeKey,
   // enabled: boolean, source: 'manage' | 'storage' | 'more' | 'adopt',
   // offlineEngineEnabled }. The enable half is the entry point #4318's discovery

@@ -48,8 +48,10 @@ vi.mock('../../offline/offline-sync-adapter', () => ({
 // expo-file-system-backed implementation). vi.hoisted because vi.mock
 // factories are hoisted above regular top-level const declarations.
 const mobileSnapshotSourceStub = vi.hoisted(() => ({ tag: 'snapshot-source' }));
+const setSnapshotDownloadStrategyFromFlagsMock = vi.hoisted(() => vi.fn());
 vi.mock('../../offline/snapshot-source', () => ({
   mobileSnapshotSource: mobileSnapshotSourceStub,
+  setSnapshotDownloadStrategyFromFlags: (flags: unknown) => setSnapshotDownloadStrategyFromFlagsMock(flags),
 }));
 
 const getPendingCountMock = vi.fn(async (..._args: unknown[]) => 0);
@@ -315,6 +317,25 @@ describe('OfflineSyncBridge — flag ON', () => {
   it('passes the mobile snapshot source when offline-snapshot-bootstrap is also on', async () => {
     render(<Harness flags={FLAG_ON_WITH_SNAPSHOT} queryClient={makeQueryClient()} />);
     await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
+    expect(getStartSyncSchedulerSnapshotSource()).toBe(mobileSnapshotSourceStub);
+  });
+
+  it('pushes the resolved transport flags into the source WITHOUT churning its identity', async () => {
+    // Issue #4394. The source's object identity is a dependency of the
+    // scheduler effect, so a flag resolving mid-download must not rebuild it —
+    // which is exactly why the strategy rides module state instead of the memo.
+    render(
+      <Harness
+        flags={{ ...FLAG_ON_WITH_SNAPSHOT, 'offline-download-task-api': true }}
+        queryClient={makeQueryClient()}
+      />,
+    );
+    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
+
+    expect(setSnapshotDownloadStrategyFromFlagsMock).toHaveBeenCalledWith({
+      taskApiFlag: true,
+      backgroundSessionFlag: undefined,
+    });
     expect(getStartSyncSchedulerSnapshotSource()).toBe(mobileSnapshotSourceStub);
   });
 

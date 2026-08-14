@@ -523,6 +523,84 @@ pre-import empty result set.
   follows the same rule: `importGradesForScope` checks the teardown reason before spending one of the
   three attempts that artifact ever gets.
 
+- **Download transport (issues #4394 / #4390)**. Which expo-file-system API moves the bytes is chosen by
+  `resolveSnapshotDownloadStrategy` (`packages/mobile/src/offline/download-strategy.ts`) from two PostHog
+  booleans plus `Platform.OS`:
+
+  | `offline-download-task-api` | `offline-download-background-session` | iOS                   | Android               |
+  | --------------------------- | ------------------------------------- | --------------------- | --------------------- |
+  | unset or `false`            | anything                              | `download-file-async` | `download-file-async` |
+  | `true`                      | unset or `true`                       | `task-background`     | `task-foreground`     |
+  | `true`                      | `false`                               | `task-foreground`     | `task-foreground`     |
+
+  **The unresolved default is today's shipped path on BOTH platforms, on purpose.** Production OTAs
+  auto-publish on every push to `main`, and a PostHog key that does not exist yet reads `undefined` on
+  every device — so an "undefined → background session" default would flip the whole iOS fleet the hour
+  it merged. The downside is not symmetric: a background `URLSession` runs out of `nsurlsessiond`, a
+  different process from the in-process default-config sessions the gzip cutover was validated against,
+  and if it does not transparently gunzip, `snapshot-source` raises `SnapshotPermanentMissError`, which
+  at the download stage burns the structural budget **and** marks the paged fallback — a durable settle
+  that flipping the flag back does not undo. Roll out by SETTING the flag (10% → 50% → 100%, watching
+  `sizeMismatch`, `reason: 'permanent-miss'` and `wireKbps`), never by merging.
+
+  The strategy lives in **module state**, set by an effect in `use-snapshot-source.ts`, because
+  `mobileSnapshotSource`'s object identity is a dependency of the scheduler effect in
+  `offline-sync-bridge.tsx` — a factory would restart the sync scheduler mid-download the moment a flag
+  resolved. It is latched at the start of each transfer so a flag resolving mid-download cannot mislabel
+  the measurement.
+
+  Both platforms are real arms, not relabels: Android ignores `sessionType` but a `DownloadTask` builds
+  its **own** `OkHttpClient` (60 s connect/read/write timeouts), and on iOS the task sessions use
+  `delegateQueue: .main` where the legacy `downloadFileAsync` store uses `nil` — which makes
+  `task-foreground` double as a main-thread-contention probe at zero native cost.
+
+- **Why continuation and not persisted pause/resume.** Measured against the live CDN object on
+  2026-08-13: `Content-Encoding: gzip` comes back **unconditionally** (even under
+  `Accept-Encoding: identity` — it is stored-object metadata, not negotiated), `Accept-Ranges: bytes`,
+  strong ETag, and `Range: bytes=0-15` returns `206` with `Content-Range: bytes 0-15/102416919` and a
+  body starting `1f 8b` — so **Range addresses ENCODED bytes**. Both platforms write **decoded** bytes to
+  disk. expo's Android resume computes its offset as the destination file's length
+  (`FileSystemDownloadTask.kt:92`) and sends `Range: bytes=<decoded>-` (line 112): provably wrong for
+  every gzip artifact we publish, off by 2.6× on kilter:1, with no JS-side fix. **Never enable Android
+  resume** until the artifacts are served identity-encoded or expo's offset moves to encoded byte space.
+  iOS `resumeData` validity over a `Content-Encoding` response cannot be established off-device and is
+  treated as unproven. Background-session continuation needs no byte-space reasoning at all.
+
+  Residual gap, stated honestly: if iOS **terminates** the app (force-quit or a memory-pressure kill),
+  expo's dispatcher has no delegate on relaunch and the finished temp file is dropped — that download is
+  lost and the next foreground restarts at 0. A merely _suspended_ app keeps its delegate and resolves
+  on resume, which is the common case.
+
+- **Exact decoded-size gate (#4394)**. Before the `.complete` sidecar is written, the finished file's
+  size is compared against `entry.uncompressedBytes` — exact, because the export writes
+  `rawBuffer.length`, the SQLite file's own byte length. A mismatch deletes the file, reports a handled
+  error, and throws `SnapshotArtifactTruncatedError` → funnel reason `artifact-truncated`, charged to the
+  **transport** budget (a short body is a cut-short response; `structural-device` would durably settle a
+  scope onto the paged crawl after two occurrences). It runs **after** the gzip sniff, so a
+  still-compressed body keeps reporting `permanent-miss`. Absent `uncompressedBytes` — every gzip grades
+  block and every pre-#4311 layout entry — the gate is skipped; an `identity` entry gates on
+  `entry.bytes`, which there IS the decoded size. A retained artifact's size is re-verified before its
+  sidecar is trusted, so a survivor the OS truncated is re-downloaded rather than ATTACHed.
+
+- **Superseded-partial sweep**: artifacts for an older `builtAt` of the same (board, layout) are deleted
+  at the **top** of `downloadSnapshotFile`, before the free-space precheck, as well as after a successful
+  download. A 271 MB stale partial used to sit in the cache until the next download succeeded — which it
+  might not, because that partial counted against the precheck the new download had to pass.
+
+- **Per-transfer telemetry**: every transfer that moved bytes emits `Offline Artifact Transfer` with
+  `strategy`, `wireBytes`, `wallMs`, `firstByteMs`, `wireKbps`, `backgroundedDuringTransfer` and friends
+  (full prop contract in `packages/shared/analytics/src/events.ts`). A reused artifact emits nothing, so
+  the denominator is always real network work. Read `wireKbps` only where
+  `backgroundedDuringTransfer = false`: a suspended transfer's `wallMs` includes wall-clock time nobody
+  was downloading.
+
+- **Not on `main`, ever** — these need a native fingerprint change and belong on a `[native-train]` draft:
+  the `URLSessionConfiguration` knobs behind #4394's Low Data Mode hypothesis
+  (`allowsConstrainedNetworkAccess`, `allowsExpensiveNetworkAccess`, `waitsForConnectivity`,
+  `networkServiceType`, `delegateQueue`), restoring background-session delegates on relaunch, and
+  surfacing `X-Tigris-*` response headers from a download task. All of them live in expo-file-system's
+  Swift, reachable only via a bun patch or an upstream PR.
+
 - **Download fallback status**: My Boards keeps the normal per-row download state (`pending`,
   `downloading`, or `downloaded`) and separately derives a `BoardDownloadNotice` from the persisted
   attempt, done, and explicit paged-fallback markers plus board checkpoints. The explicit outcome closes
@@ -751,6 +829,13 @@ manifest) and the export re-bases entry URLs onto it. Keep it consistent with
   block, so publishing a manifest without one — or rolling the fleet back to the identity `board-snapshots/v1`
   prefix, which never publishes grades — reverts every client to the paged grades crawl with no deploy. It
   is a slower download, not a broken one.
+- **Download transport** (issue #4394): `offline-download-task-api` off (or deleted — unset reads as off)
+  puts every device back on today's `File.downloadFileAsync`, and
+  `offline-download-background-session` off pins an iOS task to a foreground session without leaving the
+  DownloadTask arm. Both default OFF, so a merge changes nobody's transport; the rollback signal to watch
+  is a spike in the `snapshot artifact arrived still gzip-compressed` Sentry handled error or in
+  `reason: 'permanent-miss'`, because a background session runs out of `nsurlsessiond` rather than
+  in-process.
 - **Nuclear, affects every client regardless of flag state after cache expiry**: delete the
   `board-snapshots/v1-gzip/manifest.json` object from the bucket — that's the prefix the fleet reads;
   deleting `board-snapshots/v1/manifest.json` stops nothing. The manifest is cached for up to 5 minutes
