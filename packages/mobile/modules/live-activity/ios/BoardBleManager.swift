@@ -1128,12 +1128,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // supported on MoonBoard (boardSupportsMirroring is false), so frames go
         // out as-is.
         if configuration.boardName == "moonboard" {
-            // numRows nil (config persisted by an older build) → the encoder's
-            // 18-row standard-wall default.
+            // numRows/lightAdjacentHolds nil (config persisted by an older
+            // build) → the encoder's 18-row standard-wall / no-prefix defaults.
             let result = BoardBleEncoding.makeMoonboardPacket(
                 frames: item.frames,
                 numRows: configuration.numRows,
-                lightAdjacentHolds: configuration.lightAdjacentHolds
+                lightAdjacentHolds: configuration.lightAdjacentHolds ?? false
             )
             guard !result.packet.isEmpty else {
                 // A non-empty climb whose holds all dropped (unrecognised/out-of-

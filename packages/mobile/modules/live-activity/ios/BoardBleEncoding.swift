@@ -12,13 +12,36 @@ struct BoardBleConfiguration: Codable, Equatable {
     // persisted by builds that predate it still decode (#3392).
     let numRows: Int?
     // MoonBoard "V2" additional-LED feature (light each hold's neighbour LED,
-    // firmware-defined — see BoardBleEncoding.makeMoonboardPacket). Defaults
-    // false so configs persisted before this field existed still decode.
-    // Default expression (not just a documented default) so Codable's
-    // synthesized decoder back-fills `false` for configs persisted by builds
-    // that predate this field, same as `numRows` handles its own gap via
-    // Optional.
-    let lightAdjacentHolds: Bool = false
+    // firmware-defined — see BoardBleEncoding.makeMoonboardPacket). Optional,
+    // like `numRows` above: Swift's synthesized Decodable only skips a missing
+    // key for an Optional-typed property (`decodeIfPresent`) — a non-optional
+    // stored property's default-value expression is NOT consulted by Codable
+    // synthesis, so `Bool = false` here would still throw `keyNotFound` and
+    // fail the whole decode for configs persisted before this field existed
+    // (readConfiguration() swallows that via `try?`, silently dropping the
+    // saved config). `Bool?` decodes those as nil; callers read
+    // `lightAdjacentHolds ?? false`.
+    let lightAdjacentHolds: Bool?
+
+    init(
+        boardName: String,
+        layoutId: Int,
+        sizeId: Int,
+        apiLevel: Int?,
+        deviceName: String?,
+        colorOverrides: [String: String],
+        numRows: Int?,
+        lightAdjacentHolds: Bool? = nil
+    ) {
+        self.boardName = boardName
+        self.layoutId = layoutId
+        self.sizeId = sizeId
+        self.apiLevel = apiLevel
+        self.deviceName = deviceName
+        self.colorOverrides = colorOverrides
+        self.numRows = numRows
+        self.lightAdjacentHolds = lightAdjacentHolds
+    }
 }
 
 struct BoardBlePacketResult: Equatable {
