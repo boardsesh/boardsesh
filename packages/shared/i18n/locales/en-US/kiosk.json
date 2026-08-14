@@ -267,6 +267,10 @@
         "attach": "Add to gym",
         "attached": "Board added to your gym.",
         "attachFailed": "Couldn't add that board.",
+        "lastBoardNote": "Last board on that listing",
+        "lastBoardTitle": "This empties the other listing",
+        "lastBoardBody": "\"{{name}}\" has no other boards. Add this one and that listing folds into your gym — old links still land here, and it stops turning up in search as an empty duplicate.",
+        "lastBoardConfirm": "Add and merge",
         "empty": "Nothing loose right now. Every board near your gym is already on your listing.",
         "loadError": "Couldn't check for stray boards.",
         "retry": "Try again"

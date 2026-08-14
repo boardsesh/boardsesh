@@ -7114,6 +7114,8 @@ export type StrayBoard = {
   currentGymUuid?: Maybe<Scalars['ID']['output']>;
   /** Metres from this gym's location to the board; null when either lacks coordinates. */
   distanceMeters?: Maybe<Scalars['Float']['output']>;
+  /** True when attaching this board empties the auto-synced listing it sits on, which then folds into this gym. False for an unlinked board, and for a listing that never folds (already merged, or owned by a person). */
+  isLastBoardAtCurrentGym: Scalars['Boolean']['output'];
   /** The board's display name. */
   name: Scalars['String']['output'];
   /** Why this board is a candidate for this gym. */

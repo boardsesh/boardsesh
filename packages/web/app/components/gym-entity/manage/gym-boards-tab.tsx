@@ -43,6 +43,7 @@ import type { StrayBoard, UserBoard } from '@boardsesh/shared-schema';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import { themeTokens } from '@/app/theme/theme-config';
 import { canManageGymBoards, canUnlinkBoard, linkableBoards } from './gym-board-permissions';
+import ConfirmDialog from './confirm-dialog';
 import type { GymManageTabProps } from './tab-props';
 
 export function VisibilityChip({ board }: { board: Pick<UserBoard, 'isPublic' | 'isUnlisted'> }) {
@@ -363,6 +364,10 @@ type StrayBoardsSectionProps = {
  * this gym (within ~150 m, unlinked or on a synced listing) or left behind by a
  * merged listing. One tap re-points the board to this gym. Only mounted for
  * viewers with gym edit access — the resolver enforces the same gate.
+ *
+ * A board flagged `isLastBoardAtCurrentGym` is the exception to one-tap: taking
+ * it empties its listing, and the backend then folds that listing into this gym,
+ * so the consequence gets a confirm step instead of happening silently.
  */
 function StrayBoardsSection({ gymUuid, onAttached }: StrayBoardsSectionProps) {
   const { t } = useTranslation('kiosk');
@@ -370,6 +375,7 @@ function StrayBoardsSection({ gymUuid, onAttached }: StrayBoardsSectionProps) {
   const [strays, setStrays] = useState<StrayBoard[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [attachingUuid, setAttachingUuid] = useState<string | null>(null);
+  const [mergeConfirmTarget, setMergeConfirmTarget] = useState<StrayBoard | null>(null);
 
   const attachMutation = useEntityMutation<AttachBoardToGymMutationResponse, AttachBoardToGymMutationVariables>(
     ATTACH_BOARD_TO_GYM,
@@ -413,6 +419,25 @@ function StrayBoardsSection({ gymUuid, onAttached }: StrayBoardsSectionProps) {
     },
     [attachMutation, gymUuid, onAttached],
   );
+
+  const handleAttachClick = useCallback(
+    (board: StrayBoard) => {
+      if (board.isLastBoardAtCurrentGym) {
+        setMergeConfirmTarget(board);
+        return;
+      }
+      void handleAttach(board);
+    },
+    [handleAttach],
+  );
+
+  const handleMergeConfirm = useCallback(() => {
+    const board = mergeConfirmTarget;
+    setMergeConfirmTarget(null);
+    if (board) {
+      void handleAttach(board);
+    }
+  }, [mergeConfirmTarget, handleAttach]);
 
   const reasonText = (board: StrayBoard): string => {
     if (board.reason === 'MERGED_TWIN') {
@@ -476,7 +501,7 @@ function StrayBoardsSection({ gymUuid, onAttached }: StrayBoardsSectionProps) {
                   variant="contained"
                   startIcon={<AddLinkOutlined />}
                   disabled={attachingUuid !== null}
-                  onClick={() => handleAttach(board)}
+                  onClick={() => handleAttachClick(board)}
                   sx={{ textTransform: 'none' }}
                 >
                   {attachingUuid === board.uuid ? (
@@ -488,7 +513,19 @@ function StrayBoardsSection({ gymUuid, onAttached }: StrayBoardsSectionProps) {
               }
             >
               <ListItemText
-                primary={board.name}
+                primary={
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                    <Typography component="span">{board.name}</Typography>
+                    {board.isLastBoardAtCurrentGym && (
+                      <Chip
+                        size="small"
+                        color="warning"
+                        variant="outlined"
+                        label={t('manage.boards.strays.lastBoardNote')}
+                      />
+                    )}
+                  </Box>
+                }
                 secondary={
                   board.currentGymName
                     ? `${reasonText(board)} · ${t('manage.boards.strays.onListing', { name: board.currentGymName })}`
@@ -499,6 +536,17 @@ function StrayBoardsSection({ gymUuid, onAttached }: StrayBoardsSectionProps) {
           ))}
         </List>
       )}
+
+      <ConfirmDialog
+        open={mergeConfirmTarget !== null}
+        title={t('manage.boards.strays.lastBoardTitle')}
+        body={t('manage.boards.strays.lastBoardBody', { name: mergeConfirmTarget?.currentGymName ?? '' })}
+        confirmLabel={t('manage.boards.strays.lastBoardConfirm')}
+        cancelLabel={t('manage.boards.cancel')}
+        confirmColor="primary"
+        onConfirm={handleMergeConfirm}
+        onClose={() => setMergeConfirmTarget(null)}
+      />
     </Box>
   );
 }

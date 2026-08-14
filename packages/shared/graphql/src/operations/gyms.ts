@@ -190,6 +190,7 @@ export const STRAY_BOARDS_FOR_GYM = gql`
       currentGymName
       distanceMeters
       reason
+      isLastBoardAtCurrentGym
     }
   }
 `;

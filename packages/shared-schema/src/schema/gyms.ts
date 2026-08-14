@@ -177,6 +177,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     distanceMeters: Float
     "Why this board is a candidate for this gym."
     reason: StrayBoardReason!
+    "True when attaching this board empties the auto-synced listing it sits on, which then folds into this gym. False for an unlinked board, and for a listing that never folds (already merged, or owned by a person)."
+    isLastBoardAtCurrentGym: Boolean!
   }
 
   """
