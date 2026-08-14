@@ -53,6 +53,13 @@ vi.mock('../../lib/error-reporting', () => ({
   reportError: vi.fn(),
 }));
 
+// The adapter wires AppState and NetInfo at import time, so the one reporter this
+// module takes from it is stubbed rather than the whole of react-native (#4406).
+const reportScopeDownloadAbandoned = vi.fn();
+vi.mock('../offline-sync-adapter', () => ({
+  reportScopeDownloadAbandoned: (...args: unknown[]) => reportScopeDownloadAbandoned(...(args as [])),
+}));
+
 const sweepOverlaysForScope = vi.fn(async () => ({ beforeBytes: 0, freedBytes: 0, filesDeleted: 0 }));
 vi.mock('../../lib/sweep-caches', () => ({
   sweepOverlaysForScope: (...args: unknown[]) => sweepOverlaysForScope(...(args as [])),
@@ -146,6 +153,22 @@ describe('removeOfflineBoard', () => {
 
     await expect(removeOfflineBoard({ db, queryClient, scope: KILTER_12X14 })).rejects.toThrow('disk went away');
     expect(releasePurge).toHaveBeenCalledTimes(1);
+  });
+
+  // The funnel's terminal for a board removed mid-download (issue #4406). The
+  // engine owns WHEN it fires (it is the only code that can still read the
+  // `scope-started:` marker); this pins that the seam is wired at all — an
+  // unwired one is invisible, because the symptom is a missing analytics event.
+  it('hands the engine the abandoned-download reporter', async () => {
+    setSetting('syncEnabledBoards', ['kilter:1:7']);
+
+    await removeOfflineBoard({ db, queryClient, scope: KILTER_12X14 });
+
+    const [teardownParams] = removeBoardScopeData.mock.calls[0] as unknown as [
+      { onDownloadAbandoned?: (info: { scopeKey: string }) => void },
+    ];
+    teardownParams.onDownloadAbandoned?.({ scopeKey: 'kilter:1:7' });
+    expect(reportScopeDownloadAbandoned).toHaveBeenCalledWith({ scopeKey: 'kilter:1:7' });
   });
 
   it('retains every other enabled scope, and never the one being removed', async () => {

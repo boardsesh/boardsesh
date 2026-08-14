@@ -13,6 +13,7 @@ import {
   type SchedulerTriggers,
 } from '../sync-scheduler';
 import { pullSync } from '../pull-client';
+import { beginScopePurge, __resetDrainerStateForTests } from '../../mutation-queue/drainer';
 
 const mockPullSync = pullSync as ReturnType<typeof vi.fn>;
 
@@ -73,6 +74,7 @@ describe('sync-scheduler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     __resetSyncSchedulerStateForTests();
+    __resetDrainerStateForTests();
     mockPullSync.mockResolvedValue(undefined);
   });
 
@@ -355,5 +357,85 @@ describe('sync-scheduler', () => {
 
     // The queued follow-up must NOT have fired a second cycle.
     expect(mockPullSync).toHaveBeenCalledTimes(1);
+  });
+
+  // Issue #4406. A removal's exclusive transaction latches its namespace for
+  // seconds, and every guard in the pull client reads that latch as "purged" —
+  // so a cycle kicked DURING it (the climber switching the board straight back
+  // on, two seconds later) skips the scope from top to bottom and reports
+  // nothing. Nothing picks it up afterwards: the scheduler wakes on foreground
+  // and on the offline→online edge and has no interval, so a phone that stays in
+  // the climber's hand never downloads that board again.
+  describe('a purge window closing', () => {
+    it('re-runs a cycle when the purged namespace still has an enabled board', async () => {
+      const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+      const queryClient = createMockQueryClient();
+      const fakeTriggers = createFakeTriggers();
+
+      startSyncScheduler(
+        mockDb,
+        queryClient,
+        mockGraphqlFetch,
+        () => ['tension:11:8'],
+        drainQueue,
+        fakeTriggers.triggers,
+      );
+      await flush();
+      expect(mockPullSync).toHaveBeenCalledTimes(1); // initial cycle
+
+      // The removal: epoch bump, exclusive transaction, release.
+      const release = beginScopePurge('tension:11');
+      await flush();
+      expect(mockPullSync).toHaveBeenCalledTimes(1); // nothing runs INTO the delete
+      release();
+      await flush();
+
+      expect(mockPullSync).toHaveBeenCalledTimes(2);
+    });
+
+    it('stays quiet when nothing enabled needs that namespace', async () => {
+      const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+      const queryClient = createMockQueryClient();
+      const fakeTriggers = createFakeTriggers();
+
+      startSyncScheduler(
+        mockDb,
+        queryClient,
+        mockGraphqlFetch,
+        () => ['kilter:1:5'],
+        drainQueue,
+        fakeTriggers.triggers,
+      );
+      await flush();
+      expect(mockPullSync).toHaveBeenCalledTimes(1);
+
+      beginScopePurge('tension:11')();
+      await flush();
+
+      // An ordinary removal — the board is gone and stays gone — costs no cycle.
+      expect(mockPullSync).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops listening once the scheduler is stopped', async () => {
+      const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+      const queryClient = createMockQueryClient();
+      const fakeTriggers = createFakeTriggers();
+
+      const stop = startSyncScheduler(
+        mockDb,
+        queryClient,
+        mockGraphqlFetch,
+        () => ['tension:11:8'],
+        drainQueue,
+        fakeTriggers.triggers,
+      );
+      await flush();
+      stop();
+
+      beginScopePurge('tension:11')();
+      await flush();
+
+      expect(mockPullSync).toHaveBeenCalledTimes(1);
+    });
   });
 });

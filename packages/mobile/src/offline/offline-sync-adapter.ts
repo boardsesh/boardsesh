@@ -45,6 +45,7 @@ import {
   type SnapshotSource,
   type SyncOptions,
   type SyncProgressSink,
+  type AbandonedDownloadInfo,
 } from '@boardsesh/offline-sync';
 import { SHARED_EVENTS, sanitizeErrorForAnalytics } from '@boardsesh/analytics';
 import { reportHandledError } from '../lib/error-reporting';
@@ -199,6 +200,32 @@ const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({
       },
     },
   );
+};
+
+/**
+ * The funnel's other missing terminal (issue #4406): the climber removed the
+ * board while its download was still running.
+ *
+ * Routed through `reportSnapshotBootstrapError` rather than a `track()` of its
+ * own so the Failed leg has exactly one shape and one call site — the two could
+ * otherwise disagree about what a failed download looks like. `aborted: true`
+ * keeps it out of Sentry (a Remove tap is not a defect) and out of any failure
+ * RATE, while the `abandoned-removed` reason is what makes abandonment
+ * countable: it fires at most once per `Offline Board Download Started`, from
+ * the teardown that deletes the marker.
+ */
+export const reportScopeDownloadAbandoned = ({ scopeKey }: AbandonedDownloadInfo): void => {
+  reportSnapshotBootstrapError({
+    scopeKey,
+    stage: 'board-removed',
+    // No retry budget was spent — the same "nothing was burned" zero every other
+    // teardown report sends.
+    attempt: 0,
+    cause: new Error(`Offline download for ${scopeKey} was removed before it finished`),
+    expected: true,
+    reason: 'abandoned-removed',
+    aborted: true,
+  });
 };
 
 // Fired once per board scope's initial download so the snapshot-bootstrap

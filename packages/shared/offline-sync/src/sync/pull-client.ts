@@ -36,6 +36,7 @@ import {
 } from './snapshot-bootstrap';
 import { classifySnapshotBootstrapFailure, type SnapshotBootstrapFailureReason } from './bootstrap-failure-reason';
 import { createDownloadFunnelGuard } from './download-funnel-guard';
+import { noteScopeDownloadTerminal } from './download-terminal-registry';
 import {
   classifyBootstrapFailure,
   clearBootstrapPagedFallback,
@@ -1070,8 +1071,19 @@ async function runBootstrapPhase(params: {
   // own catch, a consumer callback blowing up — still closes the funnel. See
   // download-funnel-guard.ts for what counts as settled and why only a genuinely
   // unexplained exit reaches Sentry.
+  //
+  // Every report leaving this phase — the guard's own included — passes through
+  // `recordTerminal` first, so the teardown that is about to delete this scope
+  // knows a terminal event has already been spent on its removal (issue #4406).
+  const recordTerminal = (report: SnapshotBootstrapErrorReport): void => {
+    // Only the teardown-shaped reason: an ordinary failure ends this ATTEMPT but
+    // leaves the download itself owed a terminal, which is exactly the case the
+    // teardown must still report.
+    if (report.reason === 'aborted-wipe') noteScopeDownloadTerminal(report.scopeKey);
+    rawSnapshotBootstrapError?.(report);
+  };
   const funnelGuard = createDownloadFunnelGuard({
-    report: rawSnapshotBootstrapError,
+    report: rawSnapshotBootstrapError ? recordTerminal : undefined,
     // Scope-aware: an unexplained exit that merely COINCIDES with another
     // board's removal is no longer laundered as `aborted-wipe`, so it still
     // reaches Sentry as `unknown-exit` (issue #4370).
@@ -1087,7 +1099,7 @@ async function runBootstrapPhase(params: {
   const onSnapshotBootstrapError = rawSnapshotBootstrapError
     ? (report: BootstrapErrorInput): void => {
         funnelGuard.settle(report.scopeKey);
-        rawSnapshotBootstrapError({
+        recordTerminal({
           ...report,
           reason: report.reason ?? classifySnapshotBootstrapFailure(report.cause),
           aborted: report.aborted ?? false,
@@ -2444,6 +2456,17 @@ export async function pullSync(
     // purge only invalidates its own scope — the one being deleted right now,
     // which is still in this stale list — so it skips that scope and lets every
     // other board finish (issue #4370).
+    //
+    // NONE of the exits below reports a terminal event, and that is deliberate
+    // (issue #4406). A board-data crawl legitimately spans cycles — a 40k-climb
+    // layout is hundreds of pages, and the durable `scope-started:` marker keeps
+    // ONE Started open across all of them — so a Failed per interrupted cycle
+    // would turn every normal multi-cycle download into a stream of failures.
+    // The one exit that ends a download for good is the removal these purge
+    // checks are dodging, and `removeBoardScopeData` reports it from the other
+    // side: it is the last code that can still see the Started marker before
+    // deleting it, and it de-dups against the bootstrap phase's own
+    // `aborted-wipe` through the purge generation.
     if (cycleAborted()) return;
     if (scopePurged(boardScope)) continue;
     const scopeKey = boardScope.scopeKey;

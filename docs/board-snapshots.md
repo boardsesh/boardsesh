@@ -684,14 +684,14 @@ Five PostHog events (`@boardsesh/analytics`'s `SHARED_EVENTS`) make board downlo
 end-to-end (issue #4316). Before them the feature had exactly one — `Offline Board Download
 Completed` — so abandonment was structurally unmeasurable and failures went only to Sentry.
 
-| Event                              | When                                                   | Key props                                                                             |
-| ---------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| `Offline Board Download Started`   | first time any cycle starts pulling a scope, once ever | `scopeKey`, `pathIntent`, `artifactBytes`, `trigger`, `offlineEngineEnabled`          |
-| `Offline Board Download Completed` | both board tables reached the tail, once ever          | `scopeKey`, `method`, `durationMs`, `bytes?`, `rowCount?`, `downloadMs?`, `importMs?` |
-| `Offline Board Download Failed`    | a bootstrap attempt ended without succeeding           | `scopeKey`, `stage`, `attempt`, `expected`, `reason`, `aborted`, `errorMessage`       |
-| `Offline Board Download Cancelled` | the board was switched off mid-download                | `scopeKey`, `source`, `stage?`, `fraction?`, `bytesDone?`                             |
-| `Offline Board Toggled`            | the offline switch was flipped, either way             | `scopeKey`, `enabled`, `source`                                                       |
-| `Offline Download All Tapped`      | the "download all my boards" switch was TAPPED         | `boardCount`                                                                          |
+| Event                              | When                                                                                   | Key props                                                                             |
+| ---------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `Offline Board Download Started`   | first time any cycle starts pulling a scope, once ever                                 | `scopeKey`, `pathIntent`, `artifactBytes`, `trigger`, `offlineEngineEnabled`          |
+| `Offline Board Download Completed` | both board tables reached the tail, once ever                                          | `scopeKey`, `method`, `durationMs`, `bytes?`, `rowCount?`, `downloadMs?`, `importMs?` |
+| `Offline Board Download Failed`    | a bootstrap attempt ended without succeeding, or a removal ended the download for good | `scopeKey`, `stage`, `attempt`, `expected`, `reason`, `aborted`, `errorMessage`       |
+| `Offline Board Download Cancelled` | the board was switched off mid-download                                                | `scopeKey`, `source`, `stage?`, `fraction?`, `bytesDone?`                             |
+| `Offline Board Toggled`            | the offline switch was flipped, either way                                             | `scopeKey`, `enabled`, `source`                                                       |
+| `Offline Download All Tapped`      | the "download all my boards" switch was TAPPED                                         | `boardCount`                                                                          |
 
 **The once-ever contract.** Started and Completed are each guarded by a durable `sync_meta`
 marker — `scope-started:<scopeKey>` and `scope-complete:<scopeKey>` — so the funnel query is
@@ -748,8 +748,30 @@ explain, and it is the one abort-shaped outcome that still goes to Sentry (`sour
 
 **The invariant is scoped to the snapshot bootstrap.** A paged crawl is multi-cycle by design — an
 interrupted one has not failed, it is simply not finished — so the board-data loop does not report
-per-cycle aborts, and a paged Started legitimately stays open until its Completed lands. Abandonment
-on that path is measured as a Started with no Completed after N days, not as a Failed.
+per-cycle aborts, and a paged Started legitimately stays open until its Completed lands. Slow
+abandonment on that path is still measured as a Started with no Completed after N days, not as a
+Failed.
+
+**Except when the board is removed** (issue #4406). That is the one exit that ends a download for
+good: `removeBoardScopeData` deletes the `scope-started:` marker along with the rows, so once it
+commits nothing can tell an abandoned download from a board that was never downloaded. It therefore
+reads `scope-started:` / `scope-complete:` **before** its transaction and, when a download had
+announced itself and never completed, reports one
+`Offline Board Download Failed { stage: 'board-removed', reason: 'abandoned-removed', aborted: true, attempt: 0 }`
+after the commit. Unlike every other abort-shaped reason it fires **at most once per Started**, which
+makes "downloads the climber gave up on" a count rather than a subtraction. A removal landing
+mid-**bootstrap** would otherwise produce two terminals for one Started — the phase's own
+`aborted-wipe` and this one — so both claim against the purge generation `beginScopePurge` bumped
+(`sync/download-terminal-registry.ts`), and only the first claim reports.
+
+**A removal also re-arms the scheduler.** A removal latches its namespace for the seconds its delete
+transaction runs, and every purge guard in the pull client reads that latch as "purged" — so a cycle
+that starts inside the window skips the scope from top to bottom. That is correct (it must not write
+into a delete) but it also consumes the trigger, and the scheduler has no interval: a board switched
+back **on** during a removal used to sit on "waiting to download" until the next foreground or
+reconnect, which on Marco's phone meant nine hours and an app relaunch. `startSyncScheduler` now
+subscribes to `onPurgeSettled` and runs a cycle when the window closes — but only when a
+still-enabled board needs that namespace, so an ordinary removal costs no cycle.
 
 **Reading the props.** `pathIntent` on Started is an INTENT from cheap local facts, not an outcome —
 a snapshot-eligible scope can still fall back to the paged crawl after the manifest resolves. Split
