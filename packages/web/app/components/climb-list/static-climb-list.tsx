@@ -41,6 +41,13 @@ export type StaticClimbListProps = {
   logbook?: readonly LogbookEntry[];
   isFetching: boolean;
   hasMore: boolean;
+  /**
+   * Must be idempotent. Two paths call it — the five-rows-early virtualizer
+   * effect and the bottom sentinel — and both gate on `!isFetching`, which a
+   * caller may not flip synchronously, so a fast scroll can fire both in one
+   * tick. Every current caller is React Query's `fetchNextPage`, which drops a
+   * second call while the first is in flight.
+   */
   onLoadMore: () => void;
   header?: React.ReactNode;
   /** Rendered instead of the rows when there are no climbs. */

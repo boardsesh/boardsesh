@@ -36,8 +36,6 @@ export type StaticClimbRowProps = {
   logbook?: readonly LogbookEntry[];
   preferImageLayers?: boolean;
   fetchPriority?: 'high' | 'low' | 'auto';
-  /** Extra content under the title, inside the link (e.g. a playlist note). */
-  centerBottomSlot?: React.ReactNode;
 };
 
 // Reproduces climb-list-item's row geometry exactly: 64px thumbnail at
@@ -74,7 +72,6 @@ const StaticClimbRow = ({
   logbook,
   preferImageLayers,
   fetchPriority,
-  centerBottomSlot,
 }: StaticClimbRowProps) => {
   const href = useMemo(
     () => buildCanonicalClimbViewUrl(boardDetails, climb.angle, climb.uuid, climb.name),
@@ -114,7 +111,6 @@ const StaticClimbRow = ({
             titleFontSize={themeTokens.typography.fontSize.xl}
             isNoMatch={!!climb.is_no_match}
           />
-          {centerBottomSlot}
         </Box>
       </Box>
     </MuiLink>
