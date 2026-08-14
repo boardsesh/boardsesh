@@ -51,10 +51,15 @@ vi.mock('../../offline/outbox-telemetry', () => ({
   reportEnqueueSuppressed: reportEnqueueSuppressedMock,
 }));
 
+// The retry ladder emits one analytics event per contended write; the event's
+// own shape is covered in offline/__tests__/local-write-telemetry.test.ts.
+vi.mock('../../lib/analytics', () => ({ track: vi.fn() }));
+
 import {
   writeTickLocal,
   addFavoriteLocal,
   removeFavoriteLocal,
+  enqueueTickOutboxOnly,
   favoriteAddKey,
   favoriteRemoveKey,
   useOfflineFollowUser,
@@ -87,6 +92,32 @@ function makeTickInput(overrides: Partial<SaveTickInput> = {}): SaveTickInput {
     ...overrides,
   };
 }
+
+// node:sqlite serializes, so genuine SQLITE_BUSY is unreachable in this suite.
+// Wrapping the handle so the first N transactions throw the real driver message
+// is what lets the ladder's behaviour be asserted against the REAL DDL: the
+// recovering attempt still runs the actual SQL.
+function withFailingTransactions(base: TestSqliteDb, failures: number, message: string): TestSqliteDb {
+  let remaining = failures;
+  return new Proxy(base, {
+    get(target, property) {
+      if (property === 'withExclusiveTransactionAsync') {
+        return async (task: (txn: unknown) => Promise<void>) => {
+          if (remaining > 0) {
+            remaining -= 1;
+            throw new Error(message);
+          }
+          return target.withExclusiveTransactionAsync(task as never);
+        };
+      }
+      const value = Reflect.get(target, property) as unknown;
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
+const LOCK_MESSAGE = 'Error code 5: database is locked';
+const DISK_MESSAGE = 'database or disk is full';
 
 let db: TestSqliteDb;
 
@@ -136,6 +167,173 @@ describe('writeTickLocal', () => {
 
     const tick = await db.getFirstAsync<Row>('SELECT session_id FROM boardsesh_ticks WHERE uuid = ?', ['tick-uuid-2']);
     expect(tick?.session_id).toBeNull();
+  });
+
+  // Issue #4315. The transaction is atomic, so losing the lock used to roll back
+  // the tick row AND the outbox row — the send vanished. One retry is what makes
+  // an ordinary contended save land.
+  it('recovers a lock-contended write on the retry and lands exactly one tick and one queue row', async () => {
+    await writeTickLocal(withFailingTransactions(db, 1, LOCK_MESSAGE), makeTickInput(), 'tick-retry-1');
+
+    const ticks = await db.getAllAsync<Row>('SELECT * FROM boardsesh_ticks WHERE uuid = ?', ['tick-retry-1']);
+    expect(ticks).toHaveLength(1);
+    const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations WHERE idempotency_key = ?', [
+      'tick-retry-1',
+    ]);
+    expect(queued).toHaveLength(1);
+  });
+
+  // A SQLITE_BUSY can surface at COMMIT, so a retry can follow an attempt that
+  // actually landed. The tick INSERT is OR IGNORE precisely so that re-run is a
+  // no-op rather than a UNIQUE violation.
+  it('is idempotent when the same uuid is written twice (commit-then-throw safety)', async () => {
+    const input = makeTickInput();
+    await writeTickLocal(db, input, 'tick-twice');
+    await writeTickLocal(db, input, 'tick-twice');
+
+    const ticks = await db.getAllAsync<Row>('SELECT * FROM boardsesh_ticks WHERE uuid = ?', ['tick-twice']);
+    expect(ticks).toHaveLength(1);
+    const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations WHERE idempotency_key = ?', [
+      'tick-twice',
+    ]);
+    expect(queued).toHaveLength(1);
+  });
+
+  it('rethrows a non-lock error without a second attempt', async () => {
+    const flaky = withFailingTransactions(db, 1, DISK_MESSAGE);
+
+    await expect(writeTickLocal(flaky, makeTickInput(), 'tick-disk')).rejects.toThrow(DISK_MESSAGE);
+
+    const ticks = await db.getAllAsync<Row>('SELECT * FROM boardsesh_ticks');
+    expect(ticks).toHaveLength(0);
+  });
+
+  // The adapter stamps input.uuid before the first write so the queued replay and
+  // any network fall-through name the same server row. If the payload ever lost
+  // it, the fall-through would log a second send.
+  it('carries a caller-stamped input.uuid into the enqueued payload, matching the key', async () => {
+    const input = makeTickInput({ uuid: 'tick-stamped' });
+
+    await writeTickLocal(db, input, 'tick-stamped');
+
+    const queued = await db.getFirstAsync<Row>('SELECT * FROM pending_mutations WHERE idempotency_key = ?', [
+      'tick-stamped',
+    ]);
+    const payload = JSON.parse(queued?.payload as string) as Record<string, unknown>;
+    expect(payload.uuid).toBe('tick-stamped');
+    expect(payload.uuid).toBe(queued?.idempotency_key);
+  });
+});
+
+// Issue #4315. The tick can survive on its outbox row alone: the drainer replays
+// a queued mutation from its payload, so the local boardsesh_ticks row only ever
+// served LOCAL reads (the "waiting to sync" badge, the offline logbook).
+describe('enqueueTickOutboxOnly', () => {
+  it('writes the queue row and NO tick row, with the payload the full write would have queued', async () => {
+    const input = makeTickInput({ uuid: 'degraded-1', sessionId: 'session-7' });
+
+    await enqueueTickOutboxOnly(db, input, 'degraded-1', 5000);
+
+    const ticks = await db.getAllAsync<Row>('SELECT * FROM boardsesh_ticks');
+    expect(ticks).toHaveLength(0);
+
+    const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations');
+    expect(queued).toHaveLength(1);
+    expect(queued[0].table_name).toBe('boardsesh_ticks');
+    expect(queued[0].operation).toBe('create');
+    expect(queued[0].idempotency_key).toBe('degraded-1');
+    expect(JSON.parse(queued[0].payload as string)).toEqual(input);
+  });
+
+  it('is a no-throw no-op when the key is already queued', async () => {
+    const input = makeTickInput({ uuid: 'degraded-2' });
+    await enqueueTickOutboxOnly(db, input, 'degraded-2', 5000);
+
+    await expect(enqueueTickOutboxOnly(db, input, 'degraded-2', 5000)).resolves.toBeUndefined();
+
+    const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations');
+    expect(queued).toHaveLength(1);
+  });
+
+  it('retries once on a lock error', async () => {
+    const flaky = withFailingTransactions(db, 1, LOCK_MESSAGE);
+
+    await enqueueTickOutboxOnly(flaky, makeTickInput({ uuid: 'degraded-3' }), 'degraded-3', 5000);
+
+    const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations');
+    expect(queued).toHaveLength(1);
+  });
+});
+
+// The ladder is a class fix, not a tick fix: favorites and follows lost writes
+// the same way and reported nothing at all. They keep today's reject-and-revert
+// behaviour on a hard failure — only the retry (and the new event) are new.
+describe('retry ladder across every local write', () => {
+  const favorite = { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 };
+
+  it('addFavoriteLocal recovers and lands the same state as an uncontended run', async () => {
+    await addFavoriteLocal(withFailingTransactions(db, 1, LOCK_MESSAGE), favorite);
+
+    const rows = await db.getAllAsync<Row>('SELECT * FROM user_favorites');
+    expect(rows).toHaveLength(1);
+    const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations');
+    expect(queued).toHaveLength(1);
+    expect(queued[0].idempotency_key).toBe(favoriteAddKey(favorite));
+  });
+
+  it('removeFavoriteLocal recovers', async () => {
+    await db.runAsync(
+      "INSERT INTO user_favorites (board_name, climb_uuid, angle, created_at, updated_at) VALUES ('kilter', 'climb-9', 40, 'now', 'now')",
+    );
+
+    await removeFavoriteLocal(withFailingTransactions(db, 1, LOCK_MESSAGE), favorite);
+
+    expect(await db.getAllAsync<Row>('SELECT * FROM user_favorites')).toHaveLength(0);
+    const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations');
+    expect(queued).toHaveLength(1);
+    expect(queued[0].idempotency_key).toBe(favoriteRemoveKey(favorite));
+  });
+
+  it('the follow hooks recover', async () => {
+    const followUser = useOfflineFollowUser(withFailingTransactions(db, 1, LOCK_MESSAGE), parkedGraphqlFetch);
+
+    await followUser('user-42');
+
+    expect(await db.getAllAsync<Row>('SELECT * FROM user_follows')).toHaveLength(1);
+    const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations');
+    expect(queued).toHaveLength(1);
+    expect(queued[0].idempotency_key).toBe('add:user_follows:user-42');
+  });
+
+  it('the unfollow hook recovers', async () => {
+    await db.runAsync(
+      "INSERT INTO user_follows (following_id, created_at, updated_at) VALUES ('user-42', 'now', 'now')",
+    );
+    const unfollowUser = useOfflineUnfollowUser(withFailingTransactions(db, 1, LOCK_MESSAGE), parkedGraphqlFetch);
+
+    await unfollowUser('user-42');
+
+    expect(await db.getAllAsync<Row>('SELECT * FROM user_follows')).toHaveLength(0);
+    const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations');
+    expect(queued).toHaveLength(1);
+    expect(queued[0].idempotency_key).toBe('del:user_follows:user-42');
+  });
+
+  it('rethrows a non-lock favorite failure untouched (favorites are NOT degraded)', async () => {
+    await expect(addFavoriteLocal(withFailingTransactions(db, 1, DISK_MESSAGE), favorite)).rejects.toThrow(
+      DISK_MESSAGE,
+    );
+    expect(await db.getAllAsync<Row>('SELECT * FROM user_favorites')).toHaveLength(0);
+  });
+
+  // A retried write re-runs `enqueue`, which can now see a row a previous attempt
+  // committed. That is only safe because reportEnqueueSuppressed early-returns
+  // unless the existing row is a dead letter — pinned here rather than left as an
+  // accident of the reporter's filter.
+  it('never reports a suppressed enqueue just because the write was retried', async () => {
+    await addFavoriteLocal(withFailingTransactions(db, 1, LOCK_MESSAGE), favorite);
+
+    expect(reportEnqueueSuppressedMock).not.toHaveBeenCalled();
   });
 });
 

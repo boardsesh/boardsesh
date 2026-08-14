@@ -649,6 +649,7 @@
     },
     "logAscent": {
       "errorMessage": "No se pudo guardar tu ascenso. Inténtalo de nuevo.",
+      "offlineErrorMessage": "No se pudo guardar tu ascenso sin conexión. El almacenamiento del teléfono estaba ocupado; inténtalo de nuevo en un momento.",
       "savedToast": "Encadene guardado"
     },
     "tick": {

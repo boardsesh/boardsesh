@@ -46,12 +46,33 @@ export const OFFLINE_DB_BUSY_TIMEOUT_MS = 5000;
 export const OFFLINE_DB_WAL_SWITCH_TIMEOUT_MS = 250;
 
 /**
+ * The `busy_timeout` for a RETRY of a local write whose first attempt already
+ * waited out the full five seconds. Shorter on purpose: measured import windows
+ * (`Offline Board Download Completed.importMs`, p50 806ms / max 3.2s over 60
+ * days) all fit inside attempt 1, so a second full wait buys almost nothing —
+ * this attempt asks "did the lock clear in the retry gap?" and gets out of the
+ * log-ascent sheet's way if it did not.
+ */
+export const OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS = 1500;
+
+/**
+ * The `busy_timeout` for the last-chance fallback write, run after the main
+ * write has already lost the lock twice (mobile's outbox-only tick degrade).
+ * One second: the user is blocked on it, it is the smallest write on the path,
+ * and the whole ladder still has to land inside OFFLINE_LOCAL_WRITE_BUDGET_MS.
+ */
+export const OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS = 1000;
+
+/**
  * Set `busy_timeout` on a connection. Call as the first statement of every
  * `withExclusiveTransactionAsync` task — the task runs on its own native
  * connection, which starts at `busy_timeout = 0`.
+ *
+ * `timeoutMs` exists for the retry ladder, which shortens the wait on later
+ * attempts (see the two constants above). Everything else takes the default.
  */
-export async function applyBusyTimeout(db: SqlExecutor): Promise<void> {
-  await db.execAsync(`PRAGMA busy_timeout = ${OFFLINE_DB_BUSY_TIMEOUT_MS}`);
+export async function applyBusyTimeout(db: SqlExecutor, timeoutMs = OFFLINE_DB_BUSY_TIMEOUT_MS): Promise<void> {
+  await db.execAsync(`PRAGMA busy_timeout = ${timeoutMs}`);
 }
 
 /**

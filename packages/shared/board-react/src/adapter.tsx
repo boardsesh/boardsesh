@@ -73,6 +73,14 @@ export type BoardAdapter = {
    * Optional platform-local save path. Mobile uses this to commit a tick to
    * SQLite and enqueue the GraphQL replay before falling back to network-only
    * behavior when no local database is available. Web omits it.
+   *
+   * The adapter MAY stamp `variables.input.uuid` with the id it queued the tick
+   * under, and mobile does. `useSaveTick` sends that SAME `variables` object on
+   * the fall-through, and the server's `saveTick` dedupes on
+   * `SaveTickInput.uuid` — so the local write, the outbox replay and the network
+   * fall-through all resolve to one server row. Without the stamp, a write that
+   * committed its outbox row and still threw (a `SQLITE_BUSY` surfacing at
+   * COMMIT) would deliver the same send twice with no way to merge them.
    */
   saveTickOffline?: (
     variables: SaveTickMutationVariables,

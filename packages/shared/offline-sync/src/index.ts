@@ -229,7 +229,21 @@ export { vacuumDatabase, measureReclaimableBytes } from './db/vacuum';
 export { SCHEMA_STATEMENTS } from './db/schema';
 export { runMigrations, MIGRATIONS, LATEST_SCHEMA_VERSION } from './db/migrations';
 export type { Migration } from './db/migrations';
-export { OFFLINE_DB_BUSY_TIMEOUT_MS, applyBusyTimeout, configureMainConnection } from './db/pragmas';
+export {
+  OFFLINE_DB_BUSY_TIMEOUT_MS,
+  OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS,
+  OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS,
+  applyBusyTimeout,
+  configureMainConnection,
+} from './db/pragmas';
+
+// --- Local write retry (issue #4315) ---------------------------------------------
+// One ladder for every local SQLite write that can lose the single-writer lock.
+// Silent when the first attempt succeeds, so `onSettled` fires only on a
+// contended write; a terminal failure rethrows the ORIGINAL error object, which
+// keeps Sentry grouping and lock classification unchanged.
+export { runLocalWriteWithRetry, OFFLINE_LOCAL_WRITE_BUDGET_MS } from './db/write-retry';
+export type { LocalWriteRetryOptions, LocalWriteRetryOutcome } from './db/write-retry';
 // One predicate for "was this write-lock contention?", so reporting (#4329) and
 // the sqlite-init retry loop (#4314) can never disagree about which failures
 // count. `classifySqliteLockError` is the same verdict plus the SQLite result

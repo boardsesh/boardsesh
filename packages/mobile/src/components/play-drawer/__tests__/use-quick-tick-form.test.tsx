@@ -73,6 +73,9 @@ vi.mock('../../../providers/rogue-timer-provider', () => ({
   useOptionalRogueTimer: () => null,
 }));
 vi.mock('../../../hooks/use-local-ticks', () => ({ useLocalPendingTicks: () => ({ data: 0 }) }));
+// Connectivity drives which save-failure message the form shows (issue #4315).
+const connectivityState = vi.hoisted(() => ({ isOffline: false }));
+vi.mock('../../../hooks/use-is-offline', () => ({ useIsOffline: () => connectivityState.isOffline }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSuccess: vi.fn(), hapticError: vi.fn() }));
 
@@ -191,6 +194,7 @@ beforeEach(() => {
   saveMock.state.failure = null;
   toastMock.showToast.mockClear();
   gradesState.current = [];
+  connectivityState.isOffline = false;
   vi.mocked(track).mockClear();
 });
 
@@ -416,6 +420,33 @@ describe('useQuickTickForm save errors', () => {
     fireEvent.click(getByTestId('save'));
 
     expect(container.querySelector('[data-testid="last-error"]')?.textContent).toBe('mobile.logAscent.errorMessage');
+  });
+
+  // Issue #4315. A save that fails offline has already exhausted the local write,
+  // the retry ladder and the outbox degrade. The network error's own message is a
+  // technical, English-only string, so say what happened in the climber's language.
+  it('shows the localized offline message when the save fails while offline', () => {
+    boardState.current = null;
+    connectivityState.isOffline = true;
+    saveMock.state.failure = new Error('Network request failed');
+    const { container, getByTestId } = renderForm();
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(container.querySelector('[data-testid="last-error"]')?.textContent).toBe(
+      'mobile.logAscent.offlineErrorMessage',
+    );
+  });
+
+  it('still surfaces the error own message when online, where it is worth reading', () => {
+    boardState.current = null;
+    connectivityState.isOffline = false;
+    saveMock.state.failure = new Error('Climb not found');
+    const { container, getByTestId } = renderForm();
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(container.querySelector('[data-testid="last-error"]')?.textContent).toBe('Climb not found');
   });
 });
 

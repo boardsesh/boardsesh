@@ -31,6 +31,7 @@ import { useToast } from '../../providers/toast-provider';
 import { useOptionalRogueTimer } from '../../providers/rogue-timer-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useLocalPendingTicks } from '../../hooks/use-local-ticks';
+import { useIsOffline } from '../../hooks/use-is-offline';
 import { track } from '../../lib/analytics';
 import { hapticSuccess, hapticError } from '../../lib/haptics';
 
@@ -152,6 +153,15 @@ export function useQuickTickForm({
   const boardActions = useOptionalBoardActions();
   const boardLogbook = useOptionalBoardLogbook();
   const { data: localPendingTicks = 0 } = useLocalPendingTicks(climbUuid, boardName);
+  // Read through a ref so the save handler's identity doesn't change on every
+  // connectivity flip (the file's existing stable-identity idiom). A save that
+  // fails while offline has already exhausted the local write, the retry ladder
+  // and the outbox degrade — the network error's own message is a technical,
+  // English-only string, so say what happened in the climber's language instead.
+  // Online, the error's own message is worth reading and stays.
+  const isOffline = useIsOffline();
+  const isOfflineRef = useRef(isOffline);
+  isOfflineRef.current = isOffline;
   useEffect(() => {
     if (!boardActions) return;
     void boardActions.getLogbook([climbUuid]);
@@ -334,8 +344,11 @@ export function useQuickTickForm({
           onError: (error: unknown) => {
             hapticError();
             track(SHARED_EVENTS.QuickTickFailed, { climbUuid, layoutId: layoutId ?? null });
-            const message =
-              error instanceof Error && error.message ? error.message : tClimbs('mobile.logAscent.errorMessage');
+            const message = isOfflineRef.current
+              ? tClimbs('mobile.logAscent.offlineErrorMessage')
+              : error instanceof Error && error.message
+                ? error.message
+                : tClimbs('mobile.logAscent.errorMessage');
             setLastError(message);
           },
         },

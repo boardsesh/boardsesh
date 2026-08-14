@@ -10,6 +10,8 @@ import { join } from 'node:path';
 import {
   OFFLINE_DB_BUSY_TIMEOUT_MS,
   OFFLINE_DB_WAL_SWITCH_TIMEOUT_MS,
+  OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS,
+  OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS,
   applyBusyTimeout,
   configureMainConnection,
 } from '../pragmas';
@@ -38,6 +40,24 @@ describe('applyBusyTimeout', () => {
 
     const after = await db.getFirstAsync<{ timeout: number }>('PRAGMA busy_timeout');
     expect(after?.timeout).toBe(OFFLINE_DB_BUSY_TIMEOUT_MS);
+  });
+
+  // The retry ladder shortens the wait on later attempts (issue #4315): attempt 1
+  // already sat out the full five seconds, so a second full wait buys little.
+  it('honours an explicit timeout for a retry attempt', async () => {
+    await applyBusyTimeout(db, OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS);
+
+    const after = await db.getFirstAsync<{ timeout: number }>('PRAGMA busy_timeout');
+    expect(after?.timeout).toBe(OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS);
+    expect(OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS).toBeLessThan(OFFLINE_DB_BUSY_TIMEOUT_MS);
+  });
+
+  it('honours the shorter fallback timeout for the last-chance write', async () => {
+    await applyBusyTimeout(db, OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS);
+
+    const after = await db.getFirstAsync<{ timeout: number }>('PRAGMA busy_timeout');
+    expect(after?.timeout).toBe(OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS);
+    expect(OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS).toBeLessThan(OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS);
   });
 });
 

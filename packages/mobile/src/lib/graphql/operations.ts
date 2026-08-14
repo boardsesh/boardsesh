@@ -807,6 +807,13 @@ export const SAVE_TICK = gql`
 
 export type SaveTickMutationVariables = {
   input: {
+    /**
+     * Client-generated tick id. The offline adapter stamps it before the local
+     * write so the SQLite row, the queued replay and any network fall-through
+     * all name the same server row — `saveTick` returns the existing tick for a
+     * repeat uuid instead of logging a second send.
+     */
+    uuid?: string;
     boardType: string;
     climbUuid: string;
     angle: number;

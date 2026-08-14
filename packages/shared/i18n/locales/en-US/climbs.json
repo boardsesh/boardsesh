@@ -649,6 +649,7 @@
     },
     "logAscent": {
       "errorMessage": "Could not save your ascent. Please try again.",
+      "offlineErrorMessage": "Couldn't save this ascent while you're offline. Your phone's storage was busy — try again in a moment.",
       "savedToast": "Tick saved"
     },
     "tick": {

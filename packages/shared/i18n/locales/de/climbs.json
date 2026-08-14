@@ -649,6 +649,7 @@
     },
     "logAscent": {
       "errorMessage": "Deine Begehung konnte nicht gespeichert werden. Versuch es nochmal.",
+      "offlineErrorMessage": "Deine Begehung konnte offline nicht gespeichert werden. Der Speicher deines Handys war belegt – versuch es gleich nochmal.",
       "savedToast": "Eintrag gespeichert"
     },
     "tick": {
