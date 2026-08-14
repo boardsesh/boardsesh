@@ -26,28 +26,6 @@ vi.mock('@/app/components/persistent-session/persistent-session-context', () => 
   useIsOnBoardRoute: () => mockIsOnBoardRoute,
 }));
 
-const mockOpenClimbSearchDrawer = vi.fn();
-const mockSetNameFilter = vi.fn();
-let mockBridgeState: {
-  openClimbSearchDrawer: (() => void) | null;
-  searchPillSummary: string | null;
-  hasActiveFilters: boolean;
-  nameFilter: string;
-  setNameFilter: ((name: string) => void) | null;
-  hasActiveNonNameFilters: boolean;
-} = {
-  openClimbSearchDrawer: null,
-  searchPillSummary: null,
-  hasActiveFilters: false,
-  nameFilter: '',
-  setNameFilter: null,
-  hasActiveNonNameFilters: false,
-};
-
-vi.mock('@/app/components/search-drawer/search-drawer-bridge-context', () => ({
-  useSearchDrawerBridge: () => mockBridgeState,
-}));
-
 vi.mock('@/app/components/search-drawer/unified-search-drawer', () => ({
   default: ({ open, defaultCategory }: { open: boolean; onClose: () => void; defaultCategory: string }) =>
     open ? <div data-testid="unified-search-drawer" data-category={defaultCategory} /> : null,
@@ -153,14 +131,6 @@ describe('GlobalHeader', () => {
       isActive: false,
       displayName: null,
     };
-    mockBridgeState = {
-      openClimbSearchDrawer: null,
-      searchPillSummary: null,
-      hasActiveFilters: false,
-      nameFilter: '',
-      setNameFilter: null,
-      hasActiveNonNameFilters: false,
-    };
   });
 
   it('renders user drawer and search input', () => {
@@ -219,146 +189,34 @@ describe('GlobalHeader', () => {
   });
 
   // -----------------------------------------------------------------------
-  // Bridge integration tests (list page behavior)
+  // Board list pages (post-W-17: no in-place filter, no bridge)
   // -----------------------------------------------------------------------
-  describe('with search drawer bridge active (on board list page)', () => {
+  describe('on board list routes', () => {
     beforeEach(() => {
       mockPathname = '/b/test-board/40/list';
-      mockBridgeState = {
-        openClimbSearchDrawer: mockOpenClimbSearchDrawer,
-        searchPillSummary: 'V5-V7 · Tall',
-        hasActiveFilters: true,
-        nameFilter: '',
-        setNameFilter: mockSetNameFilter,
-        hasActiveNonNameFilters: true,
-      };
     });
 
-    it('shows "Search climbs..." placeholder when bridge is active', () => {
+    it('shows the same generic search trigger every other page shows', () => {
       render(<GlobalHeader boardConfigs={mockBoardConfigs} />);
 
-      expect(screen.getByPlaceholderText('Search climbs...')).toBeTruthy();
+      const input = screen.getByPlaceholderText('What do you want to climb?') as HTMLInputElement;
+      expect(input.readOnly).toBe(true);
+      expect(input.value).toBe('');
     });
 
-    it('renders the filter button when bridge is active', () => {
+    it('renders no filter button — the board-route drawer it drove is gone', () => {
       render(<GlobalHeader boardConfigs={mockBoardConfigs} />);
 
-      expect(screen.getByLabelText('Open filters')).toBeTruthy();
-    });
-
-    it('calls openClimbSearchDrawer when filter button is clicked', () => {
-      render(<GlobalHeader boardConfigs={mockBoardConfigs} />);
-
-      fireEvent.click(screen.getByLabelText('Open filters'));
-      expect(mockOpenClimbSearchDrawer).toHaveBeenCalledTimes(1);
-    });
-
-    it('shows filter active indicator when non-name filters are active', () => {
-      const { container } = render(<GlobalHeader boardConfigs={mockBoardConfigs} />);
-
-      const activeIndicator = container.querySelector('[class*="filterActiveIndicator"]');
-      expect(activeIndicator).toBeTruthy();
-    });
-
-    it('does not show filter active indicator when non-name filters are not active', () => {
-      mockBridgeState = {
-        ...mockBridgeState,
-        hasActiveNonNameFilters: false,
-      };
-
-      const { container } = render(<GlobalHeader boardConfigs={mockBoardConfigs} />);
-
-      const activeIndicator = container.querySelector('[class*="filterActiveIndicator"]');
-      expect(activeIndicator).toBeNull();
-    });
-
-    it('adds onboarding-search-button id when bridge is active', () => {
-      render(<GlobalHeader boardConfigs={mockBoardConfigs} />);
-
-      const searchWrapper = screen.getByPlaceholderText('Search climbs...').closest('[id="onboarding-search-button"]');
-      expect(searchWrapper).toBeTruthy();
-    });
-
-    it('renders the filter button disabled when the bridge is inactive on a list path', () => {
-      // Pathname-driven gate: the button renders on every list path so the
-      // SSR HTML matches the hydrated HTML; it's disabled until the bridge
-      // registers so taps don't silently no-op.
-      mockBridgeState = {
-        openClimbSearchDrawer: null,
-        searchPillSummary: null,
-        hasActiveFilters: false,
-        nameFilter: '',
-        setNameFilter: null,
-        hasActiveNonNameFilters: false,
-      };
-
-      render(<GlobalHeader boardConfigs={mockBoardConfigs} />);
-
-      const button = screen.getByLabelText('Open filters') as HTMLButtonElement;
-      expect(button.disabled).toBe(true);
-    });
-
-    it('shows clear button when nameFilter has a value', () => {
-      mockBridgeState = {
-        ...mockBridgeState,
-        nameFilter: 'some search',
-      };
-
-      render(<GlobalHeader boardConfigs={mockBoardConfigs} />);
-
-      expect(screen.getByLabelText('Clear search')).toBeTruthy();
-    });
-
-    it('does not show clear button when nameFilter is empty', () => {
-      mockBridgeState = {
-        ...mockBridgeState,
-        nameFilter: '',
-      };
-
-      render(<GlobalHeader boardConfigs={mockBoardConfigs} />);
-
+      expect(screen.queryByLabelText('Open filters')).toBeNull();
       expect(screen.queryByLabelText('Clear search')).toBeNull();
     });
 
-    it('calls setNameFilter with empty string when clear button is clicked', () => {
-      mockBridgeState = {
-        ...mockBridgeState,
-        nameFilter: 'some search',
-      };
-
+    it('opens the unified search drawer on focus, like any other page', () => {
       render(<GlobalHeader boardConfigs={mockBoardConfigs} />);
 
-      fireEvent.click(screen.getByLabelText('Clear search'));
-      expect(mockSetNameFilter).toHaveBeenCalledWith('');
+      fireEvent.focus(screen.getByPlaceholderText('What do you want to climb?'));
+      expect(screen.getByTestId('unified-search-drawer')).toBeTruthy();
     });
-  });
-
-  it('shows "Search climbs..." placeholder on board list routes even before the bridge registers', () => {
-    // Pathname-derived gate: the SSR HTML must already match the hydrated
-    // copy on a list route, so the placeholder switches based on path,
-    // not bridge state.
-    mockPathname = '/b/test-board/40/list';
-
-    render(<GlobalHeader boardConfigs={mockBoardConfigs} />);
-
-    expect(screen.getByPlaceholderText('Search climbs...')).toBeTruthy();
-  });
-
-  it('renders the filter button disabled on board list routes pre-hydration', () => {
-    mockPathname = '/b/test-board/40/list';
-    render(<GlobalHeader boardConfigs={mockBoardConfigs} />);
-
-    const filterButton = screen.getByLabelText('Open filters') as HTMLButtonElement;
-    expect(filterButton.disabled).toBe(true);
-    expect(screen.queryByLabelText('Open queue')).toBeNull();
-  });
-
-  it('shows generic placeholder on non-list routes when the bridge is inactive', () => {
-    mockPathname = '/b/test-board/40/view/some-climb';
-
-    render(<GlobalHeader boardConfigs={mockBoardConfigs} />);
-
-    expect(screen.getByPlaceholderText('What do you want to climb?')).toBeTruthy();
   });
 
   // -----------------------------------------------------------------------

@@ -412,8 +412,6 @@
   "ariaLabels": {
     "close": "Close",
     "back": "Back",
-    "clearSearch": "Clear search",
-    "openFilters": "Open filters",
     "openQueue": "Open up next",
     "openStatsFilters": "Open stats filters",
     "shareProfile": "Share profile",
@@ -435,7 +433,6 @@
     "createdClimbs": "Created Climbs",
     "auroraMigration": "Aurora Migration",
     "searchPlaceholder": "What do you want to climb?",
-    "searchClimbsPlaceholder": "Search climbs...",
     "startClimbing": "Start climbing"
   },
   "share": {
