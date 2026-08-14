@@ -6,7 +6,8 @@
       "title": "Blocs {{boardName}} à {{angle}}°",
       "description": "Parcourez les blocs sur {{boardName}} à {{angle}}°",
       "fallbackTitle": "Blocs",
-      "fallbackDescription": "Parcourez les blocs"
+      "fallbackDescription": "Parcourez les blocs",
+      "paginatedTitle": "Blocs {{boardName}} à {{angle}}° — Page {{page}}"
     },
     "view": {
       "title": "{{climbName}} - {{grade}}",
@@ -57,6 +58,18 @@
       "reshuffle": "Mélanger à nouveau",
       "ascending": "Asc",
       "descending": "Desc"
+    },
+    "frontDoor": {
+      "heading": "Blocs {{boardName}} à {{angle}}°",
+      "intro": "Tous les blocs ouverts sur cette configuration {{boardName}} à {{angle}}°, les plus grimpés en premier. Ouvrez-en un pour voir la board, la cotation à chaque inclinaison et la beta.",
+      "empty": "Aucun bloc sur cette board pour l’instant.",
+      "cta": "Grimper sur cette board",
+      "pagination": {
+        "aria": "Pagination",
+        "previous": "Page précédente",
+        "next": "Page suivante",
+        "pageLabel": "Page {{page}}"
+      }
     }
   },
   "header": {
@@ -418,9 +431,7 @@
     "emptyDefault": "Pas encore de blocs similaires.",
     "emptyOnLayout": "Pas de blocs similaires sur cette configuration.",
     "emptyIdentical": "Aucun bloc identique trouvé pour le moment.",
-    "untitledClimb": "Bloc sans nom",
-    "openActions": "Plus d'actions",
-    "actionsUnavailable": "Impossible d'ouvrir les actions pour ce bloc — configuration de la board indisponible."
+    "untitledClimb": "Bloc sans nom"
   },
   "multiboardList": {
     "noClimbsFound": "Aucun bloc trouvé",
@@ -962,6 +973,50 @@
       "switchBoard": "Passer sur {{board}}",
       "switchFailed": "Impossible de passer sur {{board}}. Réessaie.",
       "cancel": "Annuler"
+    }
+  },
+  "frontDoor": {
+    "breadcrumb": {
+      "aria": "Fil d’Ariane",
+      "home": "Boardsesh",
+      "board": "{{boardName}}",
+      "list": "Blocs à {{angle}}°"
+    },
+    "boardImageAlt": "{{climbName}} allumé sur la board {{boardName}} {{layoutName}} à {{angle}}°",
+    "setterLink": "Plus de blocs de {{setter}}",
+    "facts": {
+      "grade": "Cotation",
+      "setter": "Ouvreur",
+      "ascents": "Croix",
+      "quality": "Qualité",
+      "angle": "Inclinaison",
+      "board": "Board",
+      "firstAscent": "Première ascension",
+      "firstAscentUnknown": "Non renseignée",
+      "unknown": "Inconnu",
+      "angleValue": "{{angle}}°",
+      "qualityValue": "{{quality}} sur 5",
+      "firstAscentValue": "{{setter}}, {{date}}"
+    },
+    "angles": {
+      "heading": "Le même bloc à d’autres inclinaisons",
+      "link": "{{angle}}° · {{grade}}",
+      "current": "{{angle}}° · {{grade}} — vous y êtes"
+    },
+    "beta": {
+      "heading": "Vidéos de beta",
+      "empty": "Aucune beta filmée pour l’instant."
+    },
+    "community": {
+      "heading": "Communauté"
+    },
+    "similar": {
+      "heading": "Des blocs dans le même esprit"
+    },
+    "cta": {
+      "climbThis": "Grimper ce bloc",
+      "ariaLabel": "Ouvrir {{climbName}} dans l’app Boardsesh",
+      "helper": "Ouvre l’app, allume les prises, enregistre la croix."
     }
   }
 }

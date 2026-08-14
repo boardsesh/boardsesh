@@ -1,6 +1,5 @@
 import React from 'react';
 import Box from '@mui/material/Box';
-import { visuallyHidden } from '@mui/utils';
 import type { BoardDetails, Climb } from '@/app/lib/types';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 
@@ -10,12 +9,17 @@ type ClimbViewSeoFragmentProps = {
 };
 
 /**
- * Server-rendered fragment that gives crawlers (and the brief pre-hydration
- * paint) a heading and metadata about the climb the /view/{uuid} route is
- * about, before the PlayViewDrawer hydrates and covers the viewport.
+ * The climb front door's page heading: the `<h1>` and the one-paragraph summary
+ * of what this climb is.
  *
- * Visually hidden via the standard sr-only pattern so it doesn't double up
- * with the drawer's own header once the page is interactive.
+ * It used to be `sx={visuallyHidden}` — a crawler-only payload sitting behind
+ * the PlayViewDrawer, which hydrated and covered the viewport. W-15 removed the
+ * drawer from this route, so there is nothing left to double up with and no
+ * reason to hide the only heading the page has. Element identity (`<h1>` + `<p>`)
+ * is deliberately unchanged; `view-seo-fragment.test.tsx` pins it.
+ *
+ * This is the page's ONLY `<h1>`. Every other front-door section heading is an
+ * `<h2>`.
  */
 export default async function ClimbViewSeoFragment({ climb, boardDetails }: ClimbViewSeoFragmentProps) {
   const { t } = await getServerTranslation('climbs');
@@ -32,7 +36,7 @@ export default async function ClimbViewSeoFragment({ climb, boardDetails }: Clim
   const ascentsSuffix = ascents > 0 ? t('metadata.view.seoAscentsSuffix', { ascents }) : '';
 
   return (
-    <Box component="section" sx={visuallyHidden}>
+    <Box component="header">
       <h1>{heading}</h1>
       <p>
         {summary}

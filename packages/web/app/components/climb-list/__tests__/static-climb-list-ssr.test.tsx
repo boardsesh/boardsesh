@@ -69,6 +69,7 @@ function makeBoardDetails(): BoardDetails {
 }
 
 const twentyClimbs = Array.from({ length: 20 }, (_, index) => makeClimb(index));
+const fiftyClimbs = Array.from({ length: 50 }, (_, index) => makeClimb(index));
 
 function renderListToString() {
   return renderToString(
@@ -92,6 +93,46 @@ describe('StaticClimbList server render', () => {
   it('points the first anchor at the canonical config-tuple view URL', () => {
     const html = renderListToString();
     expect(html).toContain('href="/kilter/original/12x12-square/screw_bolt/40/view/test-boulder-0-CLIMB0"');
+  });
+
+  /**
+   * The front door's own bar. `virtualize={false}` exists because the
+   * virtualized path emits only a 375x812-worth of rows on the server (~18),
+   * and #4369's DoD is >=50 crawlable climb links on a fixed, ?page-paginated
+   * page of exactly 50 rows.
+   */
+  it('emits every one of 50 climb anchors with virtualize={false}', () => {
+    const html = renderToString(
+      <StaticClimbList climbs={fiftyClimbs} boardDetails={makeBoardDetails()} virtualize={false} />,
+    );
+
+    const anchors = html.match(/href="\/kilter\/[^"]*\/view\/[^"]*"/g) ?? [];
+    expect(anchors.length).toBeGreaterThanOrEqual(50);
+    // Non-vacuous: the LAST row is present, not just the virtualizer's window.
+    expect(html).toContain('/view/test-boulder-49-CLIMB49');
+  });
+
+  /**
+   * Zero behaviour change for the virtualized consumers. The same 50 climbs
+   * through the default path still emit a windowed subset — if this ever
+   * matched the static count, `virtualize` would have stopped meaning anything
+   * and `multiboard-climb-list` / `session-detail-content` would have silently
+   * lost their windowing.
+   */
+  it('leaves the default virtualized path windowed', () => {
+    const html = renderToString(
+      <StaticClimbList
+        climbs={fiftyClimbs}
+        boardDetails={makeBoardDetails()}
+        isFetching={false}
+        hasMore={false}
+        onLoadMore={() => {}}
+      />,
+    );
+
+    const anchors = html.match(/href="\/kilter\/[^"]*\/view\/[^"]*"/g) ?? [];
+    expect(anchors.length).toBeGreaterThanOrEqual(8);
+    expect(anchors.length).toBeLessThan(50);
   });
 
   /**

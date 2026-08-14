@@ -6,7 +6,8 @@
       "title": "Bloques de {{boardName}} a {{angle}}°",
       "description": "Explora bloques en {{boardName}} a {{angle}}°",
       "fallbackTitle": "Bloques",
-      "fallbackDescription": "Explora bloques"
+      "fallbackDescription": "Explora bloques",
+      "paginatedTitle": "Bloques de {{boardName}} a {{angle}}° — Página {{page}}"
     },
     "view": {
       "title": "{{climbName}} - {{grade}}",
@@ -57,6 +58,18 @@
       "reshuffle": "Mezclar de nuevo",
       "ascending": "Asc",
       "descending": "Desc"
+    },
+    "frontDoor": {
+      "heading": "Bloques de {{boardName}} a {{angle}}°",
+      "intro": "Todos los bloques montados en esta configuración de {{boardName}} a {{angle}}°, los más escalados primero. Entra en cualquiera para ver el plafón, el grado en cada ángulo y la beta.",
+      "empty": "Todavía no hay bloques en este plafón.",
+      "cta": "Escala en este plafón",
+      "pagination": {
+        "aria": "Paginación",
+        "previous": "Página anterior",
+        "next": "Página siguiente",
+        "pageLabel": "Página {{page}}"
+      }
     }
   },
   "header": {
@@ -616,9 +629,7 @@
     "emptyDefault": "Aún no hay bloques similares.",
     "emptyOnLayout": "No hay bloques similares en este layout.",
     "emptyIdentical": "Ahora mismo no se encontraron bloques idénticos.",
-    "untitledClimb": "Bloque sin título",
-    "openActions": "Más acciones",
-    "actionsUnavailable": "No se pueden abrir acciones para este bloque — configuración del plafón no disponible."
+    "untitledClimb": "Bloque sin título"
   },
   "mobile": {
     "emptyState": {
@@ -962,6 +973,50 @@
       "switchBoard": "Cambiar a {{board}}",
       "switchFailed": "No se pudo cambiar a {{board}}. Inténtalo de nuevo.",
       "cancel": "Cancelar"
+    }
+  },
+  "frontDoor": {
+    "breadcrumb": {
+      "aria": "Ruta de navegación",
+      "home": "Boardsesh",
+      "board": "{{boardName}}",
+      "list": "Bloques a {{angle}}°"
+    },
+    "boardImageAlt": "{{climbName}} iluminado en el plafón {{boardName}} {{layoutName}} a {{angle}}°",
+    "setterLink": "Más bloques de {{setter}}",
+    "facts": {
+      "grade": "Grado",
+      "setter": "Setter",
+      "ascents": "Encadenes",
+      "quality": "Calidad",
+      "angle": "Ángulo",
+      "board": "Plafón",
+      "firstAscent": "Primer encadene",
+      "firstAscentUnknown": "Sin registrar",
+      "unknown": "Desconocido",
+      "angleValue": "{{angle}}°",
+      "qualityValue": "{{quality}} de 5",
+      "firstAscentValue": "{{setter}}, {{date}}"
+    },
+    "angles": {
+      "heading": "El mismo bloque en otros ángulos",
+      "link": "{{angle}}° · {{grade}}",
+      "current": "{{angle}}° · {{grade}} — estás aquí"
+    },
+    "beta": {
+      "heading": "Vídeos de beta",
+      "empty": "Todavía nadie ha grabado beta."
+    },
+    "community": {
+      "heading": "Comunidad"
+    },
+    "similar": {
+      "heading": "Bloques parecidos a este"
+    },
+    "cta": {
+      "climbThis": "Escala este bloque",
+      "ariaLabel": "Abre {{climbName}} en la app de Boardsesh",
+      "helper": "Abre la app, ilumina las presas y registra el encadene."
     }
   }
 }

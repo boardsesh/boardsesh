@@ -27,7 +27,13 @@ const boardUrl = '/kilter/original/12x12-square/screw_bolt/40/list';
 // Viewport (390×844) is set at the project level in playwright.config.ts.
 // Both describe blocks here inherit it without needing their own test.use() calls.
 
-test.describe('Help Page Screenshots', () => {
+// W-16 (#4358) owns the /help rewrite and the replacement screenshots. These
+// steps drive the filters drawer, the heatmap and the play drawer off
+// `/kilter/…/40/list`, none of which exist on the SSR front door W-15 put
+// there. Skipped rather than deleted so the pipeline still has a home when its
+// successor lands; the committed `public/help/*.png` are untouched, so /help
+// keeps rendering — only regeneration pauses.
+test.describe.skip('Help Page Screenshots', () => {
   // Serial mode so multiple tests don't race on the same onboarding IDs /
   // drawer animations — much less flaky than 4-wide parallelism.
   test.describe.configure({ mode: 'serial' });
@@ -122,6 +128,17 @@ test.describe('Help Page Screenshots', () => {
 // Authenticated tests - requires TEST_USER_EMAIL and TEST_USER_PASSWORD env vars.
 // The seeded dev user (test@boardsesh.com / test) is exported by
 // `vp run test:e2e:setup`, so no 1Password roundtrip is required.
+//
+// This block stays LIVE where the unauthenticated one above is skipped, so
+// three of the help PNGs keep regenerating. It survives the W-15 cut because
+// nothing here needs the interactive climbing surface the page body used to be:
+// the beforeEach only waits for a climb row, which the SSR front door emits;
+// the filters drawer and the header button that opens it are mounted by the
+// untouched parent `[angle]/layout.tsx`; `/settings` is its own route; and the
+// party-mode shot dispatches the dummy-sesh event at the root layout's
+// `OnboardingDummySeshMount`. W-17 removes that header and takes
+// `personal progress filters` with it — expect this block to shrink to the two
+// route-independent tests then, and W-16 to re-home the drawer shots.
 test.describe('Help Page Screenshots - Authenticated', () => {
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(120_000);

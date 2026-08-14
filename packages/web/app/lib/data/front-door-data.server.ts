@@ -1,0 +1,93 @@
+import 'server-only';
+
+import type { SimilarClimb } from '@boardsesh/shared-schema';
+import { SIMILAR_CLIMBS_QUERY, type SimilarClimbsResponse } from '@boardsesh/graphql/operations/new-climb-feed';
+import { GET_BETA_LINKS, type GetBetaLinksQueryResponse } from '@boardsesh/graphql/operations/beta-links';
+import { createCachedGraphQLQuery } from '@/app/lib/graphql/server-cached-client';
+import { dedupeBetaLinks, mapBetaLinksResponse, type BetaLink } from '@/app/lib/beta-video-url';
+import type { BoardName } from '@/app/lib/types';
+
+/**
+ * Server-side reads for the climb front door's two GraphQL-backed sections.
+ *
+ * Both are cached, and the cache on `similarClimbs` is load-bearing rather than
+ * an optimisation. The resolver is rate-limited 30 requests/minute per IP
+ * (`packages/backend/src/graphql/resolvers/climbs/queries.ts`), and a
+ * server-side call presents ONE IP — the web server's — for the whole world's
+ * traffic. Its CTE also scans `board_climb_holds` across the entire layout. A
+ * crawler walking a few hundred thousand climb pages is precisely the workload
+ * that saturates both.
+ *
+ * Both helpers swallow their errors and return an empty list. A 429 or a
+ * backend blip must degrade the section, never 500 an indexed page.
+ */
+
+const SIMILAR_CLIMBS_REVALIDATE_SECONDS = 3600;
+const BETA_LINKS_REVALIDATE_SECONDS = 3600;
+
+type SimilarClimbsQueryVariables = {
+  input: {
+    boardType: BoardName;
+    layoutId: number;
+    climbUuid: string;
+    angle: number;
+    threshold: number;
+    limit: number;
+  };
+};
+
+export async function getFrontDoorSimilarClimbs(params: {
+  boardType: BoardName;
+  layoutId: number;
+  climbUuid: string;
+  angle: number;
+  threshold?: number;
+  limit?: number;
+}): Promise<SimilarClimb[]> {
+  const query = createCachedGraphQLQuery<SimilarClimbsResponse, SimilarClimbsQueryVariables>(
+    SIMILAR_CLIMBS_QUERY,
+    'similar-climbs',
+    SIMILAR_CLIMBS_REVALIDATE_SECONDS,
+  );
+
+  try {
+    const response = await query({
+      input: {
+        boardType: params.boardType,
+        layoutId: params.layoutId,
+        climbUuid: params.climbUuid,
+        angle: params.angle,
+        threshold: params.threshold ?? 0.5,
+        limit: params.limit ?? 10,
+      },
+    });
+    return response.similarClimbs ?? [];
+  } catch (error) {
+    console.error('Front door: similar climbs unavailable, rendering the section empty', {
+      boardType: params.boardType,
+      climbUuid: params.climbUuid,
+      error,
+    });
+    return [];
+  }
+}
+
+export async function getFrontDoorBetaLinks(params: { boardType: BoardName; climbUuid: string }): Promise<BetaLink[]> {
+  const query = createCachedGraphQLQuery<GetBetaLinksQueryResponse, { boardType: string; climbUuid: string }>(
+    GET_BETA_LINKS,
+    `beta-links-${params.climbUuid}`,
+    BETA_LINKS_REVALIDATE_SECONDS,
+  );
+
+  try {
+    const response = await query({ boardType: params.boardType, climbUuid: params.climbUuid });
+    return dedupeBetaLinks(mapBetaLinksResponse(response.betaLinks ?? []));
+  } catch (error) {
+    console.error('Front door: beta links unavailable, rendering the section empty', {
+      boardType: params.boardType,
+      climbUuid: params.climbUuid,
+      error,
+    });
+    return [];
+  }
+}

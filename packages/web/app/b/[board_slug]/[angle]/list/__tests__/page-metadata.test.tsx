@@ -53,15 +53,20 @@ vi.mock('@/app/lib/board-slug-utils', () => ({
   })),
 }));
 
+vi.mock('@/app/lib/board-utils', () => ({
+  getBoardDetailsForBoard: vi.fn(() => ({ board_name: 'kilter', layout_id: 1, size_id: 7, set_ids: [1, 20] })),
+}));
+
 vi.mock('@/app/lib/data/list-page-data.server', () => ({
-  fetchListPageData: vi.fn(async () => ({
-    boardDetails: { board_name: 'kilter' },
-    searchResponse: { climbs: [], hasMore: false },
+  fetchFrontDoorListPage: vi.fn(async () => ({
+    boardDetails: { board_name: 'kilter', layout_id: 1, size_id: 7, set_ids: [1, 20] },
+    climbs: [],
+    hasMore: false,
     preloadUrl: null,
   })),
 }));
 
-vi.mock('@/app/components/board-page/board-page-climbs-list', () => ({
+vi.mock('@/app/components/climb-front-door/static-list-front-door', () => ({
   default: () => null,
 }));
 
@@ -88,34 +93,54 @@ function canonicalOf(metadata: Awaited<ReturnType<typeof generateMetadata>>) {
 }
 
 describe('board slug list metadata', () => {
-  it('sets a plain canonical and no robots override for the unfiltered list', async () => {
+  it('canonicalises the unfiltered list INTO the config-tuple tree (A1), with no robots override', async () => {
     const metadata = await generateMetadata();
 
     expect(metadata.robots).toBeUndefined();
-    expect(canonicalOf(metadata)).toContain('/b/my-board/40/list');
+    // A1: `/b/{slug}` names a board a user owns, not a climb config. Most
+    // configs have no `/b` URL and popular ones have many, so the config-tuple
+    // tree is the consolidation target.
+    expect(canonicalOf(metadata)).not.toContain('/b/my-board');
+    expect(canonicalOf(metadata)).toContain('/kilter/');
+    expect(canonicalOf(metadata)).toContain('/40/list');
   });
 
-  it('keeps pagination-only requests indexable', async () => {
+  it('keeps pagination-only requests indexable, carrying the page into the cross-tree canonical', async () => {
     const metadata = await generateMetadata({ page: '2' });
 
     expect(metadata.robots).toBeUndefined();
+    expect(canonicalOf(metadata)).toContain('/40/list?page=2');
   });
 
-  it('noindexes filtered list requests and canonicalizes to the clean base URL', async () => {
+  it('noindexes past the last indexable page but keeps that page self-canonical', async () => {
+    const metadata = await generateMetadata({ page: '11' });
+
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    // Same doctrine as the config-tuple twin (`resolveListPageIndexation`):
+    // `?page=11` is different climbs, so it canonicalises to itself rather than
+    // back at page 1 — and its target is noindex too, so no conflicting signal.
+    expect(canonicalOf(metadata)).toContain('/40/list?page=11');
+  });
+
+  it('noindexes filtered list requests and canonicalises them onto the clean base', async () => {
     const metadata = await generateMetadata({ minGrade: '20' });
 
     expect(metadata.robots).toEqual({ index: false, follow: true });
+    // A filter variant is the same page of content behind a different query, so
+    // it consolidates onto the clean base URL (CLAUDE.md's SEO rule) —
+    // identically on both trees, which is the point of the shared resolver.
     expect(canonicalOf(metadata)).not.toContain('minGrade');
-    expect(canonicalOf(metadata)).toContain('/b/my-board/40/list');
+    expect(canonicalOf(metadata)).not.toContain('/b/my-board');
+    expect(canonicalOf(metadata)).toContain('/40/list');
   });
 
-  it('noindexes an unlisted board even with no filter params, but keeps it readable', async () => {
+  it('noindexes an unlisted board even with no filter params, but keeps it readable and canonical-free', async () => {
     resolveBoardBySlug.mockResolvedValue(board({ isUnlisted: true }));
 
     const metadata = await generateMetadata();
 
     expect(metadata.robots).toEqual({ index: false, follow: true });
-    expect(canonicalOf(metadata)).toContain('/b/my-board/40/list');
+    expect(metadata.alternates).toBeUndefined();
   });
 
   it('noindexes a private board however it resolved', async () => {
@@ -124,6 +149,7 @@ describe('board slug list metadata', () => {
     const metadata = await generateMetadata();
 
     expect(metadata.robots).toEqual({ index: false, follow: true });
+    expect(metadata.alternates).toBeUndefined();
   });
 
   it('falls back to generic metadata for an unresolvable slug — no name or canonical leak', async () => {
@@ -150,5 +176,41 @@ describe('board slug list page — unresolvable board', () => {
     });
 
     expect(notFound).toHaveBeenCalled();
+  });
+});
+
+describe('board slug list page — ?page bounds', () => {
+  async function renderPage(searchParams: Record<string, string>) {
+    return pageModule.default({
+      params: Promise.resolve({ board_slug: 'my-board', angle: '40' }),
+      searchParams: Promise.resolve(searchParams as never),
+    });
+  }
+
+  it('404s past the hard ceiling without running the query', async () => {
+    const { notFound } = await import('next/navigation');
+    const { fetchFrontDoorListPage } = await import('@/app/lib/data/list-page-data.server');
+    vi.mocked(notFound).mockClear();
+    vi.mocked(fetchFrontDoorListPage).mockClear();
+
+    await renderPage({ page: '5000' });
+
+    // Same ceiling as the config-tuple twin: nothing links past page 10, so a
+    // page number this deep must not cost a deep OFFSET per guessed URL.
+    expect(notFound).toHaveBeenCalled();
+    expect(fetchFrontDoorListPage).not.toHaveBeenCalled();
+  });
+
+  it('still serves a deep page inside the grace band', async () => {
+    const { notFound } = await import('next/navigation');
+    const { fetchFrontDoorListPage } = await import('@/app/lib/data/list-page-data.server');
+    const { FRONT_DOOR_MAX_PAGE } = await import('@/app/lib/seo/list-page-robots');
+    vi.mocked(notFound).mockClear();
+    vi.mocked(fetchFrontDoorListPage).mockClear();
+
+    await renderPage({ page: String(FRONT_DOOR_MAX_PAGE) });
+
+    expect(notFound).not.toHaveBeenCalled();
+    expect(fetchFrontDoorListPage).toHaveBeenCalledWith(expect.anything(), FRONT_DOOR_MAX_PAGE);
   });
 });

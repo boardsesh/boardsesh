@@ -280,9 +280,6 @@
   },
   "queueDrawer": {
     "title": "Up next",
-    "clearTitle": "Clear up next",
-    "clearDescription": "Are you sure you want to clear everything in up next?",
-    "clearConfirm": "Clear",
     "clear": "Clear",
     "removeItems_one": "Remove {{count}} item",
     "removeItems_other": "Remove {{count}} items"

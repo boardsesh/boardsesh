@@ -223,8 +223,42 @@ const KEPT_COMPONENT_DIRS = [
   'dev-url-dialog',
 ];
 
-/** Top-level app files that anchor the front door, plus the edge middleware. */
-const KEPT_ENTRY_FILES = ['app/page.tsx', 'app/layout.tsx', 'app/robots.ts', 'app/manifest.ts', 'middleware.ts'];
+/**
+ * Top-level app files that anchor the front door, plus the edge middleware —
+ * and the three legacy config-tuple route files W-15 converted into front
+ * doors.
+ *
+ * The `[board_name]/…` tree is not in `KEPT_ROUTE_DIRS` and must not be: most of
+ * it (`create`, `import`, `liked`, `logbook`, `playlists`, `play`) is still the
+ * classic client UI, which W-17 deletes. The reposition's canonical climb page
+ * and board list live in exactly these three files, and `KEPT_ENTRY_FILES` takes
+ * arbitrary paths (unlike the directory-scoped list above) so the promotion can
+ * be exactly this narrow.
+ *
+ * **What this promotion does NOT cover, deliberately:** the parent shell,
+ * `app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout.tsx`. It is
+ * not a keep root and is not allowlisted, and it still imports eight delete-set
+ * modules (`board-page/header`, `graphql-queue`, the two `connection-manager`
+ * providers, `persistent-session`, `queue-control/ui-searchparams-provider`,
+ * `queue-control/queue-bridge-context`, `board-page/last-used-board-tracker`).
+ * So the three pages below render a server-only front door *inside* a shell
+ * that still mounts the header, the queue and the WebSocket providers — the
+ * walk proves the page subtree is clean, not the whole response. That shell
+ * comes down with the rest of the classic UI in W-16/W-17, and adding its edges
+ * here would mean growing the allowlist W-15 is supposed to shrink. Until then
+ * `vp run typecheck` is the backstop: it hard-fails the day those modules are
+ * deleted while this layout still imports them.
+ */
+const KEPT_ENTRY_FILES = [
+  'app/page.tsx',
+  'app/layout.tsx',
+  'app/robots.ts',
+  'app/manifest.ts',
+  'middleware.ts',
+  'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]/page.tsx',
+  'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/page.tsx',
+  'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/layout.tsx',
+];
 /** `sitemap.ts` today, but the programme may split it — match the family. */
 const KEPT_SITEMAP_PATTERN = /^app\/sitemap[\w.-]*\.tsx?$/;
 

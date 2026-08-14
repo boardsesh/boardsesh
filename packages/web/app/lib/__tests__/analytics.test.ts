@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   posthog: {
     alias: vi.fn(),
     capture: vi.fn(),
+    flush: vi.fn(async () => {}),
     identify: vi.fn(),
     reset: vi.fn(),
     setPersonProperties: vi.fn(),
@@ -181,6 +182,45 @@ describe('analytics wrapper', () => {
     expect(mocks.vercelTrack).toHaveBeenCalledWith('Preview Event', undefined, undefined);
     expect(mocks.PostHog).not.toHaveBeenCalled();
     expect(mocks.posthog.capture).not.toHaveBeenCalled();
+  });
+
+  it('flushes an event that is about to lose its document, and waits for the flush', async () => {
+    // posthog-js-lite batches at 20 events / 10s and has no pagehide or
+    // sendBeacon transport, so a fire-and-forget capture in the click handler of
+    // a cross-origin link never leaves the browser. `trackBeforeNavigation` is
+    // what the front-door CTA uses instead; if this stops awaiting the flush,
+    // `Climb Handoff Clicked` goes dark and the hand-off funnel reads as broken.
+    let flushed = false;
+    mocks.posthog.flush.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          // A macrotask, deliberately. A microtask here would run during ANY
+          // `await` in this test, so a fire-and-forget flush would still see
+          // `flushed === true` and the await-the-flush property would go
+          // unpinned. A timer callback only runs before the assertion if
+          // `trackBeforeNavigation` genuinely awaits the flush promise.
+          setTimeout(() => {
+            flushed = true;
+            resolve();
+          }, 0);
+        }),
+    );
+    const { trackBeforeNavigation } = await import('../analytics');
+
+    await trackBeforeNavigation('Climb Handoff Clicked', { environment: 'production-web' });
+
+    expect(mocks.posthog.capture).toHaveBeenCalledWith('Climb Handoff Clicked', {
+      environment: 'production-web',
+    });
+    expect(mocks.posthog.flush).toHaveBeenCalledTimes(1);
+    expect(flushed).toBe(true);
+  });
+
+  it('does not strand the reader when the flush rejects', async () => {
+    mocks.posthog.flush.mockRejectedValueOnce(new Error('blocked by an extension'));
+    const { trackBeforeNavigation } = await import('../analytics');
+
+    await expect(trackBeforeNavigation('Climb Handoff Clicked')).resolves.toBeUndefined();
   });
 
   it('captures PostHog-only events without Vercel fan-out', async () => {

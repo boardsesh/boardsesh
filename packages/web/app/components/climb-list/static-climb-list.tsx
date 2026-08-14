@@ -46,16 +46,35 @@ export type StaticClimbListProps = {
   unlinkedClimbUuids?: ReadonlySet<string>;
   /** Viewer's ticks for the ascent badges. Absent on anonymous/crawler renders. */
   logbook?: readonly LogbookEntry[];
-  isFetching: boolean;
-  hasMore: boolean;
+  /**
+   * Virtualize the rows (default). Set `false` on the SSR front doors.
+   *
+   * The virtualized path renders a viewport-sized window, and on the server
+   * that viewport is the 375×812 `initialRect` below — about 18 rows. That is
+   * plenty for an infinite-scrolling in-app list and far short of the front
+   * door's bar, which is ≥50 crawlable anchors on a fixed, `?page`-paginated
+   * page of exactly 50 rows. Fifty fixed rows gain nothing from a virtualizer
+   * and lose the anchors the page exists to emit, so the front door opts out
+   * and maps every climb.
+   *
+   * The virtualized path is unchanged and stays the default:
+   * `multiboard-climb-list.tsx` and `session-detail-content.tsx` depend on it,
+   * including `ref={virtualizer.measureElement}` for the taller tick rows.
+   */
+  virtualize?: boolean;
+  isFetching?: boolean;
+  hasMore?: boolean;
   /**
    * Must be idempotent. Two paths call it — the five-rows-early virtualizer
    * effect and the bottom sentinel — and both gate on `!isFetching`, which a
    * caller may not flip synchronously, so a fast scroll can fire both in one
    * tick. Every current caller is React Query's `fetchNextPage`, which drops a
    * second call while the first is in flight.
+   *
+   * Optional so a static caller doesn't have to pass three dead props: a
+   * paginated front door has no "load more".
    */
-  onLoadMore: () => void;
+  onLoadMore?: () => void;
   header?: React.ReactNode;
   /** Rendered instead of the rows when there are no climbs. */
   emptyState?: React.ReactNode;
@@ -75,15 +94,29 @@ const noMoreClimbsBoxSx = {
   color: 'var(--neutral-400)',
 };
 
+const noop = () => {};
+
+/** Row props every row shares, whichever path renders it. */
+type SharedRowProps = {
+  climbs: Climb[];
+  resolveBoardDetails: (climb: Climb) => BoardDetails;
+  unlinkedClimbUuids?: ReadonlySet<string>;
+  pathname: string;
+  logbook?: readonly LogbookEntry[];
+  initialImageCount: number;
+  renderItemExtra?: (climb: Climb) => React.ReactNode;
+};
+
 export default function StaticClimbList({
   climbs,
   boardDetails,
   boardDetailsByClimb,
   unlinkedClimbUuids,
   logbook,
-  isFetching,
-  hasMore,
-  onLoadMore,
+  virtualize = true,
+  isFetching = false,
+  hasMore = false,
+  onLoadMore = noop,
   header,
   emptyState,
   hideEndMessage = false,
@@ -91,13 +124,132 @@ export default function StaticClimbList({
   initialImageCount = 0,
   renderItemExtra,
 }: StaticClimbListProps) {
-  const { t } = useTranslation('climbs');
   // Read once at list level: ClimbThumbnail takes the pathname as a prop
   // rather than each row paying for its own context lookup.
   const pathname = usePathname();
 
+  const resolveBoardDetails = useCallback(
+    (climb: Climb) => boardDetailsByClimb?.[climb.uuid] ?? boardDetails,
+    [boardDetailsByClimb, boardDetails],
+  );
+
+  const rowProps: SharedRowProps = {
+    climbs,
+    resolveBoardDetails,
+    unlinkedClimbUuids,
+    pathname,
+    logbook,
+    initialImageCount,
+    renderItemExtra,
+  };
+
+  return (
+    /*
+     * translate="no" tells well-behaved browser translators (Chrome/Safari
+     * auto-translate) to leave this subtree's DOM alone — they otherwise
+     * replace text nodes React still holds references to. See issue #3604.
+     */
+    <Box translate="no">
+      {header}
+
+      {climbs.length === 0 ? (
+        (emptyState ?? null)
+      ) : (
+        <ErrorBoundary recoverable>
+          {virtualize ? (
+            <VirtualizedRows {...rowProps} hasMore={hasMore} isFetching={isFetching} onLoadMore={onLoadMore} />
+          ) : (
+            <PlainRows {...rowProps} />
+          )}
+        </ErrorBoundary>
+      )}
+
+      {/* Infinite scroll and its end message belong to the virtualized path.
+          A non-virtualized list is a fixed, `?page`-paginated page with real
+          prev/next anchors: there is nothing to load more of, and no "end" to
+          announce. */}
+      {virtualize && (
+        <InfiniteScrollSentinel
+          onLoadMore={onLoadMore}
+          hasMore={hasMore}
+          isFetching={isFetching}
+          climbCount={climbs.length}
+          hideEndMessage={hideEndMessage}
+        />
+      )}
+
+      {showBottomSpacer && <Box sx={{ height: themeTokens.layout.bottomNavSpacer }} aria-hidden />}
+    </Box>
+  );
+}
+
+/**
+ * Every climb, in document order, no windowing. The front door's 50 rows.
+ */
+function PlainRows({
+  climbs,
+  resolveBoardDetails,
+  unlinkedClimbUuids,
+  pathname,
+  logbook,
+  initialImageCount,
+  renderItemExtra,
+}: SharedRowProps) {
+  return (
+    <div style={{ width: '100%', backgroundColor: 'inherit' }}>
+      {climbs.map((climb, index) => (
+        <div key={climb.uuid} data-index={index} style={{ width: '100%', minHeight: LIST_ROW_HEIGHT }}>
+          <StaticClimbRow
+            climb={climb}
+            boardDetails={resolveBoardDetails(climb)}
+            unlinked={unlinkedClimbUuids?.has(climb.uuid)}
+            pathname={pathname}
+            logbook={logbook}
+            preferImageLayers={index < initialImageCount}
+            fetchPriority={index === 0 ? 'high' : undefined}
+          />
+          {renderItemExtra?.(climb)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function InfiniteScrollSentinel({
+  onLoadMore,
+  hasMore,
+  isFetching,
+  climbCount,
+  hideEndMessage,
+}: {
+  onLoadMore: () => void;
+  hasMore: boolean;
+  isFetching: boolean;
+  climbCount: number;
+  hideEndMessage: boolean;
+}) {
+  const { t } = useTranslation('climbs');
   const { sentinelRef } = useInfiniteScroll({ onLoadMore, hasMore, isFetching });
 
+  return (
+    <Box ref={sentinelRef} sx={sentinelBoxSx}>
+      {!hasMore && climbCount > 0 && !hideEndMessage && <Box sx={noMoreClimbsBoxSx}>{t('list.noMore')}</Box>}
+    </Box>
+  );
+}
+
+function VirtualizedRows({
+  climbs,
+  resolveBoardDetails,
+  unlinkedClimbUuids,
+  pathname,
+  logbook,
+  initialImageCount,
+  renderItemExtra,
+  hasMore,
+  isFetching,
+  onLoadMore,
+}: SharedRowProps & { hasMore: boolean; isFetching: boolean; onLoadMore: () => void }) {
   // --- List virtualization ---
   // Overscan of 10 items (~1070px at the LIST_ROW_HEIGHT estimate) is enough
   // headroom for fast scrolling while keeping the LCP-time mount count low.
@@ -123,11 +275,6 @@ export default function StaticClimbList({
 
   const virtualItems = virtualizer.getVirtualItems();
 
-  const resolveBoardDetails = useCallback(
-    (climb: Climb) => boardDetailsByClimb?.[climb.uuid] ?? boardDetails,
-    [boardDetailsByClimb, boardDetails],
-  );
-
   // Page five rows early so the next batch is in flight before the reader
   // reaches the bottom. The sentinel below still covers the case where the
   // whole list fits in one screen.
@@ -140,80 +287,59 @@ export default function StaticClimbList({
   }, [lastVirtualItem, climbs.length, hasMore, isFetching, onLoadMore]);
 
   return (
-    /*
-     * translate="no" tells well-behaved browser translators (Chrome/Safari
-     * auto-translate) to leave this subtree's DOM alone — they otherwise
-     * replace text nodes React still holds references to. See issue #3604.
-     */
-    <Box translate="no">
-      {header}
-
-      {climbs.length === 0 ? (
-        (emptyState ?? null)
-      ) : (
-        <ErrorBoundary recoverable>
-          {/* Plain div with inline style, as in board-page/climbs-list: the
-              height changes on every measure, so an sx object would mint a
-              fresh emotion class per render. */}
+    /* Plain div with inline style, as in board-page/climbs-list: the height
+       changes on every measure, so an sx object would mint a fresh emotion
+       class per render. */
+    <div
+      style={{
+        height: virtualizer.getTotalSize(),
+        width: '100%',
+        position: 'relative',
+        backgroundColor: 'inherit',
+      }}
+    >
+      {virtualItems.map((virtualItem) => {
+        const climb = climbs[virtualItem.index];
+        if (!climb) return null;
+        return (
           <div
+            key={virtualItem.key}
+            ref={virtualizer.measureElement}
+            data-index={virtualItem.index}
             style={{
-              height: virtualizer.getTotalSize(),
+              position: 'absolute',
+              top: 0,
+              left: 0,
               width: '100%',
-              position: 'relative',
-              backgroundColor: 'inherit',
+              // Floor at the estimated row height so a plain row measures
+              // to exactly the estimate (no post-mount reflow / CLS).
+              // Rows with extra content below (renderItemExtra) still
+              // grow past this via measureElement.
+              minHeight: LIST_ROW_HEIGHT,
+              boxSizing: 'border-box',
+              transform: `translateY(${virtualItem.start}px)`,
+              // No `paint` here, unlike the classic list: paint
+              // containment clips descendants to this box, and the row
+              // is one big anchor whose keyboard focus ring is drawn
+              // *outside* its border box (`outline-offset: 2px`, in
+              // components/index.css). With `paint` the ring is clipped
+              // away and tabbing through the list shows nothing.
+              contain: 'layout style',
             }}
           >
-            {virtualItems.map((virtualItem) => {
-              const climb = climbs[virtualItem.index];
-              if (!climb) return null;
-              return (
-                <div
-                  key={virtualItem.key}
-                  ref={virtualizer.measureElement}
-                  data-index={virtualItem.index}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    // Floor at the estimated row height so a plain row measures
-                    // to exactly the estimate (no post-mount reflow / CLS).
-                    // Rows with extra content below (renderItemExtra) still
-                    // grow past this via measureElement.
-                    minHeight: LIST_ROW_HEIGHT,
-                    boxSizing: 'border-box',
-                    transform: `translateY(${virtualItem.start}px)`,
-                    // No `paint` here, unlike the classic list: paint
-                    // containment clips descendants to this box, and the row
-                    // is one big anchor whose keyboard focus ring is drawn
-                    // *outside* its border box (`outline-offset: 2px`, in
-                    // components/index.css). With `paint` the ring is clipped
-                    // away and tabbing through the list shows nothing.
-                    contain: 'layout style',
-                  }}
-                >
-                  <StaticClimbRow
-                    climb={climb}
-                    boardDetails={resolveBoardDetails(climb)}
-                    unlinked={unlinkedClimbUuids?.has(climb.uuid)}
-                    pathname={pathname}
-                    logbook={logbook}
-                    preferImageLayers={virtualItem.index < initialImageCount}
-                    fetchPriority={virtualItem.index === 0 ? 'high' : undefined}
-                  />
-                  {renderItemExtra?.(climb)}
-                </div>
-              );
-            })}
+            <StaticClimbRow
+              climb={climb}
+              boardDetails={resolveBoardDetails(climb)}
+              unlinked={unlinkedClimbUuids?.has(climb.uuid)}
+              pathname={pathname}
+              logbook={logbook}
+              preferImageLayers={virtualItem.index < initialImageCount}
+              fetchPriority={virtualItem.index === 0 ? 'high' : undefined}
+            />
+            {renderItemExtra?.(climb)}
           </div>
-        </ErrorBoundary>
-      )}
-
-      <Box ref={sentinelRef} sx={sentinelBoxSx}>
-        {!hasMore && climbs.length > 0 && !hideEndMessage && <Box sx={noMoreClimbsBoxSx}>{t('list.noMore')}</Box>}
-      </Box>
-
-      {showBottomSpacer && <Box sx={{ height: themeTokens.layout.bottomNavSpacer }} aria-hidden />}
-    </Box>
+        );
+      })}
+    </div>
   );
 }

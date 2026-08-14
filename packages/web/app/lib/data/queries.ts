@@ -92,9 +92,9 @@ export type ClimbStatsForAngle = {
   difficulty: string | null;
 };
 
-export const getClimbStatsForAllAngles = async (
+async function fetchClimbStatsForAllAnglesFromDb(
   params: ParsedBoardRouteParametersWithUuid,
-): Promise<ClimbStatsForAngle[]> => {
+): Promise<ClimbStatsForAngle[]> {
   const result = rowsFromResult<ClimbStatsForAngle & { difficulty_id: number | null }>(
     await sql`
     SELECT
@@ -116,7 +116,29 @@ export const getClimbStatsForAllAngles = async (
     ...row,
     difficulty: getGradeLabel(row.difficulty_id),
   })) as ClimbStatsForAngle[];
-};
+}
+
+/**
+ * Per-angle grade/ascents/FA for one climb — the angle cross-links on the climb
+ * front door.
+ *
+ * Cached under the same `climb-${uuid}` tag as `getClimb`, so one
+ * `revalidateTag` clears both: a page that renders the climb's own facts from a
+ * fresh row and its angle table from an hour-old one is worse than either.
+ */
+export async function getClimbStatsForAllAngles(
+  params: ParsedBoardRouteParametersWithUuid,
+): Promise<ClimbStatsForAngle[]> {
+  const cachedFn = unstable_cache(
+    async () => fetchClimbStatsForAllAnglesFromDb(params),
+    ['climb-stats-all-angles', params.board_name, params.climb_uuid],
+    {
+      revalidate: 3600,
+      tags: [`climb-${params.climb_uuid}`],
+    },
+  );
+  return cachedFn();
+}
 
 export type LayoutRow = {
   id: number;

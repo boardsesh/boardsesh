@@ -107,16 +107,30 @@ export const SHARED_EVENTS = {
   WorkoutGenerated: 'Workout Generated',
   // Deep-link session join
   SessionJoined: 'Session Joined',
-  // Canonical board URLs — deep links and the www front door's hand-off.
+  // Canonical board URLs — the two halves of one funnel: www hands a reader
+  // off at `Climb Handoff Clicked`, the app receives them at
+  // `Board Route Handoff`. Both carry `environment: 'production-web'` for the
+  // app.boardsesh.com / www side, so one filter spans the whole hop. Divide the
+  // second by the first for the hand-off completion rate; the gap is installs,
+  // store bounces and blocked deep links.
   //
-  // App-only today: the native fleet and app.boardsesh.com both fire it, www
-  // does not. Props: { kind: 'list' | 'climb' | 'slug-list' | 'slug-climb' |
-  // 'unparsed', status: 'resolved' | 'not_found' | 'auth_required', source:
-  // 'deep-link' | 'in-app' }. `not_found` is held back for a parsed URL that
-  // failed while the device was offline — that one heals on reconnect and would
-  // otherwise double-count as a failure and a success. The www-side counterpart,
-  // `Climb Handoff Clicked`, arrives with W-15 (#4369).
+  // Fired by the native fleet and app.boardsesh.com. Props: { kind: 'list' |
+  // 'climb' | 'slug-list' | 'slug-climb' | 'unparsed', status: 'resolved' |
+  // 'not_found' | 'auth_required', source: 'deep-link' | 'in-app' }.
+  // `not_found` is held back for a parsed URL that failed while the device was
+  // offline — that one heals on reconnect and would otherwise double-count as a
+  // failure and a success.
   BoardRouteHandoff: 'Board Route Handoff',
+  // Fired by www's SSR front doors when a reader taps "Climb this". Props:
+  // { environment: 'production-web', surface: 'climb_front_door' |
+  // 'list_front_door', tree: 'config-tuple' | 'slug', boardName, layoutId,
+  // angle, climbUuid?, locale, campaign: 'front_door' }. `environment` is a
+  // per-event property rather than a super property on purpose: PostHog
+  // resolves per-event over super, so the tag reaches this funnel without
+  // reclassifying $pageview, $web_vitals and every other www event that has
+  // never carried it. The CTA href itself stays UTM-free — attribution is
+  // these properties, because the app route has to match the bare pathname.
+  ClimbHandoffClicked: 'Climb Handoff Clicked',
   // Logbook
   LogbookRowClicked: 'Logbook Row Clicked',
   // Logbook search / filter usage — privacy-safe (counts, field names, and the

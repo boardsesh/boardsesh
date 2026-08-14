@@ -11,10 +11,8 @@
   display: none;
 }
 
-/* Wraps the clickable card and the absolute-positioned ellipsis so the
-   IconButton can render as a sibling (not a descendant) of the card's
-   <button>/<a> — nesting a <button> inside a <button>/<a> is invalid HTML
-   and triggers hydration errors. */
+/* Fixed-width slot in the horizontal scroller. Kept as a wrapper around the
+   card link so the scroll-snap and flex sizing stay off the <a> itself. */
 .cardWrapper {
   position: relative;
   flex-shrink: 0;
@@ -38,26 +36,15 @@
   color: inherit;
 }
 
-.cardButton {
-  /* Reset button defaults so the card looks like the link variant. */
-  background: transparent;
-  border: 0;
-  padding: 0;
-  margin: 0;
-  font: inherit;
-  text-align: left;
-}
-
 .cardDisabled {
   cursor: default;
 }
 
 /* Applied to the inner content elements (thumbnail / name row / byline) of
    a card whose climb's compatibleSizeIds doesn't include the viewer's
-   product size. The ellipsis button is a sibling and stays at full opacity
-   so the actions menu remains usable. 0.45 is between --opacity-subtle
-   (0.7) and --opacity-disabled (0.5); the lower value reads as "not for
-   you" at a glance while keeping the climb name readable. */
+   product size. 0.45 is between --opacity-subtle (0.7) and
+   --opacity-disabled (0.5); the lower value reads as "not for you" at a
+   glance while keeping the climb name readable. */
 .dimmed {
   opacity: 0.45;
 }
@@ -132,19 +119,4 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-/* Positioned over the thumbnail top-right. Anchored to .cardWrapper so the
-   ellipsis stays a sibling of the clickable card surface, not a descendant. */
-.ellipsis {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  background-color: var(--semantic-surface-overlay);
-  backdrop-filter: blur(4px);
-  z-index: 1;
-}
-
-.ellipsis:hover {
-  background-color: var(--semantic-surface);
 }

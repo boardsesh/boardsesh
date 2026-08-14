@@ -1,10 +1,11 @@
 import React from 'react';
 import { notFound, permanentRedirect } from 'next/navigation';
 import type { BoardRouteParametersWithUuid } from '@/app/lib/types';
-import { getClimb } from '@/app/lib/data/queries';
+import { getClimb, getClimbStatsForAllAngles } from '@/app/lib/data/queries';
+import { getFrontDoorBetaLinks, getFrontDoorSimilarClimbs } from '@/app/lib/data/front-door-data.server';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import {
-  constructClimbViewUrl,
+  buildCanonicalClimbViewUrl,
   isUuidOnly,
   constructClimbViewUrlWithSlugs,
   tryConstructSlugViewUrl,
@@ -12,12 +13,12 @@ import {
 import { parseRouteParams } from '@/app/lib/url-utils.server';
 
 import type { Metadata } from 'next';
-import BoardPageClimbsList from '@/app/components/board-page/board-page-climbs-list';
+import ClimbFrontDoor from '@/app/components/climb-front-door/climb-front-door';
 import { buildOgBoardRenderUrl, buildOverlayUrl } from '@/app/components/board-renderer/util';
 import { scheduleOverlayWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
-import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-fragment';
+import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 
 export async function generateMetadata(props: { params: Promise<BoardRouteParametersWithUuid> }): Promise<Metadata> {
   const params = await props.params;
@@ -28,21 +29,14 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
     const boardDetails = getBoardDetailsForBoard(parsedParams);
     const currentClimb = await getClimb(parsedParams);
 
-    const climbName = currentClimb.name || `${boardDetails.board_name} Climb`;
+    const climbName = resolveClimbDisplayName(currentClimb.name, boardDetails.board_name);
     const climbGrade = currentClimb.difficulty || 'Unknown Grade';
     const setter = currentClimb.setter_username || 'Unknown Setter';
     const quality = currentClimb.quality_average || 0;
     const ascents = currentClimb.ascensionist_count || 0;
-    const climbUrl =
-      tryConstructSlugViewUrl(
-        parsedParams.board_name,
-        parsedParams.layout_id,
-        parsedParams.size_id,
-        parsedParams.set_ids,
-        parsedParams.angle,
-        parsedParams.climb_uuid,
-        climbName,
-      ) ?? constructClimbViewUrl(parsedParams, parsedParams.climb_uuid, climbName);
+    // ONE builder, shared with `/b/{slug}/{angle}/view` — that is what makes
+    // the two trees' canonicals provably identical (A1).
+    const climbUrl = buildCanonicalClimbViewUrl(boardDetails, parsedParams.angle, parsedParams.climb_uuid, climbName);
 
     const ogImagePath = buildOgBoardRenderUrl(boardDetails, currentClimb.frames);
 
@@ -126,23 +120,43 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
 
     const boardDetails = getBoardDetailsForBoard(parsedParams);
 
-    // Warm the full-resolution overlay for the viewed climb so the drawer's
-    // board render appears as soon as possible after hydration. The climbs
-    // list is no longer SSR-fetched here — the drawer is the primary surface
-    // on this route, and React Query loads the list async on mount.
+    const [angleStats, similarClimbs, betaLinks] = await Promise.all([
+      getClimbStatsForAllAngles(parsedParams),
+      getFrontDoorSimilarClimbs({
+        boardType: parsedParams.board_name,
+        layoutId: parsedParams.layout_id,
+        climbUuid: parsedParams.climb_uuid,
+        angle: parsedParams.angle,
+      }),
+      getFrontDoorBetaLinks({ boardType: parsedParams.board_name, climbUuid: parsedParams.climb_uuid }),
+    ]);
+
+    // Warm the full-resolution overlay so the front door's board image — the
+    // page's LCP element — is already rendered when the browser asks for it.
     scheduleOverlayWarming({ boardDetails, climbs: [currentClimb], variant: 'full' });
     const preloadUrl = currentClimb.frames ? buildOverlayUrl(boardDetails, currentClimb.frames, false) : null;
+    // Same name fallback `generateMetadata` used. An unnamed climb would
+    // otherwise get the `-{board} Climb-` slug in its canonical and the bare
+    // uuid form in the CTA — the hand-off would leave the page's own URL.
+    const handoffPath = buildCanonicalClimbViewUrl(
+      boardDetails,
+      parsedParams.angle,
+      parsedParams.climb_uuid,
+      resolveClimbDisplayName(currentClimb.name, boardDetails.board_name),
+    );
 
     return (
       <>
         {preloadUrl && <link rel="preload" as="image" href={preloadUrl} fetchPriority="high" />}
-        <ClimbViewSeoFragment climb={currentClimb} boardDetails={boardDetails} />
-        <BoardPageClimbsList
-          {...parsedParams}
+        <ClimbFrontDoor
+          climb={currentClimb}
           boardDetails={boardDetails}
-          initialClimbs={[]}
-          initialHasMore
-          initialOpenClimb={currentClimb}
+          angle={parsedParams.angle}
+          angleStats={angleStats}
+          similarClimbs={similarClimbs}
+          betaLinks={betaLinks}
+          handoffPath={handoffPath}
+          tree="config-tuple"
         />
       </>
     );

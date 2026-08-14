@@ -6,7 +6,8 @@
       "title": "{{boardName}}-Boulder bei {{angle}}°",
       "description": "Stöber durch Boulder auf {{boardName}} bei {{angle}}°",
       "fallbackTitle": "Boulder",
-      "fallbackDescription": "Boulder durchstöbern"
+      "fallbackDescription": "Boulder durchstöbern",
+      "paginatedTitle": "{{boardName}}-Boulder bei {{angle}}° — Seite {{page}}"
     },
     "view": {
       "title": "{{climbName}} - {{grade}}",
@@ -57,6 +58,18 @@
       "reshuffle": "Neu mischen",
       "ascending": "Auf",
       "descending": "Ab"
+    },
+    "frontDoor": {
+      "heading": "{{boardName}}-Boulder bei {{angle}}°",
+      "intro": "Alle Boulder auf dieser {{boardName}}-Konfiguration bei {{angle}}°, die meistgekletterten zuerst. Öffne einen davon für das Board-Rendering, den Grad bei jedem Winkel und die Beta.",
+      "empty": "Auf diesem Board gibt es noch keine Boulder.",
+      "cta": "Auf diesem Board bouldern",
+      "pagination": {
+        "aria": "Seitennummerierung",
+        "previous": "Vorherige Seite",
+        "next": "Nächste Seite",
+        "pageLabel": "Seite {{page}}"
+      }
     }
   },
   "header": {
@@ -418,9 +431,7 @@
     "emptyDefault": "Noch keine ähnlichen Boulder.",
     "emptyOnLayout": "Keine ähnlichen Boulder auf diesem Layout.",
     "emptyIdentical": "Gerade keine identischen Boulder gefunden.",
-    "untitledClimb": "Boulder ohne Namen",
-    "openActions": "Mehr Aktionen",
-    "actionsUnavailable": "Für diesen Boulder lassen sich keine Aktionen öffnen — die Board-Konfiguration fehlt."
+    "untitledClimb": "Boulder ohne Namen"
   },
   "multiboardList": {
     "noClimbsFound": "Keine Boulder gefunden",
@@ -962,6 +973,50 @@
       "switchBoard": "Zu {{board}} wechseln",
       "switchFailed": "Wechsel zu {{board}} hat nicht geklappt. Versuch es nochmal.",
       "cancel": "Abbrechen"
+    }
+  },
+  "frontDoor": {
+    "breadcrumb": {
+      "aria": "Brotkrümelnavigation",
+      "home": "Boardsesh",
+      "board": "{{boardName}}",
+      "list": "Boulder bei {{angle}}°"
+    },
+    "boardImageAlt": "{{climbName}} beleuchtet am {{boardName}} {{layoutName}} bei {{angle}}°",
+    "setterLink": "Mehr Boulder von {{setter}}",
+    "facts": {
+      "grade": "Grad",
+      "setter": "Routenbauer*in",
+      "ascents": "Begehungen",
+      "quality": "Qualität",
+      "angle": "Winkel",
+      "board": "Board",
+      "firstAscent": "Erstbegehung",
+      "firstAscentUnknown": "Nicht erfasst",
+      "unknown": "Unbekannt",
+      "angleValue": "{{angle}}°",
+      "qualityValue": "{{quality}} von 5",
+      "firstAscentValue": "{{setter}}, {{date}}"
+    },
+    "angles": {
+      "heading": "Derselbe Boulder bei anderen Winkeln",
+      "link": "{{angle}}° · {{grade}}",
+      "current": "{{angle}}° · {{grade}} — du bist hier"
+    },
+    "beta": {
+      "heading": "Beta-Videos",
+      "empty": "Noch keine Beta gefilmt."
+    },
+    "community": {
+      "heading": "Community"
+    },
+    "similar": {
+      "heading": "Boulder wie dieser"
+    },
+    "cta": {
+      "climbThis": "Boulder jetzt",
+      "ariaLabel": "{{climbName}} in der Boardsesh-App öffnen",
+      "helper": "Öffnet die App, beleuchtet die Griffe, loggt die Begehung."
     }
   }
 }

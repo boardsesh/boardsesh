@@ -280,9 +280,6 @@
   },
   "queueDrawer": {
     "title": "Als Nächstes",
-    "clearTitle": "„Als Nächstes“ leeren",
-    "clearDescription": "Willst du wirklich alles aus „Als Nächstes“ entfernen?",
-    "clearConfirm": "Leeren",
     "clear": "Leeren",
     "removeItems_one": "{{count}} Eintrag entfernen",
     "removeItems_other": "{{count}} Einträge entfernen"

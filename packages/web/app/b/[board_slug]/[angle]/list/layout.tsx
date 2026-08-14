@@ -1,8 +1,6 @@
 import React, { type PropsWithChildren } from 'react';
 import { notFound } from 'next/navigation';
-import { resolveBoardBySlug, boardToRouteParams } from '@/app/lib/board-slug-utils';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
-import ListLayoutClient from '@/app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/layout-client';
+import { resolveBoardBySlug } from '@/app/lib/board-slug-utils';
 
 type LayoutProps = {
   params: Promise<{ board_slug: string; angle: string }>;
@@ -12,13 +10,15 @@ export default async function BoardSlugListLayout(props: PropsWithChildren<Layou
   const params = await props.params;
   const { children } = props;
 
+  // Resolve the board here so an unknown slug 404s at the layout rather than
+  // rendering an empty page under it.
   const board = await resolveBoardBySlug(params.board_slug);
   if (!board) {
     return notFound();
   }
 
-  const parsedParams = boardToRouteParams(board, Number(params.angle));
-  const boardDetails = getBoardDetailsForBoard(parsedParams);
-
-  return <ListLayoutClient boardDetails={boardDetails}>{children}</ListLayoutClient>;
+  // No shell. This layout used to reach across trees for the legacy
+  // `ListLayoutClient` — the A0 cross-tree blocker — and that component is
+  // deleted with the queue/search sider it mounted.
+  return <>{children}</>;
 }

@@ -3,10 +3,16 @@
  *
  * Captures screenshots of every unique board layout Boardsesh supports.
  * For each layout we:
- *   1. Navigate to the climb list (biggest available board size, default sets, 40°)
+ *   1. Navigate to the climb list front door (biggest available board size,
+ *      default sets, 40°)
  *   2. Screenshot the climb list
- *   3. Tap the first climb's thumbnail to open the play-view drawer
- *   4. Screenshot the play-view drawer
+ *   3. Follow the first row's anchor to that climb's front door
+ *   4. Screenshot the climb front door
+ *
+ * Step 3 used to tap the thumbnail to open the play-view drawer. W-15 (#4369)
+ * replaced both surfaces with server-rendered front doors, so there is no
+ * drawer to open — and the front door is a better board-art source anyway: it
+ * paints the full-resolution overlay rather than the drawer's scaled render.
  *
  * Screenshots are saved to e2e/screenshots/layouts/.
  *
@@ -16,10 +22,10 @@
  * Prerequisites:
  *   - Dev server running (or use `bun run test:e2e:setup` first)
  */
-import { test } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import path from 'path';
 import { mkdirSync } from 'fs';
-import { waitForBoardListReady, waitForDrawerOpen } from './helpers/waits';
+import { waitForBoardListReady } from './helpers/waits';
 
 const SCREENSHOT_DIR = path.resolve(__dirname, 'screenshots/layouts');
 mkdirSync(SCREENSHOT_DIR, { recursive: true });
@@ -78,10 +84,10 @@ test.describe('Layout Screenshots', () => {
 
   for (const layout of LAYOUTS) {
     test(`${layout.label}`, async ({ page }) => {
-      // ── 1. Navigate to the climb list ──────────────────────────────────────
+      // ── 1. Navigate to the climb list front door ───────────────────────────
       await page.goto(layout.url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
 
-      // Wait for the first climb card to render (board image assets may be slow)
+      // Wait for the first climb row to render (board image assets may be slow)
       await waitForBoardListReady(page, 60_000);
 
       // ── 2. Screenshot: climb list ───────────────────────────────────────────
@@ -89,19 +95,24 @@ test.describe('Layout Screenshots', () => {
         path: `${SCREENSHOT_DIR}/${layout.name}-01-climb-list.png`,
       });
 
-      // ── 3. Tap the first climb's thumbnail ─────────────────────────────────
-      // Clicking the thumbnail activates the climb AND dispatches the
-      // open-play-drawer event (see climbs-list.tsx → handleClimbThumbnailClickByIndex).
-      const thumbnail = page.locator('#onboarding-climb-card [data-testid="climb-thumbnail"]');
-      await thumbnail.waitFor({ state: 'visible', timeout: 10_000 });
-      await thumbnail.click();
+      // ── 3. Follow the first row's anchor to the climb front door ───────────
+      // Real navigation, not a drawer: the list rows are `<a href>` to the
+      // canonical view URL, which is the whole point of the SSR list.
+      const firstClimbLink = page.locator('a[href*="/view/"]').first();
+      await firstClimbLink.waitFor({ state: 'visible', timeout: 15_000 });
+      await firstClimbLink.click();
+      await page.waitForURL(/\/view\//, { timeout: 30_000 });
 
-      // ── 4. Wait for the play-view drawer ───────────────────────────────────
-      await waitForDrawerOpen(page, 0, 15_000);
+      // ── 4. Wait for the front door's board render ──────────────────────────
+      // The overlay `<img>` is the page's LCP element and the board art this
+      // gallery exists to catch regressions in.
+      const boardImage = page.locator('img[src*="/api/internal/board-render"]').first();
+      await boardImage.waitFor({ state: 'visible', timeout: 30_000 });
+      await expect(page.locator('h1')).toBeVisible();
 
-      // ── 5. Screenshot: play-view drawer ────────────────────────────────────
+      // ── 5. Screenshot: climb front door ────────────────────────────────────
       await page.screenshot({
-        path: `${SCREENSHOT_DIR}/${layout.name}-02-play-drawer.png`,
+        path: `${SCREENSHOT_DIR}/${layout.name}-02-climb-front-door.png`,
       });
     });
   }

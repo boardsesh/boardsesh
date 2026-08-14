@@ -1043,6 +1043,43 @@ export const buildCanonicalClimbViewUrl = (
 };
 
 /**
+ * Build the canonical config-tuple climb-list URL — `/{board}/{layout}/{size}/{sets}/{angle}/list`.
+ *
+ * The list twin of `buildCanonicalClimbViewUrl`, and it exists for the same
+ * reason: both `/list` front doors (the config-tuple tree and `/b/{slug}`) must
+ * emit ONE canonical string for a board config, and the only way to prove that
+ * is to have both call the same function. `/b/{slug}` names a board a user
+ * owns, not a climb config — most configs have no `/b` URL and popular ones
+ * have many — so the config-tuple tree is the consolidation target.
+ */
+export const buildCanonicalClimbListUrl = (boardDetails: BoardRouteIdentity, angle: number): string => {
+  // Ids first, for the same shadowed-size reason as the view builder: only the
+  // id-aware path emits the qualified size slug for a size that shares its base
+  // slug with another on the same layout (Kilter layout 1 sizes 10/27).
+  const slugUrl = tryConstructSlugListUrl(
+    boardDetails.board_name,
+    boardDetails.layout_id,
+    boardDetails.size_id,
+    boardDetails.set_ids,
+    angle,
+  );
+  if (slugUrl) return slugUrl;
+
+  if (boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names) {
+    return constructClimbListWithSlugs(
+      boardDetails.board_name,
+      boardDetails.layout_name,
+      boardDetails.size_name,
+      boardDetails.size_description,
+      boardDetails.set_names,
+      angle,
+    );
+  }
+
+  return `/${boardDetails.board_name}/${boardDetails.layout_id}/${boardDetails.size_id}/${boardDetails.set_ids.join(',')}/${angle}/list`;
+};
+
+/**
  * Build a climb-view URL that preserves board-slug routing context when present.
  * - On /b/{slug}/{angle}/... routes, returns /b/{slug}/{angle}/view/{slug-uuid|uuid}
  * - Otherwise, falls back to canonical board URLs.

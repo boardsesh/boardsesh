@@ -148,9 +148,6 @@ vi.mock('@/app/components/connection-manager/websocket-connection-provider', () 
 vi.mock('@/app/components/persistent-session', () => ({ BoardSessionBridge: () => null }));
 vi.mock('@/app/components/queue-control/ui-searchparams-provider', () => ({ UISearchParamsProvider: () => null }));
 vi.mock('@/app/components/queue-control/queue-bridge-context', () => ({ QueueBridgeInjector: () => null }));
-vi.mock('@/app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/layout-client', () => ({
-  default: () => null,
-}));
 
 const { middleware } = await import('@/middleware');
 const BoardAngleLayout = (await import('@/app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout')).default;
