@@ -198,9 +198,9 @@ describe('LibraryPageContent read-only directory', () => {
       />,
     );
 
-    // The empty-owned-playlists state also renders here (its app-handoff CTA
-    // is covered by its own test above) — filter down to the playlist-detail
-    // anchors this test is actually about.
+    // The empty-owned-playlists state also renders here — its app-handoff CTA
+    // is covered by 'gives the empty state an app-handoff CTA, not a dead
+    // end'. Filter down to the playlist-detail anchors this test is about.
     const playlistHrefs = screen
       .getAllByRole('link')
       .map((link) => link.getAttribute('href'))
@@ -266,6 +266,9 @@ describe('LibraryPageContent read-only directory', () => {
     render(<LibraryPageContent initialMyBoards={[]} initialPlaylists={null} initialDiscoverPlaylists={NO_DISCOVER} />);
 
     expect(screen.getByText(tFromCatalog('playlists', 'library.sections.jumpBackIn'))).toBeTruthy();
+    // The heading alone would still render if the placeholder went missing, so
+    // count the placeholder cards themselves.
+    expect(screen.getAllByTestId('playlist-card-skeleton')).toHaveLength(4);
     // No real cards (anchors) have loaded yet — only skeleton placeholders.
     expect(screen.queryAllByRole('link')).toHaveLength(0);
   });
@@ -281,6 +284,7 @@ describe('LibraryPageContent read-only directory', () => {
     );
 
     expect(screen.getByRole('link').getAttribute('href')).toBe('/playlists/aaa');
+    expect(screen.queryAllByTestId('playlist-card-skeleton')).toHaveLength(0);
   });
 
   it('shows a Discover loading placeholder while nothing has arrived yet', () => {
@@ -294,6 +298,9 @@ describe('LibraryPageContent read-only directory', () => {
     );
 
     expect(screen.getByText(tFromCatalog('playlists', 'library.sections.discover'))).toBeTruthy();
+    // Jump Back In has already loaded, so every placeholder on the page belongs
+    // to Discover — one full set of four.
+    expect(screen.getAllByTestId('playlist-card-skeleton')).toHaveLength(4);
   });
 
   it('still offers the sign-in banner to signed-out visitors and opens the auth modal', async () => {

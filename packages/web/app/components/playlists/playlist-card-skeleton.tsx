@@ -24,8 +24,15 @@ export default function PlaylistCardSkeleton({ count = 4 }: PlaylistCardSkeleton
   return (
     <>
       {Array.from({ length: count }).map((_, index) => (
-        <div key={index} className={styles.cardCompact}>
-          <Skeleton variant="rounded" animation="wave" className={styles.cardCompactSquare} />
+        <div key={index} className={styles.skeletonCompact} data-testid="playlist-card-skeleton">
+          {/* 48x48 as props, not as a class: MUI's own Skeleton style sets
+              `height: 1.2em`, and a CSS-module rule only beats it if the module
+              stylesheet happens to land after emotion's — nothing guarantees
+              that (the app mounts AppRouterCacheProvider without
+              `enableCssLayer`). Props render as inline styles, so the square
+              holds wherever the cascade falls. Same call shape as
+              library/playlist-card-grid.tsx. */}
+          <Skeleton variant="rounded" animation="wave" width={48} height={48} />
           <div className={styles.cardCompactInfo}>
             <Skeleton variant="text" animation="wave" width="70%" />
             <Skeleton variant="text" animation="wave" width="40%" />
