@@ -349,6 +349,7 @@ vi.mock('../../lib/auth-interceptor', () => ({
 }));
 
 import { AuthProvider, useAuth } from '../auth-provider';
+import { GATED_PATHS, READ_ONLY_PATHS } from '../../lib/routing/__tests__/read-only-route-corpus';
 
 describe('AuthProvider loading state', () => {
   beforeEach(() => {
@@ -2186,5 +2187,65 @@ describe('AuthProvider.checkAuth keychain read failure', () => {
 
     expect(redirectMock).toHaveBeenCalledWith('/auth/login');
     expect(redirectMock).not.toHaveBeenCalledWith('/auth/session-unavailable');
+  });
+});
+
+// The native half of W-06's "web only" claim. Every merge to `main` touching
+// `packages/mobile/**` auto-publishes a production OTA, and a JS-only diff keeps
+// the same `fingerprint` runtimeVersion — so this relaxation lands on every
+// installed binary whether or not it is meant for them. Byte-equality of this
+// file is impossible (it gained a condition), so the equivalent is asserted
+// here: under `Platform.OS = 'ios'` the gate emits exactly the redirect it
+// emitted before, for the entire route corpus, and never renders children to a
+// signed-out visitor.
+describe('native auth gate parity (this PR auto-OTAs to the store fleet)', () => {
+  beforeEach(() => {
+    platformState.OS = 'ios';
+    getAuthTokenMock.mockReset();
+    isTokenExpiringSoonMock.mockReset();
+    isTokenExpiringSoonMock.mockResolvedValue(false);
+  });
+
+  function renderGate() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <span data-testid="child">app tree</span>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+  }
+
+  it.each([...READ_ONLY_PATHS, ...GATED_PATHS])(
+    'redirects a signed-out visitor at %s to the bare login route',
+    async (path) => {
+      getAuthTokenMock.mockResolvedValue(null);
+      routerState.segments = [];
+      window.history.replaceState({}, '', path);
+
+      const { queryByTestId } = renderGate();
+
+      await waitFor(() => expect(redirectMock).toHaveBeenCalledWith('/auth/login'));
+      // No `?next=` on native: the query is a web-fork product, and the gate
+      // itself never appends one on either platform.
+      expect(redirectMock).not.toHaveBeenCalledWith(expect.stringContaining('next='));
+      // And the tree below the gate stays withheld — a relaxed route on native
+      // would show up here first.
+      expect(queryByTestId('child')).toBeNull();
+    },
+  );
+
+  it('ignores a next= in the address bar on the authenticated branch', async () => {
+    const next = '/b/the-gym/40/view/0A1B2C3D4E5F60718293A4B5C6D7E8F9';
+    getAuthTokenMock.mockResolvedValue('jwt-token');
+    routerState.segments = ['auth', 'login'];
+    window.history.replaceState({}, '', `/auth/login?next=${encodeURIComponent(next)}`);
+
+    renderGate();
+
+    await waitFor(() => expect(redirectMock).toHaveBeenCalledWith('/(tabs)/home'));
+    expect(redirectMock).not.toHaveBeenCalledWith(next);
+    expect(redirectMock).not.toHaveBeenCalledWith(expect.stringContaining('next='));
   });
 });

@@ -132,6 +132,16 @@ plus `useOptionalPlaylistActivation`. Refactor `multiboard-climb-list.tsx` and
   — the climb-view page SSR-emits `ClimbViewSeoFragment` (the crawlable payload).
   Guards A2's drawer→static swap from dropping it.
 
+**W-06 (#4361) — the SPA end of the hand-off.** A front door that links into
+`app.boardsesh.com` is only worth building if the arrival works signed-out, so
+the Expo app's auth gate now stands aside for the read-only board URLs on web
+and carries the attempted path through login as a validated `?next=`. The URL
+shapes it relaxes, the two-gate `next` contract, the `.web.ts` fork that keeps
+the native gate a constant `false`, and why `auth_required` is a relaxed route's
+terminal status today are recorded in
+[`docs/expo-web-deployment.md`](./expo-web-deployment.md) under "Signed-out
+read-only routes".
+
 ## Phase A0 — blocking pre-delete QA gate (real devices)
 
 The teardown is a **hard delete** with no retained `?classic=1` runtime fallback,

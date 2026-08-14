@@ -32,6 +32,10 @@ import { onlineManager } from '@tanstack/react-query';
 import { isNetworkError } from '@boardsesh/offline-sync/error-classification';
 import type { CreateBoardInput, UserBoard } from '@boardsesh/shared-schema';
 import { toBoardPath, type BoardRouteTarget } from './board-route-target';
+// The platform switch is this constant, not `Platform.OS` — the hook then needs
+// no `react-native` import, whose RN 0.86 Flow entry the vitest node env cannot
+// parse (see the config's `hooks-dual-write` exclusion note).
+import { RELAXES_ANONYMOUS_ROUTES } from './anonymous-auth-gate';
 import { useClimb } from '../graphql/hooks';
 import { fetchAllMyBoards, fetchBoardBySlug, fetchBoardByUuid, useCreateBoard } from '../graphql/hooks';
 import { readDuplicateBoardError } from '../graphql/extract-error-message';
@@ -47,7 +51,19 @@ import {
 } from '../board-path-to-user-board';
 import { openClimbInPlayDrawer } from '../open-climb-in-play-drawer';
 
-export type BoardRouteStatus = 'resolving' | 'not-found';
+/**
+ * What the entry route should draw.
+ *
+ * A successful hand-off has no status of its own. The screen keeps its spinner
+ * right up to the moment it leaves the tree, and a status that says "handed off"
+ * could not be observed anyway — the hand-off effect navigates this screen away
+ * in the same React batch a state update would land in, so the render carrying
+ * it never commits. `onHandedOff` is how a caller hears about it instead.
+ *
+ * `auth-required` is reachable on web only: the browser export serves these
+ * routes to signed-out visitors, and board adoption needs an account.
+ */
+export type BoardRouteStatus = 'resolving' | 'not-found' | 'auth-required';
 
 /**
  * Where the target came from, which decides two things the caller can't:
@@ -367,13 +383,20 @@ function useAdoptedBoard(
  */
 export function useBoardRouteTarget(
   target: BoardRouteTarget | null,
-  options?: { mode?: BoardRouteMode },
+  options?: { mode?: BoardRouteMode; onHandedOff?: () => void },
 ): BoardRouteStatus {
   const mode = options?.mode ?? 'deep-link';
   const adoptsBoard = mode === 'deep-link';
   const router = useRouter();
   const { openPlayDrawer } = useDrawerHost();
-  const { board, error: boardError } = useAdoptedBoard(target, adoptsBoard);
+  const { isAuthenticated, isLoading: authIsLoading } = useAuth();
+  // Only reachable on web: the native gate never serves these routes signed-out.
+  // Board adoption needs the account (the tuple form mints a UserBoard, which is
+  // `requireAuthenticated`), so the route hands the URL to login rather than
+  // resolving anything anonymously. An unsettled session waits — bouncing on
+  // `isLoading` would send a signed-in visitor to login on every cold open.
+  const authRequired = RELAXES_ANONYMOUS_ROUTES && adoptsBoard && !authIsLoading && !isAuthenticated;
+  const { board, error: boardError } = useAdoptedBoard(target, adoptsBoard && !authRequired);
 
   const wantsClimb = target?.kind === 'climb' || target?.kind === 'slug-climb';
   const climbUuid = wantsClimb ? target.climbUuid : undefined;
@@ -398,7 +421,10 @@ export function useBoardRouteTarget(
   );
   const boardConfig = configFromUrl ?? configFromBoard;
 
-  const climbQuery = useClimb(boardConfig && climbUuid ? { ...boardConfig, climbUuid } : null);
+  // `!authRequired` is what makes the short-circuit below true to its word: the
+  // tuple form carries its whole config in the URL, so without this the climb
+  // query would fire for a visitor we have already decided to send to login.
+  const climbQuery = useClimb(!authRequired && boardConfig && climbUuid ? { ...boardConfig, climbUuid } : null);
   const climb = climbQuery.data;
 
   // Hand off exactly once per target. The ref guards a re-render firing the open
@@ -407,8 +433,21 @@ export function useBoardRouteTarget(
   // screen still gets its hand-off instead of sitting on the spinner forever.
   const targetKey = target ? `${toBoardPath(target)}#${wantsClimb ? climbUuid : ''}` : null;
   const handedOffRef = useRef<string | null>(null);
+  // The hand-off is reported imperatively, from inside the effect, rather than
+  // through a status the caller could watch. It has to be: the same effect body
+  // calls `router.replace` / `router.back`, React batches that with anything
+  // else queued in the flush, and the navigator drops this screen in the very
+  // render that would have carried the new status — the update is discarded with
+  // the fiber and never commits. `join/[sessionId]` fires `Session Joined` the
+  // same way, immediately before replacing itself. Held in a ref so a caller
+  // passing a fresh closure each render can't re-enter the effect.
+  const onHandedOffRef = useRef(options?.onHandedOff);
+  useEffect(() => {
+    onHandedOffRef.current = options?.onHandedOff;
+  });
   useEffect(() => {
     if (!target || !targetKey || handedOffRef.current === targetKey) return;
+    if (authRequired) return;
     // A deep link has to land on the adopted board — the Climbs tab behind the
     // drawer renders whatever the active board is.
     if (adoptsBoard && !board) return;
@@ -432,12 +471,14 @@ export function useBoardRouteTarget(
 
     if (!wantsClimb) {
       handedOffRef.current = targetKey;
+      onHandedOffRef.current?.();
       leave();
       return;
     }
 
     if (!climb || !boardConfig) return;
     handedOffRef.current = targetKey;
+    onHandedOffRef.current?.();
     // preview:true so a deep-linked climb doesn't disturb the queue — in a
     // session it would change the shared current climb for everyone. The drawer
     // shows a "Preview" badge with "Set active" to opt into playing it.
@@ -457,9 +498,12 @@ export function useBoardRouteTarget(
     }
     openDrawer();
     leave();
-  }, [adoptsBoard, board, boardConfig, climb, openPlayDrawer, router, target, targetKey, wantsClimb]);
+  }, [adoptsBoard, authRequired, board, boardConfig, climb, openPlayDrawer, router, target, targetKey, wantsClimb]);
 
   if (!target) return 'not-found';
+  // Before every resolution check: a signed-out visitor has no board to fail on,
+  // and nothing was asked of the server on their behalf.
+  if (authRequired) return 'auth-required';
   if (boardError) return 'not-found';
   // Only a settled query says the climb is gone: `isLoading` briefly reads false
   // in the render where the query switches on, which would flash a not-found

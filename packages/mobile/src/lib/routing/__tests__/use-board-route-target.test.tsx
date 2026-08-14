@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, waitFor } from '@testing-library/react';
-import { createElement } from 'react';
+import { createElement, useLayoutEffect, useState } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { BoardRouteTarget } from '../board-route-target';
 
@@ -24,8 +24,14 @@ const climbQuery = vi.hoisted(() => ({
     isSuccess: boolean;
   },
 }));
+// Every `useClimb` argument, so a test can assert the query was never armed —
+// `null` variables is what keeps it from reaching the server.
+const climbQueryVariables = vi.hoisted(() => ({ current: [] as unknown[] }));
 // Mirrors AuthProvider: `isLoading` starts true and the session resolves async.
 const authState = vi.hoisted(() => ({ current: { isAuthenticated: true, isLoading: false } }));
+// `false` is the native fork's value, which is what every pre-existing case in
+// this file runs against.
+const gateState = vi.hoisted(() => ({ relaxesRoutes: false }));
 // The hook reads connectivity straight off React Query's onlineManager (the
 // resolve runs once, so a reactive hook would be the wrong shape) and subscribes
 // to it to heal a resolve that failed offline. `goOnline` drives that transition
@@ -53,8 +59,10 @@ vi.mock('@tanstack/react-query', () => ({
   },
 }));
 vi.mock('../../graphql/hooks', () => ({
-  useClimb: (variables: unknown) =>
-    variables ? climbQuery.current : { data: undefined, isError: false, isSuccess: false },
+  useClimb: (variables: unknown) => {
+    climbQueryVariables.current.push(variables);
+    return variables ? climbQuery.current : { data: undefined, isError: false, isSuccess: false };
+  },
   useCreateBoard: () => ({ mutateAsync: createBoardMutateAsync }),
   fetchAllMyBoards,
   fetchBoardByUuid,
@@ -73,6 +81,17 @@ vi.mock('../../board-path-to-user-board', async (importOriginal) => ({
   resolveBoardForSession,
 }));
 vi.mock('../../open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer }));
+// The platform switch, as a mutable so one suite can exercise both forks. A
+// getter (not a captured value) because the hook reads the constant on every
+// render and the mock factory runs once.
+vi.mock('../anonymous-auth-gate', () => ({
+  get RELAXES_ANONYMOUS_ROUTES() {
+    return gateState.relaxesRoutes;
+  },
+  isAnonymousReadOnlyLocation: () => false,
+  buildLoginHrefWithReturn: () => '/auth/login',
+  readPostLoginReturnHref: () => null,
+}));
 
 const { useBoardRouteTarget } = await import('../use-board-route-target');
 const { resolveBoardForSession: realResolveBoardForSession } = await vi.importActual<
@@ -129,8 +148,16 @@ function duplicateBoardRejection(existingBoardUuid: string) {
   };
 }
 
-function Harness({ target, mode }: { target: BoardRouteTarget | null; mode?: 'deep-link' | 'in-app' }) {
-  return createElement('span', { 'data-status': useBoardRouteTarget(target, { mode }) });
+function Harness({
+  target,
+  mode,
+  onHandedOff,
+}: {
+  target: BoardRouteTarget | null;
+  mode?: 'deep-link' | 'in-app';
+  onHandedOff?: () => void;
+}) {
+  return createElement('span', { 'data-status': useBoardRouteTarget(target, { mode, onHandedOff }) });
 }
 
 function statusOf(container: HTMLElement): string | null {
@@ -139,6 +166,9 @@ function statusOf(container: HTMLElement): string | null {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // `clearAllMocks` wipes calls, not implementations — and one case below gives
+  // `replace` a real one that unmounts the harness.
+  router.replace.mockReset();
   router.canGoBack.mockReturnValue(true);
   resolveBoardForSession.mockResolvedValue(RESOLVED_BOARD);
   fetchAllMyBoards.mockResolvedValue([]);
@@ -147,7 +177,9 @@ beforeEach(() => {
   getStoredActiveBoard.mockResolvedValue(null);
   getOfflineBoards.mockReturnValue([]);
   climbQuery.current = { data: undefined, isError: false, isSuccess: false };
+  climbQueryVariables.current = [];
   authState.current = { isAuthenticated: true, isLoading: false };
+  gateState.relaxesRoutes = false;
   connectivity.isOnline = true;
   connectivity.listeners.clear();
 });
@@ -394,7 +426,9 @@ describe('useBoardRouteTarget', () => {
     await waitFor(() => expect(setActiveBoard).toHaveBeenCalledTimes(1));
     expect(fetchBoardByUuid).toHaveBeenCalledWith('existing-uuid');
     expect(setActiveBoard).toHaveBeenCalledWith({ ...existingBoard, angle: 40 });
-    expect(statusOf(container)).toBe('resolving');
+    // A recovered duplicate is a successful hand-off, not a dead end.
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs'));
+    expect(statusOf(container)).not.toBe('not-found');
   });
 
   // The headline optimization: the deep link almost always names the wall the
@@ -523,9 +557,14 @@ describe('useBoardRouteTarget', () => {
     fetchAllMyBoards.mockResolvedValue([RESOLVED_BOARD]);
     act(() => connectivity.goOnline());
 
-    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(RESOLVED_BOARD));
+    // The healed resolve is the longest await chain in this file — a local-board
+    // probe, the owned-list walk and the resolver all have to settle before the
+    // board is adopted. `waitFor`'s 1s default loses that race on a loaded CI
+    // box (observed on PR #4418), so this one gets room.
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(RESOLVED_BOARD), { timeout: 5000 });
     expect(fetchAllMyBoards).toHaveBeenCalledTimes(1);
-    expect(statusOf(container)).toBe('resolving');
+    // The healed resolve hands off; the stale not-found is gone either way.
+    expect(statusOf(container)).not.toBe('not-found');
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs'));
   });
 
@@ -704,5 +743,202 @@ describe('useBoardRouteTarget', () => {
     expect(router.back).not.toHaveBeenCalled();
     // Still in-app: a cold open must not adopt (or mint) the URL's board.
     expect(setActiveBoard).not.toHaveBeenCalled();
+  });
+});
+
+// Web only: `app.boardsesh.com` serves these routes to a signed-out visitor so
+// the climb they arrived for survives the login round trip. Board adoption is
+// what forces the short-circuit — the tuple form mints a UserBoard through
+// `createBoard`, which is `requireAuthenticated`.
+describe('useBoardRouteTarget signed-out on web', () => {
+  it('short-circuits a deep link to auth-required without resolving anything', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+
+    const { container } = render(
+      createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('auth-required'));
+    // The assertion that matters: nothing was asked of the server, and no board
+    // was adopted or minted, on behalf of someone with no account.
+    expect(resolveBoardForSession).not.toHaveBeenCalled();
+    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+    expect(createBoardMutateAsync).not.toHaveBeenCalled();
+    expect(setActiveBoard).not.toHaveBeenCalled();
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  it('short-circuits a slug climb URL the same way', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'slug-climb', slug: 'the-gym', angle: 40, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('auth-required'));
+    expect(fetchBoardBySlug).not.toHaveBeenCalled();
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+  });
+
+  // The tuple form is the half that carries its whole board config in the URL,
+  // so nothing has to resolve before the climb query could arm itself. Leaving
+  // it armed would have a signed-out visitor pulling a climb from the server on
+  // the way to a login redirect.
+  it('asks the server for nothing on a tuple climb URL either', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('auth-required'));
+    expect(climbQueryVariables.current.every((variables) => variables === null)).toBe(true);
+    expect(resolveBoardForSession).not.toHaveBeenCalled();
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+  });
+
+  // The same URL signed IN still loads its climb — the gate above must not be a
+  // permanent muzzle on the query.
+  it('arms the climb query as soon as the visitor has an account', async () => {
+    gateState.relaxesRoutes = true;
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
+    expect(climbQueryVariables.current).toContainEqual({ ...KILTER_BOARD, climbUuid: CLIMB_UUID });
+  });
+
+  // An unsettled session reads as signed-out for a beat on every cold open.
+  // Bouncing on it would send signed-in visitors to login too.
+  it('waits for the session to settle before deciding auth is required', () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: true };
+
+    const { container } = render(
+      createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }),
+    );
+
+    expect(statusOf(container)).toBe('resolving');
+  });
+
+  // The native fork's constant `false` is what makes this whole branch
+  // unreachable on the store fleet — the same signed-out state resolves as it
+  // always has.
+  it('never reports auth-required when the platform does not relax routes', async () => {
+    gateState.relaxesRoutes = false;
+    authState.current = { isAuthenticated: false, isLoading: false };
+
+    const { container } = render(
+      createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }),
+    );
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(RESOLVED_BOARD));
+    expect(statusOf(container)).not.toBe('auth-required');
+  });
+
+  // `in-app` adopts nothing, so there is nothing to need an account for.
+  it('does not short-circuit an in-app target', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+        mode: 'in-app',
+      }),
+    );
+
+    await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
+    expect(statusOf(container)).not.toBe('auth-required');
+  });
+});
+
+// The hand-off is reported through a callback rather than a status because the
+// screen is gone by the time a status could be read: `leave()` removes it from
+// the navigator in the same React batch any state update would land in, so the
+// render carrying it is discarded with the fiber. The last case here is the one
+// that actually proves it — a router that really unmounts.
+describe('useBoardRouteTarget hand-off callback', () => {
+  it('reports once a list URL has handed off', async () => {
+    const onHandedOff = vi.fn();
+
+    render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget, onHandedOff }));
+
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs'));
+    expect(onHandedOff).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports once a climb URL has opened the drawer', async () => {
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    const onHandedOff = vi.fn();
+
+    render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+        onHandedOff,
+      }),
+    );
+
+    await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
+    expect(onHandedOff).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays quiet while the board is still resolving', async () => {
+    const deferred = deferredBoard(RESOLVED_BOARD);
+    resolveBoardForSession.mockReturnValue(deferred.promise);
+    const onHandedOff = vi.fn();
+
+    render(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget, onHandedOff }));
+
+    await waitFor(() => expect(resolveBoardForSession).toHaveBeenCalled());
+    expect(onHandedOff).not.toHaveBeenCalled();
+
+    await act(async () => {
+      deferred.release();
+    });
+    await waitFor(() => expect(onHandedOff).toHaveBeenCalledTimes(1));
+  });
+
+  // The regression the callback exists for. Every other case in this file runs
+  // against `replace: vi.fn()`, which leaves the redirector mounted — production
+  // does not. Here the replace really removes the screen, in the same batch the
+  // hand-off runs in, and the report still has to come out.
+  it('reports even when the replace unmounts the screen in the same batch', async () => {
+    const onHandedOff = vi.fn();
+    const navigator = { leave: () => {} };
+    router.replace.mockImplementation(() => navigator.leave());
+
+    function Navigator() {
+      const [mounted, setMounted] = useState(true);
+      // Layout effect, so `leave` is wired before the hook's passive hand-off
+      // effect runs in the same commit.
+      useLayoutEffect(() => {
+        navigator.leave = () => setMounted(false);
+      }, []);
+      return mounted
+        ? createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget, onHandedOff })
+        : createElement('span', { 'data-status': 'unmounted' });
+    }
+
+    const { container } = render(createElement(Navigator));
+
+    await waitFor(() => expect(statusOf(container)).toBe('unmounted'));
+    expect(onHandedOff).toHaveBeenCalledTimes(1);
   });
 });

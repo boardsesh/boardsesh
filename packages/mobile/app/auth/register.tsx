@@ -16,6 +16,7 @@ import { webApiUrl } from '../../src/lib/env';
 import { reportError } from '../../src/lib/error-reporting';
 import { hapticLight } from '../../src/lib/haptics';
 import { OAuthProviderButtons, useOAuthProviders } from '../../src/components/auth/OAuthProviderButtons';
+import { readPostLoginReturnHref } from '../../src/lib/routing/anonymous-auth-gate';
 
 type FieldKey = 'name' | 'email' | 'password' | 'confirmPassword';
 
@@ -24,6 +25,16 @@ export default function RegisterScreen() {
   const { t } = useTranslation('auth');
   const theme = useTheme();
   const router = useRouter();
+  // Web only: the climb a signed-out visitor arrived for, forwarded here by
+  // login's sign-up link. Handing it straight back is what makes the round trip
+  // symmetrical — someone who taps Sign up, thinks better of it and taps Sign in
+  // would otherwise land on a bare login and lose the climb in three taps.
+  // Constant `null` on native, so `signInHref` is the bare route string there
+  // and both hops below stay exactly the navigation the store fleet ships today.
+  const returnHref = readPostLoginReturnHref();
+  const signInHref = returnHref
+    ? ({ pathname: '/auth/login', params: { next: returnHref } } as const)
+    : ('/auth/login' as const);
 
   const [values, setValues] = useState({ name: '', email: '', password: '', confirmPassword: '' });
   const [fieldErrors, setFieldErrors] = useState<RegisterFieldErrors>({});
@@ -249,7 +260,7 @@ export default function RegisterScreen() {
               ) : null}
               <Button
                 title={t('login.submit.signIn')}
-                onPress={() => router.replace('/auth/login')}
+                onPress={() => router.replace(signInHref)}
                 variant="text"
                 size="large"
               />
@@ -377,7 +388,7 @@ export default function RegisterScreen() {
                 {/* replace (not back) so a deep-link straight to /auth/register still
                 lands on login rather than no-op'ing on an empty back stack. */}
                 <Pressable
-                  onPress={() => router.replace('/auth/login')}
+                  onPress={() => router.replace(signInHref)}
                   hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
                   style={styles.footerLinkHit}
                   accessibilityRole="link"

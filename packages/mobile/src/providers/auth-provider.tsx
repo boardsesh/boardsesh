@@ -43,6 +43,7 @@ import { reportOutboxDiscardedOnSignOut } from '../offline/outbox-telemetry';
 import { stopTokenManagement } from '../notifications';
 import { consumeFreshOAuthPending } from '../lib/oauth-pending-store';
 import { consumeWebOAuthReturn } from '../lib/oauth-return';
+import { isAnonymousReadOnlyLocation, readPostLoginReturnHref } from '../lib/routing/anonymous-auth-gate';
 
 type AuthState = {
   isAuthenticated: boolean;
@@ -1023,11 +1024,19 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     return <Redirect href={isAuthenticated ? '/(tabs)/home' : '/auth/login'} />;
   }
 
-  if (!isAuthenticated && !inAuthGroup) {
+  // Web only: the canonical board URLs the Next front door links into render for
+  // a signed-out visitor instead of bouncing them to a login wall that loses the
+  // climb they arrived for. The route itself then hands off to login carrying the
+  // path (see BoardRouteRedirect). Native resolves anonymous-auth-gate to the
+  // inert fork — `isAnonymousReadOnlyLocation()` is a constant `false` and
+  // `readPostLoginReturnHref()` a constant `null` — so both branches below are
+  // exactly what ships today on the store fleet. Asserted by test, because this
+  // change auto-OTAs to every installed binary.
+  if (!isAuthenticated && !inAuthGroup && !isAnonymousReadOnlyLocation()) {
     return <Redirect href="/auth/login" />;
   }
   if (isAuthenticated && inAuthGroup) {
-    return <Redirect href="/(tabs)/home" />;
+    return <Redirect href={readPostLoginReturnHref() ?? '/(tabs)/home'} />;
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

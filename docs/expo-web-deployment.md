@@ -104,6 +104,65 @@ redirect allow-list accepts only the configured app origin and numbered app
 previews, and the shared `.boardsesh.com` session cookie is available when the
 Expo export reloads.
 
+### Signed-out read-only routes (the `?next=` return)
+
+The Next front door on `www` links every climb page into `app.boardsesh.com` at
+the same path. The browser export serves those paths to visitors who have never
+signed in, so the climb survives the login round trip.
+
+Relaxed shapes (`packages/mobile/src/lib/routing/read-only-routes.ts`), matched
+on shape only — never against the board catalogue, so a URL whose board is gone
+reaches that route's own not-found rather than a login wall:
+
+- `/b/{slug}`, `/b/{slug}/{angle}/list`, `/b/{slug}/{angle}/{view|play}/{climb}`
+- `/{board}/{layout}/{size}/{sets}/{angle}/list` and `…/{angle}/{view|play}/{climb}`
+- every one of the above under an `/es`, `/fr` or `/de` prefix — web keeps the
+  locale in the path, those URLs match no Expo route, so the matcher runs
+  `stripLocalePrefix` first
+
+**Native is untouched.** The relaxation lives in `anonymous-auth-gate.web.ts`;
+the native fork `anonymous-auth-gate.ts` is a constant module (`false`,
+`() => false`, `() => '/auth/login'`, `() => null`), so the gate in
+`auth-provider.tsx` behaves exactly as it does on the store fleet today. Every
+merge to `main` touching `packages/mobile/**` auto-publishes a production OTA
+onto every installed binary, which is why this is a fork rather than a
+`Platform.OS` check — and why both the module's inertness and the rendered gate
+are asserted by test.
+
+A relaxed route mounts, discovers it needs an account, and hands off to
+`/auth/login?next=<path>` rather than resolving anything anonymously: the
+config-tuple form mints a `UserBoard` through `createBoard`, which is
+`requireAuthenticated`. `auth-required` is therefore the terminal status for
+every relaxed route today, and the visitor lands on the climb after signing in.
+
+`next` passes two independent gates before it is followed: `isSafeReturnPath`
+(app-relative, length-capped, no scheme, no `//`, no backslash, no control
+characters) and `isReadOnlyAnonymousPath`, which pins the destination to a shape
+the gate itself could have produced. Values are read from
+`window.location.pathname` with `EXPO_BASE_URL` stripped (`/app` on the
+www-mounted export, `/` on the subdomain) and written back base-relative, since
+Expo Router re-applies the base. The browser-OAuth path carries `next` on the
+NextAuth `callbackUrl` (`src/lib/auth.web.ts`) — the document navigates away, so
+the address bar does not survive the round trip on its own.
+
+`Board Route Handoff` fires once per board-route open on **both** platforms with
+`{ kind, status, source }`; it is the only signal for whether deep links resolve
+on the native fleet as well as on `app.boardsesh.com`. Two things about the
+wiring are load-bearing for reading the funnel:
+
+- `status: 'resolved'` is fired **imperatively** from inside the hand-off, not
+  derived from a rendered status. The hand-off effect calls
+  `router.replace` / `router.back` in the same body, React batches that with any
+  state update queued in the same flush, and the navigator drops the redirector
+  in the very render that would have carried the new status — so a
+  status-derived success leg never commits and the funnel reads as ~100%
+  failure. `join/[sessionId]` fires `Session Joined` the same way.
+- `status: 'not_found'` is **held back** for a parsed URL while the device is
+  offline. That state is the transient one `useAdoptedBoard`'s reconnect watcher
+  heals, so reporting it would file a failure for every offline cold open that
+  later lands, and count the same open twice. A URL that did not parse reports
+  either way.
+
 ### Telemetry (baked at build time)
 
 `deploy-app-web` builds the export with `EXPO_PUBLIC_SENTRY_DSN`,
