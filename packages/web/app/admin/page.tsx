@@ -106,6 +106,14 @@ export default function AdminPage() {
         >
           {t('nav.gymDuplicates')}
         </MuiLink>
+        <MuiLink
+          component={LocaleLink}
+          href="/admin/location-sync"
+          underline="hover"
+          sx={{ color: themeTokens.colors.primary }}
+        >
+          {t('nav.locationSync')}
+        </MuiLink>
       </Box>
 
       <Box sx={{ borderBottom: 1, borderColor: themeTokens.neutral[200], mb: 3 }}>
