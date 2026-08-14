@@ -166,3 +166,164 @@ Devices: a physical iPhone (iOS Safari) and a physical Android phone (Chrome).
 
 Sign-off on every box is the gate to start A5. If any fails, hold the delete and
 fix the sheet on expo-web first.
+
+## W-14 — the classic-web rollback artifact (#4368)
+
+W-16 deletes ~110k LOC of the interactive classic web app and swaps the root
+chrome in one commit, with no `?classic=1` runtime fallback (W-09 removed the
+last of that hatch). Reverting that under incident pressure with `git revert`
+means reintroducing that much code, re-mounting a provider tree, rebasing over
+every subsequent merge, and passing `check:i18n:orphans` — hours of work at the
+worst possible time.
+
+**The rollback is a deployable artifact, not a revert.** This is a locked
+decision: **no downstream PR (W-15/W-16/W-17 or anything after) may propose
+`git revert` as the recovery plan.** The recovery plan is always "promote
+`release/classic-web`" (below).
+
+### The artifact
+
+- **Tag `classic-web-last-good`** — an annotated tag at
+  `7bd5300d980f8c9a7b9c1f337ce57ec4d98d803f`, the last commit that serves the
+  full interactive classic web app (pre-W-15 front doors, W-13a merged).
+- **Branch `release/classic-web`** — pushed at the same commit, so it can be
+  fast-forwarded/read from without resolving a tag ref.
+
+Both were cut from `main` at that exact commit (verify with
+`git log --oneline -1 classic-web-last-good`). If `main` advances past this
+point before #4369 merges, **re-cut both** onto the new last-pre-W-15 commit —
+don't leave the artifact pointing at a stale, no-longer-last-good SHA:
+
+```bash
+git fetch origin main
+NEW_SHA=<last commit before #4369's merge, on main>
+git tag -f -a classic-web-last-good "$NEW_SHA" -m "Last commit serving the full interactive classic web app (pre-W-15 front doors).
+
+The web-reposition programme's rollback point: epic #4358, issue #4368 (W-14).
+The deployable artifact is branch release/classic-web at this same commit.
+Restore procedure: docs/web-reposition.md (W-14 section)."
+git push origin refs/tags/classic-web-last-good --force
+git branch -f release/classic-web "$NEW_SHA"
+git push origin release/classic-web --force
+```
+
+Update this section's SHA and the retention expiry date (below) after a re-cut,
+and re-run the local verification and preview dispatch described below against
+the new SHA before trusting the artifact again.
+
+### Restore procedure
+
+**Vercel's git auto-deploy is off** (`packages/web/vercel.json` →
+`git.deploymentEnabled: false`), so pushing `release/classic-web` — or any
+branch — deploys nothing by itself. **Production deploys only run from
+`.github/workflows/production-deploy.yml` on push to `main`.** That workflow
+also has a `workflow_dispatch` trigger, but every job that touches deploy
+secrets declares `environment: Production`, and the `Production` GitHub
+environment is scoped to the `main` branch — dispatching it from a non-`main`
+ref will not resolve those secrets (see `docs/branch-deploys.md`). **Do not
+attempt to dispatch `production-deploy.yml` from `release/classic-web`
+directly** — it will build but fail (or silently no-op) on every
+Production-environment step.
+
+So the honest restore path is a **tree-restore commit onto `main`**, landed
+through the normal PR + merge flow so it rides the existing pipeline:
+
+```bash
+git fetch origin
+git checkout -b restore/classic-web origin/main
+git read-tree -u --reset origin/release/classic-web
+git commit -m "revert: restore the classic interactive web app (rollback via release/classic-web)
+
+Refs #4368. This is the W-14 rollback artifact, not a git revert of the
+individual web-reposition commits — see docs/web-reposition.md."
+git push -u origin restore/classic-web
+```
+
+Then open a **fast-track PR** `restore/classic-web` → `main`. Merging it is a
+completely ordinary push to `main`: `production-deploy.yml`'s `detect-changes`
+job sees a normal file diff, `build-web`/`build-backend` build it, `migrate`
+gates it, and `deploy-web`/`deploy-production-backend` ship it to
+`www.boardsesh.com` — **no extra environment variables, no dashboard changes,
+no special alias.** The restore rides the same `Production` GitHub environment
+secrets (`VERCEL_TOKEN`, `DATABASE_URL`, `RAILWAY_TOKEN`, …) every other
+production release already uses. **Who can do it:** anyone with merge rights
+on `main` — no special access beyond the normal release path.
+
+**This command sequence was verified**, not just written down: run in a
+throwaway branch off `origin/main` with a dummy commit added first (to
+simulate `main` having drifted from the rollback point), `git read-tree -u
+--reset origin/release/classic-web` correctly staged the dummy file for
+deletion, and after committing, `git rev-parse HEAD^{tree}` and
+`git rev-parse origin/release/classic-web^{tree}` produced the **identical**
+tree SHA (`880b792ba7db3819c50c5d93d38a7b233dc86c10`) with an empty
+`git diff --stat` between the two — i.e. the restored tree is byte-identical
+to `release/classic-web`, regardless of what `main` looked like beforehand.
+
+### Preview verification
+
+The issue's gate is "the alias serves a working classic climb page with the
+queue drawer," proven by hand, not just a green build. The intended route is
+a PR preview at `{PRID}.preview.boardsesh.com` per `docs/branch-deploys.md`.
+**That pipeline is currently non-functional at the infrastructure level,
+independent of this artifact:**
+
+- `pull_request` triggers are commented out in `branch-deploy.yml`,
+  `branch-deploy-cleanup.yml`, and `branch-deploy-sweep.yml` (commit
+  `b2276e456`, "these workflows are currently broken and will be fixed
+  later"). Opening a PR does not auto-trigger a deploy.
+- The remaining `workflow_dispatch` trigger's `deploy` job requires
+  `runs-on: [self-hosted, homelab, ephemeral]`. `gh api
+repos/boardsesh/boardsesh/actions/runners` currently returns **zero
+  registered runners**. The last manual dispatch (2026-07-20, run
+  `29720371986`) shows `build-images` succeeding and `deploy` failing with
+  _"The job has exceeded the maximum execution time while awaiting a runner
+  for 24h0m0s."_
+
+**Preview PR #4427** (`preview/classic-web-rollback`, one empty commit on top
+of `release/classic-web`, draft, never-merge) is the standing verification
+route: whenever the homelab runner is healthy again, dispatch
+`branch-deploy.yml` with `pr_number=4427`, open
+`https://4427.preview.boardsesh.com`, and confirm the classic climb list page
+renders **with a working queue drawer** (open it, drag a climb in). Do this
+now to re-validate the artifact periodically, and do it again before ever
+promoting `release/classic-web` for a real incident, once the runner is back.
+
+Until the runner is restored, curl-level verification of the markup was done
+**locally** instead, against this exact commit (`vp run dev` in a worktree
+checked out at `classic-web-last-good`, against the shared dev Postgres):
+
+```bash
+curl -sk -o list-page.html -w "HTTP_CODE=%{http_code}\n" \
+  "https://localhost:3001/kilter/original/12x12-square/screw_bolt/40/list"
+# HTTP_CODE=200
+
+grep -o 'data-testid="bottom-bar-wrapper"' list-page.html   # 1 match
+grep -o 'data-testid="bottom-tab-bar"' list-page.html       # 1 match
+grep -o 'data-testid="queue-control-bar-shell"' list-page.html  # 1 match
+```
+
+All three mount markers from
+`packages/web/app/components/providers/persistent-session-wrapper.tsx`
+(`RootBottomBar`) are present — the persistent bottom-bar wrapper, the bottom
+tab bar, and the queue-control-bar shell (shown because a cookie-less request
+has no active queue yet, which is expected). This proves the classic chrome
+renders server-side at this commit; it does **not** prove the interactive
+queue drawer works in a real browser — that needs the preview-PR check above,
+and is left as an explicit unchecked item on the W-14 PR.
+
+### Retention — 90 days
+
+Cut **2026-08-14**. **Expires 2026-11-12.** Put a reminder on the epic
+(#4358) before that date:
+
+- If the web-reposition programme has shipped cleanly and nothing has needed
+  the rollback, **delete both** — `git push origin --delete release/classic-web`
+  and `git push origin --delete classic-web-last-good` (plus the local tag
+  with `git tag -d classic-web-last-good` if you have it checked out) — don't
+  let it silently rot as an ever-growing, never-reviewed fork of history.
+- If the programme is still mid-flight (W-16/W-17 not yet landed, or there's
+  active incident risk), **consciously re-cut** — same commands as the
+  "advances past this point" case above — and push the expiry another 90 days.
+
+Do not let this artifact linger unreviewed past its expiry date in either
+direction: it is either actively re-justified for another 90 days, or gone.
