@@ -237,3 +237,364 @@ Devices: a physical iPhone (iOS Safari) and a physical Android phone (Chrome).
 
 Sign-off on every box is the gate to start A5. If any fails, hold the delete and
 fix the sheet on expo-web first.
+
+## W-14 — the classic-web rollback artifact (#4368)
+
+W-16 deletes ~110k LOC of the interactive classic web app and swaps the root
+chrome in one commit, with no `?classic=1` runtime fallback (W-09 removed the
+last of that hatch). Reverting that under incident pressure with `git revert`
+means reintroducing that much code, re-mounting a provider tree, rebasing over
+every subsequent merge, and passing `check:i18n:orphans` — hours of work at the
+worst possible time.
+
+**The rollback is a deployable artifact, not a revert.** This is a locked
+decision: **no downstream PR (W-15/W-16/W-17 or anything after) may propose
+`git revert` as the recovery plan.** The recovery plan is always "promote
+`release/classic-web`" (below).
+
+### The artifact
+
+- **Tag `classic-web-last-good`** — an annotated tag at
+  `7bd5300d980f8c9a7b9c1f337ce57ec4d98d803f`, the last commit that serves the
+  full interactive classic web app (pre-W-15 front doors, W-13a merged).
+- **Branch `release/classic-web`** — pushed at the same commit, so it can be
+  fast-forwarded/read from without resolving a tag ref.
+
+Both were cut from `main` at that exact commit (verify with
+`git log --oneline -1 classic-web-last-good`). If `main` advances past this
+point before #4369 merges, **re-cut both** onto the new last-pre-W-15 commit —
+don't leave the artifact pointing at a stale, no-longer-last-good SHA:
+
+```bash
+git fetch origin main
+NEW_SHA=<last commit before #4369's merge, on main>
+git tag -f -a classic-web-last-good "$NEW_SHA" -m "Last commit serving the full interactive classic web app (pre-W-15 front doors).
+
+The web-reposition programme's rollback point: epic #4358, issue #4368 (W-14).
+The deployable artifact is branch release/classic-web at this same commit.
+Restore procedure: docs/web-reposition.md (W-14 section)."
+git push origin refs/tags/classic-web-last-good --force
+git branch -f release/classic-web "$NEW_SHA"
+git push origin release/classic-web --force
+```
+
+The re-cut rule is about commits that change what the web app serves. `main`
+gains automated `chore(changelog): refresh from merged PRs [skip ci]` commits
+that touch `CHANGELOG.md` and `packages/mobile/src/data/changelog.generated.json`
+only — it had already taken two of those within a day of the cut — and those
+don't make the artifact stale. Anything that touches `packages/web` or the
+packages it builds against does.
+
+Update this section's SHA and the retention expiry date (below) after a re-cut,
+and re-run the local verification and preview dispatch described below against
+the new SHA before trusting the artifact again.
+
+### Restore procedure
+
+**Vercel's git auto-deploy is off** (`packages/web/vercel.json` →
+`git.deploymentEnabled: false`), so pushing `release/classic-web` — or any
+branch — deploys nothing by itself. **Production deploys only run from
+`.github/workflows/production-deploy.yml` on push to `main`.** That workflow
+also has a `workflow_dispatch` trigger, but every job that touches deploy
+secrets declares `environment: Production`, and the `Production` GitHub
+environment is scoped to the `main` branch — dispatching it from a non-`main`
+ref will not resolve those secrets (see `docs/branch-deploys.md`). **Do not
+attempt to dispatch `production-deploy.yml` from `release/classic-web`
+directly** — it will build but fail (or silently no-op) on every
+Production-environment step.
+
+So the honest restore path is a **tree-restore commit onto `main`**, landed
+through the normal PR + merge flow so it rides the existing pipeline. Build the
+commit with plumbing, so the tree is byte-identical by construction and no hook
+can rewrite it on the way in:
+
+```bash
+git fetch origin
+RESTORE=$(git commit-tree origin/release/classic-web^{tree} -p origin/main -m "revert: restore the classic interactive web app (rollback via release/classic-web)
+
+Refs #4368. This is the W-14 rollback artifact, not a git revert of the
+individual web-reposition commits — see docs/web-reposition.md.")
+git branch restore/classic-web "$RESTORE"
+git push -u origin restore/classic-web
+
+# Assert before opening the PR — must print nothing:
+git diff --stat restore/classic-web origin/release/classic-web
+```
+
+If you want the files in the working tree first (to read them, or to run the app
+locally before you ship it), the index form does the same job:
+
+```bash
+git checkout -b restore/classic-web origin/main
+git read-tree -u --reset origin/release/classic-web
+git commit -m "revert: restore the classic interactive web app …"
+git diff --stat HEAD origin/release/classic-web   # must print nothing
+```
+
+— with one caveat: `git commit` runs this repo's pre-commit hook
+(`core.hooksPath=.vite-hooks`, `pre-commit` → `vp staged`, i.e.
+`vp check --fix`) across the **entire** staged restore. It is slow, it can abort
+the commit outright (it did when this sequence was re-run in a fresh worktree),
+and `--fix` rewrites staged files, which quietly breaks the byte-identical
+property. `git commit-tree` sidesteps all of that: it writes the commit straight
+from the artifact's tree object, touching no index and running no hook. Either
+way the `git diff --stat` assertion is part of the procedure, not a flourish —
+if it prints anything, the tree you are about to ship is not the artifact.
+
+Then open a **fast-track PR** `restore/classic-web` → `main`. Merging it is an
+ordinary push to `main`: `production-deploy.yml`'s `detect-changes` job sees a
+normal file diff, `build-web`/`build-backend` build it, `migrate` gates it, and
+`deploy-web`/`deploy-production-backend` ship it to `www.boardsesh.com`. It
+rides the same `Production` GitHub environment secrets (`VERCEL_TOKEN`,
+`DATABASE_URL`, `RAILWAY_TOKEN`, …) every other production release uses — no new
+secrets, no Vercel alias surgery. **Who can do it:** anyone with merge rights on
+`main`, no special access beyond the normal release path. The four subsections
+below are the parts that are _not_ ordinary; read them before merging.
+
+**The tree restore itself is verified**, not just written down: run in a
+throwaway branch off `origin/main` with a dummy commit added first (to
+simulate `main` having drifted from the rollback point), `git read-tree -u
+--reset origin/release/classic-web` correctly staged the dummy file for
+deletion, and the resulting commit's tree (`git rev-parse HEAD^{tree}`) came
+back **identical** to `git rev-parse origin/release/classic-web^{tree}` —
+`880b792ba7db3819c50c5d93d38a7b233dc86c10`, empty `git diff --stat` between the
+two — regardless of what `main` looked like beforehand. That property belongs to
+the restore **commit**; it does not survive the **merge** by itself.
+
+#### Re-verify at merge time — the merge is not the commit
+
+Merging `restore/classic-web` is a three-way merge (squash included) whose base
+is `main` as it stood when you cut the branch. Anything that lands on `main`
+afterwards survives that merge with no conflict and no warning: the restore
+commit says nothing about files that didn't exist when it was written. Confirmed
+with `git merge-tree --write-tree` — add one file to `main` after cutting the
+restore branch and the merged tree contains it, so it differs from
+`release/classic-web` by exactly that file. `main` here takes automated
+`chore(changelog): refresh from merged PRs [skip ci]` pushes on top of normal
+merges, so the window is never empty; `main` had already moved past the cut
+point within a day of the cut.
+
+A W-16-era file that only exists post-cut — a new expo-web front-door route,
+say — would then ship next to the restored classic `layout.tsx`: neither
+version, a red build at best and green-but-wrong at worst.
+
+**The invariant to hold at merge time: `restore/classic-web`'s parent is the
+current `main` tip**, i.e. the PR merges as a fast-forward. Immediately before
+merging:
+
+```bash
+git fetch origin
+git merge-base --is-ancestor origin/main restore/classic-web && echo "fast-forward OK"
+```
+
+If that fails, rebuild the branch — **`git rebase` does not re-restore the
+tree**, it replays the old diff and keeps the post-cut files:
+
+```bash
+git branch -f restore/classic-web \
+  "$(git commit-tree origin/release/classic-web^{tree} -p origin/main -m 'revert: restore the classic interactive web app (rollback via release/classic-web)')"
+git push --force-with-lease origin restore/classic-web
+git diff --stat restore/classic-web origin/release/classic-web   # must print nothing
+```
+
+#### The blast radius is the whole repo, not just the web app
+
+`git read-tree` restores **every path**, not `packages/web`. That sweeps up the
+paths the mobile pipeline watches — `packages/mobile/**`, `packages/shared/**`,
+`packages/shared-schema/**`, `packages/board-constants/**`, `package.json`,
+`bun.lock`, `patches/**` — and each of those is a push-to-`main` trigger for:
+
+- `mobile-ota-production.yml` — publishes a **production OTA** to every install
+  whose native fingerprint still matches, i.e. the restore merge republishes the
+  artifact's (by then old) JS bundle to the live native fleet.
+- `ios-testflight-rn.yml` and `android-apk-rn.yml` — native builds off the old
+  tree.
+- `production-deploy.yml`'s `deploy-app-web` job — its `app_changed` list is
+  `packages/mobile/*`, `packages/shared/*`, `packages/shared-schema/*`,
+  `scripts/build-expo-web-export.sh`, and the two CF Pages host files — so it
+  rebuilds and ships `app.boardsesh.com`, the expo-web app, off the old tree too.
+
+Not hypothetical: `main` already differs from `release/classic-web` in
+`packages/mobile/src/data/changelog.generated.json`, so a whole-tree restore
+today already touches `packages/mobile/**` and fires all four. The repo has form
+here — a parity-restoring revert once shipped a whole drift backlog to
+production (2026-07-17).
+
+Pick one before merging:
+
+1. **Scope the restore to the web surface** — the default when the incident is
+   web-only. `packages/web` appears in none of the mobile trigger lists. Delete
+   the current subtree first: a bare `git checkout <ref> -- packages/web`
+   restores the artifact's files but leaves behind any file W-15/W-16 _added_
+   under `packages/web`, which is how you get a tree that is neither version.
+
+   ```bash
+   git checkout -b restore/classic-web origin/main
+   git rm -rq packages/web
+   git checkout origin/release/classic-web -- packages/web
+   git diff --stat origin/release/classic-web -- packages/web   # must print nothing
+   ```
+
+   Verified the same way as the whole-tree restore: with a dummy
+   `packages/web/app/AFTER-CUT.ts` committed on top of `main`, the sequence
+   above removed it and left `packages/web` byte-identical to the artifact
+   (empty `git diff --stat`).
+
+   If the web build then fails against a drifted shared package, add that
+   package specifically (same delete-then-restore shape) and re-read the list
+   above: anything under `packages/shared*` puts the mobile workflows back in
+   play.
+
+2. **Whole-tree restore with the mobile side held.** Before merging,
+   `gh workflow disable mobile-ota-production.yml` (and `ios-testflight-rn.yml`,
+   `android-apk-rn.yml`), and set the repo variable `APP_WEB_DEPLOY_HOLD` —
+   `deploy-app-web` skips while it is non-empty, and `notify-app-web-held` posts
+   a reminder so the hold can't be silently forgotten. Re-enable all four and
+   publish forward once the web incident is closed.
+
+#### A pinned Instant Rollback stops the restore reaching www
+
+Instant Rollback is the first-line incident mitigation
+(`docs/branch-deploys.md` § "Instant Rollback interaction"), so the realistic
+order of events is: someone pins production to an older deployment, _then_ the
+restore PR merges. When `check-rollback` sees an active rollback, `deploy-web`
+runs `vercel deploy --prebuilt --prod --skip-domain` — uploaded, not assigned to
+the production domain — `deploy-production-backend` pushes the image to GHCR
+without redeploying Railway, and the post-deploy smoke against www is skipped.
+Every job goes green. The only signal is the `notify-no-promote` Discord
+message.
+
+Clear the Instant Rollback in the Vercel dashboard before merging the restore
+(or promote the staged deployment afterwards), and confirm www is actually
+serving it. A green pipeline is not proof here.
+
+#### The restore rolls back code, never the database
+
+`migrate` runs `db:migrate` forward only; nothing un-applies a migration. The
+`VERIFY_MIGRATION_JOURNAL=1` gate only fails when a migration file exists but is
+missing from the ledger (`findUnappliedMigrations`,
+`packages/db/scripts/migration-journal.ts`), so a restored tree with _fewer_
+migrations than the database passes it silently. Harmless for expand-phase
+migrations (new columns the classic code ignores); fatal for a contract-phase
+one — a column dropped or renamed after the cut is still gone after the restore,
+and classic code that reads it breaks.
+
+While this artifact is the rollback plan, every production migration must stay
+backward-compatible with `release/classic-web` — the same expand/contract rule
+`docs/branch-deploys.md` already states for Instant Rollback. If a
+contract-phase migration has landed since the cut, the restore needs a paired
+forward migration that re-adds what it removed: write that before the incident,
+not during it.
+
+### Preview verification — the alias gate is UNMET
+
+The issue's gate is "the alias serves a working classic climb page with the
+queue drawer," proven by hand, not just a green build. **That gate is not met**,
+and two independent pieces of infrastructure have to come back before it can be
+— the runner is only half of it:
+
+1. **No runner.** `pull_request` triggers are commented out in
+   `branch-deploy.yml`, `branch-deploy-cleanup.yml`, and
+   `branch-deploy-sweep.yml` (commit `b2276e456`, "these workflows are currently
+   broken and will be fixed later"), so opening a PR auto-triggers nothing. The
+   remaining `workflow_dispatch` path's `deploy` job wants
+   `runs-on: [self-hosted, homelab, ephemeral]`, and
+   `gh api repos/boardsesh/boardsesh/actions/runners` returns `total_count: 0`.
+   The last real dispatch before this work (2026-07-20, run `29720371986`) shows
+   `build-images` succeeding and `deploy` giving up after 24h "awaiting a
+   runner".
+2. **No DNS.** The wildcard `*.preview.boardsesh.com` CNAME → Cloudflare Tunnel
+   that `docs/branch-deploys.md` § 2.2 describes does not resolve at all:
+   `getent hosts 4427.preview.boardsesh.com` returns nothing (as does any other
+   `*.preview` name), while `www.boardsesh.com` resolves and answers 200 from
+   the same shell. Even with a healthy runner, the Traefik `Host()` rule the
+   deploy job writes has nothing routing to it until the record and the tunnel
+   are back.
+
+**Preview PR #4427** (`preview/classic-web-rollback`, one empty commit on top of
+`release/classic-web`, draft, never-merge) is the standing verification route
+once both are fixed. Dispatch it **against the branch**, not just the PR number:
+
+```bash
+gh workflow run branch-deploy.yml \
+  --ref preview/classic-web-rollback \
+  -f pr_number=4427
+```
+
+`--ref` is what decides which code gets built. `build-images` checks out with a
+bare `- uses: actions/checkout@v6` (no `ref:`), so on `workflow_dispatch` it
+builds the ref the workflow was dispatched against; `pr_number` only names the
+GHCR image tag (`boardsesh-web:pr-4427`), the Traefik `Host()` rule
+(`4427.preview.boardsesh.com`), and the `BASE_URL` / `NEXT_PUBLIC_WS_URL` build
+args. Dispatch from the default branch with `pr_number=4427` and you build
+`main` and serve it at the 4427 hostname — which is exactly what the first
+attempt here did (run `31797731863`: `headBranch: main`, `headSha: 31ccf56a6`).
+
+So confirm which build you are looking at before believing anything:
+
+```bash
+curl -s "https://4427.preview.boardsesh.com/kilter/original/12x12-square/screw_bolt/40/list" \
+  | grep -c 'data-testid="queue-control-bar-shell"'   # 1 = classic chrome, 0 = wrong build
+```
+
+Only then do the part that needs a human: open the page, open the queue drawer,
+drag a climb in. Re-run this periodically to keep the artifact honest, and again
+before ever promoting `release/classic-web` for a real incident.
+
+Until both prerequisites are back, verification of this commit is markup-level
+and local — `vp run dev` in a worktree checked out at `classic-web-last-good`,
+against the shared dev Postgres:
+
+```bash
+# Use whatever host/port `[dev]` prints on startup. The default is
+# http://localhost:3000; the run recorded here was on a Tailscale-TLS dev
+# server that had fallen through to 3001.
+curl -s -o list-page.html -w "HTTP_CODE=%{http_code}\n" \
+  "http://localhost:3000/kilter/original/12x12-square/screw_bolt/40/list"
+# HTTP_CODE=200
+
+grep -o 'data-testid="bottom-bar-wrapper"' list-page.html   # 1 match
+grep -o 'data-testid="bottom-tab-bar"' list-page.html       # 1 match
+grep -o 'data-testid="queue-control-bar-shell"' list-page.html  # 1 match
+```
+
+All three mount markers from
+`packages/web/app/components/providers/persistent-session-wrapper.tsx`
+(`RootBottomBar`) are present — the persistent bottom-bar wrapper, the bottom
+tab bar, and the queue-control-bar shell (shown because a cookie-less request
+has no active queue yet, which is expected). This proves the classic chrome
+renders server-side at this commit. It proves nothing about the interactive
+drawer.
+
+**The drawer-level check that can run today**, with no preview infrastructure,
+is the repo's own Playwright suite against a local checkout of the artifact —
+`packages/web/e2e/queue-persistence.spec.ts` double-clicks a climb card, waits
+for `[data-testid="queue-control-bar"]`, and asserts the queue survives
+navigation:
+
+```bash
+git worktree add ../classic-check classic-web-last-good
+cd ../classic-check && vp run test:e2e
+```
+
+Run that before promoting the artifact for a real incident. It is not a
+substitute for the alias gate — it says nothing about the image building or
+Traefik routing to it — but it is the only browser-level evidence available
+while the runner and the DNS record are both down.
+
+### Retention — 90 days
+
+Cut **2026-08-14**. **Expires 2026-11-12.** Put a reminder on the epic
+(#4358) before that date:
+
+- If the web-reposition programme has shipped cleanly and nothing has needed
+  the rollback, **delete both** — `git push origin --delete release/classic-web`
+  and `git push origin --delete classic-web-last-good` (plus the local tag
+  with `git tag -d classic-web-last-good` if you have it checked out) — don't
+  let it silently rot as an ever-growing, never-reviewed fork of history.
+- If the programme is still mid-flight (W-16/W-17 not yet landed, or there's
+  active incident risk), **consciously re-cut** — same commands as the
+  "advances past this point" case above — and push the expiry another 90 days.
+
+Do not let this artifact linger unreviewed past its expiry date in either
+direction: it is either actively re-justified for another 90 days, or gone.
