@@ -77,10 +77,10 @@ vi.mock('@/app/lib/healthkit/healthkit-bridge', () => ({
 // The page is a shell around a lot of unrelated sections; stub them so this
 // test only exercises the profile form.
 vi.mock('@/app/components/settings/aurora-credentials-section', () => ({ default: () => null }));
-vi.mock('@/app/components/settings/controllers-section', () => ({ default: () => null }));
+vi.mock('@/app/components/account/controllers-section', () => ({ default: () => null }));
 vi.mock('@/app/components/settings/watch-pairing-section', () => ({ default: () => null }));
 vi.mock('@/app/components/settings/delete-account-section', () => ({ default: () => null }));
-vi.mock('@/app/components/settings/set-password-section', () => ({
+vi.mock('@/app/components/account/set-password-section', () => ({
   default: ({ hasPassword, linkedProviders }: { hasPassword: boolean; linkedProviders: string[] }) => (
     <div
       data-testid="set-password-section"
