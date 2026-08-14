@@ -339,9 +339,17 @@ export const LightControlDrawer: React.FC<LightControlDrawerProps> = ({ open, on
     onClose();
   };
 
-  const handleToggleLightAdjacentHolds = () => {
-    setMoonboardLightAdjacentHolds(!moonboardLightAdjacentHolds);
+  const updateLightAdjacentHolds = (checked: boolean) => {
+    setMoonboardLightAdjacentHolds(checked);
     reassertWall();
+  };
+
+  const handleToggleLightAdjacentHolds = () => {
+    updateLightAdjacentHolds(!moonboardLightAdjacentHolds);
+  };
+
+  const handleLightAdjacentHoldsChange = (_event: React.ChangeEvent<HTMLInputElement>, checked: boolean) => {
+    updateLightAdjacentHolds(checked);
   };
 
   return (
@@ -389,7 +397,7 @@ export const LightControlDrawer: React.FC<LightControlDrawerProps> = ({ open, on
               <Switch
                 edge="end"
                 checked={moonboardLightAdjacentHolds}
-                onChange={handleToggleLightAdjacentHolds}
+                onChange={handleLightAdjacentHoldsChange}
                 onClick={(event) => event.stopPropagation()}
                 slotProps={{ input: { 'aria-label': t('lightControl.lightAdjacentHolds') } }}
               />

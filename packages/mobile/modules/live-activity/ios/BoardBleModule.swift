@@ -220,7 +220,7 @@ public class BoardBleModule: Module {
                     deviceName: options.deviceName,
                     colorOverrides: options.colorOverrides ?? [:],
                     numRows: options.numRows,
-                    lightAdjacentHolds: options.lightAdjacentHolds ?? false
+                    lightAdjacentHolds: options.lightAdjacentHolds
                 )
             )
         }
