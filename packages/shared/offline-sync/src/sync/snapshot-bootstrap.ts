@@ -198,7 +198,14 @@ export interface SnapshotSource {
 /** Where a bootstrap failed, for telemetry. */
 export type SnapshotBootstrapErrorReport = {
   scopeKey: string;
-  stage: 'manifest' | 'download' | 'import' | 'grades-download' | 'grades-import';
+  /**
+   * How far the attempt got. `board-removed` is the one value no bootstrap stage
+   * produces: it is reported by the teardown when a board is removed mid-download
+   * (issue #4406), which can happen at any stage — including the paged delta
+   * crawl that runs long after the bootstrap phase has finished — so naming a
+   * bootstrap stage there would invent a precision the teardown does not have.
+   */
+  stage: 'manifest' | 'download' | 'import' | 'grades-download' | 'grades-import' | 'board-removed';
   attempt: number;
   cause: unknown;
   /**

@@ -12,6 +12,8 @@ import {
   type BootstrapPathRecoveredReporter,
 } from './pull-client';
 import type { SnapshotSource, SnapshotBootstrapErrorReporter } from './snapshot-bootstrap';
+import { onPurgeSettled } from '../mutation-queue/drainer';
+import { purgeNamespaceForScopeKey } from '../offline-board-key';
 
 /**
  * Optional progress sink for the pull phase. The bridge passes the sync-status
@@ -205,6 +207,29 @@ export function startSyncScheduler(
     wasConnected = isConnected;
   });
 
+  // The third wake-up, and the one that is not about the phone (issue #4406).
+  //
+  // Removing a board latches its namespace for the seconds its delete
+  // transaction runs, and every guard in the pull client reads that latch as
+  // "purged": a cycle that starts inside the window skips the scope from top to
+  // bottom. That is correct — it must not write into a delete — but it also
+  // CONSUMES the trigger. A climber who switches a board straight back on gets
+  // their kick collapsed into exactly that cycle (`runSync` is single-flight),
+  // and with no interval here, the next wake-up is a foreground or a
+  // reconnect that may not come for hours. Marco's phone sat on "waiting to
+  // download" for nine hours and an app relaunch.
+  //
+  // So the moment the window closes, re-run — but only when something still
+  // enabled actually needs that namespace's rows. An ordinary removal (the board
+  // is gone and stays gone) matches nothing and costs no cycle.
+  const unsubscribePurge = onPurgeSettled((namespace) => {
+    const isNamespaceStillWanted = getEnabledBoards().some(
+      (scopeKey) => purgeNamespaceForScopeKey(scopeKey) === namespace,
+    );
+    if (!isNamespaceStillWanted) return;
+    void runSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, options);
+  });
+
   // Run initial sync immediately
   void runSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, options);
 
@@ -212,6 +237,7 @@ export function startSyncScheduler(
     if (foregroundTimeout) clearTimeout(foregroundTimeout);
     unsubscribeForeground();
     unsubscribeConnectivity();
+    unsubscribePurge();
     // A trigger queued behind an in-flight cycle would otherwise fire that
     // cycle's finally-block re-run AFTER this scheduler stopped (sign-out,
     // flag flip). React runs this cleanup before any replacement scheduler's

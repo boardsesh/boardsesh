@@ -191,7 +191,7 @@ export type { InvalidateKeys } from './sync/invalidate-keys';
 
 // --- Reclaiming a downloaded board's disk space ----------------------------------
 export { removeBoardScopeData, getScopeUsage, scopeSyncMetaKeys } from './sync/scope-teardown';
-export type { ScopeTeardownResult, ScopeUsage } from './sync/scope-teardown';
+export type { AbandonedDownloadInfo, ScopeTeardownResult, ScopeUsage } from './sync/scope-teardown';
 
 // --- Board-snapshot manifest (Phase 2 export ↔ Phase 3 bootstrap) ----------------
 export { parseSnapshotManifest, SNAPSHOT_MANIFEST_FORMAT_VERSION } from './sync/snapshot-manifest';

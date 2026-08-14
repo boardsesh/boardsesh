@@ -23,6 +23,16 @@ import { classifySqliteLockError } from '../db/lock-errors';
 export type SnapshotBootstrapFailureReason =
   /** A sign-out, or a local purge (removing ANY board), tore the cycle down. */
   | 'aborted-wipe'
+  /**
+   * The board was REMOVED while its download was still running, so the download
+   * is over for good (issue #4406). Distinct from `aborted-wipe`, which a cycle
+   * reports whenever it bails and which the same scope can collect many times
+   * over one download — a backgrounded phone, a sibling board's removal, a
+   * sign-out. This one is emitted once per `Offline Board Download Started`,
+   * from the teardown that deletes the marker, so it is the abandonment the
+   * funnel is trying to size rather than another interruption.
+   */
+  | 'abandoned-removed'
   /** The app went to the background mid-cycle. Resumes on the next foreground. */
   | 'aborted-background'
   /** SQLITE_BUSY / SQLITE_LOCKED — contention, not a broken database. */

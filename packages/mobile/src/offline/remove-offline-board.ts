@@ -21,6 +21,7 @@ import {
   type ScopeTeardownResult,
 } from '@boardsesh/offline-sync';
 import { getSetting, setOfflineBoardEnabled, forgetOfflineBoardScope } from '../settings';
+import { reportScopeDownloadAbandoned } from './offline-sync-adapter';
 import { reportHandledError } from '../lib/error-reporting';
 import { sweepOverlaysForScope } from '../lib/sweep-caches';
 
@@ -97,7 +98,17 @@ export async function removeOfflineBoard(params: {
 
   let result: ScopeTeardownResult;
   try {
-    result = await removeBoardScopeData({ db, scope, scopeKey: offlineBoardKey(scope), retainedScopes });
+    result = await removeBoardScopeData({
+      db,
+      scope,
+      scopeKey: offlineBoardKey(scope),
+      retainedScopes,
+      // The download funnel's terminal for a board removed mid-download (issue
+      // #4406). It belongs to the teardown because the teardown is what deletes
+      // the `scope-started:` marker: after this call nothing can tell an
+      // abandoned download from a board that was never downloaded.
+      onDownloadAbandoned: reportScopeDownloadAbandoned,
+    });
   } finally {
     // Unconditional: a latch left set would block this layout's downloads for the
     // rest of the app session.
