@@ -103,6 +103,12 @@ export default function SimilarClimbsList({
     enabled,
     staleTime: 5 * 60 * 1000,
     initialData: initialClimbs,
+    // Load-bearing alongside `initialData`. Without it React Query stamps
+    // `dataUpdatedAt = 0`, so `Date.now() - 0` beats any staleTime and the
+    // client refetches on mount — re-running a resolver that is rate-limited
+    // 30/min against the web server's single IP, which is exactly what the
+    // server-side cache in `front-door-data.server.ts` exists to avoid.
+    initialDataUpdatedAt: initialClimbs ? Date.now() : undefined,
   });
 
   if (!enabled) return null;

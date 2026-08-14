@@ -61,7 +61,7 @@
     },
     "frontDoor": {
       "heading": "Blocs {{boardName}} à {{angle}}°",
-      "intro": "Tous les blocs ouverts sur cette configuration {{boardName}} à {{angle}}°, les plus grimpés en premier. Ouvre-en un pour voir la board, la cotation à chaque inclinaison et la beta.",
+      "intro": "Tous les blocs ouverts sur cette configuration {{boardName}} à {{angle}}°, les plus grimpés en premier. Ouvrez-en un pour voir la board, la cotation à chaque inclinaison et la beta.",
       "empty": "Aucun bloc sur cette board pour l’instant.",
       "cta": "Grimper sur cette board",
       "pagination": {
