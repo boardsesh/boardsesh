@@ -984,22 +984,20 @@ const getBoardSlugRouteContext = (pathname: string): { slug: string; angle: numb
 };
 
 /**
- * Build a climb-view URL that preserves board-slug routing context when present.
- * - On /b/{slug}/{angle}/... routes, returns /b/{slug}/{angle}/view/{slug-uuid|uuid}
- * - Otherwise, falls back to canonical board URLs.
+ * Build the canonical config-tuple climb-view URL — `/{board}/{layout}/{size}/{sets}/{angle}/view/{slug-uuid}`.
+ *
+ * This is the tree the reposition treats as canonical (see `docs/web-reposition.md`),
+ * so anything that must emit a crawlable, shareable climb link calls this
+ * directly rather than `getContextAwareClimbViewUrl` — the latter keeps a
+ * visitor inside `/b/{slug}` when they already are there, which is the right
+ * call for in-app navigation and the wrong one for a link we want indexed.
  */
-export const getContextAwareClimbViewUrl = (
-  pathname: string,
+export const buildCanonicalClimbViewUrl = (
   boardDetails: BoardRouteIdentity,
   angle: number,
   climbUuid: string,
   climbName?: string,
 ): string => {
-  const boardSlugRoute = getBoardSlugRouteContext(pathname);
-  if (boardSlugRoute) {
-    return constructBoardSlugViewUrl(boardSlugRoute.slug, boardSlugRoute.angle, climbUuid, climbName);
-  }
-
   // Ids first. Only the id-aware builder can emit the qualified size slug for a
   // size that shares its base slug with another on the same layout (Kilter
   // layout 1 sizes 10/27 — see `resolveSizeSlug`); the name-based builder below
@@ -1042,6 +1040,26 @@ export const getContextAwareClimbViewUrl = (
     climbUuid,
     climbName,
   );
+};
+
+/**
+ * Build a climb-view URL that preserves board-slug routing context when present.
+ * - On /b/{slug}/{angle}/... routes, returns /b/{slug}/{angle}/view/{slug-uuid|uuid}
+ * - Otherwise, falls back to canonical board URLs.
+ */
+export const getContextAwareClimbViewUrl = (
+  pathname: string,
+  boardDetails: BoardRouteIdentity,
+  angle: number,
+  climbUuid: string,
+  climbName?: string,
+): string => {
+  const boardSlugRoute = getBoardSlugRouteContext(pathname);
+  if (boardSlugRoute) {
+    return constructBoardSlugViewUrl(boardSlugRoute.slug, boardSlugRoute.angle, climbUuid, climbName);
+  }
+
+  return buildCanonicalClimbViewUrl(boardDetails, angle, climbUuid, climbName);
 };
 
 /**

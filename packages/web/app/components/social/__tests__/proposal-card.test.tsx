@@ -43,20 +43,20 @@ vi.mock('@boardsesh/graphql/operations/proposals', () => ({
   DELETE_PROPOSAL: 'DELETE_PROPOSAL',
 }));
 
-// Mock ClimbListItem to verify it receives the correct props
-const mockClimbListItem = vi.fn();
-vi.mock('@/app/components/climb-card/climb-list-item', () => ({
+// Mock StaticClimbRow to verify it receives the correct props. The proposal
+// preview is a crawlable link row now (W-12), not an interactive list item.
+const mockStaticClimbRow = vi.fn();
+vi.mock('@/app/components/climb-list/static-climb-row', () => ({
   default: (props: {
     climb: { uuid: string; name: string; difficulty: string; setter_username: string };
-    disableSwipe?: boolean;
+    pathname?: string;
   }) => {
-    mockClimbListItem(props);
+    mockStaticClimbRow(props);
     return (
-      <div data-testid="climb-list-item-mock">
+      <div data-testid="static-climb-row-mock">
         {props.climb.name && <span data-testid="climb-name">{props.climb.name}</span>}
         {props.climb.difficulty && <span data-testid="climb-difficulty">{props.climb.difficulty}</span>}
         {props.climb.setter_username && <span data-testid="climb-setter">{props.climb.setter_username}</span>}
-        {props.disableSwipe && <span data-testid="disable-swipe">true</span>}
       </div>
     );
   },
@@ -171,16 +171,17 @@ describe('ProposalCard', () => {
     mockRequest.mockReset();
   });
 
-  describe('ClimbListItem integration', () => {
-    it('renders ClimbListItem component', () => {
+  describe('StaticClimbRow integration', () => {
+    it('renders the StaticClimbRow preview', () => {
       render(<ProposalCard proposal={makeProposal()} />);
-      expect(screen.getByTestId('climb-list-item-mock')).toBeTruthy();
+      expect(screen.getByTestId('static-climb-row-mock')).toBeTruthy();
     });
 
-    it('passes disableSwipe prop to ClimbListItem', () => {
+    it('passes the current pathname through to the row', () => {
       render(<ProposalCard proposal={makeProposal()} />);
-      expect(screen.getByTestId('disable-swipe')).toBeTruthy();
-      expect(mockClimbListItem).toHaveBeenCalledWith(expect.objectContaining({ disableSwipe: true }));
+      expect(mockStaticClimbRow).toHaveBeenCalledWith(
+        expect.objectContaining({ pathname: '/kilter/original/12x12/default/40/list' }),
+      );
     });
 
     it('constructs climb data from proposal fields', () => {
@@ -194,7 +195,7 @@ describe('ProposalCard', () => {
         />,
       );
 
-      expect(mockClimbListItem).toHaveBeenCalledWith(
+      expect(mockStaticClimbRow).toHaveBeenCalledWith(
         expect.objectContaining({
           climb: expect.objectContaining({
             uuid: 'climb-abc123',
@@ -217,7 +218,7 @@ describe('ProposalCard', () => {
         />,
       );
 
-      expect(mockClimbListItem).toHaveBeenCalledWith(
+      expect(mockStaticClimbRow).toHaveBeenCalledWith(
         expect.objectContaining({
           climb: expect.objectContaining({
             quality_average: '4.2',
@@ -231,7 +232,7 @@ describe('ProposalCard', () => {
     it('passes boardDetails with correct board_name', () => {
       render(<ProposalCard proposal={makeProposal({ boardType: 'kilter' })} />);
 
-      expect(mockClimbListItem).toHaveBeenCalledWith(
+      expect(mockStaticClimbRow).toHaveBeenCalledWith(
         expect.objectContaining({
           boardDetails: expect.objectContaining({
             board_name: 'kilter',
@@ -240,21 +241,21 @@ describe('ProposalCard', () => {
       );
     });
 
-    it('does not render ClimbListItem when climbName and frames are null', () => {
+    it('does not render the row when climbName and frames are null', () => {
       render(<ProposalCard proposal={makeProposal({ climbName: null, frames: null })} />);
-      expect(screen.queryByTestId('climb-list-item-mock')).toBeNull();
+      expect(screen.queryByTestId('static-climb-row-mock')).toBeNull();
     });
 
-    it('does not render ClimbListItem when layoutId is null', () => {
+    it('does not render the row when layoutId is null', () => {
       render(<ProposalCard proposal={makeProposal({ layoutId: null })} />);
-      expect(screen.queryByTestId('climb-list-item-mock')).toBeNull();
+      expect(screen.queryByTestId('static-climb-row-mock')).toBeNull();
     });
 
-    it('renders ClimbListItem when angle is null (classic proposals)', () => {
+    it('renders the row when angle is null (classic proposals)', () => {
       render(<ProposalCard proposal={makeProposal({ angle: null })} />);
-      expect(screen.getByTestId('climb-list-item-mock')).toBeTruthy();
+      expect(screen.getByTestId('static-climb-row-mock')).toBeTruthy();
       // Should use 0 as fallback angle
-      expect(mockClimbListItem).toHaveBeenCalledWith(
+      expect(mockStaticClimbRow).toHaveBeenCalledWith(
         expect.objectContaining({
           climb: expect.objectContaining({ angle: 0 }),
         }),
@@ -275,7 +276,7 @@ describe('ProposalCard', () => {
         />,
       );
 
-      expect(mockClimbListItem).toHaveBeenCalledWith(
+      expect(mockStaticClimbRow).toHaveBeenCalledWith(
         expect.objectContaining({
           climb: expect.objectContaining({
             setter_username: '',
