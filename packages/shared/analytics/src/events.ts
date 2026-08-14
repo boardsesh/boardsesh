@@ -58,6 +58,14 @@ export const SHARED_EVENTS = {
   // title text.
   SessionRenamed: 'Session Renamed',
   AngleChanged: 'Angle Changed',
+  // A party peer broadcast a playback frame count that disagrees with ours, so
+  // the two clients read the same climb's frames differently and we stopped
+  // following them instead of clamping onto a wrong frame (issue #3989).
+  // Props: { peerFrameCount, localFrameCount, boardName } — counts only. Fires
+  // once per stretch of disagreement, not per broadcast. Expected to stay
+  // silent until the frames reader next changes shape; any volume at all means
+  // a mixed-fleet rollout is skewing playback in the field.
+  PlaybackPeerFrameMismatch: 'Playback Peer Frame Mismatch',
   // Queue sync-gate telemetry (createQueueSyncGate in @boardsesh/queue-runtime)
   // — observability for the sequence-gap / stale-event / hash-drift guards so
   // a resync loop or a dropped duplicate shows up in the field instead of only

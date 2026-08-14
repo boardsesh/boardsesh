@@ -27,6 +27,13 @@ export type PlaybackStateChangedEvent = {
   sequence: number;
   climbUuid: string;
   frameIndex: number;
+  /**
+   * Frames the publisher's reader produced for this climb. Optional: publishers
+   * that predate the field omit it, and legacy payloads must keep typechecking.
+   * Receivers stop following the peer when it disagrees with their own frame
+   * count rather than clamping the index into range.
+   */
+  frameCount?: number | null;
   isPlaying: boolean;
   speed: number;
   paceMs: number;

@@ -52,6 +52,11 @@ type PlaybackControlsProps = {
   speed: number;
   /** Native per-frame pace (ms) — glides the progress cue at the playback cadence. */
   paceMs: number;
+  /**
+   * A party peer is counting this route's frames differently, so their
+   * playback isn't being followed. Renders a one-line passive notice.
+   */
+  peerFrameMismatch?: boolean;
   onPlay: () => void;
   onPause: () => void;
   onSeek: (index: number) => void;
@@ -305,6 +310,7 @@ export function PlaybackControls({
   isPlaying,
   speed,
   paceMs,
+  peerFrameMismatch = false,
   onPlay,
   onPause,
   onSeek,
@@ -444,6 +450,12 @@ export function PlaybackControls({
         </View>
       </View>
 
+      {peerFrameMismatch && (
+        <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.mismatchNotice}>
+          {t('playView.peerFrameMismatch')}
+        </Text>
+      )}
+
       {showSpeed && (
         <Animated.View entering={FadeIn.duration(timing.fast)} exiting={FadeOut.duration(timing.instant)}>
           <SpeedSlider value={speed} onChange={onSpeedChange} onLiveChange={setLiveSpeed} />
@@ -515,6 +527,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[3],
     paddingVertical: spacing[1],
     borderRadius: borderRadius.full,
+  },
+  mismatchNotice: {
+    textAlign: 'center',
   },
   speedPillText: {
     fontVariant: ['tabular-nums'],

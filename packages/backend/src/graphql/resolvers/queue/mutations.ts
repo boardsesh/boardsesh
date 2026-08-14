@@ -533,6 +533,10 @@ export const queueMutations = {
       sequence: currentState.sequence,
       climbUuid: validatedInput.climbUuid,
       frameIndex: validatedInput.frameIndex,
+      // Forwarded verbatim so receivers can compare it to their own frame list.
+      // Null for publishers that predate the field — receivers fall back to the
+      // legacy clamp when they have nothing to compare against.
+      frameCount: validatedInput.frameCount ?? null,
       isPlaying: validatedInput.isPlaying,
       speed: validatedInput.speed,
       paceMs: validatedInput.paceMs,

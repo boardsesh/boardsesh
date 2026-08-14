@@ -117,6 +117,12 @@ export type PersistentSessionActionsType = {
   publishPlaybackState: (input: {
     climbUuid: string;
     frameIndex: number;
+    /**
+     * Frames our reader produced for this climb. Peers stop following us when
+     * it disagrees with their own count rather than clamping our index into
+     * their range (issue #3989).
+     */
+    frameCount: number;
     isPlaying: boolean;
     speed: number;
     paceMs: number;

@@ -39,6 +39,10 @@ describe('PlaybackStateInputSchema', () => {
   it.each([
     ['negative frame index', { frameIndex: -1 }],
     ['fractional frame index', { frameIndex: 0.5 }],
+    ['zero frame count', { frameCount: 0 }],
+    ['negative frame count', { frameCount: -3 }],
+    ['fractional frame count', { frameCount: 4.5 }],
+    ['frame count above GraphQL Int maximum', { frameCount: GRAPHQL_INT_MAX + 1 }],
     ['frame index above GraphQL Int maximum', { frameIndex: GRAPHQL_INT_MAX + 1 }],
     ['speed below the control minimum', { speed: 0.49 }],
     ['speed above the control maximum', { speed: 10.01 }],
@@ -61,6 +65,8 @@ describe('PlaybackStateInputSchema', () => {
     ['negative infinite speed', { speed: -Infinity }],
     ['NaN pace', { paceMs: Number.NaN }],
     ['infinite pace', { paceMs: Infinity }],
+    ['NaN frame count', { frameCount: Number.NaN }],
+    ['infinite frame count', { frameCount: Infinity }],
   ])('rejects %s', (_description, overrides) => {
     expect(PlaybackStateInputSchema.safeParse(playbackStateWith(overrides)).success).toBe(false);
   });
@@ -72,6 +78,7 @@ describe('PlaybackStateInputSchema', () => {
     ['string playing state', { isPlaying: 'true' }],
     ['numeric climb identifier', { climbUuid: 1 }],
     ['numeric client identifier', { clientId: 1 }],
+    ['string frame count', { frameCount: '4' }],
   ])('does not coerce a %s', (_description, overrides) => {
     expect(PlaybackStateInputSchema.safeParse(playbackStateWith(overrides)).success).toBe(false);
   });
@@ -89,5 +96,20 @@ describe('PlaybackStateInputSchema', () => {
   it('accepts an omitted or null client identifier for connection-id fallback', () => {
     expect(PlaybackStateInputSchema.safeParse(validPlaybackState).success).toBe(true);
     expect(PlaybackStateInputSchema.safeParse(playbackStateWith({ clientId: null })).success).toBe(true);
+  });
+
+  // Issue #3989: peers compare the publisher's frame count against their own to
+  // spot a frames-reader disagreement. Clients older than the field publish
+  // without it, so the field has to stay optional and nullable forever.
+  it('accepts an omitted or null frame count from clients that predate the field', () => {
+    expect(PlaybackStateInputSchema.parse(validPlaybackState).frameCount).toBeUndefined();
+    expect(PlaybackStateInputSchema.parse(playbackStateWith({ frameCount: null })).frameCount).toBeNull();
+  });
+
+  it('accepts a frame count from 1 up to the GraphQL Int maximum', () => {
+    expect(PlaybackStateInputSchema.parse(playbackStateWith({ frameCount: 1 })).frameCount).toBe(1);
+    expect(PlaybackStateInputSchema.parse(playbackStateWith({ frameCount: GRAPHQL_INT_MAX })).frameCount).toBe(
+      GRAPHQL_INT_MAX,
+    );
   });
 });

@@ -610,6 +610,7 @@
     "pause": "Pause",
     "replay": "Nochmal",
     "speed": "Wiedergabegeschwindigkeit",
+    "peerFrameMismatch": "Wiedergabe läuft eigenständig. Jemand in der Session nutzt eine andere App-Version, die die Bilder dieser Route anders liest.",
     "audienceCount_one": "{{count}} weitere Person schaut zu",
     "audienceCount_other": "{{count}} weitere Personen schauen zu",
     "yourAscents_one": "Deine Begehung ({{count}})",

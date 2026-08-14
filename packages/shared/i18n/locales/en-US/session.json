@@ -610,6 +610,7 @@
     "pause": "Pause",
     "replay": "Replay",
     "speed": "Playback speed",
+    "peerFrameMismatch": "Playing on your own. Someone in the session is on a different app version that reads this route's frames differently.",
     "audienceCount_one": "{{count}} other watching",
     "audienceCount_other": "{{count}} others watching",
     "yourAscents_one": "Your Ascent ({{count}})",
