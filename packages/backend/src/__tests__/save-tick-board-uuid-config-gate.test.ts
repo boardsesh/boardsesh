@@ -188,6 +188,18 @@ describe('saveTick boardUuid config gate', () => {
     expect(await saveTick({ boardUuid: gymBoard.uuid, setIds: '1,2' })).toBe(gymBoard.id);
   });
 
+  it('records the tick unassociated instead of falsely matching when the sent hold sets carry a non-numeric token', async () => {
+    // SaveTickInputSchema.setIds isn't NumericCsvSchema-restricted (#4217), so a
+    // client could in theory send a malformed token here. The set-id comparison
+    // (@boardsesh/board-config's normaliseSetIds) keeps non-numeric tokens
+    // verbatim rather than silently dropping them, so '1,2,abc' never collapses
+    // to '1,2' and can't be coincidentally attributed to a real board that
+    // happens to run sets 1 and 2.
+    const gymBoard = await insertBoard({ ownerId: OTHER_USER_ID, setIds: '1,2', name: 'Gym wall' });
+
+    expect(await saveTick({ boardUuid: gymBoard.uuid, setIds: '1,2,abc' })).toBeNull();
+  });
+
   it('records the tick unassociated when the input carries a boardUuid but no configuration', async () => {
     // Deliberate strictness: without a layout/size/set there is nothing to check,
     // so omitting the config can't be a way around the gate.

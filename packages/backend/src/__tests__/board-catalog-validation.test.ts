@@ -4,12 +4,12 @@ import { GraphQLError } from 'graphql';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE } from '@boardsesh/board-config';
+import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE, normaliseSetIds } from '@boardsesh/board-config';
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { assertKnownBoardConfig } from '../graphql/resolvers/board-presence/board-catalog';
 import { boardPresenceMutations } from '../graphql/resolvers/board-presence/mutations';
-import { normalizeSetIds, SYSTEM_BOARD_OWNER_ID } from '../graphql/resolvers/board-presence/shared';
+import { SYSTEM_BOARD_OWNER_ID } from '../graphql/resolvers/board-presence/shared';
 import { socialBoardMutations } from '../graphql/resolvers/social/boards';
 import { BoardPresenceConfigInputSchema, CreateBoardInputSchema, UpdateBoardInputSchema } from '../validation/schemas';
 import { seedAuroraCatalogFixtures } from './helpers/board-catalog-fixture';
@@ -52,7 +52,7 @@ function anonCtx(): ConnectionContext {
 }
 
 function presenceSlug(boardType: string, layoutId: number, sizeId: number, setIds: string): string {
-  const normalizedSetIds = normalizeSetIds(setIds);
+  const normalizedSetIds = normaliseSetIds(setIds);
   const digest = createHash('sha256')
     .update(`${boardType}:${layoutId}:${sizeId}:${normalizedSetIds}`)
     .digest('hex')
