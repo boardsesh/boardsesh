@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Climb pages load fast and clean — see the problem, the grades, and one tap into the app to climb it. ([#4430](https://github.com/boardsesh/boardsesh/pull/4430))
+  Every climb on your board is now one page away, and findable in search.
 - Build routes and circuits, not just single-frame boulders — duplicate a frame, edit the copy, and step through your sequence as you build it. ([#4422](https://github.com/boardsesh/boardsesh/pull/4422))
   Forking or editing an existing route no longer collapses it into one frame.
 - Climb lists are real links now — open a climb in a new tab, share it straight from the list, or land on it from a search. ([#4421](https://github.com/boardsesh/boardsesh/pull/4421))

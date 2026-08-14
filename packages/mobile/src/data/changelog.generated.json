@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-14T11:36:20.962Z",
+  "generatedAt": "2026-08-14T21:43:53.810Z",
   "entries": [
+    {
+      "prNumber": 4430,
+      "category": "new",
+      "title": "Climb pages load fast and clean — see the problem, the grades, and one tap into the app to climb it.",
+      "mergedAt": "2026-08-14T21:42:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4430",
+      "body": "Every climb on your board is now one page away, and findable in search."
+    },
     {
       "prNumber": 4423,
       "category": "improved",
