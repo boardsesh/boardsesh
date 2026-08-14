@@ -241,7 +241,6 @@
   },
   "queueBar": {
     "cancelReconnectConfirm": "Annuler quittera la session. C'est ce que tu veux ?",
-    "shellMessage": "Aucun bloc sélectionné",
     "startSesh": "Lancer la sesh",
     "linkCopied": "Lien copié !",
     "shareFailed": "Échec du partage",

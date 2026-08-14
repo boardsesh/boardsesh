@@ -18,6 +18,13 @@ import { test, expect, type Page } from '@playwright/test';
 import { waitForBoardListReady } from './helpers/waits';
 
 const BOARD_PATH = '/kilter/original/12x12-square/screw_bolt/40';
+/** The same board in canonical numeric form — the only form the app can parse. */
+const NUMERIC_BOARD_PATH = '/kilter/1/10/1,2/40';
+/**
+ * MoonBoard 2024 (layout 3) running Hold Set D + Wooden Holds (5,8) — two of the
+ * layout's six sets, which is what makes the `sets` param observable.
+ */
+const MOONBOARD_PATH = '/moonboard/3/17/5,8/40';
 const SLUG_BOARD_PATH = '/b/test-board/40';
 const LOCALE_PREFIXES = ['', '/es', '/fr', '/de'] as const;
 
@@ -36,8 +43,12 @@ const SAME_ORIGIN_REDIRECTS = [
 /** Deleted paths that hand off to the app. */
 const APP_HANDOFF_PATHS = [`${BOARD_PATH}/create`, `${SLUG_BOARD_PATH}/create`] as const;
 
-/** Deleted paths re-homed onto the board-agnostic importer. */
-const IMPORTER_PATHS = [`${BOARD_PATH}/import`, `${SLUG_BOARD_PATH}/import`] as const;
+/**
+ * Deleted paths re-homed onto the board-agnostic importer. Bulk import is
+ * MoonBoard-only, so the Aurora board's `…/import` is NOT one of them — it goes
+ * to that board's own list, asserted separately below.
+ */
+const IMPORTER_PATHS = [`${MOONBOARD_PATH}/import`, `${SLUG_BOARD_PATH}/import`] as const;
 
 test.describe('deleted board-route siblings redirect in every locale', () => {
   for (const prefix of LOCALE_PREFIXES) {
@@ -65,6 +76,40 @@ test.describe('deleted board-route siblings redirect in every locale', () => {
         expect(new URL(location).pathname).toBe('/climbs/create');
       });
     }
+
+    test(`${localeLabel}: a numeric create URL carries its board to the app`, async ({ request }) => {
+      const response = await request.get(`${prefix}${NUMERIC_BOARD_PATH}/create`, { maxRedirects: 0 });
+
+      expect(response.status()).toBe(307);
+      const location = new URL(response.headers()['location']);
+      expect(location.pathname).toBe('/climbs/create');
+      expect(Object.fromEntries(location.searchParams)).toEqual({
+        boardName: 'kilter',
+        layoutId: '1',
+        sizeId: '10',
+        setIds: '1,2',
+        angle: '40',
+      });
+    });
+
+    test(`${localeLabel}: a MoonBoard import URL carries the hold sets it named`, async ({ request }) => {
+      const response = await request.get(`${prefix}${MOONBOARD_PATH}/import`, { maxRedirects: 0 });
+
+      expect(response.status()).toBe(308);
+      const location = new URL(response.headers()['location'], 'http://localhost');
+      expect(location.pathname).toBe(`${prefix}/moonboard-import`);
+      expect(location.searchParams.get('sets')).toBe('5,8');
+    });
+
+    test(`${localeLabel}: a non-MoonBoard import URL lands on that board's own list`, async ({ request }) => {
+      // Bulk import is MoonBoard-only, and MoonBoard layout ids collide with
+      // Aurora's — without its own rule this would open the importer for the
+      // wrong board.
+      const response = await request.get(`${prefix}${NUMERIC_BOARD_PATH}/import`, { maxRedirects: 0 });
+
+      expect(response.status()).toBe(308);
+      expect(response.headers()['location']).toBe(`${prefix}${NUMERIC_BOARD_PATH}/list`);
+    });
 
     for (const from of IMPORTER_PATHS) {
       test(`${localeLabel}: ${from} 308s to the MoonBoard importer`, async ({ request }) => {
@@ -100,18 +145,27 @@ test.describe('the surviving board routes', () => {
 });
 
 /**
+ * The path every product WebSocket in this app connects to. The only one is the
+ * graphql-ws link to the backend — `getBackendWsUrl()` in
+ * `app/lib/backend-url.ts` always ends in `/graphql`.
+ *
+ * Matching it positively is what makes this check trustworthy. A negative
+ * filter would have to enumerate every socket that is *not* ours, and the local
+ * runner boots the Next dev server, where HMR, the RSC debug channel and the
+ * Vercel toolbar each open their own — any of which would red a test whose
+ * subject is the comment socket.
+ */
+const PRODUCT_WS_PATHNAME = '/graphql';
+
+/**
  * Records every product WebSocket the page opens while it loads and while it
  * sits scrolled to the bottom — the comment section mounts below the fold, so
  * a check that never scrolls passes vacuously.
- *
- * Next's own dev-server sockets (HMR, the RSC debug channel) are filtered out:
- * they live under `/_next/` and only exist when this runs against `bun run
- * dev`, which is exactly how `vp run test:e2e` runs it.
  */
 async function socketsOpenedOn(page: Page, path: string): Promise<string[]> {
   const sockets: string[] = [];
   page.on('websocket', (ws) => {
-    if (!new URL(ws.url()).pathname.startsWith('/_next')) sockets.push(ws.url());
+    if (new URL(ws.url()).pathname === PRODUCT_WS_PATHNAME) sockets.push(ws.url());
   });
 
   await page.goto(path, { waitUntil: 'load' });
@@ -124,6 +178,12 @@ async function socketsOpenedOn(page: Page, path: string): Promise<string[]> {
 test.describe('no WebSocket opens on a board route for a signed-out visitor', () => {
   test('the board list front door', async ({ page }) => {
     expect(await socketsOpenedOn(page, `${BOARD_PATH}/list`)).toEqual([]);
+  });
+
+  test('the named-board list front door', async ({ page }) => {
+    // The `/b/{slug}` tree has its own layout, stripped in the same PR — a green
+    // config-tuple tree says nothing about this one.
+    expect(await socketsOpenedOn(page, `${SLUG_BOARD_PATH}/list`)).toEqual([]);
   });
 
   test('a climb front door', async ({ page }) => {

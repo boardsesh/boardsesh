@@ -241,7 +241,6 @@
   },
   "queueBar": {
     "cancelReconnectConfirm": "Cancelling will leave the session. Is that what you want?",
-    "shellMessage": "No climb selected",
     "startSesh": "Start sesh",
     "linkCopied": "Link copied!",
     "shareFailed": "Failed to share",

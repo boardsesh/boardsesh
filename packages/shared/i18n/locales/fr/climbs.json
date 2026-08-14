@@ -60,9 +60,7 @@
       }
     }
   },
-  "header": {
-    "createNewClimb": "Créer un nouveau bloc"
-  },
+  "header": {},
   "share": {
     "actionLabel": "Partager",
     "actionText": "Jetez un œil à « {{climbName}} » ({{difficulty}}) sur Boardsesh",
@@ -181,7 +179,6 @@
       "onlyCompleted": "Enchaînés uniquement"
     },
     "actions": {
-      "search": "Rechercher",
       "clearAll": "Tout effacer",
       "signIn": "Se connecter"
     },

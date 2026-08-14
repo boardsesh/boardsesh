@@ -60,9 +60,7 @@
       }
     }
   },
-  "header": {
-    "createNewClimb": "Create new climb"
-  },
+  "header": {},
   "share": {
     "actionLabel": "Share",
     "actionText": "Check out \"{{climbName}}\" ({{difficulty}}) on Boardsesh",
@@ -181,7 +179,6 @@
       "onlyCompleted": "Only Completed"
     },
     "actions": {
-      "search": "Search",
       "clearAll": "Clear all",
       "signIn": "Sign In"
     },

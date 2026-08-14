@@ -191,12 +191,6 @@
     },
     {
       "from": "app/components/providers/persistent-session-wrapper.tsx",
-      "to": "app/components/search-drawer/search-drawer-bridge-context.tsx",
-      "reason": "unified search drawer; the SPA has its own search sheet",
-      "cutBy": "teardown:components-search-drawer"
-    },
-    {
-      "from": "app/components/providers/persistent-session-wrapper.tsx",
       "to": "app/components/sesh-settings/sesh-settings-drawer-event.ts",
       "reason": "session settings drawer that moves to the SPA",
       "cutBy": "teardown:components-sesh-settings"

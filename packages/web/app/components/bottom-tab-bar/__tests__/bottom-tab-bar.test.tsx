@@ -272,6 +272,13 @@ function createHref() {
   return createTab.getAttribute('href') ?? '';
 }
 
+/**
+ * The Create tab leaves www: W-17 (#4433) deleted the board routes' `…/create`
+ * sibling and the climb editor lives in the app. It is always a real
+ * cross-origin <a>, never a drawer trigger — the board in scope rides along as
+ * query params the app's create screen reads, and with no board it hands over
+ * bare so the app opens on the reader's active board.
+ */
 describe('BottomTabBar create flow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -283,54 +290,33 @@ describe('BottomTabBar create flow', () => {
     mockLastUsedBoard = null;
   });
 
-  it('renders a link to the create climb URL when board details are available', () => {
+  it('links to the app editor with the board in scope attached', () => {
     render(<BottomTabBar boardDetails={boardDetails} angle={40} boardConfigs={boardConfigs} />);
 
-    expect(createHref()).toContain('/create');
+    const href = new URL(createHref());
+    expect(href.origin + href.pathname).toBe('https://app.boardsesh.com/climbs/create');
+    expect(href.searchParams.get('boardName')).toBe(boardDetails.board_name);
+    expect(href.searchParams.get('angle')).toBe('40');
   });
 
-  it('opens board selector when no board context, then navigates to create after board selection', () => {
-    render(<BottomTabBar boardConfigs={boardConfigs} />);
+  it('never links into the deleted www create route', () => {
+    render(<BottomTabBar boardDetails={boardDetails} angle={40} boardConfigs={boardConfigs} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
-
-    expect(screen.getByTestId('drawer-Pick a board')).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Select Board' }));
-
-    expect(mockPush).toHaveBeenCalledWith(expect.stringContaining('/create'));
+    // A www `…/create` href would 307 the reader straight back off the site,
+    // dropping the board on the way.
+    expect(createHref().startsWith('http')).toBe(true);
+    expect(createHref()).not.toMatch(/^\/[a-z]/);
   });
 
-  it('routes to /create (not /list) when board is selected via isCreateClimbFlow', () => {
-    // createClimbUrl is null (no boardDetails/angle); boardConfigs is set so the board selector opens
-    render(<BottomTabBar boardConfigs={boardConfigs} />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
-    expect(screen.getByTestId('drawer-Pick a board')).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Select Board' }));
-
-    // Should navigate to the create path, not the list path the mock returns
-    const pushedUrl = mockPush.mock.calls[0][0] as string;
-    expect(pushedUrl).toContain('/create');
-    expect(pushedUrl).not.toContain('/list');
-  });
-
-  it('does nothing when createClimbUrl is null and boardConfigs is not provided', () => {
-    // No boardDetails, no boardConfigs — Create tab should not navigate or open any drawer
+  it('hands over bare when no board is in scope, still as a link', () => {
     render(<BottomTabBar />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
-
-    expect(mockPush).not.toHaveBeenCalled();
+    // No drawer, no dead button: the app opens on the reader's active board.
+    expect(createHref()).toBe('https://app.boardsesh.com/climbs/create');
     expect(screen.queryByTestId('drawer-Pick a board')).toBeNull();
   });
 
-  it('renders a link to last-used-board /create URL when board details are unavailable', async () => {
-    // Slow-network race: QueueBridge hasn't populated effectiveBoardDetails
-    // yet, but the user previously visited a board so IndexedDB has it.
-    // The Create tab must promote to a real <a> rather than waiting on the
-    // drawer-opening button branch.
+  it('does not consult the last-used board — the app already knows it', async () => {
     mockLastUsedBoard = {
       url: '/kilter/original/12x12-square/screw_bolt/40/list',
       boardName: 'kilter',
@@ -343,7 +329,7 @@ describe('BottomTabBar create flow', () => {
     render(<BottomTabBar boardConfigs={boardConfigs} />);
 
     const createLink = await waitFor(() => screen.getByRole('link', { name: 'Create' }));
-    expect(createLink.getAttribute('href')).toBe('/kilter/original/12x12-square/screw_bolt/40/create');
+    expect(createLink.getAttribute('href')).toBe('https://app.boardsesh.com/climbs/create');
   });
 });
 
@@ -527,21 +513,22 @@ describe('BottomTabBar shadowed size slugs', () => {
     mockLastUsedBoard = null;
   });
 
-  it('emits the qualified size slug on both tabs for the shadowed size', () => {
+  it('emits the qualified size slug on the Climb tab for the shadowed size', () => {
     render(<BottomTabBar boardDetails={squareWithoutKickboard} angle={40} boardConfigs={boardConfigs} />);
 
     expect(climbHref()).toBe('/kilter/original/12x12-square-without-kickboard/screw_bolt/40/list');
-    expect(createHref()).toBe('/kilter/original/12x12-square-without-kickboard/screw_bolt/40/create');
+    // The Create tab can't be ambiguous at all — it sends the numeric size id.
+    expect(new URL(createHref()).searchParams.get('sizeId')).toBe('27');
   });
 
   it('leaves the size that owns the bare slug on it', () => {
     render(<BottomTabBar boardDetails={squareWithKickboard} angle={40} boardConfigs={boardConfigs} />);
 
     expect(climbHref()).toBe('/kilter/original/12x12-square/screw_bolt/40/list');
-    expect(createHref()).toBe('/kilter/original/12x12-square/screw_bolt/40/create');
+    expect(new URL(createHref()).searchParams.get('sizeId')).toBe('10');
   });
 
-  it('falls back to the name-based URLs for a board the static tables do not carry', () => {
+  it('falls back to the name-based list URL for a board the static tables do not carry', () => {
     const dbOnlyBoard = {
       ...boardDetails,
       layout_id: 9999,
@@ -556,6 +543,7 @@ describe('BottomTabBar shadowed size slugs', () => {
     render(<BottomTabBar boardDetails={dbOnlyBoard} angle={40} boardConfigs={boardConfigs} />);
 
     expect(climbHref()).toBe('/kilter/homewall/8x12-home/main/40/list');
-    expect(createHref()).toBe('/kilter/homewall/8x12-home/main/40/create');
+    // No name lookup on the Create tab — the ids go over as they are.
+    expect(new URL(createHref()).searchParams.get('layoutId')).toBe('9999');
   });
 });

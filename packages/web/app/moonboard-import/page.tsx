@@ -11,6 +11,7 @@ import {
   MOONBOARD_ANGLES,
   MOONBOARD_LAYOUTS,
   MOONBOARD_SETS,
+  getHoldSetImages,
 } from '@/app/lib/moonboard-config';
 import { getMoonBoardLayoutBySlug } from '@/app/lib/url-utils';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
@@ -72,8 +73,37 @@ function resolveAngle(rawAngle: string | undefined): number {
   return MOONBOARD_ANGLES.includes(angle as (typeof MOONBOARD_ANGLES)[number]) ? angle : DEFAULT_ANGLE;
 }
 
+/**
+ * The overlay images for the hold sets actually bolted to the climber's wall.
+ *
+ * The old board URL named them in its `set_ids` segment and the deleted page
+ * drew only those; the canonical redirect carries that segment through as
+ * `sets` so this route can keep doing the same. Without it a MoonBoard 2024
+ * wall running Hold Set D + Wooden Holds would get all six of the layout's sets
+ * stacked on the import preview and the edit modal — holds that are not on the
+ * wall.
+ *
+ * Falls back to every set for the layout when `sets` is absent or names nothing
+ * this layout has: the `/b/:board_slug` tree has no set segment, and a
+ * slug-form URL carries names rather than ids. That is the same art the picker's
+ * own entry point produces, so the fallback is the status quo, not a surprise.
+ */
+function resolveHoldSetImages(layoutKey: MoonBoardLayoutKey, rawSets: string | undefined): string[] {
+  const everySetForLayout = (MOONBOARD_SETS[layoutKey] ?? []).map((holdSet) => holdSet.imageFile);
+  if (!rawSets) return everySetForLayout;
+
+  const setIds = rawSets
+    .split(',')
+    .map((rawSetId) => Number(rawSetId.trim()))
+    .filter((setId) => Number.isInteger(setId));
+  if (setIds.length === 0) return everySetForLayout;
+
+  const selected = getHoldSetImages(layoutKey, setIds);
+  return selected.length > 0 ? selected : everySetForLayout;
+}
+
 type MoonBoardImportPageProps = {
-  searchParams: Promise<{ layout?: string; angle?: string }>;
+  searchParams: Promise<{ layout?: string; sets?: string; angle?: string }>;
 };
 
 export default async function MoonBoardImportPage(props: MoonBoardImportPageProps) {
@@ -128,7 +158,7 @@ export default async function MoonBoardImportPage(props: MoonBoardImportPageProp
     );
   }
 
-  const holdSetImages = (MOONBOARD_SETS[layout.layoutKey] ?? []).map((holdSet) => holdSet.imageFile);
+  const holdSetImages = resolveHoldSetImages(layout.layoutKey, searchParams.sets);
 
   return (
     <MoonBoardBulkImport

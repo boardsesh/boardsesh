@@ -52,23 +52,32 @@ export function resolveExpoWebDevOrigin(rawOrigin) {
 const PATH_LOCALE_PREFIXES = ['/es', '/fr', '/de'];
 
 /**
- * Origin of the Expo-web app. Mirrors `app/lib/app-origin.ts`, which cannot be
- * imported here (next.config.mjs loads outside the TS path aliases);
- * `app/__tests__/next-config-redirects.test.ts` pins this literal against
- * `DEFAULT_APP_ORIGIN` from `@boardsesh/shared-schema/app-origins`.
+ * Origin of the Expo-web app. Mirrors `DEFAULT_APP_ORIGIN` in
+ * `@boardsesh/shared-schema/app-origins`, which cannot be imported here
+ * (next.config.mjs loads outside the TS path aliases), so
+ * `app/__tests__/next-config-redirects.test.ts` pins the literal against it.
+ *
+ * Exported separately from `APP_ORIGIN` on purpose: `NEXT_PUBLIC_APP_URL` is set
+ * to `http://localhost:8081` for local Expo-web work (see `.env.local`), and a
+ * test that pinned the env-resolved value would fail on a correct config the
+ * moment that export is in the shell.
  */
-export const APP_ORIGIN = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.boardsesh.com';
+export const DEFAULT_CONFIG_APP_ORIGIN = 'https://app.boardsesh.com';
+
+export const APP_ORIGIN = process.env.NEXT_PUBLIC_APP_URL ?? DEFAULT_CONFIG_APP_ORIGIN;
 
 /**
  * Board-route siblings deleted by the web reposition (W-17, #4433), plus the
  * legacy library/profile paths that predate it.
  *
  * Same-origin destinations are `permanent: true` — they point at routes that
- * exist on this deploy and consolidating the signal is the point. The one
- * cross-origin destination is `permanent: false`: a browser caches a permanent
- * cross-origin redirect indefinitely and `middleware.ts` serves it CDN-stale
- * for `stale-while-revalidate = TTL × 7`, so there would be no hatch left if the
- * SPA route moved. It stays temporary until the app route is proven in prod.
+ * exist on this deploy and consolidating the signal is the point. The
+ * cross-origin destinations are `permanent: false`: a browser caches a permanent
+ * cross-origin redirect indefinitely, with no server-side hatch left if the SPA
+ * route moves. They stay temporary until the app route is proven in prod.
+ *
+ * Order matters — Next matches these in array order, so a board-specific rule
+ * has to come before the `/:board/…` catch-all that would otherwise swallow it.
  */
 const BASE_REDIRECTS = [
   // Legacy library / profile paths.
@@ -98,9 +107,19 @@ const BASE_REDIRECTS = [
     permanent: true,
   },
 
-  // Climb creation moved to the app. The destination is not board-scoped, so a
-  // bookmarked board create URL lands on the app's create screen bound to
-  // whatever board the app last had — an accepted regression, recorded on #4433.
+  // Climb creation moved to the app. A canonical numeric board URL hands its
+  // board over intact: these are exactly the params the app's create screen
+  // reads (`packages/mobile/app/(tabs)/climbs/create.tsx`), and it falls back to
+  // the signed-in user's active board for any it doesn't get.
+  {
+    source: '/:board/:layout(\\d+)/:size(\\d+)/:set([\\d,]+)/:angle(\\d+)/create',
+    destination: `${APP_ORIGIN}/climbs/create?boardName=:board&layoutId=:layout&sizeId=:size&setIds=:set&angle=:angle`,
+    permanent: false,
+  },
+  // The slug forms hand over bare. The app parses layoutId/sizeId with
+  // `Number()`, so forwarding `original`/`12x12-square` would seed the editor
+  // with NaN — worse than its active-board fallback — and resolving a slug needs
+  // a DB lookup a static redirect cannot do. Recorded on #4433.
   {
     source: '/:board/:layout/:size/:set/:angle/create',
     destination: `${APP_ORIGIN}/climbs/create`,
@@ -113,13 +132,27 @@ const BASE_REDIRECTS = [
   },
 
   // The MoonBoard bulk importer stays on Next, re-homed to a board-agnostic
-  // route. The layout and angle ride along so a bookmarked board import URL
-  // opens the board it named; anything unresolvable lands on the picker.
+  // route. Layout, hold sets and angle ride along so a bookmarked import URL
+  // opens the wall it named; anything unresolvable lands on the picker.
   {
-    source: '/:board/:layout/:size/:set/:angle/import',
-    destination: '/moonboard-import?layout=:layout&angle=:angle',
+    source: '/moonboard/:layout/:size/:set/:angle/import',
+    destination: '/moonboard-import?layout=:layout&sets=:set&angle=:angle',
     permanent: true,
   },
+  // Bulk import is MoonBoard-only — the deleted page sent a Kilter or Tension
+  // import URL to that board's own list instead of rendering the importer. This
+  // rule keeps that, and it has to exist: `MOONBOARD_LAYOUTS` ids run 1–7 and
+  // collide with Aurora layout ids, so without it `/kilter/1/…/import` would
+  // resolve to MoonBoard 2010 and render the importer for the wrong board.
+  {
+    source: '/:board/:layout/:size/:set/:angle/import',
+    destination: '/:board/:layout/:size/:set/:angle/list',
+    permanent: true,
+  },
+  // The `/b` tree can't make that split: the slug names a board row, and only a
+  // DB lookup says whether it's a MoonBoard. It goes to the importer because
+  // that is the only reason to open `/import` at all; a non-MoonBoard slug lands
+  // on the picker, which is a noindex utility page with a way back.
   {
     source: '/b/:board_slug/:angle/import',
     destination: '/moonboard-import?angle=:angle',

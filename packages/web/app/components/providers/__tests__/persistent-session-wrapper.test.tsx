@@ -113,9 +113,7 @@ vi.mock('../../session-summary/session-summary-dialog', () => ({
   default: () => null,
 }));
 
-vi.mock('../../search-drawer/search-drawer-bridge-context', () => ({
-  SearchDrawerBridgeProvider: ({ children }: { children: React.ReactNode }) => children,
-}));
+vi.mock('../../search-drawer/search-drawer-bridge-context', () => ({}));
 
 const mockBoardConfigs = {} as Parameters<typeof RootBottomBar>[0]['boardConfigs'];
 

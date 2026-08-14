@@ -25,7 +25,6 @@ import type { BoardConfigData } from '@/app/lib/server-board-configs';
 import { isChromeLessPath } from '@/app/lib/chrome-less-routes';
 import GlobalHeader from '../global-header/global-header';
 import SessionSummaryDialog from '../session-summary/session-summary-dialog';
-import { SearchDrawerBridgeProvider } from '../search-drawer/search-drawer-bridge-context';
 import { StatsFilterBridgeProvider } from '../stats-filter-bridge/stats-filter-bridge-context';
 import { ProfileHeaderShareProvider } from '../profile-header-bridge/profile-header-bridge-context';
 import { isNativeApp } from '@/app/lib/ble/capacitor-utils';
@@ -57,30 +56,28 @@ export default function PersistentSessionWrapper({ children, boardConfigs }: Per
       <PersistentSessionProvider>
         <QueueBridgeProvider>
           <BoardSwitchConfirmProvider>
-            <SearchDrawerBridgeProvider>
-              <StatsFilterBridgeProvider>
-                <ProfileHeaderShareProvider>
-                  {/* WebBoardPresenceProvider wraps the BLE provider so the
-                      connect→resolveBoardForSerial and wall-confirm→reportClimb
-                      wiring inside BluetoothProvider can read the wall context.
-                      Inert (no client, null boardId) until a BLE serial resolves
-                      to a board. */}
-                  <WebBoardPresenceProvider>
-                    <RootBluetoothProvider>
-                      <PlaylistsAdapterProvider>
-                        <GlobalHeader boardConfigs={boardConfigs} />
-                        {children}
-                        <RootBottomBar boardConfigs={boardConfigs} />
-                        <BoardPresencePanel />
-                        <RootSessionSummaryDialog />
-                        <RootSeshSettingsDrawer />
-                        <SessionWakeLock />
-                      </PlaylistsAdapterProvider>
-                    </RootBluetoothProvider>
-                  </WebBoardPresenceProvider>
-                </ProfileHeaderShareProvider>
-              </StatsFilterBridgeProvider>
-            </SearchDrawerBridgeProvider>
+            <StatsFilterBridgeProvider>
+              <ProfileHeaderShareProvider>
+                {/* WebBoardPresenceProvider wraps the BLE provider so the
+                    connect→resolveBoardForSerial and wall-confirm→reportClimb
+                    wiring inside BluetoothProvider can read the wall context.
+                    Inert (no client, null boardId) until a BLE serial resolves
+                    to a board. */}
+                <WebBoardPresenceProvider>
+                  <RootBluetoothProvider>
+                    <PlaylistsAdapterProvider>
+                      <GlobalHeader boardConfigs={boardConfigs} />
+                      {children}
+                      <RootBottomBar boardConfigs={boardConfigs} />
+                      <BoardPresencePanel />
+                      <RootSessionSummaryDialog />
+                      <RootSeshSettingsDrawer />
+                      <SessionWakeLock />
+                    </PlaylistsAdapterProvider>
+                  </RootBluetoothProvider>
+                </WebBoardPresenceProvider>
+              </ProfileHeaderShareProvider>
+            </StatsFilterBridgeProvider>
           </BoardSwitchConfirmProvider>
         </QueueBridgeProvider>
       </PersistentSessionProvider>

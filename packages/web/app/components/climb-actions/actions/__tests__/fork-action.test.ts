@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { ForkAction } from '../fork-action';
-import { constructCreateClimbUrl, tryConstructSlugCreateUrl } from '@/app/lib/url-utils';
-import type { ClimbActionProps } from '../../types';
+import type { ClimbActionProps, ClimbActionResult } from '../../types';
 import type { BoardDetails, Climb } from '@/app/lib/types';
 
 // Mock dependencies before importing the module
@@ -11,13 +10,6 @@ vi.mock('@/app/lib/analytics', () => ({
 
 vi.mock('next/link', () => ({
   default: vi.fn(({ children }: { children: React.ReactNode }) => children),
-}));
-
-vi.mock('@/app/lib/url-utils', () => ({
-  constructCreateClimbUrl: vi.fn(() => '/mocked-fork-url'),
-  // null → ForkAction falls through to the name-based builder above; the
-  // id-aware preference is pinned separately below.
-  tryConstructSlugCreateUrl: vi.fn(() => null),
 }));
 
 vi.mock('@/app/theme/theme-config', () => ({
@@ -98,6 +90,16 @@ function createTestProps(overrides?: Partial<ClimbActionProps>): ClimbActionProp
   };
 }
 
+/**
+ * The remix href, read off the menu item's label element. Every surface
+ * (icon/button/list/menu) is built from the same `url`, so one is enough.
+ */
+function hrefOf(menuItem: ClimbActionResult['menuItem']): string | undefined {
+  const label = menuItem?.label;
+  if (!label || typeof label !== 'object' || !('props' in label)) return undefined;
+  return (label.props as { href?: string }).href;
+}
+
 describe('ForkAction', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -113,31 +115,21 @@ describe('ForkAction', () => {
       expect(result.available).toBe(false);
     });
 
-    it('returns available: false when layout_name is missing', () => {
+    it('stays available on a board the static slug tables do not name', () => {
+      // The app's editor takes the numeric tuple, so a missing layout/size/set
+      // name is no longer a reason to hide the action.
       const props = createTestProps({
-        boardDetails: createTestBoardDetails({ layout_name: undefined }),
+        boardDetails: createTestBoardDetails({
+          layout_name: undefined,
+          size_name: undefined,
+          set_names: undefined,
+        }),
       });
       const result = ForkAction(props);
-      expect(result.available).toBe(false);
+      expect(result.available).toBe(true);
     });
 
-    it('returns available: false when size_name is missing', () => {
-      const props = createTestProps({
-        boardDetails: createTestBoardDetails({ size_name: undefined }),
-      });
-      const result = ForkAction(props);
-      expect(result.available).toBe(false);
-    });
-
-    it('returns available: false when set_names is missing', () => {
-      const props = createTestProps({
-        boardDetails: createTestBoardDetails({ set_names: undefined }),
-      });
-      const result = ForkAction(props);
-      expect(result.available).toBe(false);
-    });
-
-    it('returns available: true when board is not moonboard and all slug fields present', () => {
+    it('returns available: true when the board is not moonboard', () => {
       const props = createTestProps();
       const result = ForkAction(props);
       expect(result.available).toBe(true);
@@ -153,44 +145,35 @@ describe('ForkAction', () => {
   });
 
   describe('URL construction', () => {
-    it('calls constructCreateClimbUrl with correct params when available', () => {
+    // W-17 (#4433) deleted www's `…/create` routes; a remix opens the app's
+    // editor directly, so the seed frames survive instead of being dropped by a
+    // redirect that keeps only the pathname.
+    it('links straight at the app editor with the board and the seed attached', () => {
       const props = createTestProps();
-      ForkAction(props);
+      const { menuItem } = ForkAction(props);
 
-      expect(constructCreateClimbUrl).toHaveBeenCalledWith(
-        'kilter',
-        'Original',
-        '12x12',
-        'Full Size',
-        ['Standard', 'Extended'],
-        40,
-        { frames: 'p1r12p2r13', name: 'Test Climb' },
+      expect(hrefOf(menuItem)).toBe(
+        'https://app.boardsesh.com/climbs/create?boardName=kilter&layoutId=1&sizeId=10&setIds=1%2C2&angle=40&forkFrames=p1r12p2r13&forkName=Test+Climb',
       );
     });
 
-    it('does not call constructCreateClimbUrl when not available', () => {
+    it('sends the numeric board tuple, so a shadowed size remixes onto its own board', () => {
+      // Kilter layout 1 size 27 shares a bare slug with size 10; ids can't be
+      // ambiguous the way the slug was.
+      const props = createTestProps({ boardDetails: createTestBoardDetails({ size_id: 27 }) });
+      const { menuItem } = ForkAction(props);
+
+      expect(hrefOf(menuItem)).toContain('sizeId=27');
+    });
+
+    it('builds no URL on moonboard, the one board the editor cannot remix', () => {
       const props = createTestProps({
         boardDetails: createTestBoardDetails({ board_name: 'moonboard' }),
       });
-      ForkAction(props);
+      const result = ForkAction(props);
 
-      expect(constructCreateClimbUrl).not.toHaveBeenCalled();
-    });
-
-    it('prefers the id-aware create URL when the static tables resolve the board', () => {
-      vi.mocked(tryConstructSlugCreateUrl).mockReturnValueOnce(
-        '/kilter/original/12x12-square-without-kickboard/screw_bolt/40/create?forkFrames=p1r12p2r13&forkName=Test+Climb',
-      );
-      const props = createTestProps();
-      ForkAction(props);
-
-      expect(tryConstructSlugCreateUrl).toHaveBeenCalledWith('kilter', 1, 10, [1, 2], 40, {
-        frames: 'p1r12p2r13',
-        name: 'Test Climb',
-      });
-      // The name-based builder must not run when the id-aware one resolved —
-      // its bare slug would point a shadowed size at the wrong board.
-      expect(constructCreateClimbUrl).not.toHaveBeenCalled();
+      expect(result.available).toBe(false);
+      expect(result.menuItem?.disabled).toBe(true);
     });
   });
 
@@ -247,21 +230,10 @@ describe('ForkAction', () => {
           description: 'Draft description',
         }),
       });
-      ForkAction(props);
-
-      expect(constructCreateClimbUrl).toHaveBeenCalledWith(
-        'kilter',
-        'Original',
-        '12x12',
-        'Full Size',
-        ['Standard', 'Extended'],
-        40,
-        {
-          frames: 'p1r12p2r13',
-          name: 'Test Climb',
-          description: 'Draft description',
-          editClimbUuid: 'test-uuid-123',
-        },
+      expect(hrefOf(ForkAction(props).menuItem)).toBe(
+        'https://app.boardsesh.com/climbs/create?boardName=kilter&layoutId=1&sizeId=10&setIds=1%2C2&angle=40' +
+          '&forkFrames=p1r12p2r13&forkName=Test+Climb&forkDescription=Draft+description' +
+          '&editClimbUuid=test-uuid-123',
       );
     });
 
@@ -274,17 +246,9 @@ describe('ForkAction', () => {
       const props = createTestProps({
         climb: createTestClimb({ is_draft: true, userId: 'user-123' }),
       });
-      ForkAction(props);
-
-      // Should be called with fork params (no editClimbUuid)
-      expect(constructCreateClimbUrl).toHaveBeenCalledWith(
-        'kilter',
-        'Original',
-        '12x12',
-        'Full Size',
-        ['Standard', 'Extended'],
-        40,
-        { frames: 'p1r12p2r13', name: 'Test Climb' },
+      // Fork params, no editClimbUuid.
+      expect(hrefOf(ForkAction(props).menuItem)).toBe(
+        'https://app.boardsesh.com/climbs/create?boardName=kilter&layoutId=1&sizeId=10&setIds=1%2C2&angle=40&forkFrames=p1r12p2r13&forkName=Test+Climb',
       );
     });
 
@@ -297,16 +261,8 @@ describe('ForkAction', () => {
       const props = createTestProps({
         climb: createTestClimb({ is_draft: true, userId: 'user-123' }),
       });
-      ForkAction(props);
-
-      expect(constructCreateClimbUrl).toHaveBeenCalledWith(
-        'kilter',
-        'Original',
-        '12x12',
-        'Full Size',
-        ['Standard', 'Extended'],
-        40,
-        { frames: 'p1r12p2r13', name: 'Test Climb' },
+      expect(hrefOf(ForkAction(props).menuItem)).toBe(
+        'https://app.boardsesh.com/climbs/create?boardName=kilter&layoutId=1&sizeId=10&setIds=1%2C2&angle=40&forkFrames=p1r12p2r13&forkName=Test+Climb',
       );
     });
 
@@ -319,16 +275,8 @@ describe('ForkAction', () => {
       const props = createTestProps({
         climb: createTestClimb({ is_draft: false, userId: 'user-123' }),
       });
-      ForkAction(props);
-
-      expect(constructCreateClimbUrl).toHaveBeenCalledWith(
-        'kilter',
-        'Original',
-        '12x12',
-        'Full Size',
-        ['Standard', 'Extended'],
-        40,
-        { frames: 'p1r12p2r13', name: 'Test Climb' },
+      expect(hrefOf(ForkAction(props).menuItem)).toBe(
+        'https://app.boardsesh.com/climbs/create?boardName=kilter&layoutId=1&sizeId=10&setIds=1%2C2&angle=40&forkFrames=p1r12p2r13&forkName=Test+Climb',
       );
     });
   });

@@ -213,6 +213,46 @@ rate on the highest-traffic pages.
 staged PostHog rollout; SSR-ing the section would end it for every visitor and
 crawler in a single deploy, irreversibly without another one.
 
+## W-17 — deleting the board-route siblings (#4433)
+
+Twelve sibling routes came out of the two board trees (`create`, `import`,
+`liked`, `logbook`, `playlists`, `playlists/[playlist_uuid]`), plus the session
+providers and `BoardSeshHeader` above them. `next.config.mjs` holds the redirect
+table, every rule with its three locale twins. Three of those rules carry
+context rather than dropping it, and the reasons are worth keeping:
+
+- **Create → the app, with the board attached.** A canonical numeric board URL
+  hands `boardName`/`layoutId`/`sizeId`/`setIds`/`angle` to the app's create
+  screen, which reads exactly those. Slug forms (`/kilter/original/…` and the
+  whole `/b/{slug}` tree) hand over bare: the app parses the ids with `Number()`,
+  so forwarding a slug would seed the editor with `NaN`, and resolving one needs
+  a DB lookup a static redirect can't do. **Everything on www that used to link
+  at `…/create` now links at the app directly** — the Create tab in the bottom
+  bar, the remix/edit action — through `buildAppCreateClimbUrl`, so there is no
+  redirect hop and no board context lost in it.
+- **Import → `/moonboard-import`, with the hold sets.** Bulk import is
+  MoonBoard-only, so `/moonboard/…/import` goes to the importer carrying
+  `layout`, `sets` and `angle`, and every other board's `…/import` goes to that
+  board's own list — the same split the deleted page made. It needs its own rule
+  because `MOONBOARD_LAYOUTS` ids run 1–7 and collide with Aurora layout ids;
+  without it `/kilter/1/…/import` would render the importer for MoonBoard 2010.
+  The `sets` param matters for the same reason: without it a 2024 wall gets all
+  six of the layout's hold sets stacked on the preview instead of the two it
+  named. The `/b/{slug}` tree can't make that split — the slug names a DB row —
+  so it goes to the importer and an unresolvable one lands on the picker.
+- **Cross-origin rules stay `permanent: false`.** A permanent cross-origin
+  redirect is cached by the browser indefinitely with no server-side hatch. They
+  go 308 once the app route is proven in production.
+
+**Parked, not forgotten.** `components/create-climb/` (the www climb editor,
+including `drafts-drawer` and `create-climb-form`) lost its last route here and
+is now reachable only through the MoonBoard importer's shared pieces
+(`hold-indicator`, `hold-type-picker`, `use-hold-type-picker`,
+`use-moonboard-create-climb`). Deleting the rest belongs with `teardown:components-create-climb`
+in W-16, not here — it is a large cascade and the importer's edges have to be
+lifted out first. `components/board-page/last-used-board-tracker.tsx` stays for
+the same reason, as the one allowlisted edge W-16 cuts.
+
 ## Phase A0 — blocking pre-delete QA gate (real devices)
 
 The teardown is a **hard delete** with no retained `?classic=1` runtime fallback,
@@ -592,7 +632,7 @@ Cut **2026-08-14**. **Expires 2026-11-12.** Put a reminder on the epic
   and `git push origin --delete classic-web-last-good` (plus the local tag
   with `git tag -d classic-web-last-good` if you have it checked out) — don't
   let it silently rot as an ever-growing, never-reviewed fork of history.
-- If the programme is still mid-flight (W-16/W-17 not yet landed, or there's
+- If the programme is still mid-flight (W-16 not yet landed, or there's
   active incident risk), **consciously re-cut** — same commands as the
   "advances past this point" case above — and push the expiry another 90 days.
 

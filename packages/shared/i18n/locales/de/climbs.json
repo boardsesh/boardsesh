@@ -60,9 +60,7 @@
       }
     }
   },
-  "header": {
-    "createNewClimb": "Neuen Boulder bauen"
-  },
+  "header": {},
   "share": {
     "actionLabel": "Teilen",
     "actionText": "Schau dir „{{climbName}}“ ({{difficulty}}) auf Boardsesh an",
@@ -181,7 +179,6 @@
       "onlyCompleted": "Nur getoppte"
     },
     "actions": {
-      "search": "Suchen",
       "clearAll": "Alles zurücksetzen",
       "signIn": "Anmelden"
     },

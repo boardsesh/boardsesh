@@ -135,7 +135,6 @@ vi.mock('@/app/components/board-renderer/util', () => ({
 // cleanly, since the page/layout modules import them at the top level.
 vi.mock('@/app/components/board-page/board-page-climbs-list', () => ({ default: () => null }));
 vi.mock('@/app/components/climb-detail/climb-view-seo-fragment', () => ({ default: () => null }));
-vi.mock('@/app/components/board-page/header', () => ({ default: () => null }));
 vi.mock('@/app/components/board-page/last-used-board-tracker', () => ({ default: () => null }));
 vi.mock('@/app/components/providers/i18n-provider', () => ({ default: () => null }));
 vi.mock('@/app/components/graphql-queue', () => ({ GraphQLQueueProvider: () => null }));

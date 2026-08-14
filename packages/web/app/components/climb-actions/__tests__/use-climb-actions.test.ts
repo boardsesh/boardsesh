@@ -52,12 +52,13 @@ vi.mock('@/app/components/providers/auth-modal-provider', () => ({
 
 vi.mock('@/app/lib/url-utils', () => ({
   getContextAwareClimbViewUrl: vi.fn(() => '/climb/view-context'),
-  constructCreateClimbUrl: vi.fn(() => '/climb/create'),
   constructClimbInfoUrl: vi.fn(() => '/climb/info'),
-  // null → the hook falls through to the name-based builder mocked above, so
-  // the fixtures (which don't resolve in the static tables anyway) stay valid.
-  tryConstructSlugCreateUrl: vi.fn(() => null),
 }));
+
+// The remix target is the app's editor, not a www route — W-17 (#4433) deleted
+// www's own `…/create`. `app-handoff` is deliberately unmocked so the assertions
+// below pin the real URL the reader is sent to.
+const mockLocationAssign = vi.fn();
 
 // --- Test data ---
 
@@ -72,7 +73,7 @@ const mockBoardDetails = {
   board_name: 'kilter',
   layout_id: 1,
   size_id: 10,
-  set_ids: '1,2',
+  set_ids: [1, 2],
   layout_name: 'Original',
   size_name: '12x12',
   size_description: 'Full',
@@ -108,7 +109,8 @@ describe('useClimbActions', () => {
     Object.defineProperty(global, 'window', {
       value: Object.assign(Object.create(Object.getPrototypeOf(global.window)), global.window, {
         open: vi.fn(),
-        location: { origin: 'https://boardsesh.com' },
+        // `assign` because the remix leaves this origin for the app.
+        location: { origin: 'https://boardsesh.com', assign: mockLocationAssign },
       }),
       writable: true,
       configurable: true,
@@ -136,14 +138,19 @@ describe('useClimbActions', () => {
     expect(defaultOptions.onActionComplete).toHaveBeenCalledWith('viewDetails');
   });
 
-  it('handleFork navigates to create URL', () => {
+  it('handleFork leaves www for the app editor, board attached', () => {
     const { result } = renderHook(() => useClimbActions(defaultOptions));
 
     act(() => {
       result.current.handleFork();
     });
 
-    expect(mockPush).toHaveBeenCalledWith('/climb/create');
+    // Not router.push: the destination is another origin.
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockLocationAssign).toHaveBeenCalledWith(
+      'https://app.boardsesh.com/climbs/create?boardName=kilter&layoutId=1&sizeId=10&setIds=1%2C2&angle=40' +
+        '&forkFrames=p1r42&forkName=Test+Climb',
+    );
     expect(defaultOptions.onActionComplete).toHaveBeenCalledWith('fork');
   });
 
@@ -314,18 +321,29 @@ describe('useClimbActions', () => {
     expect(result.current.viewDetailsUrl).toBe('/climb/view-context');
   });
 
-  it('forkUrl is null when canFork is false', () => {
-    const boardDetailsNoFork = {
+  it('forkUrl is null on MoonBoard, the one board the editor cannot remix', () => {
+    const moonBoardDetails = { ...mockBoardDetails, board_name: 'moonboard' as const };
+
+    const { result } = renderHook(() => useClimbActions({ ...defaultOptions, boardDetails: moonBoardDetails }));
+
+    expect(result.current.canFork).toBe(false);
+    expect(result.current.forkUrl).toBeNull();
+  });
+
+  it('still remixes a board the static slug tables do not carry', () => {
+    // The app takes the numeric tuple, so a missing layout/size/set NAME is no
+    // longer a reason to hide the action the way the www builder made it one.
+    const unnamedBoard = {
       ...mockBoardDetails,
       layout_name: undefined,
       size_name: undefined,
       set_names: undefined,
     };
 
-    const { result } = renderHook(() => useClimbActions({ ...defaultOptions, boardDetails: boardDetailsNoFork }));
+    const { result } = renderHook(() => useClimbActions({ ...defaultOptions, boardDetails: unnamedBoard }));
 
-    expect(result.current.canFork).toBe(false);
-    expect(result.current.forkUrl).toBeNull();
+    expect(result.current.canFork).toBe(true);
+    expect(result.current.forkUrl).toContain('https://app.boardsesh.com/climbs/create?boardName=kilter');
   });
 
   it('onActionComplete callback is called', () => {

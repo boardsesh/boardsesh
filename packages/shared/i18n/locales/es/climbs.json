@@ -60,9 +60,7 @@
       }
     }
   },
-  "header": {
-    "createNewClimb": "Crear un nuevo bloque"
-  },
+  "header": {},
   "share": {
     "actionLabel": "Compartir",
     "actionText": "Mira \"{{climbName}}\" ({{difficulty}}) en Boardsesh",
@@ -181,7 +179,6 @@
       "onlyCompleted": "Solo encadenados"
     },
     "actions": {
-      "search": "Buscar",
       "clearAll": "Limpiar todo",
       "signIn": "Iniciar sesión"
     },

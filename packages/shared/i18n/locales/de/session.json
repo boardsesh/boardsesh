@@ -241,7 +241,6 @@
   },
   "queueBar": {
     "cancelReconnectConfirm": "Abbrechen heißt, die Session zu verlassen. Willst du das?",
-    "shellMessage": "Kein Boulder ausgewählt",
     "startSesh": "Sesh starten",
     "linkCopied": "Link kopiert!",
     "shareFailed": "Teilen fehlgeschlagen",

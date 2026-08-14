@@ -5,11 +5,10 @@ import MuiButton from '@mui/material/Button';
 import { ActionTooltip } from '../action-tooltip';
 import CallSplitOutlined from '@mui/icons-material/CallSplitOutlined';
 import EditOutlined from '@mui/icons-material/EditOutlined';
-import LocaleLink from '@/app/components/i18n/locale-link';
 import { track } from '@/app/lib/analytics';
 import { useSession } from 'next-auth/react';
 import type { ClimbActionProps, ClimbActionResult } from '../types';
-import { constructCreateClimbUrl, tryConstructSlugCreateUrl } from '@/app/lib/url-utils';
+import { buildAppCreateClimbUrl } from '@/app/lib/app-handoff';
 import { themeTokens } from '@/app/theme/theme-config';
 import { buildActionResult, computeActionDisplay } from '../action-view-renderer';
 
@@ -31,11 +30,11 @@ export function ForkAction({
 
   // Fork is not supported for moonboard yet
   const isMoonboard = boardDetails.board_name === 'moonboard';
-  const canFork = !isMoonboard && !!(boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names);
+  const canFork = !isMoonboard;
 
   const isEdit = !!climb.is_draft && !!climb.userId && climb.userId === session?.user?.id;
 
-  const forkParams = isEdit
+  const forkSeed = isEdit
     ? {
         frames: climb.frames,
         name: climb.name,
@@ -43,27 +42,21 @@ export function ForkAction({
         editClimbUuid: climb.uuid,
       }
     : { frames: climb.frames, name: climb.name };
-  // Id-aware first so a shadowed size (Kilter 12x12 without kickboard) forks
-  // onto its own board rather than the bare slug's first match; names stay as
-  // the fallback for a board the static tables don't carry.
+  // The editor lives in the app — W-17 (#4433) deleted www's `…/create` routes.
+  // The numeric board tuple goes over as-is, so a shadowed size (Kilter 12x12
+  // without kickboard) still remixes onto its own board; no slug round trip and
+  // no name lookup to drift.
   const url = canFork
-    ? (tryConstructSlugCreateUrl(
-        boardDetails.board_name,
-        boardDetails.layout_id,
-        boardDetails.size_id,
-        boardDetails.set_ids,
-        angle,
-        forkParams,
-      ) ??
-      constructCreateClimbUrl(
-        boardDetails.board_name,
-        boardDetails.layout_name!,
-        boardDetails.size_name!,
-        boardDetails.size_description,
-        boardDetails.set_names!,
-        angle,
-        forkParams,
-      ))
+    ? buildAppCreateClimbUrl(
+        {
+          boardName: boardDetails.board_name,
+          layoutId: boardDetails.layout_id,
+          sizeId: boardDetails.size_id,
+          setIds: boardDetails.set_ids,
+          angle,
+        },
+        forkSeed,
+      )
     : null;
 
   const handleClick = () => {
@@ -82,7 +75,9 @@ export function ForkAction({
     <CallSplitOutlined sx={{ fontSize: iconSize }} />
   );
 
-  // Link-based actions need custom elements since they wrap with Next.js Link
+  // Link-based actions need custom elements. These are plain cross-origin <a>
+  // tags, not LocaleLink: the app has no /es, /fr or /de routing and Next's
+  // client router doesn't own the hop.
   return buildActionResult({
     key: 'fork',
     label,
@@ -96,13 +91,13 @@ export function ForkAction({
     available: canFork,
     iconElementOverride: url ? (
       <ActionTooltip title={tooltip}>
-        <LocaleLink href={url} prefetch={false} onClick={handleClick} className={className} style={linkResetStyle}>
+        <a href={url} onClick={handleClick} className={className} style={linkResetStyle}>
           {icon}
-        </LocaleLink>
+        </a>
       </ActionTooltip>
     ) : null,
     buttonElementOverride: url ? (
-      <LocaleLink href={url} prefetch={false} onClick={handleClick} style={linkResetStyle}>
+      <a href={url} onClick={handleClick} style={linkResetStyle}>
         <MuiButton
           variant="outlined"
           startIcon={icon}
@@ -112,10 +107,10 @@ export function ForkAction({
         >
           {shouldShowLabel && label}
         </MuiButton>
-      </LocaleLink>
+      </a>
     ) : null,
     listElementOverride: url ? (
-      <LocaleLink href={url} prefetch={false} onClick={handleClick} style={linkResetStyle}>
+      <a href={url} onClick={handleClick} style={linkResetStyle}>
         <MuiButton
           variant="text"
           startIcon={icon}
@@ -137,15 +132,15 @@ export function ForkAction({
         >
           {label}
         </MuiButton>
-      </LocaleLink>
+      </a>
     ) : null,
     menuItem: url
       ? {
           key: 'fork',
           label: (
-            <LocaleLink href={url} prefetch={false} onClick={handleClick} style={linkResetStyle}>
+            <a href={url} onClick={handleClick} style={linkResetStyle}>
               {label}
-            </LocaleLink>
+            </a>
           ),
           icon,
         }
