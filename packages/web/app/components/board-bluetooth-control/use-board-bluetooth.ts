@@ -88,6 +88,10 @@ type UseBoardBluetoothOptions = {
    * this re-creates `sendFramesToBoard` so the auto-sender repaints the
    * current climb with the new colours. */
   ledColorOverrides?: LedColorOverrides;
+  /** MoonBoard "V2" BLE feature: also light each active hold's firmware-
+   * defined neighbour LED. No-op on Aurora boards. Changing this re-creates
+   * `sendFramesToBoard` so the auto-sender repaints the current climb. */
+  moonboardLightAdjacentHolds?: boolean;
   analyticsBoardId?: number | null;
   /** Fires once per successful connect with the parsed BLE serial (null when
    * the device name didn't carry one — e.g., moonboard). Used by
@@ -144,6 +148,7 @@ type BoardConfigurationRequest = {
   apiLevel: number;
   deviceName: string | undefined;
   colorOverrides: LedColorOverrides | undefined;
+  lightAdjacentHolds: boolean;
 };
 
 // Identity of the physical board a serial maps to: board name + the route's
@@ -172,6 +177,7 @@ function createBoardConfigurationKey(configuration: BoardConfigurationRequest): 
     configuration.apiLevel,
     configuration.deviceName ?? null,
     sortedColorOverrides,
+    configuration.lightAdjacentHolds,
   ]);
 }
 
@@ -180,6 +186,7 @@ export function useBoardBluetooth({
   boardUuid,
   onConnectionChange,
   ledColorOverrides,
+  moonboardLightAdjacentHolds = false,
   analyticsBoardId,
   onConnectSuccess,
 }: UseBoardBluetoothOptions) {
@@ -422,7 +429,9 @@ export function useBoardBluetooth({
         if (frames === '') {
           const clearPacket =
             boardDetails.board_name === 'moonboard'
-              ? getMoonboardBluetoothPacket('', getMoonBoardGeometryByLayoutId(boardDetails.layout_id).numRows).packet
+              ? getMoonboardBluetoothPacket('', getMoonBoardGeometryByLayoutId(boardDetails.layout_id).numRows, {
+                  lightAdjacentHolds: moonboardLightAdjacentHolds,
+                }).packet
               : getAuroraBluetoothPacket('', {}, boardDetails.board_name, apiLevelRef.current).packet;
           await serialisedWrite(adapterRef.current, clearPacket, signal);
           if (sendContext?.sendSource === 'clear') {
@@ -441,7 +450,9 @@ export function useBoardBluetooth({
           // Mini boards wire a 12-row LED strip; the standard board is 18 rows.
           const moonNumRows = getMoonBoardGeometryByLayoutId(boardDetails.layout_id).numRows;
 
-          const moonResult = getMoonboardBluetoothPacket(frames, moonNumRows);
+          const moonResult = getMoonboardBluetoothPacket(frames, moonNumRows, {
+            lightAdjacentHolds: moonboardLightAdjacentHolds,
+          });
           const moonSkipped = moonResult.skippedRoleCount + moonResult.skippedPositionCount;
           const moonEncoded = moonResult.totalPlacements - moonSkipped;
 
@@ -611,7 +622,16 @@ export function useBoardBluetooth({
         return false;
       }
     },
-    [boardDetails, showMessage, t, ledColorOverrides, serialisedWrite, handleDisconnection, analyticsBoardId],
+    [
+      boardDetails,
+      showMessage,
+      t,
+      ledColorOverrides,
+      moonboardLightAdjacentHolds,
+      serialisedWrite,
+      handleDisconnection,
+      analyticsBoardId,
+    ],
   );
 
   const configureConnectedBoard = useCallback(
@@ -624,6 +644,7 @@ export function useBoardBluetooth({
         apiLevel: apiLevelRef.current,
         deviceName: deviceNameRef.current,
         colorOverrides: ledColorOverrides,
+        lightAdjacentHolds: moonboardLightAdjacentHolds,
       };
       const boardConfigurationKey = createBoardConfigurationKey(boardConfiguration);
       if (configuredBoardKeyRef.current === boardConfigurationKey) return;
@@ -632,7 +653,7 @@ export function useBoardBluetooth({
       }
       configuredBoardKeyRef.current = boardConfigurationKey;
     },
-    [boardDetails, ledColorOverrides],
+    [boardDetails, ledColorOverrides, moonboardLightAdjacentHolds],
   );
 
   // Handle connection initiation

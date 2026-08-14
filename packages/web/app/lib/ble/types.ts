@@ -75,5 +75,7 @@ export type BluetoothAdapter = {
     apiLevel?: number;
     deviceName?: string;
     colorOverrides?: Record<string, string>;
+    /** MoonBoard "V2" additional-LED feature — see BoardBleConfiguration.swift. */
+    lightAdjacentHolds?: boolean;
   }): Promise<void>;
 };

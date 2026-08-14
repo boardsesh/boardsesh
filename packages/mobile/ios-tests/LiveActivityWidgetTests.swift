@@ -216,6 +216,31 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertTrue(BoardBleEncoding.makeMoonboardPacket(frames: "garbage").packet.isEmpty)
     }
 
+    func testMoonboardPacketPrefixesV2AdditionalLedMarker() {
+        // Parity with moonboard.test.ts "V2 additional-LED prefix": lightAdjacentHolds
+        // prepends `~D` to a non-empty frame, asking the firmware to also light each
+        // hold's firmware-defined neighbour LED.
+        let result = BoardBleEncoding.makeMoonboardPacket(frames: "p1r42p2r43p198r44", lightAdjacentHolds: true)
+        XCTAssertEqual(String(decoding: result.packet, as: UTF8.self), "~Dl#S0,P35,E197#")
+    }
+
+    func testMoonboardPacketOmitsV2PrefixByDefault() {
+        let result = BoardBleEncoding.makeMoonboardPacket(frames: "p1r42")
+        XCTAssertEqual(String(decoding: result.packet, as: UTF8.self), "l#S0#")
+    }
+
+    func testMoonboardPacketNeverPrefixesClearAll() {
+        // The clear-all `l##` never gets the V2 marker, even when requested —
+        // prefixing it has no effect and would needlessly exercise the firmware's
+        // empty-string parsing path.
+        let result = BoardBleEncoding.makeMoonboardPacket(frames: "", lightAdjacentHolds: true)
+        XCTAssertEqual(String(decoding: result.packet, as: UTF8.self), "l##")
+    }
+
+    func testMoonboardPacketNeverPrefixesAllSkippedFrame() {
+        XCTAssertTrue(BoardBleEncoding.makeMoonboardPacket(frames: "p1r45", lightAdjacentHolds: true).packet.isEmpty)
+    }
+
     func testMoonboardSerialPositionMirrorsGridMath() {
         XCTAssertEqual(BoardBleEncoding.moonboardSerialPosition(holdId: 1), 0)
         XCTAssertEqual(BoardBleEncoding.moonboardSerialPosition(holdId: 2), 35)

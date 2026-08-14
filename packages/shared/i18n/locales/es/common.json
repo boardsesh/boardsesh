@@ -590,6 +590,8 @@
     "customizeColorsTitle": "Colores de los LED",
     "customizeColorsHelp": "Elige los colores con los que tu plafón ilumina las manos, los pies y la presa final. Las presas de inicio mantienen su verde por defecto.",
     "resetColors": "Restablecer",
+    "lightAdjacentHolds": "Iluminar la presa de arriba",
+    "lightAdjacentHoldsHelp": "Enciende un segundo LED, más tenue, sobre cada presa iluminada. Requiere un controlador MoonBoard con la función de LED adicional.",
     "disconnect": "Desconectar plafón",
     "role": {
       "HAND": "Manos",

@@ -40,6 +40,7 @@ import type { DiscoveredDevice } from '@/app/lib/ble/types';
 import type { PickerState } from './use-board-bluetooth';
 import type { BleSendFailureReason } from '@boardsesh/ble-protocol/connection-error';
 import { useLedColorOverrides, type LedColorOverrides } from '@/app/lib/led-color-overrides-db';
+import { useMoonboardLightAdjacentHolds } from '@/app/hooks/use-moonboard-light-adjacent-holds';
 import { accumulateFramesToMaps, accumulatedMapsToFrameStrings } from '@boardsesh/board-constants/hold-states';
 import type { BoardName } from '@boardsesh/shared-schema';
 
@@ -81,6 +82,11 @@ type BluetoothContextValue = {
    * the auto-sender so the current climb repaints. */
   ledColorOverrides: LedColorOverrides;
   setLedColorOverrides: (next: LedColorOverrides) => void;
+  /** MoonBoard "V2" BLE feature: also light each active hold's firmware-
+   * defined neighbour LED (typically the hold above), dimmer, alongside its
+   * role colour. Persisted in IndexedDB; no-op on Aurora boards. */
+  moonboardLightAdjacentHolds: boolean;
+  setMoonboardLightAdjacentHolds: (next: boolean) => void;
   isBluetoothSupported: boolean;
   isIOS: boolean;
   /**
@@ -415,6 +421,7 @@ export function BluetoothProvider({
   children: React.ReactNode;
 }) {
   const [ledColorOverrides, setLedColorOverrides] = useLedColorOverrides();
+  const [moonboardLightAdjacentHolds, setMoonboardLightAdjacentHolds] = useMoonboardLightAdjacentHolds();
 
   // Party-session hooks pulled here so the AutoSender (mounted only when
   // connected) and the connect callback share the same references. The
@@ -565,6 +572,7 @@ export function BluetoothProvider({
     boardDetails: boardDetails ?? undefined,
     boardUuid,
     ledColorOverrides,
+    moonboardLightAdjacentHolds,
     analyticsBoardId: presenceBoardId,
     onConnectSuccess: handleConnectSuccess,
     onConnectionChange: handleConnectionChange,
@@ -938,6 +946,8 @@ export function BluetoothProvider({
       setPartyMode,
       ledColorOverrides,
       setLedColorOverrides,
+      moonboardLightAdjacentHolds,
+      setMoonboardLightAdjacentHolds,
       isBluetoothSupported,
       isIOS,
       reassertWall,
@@ -955,6 +965,8 @@ export function BluetoothProvider({
       setPartyMode,
       ledColorOverrides,
       setLedColorOverrides,
+      moonboardLightAdjacentHolds,
+      setMoonboardLightAdjacentHolds,
       isBluetoothSupported,
       isIOS,
       reassertWall,

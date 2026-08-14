@@ -111,6 +111,16 @@ type BluetoothContextValue = {
   autoDisconnectEnabled: boolean;
   autoDisconnectTimeoutSeconds: number;
   autoDisconnectWarning: boolean;
+  /** The board type this provider is scoped to (route-derived), so BLE-controls
+   * UI can gate MoonBoard-only affordances. Undefined off a board route. */
+  boardName: string | undefined;
+  /**
+   * MoonBoard "V2" BLE feature: also light each active hold's firmware-
+   * defined neighbour LED (typically the hold above), dimmer, alongside its
+   * role colour. Persisted; no-op on Aurora boards.
+   */
+  moonboardLightAdjacentHolds: boolean;
+  setMoonboardLightAdjacentHolds: (next: boolean) => void;
 };
 
 const BluetoothContext = createContext<BluetoothContextValue | null>(null);
@@ -521,6 +531,7 @@ export function BluetoothProvider({
   const { showToast } = useToast();
   const [autoDisconnectBle] = useSetting('autoDisconnectBle');
   const [autoDisconnectTimeoutSeconds] = useSetting('autoDisconnectTimeoutSeconds');
+  const [moonboardLightAdjacentHolds, setMoonboardLightAdjacentHolds] = useSetting('moonboardLightAdjacentHolds');
   const [autoDisconnectWarning, setAutoDisconnectWarning] = useState(false);
   const autoDisconnectExpireRef = useRef<() => void>(() => {});
   const autoDisconnectControllerRef = useRef<AutoDisconnectController | null>(null);
@@ -953,6 +964,7 @@ export function BluetoothProvider({
     analyticsBoardId: presenceBoardId,
     analyticsInSession: sessionId != null,
     ledColorOverrides: bluetoothColorOverrides,
+    moonboardLightAdjacentHolds,
     onConnectSuccess: handleConnectSuccess,
     onConnectionEnded: handleBluetoothConnectionEnded,
     getConnectedViaMismatchOverride,
@@ -1514,6 +1526,9 @@ export function BluetoothProvider({
       autoDisconnectEnabled: autoDisconnectBle,
       autoDisconnectTimeoutSeconds,
       autoDisconnectWarning,
+      boardName,
+      moonboardLightAdjacentHolds,
+      setMoonboardLightAdjacentHolds,
     }),
     [
       isConnected,
@@ -1531,6 +1546,9 @@ export function BluetoothProvider({
       autoDisconnectBle,
       autoDisconnectTimeoutSeconds,
       autoDisconnectWarning,
+      boardName,
+      moonboardLightAdjacentHolds,
+      setMoonboardLightAdjacentHolds,
     ],
   );
 

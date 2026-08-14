@@ -6,6 +6,7 @@ import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
+import Switch from '@mui/material/Switch';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -20,6 +21,7 @@ import StopCircleOutlined from '@mui/icons-material/StopCircleOutlined';
 import AutoAwesome from '@mui/icons-material/AutoAwesome';
 import Palette from '@mui/icons-material/Palette';
 import BluetoothDisabledOutlined from '@mui/icons-material/BluetoothDisabledOutlined';
+import Highlight from '@mui/icons-material/Highlight';
 import SwipeableDrawer from '@/app/components/swipeable-drawer/swipeable-drawer';
 import { useBluetoothContext } from '../board-bluetooth-control/bluetooth-context';
 import { useCurrentClimb } from '../graphql-queue';
@@ -92,6 +94,8 @@ export const LightControlDrawer: React.FC<LightControlDrawerProps> = ({ open, on
     setPartyMode,
     ledColorOverrides,
     setLedColorOverrides,
+    moonboardLightAdjacentHolds,
+    setMoonboardLightAdjacentHolds,
   } = useBluetoothContext();
   const { currentClimbQueueItem } = useCurrentClimb();
 
@@ -334,6 +338,10 @@ export const LightControlDrawer: React.FC<LightControlDrawerProps> = ({ open, on
     onClose();
   };
 
+  const handleToggleLightAdjacentHolds = () => {
+    setMoonboardLightAdjacentHolds(!moonboardLightAdjacentHolds);
+  };
+
   return (
     <>
       <SwipeableDrawer placement="bottom" open={open} onClose={onClose} title={t('lightControl.title')} height="auto">
@@ -367,6 +375,24 @@ export const LightControlDrawer: React.FC<LightControlDrawerProps> = ({ open, on
               secondary={isMoonboard ? t('lightControl.customizeColorsUnsupported') : undefined}
             />
           </ListItemButton>
+          {isMoonboard && (
+            <ListItemButton onClick={handleToggleLightAdjacentHolds}>
+              <ListItemIcon>
+                <Highlight />
+              </ListItemIcon>
+              <ListItemText
+                primary={t('lightControl.lightAdjacentHolds')}
+                secondary={t('lightControl.lightAdjacentHoldsHelp')}
+              />
+              <Switch
+                edge="end"
+                checked={moonboardLightAdjacentHolds}
+                onChange={handleToggleLightAdjacentHolds}
+                onClick={(event) => event.stopPropagation()}
+                slotProps={{ input: { 'aria-label': t('lightControl.lightAdjacentHolds') } }}
+              />
+            </ListItemButton>
+          )}
           <ListItemButton onClick={handleDisconnect} disabled={!isConnected}>
             <ListItemIcon>
               <BluetoothDisabledOutlined />

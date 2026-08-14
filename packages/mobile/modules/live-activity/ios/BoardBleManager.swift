@@ -1082,6 +1082,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // matching the JS clear path.
         let result: BoardBlePacketResult
         if configuration.boardName == "moonboard" {
+            // Deliberate clear — never prefix with the V2 additional-LED
+            // marker (see makeMoonboardPacket / getMoonboardBluetoothPacket).
             result = BoardBleEncoding.makeMoonboardPacket(frames: "", numRows: configuration.numRows)
         } else {
             result = BoardBleEncoding.makeAuroraPacket(
@@ -1128,7 +1130,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         if configuration.boardName == "moonboard" {
             // numRows nil (config persisted by an older build) → the encoder's
             // 18-row standard-wall default.
-            let result = BoardBleEncoding.makeMoonboardPacket(frames: item.frames, numRows: configuration.numRows)
+            let result = BoardBleEncoding.makeMoonboardPacket(
+                frames: item.frames,
+                numRows: configuration.numRows,
+                lightAdjacentHolds: configuration.lightAdjacentHolds
+            )
             guard !result.packet.isEmpty else {
                 // A non-empty climb whose holds all dropped (unrecognised/out-of-
                 // range) → refuse to write rather than dark the wall. Only a

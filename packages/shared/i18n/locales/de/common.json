@@ -373,6 +373,8 @@
     "customizeColorsTitle": "LED-Farben",
     "customizeColorsHelp": "Wähle, in welchen Farben dein Board Hände, Füße und den Topgriff beleuchtet. Startgriffe bleiben standardmäßig grün.",
     "resetColors": "Zurücksetzen",
+    "lightAdjacentHolds": "Griff darüber beleuchten",
+    "lightAdjacentHoldsHelp": "Lässt eine zweite, gedimmte LED über jedem beleuchteten Griff leuchten. Erfordert einen MoonBoard-Controller mit der Zusatz-LED-Funktion.",
     "disconnect": "Board trennen",
     "role": {
       "HAND": "Hände",

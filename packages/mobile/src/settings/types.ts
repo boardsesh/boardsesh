@@ -33,6 +33,13 @@ export type AppSettings = {
   autoConnectBle: boolean;
   autoDisconnectBle: boolean;
   autoDisconnectTimeoutSeconds: number;
+  /**
+   * MoonBoard "V2" BLE feature: also light each active hold's firmware-defined
+   * neighbour LED (typically the hold above), dimmer, alongside its role
+   * colour. See `MOONBOARD_V2_ADDITIONAL_LED_PREFIX` in
+   * `@boardsesh/ble-protocol/moonboard`. No-op on Aurora boards.
+   */
+  moonboardLightAdjacentHolds: boolean;
   keepScreenAwake: boolean;
   theme: 'system' | 'light' | 'dark';
   hapticFeedbackEnabled: boolean;
