@@ -429,3 +429,70 @@ describe('previous-release driver operations: reduced-B7 validation split', () =
     });
   }
 });
+
+/**
+ * Shipped-binary contract for the profile domain (issue #1884).
+ *
+ * Moving the web app off `GET/PUT /api/internal/profile` onto `Query.profile` /
+ * `Mutation.updateProfile` meant growing the schema (instagramUrl, hasPassword,
+ * linkedProviders on UserProfile; instagramUrl on UpdateProfileInput). Every
+ * one of those additions has to stay additive: App Store and TestFlight
+ * binaries in the field send the older, narrower selection set below, and a
+ * validation error there is a hard failure on a screen users can reach — not a
+ * degraded field.
+ *
+ * These documents are deliberately frozen copies, not imports: the point is to
+ * pin what old clients send, so editing mobile's operations.ts can't quietly
+ * update the expectation too.
+ */
+describe('shipped mobile binaries keep validating against the profile schema', () => {
+  const shippedProfileOperations: Array<[string, string]> = [
+    [
+      'GetProfile (pre-#1884 selection set)',
+      `query GetProfile {
+        profile {
+          id
+          email
+          displayName
+          avatarUrl
+          isTester
+          createdAt
+          favoriteCount
+        }
+      }`,
+    ],
+    [
+      'UpdateProfile (pre-#1884 selection set)',
+      `mutation UpdateProfile($input: UpdateProfileInput!) {
+        updateProfile(input: $input) {
+          id
+          email
+          displayName
+          avatarUrl
+          isTester
+        }
+      }`,
+    ],
+  ];
+
+  for (const [name, source] of shippedProfileOperations) {
+    it(`${name} still validates`, () => {
+      const errors = validate(schema, parse(source));
+      if (errors.length > 0) {
+        const detail = errors.map((error, index) => `  ${index + 1}. ${error.message}`).join('\n');
+        throw new Error(`${name} no longer validates — this breaks shipped binaries:\n${detail}`);
+      }
+    });
+  }
+
+  it('UpdateProfileInput still accepts an input with no instagramUrl', () => {
+    const inputType = schema.getType('UpdateProfileInput');
+    if (!inputType || !('getFields' in inputType)) throw new Error('UpdateProfileInput missing from the schema');
+    const fields = (inputType as { getFields: () => Record<string, { type: { toString: () => string } }> }).getFields();
+    // Every field optional (no trailing "!") means an old client sending only
+    // displayName/avatarUrl still passes validation.
+    for (const [fieldName, field] of Object.entries(fields)) {
+      expect(`${fieldName}: ${field.type.toString()}`).not.toMatch(/!$/);
+    }
+  });
+});

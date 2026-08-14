@@ -1,53 +1,51 @@
 import 'server-only';
-import { getDb } from '@/app/lib/db/db';
-import * as schema from '@/app/lib/db/schema';
-import { eq, and, count } from 'drizzle-orm';
-import { getUserBoardMappings } from '@/app/lib/auth/user-board-mappings';
+import { GET_PUBLIC_PROFILE } from '@boardsesh/graphql/operations';
+import type { PublicUserProfile } from '@boardsesh/shared-schema';
+import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import type { UserProfile } from './utils/profile-constants';
 
-export async function getProfileData(userId: string, viewerUserId?: string): Promise<UserProfile | null> {
-  const db = getDb();
+type GetPublicProfileResponse = {
+  publicProfile: PublicUserProfile | null;
+};
 
-  const [users, profiles, mappings, followerCountResult, followingCountResult, followCheck] = await Promise.all([
-    db.select().from(schema.users).where(eq(schema.users.id, userId)).limit(1),
-    db.select().from(schema.userProfiles).where(eq(schema.userProfiles.userId, userId)).limit(1),
-    getUserBoardMappings(userId),
-    db.select({ count: count() }).from(schema.userFollows).where(eq(schema.userFollows.followingId, userId)),
-    db.select({ count: count() }).from(schema.userFollows).where(eq(schema.userFollows.followerId, userId)),
-    viewerUserId && viewerUserId !== userId
-      ? db
-          .select({ count: count() })
-          .from(schema.userFollows)
-          .where(and(eq(schema.userFollows.followerId, viewerUserId), eq(schema.userFollows.followingId, userId)))
-      : Promise.resolve([{ count: 0 }]),
-  ]);
+/**
+ * Server-side read for /profile/[user_id]. Goes through the backend's
+ * `publicProfile` resolver rather than querying Postgres from Next.js, so the
+ * frontend no longer needs its own DATABASE_URL (issue #1884).
+ *
+ * `isFollowedByMe` is derived from the viewer's own auth token — the resolver
+ * reads it off the request context — so there is no viewerUserId argument to
+ * pass. `email` is the caller's job: it comes from the NextAuth session when
+ * someone views their own profile, never from this public query.
+ *
+ * A backend blip returns null the same way a missing user does. The caller
+ * turns that into a 404, which is the pre-existing behaviour for an
+ * unreachable profile and keeps a transient outage from 500ing an indexable
+ * page.
+ */
+export async function getProfileData(userId: string, authToken?: string): Promise<UserProfile | null> {
+  try {
+    const response = await executeAuthenticatedGraphQL<GetPublicProfileResponse>(
+      GET_PUBLIC_PROFILE,
+      { userId },
+      authToken,
+    );
 
-  if (users.length === 0) return null;
+    const publicProfile = response.publicProfile;
+    if (!publicProfile) return null;
 
-  const user = users[0];
-  const profile = profiles[0] ?? null;
-  const isOwnProfile = viewerUserId === userId;
-
-  const credentials = mappings.map((m) => ({
-    boardType: m.boardType,
-    auroraUsername: m.boardUsername || '',
-  }));
-
-  return {
-    id: user.id,
-    email: isOwnProfile ? (user.email ?? '') : undefined,
-    name: user.name,
-    image: user.image,
-    profile: profile
-      ? {
-          displayName: profile.displayName,
-          avatarUrl: profile.avatarUrl,
-          instagramUrl: profile.instagramUrl,
-        }
-      : null,
-    credentials,
-    followerCount: Number(followerCountResult[0]?.count || 0),
-    followingCount: Number(followingCountResult[0]?.count || 0),
-    isFollowedByMe: Number(followCheck[0]?.count || 0) > 0,
-  };
+    return {
+      id: publicProfile.id,
+      email: undefined,
+      displayName: publicProfile.displayName ?? null,
+      avatarUrl: publicProfile.avatarUrl ?? null,
+      instagramUrl: publicProfile.instagramUrl ?? null,
+      followerCount: publicProfile.followerCount ?? 0,
+      followingCount: publicProfile.followingCount ?? 0,
+      isFollowedByMe: publicProfile.isFollowedByMe ?? false,
+    };
+  } catch (error) {
+    console.error('getProfileData failed:', error);
+    return null;
+  }
 }

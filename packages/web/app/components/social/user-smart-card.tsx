@@ -16,7 +16,10 @@ import {
   GET_USER_PROFILE_STATS,
   type GetUserProfileStatsQueryVariables,
   type GetUserProfileStatsQueryResponse,
+  GET_PUBLIC_PROFILE,
 } from '@boardsesh/graphql/operations';
+import type { PublicUserProfile } from '@boardsesh/shared-schema';
+import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { getDifficultyMapping, sortGrades } from '@/app/profile/[user_id]/utils/profile-constants';
 import { V_GRADE_COLORS, FONT_GRADE_COLORS, getGradeColorWithOpacity } from '@/app/lib/grade-colors';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
@@ -27,20 +30,8 @@ type UserSmartCardProps = {
   refreshKey?: number;
 };
 
-type ProfileData = {
-  id: string;
-  name: string | null;
-  image: string | null;
-  profile: {
-    displayName: string | null;
-    avatarUrl: string | null;
-  } | null;
-  credentials?: Array<{
-    boardType: string;
-    auroraUsername: string;
-  }>;
-  followerCount: number;
-  followingCount: number;
+type GetPublicProfileResponse = {
+  publicProfile: PublicUserProfile | null;
 };
 
 type GradeBar = {
@@ -74,7 +65,7 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
   const { t } = useTranslation('feed');
   const router = useLocaleRouter();
   const { gradeFormat, loaded: gradeFormatLoaded } = useGradeFormat();
-  const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [profile, setProfile] = useState<PublicUserProfile | null>(null);
   const [totalClimbs, setTotalClimbs] = useState(0);
   const [rawStats, setRawStats] = useState<GetUserProfileStatsQueryResponse['userProfileStats'] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -82,11 +73,18 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
+      const client = createGraphQLHttpClient(null);
       const [profileRes, statsData] = await Promise.all([
-        fetch(`/api/internal/profile/${userId}`).then((r) => (r.ok ? r.json() : null)),
         (async () => {
           try {
-            const client = createGraphQLHttpClient(null);
+            const res = await client.request<GetPublicProfileResponse>(GET_PUBLIC_PROFILE, { userId });
+            return res.publicProfile;
+          } catch {
+            return null;
+          }
+        })(),
+        (async () => {
+          try {
             const res = await client.request<GetUserProfileStatsQueryResponse, GetUserProfileStatsQueryVariables>(
               GET_USER_PROFILE_STATS,
               { userId },
@@ -162,8 +160,16 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
     return { total, segments };
   }, [gradeBars]);
 
-  const displayName = profile?.profile?.displayName || profile?.name || 'Climber';
-  const avatarUrl = profile?.profile?.avatarUrl || profile?.image;
+  // Boards the climber actually logs sends on, straight off their stats. The
+  // card used to list linked Aurora accounts instead, which needed a private
+  // credentials read on a public card — same chips, better signal.
+  const boardTypes = useMemo(() => {
+    if (!rawStats) return [];
+    return [...new Set(rawStats.layoutStats.map((layout) => layout.boardType))];
+  }, [rawStats]);
+
+  const displayName = profile?.displayName || 'Climber';
+  const avatarUrl = profile?.avatarUrl;
 
   if (loading) {
     return (
@@ -206,12 +212,12 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
                 {t('userSmartCard.following', { count: profile.followingCount })}
               </Typography>
 
-              {profile.credentials && profile.credentials.length > 0 && (
+              {boardTypes.length > 0 && (
                 <div className={styles.chips}>
-                  {profile.credentials.map((cred: { boardType: string; auroraUsername: string }) => (
+                  {boardTypes.map((boardType) => (
                     <Chip
-                      key={cred.boardType}
-                      label={cred.boardType.charAt(0).toUpperCase() + cred.boardType.slice(1)}
+                      key={boardType}
+                      label={formatBoardDisplayName(boardType)}
                       size="small"
                       variant="outlined"
                       sx={CHIP_SX}

@@ -10,9 +10,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
-const { onConflictMock, limitMock } = vi.hoisted(() => ({
+const { onConflictMock, limitMock, userUpdateSetMock } = vi.hoisted(() => ({
   onConflictMock: vi.fn(async () => undefined),
   limitMock: vi.fn(),
+  userUpdateSetMock: vi.fn(() => ({ where: async () => undefined })),
 }));
 
 vi.mock('../../../../db/client', () => ({
@@ -20,6 +21,7 @@ vi.mock('../../../../db/client', () => ({
     transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
       callback({
         insert: () => ({ values: () => ({ onConflictDoUpdate: onConflictMock }) }),
+        update: () => ({ set: userUpdateSetMock }),
         select: () => {
           const chain = {
             from: () => chain,
@@ -54,12 +56,16 @@ const JOINED_ROW = {
   createdAt: new Date('2024-02-02T00:00:00.000Z'),
   displayName: 'New Name',
   avatarUrl: null,
+  instagramUrl: null,
+  hasPassword: false,
+  linkedProviders: [],
   favoriteCount: 3,
 };
 
 describe('userMutations.updateProfile', () => {
   beforeEach(() => {
     onConflictMock.mockClear();
+    userUpdateSetMock.mockClear();
     limitMock.mockReset();
     userIsTesterMock.mockReset();
     userIsTesterMock.mockResolvedValue(false);
@@ -74,6 +80,7 @@ describe('userMutations.updateProfile', () => {
     expect(result.createdAt).toBe('2024-02-02T00:00:00.000Z');
     expect(result.favoriteCount).toBe(3);
     expect(result.displayName).toBe('New Name');
+    expect(userUpdateSetMock).toHaveBeenCalledWith(expect.objectContaining({ name: 'New Name' }));
   });
 
   it('still returns createdAt/favoriteCount when only avatarUrl changes', async () => {
@@ -89,5 +96,23 @@ describe('userMutations.updateProfile', () => {
     expect(result.avatarUrl).toBe('https://cdn/pic.png');
     expect(result.createdAt).toBe('2024-02-02T00:00:00.000Z');
     expect(result.favoriteCount).toBe(3);
+    // An avatar-only save must not touch users.name.
+    expect(userUpdateSetMock).not.toHaveBeenCalled();
+  });
+
+  it('returns the account-shape fields the settings form needs', async () => {
+    limitMock.mockReturnValueOnce([
+      { ...JOINED_ROW, instagramUrl: 'https://instagram.com/climber', hasPassword: true, linkedProviders: ['apple'] },
+    ]);
+
+    const result = await userMutations.updateProfile(
+      undefined,
+      { input: { instagramUrl: 'https://instagram.com/climber' } },
+      makeCtx(),
+    );
+
+    expect(result.instagramUrl).toBe('https://instagram.com/climber');
+    expect(result.hasPassword).toBe(true);
+    expect(result.linkedProviders).toEqual(['apple']);
   });
 });

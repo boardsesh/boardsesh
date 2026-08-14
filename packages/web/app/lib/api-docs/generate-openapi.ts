@@ -46,7 +46,6 @@ This documentation covers the REST API endpoints.
 - **Slug Resolution**: Convert human-readable URLs to numeric IDs
 
 ### Authenticated Endpoints
-- **User Profile**: Manage user settings and preferences
 - **Aurora Proxy**: Interact with Aurora Climbing platform
 
 ### WebSocket API
@@ -114,10 +113,6 @@ Layout, size, and set IDs can be either numeric IDs or human-readable slugs.
       {
         name: 'Aurora Proxy',
         description: 'Proxy endpoints for Aurora Climbing platform integration',
-      },
-      {
-        name: 'User Profile',
-        description: 'User profile management (requires authentication)',
       },
       {
         name: 'WebSocket',

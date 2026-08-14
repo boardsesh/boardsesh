@@ -69,8 +69,8 @@ export default function YouProgressContent({ userId }: YouProgressContentProps) 
     return <YouPageSkeleton />;
   }
 
-  const displayName = profile?.profile?.displayName || profile?.name || tProfile('page.displayNameFallback');
-  const avatarUrl = profile?.profile?.avatarUrl || profile?.image;
+  const displayName = profile?.displayName || tProfile('page.displayNameFallback');
+  const avatarUrl = profile?.avatarUrl;
 
   return (
     <>

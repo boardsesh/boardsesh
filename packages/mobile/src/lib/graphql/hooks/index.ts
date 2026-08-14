@@ -196,7 +196,12 @@ export function useUpdateProfile() {
       return response.updateProfile;
     },
     onSuccess: (updatedProfile) => {
-      queryClient.setQueryData<GetProfileQueryResponse>(['profile'], { profile: updatedProfile });
+      // Merge, don't replace: UPDATE_PROFILE selects fewer fields than
+      // GET_PROFILE, so overwriting the entry would blank out createdAt and
+      // favoriteCount for every consumer until the invalidation below lands.
+      queryClient.setQueryData<GetProfileQueryResponse>(['profile'], (cached) =>
+        cached?.profile ? { profile: { ...cached.profile, ...updatedProfile } } : cached,
+      );
       queryClient.setQueryData<PublicUserProfile | null>(['publicProfile', updatedProfile.id], (cachedProfile) =>
         cachedProfile
           ? {

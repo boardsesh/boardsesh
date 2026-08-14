@@ -41,6 +41,16 @@ import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import { useHealthKitAutoSync } from '@/app/hooks/use-healthkit-sync';
 import { isHealthKitAvailable } from '@/app/lib/healthkit/healthkit-bridge';
+import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import { extractGraphQLErrorMessage } from '@/app/lib/graphql/extract-error-message';
+import {
+  GET_MY_PROFILE,
+  UPDATE_MY_PROFILE,
+  type GetMyProfileQueryResponse,
+  type MyProfile,
+  type UpdateMyProfileMutationResponse,
+  type UpdateMyProfileMutationVariables,
+} from '@boardsesh/graphql/operations/account';
 
 const MAX_INPUT_SIZE = 10 * 1024 * 1024; // 10MB input ceiling before compression
 const MAX_DIMENSION = 1024; // resize longest side to ≤ 1024 px
@@ -103,20 +113,6 @@ async function compressImage(file: File): Promise<File> {
   });
 }
 
-type UserProfile = {
-  id: string;
-  email: string;
-  name: string | null;
-  image: string | null;
-  hasPassword: boolean;
-  linkedProviders: string[];
-  profile: {
-    displayName: string | null;
-    avatarUrl: string | null;
-    instagramUrl: string | null;
-  } | null;
-};
-
 export default function SettingsPageContent() {
   const { data: session, status, update: updateSession } = useSession();
   const router = useLocaleRouter();
@@ -126,10 +122,10 @@ export default function SettingsPageContent() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profile, setProfile] = useState<MyProfile | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | undefined>();
-  const { token: authToken } = useWsAuthToken();
+  const { token: authToken, isLoading: authTokenLoading } = useWsAuthToken();
   const { refreshProfile: refreshPartyProfile } = usePartyProfile();
   const { showMessage } = useSnackbar();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -158,33 +154,60 @@ export default function SettingsPageContent() {
     }
   }, [status, router, activeLocale]);
 
+  // The resolver already coalesces displayName/avatarUrl onto the NextAuth
+  // name and image, so there is no second fallback to apply here.
+  const applyProfile = useCallback((loadedProfile: MyProfile) => {
+    setProfile(loadedProfile);
+    setFormValues({
+      displayName: loadedProfile.displayName || '',
+      instagramUrl: loadedProfile.instagramUrl || '',
+    });
+    setPreviewUrl(loadedProfile.avatarUrl || undefined);
+  }, []);
+
   const fetchProfile = useCallback(async () => {
+    if (!authToken) return;
     try {
-      const response = await fetch('/api/internal/profile');
-      if (!response.ok) {
+      const client = createGraphQLHttpClient(authToken);
+      const response = await client.request<GetMyProfileQueryResponse>(GET_MY_PROFILE);
+      if (!response.profile) {
         throw new Error('Failed to fetch profile');
       }
-      const data = await response.json();
-      setProfile(data);
-      setFormValues({
-        displayName: data.profile?.displayName || data.name || '',
-        instagramUrl: data.profile?.instagramUrl || '',
-      });
-      setPreviewUrl(data.profile?.avatarUrl || data.image || undefined);
+      applyProfile(response.profile);
     } catch (error) {
       console.error('Failed to fetch profile:', error);
       showMessage(t('loading.profileError'), 'error');
     } finally {
       setLoading(false);
     }
-  }, [showMessage, t]);
+  }, [authToken, applyProfile, showMessage, t]);
 
-  // Fetch profile on mount
+  // Fetch the profile once ws-auth has produced a token. The backend resolves
+  // `profile` from the bearer token, so firing on session status alone would
+  // race the token and render an empty form.
   useEffect(() => {
-    if (status === 'authenticated') {
+    if (status === 'authenticated' && authToken) {
       void fetchProfile();
     }
-  }, [status, fetchProfile]);
+  }, [status, authToken, fetchProfile]);
+
+  // ws-auth settled without a token (its retries ran out). Only the profile
+  // card needs that token — Aurora credentials, controllers, watch pairing,
+  // grade format and account deletion all still work, so release the
+  // page-level spinner instead of stranding the whole of /settings on it.
+  const wsAuthDeadEnd = status === 'authenticated' && !authToken && !authTokenLoading;
+  const reportedWsAuthDeadEnd = useRef(false);
+  useEffect(() => {
+    if (!wsAuthDeadEnd) {
+      reportedWsAuthDeadEnd.current = false;
+      return;
+    }
+    setLoading(false);
+    if (!reportedWsAuthDeadEnd.current) {
+      reportedWsAuthDeadEnd.current = true;
+      showMessage(t('loading.profileError'), 'error');
+    }
+  }, [wsAuthDeadEnd, showMessage, t]);
 
   // Clean up preview URL when component unmounts
   useEffect(() => {
@@ -248,7 +271,7 @@ export default function SettingsPageContent() {
 
       setSaving(true);
 
-      let avatarUrl = profile?.profile?.avatarUrl || profile?.image || null;
+      let avatarUrl = profile?.avatarUrl || null;
 
       // Upload avatar if there's a new file
       if (selectedFile) {
@@ -297,28 +320,36 @@ export default function SettingsPageContent() {
         }
       }
 
-      // Update profile
-      const response = await fetch('/api/internal/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      if (!authToken) {
+        throw new Error(t('profile.saveError'));
+      }
+
+      // null, never '': an empty string fails validation, while null is the
+      // documented "clear this field" value.
+      const variables: UpdateMyProfileMutationVariables = {
+        input: {
           displayName: values.displayName?.trim() || null,
           avatarUrl,
           instagramUrl: values.instagramUrl?.trim() || null,
-        }),
-      });
+        },
+      };
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || t('profile.saveError'));
+      const client = createGraphQLHttpClient(authToken);
+      let saved: UpdateMyProfileMutationResponse;
+      try {
+        saved = await client.request<UpdateMyProfileMutationResponse, UpdateMyProfileMutationVariables>(
+          UPDATE_MY_PROFILE,
+          variables,
+        );
+      } catch (error) {
+        throw new Error(extractGraphQLErrorMessage(error) || t('profile.saveError'));
       }
 
       showMessage(t('profile.saved'), 'success');
       setSelectedFile(null);
-      // Refresh profile locally and in context (so queue items show updated avatar)
-      await fetchProfile();
+      // The mutation returns the merged profile, so the form can re-seed from
+      // its response instead of paying for another round trip.
+      applyProfile(saved.updateProfile);
       await refreshPartyProfile();
       // Refresh the NextAuth session now so the header/drawer show the new name immediately.
       await updateSession();

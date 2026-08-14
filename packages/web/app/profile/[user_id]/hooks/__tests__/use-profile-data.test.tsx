@@ -7,7 +7,12 @@ import { IsRestoringProvider, QueryClient, QueryClientProvider } from '@tanstack
 import { useSession } from 'next-auth/react';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
-import { GET_USER_CLIMB_PERCENTILE, GET_USER_PROFILE_STATS, GET_USER_TICKS } from '@boardsesh/graphql/operations';
+import {
+  GET_PUBLIC_PROFILE,
+  GET_USER_CLIMB_PERCENTILE,
+  GET_USER_PROFILE_STATS,
+  GET_USER_TICKS,
+} from '@boardsesh/graphql/operations';
 import { useProfileData } from '../use-profile-data';
 
 vi.mock('next-auth/react', () => ({
@@ -20,6 +25,10 @@ vi.mock('@/app/components/providers/snackbar-provider', () => ({
 
 vi.mock('@/app/hooks/use-grade-format', () => ({
   useGradeFormat: vi.fn(),
+}));
+
+vi.mock('@/app/hooks/use-ws-auth-token', () => ({
+  useWsAuthToken: vi.fn(() => ({ token: 'ws-token', isAuthenticated: true, isLoading: false, error: null })),
 }));
 
 const mockRequest = vi.fn();
@@ -64,14 +73,6 @@ describe('useProfileData', () => {
       getGradeColor: vi.fn(() => undefined),
     });
     mockRequest.mockResolvedValue({ userClimbPercentile: null });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({}),
-      } as Response),
-    );
   });
 
   it('adds explicit send and flash status metadata to hardest grade highlights', () => {
@@ -80,10 +81,9 @@ describe('useProfileData', () => {
         initialProfile: {
           id: 'user-1',
           email: undefined,
-          name: 'Test User',
-          image: null,
-          profile: null,
-          credentials: [],
+          displayName: 'Test User',
+          avatarUrl: null,
+          instagramUrl: null,
           followerCount: 0,
           followingCount: 0,
           isFollowedByMe: false,
@@ -143,23 +143,20 @@ describe('useProfileData', () => {
   });
 
   it('fetches missing profile, ticks, stats, and percentile data on mount', async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        id: 'user-1',
-        email: 'test@example.com',
-        name: 'Fetched User',
-        image: null,
-        profile: null,
-        credentials: [],
-        followerCount: 4,
-        followingCount: 2,
-        isFollowedByMe: false,
-      }),
-    } as Response);
-
     mockRequest.mockImplementation(async (query: unknown, variables?: Record<string, unknown>) => {
+      if (query === GET_PUBLIC_PROFILE) {
+        return {
+          publicProfile: {
+            id: 'user-1',
+            displayName: 'Fetched User',
+            avatarUrl: null,
+            instagramUrl: null,
+            followerCount: 4,
+            followingCount: 2,
+            isFollowedByMe: true,
+          },
+        };
+      }
       if (query === GET_USER_TICKS && variables?.boardType === 'kilter') {
         return {
           userTicks: [
@@ -206,8 +203,11 @@ describe('useProfileData', () => {
       expect(result.current.loadingProfileStats).toBe(false);
     });
 
-    expect(fetch).toHaveBeenCalledWith('/api/internal/profile/user-1');
-    expect(result.current.profile?.name).toBe('Fetched User');
+    expect(mockRequest).toHaveBeenCalledWith(GET_PUBLIC_PROFILE, { userId: 'user-1' });
+    expect(result.current.profile?.displayName).toBe('Fetched User');
+    // Resolved from the viewer's bearer token — an anonymous request would
+    // come back false and stomp the SSR-seeded follow state.
+    expect(result.current.profile?.isFollowedByMe).toBe(true);
     expect(result.current.statisticsSummary.totalAscents).toBe(1);
     expect(result.current.hardestSend).toMatchObject({ label: 'V6', status: 'send' });
     expect(result.current.percentile).toMatchObject({ percentile: 90, totalActiveUsers: 10 });
@@ -219,10 +219,9 @@ describe('useProfileData', () => {
         initialProfile: {
           id: 'user-1',
           email: undefined,
-          name: 'Test User',
-          image: null,
-          profile: null,
-          credentials: [],
+          displayName: 'Test User',
+          avatarUrl: null,
+          instagramUrl: null,
           followerCount: 0,
           followingCount: 0,
           isFollowedByMe: false,
@@ -284,10 +283,9 @@ describe('useProfileData', () => {
         initialProfile: {
           id: 'user-1',
           email: undefined,
-          name: 'SSR User',
-          image: null,
-          profile: null,
-          credentials: [],
+          displayName: 'SSR User',
+          avatarUrl: null,
+          instagramUrl: null,
           followerCount: 0,
           followingCount: 0,
           isFollowedByMe: false,
@@ -306,18 +304,17 @@ describe('useProfileData', () => {
       await Promise.resolve();
     });
 
-    expect(fetch).not.toHaveBeenCalled();
+    expect(mockRequest).not.toHaveBeenCalledWith(GET_PUBLIC_PROFILE, { userId: 'user-1' });
     expect(mockRequest).not.toHaveBeenCalledWith(GET_USER_PROFILE_STATS, { userId: 'user-1' });
     expect(mockRequest).not.toHaveBeenCalledWith(GET_USER_CLIMB_PERCENTILE, { userId: 'user-1' });
     expect(mockRequest).not.toHaveBeenCalledWith(GET_USER_TICKS, { userId: 'user-1', boardType: 'kilter' });
   });
 
-  it('flags notFound when the profile endpoint returns 404', async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: false,
-      status: 404,
-      json: async () => ({}),
-    } as Response);
+  it('flags notFound when publicProfile resolves to null', async () => {
+    mockRequest.mockImplementation(async (query: unknown) => {
+      if (query === GET_PUBLIC_PROFILE) return { publicProfile: null };
+      return {};
+    });
 
     const { result } = renderProfileDataHook(() => useProfileData('missing-user'));
 
@@ -325,6 +322,9 @@ describe('useProfileData', () => {
       expect(result.current.notFound).toBe(true);
     });
     expect(result.current.profile).toBeNull();
+    // A missing profile must not be retried — it's an answer, not a failure.
+    const publicProfileCalls = mockRequest.mock.calls.filter((call) => call[0] === GET_PUBLIC_PROFILE);
+    expect(publicProfileCalls).toHaveLength(1);
   });
 
   it('seeds percentile from initial data without waiting on a fetch', () => {
@@ -339,10 +339,9 @@ describe('useProfileData', () => {
         initialProfile: {
           id: 'user-1',
           email: undefined,
-          name: 'Test User',
-          image: null,
-          profile: null,
-          credentials: [],
+          displayName: 'Test User',
+          avatarUrl: null,
+          instagramUrl: null,
           followerCount: 0,
           followingCount: 0,
           isFollowedByMe: false,
@@ -370,10 +369,9 @@ describe('useProfileData', () => {
           initialProfile: {
             id: 'user-1',
             email: undefined,
-            name: 'SSR User',
-            image: null,
-            profile: null,
-            credentials: [],
+            displayName: 'SSR User',
+            avatarUrl: null,
+            instagramUrl: null,
             followerCount: 0,
             followingCount: 0,
             isFollowedByMe: false,
@@ -397,10 +395,9 @@ describe('useProfileData', () => {
       initialProfile: {
         id: 'user-1',
         email: undefined,
-        name: 'Test',
-        image: null,
-        profile: null,
-        credentials: [],
+        displayName: 'Test',
+        avatarUrl: null,
+        instagramUrl: null,
         followerCount: 0,
         followingCount: 0,
         isFollowedByMe: false,
@@ -449,22 +446,6 @@ describe('useProfileData', () => {
       if (query === GET_USER_CLIMB_PERCENTILE) throw new Error('percentile boom');
       return {};
     });
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        id: 'user-1',
-        email: undefined,
-        name: 'Test',
-        image: null,
-        profile: null,
-        credentials: [],
-        followerCount: 0,
-        followingCount: 0,
-        isFollowedByMe: false,
-      }),
-    } as Response);
-
     renderProfileDataHook(() => useProfileData('user-1'));
 
     await waitFor(() => {

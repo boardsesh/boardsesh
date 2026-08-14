@@ -7,14 +7,19 @@ export type UserProfile = {
   email: string;
   displayName?: string;
   avatarUrl?: string;
+  instagramUrl?: string;
+  hasPassword: boolean;
+  linkedProviders: string[];
   isTester: boolean;
   createdAt: string;
   favoriteCount: number;
 };
 
+// Omitting a field leaves it untouched; passing null clears it.
 export type UpdateProfileInput = {
-  displayName?: string;
-  avatarUrl?: string;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  instagramUrl?: string | null;
 };
 
 export type AuroraCredential = {

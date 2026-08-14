@@ -80,8 +80,20 @@ describe('useUpdateProfile', () => {
       followingCount: 3,
       isFollowedByMe: false,
     };
+    // GET_PROFILE selects more than UPDATE_PROFILE returns, so there is a
+    // seeded entry whose extra fields must survive the write.
+    const cachedOwnProfile = {
+      id: 'user-1',
+      email: 'alex@example.com',
+      displayName: 'Alex',
+      avatarUrl: 'https://ws.example.com/static/avatars/user-1.jpg?v=old',
+      isTester: false,
+      createdAt: '2024-01-01T00:00:00.000Z',
+      favoriteCount: 12,
+    };
     requestMock.mockResolvedValue({ updateProfile: updatedProfile });
     const { queryClient, Wrapper } = makeWrapper();
+    queryClient.setQueryData(['profile'], { profile: cachedOwnProfile });
     queryClient.setQueryData(['publicProfile', 'user-1'], cachedPublicProfile);
 
     const { result } = renderHook(() => useUpdateProfile(), { wrapper: Wrapper });
@@ -89,7 +101,11 @@ describe('useUpdateProfile', () => {
     await result.current.mutateAsync({ avatarUrl: updatedProfile.avatarUrl });
 
     expect(requestMock).toHaveBeenCalledWith(UPDATE_PROFILE, { input: { avatarUrl: updatedProfile.avatarUrl } });
-    expect(queryClient.getQueryData(['profile'])).toEqual({ profile: updatedProfile });
+    // Merged, not replaced: createdAt/favoriteCount aren't in the mutation's
+    // selection set and would otherwise be blanked out until the refetch.
+    expect(queryClient.getQueryData(['profile'])).toEqual({
+      profile: { ...cachedOwnProfile, ...updatedProfile },
+    });
     expect(queryClient.getQueryData(['publicProfile', 'user-1'])).toEqual({
       ...cachedPublicProfile,
       displayName: updatedProfile.displayName,

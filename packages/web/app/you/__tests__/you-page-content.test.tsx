@@ -133,9 +133,9 @@ describe('YouProgressContent', () => {
         profile: {
           id: 'user-123',
           email: 'test@boardsesh.com',
-          name: 'Test User',
-          image: null,
-          profile: { displayName: 'Display Name', avatarUrl: null, instagramUrl: null },
+          displayName: 'Display Name',
+          avatarUrl: null,
+          instagramUrl: null,
           followerCount: 42,
           followingCount: 17,
           isFollowedByMe: false,
@@ -151,36 +151,17 @@ describe('YouProgressContent', () => {
     expect(followerCount.textContent).toContain('42 followers');
   });
 
-  it('falls back to profile.name when displayName is missing', () => {
+  // The backend coalesces displayName onto users.name before it ever reaches
+  // this component, so a null here means the account has no name at all.
+  it("falls back to 'Climber' when there is no display name", () => {
     mockUseProfileData.mockReturnValue(
       mockProfileDataReturn({
         profile: {
           id: 'user-123',
           email: 'test@boardsesh.com',
-          name: 'Test User',
-          image: null,
-          profile: { displayName: null, avatarUrl: null, instagramUrl: null },
-          followerCount: 0,
-          followingCount: 0,
-          isFollowedByMe: false,
-        },
-      }),
-    );
-
-    render(<YouProgressContent userId="user-1" />);
-
-    expect(screen.getByRole('heading', { level: 1, name: 'Test User' })).toBeTruthy();
-  });
-
-  it("falls back to 'Climber' when both displayName and name are null", () => {
-    mockUseProfileData.mockReturnValue(
-      mockProfileDataReturn({
-        profile: {
-          id: 'user-123',
-          email: 'test@boardsesh.com',
-          name: null,
-          image: null,
-          profile: { displayName: null, avatarUrl: null, instagramUrl: null },
+          displayName: null,
+          avatarUrl: null,
+          instagramUrl: null,
           followerCount: 0,
           followingCount: 0,
           isFollowedByMe: false,
@@ -193,19 +174,15 @@ describe('YouProgressContent', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Climber' })).toBeTruthy();
   });
 
-  it('renders avatar with profile.profile.avatarUrl when set', () => {
+  it('renders the avatar when one is set', () => {
     mockUseProfileData.mockReturnValue(
       mockProfileDataReturn({
         profile: {
           id: 'user-123',
           email: 'test@boardsesh.com',
-          name: 'Test User',
-          image: 'https://example.com/avatar.jpg',
-          profile: {
-            displayName: 'Display Name',
-            avatarUrl: 'https://example.com/profile-avatar.jpg',
-            instagramUrl: null,
-          },
+          displayName: 'Display Name',
+          avatarUrl: 'https://example.com/profile-avatar.jpg',
+          instagramUrl: null,
           followerCount: 0,
           followingCount: 0,
           isFollowedByMe: false,
@@ -216,27 +193,6 @@ describe('YouProgressContent', () => {
     render(<YouProgressContent userId="user-1" />);
 
     expect(screen.getByRole('img').getAttribute('src')).toBe('https://example.com/profile-avatar.jpg');
-  });
-
-  it('falls back to profile.image when profile.avatarUrl is null', () => {
-    mockUseProfileData.mockReturnValue(
-      mockProfileDataReturn({
-        profile: {
-          id: 'user-123',
-          email: 'test@boardsesh.com',
-          name: 'Test User',
-          image: 'https://example.com/avatar.jpg',
-          profile: { displayName: 'Display Name', avatarUrl: null, instagramUrl: null },
-          followerCount: 0,
-          followingCount: 0,
-          isFollowedByMe: false,
-        },
-      }),
-    );
-
-    render(<YouProgressContent userId="user-1" />);
-
-    expect(screen.getByRole('img').getAttribute('src')).toBe('https://example.com/avatar.jpg');
   });
 
   it('passes weekly bars into StatsSummary and keeps BoardStatsSection fallback-only', () => {

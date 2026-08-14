@@ -14,6 +14,8 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  * Learn more about it here: https://the-guild.dev/graphql/codegen/plugins/presets/preset-client#reducing-bundle-size
  */
 type Documents = {
+  '\n  query GetMyProfile {\n    profile {\n      id\n      email\n      displayName\n      avatarUrl\n      instagramUrl\n      hasPassword\n      linkedProviders\n      isTester\n      createdAt\n      favoriteCount\n    }\n  }\n': typeof types.GetMyProfileDocument;
+  '\n  mutation UpdateMyProfile($input: UpdateProfileInput!) {\n    updateProfile(input: $input) {\n      id\n      email\n      displayName\n      avatarUrl\n      instagramUrl\n      hasPassword\n      linkedProviders\n      isTester\n      createdAt\n      favoriteCount\n    }\n  }\n': typeof types.UpdateMyProfileDocument;
   '\n  query GetDeleteAccountInfo {\n    deleteAccountInfo {\n      publishedClimbCount\n    }\n  }\n': typeof types.GetDeleteAccountInfoDocument;
   '\n  mutation DeleteAccount($input: DeleteAccountInput!) {\n    deleteAccount(input: $input)\n  }\n': typeof types.DeleteAccountDocument;
   '\n  query GetBetaLinks($boardType: String!, $climbUuid: String!) {\n    betaLinks(boardType: $boardType, climbUuid: $climbUuid) {\n      climbUuid\n      link\n      foreignUsername\n      angle\n      thumbnail\n      isListed\n      createdAt\n      tickUuid\n      boardId\n    }\n  }\n': typeof types.GetBetaLinksDocument;
@@ -136,6 +138,10 @@ type Documents = {
   '\n  mutation UpdateTick($uuid: ID!, $input: UpdateTickInput!) {\n    updateTick(uuid: $uuid, input: $input) {\n      uuid\n      status\n      attemptCount\n      quality\n      difficulty\n      isBenchmark\n      comment\n      climbedAt\n      angle\n      updatedAt\n    }\n  }\n': typeof types.UpdateTickDocument;
 };
 const documents: Documents = {
+  '\n  query GetMyProfile {\n    profile {\n      id\n      email\n      displayName\n      avatarUrl\n      instagramUrl\n      hasPassword\n      linkedProviders\n      isTester\n      createdAt\n      favoriteCount\n    }\n  }\n':
+    types.GetMyProfileDocument,
+  '\n  mutation UpdateMyProfile($input: UpdateProfileInput!) {\n    updateProfile(input: $input) {\n      id\n      email\n      displayName\n      avatarUrl\n      instagramUrl\n      hasPassword\n      linkedProviders\n      isTester\n      createdAt\n      favoriteCount\n    }\n  }\n':
+    types.UpdateMyProfileDocument,
   '\n  query GetDeleteAccountInfo {\n    deleteAccountInfo {\n      publishedClimbCount\n    }\n  }\n':
     types.GetDeleteAccountInfoDocument,
   '\n  mutation DeleteAccount($input: DeleteAccountInput!) {\n    deleteAccount(input: $input)\n  }\n':
@@ -387,6 +393,18 @@ const documents: Documents = {
  */
 export function graphql(source: string): unknown;
 
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query GetMyProfile {\n    profile {\n      id\n      email\n      displayName\n      avatarUrl\n      instagramUrl\n      hasPassword\n      linkedProviders\n      isTester\n      createdAt\n      favoriteCount\n    }\n  }\n',
+): (typeof documents)['\n  query GetMyProfile {\n    profile {\n      id\n      email\n      displayName\n      avatarUrl\n      instagramUrl\n      hasPassword\n      linkedProviders\n      isTester\n      createdAt\n      favoriteCount\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation UpdateMyProfile($input: UpdateProfileInput!) {\n    updateProfile(input: $input) {\n      id\n      email\n      displayName\n      avatarUrl\n      instagramUrl\n      hasPassword\n      linkedProviders\n      isTester\n      createdAt\n      favoriteCount\n    }\n  }\n',
+): (typeof documents)['\n  mutation UpdateMyProfile($input: UpdateProfileInput!) {\n    updateProfile(input: $input) {\n      id\n      email\n      displayName\n      avatarUrl\n      instagramUrl\n      hasPassword\n      linkedProviders\n      isTester\n      createdAt\n      favoriteCount\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

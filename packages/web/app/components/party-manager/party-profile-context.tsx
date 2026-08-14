@@ -10,6 +10,9 @@ import { alias, identify, reset, setPersonProperties, track } from '@/app/lib/an
 import { isAdminAnalyticsUrl } from '@/app/lib/analytics-paths';
 import { hasRecordedPosthogAlias, recordPosthogAlias } from '@/app/lib/posthog-alias-storage';
 import { consumeFreshOAuthPending } from '@/app/lib/oauth-pending-db';
+import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import { GET_MY_PROFILE, type GetMyProfileQueryResponse } from '@boardsesh/graphql/operations/account';
+import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 
 type UserProfileData = {
   displayName: string | null;
@@ -35,6 +38,7 @@ export const PartyProfileProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [userProfile, setUserProfile] = useState<UserProfileData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { data: session, status: sessionStatus } = useSession();
+  const { token: authToken } = useWsAuthToken();
   const pathname = usePathname();
   const { i18n } = useTranslation();
   const lastAnalyticsDistinctId = useRef<string | null>(null);
@@ -131,35 +135,38 @@ export const PartyProfileProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setPersonProperties({ language: i18n.language });
   }, [i18n.language, pathname, profile?.id, sessionStatus]);
 
+  // The backend resolves `profile` from the bearer token, so this can only run
+  // once ws-auth has handed one over. Firing on `sessionStatus` alone would
+  // race it and come back `profile: null`, briefly showing the NextAuth name
+  // and avatar instead of the custom ones.
+  const fetchUserProfile = useCallback(async (): Promise<UserProfileData | null> => {
+    if (sessionStatus !== 'authenticated' || !authToken) return null;
+
+    const client = createGraphQLHttpClient(authToken);
+    const response = await client.request<GetMyProfileQueryResponse>(GET_MY_PROFILE);
+    const fetchedProfile = response.profile;
+    if (!fetchedProfile) return null;
+
+    return { displayName: fetchedProfile.displayName, avatarUrl: fetchedProfile.avatarUrl };
+  }, [sessionStatus, authToken]);
+
   // Fetch custom user profile (displayName, avatarUrl) when authenticated
   useEffect(() => {
     let mounted = true;
 
-    const fetchUserProfile = async () => {
-      if (sessionStatus !== 'authenticated') {
-        setUserProfile(null);
-        return;
-      }
-
+    void (async () => {
       try {
-        const response = await fetch('/api/internal/profile');
-        if (response.ok) {
-          const data = await response.json();
-          if (mounted) {
-            setUserProfile(data.profile || null);
-          }
-        }
+        const fetchedProfile = await fetchUserProfile();
+        if (mounted) setUserProfile(fetchedProfile);
       } catch (error) {
         console.error('Failed to fetch user profile:', error);
       }
-    };
-
-    void fetchUserProfile();
+    })();
 
     return () => {
       mounted = false;
     };
-  }, [sessionStatus]);
+  }, [fetchUserProfile]);
 
   const refreshProfile = useCallback(async () => {
     try {
@@ -167,18 +174,12 @@ export const PartyProfileProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const loadedProfile = await getPartyProfile();
       setProfile(loadedProfile);
 
-      // Also refresh user profile from API if authenticated
-      if (sessionStatus === 'authenticated') {
-        const response = await fetch('/api/internal/profile');
-        if (response.ok) {
-          const data = await response.json();
-          setUserProfile(data.profile || null);
-        }
-      }
+      // Also refresh the custom profile from the backend if authenticated
+      setUserProfile(await fetchUserProfile());
     } catch (error) {
       console.error('Failed to refresh party profile:', error);
     }
-  }, [sessionStatus]);
+  }, [fetchUserProfile]);
 
   const clearProfileHandler = useCallback(async () => {
     setIsLoading(true);

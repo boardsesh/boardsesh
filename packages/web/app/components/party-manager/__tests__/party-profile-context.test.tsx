@@ -1,6 +1,6 @@
 import { render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { PartyProfileProvider } from '../party-profile-context';
+import { PartyProfileProvider, usePartyProfile } from '../party-profile-context';
 
 type OAuthMarker = { provider: string; flow: 'web' | 'native'; attempted_at: number };
 
@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   reset: vi.fn(),
   setPersonProperties: vi.fn(),
   track: vi.fn(),
+  graphqlRequest: vi.fn(),
+  wsAuthToken: { token: null as string | null, isLoading: false },
   route: {
     pathname: '/',
   },
@@ -63,6 +65,19 @@ vi.mock('@/app/lib/oauth-pending-db', () => ({
   consumeFreshOAuthPending: mocks.consumeFreshOAuthPending,
 }));
 
+vi.mock('@/app/lib/graphql/client', () => ({
+  createGraphQLHttpClient: () => ({ request: mocks.graphqlRequest }),
+}));
+
+vi.mock('@/app/hooks/use-ws-auth-token', () => ({
+  useWsAuthToken: () => ({
+    token: mocks.wsAuthToken.token,
+    isAuthenticated: !!mocks.wsAuthToken.token,
+    isLoading: mocks.wsAuthToken.isLoading,
+    error: null,
+  }),
+}));
+
 function renderProvider() {
   return render(
     <PartyProfileProvider>
@@ -82,13 +97,9 @@ describe('PartyProfileProvider PostHog identity wiring', () => {
     mocks.getPartyProfile.mockResolvedValue({ id: 'profile-1' });
     mocks.hasRecordedPosthogAlias.mockReturnValue(false);
     mocks.consumeFreshOAuthPending.mockResolvedValue(null);
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => ({ profile: null }),
-      })),
-    );
+    mocks.wsAuthToken.token = null;
+    mocks.wsAuthToken.isLoading = false;
+    mocks.graphqlRequest.mockResolvedValue({ profile: null });
   });
 
   it('identifies the IndexedDB profile before aliasing and identifying the authenticated user', async () => {
@@ -245,5 +256,73 @@ describe('PartyProfileProvider PostHog identity wiring', () => {
     await waitFor(() => {
       expect(mocks.setPersonProperties).toHaveBeenCalledWith({ language: 'en-US' });
     });
+  });
+});
+
+function ProfileConsumer() {
+  const { username, avatarUrl } = usePartyProfile();
+  return <div data-testid="consumer" data-username={username ?? ''} data-avatar-url={avatarUrl ?? ''} />;
+}
+
+describe('PartyProfileProvider custom-profile read', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.route.pathname = '/';
+    mocks.session.data = {
+      user: { id: 'user-1', email: 'one@example.com', name: 'Session Name', image: 'session.png' },
+    };
+    mocks.session.status = 'authenticated';
+    mocks.alias.mockReturnValue(true);
+    mocks.ensurePartyProfile.mockResolvedValue({ id: 'profile-1' });
+    mocks.getPartyProfile.mockResolvedValue({ id: 'profile-1' });
+    mocks.hasRecordedPosthogAlias.mockReturnValue(true);
+    mocks.consumeFreshOAuthPending.mockResolvedValue(null);
+    mocks.wsAuthToken.token = null;
+    mocks.wsAuthToken.isLoading = false;
+    mocks.graphqlRequest.mockResolvedValue({
+      profile: { displayName: 'Custom Name', avatarUrl: 'custom.png' },
+    });
+  });
+
+  function renderConsumer() {
+    return render(
+      <PartyProfileProvider>
+        <ProfileConsumer />
+      </PartyProfileProvider>,
+    );
+  }
+
+  // The resolver reads `profile` off the bearer token, so firing before
+  // ws-auth resolves comes back null and flashes the NextAuth name/avatar.
+  it('does not query before the ws-auth token resolves', async () => {
+    renderConsumer();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mocks.graphqlRequest).not.toHaveBeenCalled();
+  });
+
+  it('prefers the custom display name and avatar over the NextAuth session', async () => {
+    mocks.wsAuthToken.token = 'ws-token';
+
+    const { getByTestId } = renderConsumer();
+
+    await waitFor(() => {
+      expect(getByTestId('consumer').getAttribute('data-username')).toBe('Custom Name');
+    });
+    expect(getByTestId('consumer').getAttribute('data-avatar-url')).toBe('custom.png');
+    expect(mocks.graphqlRequest).toHaveBeenCalled();
+  });
+
+  it('falls back to the session name and image when there is no custom profile', async () => {
+    mocks.wsAuthToken.token = 'ws-token';
+    mocks.graphqlRequest.mockResolvedValue({ profile: null });
+
+    const { getByTestId } = renderConsumer();
+
+    await waitFor(() => {
+      expect(mocks.graphqlRequest).toHaveBeenCalled();
+    });
+    expect(getByTestId('consumer').getAttribute('data-username')).toBe('Session Name');
+    expect(getByTestId('consumer').getAttribute('data-avatar-url')).toBe('session.png');
   });
 });

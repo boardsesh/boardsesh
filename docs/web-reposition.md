@@ -22,11 +22,12 @@ The mobile app reaches the climbing backend through **GraphQL**, not the Next.js
 web proxies. The only web endpoints `packages/mobile/src` fetches are
 `/api/auth/session`, `/api/internal/ws-auth`, and `/api/internal/beta-link-thumbnail`.
 
-| Route                                                                     | Runtime callers                                                                                                   | Verdict                               |
-| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `/api/v1/[board]/proxy/{login,saveAscent,saveClimb,getLogbook,user-sync}` | **None** — already migrated to GraphQL (see `docs/branch-deploys.md`)                                             | delete (dead code)                    |
-| `/api/internal/{join,controllers,favorites}`                              | Only web session-app UI slated for teardown (`join/*` page, `account/controllers-section.tsx`, `climb-actions/*`) | delete with that UI                   |
-| `/api/internal/ws-auth`                                                   | `use-ws-auth-token.ts` → ~85 web files incl. kiosk presence; mobile `auth-store.web.ts:343`                       | **KEEP** — `/app` + kiosk auth bridge |
+| Route                                                                     | Runtime callers                                                                                                                                                                        | Verdict                                            |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `/api/v1/[board]/proxy/{login,saveAscent,saveClimb,getLogbook,user-sync}` | **None** — already migrated to GraphQL (see `docs/branch-deploys.md`)                                                                                                                  | delete (dead code)                                 |
+| `/api/internal/{join,controllers,favorites}`                              | Only web session-app UI slated for teardown (`join/*` page, `account/controllers-section.tsx`, `climb-actions/*`)                                                                      | delete with that UI                                |
+| ~~`/api/internal/profile{,/[userId]}`~~                                   | **Deleted** in #1884 — `/settings`, `/profile/[user_id]` (SSR + client), the party-profile context and the feed's `UserSmartCard` all read `Query.profile` / `Query.publicProfile` now | done — the SSR path no longer needs `DATABASE_URL` |
+| `/api/internal/ws-auth`                                                   | `use-ws-auth-token.ts` → ~85 web files incl. kiosk presence; mobile `auth-store.web.ts:343`                                                                                            | **KEEP** — `/app` + kiosk auth bridge              |
 
 Loose ends to clean when the routes go (not runtime callers, but they'd go stale):
 `app/lib/api-docs/openapi-routes.ts` (documents `proxy/login`, `proxy/saveAscent`),

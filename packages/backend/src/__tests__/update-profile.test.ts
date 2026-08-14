@@ -23,6 +23,8 @@ const { mockDb, sentryCaptureMock, txState } = vi.hoisted(() => {
     insertCalled: false,
     insertValues: undefined as Record<string, unknown> | undefined,
     upsertSet: undefined as Record<string, unknown> | undefined,
+    userUpdateCalled: false,
+    userUpdateSet: undefined as Record<string, unknown> | undefined,
     selectRow: undefined as Record<string, unknown> | undefined,
     failWith: undefined as Error | undefined,
   };
@@ -38,6 +40,13 @@ const { mockDb, sentryCaptureMock, txState } = vi.hoisted(() => {
             return Promise.resolve(undefined);
           }),
         };
+      }),
+    })),
+    update: vi.fn(() => ({
+      set: vi.fn((values: Record<string, unknown>) => {
+        txState.userUpdateCalled = true;
+        txState.userUpdateSet = values;
+        return { where: vi.fn(() => Promise.resolve(undefined)) };
       }),
     })),
     select: vi.fn(() => ({
@@ -102,6 +111,9 @@ const SUCCESS_ROW = {
   createdAt: new Date('2024-01-01T00:00:00.000Z'),
   displayName: 'New Name',
   avatarUrl: 'https://cdn/new.png',
+  instagramUrl: 'https://instagram.com/climber',
+  hasPassword: true,
+  linkedProviders: ['google'],
   favoriteCount: 7,
 };
 
@@ -111,6 +123,8 @@ describe('updateProfile mutation', () => {
     txState.insertCalled = false;
     txState.insertValues = undefined;
     txState.upsertSet = undefined;
+    txState.userUpdateCalled = false;
+    txState.userUpdateSet = undefined;
     txState.selectRow = { ...SUCCESS_ROW };
     txState.failWith = undefined;
   });
@@ -143,6 +157,9 @@ describe('updateProfile mutation', () => {
       email: 'user1@example.com',
       displayName: 'New Name',
       avatarUrl: 'https://cdn/new.png',
+      instagramUrl: 'https://instagram.com/climber',
+      hasPassword: true,
+      linkedProviders: ['google'],
       favoriteCount: 7,
     });
   });
@@ -154,8 +171,47 @@ describe('updateProfile mutation', () => {
     expect(txState.insertValues).toEqual({ userId: 'user-1', displayName: 'Only Name' });
     // avatarUrl was omitted, so it must NOT appear in the conflict `set` —
     // that preserves the existing avatar instead of nulling it.
-    expect(txState.upsertSet).toEqual({ displayName: 'Only Name' });
+    expect(txState.upsertSet).toMatchObject({ displayName: 'Only Name' });
     expect(txState.upsertSet).not.toHaveProperty('avatarUrl');
+    expect(txState.upsertSet).not.toHaveProperty('instagramUrl');
+  });
+
+  it('persists instagramUrl and clears it with an explicit null', async () => {
+    await userMutations.updateProfile({}, { input: { instagramUrl: 'https://instagram.com/climber' } }, makeAuthCtx());
+    expect(txState.insertValues).toEqual({ userId: 'user-1', instagramUrl: 'https://instagram.com/climber' });
+    expect(txState.upsertSet).toMatchObject({ instagramUrl: 'https://instagram.com/climber' });
+
+    await userMutations.updateProfile({}, { input: { instagramUrl: null } }, makeAuthCtx());
+    expect(txState.upsertSet).toMatchObject({ instagramUrl: null });
+  });
+
+  it('rejects an invalid instagramUrl', async () => {
+    await expect(
+      userMutations.updateProfile({}, { input: { instagramUrl: 'instagram.com/climber' } }, makeAuthCtx()),
+    ).rejects.toThrow();
+  });
+
+  // Parity with the REST route this mutation replaced: users.name is what the
+  // NextAuth session (and so the web header/drawer) renders, so a rename has to
+  // land there too or the old name sticks around until the next sign-in.
+  it('mirrors displayName onto users.name in the same transaction', async () => {
+    await userMutations.updateProfile({}, { input: { displayName: 'Renamed' } }, makeAuthCtx());
+
+    expect(txState.userUpdateCalled).toBe(true);
+    expect(txState.userUpdateSet).toMatchObject({ name: 'Renamed' });
+  });
+
+  it('nulls users.name when displayName is cleared', async () => {
+    await userMutations.updateProfile({}, { input: { displayName: null } }, makeAuthCtx());
+
+    expect(txState.userUpdateCalled).toBe(true);
+    expect(txState.userUpdateSet).toMatchObject({ name: null });
+  });
+
+  it('leaves users.name alone when displayName is not part of the update', async () => {
+    await userMutations.updateProfile({}, { input: { avatarUrl: 'https://cdn/new.png' } }, makeAuthCtx());
+
+    expect(txState.userUpdateCalled).toBe(false);
   });
 
   it('takes the no-write path when the input is empty', async () => {
