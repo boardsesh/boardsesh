@@ -1,26 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { EDIT_WINDOW_MS, computeCanUpdate, computeEditLocked, buildInitialHoldsMap } from '../helpers';
-
-vi.mock('@boardsesh/board-constants/hold-states', () => ({
-  // Single-frame: `p{id}r{code}`. Multi-frame: comma-separated, later frames win.
-  convertLitUpHoldsStringToMap: (frames: string) => {
-    const result: Record<number, Record<number, { state: string; color: string; displayColor: string }>> = {};
-    frames
-      .split(',')
-      .filter(Boolean)
-      .forEach((frame, index) => {
-        const holds: Record<number, { state: string; color: string; displayColor: string }> = {};
-        for (const match of frame.matchAll(/p(\d+)r(\d+)/g)) {
-          const holdId = Number(match[1]);
-          const code = Number(match[2]);
-          const state = code === 42 ? 'STARTING' : code === 43 ? 'HAND' : 'FINISH';
-          holds[holdId] = { state, color: '#fff', displayColor: '#fff' };
-        }
-        result[index] = holds;
-      });
-    return result;
-  },
-}));
+import { describe, it, expect } from 'vitest';
+import { EDIT_WINDOW_MS, computeCanUpdate, computeEditLocked, buildInitialFrames } from '../helpers';
 
 const NOW = Date.parse('2026-06-03T12:00:00.000Z');
 const within = new Date(NOW - 60 * 60 * 1000).toISOString(); // 1h ago
@@ -73,21 +52,25 @@ describe('computeEditLocked', () => {
   });
 });
 
-describe('buildInitialHoldsMap', () => {
-  it('returns empty for empty frames', () => {
-    expect(buildInitialHoldsMap('', 'kilter')).toEqual({});
+describe('buildInitialFrames', () => {
+  it('returns a single empty frame for an empty frames string', () => {
+    expect(buildInitialFrames('', 'kilter')).toEqual([{}]);
   });
 
   it('parses a single frame', () => {
-    expect(buildInitialHoldsMap('p100r42p200r43', 'kilter')).toEqual({
-      100: { state: 'STARTING', color: '#fff', displayColor: '#fff' },
-      200: { state: 'HAND', color: '#fff', displayColor: '#fff' },
-    });
+    const frames = buildInitialFrames('p100r42p200r43', 'kilter');
+    expect(frames).toHaveLength(1);
+    expect(frames[0][100].state).toBe('STARTING');
+    expect(frames[0][200].state).toBe('HAND');
   });
 
-  it('merges multi-frame with later frames overriding', () => {
-    const map = buildInitialHoldsMap('p100r42,p100r43p200r44', 'kilter');
-    expect(map[100].state).toBe('HAND'); // later frame wins
-    expect(map[200].state).toBe('FINISH');
+  it('preserves frame separation instead of flattening to one map', () => {
+    // Frame 0 lights hold 100; frame 1 is a delta that re-roles it and adds 200.
+    const frames = buildInitialFrames('p100r42,"p100r43p200r44', 'kilter');
+    expect(frames).toHaveLength(2);
+    expect(frames[0][100].state).toBe('STARTING');
+    expect(frames[0][200]).toBeUndefined();
+    expect(frames[1][100].state).toBe('HAND');
+    expect(frames[1][200].state).toBe('FINISH');
   });
 });

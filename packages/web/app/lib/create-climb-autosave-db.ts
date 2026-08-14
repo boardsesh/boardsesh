@@ -4,8 +4,14 @@ const STORE_NAME = 'autosave';
 const AUTOSAVE_KEY = 'create-climb';
 
 export type CreateClimbAutosave = {
-  /** Serialised holds map (JSON stringified LitUpHoldsMap) */
+  /**
+   * MoonBoard: serialised holds map (JSON stringified LitUpHoldsMap).
+   * Aurora: serialised *active* frame only, kept for backward compatibility —
+   * `framesJson` below is the full route and takes priority when present.
+   */
   holdsJson: string;
+  /** Aurora only: JSON.stringify(LitUpHoldsMap[]) — the full frame sequence. */
+  framesJson?: string;
   climbName: string;
   description: string;
   isDraft: boolean;

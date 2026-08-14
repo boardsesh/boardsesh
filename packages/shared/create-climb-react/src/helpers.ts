@@ -1,5 +1,5 @@
 import type { BoardName, LitUpHoldsMap } from '@boardsesh/shared-schema';
-import { convertLitUpHoldsStringToMap } from '@boardsesh/board-constants/hold-states';
+import { accumulateFramesToMaps } from '@boardsesh/board-constants/hold-states';
 
 /** Window after first publish during which a non-draft climb can still be edited. */
 export const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -47,14 +47,16 @@ export function computeEditLocked(saved: SavedClimbSnapshot | null, now: number 
 }
 
 /**
- * Flatten a (possibly multi-frame) fork/draft frames string into a single
- * Aurora holds map for seeding the editor. Later frames override earlier ones,
- * matching the web form's draft-load behaviour.
+ * Decode a (possibly multi-frame) fork/draft/edit frames string into the
+ * editor's per-frame sequence, preserving frame separation — unlike the old
+ * flatten-to-one-map seeding this replaced, a multi-frame route/circuit no
+ * longer collapses into a single frame when you fork or edit it.
+ *
+ * Falls back to a single empty frame for an empty string, matching a
+ * brand-new climb's starting state.
  */
-export function buildInitialHoldsMap(frames: string, board: BoardName): LitUpHoldsMap {
-  if (!frames) return {};
-  const framesMap = convertLitUpHoldsStringToMap(frames, board);
-  return Object.entries(framesMap)
-    .sort(([a], [b]) => Number(a) - Number(b))
-    .reduce((acc, [, frame]) => ({ ...acc, ...frame }), {} as LitUpHoldsMap);
+export function buildInitialFrames(frames: string, board: BoardName): LitUpHoldsMap[] {
+  if (!frames) return [{}];
+  const maps = accumulateFramesToMaps(frames, board);
+  return maps.length > 0 ? maps : [{}];
 }

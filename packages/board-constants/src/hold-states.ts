@@ -295,6 +295,60 @@ export function accumulatedMapsToFrameStrings(maps: LitUpHoldsMap[], board: Boar
 }
 
 /**
+ * Encode per-frame lit-state snapshots into an Aurora `frames` string — the
+ * write-side counterpart to `accumulateFramesToMaps`.
+ *
+ * Frame 0 always encodes absolute (`p<id>r<code>` concatenation, matching a
+ * single-frame climb's flat format exactly — so a one-frame route's encoded
+ * string is byte-for-byte what it always was). Every later frame is a delta
+ * against the previous *decoded* snapshot: a hold present before but absent
+ * now emits `x<id>`; a hold that is new or changed state emits `p<id>r<code>`;
+ * an unchanged hold emits nothing. Two identical consecutive frames correctly
+ * produce a bare `"` — the documented "hold frame" in `parseFramesSegments`
+ * that repeats the previous snapshot for one more pace tick.
+ *
+ * `accumulateFramesToMaps(encodeMapsToFramesString(maps, board), board)`
+ * round-trips `maps` (module the `{holdId}={code}` sentinel for role codes
+ * `STATE_TO_PRIMARY_CODE` doesn't have a code for, which this function drops
+ * the same way `generateFramesString` always has).
+ */
+export function encodeMapsToFramesString(maps: LitUpHoldsMap[], board: BoardName): string {
+  const stateToCode = STATE_TO_PRIMARY_CODE[board];
+  const encodeAbsolute = (map: LitUpHoldsMap): string =>
+    Object.entries(map)
+      .filter(([, hold]) => hold.state !== 'OFF')
+      .flatMap(([holdId, hold]) => {
+        const code = stateToCode?.[hold.state];
+        return code === undefined ? [] : [`p${holdId}r${code}`];
+      })
+      .join('');
+
+  if (maps.length === 0) return '';
+
+  const segments = [encodeAbsolute(maps[0])];
+  for (let index = 1; index < maps.length; index += 1) {
+    const previous = maps[index - 1];
+    const current = maps[index];
+    const tokens: string[] = [];
+
+    for (const holdId of Object.keys(previous)) {
+      if (!(Number(holdId) in current)) tokens.push(`x${holdId}`);
+    }
+    for (const [holdId, hold] of Object.entries(current)) {
+      if (hold.state === 'OFF') continue;
+      const previousHold = previous[Number(holdId)];
+      if (previousHold?.state === hold.state) continue;
+      const code = stateToCode?.[hold.state];
+      if (code === undefined) continue;
+      tokens.push(`p${holdId}r${code}`);
+    }
+
+    segments.push(`"${tokens.join('')}`);
+  }
+  return segments.join(',');
+}
+
+/**
  * True when a decoded hold state is the `{holdId}={code}` sentinel that
  * `accumulateFramesToMaps` emits for a role code missing from
  * `HOLD_STATE_MAP`, rather than a real hold state.

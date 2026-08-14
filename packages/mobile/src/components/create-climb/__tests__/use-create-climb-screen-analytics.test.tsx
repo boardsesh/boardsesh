@@ -31,13 +31,23 @@ const editClimb = vi.hoisted(() => ({ data: undefined as unknown }));
 // doesn't early-return), and `litUpHoldsMap` (for holdCount).
 const createClimb = vi.hoisted(() => ({
   litUpHoldsMap: { 1: { state: 'STARTING' }, 2: { state: 'HAND' }, 3: { state: 'FINISH' } },
+  frames: [{ 1: { state: 'STARTING' }, 2: { state: 'HAND' }, 3: { state: 'FINISH' } }],
+  frameCount: 1,
+  currentFrameIndex: 0,
   setHoldState: vi.fn(),
   generateFramesString: vi.fn(() => 'p1r12p2r13p3r14'),
+  currentFrameBleString: vi.fn(() => 'p1r12p2r13p3r14'),
   startingCount: 1,
   finishCount: 1,
   isValid: true,
   resetHolds: vi.fn(),
   loadHolds: vi.fn(),
+  loadFrames: vi.fn(),
+  duplicateFrame: vi.fn(),
+  deleteFrame: vi.fn(),
+  goToFrame: vi.fn(),
+  nextFrame: vi.fn(),
+  prevFrame: vi.fn(),
   undo: vi.fn(),
   redo: vi.fn(),
   canUndo: false,
@@ -70,7 +80,7 @@ vi.mock('@boardsesh/create-climb-react', () => ({
   // update branch is exercised by seeding a savedClimb via edit mode below.
   computeCanUpdate: (savedClimb: unknown) => savedClimb != null,
   computeEditLocked: () => false,
-  buildInitialHoldsMap: () => ({}),
+  buildInitialFrames: () => [{}],
 }));
 
 vi.mock('@boardsesh/board-react', () => ({

@@ -32,6 +32,12 @@ type CreateDrawerActionBarProps = {
   onUndo: () => void;
   onRedo: () => void;
   onClear: () => void;
+  frameCount: number;
+  currentFrameIndex: number;
+  onDuplicateFrame: () => void;
+  onDeleteFrame: () => void;
+  onPrevFrame: () => void;
+  onNextFrame: () => void;
   canSetActive: boolean;
   onSetActive: () => void;
   saveState: SaveButtonState;
@@ -53,6 +59,12 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   onUndo,
   onRedo,
   onClear,
+  frameCount,
+  currentFrameIndex,
+  onDuplicateFrame,
+  onDeleteFrame,
+  onPrevFrame,
+  onNextFrame,
   canSetActive,
   onSetActive,
   saveState,
@@ -143,6 +155,39 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
           onPress={onClear}
           accessibilityLabel={t('mobile.create.actions.clear')}
         />
+        <ActionButton
+          size="sm"
+          iconName="copy"
+          onPress={onDuplicateFrame}
+          accessibilityLabel={t('mobile.create.frames.duplicate')}
+        />
+        {frameCount > 1 && (
+          <>
+            <ActionButton
+              size="sm"
+              iconName="skip.previous"
+              onPress={onPrevFrame}
+              disabled={currentFrameIndex === 0}
+              accessibilityLabel={t('mobile.create.frames.prev')}
+            />
+            <Text variant="caption1" style={styles.frameCounter} numberOfLines={1}>
+              {t('mobile.create.frames.counter', { index: currentFrameIndex + 1, total: frameCount })}
+            </Text>
+            <ActionButton
+              size="sm"
+              iconName="skip.next"
+              onPress={onNextFrame}
+              disabled={currentFrameIndex >= frameCount - 1}
+              accessibilityLabel={t('mobile.create.frames.next')}
+            />
+            <ActionButton
+              size="sm"
+              iconName="frame.remove"
+              onPress={onDeleteFrame}
+              accessibilityLabel={t('mobile.create.frames.delete')}
+            />
+          </>
+        )}
 
         <View style={drawerActionBarStyles.spacer} />
 
@@ -208,5 +253,9 @@ const styles = StyleSheet.create({
   },
   chipLabel: {
     fontWeight: '600',
+  },
+  frameCounter: {
+    minWidth: 44,
+    textAlign: 'center',
   },
 });

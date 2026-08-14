@@ -223,6 +223,12 @@
       "title": "Effacer le bloc",
       "description": "Toutes les prises seront retirées et le formulaire remis à zéro. On y va ?",
       "tooltip": "Effacer toutes les prises"
+    },
+    "frames": {
+      "duplicateTooltip": "Dupliquer l'image",
+      "deleteTooltip": "Supprimer l'image",
+      "deleteTitle": "Supprimer l'image",
+      "deleteDescription": "L'image actuelle sera supprimée. On y va ?"
     }
   },
   "actions": {
@@ -867,6 +873,13 @@
         "setActive": "Définir comme voie active",
         "undo": "Annuler",
         "redo": "Rétablir"
+      },
+      "frames": {
+        "duplicate": "Dupliquer l'image",
+        "delete": "Supprimer l'image",
+        "prev": "Image précédente",
+        "next": "Image suivante",
+        "counter": "{{index}}/{{total}}"
       },
       "holdRole": {
         "title": "Définir le rôle de la prise",

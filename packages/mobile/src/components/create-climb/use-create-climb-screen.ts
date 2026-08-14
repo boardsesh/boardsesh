@@ -10,7 +10,7 @@ import {
   useCreateClimb,
   computeCanUpdate,
   computeEditLocked,
-  buildInitialHoldsMap,
+  buildInitialFrames,
   type SavedClimbSnapshot,
 } from '@boardsesh/create-climb-react';
 import { useBoardActions, isDuplicateClimbError } from '@boardsesh/board-react';
@@ -106,10 +106,11 @@ export function useCreateClimbScreen({
   const isForking = !!forkFrames;
   const isEditing = !!editClimbUuid;
 
-  // Seed the editor from a fork's frames once; an empty start otherwise. Edit
-  // mode seeds asynchronously below (guarded by a ref).
-  const initialHoldsMap = useMemo(
-    () => (isForking && forkFrames ? buildInitialHoldsMap(forkFrames, board.boardName) : {}),
+  // Seed the editor from a fork's frames once, preserving every frame of a
+  // multi-frame source route (an empty single frame otherwise). Edit mode
+  // seeds asynchronously below (guarded by a ref).
+  const initialFrames = useMemo(
+    () => (isForking && forkFrames ? buildInitialFrames(forkFrames, board.boardName) : undefined),
     // Seed only once from the route param — board.boardName is stable per screen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -117,18 +118,26 @@ export function useCreateClimbScreen({
 
   const {
     litUpHoldsMap,
+    frames,
+    frameCount,
+    currentFrameIndex,
     setHoldState,
     generateFramesString,
+    currentFrameBleString,
     startingCount,
     finishCount,
     isValid,
     resetHolds,
-    loadHolds,
+    loadFrames,
+    duplicateFrame,
+    deleteFrame,
+    nextFrame,
+    prevFrame,
     undo,
     redo,
     canUndo,
     canRedo,
-  } = useCreateClimb(board.boardName, { initialHoldsMap });
+  } = useCreateClimb(board.boardName, { initialFrames });
 
   const [selectedBrush, setSelectedBrush] = useState<BrushRole>('HAND');
   const [name, setName] = useState(isForking && forkName ? `${forkName} remix` : '');
@@ -219,7 +228,7 @@ export function useCreateClimbScreen({
   useEffect(() => {
     if (!editClimb || editSeededRef.current) return;
     editSeededRef.current = true;
-    loadHolds(buildInitialHoldsMap(editClimb.frames, board.boardName));
+    loadFrames(buildInitialFrames(editClimb.frames, board.boardName));
     setName(editClimb.name);
     setDescription(withNoMatch(editClimb.description ?? '', false));
     setNoMatch(isNoMatchClimb(editClimb.description));
@@ -231,7 +240,7 @@ export function useCreateClimbScreen({
       publishedAt: editClimb.published_at ?? null,
       isDraft: editClimb.is_draft ?? false,
     });
-  }, [editClimb, board.boardName, loadHolds]);
+  }, [editClimb, board.boardName, loadFrames]);
 
   // ---- Local autosave restore on mount. ----
   useEffect(() => {
@@ -246,8 +255,10 @@ export function useCreateClimbScreen({
         return;
       }
       try {
-        const parsed = JSON.parse(draft.holdsJson) as Record<number, { state: string }>;
-        loadHolds(parsed as Parameters<typeof loadHolds>[0]);
+        const frames = draft.framesJson
+          ? (JSON.parse(draft.framesJson) as Parameters<typeof loadFrames>[0])
+          : [JSON.parse(draft.holdsJson) as Parameters<typeof loadFrames>[0][number]];
+        loadFrames(frames);
       } catch {
         // Corrupt holds payload — ignore and start clean.
       }
@@ -266,13 +277,14 @@ export function useCreateClimbScreen({
 
   // ---- Local autosave (debounced). ----
   const holdsJson = useMemo(() => JSON.stringify(litUpHoldsMap), [litUpHoldsMap]);
+  const framesJson = useMemo(() => JSON.stringify(frames), [frames]);
   // The most recent autosave payload, kept current by the debounced effect so a
   // flush-on-unmount / background can persist it synchronously without waiting
   // for the (suspended-when-backgrounded) debounce timer. `dirty` gates whether
   // there is anything worth flushing for the current per-board new-draft slot.
   const pendingDraftRef = useRef<{ key: string; draft: CreateClimbDraft; dirty: boolean }>({
     key: draftKey,
-    draft: { holdsJson, name, description, isDraft },
+    draft: { holdsJson, framesJson, name, description, isDraft },
     dirty: false,
   });
   // Forks seed from another climb's frames and skip restore, so — like edit
@@ -288,8 +300,14 @@ export function useCreateClimbScreen({
       pendingDraftRef.current.dirty = false;
       return;
     }
-    const hasContent = holdsJson !== '{}' || name.trim() !== '' || description.trim() !== '';
-    const draft: CreateClimbDraft = { holdsJson, name, description: withNoMatch(description, noMatch), isDraft };
+    const hasContent = holdsJson !== '{}' || frameCount > 1 || name.trim() !== '' || description.trim() !== '';
+    const draft: CreateClimbDraft = {
+      holdsJson,
+      framesJson,
+      name,
+      description: withNoMatch(description, noMatch),
+      isDraft,
+    };
     // Mirror the latest payload so a flush (unmount/background) can persist the
     // pending edit even before the debounce fires.
     pendingDraftRef.current = { key: draftKey, draft, dirty: hasContent };
@@ -303,7 +321,7 @@ export function useCreateClimbScreen({
       pendingDraftRef.current.dirty = false;
     }, AUTOSAVE_DEBOUNCE_MS);
     return () => clearTimeout(handle);
-  }, [holdsJson, name, description, noMatch, isDraft, draftKey, autosaveDisabled]);
+  }, [holdsJson, framesJson, frameCount, name, description, noMatch, isDraft, draftKey, autosaveDisabled]);
 
   // ---- Flush the pending draft on unmount / background. ----
   // JS timers are suspended when the app is backgrounded and the cleanup's
@@ -334,10 +352,13 @@ export function useCreateClimbScreen({
   useEffect(() => {
     if (!bleConnected) return;
     const handle = setTimeout(() => {
-      void sendFramesRef.current?.(generateFramesString());
+      // The active frame only — the wall mirrors whatever you're painting
+      // right now, not multi-frame route syntax the BLE packet builder can't
+      // parse.
+      void sendFramesRef.current?.(currentFrameBleString());
     }, BLE_PREVIEW_DEBOUNCE_MS);
     return () => clearTimeout(handle);
-  }, [holdsJson, bleConnected, generateFramesString]);
+  }, [holdsJson, bleConnected, currentFrameBleString]);
 
   // ---- Painting + role assignment. ----
   const handlePaint = useCallback(
@@ -413,11 +434,12 @@ export function useCreateClimbScreen({
       published_at: savedClimb?.publishedAt ?? null,
       userAscents: 0,
       userAttempts: 0,
-      // The editor emits a single static frame (no multi-frame playback).
-      framesCount: 1,
+      framesCount: frameCount,
+      // 0/null both mean "use the default pace" — useClimbFrames falls back to
+      // DEFAULT_PACE_MS whenever framesPace isn't a positive number.
       framesPace: null,
     }),
-    [name, description, noMatch, profile, savedClimb, board.angle, board.boardName, board.layoutId, t],
+    [name, description, noMatch, profile, savedClimb, board.angle, board.boardName, board.layoutId, t, frameCount],
   );
 
   // Push the freshly saved climb into the queue as the current climb so the
@@ -449,8 +471,8 @@ export function useCreateClimbScreen({
     // connect tears down the first attempt's scan and strands the picker.
     if (bluetooth.loading) return;
     if (bluetooth.isConnected) void bluetooth.disconnect();
-    else void bluetooth.connect(generateFramesString());
-  }, [bluetooth, generateFramesString]);
+    else void bluetooth.connect(currentFrameBleString());
+  }, [bluetooth, currentFrameBleString]);
 
   // ---- Save state machine. ----
   const editLocked = computeEditLocked(savedClimb);
@@ -503,6 +525,8 @@ export function useCreateClimbScreen({
           description: fullDescription,
           frames,
           angle: board.angle,
+          framesCount: frameCount,
+          framesPace: 0,
           isDraft,
         });
         setSavedClimb({
@@ -528,6 +552,8 @@ export function useCreateClimbScreen({
           description: fullDescription,
           is_draft: isDraft,
           frames,
+          frames_count: frameCount,
+          frames_pace: 0,
           angle: board.angle,
         });
         setSavedClimb({
@@ -586,6 +612,7 @@ export function useCreateClimbScreen({
     savedClimb,
     litUpHoldsMap,
     generateFramesString,
+    frameCount,
     updateClimb,
     saveClimb,
     board,
@@ -618,6 +645,13 @@ export function useCreateClimbScreen({
     handleClear,
     showAllHolds,
     setShowAllHolds,
+    // frames (route/circuit editing)
+    frameCount,
+    currentFrameIndex,
+    duplicateFrame,
+    deleteFrame,
+    nextFrame,
+    prevFrame,
     // undo/redo (current editing session only)
     undo,
     redo,

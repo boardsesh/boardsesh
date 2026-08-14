@@ -11,8 +11,14 @@ import { getPreference, setPreference, removePreference, removePreferencesMatchi
 import type { UserStorageOwner } from './user-storage-owner';
 
 export type CreateClimbDraft = {
-  /** JSON.stringify of the editor's LitUpHoldsMap. */
+  /**
+   * JSON.stringify of the editor's active-frame LitUpHoldsMap. Kept for
+   * backward compatibility — `framesJson` below is the full route and takes
+   * priority when present.
+   */
   holdsJson: string;
+  /** JSON.stringify(LitUpHoldsMap[]) — the full frame sequence. */
+  framesJson?: string;
   name: string;
   description: string;
   isDraft: boolean;

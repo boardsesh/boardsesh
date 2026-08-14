@@ -8,6 +8,7 @@ import {
   parseFramesSegments,
   accumulateFramesToMaps,
   accumulatedMapsToFrameStrings,
+  encodeMapsToFramesString,
   flattenFramesToUnion,
   isSentinelHoldState,
   toFlatFrames,
@@ -316,6 +317,51 @@ describe('accumulatedMapsToFrameStrings', () => {
     ];
     const [string0] = accumulatedMapsToFrameStrings(maps, 'moonboard');
     expect(string0).toBe('p100r42');
+  });
+});
+
+describe('encodeMapsToFramesString', () => {
+  it('returns the empty string for an empty maps array', () => {
+    expect(encodeMapsToFramesString([], 'tension')).toBe('');
+  });
+
+  it('encodes a single frame identically to the legacy flat format', () => {
+    const maps = accumulateFramesToMaps('p100r1p200r2', 'tension');
+    expect(encodeMapsToFramesString(maps, 'tension')).toBe('p100r1p200r2');
+  });
+
+  it('round-trips adds, removes, and role changes across frames', () => {
+    const original = 'p100r1p200r2,"x100p300r2,"p300r3';
+    const maps = accumulateFramesToMaps(original, 'tension');
+    const reEncoded = encodeMapsToFramesString(maps, 'tension');
+    expect(accumulateFramesToMaps(reEncoded, 'tension')).toEqual(maps);
+  });
+
+  it('encodes two identical consecutive frames as a bare hold frame', () => {
+    const maps = [
+      { 100: { state: 'STARTING' as const, color: '#00FF00', displayColor: '#00FF00' } },
+      { 100: { state: 'STARTING' as const, color: '#00FF00', displayColor: '#00FF00' } },
+    ];
+    expect(encodeMapsToFramesString(maps, 'tension')).toBe('p100r1,"');
+  });
+
+  it('round-trips the Kilter Grips oracle fixtures', () => {
+    for (const climb of oracle.climbs) {
+      const maps = accumulateFramesToMaps(climb.auroraFrames, 'kilter');
+      const reEncoded = encodeMapsToFramesString(maps, 'kilter');
+      expect(accumulateFramesToMaps(reEncoded, 'kilter')).toEqual(maps);
+    }
+  });
+
+  it('drops holds whose state has no canonical code on this board', () => {
+    const maps = [
+      {
+        100: { state: 'STARTING' as const, color: '#00FF00', displayColor: '#00FF00' },
+        200: { state: 'FOOT' as const, color: '#FFAA00', displayColor: '#FFAA00' },
+      },
+    ];
+    // MoonBoard has no FOOT canonical code.
+    expect(encodeMapsToFramesString(maps, 'moonboard')).toBe('p100r42');
   });
 });
 

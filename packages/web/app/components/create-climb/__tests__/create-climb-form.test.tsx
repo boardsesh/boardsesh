@@ -24,12 +24,19 @@ const mockReplaceQueueItem = vi.fn();
 const mockSaveClimb = vi.fn();
 const mockUpdateClimb = vi.fn();
 const mockLoadAuroraHolds = vi.fn();
+const mockLoadAuroraFrames = vi.fn();
 const mockResetAuroraHolds = vi.fn();
 const mockResetMoonboardHolds = vi.fn();
 const mockSetAuroraHoldState = vi.fn();
 const mockSetMoonboardHoldState = vi.fn();
 const mockSendFramesToBoard = vi.fn();
 const mockGenerateAuroraFramesString = vi.fn(() => 'test-frames');
+const mockCurrentFrameBleString = vi.fn(() => 'test-ble-frame');
+const mockDuplicateFrame = vi.fn();
+const mockDeleteFrame = vi.fn();
+const mockNextFrame = vi.fn();
+const mockPrevFrame = vi.fn();
+const mockBuildInitialFrames = vi.hoisted(() => vi.fn(() => [{} as LitUpHoldsMap]));
 let mockQueueActions: Record<string, unknown> | null = null;
 let mockCurrentClimbData: Record<string, unknown> | null = null;
 let mockAuroraCreateState: {
@@ -74,6 +81,8 @@ vi.mock('../../board-bluetooth-control/bluetooth-context', () => ({
 vi.mock('@boardsesh/create-climb-react', () => ({
   useCreateClimb: vi.fn(() => ({
     litUpHoldsMap: mockAuroraCreateState.litUpHoldsMap,
+    frameCount: 1,
+    currentFrameIndex: 0,
     setHoldState: mockSetAuroraHoldState,
     startingCount: 0,
     finishCount: 0,
@@ -81,8 +90,15 @@ vi.mock('@boardsesh/create-climb-react', () => ({
     isValid: mockAuroraCreateState.isValid,
     resetHolds: mockResetAuroraHolds,
     generateFramesString: mockGenerateAuroraFramesString,
+    currentFrameBleString: mockCurrentFrameBleString,
     loadHolds: mockLoadAuroraHolds,
+    loadFrames: mockLoadAuroraFrames,
+    duplicateFrame: mockDuplicateFrame,
+    deleteFrame: mockDeleteFrame,
+    nextFrame: mockNextFrame,
+    prevFrame: mockPrevFrame,
   })),
+  buildInitialFrames: mockBuildInitialFrames,
 }));
 
 vi.mock('../use-moonboard-create-climb', () => ({
@@ -862,6 +878,9 @@ describe('CreateClimbForm — Aurora rendering', () => {
     };
     vi.mocked(useCreateClimb).mockReturnValue({
       litUpHoldsMap: mockAuroraCreateState.litUpHoldsMap,
+      frames: [mockAuroraCreateState.litUpHoldsMap],
+      frameCount: 1,
+      currentFrameIndex: 0,
       setHoldState: mockSetAuroraHoldState,
       startingCount: 0,
       finishCount: 0,
@@ -869,7 +888,14 @@ describe('CreateClimbForm — Aurora rendering', () => {
       isValid: true,
       resetHolds: mockResetAuroraHolds,
       generateFramesString: mockGenerateAuroraFramesString,
+      currentFrameBleString: mockCurrentFrameBleString,
       loadHolds: mockLoadAuroraHolds,
+      loadFrames: mockLoadAuroraFrames,
+      duplicateFrame: mockDuplicateFrame,
+      deleteFrame: mockDeleteFrame,
+      goToFrame: vi.fn(),
+      nextFrame: mockNextFrame,
+      prevFrame: mockPrevFrame,
       undo: vi.fn(),
       redo: vi.fn(),
       canUndo: false,
@@ -878,8 +904,10 @@ describe('CreateClimbForm — Aurora rendering', () => {
 
     renderAuroraComponent();
 
+    // The direct-preview send uses the active-frame-only BLE string, never the
+    // full (possibly multi-frame) route string generateFramesString() returns.
     await waitFor(() => {
-      expect(mockSendFramesToBoard).toHaveBeenCalledWith('test-frames');
+      expect(mockSendFramesToBoard).toHaveBeenCalledWith('test-ble-frame');
     });
   });
 
@@ -905,6 +933,9 @@ describe('CreateClimbForm — Aurora rendering', () => {
     };
     vi.mocked(useCreateClimb).mockReturnValue({
       litUpHoldsMap: mockAuroraCreateState.litUpHoldsMap,
+      frames: [mockAuroraCreateState.litUpHoldsMap],
+      frameCount: 1,
+      currentFrameIndex: 0,
       setHoldState: mockSetAuroraHoldState,
       startingCount: 0,
       finishCount: 0,
@@ -912,7 +943,14 @@ describe('CreateClimbForm — Aurora rendering', () => {
       isValid: true,
       resetHolds: mockResetAuroraHolds,
       generateFramesString: mockGenerateAuroraFramesString,
+      currentFrameBleString: mockCurrentFrameBleString,
       loadHolds: mockLoadAuroraHolds,
+      loadFrames: mockLoadAuroraFrames,
+      duplicateFrame: mockDuplicateFrame,
+      deleteFrame: mockDeleteFrame,
+      goToFrame: vi.fn(),
+      nextFrame: mockNextFrame,
+      prevFrame: mockPrevFrame,
       undo: vi.fn(),
       redo: vi.fn(),
       canUndo: false,
