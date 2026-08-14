@@ -7,14 +7,11 @@ import {
   GET_ALL_USER_PLAYLISTS,
   GET_PLAYLIST,
   GET_PLAYLIST_CLIMBS,
-  GET_SMART_PLAYLIST,
   type Playlist,
   type GetAllUserPlaylistsQueryResponse,
   type GetPlaylistQueryResponse,
   type GetPlaylistClimbsQueryResponse,
   type GetPlaylistClimbsInput,
-  type GetSmartPlaylistInput,
-  type GetSmartPlaylistQueryResponse,
 } from '@boardsesh/graphql/operations/playlists';
 import { GET_GROUPED_NOTIFICATIONS } from '@boardsesh/graphql/operations/notifications';
 
@@ -118,29 +115,6 @@ export async function serverPlaylist(authToken: string | undefined, playlistId: 
     return response.playlist;
   } catch (error) {
     console.error('serverPlaylist failed:', error);
-    return null;
-  }
-}
-
-/**
- * Server-side fetch of the first page of a smart (generated) playlist.
- * The resolver doesn't require auth (rate-limited only), but we forward
- * the caller's token when present so any per-user fields stay consistent
- * with what the client would see on hydration.
- */
-export async function serverSmartPlaylist(
-  authToken: string | undefined,
-  input: GetSmartPlaylistInput,
-): Promise<GetSmartPlaylistQueryResponse['smartPlaylist'] | null> {
-  try {
-    const response = await executeAuthenticatedGraphQL<GetSmartPlaylistQueryResponse>(
-      GET_SMART_PLAYLIST,
-      { input },
-      authToken,
-    );
-    return response.smartPlaylist;
-  } catch (error) {
-    console.error('serverSmartPlaylist failed:', error);
     return null;
   }
 }

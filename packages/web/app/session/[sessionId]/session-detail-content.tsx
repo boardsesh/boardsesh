@@ -15,35 +15,21 @@ import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import ChatBubbleOutlineOutlined from '@mui/icons-material/ChatBubbleOutlineOutlined';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
-import EditOutlined from '@mui/icons-material/EditOutlined';
 import LocaleLink from '@/app/components/i18n/locale-link';
-import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import { useTranslation } from 'react-i18next';
 import { useSession } from 'next-auth/react';
-import type {
-  SessionDetail,
-  SessionDetailTick,
-  SessionFeedParticipant,
-  SessionSummary,
-} from '@boardsesh/shared-schema';
+import type { SessionDetail, SessionDetailTick, SessionFeedParticipant } from '@boardsesh/shared-schema';
 import VoteButton from '@/app/components/social/vote-button';
 import CommentSection from '@/app/components/social/comment-section';
 import { VoteSummaryProvider } from '@/app/components/social/vote-summary-context';
-import ClimbsList from '@/app/components/board-page/climbs-list';
-import { FavoritesProvider } from '@/app/components/climb-actions/favorites-batch-context';
-import { PlaylistsProvider } from '@/app/components/climb-actions/playlists-batch-context';
-import { useClimbActionsData } from '@/app/hooks/use-climb-actions-data';
+import StaticClimbList from '@/app/components/climb-list/static-climb-list';
 import { useMyBoards } from '@/app/hooks/use-my-boards';
 import { useBoardDetailsMap } from '@/app/hooks/use-board-details-map';
-import { getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
 
 import { useSessionDetail } from '@/app/hooks/use-session-detail';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { Climb, BoardDetails } from '@/app/lib/types';
-import SessionOverviewPanel, {
-  buildSessionSummaryParts,
-} from '@/app/components/session-details/session-overview-panel';
-import EditSessionDialog from '@/app/components/session-details/edit-session-dialog';
+import SessionOverviewPanel, { buildSessionSummaryParts } from './session-overview-panel';
 import CollapsibleSection, {
   type CollapsibleSectionConfig,
 } from '@/app/components/collapsible-section/collapsible-section';
@@ -53,8 +39,6 @@ import { useGradeFormat } from '@/app/hooks/use-grade-format';
 import { generateSessionName } from '@/app/lib/session-utils';
 import { ConfirmPopover } from '@/app/components/ui/confirm-popover';
 import { useDeleteTick } from '@/app/hooks/use-delete-tick';
-import SaveToHealthKitButton from '@/app/components/healthkit/save-to-healthkit-button';
-import { useOptionalQueueActions, useOptionalSessionData } from '@/app/components/graphql-queue';
 
 type SessionDetailContentProps = {
   session: SessionDetail | null;
@@ -133,7 +117,7 @@ function formatAttemptText(tick: SessionDetailTick, t: TFunc): string | null {
 }
 
 /**
- * Convert session ticks to deduplicated Climb objects for use with ClimbsList.
+ * Convert session ticks to deduplicated Climb objects for use with StaticClimbList.
  * Keeps the first occurrence of each climbUuid.
  */
 function convertSessionTicksToClimbs(ticks: SessionDetailTick[], unknownClimbLabel: string): Climb[] {
@@ -159,6 +143,7 @@ function convertSessionTicksToClimbs(ticks: SessionDetailTick[], unknownClimbLab
       difficulty_error: '0',
       benchmark_difficulty: tick.isBenchmark ? tick.difficultyName || null : null,
       mirrored: tick.isMirror,
+      is_no_match: tick.isNoMatch,
       boardType: tick.boardType,
       layoutId: tick.layoutId ?? null,
     });
@@ -290,12 +275,8 @@ export default function SessionDetailContent({
 }: SessionDetailContentProps) {
   const { t } = useTranslation('session');
   const { data: authSession } = useSession();
-  const router = useLocaleRouter();
   const deleteTick = useDeleteTick();
   const { showMessage } = useSnackbar();
-  const queueActions = useOptionalQueueActions();
-  const optionalSessionData = useOptionalSessionData();
-  const isPersistentSessionActive = !!optionalSessionData?.isPersistentSessionActive;
 
   const { session: hookSession } = useSessionDetail({
     sessionId: sessionIdProp ?? initialSession?.sessionId,
@@ -306,7 +287,6 @@ export default function SessionDetailContent({
   const session = embedded ? initialSession : hookSession;
 
   const [sessionCommentsOpen, setSessionCommentsOpen] = useState(false);
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   const { boards: myBoards } = useMyBoards(true);
 
@@ -331,38 +311,12 @@ export default function SessionDetailContent({
   const downvotes = session?.downvotes ?? 0;
   const commentCount = session?.commentCount ?? 0;
 
+  // Still read: the own-tick delete affordance is gated on it. Owner-only
+  // writes (rename, recap) live in the app — see SessionEditSheet.
   const currentUserId = authSession?.user?.id;
-  const isParticipant = currentUserId ? participants.some((p) => p.userId === currentUserId) : false;
-  const ownerUserId = session?.ownerUserId;
-  const isOwner = !!currentUserId && !!ownerUserId && currentUserId === ownerUserId;
 
   const isMultiUser = participants.length > 1;
   const displayName = sessionName || generateSessionName(firstTickAt, boardTypes);
-
-  const lastTickAt = session?.lastTickAt ?? '';
-  const healthKitSummary: SessionSummary | null =
-    session && isParticipant
-      ? {
-          sessionId,
-          totalSends,
-          totalFlashes,
-          totalAttempts,
-          gradeDistribution: gradeDistribution.map((g) => ({
-            grade: g.grade,
-            count: (g.flash ?? 0) + (g.send ?? 0),
-            flash: g.flash ?? 0,
-            send: g.send ?? 0,
-            attempt: g.attempt ?? 0,
-          })),
-          hardestClimb: null,
-          participants: [],
-          startedAt: firstTickAt,
-          endedAt: lastTickAt,
-          durationMinutes: durationMinutes ?? null,
-          goal: goal ?? null,
-        }
-      : null;
-  const healthKitBoardType = boardTypes[0] ?? '';
 
   // Build a lookup from userId to participant info (memoized to avoid recreating on every render)
   const participantMap = useMemo(() => {
@@ -373,7 +327,7 @@ export default function SessionDetailContent({
     return map;
   }, [participants]);
 
-  // Convert ticks to Climb objects for ClimbsList
+  // Convert ticks to Climb objects for StaticClimbList
   const unknownClimbLabel = t('detail.unknownClimb');
   const sessionClimbs = useMemo(
     () => convertSessionTicksToClimbs(ticks, unknownClimbLabel),
@@ -386,8 +340,9 @@ export default function SessionDetailContent({
   // Collect tick UUIDs for batch vote summary fetching
   const tickUuids = useMemo(() => ticks.map((t) => t.uuid), [ticks]);
 
-  // Build per-climb BoardDetails for multi-board support
-  const { boardDetailsByClimb, defaultBoardDetails, unsupportedClimbs, upsizedClimbs } = useBoardDetailsMap(
+  // Build per-climb BoardDetails for multi-board support. StaticClimbList has
+  // no equivalent for the unsupported/upsized hints, so those are left unread.
+  const { boardDetailsByClimb, defaultBoardDetails } = useBoardDetailsMap(
     sessionClimbs,
     myBoards,
     null,
@@ -395,55 +350,6 @@ export default function SessionDetailContent({
     boardTypes,
   );
   const effectiveBoardDetails = defaultBoardDetails ?? fallbackBoardDetails;
-
-  // Climb actions data for favorites/playlists — derive from actual climb data, fall back to session metadata
-  const climbUuids = useMemo(() => sessionClimbs.map((c) => c.uuid), [sessionClimbs]);
-  const firstClimb = sessionClimbs[0];
-  const actionsBoardName = firstClimb?.boardType || boardTypes[0] || '';
-  const actionsLayoutId = firstClimb?.layoutId ?? 1;
-  const actionsAngle = firstClimb?.angle ?? getDefaultAngleForBoard(actionsBoardName);
-
-  const { favoritesProviderProps, playlistsProviderProps } = useClimbActionsData({
-    boardName: actionsBoardName,
-    layoutId: actionsLayoutId,
-    angle: actionsAngle,
-    climbUuids,
-  });
-
-  // Set the climb as current (so it's sent to the board / shared with the
-  // party session) and, when not embedded in a drawer, navigate to its detail
-  // page. Embedded mode skips navigation so the drawer stays open.
-  // setCurrentClimb returns null when board-compatibility validation fails
-  // (a snackbar is already surfaced). In that case, skip navigation too — the
-  // user shouldn't land on a climb page for a climb the board rejected.
-  const navigateToClimb = useCallback(
-    async (climb: Climb) => {
-      try {
-        if (queueActions && !isPersistentSessionActive) {
-          // Solo: keep today's behavior — set as active so BLE sends the
-          // climb to the board, and skip navigation when board-compat
-          // validation fails (snackbar already surfaced).
-          const result = await queueActions.setCurrentClimb(climb, { playlistSuggestionSource: null });
-          if (result === null) return;
-        }
-        // Party: skip setCurrentClimb so we don't yank the wall away from
-        // other party members. We still navigate to the climb's board page
-        // (in non-embedded mode), where the party member can preview or
-        // explicitly send via the lightbulb/Set Active path.
-        if (embedded) return;
-        const bt = climb.boardType;
-        if (!bt) return;
-        const params = new URLSearchParams({ boardType: bt, climbUuid: climb.uuid });
-        const res = await fetch(`/api/internal/climb-redirect?${params}`);
-        if (!res.ok) return;
-        const { url } = await res.json();
-        if (url) router.push(url);
-      } catch (error) {
-        console.error('Failed to navigate to climb:', error);
-      }
-    },
-    [queueActions, embedded, router, isPersistentSessionActive],
-  );
 
   const handleShare = useCallback(async () => {
     const shareUrl = `${window.location.origin}/session/${sessionId}`;
@@ -563,23 +469,16 @@ export default function SessionDetailContent({
       content:
         effectiveBoardDetails && sessionClimbs.length > 0 ? (
           <VoteSummaryProvider entityType="tick" entityIds={tickUuids}>
-            <FavoritesProvider {...favoritesProviderProps}>
-              <PlaylistsProvider {...playlistsProviderProps}>
-                <ClimbsList
-                  boardDetails={effectiveBoardDetails}
-                  boardDetailsByClimb={boardDetailsByClimb}
-                  unsupportedClimbs={unsupportedClimbs}
-                  upsizedClimbs={upsizedClimbs}
-                  climbs={sessionClimbs}
-                  isFetching={false}
-                  hasMore={false}
-                  onClimbSelect={navigateToClimb}
-                  onLoadMore={noopLoadMore}
-                  hideEndMessage
-                  renderItemExtra={renderTickDetails}
-                />
-              </PlaylistsProvider>
-            </FavoritesProvider>
+            <StaticClimbList
+              boardDetails={effectiveBoardDetails}
+              boardDetailsByClimb={boardDetailsByClimb}
+              climbs={sessionClimbs}
+              isFetching={false}
+              hasMore={false}
+              onLoadMore={noopLoadMore}
+              hideEndMessage
+              renderItemExtra={renderTickDetails}
+            />
           </VoteSummaryProvider>
         ) : (
           <Typography variant="body2" color="text.secondary">
@@ -641,12 +540,7 @@ export default function SessionDetailContent({
     formatGrade,
     effectiveBoardDetails,
     tickUuids,
-    favoritesProviderProps,
-    playlistsProviderProps,
     boardDetailsByClimb,
-    unsupportedClimbs,
-    upsizedClimbs,
-    navigateToClimb,
     noopLoadMore,
     renderTickDetails,
     effectiveGradeDistribution,
@@ -697,30 +591,10 @@ export default function SessionDetailContent({
               {formatDate(firstTickAt)}
             </Typography>
           </Box>
-          {isOwner && (
-            <IconButton
-              size="small"
-              data-testid="edit-session-button"
-              onClick={() => setEditDialogOpen(true)}
-              aria-label={t('detail.editSession')}
-            >
-              <EditOutlined fontSize="small" />
-            </IconButton>
-          )}
           <IconButton size="small" onClick={handleShare} aria-label={t('detail.share')}>
             <IosShare fontSize="small" />
           </IconButton>
         </Box>
-      )}
-
-      {!embedded && isOwner && (
-        <EditSessionDialog
-          open={editDialogOpen}
-          onClose={() => setEditDialogOpen(false)}
-          sessionId={sessionId}
-          initialName={sessionName ?? ''}
-          initialNotes={notes ?? ''}
-        />
       )}
 
       <Box
@@ -786,15 +660,6 @@ export default function SessionDetailContent({
               <Collapse in={sessionCommentsOpen} unmountOnExit>
                 <CommentSection entityType="session" entityId={sessionId} title={t('detail.comments')} />
               </Collapse>
-              {healthKitSummary && (
-                <Box sx={{ mt: 1 }}>
-                  <SaveToHealthKitButton
-                    summary={healthKitSummary}
-                    boardType={healthKitBoardType}
-                    existingWorkoutId={session.healthKitWorkoutId}
-                  />
-                </Box>
-              )}
             </Box>
 
             <Divider />
@@ -809,24 +674,17 @@ export default function SessionDetailContent({
 
       {!embedded && effectiveBoardDetails && sessionClimbs.length > 0 && (
         <VoteSummaryProvider entityType="tick" entityIds={tickUuids}>
-          <FavoritesProvider {...favoritesProviderProps}>
-            <PlaylistsProvider {...playlistsProviderProps}>
-              <ClimbsList
-                boardDetails={effectiveBoardDetails}
-                boardDetailsByClimb={boardDetailsByClimb}
-                unsupportedClimbs={unsupportedClimbs}
-                upsizedClimbs={upsizedClimbs}
-                climbs={sessionClimbs}
-                isFetching={false}
-                hasMore={false}
-                onClimbSelect={navigateToClimb}
-                onLoadMore={noopLoadMore}
-                hideEndMessage
-                showBottomSpacer
-                renderItemExtra={renderTickDetails}
-              />
-            </PlaylistsProvider>
-          </FavoritesProvider>
+          <StaticClimbList
+            boardDetails={effectiveBoardDetails}
+            boardDetailsByClimb={boardDetailsByClimb}
+            climbs={sessionClimbs}
+            isFetching={false}
+            hasMore={false}
+            onLoadMore={noopLoadMore}
+            hideEndMessage
+            showBottomSpacer
+            renderItemExtra={renderTickDetails}
+          />
         </VoteSummaryProvider>
       )}
     </Box>

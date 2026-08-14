@@ -26,7 +26,6 @@ import {
   serverMyBoards,
   serverPlaylist,
   serverPlaylistClimbs,
-  serverSmartPlaylist,
   serverUserPlaylists,
 } from '../server-graphql';
 
@@ -119,38 +118,6 @@ describe('server-graphql helpers', () => {
         page: 0,
         pageSize: 20,
       });
-    });
-  });
-
-  describe('serverSmartPlaylist', () => {
-    it('returns the smartPlaylist payload on success', async () => {
-      const payload = {
-        meta: { type: 'FIVE_STARS', userId: 'u1', userName: 'Marco', userAvatar: null, climbCount: 12 },
-        climbs: [],
-        totalCount: 12,
-        hasMore: true,
-      };
-      requestMock.mockResolvedValueOnce({ smartPlaylist: payload });
-
-      const result = await serverSmartPlaylist('auth-token', {
-        type: 'FIVE_STARS',
-        userId: 'u1',
-        page: 0,
-        pageSize: 20,
-      });
-
-      expect(result).toEqual(payload);
-    });
-
-    it('returns null and logs when the GraphQL request throws', async () => {
-      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      requestMock.mockRejectedValueOnce(new Error('boom'));
-
-      const result = await serverSmartPlaylist(undefined, { type: 'PROJECTS', userId: 'u1' });
-
-      expect(result).toBeNull();
-      expect(errorSpy).toHaveBeenCalledWith('serverSmartPlaylist failed:', expect.any(Error));
-      errorSpy.mockRestore();
     });
   });
 

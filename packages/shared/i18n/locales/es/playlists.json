@@ -83,8 +83,7 @@
         "title": "Playlist inteligente no encontrada",
         "description": "Esta playlist inteligente no existe."
       },
-      "empty": "Todavía no hay bloques en esta playlist inteligente.",
-      "shareText": "Mira los bloques de {{name}} en Boardsesh"
+      "empty": "Todavía no hay bloques en esta playlist inteligente."
     },
     "empty": {
       "title": "Aún no tienes playlists",

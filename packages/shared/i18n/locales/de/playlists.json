@@ -83,8 +83,7 @@
         "title": "Smart-Playlist nicht gefunden",
         "description": "Diese Smart-Playlist gibt es nicht."
       },
-      "empty": "Noch keine Boulder in dieser Smart-Playlist.",
-      "shareText": "Schau dir die Boulder von {{name}} auf Boardsesh an"
+      "empty": "Noch keine Boulder in dieser Smart-Playlist."
     },
     "empty": {
       "title": "Noch keine Playlists",

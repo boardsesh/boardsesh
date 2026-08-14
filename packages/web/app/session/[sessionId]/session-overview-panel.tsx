@@ -17,10 +17,17 @@ import type { SessionGradeDistributionItem } from '@boardsesh/shared-schema';
 import { CssBarChart } from '@/app/components/charts/css-bar-chart';
 import { buildSessionGradeBars, SESSION_GRADE_LEGEND } from '@/app/components/charts/session-grade-bars';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
-import type { BoardDetails } from '@/app/lib/types';
-import BoardRenderer from '@/app/components/board-renderer/board-renderer';
-import AngleSelector from '@/app/components/board-page/angle-selector';
 import { useTranslation } from 'react-i18next';
+
+/**
+ * Read-only session overview for the kept `/session/[sessionId]` share page.
+ *
+ * Recreated here from `components/session-details/session-overview-panel.tsx`
+ * minus its board preview. That preview (BoardRenderer + AngleSelector) only
+ * ever rendered under `compact && boardDetails`, and no caller has ever passed
+ * `boardDetails` — it was reachable only from the party drawer, which moves to
+ * the app. Keeping it would anchor `components/board-page` from a kept route.
+ */
 
 type TFunc = (key: string, options?: Record<string, unknown>) => string;
 
@@ -65,16 +72,8 @@ type SessionOverviewPanelProps = {
   /** Optional free-text end-of-session recap saved by the session creator. */
   notes?: string | null;
   afterParticipants?: React.ReactNode;
-  /** When true, only render board preview + goal (no chips/chart). */
+  /** When true, only render goal + notes (no chips/chart). */
   compact?: boolean;
-  /** Board details for rendering a thumbnail preview. */
-  boardDetails?: BoardDetails | null;
-  /** Current board angle for display next to the board preview. */
-  currentAngle?: number;
-  /** Callback when user changes the angle via the angle selector. */
-  onAngleChange?: (angle: number) => void;
-  /** User-facing name of the named board (e.g., "My Home Wall") */
-  namedBoardName?: string;
 };
 
 export function formatDuration(minutes: number, t: TFunc): string {
@@ -97,10 +96,6 @@ export default function SessionOverviewPanel({
   notes,
   afterParticipants,
   compact = false,
-  boardDetails = null,
-  currentAngle,
-  onAngleChange,
-  namedBoardName,
 }: SessionOverviewPanelProps) {
   const { t } = useTranslation('session');
   const { formatGrade, loaded: gradeFormatLoaded } = useGradeFormat();
@@ -112,38 +107,6 @@ export default function SessionOverviewPanel({
 
   return (
     <>
-      {compact && boardDetails && (
-        <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
-          <Box
-            sx={{
-              width: 90,
-              flexShrink: 0,
-              borderRadius: '6px',
-              overflow: 'hidden',
-              boxShadow: 'var(--shadow-xs)',
-              background: 'var(--neutral-100)',
-              aspectRatio: '1',
-            }}
-          >
-            <BoardRenderer boardDetails={boardDetails} mirrored={false} thumbnail fillHeight />
-          </Box>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, minWidth: 0, flexShrink: 0 }}>
-            <Typography variant="body2" fontWeight={600}>
-              {namedBoardName || boardDetails.board_name.charAt(0).toUpperCase() + boardDetails.board_name.slice(1)}
-            </Typography>
-            {currentAngle != null && onAngleChange && (
-              <AngleSelector
-                boardName={boardDetails.board_name}
-                boardDetails={boardDetails}
-                currentAngle={currentAngle}
-                currentClimb={null}
-                onAngleChange={onAngleChange}
-              />
-            )}
-          </Box>
-        </Box>
-      )}
-
       {afterParticipants}
 
       {goal ? (

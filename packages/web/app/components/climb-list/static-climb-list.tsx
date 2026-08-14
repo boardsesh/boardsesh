@@ -20,7 +20,7 @@ import type { BoardDetails, Climb } from '@/app/lib/types';
  *
  * Two consumers shape this prop surface; don't narrow it without checking both.
  *  - `climb-list/multiboard-climb-list.tsx` serves `/playlists/[uuid]`,
- *    `/setter/[username]`, `/profile/{id}/climbs` and `/discover/*`, and needs
+ *    `/setter/[username]` and `/profile/{id}/climbs`, and needs
  *    `boardDetailsByClimb` because its climbs span boards.
  *  - `session/[sessionId]/session-detail-content.tsx` (W-13a) renders the list
  *    twice with `renderItemExtra` for tick details — rows that legitimately

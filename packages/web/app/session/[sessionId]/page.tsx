@@ -81,8 +81,11 @@ export default async function SessionDetailPage({ params }: Props) {
   const session = await fetchSessionDetail(sessionId);
   const locale = await getLocale();
 
+  // `climbs` is seeded alongside `session` because StaticClimbRow's ClimbTitle
+  // reads that namespace on the server. Without it the share page's first HTML
+  // carries raw `card.title.*` keys until the lazy catalog fetch lands.
   return (
-    <I18nProvider locale={locale} namespaces={['session']}>
+    <I18nProvider locale={locale} namespaces={['session', 'climbs']}>
       <SessionDetailContent session={session} sessionId={sessionId} />
     </I18nProvider>
   );
