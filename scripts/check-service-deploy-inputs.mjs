@@ -178,8 +178,6 @@ function createServiceDeployInputFailures({ repoRoot = defaultRepoRoot } = {}) {
 
   const branchBackendChangePattern =
     'packages/*|Dockerfile.backend|scripts/create-service-docker-context.mjs|bun.lock|package.json';
-  const productionBackendChangePattern =
-    'packages/*|Dockerfile.backend|scripts/create-service-docker-context.mjs|scripts/railway-deployment-status.mjs|railway.toml|bun.lock|package.json|.github/workflows/production-deploy.yml';
 
   requireFileIncludes(
     failures,
@@ -192,8 +190,8 @@ function createServiceDeployInputFailures({ repoRoot = defaultRepoRoot } = {}) {
     failures,
     repoRoot,
     '.github/workflows/production-deploy.yml',
-    productionBackendChangePattern,
-    'Production deploy backend detection must treat any workspace package, Railway config, or Docker install input as backend-affecting.',
+    'node scripts/production-deploy-changes.mjs --runs-json',
+    'Production deploy must use the tested cumulative change detector.',
   );
 
   requireFileIncludes(
@@ -299,6 +297,34 @@ function createServiceDeployInputFailures({ repoRoot = defaultRepoRoot } = {}) {
     '.github/workflows/production-deploy.yml',
     'cancel-in-progress: false',
     'Production deploy must not be cancelled by newer pushes.',
+  );
+  requireFileIncludes(
+    failures,
+    repoRoot,
+    '.github/workflows/production-deploy.yml',
+    'actions: read',
+    'Production change detection must be able to read prior workflow runs.',
+  );
+  requireFileIncludes(
+    failures,
+    repoRoot,
+    '.github/workflows/production-deploy.yml',
+    'deployment_base_sha:',
+    'Production deploy must expose its cumulative baseline to downstream notifications.',
+  );
+  requireFileIncludes(
+    failures,
+    repoRoot,
+    '.github/workflows/production-deploy.yml',
+    'BEFORE_SHA: ${{ needs.detect-changes.outputs.deployment_base_sha }}',
+    'Production notifications must report the same cumulative range that was deployed.',
+  );
+  requireFileIncludes(
+    failures,
+    repoRoot,
+    '.github/workflows/production-deploy.yml',
+    'node scripts/production-backend-smoke.mjs',
+    'Production backend deploy must verify the live GraphQL schema.',
   );
   requireFileIncludes(
     failures,

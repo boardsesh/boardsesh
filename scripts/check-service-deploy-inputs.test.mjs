@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { test } from 'node:test';
@@ -80,12 +80,18 @@ function createFixtureRepo() {
       'concurrency:',
       '  group: production-deploy',
       '  cancel-in-progress: false',
-      'run: case "$file" in packages/*|Dockerfile.backend|scripts/create-service-docker-context.mjs|scripts/railway-deployment-status.mjs|railway.toml|bun.lock|package.json|.github/workflows/production-deploy.yml)',
+      'permissions:',
+      '  actions: read',
+      'outputs:',
+      '  deployment_base_sha: example',
+      'BEFORE_SHA: ${{ needs.detect-changes.outputs.deployment_base_sha }}',
+      'run: node scripts/production-deploy-changes.mjs --runs-json "$RUNS_JSON"',
       'run: vp run docker-context:backend',
       'context: .docker-context/backend',
       'file: .docker-context/backend/Dockerfile',
       'node scripts/railway-deployment-status.mjs capture-previous railway-before.json',
       'node scripts/railway-deployment-status.mjs find-new railway-deployments.json',
+      'node scripts/production-backend-smoke.mjs',
       'deploymentRollback',
       '',
     ].join('\n'),
@@ -107,6 +113,22 @@ function withFixtureRepo(callback) {
 void test('passes for generated Docker context inputs, including newly added workspaces', () => {
   withFixtureRepo((repoRoot) => {
     assert.deepEqual(createServiceDeployInputFailures({ repoRoot }), []);
+  });
+});
+
+void test('requires cumulative production detection permissions and the live backend schema smoke', () => {
+  withFixtureRepo((repoRoot) => {
+    const workflowPath = join(repoRoot, '.github/workflows/production-deploy.yml');
+    const weakenedWorkflow = readFileSync(workflowPath, 'utf8')
+      .replace('  actions: read\n', '')
+      .replace('run: node scripts/production-deploy-changes.mjs --runs-json "$RUNS_JSON"\n', '')
+      .replace('node scripts/production-backend-smoke.mjs\n', '');
+    writeFileSync(workflowPath, weakenedWorkflow, 'utf8');
+
+    const failures = createServiceDeployInputFailures({ repoRoot }).join('\n');
+    assert.match(failures, /tested cumulative change detector/);
+    assert.match(failures, /read prior workflow runs/);
+    assert.match(failures, /verify the live GraphQL schema/);
   });
 });
 

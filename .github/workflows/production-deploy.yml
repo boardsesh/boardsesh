@@ -29,7 +29,10 @@ on:
 
 concurrency:
   group: production-deploy
-  cancel-in-progress: false # never cancel an in-flight production deploy
+  # GitHub still keeps only one pending run and replaces an older pending run
+  # with the newest push. detect-changes therefore uses the last successful run
+  # as its baseline, so the surviving run absorbs every canceled middle push.
+  cancel-in-progress: false # never cancel the run that is already executing
 
 env:
   REGISTRY: ghcr.io
@@ -63,76 +66,37 @@ env:
 jobs:
   detect-changes:
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
     outputs:
       web_changed: ${{ steps.changes.outputs.web }}
       backend_changed: ${{ steps.changes.outputs.backend }}
       app_changed: ${{ steps.changes.outputs.app }}
+      deployment_base_sha: ${{ steps.changes.outputs.deployment_base_sha }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
+      - name: Read the latest successful production deploy
+        id: deploy-history
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          runs_json="$RUNNER_TEMP/production-deploy-runs.json"
+          if ! gh api --method GET \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/production-deploy.yml/runs?branch=main&status=success&per_page=20" \
+            > "$runs_json"; then
+            echo "::warning::Could not read prior production runs; falling back to a full deploy."
+            printf '{"workflow_runs":[]}\n' > "$runs_json"
+          fi
+          echo "runs_json=$runs_json" >> "$GITHUB_OUTPUT"
+
       - name: Detect changed paths
         id: changes
-        run: |
-          # Manual runs build everything.
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "web=true" >> "$GITHUB_OUTPUT"
-            echo "backend=true" >> "$GITHUB_OUTPUT"
-            echo "app=true" >> "$GITHUB_OUTPUT"
-            echo "Manual trigger: building web + backend + app"
-            exit 0
-          fi
-
-          BEFORE="${{ github.event.before }}"
-          # First push / missing parent / force-push to a new ref -> full build.
-          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
-            echo "No usable before-sha ($BEFORE): building web + backend + app"
-            echo "web=true" >> "$GITHUB_OUTPUT"
-            echo "backend=true" >> "$GITHUB_OUTPUT"
-            echo "app=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          CHANGED_FILES=$(git diff --name-only "$BEFORE" "${{ github.sha }}")
-          echo "Changed files:"
-          echo "$CHANGED_FILES"
-
-          # Backend-affecting paths — keep in sync with detect-changes in branch-deploy.yml.
-          BACKEND_CHANGED=false
-          # Web deploys broadly: any change that isn't purely docs or mobile.
-          WEB_CHANGED=false
-          # app.boardsesh.com (standalone Expo web export) — deploys on the mobile
-          # app, its shared deps, the export script, or the two CF Pages host
-          # config files. Those two are named individually rather than globbed as
-          # `deploy/app-subdomain/*`: `case` wildcards span `/`, so the glob also
-          # caught the directory's README and its CI tests, and editing a comment
-          # in a test kicked off a production deploy.
-          APP_CHANGED=false
-          for file in $CHANGED_FILES; do
-            case "$file" in
-              packages/*|Dockerfile.backend|scripts/create-service-docker-context.mjs|scripts/railway-deployment-status.mjs|railway.toml|bun.lock|package.json|.github/workflows/production-deploy.yml)
-                BACKEND_CHANGED=true
-                ;;
-            esac
-            case "$file" in
-              mobile/*|packages/mobile/*|docs/*|*.md)
-                ;;
-              *)
-                WEB_CHANGED=true
-                ;;
-            esac
-            case "$file" in
-              packages/mobile/*|packages/shared/*|packages/shared-schema/*|scripts/build-expo-web-export.sh|deploy/app-subdomain/_headers|deploy/app-subdomain/_redirects)
-                APP_CHANGED=true
-                ;;
-            esac
-          done
-
-          echo "backend=${BACKEND_CHANGED}" >> "$GITHUB_OUTPUT"
-          echo "web=${WEB_CHANGED}" >> "$GITHUB_OUTPUT"
-          echo "app=${APP_CHANGED}" >> "$GITHUB_OUTPUT"
-          echo "Backend changed: ${BACKEND_CHANGED}; Web changed: ${WEB_CHANGED}; App changed: ${APP_CHANGED}"
+        run: node scripts/production-deploy-changes.mjs --runs-json "${{ steps.deploy-history.outputs.runs_json }}"
 
   # Detects whether a Vercel Instant Rollback is pinning production. Outputs
   # active=true/false; the deploy jobs read it to decide promote vs. stage-only.
@@ -556,6 +520,13 @@ jobs:
           echo "Railway deployment did not reach SUCCESS in time"
           exit 1
 
+      - name: Verify the live notification schema
+        if: needs.check-rollback.outputs.active != 'true'
+        # Railway can report SUCCESS just before the public edge reaches the new
+        # instance. The bounded retry proves the API shape mobile already ships,
+        # and turns a stale image/schema into notify-failure instead of silence.
+        run: node scripts/production-backend-smoke.mjs
+
   # Deploys app.boardsesh.com — the STANDALONE Expo web export (baseUrl `/`)
   # served at the root of its own subdomain via Cloudflare Pages (project
   # `boardsesh-app`, direct upload). This is the `--subdomain` artifact, distinct
@@ -902,7 +873,7 @@ jobs:
 
   # Pings the Discord deploy channel after a successful, PROMOTED production
   # deploy. Lists the PRs that just shipped (parsed from merge-commit subjects
-  # between github.event.before and github.sha). Fires only when no rollback
+  # between the cumulative deployment baseline and github.sha). Fires only when no rollback
   # is pinning prod, nothing failed or got cancelled, and at least one
   # component actually deployed. No-ops if DISCORD_DEPLOY_WEBHOOK is unset.
   notify-success:
@@ -941,14 +912,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          # Need enough history to walk github.event.before..github.sha for the
-          # PR list. A single push to main is normally 1–5 commits (merge +
-          # squashed PR commits); 50 is a generous buffer for batched-merge
-          # days without paying for a full-history clone. If BEFORE isn't
-          # reachable in the shallow clone, the PR-list step short-circuits
-          # via the `git cat-file -e` check and the notification still posts
-          # (just without the Shipped section).
-          fetch-depth: 50
+          # The cumulative baseline may predate many canceled pending runs.
+          # Full history guarantees the shipped-PR range is available.
+          fetch-depth: 0
 
       - name: Notify Discord (deployed + promoted)
         env:
@@ -976,7 +942,7 @@ jobs:
           APP_WEB_HELD: ${{ needs.deploy-app-web.result == 'skipped' && needs.detect-changes.outputs.app_changed == 'true' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT_SHA: ${{ github.sha }}
-          BEFORE_SHA: ${{ github.event.before }}
+          BEFORE_SHA: ${{ needs.detect-changes.outputs.deployment_base_sha }}
           PR_BASE_URL: ${{ github.server_url }}/${{ github.repository }}/pull
         run: |
           if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
@@ -998,9 +964,9 @@ jobs:
             APP_WEB_LINE="held (APP_WEB_DEPLOY_HOLD set)"
           fi
 
-          # Pull PR numbers from merge-commit subjects in BEFORE..SHA. Skip the
-          # section entirely if BEFORE is missing/zero (workflow_dispatch, first
-          # push, force push) rather than guessing.
+          # Pull PR numbers from merge-commit subjects in the exact cumulative
+          # range used by change detection. Skip when a safe baseline was not
+          # available (manual/full fallback) rather than guessing.
           PR_LIST=""
           if [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
             PR_NUMS=$(git log --format='%s' "${BEFORE_SHA}..${COMMIT_SHA}" | grep -oE 'Merge pull request #[0-9]+' | grep -oE '[0-9]+' | sort -un || true)
