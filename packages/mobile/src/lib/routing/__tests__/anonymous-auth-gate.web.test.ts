@@ -88,6 +88,16 @@ describe('readPostLoginReturnHref', () => {
   // lands in the address bar. Reading it back is what makes "register instead of
   // signing in" return to the same climb — and it is also what
   // `startWebOAuth` reads when someone taps "Continue with Google" from there.
+  // A Spanish, French or German share link is the case this whole feature was
+  // extended for, so the round trip is exercised end to end and not only through
+  // the predicate: the locale-prefixed path is what login is handed, and it has
+  // to come back out intact.
+  it.each(['es', 'fr', 'de'])('returns a /%s-prefixed board path', (locale) => {
+    const next = `/${locale}/b/the-gym/40/view/${CLIMB_SEGMENT}`;
+    goTo(`/auth/login?next=${encodeURIComponent(next)}`);
+    expect(readPostLoginReturnHref()).toBe(next);
+  });
+
   it('reads the same next off the register screen', () => {
     const next = `/b/the-gym/40/view/${CLIMB_SEGMENT}`;
     goTo(`/auth/register?next=${encodeURIComponent(next)}`);
