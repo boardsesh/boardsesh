@@ -1,3 +1,8 @@
+/* Matches the inset the homepage's other section labels use (the "Recent
+   beta" and "Get started" headers in home-page-content.tsx / home-recent-
+   beta-section.tsx both set `px: 0.5`, i.e. --spacing-1 on both sides) so all
+   three line up under the same left edge instead of drifting by a stray
+   magic number. */
 .title {
   color: var(--neutral-400);
   text-transform: uppercase;
@@ -5,14 +10,23 @@
   font-size: var(--font-size-xs);
   font-weight: 600;
   margin-bottom: var(--spacing-2);
-  padding-left: 2px;
+  padding: 0 var(--spacing-1);
 }
 
 /* An intentional grid, not a scroll rail: everything is on screen and in the
-   server HTML, so there is nothing to scroll to reveal. */
+   server HTML, so there is nothing to scroll to reveal.
+   `minmax(120px, 160px)` — not `1fr` — caps each column's width: `auto-fill`
+   already keeps the *count* of columns responsive (2 columns at 390px, 4 at
+   768px, 8 at 1440px, reasoned through the repeat-count algorithm at all
+   three), but an unbounded `1fr` upper bound lets the last, partially full
+   row stretch its cards to fill whatever's left — a handful of popular
+   configs on a wide viewport would otherwise blow up into oversized tiles.
+   160px keeps a card roughly thumbnail-sized at any width; the leftover
+   space past the last column is a trailing gutter instead of stretched
+   cards. */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(120px, 160px));
   gap: var(--spacing-3);
 }
 

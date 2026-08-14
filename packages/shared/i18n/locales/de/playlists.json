@@ -88,7 +88,8 @@
     "empty": {
       "title": "Noch keine Playlists",
       "description": "Pack deine Projekte und Lieblingsboulder in eine Playlist, dann findest du sie schnell wieder.",
-      "createCta": "Playlist erstellen"
+      "createCta": "Playlist erstellen",
+      "cta": "Playlist in der App erstellen"
     },
     "createFab": {
       "ariaLabel": "Playlist erstellen"
