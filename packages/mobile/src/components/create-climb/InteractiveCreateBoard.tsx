@@ -2,7 +2,7 @@ import React, { useMemo, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View, StyleSheet, Pressable } from 'react-native';
 import Animated from 'react-native-reanimated';
-import { GestureDetector, type GestureType } from 'react-native-gesture-handler';
+import { GestureDetector, GestureHandlerRootView, type GestureType } from 'react-native-gesture-handler';
 import type { BoardName, LitUpHoldsMap } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../BoardImageNative';
 import { Text } from '../Text';
@@ -47,6 +47,16 @@ type InteractiveCreateBoardProps = {
  * 1-finger zoom-pan only mounts while zoomed (a conditional overlay) so idle
  * vertical drags fall through to the BottomSheetScrollView and scroll/close the
  * drawer instead of being eaten here.
+ *
+ * Wrapped in its own GestureHandlerRootView: on Android, CreateDrawer's sheet
+ * (`@expo/ui/community/bottom-sheet`) hosts its content inside a Jetpack Compose
+ * `ModalBottomSheet` via a native `RNHostView` bridge — a separate surface the
+ * app's single root-level GestureHandlerRootView (app/_layout.tsx) doesn't cover.
+ * Without a nested root here, every per-hold Gesture.Tap()/LongPress() and the
+ * pinch/pan gestures silently never receive touches on Android, so no hold can be
+ * painted (#4320). RNGH's own docs call out nesting a root per-Modal for exactly
+ * this reason; iOS isn't affected since its modal presentation doesn't split the
+ * touch-dispatch tree the same way.
  */
 export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard({
   boardName,
@@ -118,7 +128,7 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
   });
 
   return (
-    <View style={styles.root}>
+    <GestureHandlerRootView style={styles.root}>
       <GestureDetector gesture={pinchGesture}>
         <View style={[styles.clip, { width: renderWidth, height: renderHeight }]}>
           <Animated.View style={[styles.board, animatedZoomStyle]}>
@@ -180,7 +190,7 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
           ) : null}
         </View>
       </GestureDetector>
-    </View>
+    </GestureHandlerRootView>
   );
 });
 
