@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-08-14T21:43:53.810Z",
+  "generatedAt": "2026-08-14T21:50:00.293Z",
   "entries": [
+    {
+      "prNumber": 4431,
+      "category": "fixed",
+      "title": "The playlists page shows loading placeholders and gives you somewhere to go when it is empty.",
+      "mergedAt": "2026-08-14T21:44:01Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4431"
+    },
+    {
+      "prNumber": 4432,
+      "category": "new",
+      "title": "Notifications now live in the app — see who liked your sends and follows your climbing without opening the website.",
+      "mergedAt": "2026-08-14T21:43:39Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4432"
+    },
     {
       "prNumber": 4430,
       "category": "new",

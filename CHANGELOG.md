@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Notifications now live in the app — see who liked your sends and follows your climbing without opening the website. ([#4432](https://github.com/boardsesh/boardsesh/pull/4432))
 - Climb pages load fast and clean — see the problem, the grades, and one tap into the app to climb it. ([#4430](https://github.com/boardsesh/boardsesh/pull/4430))
   Every climb on your board is now one page away, and findable in search.
 - Build routes and circuits, not just single-frame boulders — duplicate a frame, edit the copy, and step through your sequence as you build it. ([#4422](https://github.com/boardsesh/boardsesh/pull/4422))
@@ -27,6 +28,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- The playlists page shows loading placeholders and gives you somewhere to go when it is empty. ([#4431](https://github.com/boardsesh/boardsesh/pull/4431))
 - Fixed: holds can be tapped again when creating or editing a climb on Android. ([#4425](https://github.com/boardsesh/boardsesh/pull/4425))
 - Clearing one board out of storage no longer stops your other boards downloading — remove a wall you're done with and the rest keep coming down. ([#4404](https://github.com/boardsesh/boardsesh/pull/4404))
 - Log a send while your phone's storage is tied up — mid board download, or right after you clear a board out — and it no longer disappears. Boardsesh retries the save, queues it for the next sync if the storage is still busy, and if it truly can't stash it offline it tells you plainly, in your own language, instead of swallowing the send. ([#4402](https://github.com/boardsesh/boardsesh/pull/4402))
