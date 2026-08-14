@@ -196,12 +196,11 @@ describe('checkPatchesApplied on a scoped package', () => {
   });
 });
 
-// Mutation test on the shipped rule, not a synthetic one: the sentinel list has
-// to distinguish the current patch from the pre-#4108 patch, which guarded
-// expand()/partialExpand() (#3478) but left hide() — every programmatic dismiss
-// — bare. `swallowMissingNativeHandler` alone is satisfied by both, so a patch
-// regenerated for a version bump could reinstate only the #3478 half and keep
-// this check green while the dismiss guard silently disappeared.
+// Mutation tests on the shipped rule, not a synthetic one: the sentinel list
+// must distinguish the current patch from both the pre-#4108 patch and the
+// short-circuiting hide helper. `swallowMissingNativeHandler` alone is satisfied
+// by all three, so a regenerated patch could otherwise keep this check green
+// while the dismiss guard or its null-ref cleanup silently disappeared.
 describe('the shipped @expo/ui Android rule', () => {
   const androidRule = REAL_RULES.find((rule) => rule.package === SCOPED_PKG && rule.file === SCOPED_FILE);
 
@@ -209,6 +208,13 @@ describe('the shipped @expo/ui Android rule', () => {
 function swallowMissingNativeHandler(error: unknown): void { /* ... */ }
 sheetRef.current?.expand()?.catch(swallowMissingNativeHandler);
 sheetRef.current?.hide().then(() => { setIsOpen(false); fireCloseCallbacks(); });
+`;
+
+  const SHORT_CIRCUITING_HIDE_SOURCE = `
+function swallowMissingNativeHandler(error: unknown): void { /* ... */ }
+function hideSwallowingMissingNativeHandler(): void {
+  sheetRef.current?.hide().catch(swallowMissingNativeHandler).then(runCleanup);
+}
 `;
 
   it('is registered', () => {
@@ -228,6 +234,21 @@ sheetRef.current?.hide().then(() => { setIsOpen(false); fireCloseCallbacks(); })
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain('patch NOT applied');
     expect(result.errors[0]).toContain('hideSwallowingMissingNativeHandler');
+  });
+
+  it('goes red when a missing sheet ref can short-circuit the JS cleanup', () => {
+    if (!androidRule) throw new Error('no @expo/ui Android rule registered');
+    const env = makeEnv({
+      patchedDependencies: { [androidRule.patchedKey]: SCOPED_PATCH_PATH },
+      versions: { [androidRule.package]: versionFromKey(androidRule.patchedKey) },
+      files: { [`${androidRule.package}::${androidRule.file}`]: SHORT_CIRCUITING_HIDE_SOURCE },
+    });
+
+    const result = checkPatchesApplied([androidRule], env);
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('patch NOT applied');
+    expect(result.errors[0]).toContain('Promise.resolve(hidePromise)');
   });
 });
 
