@@ -36,6 +36,11 @@ vi.mock('react-native-paper', () => ({
   },
 }));
 
+// The chrome owns the notifications push itself, so the bell takes no new prop
+// from the host — this captures where it sends the user.
+const routerMock = vi.hoisted(() => ({ push: vi.fn() }));
+vi.mock('expo-router', () => ({ useRouter: () => routerMock }));
+
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     variant: ctrl.variant,
@@ -63,6 +68,10 @@ vi.mock('../../user-drawer/UserAvatarToolbarAction', () => ({
   UserAvatarToolbarAction: ({ variant }: { variant: 'glass' | 'material' }) =>
     createElement('button', { 'data-avatar-variant': variant }),
 }));
+vi.mock('../../chrome/NotificationsToolbarAction', () => ({
+  NotificationsToolbarAction: ({ variant, onPress }: { variant: 'glass' | 'material'; onPress: () => void }) =>
+    createElement('button', { 'data-bell-variant': variant, onClick: onPress }),
+}));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }) }));
 vi.mock('../FeedScopeTitle', () => ({
   FeedScopeTitle: ({ title }: { title: string }) => createElement('div', { 'data-feed-scope': 'true' }, title),
@@ -89,9 +98,35 @@ const searchAction = (root: HTMLElement) =>
   (root.querySelector('[data-pressable="searchLabel"]') ??
     root.querySelector('[data-appbar-action="searchLabel"]')) as HTMLButtonElement | null;
 
+const bell = (root: HTMLElement, variant: 'glass' | 'material') =>
+  root.querySelector(`[data-bell-variant="${variant}"]`) as HTMLButtonElement | null;
+
 describe('HomeTopChrome', () => {
   beforeEach(() => {
     ctrl.variant = 'liquidGlass';
+    routerMock.push.mockClear();
+  });
+
+  describe('notifications bell', () => {
+    it('renders the glass bell and pushes the Home stack route', () => {
+      const { container } = render(<HomeTopChrome {...makeProps()} />);
+      const glassBell = bell(container, 'glass');
+      expect(glassBell).not.toBeNull();
+
+      fireEvent.click(glassBell!);
+      // Home's OWN stack, not the Profile one — Back must land on the feed.
+      expect(routerMock.push).toHaveBeenCalledWith('/(tabs)/home/notifications');
+    });
+
+    it('renders the material bell and pushes the same route', () => {
+      ctrl.variant = 'material';
+      const { container } = render(<HomeTopChrome {...makeProps()} />);
+      const materialBell = bell(container, 'material');
+      expect(materialBell).not.toBeNull();
+
+      fireEvent.click(materialBell!);
+      expect(routerMock.push).toHaveBeenCalledWith('/(tabs)/home/notifications');
+    });
   });
 
   describe('Liquid Glass variant', () => {

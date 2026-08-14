@@ -2,19 +2,20 @@
 //
 // Liquid Glass: the floating chrome shared with the other tabs — an always-on
 // progressive blur plus a row of glass islands (account avatar left, the
-// `FeedScopeTitle` title-menu pill centred, a find-climbers action right). The feed
-// scrolls under the blur.
+// `FeedScopeTitle` title-menu pill centred, and a two-slot trailing island
+// holding notifications + find-climbers). The feed scrolls under the blur.
 //
 // Material: an absolutely-positioned, `onHeightChange`-measured M3 small app bar
 // (mirroring `ProfileTopChrome` / `ClimbTopChrome`) — the account avatar, the
-// `FeedScopeTitle` as the flat app-bar title-menu, and the find-climbers
-// `Appbar.Action`. Home has no board/angle/light controls and no create action, so
-// the bar stays avatar · scope · find-climbers.
+// `FeedScopeTitle` as the flat app-bar title-menu, then the notifications and
+// find-climbers `Appbar.Action`s. Home has no board/angle/light controls and no
+// create action, so the bar stays avatar · scope · notifications · find-climbers.
 
 import { useCallback } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Appbar } from 'react-native-paper';
+import { useRouter } from 'expo-router';
 import { useTheme } from '../../providers/theme-provider';
 import { createVariantComponent } from '../../theme/variants';
 import { spacing } from '../../theme/tokens';
@@ -23,6 +24,7 @@ import { iconMap } from '../icon-map';
 import { type AppMenuAction } from '../AppMenu';
 import { ProgressiveBlur } from '../ProgressiveBlur';
 import { GlassActionToolbar, GlassToolbarAction, TOP_ACTION_SIZE } from '../chrome';
+import { NotificationsToolbarAction } from '../chrome/NotificationsToolbarAction';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { FeedScopeTitle } from './FeedScopeTitle';
 
@@ -64,11 +66,14 @@ function HomeTopChromeGlass({
 }: HomeTopChromeProps) {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
     [onHeightChange],
   );
+
+  const handleOpenNotifications = useCallback(() => router.push('/(tabs)/home/notifications'), [router]);
 
   return (
     <>
@@ -97,11 +102,14 @@ function HomeTopChromeGlass({
               accessibilityHint={scopeAccessibilityHint}
             />
           </View>
-          {/* Find-climbers action: balances the avatar so the scope menu reads
-              centred, and opens the full-screen climber search. Uses a person-add
-              glyph (not a magnifier) so it doesn't read as a second "search" next to
-              the Climbs tab's bottom-bar magnifier. */}
-          <GlassActionToolbar actionCount={1}>
+          {/* Trailing island, two slots wide (the island sizes itself from
+              actionCount): the notifications bell, then find-climbers. It now
+              outweighs the single avatar island on the left, so the centred scope
+              pill sits a slot's width (TOP_ACTION_SIZE) left of true centre.
+              Find-climbers uses a person-add glyph (not a magnifier) so it doesn't
+              read as a second "search" next to the Climbs tab's bottom-bar one. */}
+          <GlassActionToolbar actionCount={2}>
+            <NotificationsToolbarAction variant="glass" onPress={handleOpenNotifications} />
             <GlassToolbarAction onPress={onOpenSearch} accessibilityLabel={searchAccessibilityLabel}>
               <Icon name="person.badge.plus" size={22} color={systemColors.label} />
             </GlassToolbarAction>
@@ -123,11 +131,14 @@ function HomeTopChromeMaterial({
 }: HomeTopChromeProps) {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
     [onHeightChange],
   );
+
+  const handleOpenNotifications = useCallback(() => router.push('/(tabs)/home/notifications'), [router]);
 
   return (
     <View
@@ -160,6 +171,7 @@ function HomeTopChromeMaterial({
             scope title-menu is a Paper Menu (content-width anchor), so it can't flex
             into the slot itself the way Appbar.Content / BoardSwitcherButton do. */}
         <View style={styles.materialSpacer} />
+        <NotificationsToolbarAction variant="material" onPress={handleOpenNotifications} />
         <Appbar.Action
           icon={iconMap['person.badge.plus'].android}
           color={systemColors.label as string}

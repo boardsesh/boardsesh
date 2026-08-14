@@ -41,5 +41,8 @@
     "minutes": "{{count}}m",
     "hours": "{{count}}h",
     "days": "{{count}}d"
+  },
+  "errors": {
+    "load": "Couldn't load your notifications"
   }
 }

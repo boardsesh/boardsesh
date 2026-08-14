@@ -41,5 +41,8 @@
     "minutes": "{{count}} min",
     "hours": "{{count}} h",
     "days": "{{count}} j"
+  },
+  "errors": {
+    "load": "Impossible de charger tes notifications"
   }
 }

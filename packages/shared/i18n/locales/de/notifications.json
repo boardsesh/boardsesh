@@ -41,5 +41,8 @@
     "minutes": "{{count}} Min.",
     "hours": "{{count}} Std.",
     "days": "{{count}} T"
+  },
+  "errors": {
+    "load": "Deine Benachrichtigungen konnten nicht geladen werden"
   }
 }

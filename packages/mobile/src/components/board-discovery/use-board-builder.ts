@@ -7,6 +7,7 @@ import {
   getBoardSetsForLayoutAndSize,
   getDefaultBoardSizeForLayout,
 } from '../../lib/custom-board-options';
+import { defaultAngle } from '../../lib/boards/default-angle';
 import { cleanLayoutName } from './board-builder-labels';
 
 /**
@@ -41,11 +42,6 @@ export type BoardBuilderSeed = {
   gymUuid?: string | null;
   gymName?: string | null;
 };
-
-function defaultAngle(boardName: BoardName): number {
-  const angles = ANGLES[boardName] ?? [];
-  return angles.includes(40) ? 40 : (angles[0] ?? 0);
-}
 
 function parseSetIds(setIds: string): number[] {
   return setIds.split(',').map(Number).filter(Number.isFinite);

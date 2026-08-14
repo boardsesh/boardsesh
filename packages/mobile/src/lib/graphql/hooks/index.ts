@@ -1348,6 +1348,11 @@ export {
   useAddComment,
 } from './use-social';
 export { useSessionDetail, useSessionPreview, useSessionOwnerUserId } from './use-session-detail';
+// `use-notifications` is deliberately NOT re-exported here. Its `enabled` gate
+// reads the stored auth token, so the module reaches expo-secure-store — and
+// this barrel is imported by suites that mock only the GraphQL client, where
+// any new native reach makes Rolldown's scan hit react-native's Flow source and
+// fail the whole file. Its three consumers import it by path instead.
 export { useDeleteAccountInfo, useDeleteAccount } from './use-delete-account';
 export {
   useIntegrationStatuses,
