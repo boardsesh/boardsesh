@@ -20,21 +20,9 @@
       "seoSetterSuffix": " creado por {{setter}}",
       "seoAscentsSuffix": ". {{ascents}} encadenes registrados"
     },
-    "create": {
-      "title": "Crear un bloque",
-      "description": "Apertura un nuevo bloque en tu plafón"
-    },
     "import": {
       "title": "Importar bloques",
       "description": "Importa bloques de MoonBoard desde capturas de pantalla"
-    },
-    "liked": {
-      "title": "Bloques favoritos",
-      "description": "Bloques que has marcado como favoritos"
-    },
-    "logbook": {
-      "title": "Historial",
-      "description": "Tu historial de escalada para este plafón"
     }
   },
   "list": {
@@ -453,24 +441,6 @@
       "logAttempt": "Registrar intento",
       "cancel": "Cancelar"
     }
-  },
-  "liked": {
-    "heroTitle": "Bloques favoritos",
-    "heroSubtitle": "Tus bloques favoritos",
-    "signInRequired": "Inicio de sesión requerido",
-    "signInBody": "Inicia sesión para ver tus bloques favoritos.",
-    "actionsAriaLabel": "Acciones",
-    "queueAll": "Añadir todos a la cola",
-    "adding": "Añadiendo...",
-    "noClimbsToAdd": "No hay bloques que añadir",
-    "addedToQueue_one": "Se añadió {{count}} bloque a la cola",
-    "addedToQueue_other": "Se añadieron {{count}} bloques a la cola",
-    "addToQueueFailed": "Error al añadir los bloques a la cola",
-    "loadFailed": "Error al cargar los bloques favoritos",
-    "emptyState": "Aún no tienes bloques favoritos. Marca algunos con el corazón para verlos aquí."
-  },
-  "moonboard": {
-    "invalidLayout": "Layout de MoonBoard no válido"
   },
   "createClimbForm": {
     "draftBadge": "Borrador",

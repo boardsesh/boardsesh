@@ -20,21 +20,9 @@
       "seoSetterSuffix": " ouvert par {{setter}}",
       "seoAscentsSuffix": ". {{ascents}} enchaînements enregistrés"
     },
-    "create": {
-      "title": "Créer un bloc",
-      "description": "Ouvrez un nouveau bloc sur votre board"
-    },
     "import": {
       "title": "Importer des blocs",
       "description": "Importez des blocs MoonBoard depuis des captures d'écran"
-    },
-    "liked": {
-      "title": "Blocs aimés",
-      "description": "Blocs que vous avez aimés"
-    },
-    "logbook": {
-      "title": "Carnet",
-      "description": "Votre carnet de croix sur cette board"
     }
   },
   "list": {
@@ -460,24 +448,6 @@
       "logAttempt": "Enregistrer l'essai",
       "cancel": "Annuler"
     }
-  },
-  "liked": {
-    "heroTitle": "Blocs aimés",
-    "heroSubtitle": "Vos blocs préférés",
-    "signInRequired": "Connexion requise",
-    "signInBody": "Connectez-vous pour voir vos blocs aimés.",
-    "actionsAriaLabel": "Actions",
-    "queueAll": "Tout mettre en file",
-    "adding": "Ajout...",
-    "noClimbsToAdd": "Aucun bloc à ajouter",
-    "addedToQueue_one": "{{count}} bloc ajouté à la file",
-    "addedToQueue_other": "{{count}} blocs ajoutés à la file",
-    "addToQueueFailed": "Impossible d'ajouter les blocs à la file",
-    "loadFailed": "Impossible de charger les blocs aimés",
-    "emptyState": "Pas encore de blocs aimés. Mettez un cœur sur des blocs pour les retrouver ici."
-  },
-  "moonboard": {
-    "invalidLayout": "Disposition MoonBoard invalide"
   },
   "createClimbForm": {
     "draftBadge": "Brouillon",

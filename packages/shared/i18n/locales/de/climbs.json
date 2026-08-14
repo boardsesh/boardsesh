@@ -20,21 +20,9 @@
       "seoSetterSuffix": " gebaut von {{setter}}",
       "seoAscentsSuffix": ". {{ascents}} Begehungen eingetragen"
     },
-    "create": {
-      "title": "Boulder bauen",
-      "description": "Bau einen neuen Boulder an deinem Board"
-    },
     "import": {
       "title": "Boulder importieren",
       "description": "MoonBoard-Boulder aus Screenshots importieren"
-    },
-    "liked": {
-      "title": "Favorisierte Boulder",
-      "description": "Boulder, die du favorisiert hast"
-    },
-    "logbook": {
-      "title": "Routenbuch",
-      "description": "Deine Kletterhistorie für dieses Board"
     }
   },
   "list": {
@@ -460,24 +448,6 @@
       "logAttempt": "Versuch eintragen",
       "cancel": "Abbrechen"
     }
-  },
-  "liked": {
-    "heroTitle": "Favorisierte Boulder",
-    "heroSubtitle": "Deine Lieblingsboulder",
-    "signInRequired": "Anmeldung nötig",
-    "signInBody": "Melde dich an, um deine favorisierten Boulder zu sehen.",
-    "actionsAriaLabel": "Aktionen",
-    "queueAll": "Alle zu „Als Nächstes“ hinzufügen",
-    "adding": "Wird hinzugefügt…",
-    "noClimbsToAdd": "Keine Boulder zum Hinzufügen",
-    "addedToQueue_one": "{{count}} Boulder zu „Als Nächstes“ hinzugefügt",
-    "addedToQueue_other": "{{count}} Boulder zu „Als Nächstes“ hinzugefügt",
-    "addToQueueFailed": "Boulder konnten nicht zu „Als Nächstes“ hinzugefügt werden",
-    "loadFailed": "Favorisierte Boulder konnten nicht geladen werden",
-    "emptyState": "Noch keine Favoriten. Tipp bei Bouldern aufs Herz, dann erscheinen sie hier!"
-  },
-  "moonboard": {
-    "invalidLayout": "Ungültiges MoonBoard-Layout"
   },
   "createClimbForm": {
     "draftBadge": "Entwurf",

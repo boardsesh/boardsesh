@@ -5,8 +5,7 @@
       "description": "Discover public climbing playlists and manage your own after signing in."
     },
     "detail": {
-      "fallbackTitle": "Playlist",
-      "fallbackDescription": "Climbing playlist on Boardsesh"
+      "fallbackTitle": "Playlist"
     }
   },
   "library": {

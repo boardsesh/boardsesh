@@ -20,21 +20,9 @@
       "seoSetterSuffix": " set by {{setter}}",
       "seoAscentsSuffix": ". {{ascents}} ascents logged"
     },
-    "create": {
-      "title": "Create a climb",
-      "description": "Set a new climb on your board"
-    },
     "import": {
       "title": "Import climbs",
       "description": "Import MoonBoard climbs from screenshots"
-    },
-    "liked": {
-      "title": "Liked climbs",
-      "description": "Climbs you've liked"
-    },
-    "logbook": {
-      "title": "Logbook",
-      "description": "Your climbing history for this board"
     }
   },
   "list": {
@@ -460,24 +448,6 @@
       "logAttempt": "Log attempt",
       "cancel": "Cancel"
     }
-  },
-  "liked": {
-    "heroTitle": "Liked Climbs",
-    "heroSubtitle": "Your favorite climbs",
-    "signInRequired": "Sign In Required",
-    "signInBody": "Please sign in to view your liked climbs.",
-    "actionsAriaLabel": "Actions",
-    "queueAll": "Add all to up next",
-    "adding": "Adding...",
-    "noClimbsToAdd": "No climbs to add",
-    "addedToQueue_one": "Added {{count}} climb to up next",
-    "addedToQueue_other": "Added {{count}} climbs to up next",
-    "addToQueueFailed": "Failed to add climbs to up next",
-    "loadFailed": "Failed to load liked climbs",
-    "emptyState": "No liked climbs yet. Heart some climbs to see them here!"
-  },
-  "moonboard": {
-    "invalidLayout": "Invalid MoonBoard layout"
   },
   "createClimbForm": {
     "draftBadge": "Draft",
