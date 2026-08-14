@@ -18,6 +18,7 @@ import { buildOgBoardRenderUrl, buildOverlayUrl } from '@/app/components/board-r
 import { scheduleOverlayWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
+import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 
 export async function generateMetadata(props: { params: Promise<BoardRouteParametersWithUuid> }): Promise<Metadata> {
   const params = await props.params;
@@ -28,7 +29,7 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
     const boardDetails = getBoardDetailsForBoard(parsedParams);
     const currentClimb = await getClimb(parsedParams);
 
-    const climbName = currentClimb.name || `${boardDetails.board_name} Climb`;
+    const climbName = resolveClimbDisplayName(currentClimb.name, boardDetails.board_name);
     const climbGrade = currentClimb.difficulty || 'Unknown Grade';
     const setter = currentClimb.setter_username || 'Unknown Setter';
     const quality = currentClimb.quality_average || 0;
@@ -134,11 +135,14 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
     // page's LCP element — is already rendered when the browser asks for it.
     scheduleOverlayWarming({ boardDetails, climbs: [currentClimb], variant: 'full' });
     const preloadUrl = currentClimb.frames ? buildOverlayUrl(boardDetails, currentClimb.frames, false) : null;
-    const canonicalPath = buildCanonicalClimbViewUrl(
+    // Same name fallback `generateMetadata` used. An unnamed climb would
+    // otherwise get the `-{board} Climb-` slug in its canonical and the bare
+    // uuid form in the CTA — the hand-off would leave the page's own URL.
+    const handoffPath = buildCanonicalClimbViewUrl(
       boardDetails,
       parsedParams.angle,
       parsedParams.climb_uuid,
-      currentClimb.name,
+      resolveClimbDisplayName(currentClimb.name, boardDetails.board_name),
     );
 
     return (
@@ -151,7 +155,7 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
           angleStats={angleStats}
           similarClimbs={similarClimbs}
           betaLinks={betaLinks}
-          canonicalPath={canonicalPath}
+          handoffPath={handoffPath}
           tree="config-tuple"
         />
       </>

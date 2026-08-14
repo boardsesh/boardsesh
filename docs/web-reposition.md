@@ -155,9 +155,18 @@ read-only routes".
 
 ## The front door (W-15, #4369)
 
-Four surfaces are now server-rendered front doors with no interactive climbing
-UI: the climb view and `/list` on the config-tuple tree, and their `/b/{slug}`
-twins. What each one is, and the two constraints that shaped them:
+Four **page subtrees** are now server-rendered front doors with no interactive
+climbing UI: the climb view and `/list` on the config-tuple tree, and their
+`/b/{slug}` twins. The page subtree is what changed — on the config-tuple pair
+the surrounding board shell
+(`app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout.tsx`) still
+renders `BoardSeshHeader` above the front door and still mounts the queue and
+WebSocket providers. That shell comes down in W-16/W-17, and until it does the
+import-graph invariant walks the three promoted page files but not their parent
+layout (the `KEPT_ENTRY_FILES` docblock in
+`app/__tests__/import-graph-invariant.test.ts` spells out which eight edges that
+leaves unwalked, and why adding them would grow the allowlist W-15 shrinks).
+What each front door is, and the two constraints that shaped them:
 
 **The climb front door** (`app/components/climb-front-door/`) renders a
 breadcrumb, the promoted `ClimbViewSeoFragment` heading, the board art as a
@@ -174,8 +183,15 @@ bar here is ≥50 crawlable climb links per page. `?page=N` is 1-based and clamp
 `?page=1` canonicalises onto the bare path (same page, one URL); pages 1–10 are
 indexable with real prev/next anchors; `?page=11` and beyond is
 `noindex, follow`, so crawlers keep walking the climb links without indexing the
-container. The contract lives in `app/lib/seo/list-page-robots.ts` and is pinned
-by `list/__tests__/list-front-door.test.tsx`.
+container. Filter/sort variants (`?minGrade=`, `?sortBy=`, …) are `noindex,
+follow` too and canonicalise onto the clean base URL; pagination stays
+self-canonical, because `?page=3` is different climbs rather than a duplicate of
+page 1. The one case that emits no canonical at all is an unlisted or private
+`/b` board, where the noindex is about the board and its clean base is a public
+config-tuple URL we do not want dragged down with it. All of it — including the
+`?page` bounds — lives in `resolveListPageIndexation`
+(`app/lib/seo/list-page-robots.ts`), called by both trees, and is pinned by
+`list/__tests__/list-front-door.test.tsx` plus the two `page-metadata` suites.
 
 **Both render anonymously, and must.** `middleware.ts` puts a shared
 `Vercel-CDN-Cache-Control: s-maxage` on every climb-view and `/list` URL with no

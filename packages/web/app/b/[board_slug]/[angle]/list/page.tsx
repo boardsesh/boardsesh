@@ -10,10 +10,8 @@ import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import {
-  frontDoorPagePath,
-  hasListFilterParams,
-  isIndexableFrontDoorPage,
   parseFrontDoorPage,
+  resolveListPageIndexation,
   type ListPageSearchParams,
 } from '@/app/lib/seo/list-page-robots';
 import { getServerTranslation } from '@/app/lib/i18n/server';
@@ -40,26 +38,23 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
     const boardName = formatBoardDisplayName(board.boardType);
     const angle = Number(params.angle);
     const page = parseFrontDoorPage(searchParams.page);
-    // Unlisted is link-only by design, and a private board is readable to a
-    // slug holder until #4087 masks it — neither belongs in the index. This is
-    // indexation only; it is not the access control, which #4087 owns.
-    const listShouldNoindex =
-      board.isUnlisted ||
-      !board.isPublic ||
-      hasListFilterParams(searchParams as unknown as ListPageSearchParams) ||
-      !isIndexableFrontDoorPage(page);
+    const parsedParams = boardToRouteParams(board, angle);
 
     // A1: canonicalise into the config-tuple tree via the same builder that
     // tree's own `/list` page calls, so one board config emits one canonical.
+    // `resolveListPageIndexation` then applies the SAME filter/pagination
+    // doctrine both trees use — see its docblock for why a hidden board is the
+    // one case that emits no canonical at all.
     //
-    // A noindex page passes NO `path`, so `createPageMetadata` emits no
-    // `alternates`: a canonical from a noindex URL onto an indexable twin is a
-    // conflicting signal Google can resolve by propagating the noindex to the
-    // target.
-    const parsedParams = boardToRouteParams(board, angle);
-    const canonicalPath = listShouldNoindex
-      ? undefined
-      : frontDoorPagePath(buildCanonicalClimbListUrl(getBoardDetailsForBoard(parsedParams), angle), page);
+    // Unlisted is link-only by design, and a private board is readable to a
+    // slug holder until #4087 masks it — neither belongs in the index. This is
+    // indexation only; it is not the access control, which #4087 owns.
+    const { path, robots } = resolveListPageIndexation({
+      cleanPath: buildCanonicalClimbListUrl(getBoardDetailsForBoard(parsedParams), angle),
+      page,
+      searchParams: searchParams as unknown as ListPageSearchParams,
+      boardIsHidden: board.isUnlisted || !board.isPublic,
+    });
 
     return createPageMetadata({
       title:
@@ -67,9 +62,9 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
           ? t('metadata.list.paginatedTitle', { boardName, angle: params.angle, page })
           : t('metadata.list.title', { boardName, angle: params.angle }),
       description: t('metadata.list.description', { boardName, angle: params.angle }),
-      path: canonicalPath,
+      path,
       locale,
-      robots: listShouldNoindex ? { index: false, follow: true } : undefined,
+      robots,
     });
   } catch {
     return createPageMetadata({

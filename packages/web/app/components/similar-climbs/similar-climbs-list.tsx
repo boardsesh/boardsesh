@@ -103,11 +103,16 @@ export default function SimilarClimbsList({
     enabled,
     staleTime: 5 * 60 * 1000,
     initialData: initialClimbs,
-    // Load-bearing alongside `initialData`. Without it React Query stamps
-    // `dataUpdatedAt = 0`, so `Date.now() - 0` beats any staleTime and the
-    // client refetches on mount — re-running a resolver that is rate-limited
-    // 30/min against the web server's single IP, which is exactly what the
-    // server-side cache in `front-door-data.server.ts` exists to avoid.
+    // Pins the seed's freshness explicitly rather than relying on the default.
+    // The contract that matters is "a seeded query is fresh": if it were stamped
+    // `dataUpdatedAt = 0`, `Date.now() - 0` would beat any staleTime and the
+    // client would refetch the moment the front door hydrates — re-running a
+    // resolver rate-limited 30/min against the web server's single IP, which is
+    // exactly what the server-side cache in `front-door-data.server.ts` exists
+    // to avoid. query-core 5.101.4 already defaults `dataUpdatedAt` to
+    // `Date.now()` when `initialData` is present (`getDefaultState`, query.js),
+    // so today this is belt-and-braces; `similar-climbs-ssr.test.tsx` pins the
+    // freshness itself rather than the mechanism.
     initialDataUpdatedAt: initialClimbs ? Date.now() : undefined,
   });
 

@@ -112,21 +112,26 @@ describe('board slug list metadata', () => {
     expect(canonicalOf(metadata)).toContain('/40/list?page=2');
   });
 
-  it('noindexes past the last indexable page and emits no canonical to leak it onto the twin', async () => {
+  it('noindexes past the last indexable page but keeps that page self-canonical', async () => {
     const metadata = await generateMetadata({ page: '11' });
 
     expect(metadata.robots).toEqual({ index: false, follow: true });
-    expect(metadata.alternates).toBeUndefined();
+    // Same doctrine as the config-tuple twin (`resolveListPageIndexation`):
+    // `?page=11` is different climbs, so it canonicalises to itself rather than
+    // back at page 1 — and its target is noindex too, so no conflicting signal.
+    expect(canonicalOf(metadata)).toContain('/40/list?page=11');
   });
 
-  it('noindexes filtered list requests and emits no canonical at all', async () => {
+  it('noindexes filtered list requests and canonicalises them onto the clean base', async () => {
     const metadata = await generateMetadata({ minGrade: '20' });
 
     expect(metadata.robots).toEqual({ index: false, follow: true });
-    // No `alternates` on a noindex page: a canonical pointing from a noindex
-    // URL at the indexable config-tuple twin is a conflicting signal Google can
-    // resolve by propagating the noindex to the target.
-    expect(metadata.alternates).toBeUndefined();
+    // A filter variant is the same page of content behind a different query, so
+    // it consolidates onto the clean base URL (CLAUDE.md's SEO rule) —
+    // identically on both trees, which is the point of the shared resolver.
+    expect(canonicalOf(metadata)).not.toContain('minGrade');
+    expect(canonicalOf(metadata)).not.toContain('/b/my-board');
+    expect(canonicalOf(metadata)).toContain('/40/list');
   });
 
   it('noindexes an unlisted board even with no filter params, but keeps it readable and canonical-free', async () => {

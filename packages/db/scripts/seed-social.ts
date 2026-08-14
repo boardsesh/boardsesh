@@ -1,4 +1,4 @@
-import { eq, sql, and, or, ilike, asc } from 'drizzle-orm';
+import { eq, sql, and } from 'drizzle-orm';
 import { faker } from '@faker-js/faker';
 
 import { users } from '../src/schema/auth/users.js';
@@ -7,12 +7,7 @@ import { userFollows } from '../src/schema/app/follows.js';
 import { boardseshTicks } from '../src/schema/app/ascents.js';
 import { userBoards, boardFollows } from '../src/schema/app/boards.js';
 import { boardSessions } from '../src/schema/app/sessions.js';
-import {
-  boardClimbs,
-  boardClimbStats,
-  boardDifficultyGrades,
-  boardProductSizes,
-} from '../src/schema/boards/unified.js';
+import { boardClimbs, boardClimbStats, boardDifficultyGrades } from '../src/schema/boards/unified.js';
 import { notifications } from '../src/schema/app/notifications.js';
 import { comments, votes } from '../src/schema/app/social.js';
 import { feedItems } from '../src/schema/app/feed.js';
@@ -838,117 +833,6 @@ async function seedSocialData() {
       await db.insert(boardseshTicks).values(batch).onConflictDoNothing();
     }
     console.info(`  Fixture ticks: ${fixtureTickRecords.length}`);
-
-    // =========================================================================
-    // Step 8.51: Pin deterministic test-user ticks for the e2e grid-badge spec
-    // =========================================================================
-    // `grid-mode-ascent-badge.spec.ts` navigates to
-    // `/kilter/original/12x12-square/screw_bolt/40/list?showOnlyCompleted=true`
-    // and asserts that at least one ascent badge renders. With the random
-    // tick distribution above, the 2000 test-user ticks rarely include a
-    // climb on this exact (layout, sets, angle, size) combo — the spec's
-    // flake root cause. Pinning 5 SEND ticks on climbs that match the
-    // ACTUAL filter the route applies turns the assumption into a contract
-    // documented in `packages/web/e2e/SEED_CONTRACT.md`.
-    //
-    // Constraints mirror the climb-list filter so the seeded climbs are
-    // guaranteed to appear on the page (mirrors create-climb-filters.ts):
-    //   - boardType = kilter
-    //   - layoutId = 1 (the "original" Kilter layout)
-    //   - isListed = true
-    //   - has board_climb_stats at angle 40
-    //   - required_set_ids <@ ARRAY[1, 20]  (subset; matches the route's
-    //     `required_set_ids <@ selected_sets` check)
-    //   - {chosen size_id} = ANY(compatible_size_ids)  (matches the route's
-    //     `${params.size_id} = ANY(compatible_size_ids)` check)
-    //
-    // Ordered by climb UUID so the selection is stable across seed runs.
-    console.info('\n  Pinning deterministic e2e grid-badge ticks...');
-
-    const KILTER_ORIGINAL_LAYOUT_ID = 1;
-    // Bolt Ons (1) + Screw Ons (20) — the "screw_bolt" URL slug picks both.
-    const KILTER_SCREW_BOLT_SET_IDS = [1, 20];
-    const GRID_BADGE_ANGLE = 40;
-    const GRID_BADGE_TICK_COUNT = 5;
-
-    // Resolve a single product_size_id matching the "12x12-square" slug.
-    // The route URL parsing maps a slug to one size_id, so the seed needs
-    // one ID too — not an array — to mirror the route's
-    // `${size_id} = ANY(compatible_size_ids)` filter exactly. Ordered by
-    // id so re-runs against the same dev DB image are deterministic.
-    const kilter12x12SizeRow = await db
-      .select({ id: boardProductSizes.id })
-      .from(boardProductSizes)
-      .where(
-        and(
-          eq(boardProductSizes.boardType, 'kilter'),
-          or(ilike(boardProductSizes.name, '12 x 12%'), ilike(boardProductSizes.name, '12x12%')),
-        ),
-      )
-      .orderBy(asc(boardProductSizes.id))
-      .limit(1);
-    const kilter12x12SizeId = kilter12x12SizeRow[0]?.id;
-
-    const setIdLiterals = sql.join(
-      KILTER_SCREW_BOLT_SET_IDS.map((id) => sql`${id}`),
-      sql`, `,
-    );
-
-    const gridBadgeClimbs =
-      kilter12x12SizeId === undefined
-        ? []
-        : await db
-            .select({ uuid: boardClimbs.uuid })
-            .from(boardClimbs)
-            .innerJoin(
-              boardClimbStats,
-              and(
-                eq(boardClimbs.uuid, boardClimbStats.climbUuid),
-                eq(boardClimbs.boardType, boardClimbStats.boardType),
-              ),
-            )
-            .where(
-              and(
-                eq(boardClimbs.boardType, 'kilter'),
-                eq(boardClimbs.layoutId, KILTER_ORIGINAL_LAYOUT_ID),
-                eq(boardClimbs.isListed, true),
-                eq(boardClimbStats.angle, GRID_BADGE_ANGLE),
-                sql`${boardClimbs.requiredSetIds} <@ ARRAY[${setIdLiterals}]::int[]`,
-                sql`${kilter12x12SizeId} = ANY(${boardClimbs.compatibleSizeIds})`,
-              ),
-            )
-            .orderBy(boardClimbs.uuid)
-            .limit(GRID_BADGE_TICK_COUNT);
-
-    if (gridBadgeClimbs.length === 0) {
-      console.warn(
-        '  ⚠️  No kilter climbs match the grid-badge fixture filter (layout 1, sets ⊆ {1,20}, ' +
-          `size_id=${kilter12x12SizeId ?? 'none-found'}, angle 40). ` +
-          'The grid-mode-ascent-badge spec will continue to flake until the dev DB image carries climbs ' +
-          'on this combo.',
-      );
-    } else {
-      const gridBadgeBaseTime = FIXTURE_BASE_TIMESTAMP + 30 * DAY_MS;
-      const gridBadgeRecords = gridBadgeClimbs.map((climb, i) => ({
-        // Stable uuid → re-runs are idempotent via the onConflictDoNothing below.
-        uuid: `fx-tick-grid-badge-${String(i + 1).padStart(2, '0')}`,
-        userId: TEST_USER_ID,
-        boardType: 'kilter' as const,
-        climbUuid: climb.uuid,
-        angle: GRID_BADGE_ANGLE,
-        isMirror: false,
-        status: 'send' as const,
-        attemptCount: 3,
-        quality: 4,
-        difficulty: null,
-        isBenchmark: false,
-        comment: '',
-        climbedAt: new Date(gridBadgeBaseTime + i * 15 * 60 * 1000).toISOString(),
-        boardId: null,
-      }));
-      await db.insert(boardseshTicks).values(gridBadgeRecords).onConflictDoNothing();
-      console.info(`  Grid-badge ticks: ${gridBadgeRecords.length} (test user, kilter layout 1, angle 40)`);
-    }
 
     // =========================================================================
     // Step 8.55: Seed party mode sessions (real sessions with multiple users)

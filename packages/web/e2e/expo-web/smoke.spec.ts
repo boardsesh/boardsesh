@@ -257,9 +257,9 @@ test.describe('expo-web smoke', () => {
 
     /**
      * A climb that really is listed on the seeded board at this angle. Picked
-     * the same way global-setup picks its grid-badge fixture (lowest uuid among
-     * the matching climbs) so the URL under test is deterministic per dev-DB
-     * image without pinning a uuid the image is free to drop.
+     * by lowest uuid among the matching climbs, so the URL under test is
+     * deterministic per dev-DB image without pinning a uuid the image is free
+     * to drop.
      */
     /** The seeded shared board the suite already binds through the board sheet. */
     async function findSeededBoardSlug(): Promise<string> {

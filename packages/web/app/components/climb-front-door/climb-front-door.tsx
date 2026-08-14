@@ -6,8 +6,9 @@ import SimilarClimbsList from '@/app/components/similar-climbs/similar-climbs-li
 import ClimbSocialSection from '@/app/components/social/climb-social-section';
 import BoardseshBetaList from '@/app/components/beta-videos/boardsesh-beta-list';
 import { buildOverlayUrl } from '@/app/components/board-renderer/util';
-import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
+import { buildCanonicalClimbListUrl, buildCanonicalClimbViewUrl } from '@/app/lib/url-utils';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { BetaLink } from '@/app/lib/beta-video-url';
@@ -24,8 +25,13 @@ type ClimbFrontDoorProps = {
   angleStats: ClimbStatsForAngle[];
   similarClimbs: SimilarClimb[];
   betaLinks: BetaLink[];
-  /** This page's own canonical path. Doubles as the CTA's hand-off pathname. */
-  canonicalPath: string;
+  /**
+   * The pathname the "Climb this" CTA hands to the app — the URL the reader is
+   * actually on. Deliberately NOT the page's canonical: on `/b/{slug}` the
+   * canonical points into the config-tuple tree (A1) while the hand-off keeps
+   * the board context the reader arrived with.
+   */
+  handoffPath: string;
   tree: HandoffTree;
 };
 
@@ -64,12 +70,16 @@ export default async function ClimbFrontDoor({
   angleStats,
   similarClimbs,
   betaLinks,
-  canonicalPath,
+  handoffPath,
   tree,
 }: ClimbFrontDoorProps) {
   const { t, locale } = await getServerTranslation('climbs');
 
   const boardListUrl = buildCanonicalClimbListUrl(boardDetails, angle);
+  const climbName = resolveClimbDisplayName(climb.name, boardDetails.board_name);
+  // The breadcrumb's leaf is the page's CANONICAL, not `handoffPath`: on `/b`
+  // those differ, and the JSON-LD has to name the URL the page claims.
+  const canonicalClimbUrl = buildCanonicalClimbViewUrl(boardDetails, angle, climb.uuid, climbName);
   const overlayUrl = climb.frames ? buildOverlayUrl(boardDetails, climb.frames, false) : null;
   const currentAngleStats = angleStats.find((stats) => stats.angle === angle);
   const layoutName = boardDetails.layout_name ?? '';
@@ -80,7 +90,8 @@ export default async function ClimbFrontDoor({
         boardName={boardDetails.board_name}
         angle={angle}
         boardListUrl={boardListUrl}
-        currentLabel={climb.name}
+        currentLabel={climbName}
+        currentUrl={canonicalClimbUrl}
       />
 
       <ClimbViewSeoFragment climb={climb} boardDetails={boardDetails} />
@@ -92,7 +103,7 @@ export default async function ClimbFrontDoor({
         <img
           src={overlayUrl}
           alt={t('frontDoor.boardImageAlt', {
-            climbName: climb.name,
+            climbName,
             boardName: boardDetails.board_name,
             layoutName,
             angle,
@@ -108,9 +119,9 @@ export default async function ClimbFrontDoor({
       <ClimbFacts climb={climb} boardDetails={boardDetails} angle={angle} currentAngleStats={currentAngleStats} />
 
       <ClimbHandoffCta
-        pathname={canonicalPath}
+        pathname={handoffPath}
         label={t('frontDoor.cta.climbThis')}
-        ariaLabel={t('frontDoor.cta.ariaLabel', { climbName: climb.name })}
+        ariaLabel={t('frontDoor.cta.ariaLabel', { climbName })}
         helperText={t('frontDoor.cta.helper')}
         surface="climb_front_door"
         tree={tree}
@@ -124,7 +135,7 @@ export default async function ClimbFrontDoor({
       <AngleCrossLinks
         boardDetails={boardDetails}
         climbUuid={climb.uuid}
-        climbName={climb.name}
+        climbName={climbName}
         currentAngle={angle}
         angleStats={angleStats}
       />

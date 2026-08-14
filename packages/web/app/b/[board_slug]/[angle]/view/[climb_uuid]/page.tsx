@@ -11,6 +11,7 @@ import { buildOgBoardRenderUrl, buildOverlayUrl } from '@/app/components/board-r
 import { scheduleOverlayWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
+import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 
 type BoardSlugViewRouteParams = { board_slug: string; angle: string; climb_uuid: string };
 
@@ -41,7 +42,7 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
     const boardDetails = getBoardDetailsForBoard(parsedParams);
     const currentClimb = await getClimb(parsedParams);
 
-    const climbName = currentClimb.name || `${boardDetails.board_name} Climb`;
+    const climbName = resolveClimbDisplayName(currentClimb.name, boardDetails.board_name);
     const climbGrade = currentClimb.difficulty || 'Unknown Grade';
     const setter = currentClimb.setter_username || 'Unknown Setter';
     const quality = currentClimb.quality_average || 0;
@@ -132,7 +133,9 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
           // The CTA hands off the `/b` pathname the reader is actually on: the
           // app serves both URL shapes (post-#3823), and rewriting it to the
           // config-tuple twin would drop the board context they arrived with.
-          canonicalPath={`/b/${params.board_slug}/${params.angle}/view/${params.climb_uuid}`}
+          // Not the canonical — `generateMetadata` above points that into the
+          // config-tuple tree (A1).
+          handoffPath={`/b/${params.board_slug}/${params.angle}/view/${params.climb_uuid}`}
           tree="slug"
         />
       </>

@@ -9,12 +9,10 @@ import StaticListFrontDoor from '@/app/components/climb-front-door/static-list-f
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { fetchFrontDoorListPage } from '@/app/lib/data/list-page-data.server';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
-import { createNoIndexMetadata, createPageMetadata } from '@/app/lib/seo/metadata';
+import { createPageMetadata } from '@/app/lib/seo/metadata';
 import {
-  frontDoorPagePath,
-  hasListFilterParams,
-  isIndexableFrontDoorPage,
   parseFrontDoorPage,
+  resolveListPageIndexation,
   type ListPageSearchParams,
 } from '@/app/lib/seo/list-page-robots';
 import { getServerTranslation } from '@/app/lib/i18n/server';
@@ -27,39 +25,57 @@ export async function generateMetadata(props: {
 
   const { t, locale } = await getServerTranslation('climbs');
   const boardName = formatBoardDisplayName(params.board_name);
-  const cleanPath = `/${params.board_name}/${params.layout_id}/${params.size_id}/${params.set_ids}/${params.angle}/list`;
 
-  // Filter/sort query params are an unbounded crawl space over the same page of
-  // content: keep them out of the index, point them at the clean base URL, and
-  // let crawlers follow links off the page.
-  if (hasListFilterParams(searchParams as unknown as ListPageSearchParams)) {
-    return createNoIndexMetadata({
-      title: t('metadata.list.title', { boardName, angle: params.angle }),
-      description: t('metadata.list.description', { boardName, angle: params.angle }),
-      path: cleanPath,
+  try {
+    // Resolve the request's slugs to ids and build the canonical from THOSE,
+    // through the same builder `/b/{slug}/{angle}/list` calls. Echoing the
+    // request's own segments back would hand every alias spelling of one board
+    // config its own self-canonical: `kilter-original` and `original` both
+    // resolve to layout 1 (the board-prefix strip in `findLayoutBySlug`),
+    // `12x12` and `12x12-square` both to size 10 (the bare-dimension fallback
+    // in `findSizeBySlug`), and `bolt_screw` and `screw_bolt` both to [1,20]
+    // (`matchSetNameToSlugParts` is order-insensitive) — N competing claims,
+    // none of them the URL `/b` now canonicalises into.
+    //
+    // `parseRouteParams` is React-`cache`d and the page body below calls it on
+    // the same request, so this resolution is free.
+    const { parsedParams } = await parseRouteParams(params);
+    const angle = parsedParams.angle;
+    const cleanPath = buildCanonicalClimbListUrl(getBoardDetailsForBoard(parsedParams), angle);
+
+    // Self-canonical for the unfiltered case. This page used to return a bare
+    // `{}` rather than claim one, because `/b/{slug}/{angle}/list` was also
+    // self-canonicalising and a second canonical would have widened the
+    // PageRank split. W-15 closes that: `/b` now canonicalises into this tree
+    // (A1), so this is the one URL for the config and it should say so.
+    const page = parseFrontDoorPage(searchParams.page);
+    const { path, robots } = resolveListPageIndexation({
+      cleanPath,
+      page,
+      searchParams: searchParams as unknown as ListPageSearchParams,
+    });
+
+    return createPageMetadata({
+      title:
+        page > 1
+          ? t('metadata.list.paginatedTitle', { boardName, angle, page })
+          : t('metadata.list.title', { boardName, angle }),
+      description: t('metadata.list.description', { boardName, angle }),
+      path,
       locale,
+      robots,
+    });
+  } catch {
+    // A board config the slug tables and the DB both fail to resolve. The page
+    // body 404s on the same request; claim no canonical for a URL that has no
+    // board behind it.
+    return createPageMetadata({
+      title: t('metadata.list.fallbackTitle'),
+      description: t('metadata.list.fallbackDescription'),
+      locale,
+      robots: { index: false, follow: true },
     });
   }
-
-  // Self-canonical for the unfiltered case. This page used to return a bare
-  // `{}` rather than claim one, because `/b/{slug}/{angle}/list` was also
-  // self-canonicalising and a second canonical would have widened the PageRank
-  // split. W-15 closes that: `/b` now canonicalises into this tree (A1), so
-  // this is the one URL for the config and it should say so.
-  const page = parseFrontDoorPage(searchParams.page);
-  return createPageMetadata({
-    title:
-      page > 1
-        ? t('metadata.list.paginatedTitle', { boardName, angle: params.angle, page })
-        : t('metadata.list.title', { boardName, angle: params.angle }),
-    description: t('metadata.list.description', { boardName, angle: params.angle }),
-    // `?page=1` and the bare path are the same page, so page 1 canonicalises
-    // without the query. Deep pages stay `follow` — the climb links still get
-    // walked — but drop out of the index.
-    path: frontDoorPagePath(cleanPath, page),
-    locale,
-    robots: isIndexableFrontDoorPage(page) ? undefined : { index: false, follow: true },
-  });
 }
 
 export default async function DynamicResultsPage(props: {
