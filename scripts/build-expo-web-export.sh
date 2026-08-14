@@ -21,6 +21,10 @@ set -euo pipefail
 # The output directory is wiped first. As a guard, the script refuses to wipe a
 # non-empty directory that isn't already an Expo web export (no `_expo/`), and
 # refuses any target at or above the repo root. See docs/expo-web-deployment.md.
+#
+# BOARDSESH_EXPORT_KEEP_METRO_CACHE=1 trades the `--clear` cache wipe for an
+# env-scoped transform store — throwaway validation only, never a shipped
+# artifact. See the block above the export invocation for the full reasoning.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -101,11 +105,96 @@ export TAILSCALE_HOSTS="${TAILSCALE_HOSTS-}"
 #
 # --clear: expo export reuses Metro's transform cache across EXPO_PUBLIC_* env
 # changes, silently shipping a stale bundle with old env values inlined
-# (verified 2026-07-18..20). Every consumer of this script is a
-# build-the-artifact-once path (Docker builder stage, CI deploy, bundle
-# check), so the cache buys nothing here and the staleness risk is real.
+# (verified 2026-07-18..20). It stays ON by default, for every caller that
+# produces an artifact somebody serves: Dockerfile.web's builder stage,
+# production-deploy.yml's standalone export, `vp run build:expo-web`, and
+# scripts/dev-expo-web-static.sh. Those bake real origins in, so a stale shard
+# ships; none of them sets the opt-out below.
+EXPORT_CLEAR_FLAG='--clear'
+
+# The one caller that gains nothing from the wipe is the CI bundle check
+# (scripts/mobile-web-bundle-check.sh): it bakes no EXPO_PUBLIC_*, sets no
+# BOARDSESH_EXPORT_EXPECT_URLS, and deletes its own output directory. It asserts
+# only that the web graph still resolves, transforms and serializes, and that
+# the shell + WASM assets land — yet it paid a fully cold Metro (~95s) on every
+# run, and would also have deleted any cache restored for it.
+#
+# The opt-out does not drop the 2026-07-18 guarantee, it re-buys it a different
+# way: the transform store moves into a directory named after a hash of every
+# env value this export bakes in. A changed value therefore cannot *reach* a
+# shard transformed under the old one — it lands in a different directory. Never
+# ship the flag gate without the hashed root; the flag alone is the stale-bundle
+# bug again.
+# A bare `-n` test would read BOARDSESH_EXPORT_KEEP_METRO_CACHE=0 as "on" — and
+# `=0` is the first spelling anyone reaches for to turn a speed-up OFF. For a
+# flag whose wrong answer is a reused cache, unsetting must not be the only way
+# to say no. Off-shaped values are off; anything else (1, true, yes) opts in.
+KEEP_METRO_CACHE=1
+case "${BOARDSESH_EXPORT_KEEP_METRO_CACHE:-}" in
+  '' | 0 | false | FALSE | no | NO) KEEP_METRO_CACHE=0 ;;
+esac
+
+if [[ "$KEEP_METRO_CACHE" == 1 && -n "${BOARDSESH_EXPORT_EXPECT_URLS:-}" ]]; then
+  # Interlock. BOARDSESH_EXPORT_EXPECT_URLS means this export is an artifact
+  # with real origins baked in — exactly the shape --clear was bought for. No
+  # caller sets both today; if one ever does, the wipe wins over the speed-up.
+  echo "[build-expo-web-export] BOARDSESH_EXPORT_EXPECT_URLS is set — ignoring BOARDSESH_EXPORT_KEEP_METRO_CACHE and keeping --clear" >&2
+elif [[ "$KEEP_METRO_CACHE" == 1 ]]; then
+  # macOS ships `shasum`, Linux and the alpine builder ship GNU `sha256sum`.
+  if command -v sha256sum >/dev/null 2>&1; then
+    hash_inlined_env() { sha256sum; }
+  elif command -v shasum >/dev/null 2>&1; then
+    hash_inlined_env() { shasum -a 256; }
+  else
+    hash_inlined_env() { return 1; }
+  fi
+
+  INLINED_ENV_HASH="$(
+    {
+      # BOARDSESH_WEB_BASE_URL is set on the export command line below rather
+      # than exported, so `env` cannot see it — feed the effective value in by
+      # hand. --subdomain flips it, and it decides every asset URL in
+      # index.html, which is exactly the kind of staleness --clear guarded.
+      printf 'BOARDSESH_WEB_BASE_URL=%s\n' "$WEB_BASE_URL"
+      # Deliberately broad. EXPO_PUBLIC_* are inlined into the JS by babel; the
+      # rest steer app.config.ts, whose resolved config is serialized into the
+      # bundle too. Over-inclusion costs at most a cache miss (slow); a missing
+      # name is the 2026-07-18 bug (wrong).
+      #
+      # The trailing `[^=]*=` is load-bearing twice over: those entries are name
+      # PREFIXES, so binding the `=` straight to the group (`^(EXPO_|...)=`)
+      # would only ever match a variable named exactly `EXPO_`, silently hashing
+      # nothing — and requiring a `NAME=` shape also skips the continuation
+      # lines of any multi-line value, which cannot be attributed to a name.
+      #
+      # KNOWN LIMIT, so nobody reads this as "every inlined value": the Expo CLI
+      # also loads packages/mobile/.env* from inside the node process, after
+      # this snapshot, so EXPO_PUBLIC_* set THERE are inlined without reaching
+      # the hash. That file is gitignored (a local-dev thing; CI has none), and
+      # the only caller that opts in throws its export away — but it is exactly
+      # why the opt-out must never move to a path that keeps its output.
+      env | grep -E '^(EXPO_|BOARDSESH_|EAS_BUILD|TAILSCALE_HOSTS|GOOGLE_MAPS_API_KEY)[^=]*=' || true
+    } | LC_ALL=C sort | hash_inlined_env | cut -c1-16
+  )" || INLINED_ENV_HASH=''
+
+  if [[ -z "$INLINED_ENV_HASH" ]]; then
+    # No sha256 tool means no scoped root, and an unscoped reused cache is the
+    # thing we refuse to ship. Slow is an acceptable failure here; stale is not.
+    echo "[build-expo-web-export] no sha256sum/shasum available — keeping --clear despite BOARDSESH_EXPORT_KEEP_METRO_CACHE" >&2
+  else
+    # @expo/metro-config hard-codes the transform store to
+    # os.tmpdir()/metro-cache, so TMPDIR is the only supported way to move it.
+    # (Do NOT reach for a cacheStores override in metro.config.js — that file is
+    # a native-fingerprint input and editing it invalidates every OTA binary.)
+    export TMPDIR="${TMPDIR:-/tmp}/metro-web-env-$INLINED_ENV_HASH"
+    mkdir -p "$TMPDIR"
+    EXPORT_CLEAR_FLAG=''
+    echo "[build-expo-web-export] reusing Metro's transform cache under $TMPDIR (inlined-env $INLINED_ENV_HASH)"
+  fi
+fi
+
 BOARDSESH_WEB=1 BOARDSESH_WEB_BASE_URL="$WEB_BASE_URL" EXPO_NO_WEB_SETUP=1 EXPO_NO_TELEMETRY=1 \
-  bunx expo export --platform web --output-dir "$OUTPUT_DIR" --clear
+  bunx expo export --platform web --output-dir "$OUTPUT_DIR" ${EXPORT_CLEAR_FLAG:+"$EXPORT_CLEAR_FLAG"}
 
 if [[ ! -f "$OUTPUT_DIR/index.html" ]]; then
   echo "[build-expo-web-export] missing index.html in $OUTPUT_DIR" >&2

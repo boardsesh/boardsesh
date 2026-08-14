@@ -56,21 +56,36 @@ jobs:
       # Defaults false off PRs (the OTA bot legitimately rewrites it on push).
       changelogData: ${{ github.event_name == 'pull_request' && steps.filter.outputs.changelogData || 'false' }}
       dbMigrations: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.dbMigrations }}
-      # True if any downstream job's gate would fire. setup gates on this so
-      # docs-only / firmware-only PRs skip the bun-install + build:db pass
-      # nothing downstream would consume. Must mirror the union of every
-      # downstream `if:` — sharedDeps/sharedSchema in particular cover
-      # non-JS files (SQL migrations under packages/db, .graphql under
-      # shared-schema) that wouldn't trigger anyJs but still need setup so
-      # test-backend / mobile-bundle / codegen-drift can run.
+      # True if any downstream job's gate would fire. This used to gate the
+      # `setup` job (bun install + build:db + a `built-packages` artifact every
+      # heavy job downloaded); that job was deleted because @boardsesh/db and
+      # @boardsesh/shared-schema resolve through `src/*.ts` in their exports
+      # maps — nothing in the repo ever consumed those dist dirs — and it cost
+      # ~69s of serialized latency in front of every gated job. The output is
+      # kept (no consumer today) because it is the one place that records the
+      # union of every downstream gate, and scripts/__tests__/
+      # ci-location-sync-workflow.test.ts asserts on its terms; keep it in sync
+      # with the job `if:`s below so a future job can gate on it again.
       runAny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.anyJs == 'true' || steps.filter.outputs.web == 'true' || steps.filter.outputs.i18nCatalogs == 'true' || steps.filter.outputs.sharedSchema == 'true' || steps.filter.outputs.sharedDeps == 'true' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.ocr == 'true' || steps.filter.outputs.locationSync == 'true' || steps.filter.outputs.rootCi == 'true' }}
       # NOTE: deployConfig, storeMetadata, and mobileLocales are deliberately
       # NOT part of runAny — the deploy-config and listing-guards jobs below
-      # need [changes] only (no bun-install/build:db setup pass), so a PR
-      # touching only their files doesn't pay for a `setup` run nothing else
-      # would consume.
+      # gate on their own filters, so a PR touching only their files runs
+      # nothing else.
     steps:
-      - uses: actions/checkout@v6
+      # No actions/checkout here on purpose: on `pull_request` dorny/paths-filter
+      # reads the changed-file list from the REST API (no working tree needed),
+      # and on `push` the filter step is skipped outright and every output above
+      # hardcodes `true`. The checkout was 8-58s at the very head of the run.
+      #
+      # The one thing the API costs us is a ceiling: `GET /pulls/{n}/files` tops
+      # out at 3000 files, and a truncated list would evaluate a filter to
+      # `false` and silently skip a job that should have run — the failure mode
+      # this whole `changes` job exists to avoid. Fail closed instead, and say
+      # what to do about it. (Needs `pull-requests: read`, subsumed by the
+      # workflow-level `pull-requests: write`.)
+      - name: Guard against paths-filter API truncation
+        if: github.event_name == 'pull_request' && github.event.pull_request.changed_files > 2900
+        run: echo "::error::PR exceeds the paths-filter API window; re-add actions/checkout to the changes job" && exit 1
       - id: filter
         if: github.event_name == 'pull_request'
         uses: dorny/paths-filter@v3
@@ -175,34 +190,16 @@ jobs:
               # invokes, so editing it has to run the job that depends on it.
               - 'packages/db/package.json'
 
-  setup:
-    needs: [changes]
-    if: needs.changes.outputs.runAny == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version: 'lts'
-          cache: true
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - name: Build shared packages
-        run: vp run build:db
-      - name: Upload built packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: built-packages
-          path: |
-            packages/shared-schema/dist
-            packages/db/dist
-          retention-days: 1
-
   lint:
-    needs: [changes, setup]
-    if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true'
+    needs: [changes]
+    # Gate is the UNION of lint's own scope and the mobile-bundle scope, because
+    # the nine `check:mobile-*` guards live here now (they used to sit in front
+    # of Metro in mobile-bundle, costing ~24s on the critical path). mobile /
+    # sharedDeps cover paths that anyJs never matches — patches/**,
+    # packages/board-renderer/wasm/pkg/**, scripts/mobile-*.sh — so dropping
+    # either term would silently stop running the patch and fingerprint guards
+    # on exactly the PR shape they exist for. Only ever widen this.
+    if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.sharedDeps == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -222,12 +219,71 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Install Expo web lint dependencies
-        if: needs.changes.outputs.mobile == 'true'
+        # Widened alongside the job gate above: lint now also runs for
+        # sharedDeps-only changes, and the expo-web runtime has to be present
+        # whenever we lint mobile sources.
+        if: needs.changes.outputs.mobile == 'true' || needs.changes.outputs.sharedDeps == 'true'
         run: vp run mobile:web-runtime:install
-      - name: Download built packages
-        uses: actions/download-artifact@v4
-        with:
-          name: built-packages
+      # The nine `check:mobile-*` guards below used to run in mobile-bundle, in
+      # front of Metro — ~24s of the critical path (18s of it the fingerprint
+      # check) spent on checks that need nothing Metro produces. They live in
+      # this cheap job now. Fail-fast is preserved: lint still goes red inside a
+      # minute and PR runs cancel-in-progress. The only property given up is
+      # that a failing guard no longer short-circuits Metro's work.
+      - name: Check mobile board art stays bundled
+        run: vp run check:mobile-board-art-network
+      # Catches iOS bundle-phase dep-resolution breaks (e.g. a transitive-only
+      # @sentry/cli unresolvable from packages/mobile under Bun's isolated
+      # linker) here on Linux, instead of in the macOS TestFlight archive on
+      # push-to-main.
+      - name: Check native build-phase deps resolve
+        run: vp run check:mobile-native-deps
+      # Every @expo/* and expo-* dep must be exact-pinned: they ship a JS+native
+      # pair, and a `~`/`^` range lets the JS float ahead of a shipped binary's
+      # native layer. With the OTA fingerprint pinned via an override, that
+      # drifted JS still lands on the old binary — the ModalBottomSheetView
+      # .partialExpand "No handler registered" crash from a `~56.0.18` @expo/ui.
+      - name: Check Expo deps are exact-pinned
+        run: vp run check:mobile-expo-deps-pinned
+      # Deterministic, read-only dep-health check: compares our declared pins
+      # against packages/mobile/node_modules/expo/bundledNativeModules.json for
+      # the SDK release we actually have installed, and flags installed-version
+      # drift from those pins (the caret-drift class behind the 2.0.0 launch
+      # crash). It never consults the network or Expo's remote versions API, so
+      # it only changes outcome when WE change something (bump expo, edit a
+      # pin, lockfile drift) — not when Expo ships an unrelated patch release.
+      # Intentional deviations live in expo.install.exclude.
+      - name: Mobile dep-health check
+        run: vp run check:mobile-deps
+      # A Bun patch is keyed by an exact version, so an Expo/RN bump can silently
+      # drop it: install only warns, and typecheck + the Metro bundle stay green
+      # while a native-only behavior (e.g. the iOS 26 tab-bar minimize tracking
+      # the climbs FlashList) regresses all the way into TestFlight. Assert the
+      # patched source is actually present on this cheap Linux runner.
+      - name: Check native patches are applied
+        run: vp run check:mobile-patches
+      # The resolver can return a valid fingerprint even when a source is silently
+      # absent/null. Assert the four autolinking configs, every discovered native
+      # module dir, the fingerprint config, and root patch bodies all contribute.
+      - name: Check mobile fingerprint inputs are complete
+        run: vp run check:mobile-fingerprint-inputs
+      # Cheap source guard: no raw theme-variant magic-string compares regrew in
+      # mobile components (they must route through the variant primitives/tokens —
+      # see packages/mobile/src/theme/variants/README.md).
+      - name: Check mobile variant usage
+        run: vp run check:mobile-variants
+      # @expo/ui swift-ui / jetpack-compose imports must stay in their platform
+      # file (*.ios.tsx / *.android.tsx) — a misplaced one crashes the other
+      # platform at runtime. The .oxlintrc rule isn't enforced by `vp check`, so
+      # this grep guard is the real backstop. See docs/expo-ui-components.md.
+      - name: Check mobile @expo/ui platform imports
+        run: vp run check:mobile-platform-imports
+      # The offline-sync engine's drain/scheduler/pull entry points must be
+      # imported via src/offline/offline-sync-adapter (binds the connectivity
+      # probe + platform triggers). The .oxlintrc rule isn't enforced by
+      # `vp check`, so this grep guard is the real backstop.
+      - name: Check offline-sync adapter boundary
+        run: vp run check:mobile-offline-sync-imports
       - name: Lint changed files (PR)
         if: github.event_name == 'pull_request'
         env:
@@ -296,7 +352,7 @@ jobs:
           fi
 
   typecheck:
-    needs: [changes, setup]
+    needs: [changes]
     if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -309,10 +365,6 @@ jobs:
           cache: true
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Download built packages
-        uses: actions/download-artifact@v4
-        with:
-          name: built-packages
       # `vp run typecheck` walks the dependsOn graph defined in root
       # vite.config.ts and uses vp's task cache — unchanged packages skip via
       # cache hits, so this is fast on small PRs even though it expresses the
@@ -340,11 +392,16 @@ jobs:
           POSTGRES_DB: postgres
         ports:
           - 5432:5432
+        # Docker runs its FIRST health probe only after --health-interval
+        # elapses, so a coarse interval is pure idle: Postgres logs "ready to
+        # accept connections" within ~0.1s of container start. Finer grid, same
+        # total tolerance (5s x 10 = 50s -> 2s x 25 = 50s). Do not shorten the
+        # window itself — that trades latency for flakiness on a slow start.
         options: >-
           --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
+          --health-interval 2s
           --health-timeout 5s
-          --health-retries 10
+          --health-retries 25
     steps:
       - uses: actions/checkout@v6
         with:
@@ -371,7 +428,7 @@ jobs:
         run: vp run test:db:migration-journal
 
   codegen-drift:
-    needs: [changes, setup]
+    needs: [changes]
     # codegen.ts pulls GraphQL documents from packages/web/app/**/*.{ts,tsx}
     # in addition to the schema + shared/graphql, so a web-only PR that edits
     # a gql tag can drift the generated client. Include `web` in the gate.
@@ -387,10 +444,6 @@ jobs:
           cache: true
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Download built packages
-        uses: actions/download-artifact@v4
-        with:
-          name: built-packages
       - name: Regenerate GraphQL types
         run: vp run codegen
       - name: Verify committed output matches
@@ -404,7 +457,7 @@ jobs:
           fi
 
   i18n:
-    needs: [changes, setup]
+    needs: [changes]
     if: needs.changes.outputs.web == 'true' || needs.changes.outputs.i18nCatalogs == 'true' || needs.changes.outputs.rootCi == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -417,10 +470,6 @@ jobs:
           cache: true
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Download built packages
-        uses: actions/download-artifact@v4
-        with:
-          name: built-packages
       - name: Check hardcoded user-facing strings
         run: vp run check:i18n
       - name: Check orphaned i18n keys
@@ -477,12 +526,23 @@ jobs:
         run: vp test run --project scripts scripts/store-metadata-limits.test.ts scripts/mobile-locales-parity.test.ts
 
   test-default:
-    needs: [changes, setup]
+    needs: [changes]
     # i18nCatalogs: a catalog-only PR (pure JSON) must still run the
     # catalog-completeness parity test, which lives in this job.
     if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.i18nCatalogs == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      # Same idiom as test-backend below. fail-fast stays false so a failure in
+      # one shard still reports the other's failures — a cancelled sibling costs
+      # a round trip (and `cancelled` is neither success nor skipped, so
+      # ci-status still fails either way).
+      fail-fast: false
+      # 3 shards on main (the whole ~1380-spec run, job mean 558s), 2 on PRs
+      # (where `--changed` already trims the spec set and a third runner is
+      # mostly harness overhead).
+      matrix:
+        include: ${{ fromJSON(github.event_name != 'pull_request' && '[{"shard":1,"total":3},{"shard":2,"total":3},{"shard":3,"total":3}]' || '[{"shard":1,"total":2},{"shard":2,"total":2}]') }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -499,10 +559,6 @@ jobs:
           cache: true
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Download built packages
-        uses: actions/download-artifact@v4
-        with:
-          name: built-packages
       # Run every project EXCEPT the two with dedicated infra-bearing jobs
       # (`backend`: postgres+redis; `moonboard-ocr`: canvas libs) as an explicit
       # POSITIVE `--project` list. Negation (`--project '!backend'`) does NOT
@@ -513,7 +569,14 @@ jobs:
       # project absent from a positive list is never loaded. The list is derived
       # from root vite.config.ts's `test.projects` (see the script) so new
       # packages are picked up automatically and can't be silently skipped.
-      - name: Run tests
+      #
+      # No `passWithNoTests` flag anywhere, deliberately: on a PR `--changed` is
+      # set, which already implies it inside Vitest and also suppresses Vitest's
+      # `shard.count > specs.length` throw, so a one-file diff can't red the
+      # build; on push the run selects ~1380 specs, far above 3. Passing the
+      # flag would instead turn "this shard collected nothing" into a silent
+      # green.
+      - name: Run tests (shard ${{ matrix.shard }}/${{ matrix.total }})
         env:
           BASE_REF: ${{ github.base_ref }}
           EVENT_NAME: ${{ github.event_name }}
@@ -526,23 +589,29 @@ jobs:
           echo "test-default projects: $PROJECTS"
           if [ "$EVENT_NAME" = "pull_request" ]; then
             vp test run --changed "origin/$BASE_REF" $PROJECTS \
+              --shard=${{ matrix.shard }}/${{ matrix.total }} \
               --reporter=verbose --reporter=github-actions \
-              --reporter=junit --outputFile.junit=./test-results/junit-default.xml
+              --reporter=junit --outputFile.junit=./test-results/junit-default-${{ matrix.shard }}.xml
           else
             vp test run $PROJECTS \
+              --shard=${{ matrix.shard }}/${{ matrix.total }} \
               --reporter=verbose --reporter=github-actions \
-              --reporter=junit --outputFile.junit=./test-results/junit-default.xml
+              --reporter=junit --outputFile.junit=./test-results/junit-default-${{ matrix.shard }}.xml
           fi
+      # Shard-scoped artifact name AND file name: test-report downloads
+      # `test-results-*` with merge-multiple, which flattens every artifact into
+      # one directory — same-named files would clobber each other and the report
+      # would silently lose a shard's worth of results.
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-results-default
-          path: test-results/junit-default.xml
+          name: test-results-default-${{ matrix.shard }}
+          path: test-results/junit-default-${{ matrix.shard }}.xml
           retention-days: 7
 
   test-backend:
-    needs: [changes, setup]
+    needs: [changes]
     # Gated on `sharedDeps` (packages/shared/**) as well as `backend`: the backend
     # test project drives the queue-client integration suite against the real
     # @boardsesh/queue* packages, so a change to those must run it. See the
@@ -567,20 +636,25 @@ jobs:
           POSTGRES_DB: boardsesh_backend_test
         ports:
           - 5433:5432
+        # Finer probe grid, identical tolerance window (10s x 5 = 50s ->
+        # 2s x 25 = 50s). Docker's first probe fires only after one interval
+        # elapses, so the coarse grid was ~13s of idle in `Initialize
+        # containers` while the server was already accepting connections.
         options: >-
           --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
+          --health-interval 2s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 25
       redis:
         image: redis:7-alpine
         ports:
           - 6380:6379
+        # Same rescale: 10s x 5 = 50s -> 2s x 25 = 50s.
         options: >-
           --health-cmd "redis-cli ping"
-          --health-interval 10s
+          --health-interval 2s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 25
     steps:
       - uses: actions/checkout@v6
         with:
@@ -612,10 +686,6 @@ jobs:
           cache: true
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Download built packages
-        uses: actions/download-artifact@v4
-        with:
-          name: built-packages
       - name: Run backend tests (shard ${{ matrix.shard }}/${{ matrix.total }})
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5433/boardsesh_backend_test
@@ -644,7 +714,7 @@ jobs:
           retention-days: 7
 
   test-ocr:
-    needs: [changes, setup]
+    needs: [changes]
     # Include sharedDeps so OCR tests rerun when a shared package they
     # depend on changes (e.g. shared-schema, board-constants). Mirrors how
     # test-backend and mobile-bundle already gate on sharedDeps.
@@ -660,10 +730,16 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: git fetch --depth=50 origin "$BASE_REF":"refs/remotes/origin/$BASE_REF"
-      - name: Install canvas system libs
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
+      # No apt-get for canvas's build deps (~22s): canvas@3.2.3 installs through
+      # `prebuild-install -r napi`, and the napi prebuild vendors every graphics
+      # library inside the package — ldd on the installed canvas.node resolves
+      # libcairo, libpango, librsvg, libjpeg, libgif, libfreetype, libharfbuzz,
+      # libpixman and libfontconfig to its own build/Release via RUNPATH $ORIGIN;
+      # only libc/libm/libstdc++/libgcc come from the runner. The node-gyp
+      # compile fallback is never reached here. If a future bump ever loses the
+      # prebuild, parser.canvas.test.ts imports canvas at module scope with no
+      # skipIf guard, so this job fails loudly at import time rather than
+      # quietly dropping a spec file.
       - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
@@ -671,10 +747,6 @@ jobs:
           cache: true
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Download built packages
-        uses: actions/download-artifact@v4
-        with:
-          name: built-packages
       - name: Run OCR tests
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -699,7 +771,7 @@ jobs:
           retention-days: 7
 
   test-location-sync-integration:
-    needs: [changes, setup]
+    needs: [changes]
     if: needs.changes.outputs.locationSync == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.sharedSchema == 'true' || needs.changes.outputs.rootCi == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -715,11 +787,14 @@ jobs:
           POSTGRES_DB: main
         ports:
           - 5432:5432
+        # Finer probe grid, identical tolerance window (10s x 10 = 100s ->
+        # 2s x 50 = 100s). The window stays generous on purpose: this is the
+        # large pre-seeded dev-db image, which is the slowest container we boot.
         options: >-
           --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
+          --health-interval 2s
           --health-timeout 5s
-          --health-retries 10
+          --health-retries 50
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
@@ -729,10 +804,6 @@ jobs:
           cache: true
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Download built packages
-        uses: actions/download-artifact@v4
-        with:
-          name: built-packages
       - name: Apply the full migration journal
         env:
           DATABASE_URL: postgres://postgres:password@localhost:5432/main
@@ -756,7 +827,7 @@ jobs:
           retention-days: 7
 
   mobile-bundle:
-    needs: [changes, setup]
+    needs: [changes]
     if: needs.changes.outputs.mobile == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.rootCi == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -769,69 +840,86 @@ jobs:
           cache: true
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Check mobile board art stays bundled
-        run: vp run check:mobile-board-art-network
-      # Catches iOS bundle-phase dep-resolution breaks (e.g. a transitive-only
-      # @sentry/cli unresolvable from packages/mobile under Bun's isolated
-      # linker) here on Linux, instead of in the macOS TestFlight archive on
-      # push-to-main. Runs before the heavier Metro bundle so it fails fast.
-      - name: Check native build-phase deps resolve
-        run: vp run check:mobile-native-deps
-      # Every @expo/* and expo-* dep must be exact-pinned: they ship a JS+native
-      # pair, and a `~`/`^` range lets the JS float ahead of a shipped binary's
-      # native layer. With the OTA fingerprint pinned via an override, that
-      # drifted JS still lands on the old binary — the ModalBottomSheetView
-      # .partialExpand "No handler registered" crash from a `~56.0.18` @expo/ui.
-      - name: Check Expo deps are exact-pinned
-        run: vp run check:mobile-expo-deps-pinned
-      # Deterministic, read-only dep-health check: compares our declared pins
-      # against packages/mobile/node_modules/expo/bundledNativeModules.json for
-      # the SDK release we actually have installed, and flags installed-version
-      # drift from those pins (the caret-drift class behind the 2.0.0 launch
-      # crash). It never consults the network or Expo's remote versions API, so
-      # it only changes outcome when WE change something (bump expo, edit a
-      # pin, lockfile drift) — not when Expo ships an unrelated patch release.
-      # Intentional deviations live in expo.install.exclude. Cheap, so it runs
-      # before the heavier Metro bundle.
-      - name: Mobile dep-health check
-        run: vp run check:mobile-deps
-      # A Bun patch is keyed by an exact version, so an Expo/RN bump can silently
-      # drop it: install only warns, and typecheck + the Metro bundle stay green
-      # while a native-only behavior (e.g. the iOS 26 tab-bar minimize tracking
-      # the climbs FlashList) regresses all the way into TestFlight. Assert the
-      # patched source is actually present on this cheap Linux runner.
-      - name: Check native patches are applied
-        run: vp run check:mobile-patches
-      # The resolver can return a valid fingerprint even when a source is silently
-      # absent/null. Assert the four autolinking configs, every discovered native
-      # module dir, the fingerprint config, and root patch bodies all contribute.
-      - name: Check mobile fingerprint inputs are complete
-        run: vp run check:mobile-fingerprint-inputs
-      # Cheap source guard: no raw theme-variant magic-string compares regrew in
-      # mobile components (they must route through the variant primitives/tokens —
-      # see packages/mobile/src/theme/variants/README.md).
-      - name: Check mobile variant usage
-        run: vp run check:mobile-variants
-      # @expo/ui swift-ui / jetpack-compose imports must stay in their platform
-      # file (*.ios.tsx / *.android.tsx) — a misplaced one crashes the other
-      # platform at runtime. The .oxlintrc rule isn't enforced by `vp check`, so
-      # this grep guard is the real backstop. See docs/expo-ui-components.md.
-      - name: Check mobile @expo/ui platform imports
-        run: vp run check:mobile-platform-imports
-      # The offline-sync engine's drain/scheduler/pull entry points must be
-      # imported via src/offline/offline-sync-adapter (binds the connectivity
-      # probe + platform triggers). The .oxlintrc rule isn't enforced by
-      # `vp check`, so this grep guard is the real backstop.
-      - name: Check offline-sync adapter boundary
-        run: vp run check:mobile-offline-sync-imports
-      - name: Download built packages
-        uses: actions/download-artifact@v4
+      # The nine cheap `check:mobile-*` guards that used to sit here now run in
+      # the `lint` job, whose gate was widened to this job's union so none of
+      # them lost coverage. See the block above `Check mobile board art stays
+      # bundled` in `lint`.
+      #
+      # Metro's transform cache. @expo/metro-config hard-codes the store to
+      # os.tmpdir()/metro-cache, so TMPDIR is the only supported way to move it
+      # — hence a cache dir under runner.temp plus TMPDIR on the bundle step.
+      # It must NOT live inside the workspace: packages/mobile/metro.config.js
+      # sets watchFolders to the monorepo root, so an in-repo cache directory
+      # gets crawled by the file watcher. Measured on identical hardware with
+      # only TMPDIR differing: 178s cold vs 90s warm (649 vs 104 CPU-seconds),
+      # i.e. ~84% of the babel transform output is reusable, and each reused
+      # entry is still validated by Metro's own content hash.
+      #
+      # The key hashes what decides HOW a module is transformed, not the modules
+      # themselves — Metro content-hashes every source file on its own, so a
+      # source edit is a per-file miss, never a stale hit. metro.config.js pulls
+      # in the two sibling .cjs helpers, so they're keyed too. There is no
+      # project babel config today (babel-preset-expo comes in through
+      # @expo/metro-config); packages/mobile/babel.config.js stays in the list
+      # so the day someone adds one it is keyed from the first run instead of
+      # silently reusing transforms built under the old preset chain.
+      - name: Prepare the Metro transform cache directory
+        run: mkdir -p ${{ runner.temp }}/metro-native
+      - name: Restore Metro's native transform cache
+        uses: actions/cache/restore@v4
         with:
-          name: built-packages
+          path: ${{ runner.temp }}/metro-native
+          # Deliberately NO cross-lockfile restore-key: any dependency bump must
+          # fall back to a fully cold Metro rather than reuse transforms built
+          # against different sources.
+          key: metro-native-${{ runner.os }}-${{ hashFiles('bun.lock', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-${{ github.sha }}
+          restore-keys: |
+            metro-native-${{ runner.os }}-${{ hashFiles('bun.lock', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-
       - name: Metro bundle check
+        env:
+          TMPDIR: ${{ runner.temp }}/metro-native
         run: vp run check:mobile-bundle
+      - name: Save Metro's native transform cache
+        uses: actions/cache/save@v4
+        # Only main writes the cache. PRs restore from the default-branch
+        # lineage but never upload, so a PR can't poison the shared entry and
+        # PR runs don't spend ~10s uploading 62 MB each. mobile-bundle runs on
+        # every push to main, so the lineage stays fresh on its own.
+        if: github.ref == 'refs/heads/main'
+        with:
+          path: ${{ runner.temp }}/metro-native
+          key: metro-native-${{ runner.os }}-${{ hashFiles('bun.lock', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-${{ github.sha }}
+      # Same treatment for the Expo web export, in its own store so the two
+      # bundle checks can't invalidate each other's entries.
+      # BOARDSESH_EXPORT_KEEP_METRO_CACHE is honoured by
+      # scripts/build-expo-web-export.sh: without it the export passes --clear,
+      # which rm -rf's all 256 shards of the store (and would delete whatever we
+      # just restored). scripts/mobile-web-bundle-check.sh already sets it on
+      # its own call, so this is belt-and-braces: it keeps the reason the cache
+      # steps exist next to the cache steps. Those two are the ONLY places it
+      # may be set — Dockerfile.web and production-deploy.yml must keep --clear
+      # plus their BOARDSESH_EXPORT_EXPECT_URLS assertion, because they bake
+      # EXPO_PUBLIC_* values into a bundle somebody serves.
+      - name: Prepare the Expo web Metro cache directory
+        run: mkdir -p ${{ runner.temp }}/metro-web
+      - name: Restore Metro's Expo-web transform cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/metro-web
+          key: metro-web-${{ runner.os }}-${{ hashFiles('bun.lock', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-${{ github.sha }}
+          restore-keys: |
+            metro-web-${{ runner.os }}-${{ hashFiles('bun.lock', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-
       - name: Expo web bundle check
+        env:
+          TMPDIR: ${{ runner.temp }}/metro-web
+          BOARDSESH_EXPORT_KEEP_METRO_CACHE: '1'
         run: vp run check:mobile-web-bundle
+      - name: Save Metro's Expo-web transform cache
+        uses: actions/cache/save@v4
+        if: github.ref == 'refs/heads/main'
+        with:
+          path: ${{ runner.temp }}/metro-web
+          key: metro-web-${{ runner.os }}-${{ hashFiles('bun.lock', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-${{ github.sha }}
 
   commit-lint:
     needs: [changes]
@@ -973,7 +1061,6 @@ jobs:
   ci-status:
     needs:
       - changes
-      - setup
       - lint
       - typecheck
       - db-migrations

@@ -608,13 +608,40 @@ export default defineConfig({
         command: 'bun run --filter=@boardsesh/sync-runtime typecheck',
         dependsOn: ['build:sync-runtime'],
       },
+      // The eight `build:*` entries in this list stand in for the `typecheck:*`
+      // tasks of the same packages (shared-schema, db, backend, aurora-sync,
+      // kilter-sync, location-sync, moonboard-sync, sync-runtime). Each of them
+      // runs plain `tsc` for `build` and `tsc --noEmit` for `typecheck` against
+      // the SAME tsconfig.json — same `include: ["src/**/*"]`, which covers
+      // their test files too — and every `typecheck:X` already dependsOn
+      // `build:X`. Listing both compiled each package twice back to back: 51
+      // CPU-seconds of literal duplicate work per CI run, with
+      // `typecheck:backend` the task that ended the non-web half of the job.
+      // No coverage is lost: emit-mode `tsc` reports a superset of `--noEmit`
+      // diagnostics over the same files (it adds declaration-emit errors).
+      //
+      // THE INVARIANT THIS BUYS INTO, which is invisible from this file: it
+      // holds only while those eight packages' `build` script stays plain `tsc`
+      // over the same tsconfig their `typecheck` script uses. The day one of
+      // them gains a `tsconfig.build.json` that excludes tests, or switches
+      // `build` to a bundler (tsup/esbuild/`bun build`), this aggregate
+      // silently stops type-checking it — nothing goes red, coverage just
+      // evaporates. Put that package's `typecheck:X` back in this list in the
+      // same commit. The `typecheck:X` task definitions above are deliberately
+      // kept so `vp run typecheck:backend` still works on its own locally.
+      //
+      // All eight `build:*` are named here even though build:aurora,
+      // build:kilter, build:location-sync and build:sync-runtime arrive
+      // transitively via build:backend today, and build:shared/build:db via
+      // build:web: spelling them out means an unrelated edit to someone else's
+      // dependsOn cannot quietly drop one of them out of the typecheck graph.
       typecheck: {
         command: 'true',
         dependsOn: [
           'typecheck:scripts',
-          'typecheck:shared',
-          'typecheck:db',
-          'typecheck:backend',
+          'build:shared',
+          'build:db',
+          'build:backend',
           'typecheck:web',
           'typecheck:ble-protocol',
           'typecheck:queue',
@@ -644,11 +671,11 @@ export default defineConfig({
           'typecheck:graphql',
           'typecheck:graphql-client',
           'typecheck:mobile',
-          'typecheck:kilter',
-          'typecheck:aurora',
-          'typecheck:location-sync',
-          'typecheck:moonboard-sync',
-          'typecheck:sync-runtime',
+          'build:kilter',
+          'build:aurora',
+          'build:location-sync',
+          'build:moonboard-sync',
+          'build:sync-runtime',
         ],
       },
       // Footgun-proof scoped test runs. `vp test --project <name> run` (the
