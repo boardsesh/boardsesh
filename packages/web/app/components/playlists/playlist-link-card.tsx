@@ -25,7 +25,6 @@ export type PlaylistLinkCardProps = {
   icon?: string;
   href: string;
   index?: number;
-  isLikedClimbs?: boolean;
   fetchPriority?: 'high' | 'low' | 'auto';
 };
 
@@ -38,7 +37,6 @@ function PlaylistLinkCard({
   icon,
   href,
   index = 0,
-  isLikedClimbs,
   fetchPriority,
 }: PlaylistLinkCardProps) {
   const { t } = useTranslation('playlists');
@@ -54,7 +52,6 @@ function PlaylistLinkCard({
           layoutId={layoutId}
           color={color}
           icon={icon}
-          isLikedClimbs={isLikedClimbs}
           index={index}
           className={previewStyles.previewCompact}
           fetchPriority={fetchPriority}

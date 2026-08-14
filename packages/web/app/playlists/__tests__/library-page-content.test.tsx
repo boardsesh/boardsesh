@@ -5,6 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { createTestQueryClient } from '@/app/test-utils/test-providers';
 import { PlaylistsAdapterTestProvider } from '@/app/test-utils/playlists-adapter-wrapper';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import { APP_URL } from '@/app/lib/app-origin';
 import LibraryPageContent from '../library-page-content';
 import type { Playlist, DiscoverablePlaylist } from '@boardsesh/graphql/operations/playlists';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -69,10 +70,11 @@ vi.mock('@/app/hooks/use-my-boards', () => ({
 // can be exercised without standing up the whole GraphQL hook.
 const mockLoadMorePlaylists = vi.fn();
 let mockPlaylistsHasMore = false;
+let mockPlaylistsLoading = false;
 vi.mock('@/app/hooks/use-user-playlists', () => ({
   useUserPlaylists: ({ initialData }: { initialData?: Playlist[] }) => ({
     playlists: initialData ?? [],
-    isLoading: false,
+    isLoading: mockPlaylistsLoading,
     isLoadingMore: false,
     hasMore: mockPlaylistsHasMore,
     hasError: false,
@@ -85,10 +87,12 @@ vi.mock('@/app/hooks/use-pinned-playlists', () => ({
   usePinnedPlaylists: () => ({ pinned: [], isLoading: false }),
 }));
 
+let mockDiscoverLoading = false;
 vi.mock('@/app/hooks/use-discover-playlists', () => ({
   useDiscoverPlaylists: ({ initialData }: { initialData?: { popular: DiscoverablePlaylist[] } }) => ({
     popular: initialData?.popular ?? [],
     recent: [],
+    isLoading: mockDiscoverLoading,
     isLoadingMore: false,
     hasMore: false,
     loadMore: vi.fn(),
@@ -145,6 +149,8 @@ const NO_DISCOVER = { popular: [], recent: [], popularHasMore: false, recentHasM
 beforeEach(() => {
   vi.clearAllMocks();
   mockPlaylistsHasMore = false;
+  mockPlaylistsLoading = false;
+  mockDiscoverLoading = false;
   mockSession.data = { user: { id: 'user-1' } };
   mockSession.status = 'authenticated';
 });
@@ -192,8 +198,14 @@ describe('LibraryPageContent read-only directory', () => {
       />,
     );
 
-    const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
-    expect(hrefs).toEqual(['/playlists/pub-1']);
+    // The empty-owned-playlists state also renders here — its app-handoff CTA
+    // is covered by 'gives the empty state an app-handoff CTA, not a dead
+    // end'. Filter down to the playlist-detail anchors this test is about.
+    const playlistHrefs = screen
+      .getAllByRole('link')
+      .map((link) => link.getAttribute('href'))
+      .filter((href): href is string => href !== null && href.startsWith('/playlists/'));
+    expect(playlistHrefs).toEqual(['/playlists/pub-1']);
   });
 
   it('shows "Show more" only when another page exists, and calls loadMore', () => {
@@ -232,6 +244,63 @@ describe('LibraryPageContent read-only directory', () => {
     );
 
     expect(screen.getByText(tFromCatalog('playlists', 'library.empty.title'))).toBeTruthy();
+  });
+
+  it('gives the empty state an app-handoff CTA, not a dead end', () => {
+    render(
+      <LibraryPageContent
+        initialMyBoards={[]}
+        initialPlaylists={{ playlists: [], totalCount: 0, hasMore: false }}
+        initialDiscoverPlaylists={NO_DISCOVER}
+      />,
+    );
+
+    // Nothing else on the empty state is a link, so this is the CTA.
+    const cta = screen.getByRole('link');
+    expect(cta.getAttribute('href')).toBe(`${APP_URL}/discover`);
+    expect(cta.textContent).toContain(tFromCatalog('playlists', 'library.empty.cta'));
+  });
+
+  it('shows a Jump Back In loading placeholder while nothing has arrived yet', () => {
+    mockPlaylistsLoading = true;
+    render(<LibraryPageContent initialMyBoards={[]} initialPlaylists={null} initialDiscoverPlaylists={NO_DISCOVER} />);
+
+    expect(screen.getByText(tFromCatalog('playlists', 'library.sections.jumpBackIn'))).toBeTruthy();
+    // The heading alone would still render if the placeholder went missing, so
+    // count the placeholder cards themselves.
+    expect(screen.getAllByTestId('playlist-card-skeleton')).toHaveLength(4);
+    // No real cards (anchors) have loaded yet — only skeleton placeholders.
+    expect(screen.queryAllByRole('link')).toHaveLength(0);
+  });
+
+  it('replaces the Jump Back In skeleton once playlists have loaded', () => {
+    mockPlaylistsLoading = false;
+    render(
+      <LibraryPageContent
+        initialMyBoards={[]}
+        initialPlaylists={{ playlists: [makePlaylist('aaa')], totalCount: 1, hasMore: false }}
+        initialDiscoverPlaylists={NO_DISCOVER}
+      />,
+    );
+
+    expect(screen.getByRole('link').getAttribute('href')).toBe('/playlists/aaa');
+    expect(screen.queryAllByTestId('playlist-card-skeleton')).toHaveLength(0);
+  });
+
+  it('shows a Discover loading placeholder while nothing has arrived yet', () => {
+    mockDiscoverLoading = true;
+    render(
+      <LibraryPageContent
+        initialMyBoards={[]}
+        initialPlaylists={{ playlists: [makePlaylist('aaa')], totalCount: 1, hasMore: false }}
+        initialDiscoverPlaylists={null}
+      />,
+    );
+
+    expect(screen.getByText(tFromCatalog('playlists', 'library.sections.discover'))).toBeTruthy();
+    // Jump Back In has already loaded, so every placeholder on the page belongs
+    // to Discover — one full set of four.
+    expect(screen.getAllByTestId('playlist-card-skeleton')).toHaveLength(4);
   });
 
   it('still offers the sign-in banner to signed-out visitors and opens the auth modal', async () => {

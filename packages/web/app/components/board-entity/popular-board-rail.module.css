@@ -1,3 +1,8 @@
+/* Matches the inset the homepage's other section labels use (the "Recent
+   beta" and "Get started" headers in home-page-content.tsx / home-recent-
+   beta-section.tsx both set `px: 0.5`, i.e. --spacing-1 on both sides) so all
+   three line up under the same left edge instead of drifting by a stray
+   magic number. */
 .title {
   color: var(--neutral-400);
   text-transform: uppercase;
@@ -5,19 +10,40 @@
   font-size: var(--font-size-xs);
   font-weight: 600;
   margin-bottom: var(--spacing-2);
-  padding-left: 2px;
+  padding: 0 var(--spacing-1);
 }
 
 /* An intentional grid, not a scroll rail: everything is on screen and in the
-   server HTML, so there is nothing to scroll to reveal. */
+   server HTML, so there is nothing to scroll to reveal.
+
+   `auto-fill` keeps the column *count* responsive on its own. What needed
+   bounding is the card: with bare `minmax(120px, 1fr)` columns the same board
+   thumbnail measured 184px on a 412px phone (2 columns) and 124.7px at 430px
+   (3 columns) — the narrower screen drew the bigger tile.
+
+   Capping the *column* at `minmax(120px, 160px)` fixes the size but stops the
+   grid filling its container: every column is exactly 160px, so all the
+   leftover piles up past the last one (measured 144px of dead space at a
+   1024px viewport, 66px at 430px) and the rail stops short of the page gutter
+   its sibling homepage sections run to. So cap the *card* instead and leave
+   the columns on `1fr`: the grid still fills the container, and slack only
+   shows up where a card has hit its 160px ceiling.
+
+   Measured in Chromium at 375/390/412/430/768/1024/1280/1440 (homepage box
+   model, main px: 2): card 124.7-160px, and at most 12px of slack per edge —
+   against 124.7-184px unbounded, or 144px dead at one edge when the column is
+   what's capped. */
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: var(--spacing-3);
+  justify-items: center;
 }
 
 .card {
   display: block;
+  width: 100%;
+  max-width: 160px;
   color: inherit;
   text-decoration: none;
 }

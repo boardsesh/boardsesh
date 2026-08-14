@@ -88,7 +88,8 @@
     "empty": {
       "title": "No playlists yet",
       "description": "Save your projects and go-to sends into a playlist so they're easy to find.",
-      "createCta": "Create playlist"
+      "createCta": "Create playlist",
+      "cta": "Build a playlist in the app"
     },
     "createFab": {
       "ariaLabel": "Create playlist"

@@ -48,6 +48,21 @@
   padding-right: var(--spacing-2);
 }
 
+/* Loading placeholder for the same compact card — the card's box minus every
+   pointer affordance, so a placeholder never highlights on hover or offers a
+   click target. Same source as the card above: library.module.css's
+   `.skeletonCompact`. Geometry is deliberately identical to `.cardCompact`
+   (48px square, same info column) so swapping in the real card shifts
+   nothing. */
+.skeletonCompact {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background-color: var(--semantic-surface);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
 .cardCompactName {
   font-size: 13px;
   font-weight: 500;

@@ -88,7 +88,8 @@
     "empty": {
       "title": "Aún no tienes playlists",
       "description": "Guarda tus proyectos y tus bloques favoritos en una playlist para tenerlos a mano.",
-      "createCta": "Crear playlist"
+      "createCta": "Crear playlist",
+      "cta": "Crear playlist en la app"
     },
     "createFab": {
       "ariaLabel": "Crear playlist"

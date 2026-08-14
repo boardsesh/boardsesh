@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import MuiButton from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
-import { LabelOutlined, LoginOutlined, SentimentDissatisfiedOutlined } from '@mui/icons-material';
+import { AddOutlined, LabelOutlined, LoginOutlined, SentimentDissatisfiedOutlined } from '@mui/icons-material';
 import { useSession } from 'next-auth/react';
 import { useTranslation } from 'react-i18next';
 import { type Playlist, type DiscoverablePlaylist } from '@boardsesh/graphql/operations/playlists';
@@ -14,9 +14,11 @@ import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { useMyBoards } from '@/app/hooks/use-my-boards';
 import { findMatchingBoard } from '@/app/lib/find-matching-board';
 import { deriveIsAuthenticated } from '@/app/lib/derive-auth-status';
+import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import PlaylistLinkCard from '@/app/components/playlists/playlist-link-card';
+import PlaylistCardSkeleton from '@/app/components/playlists/playlist-card-skeleton';
 import styles from '@/app/components/ui/page-container.module.css';
 
 type LibraryPageContentProps = {
@@ -136,6 +138,7 @@ export default function LibraryPageContent({
   const {
     popular: popularPlaylists,
     recent: recentPlaylists,
+    isLoading: discoverLoading,
     isLoadingMore: discoverLoadingMore,
     hasMore: discoverHasMore,
     loadMore: loadMoreDiscover,
@@ -250,7 +253,35 @@ export default function LibraryPageContent({
           <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 300, mb: 2 }}>
             {t('library.empty.description')}
           </Typography>
+          {/* Building a playlist lives in the app now — this surface reads,
+              it does not write (see the module doc comment above). A plain
+              cross-origin anchor, never a redirect: www and app share the
+              `.boardsesh.com` session cookie, so there is no token to hand
+              over (same contract as the "Climb this in the app" CTA on
+              playlist-detail-content.tsx). */}
+          <MuiButton
+            variant="contained"
+            component="a"
+            href={buildAppHandoffUrl('/discover')}
+            startIcon={<AddOutlined />}
+          >
+            {t('library.empty.cta')}
+          </MuiButton>
         </div>
+      )}
+
+      {/* Jump Back In skeleton — reserves the section's space while playlists
+          are still loading and nothing has arrived yet, so the grid doesn't
+          pop in without warning (mirrors the pre-W-13 PlaylistScrollSection
+          loading state). Once anything has landed the real cards below take
+          over instead. */}
+      {isAuthenticated && isLoading && jumpBackInPlaylists.length === 0 && (
+        <>
+          <div className={styles.sectionTitle}>{t('library.sections.jumpBackIn')}</div>
+          <div className={styles.cardGrid}>
+            <PlaylistCardSkeleton />
+          </div>
+        </>
       )}
 
       {/* Jump Back In — pinned playlists lead, the rest of the user's own
@@ -280,6 +311,17 @@ export default function LibraryPageContent({
               {t('library.showMore')}
             </MuiButton>
           )}
+        </>
+      )}
+
+      {/* Discover skeleton — same reserved-space treatment as Jump Back In,
+          shown regardless of auth since Discover is public. */}
+      {discoverLoading && discoverItems.length === 0 && (
+        <>
+          <div className={styles.sectionTitle}>{t('library.sections.discover')}</div>
+          <div className={styles.cardGrid}>
+            <PlaylistCardSkeleton />
+          </div>
         </>
       )}
 
