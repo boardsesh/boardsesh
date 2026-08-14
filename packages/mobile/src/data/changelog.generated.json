@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-14T05:00:52.258Z",
+  "generatedAt": "2026-08-14T05:22:00.809Z",
   "entries": [
+    {
+      "prNumber": 4404,
+      "category": "fixed",
+      "title": "Clearing one board out of storage no longer stops your other boards downloading — remove a wall you're done with and the rest keep coming down.",
+      "mergedAt": "2026-08-14T05:20:32Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4404"
+    },
     {
       "prNumber": 4402,
       "category": "fixed",
