@@ -83,6 +83,17 @@ describe('StaticClimbRow climb-view href', () => {
     );
   });
 
+  it('renders no anchor at all when the climb has no resolvable URL', () => {
+    // A session tick the catalog lookup missed carries no name, no layout and
+    // no frames, so every part of a climb URL for it would be invented. The
+    // row still shows what the tick knows, minus the link.
+    render(
+      <StaticClimbRow climb={makeClimb()} boardDetails={makeBoardDetails(10)} pathname="/session/session-1" unlinked />,
+    );
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(screen.getByTestId('climb-thumbnail')).toBeTruthy();
+  });
+
   it('renders exactly one interactive element, so the anchor stays valid and keyboard-navigable', () => {
     render(<StaticClimbRow climb={makeClimb()} boardDetails={makeBoardDetails(10)} pathname="/playlists/some-uuid" />);
     expect(screen.getAllByRole('link')).toHaveLength(1);

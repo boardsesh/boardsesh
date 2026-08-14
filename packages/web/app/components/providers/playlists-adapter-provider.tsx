@@ -23,11 +23,16 @@ import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
  *    `RECENT_PLAYLISTS_CHANGED_EVENT` window event) for the pinned-playlists
  *    fallback.
  *
- * Mounted once at the app root so every playlist surface (/playlists,
- * /discover/*, /playlists/[uuid]) shares the same wiring. The standalone web
- * wrapper hooks still pass explicit `executeGraphQL`/`recents` overrides so
- * their unit tests can run without this provider; this provider is what keeps
- * the package's unconditional `usePlaylistsAdapter()` call satisfied in the app.
+ * Mounted once at the app root so every playlist surface shares the same
+ * wiring: /playlists, /playlists/[uuid], and the queue-control paths that
+ * activate a playlist. Nothing under /discover reads it any more. The
+ * smart-playlist route it used to serve is gone (W-13a) and only
+ * `app/discover/layout.tsx` is left standing there.
+ *
+ * The standalone web wrapper hooks still pass explicit
+ * `executeGraphQL`/`recents` overrides so their unit tests can run without this
+ * provider; this provider is what keeps the package's unconditional
+ * `usePlaylistsAdapter()` call satisfied in the app.
  */
 export default function PlaylistsAdapterProvider({ children }: { children: React.ReactNode }) {
   const { token } = useWsAuthToken();

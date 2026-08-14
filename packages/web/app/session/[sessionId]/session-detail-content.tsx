@@ -25,6 +25,7 @@ import { VoteSummaryProvider } from '@/app/components/social/vote-summary-contex
 import StaticClimbList from '@/app/components/climb-list/static-climb-list';
 import { useMyBoards } from '@/app/hooks/use-my-boards';
 import { useBoardDetailsMap } from '@/app/hooks/use-board-details-map';
+import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 
 import { useSessionDetail } from '@/app/hooks/use-session-detail';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -116,18 +117,31 @@ function formatAttemptText(tick: SessionDetailTick, t: TFunc): string | null {
   return parts.join(', ');
 }
 
+type SessionClimbRows = {
+  /** Deduplicated climbs, in the order they were first ticked. */
+  climbs: Climb[];
+  /**
+   * Climbs the catalog lookup missed — the tick arrives with no name, no
+   * layout and no frames, so both the board and the name slug in a climb URL
+   * would be invented. Their rows render without a link.
+   */
+  unknownClimbUuids: Set<string>;
+};
+
 /**
  * Convert session ticks to deduplicated Climb objects for use with StaticClimbList.
  * Keeps the first occurrence of each climbUuid.
  */
-function convertSessionTicksToClimbs(ticks: SessionDetailTick[], unknownClimbLabel: string): Climb[] {
+function convertSessionTicksToClimbs(ticks: SessionDetailTick[], unknownClimbLabel: string): SessionClimbRows {
   const seen = new Map<string, Climb>();
   const order: string[] = [];
+  const unknownClimbUuids = new Set<string>();
 
   for (const tick of ticks) {
     if (seen.has(tick.climbUuid)) continue;
 
     order.push(tick.climbUuid);
+    if (!tick.climbName) unknownClimbUuids.add(tick.climbUuid);
 
     seen.set(tick.climbUuid, {
       uuid: tick.climbUuid,
@@ -149,7 +163,38 @@ function convertSessionTicksToClimbs(ticks: SessionDetailTick[], unknownClimbLab
     });
   }
 
-  return order.map((uuid) => seen.get(uuid)!);
+  return { climbs: order.map((uuid) => seen.get(uuid)!), unknownClimbUuids };
+}
+
+/**
+ * BoardDetails per climb, built from the board each tick was logged against.
+ * The backend resolves that per tick (`renderBoard` — "each tick is drawn on
+ * ITS climber's board, not the session owner's", session-feed.ts), so a sesh
+ * two climbers logged on different walls links each row to the wall it was
+ * climbed on instead of the layout's largest size. Ticks the backend couldn't
+ * resolve a board for are left out and keep the layout default.
+ */
+function buildLoggedBoardDetails(ticks: SessionDetailTick[]): Record<string, BoardDetails> {
+  const byClimb: Record<string, BoardDetails> = {};
+
+  for (const tick of ticks) {
+    const loggedBoard = tick.renderBoard;
+    if (!loggedBoard || byClimb[tick.climbUuid]) continue;
+
+    try {
+      byClimb[tick.climbUuid] = getBoardDetailsForBoard({
+        board_name: tick.boardType,
+        layout_id: loggedBoard.layoutId,
+        size_id: loggedBoard.sizeId,
+        set_ids: loggedBoard.setIds,
+      });
+    } catch {
+      // The static board tables don't carry this configuration — the layout
+      // default from useBoardDetailsMap stands in.
+    }
+  }
+
+  return byClimb;
 }
 
 /**
@@ -329,7 +374,7 @@ export default function SessionDetailContent({
 
   // Convert ticks to Climb objects for StaticClimbList
   const unknownClimbLabel = t('detail.unknownClimb');
-  const sessionClimbs = useMemo(
+  const { climbs: sessionClimbs, unknownClimbUuids } = useMemo(
     () => convertSessionTicksToClimbs(ticks, unknownClimbLabel),
     [ticks, unknownClimbLabel],
   );
@@ -342,12 +387,20 @@ export default function SessionDetailContent({
 
   // Build per-climb BoardDetails for multi-board support. StaticClimbList has
   // no equivalent for the unsupported/upsized hints, so those are left unread.
-  const { boardDetailsByClimb, defaultBoardDetails } = useBoardDetailsMap(
+  // This pass only knows the climb's board type and layout, so it lands on the
+  // layout's largest size with every set — a guess the logged board below
+  // overrides wherever the backend resolved one.
+  const { boardDetailsByClimb: layoutDefaultBoardDetails, defaultBoardDetails } = useBoardDetailsMap(
     sessionClimbs,
     myBoards,
     null,
     null,
     boardTypes,
+  );
+  const loggedBoardDetails = useMemo(() => buildLoggedBoardDetails(ticks), [ticks]);
+  const boardDetailsByClimb = useMemo(
+    () => ({ ...layoutDefaultBoardDetails, ...loggedBoardDetails }),
+    [layoutDefaultBoardDetails, loggedBoardDetails],
   );
   const effectiveBoardDetails = defaultBoardDetails ?? fallbackBoardDetails;
 
@@ -472,6 +525,7 @@ export default function SessionDetailContent({
             <StaticClimbList
               boardDetails={effectiveBoardDetails}
               boardDetailsByClimb={boardDetailsByClimb}
+              unlinkedClimbUuids={unknownClimbUuids}
               climbs={sessionClimbs}
               isFetching={false}
               hasMore={false}
@@ -677,6 +731,7 @@ export default function SessionDetailContent({
           <StaticClimbList
             boardDetails={effectiveBoardDetails}
             boardDetailsByClimb={boardDetailsByClimb}
+            unlinkedClimbUuids={unknownClimbUuids}
             climbs={sessionClimbs}
             isFetching={false}
             hasMore={false}

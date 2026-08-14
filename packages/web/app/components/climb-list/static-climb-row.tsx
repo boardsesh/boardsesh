@@ -30,6 +30,13 @@ import type { BoardDetails, Climb } from '@/app/lib/types';
 export type StaticClimbRowProps = {
   climb: Climb;
   boardDetails: BoardDetails;
+  /**
+   * Renders the row without its anchor, for a climb with no resolvable
+   * canonical URL — a session tick the catalog lookup missed has no name,
+   * layout or frames, so both the board and the slug in a link would be
+   * invented. A plain row beats a link to a climb that doesn't resolve.
+   */
+  unlinked?: boolean;
   /** Current pathname, forwarded to ClimbThumbnail (it takes it as a prop rather than calling usePathname per row). */
   pathname: string;
   /** Viewer's ticks for the ascent badge. Absent on anonymous/crawler renders. */
@@ -48,6 +55,10 @@ const rowLinkSx = {
   textDecoration: 'none',
   '&:hover': { backgroundColor: 'var(--semantic-selected-light)' },
 } as const;
+
+// Same geometry as the linked row, minus the hover affordance: nothing happens
+// when this one is clicked.
+const unlinkedRowSx = { display: 'block', color: 'inherit' } as const;
 
 const rowSx = {
   display: 'flex',
@@ -68,15 +79,58 @@ const centerSx = { flex: 1, minWidth: 0 } as const;
 const StaticClimbRow = ({
   climb,
   boardDetails,
+  unlinked,
   pathname,
   logbook,
   preferImageLayers,
   fetchPriority,
 }: StaticClimbRowProps) => {
   const href = useMemo(
-    () => buildCanonicalClimbViewUrl(boardDetails, climb.angle, climb.uuid, climb.name),
-    [boardDetails, climb.angle, climb.uuid, climb.name],
+    () => (unlinked ? null : buildCanonicalClimbViewUrl(boardDetails, climb.angle, climb.uuid, climb.name)),
+    [unlinked, boardDetails, climb.angle, climb.uuid, climb.name],
   );
+
+  const rowBody = (
+    <Box sx={rowSx}>
+      <Box sx={thumbnailSx} data-testid="climb-thumbnail">
+        <ClimbThumbnail
+          boardDetails={boardDetails}
+          currentClimb={climb}
+          pathname={pathname}
+          preferImageLayers={preferImageLayers}
+          fetchPriority={fetchPriority}
+        />
+        <AscentStatus
+          climbUuid={climb.uuid}
+          angle={climb.angle}
+          logbook={logbook}
+          boardName={boardDetails.board_name}
+          fontSize={12}
+          className={ascentStyles.badge}
+          mirroredClassName={ascentStyles.badgeMirrored}
+        />
+      </Box>
+      <Box sx={centerSx}>
+        {/* showGradeWhileLoading is load-bearing for the crawl: the reader's
+            grade format resolves from IndexedDB inside an effect, so without
+            it the server HTML carries a Skeleton where the grade belongs. */}
+        <ClimbTitle
+          climb={climb}
+          gradePosition="right"
+          showSetterInfo
+          showGradeWhileLoading
+          titleFontSize={themeTokens.typography.fontSize.xl}
+          isNoMatch={!!climb.is_no_match}
+        />
+      </Box>
+    </Box>
+  );
+
+  // Null href means `unlinked` — checking it here rather than the flag is what
+  // narrows `href` to a string for the anchor below.
+  if (href === null) {
+    return <Box sx={unlinkedRowSx}>{rowBody}</Box>;
+  }
 
   return (
     // prefetch={false} is load-bearing: ~18 rows are in the virtualizer's
@@ -84,39 +138,7 @@ const StaticClimbRow = ({
     // prefetch for every one of them on a page that already carries its own
     // data fetch.
     <MuiLink component={LocaleLink} href={href} prefetch={false} underline="none" color="inherit" sx={rowLinkSx}>
-      <Box sx={rowSx}>
-        <Box sx={thumbnailSx} data-testid="climb-thumbnail">
-          <ClimbThumbnail
-            boardDetails={boardDetails}
-            currentClimb={climb}
-            pathname={pathname}
-            preferImageLayers={preferImageLayers}
-            fetchPriority={fetchPriority}
-          />
-          <AscentStatus
-            climbUuid={climb.uuid}
-            angle={climb.angle}
-            logbook={logbook}
-            boardName={boardDetails.board_name}
-            fontSize={12}
-            className={ascentStyles.badge}
-            mirroredClassName={ascentStyles.badgeMirrored}
-          />
-        </Box>
-        <Box sx={centerSx}>
-          {/* showGradeWhileLoading is load-bearing for the crawl: the reader's
-              grade format resolves from IndexedDB inside an effect, so without
-              it the server HTML carries a Skeleton where the grade belongs. */}
-          <ClimbTitle
-            climb={climb}
-            gradePosition="right"
-            showSetterInfo
-            showGradeWhileLoading
-            titleFontSize={themeTokens.typography.fontSize.xl}
-            isNoMatch={!!climb.is_no_match}
-          />
-        </Box>
-      </Box>
+      {rowBody}
     </MuiLink>
   );
 };
