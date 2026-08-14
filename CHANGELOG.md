@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Climb lists are real links now — open a climb in a new tab, share it straight from the list, or land on it from a search. ([#4421](https://github.com/boardsesh/boardsesh/pull/4421))
 - We now measure how fast every board download actually runs, so we can chase the slow ones instead of guessing, and we check each downloaded board is complete before using it. ([#4405](https://github.com/boardsesh/boardsesh/pull/4405))
   Faster download paths for iPhone are behind a switch we'll turn on once we've timed them on real phones.
 - Set up any MoonBoard at more than the usual 25° and 40° — grade and log it there like any other angle, on web or in the app. *(Rolling out gradually — ask if you don't see it yet.)* ([#4419](https://github.com/boardsesh/boardsesh/pull/4419))
@@ -15,6 +16,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Log a send while your phone's storage is tied up — mid board download, or right after you clear a board out — and it no longer disappears. Boardsesh retries the save, queues it for the next sync if the storage is still busy, and if it truly can't stash it offline it tells you plainly, in your own language, instead of swallowing the send. ([#4402](https://github.com/boardsesh/boardsesh/pull/4402))
 - Feed thumbnails now open the board the send actually happened on. ([#4417](https://github.com/boardsesh/boardsesh/pull/4417))
 
 ## 2026-08-13

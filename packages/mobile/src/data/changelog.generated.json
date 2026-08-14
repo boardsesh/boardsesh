@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-08-14T01:46:54.159Z",
+  "generatedAt": "2026-08-14T05:00:52.258Z",
   "entries": [
+    {
+      "prNumber": 4402,
+      "category": "fixed",
+      "title": "Log a send while your phone's storage is tied up — mid board download, or right after you clear a board out — and it no longer disappears. Boardsesh retries the save, queues it for the next sync if the storage is still busy, and if it truly can't stash it offline it tells you plainly, in your own language, instead of swallowing the send.",
+      "mergedAt": "2026-08-14T04:59:49Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4402"
+    },
+    {
+      "prNumber": 4421,
+      "category": "new",
+      "title": "Climb lists are real links now — open a climb in a new tab, share it straight from the list, or land on it from a search.",
+      "mergedAt": "2026-08-14T04:52:51Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4421"
+    },
     {
       "prNumber": 4405,
       "category": "new",
