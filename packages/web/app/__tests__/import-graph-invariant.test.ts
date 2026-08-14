@@ -183,6 +183,7 @@ const KEPT_ROUTE_DIRS = [
   'session',
   'join',
   'import-beta',
+  'moonboard-import',
   'settings',
   'notifications',
   'discover',
@@ -225,29 +226,23 @@ const KEPT_COMPONENT_DIRS = [
 
 /**
  * Top-level app files that anchor the front door, plus the edge middleware —
- * and the three legacy config-tuple route files W-15 converted into front
- * doors.
+ * and the four legacy config-tuple route files the reposition converted into
+ * front doors.
  *
- * The `[board_name]/…` tree is not in `KEPT_ROUTE_DIRS` and must not be: most of
- * it (`create`, `import`, `liked`, `logbook`, `playlists`, `play`) is still the
- * classic client UI, which W-17 deletes. The reposition's canonical climb page
- * and board list live in exactly these three files, and `KEPT_ENTRY_FILES` takes
- * arbitrary paths (unlike the directory-scoped list above) so the promotion can
- * be exactly this narrow.
+ * The `[board_name]/…` tree is not in `KEPT_ROUTE_DIRS` and must not be: the
+ * angle segment still hosts `/play`, whose redirect pages are not part of the
+ * front door. The reposition's canonical climb page, board list and their
+ * shell are exactly these four files, and `KEPT_ENTRY_FILES` takes arbitrary
+ * paths (unlike the directory-scoped list above) so the promotion stays that
+ * narrow.
  *
- * **What this promotion does NOT cover, deliberately:** the parent shell,
- * `app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout.tsx`. It is
- * not a keep root and is not allowlisted, and it still imports eight delete-set
- * modules (`board-page/header`, `graphql-queue`, the two `connection-manager`
- * providers, `persistent-session`, `queue-control/ui-searchparams-provider`,
- * `queue-control/queue-bridge-context`, `board-page/last-used-board-tracker`).
- * So the three pages below render a server-only front door *inside* a shell
- * that still mounts the header, the queue and the WebSocket providers — the
- * walk proves the page subtree is clean, not the whole response. That shell
- * comes down with the rest of the classic UI in W-16/W-17, and adding its edges
- * here would mean growing the allowlist W-15 is supposed to shrink. Until then
- * `vp run typecheck` is the backstop: it hard-fails the day those modules are
- * deleted while this layout still imports them.
+ * The shell — `…/[angle]/layout.tsx` — joined the list in W-17 (#4433), which
+ * deleted the sibling routes under it and then stripped the header, the queue
+ * and the session/connection providers it used to mount. It is now server-only
+ * bar one client edge, `LastUsedBoardTracker`, allowlisted under
+ * `teardown:components-board-page`: it is what keeps the Climb tab pointing at
+ * the board you were last on, and it comes down with `components/board-page`
+ * in W-16.
  */
 const KEPT_ENTRY_FILES = [
   'app/page.tsx',
@@ -255,6 +250,7 @@ const KEPT_ENTRY_FILES = [
   'app/robots.ts',
   'app/manifest.ts',
   'middleware.ts',
+  'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout.tsx',
   'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]/page.tsx',
   'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/page.tsx',
   'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/layout.tsx',
