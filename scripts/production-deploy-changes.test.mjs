@@ -86,24 +86,32 @@ void test('classifies changed paths with the production workflow semantics', () 
     app: true,
   });
   assert.deepEqual(classifyChangedFiles(['scripts/production-backend-smoke.mjs']), {
-    web: true,
+    web: false,
     backend: true,
     app: false,
   });
   assert.deepEqual(classifyChangedFiles(['scripts/production-backend-smoke.test.mjs']), {
-    web: true,
+    web: false,
     backend: false,
     app: false,
   });
 });
 
 void test('treats the production workflow and its detector as affecting every target', () => {
-  for (const filePath of [
-    '.github/workflows/production-deploy.yml',
-    'scripts/production-deploy-changes.mjs',
-    'scripts/production-deploy-changes.test.mjs',
-  ]) {
+  for (const filePath of ['.github/workflows/production-deploy.yml', 'scripts/production-deploy-changes.mjs']) {
     assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: true, app: true });
+  }
+});
+
+void test('keeps production deploy unit tests CI-only', () => {
+  for (const filePath of ['scripts/production-backend-smoke.test.mjs', 'scripts/production-deploy-changes.test.mjs']) {
+    assert.deepEqual(classifyChangedFiles([filePath]), { web: false, backend: false, app: false });
+  }
+});
+
+void test('keeps every backend build and runtime control path backend-affecting', () => {
+  for (const filePath of ['Dockerfile.backend', 'railway.toml', 'bun.lock', 'package.json']) {
+    assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: true, app: false });
   }
 });
 
@@ -149,23 +157,25 @@ void test('an invalid current head SHA falls back without writing it as the depl
 });
 
 void test('an unreachable baseline or head falls back to a full build', () => {
-  const checkedShas = [];
-  const result = determineProductionDeployChanges({
-    eventName: 'push',
-    headSha: HEAD_SHA,
-    runsPayload: runsPayload([successfulRun(20)]),
-    git: {
-      ...validGit(),
-      commitExists(commitSha) {
-        checkedShas.push(commitSha);
-        return commitSha !== BASE_SHA;
+  for (const unreachableSha of [BASE_SHA, HEAD_SHA]) {
+    const checkedShas = [];
+    const result = determineProductionDeployChanges({
+      eventName: 'push',
+      headSha: HEAD_SHA,
+      runsPayload: runsPayload([successfulRun(20)]),
+      git: {
+        ...validGit(),
+        commitExists(commitSha) {
+          checkedShas.push(commitSha);
+          return commitSha !== unreachableSha;
+        },
       },
-    },
-  });
+    });
 
-  assert.deepEqual(checkedShas, [BASE_SHA]);
-  assert.equal(result.reason, 'unreachable-baseline-or-head');
-  assert.equal(result.fullBuild, true);
+    assert.deepEqual(checkedShas, unreachableSha === BASE_SHA ? [BASE_SHA] : [BASE_SHA, HEAD_SHA]);
+    assert.equal(result.reason, 'unreachable-baseline-or-head');
+    assert.equal(result.fullBuild, true);
+  }
 });
 
 void test('a baseline outside the current history falls back to a full build', () => {

@@ -42,9 +42,12 @@ function selectLatestSuccessfulPriorRun(payload, { currentRunId = '' } = {}) {
 }
 
 function isProductionDeployControlFile(filePath) {
+  return filePath === '.github/workflows/production-deploy.yml' || filePath === 'scripts/production-deploy-changes.mjs';
+}
+
+function isProductionDeployTestFile(filePath) {
   return (
-    filePath === '.github/workflows/production-deploy.yml' ||
-    filePath === 'scripts/production-deploy-changes.mjs' ||
+    filePath === 'scripts/production-backend-smoke.test.mjs' ||
     filePath === 'scripts/production-deploy-changes.test.mjs'
   );
 }
@@ -68,7 +71,9 @@ function isWebAffecting(filePath) {
     filePath.startsWith('mobile/') ||
     filePath.startsWith('packages/mobile/') ||
     filePath.startsWith('docs/') ||
-    filePath.endsWith('.md')
+    filePath.endsWith('.md') ||
+    filePath === 'scripts/production-backend-smoke.mjs' ||
+    isProductionDeployTestFile(filePath)
   );
 }
 
@@ -87,6 +92,7 @@ function classifyChangedFiles(changedFiles) {
   const targets = { web: false, backend: false, app: false };
 
   for (const filePath of changedFiles) {
+    if (isProductionDeployTestFile(filePath)) continue;
     if (isProductionDeployControlFile(filePath)) return { ...ALL_TARGETS };
     if (isBackendAffecting(filePath)) targets.backend = true;
     if (isWebAffecting(filePath)) targets.web = true;
@@ -262,6 +268,7 @@ export {
   isAppAffecting,
   isBackendAffecting,
   isProductionDeployControlFile,
+  isProductionDeployTestFile,
   isWebAffecting,
   readRunsPayload,
   selectLatestSuccessfulPriorRun,
