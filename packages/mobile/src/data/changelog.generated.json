@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-14T05:22:00.809Z",
+  "generatedAt": "2026-08-14T09:30:43.388Z",
   "entries": [
+    {
+      "prNumber": 4422,
+      "category": "new",
+      "title": "Build routes and circuits, not just single-frame boulders — duplicate a frame, edit the copy, and step through your sequence as you build it.",
+      "mergedAt": "2026-08-14T09:29:11Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4422",
+      "body": "Forking or editing an existing route no longer collapses it into one frame."
+    },
     {
       "prNumber": 4404,
       "category": "fixed",

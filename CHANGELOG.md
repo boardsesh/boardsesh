@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Build routes and circuits, not just single-frame boulders — duplicate a frame, edit the copy, and step through your sequence as you build it. ([#4422](https://github.com/boardsesh/boardsesh/pull/4422))
+  Forking or editing an existing route no longer collapses it into one frame.
 - Climb lists are real links now — open a climb in a new tab, share it straight from the list, or land on it from a search. ([#4421](https://github.com/boardsesh/boardsesh/pull/4421))
 - We now measure how fast every board download actually runs, so we can chase the slow ones instead of guessing, and we check each downloaded board is complete before using it. ([#4405](https://github.com/boardsesh/boardsesh/pull/4405))
   Faster download paths for iPhone are behind a switch we'll turn on once we've timed them on real phones.
