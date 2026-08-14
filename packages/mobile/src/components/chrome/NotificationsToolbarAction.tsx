@@ -39,6 +39,10 @@ export function NotificationsToolbarAction({ variant, onPress }: NotificationsTo
   const label = t('ariaLabels.notifications');
   const accessibilityLabel = unreadCount > 0 ? `${label} (${unreadCount})` : label;
 
+  // This is the component's OWN `'glass' | 'material'` prop — the hosting chrome
+  // says which island it renders into — not `theme.variant`, so there is no
+  // `selectByVariant` to route it through. Recorded in the variant guard's
+  // ALLOWLIST next to UserAvatarToolbarAction, which is the identical case.
   if (variant === 'material') {
     return (
       <View>

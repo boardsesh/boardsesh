@@ -33,7 +33,11 @@ cd "$(dirname "$0")/.."
 #    dual-axis check (surface capability OR aesthetic) — see the four-axis model.
 #  - UserAvatarToolbarAction: `variant` is the component's OWN `'glass' | 'material'`
 #    prop, not `theme.variant`.
-ALLOWLIST='queue-control/AccessoryBarSurface\.tsx|user-drawer/UserAvatarToolbarAction\.tsx'
+#  - NotificationsToolbarAction: same as UserAvatarToolbarAction — its `variant` prop
+#    is the island the hosting chrome renders it into, not the theme variant. (The
+#    per-line `// variant-ok` escape does not survive here: prettier moves a trailing
+#    comment off an `if (…) {` onto its own line, out of this grep's reach.)
+ALLOWLIST='queue-control/AccessoryBarSurface\.tsx|user-drawer/UserAvatarToolbarAction\.tsx|chrome/NotificationsToolbarAction\.tsx'
 
 matches=$(
   grep -rnE "[vV]ariant[[:space:]]*[!=]==[[:space:]]*'(material|liquidGlass)'" \
