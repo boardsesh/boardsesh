@@ -20,6 +20,7 @@ import { publishSocialEvent } from '../../../events';
 import { notifyClimbRevalidated } from '../../../lib/web-revalidate';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { requireAdminOrLeader } from '../social/roles';
+import { deleteClimbDependentRows } from './climb-cleanup';
 import {
   buildMoonBoardClimbHoldRows,
   buildMoonBoardDuplicateError,
@@ -741,32 +742,9 @@ export const climbMutations = {
         throw new Error('Published climbs cannot be deleted here');
       }
 
-      await tx
-        .delete(dbSchema.boardClimbStats)
-        .where(
-          and(
-            eq(dbSchema.boardClimbStats.boardType, validatedBoardType),
-            eq(dbSchema.boardClimbStats.climbUuid, validatedUuid),
-          ),
-        );
-
-      await tx
-        .delete(dbSchema.boardClimbStatsHistory)
-        .where(
-          and(
-            eq(dbSchema.boardClimbStatsHistory.boardType, validatedBoardType),
-            eq(dbSchema.boardClimbStatsHistory.climbUuid, validatedUuid),
-          ),
-        );
-
-      await tx
-        .delete(dbSchema.boardBetaLinks)
-        .where(
-          and(
-            eq(dbSchema.boardBetaLinks.boardType, validatedBoardType),
-            eq(dbSchema.boardBetaLinks.climbUuid, validatedUuid),
-          ),
-        );
+      // Clear the rows that have no FK back to board_climbs before deleting
+      // the climb itself, or they strand as orphans (issue #3943).
+      await deleteClimbDependentRows(tx, validatedBoardType, [validatedUuid]);
 
       const deletedRows = await tx
         .delete(dbSchema.boardClimbs)

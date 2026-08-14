@@ -57,12 +57,32 @@ function makeAnonCtx(): ConnectionContext {
 /**
  * Set up the transaction mock so it records all calls on the tx object.
  * Returns the txCalls array for assertions.
+ *
+ * `draftClimbs` seeds what the initial `tx.select(...).from(boardClimbs)...`
+ * lookup returns — the (uuid, boardType) pairs deleteAccount uses to clean up
+ * dependent rows before deleting the drafts themselves. Defaults to none, so
+ * existing tests that don't care about this keep their original call counts.
  */
-function setupTransactionMock(options?: { failOnUserDelete?: boolean }) {
+function setupTransactionMock(options?: {
+  failOnUserDelete?: boolean;
+  draftClimbs?: Array<{ uuid: string; boardType: string }>;
+}) {
   txCalls.length = 0;
 
   mockDb.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
     const tx = {
+      select: vi.fn().mockImplementation((columns: unknown) => {
+        const call = { method: 'select', columns, args: [] as unknown[] };
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockImplementation((...args: unknown[]) => {
+              call.args = args;
+              txCalls.push(call);
+              return Promise.resolve(options?.draftClimbs ?? []);
+            }),
+          }),
+        };
+      }),
       delete: vi.fn().mockImplementation((table: unknown) => {
         const call = { method: 'delete', table, args: [] as unknown[] };
         return {
@@ -159,14 +179,52 @@ describe('deleteAccount mutation', () => {
     ).rejects.toThrow('DB error');
   });
 
-  it('should execute operations in correct order: drafts, setter name, user', async () => {
+  it('should execute operations in correct order: select drafts, delete drafts, setter name, user', async () => {
     await userMutations.deleteAccount({}, { input: { removeSetterName: true } }, makeAuthCtx());
 
-    // Order: delete drafts, update setter name, delete user
-    expect(txCalls).toHaveLength(3);
-    expect(txCalls[0].method).toBe('delete'); // draft climbs
-    expect(txCalls[1].method).toBe('update'); // setter name
-    expect(txCalls[2].method).toBe('delete'); // user row
+    // Order: select this user's draft climbs, delete drafts, update setter name, delete user
+    expect(txCalls).toHaveLength(4);
+    expect(txCalls[0].method).toBe('select'); // this user's draft climbs
+    expect(txCalls[1].method).toBe('delete'); // draft climbs
+    expect(txCalls[2].method).toBe('update'); // setter name
+    expect(txCalls[3].method).toBe('delete'); // user row
+  });
+
+  it('cleans up board_climb_stats/history/beta_links for a draft climb before deleting the drafts', async () => {
+    setupTransactionMock({ draftClimbs: [{ uuid: 'draft-1', boardType: 'kilter' }] });
+
+    await userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx());
+
+    // select drafts, delete stats, delete history, delete beta links, delete drafts, delete user.
+    // The dependent-row cleanup (3 deletes) must land between the select and the drafts delete.
+    expect(txCalls.map((call) => call.method)).toEqual(['select', 'delete', 'delete', 'delete', 'delete', 'delete']);
+    const deleteCalls = txCalls.filter((call) => call.method === 'delete');
+    expect(deleteCalls).toHaveLength(5);
+  });
+
+  it('groups dependent-row cleanup by board type when drafts span multiple boards', async () => {
+    setupTransactionMock({
+      draftClimbs: [
+        { uuid: 'draft-1', boardType: 'kilter' },
+        { uuid: 'draft-2', boardType: 'tension' },
+      ],
+    });
+
+    await userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx());
+
+    // 3 dependent-row deletes per board type (2 boards) + the drafts delete + the user delete.
+    const deleteCalls = txCalls.filter((call) => call.method === 'delete');
+    expect(deleteCalls).toHaveLength(2 * 3 + 2);
+  });
+
+  it('skips dependent-row cleanup when the user has no draft climbs', async () => {
+    setupTransactionMock({ draftClimbs: [] });
+
+    await userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx());
+
+    // Only the (empty) drafts delete + the user delete — no dependent-row deletes fire.
+    const deleteCalls = txCalls.filter((call) => call.method === 'delete');
+    expect(deleteCalls).toHaveLength(2);
   });
 });
 
