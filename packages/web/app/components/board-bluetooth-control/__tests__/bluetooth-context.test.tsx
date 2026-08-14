@@ -1006,6 +1006,31 @@ describe('BluetoothProvider', () => {
       expect(mockShowMessage).toHaveBeenCalledTimes(1);
     });
 
+    it('uses a preference hydrated while disconnected on the first reconnect write', async () => {
+      mockBluetoothState.isConnected = false;
+      mockCurrentClimbQueueItem = {
+        climb: { uuid: 'climb-1', frames: 'p1r12', mirrored: false },
+      };
+
+      const { result, rerender } = renderHook(() => useBluetoothContext(), {
+        wrapper: createWrapper(createTestBoardDetails({ board_name: 'moonboard' })),
+      });
+      expect(mockSendFramesToBoard).not.toHaveBeenCalled();
+
+      act(() => {
+        mockHydrateMoonboardLightAdjacentHolds?.(true);
+      });
+      expect(result.current.moonboardLightAdjacentHolds).toBe(true);
+      expect(mockSendFramesToBoard).not.toHaveBeenCalled();
+
+      await act(async () => {
+        mockBluetoothState.isConnected = true;
+        rerender();
+      });
+      await vi.waitFor(() => expect(mockSendFramesToBoard).toHaveBeenCalledTimes(1));
+      expect(result.current.moonboardLightAdjacentHolds).toBe(true);
+    });
+
     it('deduplicates the WRITE for byte-identical re-broadcasts but re-confirms the wall', async () => {
       // The reducer lets duplicate CurrentClimbChanged events through (so the
       // BLE phone reacts to every event, including a peer's takeControl

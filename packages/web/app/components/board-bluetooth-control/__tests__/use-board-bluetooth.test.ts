@@ -380,6 +380,29 @@ describe('useBoardBluetooth', () => {
     });
   });
 
+  it('uses a preference updated while disconnected on the first write after connect', async () => {
+    const { result, rerender } = renderHook(
+      ({ lightAdjacentHolds }: { lightAdjacentHolds: boolean }) =>
+        useBoardBluetooth({
+          boardDetails: mockMoonboardDetails,
+          moonboardLightAdjacentHolds: lightAdjacentHolds,
+        }),
+      { initialProps: { lightAdjacentHolds: false } },
+    );
+
+    expect(result.current.isConnected).toBe(false);
+    rerender({ lightAdjacentHolds: true });
+
+    await act(async () => {
+      await result.current.connect();
+      await result.current.sendFramesToBoard('p1r42p2r43p198r44');
+    });
+
+    expect(mockGetMoonboardBluetoothPacket).toHaveBeenCalledWith('p1r42p2r43p198r44', 18, {
+      lightAdjacentHolds: true,
+    });
+  });
+
   it('clear-all writes the MoonBoard clear packet; only user-initiated clears are tracked (#3420)', async () => {
     const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockMoonboardDetails }));
     await act(async () => {
@@ -390,7 +413,7 @@ describe('useBoardBluetooth', () => {
     await act(async () => {
       await result.current.sendFramesToBoard('');
     });
-    expect(mockGetMoonboardBluetoothPacket).toHaveBeenCalledWith('', 18, { lightAdjacentHolds: false });
+    expect(mockGetMoonboardBluetoothPacket).toHaveBeenCalledWith('', 18);
     expect(mockAdapter.write).toHaveBeenCalledWith(new Uint8Array([9, 8, 7]), undefined);
     expect(mockTrack.mock.calls.find(([eventName]) => eventName === 'Board Lights Cleared')).toBeUndefined();
 

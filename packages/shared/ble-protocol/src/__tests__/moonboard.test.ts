@@ -148,6 +148,14 @@ describe('getMoonboardBluetoothPacket — V2 additional-LED prefix', () => {
     expect(new TextDecoder().decode(result.packet)).toBe('l#S0#');
   });
 
+  it('encodes an explicit false option exactly like the default path', () => {
+    const defaultPacket = getMoonboardBluetoothPacket('p1r42', 18).packet;
+    const disabledPacket = getMoonboardBluetoothPacket('p1r42', 18, { lightAdjacentHolds: false }).packet;
+
+    expect(disabledPacket).toEqual(defaultPacket);
+    expect(new TextDecoder().decode(disabledPacket)).toBe('l#S0#');
+  });
+
   it('never prefixes the deliberate clear-all frame, even when requested', () => {
     const result = getMoonboardBluetoothPacket('', undefined, { lightAdjacentHolds: true });
     expect(new TextDecoder().decode(result.packet)).toBe('l##');

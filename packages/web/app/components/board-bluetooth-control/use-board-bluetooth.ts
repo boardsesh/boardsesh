@@ -429,9 +429,7 @@ export function useBoardBluetooth({
         if (frames === '') {
           const clearPacket =
             boardDetails.board_name === 'moonboard'
-              ? getMoonboardBluetoothPacket('', getMoonBoardGeometryByLayoutId(boardDetails.layout_id).numRows, {
-                  lightAdjacentHolds: moonboardLightAdjacentHolds,
-                }).packet
+              ? getMoonboardBluetoothPacket('', getMoonBoardGeometryByLayoutId(boardDetails.layout_id).numRows).packet
               : getAuroraBluetoothPacket('', {}, boardDetails.board_name, apiLevelRef.current).packet;
           await serialisedWrite(adapterRef.current, clearPacket, signal);
           if (sendContext?.sendSource === 'clear') {
