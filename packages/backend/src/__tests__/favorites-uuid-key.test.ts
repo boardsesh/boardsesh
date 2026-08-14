@@ -210,7 +210,7 @@ describe('deploy-window compatibility with the previous backend', () => {
   // the minutes Railway takes to roll, the OLD resolver is serving against this
   // schema. Its insert infers `ON CONFLICT (user_id, board_name, climb_uuid,
   // angle)`; with no unique index on those four columns Postgres raises 42P10
-  // and every favorite tap 500s. Migration 0190 keeps unique_user_favorite_legacy
+  // and every favorite tap 500s. Migration 0194 keeps unique_user_favorite_legacy
   // for exactly that window — Release 2 drops it with the columns.
   it('still resolves the old four-column ON CONFLICT target', async () => {
     const insertTheOldWay = () =>
