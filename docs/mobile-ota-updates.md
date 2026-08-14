@@ -87,7 +87,7 @@ install, since the device couldn't verify the manifest came from us.
    signature against the embedded cert and applies it on next launch.
 3. **runtimeVersion** uses the **`fingerprint`** policy — a hash of the native project (deps,
    config plugins, entitlements, native dirs), resolved by the exact-pinned, patched
-   `@expo/fingerprint@0.20.6` installation behind Expo's `expo/fingerprint` export. An
+   `@expo/fingerprint@0.20.7` installation behind Expo's `expo/fingerprint` export. An
    update only reaches a binary with the **same** fingerprint, so a JS-only change keeps the same
    fingerprint (the OTA lands) while **any native change yields a new fingerprint** — the OTA is
    intrinsically incompatible with old binaries and isn't delivered (they keep their embedded
@@ -112,7 +112,7 @@ crash-reported unhandled rejection.
 
 Rule: any imperative native call that could be OTA-ahead of the native binary must be guarded (a
 `.catch` / capability probe / `requireOptionalNativeModule` null-check) so it degrades to a no-op
-instead of throwing. For `@expo/ui` sheets the guard lives in `patches/@expo%2Fui@57.0.3.patch`.
+instead of throwing. For `@expo/ui` sheets the guard lives in `patches/@expo%2Fui@57.0.11.patch`.
 
 ## Publishing a production update
 
@@ -284,7 +284,7 @@ bug, not a delivery failure. Mechanisms, all enforced/handled in CI:
 ### Bun isolated-linker normalization and complete native inputs
 
 Bun's isolated linker stores a package at a path like
-`node_modules/.bun/expo@57.0.9+5d294320467232ea/node_modules/expo`. The terminal hex suffix identifies
+`node_modules/.bun/expo@57.0.13+5d294320467232ea/node_modules/expo`. The terminal hex suffix identifies
 the package's peer-resolution set. A JS/devDependency change can alter that suffix without changing
 the package name, version, or native code. Raw Expo autolinking config includes these store paths, so
 hashing them verbatim made unrelated dependency changes move runtimeVersion.
@@ -307,7 +307,7 @@ hashing them verbatim made unrelated dependency changes move runtimeVersion.
 
 Expo's default `**/node_modules/**/node_modules/**` ignore also mistakes Bun's store wrapper for a
 genuine nested dependency. The exact-pinned Bun patch
-`patches/@expo%2Ffingerprint@0.20.6.patch` collapses only
+`patches/@expo%2Ffingerprint@0.20.7.patch` collapses only
 `node_modules/.bun/<entry>/node_modules/` wrappers when matching ignores and building file/directory
 hash ids. Autolinked native directories therefore contribute non-null hashes with stable logical
 ids, while a real `node_modules/package/node_modules/transitive` subtree stays ignored. The mobile
