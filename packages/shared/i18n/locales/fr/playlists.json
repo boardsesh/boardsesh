@@ -20,11 +20,11 @@
     "sections": {
       "jumpBackIn": "Reprendre",
       "pinned": "Épinglées",
-      "smart": "Vos sélections",
       "discover": "Découvrir",
       "forYou": "Pour vous",
       "community": "Playlists de la communauté"
     },
+    "showMore": "Voir plus",
     "communityByline": "{{creatorName}} - {{climbCount}}",
     "allPlaylists": {
       "title": "Mes listes",
@@ -94,7 +94,6 @@
     "createFab": {
       "ariaLabel": "Créer une playlist"
     },
-    "customUnavailable": "Les configurations personnalisées ne sont pas encore disponibles ici. Choisissez l'une de vos boards ou une configuration populaire dans la liste.",
     "errors": {
       "loadTitle": "Impossible de charger la bibliothèque",
       "loadDescription": "Erreur lors du chargement de votre bibliothèque. Réessayez.",
@@ -114,7 +113,6 @@
       "subtitle": "Les données de board manquent pour cette voie."
     },
     "menu": {
-      "generate": "Générer",
       "editClimbs": "Modifier les blocs",
       "edit": "Modifier",
       "delete": "Supprimer"
@@ -147,6 +145,7 @@
     "empty": "Aucun bloc dans cette playlist pour l'instant",
     "climbCount_one": "{{count}} bloc",
     "climbCount_other": "{{count}} blocs",
+    "openInApp": "Grimpe ça dans l'app",
     "followerCount_one": "{{count}} abonné",
     "followerCount_other": "{{count}} abonnés",
     "followFailed": "Impossible de mettre à jour le suivi",
@@ -289,10 +288,7 @@
       "configurePrompt": "Configurez les options pour prévisualiser"
     },
     "messages": {
-      "noClimbs": "Aucun bloc à générer",
-      "addedAll": "{{count}} blocs ajoutés à la playlist",
-      "addedPartial": "{{added}} blocs ajoutés. {{failed}} emplacements n'ont pas pu être remplis.",
-      "failed": "Impossible de générer la playlist. Aucun bloc adapté trouvé."
+      "noClimbs": "Aucun bloc à générer"
     }
   },
   "bottomTabBar": {

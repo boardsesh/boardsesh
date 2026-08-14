@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import enMarketing from '@boardsesh/i18n/locales/en-US/marketing.json';
 import { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL } from '@/app/lib/store-urls';
+import { APP_URL } from '@/app/lib/app-origin';
 
 // --- Mocks ---
 
@@ -56,31 +57,28 @@ vi.mock('next-auth/react', () => ({
   useSession: () => ({ data: null, status: 'unauthenticated' }),
 }));
 
-vi.mock('@/app/components/session-creation/start-sesh-drawer', () => ({
-  default: ({ open }: { open: boolean }) => (open ? <div data-testid="start-sesh-drawer">Drawer</div> : null),
-}));
-
-vi.mock('@/app/components/search-drawer/unified-search-drawer', () => ({
-  default: () => null,
-}));
-
-vi.mock('@/app/components/board-selector-drawer/board-selector-drawer', () => ({
-  default: () => null,
-}));
-
-vi.mock('@/app/components/board-scroll/board-discovery-scroll', () => ({
-  default: () => null,
-}));
-
 vi.mock('@/app/components/beta-videos/home-recent-beta-section', () => ({
   default: () => null,
 }));
 
+// The rail is deliberately NOT mocked — its anchors are the point of the page
+// now, and mocking it would make the "SSR popular configs" cases vacuous. Only
+// the board artwork inside it is stubbed out.
+vi.mock('@/app/components/board-renderer/board-renderer', () => ({
+  default: () => <div data-testid="board-thumb" />,
+}));
+
+vi.mock('@/app/components/i18n/locale-link', () => ({
+  default: ({ href, children, className }: { href: string; children?: React.ReactNode; className?: string }) => (
+    <a href={href} className={className}>
+      {children}
+    </a>
+  ),
+}));
+
 // --- Helpers ---
 
-const defaultProps = {
-  boardConfigs: {} as React.ComponentProps<typeof HomePageContent>['boardConfigs'],
-};
+const defaultProps = {};
 
 const ANDROID_UA =
   'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Mobile Safari/537.36';
@@ -128,9 +126,8 @@ describe('HomePageContent', () => {
         'App Install Click',
         expect.objectContaining({ platform: 'ios', source: 'app-store', placement: 'hero', mode: 'install' }),
       );
-      // The hero no longer starts a sesh — the drawer must stay closed and no
-      // client navigation should fire.
-      expect(screen.queryByTestId('start-sesh-drawer')).toBeNull();
+      // The hero no longer starts a sesh, and nothing on this page navigates
+      // imperatively any more — every destination is an anchor.
       expect(mockPush).not.toHaveBeenCalled();
     });
 
@@ -229,30 +226,68 @@ describe('HomePageContent', () => {
   });
 
   describe('SSR popular configs', () => {
-    it('renders the hero install CTA when initialPopularConfigs are provided', async () => {
-      // BoardDiscoveryScroll is mocked, so we just verify the component renders
-      // without error and still surfaces the hero CTA. Pin the UA so the CTA
-      // label is deterministic.
-      setUserAgent(IOS_SAFARI_UA);
-      const initialConfigs = [
-        {
-          boardType: 'kilter',
-          layoutId: 8,
-          layoutName: 'Original',
-          sizeId: 25,
-          sizeName: '12x12',
-          sizeDescription: 'Full size',
-          setIds: [26, 27],
-          setNames: ['Set A', 'Set B'],
-          climbCount: 500,
-          totalAscents: 5000,
-          boardCount: 10,
-          displayName: 'OG 12x12',
-        },
-      ];
+    const KILTER_CONFIG = {
+      boardType: 'kilter',
+      layoutId: 1,
+      layoutName: 'Original',
+      sizeId: 10,
+      sizeName: '12 x 12 Square',
+      sizeDescription: 'With kickboard',
+      setIds: [1, 20],
+      setNames: ['Bolt Ons', 'Screw Ons'],
+      climbCount: 500,
+      totalAscents: 5000,
+      boardCount: 10,
+      displayName: 'Kilter Original 12x12',
+    };
 
-      render(<HomePageContent {...defaultProps} initialPopularConfigs={initialConfigs} />);
-      expect(await screen.findByRole('button', { name: /install from app store/i })).toBeTruthy();
+    it('renders one crawlable board link per SSR config', () => {
+      setUserAgent(IOS_SAFARI_UA);
+      render(
+        <HomePageContent
+          {...defaultProps}
+          initialPopularConfigs={[KILTER_CONFIG, { ...KILTER_CONFIG, sizeId: 27, displayName: 'Kilter no kick' }]}
+        />,
+      );
+
+      const boardLinks = screen
+        .getAllByRole('link')
+        .map((link) => link.getAttribute('href') ?? '')
+        .filter((href) => /^\/(kilter|tension|moonboard)\/.+\/list$/.test(href));
+      expect(boardLinks).toHaveLength(2);
+    });
+
+    it('renders no board links and does not crash when the backend returned nothing', () => {
+      setUserAgent(IOS_SAFARI_UA);
+      render(<HomePageContent {...defaultProps} initialPopularConfigs={[]} />);
+
+      const boardLinks = screen
+        .getAllByRole('link')
+        .map((link) => link.getAttribute('href') ?? '')
+        .filter((href) => /^\/(kilter|tension|moonboard)\/.+\/list$/.test(href));
+      expect(boardLinks).toHaveLength(0);
+    });
+  });
+
+  describe('onboarding cards are links', () => {
+    it('points the Aurora and Playlist cards at real routes', () => {
+      render(<HomePageContent {...defaultProps} />);
+
+      expect(
+        screen.getByRole('link', { name: new RegExp(resolveMarketingKey('home.cards.auroraTitle'), 'i') }),
+      ).toHaveProperty('href');
+      const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
+      expect(hrefs).toContain('/aurora-migration');
+      expect(hrefs).toContain('/playlists');
+    });
+
+    it('hands the "Connect your board" card off to the app origin', () => {
+      render(<HomePageContent {...defaultProps} />);
+
+      const card = screen.getByRole('link', {
+        name: new RegExp(resolveMarketingKey('home.cards.bluetoothTitle'), 'i'),
+      });
+      expect(card.getAttribute('href')).toBe(APP_URL);
     });
   });
 

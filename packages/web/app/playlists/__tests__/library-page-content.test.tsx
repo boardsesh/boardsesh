@@ -6,9 +6,20 @@ import { createTestQueryClient } from '@/app/test-utils/test-providers';
 import { PlaylistsAdapterTestProvider } from '@/app/test-utils/playlists-adapter-wrapper';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import LibraryPageContent from '../library-page-content';
-import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
-import type { BoardConfigData } from '@/app/lib/server-board-configs';
-import type { StoredBoardConfig } from '@/app/lib/saved-boards-db';
+import type { Playlist, DiscoverablePlaylist } from '@boardsesh/graphql/operations/playlists';
+import type { UserBoard } from '@boardsesh/shared-schema';
+
+/**
+ * `/playlists` is a read-only directory now: every playlist is a real anchor,
+ * and creating one, filtering by board and building a custom board all left
+ * for the app. The previous suite tested nothing but that create/board-picker
+ * orchestration, so it could not be adapted — these cases cover what the page
+ * does instead, plus the two absences that would mean the teardown regressed.
+ *
+ * There are deliberately no `vi.mock`s for `queue-control/queue-bridge-context`,
+ * `library/*` or `board-scroll/*`: the page no longer imports them, so a mock
+ * would be dead code. Their absence is the signal.
+ */
 
 function render(ui: React.ReactElement, options?: RenderOptions) {
   const queryClient = createTestQueryClient();
@@ -38,18 +49,9 @@ vi.mock('next-auth/react', () => ({
   useSession: () => mockSession,
 }));
 
-const mockShowMessage = vi.fn();
-vi.mock('@/app/components/providers/snackbar-provider', () => ({
-  useSnackbar: () => ({ showMessage: mockShowMessage }),
-}));
-
+const mockOpenAuthModal = vi.fn();
 vi.mock('@/app/components/providers/auth-modal-provider', () => ({
-  useAuthModal: () => ({ openAuthModal: vi.fn() }),
-}));
-
-const mockRouterPush = vi.fn();
-vi.mock('@/app/lib/i18n/use-locale-router', () => ({
-  useLocaleRouter: () => ({ push: mockRouterPush }),
+  useAuthModal: () => ({ openAuthModal: mockOpenAuthModal }),
 }));
 
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({
@@ -63,428 +65,210 @@ vi.mock('@/app/hooks/use-my-boards', () => ({
   }),
 }));
 
-vi.mock('@/app/components/queue-control/queue-bridge-context', () => ({
-  useQueueBridgeBoardInfo: () => ({ boardDetails: null, hasActiveQueue: false }),
+// Own-playlist pagination is driven from the test so the "Show more" control
+// can be exercised without standing up the whole GraphQL hook.
+const mockLoadMorePlaylists = vi.fn();
+let mockPlaylistsHasMore = false;
+vi.mock('@/app/hooks/use-user-playlists', () => ({
+  useUserPlaylists: ({ initialData }: { initialData?: Playlist[] }) => ({
+    playlists: initialData ?? [],
+    isLoading: false,
+    isLoadingMore: false,
+    hasMore: mockPlaylistsHasMore,
+    hasError: false,
+    loadMore: mockLoadMorePlaylists,
+    refetch: vi.fn(),
+  }),
 }));
 
-const mockExecuteGraphQL = vi.fn();
-const mockGraphQLRequest = vi.fn();
-vi.mock('@/app/lib/graphql/client', () => ({
-  executeGraphQL: (...args: unknown[]) => mockExecuteGraphQL(...args),
-  // useUserPlaylists / usePinnedPlaylists call .request on this client; the
-  // tests only care about FAB orchestration, so an empty resolved value is
-  // sufficient and shared across both hooks.
-  createGraphQLHttpClient: () => ({ request: (...args: unknown[]) => mockGraphQLRequest(...args) }),
+vi.mock('@/app/hooks/use-pinned-playlists', () => ({
+  usePinnedPlaylists: () => ({ pinned: [], isLoading: false }),
 }));
 
-// CSS module proxy
+vi.mock('@/app/hooks/use-discover-playlists', () => ({
+  useDiscoverPlaylists: ({ initialData }: { initialData?: { popular: DiscoverablePlaylist[] } }) => ({
+    popular: initialData?.popular ?? [],
+    recent: [],
+    isLoadingMore: false,
+    hasMore: false,
+    loadMore: vi.fn(),
+  }),
+}));
+
+// CSS module proxies
 vi.mock('@/app/components/ui/page-container.module.css', () => ({
   default: new Proxy({}, { get: (_t, prop) => String(prop) }),
 }));
-
-// Stub heavy presentational children — keep them inert.
-vi.mock('@/app/components/library/playlist-card-grid', () => ({ default: () => null }));
-vi.mock('@/app/components/library/playlist-scroll-section', () => ({
-  default: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+vi.mock('@/app/components/playlists/playlist-link-card.module.css', () => ({
+  default: new Proxy({}, { get: (_t, prop) => String(prop) }),
 }));
-vi.mock('@/app/components/library/playlist-card', () => ({ default: () => null }));
+vi.mock('@/app/components/playlists/playlist-preview-square.module.css', () => ({
+  default: new Proxy({}, { get: (_t, prop) => String(prop) }),
+}));
 
-// BoardFilterStrip — exposes a way to drive selectedBoard from the test.
-vi.mock('@/app/components/board-scroll/board-filter-strip', () => ({
-  default: (props: { onBoardSelect: (board: UserBoard | null) => void; boards: UserBoard[] }) => (
-    <div data-testid="filter-strip">
-      <button data-testid="filter-clear" onClick={() => props.onBoardSelect(null)}>
-        clear
-      </button>
-      {props.boards.map((board) => (
-        <button key={board.uuid} data-testid={`filter-pick-${board.uuid}`} onClick={() => props.onBoardSelect(board)}>
-          pick {board.name}
-        </button>
-      ))}
-    </div>
+// The board artwork is irrelevant here — only the anchors the cards emit are.
+vi.mock('@/app/components/board-renderer/board-image-layers', () => ({ default: () => null }));
+
+vi.mock('@/app/components/i18n/locale-link', () => ({
+  default: ({ href, children, className }: { href: string; children?: React.ReactNode; className?: string }) => (
+    <a href={href} className={className}>
+      {children}
+    </a>
   ),
 }));
 
-// BoardDiscoveryScroll — exposes board / config / custom click hooks for the picker drawer.
-vi.mock('@/app/components/board-scroll/board-discovery-scroll', () => ({
-  default: (props: {
-    onBoardClick: (board: UserBoard) => void;
-    onConfigClick: (config: PopularBoardConfig) => void;
-    onCustomClick: () => void;
-    myBoards?: UserBoard[];
-  }) => (
-    <div data-testid="board-discovery">
-      <button data-testid="discovery-pick-board" onClick={() => props.onBoardClick(makeBoard('discovery-board'))}>
-        pick board
-      </button>
-      <button data-testid="discovery-pick-config" onClick={() => props.onConfigClick(makeConfig())}>
-        pick config
-      </button>
-      <button data-testid="discovery-pick-custom" onClick={props.onCustomClick}>
-        pick custom
-      </button>
-    </div>
-  ),
-}));
-
-// BoardSelectorDrawer — exposes onBoardSelected for the custom path.
-// Fires onTransitionEnd(false) synchronously when closed so the orchestrator's
-// pending-drawer chain fulfils within the test, mirroring real animation.
-vi.mock('@/app/components/board-selector-drawer/board-selector-drawer', () => ({
-  default: (props: {
-    open: boolean;
-    onBoardSelected?: (url: string, config?: StoredBoardConfig) => void;
-    onTransitionEnd?: (open: boolean) => void;
-  }) => {
-    React.useEffect(() => {
-      if (!props.open) props.onTransitionEnd?.(false);
-    }, [props.open]);
-    if (!props.open) return null;
-    return (
-      <div data-testid="custom-board-drawer">
-        <button
-          data-testid="custom-pick-with-config"
-          onClick={() => props.onBoardSelected?.('/some/url', makeStoredConfig())}
-        >
-          pick with config
-        </button>
-        <button data-testid="custom-pick-no-config" onClick={() => props.onBoardSelected?.('/some/url')}>
-          pick without config
-        </button>
-      </div>
-    );
-  },
-}));
-
-// SwipeableDrawer — passthrough that respects `open` and fires onTransitionEnd
-// on close so the deferred-open pattern can resolve in tests.
-vi.mock('@/app/components/swipeable-drawer/swipeable-drawer', () => ({
-  default: (props: {
-    open?: boolean;
-    children?: React.ReactNode;
-    extra?: React.ReactNode;
-    title?: React.ReactNode;
-    onTransitionEnd?: (open: boolean) => void;
-  }) => {
-    React.useEffect(() => {
-      if (!props.open) props.onTransitionEnd?.(false);
-    }, [props.open]);
-    if (!props.open) return null;
-    return (
-      <div data-testid="swipeable-drawer">
-        <div>{props.title}</div>
-        {props.children}
-        {props.extra}
-      </div>
-    );
-  },
-}));
-
-// CreatePlaylistDrawer — capture mounted props and expose a button to fire onCreated.
-const mockCreatePlaylistDrawer = vi.fn();
-vi.mock('@/app/components/library/create-playlist-drawer', () => ({
-  default: (props: {
-    open: boolean;
-    boardName: string;
-    layoutId: number;
-    source: string;
-    onCreated?: (playlist: { uuid: string }) => void;
-  }) => {
-    mockCreatePlaylistDrawer(props);
-    if (!props.open) return null;
-    return (
-      <div data-testid="create-drawer">
-        <span data-testid="create-source">{props.source}</span>
-        <span data-testid="create-board">{props.boardName}</span>
-        <span data-testid="create-layout">{String(props.layoutId)}</span>
-        <button
-          data-testid="create-fire-success"
-          onClick={() => props.onCreated?.({ uuid: 'new-playlist-uuid' } as never)}
-        >
-          fire onCreated
-        </button>
-      </div>
-    );
-  },
-}));
-
-function makeBoard(uuid: string, overrides?: Partial<UserBoard>): UserBoard {
+function makePlaylist(uuid: string, overrides?: Partial<Playlist>): Playlist {
   return {
     uuid,
-    slug: `slug-${uuid}`,
-    ownerId: 'owner',
+    name: `Playlist ${uuid}`,
+    climbCount: 7,
     boardType: 'kilter',
     layoutId: 1,
-    sizeId: 7,
-    setIds: '1,20',
-    name: `Board ${uuid}`,
-    isPublic: true,
-    isUnlisted: false,
-    hideLocation: false,
-    isOwned: true,
-    angle: 40,
-    isAngleAdjustable: true,
-    createdAt: '2026-01-01T00:00:00Z',
-    totalAscents: 0,
-    uniqueClimbers: 0,
-    followerCount: 0,
-    commentCount: 0,
-    isFollowedByMe: false,
+    color: '#FF6600',
     ...overrides,
-  } as UserBoard;
+  } as Playlist;
 }
 
-function makeConfig(): PopularBoardConfig {
+function makeDiscoverable(uuid: string, creatorId = 'someone-else'): DiscoverablePlaylist {
   return {
-    boardType: 'tension',
-    layoutId: 10,
-    sizeId: 7,
-    setIds: [1, 2],
-    setNames: ['main'],
-    climbCount: 0,
-    totalAscents: 0,
-    boardCount: 0,
-    displayName: 'Tension',
-  } as PopularBoardConfig;
+    uuid,
+    name: `Discover ${uuid}`,
+    climbCount: 3,
+    boardType: 'kilter',
+    layoutId: 1,
+    creatorId,
+  } as DiscoverablePlaylist;
 }
 
-function makeStoredConfig(): StoredBoardConfig {
-  return {
-    name: 'Custom',
-    board: 'kilter',
-    layoutId: 42,
-    sizeId: 7,
-    setIds: [1],
-    angle: 40,
-    createdAt: '2026-01-01T00:00:00Z',
-  } as StoredBoardConfig;
-}
-
-const fakeBoardConfigs = { configsByBoard: {} } as unknown as BoardConfigData;
-
-function clickFab() {
-  fireEvent.click(screen.getByLabelText(tFromCatalog('playlists', 'library.createFab.ariaLabel')));
-}
+const NO_DISCOVER = { popular: [], recent: [], popularHasMore: false, recentHasMore: false };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockExecuteGraphQL.mockResolvedValue({
-    allUserPlaylists: { playlists: [], totalCount: 0, hasMore: false },
-    discoverPlaylists: { playlists: [] },
-    myPinnedPlaylists: [],
-  });
-  // Hooks use createGraphQLHttpClient(...).request; reuse the same shape so
-  // useUserPlaylists / usePinnedPlaylists initialise to empty without errors.
-  mockGraphQLRequest.mockResolvedValue({
-    allUserPlaylists: { playlists: [], totalCount: 0, hasMore: false },
-    myPinnedPlaylists: [],
-  });
+  mockPlaylistsHasMore = false;
   mockSession.data = { user: { id: 'user-1' } };
   mockSession.status = 'authenticated';
 });
 
-describe('LibraryPageContent FAB orchestration', () => {
-  it('opens the create drawer directly when a board filter is selected', async () => {
-    const board = makeBoard('uuid-a', { boardType: 'kilter', layoutId: 1 });
+describe('LibraryPageContent read-only directory', () => {
+  it('renders every owned playlist as a real anchor to its detail page', () => {
     render(
       <LibraryPageContent
-        initialMyBoards={[board]}
-        initialPlaylists={{ playlists: [], totalCount: 0, hasMore: false }}
-        initialDiscoverPlaylists={{ popular: [], recent: [], popularHasMore: false, recentHasMore: false }}
-        boardConfigs={fakeBoardConfigs}
-        boardSlug={board.slug}
+        initialMyBoards={[]}
+        initialPlaylists={{
+          playlists: [makePlaylist('aaa'), makePlaylist('bbb'), makePlaylist('ccc')],
+          totalCount: 3,
+          hasMore: false,
+        }}
+        initialDiscoverPlaylists={NO_DISCOVER}
       />,
     );
 
-    clickFab();
-
-    await waitFor(() => expect(screen.getByTestId('create-drawer')).toBeDefined());
-    expect(screen.getByTestId('create-source').textContent).toBe('discover-fab');
-    expect(screen.getByTestId('create-board').textContent).toBe('kilter');
-    expect(screen.getByTestId('create-layout').textContent).toBe('1');
-    // No board picker should have opened.
-    expect(screen.queryByTestId('board-discovery')).toBeNull();
+    const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
+    expect(hrefs).toEqual(['/playlists/aaa', '/playlists/bbb', '/playlists/ccc']);
   });
 
-  it('routes through the board picker when no filter board is selected', async () => {
+  it('prefixes the hrefs with playlistsBasePath on a board route', () => {
+    render(
+      <LibraryPageContent
+        playlistsBasePath="/b/my-kilter/40/playlists"
+        initialMyBoards={[]}
+        initialPlaylists={{ playlists: [makePlaylist('aaa')], totalCount: 1, hasMore: false }}
+        initialDiscoverPlaylists={NO_DISCOVER}
+      />,
+    );
+
+    expect(screen.getByRole('link').getAttribute('href')).toBe('/b/my-kilter/40/playlists/aaa');
+  });
+
+  it("renders the discover section's playlists as anchors too, skipping the viewer's own", () => {
     render(
       <LibraryPageContent
         initialMyBoards={[]}
         initialPlaylists={{ playlists: [], totalCount: 0, hasMore: false }}
-        initialDiscoverPlaylists={{ popular: [], recent: [], popularHasMore: false, recentHasMore: false }}
-        boardConfigs={fakeBoardConfigs}
+        initialDiscoverPlaylists={{
+          ...NO_DISCOVER,
+          popular: [makeDiscoverable('pub-1'), makeDiscoverable('mine', 'user-1')],
+        }}
       />,
     );
 
-    clickFab();
-
-    await waitFor(() => expect(screen.getByTestId('board-discovery')).toBeDefined());
-    fireEvent.click(screen.getByTestId('discovery-pick-board'));
-
-    await waitFor(() => expect(screen.getByTestId('create-drawer')).toBeDefined());
-    expect(screen.getByTestId('create-board').textContent).toBe('kilter');
-    expect(screen.getByTestId('create-layout').textContent).toBe('1');
+    const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
+    expect(hrefs).toEqual(['/playlists/pub-1']);
   });
 
-  it('opens the custom-board drawer from the picker, then the create drawer', async () => {
+  it('shows "Show more" only when another page exists, and calls loadMore', () => {
+    mockPlaylistsHasMore = true;
+    render(
+      <LibraryPageContent
+        initialMyBoards={[]}
+        initialPlaylists={{ playlists: [makePlaylist('aaa')], totalCount: 40, hasMore: true }}
+        initialDiscoverPlaylists={NO_DISCOVER}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: tFromCatalog('playlists', 'library.showMore') }));
+    expect(mockLoadMorePlaylists).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides "Show more" when the first page is the whole list', () => {
+    render(
+      <LibraryPageContent
+        initialMyBoards={[]}
+        initialPlaylists={{ playlists: [makePlaylist('aaa')], totalCount: 1, hasMore: false }}
+        initialDiscoverPlaylists={NO_DISCOVER}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: tFromCatalog('playlists', 'library.showMore') })).toBeNull();
+  });
+
+  it('renders the empty state for an authenticated user with no playlists', () => {
     render(
       <LibraryPageContent
         initialMyBoards={[]}
         initialPlaylists={{ playlists: [], totalCount: 0, hasMore: false }}
-        initialDiscoverPlaylists={{ popular: [], recent: [], popularHasMore: false, recentHasMore: false }}
-        boardConfigs={fakeBoardConfigs}
+        initialDiscoverPlaylists={NO_DISCOVER}
       />,
     );
 
-    clickFab();
-    await waitFor(() => expect(screen.getByTestId('board-discovery')).toBeDefined());
-    fireEvent.click(screen.getByTestId('discovery-pick-custom'));
-
-    await waitFor(() => expect(screen.getByTestId('custom-board-drawer')).toBeDefined());
-    fireEvent.click(screen.getByTestId('custom-pick-with-config'));
-
-    await waitFor(() => expect(screen.getByTestId('create-drawer')).toBeDefined());
-    expect(screen.getByTestId('create-board').textContent).toBe('kilter');
-    expect(screen.getByTestId('create-layout').textContent).toBe('42');
+    expect(screen.getByText(tFromCatalog('playlists', 'library.empty.title'))).toBeTruthy();
   });
 
-  it('shows an error when the custom-board drawer returns no usable config', async () => {
-    render(
-      <LibraryPageContent
-        initialMyBoards={[]}
-        initialPlaylists={{ playlists: [], totalCount: 0, hasMore: false }}
-        initialDiscoverPlaylists={{ popular: [], recent: [], popularHasMore: false, recentHasMore: false }}
-        boardConfigs={fakeBoardConfigs}
-      />,
-    );
-
-    clickFab();
-    await waitFor(() => screen.getByTestId('board-discovery'));
-    fireEvent.click(screen.getByTestId('discovery-pick-custom'));
-    await waitFor(() => screen.getByTestId('custom-board-drawer'));
-    fireEvent.click(screen.getByTestId('custom-pick-no-config'));
-
-    await waitFor(() => {
-      expect(mockShowMessage).toHaveBeenCalledWith(
-        tFromCatalog('playlists', 'bottomTabBar.selectBoardForPlaylist'),
-        'error',
-      );
-    });
-    // Should NOT have opened the create drawer.
-    expect(screen.queryByTestId('create-drawer')).toBeNull();
-  });
-
-  it('shows an error when the custom path is taken without boardConfigs', async () => {
-    render(
-      <LibraryPageContent
-        initialMyBoards={[]}
-        initialPlaylists={{ playlists: [], totalCount: 0, hasMore: false }}
-        initialDiscoverPlaylists={{ popular: [], recent: [], popularHasMore: false, recentHasMore: false }}
-      />,
-    );
-
-    clickFab();
-    await waitFor(() => screen.getByTestId('board-discovery'));
-    fireEvent.click(screen.getByTestId('discovery-pick-custom'));
-
-    await waitFor(() => {
-      expect(mockShowMessage).toHaveBeenCalledWith(tFromCatalog('playlists', 'library.customUnavailable'), 'error');
-    });
-    expect(screen.queryByTestId('custom-board-drawer')).toBeNull();
-    expect(screen.queryByTestId('create-drawer')).toBeNull();
-  });
-
-  it('forwards createSource into the drawer for non-default routes', async () => {
-    const board = makeBoard('uuid-x');
-    render(
-      <LibraryPageContent
-        initialMyBoards={[board]}
-        initialPlaylists={{ playlists: [], totalCount: 0, hasMore: false }}
-        initialDiscoverPlaylists={{ popular: [], recent: [], popularHasMore: false, recentHasMore: false }}
-        boardConfigs={fakeBoardConfigs}
-        boardSlug={board.slug}
-        createSource="board-slug-playlists-fab"
-      />,
-    );
-
-    clickFab();
-    await waitFor(() => expect(screen.getByTestId('create-drawer')).toBeDefined());
-    expect(screen.getByTestId('create-source').textContent).toBe('board-slug-playlists-fab');
-  });
-
-  it('navigates to the new playlist when onCreated fires', async () => {
-    const board = makeBoard('uuid-nav');
-    render(
-      <LibraryPageContent
-        initialMyBoards={[board]}
-        initialPlaylists={{ playlists: [], totalCount: 0, hasMore: false }}
-        initialDiscoverPlaylists={{ popular: [], recent: [], popularHasMore: false, recentHasMore: false }}
-        boardConfigs={fakeBoardConfigs}
-        boardSlug={board.slug}
-      />,
-    );
-
-    clickFab();
-    await waitFor(() => screen.getByTestId('create-drawer'));
-    fireEvent.click(screen.getByTestId('create-fire-success'));
-
-    expect(mockRouterPush).toHaveBeenCalledWith('/playlists/new-playlist-uuid');
-  });
-
-  it('falls back to a fresh slug lookup if selectedBoard has not synced yet', async () => {
-    // Simulate the first-paint race: filter strip's internal state hasn't
-    // resolved selectedBoard yet (initialMyBoards lacks the slug match), but
-    // myBoards has just loaded with the matching board.
-    const board = makeBoard('synced-board', { slug: 'kilter-route', boardType: 'kilter', layoutId: 99 });
-    render(
-      <LibraryPageContent
-        initialMyBoards={[board]}
-        initialPlaylists={{ playlists: [], totalCount: 0, hasMore: false }}
-        initialDiscoverPlaylists={{ popular: [], recent: [], popularHasMore: false, recentHasMore: false }}
-        boardConfigs={fakeBoardConfigs}
-        boardSlug="kilter-route"
-      />,
-    );
-
-    clickFab();
-    await waitFor(() => expect(screen.getByTestId('create-drawer')).toBeDefined());
-    // The picker should never have opened — we resolved board context directly.
-    expect(screen.queryByTestId('board-discovery')).toBeNull();
-    expect(screen.getByTestId('create-layout').textContent).toBe('99');
-  });
-
-  it('opens the create drawer only after the board picker finishes closing', async () => {
-    render(
-      <LibraryPageContent
-        initialMyBoards={[]}
-        initialPlaylists={{ playlists: [], totalCount: 0, hasMore: false }}
-        initialDiscoverPlaylists={{ popular: [], recent: [], popularHasMore: false, recentHasMore: false }}
-        boardConfigs={fakeBoardConfigs}
-      />,
-    );
-
-    clickFab();
-    await waitFor(() => expect(screen.getByTestId('board-discovery')).toBeDefined());
-    fireEvent.click(screen.getByTestId('discovery-pick-board'));
-
-    // After the click the picker has been told to close; the create drawer
-    // should appear once the picker's onTransitionEnd fires (fired by the
-    // mock SwipeableDrawer's useEffect on open=false).
-    await waitFor(() => expect(screen.getByTestId('create-drawer')).toBeDefined());
-    expect(screen.queryByTestId('board-discovery')).toBeNull();
-  });
-
-  it('does not render the FAB for unauthenticated users', () => {
+  it('still offers the sign-in banner to signed-out visitors and opens the auth modal', async () => {
     mockSession.data = null;
     mockSession.status = 'unauthenticated';
     render(
-      <LibraryPageContent
-        initialMyBoards={null}
-        initialPlaylists={null}
-        initialDiscoverPlaylists={{ popular: [], recent: [], popularHasMore: false, recentHasMore: false }}
-        boardConfigs={fakeBoardConfigs}
-      />,
+      <LibraryPageContent initialMyBoards={null} initialPlaylists={null} initialDiscoverPlaylists={NO_DISCOVER} />,
     );
-    expect(screen.queryByLabelText(tFromCatalog('playlists', 'library.createFab.ariaLabel'))).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: tFromCatalog('playlists', 'library.signInBanner.cta') }));
+    await waitFor(() => expect(mockOpenAuthModal).toHaveBeenCalledTimes(1));
+  });
+
+  describe('teardown assertions', () => {
+    it('has no create FAB', () => {
+      render(
+        <LibraryPageContent
+          initialMyBoards={[]}
+          initialPlaylists={{ playlists: [makePlaylist('aaa')], totalCount: 1, hasMore: false }}
+          initialDiscoverPlaylists={NO_DISCOVER}
+        />,
+      );
+
+      expect(screen.queryByLabelText(tFromCatalog('playlists', 'library.createFab.ariaLabel'))).toBeNull();
+    });
+
+    it('renders no board filter strip and no interactive control other than links', () => {
+      const { container } = render(
+        <LibraryPageContent
+          initialMyBoards={[]}
+          initialPlaylists={{ playlists: [makePlaylist('aaa')], totalCount: 1, hasMore: false }}
+          initialDiscoverPlaylists={NO_DISCOVER}
+        />,
+      );
+
+      expect(container.querySelector('[data-testid="filter-strip"]')).toBeNull();
+      expect(screen.queryAllByRole('button')).toHaveLength(0);
+    });
   });
 });

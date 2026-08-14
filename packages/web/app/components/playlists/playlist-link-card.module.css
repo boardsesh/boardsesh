@@ -1,0 +1,65 @@
+/* Compact playlist card — copied verbatim from components/library/library.module.css
+   (the grid variant of the old PlaylistCard) so the read-only /playlists grid keeps
+   its geometry after W-16 deletes that directory. */
+.cardCompact {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  text-decoration: none !important;
+  color: inherit !important;
+  background-color: var(--semantic-surface);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: background-color 150ms ease;
+  cursor: pointer;
+}
+
+.cardCompact:visited,
+.cardCompact:hover,
+.cardCompact:active,
+.cardCompact:link {
+  text-decoration: none !important;
+  color: inherit !important;
+}
+
+.cardCompact:hover {
+  background-color: var(--neutral-100);
+}
+
+.cardCompactSquare {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.15),
+    inset 1px 0 0 rgba(255, 255, 255, 0.2);
+}
+
+.cardCompactInfo {
+  flex: 1;
+  min-width: 0;
+  /* Slightly more left padding to create visual separation from the thumbnail */
+  padding-left: var(--spacing-3);
+  padding-right: var(--spacing-2);
+}
+
+.cardCompactName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--neutral-900);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.cardMeta {
+  font-size: 12px;
+  color: var(--neutral-500);
+  margin-top: 2px;
+}

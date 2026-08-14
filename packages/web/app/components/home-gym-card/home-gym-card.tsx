@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
-import dynamic from 'next/dynamic';
+import React, { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSession } from 'next-auth/react';
 import Box from '@mui/material/Box';
@@ -10,32 +9,15 @@ import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
-import IconButton from '@mui/material/IconButton';
 import FitnessCenterOutlined from '@mui/icons-material/FitnessCenterOutlined';
 import SettingsOutlined from '@mui/icons-material/SettingsOutlined';
 import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined';
-import SearchOutlined from '@mui/icons-material/SearchOutlined';
-import CloseOutlined from '@mui/icons-material/CloseOutlined';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { useFeatureFlag } from '@/app/components/providers/feature-flags-provider';
 import { GYM_KIOSK_FLAG } from '@/app/flags';
-import type { SearchCategory } from '@/app/components/search-drawer/unified-search-drawer';
 import { useMyGyms } from '@/app/hooks/use-my-gyms';
 import { resolveGymRole, type GymRoleKind } from '@/app/lib/gym-role';
-import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
-import { track } from '@/app/lib/analytics';
 import { themeTokens } from '@/app/theme/theme-config';
-
-const MyGymsDrawer = dynamic(() => import('@/app/components/my-gyms-drawer/my-gyms-drawer'), { ssr: false });
-
-const UnifiedSearchDrawer = dynamic(() => import('@/app/components/search-drawer/unified-search-drawer'), {
-  ssr: false,
-});
-
-const DISMISS_PREFERENCE_KEY = 'homeGymCard:dismissed';
-
-// Hoisted so the search drawer gets a stable array reference across renders.
-const GYM_SEARCH_CATEGORIES: SearchCategory[] = ['gyms'];
 
 // Same outlined-card language as the homepage OnboardingCard so the gym card
 // slots into the stack without extra visual weight.
@@ -64,9 +46,15 @@ const iconChipSx = {
 } as const;
 
 /**
- * Signed-in homepage nudge about gyms. Owners see their gym with Manage / View
- * actions; signed-in climbers without a gym get a low-key, dismissible "Find
- * your gym" card. Signed-out visitors see nothing.
+ * Signed-in homepage card for a gym you help run: the gym's name plus real
+ * links into `/gym/{slug}` and `/gym/{slug}/manage`. Signed-out visitors, and
+ * signed-in climbers with no gym, see nothing.
+ *
+ * The "Find your gym" nudge, the multi-gym "and N more" drawer and the
+ * `Homepage Gym Card Click` event were removed with the search and my-gyms
+ * drawers they opened. The homepage has no gym-discovery affordance until
+ * #4372 builds a crawlable gyms directory to point at — deliberately not
+ * invented here.
  *
  * The authenticated body lives in a child component so the `useMyGyms`
  * GraphQL/React Query hooks never run for signed-out (or still-loading)
@@ -86,31 +74,6 @@ function AuthedHomeGymCard({ currentUserId }: { currentUserId: string | null }) 
   // hides the Manage button until the gym-kiosk feature ships broadly. The
   // View action stays ungated.
   const kioskFlag = useFeatureFlag(GYM_KIOSK_FLAG);
-
-  // `null` = not yet resolved from IndexedDB; render nothing until we know so
-  // the non-owner nudge never flashes and then vanishes.
-  const [dismissed, setDismissed] = useState<boolean | null>(null);
-  const [myGymsOpen, setMyGymsOpen] = useState(false);
-  const [myGymsRendered, setMyGymsRendered] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchRendered, setSearchRendered] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    // getPreference already swallows IndexedDB errors and resolves null, but
-    // guard the promise anyway so a rejection can never strand `dismissed` at
-    // null (which would keep the non-owner nudge permanently hidden).
-    void getPreference<boolean>(DISMISS_PREFERENCE_KEY)
-      .then((value) => {
-        if (!cancelled) setDismissed(Boolean(value));
-      })
-      .catch(() => {
-        if (!cancelled) setDismissed(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const roleLabel = useCallback(
     (role: GymRoleKind): string => {
@@ -133,147 +96,46 @@ function AuthedHomeGymCard({ currentUserId }: { currentUserId: string | null }) 
     [tCommon],
   );
 
-  const openMyGyms = useCallback(() => {
-    setMyGymsRendered(true);
-    setMyGymsOpen(true);
-    track('Homepage Gym Card Click', { action: 'open-my-gyms' });
-  }, []);
-
-  const openSearch = useCallback(() => {
-    setSearchRendered(true);
-    setSearchOpen(true);
-    track('Homepage Gym Card Click', { action: 'find-gym' });
-  }, []);
-
-  const closeMyGyms = useCallback(() => setMyGymsOpen(false), []);
-  const closeSearch = useCallback(() => setSearchOpen(false), []);
-
-  const handleDismiss = useCallback(() => {
-    setDismissed(true);
-    void setPreference(DISMISS_PREFERENCE_KEY, true);
-    track('Homepage Gym Card Click', { action: 'dismiss' });
-  }, []);
-
-  // Wait for the gyms fetch to definitively resolve before deciding which
-  // variant to show. `hasResolved` stays false while the ws-auth token is
-  // still in flight, so this never misreads "idle, pre-token" as "loaded with
-  // zero gyms" and flashes the non-owner nudge before swapping to the owner
-  // card (see use-my-gyms.ts).
+  // Wait for the gyms fetch to definitively resolve before rendering.
+  // `hasResolved` stays false while the ws-auth token is still in flight, so
+  // this never misreads "idle, pre-token" as "loaded with zero gyms" (see
+  // use-my-gyms.ts).
   if (error || !hasResolved) return null;
-
-  if (gyms.length > 0) {
-    return (
-      <>
-        <OwnerGymCard
-          gym={gyms[0]}
-          extraCount={gyms.length - 1}
-          role={resolveGymRole(gyms[0], currentUserId)}
-          roleLabel={roleLabel}
-          kioskFlag={Boolean(kioskFlag)}
-          onOpenMyGyms={openMyGyms}
-          ownerSubtitle={t('home.gymCard.ownerSubtitle')}
-          manageLabel={t('home.gymCard.manage')}
-          viewLabel={t('home.gymCard.viewPage')}
-          moreLabel={t('home.gymCard.andMore', { count: gyms.length - 1 })}
-        />
-        {myGymsRendered && <MyGymsDrawer open={myGymsOpen} onClose={closeMyGyms} />}
-      </>
-    );
-  }
-
-  // Non-owner: only render once we know the dismissal state and it's not set.
-  if (dismissed !== false) return null;
+  if (gyms.length === 0) return null;
 
   return (
-    <>
-      <Card variant="outlined" sx={cardSx} data-testid="home-gym-card-find">
-        <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 2, px: 2.5 }}>
-          <Box sx={iconChipSx}>
-            <FitnessCenterOutlined />
-          </Box>
-          <Box sx={{ minWidth: 0, flex: 1 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography
-                variant="body1"
-                fontWeight={themeTokens.typography.fontWeight.semibold}
-                sx={{ color: 'var(--neutral-900)', lineHeight: themeTokens.typography.lineHeight.tight, flex: 1 }}
-              >
-                {t('home.gymCard.findTitle')}
-              </Typography>
-              <IconButton
-                size="small"
-                onClick={handleDismiss}
-                aria-label={t('home.gymCard.dismiss')}
-                data-testid="home-gym-card-dismiss"
-                sx={{ color: 'var(--neutral-400)', flexShrink: 0 }}
-              >
-                <CloseOutlined fontSize="small" />
-              </IconButton>
-            </Box>
-            <Typography variant="body2" sx={{ color: 'var(--neutral-500)', mt: 0.25 }}>
-              {t('home.gymCard.findDescription')}
-            </Typography>
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<SearchOutlined />}
-              onClick={openSearch}
-              data-testid="home-gym-card-find-cta"
-              sx={{ textTransform: 'none', mt: 1.25 }}
-            >
-              {t('home.gymCard.findCta')}
-            </Button>
-          </Box>
-        </CardContent>
-      </Card>
-      {searchRendered && (
-        <UnifiedSearchDrawer
-          open={searchOpen}
-          onClose={closeSearch}
-          defaultCategory="gyms"
-          allowedCategories={GYM_SEARCH_CATEGORIES}
-          showCloseButton
-        />
-      )}
-    </>
+    <OwnerGymCard
+      gym={gyms[0]}
+      role={resolveGymRole(gyms[0], currentUserId)}
+      roleLabel={roleLabel}
+      kioskFlag={Boolean(kioskFlag)}
+      ownerSubtitle={t('home.gymCard.ownerSubtitle')}
+      manageLabel={t('home.gymCard.manage')}
+      viewLabel={t('home.gymCard.viewPage')}
+    />
   );
 }
 
 type OwnerGymCardProps = {
   gym: ReturnType<typeof useMyGyms>['gyms'][number];
-  extraCount: number;
   role: GymRoleKind | null;
   roleLabel: (role: GymRoleKind) => string;
   kioskFlag: boolean;
-  onOpenMyGyms: () => void;
   ownerSubtitle: string;
   manageLabel: string;
   viewLabel: string;
-  moreLabel: string;
 };
 
-function OwnerGymCard({
-  gym,
-  extraCount,
-  role,
-  roleLabel,
-  kioskFlag,
-  onOpenMyGyms,
-  ownerSubtitle,
-  manageLabel,
-  viewLabel,
-  moreLabel,
-}: OwnerGymCardProps) {
+function OwnerGymCard({ gym, role, roleLabel, kioskFlag, ownerSubtitle, manageLabel, viewLabel }: OwnerGymCardProps) {
   // The manage route resolves a bare UUID (slug-less legacy gyms); the public
   // gym page only resolves by slug — so "View page" is offered only with a slug.
   const showManage = gym.canEdit && kioskFlag;
   const manageHref = `/gym/${gym.slug ?? gym.uuid}/manage`;
   const viewHref = gym.slug ? `/gym/${gym.slug}` : null;
-  const showMore = extraCount > 0;
 
-  // Nothing actionable (no manage access, no public page, single gym) — skip the
-  // card entirely rather than show a dead-end owner row.
-  if (!showManage && !viewHref && !showMore) return null;
+  // Nothing actionable (no manage access, no public page) — skip the card
+  // entirely rather than show a dead-end owner row.
+  if (!showManage && !viewHref) return null;
 
   return (
     <Card variant="outlined" sx={cardSx} data-testid="home-gym-card-owner">
@@ -320,17 +182,6 @@ function OwnerGymCard({
                 sx={{ textTransform: 'none' }}
               >
                 {viewLabel}
-              </Button>
-            )}
-            {showMore && (
-              <Button
-                size="small"
-                variant="text"
-                onClick={onOpenMyGyms}
-                data-testid="home-gym-card-more"
-                sx={{ textTransform: 'none', color: 'var(--neutral-500)' }}
-              >
-                {moreLabel}
               </Button>
             )}
           </Box>

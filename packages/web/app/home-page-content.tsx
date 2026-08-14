@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
-import dynamic from 'next/dynamic';
+import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -11,7 +10,6 @@ import CardContent from '@mui/material/CardContent';
 import CardActionArea from '@mui/material/CardActionArea';
 import InstallMobileOutlined from '@mui/icons-material/InstallMobileOutlined';
 import SystemUpdateOutlined from '@mui/icons-material/SystemUpdateOutlined';
-import PlayCircleOutlineOutlined from '@mui/icons-material/PlayCircleOutlineOutlined';
 import PeopleOutlined from '@mui/icons-material/PeopleOutlined';
 import BluetoothOutlined from '@mui/icons-material/BluetoothOutlined';
 import LocalOfferOutlined from '@mui/icons-material/LocalOfferOutlined';
@@ -23,34 +21,21 @@ import { isNativeApp, isCapacitorWebView, waitForCapacitor } from '@/app/lib/ble
 import { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL } from '@/app/lib/store-urls';
 import { resolveHeroInstall, type InstallPlatform, type HeroInstallStore } from '@/app/lib/hero-install';
 import { useSession } from 'next-auth/react';
-import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import { useTranslation } from 'react-i18next';
 import { themeTokens } from '@/app/theme/theme-config';
-import BoardDiscoveryScroll from '@/app/components/board-scroll/board-discovery-scroll';
-import { constructBoardSlugListUrl, popularConfigListUrl } from '@/app/lib/url-utils';
-import { getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
-import type { BoardConfigData } from '@/app/lib/server-board-configs';
-import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
+import LocaleLink from '@/app/components/i18n/locale-link';
+import PopularBoardRail from '@/app/components/board-entity/popular-board-rail';
+import { APP_URL } from '@/app/lib/app-origin';
+import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import HomeRecentBetaSection from '@/app/components/beta-videos/home-recent-beta-section';
 import HomeGymCard from '@/app/components/home-gym-card/home-gym-card';
 import StartClimbingButton from '@/app/components/start-climbing-button';
 import { track } from '@/app/lib/analytics';
-import { useOnboardingTourOptional } from '@/app/components/onboarding/onboarding-tour-provider';
-import { TOUR_OPEN_START_SESH_EVENT } from '@/app/components/onboarding/onboarding-tour-events';
 
-const StartSeshDrawer = dynamic(() => import('@/app/components/session-creation/start-sesh-drawer'), { ssr: false });
-
-const UnifiedSearchDrawer = dynamic(() => import('@/app/components/search-drawer/unified-search-drawer'), {
-  ssr: false,
-});
-
-const BoardSelectorDrawer = dynamic(() => import('@/app/components/board-selector-drawer/board-selector-drawer'), {
-  ssr: false,
-});
+const DISCORD_INVITE_URL = 'https://discord.gg/YXA8GsXfQK';
 
 type HomePageContentProps = {
-  boardConfigs: BoardConfigData;
   initialPopularConfigs?: PopularBoardConfig[];
   initialRecentBeta?: RecentBetaLinkRow[];
 };
@@ -61,7 +46,15 @@ type OnboardingCardProps = {
   icon: React.ReactNode;
   title: string;
   description: string;
-  onClick: () => void;
+  /** Destination. Makes the whole card a real anchor a crawler can follow. */
+  href?: string;
+  /** `href` is cross-origin (the app, Discord) — render a plain <a>, not a LocaleLink. */
+  external?: boolean;
+  /** Open an external card in a new tab. Off for the app hand-off, which is a same-tab
+   *  navigation between two `.boardsesh.com` origins (see start-climbing-button.tsx). */
+  newTab?: boolean;
+  /** Fallback for the store-install cards, which fire analytics and window.open. */
+  onClick?: () => void;
   /**
    * Category colour-coding for the icon chip. Cards that do similar jobs
    * share an accent so the list is scannable. The whole card remains the
@@ -136,7 +129,73 @@ function DiscordIcon() {
   );
 }
 
-function OnboardingCard({ icon, title, description, onClick, accent = 'action' }: OnboardingCardProps) {
+function OnboardingCard({
+  icon,
+  title,
+  description,
+  onClick,
+  href,
+  external,
+  newTab,
+  accent = 'action',
+}: OnboardingCardProps) {
+  const cardBody = (
+    <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 2, px: 2.5 }}>
+      <Box
+        sx={{
+          width: 44,
+          height: 44,
+          borderRadius: `${themeTokens.borderRadius.md}px`,
+          backgroundColor: accentSurface[accent],
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+          color: resolveAccentIconColor(accent),
+        }}
+      >
+        {icon}
+      </Box>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography
+          variant="body1"
+          fontWeight={themeTokens.typography.fontWeight.semibold}
+          sx={{
+            color: 'var(--neutral-900)',
+            lineHeight: themeTokens.typography.lineHeight.tight,
+          }}
+        >
+          {title}
+        </Typography>
+        <Typography variant="body2" sx={{ color: 'var(--neutral-500)', mt: 0.25 }}>
+          {description}
+        </Typography>
+      </Box>
+    </CardContent>
+  );
+
+  // A card that goes somewhere is an anchor, not a click handler on a div:
+  // that is what makes it crawlable, middle-clickable and keyboard-reachable.
+  const action = external ? (
+    <CardActionArea
+      component="a"
+      href={href}
+      target={newTab ? '_blank' : undefined}
+      rel={newTab ? 'noopener noreferrer' : undefined}
+      sx={{ p: 0 }}
+    >
+      {cardBody}
+    </CardActionArea>
+  ) : href ? (
+    <CardActionArea component={LocaleLink} href={href} sx={{ p: 0 }}>
+      {cardBody}
+    </CardActionArea>
+  ) : (
+    <CardActionArea onClick={onClick} sx={{ p: 0 }}>
+      {cardBody}
+    </CardActionArea>
+  );
+
   return (
     <Card
       variant="outlined"
@@ -150,40 +209,7 @@ function OnboardingCard({ icon, title, description, onClick, accent = 'action' }
         },
       }}
     >
-      <CardActionArea onClick={onClick} sx={{ p: 0 }}>
-        <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 2, px: 2.5 }}>
-          <Box
-            sx={{
-              width: 44,
-              height: 44,
-              borderRadius: `${themeTokens.borderRadius.md}px`,
-              backgroundColor: accentSurface[accent],
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              color: resolveAccentIconColor(accent),
-            }}
-          >
-            {icon}
-          </Box>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography
-              variant="body1"
-              fontWeight={themeTokens.typography.fontWeight.semibold}
-              sx={{
-                color: 'var(--neutral-900)',
-                lineHeight: themeTokens.typography.lineHeight.tight,
-              }}
-            >
-              {title}
-            </Typography>
-            <Typography variant="body2" sx={{ color: 'var(--neutral-500)', mt: 0.25 }}>
-              {description}
-            </Typography>
-          </Box>
-        </CardContent>
-      </CardActionArea>
+      {action}
     </Card>
   );
 }
@@ -257,21 +283,9 @@ function InstallAppCard({ platform }: { platform: InstallPlatform }) {
   );
 }
 
-export default function HomePageContent({
-  boardConfigs,
-  initialPopularConfigs,
-  initialRecentBeta = [],
-}: HomePageContentProps) {
+export default function HomePageContent({ initialPopularConfigs, initialRecentBeta = [] }: HomePageContentProps) {
   const { t } = useTranslation('marketing');
   const { status } = useSession();
-  const router = useLocaleRouter();
-  const onboardingTour = useOnboardingTourOptional();
-  const [seshDrawerOpen, setSeshDrawerOpen] = useState(false);
-  const [findClimbersOpen, setFindClimbersOpen] = useState(false);
-  const [createBoardOpen, setCreateBoardOpen] = useState(false);
-  const [seshDrawerMounted, setSeshDrawerMounted] = useState(false);
-  const [findClimbersMounted, setFindClimbersMounted] = useState(false);
-  const [createBoardMounted, setCreateBoardMounted] = useState(false);
   const [installPlatform, setInstallPlatform] = useState<InstallPlatform>('unknown');
   // Which store a legacy native straggler installed from, so the hero "update"
   // CTA points at the right place. Only read once installPlatform === 'native',
@@ -328,57 +342,7 @@ export default function HomePageContent({
     setInstallPlatform(classifyWeb());
   }, []);
 
-  useEffect(() => {
-    if (seshDrawerOpen) setSeshDrawerMounted(true);
-  }, [seshDrawerOpen]);
-
-  useEffect(() => {
-    const handler = () => {
-      setSeshDrawerMounted(true);
-      setSeshDrawerOpen(true);
-    };
-    window.addEventListener(TOUR_OPEN_START_SESH_EVENT, handler);
-    return () => window.removeEventListener(TOUR_OPEN_START_SESH_EVENT, handler);
-  }, []);
-
-  useEffect(() => {
-    if (findClimbersOpen) setFindClimbersMounted(true);
-  }, [findClimbersOpen]);
-
-  useEffect(() => {
-    if (createBoardOpen) setCreateBoardMounted(true);
-  }, [createBoardOpen]);
-
   const isAuthenticated = status === 'authenticated';
-
-  const handleBoardClick = useCallback(
-    (board: UserBoard) => {
-      if (board.slug) {
-        router.push(constructBoardSlugListUrl(board.slug, board.angle));
-      }
-    },
-    [router],
-  );
-
-  const handleConfigClick = useCallback(
-    (config: PopularBoardConfig) => {
-      const angle = getDefaultAngleForBoard(config.boardType);
-      router.push(popularConfigListUrl(config, angle));
-    },
-    [router],
-  );
-
-  const handleCustomClick = useCallback(() => {
-    setCreateBoardOpen(true);
-  }, []);
-
-  const handleBoardCreated = useCallback(
-    (url: string) => {
-      setCreateBoardOpen(false);
-      router.push(url);
-    },
-    [router],
-  );
 
   // Hero CTA now drives app installs instead of starting a sesh. Store target,
   // label, and icon all follow the detected platform.
@@ -478,13 +442,10 @@ export default function HomePageContent({
             rail so the community signal is the first thing below the hero */}
         <HomeRecentBetaSection initialRecentBeta={initialRecentBeta} />
 
-        {/* Board Discovery - Find nearby + Custom + My boards + Popular configs */}
-        <BoardDiscoveryScroll
-          onBoardClick={handleBoardClick}
-          onConfigClick={handleConfigClick}
-          onCustomClick={handleCustomClick}
-          initialPopularConfigs={initialPopularConfigs}
-        />
+        {/* Board discovery — a static, crawlable grid of the popular configs the
+            page already SSR-fetches. Finding a board nearby, searching, and
+            building a custom config all live in the app. */}
+        <PopularBoardRail configs={initialPopularConfigs ?? []} />
 
         {/* Onboarding Cards */}
         <Box
@@ -519,19 +480,11 @@ export default function HomePageContent({
           <HomeGymCard />
 
           <OnboardingCard
-            icon={<PlayCircleOutlineOutlined />}
-            title={t('home.cards.tourTitle')}
-            description={t('home.cards.tourDescription')}
-            accent="v11"
-            onClick={() => onboardingTour?.start()}
-          />
-
-          <OnboardingCard
             icon={<WarningAmberOutlined />}
             title={t('home.cards.auroraTitle')}
             description={t('home.cards.auroraDescription')}
             accent="v11"
-            onClick={() => router.push('/aurora-migration')}
+            href="/aurora-migration"
           />
 
           <OnboardingCard
@@ -539,7 +492,7 @@ export default function HomePageContent({
             title={t('home.cards.playlistTitle')}
             description={t('home.cards.playlistDescription')}
             accent="v12"
-            onClick={() => router.push('/playlists')}
+            href="/playlists"
           />
 
           <OnboardingCard
@@ -547,7 +500,8 @@ export default function HomePageContent({
             title={t('home.cards.bluetoothTitle')}
             description={t('home.cards.bluetoothDescription')}
             accent="v12"
-            onClick={() => setSeshDrawerOpen(true)}
+            href={APP_URL}
+            external
           />
 
           <OnboardingCard
@@ -555,7 +509,8 @@ export default function HomePageContent({
             title={t('home.cards.crewTitle')}
             description={t('home.cards.crewDescription')}
             accent="v13"
-            onClick={() => setFindClimbersOpen(true)}
+            href={APP_URL}
+            external
           />
 
           <OnboardingCard
@@ -563,7 +518,9 @@ export default function HomePageContent({
             title={t('home.cards.discordTitle')}
             description={t('home.cards.discordDescription')}
             accent="v13"
-            onClick={() => window.open('https://discord.gg/YXA8GsXfQK', '_blank', 'noopener,noreferrer')}
+            href={DISCORD_INVITE_URL}
+            external
+            newTab
           />
         </Box>
 
@@ -573,34 +530,12 @@ export default function HomePageContent({
             <Typography variant="body2" sx={{ color: 'var(--neutral-400)', mb: 1 }}>
               {t('home.feed.callout')}
             </Typography>
-            <Button variant="text" size="small" onClick={() => router.push('/feed')} sx={{ textTransform: 'none' }}>
+            <Button component={LocaleLink} href="/feed" variant="text" size="small" sx={{ textTransform: 'none' }}>
               {t('home.feed.cta')}
             </Button>
           </Box>
         )}
       </Box>
-
-      {seshDrawerMounted && (
-        <StartSeshDrawer open={seshDrawerOpen} onClose={() => setSeshDrawerOpen(false)} boardConfigs={boardConfigs} />
-      )}
-
-      {findClimbersMounted && (
-        <UnifiedSearchDrawer
-          open={findClimbersOpen}
-          onClose={() => setFindClimbersOpen(false)}
-          defaultCategory="users"
-        />
-      )}
-
-      {createBoardMounted && (
-        <BoardSelectorDrawer
-          open={createBoardOpen}
-          onClose={() => setCreateBoardOpen(false)}
-          boardConfigs={boardConfigs}
-          placement="bottom"
-          onBoardSelected={handleBoardCreated}
-        />
-      )}
     </Box>
   );
 }

@@ -3,7 +3,6 @@ import { createPageMetadata } from '@/app/lib/seo/metadata';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import I18nProvider from '@/app/components/providers/i18n-provider';
-import { getAllBoardConfigs } from './lib/server-board-configs';
 import { getPopularBoardConfigs } from './lib/server-popular-configs';
 import { getRecentBetaLinks } from './lib/server-recent-beta-links';
 import { selectHomeLcpHints } from './lib/popular-lcp-preload';
@@ -22,8 +21,7 @@ export async function generateMetadata() {
 }
 
 export default async function Home() {
-  const [boardConfigs, popularConfigs, recentBeta, locale] = await Promise.all([
-    getAllBoardConfigs(),
+  const [popularConfigs, recentBeta, locale] = await Promise.all([
     getPopularBoardConfigs(),
     getRecentBetaLinks(),
     getLocale(),
@@ -46,11 +44,7 @@ export default async function Home() {
           plain preconnect opens the connection it can reuse. */}
       {preconnectOrigin && <link rel="preconnect" href={preconnectOrigin} />}
       {boardPreloadUrl && <link rel="preload" as="image" href={boardPreloadUrl} fetchPriority="high" />}
-      <HomePageContent
-        boardConfigs={boardConfigs}
-        initialPopularConfigs={popularConfigs}
-        initialRecentBeta={recentBeta}
-      />
+      <HomePageContent initialPopularConfigs={popularConfigs} initialRecentBeta={recentBeta} />
     </I18nProvider>
   );
 }

@@ -23,19 +23,17 @@ import {
   PushPinOutlined,
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { Climb } from '@/app/lib/types';
 import { executeGraphQL, createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import {
   type GetPlaylistQueryResponse,
   type GetPlaylistQueryVariables,
-  type GetPlaylistClimbsQueryResponse,
   type Playlist,
   type UpdatePlaylistLastAccessedMutationVariables,
   type UpdatePlaylistLastAccessedMutationResponse,
   type DeletePlaylistMutationVariables,
   type DeletePlaylistMutationResponse,
   GET_PLAYLIST,
-  GET_PLAYLIST_CLIMBS,
   DELETE_PLAYLIST,
   UPDATE_PLAYLIST_LAST_ACCESSED,
   FOLLOW_PLAYLIST,
@@ -46,38 +44,24 @@ import {
   type PinPlaylistMutationVariables,
   type UnpinPlaylistMutationResponse,
   type UnpinPlaylistMutationVariables,
-  type GetPlaylistClimbsQueryVariables,
   type PlaylistClimbsResult,
-  type AddClimbToPlaylistMutationResponse,
-  type AddClimbToPlaylistMutationVariables,
-  ADD_CLIMB_TO_PLAYLIST,
 } from '@boardsesh/graphql/operations/playlists';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { shareWithFallback } from '@/app/lib/share-utils';
 import { LoadingSpinner } from '@/app/components/ui/loading-spinner';
 import { EmptyState } from '@/app/components/ui/empty-state';
 import FollowButton from '@/app/components/ui/follow-button';
-import PlaylistPreviewSquare from '@/app/components/library/playlist-preview-square';
+import PlaylistPreviewSquare from '@/app/components/playlists/playlist-preview-square';
 import { recordPlaylistOpen } from '@/app/lib/recent-playlists-db';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
-import {
-  getBoardDetailsForPlaylist,
-  getDefaultAngleForBoard,
-  getUserBoardDetails,
-} from '@/app/lib/board-config-for-playlist';
+import { getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
 import { themeTokens } from '@/app/theme/theme-config';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
+import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
 import BackButton from '@/app/components/back-button';
-import { PlaylistGeneratorDrawer } from '@/app/components/playlist-generator';
 import PlaylistEditDrawer from '@/app/components/library/playlist-edit-drawer';
 import CommentSection from '@/app/components/social/comment-section';
 import MultiboardClimbList from '@/app/components/climb-list/multiboard-climb-list';
-import { PlaylistActivationProvider } from '@/app/components/climb-actions/playlist-activation-context';
-import { useOptionalQueueActions } from '@/app/components/graphql-queue';
-import { useQueueBridgeBoardInfo } from '@/app/components/queue-control/queue-bridge-context';
-import { fetchPlaylistSuggestionClimbs } from '@/app/components/queue-control/playlist-suggestion-refresh';
-import { useClearPlaylistSuggestionSourceOnUnmount } from '@/app/components/queue-control/use-clear-playlist-suggestion-source-on-unmount';
-import { usePlaylistClimbActivation } from '@/app/components/queue-control/use-playlist-climb-activation';
 import { usePlaylistClimbs, type PlaylistClimbsBoardInput } from '@boardsesh/playlists-react';
 import { useMyBoards } from '@/app/hooks/use-my-boards';
 import { findMatchingBoard, type BoardConfig } from '@/app/lib/find-matching-board';
@@ -133,8 +117,6 @@ export default function PlaylistDetailContent({
   const [loading, setLoading] = useState(!initialPlaylist);
   const [error, setError] = useState<string | null>(null);
   const [editDrawerOpen, setEditDrawerOpen] = useState(false);
-  const [generatorOpen, setGeneratorOpen] = useState(false);
-  const [listRefreshKey, setListRefreshKey] = useState(0);
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   // Initialize selectedBoard from SSR data immediately (avoids flash from "All" to selected board)
   const [selectedBoard, setSelectedBoard] = useState<UserBoard | null>(() =>
@@ -152,17 +134,11 @@ export default function PlaylistDetailContent({
   const ssrInitialClimbsUpdatedAtRef = useRef(initialClimbs ? Date.now() : 0);
   // Snapshot the query-key components that the SSR climbs payload was fetched
   // for. `initialData` is shared across keys, so without this gate a board
-  // chip switch or a post-edit `listRefreshKey` bump would re-seed the new
-  // key with the original SSR page and (because `initialDataUpdatedAt` puts
-  // it inside `staleTime`) skip the fetch entirely.
-  const ssrClimbsKeyRef = useRef({
-    boardUuid: selectedBoard?.uuid ?? null,
-    refreshKey: 0,
-  });
+  // chip switch would re-seed the new key with the original SSR page and
+  // (because `initialDataUpdatedAt` puts it inside `staleTime`) skip the fetch
+  // entirely.
+  const ssrClimbsKeyRef = useRef({ boardUuid: selectedBoard?.uuid ?? null });
   const { token, isLoading: tokenLoading } = useWsAuthToken();
-  const queueActions = useOptionalQueueActions();
-  const activeQueueBoardInfo = useQueueBridgeBoardInfo();
-  useClearPlaylistSuggestionSourceOnUnmount(queueActions);
 
   // Fetch user's boards (with SSR initial data to avoid loading skeleton).
   // These boards are forwarded to MultiboardClimbList via the `boards` prop so
@@ -253,12 +229,11 @@ export default function PlaylistDetailContent({
   // === Playlist climbs data fetching (all-boards mode by default) ===
 
   // Only feed initialData to react-query when the current query key matches
-  // the tuple the SSR climbs page was fetched for. Without this guard, every
-  // new key (board switch, listRefreshKey bump after edits, …) would adopt
-  // the same SSR page as fresh data and skip the actual fetch.
+  // the tuple the SSR climbs page was fetched for. Without this guard, a board
+  // switch would adopt the same SSR page as fresh data and skip the actual
+  // fetch.
   const ssrClimbsApplicable = ssrSeedMatchesQueryKey(!!initialClimbs, ssrClimbsKeyRef.current, {
     boardUuid: selectedBoard?.uuid ?? null,
-    refreshKey: listRefreshKey,
   });
 
   // Specific-board mode when a board is selected; all-boards otherwise.
@@ -284,7 +259,7 @@ export default function PlaylistDetailContent({
   const { query: playlistClimbsQuery, allClimbs: sharedAllClimbs } = usePlaylistClimbs({
     playlistUuid,
     boardUuid: selectedBoard?.uuid ?? null,
-    refreshKey: listRefreshKey,
+    refreshKey: 0,
     boardInput: playlistClimbsBoardInput,
     pageSize: 20,
     tokenLoading,
@@ -324,82 +299,9 @@ export default function PlaylistDetailContent({
     }
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  const selectedBoardDetails = useMemo(
-    () => (selectedBoard ? getUserBoardDetails(selectedBoard) : null),
-    [selectedBoard],
-  );
-
-  const fetchPlaylistClimbsForBoard = useCallback(
-    async ({
-      boardDetails,
-      angle,
-      activatedClimbUuid,
-      signal,
-    }: {
-      boardDetails: BoardDetails;
-      angle: number;
-      activatedClimbUuid: string;
-      signal: AbortSignal;
-    }): Promise<Climb[]> => {
-      const client = createGraphQLHttpClient(token);
-      const setIds = Array.isArray(boardDetails.set_ids)
-        ? boardDetails.set_ids.join(',')
-        : String(boardDetails.set_ids);
-
-      return fetchPlaylistSuggestionClimbs({
-        activatedClimbUuid,
-        signal,
-        fetchPage: async ({ page, pageSize, signal: requestSignal }) => {
-          const response = await client.request<GetPlaylistClimbsQueryResponse, GetPlaylistClimbsQueryVariables>({
-            document: GET_PLAYLIST_CLIMBS,
-            variables: {
-              input: {
-                playlistId: playlistUuid,
-                boardName: boardDetails.board_name,
-                layoutId: boardDetails.layout_id,
-                sizeId: boardDetails.size_id,
-                setIds,
-                angle,
-                page,
-                pageSize,
-              },
-            },
-            signal: requestSignal,
-          });
-
-          return {
-            climbs: response.playlistClimbs.climbs as Climb[],
-            hasMore: response.playlistClimbs.hasMore,
-          };
-        },
-      });
-    },
-    [playlistUuid, token],
-  );
-
-  const activatePlaylistClimb = usePlaylistClimbActivation({
-    queueActions,
-    activeQueueBoardInfo,
-    selectedBoardDetails,
-    selectedBoard,
-    fallbackBoardType: playlist?.boardType,
-    fallbackLayoutId: playlist?.layoutId,
-    sourceId: playlistUuid,
-    allClimbs,
-    fetchClimbsForBoard: fetchPlaylistClimbsForBoard,
-    refreshErrorMessage: 'Failed to refresh playlist suggestions:',
-  });
-
-  const playlistActivationValue = useMemo(() => ({ activatePlaylistClimb }), [activatePlaylistClimb]);
-
   const handleEditSuccess = useCallback((updatedPlaylist: Playlist) => {
     setPlaylist(updatedPlaylist);
   }, []);
-
-  const handlePlaylistUpdated = useCallback(() => {
-    setListRefreshKey((prev) => prev + 1);
-    void fetchPlaylist();
-  }, [fetchPlaylist]);
 
   const handleDelete = useCallback(async () => {
     if (!token || !playlist) return;
@@ -474,14 +376,6 @@ export default function PlaylistDetailContent({
     }
     return PLAYLIST_COLORS[0];
   };
-
-  // Board details for the generator drawer
-  const generatorBoardDetails = useMemo(() => {
-    if (!playlist) return null;
-    return getBoardDetailsForPlaylist(playlist.boardType, playlist.layoutId);
-  }, [playlist]);
-
-  const generatorAngle = playlist ? getDefaultAngleForBoard(playlist.boardType) : 40;
 
   // With SSR data we have content to render, so don't gate on tokenLoading.
   // Showing the spinner during the first-tick auth bootstrap defeats the
@@ -604,6 +498,19 @@ export default function PlaylistDetailContent({
                   />
                 </Box>
               )}
+              {/* Lighting the wall lives in the app. A plain cross-origin
+                  anchor, never a redirect — www and app share the
+                  `.boardsesh.com` session cookie, so there is no token to hand
+                  over (same contract as start-climbing-button.tsx). */}
+              <MuiButton
+                variant="contained"
+                component="a"
+                href={buildAppHandoffUrl(`/discover/${playlistUuid}`)}
+                startIcon={<ElectricBoltOutlined />}
+                sx={{ mt: 1 }}
+              >
+                {t('detail.openInApp')}
+              </MuiButton>
             </div>
           </div>
 
@@ -647,19 +554,6 @@ export default function PlaylistDetailContent({
               <MenuItem
                 onClick={() => {
                   setMenuAnchor(null);
-                  setGeneratorOpen(true);
-                }}
-              >
-                <ListItemIcon>
-                  <ElectricBoltOutlined />
-                </ListItemIcon>
-                <ListItemText>{t('detail.menu.generate')}</ListItemText>
-              </MenuItem>
-            )}
-            {isOwner && (
-              <MenuItem
-                onClick={() => {
-                  setMenuAnchor(null);
                   setEditDrawerOpen(true);
                 }}
               >
@@ -684,8 +578,6 @@ export default function PlaylistDetailContent({
         <div className={styles.climbsSection}>
           {allClimbs.length === 0 && !isFetchingClimbs && !isClimbsLoading ? (
             <EmptyState description={t('detail.empty')} />
-          ) : queueActions ? (
-            <PlaylistActivationProvider value={playlistActivationValue}>{climbList}</PlaylistActivationProvider>
           ) : (
             climbList
           )}
@@ -710,44 +602,6 @@ export default function PlaylistDetailContent({
           playlist={playlist}
           onClose={() => setEditDrawerOpen(false)}
           onSuccess={handleEditSuccess}
-        />
-      )}
-
-      {/* Generator Drawer */}
-      {generatorBoardDetails && (
-        <PlaylistGeneratorDrawer
-          open={generatorOpen}
-          onClose={() => setGeneratorOpen(false)}
-          boardDetails={generatorBoardDetails}
-          defaultAngle={generatorAngle}
-          targetType="playlist"
-          onAddClimb={async (climb, _slot, angle) => {
-            await executeGraphQL<AddClimbToPlaylistMutationResponse, AddClimbToPlaylistMutationVariables>(
-              ADD_CLIMB_TO_PLAYLIST,
-              {
-                input: {
-                  playlistId: playlistUuid,
-                  climbUuid: climb.uuid,
-                  angle,
-                },
-              },
-              token,
-            );
-          }}
-          onComplete={({ added, failed, total }) => {
-            if (failed === 0) {
-              showMessage(t('generator.messages.addedAll', { count: total }), 'success');
-            } else if (added > 0) {
-              showMessage(t('generator.messages.addedPartial', { added, failed }), 'warning');
-            } else {
-              showMessage(t('generator.messages.failed'), 'error');
-            }
-            // Only refetch if we actually wrote to the playlist; full failures
-            // change nothing on the server side.
-            if (added > 0) {
-              handlePlaylistUpdated();
-            }
-          }}
         />
       )}
     </>

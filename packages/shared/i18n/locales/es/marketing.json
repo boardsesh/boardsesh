@@ -44,8 +44,6 @@
       "androidLiveDescription": "Ya disponible en Google Play"
     },
     "cards": {
-      "tourTitle": "Haz el tour",
-      "tourDescription": "Un recorrido de un minuto por la cola, el registro y las sesiones con tu grupo",
       "auroraTitle": "¿Vienes de Kilter?",
       "auroraDescription": "Trae tu historial en un solo paso",
       "crewTitle": "Encuentra tu grupo",
@@ -60,12 +58,7 @@
     "gymCard": {
       "ownerSubtitle": "El gimnasio de tu equipo, a un toque",
       "manage": "Gestionar",
-      "viewPage": "Ver página",
-      "andMore": "y {{count}} más",
-      "findTitle": "¿Escalas en un gimnasio con plafones?",
-      "findDescription": "Encuéntralo en Boardsesh: abre sus plafones y registra con tu equipo.",
-      "findCta": "Encuentra tu gimnasio",
-      "dismiss": "Descartar"
+      "viewPage": "Ver página"
     },
     "feed": {
       "callout": "Tus amigos están escalando.",

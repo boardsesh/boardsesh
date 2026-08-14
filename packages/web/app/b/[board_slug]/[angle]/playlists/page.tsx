@@ -10,7 +10,6 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import LibraryPageContent from '@/app/playlists/library-page-content';
-import { getAllBoardConfigs } from '@/app/lib/server-board-configs';
 import styles from '@/app/components/library/library.module.css';
 
 type PlaylistsPageProps = {
@@ -41,11 +40,10 @@ export default async function BoardSlugPlaylistsPage(props: PlaylistsPageProps) 
   const locale = await getLocale();
   const playlistFilter = { boardType: board.boardType, layoutId: board.layoutId };
 
-  const [initialMyBoards, initialPlaylists, initialDiscoverPlaylists, boardConfigs] = await Promise.all([
+  const [initialMyBoards, initialPlaylists, initialDiscoverPlaylists] = await Promise.all([
     authToken ? serverMyBoards(authToken) : null,
     authToken ? serverUserPlaylists(authToken, playlistFilter) : null,
     cachedDiscoverPlaylists(playlistFilter),
-    getAllBoardConfigs(),
   ]);
 
   return (
@@ -57,8 +55,6 @@ export default async function BoardSlugPlaylistsPage(props: PlaylistsPageProps) 
           initialMyBoards={initialMyBoards}
           initialPlaylists={initialPlaylists}
           initialDiscoverPlaylists={initialDiscoverPlaylists}
-          boardConfigs={boardConfigs}
-          createSource="board-slug-playlists-fab"
         />
       </div>
     </I18nProvider>

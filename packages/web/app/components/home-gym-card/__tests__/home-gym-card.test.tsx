@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import { GYM_KIOSK_FLAG } from '@/app/flags';
@@ -24,9 +24,6 @@ let mockHasResolved = true;
 let mockStatus: 'authenticated' | 'unauthenticated' | 'loading' = 'authenticated';
 let mockUserId: string | null = 'user-1';
 let mockKioskFlag = true;
-let mockDismissed = false;
-const mockSetPreference = vi.fn<(key: string, value: unknown) => Promise<void>>(() => Promise.resolve());
-const mockTrack = vi.fn();
 
 vi.mock('@/app/hooks/use-my-gyms', () => ({
   useMyGyms: () => ({
@@ -53,32 +50,12 @@ vi.mock('next-auth/react', () => ({
   }),
 }));
 
-vi.mock('@/app/lib/user-preferences-db', () => ({
-  getPreference: () => Promise.resolve(mockDismissed),
-  setPreference: (key: string, value: unknown) => mockSetPreference(key, value),
-}));
-
-vi.mock('@/app/lib/analytics', () => ({
-  track: (...args: unknown[]) => mockTrack(...args),
-}));
-
 vi.mock('@/app/components/i18n/locale-link', () => ({
   default: ({ href, children, ...rest }: { href: string; children?: React.ReactNode }) => (
     <a href={href} {...rest}>
       {children}
     </a>
   ),
-}));
-
-// next/dynamic runs the loader (the mocked drawer module below) asynchronously;
-// findBy* waits for it to resolve and render.
-vi.mock('@/app/components/my-gyms-drawer/my-gyms-drawer', () => ({
-  default: ({ open }: { open: boolean }) => (open ? <div data-testid="my-gyms-drawer" /> : null),
-}));
-
-vi.mock('@/app/components/search-drawer/unified-search-drawer', () => ({
-  default: ({ open, defaultCategory }: { open: boolean; defaultCategory?: string }) =>
-    open ? <div data-testid="gym-search" data-category={defaultCategory} /> : null,
 }));
 
 function makeGym(overrides?: Record<string, unknown>) {
@@ -115,7 +92,6 @@ describe('HomeGymCard', () => {
     mockStatus = 'authenticated';
     mockUserId = 'user-1';
     mockKioskFlag = true;
-    mockDismissed = false;
   });
 
   describe('variant selection', () => {
@@ -165,35 +141,13 @@ describe('HomeGymCard', () => {
       expect(screen.queryByTestId('home-gym-card-find')).toBeNull();
     });
 
-    it('shows the non-owner "find your gym" variant when the user has no gyms', async () => {
+    it('renders nothing for a signed-in climber with no gym', () => {
+      // The "Find your gym" nudge went with the search drawer it opened. The
+      // homepage has no gym-discovery affordance until #4372 builds one —
+      // recorded as an accepted loss, not an oversight.
       mockGyms = [];
-      render(<HomeGymCard />);
-      const card = await screen.findByTestId('home-gym-card-find');
-      expect(card).toBeTruthy();
-      expect(screen.getByText(/Climb at a gym with boards/i)).toBeTruthy();
-      expect(screen.getByTestId('home-gym-card-find-cta')).toBeTruthy();
-    });
-
-    it('hides the non-owner variant once it has been dismissed', async () => {
-      mockGyms = [];
-      mockDismissed = true;
-      render(<HomeGymCard />);
-      // Give the async getPreference effect a chance to resolve.
-      await waitFor(() => {
-        expect(screen.queryByTestId('home-gym-card-find')).toBeNull();
-      });
-    });
-
-    it('still shows the owner card when dismissed=true and the user has a gym (owner branch precedes the dismissal gate)', async () => {
-      // Dismissal only ever applies to the non-owner "find your gym" nudge. An
-      // owner who dismissed the nudge before joining/creating a gym must still
-      // see their owner card — the owner check has to run before the
-      // dismissal gate is ever consulted.
-      mockGyms = [makeGym()];
-      mockDismissed = true;
-      render(<HomeGymCard />);
-      const card = await screen.findByTestId('home-gym-card-owner');
-      expect(card).toBeTruthy();
+      const { container } = render(<HomeGymCard />);
+      expect(container.firstChild).toBeNull();
       expect(screen.queryByTestId('home-gym-card-find')).toBeNull();
     });
   });
@@ -243,50 +197,24 @@ describe('HomeGymCard', () => {
       expect(screen.queryByTestId('home-gym-card-owner')).toBeNull();
     });
 
-    it('shows an "and N more" affordance for multiple gyms and opens the My Gyms drawer', async () => {
+    it('shows the first gym and no "and N more" control for a user with three', async () => {
+      // The multi-gym drawer went with `my-gyms-drawer`. A user with several
+      // gyms sees the first one; the rest are reachable from the app.
       mockGyms = [makeGym({ uuid: 'gym-a' }), makeGym({ uuid: 'gym-b' }), makeGym({ uuid: 'gym-c' })];
       render(<HomeGymCard />);
       await screen.findByTestId('home-gym-card-owner');
 
-      const more = screen.getByTestId('home-gym-card-more');
-      expect(more.textContent).toMatch(/and 2 more/i);
-
-      fireEvent.click(more);
-      expect(await screen.findByTestId('my-gyms-drawer')).toBeTruthy();
-      expect(mockTrack).toHaveBeenCalledWith('Homepage Gym Card Click', { action: 'open-my-gyms' });
-    });
-
-    it('does not show "and N more" for a single gym', async () => {
-      mockGyms = [makeGym()];
-      render(<HomeGymCard />);
-      await screen.findByTestId('home-gym-card-owner');
       expect(screen.queryByTestId('home-gym-card-more')).toBeNull();
-    });
-  });
-
-  describe('non-owner interactions', () => {
-    it('opens the search drawer pre-set to the gyms category', async () => {
-      mockGyms = [];
-      render(<HomeGymCard />);
-      const cta = await screen.findByTestId('home-gym-card-find-cta');
-
-      fireEvent.click(cta);
-      const search = await screen.findByTestId('gym-search');
-      expect(search.getAttribute('data-category')).toBe('gyms');
-      expect(mockTrack).toHaveBeenCalledWith('Homepage Gym Card Click', { action: 'find-gym' });
+      expect(screen.getAllByTestId('home-gym-card-owner')).toHaveLength(1);
     });
 
-    it('persists the dismissal and hides the card when dismissed', async () => {
-      mockGyms = [];
+    it('renders nothing when a slug-less gym has no manage access, even with several gyms', () => {
+      // `showMore` used to keep this card alive with nothing else actionable
+      // on it. Without the drawer there is nothing to show.
+      mockKioskFlag = false;
+      mockGyms = [makeGym({ slug: null, canEdit: false }), makeGym({ uuid: 'gym-b' })];
       render(<HomeGymCard />);
-      const dismiss = await screen.findByTestId('home-gym-card-dismiss');
-
-      fireEvent.click(dismiss);
-      expect(mockSetPreference).toHaveBeenCalledWith('homeGymCard:dismissed', true);
-      await waitFor(() => {
-        expect(screen.queryByTestId('home-gym-card-find')).toBeNull();
-      });
-      expect(mockTrack).toHaveBeenCalledWith('Homepage Gym Card Click', { action: 'dismiss' });
+      expect(screen.queryByTestId('home-gym-card-owner')).toBeNull();
     });
   });
 });

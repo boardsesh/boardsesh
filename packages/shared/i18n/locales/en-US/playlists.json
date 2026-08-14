@@ -20,11 +20,11 @@
     "sections": {
       "jumpBackIn": "Jump Back In",
       "pinned": "Pinned",
-      "smart": "Your Picks",
       "discover": "Discover",
       "forYou": "For You",
       "community": "Community Playlists"
     },
+    "showMore": "Show more",
     "communityByline": "{{creatorName}} - {{climbCount}}",
     "allPlaylists": {
       "title": "My Playlists",
@@ -94,7 +94,6 @@
     "createFab": {
       "ariaLabel": "Create playlist"
     },
-    "customUnavailable": "Pick one of your boards or a popular config to get started.",
     "errors": {
       "loadTitle": "Unable to Load Library",
       "loadDescription": "There was an error loading your library. Please try again.",
@@ -114,7 +113,6 @@
       "subtitle": "Board data is missing for this climb."
     },
     "menu": {
-      "generate": "Generate",
       "editClimbs": "Edit climbs",
       "edit": "Edit",
       "delete": "Delete"
@@ -147,6 +145,7 @@
     "empty": "No climbs in this playlist yet",
     "climbCount_one": "{{count}} climb",
     "climbCount_other": "{{count}} climbs",
+    "openInApp": "Climb this in the app",
     "followerCount_one": "{{count}} follower",
     "followerCount_other": "{{count}} followers",
     "followFailed": "Failed to update follow status",
@@ -289,10 +288,7 @@
       "configurePrompt": "Configure options to preview"
     },
     "messages": {
-      "noClimbs": "No climbs to generate",
-      "addedAll": "Added {{count}} climbs to playlist",
-      "addedPartial": "Added {{added}} climbs. {{failed}} slots couldn't be filled.",
-      "failed": "Failed to generate playlist. No suitable climbs found."
+      "noClimbs": "No climbs to generate"
     }
   },
   "bottomTabBar": {

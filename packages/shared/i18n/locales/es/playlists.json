@@ -20,11 +20,11 @@
     "sections": {
       "jumpBackIn": "Continúa donde lo dejaste",
       "pinned": "Fijadas",
-      "smart": "Tus selecciones",
       "discover": "Descubre",
       "forYou": "Para ti",
       "community": "Playlists de la comunidad"
     },
+    "showMore": "Ver más",
     "communityByline": "{{creatorName}} - {{climbCount}}",
     "allPlaylists": {
       "title": "Mis listas",
@@ -94,7 +94,6 @@
     "createFab": {
       "ariaLabel": "Crear playlist"
     },
-    "customUnavailable": "Las configuraciones personalizadas todavía no están disponibles aquí. Elige uno de tus plafones o una configuración popular de la lista.",
     "errors": {
       "loadTitle": "No se pudo cargar la biblioteca",
       "loadDescription": "Hubo un error al cargar tu biblioteca. Inténtalo de nuevo.",
@@ -114,7 +113,6 @@
       "subtitle": "Faltan datos del plafón para este bloque."
     },
     "menu": {
-      "generate": "Generar",
       "editClimbs": "Editar bloques",
       "edit": "Editar",
       "delete": "Eliminar"
@@ -147,6 +145,7 @@
     "empty": "Aún no hay bloques en esta playlist",
     "climbCount_one": "{{count}} bloque",
     "climbCount_other": "{{count}} bloques",
+    "openInApp": "Escala esto en la app",
     "followerCount_one": "{{count}} seguidor",
     "followerCount_other": "{{count}} seguidores",
     "followFailed": "No se pudo actualizar el seguimiento",
@@ -289,10 +288,7 @@
       "configurePrompt": "Configura las opciones para previsualizar"
     },
     "messages": {
-      "noClimbs": "No hay bloques para generar",
-      "addedAll": "Se añadieron {{count}} bloques a la playlist",
-      "addedPartial": "Se añadieron {{added}} bloques. No se pudieron rellenar {{failed}} huecos.",
-      "failed": "No se pudo generar la playlist. No se encontraron bloques adecuados."
+      "noClimbs": "No hay bloques para generar"
     }
   },
   "bottomTabBar": {

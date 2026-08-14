@@ -11,7 +11,6 @@ import { getLocale } from '@/app/lib/i18n/get-locale';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import LibraryPageContent from '@/app/playlists/library-page-content';
 import { getPlaylistLcpPreloadUrl } from '@/app/lib/lcp-preload-url';
-import { getAllBoardConfigs } from '@/app/lib/server-board-configs';
 import styles from '@/app/components/library/library.module.css';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -36,11 +35,10 @@ export default async function PlaylistsPage(props: { params: Promise<BoardRouteP
     const locale = await getLocale();
     const playlistFilter = { boardType: parsed.board_name, layoutId: parsed.layout_id };
 
-    const [initialMyBoards, initialPlaylists, initialDiscoverPlaylists, boardConfigs] = await Promise.all([
+    const [initialMyBoards, initialPlaylists, initialDiscoverPlaylists] = await Promise.all([
       authToken ? serverMyBoards(authToken) : null,
       authToken ? serverUserPlaylists(authToken, playlistFilter) : null,
       cachedDiscoverPlaylists(playlistFilter),
-      getAllBoardConfigs(),
     ]);
 
     const lcpPreloadUrl = getPlaylistLcpPreloadUrl(
@@ -56,8 +54,6 @@ export default async function PlaylistsPage(props: { params: Promise<BoardRouteP
             initialMyBoards={initialMyBoards}
             initialPlaylists={initialPlaylists}
             initialDiscoverPlaylists={initialDiscoverPlaylists}
-            boardConfigs={boardConfigs}
-            createSource="board-route-playlists-fab"
           />
         </div>
       </I18nProvider>

@@ -3,6 +3,10 @@
     "section": {
       "nearby": "Boards près de chez vous"
     },
+    "popular": {
+      "title": "Boards populaires",
+      "meta": "{{boards}} boards · {{sends}} croix"
+    },
     "findNearby": {
       "loading": "Recherche de boards…",
       "geoDenied": "Localisation indisponible",
