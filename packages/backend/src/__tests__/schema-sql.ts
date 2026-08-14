@@ -1188,7 +1188,7 @@ export const schemaSQL = `
 
   CREATE UNIQUE INDEX IF NOT EXISTS "unique_user_favorite" ON "user_favorites" ("user_id", "climb_uuid");
   CREATE INDEX IF NOT EXISTS "user_favorites_climb_idx" ON "user_favorites" ("climb_uuid");
-  -- Deploy-window compatibility index (migration 0190): the previous backend's
+  -- Deploy-window compatibility index (migration 0194): the previous backend's
   -- ON CONFLICT (user_id, board_name, climb_uuid, angle) needs SOME unique index
   -- on that column set to infer against while old instances are still serving.
   -- Dropped in Release 2 with the columns.
