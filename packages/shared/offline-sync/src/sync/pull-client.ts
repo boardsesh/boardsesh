@@ -129,6 +129,11 @@ export type SyncProgress = {
  * Monday and whose delta pull finished on Tuesday reports Tuesday's crawl time
  * with zeros for manifest/download/import. Read the phases as "where this
  * cycle's time went", not as a partition of `durationMs`.
+ *
+ * The ROW COUNTS below are OPTIONAL rather than zeroed for exactly that reason
+ * (issue #4393): a timing this cycle did not spend really is 0ms of this cycle's
+ * time, but a row count this cycle cannot vouch for is not 0 rows — it is
+ * unknown, and a fabricated 0 reads as "this board has no grades".
  */
 export type ScopeDownloadPhaseBreakdown = {
   /** Resolving the manifest. 0 for every scope after the first in a cycle (it is cached per run). */
@@ -145,11 +150,46 @@ export type ScopeDownloadPhaseBreakdown = {
   climbsPullMs: number;
   statsPullMs: number;
   gradesPullMs: number;
-  /** Rows the grades crawl consumed this cycle — the denominator for gradesPullMs. */
-  gradesRows: number;
+  /**
+   * Rows the PAGED grades crawl consumed this cycle — the denominator for
+   * `gradesPullMs`. Present iff this cycle's crawl started from a cursor no
+   * EARLIER cycle advanced: either no grades checkpoint existed, or the only one
+   * that existed was stamped by this cycle's own grades artifact.
+   *
+   * ABSENT (never 0) when the crawl resumed from an earlier cycle's checkpoint.
+   * The rows those cycles wrote are not counted here, so any number would be a
+   * silent under-report — the same reason `downloadMs`/`importMs` go absent on
+   * a completion whose import landed in an earlier cycle.
+   *
+   * Known imprecision on a HEALED scope (#4313 — an artifact imported over a
+   * partly-crawled catalog): both arms can be true at once, so this counts only
+   * this cycle's crawl above the artifact watermark while earlier cycles' grade
+   * rows go unreported. `bootstrapHealed` is the filter for that population.
+   */
+  gradesRows?: number;
+  /**
+   * Rows this cycle's grades-artifact import wrote (`INSERT OR REPLACE`
+   * changes). Absent when no grades artifact imported this cycle: no
+   * `entry.grades` in the manifest, no `source.downloadGradesArtifact`, an
+   * unusable or attempt-exhausted artifact, or the import landed in an earlier
+   * cycle.
+   *
+   * This is what makes a `gradesRows: 0` readable. The artifact stamps the
+   * grades checkpoint mid-cycle, so the delta crawl behind it legitimately
+   * consumes 0 rows: `gradesRows: 0` next to `gradesArtifactRows: 41232` means
+   * the artifact did the work, while `gradesRows: 0` with no
+   * `gradesArtifactRows` means the scope genuinely has no grade rows. Grade rows
+   * landed this cycle = `(gradesArtifactRows ?? 0) + (gradesRows ?? 0)`,
+   * meaningful only when at least one of the two is present.
+   */
+  gradesArtifactRows?: number;
 };
 
-/** A zeroed breakdown: what a scope reports before any phase has run. */
+/**
+ * A zeroed breakdown: what a scope reports before any phase has run.
+ * `gradesRows` and `gradesArtifactRows` are deliberately ABSENT rather than 0 —
+ * see their docs.
+ */
 export function emptyScopeDownloadPhases(): ScopeDownloadPhaseBreakdown {
   return {
     manifestMs: 0,
@@ -160,7 +200,6 @@ export function emptyScopeDownloadPhases(): ScopeDownloadPhaseBreakdown {
     climbsPullMs: 0,
     statsPullMs: 0,
     gradesPullMs: 0,
-    gradesRows: 0,
   };
 }
 
@@ -577,12 +616,18 @@ async function syncTable(
   boardScope?: BoardScope,
   onProgress?: (documentsProcessed: number) => void,
   onSchemaDrift?: SchemaDriftReporter,
-): Promise<{ reachedTail: boolean }> {
+): Promise<{ reachedTail: boolean; rowsProcessed: number; resumedFromCheckpoint: boolean }> {
   const config = TABLE_CONFIGS[tableName];
   if (!config) throw new Error(`No sync config for table: ${tableName}`);
 
   const checkpointKey = getCheckpointKey(tableName, boardScope?.scopeKey);
   const checkpoint = await getCheckpoint(db, checkpointKey);
+  // Whether some earlier call already advanced this cursor, so the caller can
+  // tell "these are all the rows" from "these are the tail of a crawl someone
+  // else started" (issue #4393). Sound because `setCheckpoint` below only runs
+  // after a NON-EMPTY page: a table that genuinely never had rows never leaves
+  // a checkpoint behind.
+  const resumedFromCheckpoint = checkpoint !== null;
   const query = buildSyncQuery(config.queryName, config.isPerBoard);
 
   let cursor: SyncCursorInput | undefined = checkpoint
@@ -606,7 +651,8 @@ async function syncTable(
   while (hasMore) {
     // Sign-out is wiping local data: stop before this page writes the old
     // user's rows back (mirrors the drainer's guard).
-    if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) return { reachedTail: false };
+    if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded())
+      return { reachedTail: false, rowsProcessed: totalProcessed, resumedFromCheckpoint };
     const variables: Record<string, unknown> = { cursor, limit: PAGE_LIMIT };
     if (config.isPerBoard && boardScope) {
       variables.boardType = boardScope.boardType;
@@ -619,7 +665,8 @@ async function syncTable(
 
     // Re-check after the await: the wipe may have started (or fully completed)
     // while this page was on the wire.
-    if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) return { reachedTail: false };
+    if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded())
+      return { reachedTail: false, rowsProcessed: totalProcessed, resumedFromCheckpoint };
 
     // An empty page would not advance the cursor; if the backend ever returns
     // documents:[] with hasMore:true we'd spin forever. Stop here (I2).
@@ -647,7 +694,7 @@ async function syncTable(
 
   // Both loop exits here mean the server has nothing more for this cursor:
   // hasMore === false, or an empty page (the tail). Aborts return early above.
-  return { reachedTail: true };
+  return { reachedTail: true, rowsProcessed: totalProcessed, resumedFromCheckpoint };
 }
 
 async function processDeletions(
@@ -1142,13 +1189,21 @@ async function runBootstrapPhase(params: {
     if (isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded()) return;
 
     try {
-      await bootstrapScopeGradesFromSnapshot({
+      const { rowsImported } = await bootstrapScopeGradesFromSnapshot({
         db,
         scope,
         scopeKey: scope.scopeKey,
         filePath: gradesDownload.filePath,
         onSchemaDrift,
       });
+      // The artifact's own row count, reported alongside the paged crawl's
+      // (issue #4393): it is what tells a truthful `gradesRows: 0` — the crawl
+      // behind a fresh artifact has nothing left to fetch — apart from a board
+      // that has no grades at all. Accumulating rather than assigning because
+      // the two call sites (post-import and the retrofit path) are mutually
+      // exclusive per scope today, and `+=` stays correct if that changes.
+      const phases = phaseTimings(scope.scopeKey);
+      phases.gradesArtifactRows = (phases.gradesArtifactRows ?? 0) + rowsImported;
       for (const key of TABLE_CONFIGS.board_climb_grades.invalidateKeys) {
         queryClient.invalidateQueries({ queryKey: key });
       }
@@ -2312,8 +2367,7 @@ export async function pullSync(
       // in one shot) apart from board_climb_grades, which the artifact does not
       // carry at all and which therefore crawls page by page every time.
       const tableStartedAt = Date.now();
-      let tableRows = 0;
-      const { reachedTail } = await syncTable(
+      const { reachedTail, rowsProcessed, resumedFromCheckpoint } = await syncTable(
         db,
         queryClient,
         graphqlFetch,
@@ -2321,7 +2375,6 @@ export async function pullSync(
         cycleEpoch,
         boardScope,
         (tableProcessed) => {
-          tableRows = tableProcessed;
           totalDocuments = baseCount + tableProcessed;
           onProgress?.({
             phase: 'board_data',
@@ -2336,8 +2389,18 @@ export async function pullSync(
       if (tableName === 'board_climbs') phases.climbsPullMs += tableMs;
       else if (tableName === 'board_climb_stats') phases.statsPullMs += tableMs;
       else if (tableName === 'board_climb_grades') {
+        // gradesPullMs accumulates unconditionally — it is a real measurement of
+        // this cycle either way. The row count is absent-when-unknown (#4393): a
+        // crawl that resumed from an EARLIER cycle's checkpoint consumed only a
+        // tail, so no number here is the import, and the 0 this used to emit read
+        // as "this board has no grades" in the #4310 analysis. A checkpoint THIS
+        // cycle's own grades artifact stamped is not an earlier cycle: the crawl
+        // behind it really did consume these rows, and gradesArtifactRows (set by
+        // importGradesForScope) says where the rest went.
         phases.gradesPullMs += tableMs;
-        phases.gradesRows += tableRows;
+        if (!resumedFromCheckpoint || phases.gradesArtifactRows !== undefined) {
+          phases.gradesRows = (phases.gradesRows ?? 0) + rowsProcessed;
+        }
       }
       if (!reachedTail) allTablesReachedTail = false;
     }

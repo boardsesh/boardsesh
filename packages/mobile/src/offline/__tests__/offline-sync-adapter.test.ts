@@ -103,7 +103,9 @@ import type {
 } from '@boardsesh/offline-sync';
 
 // The engine package is vi.mock'd above, so its `emptyScopeDownloadPhases`
-// helper is unreachable here — this literal stands in for it.
+// helper is unreachable here — this literal stands in for it. Neither grade row
+// count appears, mirroring the real helper: the engine omits both rather than
+// reporting a count it cannot vouch for (issue #4393).
 const NO_PHASES = {
   manifestMs: 0,
   downloadMs: 0,
@@ -113,7 +115,6 @@ const NO_PHASES = {
   climbsPullMs: 0,
   statsPullMs: 0,
   gradesPullMs: 0,
-  gradesRows: 0,
 };
 
 // What the adapter actually emits from a zeroed breakdown: download/import/bytes
@@ -125,7 +126,6 @@ const NO_PHASE_PROPS = {
   climbsPullMs: 0,
   statsPullMs: 0,
   gradesPullMs: 0,
-  gradesRows: 0,
 };
 
 const db = {} as OfflineDatabase;
@@ -557,6 +557,79 @@ describe('snapshot-bootstrap bindings', () => {
       gradesRows: 500,
       offlineEngineEnabled: false,
     });
+  });
+
+  it('omits gradesRows when the engine could not count this cycle’s grade rows', () => {
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    options.onScopeDownloadComplete?.({
+      scopeKey: 'kilter:1:5',
+      method: 'snapshot',
+      durationMs: 1234,
+      phases: { ...NO_PHASES, gradesPullMs: 134 },
+    });
+
+    const properties = trackMock.mock.calls[0][1] as Record<string, unknown>;
+    // Structural: an explicit `gradesRows: undefined` would read as a value in
+    // PostHog, so the key must not be on the object at all.
+    expect(Object.hasOwn(properties, 'gradesRows')).toBe(false);
+    expect(Object.hasOwn(properties, 'gradesArtifactRows')).toBe(false);
+    expect(properties.gradesPullMs).toBe(134);
+  });
+
+  it('forwards the grade rows the artifact imported', () => {
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    options.onScopeDownloadComplete?.({
+      scopeKey: 'kilter:1:5',
+      method: 'snapshot',
+      durationMs: 1234,
+      phases: { ...NO_PHASES, gradesArtifactRows: 41232, gradesRows: 0 },
+    });
+
+    const properties = trackMock.mock.calls[0][1] as Record<string, unknown>;
+    expect(properties.gradesArtifactRows).toBe(41232);
+    // A real measurement here — the artifact left the crawl nothing to fetch.
+    expect(properties.gradesRows).toBe(0);
+  });
+
+  it('forwards the healed-bootstrap flag so snapshot-vs-paged percentiles can filter on it', () => {
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    options.onScopeDownloadComplete?.({
+      scopeKey: 'kilter:1:5',
+      method: 'snapshot',
+      durationMs: 1234,
+      bootstrapHealed: true,
+      phases: NO_PHASES,
+    });
+    options.onScopeDownloadComplete?.({
+      scopeKey: 'kilter:1:6',
+      method: 'paged',
+      durationMs: 900,
+      phases: NO_PHASES,
+    });
+
+    expect((trackMock.mock.calls[0][1] as Record<string, unknown>).bootstrapHealed).toBe(true);
+    expect(Object.hasOwn(trackMock.mock.calls[1][1] as Record<string, unknown>, 'bootstrapHealed')).toBe(false);
   });
 
   it('composes per-scope UI invalidation with completion telemetry', () => {

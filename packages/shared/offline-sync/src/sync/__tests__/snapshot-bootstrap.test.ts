@@ -13,7 +13,12 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { QueryInvalidator } from '../../database';
-import { pullSync, type SyncProgress } from '../pull-client';
+import {
+  pullSync,
+  emptyScopeDownloadPhases,
+  type SyncProgress,
+  type ScopeDownloadPhaseBreakdown,
+} from '../pull-client';
 import type { SnapshotBootstrapProgress } from '../snapshot-progress';
 import {
   bootstrapScopeFromSnapshot,
@@ -253,15 +258,30 @@ function compareCursor(a: Cursor, b: Cursor): number {
  * tail page). Every other query is an empty page. Captures the cursor each board
  * query received so delta continuity can be asserted.
  */
-function makeGraphqlFetch(options?: { climbServerRows?: Array<{ doc: Record<string, unknown>; cursor: Cursor }> }) {
+function makeGraphqlFetch(options?: {
+  climbServerRows?: Array<{ doc: Record<string, unknown>; cursor: Cursor }>;
+  gradeServerRows?: Array<{ doc: Record<string, unknown>; cursor: Cursor }>;
+}) {
   const capturedClimbCursors: Array<Cursor | undefined> = [];
   const capturedStatsCursors: Array<Cursor | undefined> = [];
+  const capturedGradeCursors: Array<Cursor | undefined> = [];
   const emptyCursor: Cursor = { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' };
 
   const fetch = vi.fn(async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
     const cursor = variables?.cursor as Cursor | undefined;
     if (query.includes('syncDeletions')) {
       return { syncDeletions: { deletions: [], cursor: emptyCursor, hasMore: false } } as T;
+    }
+    if (query.includes('syncClimbGrades')) {
+      capturedGradeCursors.push(cursor);
+      const rows = (options?.gradeServerRows ?? []).filter((row) => !cursor || compareCursor(row.cursor, cursor) > 0);
+      if (rows.length === 0) {
+        return { syncClimbGrades: { documents: [], cursor: cursor ?? emptyCursor, hasMore: false } } as T;
+      }
+      const last = rows[rows.length - 1];
+      return {
+        syncClimbGrades: { documents: rows.map((row) => row.doc), cursor: last.cursor, hasMore: false },
+      } as T;
     }
     if (query.includes('syncClimbStats')) {
       capturedStatsCursors.push(cursor);
@@ -285,7 +305,29 @@ function makeGraphqlFetch(options?: { climbServerRows?: Array<{ doc: Record<stri
 
   // Keep the generic call signature pullSync expects AND the mock's `.mock`.
   const typedFetch = fetch as unknown as GraphqlFetchMock;
-  return { fetch: typedFetch, capturedClimbCursors, capturedStatsCursors };
+  return { fetch: typedFetch, capturedClimbCursors, capturedStatsCursors, capturedGradeCursors };
+}
+
+/**
+ * `count` grade rows the paged crawl can consume, all stamped after the grades
+ * artifact's watermark so they survive a cursor the artifact already advanced.
+ */
+function gradeServerRows(count: number): Array<{ doc: Record<string, unknown>; cursor: Cursor }> {
+  return Array.from({ length: count }, (_unused, index) => {
+    const syncSeq = String(100 + index);
+    const computedAt = '2026-06-01T00:00:00.000Z';
+    return {
+      doc: {
+        board_type: 'kilter',
+        climb_uuid: `crawled-grade-${index}`,
+        angle: 40,
+        local_grade: 20,
+        computed_at: computedAt,
+        sync_seq: Number(syncSeq),
+      },
+      cursor: { updatedAt: computedAt, syncSeq },
+    };
+  });
 }
 
 type GraphqlFetchMock = ReturnType<typeof vi.fn> &
@@ -3462,7 +3504,84 @@ describe('pullSync scope-download phase breakdown', () => {
     for (const key of ['manifestMs', 'downloadMs', 'importMs', 'climbsPullMs', 'statsPullMs', 'gradesPullMs']) {
       expect(phases[key], key).toBeGreaterThanOrEqual(0);
     }
+    // A fresh crawl with no grades checkpoint and genuinely zero rows: the 0 is a
+    // real measurement, so the key is PRESENT. No grades artifact rode along, so
+    // that key is absent rather than 0 (issue #4393).
     expect(phases.gradesRows).toBe(0);
+    expect(Object.hasOwn(phases, 'gradesRows')).toBe(true);
+    expect(Object.hasOwn(phases, 'gradesArtifactRows')).toBe(false);
+  });
+
+  it('counts the grade rows a same-cycle fresh crawl consumed', async () => {
+    const onScopeDownloadComplete = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch({ gradeServerRows: gradeServerRows(3) }).fetch, {
+      enabledBoards: ['kilter:1:5'],
+      onScopeDownloadComplete,
+    });
+
+    const { phases } = onScopeDownloadComplete.mock.calls[0][0] as { phases: ScopeDownloadPhaseBreakdown };
+    expect(phases.gradesRows).toBe(3);
+    expect(Object.hasOwn(phases, 'gradesArtifactRows')).toBe(false);
+    expect(phases.gradesPullMs).toBeGreaterThanOrEqual(0);
+  });
+
+  // The #4393 regression anchor: a cycle that only picked up the tail of a crawl
+  // an EARLIER cycle started has no idea how many rows the board has, and the 0
+  // it used to report read as "this board has no grades" in the #4310 analysis.
+  it('omits gradesRows when an earlier cycle already crawled the grades', async () => {
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      'checkpoint:board_climb_grades:kilter:1:5',
+      JSON.stringify({ updatedAt: '2026-05-01T00:00:00.000Z', syncSeq: '10' }),
+    ]);
+    const onScopeDownloadComplete = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      onScopeDownloadComplete,
+    });
+
+    const call = onScopeDownloadComplete.mock.calls[0][0] as {
+      method: string;
+      durationMs: number | null;
+      phases: ScopeDownloadPhaseBreakdown;
+    };
+    expect(call.phases.gradesRows).toBeUndefined();
+    // Structural, not just undefined: a re-introduced 0 must fail here.
+    expect(Object.hasOwn(call.phases, 'gradesRows')).toBe(false);
+    expect(Object.hasOwn(call.phases, 'gradesArtifactRows')).toBe(false);
+    // The timings are unaffected — they are real measurements of this cycle.
+    expect(typeof call.phases.gradesPullMs).toBe('number');
+    expect(typeof call.phases.manifestMs).toBe('number');
+    expect(call.method).toBe('paged');
+    expect(call.durationMs).not.toBeUndefined();
+  });
+
+  it('omits gradesRows when an earlier cycle’s crawl is only being finished', async () => {
+    // The partial-tail case: 2 rows this cycle, nothing distinguishing them from
+    // the tail of 40,000 an earlier cycle already pulled.
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      'checkpoint:board_climb_grades:kilter:1:5',
+      JSON.stringify({ updatedAt: '2026-05-01T00:00:00.000Z', syncSeq: '10' }),
+    ]);
+    const onScopeDownloadComplete = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch({ gradeServerRows: gradeServerRows(2) }).fetch, {
+      enabledBoards: ['kilter:1:5'],
+      onScopeDownloadComplete,
+    });
+
+    const { phases } = onScopeDownloadComplete.mock.calls[0][0] as { phases: ScopeDownloadPhaseBreakdown };
+    expect(await countRows('board_climb_grades')).toBe(2);
+    expect(phases.gradesRows).toBeUndefined();
+    expect(Object.hasOwn(phases, 'gradesRows')).toBe(false);
+    expect(phases.gradesPullMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('emptyScopeDownloadPhases() reports no grade counts', () => {
+    const phases = emptyScopeDownloadPhases();
+    expect(Object.hasOwn(phases, 'gradesRows')).toBe(false);
+    expect(Object.hasOwn(phases, 'gradesArtifactRows')).toBe(false);
   });
 
   it('measures a download that spans cycles from its FIRST cycle, not the last', async () => {
@@ -3828,6 +3947,138 @@ describe('pullSync grades bootstrap', () => {
       updatedAt: '2026-05-02T00:00:00Z',
       syncSeq: '21',
     });
+  });
+
+  // The dominant snapshot path, and the shape that made the naive "a checkpoint
+  // existed ⇒ report nothing" rule unreadable: the artifact stamps the grades
+  // checkpoint mid-cycle, so the delta crawl behind it truthfully consumes 0
+  // rows. gradesArtifactRows is what says where the grades actually came from.
+  it('reports the artifact’s grade rows when the crawl behind it has nothing left to fetch', async () => {
+    const climbsPath = join(workDir, 'grades-rows-climbs.db');
+    buildArtifact({
+      filePath: climbsPath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const gradesPath = join(workDir, 'grades-rows-grades.db');
+    buildGradesArtifact({
+      filePath: gradesPath,
+      grades: [
+        { climbUuid: 'c1', angle: 40, computedAt: '2026-05-02T00:00:00Z', syncSeq: 21 },
+        { climbUuid: 'c1', angle: 45, computedAt: '2026-05-02T00:00:00Z', syncSeq: 21 },
+      ],
+      watermark: { updatedAt: '2026-05-02T00:00:00Z', syncSeq: '21' },
+    });
+    const { source } = makeGradesSource({
+      manifest: makeManifest([makeEntry({ grades: gradesArtifactBlock() })]),
+      climbsFile: climbsPath,
+      gradesFile: gradesPath,
+    });
+    const onScopeDownloadComplete = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onScopeDownloadComplete,
+    });
+
+    const { phases } = onScopeDownloadComplete.mock.calls[0][0] as { phases: ScopeDownloadPhaseBreakdown };
+    expect(phases.gradesArtifactRows).toBe(2);
+    // A real measurement of the crawl, not a fabricated one — so it stays present.
+    expect(phases.gradesRows).toBe(0);
+    expect(Object.hasOwn(phases, 'gradesRows')).toBe(true);
+  });
+
+  it('still counts the crawl behind a same-cycle grades artifact', async () => {
+    const climbsPath = join(workDir, 'grades-delta-climbs.db');
+    buildArtifact({
+      filePath: climbsPath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const gradesPath = join(workDir, 'grades-delta-grades.db');
+    buildGradesArtifact({
+      filePath: gradesPath,
+      grades: [{ climbUuid: 'c1', computedAt: '2026-05-02T00:00:00Z', syncSeq: 21 }],
+      watermark: { updatedAt: '2026-05-02T00:00:00Z', syncSeq: '21' },
+    });
+    const { source } = makeGradesSource({
+      manifest: makeManifest([makeEntry({ grades: gradesArtifactBlock() })]),
+      climbsFile: climbsPath,
+      gradesFile: gradesPath,
+    });
+    const onScopeDownloadComplete = vi.fn();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch({ gradeServerRows: gradeServerRows(4) }).fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onScopeDownloadComplete,
+    });
+
+    const { phases } = onScopeDownloadComplete.mock.calls[0][0] as { phases: ScopeDownloadPhaseBreakdown };
+    // The artifact's own mid-cycle checkpoint stamp must not read as an earlier cycle.
+    expect(phases.gradesRows).toBe(4);
+    expect(phases.gradesArtifactRows).toBe(1);
+  });
+
+  it('carries no grades row counts when the artifact imported in an earlier cycle', async () => {
+    const climbsPath = join(workDir, 'grades-spanning-climbs.db');
+    buildArtifact({
+      filePath: climbsPath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const gradesPath = join(workDir, 'grades-spanning-grades.db');
+    buildGradesArtifact({
+      filePath: gradesPath,
+      grades: [{ climbUuid: 'c1', computedAt: '2026-05-02T00:00:00Z', syncSeq: 21 }],
+      watermark: { updatedAt: '2026-05-02T00:00:00Z', syncSeq: '21' },
+    });
+    const { source, gradesDownloads } = makeGradesSource({
+      manifest: makeManifest([makeEntry({ grades: gradesArtifactBlock() })]),
+      climbsFile: climbsPath,
+      gradesFile: gradesPath,
+    });
+
+    // Cycle 1 imports both artifacts, then the phone backgrounds the moment the
+    // board-data loop starts crawling — the scope does not complete.
+    const backgroundingFetch = makeGraphqlFetch();
+    const cycleOneFetch = ((query: string, variables?: Record<string, unknown>) => {
+      if (query.includes('syncClimbs')) setBackgrounded(true);
+      return backgroundingFetch.fetch(query, variables);
+    }) as unknown as typeof backgroundingFetch.fetch;
+    const neverCompletes = vi.fn();
+    await pullSync(db, noopQueryClient(), cycleOneFetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onScopeDownloadComplete: neverCompletes,
+    });
+    expect(neverCompletes).not.toHaveBeenCalled();
+    expect(gradesDownloads).toEqual([gradesArtifactBlock().key]);
+    setBackgrounded(false);
+
+    // Cycle 2 finishes the crawl. Nothing it did wrote a grade row: the artifact
+    // landed yesterday and the crawl resumes from the cursor it stamped.
+    const onScopeDownloadComplete = vi.fn();
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onScopeDownloadComplete,
+    });
+
+    expect(onScopeDownloadComplete).toHaveBeenCalledTimes(1);
+    const { phases } = onScopeDownloadComplete.mock.calls[0][0] as { phases: ScopeDownloadPhaseBreakdown };
+    expect(gradesDownloads).toHaveLength(1);
+    expect(phases.gradesRows).toBeUndefined();
+    expect(phases.gradesArtifactRows).toBeUndefined();
+    expect(Object.hasOwn(phases, 'gradesRows')).toBe(false);
+    expect(Object.hasOwn(phases, 'gradesArtifactRows')).toBe(false);
   });
 
   // Retention (#4310) keeps an UNIMPORTED whole-layout artifact for the next

@@ -212,11 +212,20 @@ const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({
 // per-scope timings above are emitted: `phases` also holds cycle-scoped copies
 // of download/import/artifact bytes, and the timings' absent-when-unknown
 // versions are the honest ones (a 0 from a later-cycle completion would read as
-// a real measurement).
+// a real measurement). The same rule now covers the two grade row counts
+// (issue #4393): the engine omits `gradesRows` when this cycle only picked up
+// the tail of a crawl an earlier cycle started, and omits `gradesArtifactRows`
+// when no grades artifact imported this cycle — a 0 for either would read as
+// "this board has no grades".
+// `bootstrapHealed` is emitted because the engine's own doc makes it the
+// required filter for snapshot-vs-paged percentile comparisons (a healed scope's
+// duration excludes the paged work earlier cycles did) — it was computed and
+// then silently dropped here, which made that comparison unanswerable.
 const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
   scopeKey,
   method,
   durationMs,
+  bootstrapHealed,
   bytes,
   rowCount,
   downloadMs,
@@ -230,6 +239,7 @@ const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
     // Spread rather than set: the engine omits these when the completing delta
     // pull landed in a later cycle than the import, and an omitted prop is the
     // honest answer where a 0 would look like a real measurement.
+    ...(bootstrapHealed === undefined ? {} : { bootstrapHealed }),
     ...(bytes === undefined ? {} : { bytes }),
     ...(rowCount === undefined ? {} : { rowCount }),
     ...(downloadMs === undefined ? {} : { downloadMs }),
@@ -239,7 +249,8 @@ const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
     climbsPullMs: phases.climbsPullMs,
     statsPullMs: phases.statsPullMs,
     gradesPullMs: phases.gradesPullMs,
-    gradesRows: phases.gradesRows,
+    ...(phases.gradesRows === undefined ? {} : { gradesRows: phases.gradesRows }),
+    ...(phases.gradesArtifactRows === undefined ? {} : { gradesArtifactRows: phases.gradesArtifactRows }),
     // Stamped so the funnel stays readable once #4312 bakes the flag on: the
     // engine gate, not the raw flag value.
     offlineEngineEnabled: isOfflineEngineEnabled(),
