@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-15T00:10:49.738Z",
+  "generatedAt": "2026-08-15T01:49:16.630Z",
   "entries": [
+    {
+      "prNumber": 4456,
+      "category": "fixed",
+      "title": "Offline board downloads recover automatically and keep bulk catalog updates on the fast CDN download instead of crawling through hundreds of 500-climb batches.",
+      "mergedAt": "2026-08-15T01:47:46Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4456"
+    },
     {
       "prNumber": 4284,
       "category": "fixed",
