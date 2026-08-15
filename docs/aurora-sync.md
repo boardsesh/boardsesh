@@ -462,8 +462,9 @@ Since the Kilter backend has been shut down, API-based sync is no longer availab
 ### How It Works
 
 1. User downloads their data export from Aurora (a `.json` file)
-2. In Boardsesh Settings > Board Accounts on web, or Connected apps on mobile,
-   click **Import JSON** on the relevant board card
+2. In the Boardsesh app, open Connected apps and click **Import JSON** on the
+   relevant board card (on the web, the same card appears on `/aurora-migration`
+   and on a profile page for a board with no data yet)
 3. Select the export file — a preview shows the number of ascents, attempts, and circuits
 4. Confirm — the server resolves climb names to UUIDs, maps grades, and imports the data
 
@@ -472,7 +473,10 @@ Since the Kilter backend has been shut down, API-based sync is no longer availab
 - **Backend endpoint**: `POST /api/aurora-import` streams progress events for web and mobile
 - **Implementation**: `packages/aurora-sync/src/sync/json-import.ts`
 - **Preview parser**: `packages/shared-schema/src/aurora-import.ts`
-- **Web UI**: `packages/web/app/components/settings/aurora-credentials-section.tsx`
+- **Web UI**: `packages/web/app/components/board-entity/board-credential-card.tsx`,
+  rendered by `board-import-prompt.tsx` on `/aurora-migration` and `/profile/{id}`.
+  Web has no board-accounts settings section any more (W-21, #4440) — full
+  credential management is mobile-only.
 - **Mobile UI**: `packages/mobile/src/components/integrations/BoardAccountsSection.tsx`
 
 Web and mobile credential management use backend REST endpoints instead of

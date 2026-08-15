@@ -35,7 +35,9 @@ vi.mock('@/app/lib/data-sync/aurora/json-import-stream', () => ({
   streamImport: (...args: unknown[]) => mockStreamImport(...args),
 }));
 
-// Mock next-auth (needed by aurora-credentials-section imports)
+// Mock next-auth. The lifted board-credential-card no longer pulls it in, but
+// the prompt is only ever rendered inside an authenticated tree, so the mock
+// stays as a guard against a transitive import re-introducing the dependency.
 vi.mock('next-auth/react', () => ({
   useSession: () => ({ data: { user: { id: 'test-user' } } }),
 }));

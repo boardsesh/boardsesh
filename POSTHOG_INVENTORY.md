@@ -62,15 +62,15 @@ Boardsesh has comprehensive PostHog instrumentation across both web (Next.js) an
 
 ### 2.1 Authentication & Identity (7 events)
 
-| Event Name               | File:Line                                          | Properties                                 | Context                                     |
-| ------------------------ | -------------------------------------------------- | ------------------------------------------ | ------------------------------------------- |
-| Login Attempted          | auth-page-content.tsx:106                          | `auth_method` (credentials/oauth)          | User clicked login button                   |
-| Login Failed             | auth-page-content.tsx:72,116                       | `auth_method`, `failure_reason`            | Credentials invalid or OAuth error          |
-| Login Succeeded          | auth-page-content.tsx:122,198                      | `auth_method`, `is_first_login` (optional) | Login completed, redirect firing            |
-| Signup Completed         | auth-page-content.tsx:160                          | `auth_method`, `requires_verification`     | Registration form submitted                 |
-| Login Attempted (Social) | social-login-buttons.tsx:88                        | `auth_method` (google/github/etc)          | OAuth button clicked                        |
-| Login Succeeded (Party)  | party-profile-context.tsx:104                      | `auth_method`, `flow` (OAuth provider)     | OAuth flow completed (server-side redirect) |
-| Logout                   | user-drawer.tsx:221, delete-account-section.tsx:99 | `method`                                   | User clicked logout                         |
+| Event Name               | File:Line                         | Properties                                 | Context                                                        |
+| ------------------------ | --------------------------------- | ------------------------------------------ | -------------------------------------------------------------- |
+| Login Attempted          | auth-page-content.tsx:106         | `auth_method` (credentials/oauth)          | User clicked login button                                      |
+| Login Failed             | auth-page-content.tsx:72,116      | `auth_method`, `failure_reason`            | Credentials invalid or OAuth error                             |
+| Login Succeeded          | auth-page-content.tsx:122,198     | `auth_method`, `is_first_login` (optional) | Login completed, redirect firing                               |
+| Signup Completed         | auth-page-content.tsx:160         | `auth_method`, `requires_verification`     | Registration form submitted                                    |
+| Login Attempted (Social) | social-login-buttons.tsx:88       | `auth_method` (google/github/etc)          | OAuth button clicked                                           |
+| Login Succeeded (Party)  | party-profile-context.tsx:104     | `auth_method`, `flow` (OAuth provider)     | OAuth flow completed (server-side redirect)                    |
+| Logout                   | _(none — web no longer emits it)_ | `method`                                   | Was user-drawer.tsx (W-16) + delete-account-section.tsx (W-21) |
 
 ### 2.2 Climb Management (13 events)
 

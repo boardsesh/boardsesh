@@ -8,10 +8,6 @@ export type FeatureFlags = Record<string, boolean | undefined>;
 
 export const EMPTY_FEATURE_FLAGS: FeatureFlags = {};
 
-// Gates the "Pair a Garmin watch" settings UI. OFF until the Connect IQ watch
-// app is live (nothing to pair to before then). Imported by WatchPairingSection.
-export const GARMIN_WATCH_FLAG = 'garmin-watch';
-
 // Gates the "Boardsesh grade" section in the climb detail / play drawer. OFF
 // until the nightly data-science grading job has enough coverage to surface.
 export const BOARDSESH_GRADE_FLAG = 'boardsesh-grade';
@@ -34,13 +30,7 @@ export const MOONBOARD_WIDE_ANGLES_FLAG = 'moonboard-wide-angles';
 
 // Keys read from PostHog by FeatureFlagsProvider. Each must have a matching
 // PostHog feature flag; values stay `undefined` (OFF) until that flag resolves.
-export const FEATURE_FLAG_KEYS = [
-  'kilter-oauth-linking',
-  GARMIN_WATCH_FLAG,
-  BOARDSESH_GRADE_FLAG,
-  GYM_KIOSK_FLAG,
-  MOONBOARD_WIDE_ANGLES_FLAG,
-] as const;
+export const FEATURE_FLAG_KEYS = [BOARDSESH_GRADE_FLAG, GYM_KIOSK_FLAG, MOONBOARD_WIDE_ANGLES_FLAG] as const;
 
 // Vercel's flags discovery endpoint expects an allFlags export.
 export const allFlags: Array<{ key: string }> = FEATURE_FLAG_KEYS.map((key) => ({ key }));

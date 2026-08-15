@@ -10,25 +10,17 @@
     "profileError": "Failed to load profile"
   },
   "profile": {
-    "title": "Profile",
     "subtitle": "Customize how you appear on Boardsesh",
     "editAction": "Edit Profile",
     "avatar": {
-      "label": "Avatar",
       "upload": "Upload",
       "change": "Change",
-      "remove": "Remove",
-      "hint": "JPG, PNG, GIF, or WebP. Up to 10MB — auto-compressed.",
       "hintMobile": "Cropped square and compressed automatically.",
       "permissionDenied": "Allow photo access in Settings to choose an avatar."
     },
     "displayName": {
       "label": "Display Name",
       "placeholder": "Enter your display name"
-    },
-    "instagram": {
-      "label": "Instagram Profile",
-      "placeholder": "https://instagram.com/username"
     },
     "email": {
       "label": "Email",
@@ -39,32 +31,19 @@
     "saveError": "Failed to save settings",
     "validation": {
       "displayNameTooLong": "Display name must be less than 100 characters",
-      "invalidInstagramUrl": "Please enter a valid Instagram profile URL",
-      "invalidImageType": "Only JPG, PNG, GIF, and WebP images are allowed",
-      "imageTooLarge": "Image must be smaller than 10MB",
       "compressionFailed": "Could not compress — please try a smaller image"
     },
     "avatarUploadFailed": "Avatar upload failed"
   },
-  "preferences": {
-    "title": "Display Preferences",
-    "subtitle": "Customize how grades and other data are displayed",
-    "gradeFormat": {
-      "label": "Grade Display Format",
-      "vGrade": "V-Grade (V3, V6, ...)",
-      "font": "Font (6A, 7C+, ...)"
-    }
-  },
-  "logbook": {
-    "title": "Your Logbook",
-    "subtitle": "View and filter your logged climbs"
+  "appHandoff": {
+    "title": "The rest lives in the app",
+    "subtitle": "Your profile, grade format, board accounts, watch pairing and account deletion are all in the Boardsesh app.",
+    "cta": "Open the app"
   },
   "deleteAccount": {
     "title": "Delete Account",
-    "warning": "Permanently delete your account and all associated data. This action cannot be undone.",
     "button": "Delete Account",
     "dialog": {
-      "title": "Delete your account?",
       "warning": "This is permanent. Your profile, draft climbs, logbook entries, and all other data will be deleted and cannot be recovered.",
       "checking": "Checking your climbs...",
       "publishedClimbs_one": "You have <strong>{{count}}</strong> published climb that will be preserved after deletion.",
@@ -159,7 +138,6 @@
   },
   "aurora": {
     "title": "Board Accounts",
-    "subtitle": "Link your board accounts to import your Aurora data to Boardsesh, or import from a JSON export file. We'll automatically sync your logbook, ascents, and climbs FROM Aurora every 12 hours. Data created in Boardsesh stays local and does not sync back to Aurora.",
     "card": {
       "boardSuffix": "Board",
       "username": "Username:",
@@ -215,7 +193,6 @@
       "description": "Enter your Kilter username and password. Your password is exchanged for a secure token and never stored. Your sends sync within a few hours.",
       "passwordHelp": "Works with your existing Kilter login. Two-factor or social-login-only accounts can't sign in this way — use Import instead."
     },
-    "unlinkSuccess": "Account unlinked successfully",
     "unlinkError": "Failed to unlink account",
     "unlinkPartial": "We disconnected on our side, but the Kilter app may still be signed in. Sign out of Kilter there too if you want to fully cut the link.",
     "loadRetry": "Try again",
@@ -228,7 +205,6 @@
         "attempts": "Importing attempts",
         "circuits": "Importing circuits"
       },
-      "fileLabel": "Upload Aurora JSON export file",
       "tooLarge": "File is too large (max 200MB). Please check you selected the correct file.",
       "parseError": "Failed to parse JSON file. Please check the file format.",
       "readError": "Failed to read file. Please try again.",
@@ -266,8 +242,6 @@
         "unresolvedAttemptsTitle_other": "{{count}} attempts had no matching climb",
         "unresolvedCircuitsTitle_one": "{{count}} circuit climb couldn't be matched",
         "unresolvedCircuitsTitle_other": "{{count}} circuit climbs couldn't be matched",
-        "unresolvedTitle_one": "{{count}} climb couldn't be matched",
-        "unresolvedTitle_other": "{{count}} climbs couldn't be matched",
         "unresolvedMore": "...and {{count}} more",
         "partialTitle": "Import was interrupted",
         "partialBody": "Some data may not have been imported. Re-importing the same file is safe and will fill in the gaps."
@@ -295,14 +269,12 @@
         "body": "Name: [full name]\nMoonBoard username: [username]\nAccount email: [email address]\n\nMy MoonBoard logbook is personal data because it records my climbing activity and sporting achievements and is linked to my identifiable account. Please treat this as a UK GDPR subject access request and, where applicable, a data portability request. ICO guidance on personal data, subject access requests, data portability, and response time limits is linked below for reference:\nhttps://ico.org.uk/for-the-public/time-limits-for-responding-to-data-protection-rights-requests/\n\nPlease include all personal data linked to my MoonBoard account, including where available:\n\naccount/profile details;\nusername and account identifiers;\nproblems I have created or logged;\nsends, ascents, benchmarks, grades, repeats, attempts, dates, and session/history data;\nfavourites, saved problems, custom problems, and user-generated content linked to my account;\nboard/setup preferences and app/service usage data linked to my account;\nany related metadata or identifiers associated with my MoonBoard profile.\n\nThe ICO’s guidance says organisations should respond to subject access requests without undue delay and within one month. If you require identity verification, clarification, or a secure delivery method, please let me know promptly.\n\nWhere technically feasible, I would prefer the export in CSV or JSON format. Alternatively, please provide the data in another structured, commonly used, machine-readable format.\n\nPlease confirm receipt of this request and the date by which you expect to respond.\n\nKind regards,\n[name]"
       },
       "csvImport": {
-        "fileLabel": "MoonBoard CSV export",
         "parseError": "Couldn't read that MoonBoard CSV. Check that it starts with ProblemId,Grade,Tries,Attempts,Rating,Date.",
         "parserUnavailable": "MoonBoard CSV import isn't available in this build yet.",
         "failed": "MoonBoard import failed. Try again.",
         "successCount": "{{count}} MoonBoard logbook items imported",
         "partialWarning": "MoonBoard import partially finished. Re-importing the file is safe.",
         "interrupted": "MoonBoard import stopped before it finished. Re-importing the file is safe.",
-        "interruptedShort": "MoonBoard import stopped before it finished.",
         "steps": {
           "resolving": "Matching MoonBoard problems",
           "dedup": "Checking for duplicates",
@@ -334,7 +306,6 @@
         "attempts": "Attempts",
         "attemptsSummary": "{{imported}} imported, {{skipped}} skipped (already exist), {{failed}} unmatched",
         "unresolvedTitle": "{{count}} MoonBoard problems couldn't be matched",
-        "partialTitle": "Import was interrupted",
         "partialBody": "Some MoonBoard data may not have been imported. Re-importing the same file is safe and will fill in the gaps."
       }
     },
@@ -342,9 +313,7 @@
       "connectedAs": "Connected as {{name}}",
       "connected": "Connected",
       "notConnected": "Not connected",
-      "kilterConnected": "Kilter connected",
       "kilterNotAllowed": "Kilter sync is not enabled for this account yet.",
-      "kilterConnectFailed": "Couldn't connect Kilter. Try again.",
       "linkSuccess": "{{boardName}} linked",
       "unlinkSuccess": "{{boardName}} unlinked",
       "unlinkPartial": "{{boardName}} was removed here, but the provider session may still be live.",
@@ -509,7 +478,6 @@
     "expiresIn": "Expires in {{seconds}}s",
     "expired": "Code expired — get a new one",
     "generating": "Getting a code…",
-    "error": "Couldn't get a code. Try again.",
-    "close": "Done"
+    "error": "Couldn't get a code. Try again."
   }
 }

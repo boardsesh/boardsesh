@@ -10,25 +10,17 @@
     "profileError": "Profil konnte nicht geladen werden"
   },
   "profile": {
-    "title": "Profil",
     "subtitle": "Leg fest, wie du auf Boardsesh erscheinst",
     "editAction": "Profil bearbeiten",
     "avatar": {
-      "label": "Avatar",
       "upload": "Hochladen",
       "change": "Ändern",
-      "remove": "Entfernen",
-      "hint": "JPG, PNG, GIF oder WebP. Bis 10 MB — wird automatisch komprimiert.",
       "hintMobile": "Wird automatisch quadratisch zugeschnitten und komprimiert.",
       "permissionDenied": "Erlaube den Fotozugriff in den Einstellungen, um einen Avatar zu wählen."
     },
     "displayName": {
       "label": "Anzeigename",
       "placeholder": "Gib deinen Anzeigenamen ein"
-    },
-    "instagram": {
-      "label": "Instagram-Profil",
-      "placeholder": "https://instagram.com/username"
     },
     "email": {
       "label": "E-Mail",
@@ -39,32 +31,19 @@
     "saveError": "Einstellungen konnten nicht gespeichert werden",
     "validation": {
       "displayNameTooLong": "Der Anzeigename muss kürzer als 100 Zeichen sein",
-      "invalidInstagramUrl": "Gib bitte eine gültige Instagram-Profil-URL ein",
-      "invalidImageType": "Nur JPG-, PNG-, GIF- und WebP-Bilder sind erlaubt",
-      "imageTooLarge": "Das Bild muss kleiner als 10 MB sein",
       "compressionFailed": "Komprimieren hat nicht geklappt — probier ein kleineres Bild"
     },
     "avatarUploadFailed": "Avatar-Upload fehlgeschlagen"
   },
-  "preferences": {
-    "title": "Anzeige",
-    "subtitle": "Leg fest, wie Grade und andere Daten angezeigt werden",
-    "gradeFormat": {
-      "label": "Format der Gradangabe",
-      "vGrade": "V-Grade (V3, V6, ...)",
-      "font": "Font (6A, 7C+, ...)"
-    }
-  },
-  "logbook": {
-    "title": "Dein Routenbuch",
-    "subtitle": "Sieh dir deine eingetragenen Boulder an und filtere sie"
+  "appHandoff": {
+    "title": "Der Rest steckt in der App",
+    "subtitle": "Dein Profil, das Format der Gradangabe, deine Board-Konten, deine Uhr und das Löschen deines Kontos findest du in der Boardsesh-App.",
+    "cta": "App öffnen"
   },
   "deleteAccount": {
     "title": "Konto löschen",
-    "warning": "Löscht dein Konto und alle zugehörigen Daten endgültig. Das lässt sich nicht rückgängig machen.",
     "button": "Konto löschen",
     "dialog": {
-      "title": "Dein Konto löschen?",
       "warning": "Das ist endgültig. Dein Profil, deine Boulder-Entwürfe, deine Routenbuch-Einträge und alle weiteren Daten werden gelöscht und lassen sich nicht wiederherstellen.",
       "checking": "Wir prüfen deine Boulder...",
       "publishedClimbs_one": "Du hast <strong>{{count}}</strong> veröffentlichten Boulder, der nach dem Löschen erhalten bleibt.",
@@ -159,7 +138,6 @@
   },
   "aurora": {
     "title": "Board-Konten",
-    "subtitle": "Verknüpf deine Board-Konten, um deine Aurora-Daten nach Boardsesh zu holen, oder importier eine JSON-Exportdatei. Wir holen dein Routenbuch, deine Begehungen und deine Boulder alle 12 Stunden automatisch VON Aurora. Was in Boardsesh entsteht, bleibt hier und wandert nicht zurück zu Aurora.",
     "card": {
       "boardSuffix": "Board",
       "username": "Benutzername:",
@@ -215,7 +193,6 @@
       "description": "Gib deinen Kilter-Benutzernamen und dein Passwort ein. Dein Passwort wird gegen ein sicheres Token getauscht und nie gespeichert. Deine Begehungen sind in ein paar Stunden da.",
       "passwordHelp": "Funktioniert mit deinem bestehenden Kilter-Login. Konten mit Zwei-Faktor oder reinem Social-Login kommen hier nicht rein – nutz stattdessen den Import."
     },
-    "unlinkSuccess": "Konto getrennt",
     "unlinkError": "Konto konnte nicht getrennt werden",
     "unlinkPartial": "Bei uns ist die Verbindung weg, in der Kilter-App bist du aber vielleicht noch angemeldet. Melde dich dort auch ab, wenn du die Verbindung ganz kappen willst.",
     "loadRetry": "Nochmal versuchen",
@@ -228,7 +205,6 @@
         "attempts": "Versuche werden importiert",
         "circuits": "Circuits werden importiert"
       },
-      "fileLabel": "Aurora-JSON-Exportdatei hochladen",
       "tooLarge": "Die Datei ist zu groß (max. 200 MB). Prüf, ob du die richtige Datei ausgewählt hast.",
       "parseError": "Die JSON-Datei ließ sich nicht lesen. Prüf bitte das Dateiformat.",
       "readError": "Die Datei ließ sich nicht lesen. Versuch es nochmal.",
@@ -266,8 +242,6 @@
         "unresolvedAttemptsTitle_other": "{{count}} Versuche ohne passenden Boulder",
         "unresolvedCircuitsTitle_one": "{{count}} Boulder aus einem Circuit ließ sich nicht zuordnen",
         "unresolvedCircuitsTitle_other": "{{count}} Boulder aus Circuits ließen sich nicht zuordnen",
-        "unresolvedTitle_one": "{{count}} Boulder ließ sich nicht zuordnen",
-        "unresolvedTitle_other": "{{count}} Boulder ließen sich nicht zuordnen",
         "unresolvedMore": "...und {{count}} weitere",
         "partialTitle": "Der Import wurde unterbrochen",
         "partialBody": "Vielleicht sind nicht alle Daten durchgekommen. Dieselbe Datei nochmal zu importieren ist unbedenklich und füllt die Lücken."
@@ -295,14 +269,12 @@
         "body": "Name: [full name]\nMoonBoard username: [username]\nAccount email: [email address]\n\nMy MoonBoard logbook is personal data because it records my climbing activity and sporting achievements and is linked to my identifiable account. Please treat this as a UK GDPR subject access request and, where applicable, a data portability request. ICO guidance on personal data, subject access requests, data portability, and response time limits is linked below for reference:\nhttps://ico.org.uk/for-the-public/time-limits-for-responding-to-data-protection-rights-requests/\n\nPlease include all personal data linked to my MoonBoard account, including where available:\n\naccount/profile details;\nusername and account identifiers;\nproblems I have created or logged;\nsends, ascents, benchmarks, grades, repeats, attempts, dates, and session/history data;\nfavourites, saved problems, custom problems, and user-generated content linked to my account;\nboard/setup preferences and app/service usage data linked to my account;\nany related metadata or identifiers associated with my MoonBoard profile.\n\nThe ICO’s guidance says organisations should respond to subject access requests without undue delay and within one month. If you require identity verification, clarification, or a secure delivery method, please let me know promptly.\n\nWhere technically feasible, I would prefer the export in CSV or JSON format. Alternatively, please provide the data in another structured, commonly used, machine-readable format.\n\nPlease confirm receipt of this request and the date by which you expect to respond.\n\nKind regards,\n[name]"
       },
       "csvImport": {
-        "fileLabel": "MoonBoard-CSV-Export",
         "parseError": "Diese MoonBoard-CSV ließ sich nicht lesen. Prüf, ob sie mit ProblemId,Grade,Tries,Attempts,Rating,Date beginnt.",
         "parserUnavailable": "Der MoonBoard-CSV-Import ist in diesem Build noch nicht dabei.",
         "failed": "MoonBoard-Import fehlgeschlagen. Versuch es nochmal.",
         "successCount": "{{count}} MoonBoard-Routenbucheinträge importiert",
         "partialWarning": "Der MoonBoard-Import ist nur teilweise durchgelaufen. Die Datei nochmal zu importieren ist unbedenklich.",
         "interrupted": "Der MoonBoard-Import hat vorher aufgehört. Die Datei nochmal zu importieren ist unbedenklich.",
-        "interruptedShort": "Der MoonBoard-Import hat vorher aufgehört.",
         "steps": {
           "resolving": "MoonBoard-Boulder werden zugeordnet",
           "dedup": "Duplikate werden geprüft",
@@ -334,7 +306,6 @@
         "attempts": "Versuche",
         "attemptsSummary": "{{imported}} importiert, {{skipped}} übersprungen (schon vorhanden), {{failed}} ohne Zuordnung",
         "unresolvedTitle": "{{count}} MoonBoard-Boulder ließen sich nicht zuordnen",
-        "partialTitle": "Der Import wurde unterbrochen",
         "partialBody": "Vielleicht sind nicht alle MoonBoard-Daten durchgekommen. Dieselbe Datei nochmal zu importieren ist unbedenklich und füllt die Lücken."
       }
     },
@@ -342,9 +313,7 @@
       "connectedAs": "Verbunden als {{name}}",
       "connected": "Verbunden",
       "notConnected": "Nicht verbunden",
-      "kilterConnected": "Kilter verbunden",
       "kilterNotAllowed": "Die Kilter-Sync ist für dieses Konto noch nicht freigeschaltet.",
-      "kilterConnectFailed": "Kilter ließ sich nicht verbinden. Versuch es nochmal.",
       "linkSuccess": "{{boardName}} verknüpft",
       "unlinkSuccess": "{{boardName}} getrennt",
       "unlinkPartial": "{{boardName}} ist hier weg, beim Anbieter läuft die Sitzung aber vielleicht noch.",
@@ -509,7 +478,6 @@
     "expiresIn": "Läuft ab in {{seconds}}s",
     "expired": "Code abgelaufen — hol dir einen neuen",
     "generating": "Code kommt…",
-    "error": "Kein Code bekommen. Versuch es nochmal.",
-    "close": "Fertig"
+    "error": "Kein Code bekommen. Versuch es nochmal."
   }
 }

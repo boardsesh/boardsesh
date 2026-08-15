@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vite-plus/test';
 import { render, screen } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
-import { ImportProgressSteps, STEP_ORDER, STEP_LABELS, type ImportProgress } from '../aurora-credentials-section';
+import { ImportProgressSteps, STEP_ORDER, STEP_LABELS, type ImportProgress } from '../board-credential-card';
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
