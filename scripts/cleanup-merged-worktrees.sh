@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 #
-# Cleanup git worktrees whose branches have a merged PR and no uncommitted changes.
+# Cleanup inactive git worktrees that have no uncommitted work to preserve.
+#
+# Eligible worktrees either have a merged PR, or have an open PR whose head is
+# exactly in sync with a local HEAD commit that is at least 48 hours old.
 #
 # Usage:
 #   ./cleanup-merged-worktrees.sh           # dry-run: show what would be removed
-#   ./cleanup-merged-worktrees.sh --apply   # actually remove eligible worktrees
+#   ./cleanup-merged-worktrees.sh --apply   # remove worktrees; preserve open-PR branches
 
 set -euo pipefail
 
@@ -13,7 +16,7 @@ for arg in "$@"; do
   case "$arg" in
     --apply) APPLY=1 ;;
     -h|--help)
-      sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -64,6 +67,9 @@ fi
 
 declare -a TO_REMOVE_PATHS=()
 declare -a TO_REMOVE_BRANCHES=()
+# Non-empty only for open-PR candidates. The OID is used for apply-time
+# revalidation and also marks the associated local branch for preservation.
+declare -a TO_REMOVE_EXPECTED_HEADS=()
 
 skipped_no_branch=0
 skipped_no_pr=0
@@ -76,6 +82,10 @@ skipped_main=0
 # Branches with no PR but no extra content vs main need to be at least this old
 # (HEAD commit timestamp) before we'll remove them. 7 days = 604800 seconds.
 NO_PR_MIN_AGE_SECONDS=$((7 * 24 * 60 * 60))
+
+# Open PR worktrees are eligible only when their local HEAD exactly matches the
+# PR head and the shared commit has been inactive for at least 48 hours.
+OPEN_PR_MIN_AGE_SECONDS=$((48 * 60 * 60))
 
 # Resolve the upstream main reference (origin/main, or origin/master as fallback).
 # Used to check whether a branch with no PR has any content not already in main.
@@ -175,13 +185,15 @@ flush_entry() {
     fi
     TO_REMOVE_PATHS+=("$path")
     TO_REMOVE_BRANCHES+=("")
+    TO_REMOVE_EXPECTED_HEADS+=("")
     printf "%s✓ remove%s %s %s(detached; tree matches %s, HEAD %s old)%s\n" \
       "$C_GREEN" "$C_RESET" "$path" "$C_DIM" "$UPSTREAM_MAIN" \
       "$((age / 86400))d" "$C_RESET"
     return
   fi
 
-  # Look up PR(s) for this branch. Take MERGED if any; OPEN otherwise.
+  # Look up PR(s) for this branch. An OPEN PR takes precedence over a
+  # historical MERGED PR because branch names can be reused.
   local pr_json
   pr_json=$(gh pr list --head "$branch" --state all \
     --json number,state,mergedAt,url,headRefOid,mergeCommit 2>/dev/null || echo "[]")
@@ -236,19 +248,58 @@ flush_entry() {
 
     TO_REMOVE_PATHS+=("$path")
     TO_REMOVE_BRANCHES+=("$branch")
+    TO_REMOVE_EXPECTED_HEADS+=("")
     printf "%s✓ remove%s %s [%s] %s(no PR; tree matches %s, HEAD %s old)%s\n" \
       "$C_GREEN" "$C_RESET" "$path" "$branch" "$C_DIM" "$UPSTREAM_MAIN" \
       "$((age / 86400))d" "$C_RESET"
     return
   fi
 
-  if [ -z "$merged_pr" ]; then
-    skipped_open_pr=$((skipped_open_pr + 1))
-    local pr_num pr_url
+  if [ -n "$open_pr" ]; then
+    local pr_num pr_url pr_head_oid local_oid dirty age
     pr_num=$(echo "$open_pr" | jq -r '.number')
     pr_url=$(echo "$open_pr" | jq -r '.url')
-    printf "%s» skip%s %s [%s] %s(PR #%s OPEN: %s)%s\n" \
-      "$C_DIM" "$C_RESET" "$path" "$branch" "$C_YELLOW" "$pr_num" "$pr_url" "$C_RESET"
+    pr_head_oid=$(echo "$open_pr" | jq -r '.headRefOid // empty')
+
+    if ! dirty=$(git -C "$path" status --porcelain 2>/dev/null); then
+      skipped_open_pr=$((skipped_open_pr + 1))
+      printf "%s» skip%s %s [%s] %s(PR #%s OPEN; failed to read status)%s\n" \
+        "$C_RED" "$C_RESET" "$path" "$branch" "$C_RED" "$pr_num" "$C_RESET"
+      return
+    fi
+
+    if [ -n "$dirty" ]; then
+      skipped_dirty=$((skipped_dirty + 1))
+      local file_count
+      file_count=$(echo "$dirty" | wc -l | tr -d ' ')
+      printf "%s» keep%s %s [%s] %s(PR #%s OPEN, but %s uncommitted file(s))%s\n" \
+        "$C_YELLOW" "$C_RESET" "$path" "$branch" "$C_YELLOW" "$pr_num" "$file_count" "$C_RESET"
+      return
+    fi
+
+    local_oid=$(git -C "$path" rev-parse HEAD 2>/dev/null || echo "")
+    if [ -z "$pr_head_oid" ] || [ -z "$local_oid" ] || [ "$local_oid" != "$pr_head_oid" ]; then
+      skipped_open_pr=$((skipped_open_pr + 1))
+      printf "%s» keep%s %s [%s] %s(PR #%s OPEN, but local HEAD is not in sync with PR head: %s)%s\n" \
+        "$C_YELLOW" "$C_RESET" "$path" "$branch" "$C_YELLOW" "$pr_num" "$pr_url" "$C_RESET"
+      return
+    fi
+
+    age=$(head_age_seconds "$path") || age=0
+    if [ "$age" -lt "$OPEN_PR_MIN_AGE_SECONDS" ]; then
+      skipped_too_fresh=$((skipped_too_fresh + 1))
+      printf "%s» keep%s %s [%s] %s(PR #%s OPEN and in sync, but HEAD is %sh old)%s\n" \
+        "$C_YELLOW" "$C_RESET" "$path" "$branch" "$C_YELLOW" "$pr_num" \
+        "$((age / 3600))" "$C_RESET"
+      return
+    fi
+
+    TO_REMOVE_PATHS+=("$path")
+    TO_REMOVE_BRANCHES+=("$branch")
+    TO_REMOVE_EXPECTED_HEADS+=("$local_oid")
+    printf "%s✓ remove%s %s [%s] %s(PR #%s OPEN and in sync, HEAD %sh old)%s\n" \
+      "$C_GREEN" "$C_RESET" "$path" "$branch" "$C_DIM" "$pr_num" \
+      "$((age / 3600))" "$C_RESET"
     return
   fi
 
@@ -305,6 +356,7 @@ flush_entry() {
 
   TO_REMOVE_PATHS+=("$path")
   TO_REMOVE_BRANCHES+=("$branch")
+  TO_REMOVE_EXPECTED_HEADS+=("")
   printf "%s✓ remove%s %s [%s] %s(PR #%s merged)%s\n" \
     "$C_GREEN" "$C_RESET" "$path" "$branch" "$C_DIM" "$pr_num" "$C_RESET"
 }
@@ -339,7 +391,7 @@ fi
 
 if [ "$APPLY" -eq 0 ]; then
   echo
-  printf "%sDry run.%s Re-run with %s--apply%s to actually remove the worktrees and their branches.\n" \
+  printf "%sDry run.%s Re-run with %s--apply%s to remove eligible worktrees; open-PR branches are preserved.\n" \
     "$C_BLUE" "$C_RESET" "$C_BLUE" "$C_RESET"
   exit 0
 fi
@@ -348,14 +400,38 @@ echo
 echo "Removing worktrees..."
 removed=0
 failed=0
+skipped_during_apply=0
 for i in "${!TO_REMOVE_PATHS[@]}"; do
   path="${TO_REMOVE_PATHS[$i]}"
   branch="${TO_REMOVE_BRANCHES[$i]}"
+  expected_head="${TO_REMOVE_EXPECTED_HEADS[$i]}"
+
+  # Open-PR eligibility depends on the worktree still being clean and exactly
+  # at the PR head observed during the scan. Fail closed if anything changed
+  # before removal so a commit made during this run cannot be discarded.
+  if [ -n "$expected_head" ]; then
+    if ! worktree_clean "$path"; then
+      printf "  %s!%s skipped %s (worktree changed after eligibility scan)\n" \
+        "$C_YELLOW" "$C_RESET" "$path"
+      skipped_during_apply=$((skipped_during_apply + 1))
+      continue
+    fi
+    current_head=$(git -C "$path" rev-parse HEAD 2>/dev/null || echo "")
+    if [ "$current_head" != "$expected_head" ]; then
+      printf "  %s!%s skipped %s (worktree changed after eligibility scan)\n" \
+        "$C_YELLOW" "$C_RESET" "$path"
+      skipped_during_apply=$((skipped_during_apply + 1))
+      continue
+    fi
+  fi
 
   if git_root worktree remove "$path"; then
     printf "  %s✓%s removed worktree %s\n" "$C_GREEN" "$C_RESET" "$path"
     if [ -n "$branch" ]; then
-      if git_root branch -D "$branch" >/dev/null 2>&1; then
+      if [ -n "$expected_head" ]; then
+        printf "  %s✓%s preserved local branch %s (PR remains open)\n" \
+          "$C_GREEN" "$C_RESET" "$branch"
+      elif git_root branch -D "$branch" >/dev/null 2>&1; then
         printf "  %s✓%s deleted branch %s\n" "$C_GREEN" "$C_RESET" "$branch"
       else
         printf "  %s!%s could not delete branch %s (may have unmerged commits)\n" "$C_YELLOW" "$C_RESET" "$branch"
@@ -369,7 +445,8 @@ for i in "${!TO_REMOVE_PATHS[@]}"; do
 done
 
 echo
-printf "Done. Removed: %s%d%s   Failed: %s%d%s\n" \
-  "$C_GREEN" "$removed" "$C_RESET" "$C_RED" "$failed" "$C_RESET"
+printf "Done. Removed: %s%d%s   Failed: %s%d%s   Skipped after scan: %s%d%s\n" \
+  "$C_GREEN" "$removed" "$C_RESET" "$C_RED" "$failed" "$C_RESET" \
+  "$C_YELLOW" "$skipped_during_apply" "$C_RESET"
 
 git_root worktree prune
