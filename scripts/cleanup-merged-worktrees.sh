@@ -115,6 +115,8 @@ skipped_too_fresh=0
 skipped_main=0
 skipped_in_use=0
 skipped_locked=0
+PROCESS_CWD_WARNING_SHOWN=0
+PROCESS_CWD_PROC_ROOT="${WORKTREE_CWD_PROC_ROOT_OVERRIDE:-/proc}"
 
 # Every removal has an inactivity floor. Agent worktrees are intentionally
 # shorter-lived because a live process CWD is checked both during the scan and
@@ -146,13 +148,19 @@ if [ -z "$GITHUB_REPOSITORY" ]; then
     exit 1
   }
 fi
-if ! ALL_PR_JSON=$(gh pr list --repo "$GITHUB_REPOSITORY" --state all --limit 10000 \
+PR_METADATA_LIMIT=10000
+if ! ALL_PR_JSON=$(gh pr list --repo "$GITHUB_REPOSITORY" --state all --limit "$PR_METADATA_LIMIT" \
   --json number,state,createdAt,mergedAt,url,headRefName,headRefOid,mergeCommit,isCrossRepository); then
   echo "Could not load GitHub PR metadata; no worktrees were changed" >&2
   exit 1
 fi
 if ! jq -e 'type == "array"' >/dev/null 2>&1 <<<"$ALL_PR_JSON"; then
   echo "GitHub PR metadata was not a valid JSON array; no worktrees were changed" >&2
+  exit 1
+fi
+PR_METADATA_COUNT=$(jq 'length' <<<"$ALL_PR_JSON")
+if [ "$PR_METADATA_COUNT" -ge "$PR_METADATA_LIMIT" ]; then
+  echo "GitHub PR metadata reached the ${PR_METADATA_LIMIT}-PR safety limit; no worktrees were changed" >&2
   exit 1
 fi
 
@@ -186,14 +194,21 @@ path_contains() {
 # Returns 0 if any live process has its CWD at or below this worktree. On
 # systems without /proc, use lsof. If neither mechanism is available, fail
 # closed and report the worktree as in use.
+warn_process_cwd_scan_unavailable() {
+  if [ "$PROCESS_CWD_WARNING_SHOWN" -eq 0 ]; then
+    echo "Warning: live process CWDs could not be enumerated; affected worktrees will be preserved" >&2
+    PROCESS_CWD_WARNING_SHOWN=1
+  fi
+}
+
 worktree_in_use() {
   local path="$1"
   local canonical_path process_cwd cwd_link
   canonical_path=$(canonical_directory "$path") || return 0
 
-  if [ -d /proc ]; then
-    readlink /proc/self/cwd >/dev/null 2>&1 || return 0
-    for cwd_link in /proc/[0-9]*/cwd; do
+  if [ -d "$PROCESS_CWD_PROC_ROOT" ] \
+     && readlink "$PROCESS_CWD_PROC_ROOT/self/cwd" >/dev/null 2>&1; then
+    for cwd_link in "$PROCESS_CWD_PROC_ROOT"/[0-9]*/cwd; do
       process_cwd=$(readlink "$cwd_link" 2>/dev/null) || continue
       process_cwd="${process_cwd% (deleted)}"
       if path_contains "$canonical_path" "$process_cwd"; then
@@ -206,9 +221,11 @@ worktree_in_use() {
   if command -v lsof >/dev/null 2>&1; then
     local lsof_output
     if ! lsof_output=$(lsof -a -d cwd -Fn 2>/dev/null); then
+      warn_process_cwd_scan_unavailable
       return 0
     fi
     while IFS= read -r process_cwd; do
+      [[ "$process_cwd" == n* ]] || continue
       process_cwd="${process_cwd#n}"
       process_cwd="${process_cwd% (deleted)}"
       if path_contains "$canonical_path" "$process_cwd"; then
@@ -218,6 +235,7 @@ worktree_in_use() {
     return 1
   fi
 
+  warn_process_cwd_scan_unavailable
   return 0
 }
 
@@ -596,10 +614,12 @@ for i in "${!TO_REMOVE_PATHS[@]}"; do
 
   recovery_branch=""
   if [ "$branch_action" = "recover-detached" ]; then
+    recovery_path=$(canonical_directory "$path" || printf '%s' "$path")
+    recovery_path_hash=$(printf '%s' "$recovery_path" | git_root hash-object --stdin)
     recovery_slug=$(basename "$path" | tr -cs 'A-Za-z0-9._-' '-')
     recovery_slug="${recovery_slug#-}"
     recovery_slug="${recovery_slug%-}"
-    recovery_base="recovery/worktree-${recovery_slug:-detached}-${current_head:0:12}"
+    recovery_base="recovery/worktree-${recovery_slug:-detached}-${recovery_path_hash:0:10}-${current_head:0:12}"
     recovery_branch="$recovery_base"
     recovery_suffix=1
     while git_root show-ref --verify --quiet "refs/heads/$recovery_branch"; do
