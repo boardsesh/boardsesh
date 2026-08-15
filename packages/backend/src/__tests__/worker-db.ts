@@ -30,7 +30,19 @@ export function getWorkerDatabaseName(): string {
 function buildWorkerDatabaseUrl(): string {
   const name = getWorkerDatabaseName();
   const raw = process.env.DATABASE_URL || `postgresql://postgres:postgres@localhost:${PG_PORT}/${WORKER_DB_PREFIX}`;
-  return raw.replace(/\/[^/]+$/, `/${name}`);
+  const workerUrl = new URL(raw);
+  workerUrl.pathname = `/${name}`;
+  // Migration 0200 makes catalog INSERT cursors database-owned. Existing tests
+  // deliberately seed historical cursor values, so their superuser-only
+  // restore escape hatch is enabled for the worker pool. The adversarial fence
+  // test explicitly turns it off on its writer sessions and proves backdated
+  // input is overwritten.
+  const existingOptions = workerUrl.searchParams.get('options')?.trim();
+  workerUrl.searchParams.set(
+    'options',
+    [existingOptions, '-c boardsesh.snapshot_cursor_restore=on'].filter(Boolean).join(' '),
+  );
+  return workerUrl.toString();
 }
 
 /** Redis ships with 16 logical databases (`databases 16`) unless configured otherwise. */

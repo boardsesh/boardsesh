@@ -16,10 +16,10 @@
 // live `syncClimbs`/`syncClimbStats` pull would have written. The
 // snapshot-export-golden test pins that equivalence.
 //
-// Reads the PRIMARY database, never a replica: the sync cursor (updated_at,
-// sync_seq) is write-time ordered, but a replica snapshot is commit-order
-// consistent, so a lagging replica can omit a lower-cursor row while containing
-// higher-cursor ones — see the pool call-site comment in runExport.
+// Primary reads remain the default. Replica reads are allowed only through the
+// explicit primary-issued cutoff + WAL replay barrier implemented below;
+// simply replacing DATABASE_URL with a replica URL is still a permanent-skip
+// bug.
 //
 // Structure: a testable core (`exportLayoutSnapshot`, `boardSnapshotDdlStatements`,
 // `discoverLayoutPairs`) under a thin CLI (`runExport`). The CLI is only invoked
@@ -28,12 +28,14 @@
 
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { DatabaseSync } from 'node:sqlite';
 import { gzipSync } from 'node:zlib';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Sql, TransactionSql } from 'postgres';
+import postgres, { type ReservedSql, type Sql, type TransactionSql } from 'postgres';
 import {
   MIGRATIONS,
   LATEST_SCHEMA_VERSION,
@@ -70,6 +72,10 @@ const SAFE_KEY_PREFIX = /^[a-z0-9]+(?:[/-][a-z0-9]+)*$/;
 const manifestKeyForPrefix = (keyPrefix: string): string => `${keyPrefix}/manifest.json`;
 const MANIFEST_CACHE_CONTROL = 'public, max-age=300';
 const ARTIFACT_CONTENT_TYPE = 'application/x-sqlite3';
+const HEARTBEAT_CACHE_CONTROL = 'no-store, max-age=0';
+const DEFAULT_REPLICA_MAX_LAG_SECONDS = 30;
+const DEFAULT_REPLICA_WAIT_SECONDS = 10 * 60;
+const DEFAULT_MAX_CUTOFF_AGE_SECONDS = 10 * 60;
 
 // Public base for the manifest's artifact URLs. Tigris serves PUBLIC objects
 // only on the bucket's virtual-host domain (https://<bucket>.t3.tigrisfiles.io);
@@ -205,6 +211,24 @@ export type LayoutGradesSnapshotResult = {
 
 export type LayoutPair = { boardType: string; layoutId: number };
 
+type SnapshotDatabaseSource = 'primary' | 'replica';
+
+export type SnapshotReadBoundary = {
+  source: SnapshotDatabaseSource;
+  stableBefore: string;
+  targetLsn: string;
+  replayLsn: string;
+  systemIdentifier: string;
+  timelineId: number;
+};
+
+type SnapshotDatabaseContext = {
+  sqlClient: Sql;
+  boundary: SnapshotReadBoundary;
+  assertPublishFence: () => Promise<void>;
+  close: () => Promise<void>;
+};
+
 type SnapshotWatermark = {
   watermarkUpdatedAt: string;
   watermarkSyncSeq: string;
@@ -238,14 +262,15 @@ export function boardSnapshotDdlStatements(
 
 // --- Postgres discovery + streaming ------------------------------------------
 
-/** Every (board_type, layout_id) pair that has at least one climb. */
+/** Every live (board_type, layout_id) pair, independent of the row export cutoff. */
 export async function discoverLayoutPairs(sqlClient: Sql, filter?: Partial<LayoutPair>): Promise<LayoutPair[]> {
   const boardCondition = filter?.boardType ? sqlClient`board_type = ${filter.boardType}` : sqlClient`TRUE`;
   const layoutCondition = filter?.layoutId != null ? sqlClient`layout_id = ${filter.layoutId}` : sqlClient`TRUE`;
   const rows = await sqlClient<{ board_type: string; layout_id: number }[]>`
     SELECT DISTINCT board_type, layout_id
     FROM board_climbs
-    WHERE ${boardCondition} AND ${layoutCondition}
+    WHERE ${boardCondition}
+      AND ${layoutCondition}
     ORDER BY board_type, layout_id
   `;
   return rows.map((row) => ({ boardType: String(row.board_type), layoutId: Number(row.layout_id) }));
@@ -259,17 +284,16 @@ function assertSafeColumns(columns: readonly string[]): void {
   }
 }
 
-// Scope predicates matching the resolvers exactly. `now()` is transaction-start
-// time and constant across the whole export transaction, so the streamed rows and
-// the watermark query below apply the identical stability boundary.
-const CLIMBS_WHERE = `board_type = $1 AND layout_id = $2 AND updated_at < now() - make_interval(secs => $3)`;
+// Every query in one run uses the exact primary-issued cutoff. A replica-local
+// now()/replay timestamp would reintroduce the late-commit cursor race.
+const CLIMBS_WHERE = `board_type = $1 AND layout_id = $2 AND updated_at < $3::timestamp`;
 
 const STATS_WHERE = `board_type = $1
     AND EXISTS (
       SELECT 1 FROM board_climbs bc
       WHERE bc.uuid = board_climb_stats.climb_uuid AND bc.board_type = $1 AND bc.layout_id = $2
     )
-    AND updated_at < now() - make_interval(secs => $3)`;
+    AND updated_at < $3::timestamp`;
 
 // Grades have no layout_id, so they are scoped to the layout's climbs through
 // the SAME correlated EXISTS the syncClimbGrades resolver uses — import wider
@@ -280,7 +304,7 @@ const GRADES_WHERE = `board_type = $1
       SELECT 1 FROM board_climbs bc
       WHERE bc.uuid = board_climb_grades.climb_uuid AND bc.board_type = $1 AND bc.layout_id = $2
     )
-    AND computed_at < now() - make_interval(secs => $3)`;
+    AND computed_at < $3::timestamp`;
 
 function whereClauseFor(tableName: SnapshotTableName | SnapshotGradesTableName): string {
   switch (tableName) {
@@ -291,6 +315,496 @@ function whereClauseFor(tableName: SnapshotTableName | SnapshotGradesTableName):
     case 'board_climb_grades':
       return GRADES_WHERE;
   }
+}
+
+type FenceRow = {
+  stable_before: unknown;
+  target_lsn: unknown;
+  primary_system_identifier?: unknown;
+  primary_timeline_id?: unknown;
+};
+type CutoffAgeRow = { age_seconds: unknown };
+
+export type ReplicaReplayStatus = {
+  inRecovery: boolean;
+  replayPaused: boolean;
+  replayLsn: string;
+  reachedTarget: boolean;
+  replayLagSeconds: number | null;
+  systemIdentifier: string;
+  timelineId: number;
+  receiverStatus: string;
+  receiverTimelineId: number;
+};
+
+type DatabaseIdentity = {
+  inRecovery: boolean;
+  systemIdentifier: string;
+  timelineId: number;
+};
+
+function requiredEnvironment(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} is required`);
+  return value;
+}
+
+function requiredExporterImageDigest(): string {
+  const imageDigest = requiredEnvironment('SNAPSHOT_EXPORTER_IMAGE_DIGEST');
+  if (!/^sha256:[0-9a-f]{64}$/.test(imageDigest)) {
+    throw new Error('SNAPSHOT_EXPORTER_IMAGE_DIGEST must be an exact sha256 digest');
+  }
+  return imageDigest;
+}
+
+function positiveEnvironmentSeconds(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive number of seconds, got ${JSON.stringify(raw)}`);
+  }
+  return parsed;
+}
+
+function isLocalDatabaseUrl(connectionString: string): boolean {
+  try {
+    const hostname = new URL(connectionString).hostname.toLowerCase().replace(/^\[(.*)\]$/, '$1');
+    return ['localhost', '127.0.0.1', '::1', 'postgres', 'postgres-test'].includes(hostname);
+  } catch {
+    return false;
+  }
+}
+
+export function createIsolatedSnapshotPool(connectionString: string, max: number): Sql {
+  const sqlClient = postgres(connectionString, {
+    max,
+    idle_timeout: 30,
+    connect_timeout: 30,
+    prepare: false,
+    // The coordinator crosses the public internet. `require` encrypts but does
+    // not authenticate the server certificate/hostname; `verify-full` does.
+    // Plaintext is accepted only for an explicit loopback/dev-service URL.
+    ssl: isLocalDatabaseUrl(connectionString) ? false : 'verify-full',
+  });
+  // Drizzle installs passthrough parsers for timestamp/date OIDs on the raw
+  // postgres.js client. Snapshot shaping relies on exact PostgreSQL text,
+  // including microseconds and timestamp-without-time-zone semantics.
+  void drizzle(sqlClient);
+  return sqlClient;
+}
+
+function fenceRowFrom(rows: readonly unknown[], description: string): FenceRow {
+  const row = rows[0] as FenceRow | undefined;
+  if (!row?.stable_before || !row.target_lsn) {
+    throw new Error(`${description} did not return stable_before and target_lsn`);
+  }
+  return row;
+}
+
+function fenceIdentityFrom(row: FenceRow): { systemIdentifier: string; timelineId: number } {
+  const systemIdentifier = row.primary_system_identifier;
+  const timelineId = Number(row.primary_timeline_id);
+  if (typeof systemIdentifier !== 'string' || !/^\d+$/.test(systemIdentifier)) {
+    throw new Error('board snapshot fence returned an invalid PostgreSQL system identifier');
+  }
+  if (!Number.isSafeInteger(timelineId) || timelineId <= 0) {
+    throw new Error('board snapshot fence returned an invalid PostgreSQL timeline');
+  }
+  return { systemIdentifier, timelineId };
+}
+
+async function readDatabaseIdentity(sqlClient: Sql): Promise<DatabaseIdentity> {
+  const rows = await sqlClient.unsafe(
+    `SELECT pg_is_in_recovery() AS in_recovery,
+            identity.system_identifier,
+            identity.timeline_id
+     FROM ops.board_snapshot_cluster_identity() AS identity`,
+  );
+  const row = rows[0] as unknown as {
+    in_recovery?: unknown;
+    system_identifier?: unknown;
+    timeline_id?: unknown;
+  };
+  const timelineId = Number(row?.timeline_id);
+  if (typeof row?.system_identifier !== 'string' || !/^\d+$/.test(row.system_identifier)) {
+    throw new Error('snapshot database returned an invalid PostgreSQL system identifier');
+  }
+  if (!Number.isSafeInteger(timelineId) || timelineId <= 0) {
+    throw new Error('snapshot database returned an invalid PostgreSQL timeline');
+  }
+  return {
+    inRecovery: row.in_recovery === true,
+    systemIdentifier: row.system_identifier,
+    timelineId,
+  };
+}
+
+function assertPrimaryDatabaseIdentity(
+  identity: DatabaseIdentity,
+  expectedSystemIdentifier: string,
+  expectedTimelineId: number,
+): void {
+  if (identity.inRecovery) {
+    throw new Error('snapshot primary read URL points at a standby');
+  }
+  if (identity.systemIdentifier !== expectedSystemIdentifier) {
+    throw new Error('snapshot primary read URL belongs to a different PostgreSQL system');
+  }
+  if (identity.timelineId !== expectedTimelineId) {
+    throw new Error(
+      `snapshot primary read URL timeline does not match coordinator (read=${identity.timelineId}, coordinator=${expectedTimelineId})`,
+    );
+  }
+}
+
+export async function readReplicaReplayStatus(sqlClient: Sql, targetLsn: string): Promise<ReplicaReplayStatus> {
+  const rows = await sqlClient.unsafe(
+    `SELECT pg_is_in_recovery() AS in_recovery,
+            CASE WHEN pg_is_in_recovery() THEN pg_is_wal_replay_paused() ELSE false END AS replay_paused,
+            pg_last_wal_replay_lsn()::text AS replay_lsn,
+            COALESCE(pg_last_wal_replay_lsn() >= $1::pg_lsn, false) AS reached_target,
+            CASE
+              WHEN pg_last_wal_replay_lsn() >= $1::pg_lsn THEN 0
+              WHEN pg_last_xact_replay_timestamp() IS NULL THEN NULL
+              ELSE EXTRACT(EPOCH FROM (clock_timestamp() - pg_last_xact_replay_timestamp()))::double precision
+            END AS replay_lag_seconds,
+            identity.system_identifier,
+            identity.timeline_id,
+            COALESCE(receiver.status, '') AS receiver_status,
+            COALESCE(receiver.received_tli, 0)::bigint AS receiver_timeline_id
+     FROM ops.board_snapshot_cluster_identity() AS identity
+     LEFT JOIN LATERAL (
+       SELECT status, received_tli
+       FROM pg_stat_wal_receiver
+       LIMIT 1
+     ) AS receiver ON true`,
+    [targetLsn],
+  );
+  const row = rows[0] as unknown as {
+    in_recovery: unknown;
+    replay_paused: unknown;
+    replay_lsn: unknown;
+    reached_target: unknown;
+    replay_lag_seconds: unknown;
+    system_identifier: unknown;
+    timeline_id: unknown;
+    receiver_status: unknown;
+    receiver_timeline_id: unknown;
+  };
+  if (row.replay_lsn != null && typeof row.replay_lsn !== 'string') {
+    throw new Error('snapshot replica returned an invalid replay LSN');
+  }
+  if (typeof row.system_identifier !== 'string' || !/^\d+$/.test(row.system_identifier)) {
+    throw new Error('snapshot database returned an invalid PostgreSQL system identifier');
+  }
+  if (typeof row.receiver_status !== 'string') throw new Error('snapshot database returned an invalid receiver status');
+  const timelineId = Number(row.timeline_id);
+  const receiverTimelineId = Number(row.receiver_timeline_id);
+  if (!Number.isSafeInteger(timelineId) || timelineId <= 0 || !Number.isSafeInteger(receiverTimelineId)) {
+    throw new Error('snapshot database returned an invalid PostgreSQL timeline');
+  }
+  return {
+    inRecovery: row.in_recovery === true,
+    replayPaused: row.replay_paused === true,
+    replayLsn: row.replay_lsn ?? '',
+    reachedTarget: row.reached_target === true,
+    replayLagSeconds: row.replay_lag_seconds == null ? null : Number(row.replay_lag_seconds),
+    systemIdentifier: row.system_identifier,
+    timelineId,
+    receiverStatus: row.receiver_status,
+    receiverTimelineId,
+  };
+}
+
+function assertReplicaIdentityAndReceiver(
+  status: ReplicaReplayStatus,
+  expectedSystemIdentifier: string,
+  expectedTimelineId: number,
+): void {
+  if (status.systemIdentifier !== expectedSystemIdentifier) {
+    throw new Error('snapshot replica belongs to a different PostgreSQL system');
+  }
+  if (status.receiverStatus !== 'streaming') {
+    throw new Error(`snapshot replica WAL receiver is ${status.receiverStatus || 'missing'}, expected streaming`);
+  }
+  if (status.receiverTimelineId !== expectedTimelineId || status.timelineId !== expectedTimelineId) {
+    throw new Error(
+      `snapshot replica timeline does not match primary (control=${status.timelineId}, receiver=${status.receiverTimelineId}, primary=${expectedTimelineId})`,
+    );
+  }
+}
+
+export async function waitForReplicaReplay(params: {
+  sqlClient: Sql;
+  targetLsn: string;
+  maxLagSeconds: number;
+  timeoutSeconds: number;
+  expectedSystemIdentifier: string;
+  expectedTimelineId: number;
+  pollMilliseconds?: number;
+  readStatus?: (sqlClient: Sql, targetLsn: string) => Promise<ReplicaReplayStatus>;
+  sleep?: (milliseconds: number) => Promise<void>;
+}): Promise<ReplicaReplayStatus> {
+  const startedAt = Date.now();
+  const pollMilliseconds = params.pollMilliseconds ?? 1000;
+  const readStatus = params.readStatus ?? readReplicaReplayStatus;
+  const sleep = params.sleep ?? delay;
+  while (true) {
+    const status = await readStatus(params.sqlClient, params.targetLsn);
+    if (!status.inRecovery) throw new Error('snapshot replica is not in recovery; refusing to read a writable server');
+    assertReplicaIdentityAndReceiver(status, params.expectedSystemIdentifier, params.expectedTimelineId);
+    if (status.replayPaused) throw new Error('snapshot replica WAL replay is paused');
+    if (!status.replayLsn) throw new Error('snapshot replica has no replay LSN');
+    if (status.reachedTarget) return status;
+    if (status.replayLagSeconds == null || status.replayLagSeconds > params.maxLagSeconds) {
+      throw new Error(
+        `snapshot replica replay lag is ${status.replayLagSeconds ?? 'unknown'}s; maximum is ${params.maxLagSeconds}s`,
+      );
+    }
+    if (Date.now() - startedAt >= params.timeoutSeconds * 1000) {
+      throw new Error(`snapshot replica did not replay target ${params.targetLsn} within ${params.timeoutSeconds}s`);
+    }
+    await sleep(pollMilliseconds);
+  }
+}
+
+async function createPrimarySnapshotContext(): Promise<SnapshotDatabaseContext> {
+  const sqlClient = createPool();
+  const rows = await sqlClient.unsafe(
+    `SELECT ((clock_timestamp() - make_interval(secs => $1)) AT TIME ZONE 'UTC') AS stable_before,
+            pg_current_wal_insert_lsn()::text AS target_lsn`,
+    [DEFAULT_STABILITY_WINDOW_SECONDS],
+  );
+  const row = fenceRowFrom(rows, 'primary snapshot boundary');
+  const targetLsn = String(row.target_lsn);
+  return {
+    sqlClient,
+    boundary: {
+      source: 'primary',
+      stableBefore: toIso(row.stable_before),
+      targetLsn,
+      replayLsn: targetLsn,
+      systemIdentifier: 'unfenced',
+      timelineId: 0,
+    },
+    assertPublishFence: async () => {},
+    // The shared primary pool is closed by the CLI entrypoint, preserving the
+    // existing integration-test contract where runExport shares that pool.
+    close: async () => {},
+  };
+}
+
+type PrimaryFenceHandle = {
+  stableBefore: string;
+  targetLsn: string;
+  systemIdentifier: string;
+  timelineId: number;
+  assertHeld: () => Promise<void>;
+  close: () => Promise<void>;
+};
+
+async function releasePrimaryFence(params: {
+  coordinator: ReservedSql | null;
+  coordinatorPool: Sql;
+  lockMayBeHeld: boolean;
+}): Promise<void> {
+  if (params.coordinator) {
+    if (params.lockMayBeHeld) {
+      try {
+        await params.coordinator.unsafe('SELECT ops.release_board_snapshot_fence() AS released');
+      } catch (error) {
+        logger.warn('[export-snapshots] failed to release primary snapshot fence', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    params.coordinator.release();
+  }
+  await params.coordinatorPool.end({ timeout: 5 }).catch(() => {});
+}
+
+async function acquirePrimaryFence(): Promise<PrimaryFenceHandle> {
+  const coordinatorUrl = requiredEnvironment('DATABASE_DIRECT_URL');
+  const coordinatorPool = createIsolatedSnapshotPool(coordinatorUrl, 1);
+  let coordinator: ReservedSql | null = null;
+  let lockMayBeHeld = false;
+  try {
+    coordinator = await coordinatorPool.reserve();
+    const fenceRows = await coordinator.unsafe(
+      `SELECT stable_before, target_lsn::text, primary_system_identifier, primary_timeline_id
+       FROM ops.acquire_board_snapshot_fence($1)`,
+      [DEFAULT_STABILITY_WINDOW_SECONDS],
+    );
+    lockMayBeHeld = true;
+    const fence = fenceRowFrom(fenceRows, 'board snapshot fence');
+    const stableBefore = toIso(fence.stable_before);
+    const targetLsn = String(fence.target_lsn);
+    const identity = fenceIdentityFrom(fence);
+
+    const maxCutoffAgeSeconds = positiveEnvironmentSeconds(
+      'SNAPSHOT_MAX_CUTOFF_AGE_SECONDS',
+      DEFAULT_MAX_CUTOFF_AGE_SECONDS,
+    );
+
+    const assertCutoffAge = async (): Promise<void> => {
+      if (!coordinator) throw new Error('snapshot coordinator connection was released before publish');
+      const cutoffAgeRows = await coordinator.unsafe(
+        `SELECT EXTRACT(EPOCH FROM ((clock_timestamp() AT TIME ZONE 'UTC') - $1::timestamp))::double precision
+                AS age_seconds`,
+        [stableBefore],
+      );
+      const cutoffAge = Number((cutoffAgeRows[0] as unknown as CutoffAgeRow | undefined)?.age_seconds);
+      if (!Number.isFinite(cutoffAge) || cutoffAge < 0 || cutoffAge > maxCutoffAgeSeconds) {
+        throw new Error(`snapshot fence cutoff age is ${cutoffAge}s; maximum is ${maxCutoffAgeSeconds}s`);
+      }
+    };
+    await assertCutoffAge();
+
+    const assertHeld = async (): Promise<void> => {
+      if (!coordinator) throw new Error('snapshot coordinator connection was released before publish');
+      const heldRows = await coordinator.unsafe('SELECT ops.board_snapshot_fence_held() AS held');
+      const held = (heldRows[0] as unknown as { held?: unknown } | undefined)?.held;
+      if (held !== true) throw new Error('primary snapshot fence was lost before publish');
+      // Long exports must not advertise a freshly-completed heartbeat for a
+      // cutoff which became stale while artifacts were being built/uploaded.
+      await assertCutoffAge();
+    };
+
+    return {
+      stableBefore,
+      targetLsn,
+      ...identity,
+      assertHeld,
+      close: async () => {
+        await releasePrimaryFence({ coordinator, coordinatorPool, lockMayBeHeld });
+        coordinator = null;
+        lockMayBeHeld = false;
+      },
+    };
+  } catch (error) {
+    await releasePrimaryFence({ coordinator, coordinatorPool, lockMayBeHeld });
+    throw error;
+  }
+}
+
+async function createFencedPrimarySnapshotContext(): Promise<SnapshotDatabaseContext> {
+  const primaryPool = createIsolatedSnapshotPool(requiredEnvironment('DATABASE_URL'), 1);
+  let primaryReader: ReservedSql | null = null;
+  let fence: PrimaryFenceHandle | null = null;
+  try {
+    primaryReader = await primaryPool.reserve();
+    const reservedPrimaryReader = primaryReader;
+    fence = await acquirePrimaryFence();
+    const assertPublishFence = async (): Promise<void> => {
+      if (!fence) throw new Error('snapshot coordinator connection was released before publish');
+      await fence.assertHeld();
+      assertPrimaryDatabaseIdentity(
+        await readDatabaseIdentity(reservedPrimaryReader),
+        fence.systemIdentifier,
+        fence.timelineId,
+      );
+    };
+    await assertPublishFence();
+    return {
+      // Identity checks and every REPEATABLE READ bulk transaction stay on one
+      // reserved backend. A mixed/load-balanced URL cannot validate against one
+      // server and stream rows from another.
+      sqlClient: reservedPrimaryReader,
+      boundary: {
+        source: 'primary',
+        stableBefore: fence.stableBefore,
+        targetLsn: fence.targetLsn,
+        replayLsn: fence.targetLsn,
+        systemIdentifier: fence.systemIdentifier,
+        timelineId: fence.timelineId,
+      },
+      assertPublishFence,
+      close: async () => {
+        primaryReader?.release();
+        primaryReader = null;
+        await fence?.close();
+        fence = null;
+        await primaryPool.end({ timeout: 5 }).catch(() => {});
+      },
+    };
+  } catch (error) {
+    primaryReader?.release();
+    await fence?.close();
+    await primaryPool.end({ timeout: 5 }).catch(() => {});
+    throw error;
+  }
+}
+
+async function createReplicaSnapshotContext(): Promise<SnapshotDatabaseContext> {
+  const replicaUrl = requiredEnvironment('SNAPSHOT_REPLICA_DATABASE_URL');
+  const replicaPool = createIsolatedSnapshotPool(replicaUrl, 1);
+  let replicaReader: ReservedSql | null = null;
+  let fence: PrimaryFenceHandle | null = null;
+  try {
+    replicaReader = await replicaPool.reserve();
+    fence = await acquirePrimaryFence();
+
+    const maxLagSeconds = positiveEnvironmentSeconds(
+      'SNAPSHOT_REPLICA_MAX_LAG_SECONDS',
+      DEFAULT_REPLICA_MAX_LAG_SECONDS,
+    );
+    const timeoutSeconds = positiveEnvironmentSeconds('SNAPSHOT_REPLICA_WAIT_SECONDS', DEFAULT_REPLICA_WAIT_SECONDS);
+    const replayStatus = await waitForReplicaReplay({
+      sqlClient: replicaReader,
+      targetLsn: fence.targetLsn,
+      maxLagSeconds,
+      timeoutSeconds,
+      expectedSystemIdentifier: fence.systemIdentifier,
+      expectedTimelineId: fence.timelineId,
+    });
+
+    const assertPublishFence = async (): Promise<void> => {
+      if (!fence) throw new Error('snapshot coordinator connection was released before publish');
+      if (!replicaReader) throw new Error('snapshot replica connection was released before publish');
+      await fence.assertHeld();
+      const currentReplay = await readReplicaReplayStatus(replicaReader, fence.targetLsn);
+      assertReplicaIdentityAndReceiver(currentReplay, fence.systemIdentifier, fence.timelineId);
+      if (!currentReplay.inRecovery || currentReplay.replayPaused || !currentReplay.reachedTarget) {
+        throw new Error('snapshot replica no longer satisfies the replay barrier before publish');
+      }
+    };
+
+    return {
+      // Replay checks and all bulk transactions stay on the exact same local
+      // standby backend for the full run.
+      sqlClient: replicaReader,
+      boundary: {
+        source: 'replica',
+        stableBefore: fence.stableBefore,
+        targetLsn: fence.targetLsn,
+        replayLsn: replayStatus.replayLsn,
+        systemIdentifier: fence.systemIdentifier,
+        timelineId: fence.timelineId,
+      },
+      assertPublishFence,
+      close: async () => {
+        replicaReader?.release();
+        replicaReader = null;
+        await fence?.close();
+        fence = null;
+        await replicaPool.end({ timeout: 5 }).catch(() => {});
+      },
+    };
+  } catch (error) {
+    replicaReader?.release();
+    await fence?.close();
+    await replicaPool.end({ timeout: 5 }).catch(() => {});
+    throw error;
+  }
+}
+
+async function createSnapshotDatabaseContext(
+  source: SnapshotDatabaseSource,
+  requireFence: boolean,
+): Promise<SnapshotDatabaseContext> {
+  if (source === 'replica') return createReplicaSnapshotContext();
+  return requireFence ? createFencedPrimarySnapshotContext() : createPrimarySnapshotContext();
 }
 
 /**
@@ -308,8 +822,9 @@ async function hasDeltaAtThreshold(params: {
   tableName: SnapshotTableName | SnapshotGradesTableName;
   watermark: SnapshotWatermark;
   threshold: number;
+  stableBefore: string;
 }): Promise<boolean> {
-  const { sqlClient, pair, tableName, watermark, threshold } = params;
+  const { sqlClient, pair, tableName, watermark, threshold, stableBefore } = params;
   const cursorColumn = cursorColumnFor(tableName);
   const rows = await sqlClient.unsafe(
     `SELECT 1
@@ -318,14 +833,7 @@ async function hasDeltaAtThreshold(params: {
        AND (${cursorColumn}, sync_seq) > ($4::timestamp, $5::bigint)
      ORDER BY ${cursorColumn} ASC, sync_seq ASC
      LIMIT $6`,
-    [
-      pair.boardType,
-      pair.layoutId,
-      DEFAULT_STABILITY_WINDOW_SECONDS,
-      watermark.watermarkUpdatedAt,
-      watermark.watermarkSyncSeq,
-      threshold,
-    ],
+    [pair.boardType, pair.layoutId, stableBefore, watermark.watermarkUpdatedAt, watermark.watermarkSyncSeq, threshold],
   );
   return rows.length >= threshold;
 }
@@ -339,8 +847,9 @@ async function layoutRefreshReason(params: {
   previousEntry: SnapshotManifestEntry | undefined;
   threshold: number;
   includeGrades: boolean;
+  stableBefore: string;
 }): Promise<RefreshReason | null> {
-  const { sqlClient, pair, previousEntry, threshold, includeGrades } = params;
+  const { sqlClient, pair, previousEntry, threshold, includeGrades, stableBefore } = params;
   if (!previousEntry) return 'missing-entry';
   if (previousEntry.schemaVersion < LATEST_SCHEMA_VERSION) return 'stale-schema';
   if (includeGrades && previousEntry.grades && previousEntry.grades.schemaVersion < LATEST_SCHEMA_VERSION) {
@@ -369,7 +878,7 @@ async function layoutRefreshReason(params: {
   }
 
   for (const { tableName, watermark } of tableWatermarks) {
-    if (await hasDeltaAtThreshold({ sqlClient, pair, tableName, watermark, threshold })) {
+    if (await hasDeltaAtThreshold({ sqlClient, pair, tableName, watermark, threshold, stableBefore })) {
       return tableName;
     }
   }
@@ -669,13 +1178,15 @@ export async function exportLayoutSnapshot(params: {
   builtAt: string;
   /** Where to write the layout's grades artifact. Omit to skip grades entirely. */
   gradesFilePath?: string;
+  /** Primary-issued, run-wide exclusive cursor cutoff. */
+  stableBefore: string;
   stabilityWindowSeconds?: number;
   streamBatchSize?: number;
 }): Promise<LayoutSnapshotResult> {
-  const { sqlClient, boardType, layoutId, filePath, builtAt, gradesFilePath } = params;
+  const { sqlClient, boardType, layoutId, filePath, builtAt, gradesFilePath, stableBefore } = params;
   const stabilityWindowSeconds = params.stabilityWindowSeconds ?? DEFAULT_STABILITY_WINDOW_SECONDS;
   const streamBatchSize = params.streamBatchSize ?? 5000;
-  const scopeParams: (string | number)[] = [boardType, layoutId, stabilityWindowSeconds];
+  const scopeParams: (string | number)[] = [boardType, layoutId, stableBefore];
 
   const sqliteDb = new DatabaseSync(filePath);
   const gradesDb = gradesFilePath ? new DatabaseSync(gradesFilePath) : null;
@@ -819,10 +1330,20 @@ type ExportOptions = {
   refreshThreshold?: number;
   boardFilter?: string;
   layoutFilter?: number;
+  source: SnapshotDatabaseSource;
+  fence: boolean;
+  heartbeat: boolean;
 };
 
 function parseArgs(argv: string[]): ExportOptions {
-  const options: ExportOptions = { dryRun: false, gzip: false, keyPrefix: DEFAULT_SNAPSHOT_KEY_PREFIX };
+  const options: ExportOptions = {
+    dryRun: false,
+    gzip: false,
+    keyPrefix: DEFAULT_SNAPSHOT_KEY_PREFIX,
+    source: 'primary',
+    fence: false,
+    heartbeat: false,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--') continue; // vp forwards a literal `--` into argv
@@ -846,9 +1367,65 @@ function parseArgs(argv: string[]): ExportOptions {
       options.layoutFilter = parseLayoutFilter(argv[(index += 1)]);
     } else if (arg.startsWith('--layout=')) {
       options.layoutFilter = parseLayoutFilter(arg.slice('--layout='.length));
+    } else if (arg === '--source') {
+      options.source = parseDatabaseSource(argv[(index += 1)]);
+    } else if (arg.startsWith('--source=')) {
+      options.source = parseDatabaseSource(arg.slice('--source='.length));
+    } else if (arg === '--fence') {
+      options.fence = true;
+    } else if (arg === '--heartbeat') {
+      options.heartbeat = true;
+    } else {
+      throw new Error(`Unknown board snapshot export argument: ${JSON.stringify(arg)}`);
     }
   }
   return options;
+}
+
+async function uploadRunHeartbeat(params: {
+  options: ExportOptions;
+  boundary: SnapshotReadBoundary;
+  refreshedLayouts: number;
+  manifestGeneratedAt: string;
+}): Promise<void> {
+  if (!params.options.heartbeat) return;
+  const completedAt = new Date().toISOString();
+  const imageDigest = requiredExporterImageDigest();
+  const runKinds: readonly ('full' | 'refresh')[] =
+    params.options.refreshThreshold === undefined ? ['full', 'refresh'] : ['refresh'];
+
+  // A full run is also the newest refresh. Publish `full` first and `refresh`
+  // last: the watchdog treats refresh as the manifest/lineage anchor, so a
+  // failure between these writes cannot advertise the partial pair as healthy.
+  for (const runKind of runKinds) {
+    const heartbeatKey = `board-snapshots/ops/${runKind}.json`;
+    const heartbeat = {
+      formatVersion: 1,
+      completedAt,
+      runKind,
+      source: params.boundary.source,
+      imageDigest,
+      keyPrefix: params.options.keyPrefix,
+      stableBefore: params.boundary.stableBefore,
+      targetLsn: params.boundary.targetLsn,
+      replayLsn: params.boundary.replayLsn,
+      systemIdentifier: params.boundary.systemIdentifier,
+      timelineId: params.boundary.timelineId,
+      manifestGeneratedAt: params.manifestGeneratedAt,
+      refreshedLayouts: params.refreshedLayouts,
+    };
+    await uploadToS3(Buffer.from(JSON.stringify(heartbeat)), heartbeatKey, 'application/json', {
+      cacheControl: HEARTBEAT_CACHE_CONTROL,
+    });
+    logger.info('[export-snapshots] heartbeat uploaded', { key: heartbeatKey, ...heartbeat });
+  }
+}
+
+function parseDatabaseSource(raw: string | undefined): SnapshotDatabaseSource {
+  if (raw !== 'primary' && raw !== 'replica') {
+    throw new Error(`--source expects "primary" or "replica", got ${JSON.stringify(raw)}`);
+  }
+  return raw;
 }
 
 function parseBoardFilter(raw: string | undefined): string {
@@ -1096,21 +1673,32 @@ export async function runExport(argv: string[]): Promise<void> {
     );
   }
 
-  // PRIMARY pool, deliberately NOT the read-replica seam: the sync cursor
-  // (updated_at, sync_seq) is assigned at WRITE time, but an async replica's
-  // snapshot is consistent by COMMIT order — a lower-cursor row that commits
-  // late (or replays late through replication lag) can be absent from the
-  // replica while higher-cursor rows are present. The 30s stability window only
-  // absorbs write→commit delay measured on the primary; replica lag stacks on
-  // top, and once (commit delay + lag) exceeds the window the exported
-  // watermark covers a row the artifact doesn't contain — every bootstrapped
-  // client resumes strictly past it and loses it FOREVER. The sync resolvers
-  // serve from the primary for the same reason. createPool GUARANTEES the
-  // drizzle wrapper is constructed before the raw pool is returned (see
-  // packages/db/src/client/postgres.ts), so the pool carries drizzle's
-  // transparent timestamp parsers and streamed rows match the resolver shaping.
-  // Closed by the CLI entry below, not here — tests share the cached pool.
-  const sqlClient = createPool();
+  if (options.dryRun && options.heartbeat) {
+    throw new Error('--heartbeat cannot be combined with --dry-run');
+  }
+
+  if (options.heartbeat && isFilteredRun) {
+    throw new Error('--heartbeat cannot be combined with --board/--layout: a partial run is not a freshness signal');
+  }
+
+  if (options.heartbeat && (!options.gzip || keyPrefix !== 'board-snapshots/v1-gzip')) {
+    throw new Error(
+      '--heartbeat is reserved for the complete live gzip prefix (use --gzip --key-prefix board-snapshots/v1-gzip)',
+    );
+  }
+
+  // Validate the immutable release identity before opening a database or
+  // uploading artifacts; a bad heartbeat configuration must have zero S3 side
+  // effects rather than fail after the manifest is already live.
+  if (options.heartbeat) requiredExporterImageDigest();
+
+  // Primary remains the default. Replica mode is an explicit operational gate:
+  // it holds a direct primary session fence, excludes every cursor at/after a
+  // primary-issued cutoff below all open transactions, then waits for the
+  // standby to replay a later WAL position. No replica-local clock or replay
+  // timestamp is allowed to choose the row boundary.
+  const databaseContext = await createSnapshotDatabaseContext(options.source, options.fence || options.heartbeat);
+  const sqlClient = databaseContext.sqlClient;
   const workDir = mkdtempSync(join(tmpdir(), 'board-snapshots-'));
   const newEntries: SnapshotManifestEntry[] = [];
   const failures: LayoutFailure[] = [];
@@ -1137,7 +1725,10 @@ export async function runExport(argv: string[]): Promise<void> {
       pairs: discoveredPairs.length,
       refreshThreshold: options.refreshThreshold ?? null,
       builtAt,
-      stabilityWindowSeconds: DEFAULT_STABILITY_WINDOW_SECONDS,
+      source: databaseContext.boundary.source,
+      stableBefore: databaseContext.boundary.stableBefore,
+      targetLsn: databaseContext.boundary.targetLsn,
+      replayLsn: databaseContext.boundary.replayLsn,
     });
 
     // Fetch the previous manifest BEFORE any upload: if it is unreadable the
@@ -1159,6 +1750,7 @@ export async function runExport(argv: string[]): Promise<void> {
           previousEntry: previousEntriesByPair.get(`${pair.boardType}:${pair.layoutId}`),
           threshold: options.refreshThreshold,
           includeGrades: options.gzip,
+          stableBefore: databaseContext.boundary.stableBefore,
         });
         if (reason) {
           stalePairs.push(pair);
@@ -1178,6 +1770,16 @@ export async function runExport(argv: string[]): Promise<void> {
     // upload objects, or prune. A missing manifest is different — every pair
     // lacks an entry and is rebuilt so the live prefix can recover.
     if (isThresholdRefresh && pairs.length === 0) {
+      if (!previousManifest) {
+        throw new Error('threshold refresh cannot report healthy without a published manifest');
+      }
+      await databaseContext.assertPublishFence();
+      await uploadRunHeartbeat({
+        options,
+        boundary: databaseContext.boundary,
+        refreshedLayouts: 0,
+        manifestGeneratedAt: previousManifest.generatedAt,
+      });
       logger.info('[export-snapshots] threshold refresh complete — no stale layouts', {
         scanned: discoveredPairs.length,
         threshold: options.refreshThreshold,
@@ -1197,6 +1799,7 @@ export async function runExport(argv: string[]): Promise<void> {
           layoutId: pair.layoutId,
           filePath,
           builtAt,
+          stableBefore: databaseContext.boundary.stableBefore,
           // GZIP PASS ONLY. The nightly runs twice — once at the identity `v1`
           // prefix kept as a rollback target, once at `v1-gzip` where the fleet
           // actually points. Publishing grades only in the gzip pass means a
@@ -1281,6 +1884,7 @@ export async function runExport(argv: string[]): Promise<void> {
             ),
           );
         } else {
+          await databaseContext.assertPublishFence();
           const uploaded = await uploadToS3(
             uploadBody,
             key,
@@ -1371,14 +1975,29 @@ export async function runExport(argv: string[]): Promise<void> {
         generatedAt: new Date().toISOString(),
         entries: mergedEntries,
       };
+      await databaseContext.assertPublishFence();
       await uploadToS3(Buffer.from(JSON.stringify(manifest)), manifestKey, 'application/json', {
         cacheControl: MANIFEST_CACHE_CONTROL,
       });
+      // A session lock cannot make the network PUT atomic with PostgreSQL, but
+      // rechecking immediately after it catches a dropped/replaced coordinator
+      // connection and fails the run instead of claiming successful health.
+      await databaseContext.assertPublishFence();
       logger.info('[export-snapshots] manifest uploaded', {
         entries: mergedEntries.length,
         refreshed: newEntries.length,
         key: manifestKey,
       });
+
+      if (failures.length === 0) {
+        await databaseContext.assertPublishFence();
+        await uploadRunHeartbeat({
+          options,
+          boundary: databaseContext.boundary,
+          refreshedLayouts: newEntries.length,
+          manifestGeneratedAt: manifest.generatedAt,
+        });
+      }
 
       // Prune superseded artifacts only after a fully-successful unfiltered
       // run: filtered runs lack the full picture, and skipping on failure
@@ -1396,6 +2015,7 @@ export async function runExport(argv: string[]): Promise<void> {
     }
   } finally {
     rmSync(workDir, { recursive: true, force: true });
+    await databaseContext.close();
   }
 }
 

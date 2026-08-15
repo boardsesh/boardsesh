@@ -1453,4 +1453,233 @@ export const schemaSQL = `
             'aurora_type','aurora_id','aurora_synced_at','aurora_sync_error',
             'kilter_type','kilter_id','kilter_synced_at','kilter_sync_error']))
     EXECUTE FUNCTION set_updated_at();
+
+  -- Replica-safe board snapshot coordinator (migration 0200). Backend tests do
+  -- not apply Drizzle migrations, so mirror the operational functions here.
+  CREATE SCHEMA IF NOT EXISTS ops;
+  REVOKE ALL ON SCHEMA ops FROM PUBLIC;
+
+  CREATE OR REPLACE FUNCTION public.set_board_climbs_sync_fields() RETURNS TRIGGER AS $$
+  BEGIN
+    NEW.updated_at = transaction_timestamp() AT TIME ZONE 'UTC';
+    NEW.sync_seq = nextval('public.board_climbs_sync_seq_seq');
+    RETURN NEW;
+  END;
+  $$ LANGUAGE plpgsql SET search_path = pg_catalog;
+
+  CREATE OR REPLACE FUNCTION public.set_board_climb_stats_sync_fields() RETURNS TRIGGER AS $$
+  BEGIN
+    NEW.updated_at = transaction_timestamp() AT TIME ZONE 'UTC';
+    NEW.sync_seq = nextval('public.board_climb_stats_sync_seq_seq');
+    RETURN NEW;
+  END;
+  $$ LANGUAGE plpgsql SET search_path = pg_catalog;
+
+  CREATE OR REPLACE FUNCTION ops.set_board_climbs_insert_sync_fields() RETURNS TRIGGER AS $$
+  DECLARE
+    v_restore_requested boolean := current_setting('boardsesh.snapshot_cursor_restore', true) = 'on';
+    v_session_is_superuser boolean;
+  BEGIN
+    IF v_restore_requested THEN
+      SELECT role.rolsuper INTO v_session_is_superuser FROM pg_roles AS role WHERE role.rolname = session_user;
+      IF NOT COALESCE(v_session_is_superuser, false) THEN
+        RAISE EXCEPTION 'boardsesh.snapshot_cursor_restore requires a PostgreSQL superuser';
+      END IF;
+      RETURN NEW;
+    END IF;
+    NEW.updated_at = transaction_timestamp() AT TIME ZONE 'UTC';
+    NEW.sync_seq = nextval('public.board_climbs_sync_seq_seq');
+    RETURN NEW;
+  END;
+  $$ LANGUAGE plpgsql SET search_path = pg_catalog;
+  REVOKE ALL ON FUNCTION ops.set_board_climbs_insert_sync_fields() FROM PUBLIC;
+  CREATE TRIGGER trg_board_climbs_set_insert_sync_fields BEFORE INSERT ON public.board_climbs
+    FOR EACH ROW EXECUTE FUNCTION ops.set_board_climbs_insert_sync_fields();
+
+  CREATE OR REPLACE FUNCTION ops.set_board_climb_stats_insert_sync_fields() RETURNS TRIGGER AS $$
+  DECLARE
+    v_restore_requested boolean := current_setting('boardsesh.snapshot_cursor_restore', true) = 'on';
+    v_session_is_superuser boolean;
+  BEGIN
+    IF v_restore_requested THEN
+      SELECT role.rolsuper INTO v_session_is_superuser FROM pg_roles AS role WHERE role.rolname = session_user;
+      IF NOT COALESCE(v_session_is_superuser, false) THEN
+        RAISE EXCEPTION 'boardsesh.snapshot_cursor_restore requires a PostgreSQL superuser';
+      END IF;
+      RETURN NEW;
+    END IF;
+    NEW.updated_at = transaction_timestamp() AT TIME ZONE 'UTC';
+    NEW.sync_seq = nextval('public.board_climb_stats_sync_seq_seq');
+    RETURN NEW;
+  END;
+  $$ LANGUAGE plpgsql SET search_path = pg_catalog;
+  REVOKE ALL ON FUNCTION ops.set_board_climb_stats_insert_sync_fields() FROM PUBLIC;
+  CREATE TRIGGER trg_board_climb_stats_set_insert_sync_fields BEFORE INSERT ON public.board_climb_stats
+    FOR EACH ROW EXECUTE FUNCTION ops.set_board_climb_stats_insert_sync_fields();
+
+  CREATE OR REPLACE FUNCTION ops.set_board_climb_grades_sync_fields() RETURNS TRIGGER AS $$
+  DECLARE
+    v_restore_requested boolean := current_setting('boardsesh.snapshot_cursor_restore', true) = 'on';
+    v_session_is_superuser boolean;
+  BEGIN
+    IF TG_OP = 'INSERT' AND v_restore_requested THEN
+      SELECT role.rolsuper INTO v_session_is_superuser FROM pg_roles AS role WHERE role.rolname = session_user;
+      IF NOT COALESCE(v_session_is_superuser, false) THEN
+        RAISE EXCEPTION 'boardsesh.snapshot_cursor_restore requires a PostgreSQL superuser';
+      END IF;
+      RETURN NEW;
+    END IF;
+    NEW.computed_at = transaction_timestamp() AT TIME ZONE 'UTC';
+    NEW.sync_seq = nextval('public.board_climb_grades_sync_seq_seq');
+    RETURN NEW;
+  END;
+  $$ LANGUAGE plpgsql SET search_path = pg_catalog;
+  REVOKE ALL ON FUNCTION ops.set_board_climb_grades_sync_fields() FROM PUBLIC;
+  -- board_climb_grades is intentionally preserved by the shared test schema's
+  -- fast rebuild path, so unlike the dropped/recreated tables its trigger can
+  -- survive a recycled Vitest worker database.
+  DROP TRIGGER IF EXISTS trg_board_climb_grades_set_sync_fields ON public.board_climb_grades;
+  CREATE TRIGGER trg_board_climb_grades_set_sync_fields BEFORE INSERT OR UPDATE ON public.board_climb_grades
+    FOR EACH ROW EXECUTE FUNCTION ops.set_board_climb_grades_sync_fields();
+
+  CREATE OR REPLACE FUNCTION ops.set_sync_deletion_cursor() RETURNS TRIGGER AS $$
+  DECLARE
+    v_restore_requested boolean := current_setting('boardsesh.snapshot_cursor_restore', true) = 'on';
+    v_session_is_superuser boolean;
+  BEGIN
+    IF v_restore_requested THEN
+      SELECT role.rolsuper INTO v_session_is_superuser FROM pg_roles AS role WHERE role.rolname = session_user;
+      IF NOT COALESCE(v_session_is_superuser, false) THEN
+        RAISE EXCEPTION 'boardsesh.snapshot_cursor_restore requires a PostgreSQL superuser';
+      END IF;
+      RETURN NEW;
+    END IF;
+    NEW.deleted_at = transaction_timestamp() AT TIME ZONE 'UTC';
+    RETURN NEW;
+  END;
+  $$ LANGUAGE plpgsql SET search_path = pg_catalog;
+  REVOKE ALL ON FUNCTION ops.set_sync_deletion_cursor() FROM PUBLIC;
+  CREATE TRIGGER trg_sync_deletions_set_cursor BEFORE INSERT ON public.sync_deletions
+    FOR EACH ROW EXECUTE FUNCTION ops.set_sync_deletion_cursor();
+
+  CREATE OR REPLACE FUNCTION ops.board_snapshot_cluster_identity()
+  RETURNS TABLE (system_identifier text, timeline_id bigint)
+  LANGUAGE sql
+  STABLE
+  SECURITY DEFINER
+  SET search_path = pg_catalog
+  AS $$
+    SELECT system_control.system_identifier::text, checkpoint_control.timeline_id::bigint
+    FROM pg_control_system() AS system_control
+    CROSS JOIN pg_control_checkpoint() AS checkpoint_control;
+  $$;
+  REVOKE ALL ON FUNCTION ops.board_snapshot_cluster_identity() FROM PUBLIC;
+
+  CREATE OR REPLACE FUNCTION ops.acquire_board_snapshot_fence(
+    p_stability_window_seconds integer DEFAULT 30
+  )
+  RETURNS TABLE (
+    stable_before timestamp without time zone,
+    target_lsn pg_lsn,
+    primary_system_identifier text,
+    primary_timeline_id bigint
+  )
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path = pg_catalog
+  AS $$
+  DECLARE
+    v_has_activity_visibility boolean;
+    v_oldest_xact_start timestamptz;
+    v_lock_acquired boolean := false;
+  BEGIN
+    IF p_stability_window_seconds < 0 OR p_stability_window_seconds > 3600 THEN
+      RAISE EXCEPTION 'snapshot stability window must be between 0 and 3600 seconds';
+    END IF;
+    SELECT role.rolsuper OR pg_has_role(current_user, 'pg_read_all_stats', 'USAGE')
+      INTO v_has_activity_visibility
+    FROM pg_roles AS role
+    WHERE role.rolname = current_user;
+    IF NOT COALESCE(v_has_activity_visibility, false) THEN
+      RAISE EXCEPTION
+        'owner of ops.acquire_board_snapshot_fence must be superuser or have effective USAGE of pg_read_all_stats';
+    END IF;
+    IF EXISTS (
+      SELECT 1
+      FROM pg_subscription AS subscription
+      WHERE subscription.subdbid = (
+        SELECT oid FROM pg_database WHERE datname = current_database()
+      )
+    ) OR EXISTS (
+      SELECT 1
+      FROM pg_stat_activity AS activity
+      WHERE activity.datid = (
+        SELECT oid FROM pg_database WHERE datname = current_database()
+      )
+        AND activity.backend_type ILIKE '%logical replication%'
+    ) THEN
+      RAISE EXCEPTION 'logical replication must be removed before acquiring a board snapshot fence';
+    END IF;
+    SELECT pg_try_advisory_lock(4340, 1) INTO v_lock_acquired;
+    IF NOT v_lock_acquired THEN
+      RAISE EXCEPTION USING ERRCODE = '55P03', MESSAGE = 'another board snapshot exporter holds the global fence';
+    END IF;
+    BEGIN
+      IF EXISTS (SELECT 1 FROM pg_prepared_xacts WHERE database = current_database()) THEN
+        RAISE EXCEPTION 'prepared transactions prevent a safe board snapshot fence';
+      END IF;
+      SELECT min(activity.xact_start)
+        INTO v_oldest_xact_start
+      FROM pg_stat_activity AS activity
+      WHERE activity.datid = (SELECT oid FROM pg_database WHERE datname = current_database())
+        AND activity.pid <> pg_backend_pid()
+        AND activity.xact_start IS NOT NULL;
+      stable_before := LEAST(
+        (clock_timestamp() - make_interval(secs => p_stability_window_seconds)) AT TIME ZONE 'UTC',
+        COALESCE(
+          (v_oldest_xact_start - interval '1 microsecond') AT TIME ZONE 'UTC',
+          'infinity'::timestamp without time zone
+        )
+      );
+      SELECT pg_current_wal_insert_lsn() INTO target_lsn;
+      SELECT identity.system_identifier, identity.timeline_id
+        INTO primary_system_identifier, primary_timeline_id
+      FROM ops.board_snapshot_cluster_identity() AS identity;
+      RETURN NEXT;
+    EXCEPTION
+      WHEN OTHERS THEN
+        PERFORM pg_advisory_unlock(4340, 1);
+        RAISE;
+    END;
+  END;
+  $$;
+  REVOKE ALL ON FUNCTION ops.acquire_board_snapshot_fence(integer) FROM PUBLIC;
+
+  CREATE OR REPLACE FUNCTION ops.board_snapshot_fence_held()
+  RETURNS boolean
+  LANGUAGE sql
+  STABLE
+  SECURITY INVOKER
+  SET search_path = pg_catalog
+  AS $$
+    SELECT EXISTS (
+      SELECT 1 FROM pg_locks
+      WHERE locktype = 'advisory'
+        AND pid = pg_backend_pid()
+        AND classid = 4340::oid
+        AND objid = 1::oid
+        AND objsubid = 2
+        AND granted
+    );
+  $$;
+  REVOKE ALL ON FUNCTION ops.board_snapshot_fence_held() FROM PUBLIC;
+
+  CREATE OR REPLACE FUNCTION ops.release_board_snapshot_fence()
+  RETURNS boolean
+  LANGUAGE sql
+  VOLATILE
+  SECURITY INVOKER
+  SET search_path = pg_catalog
+  AS $$ SELECT pg_advisory_unlock(4340, 1); $$;
+  REVOKE ALL ON FUNCTION ops.release_board_snapshot_fence() FROM PUBLIC;
 `;

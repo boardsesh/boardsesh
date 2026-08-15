@@ -1,26 +1,17 @@
 name: Export Board Snapshots
 
-# Nightly: build every per-(board, layout) SQLite snapshot of board_climbs +
-# board_climb_stats. Every 15 minutes: cheaply probe the live gzip manifest's
-# watermarks and rebuild only layouts once they have >=500 stable delta rows,
-# keeping prolonged bulk gaps out of fresh downloads. Idempotent — each
-# refresh mints new content-addressed artifacts and rewrites the manifest last.
-#
-# The nightly full run publishes the catalog under TWO prefixes side by side
-# (see docs/board-snapshots.md):
-#   - board-snapshots/v1-gzip  gzip-encoded (~2.6x smaller) — what the fleet reads. Every
-#                              mobile workflow's EXPO_PUBLIC_SNAPSHOT_BASE_URL points here.
-#   - board-snapshots/v1       identity-encoded — nothing points at it any more; kept live
-#                              as the one-revert rollback target and the public dataset base.
-# Each prefix is a self-contained, single-encoding manifest; the export merges
-# and prunes strictly within the prefix it targets. A later cleanup drops the
-# identity pass and deletes the v1 prefix.
+# Before homelab cutover, GitHub remains the primary scheduler. After the
+# SNAPSHOT_HOMELAB_EXPORT_ENABLED repository variable is set to `true`, the old
+# schedules no-op and GitHub checks the latest successful publisher heartbeats. It
+# falls back to Railway only when refresh (>45m) or full (>30h) is stale.
 on:
   schedule:
-    - cron: '15 7 * * *' # 07:15 UTC daily (off-peak; distinct from the 06:00/06:30 refresh crons)
-    # Offset from :00/:15/:30/:45 to reduce GitHub schedule congestion. This
-    # refreshes only the live gzip prefix; the identity rollback stays nightly.
-    - cron: '7,22,37,52 * * * *'
+    - cron: '15 7 * * *' # legacy/full schedule; homelab owns this after cutover
+    # Leave the 07:00 UTC hour clear for the daily full run. GitHub concurrency
+    # retains only one pending run, so a later refresh could otherwise replace
+    # a full export waiting behind the 06:52 refresh.
+    - cron: '7,22,37,52 0-6,8-23 * * *' # legacy/threshold schedule
+    - cron: '12,27,42,57 * * * *' # post-cutover heartbeat watchdog
   workflow_dispatch:
     inputs:
       gzip_only:
@@ -40,39 +31,45 @@ on:
         required: false
         default: ''
 
-concurrency:
-  group: export-board-snapshots
-  cancel-in-progress: false
-  # GitHub's default single pending slot replaces an older pending run. Keep a
-  # FIFO queue so a frequent scan can never displace the nightly full export.
-  queue: max
+permissions:
+  contents: read
+  packages: read
+
+env:
+  SNAPSHOT_PUBLIC_BASE_URL: https://boardsesh-board-snapshots.t3.tigrisfiles.io
 
 jobs:
-  export:
+  # Safe rollout path: until the homelab flag flips, preserve the existing
+  # source-checkout scheduler. workflow_dispatch always remains available as an
+  # explicit operator fallback, including filtered repairs. Once the fence flag
+  # is enabled, every run takes the primary session fence. Manual/legacy runs do
+  # not publish watchdog heartbeats because they are not the pinned homelab
+  # exporter image.
+  legacy-or-manual-export:
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (
+          vars.SNAPSHOT_HOMELAB_EXPORT_ENABLED != 'true' &&
+          github.event_name == 'schedule' &&
+          (
+            github.event.schedule == '15 7 * * *' ||
+            github.event.schedule == '7,22,37,52 0-6,8-23 * * *'
+          )
+        )
+      }}
     runs-on: ubuntu-latest
-    # The nightly does two sequential read-only passes (identity + gzip); live
-    # scans do bounded probes and, normally, no export. 45m covers a bulk refresh.
     timeout-minutes: 45
-    # DATABASE_URL is read-only-sufficient (snapshots only SELECT) but MUST
-    # point at the PRIMARY, never a read replica: the sync cursor
-    # (updated_at, sync_seq) is write-time ordered while a replica snapshot is
-    # commit-order consistent, so a lagging replica can yield watermarks that
-    # cover rows absent from the artifact — bootstrapped clients would skip
-    # those rows forever.
+    # Job-level, not workflow-level: schedule ticks whose feature-gated job is
+    # skipped must not consume/replace the one pending mutating export.
+    concurrency:
+      group: export-board-snapshots
+      cancel-in-progress: false
     environment: Production
-    # Production DB/S3 credentials are NOT declared here: job-level env would leak
-    # them to actions/checkout, the setup actions, and `bun install` before the
-    # export ever runs. They're scoped to the two export steps below instead.
     env:
-      # Tigris serves public objects only on the bucket's virtual-host
-      # domain — the S3 endpoint's path-style URLs 403 unauthenticated GETs
-      # even on a public bucket, so manifest entry URLs must be built here.
-      # Not a secret (it's in every manifest the app fetches). Keep in sync
-      # with EXPO_PUBLIC_SNAPSHOT_BASE_URL in the mobile workflows.
-      SNAPSHOT_PUBLIC_BASE_URL: https://boardsesh-board-snapshots.t3.tigrisfiles.io
-      # Keep the export's stability window in lockstep with the backend if
-      # it's ever configured off-default (empty → the shared 30s default).
       SYNC_STABILITY_WINDOW_SECONDS: ${{ vars.SYNC_STABILITY_WINDOW_SECONDS }}
+      SNAPSHOT_PRIMARY_FENCE_ENABLED: ${{ vars.SNAPSHOT_PRIMARY_FENCE_ENABLED }}
+      SNAPSHOT_HOMELAB_EXPORT_ENABLED: ${{ vars.SNAPSHOT_HOMELAB_EXPORT_ENABLED }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -87,17 +84,6 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Identity pass → board-snapshots/v1. The fleet no longer reads this prefix
-      # (it moved to v1-gzip), but it stays byte-for-byte the pre-gzip run so
-      # reverting the mobile workflows' EXPO_PUBLIC_SNAPSHOT_BASE_URL is a
-      # complete rollback on its own. It's also the base the public dataset doc
-      # hands out. Skipped on the frequent live scan and when a manual dispatch
-      # asks for gzip-only or threshold refresh.
-      #
-      # BOARD/LAYOUT come through `env` and are read as shell variables, never
-      # interpolated into the run script with `${{ }}` — a dispatch input must not
-      # be able to inject shell before the CLI's parseBoardFilter/parseLayoutFilter
-      # ever sees it. Empty values add no flag.
       - name: Export board snapshots (identity → board-snapshots/v1)
         if: >-
           ${{
@@ -109,45 +95,175 @@ jobs:
           BOARD: ${{ inputs.board }}
           LAYOUT: ${{ inputs.layout }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_DIRECT_URL: ${{ secrets.DATABASE_DIRECT_URL }}
           AWS_S3_BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          # Accept the Tigris console's exported names (AWS_ENDPOINT_URL_S3 /
-          # AWS_REGION) so rotating keys stays copy-paste, with the plain names
-          # as fallback for any other S3-compatible store.
           AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL_S3 || secrets.AWS_ENDPOINT_URL }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || secrets.AWS_DEFAULT_REGION }}
         run: |
-          args=()
+          if [ "$SNAPSHOT_HOMELAB_EXPORT_ENABLED" = 'true' ] && [ "$SNAPSHOT_PRIMARY_FENCE_ENABLED" != 'true' ]; then
+            echo "Manual export is disabled until SNAPSHOT_PRIMARY_FENCE_ENABLED=true" >&2
+            exit 1
+          fi
+          args=(--source=primary)
+          if [ "$SNAPSHOT_PRIMARY_FENCE_ENABLED" = 'true' ]; then args+=(--fence); fi
           if [ -n "$BOARD" ]; then args+=("--board=$BOARD"); fi
           if [ -n "$LAYOUT" ]; then args+=("--layout=$LAYOUT"); fi
           node --import tsx src/scripts/export-board-snapshots.ts "${args[@]}"
 
-      # Gzip pass → board-snapshots/v1-gzip. This is the live prefix: every mobile
-      # workflow's EXPO_PUBLIC_SNAPSHOT_BASE_URL points here, so this pass must
-      # stay in the nightly (a gzip-pass failure strands the fleet on whatever the
-      # manifest last named). Clients verify the gzip magic bytes and fall back to
-      # the paged crawl if a body arrives undecoded.
       - name: Export board snapshots (gzip → board-snapshots/v1-gzip)
         working-directory: packages/backend
         env:
           BOARD: ${{ inputs.board }}
           LAYOUT: ${{ inputs.layout }}
-          # The frequent schedule is the fixed PAGE_LIMIT threshold. A manual
-          # dispatch can use the same mode with another positive integer.
-          REFRESH_THRESHOLD: ${{ github.event_name == 'schedule' && github.event.schedule == '7,22,37,52 * * * *' && '500' || inputs.refresh_threshold }}
+          REFRESH_THRESHOLD: ${{ github.event_name == 'schedule' && github.event.schedule == '7,22,37,52 0-6,8-23 * * *' && '500' || inputs.refresh_threshold }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_DIRECT_URL: ${{ secrets.DATABASE_DIRECT_URL }}
           AWS_S3_BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          # Accept the Tigris console's exported names (AWS_ENDPOINT_URL_S3 /
-          # AWS_REGION) so rotating keys stays copy-paste, with the plain names
-          # as fallback for any other S3-compatible store.
           AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL_S3 || secrets.AWS_ENDPOINT_URL }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || secrets.AWS_DEFAULT_REGION }}
         run: |
-          args=(--gzip --key-prefix board-snapshots/v1-gzip)
+          if [ "$SNAPSHOT_HOMELAB_EXPORT_ENABLED" = 'true' ] && [ "$SNAPSHOT_PRIMARY_FENCE_ENABLED" != 'true' ]; then
+            echo "Manual export is disabled until SNAPSHOT_PRIMARY_FENCE_ENABLED=true" >&2
+            exit 1
+          fi
+          args=(--source=primary --gzip --key-prefix board-snapshots/v1-gzip)
+          if [ "$SNAPSHOT_PRIMARY_FENCE_ENABLED" = 'true' ]; then args+=(--fence); fi
           if [ -n "$BOARD" ]; then args+=("--board=$BOARD"); fi
           if [ -n "$LAYOUT" ]; then args+=("--layout=$LAYOUT"); fi
           if [ -n "$REFRESH_THRESHOLD" ]; then args+=("--refresh-threshold=$REFRESH_THRESHOLD"); fi
           node --import tsx src/scripts/export-board-snapshots.ts "${args[@]}"
+
+  # The watchdog uses the exact backend image digest that the homelab timer
+  # runs. It never promotes Postgres. A stale/missing/invalid heartbeat only
+  # authorizes a bounded primary export, trading temporary Railway egress for
+  # snapshot freshness.
+  homelab-watchdog:
+    if: >-
+      ${{
+        vars.SNAPSHOT_HOMELAB_EXPORT_ENABLED == 'true' &&
+        github.event_name == 'schedule' &&
+        github.event.schedule == '12,27,42,57 * * * *'
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: export-board-snapshots
+      cancel-in-progress: false
+    environment: Production
+    env:
+      SNAPSHOT_EXPORTER_IMAGE_DIGEST: ${{ vars.SNAPSHOT_EXPORTER_IMAGE_DIGEST }}
+      SNAPSHOT_PRIMARY_FENCE_ENABLED: ${{ vars.SNAPSHOT_PRIMARY_FENCE_ENABLED }}
+      SNAPSHOT_MAX_CUTOFF_AGE_SECONDS: ${{ vars.SNAPSHOT_MAX_CUTOFF_AGE_SECONDS }}
+      SYNC_STABILITY_WINDOW_SECONDS: ${{ vars.SYNC_STABILITY_WINDOW_SECONDS }}
+    steps:
+      - name: Pull immutable exporter image
+        id: image
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "$SNAPSHOT_PRIMARY_FENCE_ENABLED" != 'true' ]; then
+            echo "SNAPSHOT_PRIMARY_FENCE_ENABLED must be true before homelab cutover" >&2
+            exit 1
+          fi
+          if [[ ! "$SNAPSHOT_EXPORTER_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "SNAPSHOT_EXPORTER_IMAGE_DIGEST must be an exact sha256 digest" >&2
+            exit 1
+          fi
+          image="ghcr.io/boardsesh/boardsesh-backend@$SNAPSHOT_EXPORTER_IMAGE_DIGEST"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker pull "$image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Check snapshot publisher heartbeats
+        id: heartbeat
+        env:
+          EXPORTER_IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          decision="$(docker run --rm \
+            -e SNAPSHOT_PUBLIC_BASE_URL \
+            -e SNAPSHOT_EXPORTER_IMAGE_DIGEST \
+            -e SNAPSHOT_MAX_CUTOFF_AGE_SECONDS \
+            "$EXPORTER_IMAGE" \
+            node --import tsx src/scripts/snapshot-heartbeat-watchdog.ts)"
+          echo "$decision" | jq .
+          echo "refresh_stale=$(jq -r '.refresh.stale' <<<"$decision")" >> "$GITHUB_OUTPUT"
+          echo "full_stale=$(jq -r '.full.stale' <<<"$decision")" >> "$GITHUB_OUTPUT"
+          echo "refresh_reason=$(jq -r '.refresh.reason' <<<"$decision")" >> "$GITHUB_OUTPUT"
+          echo "full_reason=$(jq -r '.full.reason' <<<"$decision")" >> "$GITHUB_OUTPUT"
+
+      - name: Fall back to Railway primary
+        id: fallback
+        if: steps.heartbeat.outputs.refresh_stale == 'true' || steps.heartbeat.outputs.full_stale == 'true'
+        env:
+          EXPORTER_IMAGE: ${{ steps.image.outputs.image }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_DIRECT_URL: ${{ secrets.DATABASE_DIRECT_URL }}
+          AWS_S3_BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL_S3 || secrets.AWS_ENDPOINT_URL }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || secrets.AWS_DEFAULT_REGION }}
+        run: |
+          common_env=(
+            -e DATABASE_URL
+            -e DATABASE_DIRECT_URL
+            -e AWS_S3_BUCKET_NAME
+            -e AWS_ACCESS_KEY_ID
+            -e AWS_SECRET_ACCESS_KEY
+            -e AWS_ENDPOINT_URL
+            -e AWS_DEFAULT_REGION
+            -e SNAPSHOT_PUBLIC_BASE_URL
+            -e SNAPSHOT_EXPORTER_IMAGE_DIGEST
+            -e SNAPSHOT_MAX_CUTOFF_AGE_SECONDS
+            -e SYNC_STABILITY_WINDOW_SECONDS
+          )
+
+          if [ "${{ steps.heartbeat.outputs.full_stale }}" = 'true' ]; then
+            docker run --rm "${common_env[@]}" "$EXPORTER_IMAGE" \
+              node --import tsx src/scripts/export-board-snapshots.ts --source=primary --fence
+            docker run --rm "${common_env[@]}" "$EXPORTER_IMAGE" \
+              node --import tsx src/scripts/export-board-snapshots.ts \
+              --source=primary --gzip --key-prefix board-snapshots/v1-gzip --heartbeat
+          else
+            docker run --rm "${common_env[@]}" "$EXPORTER_IMAGE" \
+              node --import tsx src/scripts/export-board-snapshots.ts \
+              --source=primary --gzip --key-prefix board-snapshots/v1-gzip \
+              --refresh-threshold=500 --heartbeat
+          fi
+
+      - name: Notify snapshot watchdog failure or fallback
+        if: >-
+          ${{
+            always() &&
+            (
+              steps.image.outcome != 'success' ||
+              steps.heartbeat.outcome != 'success' ||
+              steps.heartbeat.outputs.refresh_stale == 'true' ||
+              steps.heartbeat.outputs.full_stale == 'true'
+            )
+          }}
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          IMAGE_OUTCOME: ${{ steps.image.outcome }}
+          HEARTBEAT_OUTCOME: ${{ steps.heartbeat.outcome }}
+          REFRESH_REASON: ${{ steps.heartbeat.outputs.refresh_reason }}
+          FULL_REASON: ${{ steps.heartbeat.outputs.full_reason }}
+          FALLBACK_OUTCOME: ${{ steps.fallback.outcome }}
+        run: |
+          if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
+            echo "DISCORD_DEPLOY_WEBHOOK is required so a Railway fallback cannot be silent" >&2
+            exit 1
+          fi
+          payload="$(jq -n \
+            --arg refresh "$REFRESH_REASON" \
+            --arg full "$FULL_REASON" \
+            --arg outcome "$FALLBACK_OUTCOME" \
+            --arg image "$IMAGE_OUTCOME" \
+            --arg heartbeat "$HEARTBEAT_OUTCOME" \
+            '{content: ("Board snapshot watchdog needs attention. Railway fallback: " + $outcome + "\nimage: " + $image + "\nheartbeat check: " + $heartbeat + "\nrefresh: " + $refresh + "\nfull: " + $full)}')"
+          curl -sS --fail-with-body -X POST -H 'Content-Type: application/json' \
+            -d "$payload" "$DISCORD_DEPLOY_WEBHOOK"
