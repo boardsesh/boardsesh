@@ -5,7 +5,13 @@
       "description": "Discover public climbing playlists and manage your own after signing in."
     },
     "detail": {
-      "fallbackTitle": "Playlist"
+      "fallbackTitle": "Playlist",
+      "fallbackDescription": "See the climbs in this playlist on Boardsesh.",
+      "privateTitle": "Private Playlist",
+      "privateDescription": "This playlist is private.",
+      "climbCountDescription_one": "A climbing playlist on Boardsesh with {{count}} climb.",
+      "climbCountDescription_other": "A climbing playlist on Boardsesh with {{count}} climbs.",
+      "ogAlt": "The {{name}} playlist on Boardsesh"
     }
   },
   "library": {

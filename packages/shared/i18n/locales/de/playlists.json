@@ -5,7 +5,13 @@
       "description": "Entdecke öffentliche Kletter-Playlists und verwalte nach dem Anmelden deine eigenen."
     },
     "detail": {
-      "fallbackTitle": "Playlist"
+      "fallbackTitle": "Playlist",
+      "fallbackDescription": "Sieh dir die Boulder in dieser Playlist auf Boardsesh an.",
+      "privateTitle": "Private Playlist",
+      "privateDescription": "Diese Playlist ist privat.",
+      "climbCountDescription_one": "Eine Kletter-Playlist auf Boardsesh mit {{count}} Boulder.",
+      "climbCountDescription_other": "Eine Kletter-Playlist auf Boardsesh mit {{count}} Bouldern.",
+      "ogAlt": "Die Playlist {{name}} auf Boardsesh"
     }
   },
   "library": {

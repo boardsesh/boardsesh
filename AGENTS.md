@@ -281,7 +281,7 @@ For indexable pages:
 - Canonicalise filtered/sorted/paginated variants to the clean base URL. Canonicalise `/play/...` to the equivalent `/view/...`.
 - Reachable via real `<a href>` / `Link href` — not `router.push` or click-handlers on `<div>`s. ≥2–3 internal links per page with descriptive anchor text.
 - JSON-LD where it fits: `Organization`/`WebSite` (homepage), `BreadcrumbList` (hierarchies), `ProfilePage` (profiles).
-- Update `packages/web/app/sitemap.ts` when adding a new public page type. Real content timestamps, not `new Date()`.
+- Add a shard (or extend one) in `packages/web/app/lib/seo/sitemap/shard-registry.ts` when adding a new public page type — `/sitemap.xml` is a `<sitemapindex>` over `/sitemaps/*.xml`. Real content timestamps, not `new Date()`.
 - Keep trademark wording compatible-not-affiliative.
 
 ## Mobile Development (packages/mobile/)

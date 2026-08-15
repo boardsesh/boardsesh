@@ -5,7 +5,13 @@
       "description": "Descubre playlists públicas de escalada y gestiona las tuyas al iniciar sesión."
     },
     "detail": {
-      "fallbackTitle": "Playlist"
+      "fallbackTitle": "Playlist",
+      "fallbackDescription": "Mira los bloques de esta playlist en Boardsesh.",
+      "privateTitle": "Playlist privada",
+      "privateDescription": "Esta playlist es privada.",
+      "climbCountDescription_one": "Una playlist de escalada en Boardsesh con {{count}} bloque.",
+      "climbCountDescription_other": "Una playlist de escalada en Boardsesh con {{count}} bloques.",
+      "ogAlt": "La playlist {{name}} en Boardsesh"
     }
   },
   "library": {

@@ -2,7 +2,8 @@ import React from 'react';
 import type { Metadata } from 'next';
 import SetterProfileContent from './setter-profile-content';
 import styles from '@/app/components/ui/page-container.module.css';
-import { buildVersionedOgImagePath, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
+import { buildVersionedOgImagePath } from '@/app/lib/seo/og';
+import { createNoIndexMetadata, createPageMetadata } from '@/app/lib/seo/metadata';
 import { getSetterOgSummary } from '@/app/lib/seo/dynamic-og-data';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
@@ -15,45 +16,36 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { setter_username } = await params;
   const username = decodeURIComponent(setter_username);
-  const { t } = await getServerTranslation('profile');
+  // `locale` is load-bearing: without it every /es, /fr and /de setter page
+  // canonicalises onto its en-US twin and de-indexes the localised tree.
+  const { t, locale } = await getServerTranslation('profile');
+  // Decoded once, encoded once, so the canonical is byte-stable no matter how
+  // the crawler encoded the incoming path.
+  const path = `/setter/${encodeURIComponent(username)}`;
 
   try {
     const summary = await getSetterOgSummary(username);
     const displayName = summary.displayName;
-    const ogImagePath = buildVersionedOgImagePath('/api/og/setter', { username }, summary.version);
-    const title = `${t('metadata.setter.title', { name: displayName })} | Boardsesh`;
-    const description = t('metadata.setter.description', { name: displayName });
-    const canonicalUrl = `/setter/${encodeURIComponent(setter_username)}`;
 
-    return {
-      title,
-      description,
-      alternates: { canonical: canonicalUrl },
-      openGraph: {
-        title,
-        description,
-        url: canonicalUrl,
-        images: [
-          {
-            url: ogImagePath,
-            width: OG_IMAGE_WIDTH,
-            height: OG_IMAGE_HEIGHT,
-            alt: t('metadata.setter.ogAlt', { name: displayName }),
-          },
-        ],
-      },
-      twitter: {
-        card: 'summary_large_image',
-        title,
-        description,
-        images: [ogImagePath],
-      },
-    };
+    return createPageMetadata({
+      title: t('metadata.setter.title', { name: displayName }),
+      description: t('metadata.setter.description', { name: displayName }),
+      path,
+      locale,
+      openGraphType: 'profile',
+      imagePath: buildVersionedOgImagePath('/api/og/setter', { username }, summary.version),
+      imageAlt: t('metadata.setter.ogAlt', { name: displayName }),
+    });
   } catch {
-    return {
-      title: `${t('metadata.setter.fallbackTitle')} | Boardsesh`,
+    // The lookup failing is not evidence the setter exists, so keep the error
+    // page out of the index — it previously emitted no canonical at all.
+    return createNoIndexMetadata({
+      title: t('metadata.setter.fallbackTitle'),
       description: t('metadata.setter.fallbackDescription'),
-    };
+      path,
+      locale,
+      imagePath: null,
+    });
   }
 }
 

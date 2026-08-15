@@ -57,10 +57,30 @@ describe('www production smoke checks', () => {
     expect(check.assert(response({ contentType: 'text/plain', body: 'User-agent: *\n' }))).toMatch(/Sitemap/);
   });
 
-  it('rejects an empty sitemap', () => {
-    const check = checkNamed('sitemap.xml serves');
+  it('rejects a sitemap.xml that is not an index pointing at shards', () => {
+    const check = checkNamed('sitemap index');
+    const healthyIndex =
+      '<sitemapindex><sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap></sitemapindex>';
+    expect(check.assert(response({ contentType: 'application/xml', body: healthyIndex }))).toBeNull();
+
+    // A regression to the old flat urlset — the shape this replaced.
     expect(
-      check.assert(response({ contentType: 'application/xml', body: '<urlset><loc>x</loc></urlset>' })),
+      check.assert(
+        response({ contentType: 'application/xml', body: '<urlset><url><loc>https://x/</loc></url></urlset>' }),
+      ),
+    ).toMatch(/sitemapindex/);
+
+    // An index that resolved zero shards is worse than a 5xx: it tells Google
+    // every URL we ever submitted is gone.
+    expect(check.assert(response({ contentType: 'application/xml', body: '<sitemapindex></sitemapindex>' }))).toMatch(
+      /shard/,
+    );
+  });
+
+  it('rejects an empty static sitemap shard', () => {
+    const check = checkNamed('static sitemap shard');
+    expect(
+      check.assert(response({ contentType: 'application/xml', body: '<urlset><url><loc>x</loc></url></urlset>' })),
     ).toBeNull();
     expect(check.assert(response({ contentType: 'application/xml', body: '<urlset></urlset>' }))).toMatch(/loc/);
   });

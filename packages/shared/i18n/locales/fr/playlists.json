@@ -5,7 +5,13 @@
       "description": "Parcourez des playlists publiques et gérez les vôtres une fois connecté."
     },
     "detail": {
-      "fallbackTitle": "Playlist"
+      "fallbackTitle": "Playlist",
+      "fallbackDescription": "Découvre les blocs de cette playlist sur Boardsesh.",
+      "privateTitle": "Playlist privée",
+      "privateDescription": "Cette playlist est privée.",
+      "climbCountDescription_one": "Une playlist de grimpe sur Boardsesh avec {{count}} bloc.",
+      "climbCountDescription_other": "Une playlist de grimpe sur Boardsesh avec {{count}} blocs.",
+      "ogAlt": "La playlist {{name}} sur Boardsesh"
     }
   },
   "library": {

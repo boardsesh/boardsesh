@@ -204,6 +204,11 @@ const KEPT_ROUTE_DIRS = [
   'settings',
   'notifications',
   'discover',
+  // W-22's sitemap index + shard routes. Both are directories (`sitemap.xml/`,
+  // `sitemaps/`), so they live here rather than in the filename scan the old
+  // single-file `app/sitemap.ts` needed.
+  'sitemap.xml',
+  'sitemaps',
   '.well-known',
 ];
 
@@ -272,8 +277,6 @@ const KEPT_ENTRY_FILES = [
   'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/page.tsx',
   'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/layout.tsx',
 ];
-/** `sitemap.ts` today, but the programme may split it — match the family. */
-const KEPT_SITEMAP_PATTERN = /^app\/sitemap[\w.-]*\.tsx?$/;
 
 // ---------------------------------------------------------------------------
 // File discovery
@@ -323,12 +326,6 @@ function collectKeepRoots(): string[] {
     if (!existsSync(absolutePath)) throw new Error(`Keep root ${entryFile} does not exist — update KEPT_ENTRY_FILES.`);
     roots.push(absolutePath);
   }
-
-  const sitemapFiles = readdirSync(join(WEB_ROOT, 'app'))
-    .filter((fileName) => KEPT_SITEMAP_PATTERN.test(`app/${fileName}`))
-    .map((fileName) => join(WEB_ROOT, 'app', fileName));
-  if (sitemapFiles.length === 0) throw new Error('No app/sitemap*.ts found — update KEPT_SITEMAP_PATTERN.');
-  roots.push(...sitemapFiles);
 
   return [...new Set(roots)];
 }
