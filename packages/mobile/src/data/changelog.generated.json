@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-15T21:05:31.076Z",
+  "generatedAt": "2026-08-15T21:13:12.164Z",
   "entries": [
+    {
+      "prNumber": 4490,
+      "category": "improved",
+      "title": "Notifications live in the app now — who followed you, who commented, whose proposal landed. The old web page hands you straight over.",
+      "mergedAt": "2026-08-15T21:05:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4490"
+    },
     {
       "prNumber": 4481,
       "category": "improved",

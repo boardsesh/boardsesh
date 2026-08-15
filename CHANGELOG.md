@@ -14,6 +14,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Improved
 
+- Notifications live in the app now — who followed you, who commented, whose proposal landed. The old web page hands you straight over. ([#4490](https://github.com/boardsesh/boardsesh/pull/4490))
 - Climb and board pages now stay up when the database is slow, and stop turning a bad moment into a "page not found". ([#4481](https://github.com/boardsesh/boardsesh/pull/4481))
   MoonBoard board pages load from cache instead of running a fresh search every time.
 - These endpoints have had no in-repo caller since the GraphQL migration and nothing climber-visible changes. If the new counter shows real third-party traffic, W-25b writes the climber-voice note instead. ([#4489](https://github.com/boardsesh/boardsesh/pull/4489))
