@@ -12,6 +12,18 @@ The Expo (React Native) app runs on the web behind `/app`, served through a Next
 
 `/app` is a locale-neutral **authenticated utility surface**, `noindex`. It is not a search/marketing surface — keep it out of the sitemap and locale routing (see the middleware carve-out and `next.config.mjs` header rules).
 
+## Appearance and large screens
+
+A fresh browser session starts in dark mode. The static HTML shell uses the same black background and
+dark `color-scheme`, preventing a white flash before React mounts. An existing Light, Dark, or System
+Appearance preference in IndexedDB still wins when preferences hydrate.
+
+Web screens with a physical short side of at least 600 CSS pixels opt into the same Material adaptive
+shell as Android tablets. The physical-screen eligibility remains stable while the live browser window
+controls the presentation: below 700px uses the phone tab bar, 700–815px uses the navigation rail,
+816–1175px adds the persistent play pane, and 1176px+ can add the wall column when a board is bound and
+resolved. Resizing only changes the shell chrome; the tab navigator remains mounted.
+
 ## Dev loops
 
 Two ways to run the browser app locally — pick by what you're iterating on:

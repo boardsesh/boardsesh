@@ -53,6 +53,38 @@ describe('useDeviceLayout', () => {
     expect(result.current.isTablet).toBe(true);
   });
 
+  it('treats a desktop-sized web screen as a panel-capable tablet surface', () => {
+    platform.OS = 'web';
+    platform.isPad = false;
+    screen.width = 1440;
+    screen.height = 900;
+    windowWidth.value = 1440;
+
+    const { result } = renderHook(() => useDeviceLayout());
+
+    expect(result.current).toMatchObject({
+      isPad: false,
+      isTablet: true,
+      widthClass: 'regular',
+      expanded: true,
+      wallDeviceClass: 'panel-capable',
+    });
+  });
+
+  it('keeps an eligible web screen on the same shell when its live window becomes compact', () => {
+    platform.OS = 'web';
+    platform.isPad = false;
+    screen.width = 1440;
+    screen.height = 900;
+    windowWidth.value = 699;
+
+    const { result } = renderHook(() => useDeviceLayout());
+
+    expect(result.current.isTablet).toBe(true);
+    expect(result.current.widthClass).toBe('compact');
+    expect(result.current.wallDeviceClass).toBe('panel-capable');
+  });
+
   it('reports isPad false on a phone', () => {
     platform.OS = 'ios';
     platform.isPad = false;
