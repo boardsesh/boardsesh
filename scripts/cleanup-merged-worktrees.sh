@@ -7,7 +7,7 @@
 #
 # Usage:
 #   ./cleanup-merged-worktrees.sh           # dry-run: show what would be removed
-#   ./cleanup-merged-worktrees.sh --apply   # actually remove eligible worktrees
+#   ./cleanup-merged-worktrees.sh --apply   # remove worktrees; preserve open-PR branches
 
 set -euo pipefail
 
@@ -67,6 +67,8 @@ fi
 
 declare -a TO_REMOVE_PATHS=()
 declare -a TO_REMOVE_BRANCHES=()
+# Non-empty only for open-PR candidates. The OID is used for apply-time
+# revalidation and also marks the associated local branch for preservation.
 declare -a TO_REMOVE_EXPECTED_HEADS=()
 
 skipped_no_branch=0
@@ -389,7 +391,7 @@ fi
 
 if [ "$APPLY" -eq 0 ]; then
   echo
-  printf "%sDry run.%s Re-run with %s--apply%s to actually remove the worktrees and their branches.\n" \
+  printf "%sDry run.%s Re-run with %s--apply%s to remove eligible worktrees; open-PR branches are preserved.\n" \
     "$C_BLUE" "$C_RESET" "$C_BLUE" "$C_RESET"
   exit 0
 fi
@@ -426,7 +428,10 @@ for i in "${!TO_REMOVE_PATHS[@]}"; do
   if git_root worktree remove "$path"; then
     printf "  %s✓%s removed worktree %s\n" "$C_GREEN" "$C_RESET" "$path"
     if [ -n "$branch" ]; then
-      if git_root branch -D "$branch" >/dev/null 2>&1; then
+      if [ -n "$expected_head" ]; then
+        printf "  %s✓%s preserved local branch %s (PR remains open)\n" \
+          "$C_GREEN" "$C_RESET" "$branch"
+      elif git_root branch -D "$branch" >/dev/null 2>&1; then
         printf "  %s✓%s deleted branch %s\n" "$C_GREEN" "$C_RESET" "$branch"
       else
         printf "  %s!%s could not delete branch %s (may have unmerged commits)\n" "$C_YELLOW" "$C_RESET" "$branch"

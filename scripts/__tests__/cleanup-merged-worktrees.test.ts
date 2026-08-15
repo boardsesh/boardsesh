@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import { spawnSync } from 'node:child_process';
-import { chmod, cp, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, cp, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +15,7 @@ type Fixture = {
   candidateHead: string;
   candidateWorktree: string;
   primaryWorktree: string;
+  realGitPath: string;
   scriptPath: string;
   stubBinDirectory: string;
 };
@@ -63,6 +64,9 @@ async function createFixture(headAgeSeconds: number): Promise<Fixture> {
   const candidateWorktree = join(rootDirectory, 'feature');
   const stubBinDirectory = join(rootDirectory, 'stub-bin');
   const scriptPath = join(primaryWorktree, 'scripts/cleanup-merged-worktrees.sh');
+  const realGitResult = run('sh', ['-c', 'command -v git'], rootDirectory);
+  expect(realGitResult.status, realGitResult.stderr).toBe(0);
+  const realGitPath = realGitResult.stdout.trim();
 
   const initResult = run('git', ['init', '--bare', '--initial-branch=main', bareRepository], rootDirectory);
   expect(initResult.status, initResult.stderr).toBe(0);
@@ -106,19 +110,33 @@ async function createFixture(headAgeSeconds: number): Promise<Fixture> {
       '    shift\n' +
       '  done\n' +
       '  if [ "$head_branch" = feature ]; then printf "%s\\n" "$GH_PR_JSON"; exit 0; fi\n' +
-      '  if [ "$head_branch" = trigger ] && [ -n "$GH_MUTATE_WORKTREE" ]; then\n' +
-      '    git -c core.hooksPath=/dev/null -C "$GH_MUTATE_WORKTREE" commit --allow-empty -m "test: advance after scan" >/dev/null 2>&1\n' +
-      '  fi\n' +
       '  printf "%s\\n" "${GH_OTHER_PR_JSON:-[]}"\n' +
       '  exit 0\n' +
       'fi\n' +
       'exit 1\n',
+  );
+  await writeExecutable(
+    join(stubBinDirectory, 'git'),
+    '#!/bin/sh\n' +
+      'if [ -n "${GIT_MUTATE_WORKTREE:-}" ] && [ -n "${GIT_MUTATE_COUNT_FILE:-}" ] && ' +
+      '[ "$#" -eq 4 ] && [ "$1" = -C ] && [ "$2" = "$GIT_MUTATE_WORKTREE" ] && ' +
+      '[ "$3" = rev-parse ] && [ "$4" = HEAD ]; then\n' +
+      '  mutation_count=0\n' +
+      '  if [ -f "$GIT_MUTATE_COUNT_FILE" ]; then IFS= read -r mutation_count < "$GIT_MUTATE_COUNT_FILE"; fi\n' +
+      '  mutation_count=$((mutation_count + 1))\n' +
+      '  printf "%s\\n" "$mutation_count" > "$GIT_MUTATE_COUNT_FILE"\n' +
+      '  if [ "$mutation_count" -eq 2 ]; then\n' +
+      '    "$REAL_GIT_PATH" -c core.hooksPath=/dev/null -C "$GIT_MUTATE_WORKTREE" commit --allow-empty -m "test: advance before apply revalidation" >/dev/null 2>&1\n' +
+      '  fi\n' +
+      'fi\n' +
+      'exec "$REAL_GIT_PATH" "$@"\n',
   );
 
   return {
     candidateHead,
     candidateWorktree,
     primaryWorktree,
+    realGitPath,
     scriptPath,
     stubBinDirectory,
   };
@@ -135,6 +153,17 @@ function openPullRequest(headRefOid?: string): PullRequest {
   };
 }
 
+function mergedPullRequest(headRefOid: string): PullRequest {
+  return {
+    headRefOid,
+    mergeCommit: { oid: headRefOid },
+    mergedAt: '2026-01-01T00:00:00Z',
+    number: 41,
+    state: 'MERGED',
+    url: 'https://github.com/boardsesh/boardsesh/pull/41',
+  };
+}
+
 function runCleanup(
   fixture: Fixture,
   pullRequests: PullRequest[],
@@ -144,6 +173,7 @@ function runCleanup(
   return run('bash', [fixture.scriptPath, ...args], fixture.primaryWorktree, {
     GH_PR_JSON: JSON.stringify(pullRequests),
     PATH: `${fixture.stubBinDirectory}:${process.env.PATH ?? ''}`,
+    REAL_GIT_PATH: fixture.realGitPath,
     ...extraEnvironment,
   });
 }
@@ -154,7 +184,9 @@ describe('cleanup-merged-worktrees open PR handling', () => {
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('./cleanup-merged-worktrees.sh           # dry-run');
-    expect(result.stdout).toContain('./cleanup-merged-worktrees.sh --apply   # actually remove');
+    expect(result.stdout).toContain(
+      './cleanup-merged-worktrees.sh --apply   # remove worktrees; preserve open-PR branches',
+    );
   });
 
   it('removes a clean, in-sync open PR worktree once HEAD is 48 hours old', async () => {
@@ -166,9 +198,37 @@ describe('cleanup-merged-worktrees open PR handling', () => {
     expect(result.stdout).toContain('PR #42 OPEN and in sync, HEAD 48h old');
     expect(result.stdout).toContain('Eligible for removal: 1');
     expect(result.stdout).toContain('Removed: 1');
+    expect(result.stdout).toContain('preserved local branch feature (PR remains open)');
     expect(runGit(['worktree', 'list', '--porcelain'], fixture.primaryWorktree)).not.toContain(
       fixture.candidateWorktree,
     );
+    await expect(access(fixture.candidateWorktree)).rejects.toThrow();
+    expect(runGit(['rev-parse', 'feature'], fixture.primaryWorktree)).toBe(fixture.candidateHead);
+  });
+
+  it('continues deleting the local branch after removing a merged-PR worktree', async () => {
+    const fixture = await createFixture(72 * 60 * 60);
+
+    const result = runCleanup(fixture, [mergedPullRequest(fixture.candidateHead)], ['--apply']);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('PR #41 merged');
+    expect(result.stdout).toContain('deleted branch feature');
+    expect(
+      run('git', ['show-ref', '--verify', '--quiet', 'refs/heads/feature'], fixture.primaryWorktree).status,
+    ).not.toBe(0);
+  });
+
+  it('continues deleting an old no-PR branch whose content matches main', async () => {
+    const fixture = await createFixture(8 * 24 * 60 * 60);
+    runGit(['-c', 'core.hooksPath=/dev/null', 'cherry-pick', fixture.candidateHead], fixture.primaryWorktree);
+    runGit(['push', 'origin', 'main'], fixture.primaryWorktree);
+
+    const result = runCleanup(fixture, [], ['--apply']);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('no PR; tree matches origin/main, HEAD 8d old');
+    expect(result.stdout).toContain('deleted branch feature');
     expect(
       run('git', ['show-ref', '--verify', '--quiet', 'refs/heads/feature'], fixture.primaryWorktree).status,
     ).not.toBe(0);
@@ -254,23 +314,11 @@ describe('cleanup-merged-worktrees open PR handling', () => {
 
   it('revalidates an open PR worktree immediately before applying removal', async () => {
     const fixture = await createFixture(72 * 60 * 60);
-    const triggerWorktree = join(dirname(fixture.primaryWorktree), 'trigger');
-    runGit(['worktree', 'add', '-b', 'trigger', triggerWorktree, 'main'], fixture.primaryWorktree);
-
-    // The gh stub advances feature when the later trigger entry is scanned, so
-    // feature must be queued first for this test to exercise apply-time revalidation.
-    const worktreeListing = runGit(['worktree', 'list', '--porcelain'], fixture.primaryWorktree);
-    const candidateEntryIndex = worktreeListing.indexOf(`worktree ${fixture.candidateWorktree}`);
-    const triggerEntryIndex = worktreeListing.indexOf(`worktree ${triggerWorktree}`);
-    expect(candidateEntryIndex, 'race fixture is missing the feature worktree entry').toBeGreaterThanOrEqual(0);
-    expect(triggerEntryIndex, 'race fixture is missing the trigger worktree entry').toBeGreaterThanOrEqual(0);
-    expect(
-      candidateEntryIndex,
-      'race fixture requires feature to be scanned before trigger mutates its HEAD',
-    ).toBeLessThan(triggerEntryIndex);
+    const mutationCountPath = join(dirname(fixture.primaryWorktree), 'git-mutation-count');
 
     const result = runCleanup(fixture, [openPullRequest(fixture.candidateHead)], ['--apply'], {
-      GH_MUTATE_WORKTREE: fixture.candidateWorktree,
+      GIT_MUTATE_COUNT_FILE: mutationCountPath,
+      GIT_MUTATE_WORKTREE: fixture.candidateWorktree,
     });
 
     expect(result.status, result.stderr).toBe(0);
@@ -278,7 +326,8 @@ describe('cleanup-merged-worktrees open PR handling', () => {
     expect(result.stdout).toContain('worktree changed after eligibility scan');
     expect(result.stdout).toContain('Removed: 0');
     expect(result.stdout).toContain('Skipped after scan: 1');
-    expect(runGit(['rev-parse', 'HEAD'], fixture.candidateWorktree)).not.toBe(fixture.candidateHead);
-    expect(runGit(['rev-parse', 'feature'], fixture.primaryWorktree)).not.toBe(fixture.candidateHead);
+    const advancedHead = runGit(['rev-parse', 'HEAD'], fixture.candidateWorktree);
+    expect(advancedHead).not.toBe(fixture.candidateHead);
+    expect(runGit(['rev-parse', 'feature'], fixture.primaryWorktree)).toBe(advancedHead);
   });
 });
