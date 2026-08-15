@@ -74,7 +74,17 @@
     "gradeDistributionAria": "Gradverteilung über alle Boards",
     "weeklyAttemptsAria": "Versuche pro Woche nach Schwierigkeit",
     "flashRedpointAria": "Flash vs. Rotpunkt nach Grad",
-    "layoutTooltip": "{{name}}: {{count}} Boulder ({{percentage}}%)"
+    "layoutTooltip": "{{name}}: {{count}} Boulder ({{percentage}}%)",
+    "periodComparison": {
+      "controlLabel": "Vergleichszeitraum",
+      "trailing": "Vorheriger Zeitraum",
+      "yearOverYear": "Letztes Jahr",
+      "sends": "Begehungen",
+      "vsTrailing": "vs. vorheriger Zeitraum",
+      "vsYearOverYear": "vs. gleicher Zeitraum letztes Jahr",
+      "firstPeriod": "Erster erfasster Zeitraum",
+      "noComparisonData": "Noch keine Begehungen"
+    }
   },
   "empty": {
     "userNotFound": "Nutzer*in nicht gefunden",

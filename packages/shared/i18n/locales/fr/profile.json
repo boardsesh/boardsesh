@@ -74,7 +74,17 @@
     "gradeDistributionAria": "Répartition par cotation sur toutes les boards",
     "weeklyAttemptsAria": "Essais hebdo par difficulté",
     "flashRedpointAria": "Flash vs après-travail par cotation",
-    "layoutTooltip": "{{name}} : {{count}} blocs ({{percentage}} %)"
+    "layoutTooltip": "{{name}} : {{count}} blocs ({{percentage}} %)",
+    "periodComparison": {
+      "controlLabel": "Période de comparaison",
+      "trailing": "Période précédente",
+      "yearOverYear": "Année dernière",
+      "sends": "Croix",
+      "vsTrailing": "vs. période précédente",
+      "vsYearOverYear": "vs. même période l'an dernier",
+      "firstPeriod": "Première période suivie",
+      "noComparisonData": "Aucune croix pour l'instant"
+    }
   },
   "empty": {
     "userNotFound": "Utilisateur introuvable",

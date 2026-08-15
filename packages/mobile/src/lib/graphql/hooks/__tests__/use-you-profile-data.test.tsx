@@ -66,6 +66,14 @@ describe('useYouProfileData filter state', () => {
     expect(result.current.hasActiveFilters).toBe(true);
   });
 
+  it('defaults comparisonMode to trailing and exposes a setter', () => {
+    const { result } = renderHook(() => useYouProfileData('user-1'));
+    expect(result.current.comparisonMode).toBe('trailing');
+
+    act(() => result.current.setComparisonMode('yearOverYear'));
+    expect(result.current.comparisonMode).toBe('yearOverYear');
+  });
+
   it('reports loading until a userId is available', () => {
     const { result, rerender } = renderHook(({ userId }) => useYouProfileData(userId), {
       initialProps: { userId: undefined as string | undefined },
