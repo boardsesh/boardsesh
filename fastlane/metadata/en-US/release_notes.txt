@@ -1,19 +1,4 @@
-Three big ones this update: climb with no signal, one grade that reads the same on every board, and your gym on Boardsesh.
+New in 2.4:
 
-Climb offline:
-- Download a board and keep going with no signal — search climbs, log sends, save favorites. Everything queues on your phone and syncs when you're back. Downloads finish in seconds now, and Manage storage shows what each board takes up so you can clear the ones you're not climbing on.
-
-The Boardsesh grade:
-- One grade that reads the same across Kilter, Tension and MoonBoard, built from every logged send, with a confidence level. Turn on "Show Boardsesh grades" in Settings. Problems nobody's logged yet get an estimate from their hold layout instead of sitting there ungraded.
-
-Your gym:
-- Every gym has a public page now — follow it, or claim it if it's yours. Put your walls on a TV at boardsesh.com/kiosk/your-gym: what's lit on every board, in your logo and colors, with a code climbers scan to get Boardsesh.
-
-Also:
-- Shuffle your results with the new Random sort, filter down to the projects you've tried but haven't sent, and pin the filter shortcuts you actually reach for.
-- The play screen opens on your own history with the climb — your sends and attempts, right where you can see them.
-- Your logbook counts straight: duplicate Aurora ascents land once, imported Tension attempts stay attempts, and MoonBoard 2024 sends import properly.
-- Queue rows and climb rows now work with VoiceOver.
-- Steadier Bluetooth, steadier sessions with your crew, and fewer memory crashes on long iPad days.
-
-Free, no ads, open source.
+- MoonBoard: turn on “Light the hold above” to add a dimmer LED above each lit start and hand hold on supported controllers.
+- Board photos and hold overlays load without the extra pause on iOS.

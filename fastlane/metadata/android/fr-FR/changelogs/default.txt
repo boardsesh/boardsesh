@@ -1,8 +1,4 @@
-Nouveautés :
-- Télécharge une board et grimpe sans réseau. Tes croix se synchronisent à ton retour.
-- La cotation Boardsesh se lit pareil sur Kilter, Tension et MoonBoard, à partir de vraies croix.
-- Chaque salle a sa page publique et un écran de mur pour la télé.
-- Les tablettes Android passent à la vue mur en deux panneaux.
-- Un tri Aléatoire, un filtre projets et des filtres épinglés.
-
-Corrigé : Bluetooth plus rapide et ta board réapparaît à la reconnexion.
+Nouveautés de la version 2.4 :
+- MoonBoard : active « Allumer la prise du dessus » pour ajouter une LED plus tamisée au-dessus de chaque prise de départ ou de main allumée sur les contrôleurs compatibles.
+- Les panneaux se ferment correctement après un passage en arrière-plan ou un changement d’écran.
+- Les fichiers partagés avec Boardsesh restent dans son cache même si une autre app fournit un nom inhabituel.

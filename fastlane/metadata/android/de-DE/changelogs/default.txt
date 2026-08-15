@@ -1,8 +1,4 @@
-Neu:
-- Lade ein Board herunter und klettere ohne Empfang. Begehungen syncen, sobald du zurück bist.
-- Der Boardsesh-Grad liest sich auf Kilter, Tension und MoonBoard gleich, aus echten Begehungen.
-- Jede Halle bekommt eine öffentliche Seite und ein Wand-Display für den Fernseher.
-- Android-Tablets bekommen die Zwei-Spalten-Wandansicht.
-- Sortierung Zufall, Projektfilter und angepinnte Filter.
-
-Behoben: schnelleres Bluetooth, und dein Board taucht beim Neuverbinden wieder auf.
+Neu in 2.4:
+- MoonBoard: Aktiviere „Griff darüber beleuchten“ für eine zweite, gedimmte LED über jedem beleuchteten Start- oder Handgriff auf unterstützten Controllern.
+- Panels schließen nach dem Wechsel in den Hintergrund oder zwischen Screens zuverlässig.
+- Geteilte Dateien bleiben im Boardsesh-Cache, auch wenn eine andere App einen ungewöhnlichen Namen liefert.

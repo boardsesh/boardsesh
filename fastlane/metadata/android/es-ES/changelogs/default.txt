@@ -1,8 +1,4 @@
-Novedades:
-- Descarga un plafón y sigue escalando sin cobertura. Los encadenes se sincronizan al volver.
-- El grado Boardsesh se lee igual en Kilter, Tension y MoonBoard, hecho con encadenes reales.
-- Cada rocódromo tiene página pública y pantalla de muro para la tele.
-- Las tablets Android estrenan la vista de muro a dos paneles.
-- Orden Aleatorio, filtro de proyectos y filtros fijados.
-
-Arreglado: Bluetooth más rápido y tu plafón reaparece al reconectar.
+Novedades de 2.4:
+- MoonBoard: activa «Iluminar la presa de arriba» para añadir un LED tenue sobre cada presa de inicio o de mano iluminada en controladores compatibles.
+- Los paneles se cierran bien después de dejar la app en segundo plano o cambiar de pantalla.
+- Los archivos compartidos con Boardsesh se quedan dentro de su caché aunque otra app envíe un nombre poco habitual.
