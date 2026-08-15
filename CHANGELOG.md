@@ -14,6 +14,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Keep every climber's sends and sessions together when the same wall was registered more than once ([#3422](https://github.com/boardsesh/boardsesh/pull/3422))
+  Saved walls now switch to the surviving board automatically after a merge
+  When a wall is already on Boardsesh, join the existing board or deliberately create a separate one
+- Grouped notifications open climbs with the correct board layout and angle, even across back-to-back releases. ([#4455](https://github.com/boardsesh/boardsesh/pull/4455))
 - Claiming a gym with your work email now auto-approves only when the gym's owner is the one who put that website on the listing. Anything else gets a quick human check first, so nobody can hand themselves the keys by editing the website field. ([#4058](https://github.com/boardsesh/boardsesh/pull/4058))
   Fixes #3431
 - Offline board downloads recover automatically and keep bulk catalog updates on the fast CDN download instead of crawling through hundreds of 500-climb batches. ([#4456](https://github.com/boardsesh/boardsesh/pull/4456))
