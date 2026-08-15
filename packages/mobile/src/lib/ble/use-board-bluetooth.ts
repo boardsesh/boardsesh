@@ -52,6 +52,7 @@ import {
   type StoredLastConnectedBoard,
 } from './last-connected-board-store';
 import type { BleWriteActivityStore } from './write-activity-store';
+import { getBleEncodingSignature } from './encoding-signature';
 
 // Exported for testing. Decides how a connect-failure category reaches error
 // tracking:
@@ -318,6 +319,13 @@ export type BleConnectionHandle = {
   setAnalyticsBoardId: (boardId: number) => boolean;
 };
 
+export type BleConnectInitialSend = {
+  frames: string;
+  mirrored: boolean;
+  colorSignature: string;
+  encodingSignature: string;
+};
+
 type ActiveBleConnectionLifetime = {
   adapter: BluetoothAdapter;
   generation: number;
@@ -339,6 +347,9 @@ type UseBoardBluetoothOptions = {
   /** MoonBoard "V2" BLE feature: also light each active hold's firmware-
    * defined neighbour LED. No-op on Aurora boards. */
   moonboardLightAdjacentHolds?: boolean;
+  /** Semantic packet-encoding identity derived alongside the preference above.
+   * BluetoothProvider passes this once to both the connect seed and auto-sender. */
+  encodingSignature?: string;
   analyticsBoardId?: number | null;
   analyticsInSession?: boolean;
   onConnectionEnded?: (connection: BleConnectionEnded) => void;
@@ -438,6 +449,7 @@ export function useBoardBluetooth({
   holdsData,
   ledColorOverrides,
   moonboardLightAdjacentHolds = false,
+  encodingSignature = getBleEncodingSignature(boardName, moonboardLightAdjacentHolds),
   analyticsBoardId,
   analyticsInSession = false,
   onConnectionEnded,
@@ -517,7 +529,7 @@ export function useBoardBluetooth({
   // (mounted right after isConnected flips true) reads this one-shot seed so a
   // byte-identical current climb doesn't get re-sent immediately on connect —
   // a redundant full-frame write plus a doubled success haptic.
-  const connectInitialSendRef = useRef<{ frames: string; mirrored: boolean; colorSignature: string } | null>(null);
+  const connectInitialSendRef = useRef<BleConnectInitialSend | null>(null);
   const configuredDeviceNameRef = useRef<string | undefined>(undefined);
   // The physical-link lifetime belongs to the adapter generation, not React's
   // rendered `isConnected` edge. It begins as soon as the adapter identity and
@@ -1282,7 +1294,7 @@ export function useBoardBluetooth({
         // crew a climb is lit when the wall is dark.
         connectInitialSendRef.current =
           initialFrames && initialSendResult === true
-            ? { frames: initialFrames, mirrored: !!mirrored, colorSignature }
+            ? { frames: initialFrames, mirrored: !!mirrored, colorSignature, encodingSignature }
             : null;
 
         setIsConnected(true);
@@ -1436,6 +1448,7 @@ export function useBoardBluetooth({
       sanitizedColorOverrides,
       moonboardLightAdjacentHolds,
       colorSignature,
+      encodingSignature,
       writeActivityStore,
       devicePicker,
       t,
