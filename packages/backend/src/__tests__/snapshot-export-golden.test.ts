@@ -42,6 +42,14 @@ const LAYOUT_ID = 1;
 const SIZE_ID = 5;
 const SCOPE_KEY = `${BOARD_TYPE}:${LAYOUT_ID}:${SIZE_ID}`;
 const BUILT_AT = '2026-06-01T00:00:00.000Z';
+const INCLUDE_ALL_STABLE_BEFORE = '2100-01-01T00:00:00.000Z';
+
+async function primaryStableBefore(seconds: number): Promise<string> {
+  const rows = await db.execute(sql`
+    SELECT ((clock_timestamp() - make_interval(secs => ${seconds})) AT TIME ZONE 'UTC') AS stable_before
+  `);
+  return toIso((rows[0] as { stable_before: unknown }).stable_before);
+}
 
 const CLIMB_COLUMNS = TABLE_CONFIGS.board_climbs.localColumns;
 const STATS_COLUMNS = TABLE_CONFIGS.board_climb_stats.localColumns;
@@ -315,6 +323,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
         layoutId: LAYOUT_ID,
         filePath,
         builtAt: artifactBuiltAt,
+        stableBefore: artifactBuiltAt,
         stabilityWindowSeconds: 0,
       });
 
@@ -420,7 +429,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
       layoutId: LAYOUT_ID,
       filePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0, // match the resolvers' test window so row sets align
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
     const artifactClimbs = readArtifactRows(filePath, 'board_climbs', CLIMB_COLUMNS);
     const artifactStats = readArtifactRows(filePath, 'board_climb_stats', STATS_COLUMNS);
@@ -470,7 +479,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
       layoutId: LAYOUT_ID,
       filePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
 
     // Expected watermark = the greatest (updated_at, sync_seq) among the scoped rows.
@@ -584,6 +593,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
       layoutId: LAYOUT_ID,
       filePath,
       builtAt: artifactBuiltAt,
+      stableBefore: artifactBuiltAt,
       stabilityWindowSeconds,
     });
 
@@ -624,7 +634,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
       layoutId: LAYOUT_ID,
       filePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 30,
+      stableBefore: await primaryStableBefore(30),
     });
 
     const artifactClimbs = readArtifactRows(filePath, 'board_climbs', ['uuid']);
@@ -690,7 +700,7 @@ describe('board_climb_grades snapshot artifact', () => {
       filePath,
       gradesFilePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
     const artifactGrades = readArtifactRows(gradesFilePath, 'board_climb_grades', GRADES_COLUMNS);
 
@@ -721,7 +731,7 @@ describe('board_climb_grades snapshot artifact', () => {
       filePath,
       gradesFilePath: join(workDir, 'artifact-grades.db'),
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
 
     expect(readArtifactMetaTableNames(filePath)).toEqual(['board_climb_stats', 'board_climbs', 'sync_deletions']);
@@ -749,6 +759,7 @@ describe('board_climb_grades snapshot artifact', () => {
       layoutId: LAYOUT_ID,
       filePath,
       builtAt: BUILT_AT,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
       stabilityWindowSeconds: 0,
     });
 
@@ -769,7 +780,7 @@ describe('board_climb_grades snapshot artifact', () => {
       filePath: join(workDir, 'artifact.db'),
       gradesFilePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
 
     const tables = readArtifactTableNames(gradesFilePath);
@@ -792,7 +803,7 @@ describe('board_climb_grades snapshot artifact', () => {
       filePath: join(workDir, 'artifact.db'),
       gradesFilePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
 
     const latest = (
@@ -827,7 +838,7 @@ describe('board_climb_grades snapshot artifact', () => {
       filePath: join(workDir, 'artifact.db'),
       gradesFilePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 30,
+      stableBefore: await primaryStableBefore(30),
     });
 
     const angles = readArtifactRows(gradesFilePath, 'board_climb_grades', ['angle']).map((row) => row.angle);
@@ -853,7 +864,7 @@ describe('board_climb_grades snapshot artifact', () => {
       filePath: join(workDir, 'artifact.db'),
       gradesFilePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
 
     const uuids = readArtifactRows(gradesFilePath, 'board_climb_grades', ['climb_uuid']).map((row) => row.climb_uuid);
@@ -870,7 +881,7 @@ describe('board_climb_grades snapshot artifact', () => {
       filePath: join(workDir, 'artifact.db'),
       gradesFilePath: join(workDir, 'artifact-grades.db'),
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
 
     expect(result.grades).toBeUndefined();
@@ -886,7 +897,7 @@ describe('board_climb_grades snapshot artifact', () => {
       layoutId: LAYOUT_ID,
       filePath: join(workDir, 'artifact.db'),
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
 
     expect(result.grades).toBeUndefined();
