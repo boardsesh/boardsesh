@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- No user-visible change: this ships the contract module only, and nothing calls it until the wiring PR lands. ([#4501](https://github.com/boardsesh/boardsesh/pull/4501))
 - En español, un gimnasio ahora es un rocódromo en toda la app — una sola palabra en cada pantalla, en vez de dos. ([#4500](https://github.com/boardsesh/boardsesh/pull/4500))
 - Popular climbs that resolve to a stable board setup start showing up in Google under the same link the page itself uses. ([#4483](https://github.com/boardsesh/boardsesh/pull/4483))
   Search results say something useful: setter, grade, stars and the board a climb lives on, instead of a bare title.

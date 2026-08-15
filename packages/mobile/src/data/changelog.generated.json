@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-15T23:16:41.905Z",
+  "generatedAt": "2026-08-15T23:47:11.176Z",
   "entries": [
+    {
+      "prNumber": 4501,
+      "category": "new",
+      "title": "No user-visible change: this ships the contract module only, and nothing calls it until the wiring PR lands.",
+      "mergedAt": "2026-08-15T23:46:03Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4501"
+    },
     {
       "prNumber": 4500,
       "category": "new",
