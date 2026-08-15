@@ -10,15 +10,45 @@ import {
   parseFramesToHoldEntries,
 } from '../graphql/resolvers/climbs/climb-similarity';
 
-const { mockDb } = vi.hoisted(() => ({
-  mockDb: {
+const { mockDb, mockTransactionDb } = vi.hoisted(() => {
+  const mockTransactionDb = {
     execute: vi.fn(),
-  },
-}));
+  };
+  return {
+    mockTransactionDb,
+    mockDb: {
+      execute: vi.fn(),
+      transaction: vi.fn((callback: (transactionDb: typeof mockTransactionDb) => unknown) =>
+        callback(mockTransactionDb),
+      ),
+    },
+  };
+});
 
 vi.mock('../db/client', () => ({
   db: mockDb,
 }));
+
+const dialect = new PgDialect();
+const SERIAL_PLAN_GUARD = /SET LOCAL max_parallel_workers_per_gather\s*=\s*0/i;
+
+function renderStatement(statement: unknown): string {
+  return dialect.sqlToQuery(statement as SQL).sql;
+}
+
+function mockSimilarClimbRows(rows: unknown[]): void {
+  mockTransactionDb.execute.mockImplementation((statement: unknown) =>
+    Promise.resolve(SERIAL_PLAN_GUARD.test(renderStatement(statement)) ? [] : rows),
+  );
+}
+
+function getRenderedSimilarityQuery(): { sql: string; params: unknown[] } {
+  const queryCall = mockTransactionDb.execute.mock.calls.find(
+    ([statement]) => !SERIAL_PLAN_GUARD.test(renderStatement(statement)),
+  );
+  if (!queryCall) throw new Error('Expected the similarity query to execute');
+  return dialect.sqlToQuery(queryCall[0] as SQL);
+}
 
 describe('parseFramesToHoldEntries', () => {
   it('parses a Kilter frame string into hold + state tuples', () => {
@@ -211,10 +241,11 @@ describe('findSimilarClimbs', () => {
     });
     expect(result).toEqual([]);
     expect(mockDb.execute).not.toHaveBeenCalled();
+    expect(mockDb.transaction).not.toHaveBeenCalled();
   });
 
   it('maps each row to the SimilarClimbResult shape', async () => {
-    mockDb.execute.mockResolvedValueOnce([
+    mockSimilarClimbRows([
       {
         uuid: 'similar-1',
         name: 'Dyno from Insta',
@@ -262,7 +293,7 @@ describe('findSimilarClimbs', () => {
     // so a stray refactor can't silently widen the funnel (threshold=0 would
     // need every candidate's overlap counted) or shrink it past the input
     // (threshold=1 cutoff > targetSize prunes everything but exact matches).
-    mockDb.execute.mockResolvedValueOnce([]);
+    mockSimilarClimbRows([]);
     await findSimilarClimbs({
       boardType: 'kilter',
       layoutId: 1,
@@ -275,16 +306,15 @@ describe('findSimilarClimbs', () => {
       threshold: 0,
     });
     {
-      const [query] = mockDb.execute.mock.calls[0];
-      const { params } = new PgDialect().sqlToQuery(query as SQL);
+      const { params } = getRenderedSimilarityQuery();
       // threshold=0 → CEIL(4 * 0) = 0; the HAVING simplifies to "shared >= 0"
       // which lets every candidate through, deliberately. The DB still drops
       // candidates with 0 overlap via the INNER JOIN before HAVING runs.
       expect(params).toContain(0);
     }
 
-    mockDb.execute.mockReset();
-    mockDb.execute.mockResolvedValueOnce([]);
+    mockTransactionDb.execute.mockReset();
+    mockSimilarClimbRows([]);
     await findSimilarClimbs({
       boardType: 'kilter',
       layoutId: 1,
@@ -297,8 +327,7 @@ describe('findSimilarClimbs', () => {
       threshold: 1,
     });
     {
-      const [query] = mockDb.execute.mock.calls[0];
-      const { params } = new PgDialect().sqlToQuery(query as SQL);
+      const { params } = getRenderedSimilarityQuery();
       // threshold=1 → CEIL(4 * 1) = 4; candidates need at least every target
       // hold to clear the prune. Anything less drops here, before Jaccard.
       expect(params).toContain(1);
@@ -313,7 +342,7 @@ describe('findSimilarClimbs', () => {
     // (e.g. STARTING → HAND) counts as one position, not two. Without the
     // dedupe, the targetSize denominator would double-count and depress
     // Jaccard below the threshold for legitimate extended-version matches.
-    mockDb.execute.mockResolvedValueOnce([
+    mockSimilarClimbRows([
       {
         uuid: 'pickled',
         name: 'pickled cucumbers',
@@ -338,5 +367,24 @@ describe('findSimilarClimbs', () => {
     });
     // Two distinct positions despite three input tuples.
     expect(result[0]?.targetHoldCount).toBe(2);
+  });
+
+  it('disables parallel workers before running the similarity CTE on the same transaction', async () => {
+    mockSimilarClimbRows([]);
+
+    await findSimilarClimbs({
+      boardType: 'tension',
+      layoutId: 10,
+      holds: [
+        { holdId: 439, holdState: 'STARTING' },
+        { holdId: 585, holdState: 'HAND' },
+      ],
+      threshold: 0.5,
+    });
+
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+    expect(mockTransactionDb.execute).toHaveBeenCalledTimes(2);
+    expect(renderStatement(mockTransactionDb.execute.mock.calls[0][0])).toMatch(SERIAL_PLAN_GUARD);
+    expect(renderStatement(mockTransactionDb.execute.mock.calls[1][0])).toContain('WITH target_holds AS');
   });
 });
