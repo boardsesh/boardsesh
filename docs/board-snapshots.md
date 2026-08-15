@@ -332,7 +332,7 @@ total spend; the cooldown ladder and scheduler alarm bound frequency.
 
 | Kind                  | Raised by                                                                            | Budget                                | Cooldown ladder      | Re-armed by a new `builtAt`?                         |
 | --------------------- | ------------------------------------------------------------------------------------ | ------------------------------------- | -------------------- | ---------------------------------------------------- |
-| `transport`           | `isNetworkError(cause)` at the download stage (offline, DNS, TLS, timeout)           | `MAX_TRANSPORT_DOWNLOAD_FAILURES` = 3 | 2 min → 15 min → 2 h | no                                                   |
+| `transport`           | network/DNS/TLS/timeout, short body, or iOS background-session decode interruption   | `MAX_TRANSPORT_DOWNLOAD_FAILURES` = 3 | 2 min → 15 min → 2 h | no                                                   |
 | `structural-artifact` | anything raised inside the import (`quick_check`, `snapshot_meta` mismatch, throw)   | `MAX_BOOTSTRAP_ATTEMPTS` = 2          | 6 h → 24 h           | yes, `MAX_STRUCTURAL_REARMS` = 1 per scope, lifetime |
 | `structural-device`   | every other non-transport cause (disk space, cache dir, CDN non-2xx, unclassifiable) | `MAX_BOOTSTRAP_ATTEMPTS` = 2          | 6 h → 24 h           | **no**                                               |
 
@@ -572,9 +572,10 @@ pre-import empty result set.
     survived the pocket, so a later failure belongs to the network or the device. Without the closing
     rule, one screen lock during a nine-minute Android transfer would launder every subsequent wifi
     drop, HTTP 500 or disk error into a free, cooldown-free 100 MB retry loop.
-  - the cause must be **network-shaped** (`isNetworkError`), which is what a suspension kill produces
-    (`NSURLErrorNetworkConnectionLost`, a timeout, a `SocketException`) and what a disk-full or an
-    HTTP 500 is not.
+  - the cause must be **transport-shaped**: either `isNetworkError` (for example
+    `NSURLErrorNetworkConnectionLost`, a timeout, or a `SocketException`) or iOS background
+    URLSession's exact `cannot decode raw data` response-decoding interruption. A disk-full or HTTP 500
+    is not a pause.
 
   Free pauses are **bounded at three per scope** (`MAX_FREE_BACKGROUND_PAUSES`, persisted as
   `BootstrapRetryState.backgroundPauses`). The fourth is charged to the **transport** budget on its
@@ -602,8 +603,11 @@ pre-import empty result set.
 
   The strategy is fixed for the bundle lifetime. No feature-flag resolution can restart the scheduler or
   replace a transfer's transport mid-download. Continue watching `sizeMismatch`,
-  `reason: 'permanent-miss'`, and `wireKbps`; the gzip sniff and paged fallback remain the safety net if a
-  platform HTTP stack ever stops decoding `Content-Encoding: gzip` transparently.
+  `reason: 'permanent-miss'`, `reason: 'background-transfer-decode'`, and `wireKbps`; the gzip sniff and
+  paged fallback remain the safety net if a platform HTTP stack ever stops decoding
+  `Content-Encoding: gzip` transparently. The exact iOS decode interruption is a known transport failure,
+  not a structural device defect: within an open suspension window it gets the bounded free-pause path;
+  otherwise it uses the normal transport ladder instead of the six-hour structural cooldown.
 
   Both platforms are real task arms: Android ignores `sessionType` but a `DownloadTask` builds
   its **own** `OkHttpClient` (60 s connect/read/write timeouts), while iOS hands the transfer to a
@@ -667,6 +671,9 @@ pre-import empty result set.
   waiting for a multi-scope cycle to finish. The full transition message wraps instead of truncating.
   Android exposes it as the only polite live region; iOS announces semantic notice changes through
   VoiceOver explicitly. The changing climb count remains readable but is never auto-announced per page.
+  An active paged crawl always outranks a future fast-path retry notice, so the row shows the slower-path
+  explanation and its live count instead of a static “Faster download interrupted” spinner while 500-row
+  pages are landing.
   Once a snapshot's durable import marker lands, that row stays `finalizing` throughout work on sibling
   snapshots and shared deletion/user-data phases instead of falling back to “Waiting to download.” A
   scope on the paged fallback has no import marker and therefore never gets that label prematurely.
@@ -703,6 +710,11 @@ pre-import empty result set.
   releases the scheduler even if the platform fetch never settles. Interactive GraphQL calls keep their
   existing transport behaviour. A deadline failure reaches the ordinary 30-second cycle retry rather than
   holding the global single-flight latch forever.
+- **Interrupted cycles terminalize their live status**: every expected background/offline/purge/sign-out
+  exit emits `phase: 'idle', interrupted: true`. This clears the per-board spinner without stamping
+  `lastSyncedAt`. Bootstrap and grades downloads also latch a cycle teardown across their native awaits,
+  so a foreground event that arrives before a rejection is handled queues a fresh cycle instead of letting
+  the stale one continue into deletions or paged pulls.
 - **Gzip magic-byte sniff** (`packages/mobile/src/offline/snapshot-source.ts`): identity artifacts skip
   gzip verification. For manifest entries with `contentEncoding: 'gzip'`, the expectation is that the
   native HTTP stack (`NSURLSession` / OkHttp via `expo-file-system`'s `DownloadTask`)

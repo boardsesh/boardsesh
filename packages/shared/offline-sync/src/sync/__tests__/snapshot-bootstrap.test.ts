@@ -29,6 +29,7 @@ import {
   BOOTSTRAP_METADATA_QUERY,
   BOOTSTRAP_METADATA_PATTERNS,
   SnapshotPermanentMissError,
+  SnapshotBackgroundTransferInterruptedError,
   SnapshotSchemaStaleError,
   type SnapshotSource,
 } from '../snapshot-bootstrap';
@@ -4700,10 +4701,12 @@ describe('pullSync grades bootstrap', () => {
     expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
   });
 
-  it('a grades download that fails during a teardown does not burn a grades attempt', async () => {
+  it('interrupts the cycle when a grades download rejects after backgrounding and foregrounding', async () => {
     // The grades artifact only ever gets three tries, and a pocketed phone was
     // spending them: three screen locks left a Kilter board crawling grades over
-    // GraphQL for the life of the install (issue #4390).
+    // GraphQL for the life of the install (issue #4390). AppState can already be
+    // active by the time the native rejection reaches JS, so the transfer must
+    // carry its latched teardown verdict out to the parent cycle.
     const climbsPath = join(workDir, 'grades-teardown-climbs.db');
     buildArtifact({
       filePath: climbsPath,
@@ -4717,26 +4720,46 @@ describe('pullSync grades bootstrap', () => {
       downloadArtifact: vi.fn(async () => ({ filePath: climbsPath })),
       downloadGradesArtifact: vi.fn(async () => {
         setBackgrounded(true);
+        setBackgrounded(false);
         throw new Error('The network connection was lost.');
       }),
       deleteArtifact: vi.fn(async () => {}),
     } as unknown as SnapshotSource;
     const onSnapshotBootstrapError = vi.fn();
+    const progressFrames: SyncProgress[] = [];
+    const { fetch } = makeGraphqlFetch();
 
     try {
-      await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      await pullSync(db, noopQueryClient(), fetch, {
         enabledBoards: ['kilter:1:5'],
         snapshotSource: source,
         onSnapshotBootstrapError,
+        onProgress: (progress) => progressFrames.push(progress),
       });
     } finally {
       setBackgrounded(false);
     }
 
+    // The main artifact landed before grades began, and stays imported.
+    expect(await countRows('board_climbs')).toBe(1);
     expect(await getGradesBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
     expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
       expect.objectContaining({ stage: 'grades-download', attempt: 0, aborted: true, reason: 'aborted-background' }),
     );
+    expect(
+      fetch.mock.calls.some(([query]) =>
+        ['syncDeletions', 'syncClimbs', 'syncClimbStats', 'syncClimbGrades'].some((field) =>
+          String(query).includes(field),
+        ),
+      ),
+    ).toBe(false);
+    expect(progressFrames.at(-1)).toEqual({
+      phase: 'idle',
+      currentTable: null,
+      documentsProcessed: 0,
+      interrupted: true,
+    });
+    expect(progressFrames.filter((progress) => progress.phase === 'idle')).toHaveLength(1);
   });
 
   it('stops trying grades once its own attempt budget is spent', async () => {
@@ -5072,43 +5095,44 @@ describe('pullSync bootstrap funnel invariant', () => {
     expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
   });
 
-  it('does not burn an attempt when a backgrounded phone returns before the abort is handled', async () => {
-    // The race a review flagged on #4345: the teardown flags are LIVE, so a phone
-    // that woke between our own AbortController firing and the throw being
-    // handled read as "no teardown" — and the download we cancelled ourselves was
-    // settled as a real transport failure, burning an attempt and scheduling a
-    // cooldown. A pocketed phone is not a failure (#4326's taxonomy), so the
-    // reason is now latched at the moment we abort.
+  it('ends the cycle as interrupted when a suspended transfer rejects after the phone foregrounds', async () => {
+    // Background URLSession work is allowed to continue, but the OS can still
+    // kill the transfer while the process is suspended. The phone may foreground
+    // before that rejection reaches JS, so the suspension window — not the live
+    // AppState flag — must stop this stale cycle before deletions or paged pulls.
     const filePath = join(workDir, 'backgrounded-then-foregrounded.db');
     buildScopeArtifact(filePath);
+    let seenSignal: AbortSignal | undefined;
     const source: SnapshotSource = {
       fetchManifest: async () => makeManifest([makeEntry()]),
       downloadArtifact: async (_entry, options) => {
-        // Backgrounding notifies the teardown listeners synchronously, which is
-        // what aborts the transfer.
+        seenSignal = options?.signal;
         setBackgrounded(true);
-        expect(options?.signal?.aborted).toBe(true);
-        // ...and the climber pulls the phone back out before the rejection is
-        // handled, so every live flag reads clean at the check below.
         setBackgrounded(false);
-        throw new Error('Aborted');
+        throw new Error('The network connection was lost.');
       },
       deleteArtifact: vi.fn(async () => {}),
     };
     const onSnapshotBootstrapError = vi.fn();
     const onBootstrapRetryScheduled = vi.fn();
+    const progressFrames: SyncProgress[] = [];
+    const { fetch } = makeGraphqlFetch();
 
     try {
-      await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      await pullSync(db, noopQueryClient(), fetch, {
         enabledBoards: ['kilter:1:5'],
         snapshotSource: source,
         onSnapshotBootstrapError,
         onBootstrapRetryScheduled,
+        onProgress: (progress) => progressFrames.push(progress),
       });
     } finally {
       setBackgrounded(false);
     }
 
+    // Kept outside the downloader: an assertion thrown inside that callback is
+    // intentionally caught as a download failure and cannot prove anything.
+    expect(seenSignal?.aborted).toBe(false);
     expect(onSnapshotBootstrapError).toHaveBeenCalledTimes(1);
     expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -5126,6 +5150,105 @@ describe('pullSync bootstrap funnel invariant', () => {
     const { state } = await readBootstrapRetryState(db, 'kilter:1:5', { now: BASE_NOW, random: () => 0 }, false);
     expect(state.transportFailures).toBe(0);
     expect(state.structuralFailures).toBe(0);
+    expect(progressFrames.at(-1)).toEqual({
+      phase: 'idle',
+      currentTable: null,
+      documentsProcessed: 0,
+      interrupted: true,
+    });
+    expect(progressFrames.filter((progress) => progress.phase === 'idle')).toHaveLength(1);
+    expect(
+      fetch.mock.calls.some(([query]) =>
+        ['syncDeletions', 'syncClimbs', 'syncClimbStats', 'syncClimbGrades'].some((field) =>
+          String(query).includes(field),
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it('charges a typed background-task marker to transport when AppState is active', async () => {
+    const marker = new SnapshotBackgroundTransferInterruptedError('cannot decode raw data');
+    const source: SnapshotSource = {
+      fetchManifest: async () => makeManifest([makeEntry()]),
+      downloadArtifact: async () => {
+        throw marker;
+      },
+      deleteArtifact: vi.fn(async () => {}),
+    };
+    const onSnapshotBootstrapError = vi.fn();
+    const onBootstrapRetryScheduled = vi.fn();
+    const progressFrames: SyncProgress[] = [];
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+      onBootstrapRetryScheduled,
+      onProgress: (progress) => progressFrames.push(progress),
+      now: () => BASE_NOW,
+      random: () => 0,
+    });
+
+    const { state } = await readBootstrapRetryState(db, 'kilter:1:5', { now: BASE_NOW, random: () => 0 }, false);
+    expect(state.transportFailures).toBe(1);
+    expect(state.backgroundPauses).toBe(0);
+    expect(onBootstrapRetryScheduled).toHaveBeenCalledWith(
+      expect.objectContaining({ failureKind: 'transport', transportFailures: 1 }),
+    );
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'background-transfer-decode',
+        expected: true,
+        aborted: false,
+        attempt: 1,
+      }),
+    );
+    expect(progressFrames.at(-1)).toEqual(expect.objectContaining({ phase: 'idle', currentTable: null }));
+    expect(progressFrames.at(-1)?.interrupted).toBeUndefined();
+  });
+
+  it('treats the typed marker as a bounded background pause while the suspension window stays open', async () => {
+    const source: SnapshotSource = {
+      fetchManifest: async () => makeManifest([makeEntry()]),
+      downloadArtifact: async () => {
+        setBackgrounded(true);
+        setBackgrounded(false);
+        throw new SnapshotBackgroundTransferInterruptedError('cannot decode raw data');
+      },
+      deleteArtifact: vi.fn(async () => {}),
+    };
+    const onSnapshotBootstrapError = vi.fn();
+    const onBootstrapRetryScheduled = vi.fn();
+    const progressFrames: SyncProgress[] = [];
+
+    try {
+      await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+        onSnapshotBootstrapError,
+        onBootstrapRetryScheduled,
+        onProgress: (progress) => progressFrames.push(progress),
+        now: () => BASE_NOW,
+        random: () => 0,
+      });
+    } finally {
+      setBackgrounded(false);
+    }
+
+    const { state } = await readBootstrapRetryState(db, 'kilter:1:5', { now: BASE_NOW, random: () => 0 }, false);
+    expect(state.backgroundPauses).toBe(1);
+    expect(state.transportFailures).toBe(0);
+    expect(onBootstrapRetryScheduled).not.toHaveBeenCalled();
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'aborted-background',
+        aborted: true,
+        attempt: 0,
+      }),
+    );
+    expect(progressFrames.at(-1)).toEqual(
+      expect.objectContaining({ phase: 'idle', currentTable: null, interrupted: true }),
+    );
   });
 
   it('emits exactly one terminal event for a download that genuinely failed', async () => {
@@ -5390,18 +5513,41 @@ describe('pullSync bootstrap purge scoping', () => {
       setBackgrounded(true);
       return result;
     };
+    const onSnapshotBootstrapError = vi.fn();
+    const progressFrames: SyncProgress[] = [];
+    const { fetch } = makeGraphqlFetch();
 
     try {
-      await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      await pullSync(db, noopQueryClient(), fetch, {
         enabledBoards: [KILTER_KEY],
         snapshotSource: source,
+        onSnapshotBootstrapError,
+        onProgress: (progress) => progressFrames.push(progress),
       });
     } finally {
       setBackgrounded(false);
     }
 
+    expect(await countRows('board_climbs')).toBe(1);
     expect(await getCheckpoint(db, `checkpoint:board_climb_grades:${KILTER_KEY}`)).toBeNull();
     expect(await getGradesBootstrapAttempts(db, KILTER_KEY)).toBe(0);
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'grades-download', attempt: 0, aborted: true, reason: 'aborted-background' }),
+    );
+    expect(
+      fetch.mock.calls.some(([query]) =>
+        ['syncDeletions', 'syncClimbs', 'syncClimbStats', 'syncClimbGrades'].some((field) =>
+          String(query).includes(field),
+        ),
+      ),
+    ).toBe(false);
+    expect(progressFrames.at(-1)).toEqual({
+      phase: 'idle',
+      currentTable: null,
+      documentsProcessed: 0,
+      interrupted: true,
+    });
+    expect(progressFrames.filter((progress) => progress.phase === 'idle')).toHaveLength(1);
   });
 
   // THE FUNNEL INVARIANT under `break` → `continue`: every Started still gets

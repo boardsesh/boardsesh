@@ -245,6 +245,17 @@ describe('boardDownloadNotice', () => {
     );
   });
 
+  it('shows the live paged-fallback notice when a crawl is active after snapshot retry evidence', () => {
+    expect(
+      boardDownloadNotice({
+        ...noticeBase,
+        bootstrapAttempts: 1,
+        retryAfter: 1_800_000_000_000,
+        isPagedDownloadActive: true,
+      }),
+    ).toBe('paged-fallback');
+  });
+
   it('shows a paged-fallback notice once both snapshot budgets are spent', () => {
     expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 2, isTerminal: true })).toBe('paged-fallback');
   });

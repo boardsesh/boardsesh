@@ -309,6 +309,20 @@ export class SnapshotArtifactTruncatedError extends Error {
   }
 }
 
+/**
+ * The iOS background URLSession was interrupted while decoding a response body.
+ * Expo surfaces NSURLErrorCannotDecodeRawData as English prose without a stable
+ * code, so the mobile adapter converts that one platform-shaped error into this
+ * renderer-independent signal. It belongs on the bounded transport retry
+ * ladder, not the structural artifact/device budget.
+ */
+export class SnapshotBackgroundTransferInterruptedError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'SnapshotBackgroundTransferInterruptedError';
+  }
+}
+
 // --- Attempt / done markers (sync_meta, NOT under the checkpoint: prefix so the
 // sign-out checkpoint wipe leaves them alone, matching the board rows they
 // describe, which survive as the shared cache) ---------------------------------

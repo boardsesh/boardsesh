@@ -232,9 +232,19 @@ export function boardDownloadNotice(input: BoardDownloadNoticeInput): BoardDownl
     input.isBootstrapping
   )
     return null;
-  // A settled scope is the only permanent verdict now. A scheduled retry keeps
-  // the softer "we'll try the fast download again" caption even though the crawl
-  // is running underneath it, because that is exactly what will happen.
+  // Once the ordinary crawl is visibly active, describe the work happening now
+  // and let the row show its live count. Keeping a future snapshot-retry caption
+  // here hid a real 500-row crawl behind a static spinner, making progress look
+  // wedged even though rows were landing.
+  if (
+    input.isPagedDownloadActive &&
+    (input.isTerminal || input.isPagedFallback || input.retryAfter !== null || input.bootstrapAttempts > 0)
+  ) {
+    return 'paged-fallback';
+  }
+  // A settled scope is the only permanent verdict now. Outside an active crawl,
+  // a scheduled retry keeps the softer "we'll try the fast download again"
+  // caption because that is exactly what will happen.
   if (input.isTerminal) return 'paged-fallback';
   if (input.retryAfter !== null) return 'snapshot-retrying';
   if (input.isPagedFallback) return 'paged-fallback';

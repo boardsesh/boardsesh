@@ -198,6 +198,12 @@ export function classifyBootstrapFailure(input: {
   stage: 'manifest' | 'download' | 'import';
 }): BootstrapFailureKind {
   if (input.stage === 'import') return 'structural-artifact';
+  // Keep this module dependency-neutral: snapshot-bootstrap imports the retry
+  // constants below at module initialization time. The mobile adapter converts
+  // iOS's background URLSession decode failure into this stable error name.
+  if (input.cause instanceof Error && input.cause.name === 'SnapshotBackgroundTransferInterruptedError') {
+    return 'transport';
+  }
   // A short body is a cut-short RESPONSE, so it belongs on the transport ladder
   // (3 tries, cleared by any success) rather than `structural-device`, where two
   // occurrences would durably settle the scope onto the paged crawl with no

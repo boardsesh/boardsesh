@@ -241,7 +241,8 @@ vi.mock('../../lib/env', () => ({
 // The strategy resolver reads Platform.OS. RN's real entry is Flow source that
 // Rolldown's scan cannot parse, so it is stubbed here the way
 // offline-sync-adapter.test.ts does.
-vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
+const platformState = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android' }));
+vi.mock('react-native', () => ({ Platform: platformState }));
 
 const reportHandledError = vi.fn();
 vi.mock('../../lib/error-reporting', () => ({
@@ -255,13 +256,11 @@ vi.mock('../artifact-transfer-telemetry', () => ({
   reportArtifactTransfer: (...args: unknown[]) => reportArtifactTransfer(...args),
 }));
 
-// The FAKE File class the vi.mock above installs — imported so the strategy
-// tests can read the exact options object each transport was handed.
-import { File } from 'expo-file-system';
 import { mobileSnapshotSource, SNAPSHOT_MANIFEST_FETCH_TIMEOUT_MS } from '../snapshot-source';
 import {
   setBackgrounded,
   SnapshotArtifactTruncatedError,
+  SnapshotBackgroundTransferInterruptedError,
   SnapshotPermanentMissError,
   type SnapshotManifestEntry,
 } from '@boardsesh/offline-sync';
@@ -300,6 +299,8 @@ function brokenJsonResponse(status = 200): Response {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  setBackgrounded(false);
+  platformState.OS = 'ios';
   state.availableDiskSpace = 10_000_000_000;
   state.createdDirectories = [];
   state.downloadProgressFrames = [];
@@ -515,6 +516,45 @@ describe('downloadArtifact', () => {
 
     expect(rejection).toBeInstanceOf(Error);
     expect((rejection as Error).cause).toBe(downloadError);
+  });
+
+  it('turns cannot-decode-raw-data from a background task into a typed transport error without AppState evidence', async () => {
+    const downloadError = new Error("The operation couldn't be completed. cannot decode raw data");
+    state.downloadError = downloadError;
+
+    const rejection = await mobileSnapshotSource.downloadArtifact(ENTRY).catch((error: unknown) => error);
+
+    expect(rejection).toBeInstanceOf(SnapshotBackgroundTransferInterruptedError);
+    expect((rejection as Error).cause).toBe(downloadError);
+    expect(reportArtifactTransfer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategy: 'task-background',
+        outcome: 'failed',
+        backgroundedDuringTransfer: false,
+      }),
+    );
+  });
+
+  it('keeps cannot-decode-raw-data from a foreground task as an ordinary transfer failure', async () => {
+    const downloadError = new Error("The operation couldn't be completed. cannot decode raw data");
+    state.downloadError = downloadError;
+    platformState.OS = 'android';
+    vi.resetModules();
+    const { mobileSnapshotSource: foregroundSnapshotSource } = await import('../snapshot-source');
+
+    const rejection = await foregroundSnapshotSource.downloadArtifact(ENTRY).catch((error: unknown) => error);
+
+    expect(rejection).toBeInstanceOf(Error);
+    expect(rejection).not.toBeInstanceOf(SnapshotBackgroundTransferInterruptedError);
+    expect((rejection as Error).message).toMatch(/transfer failed.*cannot decode raw data/);
+    expect((rejection as Error).cause).toBe(downloadError);
+    expect(reportArtifactTransfer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategy: 'task-foreground',
+        outcome: 'failed',
+        backgroundedDuringTransfer: false,
+      }),
+    );
   });
 
   it('throws a descriptive error wrapping the underlying cause when the cache directory cannot be created', async () => {

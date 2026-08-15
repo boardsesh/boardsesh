@@ -25,7 +25,7 @@ vi.mock('../table-config', async () => {
   return actual;
 });
 
-import { pullSync } from '../pull-client';
+import { pullSync, type SyncProgress } from '../pull-client';
 import { setSigningOut, setBackgrounded, beginGlobalPurge } from '../../mutation-queue/drainer';
 import { getCheckpoint, setCheckpoint, getCheckpointKey, markScopeDownloadComplete } from '../checkpoints';
 import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from '../table-config';
@@ -943,18 +943,27 @@ describe('pullSync', () => {
     // Sentry BOARDSESH-AN: a SQLite call dispatched right as iOS suspends the
     // process crashed natively. Mirrors the sign-out guard above.
     setupGraphqlFetchForAllTables();
+    const progressFrames: SyncProgress[] = [];
     setBackgrounded(true);
     try {
-      await pullSync(db, queryClient, graphqlFetch);
+      await pullSync(db, queryClient, graphqlFetch, { onProgress: (progress) => progressFrames.push(progress) });
       expect(graphqlFetch).not.toHaveBeenCalled();
       expect(sqlCalls.filter((call) => call.sql.startsWith('INSERT OR REPLACE'))).toHaveLength(0);
       expect(setCheckpoint).not.toHaveBeenCalled();
+      expect(progressFrames.at(-1)).toEqual({
+        phase: 'idle',
+        currentTable: null,
+        documentsProcessed: 0,
+        interrupted: true,
+      });
+      expect(progressFrames.filter((progress) => progress.phase === 'idle')).toHaveLength(1);
     } finally {
       setBackgrounded(false);
     }
   });
 
   it('stops mid-cycle when the app backgrounds while a page is on the wire', async () => {
+    const progressFrames: SyncProgress[] = [];
     graphqlFetch.mockImplementation(async (query: string) => {
       if (query.includes('syncDeletions')) {
         return makeDeletionsResult([], false);
@@ -973,7 +982,7 @@ describe('pullSync', () => {
     });
 
     try {
-      await pullSync(db, queryClient, graphqlFetch);
+      await pullSync(db, queryClient, graphqlFetch, { onProgress: (progress) => progressFrames.push(progress) });
 
       // The page already in flight when backgrounding was detected must not be
       // upserted, and its checkpoint must not advance.
@@ -983,6 +992,13 @@ describe('pullSync', () => {
         String(args[1]).includes('boardsesh_ticks'),
       );
       expect(tickCheckpointWrites).toHaveLength(0);
+      expect(progressFrames.at(-1)).toEqual({
+        phase: 'idle',
+        currentTable: null,
+        documentsProcessed: 0,
+        interrupted: true,
+      });
+      expect(progressFrames.filter((progress) => progress.phase === 'idle')).toHaveLength(1);
     } finally {
       setBackgrounded(false);
     }
