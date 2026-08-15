@@ -42,6 +42,10 @@ export default function EditGymForm({ gym, onSuccess, onCancel, onDirtyChange }:
           name: values.name,
           slug: values.slug || undefined,
           description: values.description || undefined,
+          // `null`, not `undefined`: updateGym treats an omitted key as "leave the
+          // hours (and their confirmed date) alone", so an owner who empties the
+          // field could never clear it if this sent undefined.
+          hours: values.hours?.trim() || null,
           address: values.address || undefined,
           website: values.website || null,
           contactEmail: values.contactEmail || undefined,
@@ -67,6 +71,7 @@ export default function EditGymForm({ gym, onSuccess, onCancel, onDirtyChange }:
         name: gym.name,
         slug: gym.slug ?? '',
         description: gym.description ?? '',
+        hours: gym.hours ?? '',
         address: gym.address ?? '',
         website: gym.website ?? '',
         contactEmail: gym.contactEmail ?? '',
@@ -76,6 +81,7 @@ export default function EditGymForm({ gym, onSuccess, onCancel, onDirtyChange }:
         longitude: gym.longitude ?? null,
       }}
       showSlugField
+      showHoursField
       onSubmit={handleSubmit}
       onCancel={onCancel}
       onDirtyChange={onDirtyChange}

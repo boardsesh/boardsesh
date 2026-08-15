@@ -72,8 +72,12 @@ export async function generateUniqueGymSlug(name: string): Promise<string> {
 /**
  * Map a raw SQL row (snake_case columns) to the Drizzle gym schema shape.
  * Used for PostGIS proximity queries that bypass the Drizzle query builder.
+ *
+ * Exported for the test that guards the snake_case reads — every key here comes
+ * off a raw `SELECT *`, so a camelCase typo type-checks fine and silently maps
+ * to null forever on the proximity path while the Drizzle path looks healthy.
  */
-function mapRawGymRow(row: Record<string, unknown>): typeof dbSchema.gyms.$inferSelect {
+export function mapRawGymRow(row: Record<string, unknown>): typeof dbSchema.gyms.$inferSelect {
   return {
     id: row.id as number,
     uuid: row.uuid as string,
@@ -91,6 +95,12 @@ function mapRawGymRow(row: Record<string, unknown>): typeof dbSchema.gyms.$infer
     longitude: row.longitude != null ? Number(row.longitude) : null,
     isPublic: row.is_public as boolean,
     description: (row.description as string | null) ?? null,
+    // Snake_case, like every other key here — `row.hoursUpdatedAt` would compile
+    // and then hand the proximity path a permanent null "Confirmed" date while
+    // the Drizzle text-search path renders it correctly (same class of bug as
+    // website_vouched_by_owner above).
+    hours: (row.hours as string | null) ?? null,
+    hoursUpdatedAt: row.hours_updated_at != null ? new Date(row.hours_updated_at as string) : null,
     imageUrl: (row.image_url as string | null) ?? null,
     logoUrl: (row.logo_url as string | null) ?? null,
     brandPrimaryColor: (row.brand_primary_color as string | null) ?? null,
@@ -326,6 +336,8 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
     ownerAvatarUrl: ownerInfo?.avatarUrl || ownerInfo?.image || undefined,
     name: gym.name,
     description: gym.description,
+    hours: gym.hours,
+    hoursUpdatedAt: gym.hoursUpdatedAt ? gym.hoursUpdatedAt.toISOString() : null,
     address: gym.address,
     website: gym.website,
     contactEmail: gym.contactEmail,
@@ -1014,6 +1026,15 @@ export const socialGymMutations = {
 
     if (validatedInput.name !== undefined) updateValues.name = validatedInput.name;
     if (validatedInput.description !== undefined) updateValues.description = validatedInput.description;
+    // Opening hours carry their own confirmation stamp: any write re-dates them
+    // (the public page renders "Confirmed <date>"), and clearing the line clears
+    // the stamp with it so no date outlives the hours it vouched for. An omitted
+    // key leaves both columns alone — a save from a form that doesn't show the
+    // field must not silently re-confirm a schedule nobody looked at.
+    if (validatedInput.hours !== undefined) {
+      updateValues.hours = validatedInput.hours;
+      updateValues.hoursUpdatedAt = validatedInput.hours === null ? null : new Date();
+    }
     if (validatedInput.address !== undefined) updateValues.address = validatedInput.address;
     if (validatedInput.website !== undefined) {
       const nextWebsite = validatedInput.website;

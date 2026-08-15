@@ -81,6 +81,8 @@
     "boardsHeading": "Boards",
     "boardCount_one": "{{count}} board",
     "boardCount_other": "{{count}} boards",
+    "hoursHeading": "Opening hours",
+    "hoursConfirmed": "Confirmed {{date}}",
     "visitWebsite": "Visit website",
     "noBoardsYet": "No boards listed here yet.",
     "explorePlaylists": "See what people are building",
@@ -91,6 +93,14 @@
       "linkBoards": {
         "title": "Link your boards",
         "body": "Climbers can't see any walls here yet."
+      },
+      "addHours": {
+        "title": "Add your opening hours",
+        "body": "Climbers checking if they can get a session in tonight can't tell."
+      },
+      "addDescription": {
+        "title": "Say what climbing here is like",
+        "body": "A couple of lines on the walls, the setting, and the vibe."
       },
       "putOnTv": {
         "title": "Put this wall on a TV",

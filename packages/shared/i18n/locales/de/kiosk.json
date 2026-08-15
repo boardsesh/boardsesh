@@ -81,6 +81,8 @@
     "boardsHeading": "Boards",
     "boardCount_one": "{{count}} Board",
     "boardCount_other": "{{count}} Boards",
+    "hoursHeading": "Öffnungszeiten",
+    "hoursConfirmed": "Bestätigt am {{date}}",
     "visitWebsite": "Website besuchen",
     "noBoardsYet": "Hier sind noch keine Boards gelistet.",
     "explorePlaylists": "Sieh, was Kletterer*innen zusammenstellen",
@@ -91,6 +93,14 @@
       "linkBoards": {
         "title": "Verknüpf deine Boards",
         "body": "Kletterer*innen sehen hier noch keine Wand."
+      },
+      "addHours": {
+        "title": "Trag deine Öffnungszeiten ein",
+        "body": "Wer schaut, ob heute Abend noch eine Session drin ist, sieht nichts."
+      },
+      "addDescription": {
+        "title": "Erzähl, wie es sich hier klettert",
+        "body": "Ein paar Zeilen zu den Wänden, den Routen und der Stimmung."
       },
       "putOnTv": {
         "title": "Bring diese Wand auf einen TV",

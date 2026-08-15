@@ -81,6 +81,8 @@
     "boardsHeading": "Plafones",
     "boardCount_one": "{{count}} plafón",
     "boardCount_other": "{{count}} plafones",
+    "hoursHeading": "Horario",
+    "hoursConfirmed": "Confirmado el {{date}}",
     "visitWebsite": "Visitar el sitio web",
     "noBoardsYet": "Aún no hay plafones aquí.",
     "explorePlaylists": "Mira las playlists que monta la gente",
@@ -91,6 +93,14 @@
       "linkBoards": {
         "title": "Vincula tus plafones",
         "body": "Los escaladores todavía no ven ningún muro aquí."
+      },
+      "addHours": {
+        "title": "Añade tu horario",
+        "body": "Quien mira si le da tiempo a escalar esta noche no lo sabe."
+      },
+      "addDescription": {
+        "title": "Cuenta cómo se escala aquí",
+        "body": "Un par de líneas sobre los muros, el equipamiento y el ambiente."
       },
       "putOnTv": {
         "title": "Pon este muro en una tele",

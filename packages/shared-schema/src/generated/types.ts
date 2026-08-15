@@ -2443,6 +2443,10 @@ export type Gym = {
   description?: Maybe<Scalars['String']['output']>;
   /** Number of followers */
   followerCount: Scalars['Int']['output'];
+  /** Opening hours as one free-text line the gym maintains itself (no structured per-day model). */
+  hours?: Maybe<Scalars['String']['output']>;
+  /** ISO timestamp of the last time someone with edit access confirmed the hours. Shown publicly so a stale schedule reads as stale. */
+  hoursUpdatedAt?: Maybe<Scalars['String']['output']>;
   /** Image URL */
   imageUrl?: Maybe<Scalars['String']['output']>;
   /** Whether the current user follows this gym */
@@ -7653,6 +7657,8 @@ export type UpdateGymInput = {
   description?: InputMaybe<Scalars['String']['input']>;
   /** Gym UUID to update */
   gymUuid: Scalars['ID']['input'];
+  /** New free-text opening hours. Writing this stamps hoursUpdatedAt; pass null to clear both. */
+  hours?: InputMaybe<Scalars['String']['input']>;
   /** New image URL */
   imageUrl?: InputMaybe<Scalars['String']['input']>;
   /** New visibility */
@@ -10041,6 +10047,8 @@ export type GymResolvers<
   createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   description?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   followerCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  hours?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  hoursUpdatedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   imageUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   isFollowedByMe?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isMember?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;

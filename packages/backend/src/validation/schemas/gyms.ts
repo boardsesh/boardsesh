@@ -58,6 +58,15 @@ export const GymLogoUrlSchema = z
   );
 
 /**
+ * Opening hours are one free-text line the gym writes itself, so the only server
+ * rule is a length cap — enough room for a week of hours plus a holiday note,
+ * short enough that the public gym page can't be used as a text dump.
+ */
+export const GYM_HOURS_MAX_LENGTH = 500;
+
+export const GymHoursSchema = z.string().max(GYM_HOURS_MAX_LENGTH, 'Opening hours too long');
+
+/**
  * Create gym input validation schema
  */
 export const CreateGymInputSchema = z.object({
@@ -82,6 +91,7 @@ export const UpdateGymInputSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   slug: SlugSchema.optional(),
   description: z.string().max(500).optional().nullable(),
+  hours: GymHoursSchema.optional().nullable(),
   address: z.string().max(300).optional().nullable(),
   website: GymWebsiteSchema.optional().nullable(),
   contactEmail: z.string().email().max(200).optional().nullable(),

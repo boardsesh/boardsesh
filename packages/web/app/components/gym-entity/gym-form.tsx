@@ -15,6 +15,11 @@ export type GymFormFieldValues = {
   name: string;
   slug?: string;
   description: string;
+  /**
+   * Free-text opening hours. Optional because the create flow's CreateGymInput
+   * has no hours field — only the edit flow renders it (showHoursField).
+   */
+  hours?: string;
   address: string;
   website: string;
   contactEmail: string;
@@ -35,6 +40,8 @@ type GymFormProps = {
   submitLabel: string;
   initialValues: GymFormFieldValues;
   showSlugField?: boolean;
+  /** Opening hours are edit-only — createGym has no hours field to send them to. */
+  showHoursField?: boolean;
   onSubmit: (values: GymFormFieldValues) => Promise<void>;
   onCancel?: () => void;
   /**
@@ -52,6 +59,7 @@ export default function GymForm({
   submitLabel,
   initialValues,
   showSlugField = false,
+  showHoursField = false,
   onSubmit,
   onCancel,
   renderSuggestions,
@@ -61,6 +69,7 @@ export default function GymForm({
   const [name, setName] = useState(initialValues.name);
   const [slug, setSlug] = useState(initialValues.slug ?? '');
   const [description, setDescription] = useState(initialValues.description);
+  const [hours, setHours] = useState(initialValues.hours ?? '');
   const [address, setAddress] = useState(initialValues.address);
   const [website, setWebsite] = useState(initialValues.website);
   const [contactEmail, setContactEmail] = useState(initialValues.contactEmail);
@@ -77,6 +86,7 @@ export default function GymForm({
     name !== initialValues.name ||
     slug !== (initialValues.slug ?? '') ||
     description !== initialValues.description ||
+    hours !== (initialValues.hours ?? '') ||
     address !== initialValues.address ||
     website !== initialValues.website ||
     contactEmail !== initialValues.contactEmail ||
@@ -99,6 +109,7 @@ export default function GymForm({
         name: name.trim(),
         slug: slug.trim() || undefined,
         description: description.trim(),
+        hours: hours.trim(),
         address: address.trim(),
         website: website.trim(),
         contactEmail: contactEmail.trim(),
@@ -149,6 +160,23 @@ export default function GymForm({
         maxRows={4}
         placeholder={t('gymForm.placeholders.description')}
       />
+
+      {showHoursField && (
+        <TextField
+          label={t('gymForm.fields.hours')}
+          value={hours}
+          onChange={(e) => setHours(e.target.value)}
+          fullWidth
+          size="small"
+          multiline
+          minRows={2}
+          maxRows={6}
+          placeholder={t('gymForm.placeholders.hours')}
+          helperText={t('gymForm.helpers.hours')}
+          // Mirrors GYM_HOURS_MAX_LENGTH on the backend, which is the real gate.
+          slotProps={{ htmlInput: { maxLength: 500 } }}
+        />
+      )}
 
       <TextField
         label={t('gymForm.fields.address')}

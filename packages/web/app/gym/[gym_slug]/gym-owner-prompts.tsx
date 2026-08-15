@@ -16,6 +16,8 @@ import MuiLink from '@mui/material/Link';
 import FitnessCenterOutlined from '@mui/icons-material/FitnessCenterOutlined';
 import TvOutlined from '@mui/icons-material/TvOutlined';
 import PaletteOutlined from '@mui/icons-material/PaletteOutlined';
+import ScheduleOutlined from '@mui/icons-material/ScheduleOutlined';
+import NotesOutlined from '@mui/icons-material/NotesOutlined';
 import ArrowForwardOutlined from '@mui/icons-material/ArrowForwardOutlined';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { useFeatureFlag } from '@/app/components/providers/feature-flags-provider';
@@ -27,15 +29,23 @@ type GymOwnerPromptsProps = {
   gymSlug: string;
   canEdit: boolean;
   hasBoards: boolean;
+  hasHours: boolean;
+  hasDescription: boolean;
   hasKiosk: boolean;
   hasBranding: boolean;
 };
 
-// Static-literal lookups: the i18n linter forbids t(variable)/t(template).
+// Static-literal lookups: the i18n linter forbids t(variable)/t(template). No
+// `default` on purpose — a new prompt key then fails typecheck here instead of
+// rendering an untranslated card.
 function promptTitle(t: TFunction, key: OwnerPromptKey): string {
   switch (key) {
     case 'boards':
       return t('gymPage.owner.linkBoards.title');
+    case 'hours':
+      return t('gymPage.owner.addHours.title');
+    case 'description':
+      return t('gymPage.owner.addDescription.title');
     case 'kiosk':
       return t('gymPage.owner.putOnTv.title');
     case 'branding':
@@ -47,6 +57,10 @@ function promptBody(t: TFunction, key: OwnerPromptKey): string {
   switch (key) {
     case 'boards':
       return t('gymPage.owner.linkBoards.body');
+    case 'hours':
+      return t('gymPage.owner.addHours.body');
+    case 'description':
+      return t('gymPage.owner.addDescription.body');
     case 'kiosk':
       return t('gymPage.owner.putOnTv.body');
     case 'branding':
@@ -58,6 +72,10 @@ function promptIcon(key: OwnerPromptKey): React.ReactNode {
   switch (key) {
     case 'boards':
       return <FitnessCenterOutlined sx={{ fontSize: 18 }} />;
+    case 'hours':
+      return <ScheduleOutlined sx={{ fontSize: 18 }} />;
+    case 'description':
+      return <NotesOutlined sx={{ fontSize: 18 }} />;
     case 'kiosk':
       return <TvOutlined sx={{ fontSize: 18 }} />;
     case 'branding':
@@ -65,7 +83,15 @@ function promptIcon(key: OwnerPromptKey): React.ReactNode {
   }
 }
 
-export default function GymOwnerPrompts({ gymSlug, canEdit, hasBoards, hasKiosk, hasBranding }: GymOwnerPromptsProps) {
+export default function GymOwnerPrompts({
+  gymSlug,
+  canEdit,
+  hasBoards,
+  hasHours,
+  hasDescription,
+  hasKiosk,
+  hasBranding,
+}: GymOwnerPromptsProps) {
   const { t } = useTranslation('kiosk');
   const kioskFlag = useFeatureFlag(GYM_KIOSK_FLAG);
 
@@ -75,7 +101,7 @@ export default function GymOwnerPrompts({ gymSlug, canEdit, hasBoards, hasKiosk,
     return null;
   }
 
-  const prompts = ownerPromptsToShow({ canEdit, hasBoards, hasKiosk, hasBranding });
+  const prompts = ownerPromptsToShow({ canEdit, hasBoards, hasHours, hasDescription, hasKiosk, hasBranding });
   if (prompts.length === 0) {
     return null;
   }

@@ -78,6 +78,40 @@ describe('ProfileTab', () => {
     });
   });
 
+  it('prefills the gym opening hours and saves them trimmed', async () => {
+    mockExecute.mockResolvedValue({ updateGym: makeGym() });
+
+    render(<ProfileTab gym={makeGym({ hours: 'Mon-Fri 7-22' })} onGymChange={vi.fn()} />);
+
+    fireEvent.change(screen.getByDisplayValue('Mon-Fri 7-22'), {
+      target: { value: '  Mon-Fri 7-23, Sat-Sun 9-20  ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(mockExecute).toHaveBeenCalledTimes(1);
+    });
+    expect(mockExecute.mock.calls[0][0].input.hours).toBe('Mon-Fri 7-23, Sat-Sun 9-20');
+  });
+
+  it('sends null when the owner clears the hours, so the column actually clears', async () => {
+    mockExecute.mockResolvedValue({ updateGym: makeGym() });
+
+    render(<ProfileTab gym={makeGym({ hours: 'Mon-Fri 7-22' })} onGymChange={vi.fn()} />);
+
+    fireEvent.change(screen.getByDisplayValue('Mon-Fri 7-22'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(mockExecute).toHaveBeenCalledTimes(1);
+    });
+    // `undefined` is updateGym's "leave the column untouched" sentinel — sending
+    // it here would make the field impossible to empty.
+    const { input } = mockExecute.mock.calls[0][0];
+    expect(input.hours).toBeNull();
+    expect('hours' in input).toBe(true);
+  });
+
   it('bubbles the form dirty state so the shell can guard tab switches', async () => {
     const onDirtyChange = vi.fn();
     render(<ProfileTab gym={makeGym()} onGymChange={vi.fn()} onDirtyChange={onDirtyChange} />);

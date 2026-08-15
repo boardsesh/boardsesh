@@ -571,6 +571,7 @@
       "name": "Nom de la salle",
       "slug": "Slug d'URL",
       "description": "Description",
+      "hours": "Horaires d'ouverture",
       "address": "Adresse",
       "contactEmail": "E-mail de contact",
       "contactPhone": "Téléphone de contact",
@@ -580,6 +581,7 @@
     "placeholders": {
       "name": "ex. Boulder World, The Climbing Factory",
       "description": "Description facultative",
+      "hours": "ex. lun-ven 7h-23h, sam-dim 9h-20h",
       "address": "ex. 123 rue Principale, ville",
       "contactEmail": "E-mail de contact facultatif",
       "contactPhone": "Téléphone de contact facultatif",
@@ -597,7 +599,8 @@
       "createdNamed": "Salle « {{name}} » créée !"
     },
     "helpers": {
-      "website": "Sert à vérifier la propriété lorsque quelqu’un revendique cette salle"
+      "website": "Sert à vérifier la propriété lorsque quelqu’un revendique cette salle",
+      "hours": "Une ligne, comme tu veux l'écrire. Ta page affiche la date de ta dernière confirmation."
     }
   },
   "claimGym": {

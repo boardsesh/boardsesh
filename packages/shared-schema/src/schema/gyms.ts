@@ -54,6 +54,10 @@ export const gymsTypeDefs = /* GraphQL */ `
     name: String!
     "Optional description"
     description: String
+    "Opening hours as one free-text line the gym maintains itself (no structured per-day model)."
+    hours: String
+    "ISO timestamp of the last time someone with edit access confirmed the hours. Shown publicly so a stale schedule reads as stale."
+    hoursUpdatedAt: String
     "Physical address"
     address: String
     "Website URL (used for domain-verified ownership claims)"
@@ -249,6 +253,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     slug: String
     "New description"
     description: String
+    "New free-text opening hours. Writing this stamps hoursUpdatedAt; pass null to clear both."
+    hours: String
     "New address"
     address: String
     "New website URL"

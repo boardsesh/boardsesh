@@ -55,6 +55,15 @@ export const gyms = pgTable(
     longitude: doublePrecision('longitude'),
     isPublic: boolean('is_public').default(true).notNull(),
     description: text('description'),
+    // Opening hours as one free-text line the gym writes itself ("Mon–Fri 7–22,
+    // Sat–Sun 9–20"), deliberately unstructured: a structured per-day model would
+    // need a second copy kept in sync with whatever the gym already publishes, and
+    // nothing syncs hours. Length is capped server-side (GymHoursSchema), not here.
+    hours: text('hours'),
+    // When someone with edit access last wrote `hours`. Rendered publicly as
+    // "Confirmed <date>" so a schedule nobody has touched in a year reads as stale
+    // instead of quietly lying. Written and cleared together with `hours`.
+    hoursUpdatedAt: timestamp('hours_updated_at'),
     // imageUrl is the gym's photo (storefront / wall shot). Distinct from
     // logoUrl below, which is the transparent brand mark used to theme the kiosk.
     imageUrl: text('image_url'),

@@ -571,6 +571,7 @@
       "name": "Hallenname",
       "slug": "URL-Slug",
       "description": "Beschreibung",
+      "hours": "Öffnungszeiten",
       "address": "Adresse",
       "contactEmail": "Kontakt-E-Mail",
       "contactPhone": "Kontakt-Telefon",
@@ -580,6 +581,7 @@
     "placeholders": {
       "name": "z. B. Boulderwelt, Kletterfabrik",
       "description": "Beschreibung (optional)",
+      "hours": "z. B. Mo-Fr 7-23 Uhr, Sa-So 9-20 Uhr",
       "address": "z. B. Hauptstraße 123, Stadt",
       "contactEmail": "Kontakt-E-Mail (optional)",
       "contactPhone": "Kontakt-Telefon (optional)",
@@ -597,7 +599,8 @@
       "createdNamed": "Halle „{{name}}“ angelegt!"
     },
     "helpers": {
-      "website": "Damit prüfen wir die Inhaberschaft, wenn jemand diese Halle beansprucht"
+      "website": "Damit prüfen wir die Inhaberschaft, wenn jemand diese Halle beansprucht",
+      "hours": "Eine Zeile, so wie du sie schreibst. Deine Seite zeigt, wann du sie zuletzt bestätigt hast."
     }
   },
   "claimGym": {

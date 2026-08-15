@@ -707,6 +707,8 @@ export const schemaSQL = `
     "longitude" double precision,
     "is_public" boolean DEFAULT true NOT NULL,
     "description" text,
+    "hours" text,
+    "hours_updated_at" timestamp,
     "image_url" text,
     "logo_url" text,
     "brand_primary_color" text,
@@ -720,6 +722,11 @@ export const schemaSQL = `
     "website_vouched_by_owner" boolean DEFAULT false NOT NULL
   );
   CREATE INDEX IF NOT EXISTS "gyms_merged_into_idx" ON "gyms" ("merged_into_gym_id") WHERE "merged_into_gym_id" IS NOT NULL;
+  -- "gyms" is CREATE TABLE IF NOT EXISTS with no preceding DROP, and the
+  -- per-worker test DBs persist between runs, so a column added to the block
+  -- above never lands on a DB that already exists. Backfill it here.
+  ALTER TABLE "gyms" ADD COLUMN IF NOT EXISTS "hours" text;
+  ALTER TABLE "gyms" ADD COLUMN IF NOT EXISTS "hours_updated_at" timestamp;
 
   DROP TABLE IF EXISTS "user_boards" CASCADE;
   CREATE TABLE IF NOT EXISTS "user_boards" (
