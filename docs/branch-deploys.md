@@ -27,16 +27,18 @@ Production deploys run through a single workflow, `.github/workflows/production-
 
 Flow:
 
-1. `detect-changes` decides `web_changed` / `backend_changed` from the push diff (backend uses the same path list as `branch-deploy.yml`; web deploys on anything that isn't docs- or mobile-only). `check-rollback` runs in parallel and flags whether a Vercel Instant Rollback is active (see below).
+1. `detect-changes` decides `web_changed` / `backend_changed` from the cumulative diff since the latest successful Production Deploy run (backend uses the same path list as `branch-deploy.yml`; web deploys on anything that isn't docs- or mobile-only). `check-rollback` runs in parallel and flags whether a Vercel Instant Rollback is active (see below).
 2. `build-web` runs `vercel pull --environment=production` + `vercel build --prod` and uploads `.vercel` (prebuilt output + project link) as an artifact. `build-backend` runs `vp run docker-context:backend`, builds the generated `.docker-context/backend`, and pushes it to `ghcr.io/boardsesh/boardsesh-daemon` with `:production` / `:staging` / `:sha-<short>` / `:latest` tags.
 3. **The gate:** `migrate` runs `@boardsesh/db db:migrate` only once every _attempted_ build passed. A build that ran and failed blocks the gate, which skips both production deploys — nothing reaches prod half-built. (Migrations used to run inside the Vercel build; they moved here so they only run behind the gate.)
 4. `deploy-web` (`vercel deploy --prebuilt --prod`) and `deploy-production-backend` (`railway redeploy`) run after the gate.
 5. One of three Discord notifications fires (all gated on `DISCORD_DEPLOY_WEBHOOK`, all best-effort — webhook failures `::warning::` rather than fail the run, all post with `allowed_mentions.parse=[]` so user-controlled text like PR titles can't ping the channel):
-   - `notify-success` on a promoted deploy — lists the PRs that shipped (parsed from `Merge pull request #N` subjects in `github.event.before..github.sha`, titles via `gh api`).
+   - `notify-success` on a promoted deploy — lists the PRs that shipped (parsed from `Merge pull request #N` subjects in the cumulative deployment range, titles via `gh api`).
    - `notify-no-promote` when a rollback is active (see Instant Rollback below).
    - `notify-failure` on any job failure or cancellation.
 
 Required GitHub config — these live in the **`Production` GitHub environment** (Settings → Environments), not as repo-level secrets. Every job that reads them declares `environment: Production`; jobs that don't (`detect-changes`, `build-backend`, which uses only the automatic `GITHUB_TOKEN`) are left out. Environment-scoped secrets only resolve for jobs that opt in via `environment:` — without it they expand to empty strings and the run fails (401 from Vercel, empty `DATABASE_URL`, etc.).
+
+The workflow keeps one deploy running at a time with `cancel-in-progress: false`, but GitHub still retains only one **pending** run per concurrency group. A third push replaces and cancels the older pending run. Change detection therefore cannot use only `github.event.before`: it queries the latest successful Production Deploy run and diffs that run's commit against the current SHA, so the surviving run absorbs every canceled intermediate push. Manual dispatches, an unavailable Actions API response, a missing baseline, or a baseline that is not an ancestor all fall back to building every target.
 
 - **Secrets:** `VERCEL_TOKEN`, `DATABASE_URL` (production Neon — used by the gated migrate job), `RAILWAY_TOKEN`, `DISCORD_DEPLOY_WEBHOOK`.
 - **Variables:** `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `RAILWAY_BACKEND_SERVICE_ID`.
@@ -1487,7 +1489,7 @@ Backend-affecting paths are defined in two places that must stay in sync:
 
 `service-deploy-inputs.yml` runs the generator and verifies both contexts: manifests must match root `workspaces`, service source closures must match workspace dependencies, and Dockerfiles must not reintroduce per-package `COPY packages/.../package.json` lines.
 
-`production-deploy.yml` polls Railway deployment status after redeploy and attempts to roll back to the previously observed Railway deployment if the new one fails. Production deploys use a non-canceling concurrency group.
+`production-deploy.yml` polls Railway deployment status after redeploy and attempts to roll back to the previously observed Railway deployment if the new one fails. Production deploys use a non-canceling concurrency group and cumulative change detection because GitHub may still replace an older pending run. After Railway reports success, a live GraphQL smoke verifies the client-required notification fields before the workflow reports the backend as deployed.
 
 ### Workflows
 
