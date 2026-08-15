@@ -123,6 +123,35 @@ describe('snapshot heartbeat watchdog', () => {
     expect(decision.full).toEqual({ stale: false, ageSeconds: 300, reason: 'fresh' });
   });
 
+  it('requires HTTPS outside explicit loopback development URLs', async () => {
+    await expect(
+      snapshotHeartbeatDecision({
+        publicBaseUrl: 'http://snapshots.example.test',
+        expectedImageDigest: IMAGE_DIGEST,
+        nowMs: NOW_MS,
+        fetchHeartbeat: async () => heartbeat('refresh'),
+      }),
+    ).rejects.toThrow('must use HTTPS');
+
+    const fetchedUrls: string[] = [];
+    const decision = await snapshotHeartbeatDecision({
+      publicBaseUrl: 'http://127.0.0.1:3000/',
+      expectedImageDigest: IMAGE_DIGEST,
+      nowMs: NOW_MS,
+      fetchHeartbeat: async (url) => {
+        fetchedUrls.push(url);
+        if (url.includes('/manifest.json')) {
+          return { formatVersion: 1, generatedAt: MANIFEST_GENERATED_AT, entries: [] };
+        }
+        if (url.includes('/refresh.json')) return heartbeat('refresh');
+        return heartbeat('full');
+      },
+    });
+    expect(decision.refresh.stale).toBe(false);
+    expect(fetchedUrls).toHaveLength(3);
+    expect(fetchedUrls.every((url) => url.startsWith('http://127.0.0.1:3000/'))).toBe(true);
+  });
+
   it('rejects a full heartbeat from an older PostgreSQL lineage', async () => {
     const oldFull = {
       ...(heartbeat('full') as Record<string, unknown>),

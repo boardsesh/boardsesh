@@ -124,7 +124,9 @@ For every `(board_type, layout_id)` pair with at least one climb (`discoverLayou
    [artifact shape](#artifact-shape) the same statements are rewritten on the way in: the data tables
    become `WITHOUT ROWID` and the device's three secondary indexes are left out.
 2. Inside one Postgres `REPEATABLE READ` transaction, streams both tables through the **same row shaping**
-   the live sync resolvers use (`row-normalize.ts` + `toSqliteValue`), so an artifact row is byte-identical
+   the live sync resolvers use (`row-normalize.ts` + `toSqliteValue`). The isolated postgres.js pools register
+   explicit text parsers for PostgreSQL date/time OIDs rather than depending on Drizzle constructor side effects,
+   so they preserve microseconds and timestamp-without-time-zone wall clocks. An artifact row remains byte-identical
    to what an incremental `syncClimbs`/`syncClimbStats` pull would have written. `snapshot-export-golden.test.ts`
    pins that equivalence by running both paths against the same seeded rows and diffing them.
 3. Excludes rows at or after one run-wide `stableBefore` cutoff. In an unfenced primary dry-run it is the primary clock minus `SYNC_STABILITY_WINDOW_SECONDS` (default 30 seconds). Fenced runs take it from the primary coordinator; every threshold probe, row stream, and watermark query uses that exact cutoff with a strict `<` predicate. Layout discovery deliberately ignores the cutoff so an all-young or just-rewritten live layout cannot be mistaken for a deletion and dropped from a full manifest merge.
@@ -194,8 +196,10 @@ Migration `0200_board_snapshot_replica_fence` makes the cursor contract a databa
 UPDATE triggers stamp `board_climbs.updated_at`, `board_climb_stats.updated_at`, and
 `board_climb_grades.computed_at` from the transaction timestamp converted to UTC; INSERTs into
 `sync_deletions` receive the same UTC transaction-time stamp. Caller-supplied/backdated values are ignored.
-The only bypass (`boardsesh.snapshot_cursor_restore=on`) checks that `session_user` is a real superuser and
-exists for controlled historical restores/tests. The fence itself rejects every remaining logical
+The only INSERT bypass (`boardsesh.snapshot_cursor_restore=on`) checks that `session_user` is a real superuser and
+exists for controlled historical restores/tests. UPDATE triggers deliberately continue to restamp cursors while
+the setting is on, matching climbs, stats, and grades and preventing a long-lived restore session from backdating
+ordinary updates. The fence itself rejects every remaining logical
 subscription/apply worker. Arbitrary superuser trigger bypass remains outside the proof, so normal writer
 roles must not receive `SET` on `session_replication_role` or trigger-alter privileges. Replica export stays
 disabled until the final PG18 physical standby has been seeded after the upgrade subscription is removed.
@@ -1943,6 +1947,44 @@ Same 14-day prune grace as the other prefixes, and the manifest is written last,
 sees a key that is not on S3 yet.
 
 ## Rollout plan
+
+### Homelab replica exporter
+
+This cutover is independently reversible and does not require promoting the standby:
+
+1. Deploy migration `0200_board_snapshot_replica_fence`, audit the function owner, create the narrow
+   coordinator/standby roles, and set `DATABASE_DIRECT_URL`. Keep both repository flags unset.
+2. Set `SNAPSHOT_PRIMARY_FENCE_ENABLED=true`; run one unfiltered manual identity+gzip export. Confirm the
+   direct session retains the advisory lock through publish and a simultaneous second exporter exits with
+   SQLSTATE `55P03` without changing the manifest.
+3. Remove the one-way PG16→PG18 logical-upgrade subscription after its rollback window, then seed the final
+   PG18 physical standby. Do not reuse a standby which observed logical apply. Confirm streaming/replay
+   alerts, then run replica exports under a shadow key prefix for seven days **without `--heartbeat`**.
+   This is the required end-to-end `createReplicaSnapshotContext()` acceptance because CI has no physical
+   streaming standby. Pause catalog/grade writers for one controlled comparison and compare the primary
+   and standby row sets and watermarks at the same fixed cutoff. Also exercise the held-old-transaction
+   test against the candidate environment.
+4. Install the digest-pinned systemd timers but leave them disabled. Manually exercise full, threshold
+   no-op, lag-too-high, replay-paused, lost-primary-session, and S3-failure paths. Only successful live
+   gzip runs may update the public heartbeat. Every failure must emit no new success heartbeat; failures
+   before the manifest PUT keep the old manifest, while a simulated post-PUT fence loss verifies that the
+   watchdog repairs the manifest without treating the failed run as healthy.
+5. Set `SNAPSHOT_EXPORTER_IMAGE_DIGEST`, enable the homelab timers, and then set
+   `SNAPSHOT_HOMELAB_EXPORT_ENABLED=true`. Confirm GitHub's next watchdog sees both fresh heartbeats and
+   performs no primary export.
+6. Stop the homelab timer long enough for the 45-minute gate. Confirm GitHub alerts and performs one
+   pinned-image primary threshold fallback. Exercise the 30-hour full decision with an isolated test
+   heartbeat/base URL rather than withholding production full exports for a day.
+7. Roll back by clearing `SNAPSHOT_HOMELAB_EXPORT_ENABLED`; the original GitHub schedules resume. Leave
+   `SNAPSHOT_PRIMARY_FENCE_ENABLED=true` unless the coordinator itself is broken. Do not route mobile
+   reads to a shadow prefix and do not automatically fall back from a failing replica run inside the
+   homelab timer; the public watchdog is the single fallback authority.
+
+Record each exercise's cutoff age, fence-to-replay time, replay bytes/seconds, artifact row counts,
+watermarks, manifest key, heartbeat age, and whether Railway fallback ran. The production cutover gate is
+seven clean shadow days plus the alert/fallback exercise, not merely a successful `pg_is_in_recovery()`.
+
+### Mobile snapshot bootstrap
 
 1. **Build configuration**: confirm `EXPO_PUBLIC_SNAPSHOT_BASE_URL` is set to the R2 gzip directory URL
    in every native build. With the env var missing, the app intentionally uses the paged crawl (see Mobile
