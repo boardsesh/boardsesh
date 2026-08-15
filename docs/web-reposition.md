@@ -370,14 +370,38 @@ tells Google the missing URLs were deleted. Three more cases fail the same way:
 a shard past its URL budget, a shard that `expectsUrls` but built none (a
 poisoned cache or a regressed query silently emptying `static` or `boards`), and
 a boards fetch whose `hasMore` says the 100-config API cap — the schema's hard
-max, so the fix is paging, not a bigger constant — dropped the tail. The index
-applies the same rule: it throws rather than publishing an index that quietly
-dropped a shard, and it lists only shards carrying at least one URL. For the
+max, so the fix is paging, not a bigger constant — dropped the tail. For the
 same reason the boards shard uses a _throwing_ popular-configs fetch, not the
 homepage's swallow-and-return-`[]` wrapper. `playlists` is deliberately **not**
 `expectsUrls` — zero public playlists holding a climb is a legitimate state, and
 failing closed there would take the whole index down over nobody having shared
 a list.
+
+**The index degrades; only the shard fails closed (#4476).** W-22 shipped the
+index under the same all-or-nothing rule, and production disagreed: `/sitemap.xml`
+503'd on a cold cache and failed the post-deploy smoke twice, while
+`/sitemaps/static.xml` passed in the same run. The index is the one path that runs
+_every_ builder, so one cold boards fetch took the four shards that were ready
+down with it. The split is now by layer — a shard route still 503s when its own
+builder throws, misses its budget or comes back unexpectedly empty, but the index
+logs loudly, omits that shard's `<sitemap>` entry and still answers 200 with
+whatever built. A partial sitemap beats no sitemap when every shard it does list
+is served fail-closed at its own URL, and Google keeps the copy of the omitted
+shard it already has. `buildSitemapIndexXml` throws only when nothing is left to
+publish; an empty `<sitemapindex>` under an hour of `s-maxage` is the harm the
+doctrine was written against.
+
+**Slow is a failure mode, and a try/catch cannot see it.** Each builder in the
+index walk is raced against `SHARD_DEADLINE_MS` (3 s, the value W-23 settled on
+for its paged summary), and the walk as a whole against `INDEX_DEADLINE_MS` (8 s).
+The production failure was not a rejection: `getAllBoardConfigsOrThrow` sits on a
+10 s abort and `fetchPlaylistSitemapRows` has no bound at all, so a cold instance
+stalls until the platform kills the request — a 5xx on all five shards, strictly
+worse than the 503 the fail-closed rule was protecting. The walk is **sequential**,
+not `Promise.all`: the concurrent fan-out over a database query and a GraphQL fetch
+is the pool-starvation shape #4461 is about, and the index has no latency
+requirement that justifies it. Sequencing is only safe because of the total budget
+— five 3 s deadlines back to back is 15 s, past the serverless ceiling.
 
 **Two shards ship declared-empty, and that is the point.** `gyms.xml` waits on
 #4381's public-gyms enumeration query, which the gym-discovery epic (#4372)

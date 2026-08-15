@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
+import type { SitemapItem } from '../entries';
 import { MAX_ITEMS_PER_SHARD } from '../sitemap-xml';
 
 vi.mock('server-only', () => ({}));
@@ -19,11 +20,19 @@ const KILTER_CONFIG: PopularBoardConfig = {
   displayName: 'Kilter Original 12x12',
 };
 
-const boardConfigs = vi.hoisted(() => ({ shouldThrow: false, empty: false }));
-const playlistRows = vi.hoisted(() => ({ count: 1 }));
+const boardConfigs = vi.hoisted(() => ({ shouldThrow: false, empty: false, hang: false }));
+const playlistRows = vi.hoisted(() => ({ count: 1, shouldThrow: false, hang: false }));
+/** `static`, `gyms` and `setters` are pure builders — flags let all five fail at once. */
+const pureBuilders = vi.hoisted(() => ({ shouldThrow: false, hang: false }));
+
+/** Never settles: the failure mode a try/catch cannot see. */
+const forever = <T>(): Promise<T> => new Promise<T>(() => {});
 
 vi.mock('@/app/lib/server-popular-configs', () => ({
   getAllBoardConfigsOrThrow: async () => {
+    if (boardConfigs.hang) {
+      return forever<PopularBoardConfig[]>();
+    }
     if (boardConfigs.shouldThrow) {
       throw new Error('backend unreachable');
     }
@@ -32,6 +41,12 @@ vi.mock('@/app/lib/server-popular-configs', () => ({
 }));
 vi.mock('../playlist-query', () => ({
   fetchPlaylistSitemapRows: async () => {
+    if (playlistRows.hang) {
+      return forever<never[]>();
+    }
+    if (playlistRows.shouldThrow) {
+      throw new Error('playlist pool exhausted');
+    }
     const updatedAt = new Date('2026-04-30T00:00:00.000Z');
     return Array.from({ length: playlistRows.count }, (_, index) => ({
       uuid: index === 0 ? 'abc-123' : `playlist-${index}`,
@@ -40,7 +55,36 @@ vi.mock('../playlist-query', () => ({
   },
 }));
 
-const { buildSitemapIndexXml, shardRouteHandler } = await import('../shard-registry');
+/**
+ * The registry wraps these three in `async () => build()`, so handing back a
+ * pending promise is what a hung I/O call looks like from the index's side once
+ * it awaits — the cast is the price of faking that through a sync signature.
+ */
+const pureBuilder = (real: () => SitemapItem[]): SitemapItem[] => {
+  if (pureBuilders.hang) {
+    return forever<SitemapItem[]>() as unknown as SitemapItem[];
+  }
+  if (pureBuilders.shouldThrow) {
+    throw new Error('pure builder exploded');
+  }
+  return real();
+};
+
+vi.mock('../static-entries', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../static-entries')>();
+  return { ...actual, buildStaticEntries: () => pureBuilder(actual.buildStaticEntries) };
+});
+vi.mock('../gym-entries', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../gym-entries')>();
+  return { ...actual, buildGymEntries: () => pureBuilder(actual.buildGymEntries) };
+});
+vi.mock('../setter-entries', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../setter-entries')>();
+  return { ...actual, buildSetterEntries: () => pureBuilder(actual.buildSetterEntries) };
+});
+
+const { INDEX_DEADLINE_MS, SHARD_DEADLINE_MS, buildSitemapIndexXml, shardRouteHandler, sitemapIndexRouteHandler } =
+  await import('../shard-registry');
 
 describe('shardRouteHandler', () => {
   it('serves a shard as application/xml with a CDN cache window', async () => {
@@ -127,23 +171,135 @@ describe('buildSitemapIndexXml', () => {
     expect(xml).not.toContain('/sitemaps/setters.xml');
   });
 
-  it('throws instead of publishing an index that quietly dropped a shard', async () => {
+  it('serves the shards that built when one builder throws, and logs the one that did not', async () => {
+    // #4476: the index was the one path that ran every builder inside a
+    // `Promise.all`, so a cold boards fetch took static and playlists — which
+    // were ready — down with it. A partial sitemap beats no sitemap, because
+    // every shard the index does list is still served fail-closed at its own URL.
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     boardConfigs.shouldThrow = true;
     try {
-      await expect(buildSitemapIndexXml()).rejects.toThrow('backend unreachable');
+      const response = await sitemapIndexRouteHandler();
+      const xml = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(xml).toContain('/sitemaps/static.xml');
+      expect(xml).toContain('/sitemaps/playlists.xml');
+      expect(xml).not.toContain('/sitemaps/boards.xml');
+      expect(errors.mock.calls.flat().join(' ')).toContain('backend unreachable');
     } finally {
       boardConfigs.shouldThrow = false;
+      errors.mockRestore();
     }
   });
 
-  it('throws when a shard that expects URLs comes back empty', async () => {
-    // Same harm as a throwing builder, minus the throw: boards would vanish from
-    // the index behind a 1-hour s-maxage with a 200 on every hop.
+  it('omits — and logs — a shard that expects URLs but comes back empty', async () => {
+    // Still a failure, still loud, but no longer fatal to the other four: the
+    // shard's own route keeps 503ing on exactly this condition (above), which is
+    // where the fail-closed promise is actually kept.
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     boardConfigs.empty = true;
     try {
-      await expect(buildSitemapIndexXml()).rejects.toThrow('expects URLs but built none');
+      const response = await sitemapIndexRouteHandler();
+      const xml = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(xml).toContain('/sitemaps/static.xml');
+      expect(xml).not.toContain('/sitemaps/boards.xml');
+      expect(errors.mock.calls.flat().join(' ')).toContain('expects URLs but built none');
     } finally {
       boardConfigs.empty = false;
+      errors.mockRestore();
+    }
+  });
+
+  it('answers 503 only when no shard built at all', async () => {
+    // The floor under the degradation: an empty `<sitemapindex>` under an hour of
+    // s-maxage says "this site has no sitemaps", which is the harm the whole
+    // fail-closed doctrine exists to avoid.
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    boardConfigs.shouldThrow = true;
+    playlistRows.shouldThrow = true;
+    pureBuilders.shouldThrow = true;
+    try {
+      const response = await sitemapIndexRouteHandler();
+
+      expect(response.status).toBe(503);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(errors.mock.calls.flat().join(' ')).toContain('5 of 5 builders failed');
+    } finally {
+      boardConfigs.shouldThrow = false;
+      playlistRows.shouldThrow = false;
+      pureBuilders.shouldThrow = false;
+      errors.mockRestore();
+    }
+  });
+
+  it('serves the rest of the index when a builder never settles', async () => {
+    // The case a try/catch cannot see, and the one #4476 actually hit: a cold
+    // backend does not reject, it stalls. Without a deadline this hangs the
+    // request to the platform timeout, which 5xxes all five shards.
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.useFakeTimers();
+    boardConfigs.hang = true;
+    try {
+      const pending = sitemapIndexRouteHandler();
+      await vi.advanceTimersByTimeAsync(SHARD_DEADLINE_MS + 1);
+      const response = await pending;
+      const xml = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(xml).toContain('/sitemaps/static.xml');
+      expect(xml).toContain('/sitemaps/playlists.xml');
+      expect(xml).not.toContain('/sitemaps/boards.xml');
+      expect(errors.mock.calls.flat().join(' ')).toContain(`exceeded its ${SHARD_DEADLINE_MS}ms deadline`);
+    } finally {
+      boardConfigs.hang = false;
+      vi.useRealTimers();
+      errors.mockRestore();
+    }
+  });
+
+  it('bounds the whole walk by the index budget when every builder stalls', async () => {
+    // Sequencing the shards is only safe because the walk carries a total
+    // budget: five 3s deadlines back to back is 15s, past the serverless
+    // ceiling, and a platform kill is the 5xx this change exists to remove.
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.useFakeTimers();
+    boardConfigs.hang = true;
+    playlistRows.hang = true;
+    pureBuilders.hang = true;
+    try {
+      const pending = sitemapIndexRouteHandler();
+      await vi.advanceTimersByTimeAsync(INDEX_DEADLINE_MS + 1);
+      const response = await pending;
+
+      expect(response.status).toBe(503);
+      expect(errors.mock.calls.flat().join(' ')).toContain(`spent its ${INDEX_DEADLINE_MS}ms budget`);
+    } finally {
+      boardConfigs.hang = false;
+      playlistRows.hang = false;
+      pureBuilders.hang = false;
+      vi.useRealTimers();
+      errors.mockRestore();
+    }
+  });
+
+  it('still throws from the builder itself when nothing can be published', async () => {
+    // `buildSitemapIndexXml` is the seam the route handler catches on, so the
+    // throw has to survive the degradation rewrite — a builder that resolved to
+    // an empty index would turn the 503 above into a 200.
+    boardConfigs.shouldThrow = true;
+    playlistRows.shouldThrow = true;
+    pureBuilders.shouldThrow = true;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await expect(buildSitemapIndexXml()).rejects.toThrow('refusing to publish an empty index');
+    } finally {
+      boardConfigs.shouldThrow = false;
+      playlistRows.shouldThrow = false;
+      pureBuilders.shouldThrow = false;
+      errors.mockRestore();
     }
   });
 });

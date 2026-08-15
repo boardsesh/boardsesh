@@ -8,7 +8,7 @@ import { playlistRowsToItems } from './playlist-entries';
 import { fetchPlaylistSitemapRows } from './playlist-query';
 import { buildSetterEntries } from './setter-entries';
 import { buildStaticEntries } from './static-entries';
-import { MAX_URLS_PER_SHARD, renderSitemapIndex, renderUrlset } from './sitemap-xml';
+import { MAX_URLS_PER_SHARD, renderSitemapIndex, renderUrlset, type SitemapIndexEntry } from './sitemap-xml';
 
 export type ShardId = 'static' | 'boards' | 'gyms' | 'setters' | 'playlists';
 
@@ -70,6 +70,9 @@ function xmlResponse(body: string): Response {
  * 200 tells Google the missing URLs were removed, while a 5xx makes it retry
  * and keep the last good copy. A builder that returns `[]` on purpose (gyms,
  * setters) is a declared-empty shard, not a failure.
+ *
+ * This is the *shard route's* rule. The index degrades instead — see
+ * `buildSitemapIndexXml` — and only reaches here when no shard built at all.
  */
 function unavailableResponse(): Response {
   return new Response('sitemap shard temporarily unavailable', {
@@ -135,32 +138,120 @@ export async function shardRouteHandler(id: ShardId): Promise<Response> {
 }
 
 /**
+ * How long the index waits for one builder before giving up on it.
+ *
+ * A try/catch only sees a builder that *rejects*. The failure #4476 records in
+ * production is the other one: a cold serverless instance against a cold backend
+ * and a cold database, where `getAllBoardConfigsOrThrow` sits on its 10s abort
+ * and `fetchPlaylistSitemapRows` has no bound at all. Without a deadline that
+ * builder holds the request until the platform kills it, which is a 5xx on the
+ * whole index — strictly worse than the 503 the fail-closed doctrine was written
+ * to prevent, because it takes the four shards that *were* ready down with it.
+ *
+ * Three seconds: the index has no latency requirement that justifies more, the
+ * same value W-23 (#4483) settled on for its paged-shard summary, and every
+ * builder behind it is cached (`unstable_cache` for boards, the CDN's hourly
+ * `s-maxage` for the response itself). A builder that misses it is omitted for
+ * one cache generation, not deleted — Google keeps the copy of the shard it
+ * already has, which is the whole reason omitting beats 503ing.
+ */
+export const SHARD_DEADLINE_MS = 3_000;
+
+/**
+ * Total wall-clock budget for the sequential walk, so N slow shards cannot add
+ * up to a platform timeout the per-shard deadline never sees. Five shards ×3s
+ * is 15s, past the serverless ceiling; 8s leaves the response room to render and
+ * still lets a first slow shard spend its full deadline without starving the
+ * rest.
+ */
+export const INDEX_DEADLINE_MS = 8_000;
+
+/**
+ * Bounds `work` without cancelling it — a builder that ignores the deadline keeps
+ * running (and, for boards, still hits its own `AbortController`); we simply stop
+ * waiting. Cancellation would need every builder to thread a signal, which is a
+ * bigger change than the one this bug needs.
+ */
+async function withDeadline<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} exceeded its ${ms}ms deadline`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
  * The index lists only shards that carry at least one URL — pointing Google at
  * an empty `<urlset>` burns a fetch and teaches it the shard is worthless.
  *
- * Throws if any builder throws, or if a shard that expects URLs built none, so
- * the route answers 503 rather than publishing an index that quietly dropped a
- * shard. Same doctrine as the shards themselves.
+ * **The doctrine splits by layer.** A shard *route* stays fail-closed: it 503s
+ * when its builder throws or when a shard that expects URLs builds none, because
+ * telling Google those pages do not exist is worse than telling it to retry. The
+ * *index* degrades instead: a builder that throws, times out, or comes back
+ * unexpectedly empty is logged loudly and its `<sitemap>` entry omitted, and the
+ * index still answers 200 with whatever built. One slow builder taking the other
+ * four shards down with it is #4476, and a partial sitemap is strictly better
+ * than no sitemap when the shards Google is told about are each still served
+ * fail-closed at their own URL.
+ *
+ * Sequential, not `Promise.all`: the concurrent fan-out is the pool-starvation
+ * shape #4461 is about (the playlists builder reads the database, the boards one
+ * the GraphQL backend), and the index has no latency requirement that justifies
+ * it. The walk is bounded by `INDEX_DEADLINE_MS`, so sequencing cannot trade one
+ * timeout for another.
+ *
+ * Throws only when there is nothing left to publish — every builder failed, or
+ * every shard that survived was declared-empty. An empty `<sitemapindex>` served
+ * under an hour of `s-maxage` says "this site has no sitemaps", which is the
+ * exact harm the fail-closed rule exists to avoid.
  */
 export async function buildSitemapIndexXml(): Promise<string> {
-  const built = await Promise.all(SHARD_REGISTRY.map(async (shard) => ({ shard, items: await shard.build() })));
+  const entries: SitemapIndexEntry[] = [];
+  let failureCount = 0;
+  const startedAt = Date.now();
 
-  for (const { shard, items } of built) {
-    if (items.length > 0) continue;
-    const emptiness = emptinessError(shard);
-    if (emptiness) {
-      throw emptiness;
+  for (const shard of SHARD_REGISTRY) {
+    try {
+      const budget = Math.min(SHARD_DEADLINE_MS, INDEX_DEADLINE_MS - (Date.now() - startedAt));
+      if (budget <= 0) {
+        throw new Error(`the index spent its ${INDEX_DEADLINE_MS}ms budget before this shard ran`);
+      }
+
+      const items = await withDeadline(shard.build(), budget, `shard "${shard.id}"`);
+      if (items.length === 0) {
+        // A declared-empty shard (gyms, setters, a site with no public
+        // playlists) is a success that contributes no entry. One that expects
+        // URLs is a regressed query, and `emptinessError` says which is which.
+        const emptiness = emptinessError(shard);
+        if (emptiness) {
+          throw emptiness;
+        }
+        continue;
+      }
+
+      entries.push({ loc: absoluteUrl(shard.path), lastModified: latestLastModified(items) });
+    } catch (err) {
+      failureCount += 1;
+      console.error(
+        `[sitemap] shard "${shard.id}" failed — serving the index WITHOUT it:`,
+        err instanceof Error ? err.message : err,
+      );
     }
   }
 
-  return renderSitemapIndex(
-    built
-      .filter(({ items }) => items.length > 0)
-      .map(({ shard, items }) => ({
-        loc: absoluteUrl(shard.path),
-        lastModified: latestLastModified(items),
-      })),
-  );
+  if (entries.length === 0) {
+    throw new Error(
+      `[sitemap] index has no shards to publish (${failureCount} of ${SHARD_REGISTRY.length} builders failed) — refusing to publish an empty index`,
+    );
+  }
+
+  return renderSitemapIndex(entries);
 }
 
 export async function sitemapIndexRouteHandler(): Promise<Response> {
