@@ -709,6 +709,10 @@
       "attribution": "Begehungen, die aus der Kilter- oder Aurora-App synchronisiert wurden, tragen keine Wand und zählen hier nicht."
     },
     "moreRowLabel": "Rangliste ansehen",
-    "moreRowSubtitle": "Wo du diesen Monat stehst"
+    "moreRowSubtitle": "Wo du diesen Monat stehst",
+    "entryCard": {
+      "accessibility": "Rangliste: {{rank}} von {{total}}. Öffnet die vollständige Rangliste.",
+      "topPercent": "Top {{percent}} %"
+    }
   }
 }

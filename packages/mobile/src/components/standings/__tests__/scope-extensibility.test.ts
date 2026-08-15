@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SCOPE_KINDS } from '@boardsesh/leaderboard';
@@ -22,7 +22,7 @@ function readComponent(name: string): string {
 }
 
 describe('standings surface stays scope-agnostic', () => {
-  const components = ['StandingsScreen.tsx', 'StandingsRow.tsx', 'ViewerStandingCard.tsx'];
+  const components = ['StandingsScreen.tsx', 'StandingsRow.tsx', 'ViewerStandingCard.tsx', 'StandingsEntryCard.tsx'];
 
   for (const component of components) {
     it(`${component} does not name any individual scope kind`, () => {
@@ -46,10 +46,16 @@ describe('standings surface stays scope-agnostic', () => {
     });
   }
 
-  it('covers every component that renders a scope', () => {
-    // A new rendering component added to this folder should be added above, or
-    // the guarantee only holds for the files someone remembered.
-    expect(components).toContain('StandingsScreen.tsx');
-    expect(components.length).toBeGreaterThanOrEqual(3);
+  it('covers every rendering component in the folder, so the guard cannot go stale', () => {
+    // Enumerating by hand would silently miss the next component someone adds,
+    // and a guard with a hole in it is worse than no guard. Read the folder
+    // instead and assert the list is complete.
+    const rendered = readdirSync(STANDINGS_DIR)
+      .filter((file) => file.endsWith('.tsx'))
+      .sort();
+    expect(
+      [...components].sort(),
+      'A .tsx component was added to src/components/standings/ without being added to the scope-agnostic check above.',
+    ).toEqual(rendered);
   });
 });

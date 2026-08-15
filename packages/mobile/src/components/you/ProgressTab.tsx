@@ -10,6 +10,7 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { OfflineState } from '../OfflineState';
 import { ProfileBetaShelf } from './ProfileBetaShelf';
 import { StatsSummaryCard } from './StatsSummaryCard';
+import { StandingsEntryCard } from '../standings/StandingsEntryCard';
 import { StackedBarChart, GroupedBarChart, TotalAreaChart, type ChartLegendItem } from './YouCharts';
 import { ActivityHeatmap } from './ActivityHeatmap';
 import { LayoutShareDonut } from './LayoutShareDonut';
@@ -138,6 +139,10 @@ export const ProgressTab = memo(function ProgressTab({ data, topInset, userId }:
             hardestFlash={data.hardestFlash}
             percentile={data.percentile}
           />
+
+          {/* Where this climber stands right now. Renders nothing until there is
+              a real rank to show, so it never adds an empty card. */}
+          <StandingsEntryCard />
 
           {/* Recent beta videos shelf — sits below the stats summary, hidden when
               the climber has shared none (or has no stats yet). */}

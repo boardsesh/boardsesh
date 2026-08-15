@@ -709,6 +709,10 @@
       "attribution": "Los encadenes sincronizados desde la app de Kilter o Aurora no llevan pared, así que no cuentan aquí."
     },
     "moreRowLabel": "Ver la clasificación",
-    "moreRowSubtitle": "Tu puesto este mes"
+    "moreRowSubtitle": "Tu puesto este mes",
+    "entryCard": {
+      "accessibility": "Clasificación: {{rank}} de {{total}}. Abre la clasificación completa.",
+      "topPercent": "Top {{percent}}%"
+    }
   }
 }

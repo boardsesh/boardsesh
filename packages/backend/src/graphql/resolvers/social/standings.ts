@@ -1,6 +1,6 @@
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { isRankedBoardType, parseLayoutScopeKey, type ScopeKind } from '@boardsesh/leaderboard';
+import { isRankedBoardType, parseLayoutScopeKey, scopeDefinition, type ScopeKind } from '@boardsesh/leaderboard';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { anonymousClimberId, applyRateLimit, validateInput } from '../shared/helpers';
@@ -328,7 +328,10 @@ async function runStandings(args: {
           scoresAbove: (viewerRow.scores_above ?? []).map(Number),
         }
       : null,
-    coverage: 1,
+    // From the registry, not hardcoded: this is what lets the surface explain a
+    // low gym number ("sends synced from the Kilter app carry no wall") instead
+    // of quietly under-reporting. It describes the scope actually ranked.
+    coverage: scopeDefinition(args.resolvedKind).coverage,
   };
 }
 

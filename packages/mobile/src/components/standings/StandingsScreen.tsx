@@ -3,7 +3,7 @@ import { RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { GLOBAL_SCOPE, scopeDefinition, type Scope } from '@boardsesh/leaderboard';
+import { GLOBAL_SCOPE, type Scope } from '@boardsesh/leaderboard';
 import { Text } from '../Text';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { OfflineState } from '../OfflineState';
@@ -124,7 +124,7 @@ export function StandingsScreen({ initialScope = GLOBAL_SCOPE }: StandingsScreen
         <Text variant="caption1" color={systemColors.secondaryLabel}>
           {t('standings.footnote.metric')}
         </Text>
-        {head && head.resolvedScope.kind !== 'global' && scopeDefinition(head.resolvedScope.kind).coverage < 1 ? (
+        {head && head.coverage < 1 ? (
           <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('standings.footnote.attribution')}
           </Text>

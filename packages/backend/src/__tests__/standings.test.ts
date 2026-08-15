@@ -262,6 +262,36 @@ describeWithDatabase('standings', () => {
     expect(result.demotionReason).toBe('unknownScope');
   });
 
+  it('reports the measured attribution coverage of the scope actually ranked', async () => {
+    const climb = await makeClimb();
+    await logSend({ userId: ALICE, climbUuid: climb, boardId });
+
+    // The surface uses this to decide whether to explain a low number ("sends
+    // synced from the Kilter app don't carry a wall"). A hardcoded 1 would make
+    // it silently under-report instead.
+    const gym = await standingsQueries.standings(
+      undefined,
+      { input: { scope: { kind: 'gym', key: gymUuid } } },
+      ctxFor(ALICE),
+    );
+    expect(gym.coverage).toBeLessThan(0.5);
+
+    const global = await standingsQueries.standings(undefined, { input: { scope: { kind: 'global' } } }, ctxFor(ALICE));
+    expect(global.coverage).toBe(1);
+
+    // And it describes the RESOLVED scope: a demoted request reports the
+    // coverage of the board it actually shows, not the one that was asked for.
+    await db.execute(sql`DELETE FROM boardsesh_ticks WHERE uuid LIKE 'standings-tick-%'`);
+    await logSend({ userId: ALICE, climbUuid: climb, boardId: null });
+    const demoted = await standingsQueries.standings(
+      undefined,
+      { input: { scope: { kind: 'gym', key: gymUuid } } },
+      ctxFor(ALICE),
+    );
+    expect(demoted.resolvedScope.kind).toBe('global');
+    expect(demoted.coverage).toBe(1);
+  });
+
   it('ranks a gym through its walls', async () => {
     const climb = await makeClimb();
     await logSend({ userId: ALICE, climbUuid: climb, boardId });

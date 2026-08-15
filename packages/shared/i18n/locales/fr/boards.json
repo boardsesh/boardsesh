@@ -709,6 +709,10 @@
       "attribution": "Les croix synchronisées depuis l’app Kilter ou Aurora ne portent pas de mur, elles ne comptent donc pas ici."
     },
     "moreRowLabel": "Voir le classement",
-    "moreRowSubtitle": "Ton rang ce mois-ci"
+    "moreRowSubtitle": "Ton rang ce mois-ci",
+    "entryCard": {
+      "accessibility": "Classement : {{rank}} sur {{total}}. Ouvre le classement complet.",
+      "topPercent": "Top {{percent}} %"
+    }
   }
 }

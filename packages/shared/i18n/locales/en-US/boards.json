@@ -709,6 +709,10 @@
       "attribution": "Sends synced from the Kilter or Aurora app don’t carry a wall, so they’re not counted here."
     },
     "moreRowLabel": "See the standings",
-    "moreRowSubtitle": "Where you sit this month"
+    "moreRowSubtitle": "Where you sit this month",
+    "entryCard": {
+      "accessibility": "Standings: {{rank}} of {{total}}. Opens the full standings.",
+      "topPercent": "Top {{percent}}%"
+    }
   }
 }
