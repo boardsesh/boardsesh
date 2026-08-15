@@ -80,6 +80,7 @@
       "trailing": "Période précédente",
       "yearOverYear": "Année dernière",
       "sends": "Croix",
+      "percentChange": "{{value}} %",
       "vsTrailing": "vs. période précédente",
       "vsYearOverYear": "vs. même période l'an dernier",
       "firstPeriod": "Première période suivie",

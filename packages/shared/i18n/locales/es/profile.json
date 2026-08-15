@@ -80,6 +80,7 @@
       "trailing": "Periodo anterior",
       "yearOverYear": "Año pasado",
       "sends": "Encadenes",
+      "percentChange": "{{value}}%",
       "vsTrailing": "vs. periodo anterior",
       "vsYearOverYear": "vs. mismo periodo del año pasado",
       "firstPeriod": "Primer periodo registrado",

@@ -527,11 +527,16 @@ function comparisonUnit(timeframe: ComparisonTimeframe): 'week' | 'month' | 'yea
 }
 
 /**
- * Pure date math for the two windows a comparison card needs. `current` mirrors
- * `filterLogbookByTimeframe`'s lower bound for the same timeframe, so the
- * headline count for e.g. "this week" matches what the rest of the page already
- * shows. `previous` is either the immediately preceding window (`trailing`) or
- * the same window one year back (`yearOverYear`).
+ * Pure date math for the two windows a comparison card needs. `current`'s
+ * lower bound is `now - 1 unit`, the same cutoff `filterLogbookByTimeframe`
+ * uses for the same timeframe, so the headline count for e.g. "this week"
+ * matches what the rest of the page shows for any tick that isn't landing on
+ * that exact instant (`periodSnapshot` below treats the bound as inclusive;
+ * `filterLogbookByTimeframe` is strictly-after — a tick timestamped to the
+ * exact millisecond of the cutoff would diverge by one between the two, which
+ * in practice never happens outside contrived test fixtures). `previous` is
+ * either the immediately preceding window (`trailing`) or the same window one
+ * year back (`yearOverYear`).
  *
  * `now` is an injectable param (not a default-only arg) so tests stay
  * deterministic, matching `buildActivityHeatmap`'s `today` param.

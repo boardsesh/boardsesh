@@ -15,12 +15,6 @@ type PeriodComparisonCardProps = {
   onComparisonModeChange: (mode: PeriodComparisonMode) => void;
 };
 
-function formatPercent(value: number | null): string {
-  if (value == null) return '';
-  const rounded = Math.round(value);
-  return `${rounded > 0 ? '+' : ''}${rounded}%`;
-}
-
 /**
  * Sends this period vs. the prior comparable period (trailing or
  * year-over-year, toggled by the segmented control). Returns null when the
@@ -49,13 +43,18 @@ export const PeriodComparisonCard = memo(function PeriodComparisonCard({
 
   if (!periodComparison) return null;
 
-  const { current, previous, sendsDelta, sendsPercentChange } = periodComparison;
+  const { current, previous, sendsPercentChange } = periodComparison;
   // No comparison-period history (new climber, or the comparison period
   // predates their first tick) — show a first-period message instead of a
   // divide-by-zero "+Infinity%".
   const hasComparison = previous.sends > 0;
+  // Round once and derive the chevron/color from the *displayed* number, not
+  // the raw delta — otherwise a small nonzero change (e.g. +1 out of 1000)
+  // can round to a displayed "0%" while still showing a colored up-chevron,
+  // which reads as a contradiction.
+  const roundedPercent = sendsPercentChange == null ? 0 : Math.round(sendsPercentChange);
   const deltaColor =
-    sendsDelta > 0 ? brandColors.success : sendsDelta < 0 ? brandColors.error : systemColors.secondaryLabel;
+    roundedPercent > 0 ? brandColors.success : roundedPercent < 0 ? brandColors.error : systemColors.secondaryLabel;
 
   return (
     <Card style={styles.card}>
@@ -76,11 +75,13 @@ export const PeriodComparisonCard = memo(function PeriodComparisonCard({
           {hasComparison ? (
             <>
               <View style={styles.deltaRow}>
-                {sendsDelta !== 0 && (
-                  <Icon name={sendsDelta > 0 ? 'chevron.up' : 'chevron.down'} size={14} color={deltaColor} />
+                {roundedPercent !== 0 && (
+                  <Icon name={roundedPercent > 0 ? 'chevron.up' : 'chevron.down'} size={14} color={deltaColor} />
                 )}
                 <Text variant="title2" color={deltaColor}>
-                  {formatPercent(sendsPercentChange)}
+                  {t('stats.periodComparison.percentChange', {
+                    value: `${roundedPercent > 0 ? '+' : ''}${roundedPercent}`,
+                  })}
                 </Text>
               </View>
               <Text variant="caption1" color={systemColors.secondaryLabel}>

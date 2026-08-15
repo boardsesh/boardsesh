@@ -8,7 +8,16 @@ vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles },
 }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+// Mirrors i18next's interpolation just enough to assert on the percentChange
+// key's `{{value}}` — real locale strings own the surrounding "%" / spacing
+// (French: "{{value}} %"), so the component only ever passes a bare signed
+// number as `value`.
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { value?: string | number }) =>
+      options?.value !== undefined ? `${key}:${options.value}` : key,
+  }),
+}));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     systemColors: { fill: '#eee', secondaryLabel: '#666', tertiaryLabel: '#999' },
@@ -78,8 +87,8 @@ describe('PeriodComparisonCard', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders the current sends count and a positive percent delta', () => {
-    const { getByText } = render(
+  it('renders the current sends count and a positive percent delta with an up chevron', () => {
+    const { getByText, container } = render(
       createElement(PeriodComparisonCard, {
         periodComparison: makeComparison(),
         comparisonMode: 'trailing',
@@ -87,12 +96,14 @@ describe('PeriodComparisonCard', () => {
       }),
     );
     expect(getByText('5')).toBeTruthy();
-    expect(getByText('+67%')).toBeTruthy();
+    expect(getByText('stats.periodComparison.percentChange:+67')).toBeTruthy();
     expect(getByText('stats.periodComparison.vsTrailing')).toBeTruthy();
+    expect(container.querySelector('[data-icon="chevron.up"]')).toBeTruthy();
+    expect(container.querySelector('[data-icon="chevron.down"]')).toBeNull();
   });
 
-  it('renders a negative percent delta without an up chevron', () => {
-    const { getByText, queryByText } = render(
+  it('renders a negative percent delta with a down chevron, not an up chevron', () => {
+    const { getByText, container } = render(
       createElement(PeriodComparisonCard, {
         periodComparison: makeComparison({
           current: { sends: 1, flashes: 0, startDate: '2024-06-08', endDate: '2024-06-15' },
@@ -103,9 +114,33 @@ describe('PeriodComparisonCard', () => {
         onComparisonModeChange: vi.fn(),
       }),
     );
-    expect(getByText('-67%')).toBeTruthy();
+    expect(getByText('stats.periodComparison.percentChange:-67')).toBeTruthy();
     expect(getByText('stats.periodComparison.vsYearOverYear')).toBeTruthy();
-    expect(queryByText('chevron.up')).toBeNull();
+    expect(container.querySelector('[data-icon="chevron.down"]')).toBeTruthy();
+    expect(container.querySelector('[data-icon="chevron.up"]')).toBeNull();
+  });
+
+  it('omits the chevron and uses the neutral color when a nonzero delta rounds to a displayed 0%', () => {
+    // previous.sends = 1000, current.sends = 1001 -> +1 sends, but +0.1% rounds
+    // to "0%". The chevron/color must follow the *displayed* rounded value, not
+    // the raw (nonzero) delta, or the UI shows a green up-chevron next to "0%".
+    const { getByText, container } = render(
+      createElement(PeriodComparisonCard, {
+        periodComparison: makeComparison({
+          current: { sends: 1001, flashes: 0, startDate: '2024-06-08', endDate: '2024-06-15' },
+          previous: { sends: 1000, flashes: 0, startDate: '2024-06-01', endDate: '2024-06-08' },
+          sendsDelta: 1,
+          sendsPercentChange: 0.1,
+        }),
+        comparisonMode: 'trailing',
+        onComparisonModeChange: vi.fn(),
+      }),
+    );
+    const percentText = getByText('stats.periodComparison.percentChange:0');
+    expect(percentText).toBeTruthy();
+    expect(percentText.getAttribute('data-color')).toBe('#666'); // systemColors.secondaryLabel
+    expect(container.querySelector('[data-icon="chevron.up"]')).toBeNull();
+    expect(container.querySelector('[data-icon="chevron.down"]')).toBeNull();
   });
 
   it('shows a "first period" message instead of a broken percent when the previous period has zero sends', () => {
