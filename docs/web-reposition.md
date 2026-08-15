@@ -255,9 +255,9 @@ the same reason, as the one allowlisted edge W-16 cuts.
 
 ## W-16 (+W-18) — deleting the climbing UI and swapping the root chrome (#4435)
 
-The irreversible one. `git diff --stat` at branch time: **675 files changed,
-1,475 insertions, 131,321 deletions** — a net **−129,846** lines, against the
-epic row's estimate of −110k. The gap is second-order orphanage the row did not
+The irreversible one. `git diff --stat` against the merge base: **677 files
+changed, 1,725 insertions, 131,350 deletions** — a net **−129,625** lines,
+against the epic row's estimate of −110k. The gap is second-order orphanage the row did not
 name (the 338-line `persistent-session-wrapper` and its 402-line test, the
 `climb-detail` tree, 22 `app/lib` modules, 19 orphaned hooks, four
 `social/*-search-results`, the `lib/ble` adapters) plus the `public/help/`
