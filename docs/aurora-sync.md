@@ -523,7 +523,7 @@ backend handler have been removed; the daemon on a VM is the sole sync path.
 
 ### Kilter sync rollout gate
 
-While Kilter sync is in early access, the connect UI is gated client-side by the `kilter-oauth-linking` PostHog feature flag. The web and mobile settings screens only show the Kilter sign-in card when the flag is on (or a Kilter account is already linked). Rolling the importer in or out is a PostHog toggle — no redeploy. The backend connect endpoints stay authenticated and rate-limited but no longer enforce a user allowlist.
+While Kilter sync is in early access, the connect UI is gated client-side by the `kilter-oauth-linking` PostHog feature flag. The app's Connected apps screen only shows the Kilter sign-in card when the flag is on (or a Kilter account is already linked). Rolling the importer in or out is a PostHog toggle — no redeploy. The backend connect endpoints stay authenticated and rate-limited but no longer enforce a user allowlist.
 
 ## See also
 

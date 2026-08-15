@@ -62,6 +62,12 @@ export type ImportProgress = {
 
 export const STEP_ORDER: ImportStep[] = ['climbs', 'resolving', 'dedup', 'ascents', 'attempts', 'circuits'];
 
+/**
+ * Untranslated fallback labels, kept alongside `getStepLabels(t)` because the
+ * moved `import-progress-steps` test asserts against them. No production caller
+ * reads this map — that was already true before the lift; flagged for W-26
+ * (#4442) rather than changed here.
+ */
 export const STEP_LABELS: Record<ImportStep, string> = {
   climbs: 'Importing draft climbs',
   resolving: 'Resolving climb names',
@@ -170,6 +176,10 @@ export function BoardCredentialCard({
               {cardTitle}
             </Typography>
           </div>
+          {/* Unreachable from the only consumer: `board-import-prompt` passes
+              `kilterAurora` or `aurora`, never `kilterNew`. Kept verbatim by the
+              W-21 lift because dropping it cascades into
+              `settings:aurora.card.kilterNew*` — W-26 (#4442) decides its fate. */}
           {variant === 'kilterNew' ? (
             <>
               <Typography variant="body2" component="span" color="text.secondary" className={styles.notConnectedText}>
@@ -280,6 +290,9 @@ export function BoardCredentialCard({
               </Typography>
             </div>
           )}
+          {/* Also unreachable today: `board-import-prompt` always passes
+              `{ ascents: 0, climbs: 0 }`. Same W-26 (#4442) note as `kilterNew`
+              above — dropping it would strand `settings:aurora.unsynced.*`. */}
           {totalUnsynced > 0 && (
             <MuiAlert severity="warning" icon={<WarningOutlined />} className={styles.unsyncedAlert}>
               <AlertTitle>{t('aurora.unsynced.title', { count: totalUnsynced })}</AlertTitle>
