@@ -72,6 +72,8 @@ export interface PatchRule {
   file: string;
   /** Symbols the patch introduces; ALL must be present in the installed file. */
   sentinels: readonly string[];
+  /** Source fragments that must all be present in this exact order. */
+  orderedSentinels?: readonly string[];
   /** The exact `patchedDependencies` key expected in the root package.json. */
   patchedKey: string;
   /** Optional negative assertions scoped to a single method body. */
@@ -179,6 +181,7 @@ export const RULES: readonly PatchRule[] = [
     package: '@expo/ui',
     file: 'src/community/bottom-sheet/BottomSheet.ios.tsx',
     sentinels: ['onFullyDismissedRef', 'onDismiss={fireCloseCallbacks}', 'coordinator must observe index -1'],
+    orderedSentinels: ['onChangeRef.current?.(-1);', 'onFullyDismissedRef.current?.();'],
     patchedKey: '@expo/ui@57.0.11',
   },
   // ExpoModulesCore uses relative file URLs for xcasset names, so
@@ -421,7 +424,30 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
       );
     }
 
-    // (4) Shape assertions: a symbol can survive a re-keyed patch while the
+    // (4) Ordered shape assertions: some native contracts depend on callback
+    //     sequence, not just the presence of both calls. Keep this in the
+    //     shipped check so a re-keyed patch cannot preserve every symbol while
+    //     silently reversing the behavior.
+    const orderedSentinels = rule.orderedSentinels ?? [];
+    const orderedIndexes = orderedSentinels.map((sentinel) => source.indexOf(sentinel));
+    const missingOrderedSentinels = orderedSentinels.filter((_, index) => orderedIndexes[index] === -1);
+    if (missingOrderedSentinels.length > 0) {
+      errors.push(
+        `${rule.package}: patch order cannot be verified — ${rule.file} is missing ` +
+          `${missingOrderedSentinels.map((sentinel) => `"${sentinel}"`).join(', ')}.`,
+      );
+    } else {
+      for (let index = 1; index < orderedSentinels.length; index += 1) {
+        if (orderedIndexes[index - 1] >= orderedIndexes[index]) {
+          errors.push(
+            `${rule.package}: ${rule.file} violates required source order — ` +
+              `"${orderedSentinels[index - 1]}" must appear before "${orderedSentinels[index]}".`,
+          );
+        }
+      }
+    }
+
+    // (5) Shape assertions: a symbol can survive a re-keyed patch while the
     //     dangerous line it replaced comes back with it.
     for (const forbidden of rule.forbiddenInMethod ?? []) {
       const body = extractObjCMethodBody(source, forbidden.method);
