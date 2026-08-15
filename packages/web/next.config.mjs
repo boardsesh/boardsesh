@@ -106,13 +106,6 @@ const BASE_REDIRECTS = [
     destination: '/playlists',
     permanent: true,
   },
-  // The /you logbook tab was the web logbook feed; logging and history live in
-  // the app now, so the tab collapses back onto /you.
-  {
-    source: '/you/logbook',
-    destination: '/you',
-    permanent: true,
-  },
 
   // Climb creation moved to the app. A canonical numeric board URL hands its
   // board over intact: these are exactly the params the app's create screen
@@ -214,6 +207,43 @@ const BASE_REDIRECTS = [
     destination: '/playlists/:uuid',
     permanent: true,
   },
+
+  // W-19 (#4437): the private web surfaces. Your feed, dashboard and stats live
+  // in the app now. Cross-origin, so `permanent: false` — a browser caches a
+  // permanent cross-origin redirect indefinitely and there is no server-side
+  // hatch if the SPA route moves. `/you/:path*` swallows the old `/you/logbook`
+  // rule, which pointed at a page this PR deletes.
+  {
+    source: '/you',
+    destination: `${APP_ORIGIN}/profile`,
+    permanent: false,
+  },
+  {
+    source: '/you/:path*',
+    destination: `${APP_ORIGIN}/profile`,
+    permanent: false,
+  },
+  {
+    source: '/feed',
+    destination: `${APP_ORIGIN}/home`,
+    permanent: false,
+  },
+  // `/discover` lost its page in W-13a and this PR removes the orphan layout,
+  // but the URL still took 435 views from 117 people over the last 90 days.
+  // The app carries the surface under the same path, which is already how
+  // `playlists/library-page-content.tsx` hands off to it.
+  {
+    source: '/discover',
+    destination: `${APP_ORIGIN}/discover`,
+    permanent: false,
+  },
+  // The Instagram beta importer had zero users over two consecutive 90-day
+  // windows and no app twin. Same-origin, so `permanent: true`.
+  {
+    source: '/import-beta',
+    destination: '/',
+    permanent: true,
+  },
 ];
 
 /**
@@ -228,7 +258,16 @@ export function expandLocaleRedirects(rules) {
     ...PATH_LOCALE_PREFIXES.map((prefix) => ({
       ...rule,
       source: `${prefix}${rule.source}`,
-      destination: rule.destination.startsWith('http') ? rule.destination : `${prefix}${rule.destination}`,
+      destination: rule.destination.startsWith('http')
+        ? rule.destination
+        : // `/es` + `/` is `/es/`, and Next unshifts its own `/:path+/ → /:path+`
+          // 308 ahead of every custom rule while `trailingSlash` is at its
+          // default — so the naive twin would cost the reader a second hop. Next
+          // normalises the same case in its own i18n expansion
+          // (`load-custom-routes.js`: `destination === '/' && !trailingSlash`).
+          rule.destination === '/'
+          ? prefix
+          : `${prefix}${rule.destination}`,
     })),
   ]);
 }

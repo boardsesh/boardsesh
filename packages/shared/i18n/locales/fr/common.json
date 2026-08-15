@@ -390,8 +390,7 @@
     "userMenu": "Menu utilisateur",
     "startClimbing": "Commencer à grimper dans l'appli",
     "home": "Accueil Boardsesh",
-    "yourProfile": "Votre profil",
-    "yourDashboard": "Votre tableau de bord"
+    "yourProfile": "Votre profil"
   },
   "header": {
     "you": "Vous",
@@ -406,7 +405,6 @@
   "share": {
     "profileTitle": "Profil de grimpeur de {{name}}",
     "profileText": "Le profil de grimpeur de {{name}} sur Boardsesh",
-    "fallbackName": "Mon",
     "viewedFallbackName": "Grimpeur",
     "linkCopied": "Lien copié !",
     "shareFailed": "Échec du partage"

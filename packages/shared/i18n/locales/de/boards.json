@@ -466,13 +466,6 @@
       "hardest": "Schwerste"
     }
   },
-  "boardConfigSelects": {
-    "board": "Board",
-    "layout": "Layout",
-    "size": "Größe",
-    "holdSets": "Hold-Sets",
-    "angle": "Winkel"
-  },
   "boardPill": {
     "switchHint": "Öffnet die Board-Auswahl"
   },

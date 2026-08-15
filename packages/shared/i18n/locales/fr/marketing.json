@@ -60,10 +60,6 @@
       "manage": "Gérer",
       "viewPage": "Voir la page"
     },
-    "feed": {
-      "callout": "Vos potes sont en train de grimper.",
-      "cta": "Voir le feed"
-    },
     "recentBeta": {
       "title": "Beta fraîche"
     }

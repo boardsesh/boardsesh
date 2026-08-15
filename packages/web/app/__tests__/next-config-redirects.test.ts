@@ -68,10 +68,28 @@ describe('next.config redirects', () => {
       if (isCrossOrigin(redirect.destination)) continue;
 
       for (const prefix of LOCALE_PREFIXES) {
+        // A root destination is the one case a plain concatenation gets wrong:
+        // `/es` + `/` is `/es/`, which Next's own trailing-slash 308 then
+        // strips, costing a second hop. The twin is the bare prefix instead.
+        const expected = redirect.destination === '/' ? prefix : `${prefix}${redirect.destination}`;
         const twin = redirects.find((candidate) => candidate.source === `${prefix}${redirect.source}`);
-        expect(twin?.destination, `${prefix}${redirect.source}`).toBe(`${prefix}${redirect.destination}`);
+        expect(twin?.destination, `${prefix}${redirect.source}`).toBe(expected);
       }
     }
+  });
+
+  it('never emits a same-origin destination with a trailing slash', () => {
+    // `trailingSlash` is at its default and `skipTrailingSlashRedirect` is
+    // unset, so Next unshifts `/:path+/ → /:path+` ahead of every custom rule.
+    // Any destination ending in `/` is a silent two-hop redirect.
+    const trailing = redirects.filter(
+      (redirect) =>
+        !isCrossOrigin(redirect.destination) &&
+        redirect.destination !== '/' &&
+        redirect.destination.split('?')[0].endsWith('/'),
+    );
+
+    expect(trailing).toEqual([]);
   });
 
   it('sends every locale twin of a cross-origin rule to the same app URL', () => {
@@ -129,11 +147,26 @@ describe('next.config redirects', () => {
     expect(expectedSources.filter((source) => !sources.has(source))).toEqual([]);
   });
 
-  it('collapses the deleted /you logbook tab back onto /you', () => {
-    const rule = baseRedirects.find((redirect) => redirect.source === '/you/logbook');
-    expect(rule).toBeDefined();
-    expect(rule?.destination).toBe('/you');
-    expect(rule?.permanent).toBe(true);
+  it('30x-es every private surface W-19 deleted', () => {
+    const sources = new Set(baseRedirects.map((redirect) => redirect.source));
+    const expectedSources = ['/you', '/you/:path*', '/feed', '/discover', '/import-beta'];
+
+    expect(expectedSources.filter((source) => !sources.has(source))).toEqual([]);
+  });
+
+  it('keeps the private-surface hand-offs recoverable', () => {
+    for (const source of ['/you', '/you/:path*', '/feed', '/discover']) {
+      const rule = baseRedirects.find((redirect) => redirect.source === source);
+      expect(rule, source).toBeDefined();
+      expect(rule?.permanent, source).toBe(false);
+      expect(rule?.destination.startsWith(configuredAppOrigin), source).toBe(true);
+    }
+  });
+
+  it('does not send the deleted /you logbook tab to a deleted page', () => {
+    // `/you/logbook` used to 301 onto `/you`, which W-19 deleted. The
+    // `/you/:path*` rule covers it in a single hop instead.
+    expect(redirects.some((redirect) => redirect.source.endsWith('/you/logbook'))).toBe(false);
   });
 
   it('points every create rule at the app, temporarily', () => {

@@ -390,8 +390,7 @@
     "userMenu": "User menu",
     "startClimbing": "Start climbing in the app",
     "home": "Boardsesh home",
-    "yourProfile": "Your profile",
-    "yourDashboard": "Your dashboard"
+    "yourProfile": "Your profile"
   },
   "header": {
     "you": "You",
@@ -406,7 +405,6 @@
   "share": {
     "profileTitle": "{{name}}'s climbing profile",
     "profileText": "Check out {{name}}'s climbing profile on Boardsesh",
-    "fallbackName": "My",
     "viewedFallbackName": "Climber",
     "linkCopied": "Link copied to clipboard!",
     "shareFailed": "Failed to share"

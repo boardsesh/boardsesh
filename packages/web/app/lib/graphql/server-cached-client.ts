@@ -3,8 +3,6 @@ import { unstable_cache } from 'next/cache';
 import { type RequestDocument, type Variables, GraphQLClient } from 'graphql-request';
 import { sortObjectKeys } from '@/app/lib/cache-utils';
 import { getGraphQLHttpUrl } from './client';
-import { executeAuthenticatedGraphQL } from './server-graphql';
-import type { SessionFeedResult } from '@boardsesh/shared-schema';
 import type { DiscoverablePlaylist, DiscoverPlaylistsQueryResponse } from '@boardsesh/graphql/operations/playlists';
 import type {
   GetUserClimbPercentileQueryResponse,
@@ -84,54 +82,6 @@ export function createCachedGraphQLQuery<T = unknown, V extends Variables = Vari
 
     return cachedFn();
   };
-}
-
-/**
- * Cached server-side session-grouped feed query.
- * Used for SSR on the home page for both authenticated and unauthenticated users.
- */
-export async function cachedSessionGroupedFeed(boardUuid?: string, isAuthenticated: boolean = false) {
-  const { GET_SESSION_GROUPED_FEED } = await import('@boardsesh/graphql/operations/activity-feed');
-
-  const revalidate = isAuthenticated ? 300 : 86400;
-
-  const query = createCachedGraphQLQuery<{
-    sessionGroupedFeed: SessionFeedResult;
-  }>(
-    GET_SESSION_GROUPED_FEED,
-    isAuthenticated ? 'session-grouped-feed-auth' : 'session-grouped-feed-public',
-    revalidate,
-  );
-
-  const result = await query({ input: { boardUuid, limit: 20 } });
-  return result.sessionGroupedFeed;
-}
-
-/**
- * Cached, authenticated server-side session feed for a specific user.
- * Used for SSR on the /you/sessions page.
- * Cache is per-user (tag includes userId) with a 2-minute TTL.
- */
-export async function cachedUserSessionGroupedFeed(authToken: string, userId: string) {
-  const { GET_SESSION_GROUPED_FEED } = await import('@boardsesh/graphql/operations/activity-feed');
-
-  type Response = { sessionGroupedFeed: SessionFeedResult };
-  const tag = `user-session-feed-${userId}`;
-
-  const cachedFn = unstable_cache(
-    async () => {
-      const result = await executeAuthenticatedGraphQL<Response>(
-        GET_SESSION_GROUPED_FEED,
-        { input: { userId, limit: 20 } },
-        authToken,
-      );
-      return result.sessionGroupedFeed;
-    },
-    ['graphql', tag, JSON.stringify({ userId })],
-    { revalidate: 120, tags: [tag] },
-  );
-
-  return cachedFn();
 }
 
 /**

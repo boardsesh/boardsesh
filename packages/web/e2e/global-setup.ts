@@ -4,7 +4,7 @@ const BOARD_URL = '/kilter/original/12x12-square/screw_bolt/40/list';
 // The SSR front door's row marker (`static-climb-row.tsx`), plus the classic
 // list's two, so this check keeps working either side of the remaining W-16 cut.
 const CLIMB_ROW_SELECTOR = '[data-testid="climb-thumbnail"], #onboarding-climb-card, [data-testid="climb-card"]';
-const WARMUP_PATHS = ['/playlists', '/feed'] as const;
+const WARMUP_PATHS = ['/playlists'] as const;
 const TEST_USER_EMAIL = process.env.TEST_USER_EMAIL ?? 'test@boardsesh.com';
 const TEST_USER_PASSWORD = process.env.TEST_USER_PASSWORD ?? 'test';
 

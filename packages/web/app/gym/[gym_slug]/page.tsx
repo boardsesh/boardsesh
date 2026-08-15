@@ -312,8 +312,8 @@ export default async function GymPage(props: GymRouteProps) {
         <CommentSection entityType="gym" entityId={gym.uuid} title={tBoards('gymEntity.comments.title')} />
 
         <Box sx={{ mt: 4 }}>
-          <MuiLink component={LocaleLink} href="/feed" underline="hover" sx={{ color: 'var(--color-primary)' }}>
-            {t('gymPage.exploreFeed')}
+          <MuiLink component={LocaleLink} href="/playlists" underline="hover" sx={{ color: 'var(--color-primary)' }}>
+            {t('gymPage.explorePlaylists')}
           </MuiLink>
         </Box>
       </Container>

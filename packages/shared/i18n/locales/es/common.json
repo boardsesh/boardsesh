@@ -27,8 +27,7 @@
     "userMenu": "Menú de usuario",
     "startClimbing": "Empieza a escalar en la app",
     "home": "Inicio de Boardsesh",
-    "yourProfile": "Tu perfil",
-    "yourDashboard": "Tu panel"
+    "yourProfile": "Tu perfil"
   },
   "header": {
     "you": "Tú",
@@ -43,7 +42,6 @@
   "share": {
     "profileTitle": "Perfil de escalada de {{name}}",
     "profileText": "Mira el perfil de escalada de {{name}} en Boardsesh",
-    "fallbackName": "Mi",
     "viewedFallbackName": "Escalador",
     "linkCopied": "¡Enlace copiado!",
     "shareFailed": "No se pudo compartir"

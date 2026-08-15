@@ -199,11 +199,9 @@ const KEPT_ROUTE_DIRS = [
   'b',
   'session',
   'join',
-  'import-beta',
   'moonboard-import',
   'settings',
   'notifications',
-  'discover',
   // W-22's sitemap index + shard routes. Both are directories (`sitemap.xml/`,
   // `sitemaps/`), so they live here rather than in the filename scan the old
   // single-file `app/sitemap.ts` needed.

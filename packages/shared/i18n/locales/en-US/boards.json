@@ -466,13 +466,6 @@
       "hardest": "Hardest"
     }
   },
-  "boardConfigSelects": {
-    "board": "Board",
-    "layout": "Layout",
-    "size": "Size",
-    "holdSets": "Hold Sets",
-    "angle": "Angle"
-  },
   "boardPill": {
     "switchHint": "Opens the board switcher"
   },

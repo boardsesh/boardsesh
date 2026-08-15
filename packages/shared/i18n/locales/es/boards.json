@@ -466,13 +466,6 @@
       "hardest": "Más difícil"
     }
   },
-  "boardConfigSelects": {
-    "board": "Plafón",
-    "layout": "Disposición",
-    "size": "Tamaño",
-    "holdSets": "Conjuntos de presas",
-    "angle": "Ángulo"
-  },
   "boardPill": {
     "switchHint": "Abre el selector de plafones"
   },

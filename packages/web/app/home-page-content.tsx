@@ -20,7 +20,6 @@ import SvgIcon from '@mui/material/SvgIcon';
 import { isNativeApp, isCapacitorWebView, waitForCapacitor } from '@/app/lib/ble/capacitor-utils';
 import { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL } from '@/app/lib/store-urls';
 import { resolveHeroInstall, type InstallPlatform, type HeroInstallStore } from '@/app/lib/hero-install';
-import { useSession } from 'next-auth/react';
 import { useTranslation } from 'react-i18next';
 import { themeTokens } from '@/app/theme/theme-config';
 import LocaleLink from '@/app/components/i18n/locale-link';
@@ -285,7 +284,6 @@ function InstallAppCard({ platform }: { platform: InstallPlatform }) {
 
 export default function HomePageContent({ initialPopularConfigs, initialRecentBeta = [] }: HomePageContentProps) {
   const { t } = useTranslation('marketing');
-  const { status } = useSession();
   const [installPlatform, setInstallPlatform] = useState<InstallPlatform>('unknown');
   // Which store a legacy native straggler installed from, so the hero "update"
   // CTA points at the right place. Only read once installPlatform === 'native',
@@ -341,8 +339,6 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
 
     setInstallPlatform(classifyWeb());
   }, []);
-
-  const isAuthenticated = status === 'authenticated';
 
   // Hero CTA now drives app installs instead of starting a sesh. Store target,
   // label, and icon all follow the detected platform.
@@ -523,18 +519,6 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             newTab
           />
         </Box>
-
-        {/* Authenticated users: nudge to feed */}
-        {isAuthenticated && (
-          <Box sx={{ textAlign: 'center', py: 2 }}>
-            <Typography variant="body2" sx={{ color: 'var(--neutral-400)', mb: 1 }}>
-              {t('home.feed.callout')}
-            </Typography>
-            <Button component={LocaleLink} href="/feed" variant="text" size="small" sx={{ textTransform: 'none' }}>
-              {t('home.feed.cta')}
-            </Button>
-          </Box>
-        )}
       </Box>
     </Box>
   );

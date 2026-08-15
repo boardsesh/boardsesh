@@ -60,10 +60,6 @@
       "manage": "Gestionar",
       "viewPage": "Ver página"
     },
-    "feed": {
-      "callout": "Tus amigos están escalando.",
-      "cta": "Ver el feed"
-    },
     "recentBeta": {
       "title": "Beta fresca"
     }
