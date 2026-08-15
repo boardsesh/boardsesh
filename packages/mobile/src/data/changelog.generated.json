@@ -1,6 +1,22 @@
 {
-  "generatedAt": "2026-08-15T01:49:16.630Z",
+  "generatedAt": "2026-08-15T03:12:37.435Z",
   "entries": [
+    {
+      "prNumber": 4448,
+      "category": "improved",
+      "title": "Board pages slim down to the essentials — browsing and climbing live in the app now.",
+      "mergedAt": "2026-08-15T03:11:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4448",
+      "body": "Every old board link still works: liked climbs, logbooks and playlists send you to the right place, and creating or remixing a climb opens the app on the board you were already looking at.\nImporting MoonBoard screenshots moved to its own page — pick your board and drop the shots in."
+    },
+    {
+      "prNumber": 4058,
+      "category": "fixed",
+      "title": "Claiming a gym with your work email now auto-approves only when the gym's owner is the one who put that website on the listing. Anything else gets a quick human check first, so nobody can hand themselves the keys by editing the website field.",
+      "mergedAt": "2026-08-15T02:28:59Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4058",
+      "body": "Fixes #3431"
+    },
     {
       "prNumber": 4456,
       "category": "fixed",

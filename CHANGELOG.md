@@ -6,8 +6,16 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-08-15
 
+### Improved
+
+- Board pages slim down to the essentials — browsing and climbing live in the app now. ([#4448](https://github.com/boardsesh/boardsesh/pull/4448))
+  Every old board link still works: liked climbs, logbooks and playlists send you to the right place, and creating or remixing a climb opens the app on the board you were already looking at.
+  Importing MoonBoard screenshots moved to its own page — pick your board and drop the shots in.
+
 ### Fixed
 
+- Claiming a gym with your work email now auto-approves only when the gym's owner is the one who put that website on the listing. Anything else gets a quick human check first, so nobody can hand themselves the keys by editing the website field. ([#4058](https://github.com/boardsesh/boardsesh/pull/4058))
+  Fixes #3431
 - Offline board downloads recover automatically and keep bulk catalog updates on the fast CDN download instead of crawling through hundreds of 500-climb batches. ([#4456](https://github.com/boardsesh/boardsesh/pull/4456))
 
 ## 2026-08-14
