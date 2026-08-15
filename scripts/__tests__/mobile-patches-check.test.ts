@@ -324,6 +324,46 @@ const close = hideSwallowingMissingNativeHandler;
   });
 });
 
+describe('the shipped @expo/ui iOS rule', () => {
+  const iosFile = 'src/community/bottom-sheet/BottomSheet.ios.tsx';
+  const iosRule = REAL_RULES.find((rule) => rule.package === SCOPED_PKG && rule.file === iosFile);
+  const onChangeClosedCall = 'onChangeRef.current?.(-1);';
+  const onFullyDismissedCall = 'onFullyDismissedRef.current?.();';
+  const installedSource = readFileSync(
+    resolve(import.meta.dirname, '../../packages/mobile/node_modules/@expo/ui', iosFile),
+    'utf8',
+  );
+
+  function checkInstalledSource(source: string) {
+    if (!iosRule) throw new Error('no @expo/ui iOS rule registered');
+    return checkPatchesApplied(
+      [iosRule],
+      makeEnv({
+        patchedDependencies: { [iosRule.patchedKey]: SCOPED_PATCH_PATH },
+        versions: { [iosRule.package]: versionFromKey(iosRule.patchedKey) },
+        files: { [`${iosRule.package}::${iosRule.file}`]: source },
+      }),
+    );
+  }
+
+  it('pins index -1 before the fully-dismissed signal in the shipped rule', () => {
+    expect(iosRule?.orderedSentinels).toEqual([onChangeClosedCall, onFullyDismissedCall]);
+    expect(checkInstalledSource(installedSource).errors).toEqual([]);
+  });
+
+  it('goes red if the fully-dismissed signal moves before index -1', () => {
+    const reversedSource = installedSource
+      .replace(onChangeClosedCall, '__BOARDSESH_ON_CHANGE_CLOSED__')
+      .replace(onFullyDismissedCall, onChangeClosedCall)
+      .replace('__BOARDSESH_ON_CHANGE_CLOSED__', onFullyDismissedCall);
+
+    expect(reversedSource).not.toBe(installedSource);
+    expect(checkInstalledSource(reversedSource).errors).toEqual([
+      expect.stringContaining(`"${onChangeClosedCall}" must appear before "${onFullyDismissedCall}"`),
+    ]);
+  });
+});
+
 describe('the shipped expo-image local-asset guard', () => {
   const imageViewSource = readFileSync(
     resolve(import.meta.dirname, '../../packages/mobile/node_modules/expo-image/ios/ImageView.swift'),
