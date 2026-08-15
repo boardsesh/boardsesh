@@ -114,6 +114,7 @@ export const GET_BOARD_LEADERBOARD = gql`
         userId
         userDisplayName
         userAvatarUrl
+        isAnonymous
         rank
         totalSends
         totalFlashes
