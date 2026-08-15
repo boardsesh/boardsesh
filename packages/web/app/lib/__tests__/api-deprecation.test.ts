@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
   AURORA_PROXY_DEPRECATION_DATE,
@@ -50,6 +53,19 @@ describe('the Aurora proxy deprecation contract', () => {
       error: 'Gone: the Aurora proxy endpoints have been retired.',
       documentation: 'https://www.boardsesh.com/docs#retired-endpoints',
     });
+  });
+
+  it('links to a fragment that exists on /docs', () => {
+    // The two operations are deregistered from the Swagger pane, so the only
+    // thing at the far end of the `rel="deprecation"` link is the "Retired
+    // endpoints" card. A dangling fragment makes the whole header decorative.
+    const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+    const docsClient = readFileSync(join(webRoot, 'app/docs/docs-client.tsx'), 'utf8');
+
+    const fragment = DEPRECATION_DOCS_URL.split('#')[1];
+    expect(fragment).toBeTruthy();
+    expect(docsClient).toContain(`id="${fragment}"`);
+    expect(docsClient).toContain('docs.overview.retired.title');
   });
 });
 
