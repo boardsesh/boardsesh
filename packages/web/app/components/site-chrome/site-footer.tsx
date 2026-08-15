@@ -61,7 +61,7 @@ export default function SiteFooter() {
   ];
 
   return (
-    <Box component="footer" className={styles.footer}>
+    <Box component="footer" className={styles.footer} data-testid="site-footer">
       <Box className={styles.inner}>
         <Box className={styles.intro}>
           <Typography variant="h6" component="p" sx={{ fontWeight: themeTokens.typography.fontWeight.bold, m: 0 }}>

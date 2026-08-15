@@ -76,7 +76,7 @@ type ProfileHeaderConfig = {
 
 function CenteredHeader({ left, title, right }: CenteredHeaderProps) {
   return (
-    <header className={styles.header}>
+    <header className={styles.header} data-testid="marketing-header">
       <Box
         sx={{
           display: 'grid',
@@ -334,7 +334,7 @@ export default function MarketingHeader() {
   // On /you child pages: brand link + share + notifications + settings cog.
   if (pathname.startsWith('/you')) {
     return (
-      <header className={styles.header}>
+      <header className={styles.header} data-testid="marketing-header">
         {brandLink}
         <Box sx={{ flex: 1 }} />
         {session?.user?.id && (
@@ -353,7 +353,7 @@ export default function MarketingHeader() {
   // On /settings pages, brand link only — no settings cog, you're already here.
   if (pathname.startsWith('/settings')) {
     return (
-      <header className={styles.header}>
+      <header className={styles.header} data-testid="marketing-header">
         {brandLink}
         <Box sx={{ flex: 1 }} />
       </header>
@@ -363,7 +363,7 @@ export default function MarketingHeader() {
   // Transparent bar over the homepage hero.
   if (HIDDEN_HEADER_PAGES.includes(pathname)) {
     return (
-      <header className={styles.headerTransparent}>
+      <header className={styles.headerTransparent} data-testid="marketing-header">
         {brandLink}
         <Box sx={{ flex: 1 }} />
         {accountAction}
@@ -390,7 +390,7 @@ export default function MarketingHeader() {
   }
 
   return (
-    <header className={styles.header}>
+    <header className={styles.header} data-testid="marketing-header">
       {brandLink}
       <Box sx={{ flex: 1 }} />
       {accountAction}

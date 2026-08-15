@@ -20,10 +20,23 @@ const bottomTabBar = '[data-testid="bottom-tab-bar"]';
 const queueControlBar = '[data-testid="queue-control-bar"]';
 const bottomBarWrapper = '[data-testid="bottom-bar-wrapper"]';
 
+// Target the chrome by testid, not by tag. `<header>` and `<footer>` are used
+// by page content too — `kiosk/embed/embed-leaderboard.tsx` and
+// `kiosk/leaderboard-rail/leaderboard-rail.tsx` both render their own
+// `<footer>` — so a tag selector would make the chrome-less assertions below
+// wrong in the one direction that matters.
+const marketingHeader = '[data-testid="marketing-header"]';
+const siteFooter = '[data-testid="site-footer"]';
+
 async function expectChrome(page: Page) {
   await page.waitForLoadState('domcontentloaded');
-  await expect(page.locator('header').first()).toBeVisible({ timeout: 15000 });
-  await expect(page.locator('footer')).toBeVisible({ timeout: 15000 });
+  await expect(page.locator(marketingHeader)).toBeVisible({ timeout: 15000 });
+  await expect(page.locator(siteFooter)).toBeVisible({ timeout: 15000 });
+}
+
+async function expectNoChrome(page: Page) {
+  await expect(page.locator(marketingHeader)).toHaveCount(0);
+  await expect(page.locator(siteFooter)).toHaveCount(0);
 }
 
 async function expectNoBottomBar(page: Page) {
@@ -59,7 +72,7 @@ test.describe('Site chrome - footer links', () => {
     await page.goto('/');
     await expectChrome(page);
 
-    const footer = page.locator('footer');
+    const footer = page.locator(siteFooter);
     for (const href of ['/', '/about', '/help', '/docs', '/playlists', '/aurora-migration', '/legal', '/privacy']) {
       await expect(footer.locator(`a[href="${href}"]`)).toHaveCount(1);
     }
@@ -69,7 +82,7 @@ test.describe('Site chrome - footer links', () => {
     await page.goto('/');
     await expectChrome(page);
 
-    await expect(page.locator('footer').getByRole('button', { name: /language/i })).toBeVisible();
+    await expect(page.locator(siteFooter).getByRole('button', { name: /language/i })).toBeVisible();
   });
 });
 
@@ -78,14 +91,14 @@ test.describe('Site chrome - header hand-off', () => {
     await page.goto('/');
     await expectChrome(page);
 
-    await expect(page.locator('header').first().locator('a[href="/auth/login"]')).toBeVisible();
+    await expect(page.locator(marketingHeader).locator('a[href="/auth/login"]')).toBeVisible();
   });
 
   test('links straight to the app', async ({ page }) => {
     await page.goto('/');
     await expectChrome(page);
 
-    await expect(page.locator('header').first().locator('a[href*="boardsesh.com"]').first()).toBeVisible();
+    await expect(page.locator(marketingHeader).locator('a[href*="boardsesh.com"]').first()).toBeVisible();
   });
 });
 
@@ -104,7 +117,7 @@ test.describe('Site chrome - no dead bottom gutter', () => {
       await expectChrome(page);
 
       const gutter = await page.evaluate(() => {
-        const footer = document.querySelector('footer');
+        const footer = document.querySelector('[data-testid="site-footer"]');
         if (!footer) return Number.NaN;
         const footerBottom = footer.getBoundingClientRect().bottom + window.scrollY;
         return document.documentElement.scrollHeight - footerBottom;
@@ -133,14 +146,14 @@ test.describe('Site chrome - chrome-less surfaces', () => {
     expect(response).not.toBeNull();
     await page.waitForLoadState('domcontentloaded');
     await expectNoBottomBar(page);
-    await expect(page.locator('footer')).toHaveCount(0);
+    await expectNoChrome(page);
   });
 
   test('renders zero chrome on an embed route', async ({ page }) => {
     await page.goto('/embed/gym/00000000-0000-0000-0000-000000000000/leaderboard');
     await page.waitForLoadState('domcontentloaded');
     await expectNoBottomBar(page);
-    await expect(page.locator('footer')).toHaveCount(0);
+    await expectNoChrome(page);
   });
 
   // Socket budget. Before W-16 the root `PersistentSessionWrapper` opened a
