@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-15T05:39:09.758Z",
+  "generatedAt": "2026-08-15T06:10:59.770Z",
   "entries": [
+    {
+      "prNumber": 4471,
+      "category": "new",
+      "title": "Expo web now starts dark and uses the roomy tablet layout on desktop.",
+      "mergedAt": "2026-08-15T06:09:54Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4471",
+      "body": "Open a climb without losing the full action bar, queue, logbook, beta, community, or similar climbs."
+    },
     {
       "prNumber": 4469,
       "category": "fixed",

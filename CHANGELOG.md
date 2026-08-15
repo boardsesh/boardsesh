@@ -6,6 +6,11 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-08-15
 
+### New
+
+- Expo web now starts dark and uses the roomy tablet layout on desktop. ([#4471](https://github.com/boardsesh/boardsesh/pull/4471))
+  Open a climb without losing the full action bar, queue, logbook, beta, community, or similar climbs.
+
 ### Improved
 
 - Board pages slim down to the essentials — browsing and climbing live in the app now. ([#4448](https://github.com/boardsesh/boardsesh/pull/4448))
