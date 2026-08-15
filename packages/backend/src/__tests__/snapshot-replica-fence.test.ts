@@ -100,18 +100,12 @@ describe('replica snapshot fence', () => {
 
   it('rejects pg_read_all_stats membership when privileges are not inherited', async () => {
     const pool = createPool();
-    const roleName = `boardsesh_snapshot_noinherit_w${process.env.VITEST_POOL_ID ?? '0'}`;
+    const testSuffix = `w${process.env.VITEST_POOL_ID ?? '0'}_p${process.pid}`;
+    const roleName = `boardsesh_snapshot_noinherit_${testSuffix}`;
+    const functionName = `acquire_board_snapshot_fence_noinherit_${testSuffix}`;
     const quotedRole = quoteIdentifier(roleName);
-    const ownerRows = await pool.unsafe(
-      `SELECT pg_get_userbyid(functions.proowner) AS owner
-       FROM pg_proc AS functions
-       JOIN pg_namespace AS schemas ON schemas.oid = functions.pronamespace
-       WHERE schemas.nspname = 'ops'
-         AND functions.proname = 'acquire_board_snapshot_fence'`,
-    );
-    const originalOwner = String((ownerRows[0] as unknown as { owner: unknown }).owner);
-    const quotedOriginalOwner = quoteIdentifier(originalOwner);
-    let ownerChanged = false;
+    const quotedFunction = quoteIdentifier(functionName);
+    await pool.unsafe(`DROP FUNCTION IF EXISTS ops.${quotedFunction}(integer)`);
     await pool.unsafe(`DROP ROLE IF EXISTS ${quotedRole}`);
     await pool.unsafe(`CREATE ROLE ${quotedRole} NOLOGIN NOINHERIT`);
     await pool.unsafe(`GRANT pg_read_all_stats TO ${quotedRole}`);
@@ -123,17 +117,26 @@ describe('replica snapshot fence', () => {
       );
       expect(visibilityRows).toMatchObject([{ member: true, usage: false }]);
 
-      await pool.unsafe(`ALTER FUNCTION ops.acquire_board_snapshot_fence(integer) OWNER TO ${quotedRole}`);
-      ownerChanged = true;
-      await expect(pool.unsafe('SELECT * FROM ops.acquire_board_snapshot_fence(0)')).rejects.toThrow(
+      const definitionRows = await pool.unsafe(
+        `SELECT pg_get_functiondef('ops.acquire_board_snapshot_fence(integer)'::regprocedure) AS definition`,
+      );
+      const productionDefinition = String((definitionRows[0] as unknown as { definition: unknown }).definition);
+      const clonedDefinition = productionDefinition.replace(
+        'FUNCTION ops.acquire_board_snapshot_fence(',
+        `FUNCTION ops.${quotedFunction}(`,
+      );
+      expect(clonedDefinition).not.toBe(productionDefinition);
+      await pool.unsafe(clonedDefinition);
+      await pool.unsafe(`ALTER FUNCTION ops.${quotedFunction}(integer) OWNER TO ${quotedRole}`);
+      await expect(pool.unsafe(`SELECT * FROM ops.${quotedFunction}(0)`)).rejects.toThrow(
         'effective USAGE of pg_read_all_stats',
       );
     } finally {
-      if (ownerChanged) {
-        await pool.unsafe(`ALTER FUNCTION ops.acquire_board_snapshot_fence(integer) OWNER TO ${quotedOriginalOwner}`);
-      }
-      await pool.unsafe(`REVOKE pg_read_all_stats FROM ${quotedRole}`);
-      await pool.unsafe(`DROP ROLE ${quotedRole}`);
+      // The clone exercises the exact production body without ever changing
+      // the shared function's owner while another test or connection uses it.
+      await pool.unsafe(`DROP FUNCTION IF EXISTS ops.${quotedFunction}(integer)`).catch(() => {});
+      await pool.unsafe(`REVOKE pg_read_all_stats FROM ${quotedRole}`).catch(() => {});
+      await pool.unsafe(`DROP ROLE IF EXISTS ${quotedRole}`).catch(() => {});
     }
   });
 
@@ -219,17 +222,29 @@ describe('replica snapshot fence', () => {
       allowOldTransactionCommit.resolve();
       await oldTransaction;
 
-      const stampedCursors = await pool.unsafe(
+      // Compare in PostgreSQL rather than lexicographically: its timestamp
+      // text omits trailing fractional zeroes, so `.505751Z` sorts before
+      // `.50575Z` as text even though it is one microsecond later.
+      const cursorChecks = await pool.unsafe(
         `SELECT
-           (SELECT updated_at FROM board_climbs WHERE uuid = 'old-start-late-commit') AS climb_cursor,
-           (SELECT updated_at FROM board_climb_stats WHERE climb_uuid = 'old-start-late-commit') AS stats_cursor,
-           (SELECT computed_at FROM board_climb_grades WHERE climb_uuid = 'old-start-late-commit') AS grade_cursor,
-           (SELECT deleted_at FROM sync_deletions WHERE record_id = 'backdated-tombstone-attempt') AS deletion_cursor`,
+           (SELECT updated_at FROM board_climbs WHERE uuid = 'old-start-late-commit') > $1::timestamp
+             AS climb_after_cutoff,
+           (SELECT updated_at FROM board_climb_stats WHERE climb_uuid = 'old-start-late-commit') > $1::timestamp
+             AS stats_after_cutoff,
+           (SELECT computed_at FROM board_climb_grades WHERE climb_uuid = 'old-start-late-commit') > $1::timestamp
+             AS grade_after_cutoff,
+           (SELECT deleted_at FROM sync_deletions WHERE record_id = 'backdated-tombstone-attempt') > $1::timestamp
+             AS deletion_after_cutoff`,
+        [stableBefore],
       );
-      const stamped = stampedCursors[0] as unknown as Record<string, unknown>;
-      for (const cursor of Object.values(stamped)) {
-        expect(toIso(cursor) > stableBefore).toBe(true);
-      }
+      expect(cursorChecks).toMatchObject([
+        {
+          climb_after_cutoff: true,
+          stats_after_cutoff: true,
+          grade_after_cutoff: true,
+          deletion_after_cutoff: true,
+        },
+      ]);
 
       const filePath = join(workDir, 'artifact.db');
       await exportLayoutSnapshot({
