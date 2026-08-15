@@ -56,6 +56,16 @@ only the final, complete live-gzip pass does. A healthy threshold no-op still pu
 because `manifest.generatedAt` intentionally does not change on a no-op. Immutable-image pull or heartbeat
 checker failures alert and fail the job without authorizing a fallback whose freshness decision was never made.
 
+Heartbeat objects are public-readable health signals, not a cryptographic trust boundary. Anonymous readers
+must not be able to update them: the S3 writer credential remains part of the trusted publisher boundary. The digest,
+manifest-generation, PostgreSQL-lineage, cutoff-age, and clock checks detect stale or misconfigured publishers,
+but a principal that can write the bucket could replace the live manifest, artifacts, and matching heartbeats
+together. Protect and separately scope the bucket write credential accordingly. If the threat model expands to
+include a compromised object-store control plane, add detached signatures whose private key is isolated from
+the S3 credential; signing with a key available to the same compromised publisher would add no boundary.
+Before cutover, prove anonymous PUT and DELETE requests receive 403, scope the writer to the snapshot bucket and
+`board-snapshots/` prefix, and keep the public base on the exact HTTPS virtual-host URL documented below.
+
 **Dual-publish.** The nightly runs the export **twice**, targeting two prefixes via `--key-prefix`
 (default `board-snapshots/v1`):
 

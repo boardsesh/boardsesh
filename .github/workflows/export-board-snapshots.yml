@@ -190,10 +190,26 @@ jobs:
             "$EXPORTER_IMAGE" \
             node --import tsx src/scripts/snapshot-heartbeat-watchdog.ts)"
           echo "$decision" | jq .
-          echo "refresh_stale=$(jq -r '.refresh.stale' <<<"$decision")" >> "$GITHUB_OUTPUT"
-          echo "full_stale=$(jq -r '.full.stale' <<<"$decision")" >> "$GITHUB_OUTPUT"
-          echo "refresh_reason=$(jq -r '.refresh.reason' <<<"$decision")" >> "$GITHUB_OUTPUT"
-          echo "full_reason=$(jq -r '.full.reason' <<<"$decision")" >> "$GITHUB_OUTPUT"
+          refresh_stale="$(jq -er \
+            '.refresh.stale | if type == "boolean" then tostring else error("refresh.stale must be boolean") end' \
+            <<<"$decision")"
+          full_stale="$(jq -er \
+            '.full.stale | if type == "boolean" then tostring else error("full.stale must be boolean") end' \
+            <<<"$decision")"
+          # Reasons include fetch/parser errors derived from public objects. Keep
+          # arbitrary newlines out of GITHUB_OUTPUT by carrying them as base64.
+          refresh_reason_b64="$(jq -er \
+            '.refresh.reason | if type == "string" then @base64 else error("refresh.reason must be a string") end' \
+            <<<"$decision")"
+          full_reason_b64="$(jq -er \
+            '.full.reason | if type == "string" then @base64 else error("full.reason must be a string") end' \
+            <<<"$decision")"
+          {
+            printf 'refresh_stale=%s\n' "$refresh_stale"
+            printf 'full_stale=%s\n' "$full_stale"
+            printf 'refresh_reason_b64=%s\n' "$refresh_reason_b64"
+            printf 'full_reason_b64=%s\n' "$full_reason_b64"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Fall back to Railway primary
         id: fallback
@@ -248,22 +264,57 @@ jobs:
           }}
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
-          IMAGE_OUTCOME: ${{ steps.image.outcome }}
-          HEARTBEAT_OUTCOME: ${{ steps.heartbeat.outcome }}
-          REFRESH_REASON: ${{ steps.heartbeat.outputs.refresh_reason }}
-          FULL_REASON: ${{ steps.heartbeat.outputs.full_reason }}
-          FALLBACK_OUTCOME: ${{ steps.fallback.outcome }}
+          IMAGE_OUTCOME: ${{ steps.image.outcome || 'not-run' }}
+          HEARTBEAT_OUTCOME: ${{ steps.heartbeat.outcome || 'not-run' }}
+          REFRESH_STALE: ${{ steps.heartbeat.outputs.refresh_stale || 'not-checked' }}
+          FULL_STALE: ${{ steps.heartbeat.outputs.full_stale || 'not-checked' }}
+          REFRESH_REASON_B64: ${{ steps.heartbeat.outputs.refresh_reason_b64 }}
+          FULL_REASON_B64: ${{ steps.heartbeat.outputs.full_reason_b64 }}
+          FALLBACK_OUTCOME: ${{ steps.fallback.outcome || 'not-run' }}
         run: |
           if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
             echo "DISCORD_DEPLOY_WEBHOOK is required so a Railway fallback cannot be silent" >&2
             exit 1
           fi
+
+          decode_reason() {
+            local encoded="$1"
+            if [ -z "$encoded" ]; then
+              printf '%s' 'not checked'
+              return
+            fi
+            local decoded
+            if ! decoded="$(printf '%s' "$encoded" | base64 --decode 2>/dev/null)"; then
+              printf '%s' 'invalid encoded watchdog reason'
+              return
+            fi
+            printf '%s' "$decoded"
+          }
+
+          refresh_reason="$(decode_reason "$REFRESH_REASON_B64")"
+          full_reason="$(decode_reason "$FULL_REASON_B64")"
+          if [ "$IMAGE_OUTCOME" != 'success' ]; then
+            fallback_summary="not attempted (exporter image step: $IMAGE_OUTCOME)"
+          elif [ "$HEARTBEAT_OUTCOME" != 'success' ]; then
+            fallback_summary="not attempted (heartbeat check: $HEARTBEAT_OUTCOME)"
+          elif [ "$REFRESH_STALE" = 'true' ] || [ "$FULL_STALE" = 'true' ]; then
+            if [ "$FALLBACK_OUTCOME" = 'not-run' ] || [ "$FALLBACK_OUTCOME" = 'skipped' ]; then
+              fallback_summary="not attempted despite a stale decision ($FALLBACK_OUTCOME)"
+            else
+              fallback_summary="$FALLBACK_OUTCOME"
+            fi
+          else
+            fallback_summary="not required"
+          fi
+
           payload="$(jq -n \
-            --arg refresh "$REFRESH_REASON" \
-            --arg full "$FULL_REASON" \
-            --arg outcome "$FALLBACK_OUTCOME" \
+            --arg refresh "$refresh_reason" \
+            --arg full "$full_reason" \
+            --arg refreshStale "$REFRESH_STALE" \
+            --arg fullStale "$FULL_STALE" \
+            --arg fallback "$fallback_summary" \
             --arg image "$IMAGE_OUTCOME" \
             --arg heartbeat "$HEARTBEAT_OUTCOME" \
-            '{content: ("Board snapshot watchdog needs attention. Railway fallback: " + $outcome + "\nimage: " + $image + "\nheartbeat check: " + $heartbeat + "\nrefresh: " + $refresh + "\nfull: " + $full)}')"
+            '{content: ("Board snapshot watchdog needs attention. Railway fallback: " + $fallback + "\nimage: " + $image + "\nheartbeat check: " + $heartbeat + "\nrefresh (stale=" + $refreshStale + "): " + $refresh + "\nfull (stale=" + $fullStale + "): " + $full)}')"
           curl -sS --fail-with-body -X POST -H 'Content-Type: application/json' \
             -d "$payload" "$DISCORD_DEPLOY_WEBHOOK"
