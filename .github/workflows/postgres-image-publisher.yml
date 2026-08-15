@@ -120,7 +120,7 @@ jobs:
     name: Validate exact current main without publish authority
     needs: authorize-current-main
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -671,6 +671,12 @@ jobs:
           find "$DOCKER_CONFIG" -depth -delete
           [[ ! -e "$DOCKER_CONFIG" ]]
 
+      - name: Set up Bun after registry credential removal
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+      - name: Install locked dependencies after registry credential removal
+        run: bun install --frozen-lockfile
+
       - name: Verify labels and boot exact portable platform
         env:
           EXPECTED_REVISION: ${{ inputs.expected_main_sha }}
@@ -746,6 +752,12 @@ jobs:
           find "$DOCKER_CONFIG" -type f -exec sh -c ': >"$1"' _ {} \;
           find "$DOCKER_CONFIG" -depth -delete
           [[ ! -e "$DOCKER_CONFIG" ]]
+
+      - name: Set up Bun after registry credential removal
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+      - name: Install locked dependencies after registry credential removal
+        run: bun install --frozen-lockfile
 
       - name: Verify labels, architecture, and seeded database
         env:

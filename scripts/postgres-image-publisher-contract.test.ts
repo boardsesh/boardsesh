@@ -28,6 +28,22 @@ function replaceRequired(source: string, expected: string, replacement: string):
   return source.replace(expected, replacement);
 }
 
+function replaceRequiredInJob(
+  source: string,
+  jobName: string,
+  nextJobName: string,
+  expected: string,
+  replacement: string,
+): string {
+  const jobStart = source.indexOf(`\n  ${jobName}:\n`);
+  const nextJobStart = source.indexOf(`\n  ${nextJobName}:\n`, jobStart + 1);
+  expect(jobStart).toBeGreaterThanOrEqual(0);
+  expect(nextJobStart).toBeGreaterThan(jobStart);
+  const jobSource = source.slice(jobStart, nextJobStart);
+  expect(jobSource).toContain(expected);
+  return source.slice(0, jobStart) + jobSource.replace(expected, replacement) + source.slice(nextJobStart);
+}
+
 describe('trusted PostgreSQL image publisher contract', () => {
   it('keeps the checked-in publisher inside the parsed trust boundary', () => {
     expect(failuresFor()).toBe('');
@@ -161,6 +177,18 @@ describe('trusted PostgreSQL image publisher contract', () => {
       expected: /must fail early when the PostgreSQL 18 contract target is unavailable/,
     },
     {
+      name: 'validate-main timeout widened',
+      mutate: (workflow: string) =>
+        replaceRequiredInJob(
+          workflow,
+          'validate-main',
+          'publish-images',
+          '    timeout-minutes: 30',
+          '    timeout-minutes: 90',
+        ),
+      expected: /validate-main timeout must remain 30 minutes/,
+    },
+    {
       name: 'extra privileged publish step',
       mutate: (workflow: string) =>
         replaceRequired(
@@ -242,6 +270,57 @@ describe('trusted PostgreSQL image publisher contract', () => {
       mutate: (workflow: string) =>
         replaceRequired(workflow, '        platform: [linux/amd64, linux/arm64]', '        platform: [linux/amd64]'),
       expected: /portable smoke matrix must contain exactly linux\/amd64 and linux\/arm64/,
+    },
+    {
+      name: 'portable dependencies installed while registry credentials remain',
+      mutate: (workflow: string) => {
+        const dependencySetup = `      - name: Set up Bun after registry credential removal
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+      - name: Install locked dependencies after registry credential removal
+        run: bun install --frozen-lockfile
+
+`;
+        const withoutDependencySetup = replaceRequiredInJob(
+          workflow,
+          'smoke-portable',
+          'smoke-seeded',
+          dependencySetup,
+          '',
+        );
+        return replaceRequiredInJob(
+          withoutDependencySetup,
+          'smoke-portable',
+          'smoke-seeded',
+          '      - name: Remove registry credentials before image smoke\n',
+          dependencySetup + '      - name: Remove registry credentials before image smoke\n',
+        );
+      },
+      expected: /smoke-portable dependency setup must occur only after registry credentials are removed/,
+    },
+    {
+      name: 'seeded smoke dependencies installed without the lockfile',
+      mutate: (workflow: string) =>
+        replaceRequiredInJob(
+          workflow,
+          'smoke-seeded',
+          'attest-published-digests',
+          '        run: bun install --frozen-lockfile',
+          '        run: bun install',
+        ),
+      expected: /smoke-seeded must install only the reviewed lockfile graph/,
+    },
+    {
+      name: 'unpinned portable smoke Bun setup',
+      mutate: (workflow: string) =>
+        replaceRequiredInJob(
+          workflow,
+          'smoke-portable',
+          'smoke-seeded',
+          'oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6',
+          'oven-sh/setup-bun@v2',
+        ),
+      expected: /must use only oven-sh\/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6/,
     },
     {
       name: 'unpinned ORAS action',

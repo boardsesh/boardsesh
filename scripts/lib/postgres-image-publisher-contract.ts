@@ -64,6 +64,8 @@ const PUBLISHER_STEPS: Record<string, ExpectedStep[]> = {
     { name: 'Log in to GHCR for exact digest pull', uses: ACTIONS.login },
     { name: 'Pull exact portable digest and platform' },
     { name: 'Remove registry credentials before image smoke' },
+    { name: 'Set up Bun after registry credential removal', uses: ACTIONS.setupBun },
+    { name: 'Install locked dependencies after registry credential removal' },
     { name: 'Verify labels and boot exact portable platform' },
   ],
   'smoke-seeded': [
@@ -74,6 +76,8 @@ const PUBLISHER_STEPS: Record<string, ExpectedStep[]> = {
     { name: 'Log in to GHCR for exact digest pull', uses: ACTIONS.login },
     { name: 'Pull exact seeded digest' },
     { name: 'Remove registry credentials before image smoke' },
+    { name: 'Set up Bun after registry credential removal', uses: ACTIONS.setupBun },
+    { name: 'Install locked dependencies after registry credential removal' },
     { name: 'Verify labels, architecture, and seeded database' },
   ],
   'attest-published-digests': [
@@ -173,6 +177,8 @@ const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
     'Pull exact portable digest and platform': '9a8fc3728f38b14f516e7f68b300897beb0ed2e15011f3080789361a9ba3b7ce',
     'Remove registry credentials before image smoke':
       'd8e333a57b04ca27e1e2a74d8689cdfa14b8ce53619491f5e9d888fa2e5ff03c',
+    'Install locked dependencies after registry credential removal':
+      'ed6ae2ba19763eb56c4691c7113c556bc1dc78a2b5868187f418bcb53ecd3ffd',
     'Verify labels and boot exact portable platform':
       '5b9c73161f472d49ebed0409acef7cd36f3aa0c0ddc6c11e02ce73a49f45356c',
   },
@@ -183,6 +189,8 @@ const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
     'Pull exact seeded digest': '9c8092a89440ffcf4cf5b154ecb0f604c6ef2dd4ee519f705cfd414562c86c80',
     'Remove registry credentials before image smoke':
       '210b45c7e9c243d42c1180f419bc5183b425a71b78f018f01c19e7ea4402d60c',
+    'Install locked dependencies after registry credential removal':
+      'ed6ae2ba19763eb56c4691c7113c556bc1dc78a2b5868187f418bcb53ecd3ffd',
     'Verify labels, architecture, and seeded database':
       '12bca356c5a765627cbc262f8c9fd987a1ac1b8b0d6c1c44976e8119baafa35d',
   },
@@ -212,11 +220,11 @@ const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
 // this makes the whole publisher an exact structural allowlist.
 const PRIVILEGED_JOB_SHA256: Record<string, string> = {
   'authorize-current-main': 'de925dca4eba05dc42accdb6fe0ed3c996fe37079d620da7fc35166900e70c29',
-  'validate-main': '310908b62a52c0ea058602e33fcac04bc7578c89d10a743fa0363d5f4fda7f70',
+  'validate-main': '79a3b6710f2f3268d467ae5a8d467d78fd212627f90f3da8c6505b1a4c51b29d',
   'publish-images': 'ca9d253928f2c8132fa71dfa7c6b49c085390bffab88da15604e1ad058c20f17',
   'verify-published-images': '05f165fb989b0c7c920b470b19bf4f14b5f3dd1f0c2880bd79e3f2b79228e1c8',
-  'smoke-portable': '8cc80c28ec97ce85250334f77759f314f16ce651e1535409e4373af5db25e2db',
-  'smoke-seeded': 'fb6924c0722692a094e776ba8386e4802797219e9602aee6e8a5226ec758a1dd',
+  'smoke-portable': '0e08ebdbd32457c9b5bc08b2a3cd69411cfbe2431ed8d0e3561e2030693ed2fb',
+  'smoke-seeded': '4673065731fa518f9825de2fde82b8488cccc7832eb0328ab74c1f779b0c0c8d',
   'attest-published-digests': 'd4955025ba90ce538e2966676a44c4d65c4a400a407e557550427349d603991b',
   'verify-attestations': 'e3e536f61601ef9d8681dc5809065ff814612c227a70afbc14e1c3cb21a6ff8c',
   'record-published-digests': '976efd6082d212f82b1acacfd9fd4c82155428de80fec5b5c3b5fcec212d65eb',
@@ -608,6 +616,9 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
   }
 
   const validateMain = recordAt(jobs, 'validate-main') ?? {};
+  if (validateMain['timeout-minutes'] !== 30) {
+    failures.push('validate-main timeout must remain 30 minutes');
+  }
   validateCheckout(failures, 'validate-main', stepByName(validateMain, 'Checkout exact current main commit'), 'source');
   requireRunPattern(
     failures,
@@ -756,6 +767,35 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
       /git\/ref\/heads\/\$DEFAULT_BRANCH/,
       `${smokeName} must recheck live main immediately before login`,
     );
+    requireRunPattern(
+      failures,
+      smoke,
+      'Install locked dependencies after registry credential removal',
+      /^bun install --frozen-lockfile$/,
+      `${smokeName} must install only the reviewed lockfile graph before running candidate smoke code`,
+    );
+
+    const smokeSteps = stepsAt(smoke);
+    const credentialRemovalIndex = smokeSteps.findIndex(
+      (step) => step.name === 'Remove registry credentials before image smoke',
+    );
+    const setupBunIndex = smokeSteps.findIndex((step) => step.name === 'Set up Bun after registry credential removal');
+    const dependencyInstallIndex = smokeSteps.findIndex(
+      (step) => step.name === 'Install locked dependencies after registry credential removal',
+    );
+    const candidateSmokeStepName =
+      smokeName === 'smoke-portable'
+        ? 'Verify labels and boot exact portable platform'
+        : 'Verify labels, architecture, and seeded database';
+    const candidateSmokeIndex = smokeSteps.findIndex((step) => step.name === candidateSmokeStepName);
+    if (
+      credentialRemovalIndex < 0 ||
+      setupBunIndex <= credentialRemovalIndex ||
+      dependencyInstallIndex <= setupBunIndex ||
+      candidateSmokeIndex <= dependencyInstallIndex
+    ) {
+      failures.push(`${smokeName} dependency setup must occur only after registry credentials are removed`);
+    }
   }
   const smokePortable = recordAt(jobs, 'smoke-portable') ?? {};
   if (

@@ -97,8 +97,10 @@ attestation, and manifest recording:
    script runs after login, and the temporary registry config and Buildx
    builder are removed on every outcome.
 4. Fresh package-read runners resolve the published tag to the expected digest,
-   inspect the remote manifests, pull every exact digest/platform, erase their
-   temporary credentials, and then run the image smoke contracts.
+   inspect the remote manifests, and pull every exact digest/platform. The smoke
+   jobs then erase their temporary registry credentials before setting up Bun,
+   installing the locked dependency graph, or running either candidate-owned
+   image smoke contract.
 5. `attest-published-digests` uses the dedicated environment and the official
    pinned GitHub attestation action in native provenance mode. Because source,
    workflow, and `github.sha` are now the same exact current-main commit, the
@@ -110,6 +112,11 @@ attestation, and manifest recording:
    SHA, SLSA provenance predicate type, and GitHub-hosted runner. Only after
    both attestations verify can `record-published-digests` perform its final
    live-main/workflow binding check and upload the handoff artifact.
+
+The token spelling is intentionally different at the two boundaries. Read-only
+GitHub API checks use `github.token`; credential-bearing GHCR login steps use
+`secrets.GITHUB_TOKEN`. GitHub resolves both expressions to the same job-scoped
+token, but the distinction keeps registry authentication visually explicit.
 
 The workflow is globally serialized with `cancel-in-progress: false`. That
 prevents two runs of this publisher from racing, but it cannot stop other
