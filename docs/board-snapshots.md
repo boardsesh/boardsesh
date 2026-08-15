@@ -24,20 +24,24 @@ affected layout so a bulk gap does not remain in the first-download path.
 
 ### Nightly export and live threshold refresh
 
-The homelab batch worker's `export-board-snapshots` family owns the **07:15 UTC** nightly and
-**:07, :22, :37, :52** live scans. That ownership cutover was confirmed in #5912 on September 30.
-GitHub Actions is disabled operationally and its retired schedules are removed from the repository.
-Its remaining manual trigger is a complete R2 rehearsal while the worker still publishes Tigris.
-An explicit `Production` variable, `SNAPSHOT_PUBLISHER_STORAGE_TARGET=tigris`, enables that rehearsal;
-unset or `r2` blocks it before any export. This is an operator gate, not a lock shared with the worker.
-Before rotating the worker to R2, set the variable to `r2`, disable Actions, and drain queued/in-progress
-Actions runs. The old queued August 19 run (`32214742569`) remains unresolved: GitHub cancel/force-cancel
-reject it as not in progress. Keep the workflow disabled until that legacy Tigris publisher is proven
-unable to start; do not claim the queue is drained from those failed cancellation attempts.
-Exactly one publisher may own each storage target and prefix at a time.
+`.github/workflows/export-board-snapshots.yml` stages the per-layout publisher behind `SNAPSHOT_HOMELAB_EXPORT_ENABLED`:
 
-**Dual-publish.** The nightly runs the export **twice**, targeting two prefixes via `--key-prefix`
-(default `board-snapshots/v1`):
+- Before it is `true`, GitHub runs the full primary export at **07:15 UTC** and bounded gzip scans at **:07, :22, :37, and :52** outside the 07:00 UTC hour. A complete `workflow_dispatch` remains an operator fallback. The full export publishes identity `v1` and live gzip `v1-gzip`; the separate hardware-catalog producer is described below.
+- After it is `true`, the homelab standby timers own those per-layout runs. GitHub checks publisher heartbeats at **:12, :27, :42, and :57**. It runs the pinned exporter image against the Railway primary only when refresh is older than 45 minutes or full is older than 30 hours. A missing, malformed, future-dated, mutable-image, or wrong-prefix heartbeat is stale. A full fallback rebuilds both per-layout prefixes.
+- `workflow_dispatch` remains an explicit primary fallback in either mode. With homelab mode enabled it requires the primary fence. GitHub Actions never promotes PostgreSQL.
+
+The GitHub publisher jobs use job-level `concurrency.group: export-board-snapshots`, `cancel-in-progress: false`, and `queue: max`: up to 100 jobs may wait, and additional jobs are canceled when the queue is full. GitHub processes jobs in the order they started waiting, but ordering is not guaranteed; see [GitHub's concurrency documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency). Leaving the 07:00 UTC hour clear keeps refresh scans away from the nightly full run. Skipped feature-gated jobs do not enter the concurrency group.
+
+A separate batch-worker family can also own the per-layout prefixes after its own cutover. It is an alternative owner, not a second layer of serialization: its attempt lease does not take the PostgreSQL advisory fence used by the homelab exporter. Do not run the batch family while homelab timers or scheduled GitHub watchdog/catalog jobs can publish; the repository flag enables those GitHub jobs when the workflow is enabled. Likewise, do not enable the homelab timers or scheduled jobs while the batch family owns the prefixes. Before switching owners, disable the old scheduler and drain its queued and running jobs. The batch-worker cutover procedure below covers that handoff.
+
+The per-layout homelab heartbeat does not cover `v1-catalog`. When homelab mode is enabled, a nightly GitHub catalog-only job continues to run `export-board-catalog.ts` against the primary and publish that independent prefix. With homelab mode off, the ordinary full GitHub run publishes the catalog after the two per-layout passes. A complete manual R2 rehearsal still exports and verifies all three prefixes.
+
+The fenced homelab, manual fallback, and watchdog fallback share the global database advisory fence. The exporter checks the session immediately before and after the manifest PUT; a connection loss in that small cross-system interval cannot be made transactional, so S3 and PostgreSQL may briefly disagree. Each heartbeat therefore names the manifest's exact `generatedAt`; the watchdog validates the live manifest and requires the **refresh** heartbeat to match it. A full run writes `full.json` first and a matching `refresh.json` last, so refresh is the completed pair's manifest and PostgreSQL-lineage anchor. The full heartbeat remains an independent 30-hour clock because a later legitimate threshold refresh advances the manifest, but it is accepted only when its system identifier and timeline match that current refresh anchor. Both the exporter and watchdog reject a heartbeat whose cutoff was already more than ten minutes old at completion.
+
+A lost-lock overwrite makes refresh stale on the next watchdog pass and is repaired from the primary. A Railway fallback emits a normal `source=primary` heartbeat so the watchdog does not repeat successful work; Discord is the durable signal that the homelab path needs attention. The homelab and watchdog run the exact same `ghcr.io/boardsesh/boardsesh-backend@sha256:...` image. The daily identity pass does not emit a heartbeat; only the final, complete live-gzip pass does. A healthy threshold no-op still publishes `refresh.json`, because `manifest.generatedAt` intentionally does not change on a no-op. Immutable-image pull or heartbeat checker failures alert and fail the job without authorizing a fallback whose freshness decision was never made.
+
+**Per-layout dual-publish.** A full per-layout nightly runs the exporter **twice**, targeting two
+prefixes via `--key-prefix` (default `board-snapshots/v1`):
 
 - `board-snapshots/v1-gzip` — `--gzip`, ~2.6× smaller (`kilter:1` 271 MB → 103 MB as of 2026-07-27).
   **This is what the fleet reads**: every mobile workflow's `EXPO_PUBLIC_SNAPSHOT_BASE_URL` points here.
@@ -47,7 +51,10 @@ Exactly one publisher may own each storage target and prefix at a time.
 
 Each prefix is a self-contained, single-encoding manifest: the merge and prune logic below scope entirely
 to whichever prefix the run targets, so a gzip run never reads or prunes the identity prefix. A later
-cleanup drops the identity pass and deletes the `v1` prefix (see Rollout plan).
+cleanup drops the identity pass and deletes the `v1` prefix (see Rollout plan). The independent hardware
+catalogue is a third artifact at `v1-catalog`; the ordinary GitHub full run publishes it after the two
+per-layout passes, while homelab mode keeps it current in the separate `homelab-catalog` scheduled job.
+The catalogue never replaces either per-layout prefix.
 
 **Live threshold refresh.** The 15-minute schedule targets only `board-snapshots/v1-gzip`, the prefix the
 fleet reads, with `--refresh-threshold 500`. For every discovered layout it reads the published manifest
@@ -95,14 +102,8 @@ For every `(board_type, layout_id)` pair with at least one climb (`discoverLayou
    the live sync resolvers use (`row-normalize.ts` + `toSqliteValue`), so an artifact row is byte-identical
    to what an incremental `syncClimbs`/`syncClimbStats` pull would have written. `snapshot-export-golden.test.ts`
    pins that equivalence by running both paths against the same seeded rows and diffing them.
-3. Excludes rows younger than `SYNC_STABILITY_WINDOW_SECONDS` (default 30s, same env var the resolvers
-   read) — a row still inside its write-transaction's commit window is left for the incremental pull rather
-   than risking a watermark that covers it before it's actually visible.
-4. Computes each table's watermark — the max `(updated_at, sync_seq)` over the exported rows — **while
-   streaming those rows**, so it covers exactly what the artifact holds and costs no extra query. The
-   stream SELECT adds the cursor as integer microseconds for ordering (never a string compare of rendered
-   timestamps) and the winning row's raw value goes through the same `toIso` as the row itself. It is
-   written into `snapshot_meta` alongside
+3. Excludes rows at or after one run-wide `stableBefore` cutoff. In an unfenced primary dry-run it is the primary clock minus `SYNC_STABILITY_WINDOW_SECONDS` (default 30 seconds). Fenced runs take it from the primary coordinator; every threshold probe, row stream, and watermark query uses that exact cutoff with a strict `<` predicate. Layout discovery deliberately ignores the cutoff so an all-young or just-rewritten live layout cannot be mistaken for a deletion and dropped from a full manifest merge.
+4. Computes each table's watermark — the max `(updated_at, sync_seq)` over the exported rows — while streaming those rows in the same `REPEATABLE READ` transaction, so the watermark covers exactly the artifact and costs no extra query. The stream SELECT orders the cursor as integer microseconds (never a string comparison of rendered timestamps), and the winning row's raw value goes through the same `toIso` as the row itself. The watermark is written into `snapshot_meta` alongside
    `row_count`, `schema_version` (`LATEST_SCHEMA_VERSION`), and `format_version`. The transaction also
    captures a conservative tombstone boundary into a metadata-only `sync_deletions` row: the oldest of
    run `builtAt`, export-transaction start minus `SYNC_STABILITY_WINDOW_SECONDS`, and the oldest active
@@ -131,16 +132,57 @@ For every `(board_type, layout_id)` pair with at least one climb (`discoverLayou
    reader only ever sees a fully-consistent old-or-new manifest, never a manifest pointing at an artifact
    that hasn't finished uploading.
 
-#### Why the primary, never a replica
+#### Why a replica URL swap is unsafe, and the fence that makes replica mode safe
 
 The sync cursor `(updated_at, sync_seq)` is **write-time** ordered, but an async replica's snapshot is
-**commit-order** consistent. A row that commits late (or replicates late) can carry a lower cursor than
-rows already visible on the replica — so a replica read can produce a watermark that covers a row the
-artifact never actually contains. Every client that bootstraps from that artifact resumes strictly past
-the watermark and **loses that row forever** (the strict `>` delta pull never revisits it). The stability
-window only absorbs primary write→commit delay; replica lag stacks on top of it. The export always reads
-the primary pool (`createPool()` from `@boardsesh/db/client`) for this reason — see the long comment at
-`runExport`'s pool call site in `export-board-snapshots.ts`.
+**commit-order** consistent. A row that commits late can carry a lower cursor than a later-started row
+already visible on the replica. Publishing the visible maximum would make every bootstrapped client skip
+the late row forever. A larger fixed lag window or `pg_last_xact_replay_timestamp()` only makes that race
+less likely; neither proves the absent transaction has finished.
+
+`--source=replica` therefore fails closed unless this protocol succeeds:
+
+1. A dedicated, direct (never transaction-pooled) primary session takes advisory lock `(4340, 1)` through
+   `ops.acquire_board_snapshot_fence()` and keeps that session alive through manifest publication.
+2. The function sees every other same-database backend with an open transaction and sets `stableBefore` to
+   the lesser of primary clock minus the 30-second stability window and the oldest `xact_start` minus one
+   microsecond. It refuses prepared transactions, any remaining logical subscription, and logical apply
+   workers which are still shutting down.
+3. In a later primary statement it records `pg_current_wal_insert_lsn()`. A transaction which committed
+   before the activity scan is before that WAL position; a transaction still active during the scan has a
+   cursor at or after `stableBefore` and is excluded.
+4. Before comparing LSNs, both ends must report the same PostgreSQL system identifier and timeline, the
+   standby WAL receiver must be streaming on that timeline, the standby must be in recovery, and replay
+   must not be paused. Lag must be at most 30 seconds and `pg_last_wal_replay_lsn()` must reach the target
+   within 10 minutes. The cutoff may not already be more than 10 minutes old.
+5. All artifact reads use `cursor_at < stableBefore`. Before every artifact and the final manifest upload,
+   the exporter rechecks both the primary session lock and standby replay barrier on the same reserved
+   backend that streams the rows, and rechecks that the cutoff is still at most ten minutes old. Remote
+   primary/coordinator connections require certificate and hostname verification; plaintext is allowed only
+   for an explicit loopback/dev-service URL. A pre-manifest failure leaves the old manifest untouched. A failure
+   immediately after the manifest PUT cannot roll that PUT back, but it emits no success heartbeat; failed
+   layouts retain their previous manifest entries while successful layout updates remain valid.
+
+Migration `0200_board_snapshot_replica_fence` makes the cursor contract a database invariant. INSERT and
+UPDATE triggers stamp `board_climbs.updated_at`, `board_climb_stats.updated_at`, and
+`board_climb_grades.computed_at` from the transaction timestamp converted to UTC; INSERTs into
+`sync_deletions` receive the same UTC transaction-time stamp. Caller-supplied/backdated values are ignored.
+The only bypass (`boardsesh.snapshot_cursor_restore=on`) checks that `session_user` is a real superuser and
+exists for controlled historical restores/tests. The fence itself rejects every remaining logical
+subscription/apply worker. Arbitrary superuser trigger bypass remains outside the proof, so normal writer
+roles must not receive `SET` on `session_replication_role` or trigger-alter privileges. Replica export stays
+disabled until the final PG18 physical standby has been seeded after the upgrade subscription is removed.
+The adversarial integration test holds an old transaction open, attempts to backdate all four cursor
+families, lets a newer transaction commit, and proves the fixed cutoff cannot publish a watermark past
+the late row.
+
+The proof also assumes the primary wall clock does not step backward by more than the stability window
+between the activity scan and a later transaction start. PostgreSQL transaction timestamps follow the host
+wall clock; an extreme backward step could otherwise give a new writer a cursor below `stableBefore`.
+Production cutover therefore requires Railway/host time synchronization and clock-offset alerting. The
+exporter catches a clock that is still behind (negative cutoff age) and the watchdog catches an expired
+cutoff, but neither can detect a transient backward-and-forward step after the scan; that remains a documented
+operational residual until the sync protocol moves to a commit-ordered cursor.
 
 #### Merge semantics
 
@@ -171,8 +213,8 @@ avoid dropping data on a broken read:
 
 `packages/backend/src/workers/families/export-board-snapshots.ts` runs the same exporter
 (`runExportWithOptions` and `runCatalogExportWithOptions`) on the homelab batch worker
-(`docs/background-workers.md`, "Batch families"). It is enabled through `BATCH_FAMILIES_ENABLED`,
-and owns production publishing; Actions has only the isolated R2 rehearsal. Part of #5800; it
+(`docs/background-workers.md`, "Batch families"). It stays off until `BATCH_FAMILIES_ENABLED` names it,
+and the workflow above keeps publishing until the cutover PR removes its `schedule:`. Part of #5800; it
 implements the job side of #5622.
 
 | Schedule key | Cron (UTC) | Payload | What runs |
@@ -226,24 +268,15 @@ target; the R2 rehearsal (`storage_target: r2`) stays a `workflow_dispatch` of t
   (`zlib.gzip`), so the longest event-loop blocks left are the synchronous SQLite inserts and reading an
   artifact back into memory; the 120 s heartbeat window covers them with a wide margin.
 
-**Environment** on the batch container is managed through blackheathdc-ansible's vault and deployment.
-The current producer still uses the legacy Tigris `AWS_S3_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`,
-`AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL`, `AWS_DEFAULT_REGION`, and
+**Environment** on the batch container, in the vault env file, beside the common worker variables:
+`AWS_S3_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL`,
+`AWS_DEFAULT_REGION` (the same Tigris values as the `Production` environment), and
 `SNAPSHOT_PUBLIC_BASE_URL=https://boardsesh-board-snapshots.t3.tigrisfiles.io`.
-The live R2 producer rotation is a separate, uncompleted gate; repository preparation does not rotate it.
-At rotation, set the complete named-bucket configuration together:
-
-- `SNAPSHOTS_S3_BUCKET_NAME=boardsesh-board-snapshots` and `SNAPSHOTS_AWS_REGION=auto`.
-- `SNAPSHOTS_AWS_ENDPOINT_URL` to the scoped R2 account endpoint and the matching
-  `SNAPSHOTS_AWS_ACCESS_KEY_ID` / `SNAPSHOTS_AWS_SECRET_ACCESS_KEY`.
-- Both `SNAPSHOT_PUBLIC_BASE_URL` and `SNAPSHOTS_PUBLIC_BASE_URL` to `https://snapshots.boardsesh.com`.
-
-The singular variable controls URLs embedded by the exporter; the plural variable is the named storage
-handle's public URL base. They must agree. A named bucket never borrows legacy credentials, and R2
-uploads omit ACLs automatically. Keep `SYNC_STABILITY_WINDOW_SECONDS` aligned with the backend.
-Missing storage or the singular public base fails the run before publication.
-For controlled migration exports, `--no-prune` (CLI) or `skipPrune: true` (operator payload) suppresses
-object listing/deletion in identity, gzip, and catalog passes; ordinary nightly retention is unchanged.
+`SYNC_STABILITY_WINDOW_SECONDS` only when the backend sets it. Do not set the `SNAPSHOTS_*` variables:
+they select a different bucket (the R2 rehearsal's). The run fails without retrying when the bucket is
+unconfigured (`SNAPSHOT_STORAGE_UNCONFIGURED`) or `SNAPSHOT_PUBLIC_BASE_URL` is empty
+(`SNAPSHOT_PUBLIC_BASE_URL_UNSET`), because a manifest of path-style Tigris URLs returns 403 to every
+client.
 
 **Scratch space.** Each layout's SQLite file is written under `os.tmpdir()` and then read whole into
 memory and gzipped (`kilter:1` is about 271 MB raw, 103 MB gzipped). Mount `/tmp` as a 2 GB tmpfs on the
@@ -268,7 +301,7 @@ with the writers, so it would see none of their transactions, and the live gzip 
 layout. `pg_read_all_stats` also lets the login read other sessions' query text; the observer reads
 only `state` and `xact_start`, and nothing it reads is logged.
 
-**Previous owner cutover (completed September 30; historical steps).** Two exporters on one prefix each merge an
+**Cutover** (last in #5800's order, after neighbors). Two exporters on one prefix each merge an
 older manifest and the later write drops the other's entries, so unlike recommendations the owners
 never overlap:
 
@@ -276,7 +309,10 @@ never overlap:
    `systemctl is-enabled boardsesh-dr-snapshot-full.timer boardsesh-dr-snapshot-refresh.timer` reports
    neither as enabled, and the host vars leave `boardsesh_dr_snapshot_enabled` and
    `boardsesh_dr_snapshot_timers_enabled` at their default `false`. Check what is deployed, not the
-   defaults: #5622 allows one publisher across Actions, Ansible timers and pg-boss.
+   defaults. Confirm the old GitHub/homelab schedules are quiesced before the batch family is enabled;
+   setting `SNAPSHOT_HOMELAB_EXPORT_ENABLED=true` is safe only while the workflow can run the watchdog
+   and catalog jobs as the sole non-batch owner. #5622 allows one publisher across Actions, Ansible
+   timers and pg-boss.
 2. Grant `pg_read_all_stats` (above), and deploy the environment and the 2 GB `/tmp`.
 3. `gh workflow disable export-board-snapshots.yml`. That stops new scheduled runs, not a run already
    in progress or queued, so wait until
@@ -291,8 +327,8 @@ never overlap:
    redeploy, so the live prefix goes no longer than one deploy without a scan.
 5. The cutover PR deletes the workflow's `schedule:`, updates
    `scripts/__tests__/batch-families-cron.test.ts` and `scripts/__tests__/snapshot-export-workflow.test.ts`,
-   and limits `workflow_dispatch` to a complete `storage_target == r2` rehearsal, so a manual Tigris dispatch
-   cannot become a second publisher. Keep Actions disabled except during an explicitly gated rehearsal.
+   and limits `workflow_dispatch` to `storage_target == r2`, so a manual Tigris dispatch can never
+   become a second publisher. Re-enable the workflow after it merges; only the R2 rehearsal remains.
 6. Wait for three nights of `succeeded` nightly rows and compare each night's manifest with the one
    before (entry count, per-layout row counts).
 
@@ -1233,8 +1269,8 @@ in-memory map loses exactly that one. `unknown` is an explicit, expected value.
 
 ### Manual export
 
-For a complete isolated R2 rehearsal only: trigger `.github/workflows/export-board-snapshots.yml` via
-`workflow_dispatch` after its producer-target gate is configured. Ordinary exports run on the worker.
+From CI: trigger `.github/workflows/export-board-snapshots.yml` via `workflow_dispatch` (GitHub UI or
+`gh workflow run export-board-snapshots.yml`).
 
 From the batch worker host, once the family owns the schedule (worker environment plus
 `WORKER_OPERATOR_ENABLED=true`):
@@ -1254,7 +1290,8 @@ From a local shell, from `packages/backend/`:
 DATABASE_URL=<primary connection string> \
 AWS_S3_BUCKET_NAME=... AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_ENDPOINT_URL=... AWS_DEFAULT_REGION=... \
 node --import tsx src/scripts/export-board-snapshots.ts \
-  [--dry-run] [--gzip] [--key-prefix <prefix>] [--refresh-threshold <rows>] \
+  [--dry-run] [--source primary|replica] [--fence] [--heartbeat] \
+  [--gzip] [--key-prefix <prefix>] [--refresh-threshold <rows>] \
   [--board <boardType>] [--layout <layoutId>]
 ```
 
@@ -1275,9 +1312,49 @@ node --import tsx src/scripts/export-board-snapshots.ts \
 - `--board`/`--layout` filter to a subset. A filter matching **zero** `(boardType, layoutId)` pairs is
   treated as an operator error and throws loudly (e.g. `--board=kilterr` typo) rather than silently leaving
   that board's artifacts stale.
-- `DATABASE_URL` must point at the **primary**, never a read replica (see the rationale above) — this is
-  read-only-sufficient (the export only `SELECT`s) but the write-time/commit-order mismatch on a replica is
-  a correctness bug, not a permissions one.
+- `--fence` makes a primary export acquire the same direct-session fence as replica mode. Production and
+  manual publishing runs use it; it is optional only for local primary dry-runs/tests.
+- `--source=replica` reads bulk rows from `SNAPSHOT_REPLICA_DATABASE_URL` only after acquiring the fence
+  through `DATABASE_DIRECT_URL` and reaching its replay barrier. `DATABASE_URL` remains the ordinary
+  primary read pool for `--source=primary`.
+- `--heartbeat` implies `--fence` and is accepted only for an unfiltered, gzip export to
+  `board-snapshots/v1-gzip`. It writes no-store `board-snapshots/ops/{refresh,full}.json` only after a
+  successful run (including a healthy threshold no-op). It requires an exact
+  `SNAPSHOT_EXPORTER_IMAGE_DIGEST=sha256:...`. Shadow or filtered runs must not emit production health.
+
+### Primary coordinator role
+
+`DATABASE_DIRECT_URL` must be a direct PostgreSQL endpoint. PgBouncer transaction mode can move two
+statements to different server sessions and therefore cannot hold this advisory lock. A pooler URL fails
+safe at the first lock assertion, but it is still a configuration error.
+
+The migration deliberately revokes every `ops` function from `PUBLIC`. Create a narrow login outside the
+schema migration (password from 1Password), then grant only:
+
+```sql
+GRANT CONNECT ON DATABASE railway TO boardsesh_snapshot_coordinator;
+GRANT USAGE ON SCHEMA ops TO boardsesh_snapshot_coordinator;
+GRANT EXECUTE ON FUNCTION ops.acquire_board_snapshot_fence(integer)
+  TO boardsesh_snapshot_coordinator;
+GRANT EXECUTE ON FUNCTION ops.board_snapshot_fence_held()
+  TO boardsesh_snapshot_coordinator;
+GRANT EXECUTE ON FUNCTION ops.release_board_snapshot_fence()
+  TO boardsesh_snapshot_coordinator;
+GRANT EXECUTE ON FUNCTION ops.board_snapshot_cluster_identity()
+  TO boardsesh_snapshot_coordinator;
+```
+
+The `SECURITY DEFINER` fence owner must be a superuser or have effective `USAGE` of `pg_read_all_stats`;
+membership granted with inheritance disabled is rejected because it leaves other sessions' transaction
+timestamps masked. The function checks this on every acquisition. Audit its owner and grants after every
+logical restore. The coordinator
+needs no table DML. Also grant `USAGE` on `ops` and `EXECUTE` on
+`ops.board_snapshot_cluster_identity()` to the read-only role embedded in `DATABASE_URL`; each fenced
+primary export proves that the read pool is writable and belongs to the coordinator's exact system and
+timeline before reading or publishing. The local standby URL uses a separate read-only role with `SELECT` on the three
+snapshot tables, `USAGE` on `ops`, `EXECUTE` on `ops.board_snapshot_cluster_identity()`, and
+`pg_read_all_stats` so WAL-receiver state is visible. Grant those capabilities on the primary before the
+physical base backup so role metadata reaches the standby.
 
 ### Verify deletion replay metadata after a live full refresh
 
@@ -1374,87 +1451,57 @@ watermark; only a verified live gzip replay boundary carries the stronger long-t
 
 ### Required Production secrets
 
-The manual R2 rehearsal uses GitHub `Production` secrets `DATABASE_URL`,
-`SNAPSHOTS_R2_AWS_ENDPOINT_URL`, `SNAPSHOTS_R2_AWS_ACCESS_KEY_ID`, and
-`SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY`, with the required producer-target variable described below.
-Legacy Tigris `AWS_*` credentials belong to the current homelab producer and its rollback configuration;
-Actions no longer consumes them. `SYNC_STABILITY_WINDOW_SECONDS` remains an optional variable
-passthrough and must match the backend's configured stability window.
+Set on the `Production` GitHub environment (referenced by the workflow): `DATABASE_URL`,
+`DATABASE_DIRECT_URL`,
+`AWS_S3_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL`,
+`AWS_DEFAULT_REGION`, and `DISCORD_DEPLOY_WEBHOOK`. The fallback notification fails loudly if the webhook
+is absent or rejects the message, preventing a green but silent Railway fallback. The workflow also accepts the Tigris console's exported names
+(`AWS_ENDPOINT_URL_S3`, `AWS_REGION`) so rotating keys stays copy-paste. `SYNC_STABILITY_WINDOW_SECONDS`
+is an optional `vars.*` passthrough (only needed if the backend's stability window is ever configured off
+its 30s default — the export reads the same env var so the two stay in lockstep).
 
-The Production environment restricts deployments to `main` and `release/next`, so `workflow_dispatch`
-runs of the export must be dispatched from `main` — a feature-branch dispatch fails immediately with a
-branch-policy rejection and zero log output.
+Set these repository variables only after the seven-day shadow comparison and timer alert test:
+
+- `SNAPSHOT_EXPORTER_IMAGE_DIGEST=sha256:...` — exact digest of the released backend image used by both homelab and GitHub fallback.
+- `SNAPSHOT_PRIMARY_FENCE_ENABLED=true` — set only after `DATABASE_DIRECT_URL`, function ownership, and coordinator grants have been verified by a successful manual primary export. Until then, the legacy GitHub schedules retain their pre-migration unfenced behavior, so merging this code cannot strand the existing publisher.
+- `SNAPSHOT_HOMELAB_EXPORT_ENABLED=true` — transfers the per-layout schedule to the homelab and enables the heartbeat watchdog. Set the digest and primary-fence variables first, and keep the batch-worker family disabled. Clearing this variable restores the GitHub primary schedules; it does not touch PostgreSQL replication.
+
+Homelab-only secrets/config: `SNAPSHOT_REPLICA_DATABASE_URL`, the same narrow `DATABASE_DIRECT_URL`, S3 credentials, and the digest above. Default gates are configurable through `SNAPSHOT_REPLICA_MAX_LAG_SECONDS` (30), `SNAPSHOT_REPLICA_WAIT_SECONDS` (600), and `SNAPSHOT_MAX_CUTOFF_AGE_SECONDS` (600); loosening them requires another delayed-commit shadow test.
+
+The Production environment restricts deployments to `main` and `release/next`, so `workflow_dispatch` runs of the export must be dispatched from an allowed branch — a feature-branch dispatch fails immediately with a branch-policy rejection and zero log output.
 
 **Public URL base (Tigris quirk)**: the manifest's per-artifact `url` fields must be fetchable
 unauthenticated. Tigris serves public objects **only** on the bucket's virtual-host domain
 (`https://<bucket>.t3.tigrisfiles.io/<key>`); the S3 endpoint's path-style form that `getPublicUrl`
 builds (`https://t3.storage.dev/<bucket>/<key>`) returns 403 for anonymous GETs even on a public
-bucket. The exporter therefore uses `SNAPSHOT_PUBLIC_BASE_URL` (not a secret) to embed public URLs.
-The active Tigris producer stays aligned with the shipped mobile bases. The isolated R2 rehearsal
-sets both singular `SNAPSHOT_PUBLIC_BASE_URL` and plural `SNAPSHOTS_PUBLIC_BASE_URL` to
-`https://snapshots.boardsesh.com`, while shipped readers intentionally stay Tigris until the reader gate.
-After cutover, the mobile value is `${SNAPSHOT_PUBLIC_BASE_URL}/board-snapshots/v1-gzip`.
+bucket. The workflow therefore sets `SNAPSHOT_PUBLIC_BASE_URL` (not a secret — it appears in every
+manifest) and the export re-bases entry URLs onto it. Keep it consistent with
+`EXPO_PUBLIC_SNAPSHOT_BASE_URL` in the mobile workflows: the mobile value is
+`${SNAPSHOT_PUBLIC_BASE_URL}/board-snapshots/v1-gzip`.
 
 ### Moving the snapshot bucket to R2
 
-**Preparation is implemented; live producer and reader cutover remain uncompleted.** The migration is a
-full re-export from the primary, not an object copy. The homelab worker and every shipped app still use
-Tigris. Keep mobile workflow bases and both developer-database defaults there until a complete R2 export
-passes the gate below. No object or bucket deletion belongs in the migration.
+The migration is a full re-export from the primary database, not an object copy. Until cutover, schedules and
+ordinary manual runs continue writing Tigris, and every shipped app continues reading Tigris.
 
-1. Run `vp run cf:apply -- --apply` twice to create/converge the R2 bucket, `snapshots.boardsesh.com`,
-   CORS, and cache/header rules. Add bucket-scoped `SNAPSHOTS_R2_AWS_ENDPOINT_URL`,
-   `SNAPSHOTS_R2_AWS_ACCESS_KEY_ID`, `SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY` to GitHub `Production`.
-   Confirm the homelab worker still targets Tigris before setting `SNAPSHOT_PUBLISHER_STORAGE_TARGET=tigris`.
-2. Keep the existing worker running on Tigris. Prove the retired queued Actions publisher is unable to
-   start before temporarily enabling **Export Board Snapshots** and dispatching from `main` with
-   `storage_target=r2`. Unresolved legacy queue state blocks this step. The workflow captures the active
-   Tigris gzip manifest as trusted coverage before exporting all three R2 prefixes without pruning.
-   Actions has no scheduled/partial/Tigris export path. Do not bypass its producer-target gate.
-3. Require `storage:verify-snapshots` to pass every manifest, main artifact, grades artifact, and catalog
-   artifact. It compares bounded signed S3 downloads with public GETs with and without `Origin`, after
-   decoding gzip; checks stored/decoded sizes and SHA-256, SQLite integrity, table coverage, row counts,
-   exact microsecond/bigint watermarks, layout membership, deletion replay boundaries, freshness,
-   CORS, immutable caching, and a manifest cache HIT. A successful worker nightly alone is insufficient:
-   catalog failure is nonfatal on the worker, so the fresh catalog must pass independently.
-4. Immediately before live rotation, repeat the full rehearsal. Set `SNAPSHOT_PUBLISHER_STORAGE_TARGET=r2`,
-   disable Actions, and drain its queued/in-progress runs. Temporarily remove this family from the backend's
-   `BATCH_FAMILIES_ENABLED`, redeploy, and wait for its queued/running/retrying ledger rows to finish.
-   Rotate the homelab vault/deploy to the complete R2 configuration above. Capture a trusted coverage file
-   and UTC start time, then enqueue a full operator nightly with `skipPrune: true`. Verify all three
-   prefixes, and exercise the live scan and filtered/gzip-only operator modes with `skipPrune: true`.
-   Restore the family's schedules only after the R2 producer is verified; leave Actions disabled.
-5. In a separate reader cutover PR, change all seven mobile workflow bases to
-   `https://snapshots.boardsesh.com/board-snapshots/v1-gzip`, both dev-database defaults to
-   `https://snapshots.boardsesh.com`, and public dataset/runbook URLs. Publish the mobile OTA only after
-   producer verification. Prove fresh iOS/Android board downloads use snapshots, and browser/dev-database
-   consumers work. Retain Tigris read access for at least 30 days and compare 404/download-failure telemetry.
-   Removing its data remains a separate, explicitly approved operation.
-
-The verifier is read-only against storage and Postgres (it uses no database connection); its only writes
-are temporary local files, removed on completion/failure. Its signed S3 key needs only object-read access.
-It requires a trusted pre-export coverage file and the controlled full export's UTC start time:
-
-```sh
-vp run storage:verify-snapshots -- --expected-manifest /tmp/snapshot-expected-manifest.json \
-  --built-after 2026-10-04T00:00:00.000Z
-```
-
-Use the named `SNAPSHOTS_*` R2 configuration above when running locally. The coverage file must come from
-an active producer before the export, not the destination manifest under test. New layouts may be added,
-but expected layouts and grades cannot disappear; identity/gzip coverage must agree. No public manifest
-checksum/schema field is added. Download limits are 2 GiB per artifact and 5 minutes per body; metadata
-with a larger declared size fails closed. Cache probes stop after 13 attempts across 60 seconds. JSON
-reports include each verified artifact and a final `passed`/`failed` result; any failed gate exits nonzero.
-A curl/Node transport check does not replace real iOS/Android gzip decoding and import verification.
-
-Rollback: disable/drain Actions, pause snapshot scheduling and drain worker jobs, restore the homelab
-Tigris configuration and run a full `skipPrune: true` export. Validate the fresh Tigris gzip manifest
-and every main artifact with the curl/SQLite deletion-replay recipe above; fetch its grades and catalog
-artifacts and exercise the dev-database loader plus fresh native board imports. The new
-`storage:verify-snapshots` command is specifically pinned to R2 and cannot validate the Tigris rollback.
-Restore scheduling after those Tigris checks pass, and revert reader bases by OTA if they already moved. Do not re-enable retired Actions schedules or introduce a
-second publisher. Both providers remain intact throughout this rollback window.
+1. Merge the R2 prepare change and run `vp run cf:apply -- --apply` twice. The first apply can create
+   `boardsesh-board-snapshots`; the second attaches `snapshots.boardsesh.com` and converges CORS, cache, and response
+   header rules.
+2. Add `SNAPSHOTS_R2_AWS_ENDPOINT_URL`, `SNAPSHOTS_R2_AWS_ACCESS_KEY_ID`, and
+   `SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY` to the `Production` GitHub environment. Scope the key to the snapshot bucket.
+3. Dispatch **Export Board Snapshots** from `main` with `storage_target=r2`, `gzip_only=false`, and every filter blank.
+   The workflow rejects a partial R2 run, exports all three prefixes, then checks every manifest and referenced
+   artifact through `snapshots.boardsesh.com`, including immutable caching and CORS with and without `Origin`. A
+   cold Cloudflare edge gets up to 13 cache probes across 60 seconds to produce the required `cf-cache-status: HIT`.
+4. Dispatch the same full R2 export immediately before cutover. In the same cutover change
+   `.github/workflows/export-board-snapshots.yml` so scheduled exports and an ordinary manual dispatch default to
+   the R2 bucket, R2 credentials, and `SNAPSHOT_PUBLIC_BASE_URL=https://snapshots.boardsesh.com`. Until that change,
+   both still publish to Tigris unless a manual run explicitly selects `storage_target=r2`. Keep an explicit Tigris
+   target as the rollback path. Change all seven mobile workflow snapshot bases, the dev-database loader, and this
+   document to `https://snapshots.boardsesh.com`; merge those producer and reader changes together, then publish the
+   mobile OTA.
+5. Keep the Tigris bucket read-only for 30 days. Compare 404 and download-failure telemetry before requesting its
+   deletion; deletion remains a separate, explicitly approved operation.
 
 ### Recovery controls
 
@@ -1578,7 +1625,7 @@ lets the image be built entirely from public, production-derived, nightly-verifi
 | -------- | ------------------------------------------------------------------------------------------- |
 | Script   | `packages/backend/src/scripts/export-board-catalog.ts`                                      |
 | Prefix   | `board-snapshots/v1-catalog` — one gzip artifact + its own `manifest.json`                  |
-| Cadence  | The 07:15 UTC nightly only. Never the 15-minute scan; never a `--board`/`--layout` dispatch |
+| Cadence  | The 07:15 UTC scheduled nightly only (full-run job before homelab mode, catalogue-only job after); never the 15-minute scan |
 | Size     | ~12 MB gzipped (~63 MB on disk), dominated by `board_climb_aliases`                         |
 | Consumer | `packages/db/scripts/load-board-snapshots.ts`, run by `Dockerfile.dev-db`                   |
 
@@ -1619,6 +1666,43 @@ Same 14-day prune grace as the other prefixes, and the manifest is written last,
 sees a key that is not on S3 yet.
 
 ## Rollout plan
+
+### Homelab replica exporter
+
+This cutover is independently reversible and does not require promoting the standby:
+
+1. Deploy migration `0200_board_snapshot_replica_fence`, audit the function owner, create the narrow
+   coordinator/standby roles, and set `DATABASE_DIRECT_URL`. Keep both repository flags unset.
+2. Set `SNAPSHOT_PRIMARY_FENCE_ENABLED=true`; run one unfiltered manual identity+gzip export. Confirm the
+   direct session retains the advisory lock through publish and a simultaneous second exporter exits with
+   SQLSTATE `55P03` without changing the manifest.
+3. Remove the one-way PG16→PG18 logical-upgrade subscription after its rollback window, then seed the final
+   PG18 physical standby. Do not reuse a standby which observed logical apply. Confirm streaming/replay
+   alerts, then run replica exports under a shadow key prefix for seven days **without `--heartbeat`**.
+   Pause catalog/grade writers for one controlled
+   comparison and compare the primary and standby row sets and watermarks at the same fixed cutoff. Also
+   exercise the held-old-transaction test against the candidate environment.
+4. Install the digest-pinned systemd timers but leave them disabled. Manually exercise full, threshold
+   no-op, lag-too-high, replay-paused, lost-primary-session, and S3-failure paths. Only successful live
+   gzip runs may update the public heartbeat. Every failure must emit no new success heartbeat; failures
+   before the manifest PUT keep the old manifest, while a simulated post-PUT fence loss verifies that the
+   watchdog repairs the manifest without treating the failed run as healthy.
+5. Set `SNAPSHOT_EXPORTER_IMAGE_DIGEST`, enable the homelab timers, and then set
+   `SNAPSHOT_HOMELAB_EXPORT_ENABLED=true`. Confirm GitHub's next watchdog sees both fresh heartbeats and
+   performs no primary export.
+6. Stop the homelab timer long enough for the 45-minute gate. Confirm GitHub alerts and performs one
+   pinned-image primary threshold fallback. Exercise the 30-hour full decision with an isolated test
+   heartbeat/base URL rather than withholding production full exports for a day.
+7. Roll back by clearing `SNAPSHOT_HOMELAB_EXPORT_ENABLED`; the original GitHub schedules resume. Leave
+   `SNAPSHOT_PRIMARY_FENCE_ENABLED=true` unless the coordinator itself is broken. Do not route mobile
+   reads to a shadow prefix and do not automatically fall back from a failing replica run inside the
+   homelab timer; the public watchdog is the single fallback authority.
+
+Record each exercise's cutoff age, fence-to-replay time, replay bytes/seconds, artifact row counts,
+watermarks, manifest key, heartbeat age, and whether Railway fallback ran. The production cutover gate is
+seven clean shadow days plus the alert/fallback exercise, not merely a successful `pg_is_in_recovery()`.
+
+### Mobile snapshot bootstrap
 
 1. **Build configuration**: confirm `EXPO_PUBLIC_SNAPSHOT_BASE_URL` is set to the real Tigris bucket URL
    in every native build. With the env var missing, the app intentionally uses the paged crawl (see Mobile
