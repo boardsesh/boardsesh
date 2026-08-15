@@ -4506,13 +4506,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "website_vouched_by_owner": {
-          "name": "website_vouched_by_owner",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "contact_email": {
           "name": "contact_email",
           "type": "text",
