@@ -162,6 +162,10 @@ if ! jq -e 'type == "array"' >/dev/null 2>&1 <<<"$ALL_PR_JSON"; then
   echo "GitHub PR metadata was not a valid JSON array; no worktrees were changed" >&2
   exit 1
 fi
+PR_METADATA_COUNT=$(jq 'length' <<<"$ALL_PR_JSON")
+if [ "$PR_METADATA_COUNT" -ge "$PR_METADATA_LIMIT" ]; then
+  echo "Warning: only the newest $PR_METADATA_LIMIT PRs were loaded; older unmatched branches will use the conservative no-PR policy" >&2
+fi
 
 # Returns 0 (true) if the working tree at $1 is clean.
 worktree_clean() {

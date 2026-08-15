@@ -126,6 +126,17 @@ async function createFixture(headAgeSeconds: number, candidateRelativePath = 'fe
     '#!/bin/sh\n' +
       'if [ "$1" = auth ] && [ "$2" = status ]; then exit 0; fi\n' +
       'if [ "$1" = pr ] && [ "$2" = list ]; then\n' +
+      '  if [ -n "${GH_PR_COUNT:-}" ]; then\n' +
+      '    printf "["\n' +
+      '    pr_index=1\n' +
+      '    while [ "$pr_index" -le "$GH_PR_COUNT" ]; do\n' +
+      '      if [ "$pr_index" -gt 1 ]; then printf ","; fi\n' +
+      '      printf \'{"createdAt":"2026-01-01T00:00:00Z","headRefName":"unrelated","isCrossRepository":false,"mergeCommit":null,"mergedAt":null,"number":%s,"state":"CLOSED","url":"https://github.com/boardsesh/boardsesh/pull/%s"}\' "$pr_index" "$pr_index"\n' +
+      '      pr_index=$((pr_index + 1))\n' +
+      '    done\n' +
+      '    printf "]\\n"\n' +
+      '    exit 0\n' +
+      '  fi\n' +
       '  printf "%s\\n" "$GH_PR_JSON"\n' +
       '  exit 0\n' +
       'fi\n' +
@@ -515,6 +526,17 @@ describe('cleanup-merged-worktrees safety policy', () => {
     expect(result.stdout).toContain('PR #41 merged; inactive 1d');
     expect(result.stdout).toContain('Removed: 1');
     expect(runGit(['rev-parse', 'feature'], fixture.primaryWorktree)).toBe(fixture.candidateHead);
+  });
+
+  it('warns when the bounded PR metadata window is full', async () => {
+    const fixture = await createFixture(24 * 60 * 60);
+    const result = runCleanup(fixture, [], [], { GH_PR_COUNT: '1000' });
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toContain(
+      'only the newest 1000 PRs were loaded; older unmatched branches will use the conservative no-PR policy',
+    );
+    expect(result.stdout).toContain('no PR; inactive for 1d, minimum is 7d');
   });
 
   it('revalidates HEAD for a no-PR candidate immediately before applying removal', async () => {
