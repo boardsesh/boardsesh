@@ -7,6 +7,7 @@ const DEFAULT_FULL_MAX_AGE_SECONDS = 30 * 60 * 60;
 const DEFAULT_MAX_CUTOFF_AGE_SECONDS = 10 * 60;
 const MAX_FUTURE_CLOCK_SKEW_SECONDS = 5 * 60;
 const HEARTBEAT_FETCH_TIMEOUT_MS = 10_000;
+const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
 
 type SnapshotRunKind = 'refresh' | 'full';
 type SnapshotHeartbeatLineage = { systemIdentifier: string; timelineId: number };
@@ -50,6 +51,27 @@ function positiveSeconds(raw: string | undefined, fallback: number, name: string
 
 function isRecord(candidate: unknown): candidate is Record<string, unknown> {
   return typeof candidate === 'object' && candidate !== null && !Array.isArray(candidate);
+}
+
+function normalizedPublicBaseUrl(rawPublicBaseUrl: string): string {
+  const publicBaseUrl = rawPublicBaseUrl.trim().replace(/\/+$/, '');
+  if (!publicBaseUrl) throw new Error('publicBaseUrl is required');
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(publicBaseUrl);
+  } catch {
+    throw new Error('publicBaseUrl must be an absolute URL');
+  }
+  const hostname = parsedUrl.hostname.toLowerCase().replace(/^\[(.*)\]$/, '$1');
+  const isExplicitLoopback = LOOPBACK_HOSTNAMES.has(hostname);
+  if (parsedUrl.protocol !== 'https:' && !(parsedUrl.protocol === 'http:' && isExplicitLoopback)) {
+    throw new Error('publicBaseUrl must use HTTPS outside an explicit loopback host');
+  }
+  if (parsedUrl.username || parsedUrl.password || parsedUrl.search || parsedUrl.hash) {
+    throw new Error('publicBaseUrl must not contain credentials, a query, or a fragment');
+  }
+  return publicBaseUrl;
 }
 
 function parseHeartbeat(
@@ -211,8 +233,7 @@ export async function snapshotHeartbeatDecision(params: {
   maxCutoffAgeSeconds?: number;
   fetchHeartbeat?: FetchHeartbeat;
 }): Promise<SnapshotHeartbeatDecision> {
-  const publicBaseUrl = params.publicBaseUrl.trim().replace(/\/+$/, '');
-  if (!publicBaseUrl) throw new Error('publicBaseUrl is required');
+  const publicBaseUrl = normalizedPublicBaseUrl(params.publicBaseUrl);
   if (!/^sha256:[0-9a-f]{64}$/.test(params.expectedImageDigest)) {
     throw new Error('expectedImageDigest must be an exact sha256 digest');
   }
