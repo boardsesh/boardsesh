@@ -1478,13 +1478,26 @@ is absent or rejects the message, preventing a green but silent Railway fallback
 is an optional `vars.*` passthrough (only needed if the backend's stability window is ever configured off
 its 30s default — the export reads the same env var so the two stay in lockstep).
 
+Provision and exercise the Production `DATABASE_DIRECT_URL` **before either feature flag is enabled**. It
+must be the direct, unpooled Railway endpoint using the coordinator role; a successful fenced manual export
+is the acceptance check. The GitHub workflow never reads the standby and therefore must not receive
+`SNAPSHOT_REPLICA_DATABASE_URL`.
+
 Set these repository variables only after the seven-day shadow comparison and timer alert test:
 
 - `SNAPSHOT_EXPORTER_IMAGE_DIGEST=sha256:...` — exact digest of the released backend image used by both homelab and GitHub fallback.
 - `SNAPSHOT_PRIMARY_FENCE_ENABLED=true` — set only after `DATABASE_DIRECT_URL`, function ownership, and coordinator grants have been verified by a successful manual primary export. Until then, the legacy GitHub schedules retain their pre-migration unfenced behavior, so merging this code cannot strand the existing publisher.
 - `SNAPSHOT_HOMELAB_EXPORT_ENABLED=true` — transfers the per-layout schedule to the homelab and enables the heartbeat watchdog. Set the digest and primary-fence variables first, and keep the batch-worker family disabled. Clearing this variable restores the GitHub primary schedules; it does not touch PostgreSQL replication.
 
-Homelab-only secrets/config: `SNAPSHOT_REPLICA_DATABASE_URL`, the same narrow `DATABASE_DIRECT_URL`, S3 credentials, and the digest above. Default gates are configurable through `SNAPSHOT_REPLICA_MAX_LAG_SECONDS` (30), `SNAPSHOT_REPLICA_WAIT_SECONDS` (600), and `SNAPSHOT_MAX_CUTOFF_AGE_SECONDS` (600); loosening them requires another delayed-commit shadow test.
+Homelab-only secrets/config: `SNAPSHOT_REPLICA_DATABASE_URL` and a separately provisioned
+`DATABASE_DIRECT_URL` with the same narrow privilege contract, plus S3 credentials and the digest above.
+Provision both database URLs through the homelab's 1Password/Ansible boundary before enabling its shadow
+timer. The replica URL must resolve to the local read-only physical standby, while the direct URL must
+resolve to the unpooled Railway primary. Never copy credentials between trust domains: provision
+`DATABASE_DIRECT_URL` independently for GitHub and homelab, and never add the replica URL to GitHub.
+Default gates are configurable through
+`SNAPSHOT_REPLICA_MAX_LAG_SECONDS` (30), `SNAPSHOT_REPLICA_WAIT_SECONDS` (600), and
+`SNAPSHOT_MAX_CUTOFF_AGE_SECONDS` (600); loosening them requires another delayed-commit shadow test.
 
 The Production environment restricts deployments to `main` and `release/next`, so `workflow_dispatch` runs of the export must be dispatched from an allowed branch — a feature-branch dispatch fails immediately with a branch-policy rejection and zero log output.
 

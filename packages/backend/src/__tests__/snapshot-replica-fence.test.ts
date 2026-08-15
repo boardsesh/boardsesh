@@ -10,6 +10,7 @@ import { toIso } from '../graphql/resolvers/sync/row-normalize';
 import {
   createIsolatedSnapshotPool,
   exportLayoutSnapshot,
+  reservedSnapshotClient,
   waitForReplicaReplay,
 } from '../scripts/export-board-snapshots';
 import { getWorkerDatabaseUrl } from './worker-db';
@@ -91,10 +92,57 @@ describe('replica snapshot fence', () => {
           date_value: '2026-08-15',
         },
       ]);
+
+      // The pinned Drizzle postgres-js driver deliberately installs a
+      // transparent parser for numeric[] (OID 1231), not time[] (OID 1183).
+      // Isolated pools must match that exact, slightly non-obvious contract.
+      const parserParityQuery = `SELECT ARRAY[1.25, 2.50]::numeric[] AS numeric_array,
+                                        ARRAY['12:34:56.123456'::time] AS time_array`;
+      const isolatedParserRows = await replicaConnection.unsafe(parserParityQuery);
+      const drizzleParserRows = await createPool().unsafe(parserParityQuery);
+      expect(isolatedParserRows).toEqual(drizzleParserRows);
     } finally {
       await replicaConnection.unsafe('RESET TIME ZONE').catch(() => {});
       replicaConnection.release();
       await replicaPool.end({ timeout: 5 });
+    }
+  });
+
+  it('runs commit and rollback transactions on the exact reserved snapshot backend', async () => {
+    const snapshotPool = createIsolatedSnapshotPool(getWorkerDatabaseUrl(), 1);
+    const reservedConnection = await snapshotPool.reserve();
+    const snapshotClient = reservedSnapshotClient(reservedConnection);
+    try {
+      const reservedPidRows = await reservedConnection.unsafe('SELECT pg_backend_pid() AS pid');
+      const reservedPid = Number((reservedPidRows[0] as unknown as { pid: unknown }).pid);
+
+      await snapshotClient.begin(async (transaction) => {
+        const transactionPidRows = await transaction.unsafe('SELECT pg_backend_pid() AS pid');
+        expect(Number((transactionPidRows[0] as unknown as { pid: unknown }).pid)).toBe(reservedPid);
+        await transaction.unsafe(
+          `INSERT INTO board_climbs (uuid, board_type, layout_id, compatible_size_ids)
+           VALUES ('reserved-commit', 'kilter', 1, '{5}'::int[])`,
+        );
+      });
+      await expect(
+        reservedConnection.unsafe("SELECT count(*)::int AS count FROM board_climbs WHERE uuid = 'reserved-commit'"),
+      ).resolves.toMatchObject([{ count: 1 }]);
+
+      await expect(
+        snapshotClient.begin(async (transaction) => {
+          await transaction.unsafe(
+            `INSERT INTO board_climbs (uuid, board_type, layout_id, compatible_size_ids)
+             VALUES ('reserved-rollback', 'kilter', 1, '{5}'::int[])`,
+          );
+          throw new Error('force reserved snapshot rollback');
+        }),
+      ).rejects.toThrow('force reserved snapshot rollback');
+      await expect(
+        reservedConnection.unsafe("SELECT count(*)::int AS count FROM board_climbs WHERE uuid = 'reserved-rollback'"),
+      ).resolves.toMatchObject([{ count: 0 }]);
+    } finally {
+      reservedConnection.release();
+      await snapshotPool.end({ timeout: 5 });
     }
   });
 
