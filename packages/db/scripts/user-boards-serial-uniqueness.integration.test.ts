@@ -138,7 +138,7 @@ async function insertBoard(
   `);
 }
 
-describe('user_boards serial uniqueness — system catalog exemption', () => {
+void describe('user_boards serial uniqueness — system catalog exemption', () => {
   const sharedSerial = 'SERIALUNIQ-TEST-75934';
   const otherOwnerId = 'serial-uniqueness-test-owner';
   const uuids = {
@@ -148,7 +148,7 @@ describe('user_boards serial uniqueness — system catalog exemption', () => {
     other2: 'bbbb2222-0000-0000-0000-000000000002',
   };
 
-  it('lets two system-owned boards share a serial, but blocks a non-system owner from reusing one', async () => {
+  void it('lets two system-owned boards share a serial, but blocks a non-system owner from reusing one', async () => {
     const databaseUrl = testDatabaseUrl();
     if (!databaseUrl) {
       console.warn('[serial-uniqueness] skipped: set DATABASE_URL to a local Postgres to run');
