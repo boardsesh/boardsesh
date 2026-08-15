@@ -471,8 +471,8 @@ export type SyncOptions = {
    */
   isOnUnmeteredNetwork?: () => boolean | Promise<boolean>;
   /**
-   * Wall clock for the bootstrap retry ladder. Injected so the cooldown schedule
-   * is testable without fake timers fighting the SQLite test double.
+   * Wall clock for the bootstrap retry ladder and progress throttle. Injected so
+   * both schedules are testable without fake timers fighting the SQLite double.
    * Defaults to `Date.now`.
    */
   now?: () => number;
@@ -1226,19 +1226,6 @@ async function runBootstrapPhase(params: {
 
   const skipPagedPull = new Set<string>();
   const manifestCache: ManifestResolutionCache = {};
-  // Progress frames (issue #4311). Every emission below is SYNCHRONOUS — the
-  // throttle is a pure state machine — so none of this introduces a new `await`
-  // and none of it shifts where a wipe can land relative to the epoch checks.
-  const progressThrottle = createSnapshotProgressThrottle({ now: () => Date.now() });
-  const emitSnapshotFrame = (frame: SnapshotBootstrapProgress | null): void => {
-    if (!frame) return;
-    onProgress?.({
-      phase: 'bootstrap',
-      currentTable: frame.scopeKey,
-      documentsProcessed: 0,
-      snapshot: frame,
-    });
-  };
   type LayoutDownloadRecord = {
     file: SnapshotArtifactHandle | null;
     cause: unknown;
@@ -1423,6 +1410,21 @@ async function runBootstrapPhase(params: {
 
   try {
     for (const scope of scopes) {
+      // Progress state belongs to one scope. Keeping the high-water mark or
+      // throttle window across boards can make scope B inherit scope A's last
+      // fraction if a future path omits one of today's explicit stage flushes.
+      // Every emission is synchronous, so this pure state machine adds no await
+      // boundary and cannot move a purge check.
+      const progressThrottle = createSnapshotProgressThrottle({ now });
+      const emitSnapshotFrame = (frame: SnapshotBootstrapProgress | null): void => {
+        if (!frame) return;
+        onProgress?.({
+          phase: 'bootstrap',
+          currentTable: frame.scopeKey,
+          documentsProcessed: 0,
+          snapshot: frame,
+        });
+      };
       let metadataSettled = false;
       try {
         const loopTopVerdict = teardownVerdict(scope.scopeKey);
@@ -1866,7 +1868,7 @@ async function runBootstrapPhase(params: {
           if (cachedDownload.file) {
             bootstrapTimings.set(scope.scopeKey, {
               bytes: entry.bytes,
-              downloadMs: Date.now() - downloadStartedAt,
+              downloadMs: cachedDownload.downloadMs,
             });
           }
         }
@@ -2200,6 +2202,10 @@ async function runBootstrapPhase(params: {
         funnelGuard.settleUncaught(error);
         throw error;
       } finally {
+        // A native callback may arrive after this scope has settled while the
+        // phase is already working on another board. Cancel here so it cannot
+        // re-light the old row or contaminate the next scope's progress state.
+        progressThrottle.cancel();
         // Un-bypassable: a `break` or `continue` a future change adds below the
         // Started emission closes the funnel here whether or not it remembers to.
         funnelGuard.close();
@@ -2207,10 +2213,6 @@ async function runBootstrapPhase(params: {
       }
     }
   } finally {
-    // Before the artifact cleanup awaits, so an onProgress callback still queued
-    // behind them cannot emit a frame after the phase is over and re-light a row
-    // the UI already moved past.
-    progressThrottle.cancel();
     // Hand every artifact back rather than deleting it outright. A source with
     // no retention support falls through to deleteArtifact and behaves exactly
     // as it did before #4310; a retention-capable one keeps the files the phase

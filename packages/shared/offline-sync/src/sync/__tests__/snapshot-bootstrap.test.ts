@@ -405,6 +405,13 @@ describe('getBootstrapMetadataByScope', () => {
       'checkpoint:board_climb_stats:kilter:9:20',
       '{}',
     ]);
+    // Grades retries are a separate importer-only budget. They must not create
+    // a whole-layout BootstrapScopeMetadata row for an otherwise untouched
+    // scope.
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [
+      'grades-bootstrap-attempts:missing:4:20',
+      '2',
+    ]);
     // An unrequested scope must not become an accidental row in the returned map.
     await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-attempts:moonboard:3:7', '1']);
 
@@ -2779,10 +2786,108 @@ describe('pullSync bootstrap progress frames', () => {
     });
 
     expect(source.downloadArtifact).toHaveBeenCalledTimes(1);
-    // The second size gets manifest + download-start + import captions, but the
-    // byte stream belongs solely to the scope that actually pulled the file.
+    // The second size gets its own manifest + import captions, but no download
+    // stage because the layout artifact is already cached in this cycle. Its
+    // first frame proves scope A's throttle state did not suppress scope B.
     const byteFrames = collector.frames.filter((frame) => frame.stage === 'download' && (frame.fraction ?? 0) > 0);
     expect(byteFrames.every((frame) => frame.scopeKey === 'kilter:1:5')).toBe(true);
+    expect(collector.frames.filter((frame) => frame.scopeKey === 'kilter:1:6').map((frame) => frame.stage)).toEqual([
+      'manifest',
+      'import',
+    ]);
+  });
+
+  it('does not carry a download throttle window from one scope into the next', async () => {
+    const firstFilePath = join(workDir, 'progress-layout-1.db');
+    const secondFilePath = join(workDir, 'progress-layout-2.db');
+    buildArtifact({
+      filePath: firstFilePath,
+      climbs: [{ uuid: 'layout-1', layoutId: 1, compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    buildArtifact({
+      filePath: secondFilePath,
+      climbs: [{ uuid: 'layout-2', layoutId: 2, compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const firstEntry = progressEntry({ layoutId: 1, key: 'layout-1.db', url: 'https://example.test/layout-1.db' });
+    const secondEntry = progressEntry({ layoutId: 2, key: 'layout-2.db', url: 'https://example.test/layout-2.db' });
+    const source: SnapshotSource = {
+      fetchManifest: vi.fn(async () => makeManifest([firstEntry, secondEntry])),
+      downloadArtifact: vi.fn(
+        async (
+          entry: SnapshotManifestEntry,
+          options?: { onProgress?: (p: { bytesWritten: number; totalBytes: number | null }) => void },
+        ) => {
+          const fraction = entry.layoutId === 1 ? 0.9 : 0.05;
+          options?.onProgress?.({
+            bytesWritten: ARTIFACT_DECODED_BYTES * fraction,
+            totalBytes: ARTIFACT_DECODED_BYTES,
+          });
+          return { filePath: entry.layoutId === 1 ? firstFilePath : secondFilePath };
+        },
+      ),
+      deleteArtifact: vi.fn(async () => {}),
+    };
+    const collector = collectSnapshotFrames();
+    vi.spyOn(Date, 'now').mockReturnValue(BASE_NOW);
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5', 'kilter:2:5'],
+      snapshotSource: source,
+      onProgress: collector.onProgress,
+      now: () => BASE_NOW,
+    });
+
+    const secondScopeByteFrame = collector.frames.find(
+      (frame) => frame.scopeKey === 'kilter:2:5' && frame.stage === 'download' && (frame.fraction ?? 0) > 0,
+    );
+    expect(secondScopeByteFrame?.fraction).toBeCloseTo(0.05);
+  });
+
+  it('uses the injected clock for progress throttling', async () => {
+    const filePath = join(workDir, 'progress-clock.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c-clock', compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    let nowMs = BASE_NOW;
+    const source: SnapshotSource = {
+      fetchManifest: vi.fn(async () => makeManifest([progressEntry()])),
+      downloadArtifact: vi.fn(
+        async (
+          _entry: SnapshotManifestEntry,
+          options?: { onProgress?: (p: { bytesWritten: number; totalBytes: number | null }) => void },
+        ) => {
+          options?.onProgress?.({ bytesWritten: ARTIFACT_DECODED_BYTES / 4, totalBytes: ARTIFACT_DECODED_BYTES });
+          nowMs += 400;
+          options?.onProgress?.({ bytesWritten: ARTIFACT_DECODED_BYTES / 2, totalBytes: ARTIFACT_DECODED_BYTES });
+          return { filePath };
+        },
+      ),
+      deleteArtifact: vi.fn(async () => {}),
+    };
+    const collector = collectSnapshotFrames();
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onProgress: collector.onProgress,
+      now: () => nowMs,
+    });
+
+    expect(
+      collector.frames
+        .filter((frame) => frame.stage === 'download' && frame.fraction !== 0)
+        .map((frame) => frame.fraction),
+    ).toEqual([0.25, 0.5]);
   });
 
   it('drops a download frame that arrives after the bootstrap phase ended', async () => {
@@ -2953,6 +3058,8 @@ describe('pullSync onScopeDownloadStart', () => {
     });
     const onScopeDownloadComplete = vi.fn();
     const { fetch } = makeGraphqlFetch();
+    let wallNowMs = BASE_NOW;
+    vi.spyOn(Date, 'now').mockImplementation(() => wallNowMs++);
 
     await pullSync(db, noopQueryClient(), fetch, {
       enabledBoards: ['kilter:1:5'],
@@ -2966,6 +3073,7 @@ describe('pullSync onScopeDownloadStart', () => {
     expect(info.rowCount).toBe(3); // two climbs + one stats row
     expect(typeof info.downloadMs).toBe('number');
     expect(typeof info.importMs).toBe('number');
+    expect(info.downloadMs).toBe(info.phases.downloadMs);
   });
 
   it('stays SILENT for a board that already finished downloading before the marker existed', async () => {
