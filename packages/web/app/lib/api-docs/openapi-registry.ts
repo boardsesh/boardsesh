@@ -195,50 +195,6 @@ export const ResendVerificationRequestSchema = z
   .openapi('ResendVerificationRequest');
 
 // ============================================
-// Aurora Proxy Schemas
-// ============================================
-
-export const AuroraLoginRequestSchema = z
-  .object({
-    username: z.string().describe('Aurora board username'),
-    password: z.string().describe('Aurora board password'),
-  })
-  .openapi('AuroraLoginRequest');
-
-export const AuroraLoginResponseSchema = z
-  .object({
-    token: z.string().describe('Authentication token for Aurora API'),
-    user_id: z.number().describe('Aurora user ID'),
-    username: z.string().describe('Aurora username'),
-  })
-  .openapi('AuroraLoginResponse');
-
-export const SaveAscentRequestSchema = z
-  .object({
-    token: z.string().describe('Aurora authentication token'),
-    options: z.object({
-      uuid: z
-        .string()
-        .regex(/^(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/)
-        .describe(
-          'Client-minted ascent UUID (RFC-hyphenated or 32-hex Aurora form). Doubles as the idempotency key: retrying the same request updates the same logbook entry instead of duplicating it.',
-        ),
-      user_id: z.number().describe('Legacy Aurora user id (kept for API compatibility; not used for storage)'),
-      climb_uuid: z.string().describe('UUID of the climb'),
-      angle: z.number().describe('Board angle'),
-      is_mirror: z.boolean().describe('Whether climb was mirrored'),
-      attempt_id: z.number().describe('Aurora attempt id (1 = flash)'),
-      bid_count: z.number().describe('Number of attempts'),
-      quality: z.number().min(0).max(3).describe('Quality rating (0-3)'),
-      difficulty: z.number().describe('Difficulty rating'),
-      is_benchmark: z.boolean().describe('Whether the climb is a benchmark'),
-      comment: z.string().describe('Comment (may be empty)'),
-      climbed_at: z.string().describe('ISO timestamp of when climb was completed'),
-    }),
-  })
-  .openapi('SaveAscentRequest');
-
-// ============================================
 // Hold Classification Schemas
 // ============================================
 

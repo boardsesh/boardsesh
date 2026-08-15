@@ -246,7 +246,7 @@
         "feature1": "Boulderdaten und Statistiken abrufen",
         "feature2": "Registrierung und Authentifizierung",
         "feature3": "Profilverwaltung",
-        "feature4": "Anbindung der Aurora-Plattform",
+        "feature4": "Auflösung von URL-Slugs zu IDs",
         "baseUrlLabel": "Basis-URL:"
       },
       "ws": {

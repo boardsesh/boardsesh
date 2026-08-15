@@ -9,13 +9,13 @@ vi.mock('@/app/lib/analytics.server', () => ({
   track: (...args: Parameters<typeof mockTrack>) => mockTrack(...args),
 }));
 
-const routeProps = { params: Promise.resolve({ board_name: 'tension' }) };
+const routeProps = { params: Promise.resolve({ board_name: 'kilter' }) };
 
 function proxyRequest(): Request {
-  return new Request('https://www.boardsesh.com/api/v1/tension/proxy/saveAscent', { method: 'POST' });
+  return new Request('https://www.boardsesh.com/api/v1/kilter/proxy/login', { method: 'POST' });
 }
 
-describe('POST /api/v1/[board_name]/proxy/saveAscent', () => {
+describe('POST /api/v1/[board_name]/proxy/login', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockTrack.mockResolvedValue(undefined);
@@ -55,16 +55,16 @@ describe('POST /api/v1/[board_name]/proxy/saveAscent', () => {
     expect(response.headers.get('Cache-Control')).toBe('no-store');
   });
 
-  it('counts the call under its own endpoint name, not the login one', async () => {
+  it('counts the call so W-25b reads a number instead of arguing from "no in-repo caller"', async () => {
     const request = proxyRequest();
 
     await POST(request, routeProps);
 
-    // Endpoint and board only — the request body carried a session token.
+    // Endpoint and board only — the request body carried Aurora credentials.
     expect(mockTrack).toHaveBeenCalledTimes(1);
     expect(mockTrack).toHaveBeenCalledWith(
       DEPRECATED_AURORA_PROXY_EVENT,
-      { endpoint: 'saveAscent', boardName: 'tension' },
+      { endpoint: 'login', boardName: 'kilter' },
       { headers: request.headers },
     );
   });

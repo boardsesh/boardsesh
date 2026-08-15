@@ -15,15 +15,14 @@ import { boardClimbStats } from '../../schema/boards/unified';
  *   - benchmark_difficulty         — the catalog benchmark grade
  *   - upstream_quality_average     — the manufacturer's star average
  *
- * "On a catalog climb" is the load-bearing qualifier, not decoration. Two
- * Boardsesh writers do set display_difficulty / benchmark_difficulty:
- * saveMoonBoardClimb (packages/backend/src/graphql/resolvers/climbs/mutations.ts)
- * and the web saveClimb proxy's saveClimbStats('moonboard', …)
- * (packages/web/app/api/v1/[board_name]/proxy/saveClimb/route.ts). Both write
- * them only for a climb they are creating, and both create that climb with a
+ * "On a catalog climb" is the load-bearing qualifier, not decoration. One
+ * Boardsesh writer does set display_difficulty / benchmark_difficulty:
+ * saveMoonBoardClimb (packages/backend/src/graphql/resolvers/climbs/mutations.ts).
+ * (The web saveClimb proxy was the second writer until W-25a, #4441, deleted it.)
+ * It writes them only for a climb it is creating, and creates that climb with a
  * non-null board_climbs.user_id — and every consumer of this predicate consults
- * it strictly behind the user-created fence (bc.user_id IS NULL), so neither
- * writer's rows are ever reached through it. If that ever stopped holding, the
+ * it strictly behind the user-created fence (bc.user_id IS NULL), so its rows
+ * are never reached through it. If that ever stopped holding, the
  * failure direction is protective: an extra TRUE reads as "real catalog data",
  * and the fix responds by declining to move the tick or delete the row.
  *

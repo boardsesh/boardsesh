@@ -322,7 +322,7 @@
         "feature1": "Obtener datos y estadísticas de bloques",
         "feature2": "Registro y autenticación de usuarios",
         "feature3": "Gestión de perfil",
-        "feature4": "Integración con la plataforma Aurora",
+        "feature4": "Resolución de slugs de URL a identificadores",
         "baseUrlLabel": "URL base:"
       },
       "ws": {

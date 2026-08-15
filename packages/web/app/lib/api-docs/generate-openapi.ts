@@ -47,7 +47,6 @@ This documentation covers the REST API endpoints.
 
 ### Authenticated Endpoints
 - **User Profile**: Manage user settings and preferences
-- **Aurora Proxy**: Interact with Aurora Climbing platform
 
 ### WebSocket API
 For real-time features like queue synchronization and party sessions, see the [GraphQL WebSocket documentation](/docs#graphql).
@@ -110,10 +109,6 @@ Layout, size, and set IDs can be either numeric IDs or human-readable slugs.
       {
         name: 'Authentication',
         description: 'User registration and authentication',
-      },
-      {
-        name: 'Aurora Proxy',
-        description: 'Proxy endpoints for Aurora Climbing platform integration',
       },
       {
         name: 'User Profile',

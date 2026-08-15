@@ -246,7 +246,7 @@
         "feature1": "Récupérer les données et statistiques de blocs",
         "feature2": "Inscription et authentification des utilisateurs",
         "feature3": "Gestion de profil",
-        "feature4": "Intégration avec la plateforme Aurora",
+        "feature4": "Résolution des slugs d'URL en identifiants",
         "baseUrlLabel": "URL de base :"
       },
       "ws": {

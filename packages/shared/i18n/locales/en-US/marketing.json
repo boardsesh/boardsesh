@@ -246,7 +246,7 @@
         "feature1": "Fetching climb data and statistics",
         "feature2": "User registration and authentication",
         "feature3": "Profile management",
-        "feature4": "Aurora platform integration",
+        "feature4": "Resolving URL slugs to board IDs",
         "baseUrlLabel": "Base URL:"
       },
       "ws": {
