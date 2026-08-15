@@ -152,6 +152,16 @@ describe('resolveClimbSitemapGroups', () => {
     expect(resolveClimbSitemapGroups([...tied].reverse())[0].sizeId).toBe(10);
   });
 
+  it('compares the final set-id tie numerically, independent of input order', () => {
+    const tied = [
+      config({ boardType: 'tension', layoutId: 9, sizeId: 1, setIds: [8, 10], boardCount: 5, climbCount: 100 }),
+      config({ boardType: 'tension', layoutId: 9, sizeId: 1, setIds: [8, 9], boardCount: 5, climbCount: 100 }),
+    ];
+
+    expect(resolveClimbSitemapGroups(tied)[0].setIds).toEqual([8, 9]);
+    expect(resolveClimbSitemapGroups([...tied].reverse())[0].setIds).toEqual([8, 9]);
+  });
+
   it('drops a configuration with no listed climbs and one with no readable URL', () => {
     expect(resolveClimbSitemapGroups([config({ climbCount: 0 })])).toEqual([]);
     expect(resolveClimbSitemapGroups([config({ layoutId: 999_999 })])).toEqual([]);

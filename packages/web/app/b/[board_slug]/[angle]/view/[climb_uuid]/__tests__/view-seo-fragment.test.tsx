@@ -2,6 +2,7 @@ import React from 'react';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
 import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-fragment';
+import { getClimbStatsForAllAngles, type ClimbStatsForAngle } from '@/app/lib/data/queries';
 
 /**
  * The climb front door's acceptance suite — the vitest form of #4369's curl
@@ -85,16 +86,6 @@ vi.mock('@/app/lib/data/queries', () => ({
   })),
   getClimbStatsForAllAngles: vi.fn(async () => [
     {
-      angle: 40,
-      ascensionist_count: '12',
-      quality_average: '4.20',
-      difficulty_average: 20,
-      display_difficulty: 20,
-      fa_username: 'first-ascensionist',
-      fa_at: '2024-03-01T00:00:00.000Z',
-      difficulty: 'V5',
-    },
-    {
       angle: 25,
       ascensionist_count: '4',
       quality_average: '3.80',
@@ -103,6 +94,20 @@ vi.mock('@/app/lib/data/queries', () => ({
       fa_username: null,
       fa_at: null,
       difficulty: 'V3',
+      quality_normalized: true,
+      rating_count: '4',
+    },
+    {
+      angle: 40,
+      ascensionist_count: '12',
+      quality_average: '4.20',
+      difficulty_average: 20,
+      display_difficulty: 20,
+      fa_username: 'first-ascensionist',
+      fa_at: '2024-03-01T00:00:00.000Z',
+      difficulty: 'V5',
+      quality_normalized: true,
+      rating_count: '12',
     },
   ]),
 }));
@@ -184,6 +189,28 @@ async function renderFrontDoor(): Promise<string> {
   return renderToString(<>{await resolveServerTree(element)}</>);
 }
 
+const CURRENT_ANGLE_STATS: ClimbStatsForAngle = {
+  angle: 40,
+  ascensionist_count: '12',
+  quality_average: '4.20',
+  difficulty_average: 20,
+  display_difficulty: 20,
+  fa_username: 'first-ascensionist',
+  fa_at: '2024-03-01T00:00:00.000Z',
+  difficulty: 'V5',
+  quality_normalized: true,
+  rating_count: '12',
+};
+
+function creativeWorkPayload(html: string): Record<string, unknown> {
+  const payloads = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(
+    (match) => JSON.parse(match[1]) as Record<string, unknown>,
+  );
+  const creativeWork = payloads.find((payload) => payload['@type'] === 'CreativeWork');
+  if (!creativeWork) throw new Error(`no CreativeWork payload rendered: ${html}`);
+  return creativeWork;
+}
+
 describe('board slug climb view SEO fragment', () => {
   it('SSR-emits ClimbViewSeoFragment in the server output', async () => {
     const element = (await pageModule.default({ params: Promise.resolve(PARAMS) })) as React.ReactElement;
@@ -233,6 +260,30 @@ describe('climb front door server HTML', () => {
 
     expect(ctaHref).toBe('https://app.boardsesh.com/b/my-board/40/view/test-climb');
     expect(ctaHref).not.toContain('?');
+  });
+
+  it('describes a climb from its normalized current-angle quality and ascents', async () => {
+    const creativeWork = creativeWorkPayload(await renderFrontDoor());
+
+    expect(creativeWork.description).toBe(
+      'metadata.view.description(climbName=Test Climb,grade=V5,setter=setter-person,quality=4.20,ascents=12)',
+    );
+  });
+
+  it('omits the description when the current angle has no quality instead of inventing 0/5', async () => {
+    vi.mocked(getClimbStatsForAllAngles).mockResolvedValueOnce([
+      { ...CURRENT_ANGLE_STATS, quality_average: null, rating_count: '0' },
+    ]);
+
+    expect(creativeWorkPayload(await renderFrontDoor())).not.toHaveProperty('description');
+  });
+
+  it('omits the description when current-angle quality is not normalized to five stars', async () => {
+    vi.mocked(getClimbStatsForAllAngles).mockResolvedValueOnce([
+      { ...CURRENT_ANGLE_STATS, quality_average: '2.40', quality_normalized: false },
+    ]);
+
+    expect(creativeWorkPayload(await renderFrontDoor())).not.toHaveProperty('description');
   });
 });
 

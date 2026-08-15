@@ -33,6 +33,17 @@ function groupKey(boardType: string, layoutId: number): string {
   return `${boardType}:${layoutId}`;
 }
 
+/** Numeric lexicographic order for the already-sorted set-id arrays. */
+function isLowerSetIdList(candidate: readonly number[], incumbent: readonly number[]): boolean {
+  const sharedLength = Math.min(candidate.length, incumbent.length);
+
+  for (let index = 0; index < sharedLength; index += 1) {
+    if (candidate[index] !== incumbent[index]) return candidate[index] < incumbent[index];
+  }
+
+  return candidate.length < incumbent.length;
+}
+
 /**
  * The winner is the config with the most physical boards, then the most listed
  * climbs, then the lowest size id, then the lowest set-id list. Determinism is
@@ -43,7 +54,7 @@ function isBetterConfig(candidate: PopularBoardConfig, incumbent: PopularBoardCo
   if (candidate.boardCount !== incumbent.boardCount) return candidate.boardCount > incumbent.boardCount;
   if (candidate.climbCount !== incumbent.climbCount) return candidate.climbCount > incumbent.climbCount;
   if (candidate.sizeId !== incumbent.sizeId) return candidate.sizeId < incumbent.sizeId;
-  return candidate.setIds.join(',') < incumbent.setIds.join(',');
+  return isLowerSetIdList(candidate.setIds, incumbent.setIds);
 }
 
 /**

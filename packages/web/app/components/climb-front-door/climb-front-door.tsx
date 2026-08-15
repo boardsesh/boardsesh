@@ -99,18 +99,21 @@ export default async function ClimbFrontDoor({
   const overlayUrl = climb.frames ? buildOverlayUrl(boardDetails, climb.frames, false) : null;
   const currentAngleStats = angleStats.find((stats) => stats.angle === angle);
   const layoutName = boardDetails.layout_name ?? '';
-  // The same catalog string `generateMetadata` fills, so the structured data and
-  // the meta description say one thing. Omitted rather than padded with English
-  // placeholders when the facts it interpolates are missing — schema.org treats
-  // `description` as optional, and a half-filled sentence is worse than none.
+  // The same catalog string `generateMetadata` fills, but structured data omits
+  // it unless the current angle has an honest five-star quality value. A missing
+  // stats row must not become "Quality: 0/5", and an Aurora-scale 1-3 value must
+  // not be labelled `/5`. Schema.org treats `description` as optional.
   const jsonLdDescription =
-    climb.difficulty && climb.setter_username
+    climb.difficulty &&
+    climb.setter_username &&
+    currentAngleStats?.quality_normalized === true &&
+    currentAngleStats.quality_average !== null
       ? t('metadata.view.description', {
           climbName,
           grade: climb.difficulty,
           setter: climb.setter_username,
-          quality: climb.quality_average || 0,
-          ascents: climb.ascensionist_count || 0,
+          quality: currentAngleStats.quality_average,
+          ascents: currentAngleStats.ascensionist_count,
         })
       : null;
 
