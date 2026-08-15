@@ -669,5 +669,56 @@
     "sent": "Merci, on regarde ça et on les fusionne.",
     "alreadyReported": "Vous avez déjà signalé cette paire. On s'en occupe.",
     "errorGeneric": "Une erreur s'est produite. Réessayez."
+  },
+  "standings": {
+    "title": "Classements",
+    "anonymousClimber": "Un grimpeur",
+    "you": "Toi",
+    "youInitial": "•",
+    "climberCount_one": "{{count}} grimpeur",
+    "climberCount_other": "{{count}} grimpeurs",
+    "error": "Impossible de charger le classement. Tire pour réessayer.",
+    "rowAccessibility": "Rang {{rank}}, {{name}}, {{climbs}} blocs",
+    "window": {
+      "label": "Période",
+      "month": "30 derniers jours",
+      "week": "7 derniers jours"
+    },
+    "scope": {
+      "global": "Tout le monde",
+      "boardType": "Panneau",
+      "layout": "Configuration",
+      "board": "Mur",
+      "gym": "Salle",
+      "pickerLabel": "Choisis un classement"
+    },
+    "viewer": {
+      "rankOf": "{{rank}} sur {{total}}",
+      "rankTied_one": "{{rank}}, avec {{others}} autre grimpeur",
+      "rankTied_other": "{{rank}}, avec {{others}} autres grimpeurs",
+      "climbs_one": "{{count}} bloc sur cette période",
+      "climbs_other": "{{count}} blocs sur cette période",
+      "nextRank_one": "Un de plus et tu es {{rank}}.",
+      "nextRank_other": "{{count}} de plus et tu es {{rank}}."
+    },
+    "demoted": {
+      "empty": "Personne n’a rien enregistré sur {{requested}} sur cette période, donc voici {{scope}}.",
+      "unknown": "Ce mur est introuvable, donc voici {{scope}}."
+    },
+    "footnote": {
+      "metric": "Blocs différents que tu as enchaînés sur cette période. Les répétitions comptent une fois. Les imports de carnet ne comptent pas.",
+      "attribution": "Les croix synchronisées depuis l’app Kilter ou Aurora ne portent pas de mur, elles ne comptent donc pas ici."
+    },
+    "moreRowLabel": "Voir le classement",
+    "moreRowSubtitle": "Ton rang ce mois-ci",
+    "entryCard": {
+      "accessibility": "Classement : {{rank}} sur {{total}}. Ouvre le classement complet.",
+      "topPercent": "Top {{percent}} %"
+    },
+    "boardType": {
+      "kilter": "Kilter",
+      "tension": "Tension",
+      "moonboard": "MoonBoard"
+    }
   }
 }

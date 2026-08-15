@@ -127,6 +127,7 @@ export default defineConfig({
       './packages/shared/climb-filters/vite.config.ts',
       './packages/shared/gym-claim/vite.config.ts',
       './packages/shared/kiosk/vite.config.ts',
+      './packages/shared/leaderboard/vite.config.ts',
       './packages/shared/i18n/vite.config.ts',
       './packages/shared/graphql/vite.config.ts',
       './packages/shared/graphql-client/vite.config.ts',

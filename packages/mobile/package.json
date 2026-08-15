@@ -23,6 +23,7 @@
     "@boardsesh/gym-claim": "*",
     "@boardsesh/i18n": "*",
     "@boardsesh/key-value-storage": "*",
+    "@boardsesh/leaderboard": "workspace:*",
     "@boardsesh/logbook": "*",
     "@boardsesh/offline-sync": "*",
     "@boardsesh/party-profile": "*",

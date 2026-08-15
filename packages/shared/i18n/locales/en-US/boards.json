@@ -669,5 +669,56 @@
     "sent": "Thanks, we'll take a look and merge them.",
     "alreadyReported": "You've already flagged this pair. We're on it.",
     "errorGeneric": "Something went wrong. Try again."
+  },
+  "standings": {
+    "title": "Standings",
+    "anonymousClimber": "A climber",
+    "you": "You",
+    "youInitial": "•",
+    "climberCount_one": "{{count}} climber",
+    "climberCount_other": "{{count}} climbers",
+    "error": "Couldn’t load the standings. Pull to try again.",
+    "rowAccessibility": "Rank {{rank}}, {{name}}, {{climbs}} climbs",
+    "window": {
+      "label": "Time window",
+      "month": "Last 30 days",
+      "week": "Last 7 days"
+    },
+    "scope": {
+      "global": "Everyone",
+      "boardType": "Board",
+      "layout": "Setup",
+      "board": "Wall",
+      "gym": "Gym",
+      "pickerLabel": "Choose a leaderboard"
+    },
+    "viewer": {
+      "rankOf": "{{rank}} of {{total}}",
+      "rankTied_one": "{{rank}}, with {{others}} other climber",
+      "rankTied_other": "{{rank}}, with {{others}} other climbers",
+      "climbs_one": "{{count}} climb in this window",
+      "climbs_other": "{{count}} climbs in this window",
+      "nextRank_one": "One more and you’re {{rank}}.",
+      "nextRank_other": "{{count}} more and you’re {{rank}}."
+    },
+    "demoted": {
+      "empty": "Nobody’s logged on {{requested}} in this window, so this is {{scope}} instead.",
+      "unknown": "We couldn’t find that wall, so this is {{scope}} instead."
+    },
+    "footnote": {
+      "metric": "Different climbs you topped in this window. Repeats count once. Bulk logbook imports don’t count.",
+      "attribution": "Sends synced from the Kilter or Aurora app don’t carry a wall, so they’re not counted here."
+    },
+    "moreRowLabel": "See the standings",
+    "moreRowSubtitle": "Where you sit this month",
+    "entryCard": {
+      "accessibility": "Standings: {{rank}} of {{total}}. Opens the full standings.",
+      "topPercent": "Top {{percent}}%"
+    },
+    "boardType": {
+      "kilter": "Kilter",
+      "tension": "Tension",
+      "moonboard": "MoonBoard"
+    }
   }
 }
