@@ -403,10 +403,32 @@ describe('trusted PostgreSQL image publisher contract', () => {
       expected: /offline build must pull but never push/,
     },
     {
-      name: 'external Dockerfile frontend enabled',
+      name: 'Dockerfile frontend build argument injected',
       mutate: (workflow: string) =>
-        replaceRequired(workflow, 'BUILDKIT_SYNTAX=dockerfile.v0', 'BUILDKIT_SYNTAX=docker/dockerfile:latest'),
-      expected: /force the built-in dockerfile.v0 frontend/,
+        mutateWorkflowStep(
+          workflow,
+          'publish-images',
+          'Build portable OCI layout without registry credentials',
+          (step) => {
+            const withInputs = requireRecord(step.with, 'portable build inputs');
+            withInputs['build-args'] = 'BUILDKIT_SYNTAX=docker/dockerfile:latest\n';
+          },
+        ),
+      expected: /bundled frontend without a build-argument override/,
+    },
+    {
+      name: 'Dockerfile frontend directive revalidation removed',
+      mutate: (workflow: string) =>
+        mutateWorkflowStep(workflow, 'publish-images', 'Revalidate offline build inputs', (step) => {
+          if (typeof step.run !== 'string')
+            throw new Error('offline input revalidation must contain an inline run body');
+          step.run = replaceRequired(
+            step.run,
+            '$found ||= /^[ \\t]*#[ \\t]*syntax[ \\t]*=/i;',
+            '$found ||= /^never-a-dockerfile-directive$/;',
+          );
+        }),
+      expected: /revalidation must reject whitespace-prefixed syntax directives/,
     },
     {
       name: 'wrong seeded build context',
@@ -644,6 +666,16 @@ describe('trusted PostgreSQL image publisher contract', () => {
       /exact reviewed pull-request and protected-main path triggers/,
     );
   });
+
+  it.each(['vite.config.ts', 'scripts/vite.config.ts'])(
+    'rejects omission of test-discovery trigger %s',
+    (configurationPath) => {
+      const weakened = replaceRequired(contractWorkflow, `      - '${configurationPath}'\n`, '');
+      expect(failuresFor(publisherWorkflow, weakened)).toMatch(
+        /exact reviewed pull-request and protected-main path triggers/,
+      );
+    },
+  );
 
   it('rejects an altered protected-main push branch', () => {
     const weakened = replaceRequired(contractWorkflow, '    branches: [main]', '    branches: [release]');

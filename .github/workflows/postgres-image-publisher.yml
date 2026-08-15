@@ -263,10 +263,19 @@ jobs:
         run: |
           set -Eeuo pipefail
           [[ "$(git -C source rev-parse HEAD)" == "$EXPECTED_MAIN_SHA" ]]
-          [[ -f source/packages/db/docker/Dockerfile.postgres ]]
-          [[ ! -L source/packages/db/docker/Dockerfile.postgres ]]
-          [[ -f source/packages/db/docker/Dockerfile.dev-db ]]
-          [[ ! -L source/packages/db/docker/Dockerfile.dev-db ]]
+          for dockerfile in \
+            source/packages/db/docker/Dockerfile.postgres \
+            source/packages/db/docker/Dockerfile.dev-db; do
+            [[ -f "$dockerfile" && ! -L "$dockerfile" ]]
+            if perl -ne '
+              s/^\xEF\xBB\xBF// if $. == 1;
+              $found ||= /^[ \t]*#[ \t]*syntax[ \t]*=/i;
+              END { exit($found ? 0 : 1) }
+            ' "$dockerfile"; then
+              printf 'Offline build input validation failed: %s must not select a Dockerfile frontend\n' "$dockerfile" >&2
+              exit 1
+            fi
+          done
           [[ -f source/.dockerignore ]]
           [[ ! -L source/.dockerignore ]]
           grep -Fxq '.git' source/.dockerignore
@@ -287,8 +296,6 @@ jobs:
           provenance: false
           sbom: false
           github-token: ''
-          build-args: |
-            BUILDKIT_SYNTAX=dockerfile.v0
           labels: |
             org.opencontainers.image.revision=${{ inputs.expected_main_sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -311,8 +318,6 @@ jobs:
           provenance: false
           sbom: false
           github-token: ''
-          build-args: |
-            BUILDKIT_SYNTAX=dockerfile.v0
           labels: |
             org.opencontainers.image.revision=${{ inputs.expected_main_sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}

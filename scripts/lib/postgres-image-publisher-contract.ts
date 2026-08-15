@@ -156,7 +156,7 @@ const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
     'Validate retired-digest configuration before build setup':
       '8fa475f67e0d460703ef73b4870570790369d676cd6711209a1416234d54f7f4',
     'Create temporary tool and credential boundary': '84bf5fb7b5ff5e70be8e8684099d2f87727cefde54b3a70b92b20220e3d1fea3',
-    'Revalidate offline build inputs': '8f00867154930447c27a7f0a29d03f3e282134badd158b69aef0c3d9ddb3132d',
+    'Revalidate offline build inputs': '42ca53a491bf3433739be5ce55f88867c1d7fe5bd4403b33a3647b858596e907',
     'Validate offline layouts and retired digest policy':
       '110821eff07459d4dc1299e88bc9e71da20b0a3ce23cb89b0162cef0159b421d',
     'Recheck exact current main and environment immediately before registry authentication':
@@ -226,7 +226,7 @@ const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
 const PRIVILEGED_JOB_SHA256: Record<string, string> = {
   'authorize-current-main': 'de925dca4eba05dc42accdb6fe0ed3c996fe37079d620da7fc35166900e70c29',
   'validate-main': '79a3b6710f2f3268d467ae5a8d467d78fd212627f90f3da8c6505b1a4c51b29d',
-  'publish-images': 'ca9d253928f2c8132fa71dfa7c6b49c085390bffab88da15604e1ad058c20f17',
+  'publish-images': '47364440a1d9768c74511febb7adb076db49911e7dd388529993082f4fc0d451',
   'verify-published-images': '05f165fb989b0c7c920b470b19bf4f14b5f3dd1f0c2880bd79e3f2b79228e1c8',
   'smoke-portable': 'b5061e0cb86febdc3216af60b967ddf3825b7c74b43016d006d0d1aa245351ba',
   'smoke-seeded': '95bf708acbe676a46dde4981cc83ba978c37f6b6c3ca463ef2239647260ebdf9',
@@ -238,8 +238,10 @@ const PRIVILEGED_JOB_SHA256: Record<string, string> = {
 const CONTRACT_PATHS = [
   '.github/workflows/postgres-image-publisher.yml',
   '.github/workflows/postgres-image-publisher-contract.yml',
+  'vite.config.ts',
   'scripts/lib/postgres-image-publisher-contract.ts',
   'scripts/postgres-image-publisher-contract.test.ts',
+  'scripts/vite.config.ts',
   'docs/postgres-image-publishing.md',
   'package.json',
   'bun.lock',
@@ -253,7 +255,7 @@ const CONTRACT_STEPS: ExpectedStep[] = [
   { name: 'Verify publisher authority and artifact contracts' },
 ];
 
-const CONTRACT_WORKFLOW_METADATA_SHA256 = '97ac7c21ca7f27ab253608a1654e195f8c23824f9b0c69272e7504294d70f458';
+const CONTRACT_WORKFLOW_METADATA_SHA256 = '8b86e2310a57709dbf30f9210611d1d47feea44395b6643ba6fa23afaf22b03d';
 const CONTRACT_JOB_METADATA_SHA256 = '9e0f951e6bceb41814be7e67f5cfe5cf5d808315af99a39bc312cbce1c7f0cfb';
 const CONTRACT_STEP_SHA256: Record<string, string> = {
   'Checkout repository without persisted credentials':
@@ -490,8 +492,8 @@ function validateBuildStep(failures: string[], step: UnknownRecord | undefined, 
   ) {
     failures.push(`${kind} offline build must pull but never push, attest, emit an SBOM, or receive a GitHub token`);
   }
-  if (withInputs['build-args'] !== 'BUILDKIT_SYNTAX=dockerfile.v0\n') {
-    failures.push(`${kind} build must force the built-in dockerfile.v0 frontend`);
+  if ('build-args' in withInputs) {
+    failures.push(`${kind} build must use the pinned BuildKit bundled frontend without a build-argument override`);
   }
   if (withInputs.outputs !== expectedOutput) {
     failures.push(`${kind} build must export its exact local OCI layout before authentication`);
@@ -673,6 +675,18 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
     requireRunPattern(failures, publish, 'Validate retired-digest configuration before build setup', pattern, message);
   }
   validateOrasSetup(failures, 'publish-images', publish);
+  for (const [pattern, message] of [
+    [
+      /s\/\^\\xEF\\xBB\\xBF\/\/ if \$\. == 1;/,
+      'offline Docker input revalidation must strip a UTF-8 BOM before checking parser directives',
+    ],
+    [
+      /\$found \|\|= \/\^\[ \\t\]\*#\[ \\t\]\*syntax\[ \\t\]\*=\/i;/,
+      'offline Docker input revalidation must reject whitespace-prefixed syntax directives',
+    ],
+  ] as const) {
+    requireRunPattern(failures, publish, 'Revalidate offline build inputs', pattern, message);
+  }
   const buildx = stepByName(publish, 'Set up Docker Buildx inside the temporary boundary');
   const buildxInputs = buildx ? recordAt(buildx, 'with') : undefined;
   if (

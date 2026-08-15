@@ -52,7 +52,9 @@ publisher environment are the trust root. The contract's co-located parsed
 structure and script hashes are reviewer regression guardrails: they make every
 executable change explicit, but a source change can update its own expected
 hashes and therefore the hashes are not an independent security authority. The
-live API audit validates the environment fields GitHub exposes.
+contract workflow also watches the root and `scripts` Vite configs that select
+and discover this suite. The live API audit validates the environment fields
+GitHub exposes.
 
 ## Dispatch contract
 
@@ -87,15 +89,16 @@ attestation, and manifest recording:
    package, environment, or OIDC authority.
 3. `publish-images` is approved through `postgres-image-publisher`. BuildKit
    receives no GitHub token, secret, or SSH mount. The pinned BuildKit daemon
-   builds both images to local OCI layouts before GHCR authentication.
-   `BUILDKIT_SYNTAX=dockerfile.v0` forces BuildKit's bundled frontend even if a
-   Dockerfile contains a whitespace- or BOM-prefixed `# syntax=` directive;
-   validation rejects those directives as defense in depth. The workflow
-   verifies both layout root digests, exact platform sets, and the complete
-   retired-digest variable before logging in. A pinned, checksum-verified ORAS
-   client then copies those already validated layouts to GHCR. No checked-out
-   script runs after login, and the temporary registry config and Buildx
-   builder are removed on every outcome.
+   builds both images to local OCI layouts before GHCR authentication. Neither
+   build supplies `BUILDKIT_SYNTAX` or another build argument, so the pinned
+   daemon uses its bundled Dockerfile frontend. Both the unprivileged validation
+   job and the final offline-input validation reject whitespace- or BOM-prefixed
+   `# syntax=` directives, and the parsed workflow contract rejects adding a
+   frontend override. The workflow verifies both layout root digests, exact
+   platform sets, and the complete retired-digest variable before logging in. A
+   pinned, checksum-verified ORAS client then copies those already validated
+   layouts to GHCR. No checked-out script runs after login, and the temporary
+   registry config and Buildx builder are removed on every outcome.
 4. Fresh package-read runners resolve the published tag to the expected digest,
    inspect the remote manifests, and pull every exact digest/platform. The smoke
    jobs then erase their temporary registry credentials before setting up Vite+

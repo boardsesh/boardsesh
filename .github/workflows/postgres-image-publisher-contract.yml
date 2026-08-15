@@ -5,8 +5,10 @@ on:
     paths: &publisher_contract_paths
       - '.github/workflows/postgres-image-publisher.yml'
       - '.github/workflows/postgres-image-publisher-contract.yml'
+      - 'vite.config.ts'
       - 'scripts/lib/postgres-image-publisher-contract.ts'
       - 'scripts/postgres-image-publisher-contract.test.ts'
+      - 'scripts/vite.config.ts'
       - 'docs/postgres-image-publishing.md'
       - 'package.json'
       - 'bun.lock'
