@@ -34,9 +34,14 @@ describe('static sitemap entries', () => {
 
   it('never claims a page changed just now', () => {
     // Pins "real content timestamps, not new Date()" in CI rather than in a comment.
-    const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+    // The target is a floating `new Date()` evaluated at build/module time,
+    // which lands within milliseconds of the test run. A pinned literal that
+    // happens to be TODAY'S date is legitimate (a page genuinely rewritten
+    // today, e.g. /help on the day W-16 merged), so the window is a minute,
+    // not a day.
+    const aMinuteAgo = Date.now() - 60 * 1000;
     for (const entry of STATIC_ENTRIES) {
-      expect(entry.lastModified!.getTime()).toBeLessThan(oneDayAgo);
+      expect(entry.lastModified!.getTime()).toBeLessThan(aMinuteAgo);
     }
   });
 });
