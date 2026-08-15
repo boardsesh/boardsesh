@@ -19,11 +19,13 @@
  * existing test, all the way into TestFlight.
  *
  * For @expo/ui, the patch adds the Android `expand()`/`partialExpand()`
- * rejection guard (#3478) and the iOS `onFullyDismissed` post-animation
- * callback. Both are plain TS that Bun drops just as silently: the Android
- * guard is pure runtime (a dropped patch turns a harmless re-snap into an
- * unhandled rejection on older store binaries) and the iOS wiring is what
- * makes `onFullyDismissed` ever fire. Neither shows up in a bundle.
+ * rejection guard (#3478), the same guard on the `hide()` dismiss path (#4108),
+ * and the iOS `onFullyDismissed` post-animation callback. All of it is plain TS
+ * that Bun drops just as silently: the Android guards are pure runtime (a
+ * dropped patch turns a harmless re-snap into an unhandled rejection on older
+ * store binaries, and leaves a dismissed sheet stuck open in JS state) and the
+ * iOS wiring is what makes `onFullyDismissed` ever fire. None of it shows up in
+ * a bundle.
  *
  * For @expo/fingerprint, the patch makes Bun's isolated-linker package roots
  * hashable and gives their files stable logical ids. Without it, Expo mistakes
@@ -138,14 +140,31 @@ export const RULES: readonly PatchRule[] = [
       },
     ],
   },
-  // The Android sheet guard is the one hunk NOTHING else can see: it only
-  // swallows a native AsyncFunction rejection at runtime on store binaries
-  // whose ExpoUI layer predates expand()/partialExpand(). Types are unchanged,
-  // so typecheck and the Metro bundle stay green without it.
+  // The Android sheet guards are the one hunk NOTHING else can see: they only
+  // swallow a native AsyncFunction rejection at runtime when Compose content is
+  // unavailable or the native ExpoUI layer predates expand()/partialExpand()/hide().
+  // Types are unchanged, so typecheck and the Metro bundle stay green without them.
+  //
+  // Pin both independently-losable halves: the #3478 expand()/partialExpand()
+  // guards, and the complete #4108 dismiss path. The multi-line sentinel ties
+  // `.catch(swallowMissingNativeHandler)` to the normalized hide promise inside
+  // the helper rather than accepting one of the expand catches as proof. The
+  // final two sentinels prove snapToIndex(-1) and close()/forceClose()/dismiss()
+  // still funnel through that helper.
   {
     package: '@expo/ui',
     file: 'src/community/bottom-sheet/BottomSheet.android.tsx',
-    sentinels: ['swallowMissingNativeHandler'],
+    sentinels: [
+      'function swallowMissingNativeHandler(error: unknown): void',
+      'sheetRef.current?.expand()?.catch(swallowMissingNativeHandler)',
+      'sheetRef.current?.partialExpand()?.catch(swallowMissingNativeHandler)',
+      `const hideSwallowingMissingNativeHandler = () => {
+      const hidePromise = sheetRef.current?.hide();
+      void Promise.resolve(hidePromise)
+        .catch(swallowMissingNativeHandler)`,
+      'hideSwallowingMissingNativeHandler();',
+      'const close = hideSwallowingMissingNativeHandler;',
+    ],
     patchedKey: '@expo/ui@57.0.8',
   },
   // The iOS half wires the native post-animation dismiss signal through to the

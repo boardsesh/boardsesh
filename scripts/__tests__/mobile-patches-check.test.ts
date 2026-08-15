@@ -135,8 +135,8 @@ describe('checkPatchesApplied', () => {
 // The @expo/ui shape: a SCOPED package, so the key carries two `@` and the
 // version is the one after the scope. Its patch is plain TS whose loss is
 // runtime-only — the sheet still typechecks and bundles, it just stops
-// swallowing the native expand()/partialExpand() rejection — so this rule is
-// the only thing between a forgotten re-key and a silent regression.
+// swallowing the native expand()/partialExpand()/hide() rejection — so this
+// rule is the only thing between a forgotten re-key and a silent regression.
 const SCOPED_PKG = '@expo/ui';
 const SCOPED_FILE = 'src/community/bottom-sheet/BottomSheet.android.tsx';
 const SCOPED_KEY = '@expo/ui@57.0.8';
@@ -193,6 +193,96 @@ describe('checkPatchesApplied on a scoped package', () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain('patch NOT applied');
     expect(result.errors[0]).toContain('swallowMissingNativeHandler');
+  });
+});
+
+// Mutation tests on the shipped rule, not a synthetic one: the sentinel list
+// must distinguish the current patch from the pre-#4108 patch, the
+// short-circuiting hide helper, and a helper that normalizes a missing ref but
+// drops only the hide rejection guard. The expand catches remain in every
+// relevant fixture so none can masquerade as proof that hide itself is guarded.
+describe('the shipped @expo/ui Android rule', () => {
+  const androidRule = REAL_RULES.find((rule) => rule.package === SCOPED_PKG && rule.file === SCOPED_FILE);
+
+  const PRE_4108_SOURCE = `
+function swallowMissingNativeHandler(error: unknown): void { /* ... */ }
+sheetRef.current?.expand()?.catch(swallowMissingNativeHandler);
+sheetRef.current?.partialExpand()?.catch(swallowMissingNativeHandler);
+sheetRef.current?.hide().then(() => { setIsOpen(false); fireCloseCallbacks(); });
+`;
+
+  const SHORT_CIRCUITING_HIDE_SOURCE = `
+function swallowMissingNativeHandler(error: unknown): void { /* ... */ }
+sheetRef.current?.expand()?.catch(swallowMissingNativeHandler);
+sheetRef.current?.partialExpand()?.catch(swallowMissingNativeHandler);
+const hideSwallowingMissingNativeHandler = () => {
+  void sheetRef.current?.hide().catch(swallowMissingNativeHandler).then(runCleanup);
+};
+hideSwallowingMissingNativeHandler();
+const close = hideSwallowingMissingNativeHandler;
+`;
+
+  const HIDE_WITHOUT_CATCH_SOURCE = `
+function swallowMissingNativeHandler(error: unknown): void { /* ... */ }
+sheetRef.current?.expand()?.catch(swallowMissingNativeHandler);
+sheetRef.current?.partialExpand()?.catch(swallowMissingNativeHandler);
+const hideSwallowingMissingNativeHandler = () => {
+  const hidePromise = sheetRef.current?.hide();
+  void Promise.resolve(hidePromise).then(runCleanup);
+};
+hideSwallowingMissingNativeHandler();
+const close = hideSwallowingMissingNativeHandler;
+`;
+
+  it('is registered', () => {
+    expect(androidRule).toBeDefined();
+  });
+
+  it('goes red on the pre-#4108 patch that guarded only expand()/partialExpand()', () => {
+    if (!androidRule) throw new Error('no @expo/ui Android rule registered');
+    const env = makeEnv({
+      patchedDependencies: { [androidRule.patchedKey]: SCOPED_PATCH_PATH },
+      versions: { [androidRule.package]: versionFromKey(androidRule.patchedKey) },
+      files: { [`${androidRule.package}::${androidRule.file}`]: PRE_4108_SOURCE },
+    });
+
+    const result = checkPatchesApplied([androidRule], env);
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('patch NOT applied');
+    expect(result.errors[0]).toContain('hideSwallowingMissingNativeHandler');
+  });
+
+  it('goes red when a missing sheet ref can short-circuit the JS cleanup', () => {
+    if (!androidRule) throw new Error('no @expo/ui Android rule registered');
+    const env = makeEnv({
+      patchedDependencies: { [androidRule.patchedKey]: SCOPED_PATCH_PATH },
+      versions: { [androidRule.package]: versionFromKey(androidRule.patchedKey) },
+      files: { [`${androidRule.package}::${androidRule.file}`]: SHORT_CIRCUITING_HIDE_SOURCE },
+    });
+
+    const result = checkPatchesApplied([androidRule], env);
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('patch NOT applied');
+    expect(result.errors[0]).toContain('Promise.resolve(hidePromise)');
+  });
+
+  it('goes red when only the hide rejection catch is removed', () => {
+    if (!androidRule) throw new Error('no @expo/ui Android rule registered');
+    const env = makeEnv({
+      patchedDependencies: { [androidRule.patchedKey]: SCOPED_PATCH_PATH },
+      versions: { [androidRule.package]: versionFromKey(androidRule.patchedKey) },
+      files: { [`${androidRule.package}::${androidRule.file}`]: HIDE_WITHOUT_CATCH_SOURCE },
+    });
+
+    const result = checkPatchesApplied([androidRule], env);
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('patch NOT applied');
+    expect(result.errors[0]).toContain('.catch(swallowMissingNativeHandler)');
+    expect(result.errors[0]).not.toContain('hideSwallowingMissingNativeHandler();');
+    expect(result.errors[0]).not.toContain('const close = hideSwallowingMissingNativeHandler;');
   });
 });
 
