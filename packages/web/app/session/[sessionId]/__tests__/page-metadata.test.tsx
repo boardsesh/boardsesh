@@ -85,7 +85,7 @@ describe('session page metadata', () => {
 
     const image = Array.isArray(metadata.openGraph?.images) ? metadata.openGraph.images[0] : metadata.openGraph?.images;
 
-    expect(metadata.title).toBe('Board Session | Boardsesh');
+    expect(metadata.title).toEqual({ absolute: 'Board Session | Boardsesh' });
     expect(metadata.description).toBe('Alex — 3 sends');
     expect(getOpenGraphImageUrl(image)).toBe('/api/og/session?sessionId=session-1&v=abc123');
   });
@@ -110,7 +110,7 @@ describe('session page metadata', () => {
       params: Promise.resolve({ sessionId: 'missing-session' }),
     });
 
-    expect(metadata.title).toBe('Session Not Found | Boardsesh');
+    expect(metadata.title).toEqual({ absolute: 'Session Not Found | Boardsesh' });
   });
 
   it('never leaks the private session recap notes into title/description/OG', async () => {
@@ -141,7 +141,7 @@ describe('session page metadata', () => {
 
     const serialized = JSON.stringify(metadata);
     expect(serialized).not.toContain(secretRecap);
-    expect(metadata.title).not.toContain(secretRecap);
+    expect((metadata.title as { absolute: string }).absolute).not.toContain(secretRecap);
     expect(metadata.description).not.toContain(secretRecap);
     expect(getOpenGraphImageUrl(image) ?? '').not.toContain(secretRecap);
   });

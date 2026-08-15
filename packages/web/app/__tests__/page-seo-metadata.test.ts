@@ -48,7 +48,7 @@ describe('page metadata exports', () => {
     const aboutImages = toOpenGraphImageList(aboutMetadata.openGraph?.images);
     const aboutImageUrl = getOpenGraphImageUrl(aboutImages[0]);
 
-    expect(aboutMetadata.title).toBe('About | Boardsesh');
+    expect(aboutMetadata.title).toEqual({ absolute: 'About | Boardsesh' });
     expect(aboutMetadata.alternates?.canonical).toBe('/about');
     expect(aboutMetadata.alternates?.languages).toEqual({
       'en-US': '/about',
@@ -73,7 +73,7 @@ describe('page metadata exports', () => {
   });
 
   it('keeps the public playlists directory indexable because it exposes discoverable content', () => {
-    expect(playlistsMetadata.title).toBe('Discover Climbing Playlists | Boardsesh');
+    expect(playlistsMetadata.title).toEqual({ absolute: 'Discover Climbing Playlists | Boardsesh' });
     expect(playlistsMetadata.description).toBe(
       'Discover public climbing playlists and manage your own after signing in.',
     );

@@ -70,7 +70,7 @@ describe('profile page route', () => {
       params: Promise.resolve({ user_id: 'missing-user' }),
     });
 
-    expect(metadata.title).toBe('Profile Not Found | Boardsesh');
+    expect(metadata.title).toEqual({ absolute: 'Profile Not Found | Boardsesh' });
     // `follow: true` is the house default — the page 404s anyway, and there is
     // no reason to stop a crawler following the links it renders.
     expect(metadata.robots).toEqual({ index: false, follow: true });
@@ -104,7 +104,7 @@ describe('profile page route', () => {
 
     // Public profiles are a search surface — indexable, deliberately.
     expect(metadata.robots).toBeUndefined();
-    expect(metadata.title).toBe("Marco's Kilter Sessions | Boardsesh");
+    expect(metadata.title).toEqual({ absolute: "Marco's Kilter Sessions | Boardsesh" });
     expect(metadata.alternates?.canonical).toBe('/profile/user-1');
     expect(metadata.alternates?.languages).toEqual({
       'en-US': '/profile/user-1',
@@ -128,7 +128,7 @@ describe('profile page route', () => {
       params: Promise.resolve({ user_id: 'user-1' }),
     });
 
-    expect(metadata.title).toBe("Marco's Climbing Sessions | Boardsesh");
+    expect(metadata.title).toEqual({ absolute: "Marco's Climbing Sessions | Boardsesh" });
   });
 
   it('calls notFound and skips stats fetch when the user does not exist', async () => {
