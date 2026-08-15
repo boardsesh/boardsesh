@@ -26,7 +26,7 @@ vi.mock('../table-config', async () => {
 });
 
 import { pullSync } from '../pull-client';
-import { setSigningOut, setBackgrounded } from '../../mutation-queue/drainer';
+import { setSigningOut, setBackgrounded, beginGlobalPurge } from '../../mutation-queue/drainer';
 import { getCheckpoint, setCheckpoint, getCheckpointKey, markScopeDownloadComplete } from '../checkpoints';
 import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from '../table-config';
 
@@ -473,6 +473,111 @@ describe('pullSync', () => {
     expect(deleteCalls[0].params).toEqual(['kilter', 'climb-uuid', '40', '2024-06-01T00:00:00Z']);
   });
 
+  it('applies a deletion page and its checkpoint in one exclusive transaction', async () => {
+    const pageCursor = { updatedAt: '2024-06-01T00:00:02Z', syncSeq: '22' };
+    graphqlFetch.mockImplementation(async (query: string) => {
+      if (query.includes('syncDeletions')) {
+        return makeDeletionsResult(
+          [
+            { tableName: 'boardsesh_ticks', recordId: 'uuid-1', deletedAt: '2024-06-01T00:00:01Z' },
+            { tableName: 'boardsesh_ticks', recordId: 'uuid-2', deletedAt: '2024-06-01T00:00:02Z' },
+          ],
+          false,
+          pageCursor,
+        );
+      }
+      for (const config of Object.values(TABLE_CONFIGS)) {
+        if (query.includes(config.queryName)) return makeSyncResult(config.queryName, [], false);
+      }
+      throw new Error(`Unexpected query: ${query}`);
+    });
+
+    await pullSync(db, queryClient, graphqlFetch);
+
+    expect((db.withExclusiveTransactionAsync as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+    expect(mockTxn.runAsync).toHaveBeenCalledTimes(2);
+    expect(setCheckpoint).toHaveBeenNthCalledWith(1, mockTxn, 'checkpoint:deletions', {
+      updatedAt: '1970-01-01T00:00:00.000Z',
+      syncSeq: '0',
+    });
+    expect(setCheckpoint).toHaveBeenNthCalledWith(2, mockTxn, 'checkpoint:deletions', pageCursor);
+  });
+
+  it('abandons a queued deletion page when a global purge finishes before its transaction starts', async () => {
+    (db.getFirstAsync as ReturnType<typeof vi.fn>).mockImplementation(async (_sql: string, params: unknown[]) =>
+      params[0] === 'deletions-coverage' ? { value: String(Date.now()) } : null,
+    );
+    (db.withExclusiveTransactionAsync as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async (callback: (transaction: typeof mockTxn) => Promise<void>) => {
+        // Models the callback waiting behind a global purge's SQLite lock: its
+        // post-fetch guard already passed, then the wipe completes before this
+        // transaction gets a chance to perform its first write.
+        beginGlobalPurge();
+        await callback(mockTxn);
+      },
+    );
+    graphqlFetch.mockImplementation(async (query: string) => {
+      if (query.includes('syncDeletions')) {
+        return makeDeletionsResult(
+          [{ tableName: 'boardsesh_ticks', recordId: 'wiped-tick', deletedAt: '2024-06-01T00:00:00Z' }],
+          false,
+        );
+      }
+      for (const config of Object.values(TABLE_CONFIGS)) {
+        if (query.includes(config.queryName)) return makeSyncResult(config.queryName, [], false);
+      }
+      throw new Error(`Unexpected query: ${query}`);
+    });
+
+    await pullSync(db, queryClient, graphqlFetch);
+
+    expect(mockTxn.runAsync).not.toHaveBeenCalled();
+    expect(setCheckpoint).toHaveBeenCalledTimes(1);
+    expect(setCheckpoint).not.toHaveBeenCalledWith(mockTxn, 'checkpoint:deletions', {
+      updatedAt: '2024-06-01T00:00:00Z',
+      syncSeq: '1',
+    });
+    expect(
+      sqlCalls.some(
+        (call) => call.sql.includes('INSERT OR REPLACE INTO sync_meta') && call.params[0] === 'deletions-coverage',
+      ),
+    ).toBe(false);
+  });
+
+  it('abandons a deletion page when a global purge lands while its deferred transaction acquires the writer lock', async () => {
+    (db.getFirstAsync as ReturnType<typeof vi.fn>).mockImplementation(async (_sql: string, params: unknown[]) =>
+      params[0] === 'deletions-coverage' ? { value: String(Date.now()) } : null,
+    );
+    (setCheckpoint as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => {
+      // Models the purge winning the writer-lock race after callback entry. The
+      // checkpoint write waits for it, then the post-lock epoch guard must abort
+      // before a tombstone or the fetched page cursor can be written.
+      beginGlobalPurge();
+    });
+    graphqlFetch.mockImplementation(async (query: string) => {
+      if (query.includes('syncDeletions')) {
+        return makeDeletionsResult(
+          [{ tableName: 'boardsesh_ticks', recordId: 'wiped-tick', deletedAt: '2024-06-01T00:00:00Z' }],
+          false,
+        );
+      }
+      for (const config of Object.values(TABLE_CONFIGS)) {
+        if (query.includes(config.queryName)) return makeSyncResult(config.queryName, [], false);
+      }
+      throw new Error(`Unexpected query: ${query}`);
+    });
+
+    await pullSync(db, queryClient, graphqlFetch);
+
+    expect(setCheckpoint).toHaveBeenCalledTimes(1);
+    expect(mockTxn.runAsync).not.toHaveBeenCalled();
+    expect(
+      sqlCalls.some(
+        (call) => call.sql.includes('INSERT OR REPLACE INTO sync_meta') && call.params[0] === 'deletions-coverage',
+      ),
+    ).toBe(false);
+  });
+
   it('skips deletion when PK part count mismatches', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
@@ -746,6 +851,31 @@ describe('pullSync', () => {
 
     expect(logbookKeyCount).toBeGreaterThanOrEqual(1);
     expect(userTicksKeyCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('invalidates a committed deletion page before a later page request fails', async () => {
+    let deletionRequestCount = 0;
+    graphqlFetch.mockImplementation(async (query: string) => {
+      if (query.includes('syncDeletions')) {
+        deletionRequestCount += 1;
+        if (deletionRequestCount === 1) {
+          return makeDeletionsResult(
+            [{ tableName: 'boardsesh_ticks', recordId: 'uuid-1', deletedAt: '2024-06-01T00:00:00Z' }],
+            true,
+          );
+        }
+        throw new Error('page two transport failed');
+      }
+      throw new Error(`Unexpected query: ${query}`);
+    });
+
+    await expect(pullSync(db, queryClient, graphqlFetch)).rejects.toThrow('page two transport failed');
+
+    const invalidatedKeys = (queryClient.invalidateQueries as ReturnType<typeof vi.fn>).mock.calls.map(
+      (args: unknown[]) => (args[0] as { queryKey: string[] }).queryKey,
+    );
+    expect(invalidatedKeys).toContainEqual(['logbook']);
+    expect(invalidatedKeys).toContainEqual(['userTicks']);
   });
 
   it('calls getCheckpointKey with the full scope key for per-board tables', async () => {

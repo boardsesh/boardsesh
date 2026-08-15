@@ -101,6 +101,7 @@ export function useOfflineNudge({ surface, board, storeReviewWillPrompt }: UseOf
       boardDownloadState({
         scopeKey: scopeKey ?? '',
         enabled: scopeKey !== null && enabledBoards.includes(scopeKey),
+        isBootstrapDone: false,
         downloaded: scopeKey !== null && (downloadedScopeKeys ?? []).includes(scopeKey),
         isSyncing: false,
         currentTable: null,

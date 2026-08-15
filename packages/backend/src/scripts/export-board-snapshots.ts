@@ -27,6 +27,7 @@
 // effects.
 
 import { pathToFileURL } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { gzipSync } from 'node:zlib';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -61,6 +62,7 @@ import { logger } from '../utils/logger';
 // side. Each prefix is a self-contained, single-encoding manifest: the merge and
 // prune logic below scope entirely to whichever prefix the run targets.
 const DEFAULT_SNAPSHOT_KEY_PREFIX = 'board-snapshots/v1';
+const LIVE_SNAPSHOT_KEY_PREFIX = 'board-snapshots/v1-gzip';
 // A safe key prefix: lowercase alphanumerics separated by single `-`/`/`, no
 // leading/trailing separator and no `..`. It's spliced into S3 object keys and
 // the manifest path, so validate it (mirrors SAFE_IDENTIFIER's intent for keys).
@@ -106,6 +108,14 @@ const EPOCH_WATERMARK_UPDATED_AT = '1970-01-01T00:00:00.000Z';
 const EPOCH_WATERMARK_SYNC_SEQ = '0';
 
 const SNAPSHOT_TABLES: readonly SnapshotTableName[] = ['board_climbs', 'board_climb_stats'];
+
+// Metadata-only row in the whole-layout artifact. It does NOT imply that the
+// artifact carries a sync_deletions data table: its watermark is the oldest
+// deletion timestamp that may still belong to a transaction invisible to the
+// export's REPEATABLE READ snapshot. Existing clients query only their two
+// required table names, so an extra snapshot_meta row is backwards-compatible.
+const DELETIONS_SNAPSHOT_META_TABLE = 'sync_deletions';
+const SNAPSHOT_EXPORT_APPLICATION_PREFIX = 'boardsesh-snapshot-export-';
 
 // The SEPARATE per-layout grades artifact's single table (issue #4310). It is
 // not folded into SNAPSHOT_TABLES on purpose: the client verifies a whole-layout
@@ -156,6 +166,22 @@ export type SnapshotTableExportResult = {
   watermarkSyncSeq: string;
 };
 
+/**
+ * Stable, bounded reasons an otherwise-valid artifact can omit the optional
+ * deletion replay metadata. These values are emitted in production exporter
+ * logs, so keep them low-cardinality and never append connection/session data.
+ */
+export type DeletionReplayFallbackReason =
+  | 'observer-pool-capacity'
+  | 'activity-probe-failed'
+  | 'exporter-transaction-not-observed'
+  | 'activity-visibility-incomplete'
+  | 'invalid-probe-timestamp';
+
+type DeletionReplayMetadataResult =
+  | { deletionsReplayFrom: string; deletionsReplayFallbackReason: null }
+  | { deletionsReplayFrom: null; deletionsReplayFallbackReason: DeletionReplayFallbackReason };
+
 export type LayoutSnapshotResult = {
   boardType: string;
   layoutId: number;
@@ -170,7 +196,7 @@ export type LayoutSnapshotResult = {
    * for any run that did not ask for one.
    */
   grades?: LayoutGradesSnapshotResult;
-};
+} & DeletionReplayMetadataResult;
 
 export type LayoutGradesSnapshotResult = {
   filePath: string;
@@ -435,13 +461,159 @@ async function tableWatermark(
   };
 }
 
+type DeletionReplayProbeRow = {
+  export_xact_start: unknown;
+  oldest_same_role_xact_start: unknown;
+  visibility_established: boolean;
+};
+
+function normalizedProbeTimestamp(rawTimestamp: unknown): { iso: string; timestampMs: number } | null {
+  if (rawTimestamp === null || rawTimestamp === undefined) return null;
+  try {
+    const timestampMs = Date.parse(toIso(rawTimestamp));
+    if (!Number.isFinite(timestampMs)) return null;
+    return { iso: new Date(timestampMs).toISOString(), timestampMs };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Pick the oldest safe replay bound. Export `builtAt` is included deliberately:
+ * it is chosen before any layout transaction, so it both supplies a client-side
+ * validation ceiling and safely widens later layouts whose transaction clock is
+ * more than one stability window after the run began.
+ */
+export function selectDeletionReplayBoundary(params: {
+  artifactBuiltAt: unknown;
+  exportTransactionStartedAt: unknown;
+  oldestActiveTransactionStartedAt: unknown;
+  stabilityWindowSeconds: number;
+  visibilityEstablished: boolean;
+}): string | null {
+  if (!params.visibilityEstablished) return null;
+  const artifactBuiltAt = normalizedProbeTimestamp(params.artifactBuiltAt);
+  const exportTransactionStartedAt = normalizedProbeTimestamp(params.exportTransactionStartedAt);
+  if (!artifactBuiltAt || !exportTransactionStartedAt) return null;
+
+  const stabilityBoundaryMs =
+    exportTransactionStartedAt.timestampMs - Math.max(0, params.stabilityWindowSeconds) * 1000;
+  const oldestActiveTransaction = normalizedProbeTimestamp(params.oldestActiveTransactionStartedAt);
+  const replayFromMs = Math.min(
+    artifactBuiltAt.timestampMs,
+    stabilityBoundaryMs,
+    oldestActiveTransaction?.timestampMs ?? Number.POSITIVE_INFINITY,
+  );
+  return new Date(replayFromMs).toISOString();
+}
+
+/**
+ * Observe the open export transaction from a SECOND primary-pool connection.
+ * The export connection has run only SET commands at this point, so its
+ * REPEATABLE READ data snapshot is not fixed yet. Sampling activity first and
+ * reading artifact rows second closes the opposite ordering's race: a long
+ * delete cannot commit after the RR snapshot is fixed but before pg_stat_activity
+ * notices it has disappeared.
+ *
+ * Fail closed. PostgreSQL exposes full activity details to ordinary users only
+ * for sessions owned by the same role. Production writers and this exporter use
+ * that one role; ANY other-role client in this database, hidden/disabled peer
+ * state, a prepared transaction (not represented in pg_stat_activity), a
+ * missing exporter row, or a query/pool failure returns a bounded fallback
+ * reason. The artifact then omits this optional row and clients use the older
+ * scoped-row watermark rewind. `runExport` logs the boundary or that stable
+ * reason for every layout without exposing peer-session details.
+ */
+async function probeDeletionReplayBoundary(params: {
+  sqlClient: Sql;
+  applicationName: string;
+  artifactBuiltAt: string;
+  stabilityWindowSeconds: number;
+}): Promise<DeletionReplayMetadataResult> {
+  const { sqlClient, applicationName, artifactBuiltAt, stabilityWindowSeconds } = params;
+  // The observer must not queue behind the export connection forever. The
+  // production primary pool has max=10; a generic/max=1 caller still gets a
+  // valid artifact, just without this optional optimization.
+  const configuredPoolMax = (sqlClient as Sql & { options?: { max?: unknown } }).options?.max;
+  if (typeof configuredPoolMax !== 'number' || configuredPoolMax < 2) {
+    return { deletionsReplayFrom: null, deletionsReplayFallbackReason: 'observer-pool-capacity' };
+  }
+  try {
+    const rows = await sqlClient.unsafe(
+      `SELECT
+         exporter.xact_start AS export_xact_start,
+         (
+           SELECT min(peer.xact_start)
+           FROM pg_stat_activity peer
+           WHERE peer.datname = exporter.datname
+             AND peer.usesysid = exporter.usesysid
+             AND peer.backend_type = 'client backend'
+             AND peer.pid NOT IN (exporter.pid, pg_backend_pid())
+             AND peer.xact_start IS NOT NULL
+         ) AS oldest_same_role_xact_start,
+         current_setting('track_activities', true) = 'on'
+           AND exporter.xact_start IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1
+             FROM pg_prepared_xacts prepared
+             WHERE prepared.database = exporter.datname
+           )
+           AND NOT EXISTS (
+             SELECT 1
+             FROM pg_stat_activity peer
+             WHERE peer.datname = exporter.datname
+               AND peer.backend_type = 'client backend'
+               AND peer.pid NOT IN (exporter.pid, pg_backend_pid())
+               AND (
+                 peer.usesysid IS DISTINCT FROM exporter.usesysid
+                 OR peer.state IS NULL
+                 OR peer.state = 'disabled'
+                 OR (peer.state <> 'idle' AND peer.xact_start IS NULL)
+               )
+           ) AS visibility_established
+       FROM pg_stat_activity exporter
+       WHERE exporter.datname = current_database()
+         AND exporter.backend_type = 'client backend'
+         AND exporter.application_name = $1`,
+      [applicationName],
+    );
+    if (rows.length !== 1) {
+      return {
+        deletionsReplayFrom: null,
+        deletionsReplayFallbackReason: 'exporter-transaction-not-observed',
+      };
+    }
+    const probe = rows[0] as unknown as DeletionReplayProbeRow;
+    if (probe.visibility_established !== true) {
+      return {
+        deletionsReplayFrom: null,
+        deletionsReplayFallbackReason: 'activity-visibility-incomplete',
+      };
+    }
+    const deletionsReplayFrom = selectDeletionReplayBoundary({
+      artifactBuiltAt,
+      exportTransactionStartedAt: probe.export_xact_start,
+      oldestActiveTransactionStartedAt: probe.oldest_same_role_xact_start,
+      stabilityWindowSeconds,
+      visibilityEstablished: true,
+    });
+    if (!deletionsReplayFrom) {
+      return { deletionsReplayFrom: null, deletionsReplayFallbackReason: 'invalid-probe-timestamp' };
+    }
+    return { deletionsReplayFrom, deletionsReplayFallbackReason: null };
+  } catch {
+    return { deletionsReplayFrom: null, deletionsReplayFallbackReason: 'activity-probe-failed' };
+  }
+}
+
 // --- Layout snapshot build ----------------------------------------------------
 
-/** Writes one `snapshot_meta` row per table into an artifact. */
+/** Writes required table metadata plus the optional deletion replay boundary. */
 function writeSnapshotMeta(
   sqliteDb: DatabaseSync,
   builtAt: string,
   tables: Record<string, SnapshotTableExportResult>,
+  deletionsReplayFrom?: string | null,
 ): void {
   const insertMeta = sqliteDb.prepare(
     `INSERT OR REPLACE INTO snapshot_meta
@@ -454,6 +626,17 @@ function writeSnapshotMeta(
       tableResult.watermarkUpdatedAt,
       tableResult.watermarkSyncSeq,
       tableResult.rowCount,
+      builtAt,
+      LATEST_SCHEMA_VERSION,
+      SNAPSHOT_MANIFEST_FORMAT_VERSION,
+    );
+  }
+  if (deletionsReplayFrom) {
+    insertMeta.run(
+      DELETIONS_SNAPSHOT_META_TABLE,
+      deletionsReplayFrom,
+      EPOCH_WATERMARK_SYNC_SEQ,
+      0,
       builtAt,
       LATEST_SCHEMA_VERSION,
       SNAPSHOT_MANIFEST_FORMAT_VERSION,
@@ -473,9 +656,10 @@ function writeSnapshotMeta(
  * `board_climbs`, so a climb committed between the two reads would otherwise
  * make the grade rows and the climbs they hang off disagree.
  *
- * The whole-layout artifact is BYTE-FOR-BYTE what it was before grades existed
- * — same DDL, same two tables, same two `snapshot_meta` rows — because every
- * shipped binary verifies it against a two-table list.
+ * The whole-layout DATA tables remain byte-for-byte what they were before
+ * grades existed. Its additive metadata-only sync_deletions row is safe for old
+ * clients because they query the two required snapshot_meta rows by name and
+ * ignore extras.
  */
 export async function exportLayoutSnapshot(params: {
   sqlClient: Sql;
@@ -509,6 +693,18 @@ export async function exportLayoutSnapshot(params: {
     gradesDb?.exec('BEGIN');
     const streamed = await sqlClient.begin(async (tx) => {
       await tx.unsafe('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+      const exportApplicationName = `${SNAPSHOT_EXPORT_APPLICATION_PREFIX}${randomUUID()}`;
+      // SET does not acquire the REPEATABLE READ data snapshot. The second-
+      // connection activity probe MUST finish before the first artifact SELECT;
+      // see probeDeletionReplayBoundary for the commit-between-sample race this
+      // ordering closes. The generated value contains only a fixed prefix + UUID.
+      await tx.unsafe(`SET LOCAL application_name = '${exportApplicationName}'`);
+      const deletionReplayMetadata = await probeDeletionReplayBoundary({
+        sqlClient,
+        applicationName: exportApplicationName,
+        artifactBuiltAt: builtAt,
+        stabilityWindowSeconds,
+      });
 
       const climbColumns = TABLE_CONFIGS.board_climbs.localColumns;
       const statsColumns = TABLE_CONFIGS.board_climb_stats.localColumns;
@@ -540,7 +736,7 @@ export async function exportLayoutSnapshot(params: {
         board_climb_stats: { rowCount: statsRowCount, ...statsWatermark },
       } satisfies Record<SnapshotTableName, SnapshotTableExportResult>;
 
-      if (!gradesDb) return { tables, gradesTables: null };
+      if (!gradesDb) return { tables, gradesTables: null, ...deletionReplayMetadata };
 
       const gradesRowCount = await streamTableIntoSqlite(
         tx,
@@ -555,13 +751,14 @@ export async function exportLayoutSnapshot(params: {
 
       return {
         tables,
+        ...deletionReplayMetadata,
         gradesTables: {
           board_climb_grades: { rowCount: gradesRowCount, ...gradesWatermark },
         } satisfies Record<SnapshotGradesTableName, SnapshotTableExportResult>,
       };
     });
 
-    writeSnapshotMeta(sqliteDb, builtAt, streamed.tables);
+    writeSnapshotMeta(sqliteDb, builtAt, streamed.tables, streamed.deletionsReplayFrom);
     sqliteDb.exec('COMMIT');
 
     let grades: LayoutGradesSnapshotResult | undefined;
@@ -576,6 +773,14 @@ export async function exportLayoutSnapshot(params: {
       }
     }
 
+    const deletionReplayMetadata: DeletionReplayMetadataResult =
+      streamed.deletionsReplayFrom === null
+        ? {
+            deletionsReplayFrom: null,
+            deletionsReplayFallbackReason: streamed.deletionsReplayFallbackReason,
+          }
+        : { deletionsReplayFrom: streamed.deletionsReplayFrom, deletionsReplayFallbackReason: null };
+
     return {
       boardType,
       layoutId,
@@ -583,6 +788,7 @@ export async function exportLayoutSnapshot(params: {
       builtAt,
       schemaVersion: LATEST_SCHEMA_VERSION,
       tables: streamed.tables,
+      ...deletionReplayMetadata,
       ...(grades ? { grades } : {}),
     };
   } catch (error) {
@@ -871,6 +1077,13 @@ export async function runExport(argv: string[]): Promise<void> {
   const keyPrefix = options.keyPrefix;
   const manifestKey = manifestKeyForPrefix(keyPrefix);
 
+  // The production fleet reads this prefix as gzip. A mistyped manual command
+  // must not replace it with an identity artifact or bypass its replay-boundary
+  // publication gate; the workflow always supplies this exact pairing.
+  if (keyPrefix === LIVE_SNAPSHOT_KEY_PREFIX && !options.gzip) {
+    throw new Error(`--key-prefix ${LIVE_SNAPSHOT_KEY_PREFIX} requires --gzip`);
+  }
+
   if (options.dryRun && isThresholdRefresh) {
     throw new Error(
       '--dry-run cannot be combined with --refresh-threshold: threshold selection requires the live manifest',
@@ -993,6 +1206,18 @@ export async function runExport(argv: string[]): Promise<void> {
           ...(options.gzip ? { gradesFilePath } : {}),
         });
 
+        // The fleet reads only the gzip prefix. Publishing a newly-built live
+        // artifact without the conservative deletion replay boundary can turn
+        // the next import into a huge JS-native tombstone crawl, so fail this
+        // layout closed before any of its objects upload. The per-layout catch
+        // preserves its previous immutable manifest entry, successful siblings
+        // still publish, and the run fails at the end so the queued refresh
+        // retries. Identity (rollback) exports and dry-runs remain observable
+        // but ungated.
+        if (keyPrefix === LIVE_SNAPSHOT_KEY_PREFIX && !options.dryRun && result.deletionsReplayFrom === null) {
+          throw new Error(`live gzip deletion replay boundary unavailable: ${result.deletionsReplayFallbackReason}`);
+        }
+
         const rawBuffer = readFileSync(filePath);
         // Encoding default is IDENTITY until transparent Content-Encoding: gzip
         // decode is verified on-device for both platforms: straight-to-disk
@@ -1027,6 +1252,8 @@ export async function runExport(argv: string[]): Promise<void> {
             uploadBytes: uploadBody.length,
             gradesUploadBytes: gradesUploadBody?.length ?? 0,
             contentEncoding,
+            deletionsReplayFrom: result.deletionsReplayFrom,
+            deletionsReplayFallbackReason: result.deletionsReplayFallbackReason,
             durationMs: Date.now() - startedAt,
           });
           // publicUrlForKey may fall back to getPublicUrl, which instantiates
@@ -1077,6 +1304,8 @@ export async function runExport(argv: string[]): Promise<void> {
             contentEncoding,
             key: uploaded.key,
             gradesKey: uploadedGrades?.key ?? null,
+            deletionsReplayFrom: result.deletionsReplayFrom,
+            deletionsReplayFallbackReason: result.deletionsReplayFallbackReason,
             durationMs: Date.now() - startedAt,
           });
           newEntries.push(

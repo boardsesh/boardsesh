@@ -8,13 +8,14 @@ export type BoardDownloadState =
   | 'off' // not made available offline
   | 'pending' // enabled but not yet pulled (e.g. enabled while offline)
   | 'downloading' // the pull is fetching this exact board right now
+  | 'finalizing' // snapshot imported; shared work is running before scope completion
   | 'downloaded'; // a sync cycle has completed since it was enabled
 
 /**
  * A persisted explanation for an in-progress offline download. This is kept
  * separate from BoardDownloadState: the download still has the same pending /
- * downloading lifecycle, but a failed snapshot bootstrap changes what the user
- * should expect next.
+ * downloading / finalizing lifecycle, but a failed snapshot bootstrap changes
+ * what the user should expect next.
  */
 export type BoardDownloadNotice = 'snapshot-retrying' | 'paged-fallback' | null;
 
@@ -23,6 +24,8 @@ export type BoardDownloadStateInput = {
   scopeKey: string;
   /** Whether this scope key is in syncEnabledBoards. */
   enabled: boolean;
+  /** Durable marker set only after this scope's snapshot artifact imports successfully. */
+  isBootstrapDone: boolean;
   /** From useSyncStatus(): a cycle is mid-flight. */
   isSyncing: boolean;
   /**
@@ -34,11 +37,12 @@ export type BoardDownloadStateInput = {
   /** From useSyncStatus().progress: the table:scope label being pulled, or null. */
   currentTable: string | null;
   /**
-   * From useSyncStatus().progress?.phase: which pull phase is running. Only
-   * matters for distinguishing the snapshot-bootstrap warm-up (currentTable is
-   * the bare scope key, not a `table:scope` label) from the paged crawl.
-   * Undefined/null is treated as "not bootstrapping" — the paged-crawl match
-   * below still applies.
+   * From useSyncStatus().progress?.phase: which pull phase is running. This
+   * distinguishes the snapshot-bootstrap warm-up (currentTable is the bare
+   * scope key) and active phases that are finalizing an imported sibling scope
+   * from an idle or absent progress frame.
+   * Undefined/null is treated as neither bootstrapping nor finalizing — the
+   * paged-crawl match below still applies.
    */
   phase?: SyncProgress['phase'] | null;
 };
@@ -60,8 +64,9 @@ function isBootstrappingThisScope(
  * tables (matched exactly so a sibling scope, e.g. kilter:1:50 vs kilter:1:5,
  * can't cross-trigger) OR while it's being warmed from a snapshot artifact.
  * "downloaded" is driven by this scope's own checkpoint, so a board enabled
- * after another already synced shows "pending" (not a false "downloaded")
- * until its own data lands.
+ * after another already synced never reads as downloaded before its own scope
+ * completes. Once a snapshot has imported, work on the rest of the cycle is
+ * surfaced as "finalizing" instead of making that download look queued again.
  */
 export function boardDownloadState(input: BoardDownloadStateInput): BoardDownloadState {
   if (!input.enabled) return 'off';
@@ -74,6 +79,9 @@ export function boardDownloadState(input: BoardDownloadStateInput): BoardDownloa
   if (input.isSyncing && isCurrentBoard) return 'downloading';
 
   if (input.downloaded) return 'downloaded';
+  if (input.isSyncing && input.isBootstrapDone && input.phase != null && input.phase !== 'idle') {
+    return 'finalizing';
+  }
   return 'pending';
 }
 
@@ -112,6 +120,7 @@ export function offlineCatalogState(input: OfflineCatalogStateInput): OfflineCat
   const state = boardDownloadState({
     scopeKey: input.scopeKey,
     enabled: input.enabledScopeKeys.includes(input.scopeKey),
+    isBootstrapDone: false,
     downloaded: (input.downloadedScopeKeys ?? []).includes(input.scopeKey),
     isSyncing: false,
     currentTable: null,

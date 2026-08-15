@@ -108,6 +108,9 @@ type ArtifactSpec = {
   statsRowCountOverride?: number;
   climbsDdl?: string;
   statsDdl?: string;
+  builtAt?: string;
+  /** Optional metadata-only replay boundary; omitted to model an old artifact. */
+  deletionsReplayFrom?: string;
 };
 
 /** Builds a gzip-free SQLite artifact carrying board_climbs + stats + meta. */
@@ -160,12 +163,13 @@ function buildArtifact(spec: ArtifactSpec): void {
     );
     const formatVersion = spec.formatVersion ?? 1;
     const schemaVersion = spec.schemaVersion ?? LATEST_SCHEMA_VERSION;
+    const builtAt = spec.builtAt ?? '2026-06-01T00:00:00.000Z';
     meta.run(
       'board_climbs',
       spec.climbsWatermark.updatedAt,
       spec.climbsWatermark.syncSeq,
       spec.climbsRowCountOverride ?? spec.climbs.length,
-      '2026-06-01T00:00:00.000Z',
+      builtAt,
       schemaVersion,
       formatVersion,
     );
@@ -174,10 +178,13 @@ function buildArtifact(spec: ArtifactSpec): void {
       spec.statsWatermark.updatedAt,
       spec.statsWatermark.syncSeq,
       spec.statsRowCountOverride ?? spec.stats.length,
-      '2026-06-01T00:00:00.000Z',
+      builtAt,
       schemaVersion,
       formatVersion,
     );
+    if (spec.deletionsReplayFrom) {
+      meta.run('sync_deletions', spec.deletionsReplayFrom, '0', 0, builtAt, schemaVersion, formatVersion);
+    }
   } finally {
     db.close();
   }
@@ -731,6 +738,27 @@ describe('bootstrapScopeFromSnapshot', () => {
     await expect(
       bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: 'kilter:1:5', filePath }),
     ).rejects.toThrow(/row_count/);
+    expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toBeNull();
+  });
+
+  it('rejects inconsistent embedded snapshot_meta built_at timestamps', async () => {
+    const filePath = join(workDir, 'inconsistent-built-at.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const artifact = new DatabaseSync(filePath);
+    artifact
+      .prepare('UPDATE snapshot_meta SET built_at = ? WHERE table_name = ?')
+      .run('2026-06-01T00:00:01.000Z', 'board_climb_stats');
+    artifact.close();
+
+    await expect(
+      bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: 'kilter:1:5', filePath }),
+    ).rejects.toThrow(/inconsistent snapshot_meta built_at/);
     expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toBeNull();
   });
 
@@ -2536,7 +2564,34 @@ describe('pullSync onScopeDownloadComplete', () => {
 // ---------------------------------------------------------------------------
 
 describe('deletions checkpoint rewind on bootstrap', () => {
-  it('rewinds the deletions checkpoint to min(watermarks) when it sits ahead of the snapshot', async () => {
+  it('uses the export-transaction replay boundary instead of a quiet layout row watermark', async () => {
+    await setCheckpoint(db, DELETIONS_CHECKPOINT_KEY, { updatedAt: '2026-09-01T00:00:00Z', syncSeq: '5000' });
+
+    const filePath = join(workDir, 'transaction-boundary-rewind.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      // This layout has been quiet for a month. Replaying from this row cursor
+      // would needlessly scan a month of global tombstones.
+      climbsWatermark: { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '10' },
+      statsWatermark: { updatedAt: '2026-05-02T00:00:00Z', syncSeq: '20' },
+      // The exporter captured this from the SAME REPEATABLE READ transaction,
+      // after subtracting its stability window.
+      deletionsReplayFrom: '2026-05-31T23:59:30.000Z',
+    });
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+
+    expect(await getCheckpoint(db, DELETIONS_CHECKPOINT_KEY)).toEqual({
+      updatedAt: '2026-05-31T23:59:30.000Z',
+      syncSeq: '0',
+    });
+  });
+
+  it('falls back to min(watermarks) for an old artifact without deletion replay metadata', async () => {
     // Deletions already advanced well past the snapshot's watermark.
     await setCheckpoint(db, DELETIONS_CHECKPOINT_KEY, { updatedAt: '2026-09-01T00:00:00Z', syncSeq: '5000' });
 
@@ -2556,6 +2611,57 @@ describe('deletions checkpoint rewind on bootstrap', () => {
 
     // Rewound to the OLDER (climbs) timestamp, with deletion-domain seq 0 so
     // tombstones at exactly that timestamp are replayed too.
+    expect(await getCheckpoint(db, DELETIONS_CHECKPOINT_KEY)).toEqual({
+      updatedAt: '2026-05-01T00:00:00Z',
+      syncSeq: '0',
+    });
+  });
+
+  it('falls back to min(watermarks) when deletion replay metadata is malformed', async () => {
+    await setCheckpoint(db, DELETIONS_CHECKPOINT_KEY, { updatedAt: '2026-09-01T00:00:00Z', syncSeq: '5000' });
+
+    const filePath = join(workDir, 'malformed-transaction-boundary.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '10' },
+      statsWatermark: { updatedAt: '2026-05-02T00:00:00Z', syncSeq: '20' },
+      deletionsReplayFrom: '2026-05-31T23:59:30.000Z',
+    });
+    const artifact = new DatabaseSync(filePath);
+    artifact
+      .prepare('UPDATE snapshot_meta SET watermark_sync_seq = ? WHERE table_name = ?')
+      .run('not-zero', 'sync_deletions');
+    artifact.close();
+
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const { fetch } = makeGraphqlFetch();
+    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+
+    expect(await getCheckpoint(db, DELETIONS_CHECKPOINT_KEY)).toEqual({
+      updatedAt: '2026-05-01T00:00:00Z',
+      syncSeq: '0',
+    });
+  });
+
+  it('falls back to min(watermarks) when the replay boundary is after artifact built_at', async () => {
+    await setCheckpoint(db, DELETIONS_CHECKPOINT_KEY, { updatedAt: '2026-09-01T00:00:00Z', syncSeq: '5000' });
+
+    const filePath = join(workDir, 'future-transaction-boundary.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '10' },
+      statsWatermark: { updatedAt: '2026-05-02T00:00:00Z', syncSeq: '20' },
+      builtAt: '2026-06-01T00:00:00.000Z',
+      deletionsReplayFrom: '2026-06-01T00:00:01.000Z',
+    });
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const { fetch } = makeGraphqlFetch();
+    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+
     expect(await getCheckpoint(db, DELETIONS_CHECKPOINT_KEY)).toEqual({
       updatedAt: '2026-05-01T00:00:00Z',
       syncSeq: '0',

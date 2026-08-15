@@ -54,23 +54,23 @@ function toSeqBigInt(rawSeq: string): bigint {
 }
 
 /**
- * Lower the deletions checkpoint to `watermark.updatedAt` when it currently sits AHEAD of
- * it, leaving it untouched otherwise. A scope warmed from a snapshot re-introduces
- * board rows as of the snapshot's (older) watermark; if the global deletions
- * cursor had already advanced past that point in an earlier cycle, any board-row
- * deletions in the window `(watermark, deletions-head]` were consumed while those
- * rows were absent and would never re-apply to the freshly-imported ones — a
- * stale, already-deleted climb would linger. Rewinding makes the next deletions
- * pull re-scan that window against the imported rows. A missing (fresh) deletions
- * checkpoint is already at the epoch, behind any watermark, so it is left alone.
+ * Lower the deletions checkpoint to `replayFrom.updatedAt` when it currently sits
+ * AHEAD of it, leaving it untouched otherwise. A scope warmed from a snapshot
+ * re-introduces board rows from an older database view; if the global deletions
+ * cursor had already advanced past that view in an earlier cycle, tombstones
+ * consumed while those rows were absent would never re-apply to the freshly
+ * imported ones. Rewinding makes the next deletions pull re-scan that window.
+ * New artifacts provide a conservative export-transaction boundary; older
+ * artifacts use their scoped row watermark. A missing (fresh) deletions
+ * checkpoint is already at the epoch, behind either target, so it is left alone.
  *
  * Deletions page on `(deleted_at, sync_deletions.id)`, not board-table
  * `sync_seq`, so the rewind target uses sequence `0` to include every tombstone
  * at the exact snapshot timestamp.
  */
-export async function rewindDeletionsCheckpoint(db: SqlExecutor, watermark: SyncCheckpoint): Promise<void> {
+export async function rewindDeletionsCheckpoint(db: SqlExecutor, replayFrom: SyncCheckpoint): Promise<void> {
   const current = await getCheckpoint(db, DELETIONS_CHECKPOINT_KEY);
-  const deletionCursorWatermark = { updatedAt: watermark.updatedAt, syncSeq: '0' };
+  const deletionCursorWatermark = { updatedAt: replayFrom.updatedAt, syncSeq: '0' };
   if (!current) return;
   if (compareCheckpoints(current, deletionCursorWatermark) > 0) {
     await setCheckpoint(db, DELETIONS_CHECKPOINT_KEY, deletionCursorWatermark);

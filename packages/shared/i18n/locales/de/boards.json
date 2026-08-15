@@ -293,6 +293,7 @@
     "offline": {
       "available": "Offline verfügbar",
       "pending": "Wartet auf Download",
+      "finalizing": "Download wird abgeschlossen…",
       "bootstrapping": "Board wird geladen…",
       "bootstrapPreparing": "Download wird vorbereitet…",
       "bootstrapDownloading": "{{done}} von {{total}} geladen",

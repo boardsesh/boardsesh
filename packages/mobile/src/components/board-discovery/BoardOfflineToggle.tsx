@@ -19,12 +19,13 @@ const HIT_SLOP = { top: spacing[2], bottom: spacing[2], left: spacing[2], right:
  * Compact plain-RN offline control for a board row — an icon button (never an
  * @expo/ui Host, to keep the FlashList light). Dumb + memoised: it renders the
  * glyph for the primitive `state` and calls `onPress`; the parent owns the
- * toggle logic and the status text. Downloading shows a spinner (no tap target).
+ * toggle logic and the status text. Active download work shows a spinner (no
+ * tap target), including the shared finalizing phases after snapshots land.
  */
 function BoardOfflineToggleComponent({ state, onPress, accessibilityLabel, disabled }: BoardOfflineToggleProps) {
   const { systemColors, brandColors } = useTheme();
 
-  if (state === 'downloading') {
+  if (state === 'downloading' || state === 'finalizing') {
     return <ActivityIndicator size="small" style={styles.control} />;
   }
 
