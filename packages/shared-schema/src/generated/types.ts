@@ -885,6 +885,25 @@ export type CheckMoonBoardClimbDuplicatesInput = {
   layoutId: Scalars['Int']['input'];
 };
 
+export type ClearLocationSyncFreezeInput = {
+  entityType: LocationSyncEntityType;
+  entityUuid: Scalars['ID']['input'];
+  /** Freeze timestamp shown to the administrator; prevents a stale dialog clearing a newer edit. */
+  expectedSyncFrozenAt: Scalars['String']['input'];
+  /** Required operator explanation stored in the durable audit trail. */
+  reason: Scalars['String']['input'];
+};
+
+export type ClearLocationSyncFreezeResult = {
+  __typename?: 'ClearLocationSyncFreezeResult';
+  entityType: LocationSyncEntityType;
+  entityUuid: Scalars['ID']['output'];
+  previousSyncFrozenAt?: Maybe<Scalars['String']['output']>;
+  status: ClearLocationSyncFreezeStatus;
+};
+
+export type ClearLocationSyncFreezeStatus = 'ALREADY_UNFROZEN' | 'CLEARED';
+
 /**
  * A climbing problem/route on an interactive training board.
  * Contains all information needed to display and light up the climb on the board.
@@ -2035,6 +2054,39 @@ export type FreezeClimbInput = {
   reason?: InputMaybe<Scalars['String']['input']>;
 };
 
+export type FrozenLocationSyncEntitiesInput = {
+  entityType: LocationSyncEntityType;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  /** Optional case-insensitive name, UUID, or slug search. */
+  query?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** A gym or board whose human-curation marker currently blocks location-sync writes. */
+export type FrozenLocationSyncEntity = {
+  __typename?: 'FrozenLocationSyncEntity';
+  boardType?: Maybe<Scalars['String']['output']>;
+  deletedAt?: Maybe<Scalars['String']['output']>;
+  entityType: LocationSyncEntityType;
+  entityUuid: Scalars['ID']['output'];
+  isDeleted: Scalars['Boolean']['output'];
+  isSystemOwned: Scalars['Boolean']['output'];
+  name: Scalars['String']['output'];
+  /** A separate gym ownership or approved-claim guard still prevents source metadata refreshes. */
+  ownerProtected: Scalars['Boolean']['output'];
+  slug?: Maybe<Scalars['String']['output']>;
+  /** Known upstream source aliases. Empty for boards because board source keys are not persisted. */
+  sourceKeys: Array<Scalars['String']['output']>;
+  syncFrozenAt: Scalars['String']['output'];
+};
+
+export type FrozenLocationSyncEntityConnection = {
+  __typename?: 'FrozenLocationSyncEntityConnection';
+  entities: Array<FrozenLocationSyncEntity>;
+  hasMore: Scalars['Boolean']['output'];
+  totalCount: Scalars['Int']['output'];
+};
+
 /**
  * Full queue state sync event.
  * Sent on initial connection or when delta sync isn't possible.
@@ -2958,6 +3010,8 @@ export type LinkBoardToGymInput = {
   gymUuid?: InputMaybe<Scalars['String']['input']>;
 };
 
+export type LocationSyncEntityType = 'BOARD' | 'GYM';
+
 /** Input for merging duplicate gyms into a canonical survivor (admin only). */
 export type MergeGymsInput = {
   /** Explicit acknowledgement required to keep a SYSTEM listing as the survivor over a user-owned or claim-approved duplicate. Rejected without it. */
@@ -3048,6 +3102,12 @@ export type Mutation = {
    * actually carry the serial.
    */
   chooseBoardForSerial: ResolvedBoard;
+  /**
+   * Clear a gym or board's human-curation freeze (global admin only). This does
+   * not run a source sync, reverse ownership, or restore a soft-deleted row; it
+   * only permits a later matching source refresh and writes an audit record.
+   */
+  clearLocationSyncFreeze: ClearLocationSyncFreezeResult;
   /**
    * Confirm to all session participants that a climb was successfully relayed to the wall
    * over BLE from this client's phone. Any session participant may call — the BLE-capable
@@ -3523,6 +3583,11 @@ export type MutationAuthorizeControllerForSessionArgs = {
 export type MutationChooseBoardForSerialArgs = {
   boardId: Scalars['Int']['input'];
   serial: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationClearLocationSyncFreezeArgs = {
+  input: ClearLocationSyncFreezeInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4825,6 +4890,12 @@ export type Query = {
    */
   followingClimbAscents: FollowingClimbAscentsResult;
   /**
+   * Frozen gym or board rows awaiting an explicit location-sync release (global
+   * admin only). Includes soft-deleted rows because a later source sync may
+   * deliberately resurrect them. Merged gyms are excluded.
+   */
+  frozenLocationSyncEntities: FrozenLocationSyncEntityConnection;
+  /**
    * Get global activity feed of all recent ascents.
    * No authentication required.
    * Deprecated: Use trendingFeed instead.
@@ -5416,6 +5487,11 @@ export type QueryFollowingAscentsFeedArgs = {
 /** Root query type for all read operations. */
 export type QueryFollowingClimbAscentsArgs = {
   input: FollowingClimbAscentsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryFrozenLocationSyncEntitiesArgs = {
+  input: FrozenLocationSyncEntitiesInput;
 };
 
 /** Root query type for all read operations. */
@@ -8105,6 +8181,9 @@ export type ResolversTypes = ResolversObject<{
   BrowseProposalsInput: BrowseProposalsInput;
   BulkVoteSummaryInput: BulkVoteSummaryInput;
   CheckMoonBoardClimbDuplicatesInput: CheckMoonBoardClimbDuplicatesInput;
+  ClearLocationSyncFreezeInput: ClearLocationSyncFreezeInput;
+  ClearLocationSyncFreezeResult: ResolverTypeWrapper<ClearLocationSyncFreezeResult>;
+  ClearLocationSyncFreezeStatus: ClearLocationSyncFreezeStatus;
   Climb: ResolverTypeWrapper<Climb>;
   ClimbClassicStatus: ResolverTypeWrapper<ClimbClassicStatus>;
   ClimbCommunityStatus: ResolverTypeWrapper<ClimbCommunityStatus>;
@@ -8180,6 +8259,9 @@ export type ResolversTypes = ResolversObject<{
   FollowingClimbAscentsInput: FollowingClimbAscentsInput;
   FollowingClimbAscentsResult: ResolverTypeWrapper<FollowingClimbAscentsResult>;
   FreezeClimbInput: FreezeClimbInput;
+  FrozenLocationSyncEntitiesInput: FrozenLocationSyncEntitiesInput;
+  FrozenLocationSyncEntity: ResolverTypeWrapper<FrozenLocationSyncEntity>;
+  FrozenLocationSyncEntityConnection: ResolverTypeWrapper<FrozenLocationSyncEntityConnection>;
   FullSync: ResolverTypeWrapper<FullSync>;
   GetAllUserPlaylistsInput: GetAllUserPlaylistsInput;
   GetClimbProposalsInput: GetClimbProposalsInput;
@@ -8247,6 +8329,7 @@ export type ResolversTypes = ResolversObject<{
   LedCommandInput: LedCommandInput;
   LedUpdate: ResolverTypeWrapper<LedUpdate>;
   LinkBoardToGymInput: LinkBoardToGymInput;
+  LocationSyncEntityType: LocationSyncEntityType;
   MergeGymsInput: MergeGymsInput;
   MergeGymsResult: ResolverTypeWrapper<MergeGymsResult>;
   MoonBoardClimbDuplicateCandidateInput: MoonBoardClimbDuplicateCandidateInput;
@@ -8472,6 +8555,8 @@ export type ResolversParentTypes = ResolversObject<{
   BrowseProposalsInput: BrowseProposalsInput;
   BulkVoteSummaryInput: BulkVoteSummaryInput;
   CheckMoonBoardClimbDuplicatesInput: CheckMoonBoardClimbDuplicatesInput;
+  ClearLocationSyncFreezeInput: ClearLocationSyncFreezeInput;
+  ClearLocationSyncFreezeResult: ClearLocationSyncFreezeResult;
   Climb: Climb;
   ClimbClassicStatus: ClimbClassicStatus;
   ClimbCommunityStatus: ClimbCommunityStatus;
@@ -8542,6 +8627,9 @@ export type ResolversParentTypes = ResolversObject<{
   FollowingClimbAscentsInput: FollowingClimbAscentsInput;
   FollowingClimbAscentsResult: FollowingClimbAscentsResult;
   FreezeClimbInput: FreezeClimbInput;
+  FrozenLocationSyncEntitiesInput: FrozenLocationSyncEntitiesInput;
+  FrozenLocationSyncEntity: FrozenLocationSyncEntity;
+  FrozenLocationSyncEntityConnection: FrozenLocationSyncEntityConnection;
   FullSync: FullSync;
   GetAllUserPlaylistsInput: GetAllUserPlaylistsInput;
   GetClimbProposalsInput: GetClimbProposalsInput;
@@ -9229,6 +9317,18 @@ export type BoardseshGradeForAngleResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type ClearLocationSyncFreezeResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ClearLocationSyncFreezeResult'] =
+    ResolversParentTypes['ClearLocationSyncFreezeResult'],
+> = ResolversObject<{
+  entityType?: Resolver<ResolversTypes['LocationSyncEntityType'], ParentType, ContextType>;
+  entityUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  previousSyncFrozenAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['ClearLocationSyncFreezeStatus'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type ClimbResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['Climb'] = ResolversParentTypes['Climb'],
@@ -9780,6 +9880,36 @@ export type FollowingClimbAscentsResultResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type FrozenLocationSyncEntityResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['FrozenLocationSyncEntity'] =
+    ResolversParentTypes['FrozenLocationSyncEntity'],
+> = ResolversObject<{
+  boardType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  deletedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  entityType?: Resolver<ResolversTypes['LocationSyncEntityType'], ParentType, ContextType>;
+  entityUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  isDeleted?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isSystemOwned?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  ownerProtected?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  slug?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  sourceKeys?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
+  syncFrozenAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type FrozenLocationSyncEntityConnectionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['FrozenLocationSyncEntityConnection'] =
+    ResolversParentTypes['FrozenLocationSyncEntityConnection'],
+> = ResolversObject<{
+  entities?: Resolver<Array<ResolversTypes['FrozenLocationSyncEntity']>, ParentType, ContextType>;
+  hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type FullSyncResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['FullSync'] = ResolversParentTypes['FullSync'],
@@ -10319,6 +10449,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationChooseBoardForSerialArgs, 'boardId' | 'serial'>
+  >;
+  clearLocationSyncFreeze?: Resolver<
+    ResolversTypes['ClearLocationSyncFreezeResult'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationClearLocationSyncFreezeArgs, 'input'>
   >;
   confirmClimbOnWall?: Resolver<
     ResolversTypes['Session'],
@@ -11505,6 +11641,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryFollowingClimbAscentsArgs, 'input'>
+  >;
+  frozenLocationSyncEntities?: Resolver<
+    ResolversTypes['FrozenLocationSyncEntityConnection'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryFrozenLocationSyncEntitiesArgs, 'input'>
   >;
   globalAscentsFeed?: Resolver<
     ResolversTypes['FollowingAscentsFeedResult'],
@@ -13033,6 +13175,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   BoardTickCount?: BoardTickCountResolvers<ContextType>;
   BoardseshGrade?: BoardseshGradeResolvers<ContextType>;
   BoardseshGradeForAngle?: BoardseshGradeForAngleResolvers<ContextType>;
+  ClearLocationSyncFreezeResult?: ClearLocationSyncFreezeResultResolvers<ContextType>;
   Climb?: ClimbResolvers<ContextType>;
   ClimbClassicStatus?: ClimbClassicStatusResolvers<ContextType>;
   ClimbCommunityStatus?: ClimbCommunityStatusResolvers<ContextType>;
@@ -13074,6 +13217,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   FollowingAscentFeedItem?: FollowingAscentFeedItemResolvers<ContextType>;
   FollowingAscentsFeedResult?: FollowingAscentsFeedResultResolvers<ContextType>;
   FollowingClimbAscentsResult?: FollowingClimbAscentsResultResolvers<ContextType>;
+  FrozenLocationSyncEntity?: FrozenLocationSyncEntityResolvers<ContextType>;
+  FrozenLocationSyncEntityConnection?: FrozenLocationSyncEntityConnectionResolvers<ContextType>;
   FullSync?: FullSyncResolvers<ContextType>;
   Grade?: GradeResolvers<ContextType>;
   GradeCount?: GradeCountResolvers<ContextType>;

@@ -24,7 +24,8 @@
     "retention": "Retention dashboard",
     "gymClaims": "Gym claims",
     "feedback": "Bug reports",
-    "gymDuplicates": "Duplicate gyms"
+    "gymDuplicates": "Duplicate gyms",
+    "locationSync": "Location sync freezes"
   },
   "feedback": {
     "title": "Bug reports & feedback",
@@ -260,6 +261,65 @@
       "actions": "Actions"
     },
     "loadMore": "Load more"
+  },
+  "locationSync": {
+    "title": "Location sync freezes",
+    "backToAdmin": "Back to admin",
+    "intro": "Release a human edit only when the upstream listing should take over again. This does not run a sync; the next matching source refresh may replace details or bring a deleted listing back.",
+    "tabs": {
+      "label": "Listing type",
+      "gyms": "Gyms",
+      "boards": "Boards"
+    },
+    "search": {
+      "label": "Search frozen listings",
+      "placeholder": "Name, slug, or UUID",
+      "submit": "Search"
+    },
+    "summary": "Showing {{shown}} of {{total}} frozen listings",
+    "retry": "Retry",
+    "error": "Couldn't load frozen listings.",
+    "empty": "No frozen listings match this search.",
+    "loadMore": "Load more",
+    "notAvailable": "this listing",
+    "table": {
+      "listing": "Listing",
+      "state": "State",
+      "frozenAt": "Frozen at",
+      "sources": "Sync sources",
+      "actions": "Actions",
+      "noRecordedSources": "No recorded source"
+    },
+    "state": {
+      "deleted": "Deleted",
+      "live": "Live",
+      "systemOwned": "System-owned",
+      "userOwned": "User-owned",
+      "ownerProtected": "Owner protected"
+    },
+    "actions": {
+      "release": "Release freeze"
+    },
+    "confirm": {
+      "title": "Release this sync freeze?",
+      "body": "The next matching location sync can update {{name}} again. Review the warnings and record why the freeze is being released.",
+      "deletedWarning": "This listing is deleted. A matching source can bring it back on the next sync.",
+      "ownerProtectedWarning": "This gym has a user owner or an approved claim. The ownership guard remains active after the freeze is released.",
+      "noSourceWarning": "No sync source is currently linked to this gym. Releasing the freeze will have no effect until a source matches it.",
+      "moonBoardWarning": "MoonBoard location syncs run by hand, not on a schedule. After the freeze is released, upstream changes land when someone runs the next MoonBoard location sync.",
+      "reasonLabel": "Reason",
+      "reasonPlaceholder": "Why should upstream data take over again?",
+      "reasonRemaining": "Characters still needed: {{count}}",
+      "reasonStored": "This reason will be stored in the audit log.",
+      "cancel": "Cancel",
+      "releasing": "Releasing…",
+      "release": "Release freeze"
+    },
+    "snackbar": {
+      "alreadyReleased": "The freeze was already released",
+      "released": "Sync freeze released",
+      "failed": "Couldn't release the sync freeze. The list has been refreshed."
+    }
   },
   "gymDuplicates": {
     "title": "Duplicate gyms",

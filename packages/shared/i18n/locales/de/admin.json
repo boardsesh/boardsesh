@@ -24,7 +24,8 @@
     "retention": "Retention-Dashboard",
     "gymClaims": "Hallen-Ansprüche",
     "feedback": "Bug-Reports",
-    "gymDuplicates": "Doppelte Hallen"
+    "gymDuplicates": "Doppelte Hallen",
+    "locationSync": "Standort-Sync-Sperren"
   },
   "feedback": {
     "title": "Bug-Reports & Feedback",
@@ -260,6 +261,65 @@
       "actions": "Aktionen"
     },
     "loadMore": "Mehr laden"
+  },
+  "locationSync": {
+    "title": "Standort-Sync-Sperren",
+    "backToAdmin": "Zurück zum Admin-Panel",
+    "intro": "Hebe eine manuelle Änderung nur dann auf, wenn der Eintrag aus der Quelle wieder gelten soll. Das startet keinen Sync; die nächste passende Quellen-Aktualisierung kann Details ersetzen oder einen gelöschten Eintrag zurückholen.",
+    "tabs": {
+      "label": "Eintragstyp",
+      "gyms": "Hallen",
+      "boards": "Boards"
+    },
+    "search": {
+      "label": "Gesperrte Einträge suchen",
+      "placeholder": "Name, Slug oder UUID",
+      "submit": "Suchen"
+    },
+    "summary": "{{shown}} von {{total}} gesperrten Einträgen werden angezeigt",
+    "retry": "Nochmal versuchen",
+    "error": "Die gesperrten Einträge ließen sich nicht laden.",
+    "empty": "Keine gesperrten Einträge passen zu dieser Suche.",
+    "loadMore": "Mehr laden",
+    "notAvailable": "diesen Eintrag",
+    "table": {
+      "listing": "Eintrag",
+      "state": "Status",
+      "frozenAt": "Gesperrt am",
+      "sources": "Sync-Quellen",
+      "actions": "Aktionen",
+      "noRecordedSources": "Keine Quelle erfasst"
+    },
+    "state": {
+      "deleted": "Gelöscht",
+      "live": "Aktiv",
+      "systemOwned": "Gehört dem System",
+      "userOwned": "Gehört Nutzer*in",
+      "ownerProtected": "Eigentumsschutz aktiv"
+    },
+    "actions": {
+      "release": "Sperre aufheben"
+    },
+    "confirm": {
+      "title": "Diese Sync-Sperre aufheben?",
+      "body": "Der nächste passende Standort-Sync kann {{name}} wieder aktualisieren. Lies die Warnungen und halte fest, warum die Sperre aufgehoben wird.",
+      "deletedWarning": "Dieser Eintrag ist gelöscht. Eine passende Quelle kann ihn beim nächsten Sync zurückholen.",
+      "ownerProtectedWarning": "Diese Halle gehört jemandem oder hat einen angenommenen Anspruch. Der Eigentumsschutz bleibt auch nach dem Aufheben der Sperre aktiv.",
+      "noSourceWarning": "Aktuell ist keine Sync-Quelle mit dieser Halle verknüpft. Das Aufheben der Sperre bleibt wirkungslos, bis eine Quelle dazu passt.",
+      "moonBoardWarning": "MoonBoard-Standort-Syncs laufen von Hand, nicht nach Zeitplan. Nach dem Aufheben der Sperre kommen die Änderungen aus der Quelle an, sobald jemand den nächsten MoonBoard-Standort-Sync startet.",
+      "reasonLabel": "Grund",
+      "reasonPlaceholder": "Warum sollen die Daten aus der Quelle wieder gelten?",
+      "reasonRemaining": "Noch benötigte Zeichen: {{count}}",
+      "reasonStored": "Dieser Grund wird im Audit-Log gespeichert.",
+      "cancel": "Abbrechen",
+      "releasing": "Wird aufgehoben…",
+      "release": "Sperre aufheben"
+    },
+    "snackbar": {
+      "alreadyReleased": "Die Sperre war schon aufgehoben",
+      "released": "Sync-Sperre aufgehoben",
+      "failed": "Die Sync-Sperre ließ sich nicht aufheben. Die Liste wurde aktualisiert."
+    }
   },
   "gymDuplicates": {
     "title": "Doppelte Hallen",

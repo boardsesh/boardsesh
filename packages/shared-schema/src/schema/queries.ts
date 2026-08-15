@@ -655,6 +655,13 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     orphanGyms(input: OrphanGymsInput): OrphanGymConnection!
 
+    """
+    Frozen gym or board rows awaiting an explicit location-sync release (global
+    admin only). Includes soft-deleted rows because a later source sync may
+    deliberately resurrect them. Merged gyms are excluded.
+    """
+    frozenLocationSyncEntities(input: FrozenLocationSyncEntitiesInput!): FrozenLocationSyncEntityConnection!
+
     # ============================================
     # Gym Kiosk Queries
     # ============================================

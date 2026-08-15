@@ -1150,6 +1150,26 @@ export const schemaSQL = `
   CREATE INDEX IF NOT EXISTS "gym_merge_audit_signature_action_idx" ON "gym_merge_audit" ("cluster_signature", "action");
   CREATE INDEX IF NOT EXISTS "gym_merge_audit_canonical_idx" ON "gym_merge_audit" ("canonical_gym_id");
 
+  -- Durable audit for the global-admin location-sync unfreeze action. Production
+  -- uses a Postgres enum; text + CHECK keeps the backend test schema portable.
+  DROP TABLE IF EXISTS "location_sync_unfreeze_audit" CASCADE;
+  CREATE TABLE IF NOT EXISTS "location_sync_unfreeze_audit" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "entity_type" text NOT NULL,
+    "entity_uuid" text NOT NULL,
+    "previous_sync_frozen_at" timestamp NOT NULL,
+    "previous_deleted_at" timestamp,
+    "previous_owner_id" text NOT NULL,
+    "reason" text NOT NULL,
+    "performed_by" text NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    CONSTRAINT "location_sync_unfreeze_audit_entity_type_check" CHECK (entity_type IN ('gym', 'board'))
+  );
+  CREATE INDEX IF NOT EXISTS "location_sync_unfreeze_audit_entity_history_idx"
+    ON "location_sync_unfreeze_audit" ("entity_type", "entity_uuid", "created_at");
+  CREATE INDEX IF NOT EXISTS "location_sync_unfreeze_audit_performed_by_idx"
+    ON "location_sync_unfreeze_audit" ("performed_by");
+
   -- Board followers (enrichBoard counts these per board).
   DROP TABLE IF EXISTS "board_follows" CASCADE;
   CREATE TABLE IF NOT EXISTS "board_follows" (

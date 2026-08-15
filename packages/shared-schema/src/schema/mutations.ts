@@ -570,6 +570,13 @@ export const mutationsTypeDefs = /* GraphQL */ `
     dismissGymCluster(input: DismissGymClusterInput!): Boolean!
 
     """
+    Clear a gym or board's human-curation freeze (global admin only). This does
+    not run a source sync, reverse ownership, or restore a soft-deleted row; it
+    only permits a later matching source refresh and writes an audit record.
+    """
+    clearLocationSyncFreeze(input: ClearLocationSyncFreezeInput!): ClearLocationSyncFreezeResult!
+
+    """
     Report that two gym listings are the same gym (any signed-in user). Surfaces the
     pair to admins for review in the merge queue. Rate-limited and de-duplicated per
     pair so repeated reports don't spam the team.
