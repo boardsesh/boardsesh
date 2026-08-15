@@ -120,7 +120,6 @@ export type PeriodComparisonMode = 'trailing' | 'yearOverYear';
 
 export type RawPeriodSnapshot = {
   sends: number; // distinct climbUuid with status 'send' | 'flash'
-  flashes: number; // distinct climbUuid with status 'flash'
   startDate: string; // YYYY-MM-DD
   endDate: string;
 };

@@ -67,8 +67,8 @@ import { PeriodComparisonCard } from '../PeriodComparisonCard';
 function makeComparison(overrides: Partial<RawPeriodComparison> = {}): RawPeriodComparison {
   return {
     mode: 'trailing',
-    current: { sends: 5, flashes: 2, startDate: '2024-06-08', endDate: '2024-06-15' },
-    previous: { sends: 3, flashes: 1, startDate: '2024-06-01', endDate: '2024-06-08' },
+    current: { sends: 5, startDate: '2024-06-08', endDate: '2024-06-15' },
+    previous: { sends: 3, startDate: '2024-06-01', endDate: '2024-06-08' },
     sendsDelta: 2,
     sendsPercentChange: 66.66,
     ...overrides,
@@ -106,7 +106,7 @@ describe('PeriodComparisonCard', () => {
     const { getByText, container } = render(
       createElement(PeriodComparisonCard, {
         periodComparison: makeComparison({
-          current: { sends: 1, flashes: 0, startDate: '2024-06-08', endDate: '2024-06-15' },
+          current: { sends: 1, startDate: '2024-06-08', endDate: '2024-06-15' },
           sendsDelta: -2,
           sendsPercentChange: -66.66,
         }),
@@ -127,8 +127,8 @@ describe('PeriodComparisonCard', () => {
     const { getByText, container } = render(
       createElement(PeriodComparisonCard, {
         periodComparison: makeComparison({
-          current: { sends: 1001, flashes: 0, startDate: '2024-06-08', endDate: '2024-06-15' },
-          previous: { sends: 1000, flashes: 0, startDate: '2024-06-01', endDate: '2024-06-08' },
+          current: { sends: 1001, startDate: '2024-06-08', endDate: '2024-06-15' },
+          previous: { sends: 1000, startDate: '2024-06-01', endDate: '2024-06-08' },
           sendsDelta: 1,
           sendsPercentChange: 0.1,
         }),
@@ -147,7 +147,7 @@ describe('PeriodComparisonCard', () => {
     const { getByText, queryByText } = render(
       createElement(PeriodComparisonCard, {
         periodComparison: makeComparison({
-          previous: { sends: 0, flashes: 0, startDate: '2024-06-01', endDate: '2024-06-08' },
+          previous: { sends: 0, startDate: '2024-06-01', endDate: '2024-06-08' },
           sendsDelta: 5,
           sendsPercentChange: null,
         }),
@@ -163,8 +163,8 @@ describe('PeriodComparisonCard', () => {
     const { getByText } = render(
       createElement(PeriodComparisonCard, {
         periodComparison: makeComparison({
-          current: { sends: 0, flashes: 0, startDate: '2024-06-08', endDate: '2024-06-15' },
-          previous: { sends: 0, flashes: 0, startDate: '2024-06-01', endDate: '2024-06-08' },
+          current: { sends: 0, startDate: '2024-06-08', endDate: '2024-06-15' },
+          previous: { sends: 0, startDate: '2024-06-01', endDate: '2024-06-08' },
           sendsDelta: 0,
           sendsPercentChange: null,
         }),

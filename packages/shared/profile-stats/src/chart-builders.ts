@@ -1,6 +1,5 @@
 import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
-import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
 import { type GradeDisplayFormat } from '@boardsesh/play-view';
 import { parseTickTime, tickTimeMs } from './format-tick-time';
@@ -25,7 +24,6 @@ import type {
 } from './types';
 
 dayjs.extend(isoWeek);
-dayjs.extend(isSameOrAfter);
 dayjs.extend(isSameOrBefore);
 
 /**
@@ -529,14 +527,12 @@ function comparisonUnit(timeframe: ComparisonTimeframe): 'week' | 'month' | 'yea
 /**
  * Pure date math for the two windows a comparison card needs. `current`'s
  * lower bound is `now - 1 unit`, the same cutoff `filterLogbookByTimeframe`
- * uses for the same timeframe, so the headline count for e.g. "this week"
- * matches what the rest of the page shows for any tick that isn't landing on
- * that exact instant (`periodSnapshot` below treats the bound as inclusive;
- * `filterLogbookByTimeframe` is strictly-after — a tick timestamped to the
- * exact millisecond of the cutoff would diverge by one between the two, which
- * in practice never happens outside contrived test fixtures). `previous` is
- * either the immediately preceding window (`trailing`) or the same window one
- * year back (`yearOverYear`).
+ * uses for the same timeframe — and `periodSnapshot` below treats it exactly
+ * as strictly-after too, matching `filterLogbookByTimeframe`'s comparator, so
+ * the headline count for e.g. "this week" always agrees with what the rest of
+ * the page shows, including for a tick landing on the exact cutoff instant.
+ * `previous` is either the immediately preceding window (`trailing`) or the
+ * same window one year back (`yearOverYear`).
  *
  * `now` is an injectable param (not a default-only arg) so tests stay
  * deterministic, matching `buildActivityHeatmap`'s `today` param.
@@ -559,12 +555,18 @@ export function getComparisonWindows(
 }
 
 /**
+ * `start` is always strictly-after, matching `filterLogbookByTimeframe`'s
+ * lower-bound comparator exactly — a tick timestamped to the precise cutoff
+ * instant is excluded the same way here as everywhere else on the page,
+ * rather than being counted here and not there.
+ *
  * `inclusiveEnd` matters at the trailing-mode seam: `previous.end` and
- * `current.start` are the same instant (`now - 1 unit`), so a tick landing
- * exactly on that boundary would otherwise satisfy both windows and get
- * double-counted. `current`'s end (`now`) stays inclusive — it's the
- * outermost edge, shared with nothing — while `previous`'s end is exclusive
- * so the shared instant belongs to `current` alone.
+ * `current.start` are the same instant (`now - 1 unit`). Both windows now
+ * exclude a tick landing exactly there (start is strict; `previous`'s end is
+ * exclusive too), so it simply isn't counted by the comparison card at all —
+ * consistent with `filterLogbookByTimeframe` also excluding it, rather than
+ * being double-counted across the two windows. `current`'s end (`now`) stays
+ * inclusive since it's the outermost edge, shared with nothing.
  */
 function periodSnapshot(
   entries: LogbookEntry[],
@@ -573,27 +575,24 @@ function periodSnapshot(
   inclusiveEnd: boolean,
 ): RawPeriodSnapshot {
   const sends = new Set<string>();
-  const flashes = new Set<string>();
   for (const entry of entries) {
     // Mirrors buildAggregatedStackedBars's exclusion: attempts and entries
     // without a climbUuid don't count toward a distinct-climb tally.
     if (entry.status === 'attempt' || !entry.climbUuid) continue;
     const climbedAt = parseTickTime(entry.climbed_at);
-    if (!climbedAt.isSameOrAfter(start)) continue;
+    if (!climbedAt.isAfter(start)) continue;
     if (inclusiveEnd ? !climbedAt.isSameOrBefore(end) : !climbedAt.isBefore(end)) continue;
     sends.add(entry.climbUuid);
-    if (entry.status === 'flash') flashes.add(entry.climbUuid);
   }
   return {
     sends: sends.size,
-    flashes: flashes.size,
     startDate: start.format('YYYY-MM-DD'),
     endDate: end.format('YYYY-MM-DD'),
   };
 }
 
 /**
- * Sends/flashes for the current period vs. a comparison period (trailing or
+ * Sends for the current period vs. a comparison period (trailing or
  * year-over-year), for the Progress tab's headline comparison card. Returns
  * null for any timeframe other than week/month/year (mirrors every other
  * builder's null-for-not-applicable convention) — the caller doesn't need a

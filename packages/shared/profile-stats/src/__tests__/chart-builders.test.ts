@@ -635,7 +635,6 @@ describe('buildPeriodComparison', () => {
     ];
     const result = buildPeriodComparison({ kilter }, 'lastWeek', 'trailing', now)!;
     expect(result.current.sends).toBe(2);
-    expect(result.current.flashes).toBe(1);
     expect(result.previous.sends).toBe(1);
     expect(result.sendsDelta).toBe(1);
     expect(result.sendsPercentChange).toBe(100);
@@ -674,15 +673,30 @@ describe('buildPeriodComparison', () => {
     expect(result.previous.sends).toBe(1); // only 'b'
   });
 
-  it('counts a tick exactly on the trailing seam (previous.end === current.start) once, in current', () => {
+  it('excludes a tick exactly on the trailing seam from both windows, matching filterLogbookByTimeframe', () => {
     const now = dayjs('2024-06-15T00:00:00.000Z');
     const kilter: LogbookEntry[] = [
       // Exactly `now - 1 week`: current.start and (trailing) previous.end land
-      // on the same instant. Must be counted in current only.
+      // on the same instant. Both bounds are strict, so this tick belongs to
+      // neither window — the same treatment filterLogbookByTimeframe gives it
+      // (its lower bound is strictly-after too), rather than being
+      // double-counted across the two windows.
       makeEntry({ climbed_at: now.subtract(1, 'week').toISOString(), status: 'send', climbUuid: 'seam' }),
     ];
     const result = buildPeriodComparison({ kilter }, 'lastWeek', 'trailing', now)!;
-    expect(result.current.sends).toBe(1);
+    expect(result.current.sends).toBe(0);
     expect(result.previous.sends).toBe(0);
+  });
+
+  it('agrees with filterLogbookByTimeframe at the exact lastWeek cutoff (no headline-count divergence)', () => {
+    // No injected `now` on either side — both functions read the real wall
+    // clock, same as production. A tick timestamped to precisely `now - 1
+    // week` must be excluded by both, not counted here and not there.
+    const boundary = dayjs().subtract(1, 'week');
+    const kilter: LogbookEntry[] = [
+      makeEntry({ climbed_at: boundary.toISOString(), status: 'send', climbUuid: 'boundary' }),
+    ];
+    expect(filterLogbookByTimeframe(kilter, 'lastWeek', '', '')).toHaveLength(0);
+    expect(buildPeriodComparison({ kilter }, 'lastWeek', 'trailing')!.current.sends).toBe(0);
   });
 });
