@@ -27,6 +27,7 @@ import BadgeOutlined from '@mui/icons-material/BadgeOutlined';
 import ArrowForwardOutlined from '@mui/icons-material/ArrowForwardOutlined';
 import LaunchOutlined from '@mui/icons-material/LaunchOutlined';
 import CodeOutlined from '@mui/icons-material/CodeOutlined';
+import PrintOutlined from '@mui/icons-material/PrintOutlined';
 import type { Gym } from '@boardsesh/shared-schema';
 import {
   GET_GYM_KIOSKS,
@@ -223,6 +224,22 @@ export default function OverviewTab({ gym }: { gym: Gym }) {
             sx={{ textTransform: 'none' }}
           >
             {t('manage.overview.viewPublicPage')}
+          </Button>
+        )}
+        {/* Slug-gated, like the public-page link above it: the poster route is
+            addressed by slug only (a slug-less legacy gym reaches this console
+            by UUID), and the printed code has to encode the canonical slug —
+            there is no poster to print until the gym has one. */}
+        {gym.slug && (
+          <Button
+            component={LocaleLink}
+            href={`/gym/${gym.slug}/poster`}
+            variant="outlined"
+            size="small"
+            startIcon={<PrintOutlined />}
+            sx={{ textTransform: 'none' }}
+          >
+            {t('manage.overview.printPoster')}
           </Button>
         )}
         <Button

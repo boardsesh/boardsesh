@@ -7,11 +7,17 @@ import type { SearchRequestPagination } from '@/app/lib/types';
 const LIST_PAGE_CACHE_TTL_SECONDS = 86400;
 
 // A climb view page is fully determined by its URL and reads no server-side
-// personalization (queue/session/auth all live in client components). Its only
-// data source, `getClimb`, is `unstable_cache`d at 3600s — so the page HTML is
-// already up to an hour stale today. Matching that keeps the CDN from adding a
-// new staleness class beyond what the data cache already allows.
-const CLIMB_VIEW_PAGE_CACHE_TTL_SECONDS = 3600;
+// personalization (queue/session/auth all live in client components), so it's
+// as cacheable as a list page. The crawl surface is 4 locale twins × ~53k
+// climbs (~212k distinct URLs, #4650); at a 1h CDN window nearly every
+// crawler fetch missed and re-rendered at origin (~40k/day). The data caches
+// underneath (`getClimb`/stats in `app/lib/data/queries.ts`, and the
+// front-door similar-climbs/beta-links cache) stay at 3600s, so a re-render
+// is still ≤1h stale even though the CDN copy may now be ≤24h stale (plus a
+// 7d stale-while-revalidate window from the ×7 in middleware). The #4592 fix
+// for the CDN-cacheable self-redirect loop on non-Latin climb names must stay
+// in place — a cacheable redirect loop at this TTL would pin for a full day.
+const CLIMB_VIEW_PAGE_CACHE_TTL_SECONDS = 86400;
 
 /**
  * Checks whether search params contain any user-specific filters.

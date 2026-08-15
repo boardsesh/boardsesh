@@ -170,8 +170,9 @@ Next internal routes:
   against the signed-in user and saves the Kilter account link.
 
 Both Kilter link paths are gated client-side by the `kilter-oauth-linking`
-PostHog flag: the web and mobile settings UIs only surface the Kilter sign-in
-card when the flag is on (or an account is already linked). Toggling the flag in
+PostHog flag: the app's Connected apps screen only surfaces the Kilter sign-in
+card when the flag is on (or an account is already linked). Web dropped its
+board-accounts section in W-21 (#4440), so the flag has no web consumer left. Toggling the flag in
 PostHog rolls the importer in or out without a redeploy. The backend link
 endpoints stay authenticated and rate-limited but no longer enforce a user
 allowlist.

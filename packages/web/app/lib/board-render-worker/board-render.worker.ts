@@ -55,7 +55,9 @@ async function ensureWasmInitialized(): Promise<void> {
       try {
         // Dynamic import of the wasm-pack glue code
         const wasmModule = await import(/* webpackIgnore: true */ glueUrl);
-        await wasmModule.default(wasmUrl);
+        // Object-form init arg. The positional form still works, but logs a
+        // wasm-bindgen deprecation warning on every worker boot.
+        await wasmModule.default({ module_or_path: wasmUrl });
         wasmRenderOverlay = wasmModule.render_overlay;
       } catch (err) {
         // Reset so the next render attempt can retry (e.g. after transient network error)

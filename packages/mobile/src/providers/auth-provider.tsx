@@ -28,17 +28,18 @@ import { setOnForcedSignOut } from '../lib/auth-interceptor';
 import { getHttpClient, resetHttpClient } from '../lib/graphql/client';
 import { disposeWsClient } from '../lib/graphql/ws-client';
 import { clearStoredSessionId } from '../lib/session-store';
-import { clearStoredActiveBoard } from '../lib/active-board-store';
 import { clearStoredQueueSnapshot } from '../lib/queue-snapshot-store';
 import { clearAllCreateClimbDrafts } from '../lib/create-climb-draft-store';
 import { clearSessionCommentDraft } from '../lib/session-comment-draft-store';
 import { setCurrentUserStorageOwner, type UserStorageOwner } from '../lib/user-storage-owner';
-import { ACTIVE_BOARD_QUERY_KEY } from '../lib/graphql/use-active-board';
+import { ACTIVE_BOARD_QUERY_KEY, clearStoredActiveBoardCoordinated } from '../lib/graphql/use-active-board';
+import { resetActiveBoardSelfHealValidationCache } from '../lib/boards/active-board-self-heal-validation-cache';
 import { clearUserData, purgeLocalDataForSignOut, getDatabaseHandle } from '../db';
 import { resetSyncStatus } from '../sync/sync-status';
 import { setSetting, clearOfflineBoards } from '../settings';
 import { getOutboxSummary, setSigningOut } from '@boardsesh/offline-sync';
-import { drainMutationQueue } from '../offline/offline-sync-adapter';
+import { drainMutationQueue, reportScopeDownloadAbandonedOnSignOut } from '../offline/offline-sync-adapter';
+import { reportAbandonedDownloadsOnSignOut } from '../offline/abandoned-download-terminals';
 import { reportOutboxDiscardedOnSignOut } from '../offline/outbox-telemetry';
 import { stopTokenManagement } from '../notifications';
 import { consumeFreshOAuthPending } from '../lib/oauth-pending-store';
@@ -178,20 +179,24 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // These are the only sign-out leftovers that can carry a previous user across
   // a cold start on a shared device, so a signed-out checkAuth clears them even
   // when there's no live in-session cache to wipe (see handleSignedOutTransition).
-  const clearPersistedUserStores = useCallback(
-    (owner?: UserStorageOwner | null) =>
-      Promise.allSettled([
-        clearStoredSessionId(owner),
-        clearStoredActiveBoard(owner),
-        clearStoredQueueSnapshot(owner),
-        // Create-climb and session-recap drafts are wiped for account
-        // isolation only on web (the new surface). Native sign-out keeps its
-        // origin behavior and leaves these drafts intact, so shipping this via
-        // OTA doesn't change what a native sign-out touches.
-        ...(Platform.OS === 'web' ? [clearAllCreateClimbDrafts(owner), clearSessionCommentDraft(owner)] : []),
-      ]),
-    [],
-  );
+  const clearPersistedUserStores = useCallback((owner?: UserStorageOwner | null) => {
+    // This is the shared confirmed account boundary for manual/forced sign-out,
+    // expiry, remote sign-out, and authenticated identity changes. Invalidate
+    // cached tombstone checks before the coordinated clear synchronously bumps
+    // the active-board write generation, so neither validation nor storage
+    // state can leak into the next account.
+    resetActiveBoardSelfHealValidationCache();
+    return Promise.allSettled([
+      clearStoredSessionId(owner),
+      clearStoredActiveBoardCoordinated(owner),
+      clearStoredQueueSnapshot(owner),
+      // Create-climb and session-recap drafts are wiped for account
+      // isolation only on web (the new surface). Native sign-out keeps its
+      // origin behavior and leaves these drafts intact, so shipping this via
+      // OTA doesn't change what a native sign-out touches.
+      ...(Platform.OS === 'web' ? [clearAllCreateClimbDrafts(owner), clearSessionCommentDraft(owner)] : []),
+    ]);
+  }, []);
 
   const drainLocalMutationQueueBestEffort = useCallback(async () => {
     const localDb = getDatabaseHandle();
@@ -242,7 +247,15 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       if (purgeOfflineBoards) {
         // Reported from here rather than the caller because the counts only exist
         // inside the wipe's own transaction: pending_mutations is emptied by it.
-        const purge = await purgeLocalDataForSignOut(localDb);
+        const purge = await purgeLocalDataForSignOut(localDb, {
+          // The wipe's `deleteAllSyncMeta` is what destroys the download funnel's
+          // `scope-started:` markers, so it is the last code that can close their
+          // funnel (issue #4452). The selective branch below keeps every marker
+          // and is handled in runSignedOutCleanup instead — it needs to run after
+          // this whole cleanup, next to the `syncEnabledBoards` reset that is the
+          // thing actually ending those downloads.
+          onDownloadAbandoned: reportScopeDownloadAbandonedOnSignOut,
+        });
         track(SHARED_EVENTS.OfflineDataWipedOnSignOut, { ...purge });
       } else {
         await clearUserData(localDb);
@@ -284,7 +297,6 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // paths — manual, forced 401, and proactive expiry.
       const localDb = getDatabaseHandle();
       if (localDb) await reportOutboxDiscardedOnSignOut(localDb);
-      resetAnalytics();
       resetOfflineUsageSignal();
       const stopTokenCleanup = stopTokenManagement(async () => {});
       if (Platform.OS === 'web') await waitForCleanupPhase(stopTokenCleanup);
@@ -297,6 +309,22 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       const offlineUserDataCleanup = clearLocalOfflineUserData(purgeOfflineBoards);
       if (Platform.OS === 'web') await waitForCleanupPhase(offlineUserDataCleanup);
       else await offlineUserDataCleanup;
+      // Close the download funnel for anything that was still downloading (issue
+      // #4452). The SELECTIVE branch only: the explicit wipe already reported
+      // through purgeLocalDataForSignOut's seam and its markers are gone, while
+      // this branch keeps every marker and every row — and still ends the
+      // download for good, because `setSetting('syncEnabledBoards', [])` below
+      // runs on all three sign-out paths and pullSync only ever visits enabled
+      // scopes.
+      if (localDb && !purgeOfflineBoards) await reportAbandonedDownloadsOnSignOut(localDb);
+      // Only NOW. Every sign-out event above — the discarded outbox, the wipe's
+      // own `Offline Data Wiped On Sign Out`, and the abandonment terminals —
+      // has to land on the account that is leaving; after the reset they arrive
+      // on a fresh anonymous distinct_id and no funnel query can pair them with
+      // their `Offline Board Download Started`. Production showed exactly that:
+      // every `Offline Data Wiped On Sign Out` sat on a different person_id from
+      // the `Logout` half a second earlier.
+      resetAnalytics();
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
       // Reset the per-user "downloaded boards" list so the next account on a shared
       // device doesn't inherit the previous user's offline selection. After a

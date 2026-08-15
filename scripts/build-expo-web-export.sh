@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Builds the static Expo web export and verifies the shell and board-renderer
-# WASM assets landed. This is the single export recipe shared by:
-#   - `vp run build:expo-web` (defaults to packages/web/public/app so a local
-#     BOARDSESH_WEB=1 `vp run build:web` serves /app exactly like production),
-#   - Dockerfile.web's builder stage (same default target),
+# Builds the static Expo web export and verifies the shell, the board-renderer
+# WASM assets and the PWA manifest wiring landed. This is the single export
+# recipe shared by:
+#   - production-deploy.yml's deploy-app-web job (--subdomain) — the only caller
+#     whose artifact reaches users,
+#   - `vp run build:expo-web` and scripts/dev-expo-web-static.sh (default
+#     target packages/web/public/app, served at /app by the DEV server only),
 #   - scripts/mobile-web-bundle-check.sh (temp dir; export-only validation).
 #
 # Two serving targets share the recipe, selected by --subdomain:
-#   - default          → baseUrl /app, the Next dev proxy + legacy prod-static
-#                        path (output packages/web/public/app).
+#   - default          → baseUrl /app. Dev + CI validation only since W-24
+#                        (#4438) retired the /app static path: Dockerfile.web no
+#                        longer calls this script and next.config.mjs bakes no
+#                        /app rewrite outside NODE_ENV=development (output
+#                        packages/web/public/app).
 #   - --subdomain      → baseUrl /, a STANDALONE export a host/CDN serves at the
 #                        root of app.boardsesh.com (output
 #                        packages/web/public/app-standalone unless overridden).
@@ -28,8 +33,10 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# /app is the default so the dev proxy and the legacy prod-static path are
-# unchanged; --subdomain flips it to root-serving for app.boardsesh.com.
+# /app is the default so the dev proxy and the dev:mobile:web-static bake are
+# unchanged; --subdomain flips it to root-serving for app.boardsesh.com. There
+# is no prod-static path left for the default to keep working — W-24 (#4438)
+# retired it (see the header block).
 WEB_BASE_URL="/app"
 DEFAULT_OUTPUT_DIR="$ROOT_DIR/packages/web/public/app"
 OUTPUT_DIR=""
@@ -205,6 +212,32 @@ if [[ ! -f "$OUTPUT_DIR/wasm/board_renderer_wasm.js" || ! -f "$OUTPUT_DIR/wasm/b
   echo "[build-expo-web-export] missing board-renderer WASM assets in $OUTPUT_DIR" >&2
   exit 1
 fi
+
+# --- PWA manifest (W-24, #4438) -------------------------------------------
+# index.html is a checked-in template (packages/mobile/public/index.html) whose
+# manifest href is a fixed `/app/manifest.json`, and manifest.json is copied
+# verbatim out of public/. Neither knows this export's baseUrl. On the
+# --subdomain export that href points at a path with no file behind it, so
+# Cloudflare Pages' `/* /index.html 200` catch-all answers it with the SPA
+# shell: the browser parses HTML as a manifest, logs an error every load, and
+# never offers the install prompt. Rewrite the href and the manifest's
+# start_url/scope from WEB_BASE_URL, then assert the rewrite actually landed —
+# a silent no-op here is the exact failure mode being fixed.
+#
+# It runs in BOTH modes even though only --subdomain ships. The CI gate
+# (`vp run check:mobile-web-bundle`) only ever exercises the default mode, so a
+# uniform code path means a broken patcher reds CI; a --subdomain-only patch
+# would stay untested until a production deploy, which is how the bug it fixes
+# survived in the first place.
+if [[ "$WEB_BASE_URL" == "/" ]]; then
+  MANIFEST_BASE=""
+else
+  MANIFEST_BASE="${WEB_BASE_URL%/}"
+fi
+node "$ROOT_DIR/scripts/lib/patch-expo-web-pwa-manifest.mjs" \
+  "$OUTPUT_DIR" \
+  "$MANIFEST_BASE" \
+  "$ROOT_DIR/packages/shared/static-assets/src/generated/catalog.json"
 
 # BOARDSESH_EXPORT_EXPECT_URLS (space-separated substrings, e.g.
 # "https://ws.boardsesh.com https://www.boardsesh.com") is the direct detector

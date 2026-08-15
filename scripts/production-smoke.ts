@@ -15,6 +15,11 @@
  * a session, a mutation, or seeded data belongs in e2e, not here — this runs
  * against production and must stay read-only.
  *
+ * Outcomes are pass / WARN / FAIL / skip. WARN exists for a surface that answers
+ * correctly but tells us, on the response itself, that it served less than it
+ * should have — today only the degrading sitemap index. It annotates the job and
+ * leaves it green; only FAIL exits non-zero.
+ *
  *   vp run smoke:production                    # www.boardsesh.com
  *   vp run smoke:production -- --base <url>    # a preview deployment
  *
@@ -40,6 +45,8 @@ export type SmokeResponse = {
   status: number;
   contentType: string;
   body: string;
+  /** Response headers, keys lowercased. Only read by checks that need one. */
+  headers: Record<string, string>;
 };
 
 export type SmokeCheck = {
@@ -56,6 +63,25 @@ export type SmokeCheck = {
    * rather than an assertion failure, which reads very differently on-call.
    */
   assert: (response: SmokeResponse) => string | null;
+  /**
+   * Optional second channel for "served, but the server told us it served less
+   * than it should have". Returns null when the response is fully healthy, or a
+   * reason string describing the degradation.
+   *
+   * A degradation reports as a WARNING and leaves the job green, where `assert`
+   * reports as a failure and turns it red. The distinction only belongs on a
+   * surface whose degradation is *declared* by the server; anything we merely
+   * infer from the body is an assertion.
+   *
+   * It is retried like a failure, but do not read the retry as a warm-up: the
+   * WARN is the mechanism, not a last resort. Vercel's edge ignores this
+   * script's `Cache-Control: no-cache` request header and caches the degraded
+   * index for 60s — longer than all three attempts put together (~10s), so the
+   * retries return the same cached body. Measured: attempt 1 MISS 3.35s,
+   * attempt 2 HIT 0.09s, both carrying an identical `x-sitemap-degraded`. Once
+   * the window opens the WARN is guaranteed; the retry only covers an edge blip.
+   */
+  degradation?: (response: SmokeResponse) => string | null;
   /**
    * Env var holding the fixture this check needs. When set on the check and
    * absent from the environment, the check is skipped rather than failed.
@@ -113,6 +139,88 @@ function firstFailure(...reasons: (string | null)[]): string | null {
  */
 const MIN_RENDERED_PAGE_CHARS = 4_000;
 
+/**
+ * The header `sitemapIndexRouteHandler` sets when it published an index without
+ * one of its shards. It exists precisely so the degradation is legible from the
+ * outside instead of only in a `console.error` nobody reads, and reading it here
+ * is what lets this check tell "the index dropped a shard and said so" apart
+ * from "the shard vanished silently", which are the same body and very
+ * different bugs.
+ */
+const SITEMAP_DEGRADED_HEADER = 'x-sitemap-degraded';
+
+/**
+ * The header `sitemapIndexRouteHandler` sets naming which path served the climbs
+ * shard: `store` (the materialised `sitemap_climb_urls` / `sitemap_shard_refreshes`
+ * read) or `live` (the scan they replaced).
+ *
+ * `X-Sitemap-Degraded` cannot see this. A store that is empty or unreadable still
+ * produces a complete, correct index — the live scan is the documented fallback —
+ * so the shard keeps its `<loc>` and nothing here goes red, while every
+ * `/sitemaps/climbs/N.xml` behind it rebuilds the whole ordered list at 51 s a
+ * page. That is the shape #4583 sat in from W-23 until #4661, unnoticed, so it
+ * gets its own signal.
+ */
+const SITEMAP_CLIMBS_SOURCE_HEADER = 'x-sitemap-climbs-source';
+
+/**
+ * Shards the index must always list.
+ *
+ * `gyms` and `setters` are legitimately empty, so a missing entry there proves
+ * nothing.
+ *
+ * `playlists` used to sit in that sentence too, and the justification was stale:
+ * production serves 2,688 public playlists holding at least one climb, so a
+ * missing entry there is 10,752 locale-expanded URLs gone, not an empty surface.
+ * That is exactly why this check never caught #4524. It is `degradable: true`
+ * because the shard's rows are cached rather than stored, so a cold Data Cache
+ * entry can still lose the 3 s deadline once and self-heal on the `after()` warm —
+ * a WARN. The shard vanishing without the header saying so is still a FAIL.
+ *
+ * `climbs` is required as of #4552 — before it, this list had no view of the
+ * largest surface on the site. It could not be asserted earlier: its summary
+ * could not meet `SHARD_DEADLINE_MS` at any cache temperature, so production
+ * served the index degraded on most requests and the entry would have been a
+ * permanently red check rather than a detector. #4523 made the summary a single
+ * row of `sitemap_shard_refreshes`; `degradable: true` covers the residue — a
+ * store empty right after the migration deploys falls back to the scan that
+ * loses the deadline once, self-heals via `after()`, and names itself in the
+ * header. The `<loc>` asserted is page 1, which exists whenever the shard has
+ * any URLs at all.
+ *
+ * `degradable` is what `X-Sitemap-Degraded` may excuse. `boards` is genuinely
+ * transient — a cold cache, a slow backend — and self-heals under the 60s window.
+ * `static` is not: `buildStaticEntries` is hardcoded and pure, with no fetch, no
+ * query and nothing to time out, so it can only go missing if the index resolved
+ * essentially nothing. Excusing it via the header would buy no real coverage and
+ * would let an empty `<sitemapindex></sitemapindex>` pass as long as the handler
+ * named every shard in the header.
+ *
+ * The `<loc>` values are absolute and hardcoded on purpose: the index renders
+ * them from the configured site base, not from the request host, so they stay
+ * `www.boardsesh.com` even when the smoke runs against a preview `--base`.
+ */
+const REQUIRED_SITEMAP_SHARDS = [
+  { id: 'static', loc: 'https://www.boardsesh.com/sitemaps/static.xml', degradable: false },
+  { id: 'boards', loc: 'https://www.boardsesh.com/sitemaps/boards.xml', degradable: true },
+  { id: 'playlists', loc: 'https://www.boardsesh.com/sitemaps/playlists.xml', degradable: true },
+  { id: 'climbs', loc: 'https://www.boardsesh.com/sitemaps/climbs/1.xml', degradable: true },
+] as const;
+
+type RequiredSitemapShard = (typeof REQUIRED_SITEMAP_SHARDS)[number];
+
+/** Shard ids the response declared it dropped, in header order. */
+function declaredDegradedShards(response: SmokeResponse): string[] {
+  return (response.headers[SITEMAP_DEGRADED_HEADER] ?? '')
+    .split(',')
+    .map((shard) => shard.trim())
+    .filter((shard) => shard.length > 0);
+}
+
+function missingRequiredShards(response: SmokeResponse): RequiredSitemapShard[] {
+  return REQUIRED_SITEMAP_SHARDS.filter((shard) => !response.body.includes(`<loc>${shard.loc}`));
+}
+
 function renderedHtmlPage(response: SmokeResponse): string | null {
   return firstFailure(
     expectStatus(response, 200),
@@ -147,12 +255,110 @@ export const WWW_CHECKS: SmokeCheck[] = [
       ),
   },
   {
-    name: 'sitemap.xml serves at least one URL',
+    // A `<loc>`-only check would pass on the old flat `<urlset>` too — and on a
+    // broken index — so assert the index shape *and* that it points at a shard.
+    //
+    // Both mandatory shards are named, not "any one `<loc>`". Since #4476 the
+    // index *degrades*: a builder that fails is omitted and the index still 200s.
+    // That is the right behaviour for crawlers and the wrong behaviour for a
+    // detector — the original wording passes on an index that lost everything but
+    // `static.xml`, which is a pure hardcoded builder that cannot fail, so this
+    // check could never have gone red again.
+    //
+    // What splits fail from warn on a *degradable* shard is `X-Sitemap-Degraded`,
+    // not the body. Missing AND named in that header is the subsystem working as
+    // designed: the handler logged it, dropped the CDN window to sixty seconds so
+    // it self-heals, and told us which shard it was. That is a warning. Missing
+    // WITHOUT the header is the silent loss this check exists to catch, and stays
+    // a failure — as do a non-200, a non-XML body, anything that is not a
+    // `<sitemapindex>`, and a missing `static` under any header at all.
+    //
+    // Softening boards to a warning here removes this check's only view of the
+    // boards surface, so `/sitemaps/boards.xml` gets a check of its own below.
+    // Together they draw the line where it belongs: a transient index degradation
+    // WARNs, a boards outage that actually breaks the shard URL stays FAIL.
+    name: 'sitemap.xml serves a sitemap index pointing at shards',
     path: '/sitemap.xml',
+    assert: (response) => {
+      const structural = firstFailure(
+        expectStatus(response, 200),
+        expectContentType(response, 'xml'),
+        expectBodyContains(response, '<sitemapindex', '<sitemapindex> root element'),
+      );
+      if (structural) return structural;
+
+      const declared = declaredDegradedShards(response);
+      const unexcused = missingRequiredShards(response).filter(
+        (shard) => !shard.degradable || !declared.includes(shard.id),
+      );
+      return unexcused.length === 0
+        ? null
+        : `response body has no ${unexcused.map((shard) => shard.id).join(', ')} shard <loc> entry that the ${SITEMAP_DEGRADED_HEADER} header excuses`;
+    },
+    degradation: (response) => {
+      const reasons: string[] = [];
+
+      const declared = declaredDegradedShards(response);
+      if (declared.length > 0) {
+        const missing = missingRequiredShards(response).map((shard) => shard.id);
+        const requiredNote = missing.length > 0 ? ` — including the required ${missing.join(', ')}` : '';
+        reasons.push(
+          `index published WITHOUT ${declared.join(', ')}${requiredNote} (${SITEMAP_DEGRADED_HEADER}: ${declared.join(',')})`,
+        );
+      }
+
+      // A WARN and not an `assert`, on the same reasoning the header comment
+      // gives: the served index is complete and correct either way, so this is
+      // "the fast path is not the one running", not "the sitemap is broken".
+      // A missing header is not a finding — a deploy that predates the header,
+      // or a summary that lost the 3 s race and never reported a path, both
+      // leave it absent, and the `x-sitemap-degraded` branch above already
+      // covers the second one.
+      if (response.headers[SITEMAP_CLIMBS_SOURCE_HEADER] === 'live') {
+        reasons.push(
+          `the climbs shard is being served from the live scan, not the materialised store (${SITEMAP_CLIMBS_SOURCE_HEADER}: live) — every /sitemaps/climbs/N.xml is rebuilding the whole ordered list. Run /api/internal/refresh-sitemap-climbs`,
+        );
+      }
+
+      return reasons.length === 0 ? null : reasons.join('; ');
+    },
+  },
+  {
+    name: 'the static sitemap shard serves URLs',
+    path: '/sitemaps/static.xml',
     assert: (response) =>
       firstFailure(
         expectStatus(response, 200),
         expectContentType(response, 'xml'),
+        expectBodyContains(response, '<urlset', '<urlset> root element'),
+        expectBodyContains(response, '<loc>', '<loc> entry'),
+      ),
+  },
+  {
+    // The boards surface's only remaining hard signal, and the reason the index
+    // check above can afford to WARN. Every way `boards` goes missing from the
+    // index puts its id in `degradedShards` — a rejecting builder, a missed
+    // deadline, an unexpectedly empty build, an over-budget URL count — so once
+    // the header excuses it there, nothing else in this suite would ever go red
+    // on boards while `/sitemaps/boards.xml` sat there 503ing.
+    //
+    // Not a hypothetical failure mode: `getAllBoardConfigsOrThrow` throws on
+    // `hasMore`, and 100 is the schema's hard cap on a catalogue its own comment
+    // calls "one merge away" from outgrowing. That throw is permanent by
+    // construction — every request, indefinitely, until someone pages the query —
+    // and the shard route turns it into a 503 that this check catches on the
+    // first deploy after it starts.
+    //
+    // No `degradation` channel on purpose: a shard route is fail-closed by
+    // doctrine and has nothing to declare. Measured against production at 2,760
+    // `<loc>` entries in 0.98s, comfortably inside REQUEST_TIMEOUT_MS.
+    name: 'the boards sitemap shard serves URLs',
+    path: '/sitemaps/boards.xml',
+    assert: (response) =>
+      firstFailure(
+        expectStatus(response, 200),
+        expectContentType(response, 'xml'),
+        expectBodyContains(response, '<urlset', '<urlset> root element'),
         expectBodyContains(response, '<loc>', '<loc> entry'),
       ),
   },
@@ -228,10 +434,15 @@ async function fetchOnce(url: string): Promise<SmokeResponse> {
         'Cache-Control': 'no-cache',
       },
     });
+    const headers: Record<string, string> = {};
+    response.headers.forEach((value, name) => {
+      headers[name.toLowerCase()] = value;
+    });
     return {
       status: response.status,
       contentType: response.headers.get('content-type') ?? '',
       body: await response.text(),
+      headers,
     };
   } finally {
     clearTimeout(timer);
@@ -240,7 +451,23 @@ async function fetchOnce(url: string): Promise<SmokeResponse> {
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-type CheckOutcome = { name: string; state: 'pass' | 'fail' | 'skip'; detail: string };
+type CheckOutcome = { name: string; state: 'pass' | 'warn' | 'fail' | 'skip'; detail: string };
+
+/** What one non-passing attempt ended as. A passing attempt returns immediately. */
+export type AttemptState = 'fail' | 'degraded';
+
+/**
+ * The verdict for a check whose every attempt was used up.
+ *
+ * WARN is reserved for a run where *no* attempt failed outright — every one was a
+ * clean 200 that simply declared itself incomplete. A surface that 503s twice and
+ * recovers into a merely-degraded third attempt is flapping, and flapping is an
+ * outage: reporting that green would hide a real one behind its own recovery.
+ * Taking only the last attempt's state is the bug this exists to avoid.
+ */
+export function finalVerdict(attempts: readonly AttemptState[]): 'warn' | 'fail' {
+  return attempts.length > 0 && attempts.every((attempt) => attempt === 'degraded') ? 'warn' : 'fail';
+}
 
 async function runCheck(check: SmokeCheck, baseUrl: string, env: NodeJS.ProcessEnv): Promise<CheckOutcome> {
   const path = resolvePath(check, env);
@@ -249,24 +476,40 @@ async function runCheck(check: SmokeCheck, baseUrl: string, env: NodeJS.ProcessE
   }
 
   const url = `${baseUrl}${path}`;
-  let lastDetail = '';
+  const attempts: AttemptState[] = [];
+  let lastFailure = '';
+  let lastDegradation = '';
 
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    let detail: string;
     try {
       const response = await fetchOnce(url);
       const failure = check.assert(response);
-      if (failure === null) return { name: check.name, state: 'pass', detail: path };
-      lastDetail = failure;
+      if (failure === null) {
+        const degradation = check.degradation?.(response) ?? null;
+        if (degradation === null) return { name: check.name, state: 'pass', detail: path };
+        lastDegradation = degradation;
+        attempts.push('degraded');
+        detail = degradation;
+      } else {
+        lastFailure = failure;
+        attempts.push('fail');
+        detail = failure;
+      }
     } catch (error) {
-      lastDetail = `request failed: ${error instanceof Error ? error.message : String(error)}`;
+      lastFailure = `request failed: ${error instanceof Error ? error.message : String(error)}`;
+      attempts.push('fail');
+      detail = lastFailure;
     }
     if (attempt < ATTEMPTS) {
-      console.log(`  ${check.name}: attempt ${attempt} failed (${lastDetail}); retrying in 5s...`);
+      const label = attempts[attempts.length - 1] === 'degraded' ? 'degraded' : 'failed';
+      console.log(`  ${check.name}: attempt ${attempt} ${label} (${detail}); retrying in 5s...`);
       await delay(RETRY_DELAY_MS);
     }
   }
 
-  return { name: check.name, state: 'fail', detail: `${path} — ${lastDetail}` };
+  const state = finalVerdict(attempts);
+  return { name: check.name, state, detail: `${path} — ${state === 'warn' ? lastDegradation : lastFailure}` };
 }
 
 /** `--base` is the only override — one documented way to point this elsewhere. */
@@ -289,20 +532,31 @@ async function main(): Promise<void> {
   const baseUrl = parseBaseUrl(process.argv.slice(2));
   console.log(`Production smoke against ${baseUrl}\n`);
 
+  const MARKERS: Record<CheckOutcome['state'], string> = { pass: 'ok', warn: 'WARN', fail: 'FAIL', skip: '--' };
+
   const outcomes: CheckOutcome[] = [];
   for (const check of WWW_CHECKS) {
     const outcome = await runCheck(check, baseUrl, process.env);
     outcomes.push(outcome);
-    const marker = outcome.state === 'pass' ? 'ok' : outcome.state === 'skip' ? '--' : 'FAIL';
-    console.log(`${marker.padEnd(4)} ${outcome.name}${outcome.state === 'pass' ? '' : ` (${outcome.detail})`}`);
+    console.log(
+      `${MARKERS[outcome.state].padEnd(4)} ${outcome.name}${outcome.state === 'pass' ? '' : ` (${outcome.detail})`}`,
+    );
   }
 
   const failures = outcomes.filter((outcome) => outcome.state === 'fail');
+  const warnings = outcomes.filter((outcome) => outcome.state === 'warn');
   const skipped = outcomes.filter((outcome) => outcome.state === 'skip');
   console.log(
-    `\n${outcomes.length - failures.length - skipped.length} passed, ${failures.length} failed, ${skipped.length} skipped`,
+    `\n${outcomes.length - failures.length - warnings.length - skipped.length} passed, ${failures.length} failed, ${warnings.length} degraded, ${skipped.length} skipped`,
   );
 
+  // A degraded surface is real news, so it gets a GitHub annotation of its own —
+  // but not a red deploy: the server declared the degradation, serves it under a
+  // sixty-second window, and self-heals. Only a silent or structural break is a
+  // failure.
+  for (const warning of warnings) {
+    console.log(`::warning::production smoke degraded: ${warning.name} — ${warning.detail}`);
+  }
   for (const failure of failures) {
     console.log(`::error::production smoke failed: ${failure.name} — ${failure.detail}`);
   }

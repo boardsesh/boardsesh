@@ -18,7 +18,7 @@ type Climb {
   userId: ID
   "Name/title of the climb"
   name: String!
-  "Description or notes about the climb (nullable - omitted from search results, fetch separately via climb detail query)"
+  "Setter-written notes about the climb (nullable). Carried on search results too — the play drawer and the www climb page both render it."
   description: String
   "Encoded hold positions and colors for lighting up the board"
   frames: String!
@@ -64,6 +64,16 @@ type Climb {
   boardseshConfidence: String
   "Board configuration to draw this climb on, resolved against its setter's boards. Populated by userClimbs; null wherever the board is already known from the route."
   renderBoard: RenderBoardConfig
+  """
+  Product sizes this climb fits on (denormalised from edge bounds). Null when
+  the server has no compatibility data for this climb — a legacy row, or a
+  fetch path that doesn't project the column — which imposes no constraint.
+  On Woods it is load-bearing rather than cosmetic: the 8x10 and the 12x12
+  number their holds from their own origins, so an 8x10 climb's hold ids all
+  exist on a 12x12 as different holds and only this field can tell the two
+  apart (see canAddClimbToBoard rule 5).
+  """
+  compatibleSizeIds: [Int!]
 }
 
 """
@@ -106,6 +116,8 @@ input ClimbInput {
   boardseshDifficulty: Float
   "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only'), round-tripped through the queue."
   boardseshConfidence: String
+  "Product sizes this climb fits on. Round-tripped through the queue so a party peer on a different-sized wall can tell the climb doesn't fit theirs — on Woods the two sizes' hold ids overlap, so this is the only signal that separates them."
+  compatibleSizeIds: [Int!]
 }
 
 # ============================================
@@ -205,9 +217,9 @@ input ClimbSearchInput {
   onlyDrafts: Boolean
   "Show only unclimbed projects (climbs with 0 ascents)"
   projectsOnly: Boolean
-  "Include single-frame climbs (boulders). Default true. Set to false (paired with routes=true) to filter to routes only."
+  "Include single-frame climbs (boulders). Omitting both boulders and routes matches all climb types; set boulders=true with routes=false (or omit routes) to filter to boulders only."
   boulders: Boolean
-  "Include multi-frame climbs (routes). Default false. Set to true to include or filter to routes."
+  "Include multi-frame climbs (routes). Omitting both boulders and routes matches all climb types; set routes=true with boulders=false (or omit boulders) to filter to routes only."
   routes: Boolean
   "Restrict results using this drawn zone"
   zoneBox: ZoneBoxInput
@@ -2517,6 +2529,8 @@ input CreateBoardInput {
   a physically different wall (another gym, another room) — never by default.
   """
   allowDuplicateConfig: Boolean
+  "Create even when the serial is already registered to another user's board with the same configuration (default false — such creates fail with BOARD_SERIAL_EXISTS so clients can route the user to the existing board)"
+  allowDuplicateSerial: Boolean
 }
 
 """
@@ -2737,10 +2751,35 @@ enum GymClaimStatus {
 enum GymClaimRequestStatus {
   "A verification email was sent to the claimant's work address."
   email_sent
-  "The claim was queued for admin review and our team was notified."
+  "The claim is queued for a Boardsesh admin to review, and the claimant gets emailed the outcome either way. Mailing the team is best-effort on top of that queue, not a guarantee, so don't promise the claimant a reply."
   admin_review
   "The claim was approved on the spot — the gym was an unclaimed listing and auto-approval is on. The claimant already manages the gym."
   approved
+}
+
+"""
+One board-type + angle pair present at a gym, for the directory's board chips.
+Deliberately minimal: a card renders "Kilter 40°", nothing else. Distinct pairs
+only, so two Kilter boards both at 40° collapse into one summary.
+"""
+type GymBoardSummary {
+  "Board type (kilter, tension, moonboard, ...)"
+  boardType: String!
+  "Board angle in degrees"
+  angle: Int!
+}
+
+"""
+The viewer's own ownership claim on a gym that hasn't been resolved yet.
+Viewer-scoped: null for signed-out viewers and for anyone with no live claim.
+"""
+type MyGymClaim {
+  "Claim row id."
+  id: ID!
+  "How it gets verified: an emailed domain link, or a Boardsesh admin's review."
+  method: GymClaimMethod!
+  "ISO timestamp of when the claim was filed."
+  createdAt: String!
 }
 
 """
@@ -2761,6 +2800,10 @@ type Gym {
   name: String!
   "Optional description"
   description: String
+  "Opening hours as one free-text line the gym maintains itself (no structured per-day model)."
+  hours: String
+  "ISO timestamp of the last time someone with edit access confirmed the hours. Shown publicly so a stale schedule reads as stale."
+  hoursUpdatedAt: String
   "Physical address"
   address: String
   "Website URL (used for domain-verified ownership claims)"
@@ -2791,6 +2834,8 @@ type Gym {
   boardCount: Int!
   "Distinct board types at this gym (kilter, tension, ...) — for filtering and badges"
   boardTypes: [String!]!
+  "Distinct board-type + angle pairs at this gym, for directory board chips. Ordered by board type then angle and capped, so a gym with a wall of boards returns a bounded list."
+  boardSummaries: [GymBoardSummary!]!
   "Number of members"
   memberCount: Int!
   "Number of followers"
@@ -2809,6 +2854,17 @@ type Gym {
   canGrantAccess: Boolean!
   "Whether the current viewer may start an ownership claim for this gym (signed-in and not already the owner/gym admin)"
   canClaim: Boolean!
+  "Whether a real person owns this gym, as opposed to the system import user. Viewer-independent — unlike canClaim, which is false for every signed-out viewer."
+  isClaimed: Boolean!
+  """
+  The viewer's own unresolved claim on this gym, so a claimant who already
+  filed sees "under review" instead of the claim call-out. A lazy field
+  resolver with its own query — deliberately NOT part of enrichGym, which
+  already fires ~9 round trips per gym and runs per row for up to 50 rows.
+  Only the web gym page selects it; GYM_FIELDS leaves it out, which is why it
+  is nullable.
+  """
+  myPendingClaim: MyGymClaim
 }
 
 """
@@ -2956,6 +3012,8 @@ input UpdateGymInput {
   slug: String
   "New description"
   description: String
+  "New free-text opening hours. Writing this stamps hoursUpdatedAt; pass null to clear both."
+  hours: String
   "New address"
   address: String
   "New website URL"
@@ -3038,6 +3096,8 @@ input SearchGymsInput {
   sizeIds: [Int!]
   "Only gyms with two or more distinct board types"
   multiBoardTypeOnly: Boolean
+  "Only gyms that have a URL slug, i.e. that can be linked to at /gym/[slug]. Opt-in: omitting it leaves the emitted SQL untouched for existing callers."
+  requireSlug: Boolean
   "Latitude for proximity search"
   latitude: Float
   "Longitude for proximity search"
@@ -3782,7 +3842,6 @@ type GroupedNotification {
   Layout the climb was set on. Clients need this to build a board URL that
   actually resolves: the climb query filters on layoutId, so guessing the
   board's first layout misses every Kilter Homewall / Tension Board 2 climb.
-  Web reads the same column server-side in /api/internal/climb-redirect.
   """
   climbLayoutId: Int
   """
@@ -4611,6 +4670,8 @@ input SaveClimbInput {
   framesCount: Int
   framesPace: Int
   angle: Int!
+  "Freely-toggleable characteristics to set at creation. Only CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS are accepted here — no_match is server-derived from description, and MoonBoard method is creation-time-only via SaveMoonBoardClimbInput."
+  characteristics: [String!]
 }
 
 """
@@ -4667,6 +4728,8 @@ input UpdateClimbInput {
   isDraft: Boolean
   framesCount: Int
   framesPace: Int
+  "Freely-toggleable characteristics: the full desired boolean state of CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS. Any other characteristic already on the row (no_match, MoonBoard method) is left untouched."
+  characteristics: [String!]
 }
 
 type UpdateClimbResult {
@@ -5031,6 +5094,61 @@ type ClearLocationSyncFreezeResult {
   entityType: LocationSyncEntityType!
   entityUuid: ID!
   previousSyncFrozenAt: String
+}
+
+"A gym resolved for the admin ownership-handover surface, with the state the confirm step must name."
+type GymOwnershipSummary {
+  gymUuid: ID!
+  slug: String
+  name: String!
+  "Echoed back so the mutation can be sent with the exact owner the admin saw."
+  currentOwnerId: ID!
+  "Display name / account email of the current owner, or null when the account row is gone."
+  currentOwnerLabel: String
+  "True when the listing is still parked on the import account and has no real owner yet."
+  currentOwnerIsSystem: Boolean!
+  "The listing's human-curation marker. A handover leaves it exactly as it is."
+  syncFrozenAt: String
+  isDeleted: Boolean!
+  isMerged: Boolean!
+}
+
+"The incoming owner resolved from an account email or user id."
+type GymOwnershipUserSummary {
+  userId: ID!
+  label: String!
+  email: String
+}
+
+input GymOwnershipLookupInput {
+  "Gym UUID, slug, or a case-insensitive name fragment."
+  gymQuery: String!
+  "Account email or user id of the person the gym should move to."
+  newOwnerQuery: String!
+}
+
+"Both sides of a proposed handover. Either half is null when nothing matched."
+type GymOwnershipLookupResult {
+  gym: GymOwnershipSummary
+  newOwner: GymOwnershipUserSummary
+}
+
+input ReassignGymOwnerInput {
+  gymUuid: ID!
+  "Owner the admin saw in the confirm step; a moved owner rejects the write."
+  expectedCurrentOwnerId: ID!
+  newOwnerId: ID!
+  "Required operator explanation stored in the durable audit trail."
+  reason: String!
+}
+
+type ReassignGymOwnerResult {
+  gymUuid: ID!
+  gymName: String!
+  previousOwnerId: ID!
+  newOwnerId: ID!
+  "The human-curation marker after the write. A handover never changes it."
+  syncFrozenAt: String
 }
 
 """
@@ -5668,6 +5786,14 @@ type Query {
   adminAppFeedback(input: AdminAppFeedbackInput): AdminAppFeedbackResult!
 
   """
+  Crowdsourced QA: the open pull requests among `prNumbers` (the tester's
+  loadable `pr-<n>` OTA branches), each with its title, `## Test plan`
+  steps, `Risk: N/5`, and the caller's latest verdict. Tester role required.
+  Closed/unknown numbers are omitted; at most 50 per call.
+  """
+  qaPreviews(prNumbers: [Int!]!): [QaPreview!]!
+
+  """
   A gym owner's activity snapshot: unique climbers, ascents, top climbs, and
   busiest weekdays for the current window plus the equally-long window before
   it (for week-over-week deltas). Requires gym edit access (owner, gym
@@ -5695,6 +5821,13 @@ type Query {
   deliberately resurrect them. Merged gyms are excluded.
   """
   frozenLocationSyncEntities(input: FrozenLocationSyncEntitiesInput!): FrozenLocationSyncEntityConnection!
+
+  """
+  Resolve both halves of a proposed gym ownership handover — the gym and the
+  incoming owner — so the confirm step can name them (global admin only).
+  Read-only; nothing moves until reassignGymOwner is called.
+  """
+  gymOwnershipLookup(input: GymOwnershipLookupInput!): GymOwnershipLookupResult!
 
   # ============================================
   # Gym Kiosk Queries
@@ -6025,8 +6158,18 @@ type Mutation {
   """
   Replace the entire queue state.
   Used for bulk operations or syncing from external sources.
+
+  `baselineSequence` is the last server sequence this client had APPLIED when it
+  composed `queue`. When supplied, the server replays its queue-event buffer from
+  that point and re-appends any climb a peer added inside the window instead of
+  silently overwriting it (issue #3933). Omit it for the historical wholesale
+  overwrite — old clients send nothing here.
   """
-  setQueue(queue: [ClimbQueueItemInput!]!, currentClimbQueueItem: ClimbQueueItemInput): QueueState!
+  setQueue(
+    queue: [ClimbQueueItemInput!]!
+    currentClimbQueueItem: ClimbQueueItemInput
+    baselineSequence: Int
+  ): QueueState!
 
   """
   Confirm to all session participants that a climb was successfully relayed to the wall
@@ -6512,6 +6655,15 @@ type Mutation {
   clearLocationSyncFreeze(input: ClearLocationSyncFreezeInput!): ClearLocationSyncFreezeResult!
 
   """
+  Move a gym's ownership to another account (global admin only) — a sold gym,
+  a departed committee member, a claim approved to the wrong person. The
+  listing's human-curation freeze is left exactly as it was, the outgoing
+  owner is kept on as a gym admin, and the handover is written to a durable
+  audit trail. No self-serve entry point exists.
+  """
+  reassignGymOwner(input: ReassignGymOwnerInput!): ReassignGymOwnerResult!
+
+  """
   Report that two gym listings are the same gym (any signed-in user). Surfaces the
   pair to admins for review in the merge queue. Rate-limited and de-duplicated per
   pair so repeated reports don't spam the team.
@@ -6706,6 +6858,15 @@ type Mutation {
   moving back to `new`/`in_progress` clears them. Returns the updated row.
   """
   updateAppFeedbackStatus(input: UpdateAppFeedbackStatusInput!): AppFeedbackReport!
+
+  """
+  Crowdsourced QA: file a verdict on a pull-request preview. Tester role
+  required; the PR must be open; a `declined` verdict needs a comment of
+  10+ characters. Stores the row, then (best effort, never failing the
+  mutation) posts a comment on the PR and swaps the qa-approved/qa-declined
+  label.
+  """
+  submitQaVerdict(input: SubmitQaVerdictInput!): QaVerdict!
 
   # ============================================
   # External Platform Integration Mutations
@@ -7525,6 +7686,115 @@ the resolver + timestamp; moving back to `new`/`in_progress` clears them.
 input UpdateAppFeedbackStatusInput {
   id: ID!
   status: AppFeedbackStatus!
+}
+
+"""
+A tester's verdict on a pull-request preview (crowdsourced QA; see
+docs/crowdsourced-qa.md).
+"""
+enum QaVerdictKind {
+  approved
+  declined
+}
+
+"""
+One verdict a tester filed from the mobile app. Mirrored to GitHub as a PR
+comment plus a `qa-approved` / `qa-declined` label; `githubCommentUrl` is
+null until that side effect lands (or when it failed — the row is the record).
+"""
+type QaVerdict {
+  id: ID!
+  prNumber: Int!
+  """
+  The OTA preview branch the tester was running, e.g. `pr-4792`.
+  """
+  branch: String!
+  verdict: QaVerdictKind!
+  comment: String
+  """
+  The PR's head commit when the verdict was filed.
+  """
+  headSha: String
+  createdAt: String!
+  githubCommentUrl: String
+}
+
+"""
+An open pull request with a published OTA preview branch, as a tester sees it:
+what to test (the PR body's `## Test plan`), how risky it is (`Risk: N/5`),
+and whether this tester already filed a verdict.
+"""
+type QaPreview {
+  prNumber: Int!
+  """
+  `pr-<number>` — the xprem branch a compatible build can surf to.
+  """
+  branch: String!
+  title: String!
+  url: String!
+  """
+  GitHub login of the PR author.
+  """
+  author: String!
+  isDraft: Boolean!
+  headSha: String!
+  """
+  Committer date of `headSha` (ISO 8601). Null when the lookup failed.
+  """
+  headCommittedAt: String
+  """
+  ISO 8601 — when the PR was last updated on GitHub.
+  """
+  updatedAt: String!
+  """
+  1–5 from the PR body's `Risk: N/5` line; null when the PR predates the rule.
+  """
+  risk: Int
+  riskReason: String
+  """
+  The `## Test plan` section as written (comments stripped); null when absent.
+  """
+  testPlan: String
+  """
+  The plan's numbered steps, one string each. Empty when the plan has none.
+  """
+  testPlanSteps: [String!]!
+  """
+  The calling tester's most recent verdict on this PR, if any.
+  """
+  myLatestVerdict: QaVerdict
+}
+
+"""
+Input for submitQaVerdict. Everything but the verdict is device context the
+app fills in so the GitHub comment can say what was tested where.
+"""
+input SubmitQaVerdictInput {
+  prNumber: Int!
+  """
+  Must equal `pr-<prNumber>` — the branch the tester actually ran.
+  """
+  branch: String!
+  verdict: QaVerdictKind!
+  """
+  Free text, up to 2000 characters. Required (10+ characters) for `declined`.
+  """
+  comment: String
+  """
+  'ios' | 'android' | 'web'.
+  """
+  platform: String!
+  appVersion: String
+  """
+  expo-updates `updateId` of the running bundle.
+  """
+  updateId: String
+  runtimeVersion: String
+  """
+  expo-updates `createdAt` of the running bundle (ISO 8601). Compared with
+  the PR head's commit date to flag a verdict filed on an older revision.
+  """
+  bundleCreatedAt: String
 }
 
 # ============================================

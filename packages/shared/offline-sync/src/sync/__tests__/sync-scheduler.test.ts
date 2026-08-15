@@ -305,6 +305,45 @@ describe('sync-scheduler', () => {
     expect(mockPullSync).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps retry and failed-idle lifecycle intact when the cycle-error reporter throws', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-15T00:00:00.000Z'));
+    try {
+      const cycleError = new Error('pull failed');
+      const reporterError = new Error('telemetry failed');
+      const drainQueue: DrainQueue = vi.fn().mockRejectedValueOnce(cycleError).mockResolvedValue(undefined);
+      const onProgress = vi.fn();
+      const onCycleError = vi.fn(() => {
+        throw reporterError;
+      });
+      const stop = startSyncScheduler(
+        mockDb,
+        createMockQueryClient(),
+        mockGraphqlFetch,
+        getEnabledBoards,
+        drainQueue,
+        createFakeTriggers().triggers,
+        { onCycleError, onProgress },
+      );
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onCycleError).toHaveBeenCalledWith(cycleError);
+      expect(onProgress).toHaveBeenCalledWith({
+        phase: 'idle',
+        currentTable: null,
+        documentsProcessed: 0,
+        failed: true,
+      });
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(drainQueue).toHaveBeenCalledTimes(2);
+      expect(mockPullSync).toHaveBeenCalledTimes(1);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('startSyncScheduler runs an initial cycle and wires the injected triggers', async () => {
     const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
     const queryClient = createMockQueryClient();

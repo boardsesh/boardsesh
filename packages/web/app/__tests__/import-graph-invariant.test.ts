@@ -97,18 +97,32 @@ const DELETED_COMPONENT_DIRS = [
   'grade-picker',
   'board-presence',
   'connection-manager',
+  'notifications',
+  'settings',
 ];
 
 /**
- * `components/climb-card` survives in part. Only these three modules go — the
- * rest of the directory (climb-icons, climb-title, climb-thumbnail, …) is used
- * by the surviving feed and detail surfaces. Matched on the file stem, so
- * `climb-list-item.module.css` goes with `climb-list-item.tsx`, while
- * `climb-card-cover.tsx` is a different stem and stays.
+ * `components/climb-card` survives in part. Only these modules go — the rest of
+ * the directory (climb-icons, climb-title, climb-thumbnail, ascent-status,
+ * marquee-text) is used by the surviving feed and list surfaces. Matched on the
+ * file stem, so `climb-list-item.module.css` goes with `climb-list-item.tsx`.
+ *
+ * `climb-card-cover` and `heart-animation-overlay` joined the list in W-16:
+ * their only importers were `climb-card.tsx`, `climb-list-item.tsx` and the
+ * play view, all of which this teardown deletes.
  */
-const DELETED_CLIMB_CARD_STEMS = ['climb-card', 'climb-list-item', 'drawer-climb-header'];
+const DELETED_CLIMB_CARD_STEMS = [
+  'climb-card',
+  'climb-card-cover',
+  'climb-list-item',
+  'drawer-climb-header',
+  'heart-animation-overlay',
+];
 
-/** Hooks that only exist to serve the classic client climbing UI. */
+/**
+ * Hooks that only existed to serve deleted web surfaces — the classic client
+ * climbing UI, and the notification centre W-20b (#4439) moved to the app.
+ */
 const DELETED_HOOK_STEMS = [
   'use-tick-save',
   'use-effective-angle',
@@ -116,18 +130,34 @@ const DELETED_HOOK_STEMS = [
   'use-submit-app-feedback',
   'use-create-session',
   'use-climb-actions-data',
+  'use-notification-subscription',
+  'use-unread-notification-count',
+  'use-grouped-notifications',
+  'use-mark-notifications-read',
 ];
 
 /**
- * `app/lib/ble` goes with the board-control UI, except `capacitor-utils.ts`,
- * which the Capacitor retirement notice on the surviving web shell still reads.
+ * `app/lib/ble` goes with the board-control UI, except two files:
+ *  - `capacitor-utils.ts`, which the Capacitor retirement notice on the
+ *    surviving web shell still reads.
+ *  - `capacitor-types.d.ts`, the ambient `window.Capacitor` declaration. Six
+ *    surviving source files type against it — home-page-content,
+ *    capacitor-retirement-gate, auth/social-login-buttons, use-geolocation,
+ *    open-external-url, lib/hooks/use-wake-lock — plus four test files.
+ *    Deleting it reds the typecheck in files that have nothing to do with
+ *    Bluetooth, which is why it is pinned here rather than swept with the rest
+ *    of the directory.
  */
-const KEPT_BLE_FILES = new Set(['app/lib/ble/capacitor-utils.ts']);
+const KEPT_BLE_FILES = new Set(['app/lib/ble/capacitor-utils.ts', 'app/lib/ble/capacitor-types.d.ts']);
 
 /**
- * `components/settings` is deliberately absent: a later PR keeps two of its
- * sections, so it is not an unconditional delete and this test must not
- * pre-judge it.
+ * `components/settings` joined `DELETED_COMPONENT_DIRS` in W-21 (#4440): the
+ * directory is gone. `controllers-section` and `set-password-section` moved to
+ * `components/account/` back in W-11, and the two exports `board-import-prompt`
+ * still renders — `BoardCredentialCard` and `ImportProgressSteps` — were lifted
+ * to `components/board-entity/board-credential-card.tsx`. The delete set has no
+ * existence check, so listing it is a forward guard: if the directory is ever
+ * re-created and a keep root imports it, `deleteSetLabel` flags that edge.
  */
 function deleteSetLabel(webRelativePath: string): string | null {
   for (const componentDir of DELETED_COMPONENT_DIRS) {
@@ -182,10 +212,13 @@ const KEPT_ROUTE_DIRS = [
   'b',
   'session',
   'join',
-  'import-beta',
+  'moonboard-import',
   'settings',
-  'notifications',
-  'discover',
+  // W-22's sitemap index + shard routes. Both are directories (`sitemap.xml/`,
+  // `sitemaps/`), so they live here rather than in the filename scan the old
+  // single-file `app/sitemap.ts` needed.
+  'sitemap.xml',
+  'sitemaps',
   '.well-known',
 ];
 
@@ -202,7 +235,6 @@ const KEPT_COMPONENT_DIRS = [
   'beta-videos',
   'charts',
   'home-gym-card',
-  'notifications',
   'board-renderer',
   'moonboard-renderer',
   'ui',
@@ -220,34 +252,28 @@ const KEPT_COMPONENT_DIRS = [
   'stats-filter-bridge',
   'profile-header-bridge',
   'capacitor-retirement',
-  'dev-url-dialog',
+  'site-chrome',
 ];
 
 /**
  * Top-level app files that anchor the front door, plus the edge middleware —
- * and the three legacy config-tuple route files W-15 converted into front
- * doors.
+ * and the four legacy config-tuple route files the reposition converted into
+ * front doors.
  *
- * The `[board_name]/…` tree is not in `KEPT_ROUTE_DIRS` and must not be: most of
- * it (`create`, `import`, `liked`, `logbook`, `playlists`, `play`) is still the
- * classic client UI, which W-17 deletes. The reposition's canonical climb page
- * and board list live in exactly these three files, and `KEPT_ENTRY_FILES` takes
- * arbitrary paths (unlike the directory-scoped list above) so the promotion can
- * be exactly this narrow.
+ * The `[board_name]/…` tree is not in `KEPT_ROUTE_DIRS` and must not be: the
+ * angle segment still hosts `/play`, whose redirect pages are not part of the
+ * front door. The reposition's canonical climb page, board list and their
+ * shell are exactly these four files, and `KEPT_ENTRY_FILES` takes arbitrary
+ * paths (unlike the directory-scoped list above) so the promotion stays that
+ * narrow.
  *
- * **What this promotion does NOT cover, deliberately:** the parent shell,
- * `app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout.tsx`. It is
- * not a keep root and is not allowlisted, and it still imports eight delete-set
- * modules (`board-page/header`, `graphql-queue`, the two `connection-manager`
- * providers, `persistent-session`, `queue-control/ui-searchparams-provider`,
- * `queue-control/queue-bridge-context`, `board-page/last-used-board-tracker`).
- * So the three pages below render a server-only front door *inside* a shell
- * that still mounts the header, the queue and the WebSocket providers — the
- * walk proves the page subtree is clean, not the whole response. That shell
- * comes down with the rest of the classic UI in W-16/W-17, and adding its edges
- * here would mean growing the allowlist W-15 is supposed to shrink. Until then
- * `vp run typecheck` is the backstop: it hard-fails the day those modules are
- * deleted while this layout still imports them.
+ * The shell — `…/[angle]/layout.tsx` — joined the list in W-17 (#4433), which
+ * deleted the sibling routes under it and then stripped the header, the queue
+ * and the session/connection providers it used to mount. It is now server-only
+ * bar one client edge, `LastUsedBoardTracker`, allowlisted under
+ * `teardown:components-board-page`: it is what keeps the Climb tab pointing at
+ * the board you were last on, and it comes down with `components/board-page`
+ * in W-16.
  */
 const KEPT_ENTRY_FILES = [
   'app/page.tsx',
@@ -255,12 +281,11 @@ const KEPT_ENTRY_FILES = [
   'app/robots.ts',
   'app/manifest.ts',
   'middleware.ts',
+  'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout.tsx',
   'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]/page.tsx',
   'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/page.tsx',
   'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/layout.tsx',
 ];
-/** `sitemap.ts` today, but the programme may split it — match the family. */
-const KEPT_SITEMAP_PATTERN = /^app\/sitemap[\w.-]*\.tsx?$/;
 
 // ---------------------------------------------------------------------------
 // File discovery
@@ -310,12 +335,6 @@ function collectKeepRoots(): string[] {
     if (!existsSync(absolutePath)) throw new Error(`Keep root ${entryFile} does not exist — update KEPT_ENTRY_FILES.`);
     roots.push(absolutePath);
   }
-
-  const sitemapFiles = readdirSync(join(WEB_ROOT, 'app'))
-    .filter((fileName) => KEPT_SITEMAP_PATTERN.test(`app/${fileName}`))
-    .map((fileName) => join(WEB_ROOT, 'app', fileName));
-  if (sitemapFiles.length === 0) throw new Error('No app/sitemap*.ts found — update KEPT_SITEMAP_PATTERN.');
-  roots.push(...sitemapFiles);
 
   return [...new Set(roots)];
 }
@@ -538,7 +557,7 @@ describe('import-graph invariant: kept surfaces do not reach into the delete set
   it('does not treat the surviving parts of components/climb-card as deleted', () => {
     // The activity feed imports climb-icons on four surfaces. That module stays,
     // so the delete set must not swallow the whole climb-card directory.
-    for (const survivor of ['climb-icons', 'climb-title', 'climb-thumbnail', 'climb-card-cover', 'marquee-text']) {
+    for (const survivor of ['climb-icons', 'climb-title', 'climb-thumbnail', 'ascent-status', 'marquee-text']) {
       expect(
         deleteSetLabel(`app/components/climb-card/${survivor}.tsx`),
         `components/climb-card/${survivor} must survive the teardown`,

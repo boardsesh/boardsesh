@@ -100,7 +100,8 @@ export const GetPlaylistClimbsInputSchema = z
     // selected angle instead of the added-at / most-ascents fallback. Both are
     // required together — one without the other would silently no-op.
     activeBoardName: BoardNameSchema.optional(),
-    activeAngle: z.number().int().min(0).max(90).optional(),
+    // Live board angle; Aurora supports negative tilt.
+    activeAngle: z.number().int().min(-90).max(90).optional(),
     page: z.number().int().min(0).optional(),
     pageSize: z.number().int().min(1).max(100).optional(),
   })
@@ -113,7 +114,8 @@ export const DiscoverPlaylistsInputSchema = z.object({
   boardType: BoardNameSchema.optional(),
   layoutId: z.number().int().positive().optional(),
   sizeId: z.number().int().positive().nullable().optional(),
-  angle: z.number().int().min(0).max(90).nullable().optional(),
+  // Live board angle; Aurora supports negative tilt.
+  angle: z.number().int().min(-90).max(90).nullable().optional(),
   name: z.string().max(100).optional(),
   creatorIds: z.array(z.string().min(1)).optional(),
   generatedRecommendation: z.boolean().nullable().optional(),
@@ -152,7 +154,8 @@ export const GetSmartPlaylistInputSchema = z.object({
   boardName: BoardNameSchema.optional(),
   boardUuid: z.string().min(1).optional(),
   sizeId: z.number().int().positive().optional(),
-  angle: z.number().int().min(0).max(90).optional(),
+  // Live board angle; Aurora supports negative tilt.
+  angle: z.number().int().min(-90).max(90).optional(),
   page: z.number().int().min(0).optional(),
   pageSize: z.number().int().min(1).max(100).optional(),
 });

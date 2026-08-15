@@ -3,7 +3,13 @@ import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import { runMigrations } from '@boardsesh/offline-sync';
 import { ensureMutationQueueTable, stampLocalUserId } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
-import { searchClimbsLocal, countClimbsLocal, isOfflineSearchSupported } from '../search-climbs-local';
+import { canAddClimbToBoard, type BoardCompatibilityTarget } from '@boardsesh/board-config';
+import {
+  searchClimbsLocal,
+  countClimbsLocal,
+  isOfflineSearchSupported,
+  parseCompatibleSizeIds,
+} from '../search-climbs-local';
 
 // The climber whose rows this device holds — written into sync_meta by the
 // offline-sync bridge on sign-in, and the value every tick predicate binds.
@@ -39,6 +45,7 @@ type ClimbFixture = {
   characteristics?: string[] | null;
   setterUsername?: string | null;
   createdAt?: string | null;
+  description?: string | null;
 };
 
 type StatFixture = {
@@ -55,14 +62,15 @@ type StatFixture = {
 async function insertClimb(db: TestSqliteDb, fixture: ClimbFixture): Promise<void> {
   await db.runAsync(
     `INSERT INTO board_climbs
-      (uuid, board_type, layout_id, name, is_listed, is_draft, frames_count, frames,
+      (uuid, board_type, layout_id, name, description, is_listed, is_draft, frames_count, frames,
        compatible_size_ids, required_set_ids, characteristics, setter_username, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       fixture.uuid,
       fixture.boardType ?? 'kilter',
       fixture.layoutId ?? 1,
       fixture.name ?? `Climb ${fixture.uuid}`,
+      fixture.description ?? null,
       fixture.isListed ?? 1,
       fixture.isDraft ?? 0,
       fixture.framesCount ?? 1,
@@ -199,6 +207,24 @@ describe('searchClimbsLocal', () => {
     expect(uuids(result)).toEqual(['a']);
     expect(result.hasMore).toBe(false);
     expect(await countClimbsLocal(db, makeInput())).toBe(1);
+  });
+
+  // #4494: the search read used to drop board_climbs.description on the floor,
+  // so a climb opened from the Climbs list reached the play drawer with no
+  // setter notes at all — and the offline path is the one most users hit.
+  it('carries the setter description through to the mapped climb', async () => {
+    await insertClimb(db, { uuid: 'with-notes', description: 'Match the rail, then\nbig move to the jug.' });
+
+    const result = await searchClimbsLocal(db, makeInput());
+    expect(result.climbs).toHaveLength(1);
+    expect(result.climbs[0].description).toBe('Match the rail, then\nbig move to the jug.');
+  });
+
+  it('reports an empty description (not undefined) when the setter wrote none', async () => {
+    await insertClimb(db, { uuid: 'no-notes' });
+
+    const result = await searchClimbsLocal(db, makeInput());
+    expect(result.climbs[0].description).toBe('');
   });
 
   it('filters by size via compatible_size_ids (contains), excluding NULL', async () => {
@@ -629,5 +655,73 @@ describe('searchClimbsLocal: random sort', () => {
     // A shuffle is not the default ascents/uuid order (uuid DESC tiebreak).
     const ascentsOrder = uuids(await searchClimbsLocal(db, makeInput({ pageSize: 24 })));
     expect(orders.every((order) => order.join(',') === ascentsOrder.join(','))).toBe(false);
+  });
+});
+
+/**
+ * The offline read is where `compatibleSizeIds` has to survive a JSON-in-TEXT
+ * round-trip, and it is the read that feeds the queue when a phone is on a wall
+ * with no signal. Woods is the board that needs it: its 8x10 numbers holds
+ * 0-484 and its 12x12 numbers its own 0-893, so an 8x10 climb's hold ids all
+ * exist on a 12x12 as different holds. Without this field on the mapped climb,
+ * `canAddClimbToBoard` waves it through and the wall lights the wrong holds.
+ */
+describe('searchClimbsLocal: compatibleSizeIds survives the row -> Climb mapping', () => {
+  let db: TestSqliteDb;
+
+  const WOODS_12X12_HOLDS = Array.from({ length: 894 }, (_, index) => ({ id: index }));
+
+  function woodsWall(sizeId: number): BoardCompatibilityTarget {
+    return { board_name: 'woods', layout_id: 1, size_id: sizeId, set_ids: [1], holdsData: WOODS_12X12_HOLDS };
+  }
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await ensureMutationQueueTable(db);
+    await runMigrations(db);
+    await stampLocalUserId(db, LOCAL_OWNER);
+  });
+
+  it('decodes the stored JSON array onto the mapped climb', async () => {
+    await insertClimb(db, { uuid: 'both-sizes', compatibleSizeIds: [5, 6] });
+
+    const [climb] = (await searchClimbsLocal(db, makeInput({ sizeId: 5 }))).climbs;
+    expect(climb.compatibleSizeIds).toEqual([5, 6]);
+  });
+
+  it('reports anything that is not a usable array as null, so it reads as "no constraint"', () => {
+    // A size-scoped search never returns a NULL-sizes row (the filter excludes
+    // them), so the decode itself is the unit under test here. Empty and
+    // malformed both have to land on null rather than on `[]`, which a stricter
+    // consumer would read as "fits nothing".
+    expect(parseCompatibleSizeIds(null)).toBeNull();
+    expect(parseCompatibleSizeIds('')).toBeNull();
+    expect(parseCompatibleSizeIds('[]')).toBeNull();
+    expect(parseCompatibleSizeIds('not json')).toBeNull();
+    expect(parseCompatibleSizeIds('{"1":true}')).toBeNull();
+    expect(parseCompatibleSizeIds('[1, "two", 3]')).toEqual([1, 3]);
+  });
+
+  it('lets the size rule reject a Woods 8x10 climb on a 12x12 wall, and accept it on an 8x10', async () => {
+    // Hold ids well inside the 8x10's 0-484 range, so hold-id containment alone
+    // cannot separate the two walls — only compatibleSizeIds can.
+    await insertClimb(db, {
+      uuid: 'woods-8x10-climb',
+      boardType: 'woods',
+      layoutId: 1,
+      frames: 'p12r4p207r2p418r3',
+      compatibleSizeIds: [1],
+      // Woods ships one synthetic hold set; the search's subset predicate
+      // excludes a NULL required_set_ids row on every non-MoonBoard board.
+      requiredSetIds: [],
+    });
+
+    const [climb] = (
+      await searchClimbsLocal(db, makeInput({ boardName: 'woods', layoutId: 1, sizeId: 1, setIds: '1' }))
+    ).climbs;
+
+    expect(climb.compatibleSizeIds).toEqual([1]);
+    expect(canAddClimbToBoard(climb, woodsWall(2))).toEqual({ ok: false, reason: 'size' });
+    expect(canAddClimbToBoard(climb, woodsWall(1))).toEqual({ ok: true });
   });
 });

@@ -85,6 +85,7 @@ vi.mock('../../lib/analytics', () => ({ track: (...args: unknown[]) => trackMock
 
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { rememberDownloadTrigger } from '../../settings';
+import { __resetSyncStatusForTests, setSyncProgress } from '../../sync';
 import {
   drainMutationQueue,
   startSyncScheduler,
@@ -94,7 +95,10 @@ import {
   hasUsableInternetConnection,
   subscribeMutationDelivery,
   reportScopeDownloadAbandoned,
+  reportScopeDownloadAbandonedOnSignOut,
+  reportScopeDownloadAbandonedOnDisable,
   __resetCoverageVerdictDedupeForTests,
+  __resetCycleErrorDedupeForTests,
   __resetMeteredStateForTests,
 } from '../offline-sync-adapter';
 import type {
@@ -135,11 +139,14 @@ const NO_PHASE_PROPS = {
 };
 
 const db = {} as OfflineDatabase;
-const queryClient = { invalidateQueries: vi.fn() } as unknown as import('@tanstack/react-query').QueryClient;
+const invalidateQueries = vi.fn();
+const queryClient = { invalidateQueries } as unknown as import('@tanstack/react-query').QueryClient;
 const graphqlFetch = vi.fn() as unknown as import('@boardsesh/offline-sync').GraphQLFetch;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  __resetSyncStatusForTests();
+  __resetCycleErrorDedupeForTests();
   appStateListener = null;
   netInfoListener = null;
   onlineManagerIsOnline.mockReturnValue(true);
@@ -572,6 +579,33 @@ describe('snapshot-bootstrap bindings', () => {
     expect(reportHandledError).not.toHaveBeenCalled();
   });
 
+  // The de-listing terminals (issue #4452). Same permanent contract as the
+  // removal one above, and `stage: 'abandoned'` rather than 'board-removed'
+  // deliberately: nothing was removed on these paths, and 'board-removed'
+  // already ships in dashboards meaning "the rows were deleted".
+  it.each([
+    ['sign-out', reportScopeDownloadAbandonedOnSignOut, 'abandoned-signed-out'],
+    ['a My Boards toggle-off', reportScopeDownloadAbandonedOnDisable, 'abandoned-disabled'],
+  ])('reports a download abandoned by %s as the funnel Failed shape, never to Sentry', (_label, report, reason) => {
+    report({ scopeKey: 'tension:11:8' });
+
+    expect(trackMock).toHaveBeenCalledTimes(1);
+    expect(trackMock).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineBoardDownloadFailed,
+      expect.objectContaining({
+        scopeKey: 'tension:11:8',
+        stage: 'abandoned',
+        reason,
+        aborted: true,
+        expected: true,
+        attempt: 0,
+      }),
+    );
+    // Signing out and turning a board off are both things the climber chose to
+    // do. Neither is a defect, so neither may reach Sentry or a failure rate.
+    expect(reportHandledError).not.toHaveBeenCalled();
+  });
+
   it('captures a PostHog event on scope-download completion with the method + duration', () => {
     startSyncScheduler(
       db,
@@ -846,8 +880,8 @@ describe('snapshot-bootstrap bindings', () => {
       phases: NO_PHASES,
     });
 
-    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['downloadedScopeKeys'] });
-    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['offlineStorage'] });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['downloadedScopeKeys'] });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['offlineStorage'] });
   });
 
   it('captures a PostHog event — not a Sentry error — when the coverage guard forces a resync', () => {
@@ -1213,6 +1247,142 @@ describe('triggerSync / pullSync bindings', () => {
     expect(options.onProgress).toBe(onProgress);
     expect(options.onSchemaDrift).toBeTypeOf('function');
     expect(options.onCycleError).toBeTypeOf('function');
+  });
+
+  it('reports the last visible phase when a cycle fails after snapshot transfers', () => {
+    setSyncProgress({ phase: 'deletions', currentTable: null, documentsProcessed: 500 });
+    triggerSync(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => ['soill:1:1'],
+      async () => {},
+    );
+
+    const options = triggerSyncCore.mock.calls[0][5] as SchedulerOptions;
+    const cycleError = new Error('database write failed at /private/device/offline.db');
+    options.onCycleError?.(cycleError);
+
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineSyncCycleFailed, {
+      phase: 'deletions',
+      currentTable: null,
+      documentsProcessed: 500,
+      expected: false,
+      status: null,
+      errorKind: 'exception',
+      offlineEngineEnabled: false,
+    });
+    expect(reportHandledError).toHaveBeenCalledWith(cycleError, {
+      tags: { source: 'offline-sync', kind: 'cycle', phase: 'deletions' },
+      extra: { currentTable: null, documentsProcessed: 500 },
+    });
+  });
+
+  it('tracks an expected request timeout without sending routine reachability failures to Sentry', () => {
+    setSyncProgress({ phase: 'board_data', currentTable: 'board_climb_stats:kilter:1:10', documentsProcessed: 42 });
+    triggerSync(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => ['kilter:1:10'],
+      async () => {},
+    );
+
+    const options = triggerSyncCore.mock.calls[0][5] as SchedulerOptions;
+    const timeoutError = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+    options.onCycleError?.(timeoutError);
+
+    expect(trackMock).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineSyncCycleFailed,
+      expect.objectContaining({
+        phase: 'board_data',
+        currentTable: 'board_climb_stats:kilter:1:10',
+        expected: true,
+        errorKind: 'aborted',
+      }),
+    );
+    expect(reportHandledError).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates a repeating expected cycle failure for five minutes', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-15T00:00:00.000Z'));
+    try {
+      setSyncProgress({ phase: 'deletions', currentTable: null, documentsProcessed: 0 });
+      triggerSync(
+        db,
+        queryClient,
+        graphqlFetch,
+        () => ['soill:1:1'],
+        async () => {},
+      );
+      const options = triggerSyncCore.mock.calls[0][5] as SchedulerOptions;
+      const timeoutError = Object.assign(new Error('private request text'), { name: 'AbortError' });
+
+      options.onCycleError?.(timeoutError);
+      options.onCycleError?.(timeoutError);
+      vi.advanceTimersByTime(299_999);
+      options.onCycleError?.(timeoutError);
+      expect(trackMock).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(1);
+      options.onCycleError?.(timeoutError);
+      expect(trackMock).toHaveBeenCalledTimes(2);
+      for (const [, properties] of trackMock.mock.calls as [string, Record<string, unknown>][]) {
+        expect(properties).not.toHaveProperty('error');
+        expect(properties).not.toHaveProperty('errorMessage');
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('deduplicates repeating unexpected failures but reports a changed phase immediately', () => {
+    setSyncProgress({ phase: 'deletions', currentTable: null, documentsProcessed: 0 });
+    triggerSync(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => ['soill:1:1'],
+      async () => {},
+    );
+    const options = triggerSyncCore.mock.calls[0][5] as SchedulerOptions;
+    const sqliteError = new Error('database is locked');
+
+    options.onCycleError?.(sqliteError);
+    options.onCycleError?.(sqliteError);
+    expect(trackMock).toHaveBeenCalledTimes(1);
+    expect(reportHandledError).toHaveBeenCalledTimes(1);
+
+    setSyncProgress({ phase: 'user_data', currentTable: 'boardsesh_ticks', documentsProcessed: 0 });
+    options.onCycleError?.(sqliteError);
+    expect(trackMock).toHaveBeenCalledTimes(2);
+    expect(reportHandledError).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not suppress cycle telemetry when the wall clock moves backwards', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-15T01:00:00.000Z'));
+    try {
+      setSyncProgress({ phase: 'deletions', currentTable: null, documentsProcessed: 0 });
+      triggerSync(
+        db,
+        queryClient,
+        graphqlFetch,
+        () => ['soill:1:1'],
+        async () => {},
+      );
+      const options = triggerSyncCore.mock.calls[0][5] as SchedulerOptions;
+      const timeoutError = Object.assign(new Error('timeout'), { name: 'AbortError' });
+
+      options.onCycleError?.(timeoutError);
+      vi.setSystemTime(new Date('2026-08-15T00:00:00.000Z'));
+      options.onCycleError?.(timeoutError);
+
+      expect(trackMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('pullSync binds schema-drift telemetry but lets caller options win', async () => {

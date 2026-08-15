@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -14,7 +14,9 @@ import MuiLink from '@mui/material/Link';
 import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
 import type { TFunction } from 'i18next';
 import type { Gym } from '@boardsesh/shared-schema';
+import { gymManageTabViewed } from '@boardsesh/analytics';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { trackGymFunnelEvent } from '@/app/lib/gym-funnel-analytics';
 import { useLocaleRouter, usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import { resolveGymRole, type GymRoleKind } from '@/app/lib/gym-role';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -91,6 +93,20 @@ export default function ManageGymContent({ initialGym }: { initialGym: Gym }) {
     setIsActiveTabDirty(false);
   }, [activeTab]);
 
+  // One `Gym Manage Tab Viewed` per tab actually shown, mount included.
+  //
+  // Watching the RESOLVED tab rather than hooking handleTabChange is the whole
+  // point: a `?tab=` deep link and a first mount are views that no tap handler
+  // sees, and a tap the dirty-guard cancels is a tap that changed nothing. The
+  // ref is what makes it once-per-view — an unrelated re-render (or StrictMode
+  // re-running the effect against the same tab) must not count a second view.
+  const lastTrackedTab = useRef<ManageTab | null>(null);
+  useEffect(() => {
+    if (lastTrackedTab.current === activeTab) return;
+    lastTrackedTab.current = activeTab;
+    trackGymFunnelEvent(gymManageTabViewed({ tab: activeTab }));
+  }, [activeTab]);
+
   const performNavigation = useCallback(
     (navigation: ManageNavigation) => {
       if (navigation.kind === 'href') {
@@ -138,10 +154,7 @@ export default function ManageGymContent({ initialGym }: { initialGym: Gym }) {
   };
 
   return (
-    <Container
-      maxWidth="md"
-      sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)', pb: 'var(--bottom-bar-height)' }}
-    >
+    <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
       {gym.slug && (
         <Box sx={{ mb: 1.5 }}>
           <MuiLink

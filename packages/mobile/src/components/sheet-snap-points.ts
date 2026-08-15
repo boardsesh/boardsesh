@@ -21,13 +21,30 @@ const ANDROID_NEAR_FULL_DETENT_PERCENT = 75;
  * expanded state is the right match, so it's left unchanged. Multi-detent sheets
  * already have a partial state, and non-% (px) detents are left as-is.
  *
- * The added value is ignored on Android (only partial/expanded exist), and this
- * keeps the body's flex layout intact (unlike switching to fit-to-content, which
- * can collapse a scrollable body). iOS / web honour the exact detents via SwiftUI
- * / CSS, so they're returned unchanged.
+ * `androidOpensExpanded` (a multi-detent sheet whose pinned footer only fits at
+ * its LAST detent, e.g. the tick sheets, #4723) collapses to that single last
+ * detent on Android — not "keep both detents and pick the last index at
+ * present-time", which depends on an `@expo/ui` Android `expand()` call the
+ * library's own `ModalBottomSheetView.kt` can silently no-op ("Expanded anchor
+ * may be unreachable"). A single detent removes "partial" as a resting state
+ * entirely, so the sheet can only land on Expanded. This check runs BEFORE the
+ * small-single-detent padding below: without that ordering, an opted-in sheet
+ * with one detent under 75% would fall into the padding branch and come back
+ * out with a "partial" resting state again — exactly what the opt-in exists to
+ * remove.
+ *
+ * The added/removed values are ignored on Android (only partial/expanded exist),
+ * and this keeps the body's flex layout intact (unlike switching to fit-to-content,
+ * which can collapse a scrollable body). iOS / web honour the exact detents via
+ * SwiftUI / CSS, so they're returned unchanged.
  */
-export function androidSafeSnapPoints(snapPoints: (string | number)[]): (string | number)[] {
-  if (Platform.OS !== 'android' || snapPoints.length !== 1) return snapPoints;
+export function androidSafeSnapPoints(
+  snapPoints: (string | number)[],
+  androidOpensExpanded = false,
+): (string | number)[] {
+  if (Platform.OS !== 'android') return snapPoints;
+  if (androidOpensExpanded) return [snapPoints[snapPoints.length - 1]];
+  if (snapPoints.length !== 1) return snapPoints;
   const only = snapPoints[0];
   const percent = typeof only === 'string' && only.trim().endsWith('%') ? parseFloat(only) : null;
   if (percent == null || percent >= ANDROID_NEAR_FULL_DETENT_PERCENT) return snapPoints;

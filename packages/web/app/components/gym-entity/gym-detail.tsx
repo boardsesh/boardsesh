@@ -44,6 +44,8 @@ import {
   type DeleteGymMutationResponse,
 } from '@boardsesh/graphql/operations';
 import { useSession } from 'next-auth/react';
+import { gymClaimCtaClicked } from '@boardsesh/analytics';
+import { trackGymFunnelEvent, viewerStateFrom } from '@/app/lib/gym-funnel-analytics';
 import { themeTokens } from '@/app/theme/theme-config';
 import FollowButton from '@/app/components/ui/follow-button';
 import LocaleLink from '@/app/components/i18n/locale-link';
@@ -76,7 +78,11 @@ export default function GymDetail({ gymUuid, open, onClose, onDeleted, anchor = 
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showClaimDialog, setShowClaimDialog] = useState(false);
   const [showReportDialog, setShowReportDialog] = useState(false);
-  const { token } = useWsAuthToken();
+  // `isAuthenticated` rather than useSession().status: its query is gated on
+  // `status !== 'loading'`, so a gym fetched through this token means the
+  // session already settled — no pre-hydration `loading` masquerading as
+  // signed-out on the claim CTA event.
+  const { token, isAuthenticated } = useWsAuthToken();
   const { data: session } = useSession();
   const { showMessage } = useSnackbar();
   const currentUserId = session?.user?.id ?? null;
@@ -305,7 +311,16 @@ export default function GymDetail({ gymUuid, open, onClose, onDeleted, anchor = 
                 variant="outlined"
                 size="small"
                 startIcon={<VerifiedUserOutlined />}
-                onClick={() => setShowClaimDialog(true)}
+                onClick={() => {
+                  trackGymFunnelEvent(
+                    gymClaimCtaClicked({
+                      placement: 'preview-sheet',
+                      viewerState: viewerStateFrom(isAuthenticated),
+                      gymUuid: gym.uuid,
+                    }),
+                  );
+                  setShowClaimDialog(true);
+                }}
                 sx={{ textTransform: 'none' }}
               >
                 {t('gymEntity.actions.claim')}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isNoMatchClimb, withNoMatch } from '../utils';
+import { getDisplayDescription, isNoMatchClimb, withNoMatch } from '../utils';
 
 describe('isNoMatchClimb', () => {
   it('detects a leading "no match" marker, case-insensitively', () => {
@@ -64,5 +64,63 @@ describe('no-match toggle cannot be derived from the description', () => {
     expect(withNoMatch(prose, false)).toBe(prose);
     // ...so a description-derived toggle would never clear — hence the decouple.
     expect(isNoMatchClimb(withNoMatch(prose, false))).toBe(true);
+  });
+});
+
+describe('getDisplayDescription', () => {
+  it("strips the canonical marker line and keeps the setter's prose", () => {
+    expect(getDisplayDescription('No match\nCrimpy start, big move off the gaston')).toBe(
+      'Crimpy start, big move off the gaston',
+    );
+  });
+
+  it('preserves interior newlines and trims the edges', () => {
+    expect(getDisplayDescription('  Start matched.\nNo feet after the crimp.  ')).toBe(
+      'Start matched.\nNo feet after the crimp.',
+    );
+  });
+
+  it('returns an empty string when there is nothing to show', () => {
+    expect(getDisplayDescription('')).toBe('');
+    expect(getDisplayDescription('   ')).toBe('');
+    expect(getDisplayDescription(null)).toBe('');
+    expect(getDisplayDescription(undefined)).toBe('');
+    expect(getDisplayDescription('No match')).toBe('');
+    expect(getDisplayDescription('No match\n')).toBe('');
+  });
+
+  it('suppresses a description that is only a restatement of "no match"', () => {
+    // Roughly half the Aurora catalog's non-empty descriptions are literally
+    // this, and the climb header's no-match glyph already says it.
+    for (const restatement of [
+      'No matching',
+      'No matching.',
+      'no matching',
+      'NO MATCH.',
+      'No-match',
+      'nomatch',
+      'No matching!!',
+      'No matching?',
+      'No match;',
+      'No matching. ',
+    ]) {
+      expect(getDisplayDescription(restatement)).toBe('');
+    }
+  });
+
+  it('never eats real setter beta that merely mentions matching (whole-string match only)', () => {
+    // The regression the anchored regex exists to prevent: a prefix — or
+    // anywhere — match would delete every one of these.
+    expect(getDisplayDescription('No matching feet allowed')).toBe('No matching feet allowed');
+    expect(getDisplayDescription('No Houdini swap, spin around pls:). No matching.')).toBe(
+      'No Houdini swap, spin around pls:). No matching.',
+    );
+    expect(getDisplayDescription('No matching.\nFeet follow hands.')).toBe('No matching.\nFeet follow hands.');
+    expect(getDisplayDescription('Matching is fine')).toBe('Matching is fine');
+  });
+
+  it('handles the marker and a restatement stacked together', () => {
+    expect(getDisplayDescription('No match\nNo matching.')).toBe('');
+    expect(getDisplayDescription('No match\nNo matching feet allowed')).toBe('No matching feet allowed');
   });
 });

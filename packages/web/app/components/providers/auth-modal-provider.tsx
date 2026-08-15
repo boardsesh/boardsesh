@@ -6,6 +6,13 @@ import AuthModal from '@/app/components/auth/auth-modal';
 type AuthModalConfig = {
   title?: string;
   description?: string;
+  /**
+   * Where OAuth drops the climber back. `onSuccess` only ever fires for the
+   * email/password path, which stays on the page; a social sign-in leaves the
+   * app entirely and comes back through next-auth's redirect, so an intent that
+   * isn't in this URL is gone (SocialLoginButtons otherwise defaults to '/').
+   */
+  callbackUrl?: string;
   onSuccess?: () => void;
 };
 
@@ -27,7 +34,7 @@ export function AuthModalProvider({ children }: { children: React.ReactNode }) {
 
   const openAuthModal = useCallback((cfg: AuthModalConfig = {}) => {
     onSuccessRef.current = cfg.onSuccess;
-    setConfig({ title: cfg.title, description: cfg.description });
+    setConfig({ title: cfg.title, description: cfg.description, callbackUrl: cfg.callbackUrl });
     setHasOpenedOnce(true);
     setOpen(true);
   }, []);
@@ -53,6 +60,7 @@ export function AuthModalProvider({ children }: { children: React.ReactNode }) {
           onSuccess={handleSuccess}
           title={config.title}
           description={config.description}
+          callbackUrl={config.callbackUrl}
         />
       )}
     </AuthModalContext.Provider>

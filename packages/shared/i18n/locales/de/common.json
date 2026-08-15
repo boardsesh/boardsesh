@@ -229,6 +229,8 @@
       "sponsorsEmpty": "Noch keine Sponsoren — willst du den Anfang machen?",
       "privateSponsorsThanks": "und {{count}} weitere, die privat sponsern — auch euch danke",
       "becomeSponsor": "Sponsor werden",
+      "poweredByTitle": "Läuft mit",
+      "xpremBody": "Mercure Technologies hat Boardsesh eine Enterprise-Lizenz für xprem geschenkt, den Server hinter unseren Over-the-Air-Updates. Deshalb landen Fixes auf deinem Handy, ohne auf eine Store-Prüfung zu warten, und deshalb kannst du unter Neuigkeiten eine Vorschau ausprobieren.",
       "personalTitle": "Persönlicher Dank",
       "discordTitle": "Alle in unserem Discord",
       "discordBody": "Danke für die Beta, die Motivation und die Bug-Reports. Tippen zum Beitreten.",
@@ -358,76 +360,42 @@
     }
   },
   "lightControl": {
-    "title": "Licht",
     "turnOffAll": "Alle Lichter ausschalten",
-    "partyMode": "Party-Modus",
-    "stopParty": "Party stoppen",
-    "partyUnsupported": "Party-Modus gibt es auf diesem Board nicht",
-    "discoMode": "Boulder als Disco",
-    "stopDisco": "Disco stoppen",
-    "discoNeedsClimb": "Lade einen Boulder, um die Disco zu starten",
-    "clearFailed": "Das Board ließ sich nicht leeren",
-    "lightShowFailed": "Das Board ist mitten in der Show weg. Verbinde neu und versuch es nochmal.",
-    "customizeColors": "LED-Farben anpassen",
-    "customizeColorsUnsupported": "Eigene Farben gibt es auf diesem Board nicht",
-    "customizeColorsTitle": "LED-Farben",
-    "customizeColorsHelp": "Wähle, in welchen Farben dein Board Hände, Füße und den Topgriff beleuchtet. Startgriffe bleiben standardmäßig grün.",
-    "resetColors": "Zurücksetzen",
     "lightAdjacentHolds": "Griff darüber beleuchten",
     "lightAdjacentHoldsHelp": "Lässt eine zweite, gedimmte LED über jedem beleuchteten Start- oder Handgriff leuchten. Erfordert einen MoonBoard-Controller mit der Zusatz-LED-Funktion.",
-    "disconnect": "Board trennen",
-    "role": {
-      "HAND": "Hände",
-      "FOOT": "Füße",
-      "FINISH": "Top"
-    }
+    "disconnect": "Board trennen"
   },
   "bluetooth": {
-    "boardTaken": "Board weg — ein anderes Handy oder eine andere App hat sich verbunden.",
-    "takeItBack": "Zurückholen",
     "boardNotFound": "Dein Board wurde nicht gefunden. Prüf, ob es an und in Reichweite ist — und wenn ein anderes Handy verbunden ist, trenn dort zuerst.",
     "connectFailed": "Verbindung fehlgeschlagen. Geh näher ans Board und versuch es nochmal.",
     "serviceMissing": "Verbunden, aber das Board hat nicht geantwortet. Schalt es aus und wieder ein und versuch es nochmal.",
     "unavailable": "Bluetooth ist aus. Schalt es ein, um dich mit deinem Board zu verbinden.",
-    "unknownError": "Verbindung zu deinem Board fehlgeschlagen. Versuch es nochmal.",
-    "incompatibleClimb": "Dieser Boulder ist für ein anderes Board, deshalb wurde er nicht beleuchtet.",
-    "unrecognisedHoldData": "Dieser Boulder hat unbekannte Griffdaten und lässt sich nicht auf dem Board beleuchten.",
-    "ledDataMissing": "Beleuchten nicht möglich — für diese Board-Konfiguration fehlen die LED-Daten.",
-    "partialHoldsSkipped_one": "{{count}} Griff ließ sich nicht beleuchten — dein Board hat vielleicht eine andere Größe als die, für die dieser Boulder gebaut wurde.",
-    "partialHoldsSkipped_other": "{{count}} Griffe ließen sich nicht beleuchten — dein Board hat vielleicht eine andere Größe als die, für die dieser Boulder gebaut wurde.",
-    "allHoldsSkipped": "Kein einziger Griff dieses Boulders ließ sich beleuchten — er ist wohl für ein anderes Board gebaut."
+    "unknownError": "Verbindung zu deinem Board fehlgeschlagen. Versuch es nochmal."
   },
   "actions": {
     "yes": "Ja",
     "no": "Nein",
     "cancel": "Abbrechen",
+    "clear": "Zurücksetzen",
     "delete": "Löschen",
     "edit": "Bearbeiten",
     "close": "Schließen",
     "back": "Zurück",
-    "next": "Weiter",
     "done": "Fertig",
     "retry": "Nochmal versuchen",
-    "loading": "Wird geladen...",
-    "clear": "Leeren"
+    "loading": "Wird geladen..."
   },
   "ariaLabels": {
     "close": "Schließen",
     "back": "Zurück",
-    "clearSearch": "Suche leeren",
-    "openFilters": "Filter öffnen",
-    "openQueue": "Warteschlange öffnen",
     "openStatsFilters": "Statistik-Filter öffnen",
     "shareProfile": "Profil teilen",
     "settings": "Einstellungen",
     "notifications": "Benachrichtigungen",
-    "searchClimbsByName": "Boulder nach Namen suchen",
     "userMenu": "Nutzer*innen-Menü",
-    "toggleDarkMode": "Dunkelmodus umschalten",
-    "startClimbing": "In der App loslegen"
-  },
-  "boardSelector": {
-    "title": "Board auswählen"
+    "startClimbing": "In der App loslegen",
+    "home": "Boardsesh-Startseite",
+    "yourProfile": "Dein Profil"
   },
   "header": {
     "you": "Du",
@@ -436,63 +404,36 @@
     "sessions": "Sessions",
     "createdClimbs": "Gebaute Boulder",
     "auroraMigration": "Aurora-Migration",
-    "searchPlaceholder": "Was willst du klettern?",
-    "searchClimbsPlaceholder": "Boulder suchen...",
-    "startClimbing": "Loslegen"
+    "startClimbing": "Loslegen",
+    "signIn": "Anmelden"
   },
   "share": {
     "profileTitle": "Kletterprofil von {{name}}",
     "profileText": "Schau dir das Kletterprofil von {{name}} auf Boardsesh an",
-    "fallbackName": "mir",
     "viewedFallbackName": "dieser Person",
     "linkCopied": "Link kopiert!",
     "shareFailed": "Teilen fehlgeschlagen"
   },
   "myBoards": {
-    "title": "Meine Boards",
-    "findBoard": "Board finden",
-    "boardDetail": "Board",
-    "searchPlaceholder": "Nach Name oder Ort suchen...",
-    "ariaFindBoard": "Ein Board finden",
-    "ariaCreateBoard": "Ein Board anlegen",
-    "empty": "Noch keine Boards. Leg eins über die Board-Auswahl an und du bist startklar."
+    "title": "Meine Boards"
   },
   "myGyms": {
-    "title": "Meine Hallen",
-    "empty": "Deine Halle ist vielleicht schon auf Boardsesh. Finde sie und verwalte deine Boards und deine Crew.",
-    "findGym": "Deine Halle finden",
-    "ariaFindGym": "Deine Halle finden",
     "roleOwner": "Inhaber*in",
     "roleAdmin": "Admin",
     "roleEditor": "Bearbeiter*in",
-    "roleMember": "Mitglied",
-    "manage": "Verwalten",
-    "view": "Ansehen",
-    "loadError": "Deine Hallen ließen sich nicht laden. Versuch es nochmal."
+    "roleMember": "Mitglied"
   },
   "userDrawer": {
     "signIn": "Anmelden",
-    "signInModalTitle": "Bei Boardsesh anmelden",
-    "signInModalDescription": "Melde dich an, um Favoriten zu speichern, Begehungen einzutragen und mehr.",
     "changeBoard": "Board wechseln",
-    "devUrl": "Dev-URL",
-    "development": "Entwicklung",
-    "devBuild": "Dev-Build",
-    "branch": "Branch",
-    "qaNotes": "QA-Notizen",
-    "qaNotesEmpty": "Keine QA-Notizen-Datei",
-    "classifyHolds": "Griffe klassifizieren",
     "myPlaylists": "Meine Playlists",
-    "recentSessions": "Letzte Sessions",
-    "help": "Hilfe",
     "about": "Über",
     "whatsNew": "Neuigkeiten",
     "newBadge": "Neu",
     "rateBoardsesh": "Boardsesh bewerten",
     "reportBug": "Bug melden",
     "joinDiscord": "Discord beitreten",
-    "logout": "Abmelden",
-    "logoutError": "Abmelden hat nicht geklappt. Prüf deine Verbindung und versuch es nochmal."
+    "logout": "Abmelden"
   },
   "loading": {
     "messages": [
@@ -515,7 +456,6 @@
     "placeholder": "Kommentar hinzufügen...",
     "replyPlaceholder": "Antwort schreiben...",
     "thoughtsPlaceholder": "Teil deine Gedanken...",
-    "shortPlaceholder": "Kommentieren...",
     "submit": "Posten",
     "save": "Speichern",
     "cancel": "Abbrechen",
@@ -602,9 +542,6 @@
     "following": "Folgst du",
     "unfollow": "Nicht mehr folgen"
   },
-  "feedback": {
-    "title": "Gefällt dir Boardsesh?"
-  },
   "betaVideos": {
     "empty": "Noch keine Beta-Videos"
   },
@@ -626,20 +563,6 @@
   },
   "board": {
     "resetZoom": "Zoom zurücksetzen"
-  },
-  "playback": {
-    "play": "Abspielen",
-    "pause": "Pause",
-    "replay": "Nochmal",
-    "controls": "Wiedergabesteuerung",
-    "speed": "Geschwindigkeit",
-    "frameOfTotal": "Bild {{index}} von {{total}}",
-    "prevFrame": "Vorheriges Bild",
-    "nextFrame": "Nächstes Bild",
-    "speedHalf": "0,5×",
-    "speedNormal": "1×",
-    "speedCustom": "{{value}}×",
-    "speedCustomLabel": "Eigene Geschwindigkeit"
   },
   "capacitorRetirement": {
     "title": "Boardsesh hat eine neue App",
@@ -664,5 +587,20 @@
     "noteNative": "Wenn dieser Pull Request nativen Code geändert hat, gibt es keine Preview — dafür braucht es einen frischen TestFlight- oder Play-Build.",
     "noteManual": "Von Hand: Neuigkeiten → Preview ausprobieren → <code>{{channel}}</code>.",
     "viewPullRequest": "Pull Request #{{number}} auf GitHub lesen"
+  },
+  "footer": {
+    "tagline": "Finde Boulder, teile sie und sieh, was am Board deiner Halle hängt. Geklettert wird in der App.",
+    "navLabel": "Fußzeile",
+    "trademarkNote": "Kompatibel mit Kilter, Tension und MoonBoard. Nicht mit Aurora Climbing oder Moon Climbing verbunden.",
+    "links": {
+      "home": "Startseite",
+      "about": "Über uns",
+      "help": "Hilfe",
+      "docs": "Doku",
+      "playlists": "Playlists",
+      "auroraMigration": "Aurora-Migration",
+      "legal": "Impressum",
+      "privacy": "Datenschutz"
+    }
   }
 }

@@ -18,7 +18,7 @@ import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { BoardCarousel } from '../../src/components/board-discovery/BoardCarousel';
 import { BoardModeCard, type ModeCardState } from '../../src/components/board-discovery/BoardModeCard';
 import { BluetoothQuickstartSheet } from '../../src/components/board-discovery/BluetoothQuickstartSheet';
-import { userBoardToItem, popularConfigToItem } from '../../src/components/board-discovery/board-items';
+import { userBoardsToItems, popularConfigToItem } from '../../src/components/board-discovery/board-items';
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
 import type { DiscoveryBoardItem } from '../../src/components/board-discovery/BoardDiscoveryCard';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
@@ -176,6 +176,7 @@ export default function BoardSelection() {
       boardDownloadState({
         scopeKey: offlineBoardKeyForBoard(board),
         enabled: enabledScopeKeys.includes(offlineBoardKeyForBoard(board)),
+        isBootstrapDone: false,
         downloaded: (downloadedScopeKeys ?? []).includes(offlineBoardKeyForBoard(board)),
         isSyncing: false,
         currentTable: null,
@@ -183,24 +184,15 @@ export default function BoardSelection() {
     [enabledScopeKeys, downloadedScopeKeys],
   );
   const myBoardItems = useMemo(
-    () =>
-      myBoards
-        .map((board) => userBoardToItem(board, activeBoard?.uuid, boardOfflineState(board)))
-        .filter((item): item is DiscoveryBoardItem => item !== null),
+    () => userBoardsToItems(myBoards, activeBoard?.uuid, boardOfflineState),
     [myBoards, activeBoard?.uuid, boardOfflineState],
   );
   const nearbyItems = useMemo(
-    () =>
-      (nearby?.boards ?? [])
-        .map((board) => userBoardToItem(board, activeBoard?.uuid))
-        .filter((item): item is DiscoveryBoardItem => item !== null),
+    () => userBoardsToItems(nearby?.boards ?? [], activeBoard?.uuid),
     [nearby?.boards, activeBoard?.uuid],
   );
   const offlineItems = useMemo(
-    () =>
-      offlineRows
-        .map((board) => userBoardToItem(board, activeBoard?.uuid))
-        .filter((item): item is DiscoveryBoardItem => item !== null),
+    () => userBoardsToItems(offlineRows, activeBoard?.uuid),
     [offlineRows, activeBoard?.uuid],
   );
   const popularItems = useMemo(

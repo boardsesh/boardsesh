@@ -39,11 +39,10 @@ import { hapticSelection, hapticMedium, hapticLight, hapticSuccess } from '../..
 
 type LogbookRowProps = {
   ascent: AscentFeedItem;
-  /** Tap → the row's primary action (logbook: activate + open play drawer;
-   *  beta-share: attach the video to this climb). */
+  /** Tap → the row's primary action (logbook: activate + open play drawer). */
   onActivate: (ascent: AscentFeedItem) => void;
-  /** Long press → open the climb actions sheet. Omit to disable long-press
-   *  (e.g. the beta-share picker, where the row is a plain selector). */
+  /** Long press → open the climb actions sheet. Omit to disable long-press on a
+   *  host that wants the row to be a plain selector. */
   onOpenActions?: (ascent: AscentFeedItem) => void;
   /** Swipe left-to-right → edit the logbook entry. Owner-only; when omitted the
    *  left swipe action is disabled (you can't edit another climber's ticks). */
@@ -61,8 +60,8 @@ type LogbookRowProps = {
    * Whether the meta line carries the BOARD name. The logbook tab passes false
    * when a divider or subdivider above already names the board; the angle
    * stays on the row either way (it varies per climb on adjustable boards and
-   * disambiguates repeat ascents). Defaults to true so flat views and the
-   * share-beta picker never lose the wall.
+   * disambiguates repeat ascents). Defaults to true so flat views never lose
+   * the wall.
    */
   showBoardInMeta?: boolean;
   /**
@@ -75,8 +74,7 @@ type LogbookRowProps = {
    * Device font scale, passed by the host so a 50-row list holds ONE dimension
    * subscription (the tab's) instead of one per row — useWindowDimensions in a
    * memo'd row re-renders every visible row on any dimension event (keyboard,
-   * rotation, split-screen). Defaults to 1 for hosts that don't scale (the
-   * share-beta picker).
+   * rotation, split-screen). Defaults to 1 for hosts that don't scale.
    */
   fontScale?: number;
 };
@@ -365,7 +363,7 @@ export const LogbookRow = memo(function LogbookRow({
   );
 
   // Long-press wins over tap; a quick tap fires once the long-press fails. With
-  // no long-press handler (beta-share picker) the row is tap-only.
+  // no long-press handler the row is tap-only.
   const tapGesture = useMemo(
     () => (onOpenActions ? Gesture.Exclusive(longPressGesture, singleTapGesture) : singleTapGesture),
     [onOpenActions, longPressGesture, singleTapGesture],
@@ -451,7 +449,12 @@ export const LogbookRow = memo(function LogbookRow({
         onSwipeableOpen={handleSwipeableOpened}
         onSwipeableClose={handleSwipeableClosed}
       >
-        <GestureDetector gesture={tapGesture}>
+        {/* touchAction="pan-y" (web only): without it RNGH defaults the row's DOM
+            node to `touch-action: none`, which blocks native touch-scrolling for
+            any drag starting on the row — independent of ReanimatedSwipeable's own
+            gesture, which already sets pan-y. Vertical drags fall through to the
+            browser/list scroll; only horizontal ones reach this tap/long-press. */}
+        <GestureDetector gesture={tapGesture} touchAction="pan-y">
           <View
             accessible
             accessibilityRole="button"

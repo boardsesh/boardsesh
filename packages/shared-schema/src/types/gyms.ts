@@ -1,5 +1,22 @@
 // Gym entity types
 
+/**
+ * Max length of the free-text opening-hours line, shared by the backend
+ * validator and every client that renders the field. A client capping below the
+ * backend limit silently truncates; one capping above it lets the owner type
+ * hours the mutation then rejects with no inline explanation.
+ */
+export const GYM_HOURS_MAX_LENGTH = 500;
+
+/**
+ * Hard byte cap on the gym PHOTO (`image_url`) upload, shared by the backend's
+ * Busboy limit and the manage-console uploader that pre-checks before POSTing.
+ * One number, one import: a client cap below the server's would reject photos
+ * the server would have taken, and a client cap above it lets an owner sit
+ * through a full upload only to get a 400 back.
+ */
+export const GYM_PHOTO_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+
 export type GymMemberRole = 'admin' | 'editor' | 'member';
 
 export type GymClaimMethod = 'domain' | 'admin';
@@ -10,6 +27,25 @@ export type GymClaimRequestStatus = 'email_sent' | 'admin_review' | 'approved';
 
 export type GymClaimDecision = 'approve' | 'deny';
 
+/**
+ * One board-type + angle pair present at a gym, for the directory's board chips.
+ * Distinct pairs only — two Kilter boards both at 40° collapse into one summary.
+ */
+export type GymBoardSummary = {
+  boardType: string;
+  angle: number;
+};
+
+/**
+ * The viewer's own claim on a gym that is still waiting on an outcome — the
+ * emailed domain link or a Boardsesh admin's decision.
+ */
+export type MyGymClaim = {
+  id: string;
+  method: GymClaimMethod;
+  createdAt: string;
+};
+
 export type Gym = {
   uuid: string;
   slug?: string | null;
@@ -18,6 +54,10 @@ export type Gym = {
   ownerAvatarUrl?: string | null;
   name: string;
   description?: string | null;
+  /** Opening hours as one free-text line the gym maintains itself (no structured per-day model). */
+  hours?: string | null;
+  /** ISO timestamp of the last time someone with edit access confirmed `hours` — shown publicly so a stale schedule reads as stale. */
+  hoursUpdatedAt?: string | null;
   address?: string | null;
   website?: string | null;
   contactEmail?: string | null;
@@ -37,6 +77,14 @@ export type Gym = {
   createdAt: string;
   boardCount: number;
   boardTypes: string[];
+  /**
+   * Distinct board-type + angle pairs at this gym, ordered by type then angle
+   * and capped per board type. Non-null on the server, but OPTIONAL here because
+   * only SEARCH_GYMS_DIRECTORY selects it — the shared GYM_FIELDS selection set
+   * deliberately leaves it out, so a required type would promise a value that
+   * GET_GYM / GET_GYM_BY_SLUG / GET_MY_GYMS / SEARCH_GYMS never return.
+   */
+  boardSummaries?: GymBoardSummary[];
   memberCount: number;
   followerCount: number;
   commentCount: number;
@@ -49,6 +97,20 @@ export type Gym = {
   canGrantAccess: boolean;
   /** Whether the current viewer may start an ownership claim for this gym. */
   canClaim: boolean;
+  /**
+   * Whether a real person owns this gym rather than the system import user.
+   * Viewer-independent, and required here because GYM_FIELDS selects it — every
+   * document typed `Gym` genuinely returns it.
+   */
+  isClaimed: boolean;
+  /**
+   * The viewer's unresolved claim on this gym, or null when they have none.
+   * OPTIONAL on purpose: only GET_GYM_BY_SLUG selects it. Adding it to the
+   * shared GYM_FIELDS would put it in documents the mobile app ships, where a
+   * production OTA can reach devices before the backend deploy that answers the
+   * field — and every mobile gym view would then fail GraphQL validation.
+   */
+  myPendingClaim?: MyGymClaim | null;
 };
 
 export type GymConnection = {
@@ -143,6 +205,8 @@ export type UpdateGymInput = {
   name?: string;
   slug?: string;
   description?: string | null;
+  /** Free-text opening hours. Writing this stamps `hoursUpdatedAt`; explicit null clears both. */
+  hours?: string | null;
   address?: string | null;
   website?: string | null;
   contactEmail?: string | null;
@@ -150,7 +214,8 @@ export type UpdateGymInput = {
   latitude?: number | null;
   longitude?: number | null;
   isPublic?: boolean;
-  imageUrl?: string;
+  /** Gym photo. `undefined` leaves the column untouched; explicit `null` clears it. */
+  imageUrl?: string | null;
   // Branding: `undefined` leaves the column untouched; explicit `null` clears it
   // (reset-to-default in the manage UI).
   logoUrl?: string | null;
@@ -237,6 +302,8 @@ export type SearchGymsInput = {
   latitude?: number;
   longitude?: number;
   radiusKm?: number;
+  /** Only gyms with a slug, i.e. linkable at /gym/[slug]. Opt-in; omitting it leaves the emitted SQL unchanged. */
+  requireSlug?: boolean;
   limit?: number;
   offset?: number;
 };

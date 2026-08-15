@@ -70,8 +70,65 @@ describe('profile page route', () => {
       params: Promise.resolve({ user_id: 'missing-user' }),
     });
 
-    expect(metadata.title).toBe('Profile Not Found | Boardsesh');
-    expect(metadata.robots).toEqual({ index: false, follow: false });
+    expect(metadata.title).toEqual({ absolute: 'Profile Not Found | Boardsesh' });
+    // `follow: true` is the house default — the page 404s anyway, and there is
+    // no reason to stop a crawler following the links it renders.
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    expect(metadata.alternates?.canonical).toBe('/profile/missing-user');
+  });
+
+  it('closes the accidental-index path when the profile lookup throws', async () => {
+    profilePageTestState.getProfileOgSummaryMock.mockRejectedValue(new Error('database down'));
+
+    const metadata = await pageModule.generateMetadata({
+      params: Promise.resolve({ user_id: 'user-1' }),
+    });
+
+    // Used to emit a canonical and no robots at all, so an errored profile was
+    // indexable.
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+  });
+
+  it('keeps a real public profile indexable, with a search-first title', async () => {
+    profilePageTestState.getProfileOgSummaryMock.mockResolvedValue({
+      displayName: 'Marco',
+      avatarUrl: null,
+      fallbackImageUrl: null,
+      topBoardType: 'kilter',
+      version: 'v1',
+    });
+
+    const metadata = await pageModule.generateMetadata({
+      params: Promise.resolve({ user_id: 'user-1' }),
+    });
+
+    // Public profiles are a search surface — indexable, deliberately.
+    expect(metadata.robots).toBeUndefined();
+    expect(metadata.title).toEqual({ absolute: "Marco's Kilter Sessions | Boardsesh" });
+    expect(metadata.alternates?.canonical).toBe('/profile/user-1');
+    expect(metadata.alternates?.languages).toEqual({
+      'en-US': '/profile/user-1',
+      es: '/es/profile/user-1',
+      fr: '/fr/profile/user-1',
+      de: '/de/profile/user-1',
+      'x-default': '/profile/user-1',
+    });
+  });
+
+  it('falls back to a board-free title when the climber has no ticks', async () => {
+    profilePageTestState.getProfileOgSummaryMock.mockResolvedValue({
+      displayName: 'Marco',
+      avatarUrl: null,
+      fallbackImageUrl: null,
+      topBoardType: null,
+      version: 'v1',
+    });
+
+    const metadata = await pageModule.generateMetadata({
+      params: Promise.resolve({ user_id: 'user-1' }),
+    });
+
+    expect(metadata.title).toEqual({ absolute: "Marco's Climbing Sessions | Boardsesh" });
   });
 
   it('calls notFound and skips stats fetch when the user does not exist', async () => {

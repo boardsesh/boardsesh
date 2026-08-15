@@ -4,7 +4,13 @@ import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { CreateBoardInput, UserBoard } from '@boardsesh/shared-schema';
-import { useCreateBoard, useProfile, fetchBoardByUuid } from '../../src/lib/graphql/hooks';
+import {
+  useCreateBoard,
+  useFollowBoard,
+  useProfile,
+  fetchBoardByUuid,
+  fetchBoardsBySerialNumbers,
+} from '../../src/lib/graphql/hooks';
 import { useSetActiveBoard } from '../../src/lib/graphql/use-active-board';
 import {
   extractGraphqlMessage,
@@ -18,10 +24,32 @@ import { track } from '../../src/lib/analytics';
 import { useAuth } from '../../src/providers/auth-provider';
 import { hapticSelection } from '../../src/lib/haptics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
+import {
+  selectForeignSerialBoards,
+  boardConfigMatches,
+  extractSerialExistsError,
+  serialReuseDisclosure,
+} from '../../src/lib/boards/serial-reuse';
 import { useBoardBuilder, type BoardBuilderSeed } from '../../src/components/board-discovery/use-board-builder';
 import { BoardForm } from '../../src/components/board-discovery/BoardForm';
 import { BoardDuplicatePromptSheet } from '../../src/components/board-discovery/BoardDuplicatePromptSheet';
+import { SerialReuseConfirmSheet } from '../../src/components/board-discovery/SerialReuseConfirmSheet';
 import { formatDefaultBoardName } from '../../src/components/board-discovery/board-builder-labels';
+
+/**
+ * The overrides the climber has explicitly granted so far.
+ *
+ * The two guards are independent and can fire one after the other on the same
+ * create: "yes, this really is a second wall that reuses a serial" says nothing
+ * about "yes, I really do own two walls with this configuration". Confirming one
+ * must never imply the other, so each flag is set only by its own prompt — and
+ * both ride along on the retry once granted, otherwise confirming the second
+ * guard would re-trip the first.
+ */
+type CreateOverrides = {
+  allowDuplicateSerial?: boolean;
+  allowDuplicateConfig?: boolean;
+};
 
 /** Analytics properties describing a create attempt. Never carries free text or coordinates. */
 function describeInput(input: CreateBoardInput, source: 'popular_seed' | 'scratch') {
@@ -64,6 +92,7 @@ export default function CreateBoard() {
 
   const setActiveBoard = useSetActiveBoard();
   const createBoard = useCreateBoard();
+  const followBoard = useFollowBoard();
   const { data: profile } = useProfile({ enabled: isAuthenticated });
 
   // Pre-fill when opened from a Popular config. Memoised so the builder doesn't
@@ -102,7 +131,19 @@ export default function CreateBoard() {
 
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [duplicate, setDuplicate] = useState<DuplicateBoardError | null>(null);
+  // The duplicate-CONFIG prompt: the caller already owns this configuration at
+  // this place. `granted` carries any override already confirmed on the attempt
+  // that raised it, so answering this one doesn't discard the other.
+  const [duplicate, setDuplicate] = useState<{ error: DuplicateBoardError; granted: CreateOverrides } | null>(null);
+  // The duplicate-SERIAL prompt: another climber's wall already carries this
+  // serial with the same config. A null board means that wall is private (the
+  // backend masks its identity) — the sheet still offers "create anyway", just
+  // without a jump.
+  const [serialReuse, setSerialReuse] = useState<{
+    board: UserBoard | null;
+    input: CreateBoardInput;
+    granted: CreateOverrides;
+  } | null>(null);
   // `submitting` is only accurate on the NEXT render, so it can't guard a call
   // that fires in the same tick as the state update — which is exactly what
   // "add a new board here" does (dismiss the sheet, then create). This ref is
@@ -126,27 +167,77 @@ export default function CreateBoard() {
    * do about it.
    */
   const handleCreate = useCallback(
-    async (options?: { allowDuplicateConfig?: boolean }) => {
+    async (overrides?: CreateOverrides) => {
       if (inFlightRef.current) return;
       const input = builder.buildCreateInput(defaultName);
       if (!input) return;
+      const granted: CreateOverrides = {
+        allowDuplicateSerial: overrides?.allowDuplicateSerial || undefined,
+        allowDuplicateConfig: overrides?.allowDuplicateConfig || undefined,
+      };
       inFlightRef.current = true;
       setSubmitting(true);
       setCreateError(null);
       hapticSelection();
 
+      // Pre-submit serial-reuse check: if another climber's wall already carries
+      // this serial WITH THE SAME CONFIG, steer the user onto it before creating
+      // a duplicate. A different-config match is legitimate reuse the backend
+      // allows — prompting there would send the user to an unrelated wall. A
+      // lookup failure is non-blocking — fall through to the normal create.
+      const serial = granted.allowDuplicateSerial ? null : input.serialNumber?.trim();
+      if (serial) {
+        const config = {
+          boardType: input.boardType,
+          layoutId: input.layoutId,
+          sizeId: input.sizeId,
+          setIds: input.setIds,
+        };
+        const sameConfigBoard = await fetchBoardsBySerialNumbers([serial])
+          .then(
+            (boards) =>
+              selectForeignSerialBoards(boards, config).find((board) => boardConfigMatches(board, config)) ?? null,
+          )
+          .catch(() => null);
+        if (sameConfigBoard) {
+          // Authenticated serial lookup intentionally returns private matches so
+          // the create guard can identify a collision. Do not carry that private
+          // entity into UI state: its name, location, and owner are not ours to
+          // reveal, and the identity-free sheet must not offer a jump to it.
+          const disclosure = serialReuseDisclosure(sameConfigBoard);
+          setSerialReuse({ board: disclosure.kind === 'public' ? disclosure.board : null, input, granted });
+          inFlightRef.current = false;
+          setSubmitting(false);
+          return;
+        }
+      }
+
       try {
-        const board = await createBoard.mutateAsync({
-          ...input,
-          allowDuplicateConfig: options?.allowDuplicateConfig || undefined,
-        });
+        const board = await createBoard.mutateAsync({ ...input, ...granted });
         track(SHARED_EVENTS.BoardCreated, {
           ...describeInput(input, source),
-          allowedDuplicate: !!options?.allowDuplicateConfig,
+          allowedDuplicate: !!granted.allowDuplicateConfig,
+          allowedDuplicateSerial: !!granted.allowDuplicateSerial,
         });
         await finish(board);
         // Navigated away on success — no need to clear `submitting` (unmounting).
       } catch (error) {
+        // The backend's serial guard, raced past the pre-submit check above (or
+        // reached with no serial lookup at all). Independent of the config guard
+        // below: whichever the server raised is the one we prompt for.
+        const serialExists = granted.allowDuplicateSerial ? null : extractSerialExistsError(error);
+        if (serialExists) {
+          // A failed re-fetch (transient network, or the board vanished in a
+          // race) must not dead-end the user — fall back to the identity-less
+          // sheet, same as the private path, so "create anyway" stays reachable.
+          const existing =
+            serialExists.kind === 'private' ? null : await fetchBoardByUuid(serialExists.boardUuid).catch(() => null);
+          const disclosure = existing ? serialReuseDisclosure(existing) : null;
+          setSerialReuse({ board: disclosure?.kind === 'public' ? disclosure.board : null, input, granted });
+          inFlightRef.current = false;
+          setSubmitting(false);
+          return;
+        }
         const duplicateError = readDuplicateBoardError(error);
         if (duplicateError) {
           track(SHARED_EVENTS.BoardDuplicatePrompted, {
@@ -154,7 +245,7 @@ export default function CreateBoard() {
             source,
             hasLocation: !!input.locationName || (input.latitude != null && input.longitude != null),
           });
-          setDuplicate(duplicateError);
+          setDuplicate({ error: duplicateError, granted });
           inFlightRef.current = false;
           setSubmitting(false);
           return;
@@ -181,12 +272,12 @@ export default function CreateBoard() {
     [builder, defaultName, createBoard, finish, source, t],
   );
 
-  const handleUseExisting = useCallback(async () => {
+  const handleUseExistingDuplicate = useCallback(async () => {
     if (!duplicate || inFlightRef.current) return;
     inFlightRef.current = true;
     setSubmitting(true);
     try {
-      const board = await fetchBoardByUuid(duplicate.boardUuid);
+      const board = await fetchBoardByUuid(duplicate.error.boardUuid);
       if (!board) throw new Error('Board not found');
       track(SHARED_EVENTS.BoardCreateReusedExisting, { boardType: builder.boardName, source });
       setDuplicate(null);
@@ -200,12 +291,49 @@ export default function CreateBoard() {
   }, [duplicate, builder.boardName, source, finish, t]);
 
   const handleAddAnother = useCallback(() => {
+    const granted = duplicate?.granted;
     setDuplicate(null);
-    void handleCreate({ allowDuplicateConfig: true });
-  }, [handleCreate]);
+    void handleCreate({ ...granted, allowDuplicateConfig: true });
+  }, [duplicate, handleCreate]);
 
   const handleDismissDuplicate = useCallback(() => {
     setDuplicate(null);
+    inFlightRef.current = false;
+    setSubmitting(false);
+  }, []);
+
+  /**
+   * "Use the existing board" on the serial sheet: follow it so it joins the
+   * user's board list, then activate and leave. A failed follow must not
+   * activate a board the user still cannot reach later.
+   */
+  const handleUseExistingSerial = useCallback(async () => {
+    // No board to jump to when the conflicting wall is private (masked payload)
+    // — the sheet hides the "use existing" action in that case.
+    if (!serialReuse?.board || inFlightRef.current) return;
+    const { board } = serialReuse;
+    setSerialReuse(null);
+    inFlightRef.current = true;
+    setSubmitting(true);
+    try {
+      await followBoard.mutateAsync(board);
+      await finish(board);
+    } catch {
+      setCreateError(t('mobile.create.createError'));
+      inFlightRef.current = false;
+      setSubmitting(false);
+    }
+  }, [serialReuse, followBoard, finish, t]);
+
+  const handleCreateAnyway = useCallback(() => {
+    if (!serialReuse) return;
+    const { granted } = serialReuse;
+    setSerialReuse(null);
+    void handleCreate({ ...granted, allowDuplicateSerial: true });
+  }, [serialReuse, handleCreate]);
+
+  const handleCancelSerialReuse = useCallback(() => {
+    setSerialReuse(null);
     inFlightRef.current = false;
     setSubmitting(false);
   }, []);
@@ -222,13 +350,21 @@ export default function CreateBoard() {
       />
       {duplicate && (
         <BoardDuplicatePromptSheet
-          duplicate={duplicate}
+          duplicate={duplicate.error}
           busy={submitting}
-          onUseExisting={() => void handleUseExisting()}
+          onUseExisting={() => void handleUseExistingDuplicate()}
           onAddAnother={handleAddAnother}
           onDismiss={handleDismissDuplicate}
         />
       )}
+      <SerialReuseConfirmSheet
+        visible={serialReuse !== null}
+        board={serialReuse?.board ?? null}
+        serialNumber={serialReuse?.input.serialNumber ?? ''}
+        onUseExisting={() => void handleUseExistingSerial()}
+        onCreateAnyway={handleCreateAnyway}
+        onCancel={handleCancelSerialReuse}
+      />
     </>
   );
 }

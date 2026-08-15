@@ -16,8 +16,32 @@ export default defineConfig({
   /* 1 retry in CI and locally — enough to absorb a single transient infra blip,
    * but not enough to bury a hard-broken test the way `retries: 3` did before. */
   retries: 1,
-  /* Opt out of parallel tests on CI. */
-  workers: process.env.CI ? 2 : undefined,
+  /* 1 in CI, deliberately, and staying that way. The suite already fans out as
+   * 8 shard jobs, each with its own server + database, so cross-shard
+   * parallelism carries the wall-clock and a second in-shard worker only adds
+   * contention on a 2-core runner.
+   *
+   * Two mechanisms this comment used to blame were both wrong, and the record
+   * is worth keeping. It was not web DB-pool contention (#4461): `/embed/**`
+   * issues zero web-side Postgres statements, it fetches the backend over
+   * HTTP. It was not the web event loop being pegged by
+   * `/api/internal/board-render` WASM renders either: in run 31857179523's
+   * shard 7 the same server answered `/embed/gym/...` in 201 ms (a warm Next
+   * Data Cache entry, no backend round trip) and `/` in 3.2 s (its own 3 s
+   * backend deadline firing) while a `/embed/board/...` request sat stuck
+   * for 30 s.
+   *
+   * #4463 found it: the GraphQL BACKEND's connection pool, exhausted by
+   * concurrent copies of the home page's uncached `popularBoardConfigs`
+   * statement — 82 s each on the dev database, and uncacheable here because
+   * the CI backend runs with no REDIS_URL. Every spec that loaded `/` added
+   * another copy, postgres.js's acquire queue is unbounded and untimed, and
+   * every other backend read then waited forever. The backend now runs one
+   * copy of those cold reads at a time, the SSR fetches that wait on it carry
+   * SSR_BACKEND_FETCH_TIMEOUT_MS, and the `aa-` filename pin on the embed spec
+   * is gone — the ordering it stood for is driven explicitly inside
+   * e2e/embed-headers.spec.ts. */
+  workers: process.env.CI ? 1 : undefined,
   /* Global per-test timeout — some tests (zoom, login flows) need more than Playwright's 30 s default */
   timeout: 60_000,
   /* Raise the default assertion timeout from Playwright's 5 s to 10 s */
@@ -62,12 +86,7 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
       // `production/` runs against a deployed host under its own config
       // (playwright.production.config.ts) — never against the local dev server.
-      testIgnore: [
-        '**/layout-screenshots.spec.ts',
-        '**/help-screenshots.spec.ts',
-        '**/expo-web/**',
-        '**/production/**',
-      ],
+      testIgnore: ['**/layout-screenshots.spec.ts', '**/expo-web/**', '**/production/**'],
     },
 
     // Expo-web smoke — drives the mobile app compiled for the browser at /app.
@@ -98,16 +117,6 @@ export default defineConfig({
       // headroom over COLD_LOAD_TIMEOUT_MS.
       timeout: 240_000,
       testMatch: ['**/expo-web/*.spec.ts'],
-    },
-
-    // Help page screenshots - mobile viewport (390×844, iPhone 14 logical size).
-    // Run in CI via the `screenshots` job; locally with:
-    //   TEST_USER_EMAIL=test@boardsesh.com TEST_USER_PASSWORD=test \
-    //     cd packages/web && bunx playwright test --project=help-screenshots
-    {
-      name: 'help-screenshots',
-      use: { viewport: { width: 390, height: 844 } },
-      testMatch: ['**/help-screenshots.spec.ts'],
     },
 
     // Board-layout screenshots - iPhone 16 Pro Max viewport.

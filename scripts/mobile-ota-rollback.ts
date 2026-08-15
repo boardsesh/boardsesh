@@ -9,7 +9,7 @@
  *
  *   --mode embedded   (default) → `eoas rollback --nonInteractive`   Publishes a
  *       rollback DIRECTIVE: every install currently on the bad OTA reverts to the
- *       binary's EMBEDDED bundle on its next launch. eoas@3.0.5 rollback prompts
+ *       binary's EMBEDDED bundle on its next launch. eoas@3.1.2 rollback prompts
  *       for confirmation and THROWS in a non-TTY, so the helper passes
  *       --nonInteractive — that's what makes it CI-safe. Use this to stop the
  *       bleeding fast — it always lands on a known-good (shipped) bundle.
@@ -17,6 +17,12 @@
  *   --mode republish            → `eoas republish`  Re-points the branch to a
  *       PREVIOUS published update you pick from a list. Interactive (eoas prompts
  *       for the update), so run it LOCALLY, not in CI.
+ *       NEEDS THE SERVER ON v3.1.2: 3.1.2 lists candidates via lib/serverUpdates,
+ *       which adds a `.../runtimeVersion/<rv>/publish-groups` route 3.0.5 does not
+ *       serve, and can pass `?publishGroup=` on the republish call. Back-compat for
+ *       older clients is server-side (xprem #168). Until the Railway image is
+ *       bumped, use --mode embedded — unchanged, and the mode the incident runbook
+ *       uses anyway. The helper prints this warning before running.
  *
  * eoas resolves the target runtimeVersion (fingerprint) from the LOCAL config, so
  * the rollback only lands if it resolves the SAME fingerprint the shipped binary
@@ -49,6 +55,9 @@ import { spawnSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { EOAS_PACKAGE_SPEC, pathWithoutBrokenBunxShims } from './lib/eoas';
+
+/** The server image that matches the pinned CLI — derived so it can't drift from it. */
+const SERVER_IMAGE_REF = `xprem:v${EOAS_PACKAGE_SPEC.replace(/^eoas@/, '')}`;
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_DIR = resolve(ROOT_DIR, 'packages', 'mobile');
@@ -95,7 +104,7 @@ export function parseRollbackArgs(argv: string[]): RollbackOptions {
 export function buildEoasArgs(options: RollbackOptions): string[] {
   const subcommand = options.mode === 'embedded' ? 'rollback' : 'republish';
   const args = [EOAS_PACKAGE_SPEC, subcommand, '--branch', options.branch, '--platform', options.platform];
-  // eoas@3.0.5 `rollback` prompts for confirmation and throws in a non-TTY (CI)
+  // eoas@3.1.2 `rollback` prompts for confirmation and throws in a non-TTY (CI)
   // without --nonInteractive. `republish` is interactive by design (it prompts for
   // which previous update to re-point to), so it stays TTY-driven — run it locally.
   if (options.mode === 'embedded') args.push('--nonInteractive');
@@ -111,6 +120,29 @@ export function validateRollbackOptions(options: RollbackOptions): string | null
     return `Invalid --platform "${options.platform}". Must be one of: ${VALID_PLATFORMS.join(', ')}`;
   }
   return null;
+}
+
+/**
+ * Pre-flight note printed before a `--mode republish` run.
+ *
+ * eoas 3.1.2 lists republish candidates through `lib/serverUpdates`, which adds a
+ * `.../runtimeVersion/<rv>/publish-groups` route the 3.0.5 server never served, and
+ * one republish path sends `?publishGroup=` on the call itself. Back-compat for
+ * older clients is server-side (xprem #168), so this resolves itself the moment the
+ * Railway image is bumped.
+ *
+ * Warn, don't block: nothing here can detect the deployed version (the server has no
+ * version endpoint), so a guard would have to be unconditional — and would then need
+ * a code change to undo after the bump. Blocking a rollback path mid-incident to
+ * avoid a confusing error message is the wrong trade; naming the fallback is enough.
+ */
+export function republishServerVersionWarning(): string[] {
+  return [
+    `[ota-rollback] NOTE: republish needs the server on ${SERVER_IMAGE_REF}. If it is still on`,
+    '[ota-rollback] v3.0.5, expect a 404 listing previous updates — that is the version',
+    '[ota-rollback] gap, not a broken rollback. Use --mode embedded instead; it is',
+    '[ota-rollback] unaffected and is the mode the incident runbook uses.',
+  ];
 }
 
 function main(): number {
@@ -169,6 +201,10 @@ function main(): number {
   console.log(`[ota-rollback] Server:   ${serverUrl}`);
   console.log(`[ota-rollback] Branch:   ${options.branch}`);
   console.log(`[ota-rollback] Platform: ${options.platform}`);
+  if (options.mode === 'republish') {
+    console.log('');
+    for (const line of republishServerVersionWarning()) console.log(line);
+  }
   console.log('');
   console.log(`[ota-rollback] Running: bunx ${eoasArgs.join(' ')}`);
   console.log('');

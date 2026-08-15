@@ -27,13 +27,13 @@ import {
   getBootstrapMetadataByScope,
   estimateScopeDownload,
 } from '@boardsesh/offline-sync';
+import { reportAbandonedDownloadOnDisable } from '../../src/offline/abandoned-download-terminals';
 import { useBoardDownloads } from '../../src/offline/use-board-downloads';
 import { useSnapshotManifest } from '../../src/offline/use-snapshot-manifest';
 import { useConfirmBoardDownload } from '../../src/offline/use-confirm-board-download';
 import { useDownloadedScopeKeys } from '../../src/offline/use-downloaded-scope-keys';
 import { useRememberDownloadedBoards } from '../../src/offline/use-remember-downloaded-boards';
 import { useSnapshotSource } from '../../src/offline/use-snapshot-source';
-import { useOfflineSchemaReady } from '../../src/db/use-offline-schema-ready';
 import { formatBytes } from '../../src/lib/format-bytes';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../src/lib/analytics';
@@ -139,9 +139,6 @@ export default function ManageBoards() {
   const snapshotManifestRef = useRef(snapshotManifest);
   snapshotManifestRef.current = snapshotManifest;
   const db = useSQLiteContext();
-  // This connection is handed out as soon as the launch gate opens — after the first
-  // init attempt, whatever it did — so on a contended launch it has no tables yet.
-  const schemaReady = useOfflineSchemaReady();
   const syncStatus = useSyncStatus();
   // Mirrored for the toggle-off handler, which only reads it at tap time: keeping
   // the live status out of that callback's deps means a progress frame can't churn
@@ -239,9 +236,11 @@ export default function ManageBoards() {
       const key = offlineBoardKeyForBoard(board);
       const alreadyEnabled = getSetting('syncEnabledBoards').includes(key);
       if (alreadyEnabled) {
-        // Was this download still in flight? Read BEFORE the setting write, so the
-        // cancel event carries how far it had got (issue #4316) — this is the
-        // abandonment the funnel exists to size, caught at the moment it happens.
+        // How far had it got? Read BEFORE the setting write, so the cancel event
+        // below carries the live progress frame (issue #4316). It needs a
+        // snapshot frame naming this exact scope, so it is silent for a paged
+        // crawl — the funnel terminal further down is the signal that always
+        // fires, this is the extra detail when we happen to have it.
         const liveProgress = boardDownloadProgress({
           scopeKey: key,
           isSyncing: syncStatusRef.current.isSyncing,
@@ -277,12 +276,19 @@ export default function ManageBoards() {
             offlineEngineEnabled: isOfflineEngineEnabled(),
           });
         }
+        // The funnel's terminal (issue #4452). Turning a board off deletes
+        // nothing, so there is no teardown to hang this off — but the scope has
+        // just left `syncEnabledBoards`, and pullSync only ever visits enabled
+        // scopes, so this download is over for good. Reported and its markers
+        // cleared, so a re-enable opens a fresh Started → Completed pair rather
+        // than resuming a funnel this tap ended.
+        await reportAbandonedDownloadOnDisable(db, key);
         return;
       }
       // Size quote + confirm + enable, shared with the discovery-nudge surfaces.
       await confirmAndDownload(board, { trigger: 'toggle', source: 'manage' });
     },
-    [confirmAndDownload],
+    [confirmAndDownload, db],
   );
 
   // The escape from a board that settled onto the slow crawl (issue #4313).
@@ -473,6 +479,7 @@ export default function ManageBoards() {
       const downloadStateInput = {
         scopeKey,
         enabled: enabledSet.has(scopeKey),
+        isBootstrapDone: bootstrapMetadata?.isBootstrapDone ?? false,
         isSyncing,
         downloaded: isDownloaded,
         currentTable,

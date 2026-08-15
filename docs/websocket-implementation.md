@@ -22,6 +22,21 @@ This document describes the WebSocket implementation used for real-time party se
 
 ---
 
+> **Status (W-16, #4435): every web-client section below is historical.**
+> Climbing moved to the Expo app, and with it the entire web party-session
+> client — `components/persistent-session/`, `components/graphql-queue/`,
+> `components/queue-control/`, `app/lib/live-activity/` and the root
+> `PersistentSessionWrapper`. Sections that describe those modules ("Context
+> Split Pattern", "Shared queue-actions factory", "QueueBridgeProvider", "Web
+> Root Event Processor") are kept because they document behaviour the **mobile**
+> client still implements against the same protocol; the `packages/web/...`
+> paths they cite no longer resolve. The protocol, the backend resolvers and the
+> mobile client are unchanged. On www the only surviving `graphql-ws` consumers
+> are `components/kiosk/presence/kiosk-presence-hub.tsx`,
+> `social/comment-section.tsx` and `hooks/use-notification-subscription.ts`.
+
+---
+
 ## Architecture Overview
 
 The party session system uses a GraphQL-over-WebSocket architecture with the following key components:
@@ -84,6 +99,8 @@ The party session system uses a GraphQL-over-WebSocket architecture with the fol
 
 ### Context Split Pattern
 
+> Removed from web in W-16 (#4435) — the mobile client keeps the split.
+
 Both `PersistentSessionContext` and `QueueContext` are split into separate **Actions** and **Data** contexts to prevent unnecessary re-renders:
 
 - **ActionsContext** — stable callback functions (`addToQueue`, `setCurrentClimb`, etc.). Uses a `latestRef` pattern so callbacks have empty `[]` dependency arrays and never change identity. Components that only call actions (e.g., list item "add to queue" buttons) subscribe here and avoid re-rendering when queue data changes.
@@ -93,6 +110,8 @@ Both `PersistentSessionContext` and `QueueContext` are split into separate **Act
 Targeted hooks: `useQueueActions()`, `useQueueData()`, `usePersistentSessionActions()`, `usePersistentSessionState()`.
 
 ### Shared queue-actions factory
+
+> Removed from web in W-16 (#4435); `queue-control/queue-actions-core.ts` no longer exists.
 
 The queue-action surface itself (add/remove/set-current/navigate/mirror/replace/report-wall-disconnect) has a single implementation: `createQueueActionsCore(deps)` in `packages/web/app/components/queue-control/queue-actions-core.ts`. Both `GraphQLQueueProvider` (board routes) and the bridge's `usePersistentSessionQueueAdapter` (off-board) wire it with their own dependencies.
 
@@ -106,7 +125,9 @@ The queue-action surface itself (add/remove/set-current/navigate/mirror/replace/
 
 ### QueueBridgeProvider — root-level QueueContext
 
-`QueueBridgeProvider` (`packages/web/app/components/queue-control/queue-bridge-context.tsx`) is mounted once at the root inside `PersistentSessionWrapper` so a `QueueContext` value is always available, even off board routes (e.g. `/you/logbook`, `/session/[sessionId]`, `/playlists/...`). It has two modes:
+> Removed from web in W-16 (#4435); `queue-control/queue-bridge-context.tsx` no longer exists.
+
+`QueueBridgeProvider` (`packages/web/app/components/queue-control/queue-bridge-context.tsx`) is mounted once at the root inside `PersistentSessionWrapper` so a `QueueContext` value is always available, even off board routes (e.g. `/session/[sessionId]`, `/playlists/...`). It has two modes:
 
 - **Injected mode** — when a board route mounts `GraphQLQueueProvider`, it injects its full context (with the GraphQL data fetcher and route-scoped search state) into the bridge. Consumers transparently see the board route's queue context. Since the queue itself is root-owned (W6), there's no queue data to copy back on injection/eject anymore — only board-context bookkeeping (`ps.setBoardContext(boardPath, boardDetails)`, on inject AND on eject) needs syncing.
 - **Adapter mode** — off board routes, `usePersistentSessionQueueAdapter` reads `queue`/`currentClimbQueueItem`/`playlistSuggestionSource` straight from the root `persistent-session` provider, unconditionally (party or solo, no branching). Mutations still branch on `ps.activeSession` for where the _network_ call goes:
@@ -309,7 +330,9 @@ sequenceDiagram
 9. **TTL Refresh**: `REFRESH_TTL_SCRIPT` runs on every connection-level refresh and bumps the TTL on the connection hash, the session-members set, the `sessionParticipants` set, the participant hash, the participant-connections set, **and the session-leader key**. The connection TTL is now aligned with the session-membership TTL (4h) so a long-idle leader's connection hash can't expire while the session keys still point at it. Without the leader-key refresh, a long-running session that's been quiet but never lost its leader would drop the leader key when the original election TTL expires and clients would see a surprise `LeaderChanged` mid-session.
 10. **Authoritative Leader Check**: Authorization for destructive operations (e.g. `endSession`) compares the caller's `connectionId` against the leader-key value from Redis (`distributedState.getSessionLeader`). `SessionUser.isLeader` derived from `getSessionMembers` can be momentarily stale during handoff — a participant whose local entry still says `isLeader=true` would otherwise authorize the action after the leader has already moved on.
 
-11. **Anonymous Rate-Limit Identity**: `onConnect` resolves a `clientIp` from the upgrade request (`websocket/client-ip.ts`) and stores it on the connection context, so `applyRateLimit` keys anonymous WebSocket callers on `ip:<clientIp>:<operation>` instead of the per-connection `connectionId`. Before this, every reconnect minted a fresh `uuidv4` connectionId and therefore a fresh bucket, which defeated the limiter for anonymous clients (issue #2863). The trusted-hop order is **`cf-connecting-ip` → the LAST `x-forwarded-for` hop → `req.socket.remoteAddress` → undefined** — the same order `handlers/og-climb.ts` uses, and deliberately **not** the first-hop derivation in `graphql/yoga.ts`: earlier `x-forwarded-for` entries are client-authored, so trusting them would let a scripted client mint a fresh bucket per upgrade (or pin a victim's IP to exhaust theirs). Candidates are normalized (brackets and `%zone` stripped, `::ffff:` unwrapped, validated with `node:net`'s `isIP`, IPv6 truncated to its `/64` prefix) so one client can't split into several buckets or, with a routed `/64`, mint unlimited ones. Consequences: every anonymous WS operation — and API-key controller connections, which never set `isAuthenticated` — now shares both a fast per-instance bucket and a Redis-backed per-IP bucket across rolling-deploy instances (#4037), so a whole gym behind one NAT shares it; `reportBoardClimb` / `reportBoardDisconnect` carry extra anon headroom for that reason. `onConnect` also records the normalized TCP peer independently of all headers. Anonymous WS operations spend a second Redis bucket keyed on that peer with at least 600 requests/minute (or five times the normal operation limit). This deliberately coarse ceiling is high enough for hosted proxy fan-in, but a client reaching Railway directly cannot evade it by rotating a forged `cf-connecting-ip` header (#4038). Redis failure leaves the already-applied per-client tier in place and falls the peer ceiling back to its own in-memory key. These limits bound the _rate_ of anonymous operations, not the _count_ of concurrent anonymous sockets.
+11. **Anonymous Rate-Limit Identity**: `onConnect` resolves a `clientIp` from the upgrade request (`websocket/client-ip.ts`) and stores it on the connection context, so `applyRateLimit` keys anonymous WebSocket callers on `ip:<clientIp>:<operation>` instead of the per-connection `connectionId`. Before this, every reconnect minted a fresh `uuidv4` connectionId and therefore a fresh bucket, which defeated the limiter for anonymous clients (issue #2863). The trusted-hop order is **`cf-connecting-ip` → the LAST `x-forwarded-for` hop → `req.socket.remoteAddress` → undefined** — the same order `handlers/og-climb.ts` uses, and deliberately **not** the first-hop derivation in `graphql/yoga.ts`: earlier `x-forwarded-for` entries are client-authored, so trusting them would let a scripted client mint a fresh bucket per upgrade (or pin a victim's IP to exhaust theirs). Candidates are normalized (brackets and `%zone` stripped, `::ffff:` unwrapped, validated with `node:net`'s `isIP`, IPv6 truncated to its `/64` prefix) so one client can't split into several buckets or, with a routed `/64`, mint unlimited ones. Consequences: every anonymous WS operation — and API-key controller connections, which never set `isAuthenticated` — now shares both a fast per-instance bucket and a Redis-backed per-IP bucket across rolling-deploy instances (#4037), so a whole gym behind one NAT shares it; `reportBoardClimb` / `reportBoardDisconnect` carry extra anon headroom for that reason. `onConnect` also records the normalized TCP peer independently of all headers. Anonymous WS operations spend a second Redis bucket keyed on that peer with at least 600 requests/minute (or five times the normal operation limit). This deliberately coarse ceiling is high enough for hosted proxy fan-in, but a client reaching Railway directly cannot evade it by rotating a forged `cf-connecting-ip` header (#4038). Redis failure leaves the already-applied per-client tier in place and falls the peer ceiling back to its own in-memory key. These limits bound the _rate_ of anonymous operations; the _count_ of concurrent anonymous sockets is bounded separately — see the next point.
+
+12. **Anonymous Concurrency Cap**: `onConnect` also caps how many anonymous sockets one IP may hold open at once (`websocket/connection-cap.ts`, issue #4035), because each accepted connection costs a room-manager registration plus subscription bookkeeping that no operation-rate limit ever touches. Two tiers, reusing the `client-ip.ts` normalization so an IPv6 client can't rotate inside its `/64`: a **per-client-IP** cap (default 200, `WS_ANON_CONNECTIONS_PER_CLIENT_IP`) that enforces, and a **per-TCP-peer** backstop (default 1000, `WS_ANON_CONNECTIONS_PER_SOCKET_PEER`) that is **warn-only** unless `WS_ANON_CONNECTIONS_PER_SOCKET_PEER_ENFORCE=1` — in the hosted topology the TCP peer can be a shared Cloudflare/Railway edge address, which would turn that tier into an instance-global anonymous ceiling, so its overflow is logged and measured before it is allowed to reject. The rejection log line names the tier that tripped. Enforcement lives in `onConnect`, **not** `verifyClient` as the issue title suggests: anonymity is only knowable once `connectionParams` arrive with the ConnectionInit, which is after the upgrade. Authenticated users and validated API-key controllers are exempt — controllers never set `isAuthenticated`, so without the exemption a gym's wall controller could be evicted by phones browsing on the same NAT. A rejected connection is closed with **4429** rather than the 4403 that `return false` alone would emit: graphql-ws excludes 4403 from its client-side fatal list, our shared client retries 10 times with `shouldRetry: () => true`, and mobile overloads 4403 as its auth-refresh retry signal, so 4403 would produce a reconnect storm; 4429 is fatal client-side, at the cost that a legitimately capped client stays down until it reconnects deliberately. Slots are released from the **raw socket's `close` event**, not `onDisconnect`, which graphql-ws skips for any connection that never reached `acknowledged` (a socket that dies mid-handshake, or an `onConnect` that throws in `registerClient`) — stranding a slot would permanently shrink that IP's budget on the instance. The mirror image of that race is handled right after `roomManager.registerClient` resolves: `onConnect` re-checks the socket and unregisters the client it just registered if the socket died mid-handshake. Nothing else would — the connection was never acknowledged, so `onDisconnect` never runs, and the in-memory client map has no sweeper — so without it a caller could churn abandoned handshakes into unbounded room-manager state despite the cap, since the slot itself is freed the moment the socket closes. The registry is in-process like the tier-1 rate limiter, so the global ceiling is `cap × instance count`; a Redis-backed counter is deliberately avoided because crashed instances would leave counts that never self-heal. Residuals: an authenticated account can still hold unlimited sockets (consistent with rate limits keying authenticated traffic on `userId`), and a socket that never sends ConnectionInit never reaches `onConnect` at all — it is bounded only by graphql-ws's 3s `connectionInitWaitTimeout`, and costs no room-manager state.
 
 ### Expo web token path (`/app`)
 
@@ -408,7 +431,7 @@ This ensures `BoardSessionBridge` only calls `activateSession()` when the actual
 
 Board presence powers the mobile "now on the wall" feed, board sheet history, and board sheet stats. It is independent of party-session join: the mobile app resolves a board id for the wall feed before subscribing to `boardNowPlaying` or fetching board-presence history/stats.
 
-The web gym kiosk (`/kiosk/{gym-slug}`, `packages/web/app/components/kiosk/presence/kiosk-presence-hub.tsx`) is a second consumer of the same feed: one graphql-ws client per TV (`connectionName: 'kiosk'`, anonymous-capable — the token from `useWsAuthToken` is simply `null` for a logged-out TV) multiplexes one `boardNowPlaying` subscription per kiosk board through one `BoardPresenceProvider` each. It never resolves board ids itself — the `gymKiosk` query returns each board's presence-channel `boardId` pre-resolved (public boards only for anonymous viewers). Kiosk reliability (5-minute manual catch-ups, config-poll reload) sits on top of the same reconnect/catch-up machinery described below.
+The web gym kiosk (`/kiosk/{gym-slug}`, `packages/web/app/components/kiosk/presence/kiosk-presence-hub.tsx`) is a second consumer of the same feed: one graphql-ws client per TV (`connectionName: 'kiosk'`) multiplexes one `boardNowPlaying` subscription per kiosk board through one `BoardPresenceProvider` each. It never resolves board ids itself — the `gymKiosk` query returns each board's presence-channel `boardId` pre-resolved (public boards only for anonymous viewers). Since #4408 that client is **login-less**: the default `KioskPresenceHub` the display routes mount connects with `authToken: null` and never touches `/api/internal/ws-auth` at all, and its presence client is read-only (writes reject with `KioskReadOnlyPresenceError`). The one authenticated consumer of the same hub is the gym-manage kiosk preview, which mounts `ViewerKioskPresenceHub` (`kiosk/presence/viewer-kiosk-presence-hub.tsx`) because `gymKiosk`'s edit branch hands it private gym boards that an anonymous read masks as `NOT_FOUND`. Kiosk reliability (5-minute manual catch-ups, config-poll reload) sits on top of the same reconnect/catch-up machinery described below. Since W-16 (#4435) the kiosk client is the only web graphql-ws consumer besides `social/comment-section.tsx` and `hooks/use-notification-subscription.ts` — the root `'session'` client that used to open a second socket on every route, kiosk TVs included, came out with `PersistentSessionWrapper`, so an anonymous kiosk TV now holds exactly one socket and an `/embed/…` page holds none. A _signed-in_ viewer additionally holds the notification socket: `NotificationSubscriptionManager` is mounted at the root on every route (`app/layout.tsx`) and `use-notification-subscription.ts` opens its own client whenever there is an auth token — unchanged by W-16, and irrelevant to the kiosk/embed case, which is anonymous.
 
 Mobile resolves the feed board id in this order:
 
@@ -778,7 +801,7 @@ Why it has to be atomic: this was a read-modify-write until #3906 — HGETALL, c
 Two further pieces of the contract:
 
 - **Dormancy floor.** A session past the 4h Redis TTL still has durable counters in Postgres. When the hash is missing, the script returns `NEEDS_FLOOR` without writing; the caller reads Postgres and retries with `versionFloor`/`sequenceFloor`, and the script takes the max. Restarting the counter at 1 would rewind the sequence clients gap-check against. Same shape as the board-presence reseed in `allocateBoardSeqAtLeast`.
-- **`setQueue` is deliberately exempt.** Its payload is entirely client-supplied, so there is nothing to recompute against a concurrent write, and replacing server state wholesale is the mutation's contract. It passes `CAS_ANY_VERSION` — it needs a unique sequence, not a conflict. Consequence, tracked as #3933 rather than fixed here: a peer's `addQueueItem` landing inside a `setQueue` window is still overwritten. Web's drag-to-reorder takes this path, so the CAS work above makes party queues correct for every mutation _except_ this one — which is why #3906 stays open until #3933 lands.
+- **`setQueue` is versioned only on its merge path.** Without a `baselineSequence` its payload is entirely client-supplied, so there is nothing to recompute against a concurrent write and it passes `CAS_ANY_VERSION` — it needs a unique sequence, not a conflict. That was the whole story until #3933: a peer's `addQueueItem` landing inside a `setQueue` window was silently overwritten, and web's drag-to-reorder takes this path. Since #3933 a caller may send `baselineSequence` — the last sequence it had **applied** when it composed the payload. The resolver then replays the queue-event buffer over that window (`collectConcurrentAdds` in `graphql/resolvers/queue/set-queue-merge.ts`), re-appends peer adds the caller never saw, and writes through `withQueueVersionRetry` with a real `expectedVersion` so an add racing the merge conflicts and retries. It degrades to the legacy unversioned overwrite — deliberately, rather than merging on partial evidence — when the buffer cannot describe the window: the fire-and-forget LPUSH is still in flight after one 25 ms re-read, the window fell off the 100-entry / 5-minute buffer, Redis is off, or the CAS burned its retries. Mobile sends the baseline (`queue-provider.tsx`, read from the sync gate); web sends none and keeps the legacy behaviour. Residual, so #3933 narrows rather than closes: adds that reach the queue through a `FullSync`-publishing mutation (`replaceQueueItem`, controller navigation) carry no `QueueItemAdded` event and are still lost inside the window.
 
 `stateHashOrdered` is now stored in the Redis hash alongside `stateHash` so the CAS can hand the prior pair back to `setQueue`'s redundant-resync diagnostic in the same round trip. Sessions written before this rollout have no stored value; reads fall back to recomputing it from the stored queue.
 
@@ -895,6 +918,8 @@ sequenceDiagram
 ```
 
 ### Web Root Event Processor (the single queue-state owner, W6)
+
+> Removed from web in W-16 (#4435) — the root `persistent-session/` provider went with the climbing UI. The reducer contract it describes is `@boardsesh/queue`, which the mobile client still owns.
 
 The web app's queue state (`queue`, `currentClimbQueueItem`, `playlistSuggestionSource`, `pendingCurrentClimbUpdates`) lives in exactly one place: the root `persistent-session/hooks/use-event-processor.ts`, which runs every incoming queue event through the shared `queueReducer` (`@boardsesh/queue`) and exposes its `dispatch` through `usePersistentSession()`. Board routes (`graphql-queue/QueueContext.tsx`) and the off-board bridge (`queue-control/queue-bridge-context.tsx`) both read this state directly and dispatch local/optimistic actions into it — see "Shared queue-actions factory" above. There is no second reducer copy to keep in sync anymore; this consolidation is what workstream W6 did. Resync decisions — sequence gating, the reconnect strategy, the 60s hash watchdog's 3-strike backoff, and the corruption-resync cooldown — all live in one `createQueueSyncGate` instance (`@boardsesh/queue-runtime`, see `sync-gate.ts`) created by `PersistentSessionProvider` and shared by the event processor, `use-session-lifecycle` (which resets it on connection teardown), and `use-session-subscriptions`.
 
@@ -1938,11 +1963,12 @@ ActivityKit on every device that registered a token for this session
 
 Live Activity actions that happen outside the web view are captured server-side through PostHog when `POSTHOG_PROJECT_KEY` is configured. The backend can also fall back to `NEXT_PUBLIC_POSTHOG_KEY` for compatibility with the web build env, but `POSTHOG_PROJECT_KEY` is the preferred runtime variable. `POSTHOG_HOST` defaults to `https://us.i.posthog.com`. Server events are sent directly rather than through the browser `/api/posthog/*` proxy.
 
-**A key alone is not enough — only the production environment sends** (#3814). `getPosthogClient()` resolves an environment and short-circuits unless it is exactly `production`, so a key that leaks into a preview, staging, or local runtime can't pollute the prod project. Resolution order: `POSTHOG_ENVIRONMENT`, else `resolveSentryEnvironment()` from `@boardsesh/db/client/config` — the same helper that gates backend Sentry, so the two SDKs can never disagree about what runtime this is. That resolves `SENTRY_ENVIRONMENT` when set, otherwise `production` for any non-dev, non-test runtime, otherwise `NODE_ENV`. Consequences worth knowing:
+**A key alone is not enough — only the production environment sends** (#3814). `getPosthogClient()` resolves an environment and short-circuits unless it is exactly `production`, so a key that leaks into a preview, staging, or local runtime can't pollute the prod project. Resolution order: `POSTHOG_ENVIRONMENT`, else `resolveSentryEnvironment()` from `@boardsesh/db/client/config` — the same helper that gates backend Sentry, so the two SDKs can never disagree about what runtime this is. That resolves `SENTRY_ENVIRONMENT` when it names something other than `production`, otherwise `production` for any runtime that doesn't look local, otherwise `NODE_ENV`. "Looks local" means `NODE_ENV=development`, the test runner, a GitHub Actions job, or a `DATABASE_URL` pointing at a private host. Consequences worth knowing:
 
 - Railway prod sets no `NODE_ENV` (`Dockerfile.backend` doesn't, and Railway injects none for an image deploy), so it resolves to `production` from the runtime inference alone — no dashboard variable is load-bearing for analytics staying on.
 - Preview/staging backends declare `SENTRY_ENVIRONMENT=preview` (`branch-deploy.yml`, #3808) and opt out for free.
 - Local dev resolves to `development` via the `dev` script's `NODE_ENV=development`; the test runner resolves to `test`. Both stay dark.
+- A backend started locally with `bun run backend:start` sets no `NODE_ENV`, so the runtime inference alone used to call it production; the private-`DATABASE_URL` check now catches it. Same for e2e jobs, which run that script on a CI runner.
 - When the gate closes, the backend logs `[PostHog] Resolved environment '<x>' is not production; backend analytics disabled` at **warn** — same level as the missing-key branch, since both mean analytics went dark.
 
 Event taxonomy:
@@ -2128,16 +2154,22 @@ All except `/api/watch/pair` take `Authorization: Bearer <mobile JWT>`. `navigat
 
 - `packages/web/app/lib/backend-url.ts` - Runtime backend URL resolver (preview deploys, dev overrides)
 - `packages/shared/graphql-client/` - Platform-agnostic `graphql-ws` helpers (`execute`, `subscribe`, `createGraphQLClient`, `GraphQLOperationError`). Web and the React Native mobile app both consume this; web passes its `SafeWebSocket` wrapper + `connectionManager` registration via the `webSocketImpl` / `onClientCreated` hooks.
-- `packages/web/app/lib/realtime/graphql-client.ts` - Thin web wrapper around `@boardsesh/graphql-client` that adds the `SafeWebSocket` DOM-error suppression and `connectionManager` registration. Also re-exports the shared primitives for legacy relative imports.
+- `packages/web/app/lib/realtime/graphql-client.ts` - Thin web wrapper around `@boardsesh/graphql-client` that adds the `SafeWebSocket` DOM-error suppression and `connectionManager` registration. Also re-exports the shared primitives.
 - `packages/web/app/lib/realtime/websocket-connection-manager.ts` - Connection state tracking
-- `packages/shared/queue-runtime/src/session-connection.ts` - `createSessionConnectionController`: the pure-TS connect/join/subscribe/reconnect/retry state machine (Workstream W4)
-- `packages/web/app/components/persistent-session/hooks/use-session-lifecycle.ts` - Session lifecycle: React binding around the controller (state, activate/deactivate, IndexedDB persistence, auto-finish pre-flight)
-- `packages/web/app/components/persistent-session/hooks/session-connection-ports.ts` - Web's `SessionConnectionDeps` port implementations (GraphQL operations, `applySessionEvent` roster application)
-- `packages/web/app/components/persistent-session/hooks/use-queue-mutations.ts` - Queue mutations
-- `packages/web/app/components/graphql-queue/use-queue-session.ts` - Session hook
-- `packages/web/app/components/persistent-session/persistent-session-context.tsx` - Root-level session management (split into ActionsContext + StateContext for render performance)
-- `packages/web/app/components/graphql-queue/QueueContext.tsx` - Queue state context (split into ActionsContext + DataContext; actions use `latestRef` pattern for stable callback identity)
-- `packages/web/app/components/queue-control/queue-actions-core.ts` - Single queue-actions factory (`createQueueActionsCore`) wired by both `QueueContext.tsx` and `queue-bridge-context.tsx`; per-surface differences are injected deps
+- `packages/shared/queue-runtime/src/session-connection.ts` - `createSessionConnectionController`: the pure-TS connect/join/subscribe/reconnect/retry state machine (Workstream W4). Consumed by the mobile app; web no longer binds it.
+
+> **Status (W-16, #4435): the web party-session client is gone.** `components/persistent-session/`,
+> `components/graphql-queue/`, `components/queue-control/` and the root
+> `PersistentSessionWrapper` were deleted when climbing moved to the Expo app, and
+> with them every web binding listed in this section's earlier revisions
+> (`use-session-lifecycle.ts`, `session-connection-ports.ts`, `use-queue-mutations.ts`,
+> `use-queue-session.ts`, `persistent-session-context.tsx`, `QueueContext.tsx`,
+> `queue-actions-core.ts`) and `packages/web/app/lib/live-activity/use-live-activity.ts`.
+> The protocol, the backend resolvers and the mobile client are unchanged — read
+> the flows below as the contract the **mobile** app and the kiosk implement.
+> On www the only remaining `graphql-ws` consumers are
+> `components/kiosk/presence/kiosk-presence-hub.tsx`, `social/comment-section.tsx`
+> and `hooks/use-notification-subscription.ts`.
 
 ### Native iOS
 
@@ -2152,7 +2184,6 @@ All except `/api/watch/pair` take `Authorization: Bearer <mobile JWT>`. `navigat
 - `mobile/ios/App/BoardseshWidgets/NextClimbIntent.swift` - Widget Next button App Intent
 - `mobile/ios/App/BoardseshWidgets/PreviousClimbIntent.swift` - Widget Previous button App Intent
 - `mobile/ios/App/BoardseshWidgets/WidgetNetworking.swift` - HTTP client that calls `/api/widget/navigate` from the widget extension
-- `packages/web/app/lib/live-activity/use-live-activity.ts` - React hook bridging queue state to the native Live Activity plugin
 
 ### Shared
 
@@ -2161,16 +2192,16 @@ All except `/api/watch/pair` take `Authorization: Bearer <mobile JWT>`. `navigat
 
 ## Onboarding tour integration points
 
-The onboarding tour (see `packages/web/app/components/onboarding/`) drives the real session UI with mock data so a new user can see what a populated party session looks like without creating one. A few escape hatches in the session-related components exist solely for the tour — do not remove them thinking they are dead code:
+**Removed in W-16 (#4435).** The web onboarding tour (`components/onboarding/`) drove
+the real session UI with mock data. Every escape hatch that lived on a deleted
+component went with it — `SeshSettingsDrawer`'s `tourMockSession` /
+`tourActiveSection` props and the `TOUR_*` window events on `QueueControlBar`,
+`ClimbsList` and `PlayViewDrawer` — and `SessionDetailContent`'s
+`embedded`/`tourActiveSection` drawer branch was deleted in the same PR once its
+last caller was gone. Nothing in the surviving web tree branches on a tour.
 
-- **`SeshSettingsDrawer` — `tourMockSession?: SessionDetail` prop.** When set, the drawer skips its GraphQL `sessionDetail` query, bypasses the `activeSession` guard, hides the Stop-session button, and swaps the real invite link / QR for a non-URL preview string (`boardsesh:onboarding-tour-preview`). It renders entirely from the mock object generated by `packages/web/app/components/onboarding/mock-session-detail.ts`.
-- **`SeshSettingsDrawer` / `SessionDetailContent` — `tourActiveSection?: 'invite' | 'activity' | 'analytics' | null` prop.** Threads down to `CollapsibleSection`'s `forcedActiveKey`, which forces a specific section open and disables the user's collapse/expand interaction while the tour is driving it.
-- **`CollapsibleSection` — `forcedActiveKey?: string | null` prop.** Controlled-mode override used by the tour to walk the user through Invite → Activity → Analytics in sequence. When unset, the section is uncontrolled (existing behaviour).
-- **`QueueControlBar` — `TOUR_CLOSE_PLAY_VIEW_EVENT` window event (`onboarding:close-play-view`).** The bar closes the play drawer on demand so the session overview can be shown without stacking.
-- **`QueueControlBar` session mini-bar — `data-tour-anchor="session-mini-bar"`.** Placed on the always-rendered `.sessionHeaderInner` wrapper so the anchor resolves whether or not a real `activeSession` exists. The "Open your session" step anchors here.
-- **`ClimbsList` — `TOUR_CLIMB_LIST_PICK_EVENT` window event (`onboarding:climb-list-pick`).** Dispatched when the user explicitly taps a climb card while the tour is on the `climb-list` step. The provider advances on this signal rather than on `currentClimb` observation, so async queue hydration into a newly-created session can't falsely skip the step.
-- **`PlayViewDrawer` — `TOUR_OPEN_PLAY_QUEUE_EVENT` + `TOUR_CLOSE_PLAY_QUEUE_EVENT` window events.** Let the tour open/close the nested queue drawer inside the play view. On tour-driven open, the nested `QueueDrawer` is mounted with `initialShowHistory=true` so every queued climb is visible regardless of which one is currently active.
-
-All of the above are cheap conditional paths — they only branch when the matching prop/event is present. They do not affect the WebSocket flow or any real-session behaviour.
-
-The event constants live in `packages/web/app/components/onboarding/onboarding-tour-events.ts`. The state machine and side-effect dispatcher live in `packages/web/app/components/onboarding/onboarding-tour-provider.tsx`.
+One remnant is deliberate: `CollapsibleSection` (`components/collapsible-section/`)
+still implements its controlled `forcedActiveKey` mode, exercised by its own unit
+tests. It survives because `social/proposal-section.tsx` still renders the
+component (in uncontrolled mode); removing the controlled path is a separate
+cleanup, not part of the climbing teardown.

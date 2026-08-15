@@ -921,9 +921,19 @@ export type Climb = {
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
   /** Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod). */
   characteristics?: Maybe<Array<Scalars['String']['output']>>;
+  /**
+   * Product sizes this climb fits on (denormalised from edge bounds). Null when
+   * the server has no compatibility data for this climb — a legacy row, or a
+   * fetch path that doesn't project the column — which imposes no constraint.
+   * On Woods it is load-bearing rather than cosmetic: the 8x10 and the 12x12
+   * number their holds from their own origins, so an 8x10 climb's hold ids all
+   * exist on a 12x12 as different holds and only this field can tell the two
+   * apart (see canAddClimbToBoard rule 5).
+   */
+  compatibleSizeIds?: Maybe<Array<Scalars['Int']['output']>>;
   /** ISO timestamp of when this climb row was created */
   created_at?: Maybe<Scalars['String']['output']>;
-  /** Description or notes about the climb (nullable - omitted from search results, fetch separately via climb detail query) */
+  /** Setter-written notes about the climb (nullable). Carried on search results too — the play drawer and the www climb page both render it. */
   description?: Maybe<Scalars['String']['output']>;
   /** Difficulty grade of the climb (e.g., 'V5', '6B+') */
   difficulty: Scalars['String']['output'];
@@ -1003,6 +1013,8 @@ export type ClimbInput = {
   boardseshDifficulty?: InputMaybe<Scalars['Float']['input']>;
   /** Structured climb characteristics, round-tripped so the queue keeps method/no-match tags. */
   characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
+  /** Product sizes this climb fits on. Round-tripped through the queue so a party peer on a different-sized wall can tell the climb doesn't fit theirs — on Woods the two sizes' hold ids overlap, so this is the only signal that separates them. */
+  compatibleSizeIds?: InputMaybe<Array<Scalars['Int']['input']>>;
   description?: InputMaybe<Scalars['String']['input']>;
   difficulty: Scalars['String']['input'];
   difficulty_error: Scalars['String']['input'];
@@ -1097,7 +1109,7 @@ export type ClimbSearchInput = {
   angle: Scalars['Int']['input'];
   /** Board type (e.g., 'kilter', 'tension') */
   boardName: Scalars['String']['input'];
-  /** Include single-frame climbs (boulders). Default true. Set to false (paired with routes=true) to filter to routes only. */
+  /** Include single-frame climbs (boulders). Omitting both boulders and routes matches all climb types; set boulders=true with routes=false (or omit routes) to filter to boulders only. */
   boulders?: InputMaybe<Scalars['Boolean']['input']>;
   /** Grade accuracy filter ('tight', 'moderate', 'loose') */
   gradeAccuracy?: InputMaybe<Scalars['String']['input']>;
@@ -1139,7 +1151,7 @@ export type ClimbSearchInput = {
   pageSize?: InputMaybe<Scalars['Int']['input']>;
   /** Show only unclimbed projects (climbs with 0 ascents) */
   projectsOnly?: InputMaybe<Scalars['Boolean']['input']>;
-  /** Include multi-frame climbs (routes). Default false. Set to true to include or filter to routes. */
+  /** Include multi-frame climbs (routes). Omitting both boulders and routes matches all climb types; set routes=true with boulders=false (or omit boulders) to filter to routes only. */
   routes?: InputMaybe<Scalars['Boolean']['input']>;
   /** Comma-separated set IDs */
   setIds: Scalars['String']['input'];
@@ -1455,6 +1467,8 @@ export type CreateBoardInput = {
    * a physically different wall (another gym, another room) — never by default.
    */
   allowDuplicateConfig?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Create even when the serial is already registered to another user's board with the same configuration (default false — such creates fail with BOARD_SERIAL_EXISTS so clients can route the user to the existing board) */
+  allowDuplicateSerial?: InputMaybe<Scalars['Boolean']['input']>;
   /** Default angle for this board (default 40) */
   angle?: InputMaybe<Scalars['Int']['input']>;
   /** Board type */
@@ -2353,7 +2367,6 @@ export type GroupedNotification = {
    * Layout the climb was set on. Clients need this to build a board URL that
    * actually resolves: the climb query filters on layoutId, so guessing the
    * board's first layout misses every Kilter Homewall / Tension Board 2 climb.
-   * Web reads the same column server-side in /api/internal/climb-redirect.
    */
   climbLayoutId?: Maybe<Scalars['Int']['output']>;
   /** Climb name */
@@ -2413,6 +2426,8 @@ export type Gym = {
   address?: Maybe<Scalars['String']['output']>;
   /** Number of linked boards */
   boardCount: Scalars['Int']['output'];
+  /** Distinct board-type + angle pairs at this gym, for directory board chips. Ordered by board type then angle and capped, so a gym with a wall of boards returns a bounded list. */
+  boardSummaries: Array<GymBoardSummary>;
   /** Distinct board types at this gym (kilter, tension, ...) — for filtering and badges */
   boardTypes: Array<Scalars['String']['output']>;
   /** Kiosk/embed brand accent colour as #RRGGBB (null when unset). */
@@ -2439,8 +2454,14 @@ export type Gym = {
   description?: Maybe<Scalars['String']['output']>;
   /** Number of followers */
   followerCount: Scalars['Int']['output'];
+  /** Opening hours as one free-text line the gym maintains itself (no structured per-day model). */
+  hours?: Maybe<Scalars['String']['output']>;
+  /** ISO timestamp of the last time someone with edit access confirmed the hours. Shown publicly so a stale schedule reads as stale. */
+  hoursUpdatedAt?: Maybe<Scalars['String']['output']>;
   /** Image URL */
   imageUrl?: Maybe<Scalars['String']['output']>;
+  /** Whether a real person owns this gym, as opposed to the system import user. Viewer-independent — unlike canClaim, which is false for every signed-out viewer. */
+  isClaimed: Scalars['Boolean']['output'];
   /** Whether the current user follows this gym */
   isFollowedByMe: Scalars['Boolean']['output'];
   /** Whether the current user is a member */
@@ -2455,6 +2476,15 @@ export type Gym = {
   longitude?: Maybe<Scalars['Float']['output']>;
   /** Number of members */
   memberCount: Scalars['Int']['output'];
+  /**
+   * The viewer's own unresolved claim on this gym, so a claimant who already
+   * filed sees "under review" instead of the claim call-out. A lazy field
+   * resolver with its own query — deliberately NOT part of enrichGym, which
+   * already fires ~9 round trips per gym and runs per row for up to 50 rows.
+   * Only the web gym page selects it; GYM_FIELDS leaves it out, which is why it
+   * is nullable.
+   */
+  myPendingClaim?: Maybe<MyGymClaim>;
   /** Current user's role (null if not a member/owner) */
   myRole?: Maybe<GymMemberRole>;
   /** Gym name */
@@ -2471,6 +2501,19 @@ export type Gym = {
   uuid: Scalars['ID']['output'];
   /** Website URL (used for domain-verified ownership claims) */
   website?: Maybe<Scalars['String']['output']>;
+};
+
+/**
+ * One board-type + angle pair present at a gym, for the directory's board chips.
+ * Deliberately minimal: a card renders "Kilter 40°", nothing else. Distinct pairs
+ * only, so two Kilter boards both at 40° collapse into one summary.
+ */
+export type GymBoardSummary = {
+  __typename?: 'GymBoardSummary';
+  /** Board angle in degrees */
+  angle: Scalars['Int']['output'];
+  /** Board type (kilter, tension, moonboard, ...) */
+  boardType: Scalars['String']['output'];
 };
 
 /** A pending or resolved gym ownership claim (admin queue). */
@@ -2522,7 +2565,7 @@ export type GymClaimMethod =
 
 /** Outcome of a requestGymClaim call, so clients can show the right next step. */
 export type GymClaimRequestStatus =
-  /** The claim was queued for admin review and our team was notified. */
+  /** The claim is queued for a Boardsesh admin to review, and the claimant gets emailed the outcome either way. Mailing the team is best-effort on top of that queue, not a guarantee, so don't promise the claimant a reply. */
   | 'admin_review'
   /** The claim was approved on the spot — the gym was an unclaimed listing and auto-approval is on. The claimant already manages the gym. */
   | 'approved'
@@ -2721,6 +2764,46 @@ export type GymOwnerType =
   | 'SYSTEM'
   /** Created by a Boardsesh user. */
   | 'USER';
+
+export type GymOwnershipLookupInput = {
+  /** Gym UUID, slug, or a case-insensitive name fragment. */
+  gymQuery: Scalars['String']['input'];
+  /** Account email or user id of the person the gym should move to. */
+  newOwnerQuery: Scalars['String']['input'];
+};
+
+/** Both sides of a proposed handover. Either half is null when nothing matched. */
+export type GymOwnershipLookupResult = {
+  __typename?: 'GymOwnershipLookupResult';
+  gym?: Maybe<GymOwnershipSummary>;
+  newOwner?: Maybe<GymOwnershipUserSummary>;
+};
+
+/** A gym resolved for the admin ownership-handover surface, with the state the confirm step must name. */
+export type GymOwnershipSummary = {
+  __typename?: 'GymOwnershipSummary';
+  /** Echoed back so the mutation can be sent with the exact owner the admin saw. */
+  currentOwnerId: Scalars['ID']['output'];
+  /** True when the listing is still parked on the import account and has no real owner yet. */
+  currentOwnerIsSystem: Scalars['Boolean']['output'];
+  /** Display name / account email of the current owner, or null when the account row is gone. */
+  currentOwnerLabel?: Maybe<Scalars['String']['output']>;
+  gymUuid: Scalars['ID']['output'];
+  isDeleted: Scalars['Boolean']['output'];
+  isMerged: Scalars['Boolean']['output'];
+  name: Scalars['String']['output'];
+  slug?: Maybe<Scalars['String']['output']>;
+  /** The listing's human-curation marker. A handover leaves it exactly as it is. */
+  syncFrozenAt?: Maybe<Scalars['String']['output']>;
+};
+
+/** The incoming owner resolved from an account email or user id. */
+export type GymOwnershipUserSummary = {
+  __typename?: 'GymOwnershipUserSummary';
+  email?: Maybe<Scalars['String']['output']>;
+  label: Scalars['String']['output'];
+  userId: Scalars['ID']['output'];
+};
 
 /**
  * A gym owner's activity snapshot for the current window and the window
@@ -3270,6 +3353,14 @@ export type Mutation = {
    */
   publishPlaybackState: Scalars['Boolean']['output'];
   /**
+   * Move a gym's ownership to another account (global admin only) — a sold gym,
+   * a departed committee member, a claim approved to the wrong person. The
+   * listing's human-curation freeze is left exactly as it was, the outgoing
+   * owner is kept on as a gym admin, and the handover is written to a durable
+   * audit trail. No self-serve entry point exists.
+   */
+  reassignGymOwner: ReassignGymOwnerResult;
+  /**
    * Record the board configuration seen when connecting to a controller over
    * BLE, keyed by serial. Upserts the current user's serial→config recording.
    * Returns null when a saved board already matches the connect (nothing to record).
@@ -3410,6 +3501,12 @@ export type Mutation = {
   /**
    * Replace the entire queue state.
    * Used for bulk operations or syncing from external sources.
+   *
+   * `baselineSequence` is the last server sequence this client had APPLIED when it
+   * composed `queue`. When supplied, the server replays its queue-event buffer from
+   * that point and re-appends any climb a peer added inside the window instead of
+   * silently overwriting it (issue #3933). Omit it for the historical wholesale
+   * overwrite — old clients send nothing here.
    */
   setQueue: QueueState;
   /**
@@ -3449,6 +3546,14 @@ export type Mutation = {
    * associated with the user.
    */
   submitAppFeedback: Scalars['Boolean']['output'];
+  /**
+   * Crowdsourced QA: file a verdict on a pull-request preview. Tester role
+   * required; the PR must be open; a `declined` verdict needs a comment of
+   * 10+ characters. Stores the row, then (best effort, never failing the
+   * mutation) posts a comment on the PR and swaps the qa-approved/qa-declined
+   * label.
+   */
+  submitQaVerdict: QaVerdict;
   /** Subscribe to new climbs for a board type and layout. */
   subscribeNewClimbs: Scalars['Boolean']['output'];
   /**
@@ -3814,6 +3919,11 @@ export type MutationPublishPlaybackStateArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationReassignGymOwnerArgs = {
+  input: ReassignGymOwnerInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRecordBoardSerialArgs = {
   input: RecordBoardSerialInput;
 };
@@ -3992,6 +4102,7 @@ export type MutationSetIntegrationAutoSyncArgs = {
 
 /** Root mutation type for all write operations. */
 export type MutationSetQueueArgs = {
+  baselineSequence?: InputMaybe<Scalars['Int']['input']>;
   currentClimbQueueItem?: InputMaybe<ClimbQueueItemInput>;
   queue: Array<ClimbQueueItemInput>;
 };
@@ -4020,6 +4131,11 @@ export type MutationSetterOverrideCommunityStatusArgs = {
 /** Root mutation type for all write operations. */
 export type MutationSubmitAppFeedbackArgs = {
   input: SubmitAppFeedbackInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSubmitQaVerdictArgs = {
+  input: SubmitQaVerdictInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4157,6 +4273,20 @@ export type MyBoardsInput = {
   limit?: InputMaybe<Scalars['Int']['input']>;
   /** Offset for pagination */
   offset?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/**
+ * The viewer's own ownership claim on a gym that hasn't been resolved yet.
+ * Viewer-scoped: null for signed-out viewers and for anyone with no live claim.
+ */
+export type MyGymClaim = {
+  __typename?: 'MyGymClaim';
+  /** ISO timestamp of when the claim was filed. */
+  createdAt: Scalars['String']['output'];
+  /** Claim row id. */
+  id: Scalars['ID']['output'];
+  /** How it gets verified: an emailed domain link, or a Boardsesh admin's review. */
+  method: GymClaimMethod;
 };
 
 /** Input for listing current user's gyms. */
@@ -4662,6 +4792,62 @@ export type PublicUserProfile = {
   isFollowedByMe: Scalars['Boolean']['output'];
 };
 
+/**
+ * An open pull request with a published OTA preview branch, as a tester sees it:
+ * what to test (the PR body's `## Test plan`), how risky it is (`Risk: N/5`),
+ * and whether this tester already filed a verdict.
+ */
+export type QaPreview = {
+  __typename?: 'QaPreview';
+  /** GitHub login of the PR author. */
+  author: Scalars['String']['output'];
+  /** `pr-<number>` — the xprem branch a compatible build can surf to. */
+  branch: Scalars['String']['output'];
+  /** Committer date of `headSha` (ISO 8601). Null when the lookup failed. */
+  headCommittedAt?: Maybe<Scalars['String']['output']>;
+  headSha: Scalars['String']['output'];
+  isDraft: Scalars['Boolean']['output'];
+  /** The calling tester's most recent verdict on this PR, if any. */
+  myLatestVerdict?: Maybe<QaVerdict>;
+  prNumber: Scalars['Int']['output'];
+  /** 1–5 from the PR body's `Risk: N/5` line; null when the PR predates the rule. */
+  risk?: Maybe<Scalars['Int']['output']>;
+  riskReason?: Maybe<Scalars['String']['output']>;
+  /** The `## Test plan` section as written (comments stripped); null when absent. */
+  testPlan?: Maybe<Scalars['String']['output']>;
+  /** The plan's numbered steps, one string each. Empty when the plan has none. */
+  testPlanSteps: Array<Scalars['String']['output']>;
+  title: Scalars['String']['output'];
+  /** ISO 8601 — when the PR was last updated on GitHub. */
+  updatedAt: Scalars['String']['output'];
+  url: Scalars['String']['output'];
+};
+
+/**
+ * One verdict a tester filed from the mobile app. Mirrored to GitHub as a PR
+ * comment plus a `qa-approved` / `qa-declined` label; `githubCommentUrl` is
+ * null until that side effect lands (or when it failed — the row is the record).
+ */
+export type QaVerdict = {
+  __typename?: 'QaVerdict';
+  /** The OTA preview branch the tester was running, e.g. `pr-4792`. */
+  branch: Scalars['String']['output'];
+  comment?: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['String']['output'];
+  githubCommentUrl?: Maybe<Scalars['String']['output']>;
+  /** The PR's head commit when the verdict was filed. */
+  headSha?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  prNumber: Scalars['Int']['output'];
+  verdict: QaVerdictKind;
+};
+
+/**
+ * A tester's verdict on a pull-request preview (crowdsourced QA; see
+ * docs/crowdsourced-qa.md).
+ */
+export type QaVerdictKind = 'approved' | 'declined';
+
 /** Root query type for all read operations. */
 export type Query = {
   __typename?: 'Query';
@@ -4946,6 +5132,12 @@ export type Query = {
   /** Get members of a gym. */
   gymMembers: GymMemberConnection;
   /**
+   * Resolve both halves of a proposed gym ownership handover — the gym and the
+   * incoming owner — so the confirm step can name them (global admin only).
+   * Read-only; nothing moves until reassignGymOwner is called.
+   */
+  gymOwnershipLookup: GymOwnershipLookupResult;
+  /**
    * A gym owner's activity snapshot: unique climbers, ascents, top climbs, and
    * busiest weekdays for the current window plus the equally-long window before
    * it (for week-over-week deltas). Requires gym edit access (owner, gym
@@ -5056,6 +5248,13 @@ export type Query = {
   profile?: Maybe<UserProfile>;
   /** Get a public user profile by ID. */
   publicProfile?: Maybe<PublicUserProfile>;
+  /**
+   * Crowdsourced QA: the open pull requests among `prNumbers` (the tester's
+   * loadable `pr-<n>` OTA branches), each with its title, `## Test plan`
+   * steps, `Risk: N/5`, and the caller's latest verdict. Tester role required.
+   * Closed/unknown numbers are omitted; at most 50 per call.
+   */
+  qaPreviews: Array<QaPreview>;
   /**
    * Most recent beta videos across all climbs. Returns only rows whose
    * thumbnails are already cached in our S3; no live IG/TikTok enrichment.
@@ -5544,6 +5743,11 @@ export type QueryGymMembersArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryGymOwnershipLookupArgs = {
+  input: GymOwnershipLookupInput;
+};
+
+/** Root query type for all read operations. */
 export type QueryGymStatsArgs = {
   input: GymStatsInput;
 };
@@ -5640,6 +5844,11 @@ export type QueryPopularBoardConfigsArgs = {
 /** Root query type for all read operations. */
 export type QueryPublicProfileArgs = {
   userId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryQaPreviewsArgs = {
+  prNumbers: Array<Scalars['Int']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -6009,6 +6218,25 @@ export type QueueState = {
   stateHashOrdered?: Maybe<Scalars['String']['output']>;
 };
 
+export type ReassignGymOwnerInput = {
+  /** Owner the admin saw in the confirm step; a moved owner rejects the write. */
+  expectedCurrentOwnerId: Scalars['ID']['input'];
+  gymUuid: Scalars['ID']['input'];
+  newOwnerId: Scalars['ID']['input'];
+  /** Required operator explanation stored in the durable audit trail. */
+  reason: Scalars['String']['input'];
+};
+
+export type ReassignGymOwnerResult = {
+  __typename?: 'ReassignGymOwnerResult';
+  gymName: Scalars['String']['output'];
+  gymUuid: Scalars['ID']['output'];
+  newOwnerId: Scalars['ID']['output'];
+  previousOwnerId: Scalars['ID']['output'];
+  /** The human-curation marker after the write. A handover never changes it. */
+  syncFrozenAt?: Maybe<Scalars['String']['output']>;
+};
+
 /**
  * A recent beta link enriched with the parent climb's display name. Used
  * by the home-page slider where multiple climbs are aggregated together.
@@ -6218,6 +6446,8 @@ export type SaveAuroraCredentialInput = {
 export type SaveClimbInput = {
   angle: Scalars['Int']['input'];
   boardType: Scalars['String']['input'];
+  /** Freely-toggleable characteristics to set at creation. Only CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS are accepted here — no_match is server-derived from description, and MoonBoard method is creation-time-only via SaveMoonBoardClimbInput. */
+  characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
   description?: InputMaybe<Scalars['String']['input']>;
   frames: Scalars['String']['input'];
   framesCount?: InputMaybe<Scalars['Int']['input']>;
@@ -6338,6 +6568,8 @@ export type SearchGymsInput = {
   query?: InputMaybe<Scalars['String']['input']>;
   /** Radius in km for proximity search (default 50) */
   radiusKm?: InputMaybe<Scalars['Float']['input']>;
+  /** Only gyms that have a URL slug, i.e. that can be linked to at /gym/[slug]. Opt-in: omitting it leaves the emitted SQL untouched for existing callers. */
+  requireSlug?: InputMaybe<Scalars['Boolean']['input']>;
   /** Filter to gyms that have a board with one of these size ids (OR). Combined with boardTypes/layoutIds, all must match the same board. */
   sizeIds?: InputMaybe<Array<Scalars['Int']['input']>>;
 };
@@ -7276,6 +7508,30 @@ export type SubmitAppFeedbackInput = {
   source: Scalars['String']['input'];
 };
 
+/**
+ * Input for submitQaVerdict. Everything but the verdict is device context the
+ * app fills in so the GitHub comment can say what was tested where.
+ */
+export type SubmitQaVerdictInput = {
+  appVersion?: InputMaybe<Scalars['String']['input']>;
+  /** Must equal `pr-<prNumber>` — the branch the tester actually ran. */
+  branch: Scalars['String']['input'];
+  /**
+   * expo-updates `createdAt` of the running bundle (ISO 8601). Compared with
+   * the PR head's commit date to flag a verdict filed on an older revision.
+   */
+  bundleCreatedAt?: InputMaybe<Scalars['String']['input']>;
+  /** Free text, up to 2000 characters. Required (10+ characters) for `declined`. */
+  comment?: InputMaybe<Scalars['String']['input']>;
+  /** 'ios' | 'android' | 'web'. */
+  platform: Scalars['String']['input'];
+  prNumber: Scalars['Int']['input'];
+  runtimeVersion?: InputMaybe<Scalars['String']['input']>;
+  /** expo-updates `updateId` of the running bundle. */
+  updateId?: InputMaybe<Scalars['String']['input']>;
+  verdict: QaVerdictKind;
+};
+
 /** Root subscription type for real-time updates. */
 export type Subscription = {
   __typename?: 'Subscription';
@@ -7605,6 +7861,8 @@ export type UpdateBoardInput = {
 export type UpdateClimbInput = {
   angle?: InputMaybe<Scalars['Int']['input']>;
   boardType: Scalars['String']['input'];
+  /** Freely-toggleable characteristics: the full desired boolean state of CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS. Any other characteristic already on the row (no_match, MoonBoard method) is left untouched. */
+  characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
   description?: InputMaybe<Scalars['String']['input']>;
   frames?: InputMaybe<Scalars['String']['input']>;
   framesCount?: InputMaybe<Scalars['Int']['input']>;
@@ -7649,6 +7907,8 @@ export type UpdateGymInput = {
   description?: InputMaybe<Scalars['String']['input']>;
   /** Gym UUID to update */
   gymUuid: Scalars['ID']['input'];
+  /** New free-text opening hours. Writing this stamps hoursUpdatedAt; pass null to clear both. */
+  hours?: InputMaybe<Scalars['String']['input']>;
   /** New image URL */
   imageUrl?: InputMaybe<Scalars['String']['input']>;
   /** New visibility */
@@ -8569,6 +8829,7 @@ export type GetUserFavoriteClimbsQuery = {
       benchmark_difficulty?: string | null;
       boardseshDifficulty?: number | null;
       boardseshConfidence?: string | null;
+      compatibleSizeIds?: Array<number> | null;
     }>;
   };
 };
@@ -8672,6 +8933,46 @@ export type UpdateAppFeedbackStatusMutation = {
       url?: string | null;
       userAgent?: string | null;
     } | null;
+  };
+};
+
+export type GymOwnershipLookupQueryVariables = Exact<{
+  input: GymOwnershipLookupInput;
+}>;
+
+export type GymOwnershipLookupQuery = {
+  __typename?: 'Query';
+  gymOwnershipLookup: {
+    __typename?: 'GymOwnershipLookupResult';
+    gym?: {
+      __typename?: 'GymOwnershipSummary';
+      gymUuid: string;
+      slug?: string | null;
+      name: string;
+      currentOwnerId: string;
+      currentOwnerLabel?: string | null;
+      currentOwnerIsSystem: boolean;
+      syncFrozenAt?: string | null;
+      isDeleted: boolean;
+      isMerged: boolean;
+    } | null;
+    newOwner?: { __typename?: 'GymOwnershipUserSummary'; userId: string; label: string; email?: string | null } | null;
+  };
+};
+
+export type ReassignGymOwnerMutationVariables = Exact<{
+  input: ReassignGymOwnerInput;
+}>;
+
+export type ReassignGymOwnerMutation = {
+  __typename?: 'Mutation';
+  reassignGymOwner: {
+    __typename?: 'ReassignGymOwnerResult';
+    gymUuid: string;
+    gymName: string;
+    previousOwnerId: string;
+    newOwnerId: string;
+    syncFrozenAt?: string | null;
   };
 };
 
@@ -9273,6 +9574,7 @@ export type GetPlaylistClimbsQuery = {
       benchmark_difficulty?: string | null;
       boardseshDifficulty?: number | null;
       boardseshConfidence?: string | null;
+      compatibleSizeIds?: Array<number> | null;
     }>;
   };
 };
@@ -9406,6 +9708,7 @@ export type GetSmartPlaylistQuery = {
       benchmark_difficulty?: string | null;
       boardseshDifficulty?: number | null;
       boardseshConfidence?: string | null;
+      compatibleSizeIds?: Array<number> | null;
     }>;
   };
 };
@@ -9811,6 +10114,60 @@ export type SetCommunitySettingsMutation = {
     setBy?: string | null;
     createdAt: string;
     updatedAt: string;
+  };
+};
+
+export type QaPreviewsQueryVariables = Exact<{
+  prNumbers: Array<Scalars['Int']['input']> | Scalars['Int']['input'];
+}>;
+
+export type QaPreviewsQuery = {
+  __typename?: 'Query';
+  qaPreviews: Array<{
+    __typename?: 'QaPreview';
+    prNumber: number;
+    branch: string;
+    title: string;
+    url: string;
+    author: string;
+    isDraft: boolean;
+    headSha: string;
+    headCommittedAt?: string | null;
+    updatedAt: string;
+    risk?: number | null;
+    riskReason?: string | null;
+    testPlan?: string | null;
+    testPlanSteps: Array<string>;
+    myLatestVerdict?: {
+      __typename?: 'QaVerdict';
+      id: string;
+      prNumber: number;
+      branch: string;
+      verdict: QaVerdictKind;
+      comment?: string | null;
+      headSha?: string | null;
+      createdAt: string;
+      githubCommentUrl?: string | null;
+    } | null;
+  }>;
+};
+
+export type SubmitQaVerdictMutationVariables = Exact<{
+  input: SubmitQaVerdictInput;
+}>;
+
+export type SubmitQaVerdictMutation = {
+  __typename?: 'Mutation';
+  submitQaVerdict: {
+    __typename?: 'QaVerdict';
+    id: string;
+    prNumber: number;
+    branch: string;
+    verdict: QaVerdictKind;
+    comment?: string | null;
+    headSha?: string | null;
+    createdAt: string;
+    githubCommentUrl?: string | null;
   };
 };
 
@@ -10227,6 +10584,7 @@ export type GetSetterClimbsFullQuery = {
       benchmark_difficulty?: string | null;
       boardseshDifficulty?: number | null;
       boardseshConfidence?: string | null;
+      compatibleSizeIds?: Array<number> | null;
     }>;
   };
 };
@@ -10261,6 +10619,7 @@ export type GetUserClimbsQuery = {
       benchmark_difficulty?: string | null;
       boardseshDifficulty?: number | null;
       boardseshConfidence?: string | null;
+      compatibleSizeIds?: Array<number> | null;
       renderBoard?: {
         __typename?: 'RenderBoardConfig';
         layoutId: number;
@@ -12192,6 +12551,7 @@ export const GetUserFavoriteClimbsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'benchmark_difficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
                     ],
                   },
                 },
@@ -12430,6 +12790,123 @@ export const UpdateAppFeedbackStatusDocument = {
     },
   ],
 } as unknown as DocumentNode<UpdateAppFeedbackStatusMutation, UpdateAppFeedbackStatusMutationVariables>;
+export const GymOwnershipLookupDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GymOwnershipLookup' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'GymOwnershipLookupInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'gymOwnershipLookup' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'gym' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'gymUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'slug' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'currentOwnerId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'currentOwnerLabel' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'currentOwnerIsSystem' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'syncFrozenAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isDeleted' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isMerged' } },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'newOwner' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'label' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'email' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GymOwnershipLookupQuery, GymOwnershipLookupQueryVariables>;
+export const ReassignGymOwnerDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'ReassignGymOwner' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'ReassignGymOwnerInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'reassignGymOwner' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'gymUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'gymName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'previousOwnerId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'newOwnerId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'syncFrozenAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ReassignGymOwnerMutation, ReassignGymOwnerMutationVariables>;
 export const FrozenLocationSyncEntitiesDocument = {
   kind: 'Document',
   definitions: [
@@ -14092,6 +14569,7 @@ export const GetPlaylistClimbsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'benchmark_difficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
                     ],
                   },
                 },
@@ -14456,6 +14934,7 @@ export const GetSmartPlaylistDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'benchmark_difficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
                     ],
                   },
                 },
@@ -15441,6 +15920,129 @@ export const SetCommunitySettingsDocument = {
     },
   ],
 } as unknown as DocumentNode<SetCommunitySettingsMutation, SetCommunitySettingsMutationVariables>;
+export const QaPreviewsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'QaPreviews' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'prNumbers' } },
+          type: {
+            kind: 'NonNullType',
+            type: {
+              kind: 'ListType',
+              type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } } },
+            },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'qaPreviews' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'prNumbers' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'prNumbers' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'prNumber' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'branch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'title' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'url' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'author' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isDraft' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'headSha' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'headCommittedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'risk' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'riskReason' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'testPlan' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'testPlanSteps' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'myLatestVerdict' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'prNumber' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'branch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'verdict' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'headSha' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'githubCommentUrl' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<QaPreviewsQuery, QaPreviewsQueryVariables>;
+export const SubmitQaVerdictDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'SubmitQaVerdict' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'SubmitQaVerdictInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'submitQaVerdict' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'prNumber' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'branch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'verdict' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'headSha' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'githubCommentUrl' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SubmitQaVerdictMutation, SubmitQaVerdictMutationVariables>;
 export const EndSessionDocument = {
   kind: 'Document',
   definitions: [
@@ -16408,6 +17010,7 @@ export const GetSetterClimbsFullDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'benchmark_difficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
                     ],
                   },
                 },
@@ -16475,6 +17078,7 @@ export const GetUserClimbsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'benchmark_difficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
                       {
                         kind: 'Field',
                         name: { kind: 'Name', value: 'renderBoard' },

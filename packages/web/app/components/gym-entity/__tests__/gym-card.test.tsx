@@ -51,4 +51,48 @@ describe('GymCard', () => {
     expect(screen.queryByRole('link', { name: 'Garage Gym' })).toBeNull();
     expect(screen.getByText('Garage Gym')).toBeTruthy();
   });
+
+  // The card is rendered as a div so the gym-name <a> can nest inside it, which
+  // costs it the native button's keyboard handling. ButtonBase puts that back —
+  // these lock it in, since losing it strands keyboard users on the card.
+  describe('keyboard activation', () => {
+    it('exposes the card as a button to assistive tech', () => {
+      render(<GymCard gym={makeGym()} onClick={vi.fn()} />);
+      const card = screen.getByRole('button');
+      expect(card.tagName).toBe('DIV');
+      expect(card.getAttribute('tabindex')).toBe('0');
+    });
+
+    it('opens the preview sheet on Enter', () => {
+      const onClick = vi.fn();
+      render(<GymCard gym={makeGym()} onClick={onClick} />);
+
+      fireEvent.keyDown(screen.getByRole('button'), { key: 'Enter' });
+
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens the preview sheet on Space, which activates on key up', () => {
+      const onClick = vi.fn();
+      render(<GymCard gym={makeGym()} onClick={onClick} />);
+      const card = screen.getByRole('button');
+
+      fireEvent.keyDown(card, { key: ' ' });
+      expect(onClick).not.toHaveBeenCalled();
+
+      fireEvent.keyUp(card, { key: ' ' });
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('is not keyboard-reachable when there is no sheet to open', () => {
+      render(<GymCard gym={makeGym()} />);
+      const card = screen.getByRole('button');
+
+      expect(card.getAttribute('tabindex')).toBe('-1');
+      fireEvent.keyDown(card, { key: 'Enter' });
+      // Nothing to assert a call against — the point is that it doesn't throw
+      // and the card never advertises an action it can't perform.
+      expect(card.className).toContain('Mui-disabled');
+    });
+  });
 });

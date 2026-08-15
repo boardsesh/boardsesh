@@ -126,10 +126,12 @@ describe('buildCacheKey', () => {
     expect(small).not.toBe(full);
   });
 
-  it('uses RENDERER_VERSION v5 to invalidate non-atomic v4 overlay PNGs', () => {
-    // v5 ensures a newly built native client never trusts a v4
-    // file that may have been truncated by the old direct-to-destination write.
-    expect(buildCacheKey('kilter', 1, 10, '24', 'p1r42')).toMatch(/^v5_/);
+  it('uses RENDERER_VERSION v6 to invalidate overlays drawn by the stale WASM artifact', () => {
+    // v5 kept a newly built native client from trusting a v4 file that the old
+    // direct-to-destination write may have truncated. v6 (issue #4495) drops
+    // every overlay the stale web WASM drew at the wrong stroke width — those
+    // hash to keys the rebuilt artifact would otherwise happily reuse.
+    expect(buildCacheKey('kilter', 1, 10, '24', 'p1r42')).toMatch(/^v6_/);
   });
 
   it('uses a distinct style token so filled (list) and stroke (play view) never collide', () => {
@@ -448,9 +450,9 @@ describe('renderedOverlays warm-up from disk cache', () => {
 
   it('exposes the populated map so a fresh hook init can hit it synchronously', () => {
     expect(_renderedOverlaysForTests).toBeInstanceOf(Map);
-    _cacheRenderedOverlayForTests('v5_kilter_1_10_24_deadbeef', 'file:///prior/session.png');
-    expect(_renderedOverlaysForTests.get('v5_kilter_1_10_24_deadbeef')?.uri).toBe('file:///prior/session.png');
-    _renderedOverlaysForTests.delete('v5_kilter_1_10_24_deadbeef');
+    _cacheRenderedOverlayForTests('v6_kilter_1_10_24_deadbeef', 'file:///prior/session.png');
+    expect(_renderedOverlaysForTests.get('v6_kilter_1_10_24_deadbeef')?.uri).toBe('file:///prior/session.png');
+    _renderedOverlaysForTests.delete('v6_kilter_1_10_24_deadbeef');
   });
 
   it('mints a new generation when a render replaces the same URI', () => {
@@ -484,26 +486,28 @@ describe('renderedOverlays warm-up from disk cache', () => {
   });
 
   it('only loads PNGs whose name starts with the current RENDERER_VERSION prefix', () => {
-    // Mix older leftovers (including v4 files written before atomic publication) with
-    // current v5 entries. The warm-up must surface only v5 keys; all older
-    // files are invalid under the current atomic-publication cache contract.
+    // Mix older leftovers (v4 files written before atomic publication, v5 files
+    // the stale WASM drew at the wrong stroke width) with current v6 entries.
+    // The warm-up must surface only v6 keys; every older file is invalid.
     const v1Entry = makeMockEntry('v1_kilter_1_10_24_aaaaaaaa.png');
     const v2Entry = makeMockEntry('v2_kilter_1_10_24_bbbbbbbb.png');
     const v3Entry = makeMockEntry('v3_kilter_1_10_24_eeeeeeee.png');
     const v4Entry = makeMockEntry('v4_kilter_1_10_24_ffffffff.png');
-    const v5EntryA = makeMockEntry('v5_kilter_1_10_24_cccccccc.png');
-    const v5EntryB = makeMockEntry('v5_tension_2_8_15_dddddddd.png');
-    directoryListSpy.mockReturnValue([v1Entry, v2Entry, v3Entry, v4Entry, v5EntryA, v5EntryB]);
+    const v5Entry = makeMockEntry('v5_kilter_1_10_24_99999999.png');
+    const v6EntryA = makeMockEntry('v6_kilter_1_10_24_cccccccc.png');
+    const v6EntryB = makeMockEntry('v6_tension_2_8_15_dddddddd.png');
+    directoryListSpy.mockReturnValue([v1Entry, v2Entry, v3Entry, v4Entry, v5Entry, v6EntryA, v6EntryB]);
 
     _runWarmupForTests();
 
-    expect(_renderedOverlaysForTests.has('v5_kilter_1_10_24_cccccccc')).toBe(true);
-    expect(_renderedOverlaysForTests.has('v5_tension_2_8_15_dddddddd')).toBe(true);
+    expect(_renderedOverlaysForTests.has('v6_kilter_1_10_24_cccccccc')).toBe(true);
+    expect(_renderedOverlaysForTests.has('v6_tension_2_8_15_dddddddd')).toBe(true);
     expect(_renderedOverlaysForTests.has('v1_kilter_1_10_24_aaaaaaaa')).toBe(false);
     expect(_renderedOverlaysForTests.has('v2_kilter_1_10_24_bbbbbbbb')).toBe(false);
     expect(_renderedOverlaysForTests.has('v3_kilter_1_10_24_eeeeeeee')).toBe(false);
     expect(_renderedOverlaysForTests.has('v4_kilter_1_10_24_ffffffff')).toBe(false);
-    // Only the two v5 entries should be present — no stragglers from
+    expect(_renderedOverlaysForTests.has('v5_kilter_1_10_24_99999999')).toBe(false);
+    // Only the two v6 entries should be present — no stragglers from
     // future-version PNGs slipping in either.
     expect(_renderedOverlaysForTests.size).toBe(2);
   });
@@ -512,17 +516,19 @@ describe('renderedOverlays warm-up from disk cache', () => {
     const v1Entry = makeMockEntry('v1_kilter_1_10_24_aaaaaaaa.png');
     const v2Entry = makeMockEntry('v2_kilter_1_10_24_bbbbbbbb.png');
     const v4Entry = makeMockEntry('v4_kilter_1_10_24_stale.png');
-    const v5Entry = makeMockEntry('v5_kilter_1_10_24_cccccccc.png');
-    directoryListSpy.mockReturnValue([v1Entry, v2Entry, v4Entry, v5Entry]);
+    const v5Entry = makeMockEntry('v5_kilter_1_10_24_wrongstroke.png');
+    const v6Entry = makeMockEntry('v6_kilter_1_10_24_cccccccc.png');
+    directoryListSpy.mockReturnValue([v1Entry, v2Entry, v4Entry, v5Entry, v6Entry]);
 
     _runWarmupForTests();
 
     expect(v1Entry.delete).toHaveBeenCalledTimes(1);
     expect(v2Entry.delete).toHaveBeenCalledTimes(1);
     expect(v4Entry.delete).toHaveBeenCalledTimes(1);
+    expect(v5Entry.delete).toHaveBeenCalledTimes(1);
     // Current-version files must never be deleted — they're the cache hits
     // the warm-up exists to surface.
-    expect(v5Entry.delete).not.toHaveBeenCalled();
+    expect(v6Entry.delete).not.toHaveBeenCalled();
   });
 
   it('keeps loading remaining entries when a delete throws', () => {
@@ -532,10 +538,10 @@ describe('renderedOverlays warm-up from disk cache', () => {
     v1Entry.delete.mockImplementation(() => {
       throw new Error('EACCES');
     });
-    const v5Entry = makeMockEntry('v5_kilter_1_10_24_bbbbbbbb.png');
-    directoryListSpy.mockReturnValue([v1Entry, v5Entry]);
+    const v6Entry = makeMockEntry('v6_kilter_1_10_24_bbbbbbbb.png');
+    directoryListSpy.mockReturnValue([v1Entry, v6Entry]);
 
     expect(() => _runWarmupForTests()).not.toThrow();
-    expect(_renderedOverlaysForTests.has('v5_kilter_1_10_24_bbbbbbbb')).toBe(true);
+    expect(_renderedOverlaysForTests.has('v6_kilter_1_10_24_bbbbbbbb')).toBe(true);
   });
 });

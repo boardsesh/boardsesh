@@ -10,6 +10,7 @@ import I18nProvider from '@/app/components/providers/i18n-provider';
 import { checkAdmin } from '@/app/lib/admin/check-admin';
 import { themeTokens } from '@/app/theme/theme-config';
 import GymClaimsPanel from '@/app/components/admin/gym-claims-panel';
+import GymOwnerReassignPanel from '@/app/components/admin/gym-owner-reassign-panel';
 import LocaleLink from '@/app/components/i18n/locale-link';
 
 // Server-rendered so admin access is enforced before any markup ships — matching
@@ -25,10 +26,7 @@ export default async function AdminGymClaimsPage() {
   if (!access.authenticated) {
     return (
       <I18nProvider locale={locale} namespaces={['common', 'admin']}>
-        <Container
-          maxWidth="md"
-          sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)', pb: 'var(--bottom-bar-height)' }}
-        >
+        <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
           <Alert severity="warning">{t('auth.signInRequired')}</Alert>
         </Container>
       </I18nProvider>
@@ -38,10 +36,7 @@ export default async function AdminGymClaimsPage() {
   if (!access.isAdmin) {
     return (
       <I18nProvider locale={locale} namespaces={['common', 'admin']}>
-        <Container
-          maxWidth="md"
-          sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)', pb: 'var(--bottom-bar-height)' }}
-        >
+        <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
           <Alert severity="error">{t(access.boardScopedOnly ? 'auth.boardScopedNoAccess' : 'auth.noAccess')}</Alert>
         </Container>
       </I18nProvider>
@@ -50,10 +45,7 @@ export default async function AdminGymClaimsPage() {
 
   return (
     <I18nProvider locale={locale} namespaces={['common', 'admin']}>
-      <Container
-        maxWidth="md"
-        sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)', pb: 'var(--bottom-bar-height)' }}
-      >
+      <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
         <Typography variant="h5" sx={{ fontWeight: 700, mb: 1, color: themeTokens.neutral[800] }}>
           {t('gymClaims.title')}
         </Typography>
@@ -63,6 +55,7 @@ export default async function AdminGymClaimsPage() {
           </MuiLink>
         </Box>
         <GymClaimsPanel />
+        <GymOwnerReassignPanel />
       </Container>
     </I18nProvider>
   );

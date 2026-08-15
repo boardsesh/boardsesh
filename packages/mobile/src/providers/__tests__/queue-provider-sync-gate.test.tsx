@@ -150,8 +150,15 @@ vi.mock('@boardsesh/graphql-client', async (importOriginal) => ({
   execute: graph.execute,
 }));
 
+// Capture the deps the provider injects so the baseline-sequence seam (#3933)
+// can be read straight off the wiring, without the real hook in the way.
+const queueMutationDeps = vi.hoisted(() => ({ current: null as { getBaselineSequence?: () => number | null } | null }));
+
 vi.mock('@boardsesh/queue-react', () => ({
-  useQueueMutations: () => queueMutations,
+  useQueueMutations: (deps: { getBaselineSequence?: () => number | null }) => {
+    queueMutationDeps.current = deps;
+    return queueMutations;
+  },
 }));
 
 vi.mock('@boardsesh/play-view', async (importOriginal) => ({
@@ -1148,5 +1155,79 @@ describe('QueueItemAdded self-echo attribution (issue #4042)', () => {
       'Climb Added to Queue',
       expect.objectContaining({ addedFromTab: 'mobile', partyMode: false }),
     );
+  });
+});
+
+// A wholesale replace (playlist activation, party seed, empty-room re-seed,
+// offline reconciliation) used to overwrite a climb a party member added while
+// the payload was being composed (#3933). The provider hands the shared
+// mutations factory the last sequence this device APPLIED so the server can
+// merge that add back in — it has to be the gate's applied sequence, not a
+// locally invented counter, or a climb the climber deliberately dropped would
+// come back.
+describe('setQueue baseline sequence wiring (issue #3933)', () => {
+  const baseline = () => {
+    const deps = queueMutationDeps.current;
+    if (!deps?.getBaselineSequence) throw new Error('getBaselineSequence was not injected into useQueueMutations');
+    return deps.getBaselineSequence();
+  };
+
+  beforeEach(() => {
+    ws.reset();
+    ws.client.on.mockClear();
+    ws.client.subscribe.mockClear();
+    queueMutationDeps.current = null;
+    activeBoard.getStoredActiveBoard.mockReset();
+    activeBoard.getStoredActiveBoard.mockResolvedValue(activeBoard.stored);
+    toast.showToast.mockClear();
+    analytics.track.mockClear();
+    for (const mutation of Object.values(queueMutations) as Array<ReturnType<typeof vi.fn>>) {
+      mutation.mockReset();
+      mutation.mockResolvedValue(undefined);
+    }
+    sessionStore.getStoredSessionId.mockReset();
+    sessionStore.getStoredSessionId.mockResolvedValue('session-1');
+    graph.execute.mockReset();
+    graph.execute.mockResolvedValue(createJoinSessionResponse());
+    http.request.mockReset();
+    routeHttpRequest(queueStateResponse([]));
+  });
+
+  it('reports no baseline before any server event has been applied', async () => {
+    renderProvider(() => {});
+    await waitFor(() => {
+      expect(ws.getQueueUpdatesSink()).not.toBeNull();
+    });
+
+    expect(baseline()).toBeNull();
+  });
+
+  it("tracks the gate's applied sequence as events land", async () => {
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(ws.getQueueUpdatesSink()).not.toBeNull();
+    });
+    const queueUpdatesSink = ws.getQueueUpdatesSink();
+    if (!queueUpdatesSink) throw new Error('queue updates sink was not captured');
+
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireFullSync(1, 'hash-1') } });
+    });
+    await waitFor(() => {
+      expect(baseline()).toBe(1);
+    });
+
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireQueueItemAdded(2, 'hash-2', wireItem('q1', 'c1')) } });
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['q1']);
+    });
+
+    // A peer's add this device HAS seen sits at or below the baseline, so a
+    // replace that drops it can never have it re-appended by the server merge.
+    expect(baseline()).toBe(2);
   });
 });

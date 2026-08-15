@@ -21,6 +21,9 @@
 // violates the DDL's NOT NULL. (Both proven by the drift tests below.)
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { QueryInvalidator } from '../../database';
 
 // Capture schema-drift telemetry through the injected reporter seam.
@@ -39,6 +42,7 @@ import { runMigrations } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
 import { getDeletionsCoverageAt } from '../deletions-coverage';
+import { setCheckpoint } from '../checkpoints';
 import { DELETIONS_COVERAGE_EPOCH_FLOOR_MS } from '../retention';
 import { TABLE_CONFIGS } from '../table-config';
 
@@ -592,6 +596,36 @@ describe('sync layer — real-DDL integration', () => {
       );
     }
 
+    it('the current-cursor write acquires the writer lock inside SQLite deferred BEGIN', async () => {
+      const lockTestDirectory = mkdtempSync(join(tmpdir(), 'deletion-page-writer-lock-'));
+      const lockTestPath = join(lockTestDirectory, 'offline.db');
+      const lockOwner = createTestDatabase(lockTestPath);
+      await runMigrations(lockOwner);
+      const competingWriter = createTestDatabase(lockTestPath);
+
+      try {
+        await lockOwner.withExclusiveTransactionAsync(async (transaction) => {
+          // This is the same first write processDeletions uses before its epoch
+          // guard. Expo/node:sqlite both enter the callback under deferred BEGIN;
+          // INSERT OR REPLACE upgrades it to the sole main-DB writer.
+          await setCheckpoint(transaction, 'checkpoint:deletions', DEFAULT_CURSOR);
+
+          await expect(
+            competingWriter.runAsync('DELETE FROM sync_meta WHERE key = ?', ['checkpoint:deletions']),
+          ).rejects.toThrow(/busy|locked/i);
+        });
+
+        // Once the owner commits, the queued purge-shaped write can proceed.
+        await expect(
+          competingWriter.runAsync('DELETE FROM sync_meta WHERE key = ?', ['checkpoint:deletions']),
+        ).resolves.toMatchObject({ changes: 1 });
+      } finally {
+        lockOwner.close();
+        competingWriter.close();
+        rmSync(lockTestDirectory, { recursive: true, force: true });
+      }
+    });
+
     it('deletes a 1-segment tick (record_id = uuid), a 3-segment favorite, and a 3-segment stat row', async () => {
       // Seed the three target rows directly (deletion is independent of how a row
       // arrived). board_climb_stats local PK is (board_type, climb_uuid, angle).
@@ -696,6 +730,38 @@ describe('sync layer — real-DDL integration', () => {
       expect(
         await db.getFirstAsync('SELECT climb_uuid FROM user_favorites WHERE climb_uuid = ?', ['oldfav-climb']),
       ).toBeNull();
+    });
+
+    it('rolls back the whole deletion page and its checkpoint when one tombstone fails', async () => {
+      await seedTick('tick-atomic-1');
+      await seedTick('tick-atomic-2');
+      await db.execAsync(`
+        CREATE TRIGGER fail_second_atomic_delete
+        BEFORE DELETE ON boardsesh_ticks
+        WHEN OLD.uuid = 'tick-atomic-2'
+        BEGIN
+          SELECT RAISE(ABORT, 'forced deletion page failure');
+        END;
+      `);
+
+      const deletions: DeletionRecord[] = [
+        { tableName: 'boardsesh_ticks', recordId: 'tick-atomic-1', deletedAt: '2099-01-01T00:00:00Z' },
+        { tableName: 'boardsesh_ticks', recordId: 'tick-atomic-2', deletedAt: '2099-01-01T00:00:01Z' },
+      ];
+
+      await expect(
+        pullSync(db, queryClient, makeSingleTableFetch({ queryName: 'syncTicks', documents: [], deletions })),
+      ).rejects.toThrow(/forced deletion page failure/);
+
+      // The first DELETE ran before the trigger aborted the second. It is back
+      // because both tombstones and the page cursor share one transaction.
+      expect(
+        await db.getFirstAsync('SELECT uuid FROM boardsesh_ticks WHERE uuid = ?', ['tick-atomic-1']),
+      ).not.toBeNull();
+      expect(
+        await db.getFirstAsync('SELECT uuid FROM boardsesh_ticks WHERE uuid = ?', ['tick-atomic-2']),
+      ).not.toBeNull();
+      expect(await readCheckpoint(db, 'checkpoint:deletions')).toBeNull();
     });
   });
 

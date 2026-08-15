@@ -11,6 +11,8 @@ import {
   buildStatisticsSummary,
   buildVPointsTimeline,
   buildActivityHeatmap,
+  getComparisonWindows,
+  buildPeriodComparison,
 } from '../chart-builders';
 import type { LogbookEntry } from '../types';
 
@@ -585,5 +587,118 @@ describe('buildActivityHeatmap', () => {
         .startOf('isoWeek')
         .format('YYYY-MM-DD'),
     );
+  });
+});
+
+describe('getComparisonWindows', () => {
+  it('trailing: current is the last unit, previous is the unit before that', () => {
+    const now = dayjs('2024-06-15T00:00:00.000Z');
+    const { current, previous } = getComparisonWindows('lastWeek', 'trailing', now);
+    expect(current.start.isSame(now.subtract(1, 'week'))).toBe(true);
+    expect(current.end.isSame(now)).toBe(true);
+    expect(previous.start.isSame(now.subtract(2, 'week'))).toBe(true);
+    expect(previous.end.isSame(now.subtract(1, 'week'))).toBe(true);
+  });
+
+  it('yearOverYear: previous is the same window shifted back a year', () => {
+    const now = dayjs('2024-06-15T00:00:00.000Z');
+    const { current, previous } = getComparisonWindows('lastMonth', 'yearOverYear', now);
+    expect(current.start.isSame(now.subtract(1, 'month'))).toBe(true);
+    expect(current.end.isSame(now)).toBe(true);
+    expect(previous.start.isSame(now.subtract(1, 'month').subtract(1, 'year'))).toBe(true);
+    expect(previous.end.isSame(now.subtract(1, 'year'))).toBe(true);
+  });
+
+  it('handles the leap-year boundary for lastYear/yearOverYear without throwing', () => {
+    const now = dayjs('2024-02-29T00:00:00.000Z'); // leap day
+    const { previous } = getComparisonWindows('lastYear', 'yearOverYear', now);
+    // dayjs normalises Feb 29 minus 1 year to Feb 28 in a non-leap year.
+    expect(previous.end.format('YYYY-MM-DD')).toBe('2023-02-28');
+  });
+});
+
+describe('buildPeriodComparison', () => {
+  it('returns null for a timeframe other than week/month/year', () => {
+    expect(buildPeriodComparison({}, 'all', 'trailing')).toBeNull();
+    expect(buildPeriodComparison({}, 'today', 'trailing')).toBeNull();
+    expect(buildPeriodComparison({}, 'custom', 'trailing')).toBeNull();
+  });
+
+  it('counts distinct climbUuids per window, excluding attempts and climbUuid-less entries', () => {
+    const now = dayjs('2024-06-15T00:00:00.000Z');
+    const kilter: LogbookEntry[] = [
+      makeEntry({ climbed_at: now.toISOString(), status: 'send', climbUuid: 'a' }),
+      makeEntry({ climbed_at: now.subtract(4, 'day').toISOString(), status: 'flash', climbUuid: 'b' }),
+      makeEntry({ climbed_at: now.subtract(10, 'day').toISOString(), status: 'send', climbUuid: 'c' }),
+      makeEntry({ climbed_at: now.toISOString(), status: 'attempt', climbUuid: 'd' }),
+      makeEntry({ climbed_at: now.toISOString(), status: 'send', climbUuid: undefined }),
+    ];
+    const result = buildPeriodComparison({ kilter }, 'lastWeek', 'trailing', now)!;
+    expect(result.current.sends).toBe(2);
+    expect(result.previous.sends).toBe(1);
+    expect(result.sendsDelta).toBe(1);
+    expect(result.sendsPercentChange).toBe(100);
+  });
+
+  it('sendsPercentChange is null when the previous period has zero sends (new climber)', () => {
+    const now = dayjs('2024-06-15T00:00:00.000Z');
+    const kilter: LogbookEntry[] = [makeEntry({ climbed_at: now.toISOString(), status: 'send', climbUuid: 'a' })];
+    const result = buildPeriodComparison({ kilter }, 'lastWeek', 'trailing', now)!;
+    expect(result.previous.sends).toBe(0);
+    expect(result.sendsDelta).toBe(1);
+    expect(result.sendsPercentChange).toBeNull();
+  });
+
+  it('sums distinct climbUuids across boards', () => {
+    const now = dayjs('2024-06-15T00:00:00.000Z');
+    const kilter: LogbookEntry[] = [makeEntry({ climbed_at: now.toISOString(), status: 'send', climbUuid: 'a' })];
+    const tension: LogbookEntry[] = [makeEntry({ climbed_at: now.toISOString(), status: 'send', climbUuid: 'b' })];
+    const result = buildPeriodComparison({ kilter, tension }, 'lastWeek', 'trailing', now)!;
+    expect(result.current.sends).toBe(2);
+  });
+
+  it('yearOverYear compares against the same window one year back, not the trailing week', () => {
+    const now = dayjs('2024-06-15T00:00:00.000Z');
+    const kilter: LogbookEntry[] = [
+      makeEntry({ climbed_at: now.toISOString(), status: 'send', climbUuid: 'a' }),
+      makeEntry({
+        climbed_at: now.subtract(1, 'year').subtract(3, 'day').toISOString(),
+        status: 'send',
+        climbUuid: 'b',
+      }),
+      makeEntry({ climbed_at: now.subtract(10, 'day').toISOString(), status: 'send', climbUuid: 'c' }),
+    ];
+    const result = buildPeriodComparison({ kilter }, 'lastWeek', 'yearOverYear', now)!;
+    expect(result.current.sends).toBe(1); // only 'a'
+    expect(result.previous.sends).toBe(1); // only 'b'
+  });
+
+  it('a tick exactly on the trailing seam lands in previous only, not current and not both', () => {
+    const now = dayjs('2024-06-15T00:00:00.000Z');
+    const kilter: LogbookEntry[] = [
+      // Exactly `now - 1 week`: current.start and (trailing) previous.end land
+      // on the same instant. current.start is exclusive so this tick is
+      // excluded there (same treatment filterLogbookByTimeframe gives its own
+      // strictly-after lower bound); previous.end is inclusive so the tick
+      // belongs to previous. One bucket, not zero, not two.
+      makeEntry({ climbed_at: now.subtract(1, 'week').toISOString(), status: 'send', climbUuid: 'seam' }),
+    ];
+    const result = buildPeriodComparison({ kilter }, 'lastWeek', 'trailing', now)!;
+    expect(result.current.sends).toBe(0);
+    expect(result.previous.sends).toBe(1);
+  });
+
+  it('a tick exactly on the year-over-year boundary (now - 1 year) lands in previous, symmetric with trailing', () => {
+    // yearOverYear's windows don't share a seam with current the way trailing's
+    // do, but periodSnapshot applies the same (start, end] rule uniformly, so
+    // a tick at precisely `previous.end` (now - 1 year) still counts here
+    // rather than being silently dropped.
+    const now = dayjs('2024-06-15T00:00:00.000Z');
+    const kilter: LogbookEntry[] = [
+      makeEntry({ climbed_at: now.subtract(1, 'year').toISOString(), status: 'send', climbUuid: 'yoy-boundary' }),
+    ];
+    const result = buildPeriodComparison({ kilter }, 'lastWeek', 'yearOverYear', now)!;
+    expect(result.current.sends).toBe(0);
+    expect(result.previous.sends).toBe(1);
   });
 });

@@ -105,6 +105,13 @@ After mobile changes, run the validation sequence:
 
 Read [docs/react-native-performance.md](./docs/react-native-performance.md) before touching any list, provider, gesture, or board-art code, and [docs/mobile-sheets-vs-routes.md](./docs/mobile-sheets-vs-routes.md) before adding a screen or sheet.
 
+### Choose the PR base before coding
+
+- JavaScript-only mobile changes target `main`; the production OTA pipeline ships them to compatible store builds.
+- Changes that move the Expo native fingerprint target `release/next`, the TestFlight and Play-internal release train.
+- Split a mixed backend/native change into two PRs. Land a backward-compatible backend or shared-schema foundation on `main` first, then base the native mobile PR on `release/next` after it rebases.
+- Keep server behavior compatible with the currently shipped mobile app until the new store release has been adopted. If `release/next` is absent, ask a maintainer to start the next train from current `main`.
+
 ### Path A: small changes through the OTA channel switcher
 
 For a small fix you can test your pull request on a regular App Store or TestFlight build, with no local build at all. Every pull request that touches React Native code publishes its JavaScript bundle to its own update channel named `pr-<number>` (the `mobile-ota-preview.yml` workflow does this), and a build can switch to that channel at runtime.
@@ -203,6 +210,8 @@ Web, in `packages/web/.env.local`:
 | `DATABASE_URL`       | Postgres connection string.                                                    |
 | `NEXT_PUBLIC_WS_URL` | Backend WebSocket URL the browser connects to (`ws://localhost:8080/graphql`). |
 | `NEXTAUTH_SECRET`    | Must match the backend's value.                                                |
+
+Locally you can leave `NEXTAUTH_URL` unset — NextAuth defaults to `http://localhost:3000`. In any hosted deployment (Vercel, Docker, homelab preview) it must be the canonical https origin the browser actually talks to, e.g. `https://www.boardsesh.com`, with no trailing path. NextAuth builds every OAuth `redirect_uri` and the session-cookie domain from it, so a stale or loopback value drops users on a dead localhost page after Google/Apple sign-in. A loopback value is ignored on hosted deployments — `packages/web/app/lib/auth/canonical-auth-url.ts` substitutes the canonical origin (from `BASE_URL`, `VERCEL_ENV=production`, or `VERCEL_URL`) and logs a warning — but that is a backstop, not a substitute for setting the variable. Your own machine is never treated as hosted: `VERCEL_ENV=development` and a loopback `BASE_URL` (both in the tracked `packages/web/.env.local`) are dev defaults, so a local `NEXTAUTH_URL` is left exactly as you set it, non-3000 ports included.
 
 Mobile: copy `packages/mobile/.env.example` to `packages/mobile/.env.development.local` and set these to aim the app at a local or custom backend:
 
@@ -319,7 +328,8 @@ This is a limitation of Aurora's API, not a choice on our side.
 
 1. Branch off `main` (or work in a worktree). Make your change and run `vp check` and `vp run typecheck`. The pre-commit hook runs `vp check --fix` for you.
 2. Open a pull request against `main`. Fill in the Release Notes section from the template, written for climbers (what they get, not what the code does). Internal-only changes (refactor, CI, deps, tests) get `none`.
-3. CI runs lint, typecheck, tests, and the mobile checks. Keep iterating until it's green.
+3. Fill in the Test plan and Risk sections too. Testers read the plan word for word in the app, so keep it to 1–5 numbered steps, one action then what to see, 12 words or fewer each ("1. CI green." is fine for an internal change), and score the risk `Risk: N/5 — why` (1 docs/CI/deps … 5 BLE/OTA/migrations). CI fails without them.
+4. CI runs lint, typecheck, tests, and the mobile checks. Keep iterating until it's green.
 
 The project rules and architecture agents follow are in `CLAUDE.md`, which is useful reading for humans too.
 
@@ -330,3 +340,5 @@ Official self-hosting support is planned but still involved to set up. For now t
 ## Thanks
 
 This app started as a fork of [Climbdex](https://github.com/lemeryfertitta/Climbdex), and we use [BoardLib](https://github.com/lemeryfertitta/BoardLib) to build the database. Thanks to @lemeryfertitta for making this project possible.
+
+Thanks also to [Mercure Technologies](https://github.com/mercuretechnologies) for granting Boardsesh an enterprise license for [xprem](https://github.com/mercuretechnologies/xprem). It's the OTA server behind our releases, and the reason a reviewer can try your pull request from a store build via the channel switcher described above.

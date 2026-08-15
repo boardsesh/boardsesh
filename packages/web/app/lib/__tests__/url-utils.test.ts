@@ -30,10 +30,8 @@ import {
   tryConstructSlugViewUrl,
   buildCanonicalClimbListUrl,
   tryConstructSlugListUrl,
-  tryConstructSlugCreateUrl,
   popularConfigListUrl,
   DEFAULT_SEARCH_PARAMS,
-  constructCreateClimbUrl,
 } from '../url-utils';
 import { resolveSizeSlugToId } from '@boardsesh/play-view/readable-url-utils';
 import type { SearchRequestPagination, BoardDetails } from '../types';
@@ -1058,6 +1056,20 @@ describe('Utility functions', () => {
       expect(isUuidOnly('ABC123')).toBe(false);
       expect(isUuidOnly('')).toBe(false);
     });
+
+    it('stays false for a dashed MoonBoard uuid, on purpose', () => {
+      // `extractUuidFromSlug` DOES understand the dashed form, so it is tempting
+      // to widen this too. Do not: the only caller that gains anything is the
+      // slug-redirect branch in `/[board_name]/…/view/[climb_uuid]`, which
+      // resolves its layout through `getLayouts(board_name)` — the Aurora
+      // `board-constants` tables, which carry no MoonBoard rows at all
+      // (`getAllLayouts('moonboard')` is `[]`). Returning true here sends every
+      // bare-uuid MoonBoard climb URL into that branch, where `layout` is
+      // undefined and the page calls `notFound()`. Today those URLs render and
+      // carry a canonical pointing at their slug form, which is the consolidation
+      // Google needs; a 308 would cost a working page to gain nothing.
+      expect(isUuidOnly('9fe54099-6fdd-5adb-b82f-2d7bcb10d4ad')).toBe(false);
+    });
   });
 
   describe('isNumericId', () => {
@@ -1724,7 +1736,7 @@ describe('qualified size slugs for a shadowed size (Kilter layout 1, sizes 10/27
     size_name: '12 x 12 without kickboard',
   } as unknown as BoardDetails;
 
-  describe('tryConstructSlugViewUrl / tryConstructSlugListUrl / tryConstructSlugCreateUrl', () => {
+  describe('tryConstructSlugViewUrl / tryConstructSlugListUrl', () => {
     it('emits the qualified size slug for the shadowed size', () => {
       expect(tryConstructSlugViewUrl('kilter', 1, 27, KILTER_SQUARE_SETS, 40, 'ABC123', 'Moon Landing')).toBe(
         QUALIFIED_VIEW_URL,
@@ -1732,42 +1744,6 @@ describe('qualified size slugs for a shadowed size (Kilter layout 1, sizes 10/27
       expect(tryConstructSlugListUrl('kilter', 1, 27, KILTER_SQUARE_SETS, 40)).toBe(
         '/kilter/original/12x12-square-without-kickboard/screw_bolt/40/list',
       );
-      expect(tryConstructSlugCreateUrl('kilter', 1, 27, KILTER_SQUARE_SETS, 40)).toBe(
-        '/kilter/original/12x12-square-without-kickboard/screw_bolt/40/create',
-      );
-    });
-
-    it('swaps only the trailing surface segment when building the create URL', () => {
-      // A board whose slugs themselves contain "list" would break a naive
-      // replace; the anchor keeps the swap to the final segment.
-      const listUrl = tryConstructSlugListUrl('kilter', 1, 27, KILTER_SQUARE_SETS, 40);
-      const createUrl = tryConstructSlugCreateUrl('kilter', 1, 27, KILTER_SQUARE_SETS, 40);
-      expect(createUrl).toBe(`${listUrl?.slice(0, -'/list'.length)}/create`);
-    });
-
-    it('returns null from the create builder when static data lookup fails', () => {
-      expect(tryConstructSlugCreateUrl('kilter', 9999, 9999, [9999], 40)).toBeNull();
-    });
-
-    it('carries fork params on the qualified create URL with the same query contract as the name-based builder', () => {
-      const forkParams = { frames: 'p1r1p2r2', name: 'Moon Landing', editClimbUuid: 'ABC123' };
-      const qualifiedForkUrl = tryConstructSlugCreateUrl('kilter', 1, 27, KILTER_SQUARE_SETS, 40, forkParams);
-      expect(qualifiedForkUrl).toBe(
-        '/kilter/original/12x12-square-without-kickboard/screw_bolt/40/create' +
-          '?forkFrames=p1r1p2r2&forkName=Moon+Landing&editClimbUuid=ABC123',
-      );
-      // The name-based fallback must append the identical query string, or a
-      // fork would prefill differently depending on which builder produced it.
-      const nameBasedForkUrl = constructCreateClimbUrl(
-        'kilter',
-        'Original',
-        '12 x 12 with kickboard',
-        'Square',
-        ['Screw-Ons', 'Bolt Ons'],
-        40,
-        forkParams,
-      );
-      expect(nameBasedForkUrl?.split('?')[1]).toBe(qualifiedForkUrl?.split('?')[1]);
     });
 
     it('leaves the size that owns the bare slug on it, so existing links keep meaning what they meant', () => {
@@ -1776,9 +1752,6 @@ describe('qualified size slugs for a shadowed size (Kilter layout 1, sizes 10/27
       );
       expect(tryConstructSlugListUrl('kilter', 1, 10, KILTER_SQUARE_SETS, 40)).toBe(
         '/kilter/original/12x12-square/screw_bolt/40/list',
-      );
-      expect(tryConstructSlugCreateUrl('kilter', 1, 10, KILTER_SQUARE_SETS, 40)).toBe(
-        '/kilter/original/12x12-square/screw_bolt/40/create',
       );
     });
 
@@ -1890,50 +1863,6 @@ describe('qualified size slugs for a shadowed size (Kilter layout 1, sizes 10/27
         getContextAwareClimbViewUrl('/b/moonrise-gym/40/list', squareWithoutKickboard, 40, 'ABC123', 'Moon Landing'),
       ).toBe('/b/moonrise-gym/40/view/moon-landing-ABC123');
     });
-  });
-});
-
-describe('constructCreateClimbUrl', () => {
-  it('builds a create URL without query params when no forkParams', () => {
-    const url = constructCreateClimbUrl('kilter', 'Original', '12x12', 'Full Size', ['Standard'], 40);
-    expect(url).toContain('/create');
-    expect(url).not.toContain('?');
-  });
-
-  it('includes forkFrames and forkName when forkParams provided', () => {
-    const url = constructCreateClimbUrl('kilter', 'Original', '12x12', 'Full Size', ['Standard'], 40, {
-      frames: 'p1r12',
-      name: 'My Climb',
-    });
-    expect(url).toContain('forkFrames=p1r12');
-    expect(url).toContain('forkName=My+Climb');
-  });
-
-  it('uses editClimbUuid (not editUuid) as the query param name', () => {
-    const url = constructCreateClimbUrl('kilter', 'Original', '12x12', 'Full Size', ['Standard'], 40, {
-      frames: 'p1r12',
-      name: 'Draft',
-      editClimbUuid: 'abc-123',
-    });
-    expect(url).toContain('editClimbUuid=abc-123');
-    expect(url).not.toContain('editUuid=');
-  });
-
-  it('includes forkDescription when provided', () => {
-    const url = constructCreateClimbUrl('kilter', 'Original', '12x12', 'Full Size', ['Standard'], 40, {
-      frames: 'p1r12',
-      name: 'Draft',
-      description: 'A cool problem',
-    });
-    expect(url).toContain('forkDescription=A+cool+problem');
-  });
-
-  it('omits editClimbUuid from URL when not provided', () => {
-    const url = constructCreateClimbUrl('kilter', 'Original', '12x12', 'Full Size', ['Standard'], 40, {
-      frames: 'p1r12',
-      name: 'Fork',
-    });
-    expect(url).not.toContain('editClimbUuid');
   });
 });
 

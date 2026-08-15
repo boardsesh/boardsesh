@@ -1,10 +1,4 @@
 {
-  "metadata": {
-    "notifications": {
-      "title": "Notifications",
-      "description": "Your notifications on Boardsesh"
-    }
-  },
   "title": "Notifications",
   "empty": "Nothing yet",
   "markAllRead": "Mark all as read",
@@ -35,12 +29,6 @@
     "gymClaimApproved": "You now manage {{gym}}",
     "gymClaimApprovedGeneric": "You're the owner now — your gym claim came through",
     "default": "You have a new notification"
-  },
-  "time": {
-    "justNow": "just now",
-    "minutes": "{{count}}m",
-    "hours": "{{count}}h",
-    "days": "{{count}}d"
   },
   "errors": {
     "load": "Couldn't load your notifications"

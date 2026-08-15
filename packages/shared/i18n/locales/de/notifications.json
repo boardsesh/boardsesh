@@ -1,10 +1,4 @@
 {
-  "metadata": {
-    "notifications": {
-      "title": "Benachrichtigungen",
-      "description": "Deine Benachrichtigungen auf Boardsesh"
-    }
-  },
   "title": "Benachrichtigungen",
   "empty": "Noch nichts da",
   "markAllRead": "Alle als gelesen markieren",
@@ -35,12 +29,6 @@
     "gymClaimApproved": "Du verwaltest jetzt {{gym}}",
     "gymClaimApprovedGeneric": "Die Halle gehört jetzt dir — deine Anfrage ist durch",
     "default": "Du hast eine neue Benachrichtigung"
-  },
-  "time": {
-    "justNow": "gerade eben",
-    "minutes": "{{count}} Min.",
-    "hours": "{{count}} Std.",
-    "days": "{{count}} T"
   },
   "errors": {
     "load": "Deine Benachrichtigungen konnten nicht geladen werden"

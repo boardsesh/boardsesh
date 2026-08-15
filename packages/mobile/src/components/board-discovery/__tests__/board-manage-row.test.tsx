@@ -172,6 +172,13 @@ describe('BoardManageRow offline toggle gating', () => {
     expect(offlineToggleProps.last?.state).toBe('downloaded');
   });
 
+  it('shows a finishing caption while shared post-download work is still running', () => {
+    const { queryByText } = render(<BoardManageRow {...rowProps} downloadState="finalizing" />);
+    expect(queryByText('mobile.offline.finalizing')).not.toBeNull();
+    expect(queryByText('mobile.offline.pending')).toBeNull();
+    expect(offlineToggleProps.last?.state).toBe('finalizing');
+  });
+
   it('shows the bootstrapping caption (not the climb count) during the snapshot warm-up', () => {
     const { queryByText } = render(
       <BoardManageRow {...rowProps} downloadState="downloading" isBootstrapping downloadCount={0} />,
@@ -416,5 +423,29 @@ describe('BoardManageRow edit mode', () => {
     );
     getByLabelText('mobile.manage.deleteAria').click();
     expect(onDelete).toHaveBeenCalledWith(board);
+  });
+});
+
+describe('BoardManageRow subtitle', () => {
+  // The server sends sizeName as null on every board, so the old
+  // `board.sizeName ?? ...` first term never fired and every row read "Kilter".
+  it('shows where an owned board is', () => {
+    const gymBoard = { ...board, gymName: 'Bergen Klatresenter', sizeName: null } as unknown as UserBoard;
+    const { queryByText } = render(<BoardManageRow {...rowProps} board={gymBoard} downloadState={undefined} />);
+    expect(queryByText('Bergen Klatresenter')).not.toBeNull();
+  });
+
+  it('falls back to what an owned board is when it has no place', () => {
+    const placeless = { ...board, sizeName: null } as unknown as UserBoard;
+    const { queryByText } = render(<BoardManageRow {...rowProps} board={placeless} downloadState={undefined} />);
+    expect(queryByText('Original 12×12 with kickboard')).not.toBeNull();
+  });
+
+  it('shows the owner on a followed board', () => {
+    const followed = { ...board, ownerDisplayName: 'Marco' } as unknown as UserBoard;
+    const { queryByText } = render(
+      <BoardManageRow {...rowProps} board={followed} isOwned={false} downloadState={undefined} />,
+    );
+    expect(queryByText('Marco')).not.toBeNull();
   });
 });

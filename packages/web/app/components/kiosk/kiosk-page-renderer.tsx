@@ -13,6 +13,7 @@ import type { Metadata } from 'next';
 import { GET_GYM_KIOSK } from '@boardsesh/graphql/operations';
 import type { GymKiosk, GymKioskBoard } from '@boardsesh/shared-schema';
 import { getGraphQLHttpUrl } from '@/app/lib/graphql/client';
+import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
 import { getPublicBackendHttpUrl } from '@/app/lib/backend-url';
 import { resolveGymLogoDisplayUrl } from '@/app/lib/gym-logo-display-url';
 import { getLocale } from '@/app/lib/i18n/get-locale';
@@ -47,6 +48,11 @@ export type GymKioskFetchResult = { status: 'ok'; kiosk: GymKiosk | null } | { s
 /**
  * Anonymous, request-deduped (React cache) kiosk fetch shared by the page body
  * and generateMetadata. Mirrors `resolveBoardBySlug`'s transport.
+ *
+ * The deadline matters more here than anywhere: nobody is watching a gym TV's
+ * tab to hit reload. An aborted fetch lands in the catch as 'error', which is
+ * already the retry screen — so a wedged backend costs the TV a few seconds and
+ * a self-healing reload instead of an indefinitely blank page.
  */
 export const fetchGymKiosk = cache(async (gymSlug: string, kioskSlug: string | null): Promise<GymKioskFetchResult> => {
   try {
@@ -54,6 +60,7 @@ export const fetchGymKiosk = cache(async (gymSlug: string, kioskSlug: string | n
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query: GET_GYM_KIOSK, variables: { gymSlug, kioskSlug } }),
+      signal: AbortSignal.timeout(SSR_BACKEND_FETCH_TIMEOUT_MS),
       next: { revalidate: KIOSK_REVALIDATE_SECONDS },
     });
     if (!response.ok) return { status: 'error' };

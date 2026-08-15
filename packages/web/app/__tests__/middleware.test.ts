@@ -6,14 +6,13 @@ import { PATHNAME_HEADER } from '@/app/lib/request-pathname-header';
 
 const { getClimbViewPageCacheTTL, getListPageCacheTTL, hasUserSpecificFilters } =
   await import('@/app/lib/list-page-cache');
-const { middleware } = await import('@/middleware');
+const { middleware, config } = await import('@/middleware');
 
 function sp(params: Record<string, string> = {}): URLSearchParams {
   return new URLSearchParams(params);
 }
 
 const TTL_24H = 86400;
-const TTL_1H = 3600;
 const LEGACY_LIST = '/kilter/original/12x12-square/screw_bolt/40/list';
 const SLUG_LIST = '/b/kilter-original-12x12/40/list';
 // View pages, all three URL shapes that resolve to the same climb.
@@ -180,19 +179,21 @@ describe('getListPageCacheTTL', () => {
 describe('getClimbViewPageCacheTTL', () => {
   describe('route matching', () => {
     it('matches the slug view format', () => {
-      expect(getClimbViewPageCacheTTL(SLUG_VIEW, sp())).toBe(TTL_1H);
+      expect(getClimbViewPageCacheTTL(SLUG_VIEW, sp())).toBe(TTL_24H);
     });
 
     it('matches the named-segment (legacy) view format', () => {
-      expect(getClimbViewPageCacheTTL(NAMED_VIEW, sp())).toBe(TTL_1H);
+      expect(getClimbViewPageCacheTTL(NAMED_VIEW, sp())).toBe(TTL_24H);
     });
 
     it('matches the numeric view format (so its redirect is cacheable)', () => {
-      expect(getClimbViewPageCacheTTL(NUMERIC_VIEW, sp())).toBe(TTL_1H);
+      expect(getClimbViewPageCacheTTL(NUMERIC_VIEW, sp())).toBe(TTL_24H);
     });
 
     it('matches the tension board view', () => {
-      expect(getClimbViewPageCacheTTL('/tension/original/12x12/screw_bolt/30/view/some-climb-uuid', sp())).toBe(TTL_1H);
+      expect(getClimbViewPageCacheTTL('/tension/original/12x12/screw_bolt/30/view/some-climb-uuid', sp())).toBe(
+        TTL_24H,
+      );
     });
 
     it('rejects an unsupported board (legacy view shape)', () => {
@@ -226,7 +227,7 @@ describe('getClimbViewPageCacheTTL', () => {
 
   describe('search params', () => {
     it('caches with non-user-specific params (tracking/query noise)', () => {
-      expect(getClimbViewPageCacheTTL(SLUG_VIEW, sp({ utm_source: 'twitter' }))).toBe(TTL_1H);
+      expect(getClimbViewPageCacheTTL(SLUG_VIEW, sp({ utm_source: 'twitter' }))).toBe(TTL_24H);
     });
 
     it.each([
@@ -311,6 +312,73 @@ describe('hasUserSpecificFilters', () => {
 function makeRequest(url: string): NextRequest {
   return new NextRequest(new URL(url, 'http://localhost:3000'));
 }
+
+describe('middleware matcher config', () => {
+  it('pins the exact matcher entries', () => {
+    // Vercel bills/logs per invocation — this literal is the whole point of
+    // the fix, so a drift here (an accidental widening back to /api/:path*,
+    // or a narrowing that drops an auth path) must fail the suite outright.
+    expect(config.matcher).toEqual([
+      '/api/v1/:path*',
+      '/api/auth/:path*',
+      '/api/internal/ws-auth',
+      '/((?!api/|_next/static|_next/image|favicon.ico|monitoring|\\.well-known/|.*\\..*).*)',
+    ]);
+  });
+
+  // Coverage helper mirroring how Next compiles each matcher shape: entries
+  // 1-2 are `:path*` prefixes, entry 3 is an exact path, entry 4 is the full
+  // page-routes regex tested anchored end-to-end.
+  function isMatchedByConfig(pathname: string): boolean {
+    const [v1Prefix, authPrefix, wsAuthExact, pageRoutesRegex] = config.matcher;
+    if (pathname.startsWith(v1Prefix.replace(':path*', ''))) return true;
+    if (pathname.startsWith(authPrefix.replace(':path*', ''))) return true;
+    if (pathname === wsAuthExact) return true;
+    return new RegExp(`^${pageRoutesRegex}$`).test(pathname);
+  }
+
+  it.each([
+    '/api/internal/board-render',
+    '/api/og/setter',
+    '/api/internal/prewarm-heatmap/kilter',
+    '/api/internal/revalidate-climb',
+  ])('does not run middleware on %s (no CORS/locale/board-validation work needed there)', (pathname) => {
+    expect(isMatchedByConfig(pathname)).toBe(false);
+  });
+
+  it.each([
+    '/api/internal/ws-auth',
+    '/api/auth/session',
+    '/api/auth/callback/credentials',
+    '/api/v1/kilter/grades',
+    '/',
+    '/es/kilter/original/12x12-square/screw_bolt/40/view/x',
+    '/b/some-board/40/list',
+  ])('still runs middleware on %s', (pathname) => {
+    expect(isMatchedByConfig(pathname)).toBe(true);
+  });
+
+  it.each(['/_next/static/chunk.js', '/logo.png'])('does not run middleware on static asset %s', (pathname) => {
+    expect(isMatchedByConfig(pathname)).toBe(false);
+  });
+});
+
+describe('middleware /api/v1 board validation', () => {
+  it('404s an unsupported board name', () => {
+    const response = middleware(makeRequest('/api/v1/fakeboard/grades'));
+    expect(response.status).toBe(404);
+  });
+
+  it('passes through a supported board', () => {
+    const response = middleware(makeRequest('/api/v1/kilter/grades'));
+    expect(response.status).toBe(200);
+  });
+
+  it.each(['angles', 'grades'])('passes through the %s special segment without board validation', (segment) => {
+    const response = middleware(makeRequest(`/api/v1/${segment}`));
+    expect(response.status).toBe(200);
+  });
+});
 
 describe('middleware session redirect', () => {
   it('redirects when ?session= is present on a list page', () => {
@@ -532,7 +600,7 @@ describe('middleware cache headers on list pages', () => {
 });
 
 describe('middleware cache headers on climb view pages', () => {
-  const expected1h = `s-maxage=${TTL_1H}, stale-while-revalidate=${TTL_1H * 7}`;
+  const expectedClimbViewCacheHeader = `s-maxage=${TTL_24H}, stale-while-revalidate=${TTL_24H * 7}`;
 
   it.each([
     ['slug view', SLUG_VIEW],
@@ -540,10 +608,10 @@ describe('middleware cache headers on climb view pages', () => {
     // The numeric view URL 308-redirects to its slug form; caching the request
     // lets the CDN serve that deterministic redirect without re-rendering.
     ['numeric view (redirect)', NUMERIC_VIEW],
-  ])('sets 1h CDN cache headers on the %s URL', (_shape, url) => {
+  ])('sets 24h CDN cache headers on the %s URL', (_shape, url) => {
     const response = middleware(makeRequest(url));
-    expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe(expected1h);
-    expect(response.headers.get('CDN-Cache-Control')).toBe(expected1h);
+    expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe(expectedClimbViewCacheHeader);
+    expect(response.headers.get('CDN-Cache-Control')).toBe(expectedClimbViewCacheHeader);
   });
 
   it('does not cache a play page', () => {
@@ -562,8 +630,8 @@ describe('middleware cache headers on climb view pages', () => {
       const enResponse = middleware(makeRequest(SLUG_VIEW));
       const localizedResponse = middleware(makeRequest(`/${locale}${SLUG_VIEW}`));
       // Both are cacheable, but the CDN keys them by their distinct request URLs.
-      expect(enResponse.headers.get('Vercel-CDN-Cache-Control')).toBe(expected1h);
-      expect(localizedResponse.headers.get('Vercel-CDN-Cache-Control')).toBe(expected1h);
+      expect(enResponse.headers.get('Vercel-CDN-Cache-Control')).toBe(expectedClimbViewCacheHeader);
+      expect(localizedResponse.headers.get('Vercel-CDN-Cache-Control')).toBe(expectedClimbViewCacheHeader);
     },
   );
 
@@ -582,6 +650,94 @@ describe('middleware cache headers on climb view pages', () => {
       expect(response.headers.has('CDN-Cache-Control')).toBe(false);
     },
   );
+});
+
+// A crawler that persists cookies (observed in production logs) acquires
+// boardsesh-locale by crawling one /de|/es|/fr page, then bounces every
+// subsequent unprefixed URL through a locale twin — ~15k of these 307s/day,
+// plus the render MISS on the twin it lands on. Crawlers must never be sent
+// through the sticky-locale redirect, and must never acquire the cookie.
+//
+// #4667 gated this on Next's `userAgent(request).isBot`, whose list names no
+// scraper newer than ~2023. Probed against production on 2026-08-24, Googlebot
+// correctly got a 200 while AhrefsBot, SemrushBot, DataForSeoBot and MJ12bot
+// were all still taking the 307 to the /es twin. The cases below cover both
+// halves of the repo-owned list in `app/lib/is-crawler.ts`.
+describe('middleware bot-gates the sticky locale redirect and cookie', () => {
+  const GOOGLEBOT_UA = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
+  const CHROME_UA =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
+  const CRAWLER_UAS: [string, string][] = [
+    ['Googlebot (named by Next)', GOOGLEBOT_UA],
+    ['AhrefsBot', 'Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)'],
+    ['SemrushBot', 'Mozilla/5.0 (compatible; SemrushBot/7~bl; +http://www.semrush.com/bot.html)'],
+    ['DataForSeoBot', 'Mozilla/5.0 (compatible; DataForSeoBot/1.0; +https://dataforseo.com/dataforseo-bot)'],
+    ['MJ12bot', 'Mozilla/5.0 (compatible; MJ12bot/v1.4.8; http://mj12bot.com/)'],
+    ['DotBot', 'Mozilla/5.0 (compatible; DotBot/1.2; +https://opensiteexplorer.org/dotbot; help@moz.com)'],
+    ['archive.org_bot', 'Mozilla/5.0 (compatible; archive.org_bot +http://www.archive.org/details/archive.org_bot)'],
+  ];
+
+  function makeRequestWithUserAgent(url: string, ua: string): NextRequest {
+    return new NextRequest(new URL(url, 'http://localhost:3000'), {
+      headers: { 'user-agent': ua },
+    });
+  }
+
+  it.each(CRAWLER_UAS)(
+    'does not 307 %s carrying a stale non-default locale cookie — it gets a default-locale 200 for the requested URL',
+    (_label, crawlerUa) => {
+      const request = makeRequestWithUserAgent('/some/page', crawlerUa);
+      request.cookies.set(LOCALE_COOKIE, 'de');
+
+      const response = middleware(request);
+
+      expect(response.status).not.toBe(307);
+      expect(response.headers.has('location')).toBe(false);
+      expect(response.headers.get(`x-middleware-request-${LOCALE_HEADER}`)).toBe(DEFAULT_LOCALE);
+    },
+  );
+
+  it('still 307s a human (non-bot UA) carrying the same stale locale cookie', () => {
+    const request = makeRequestWithUserAgent('/some/page', CHROME_UA);
+    request.cookies.set(LOCALE_COOKIE, 'de');
+
+    const response = middleware(request);
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('http://localhost:3000/de/some/page');
+  });
+
+  it.each(CRAWLER_UAS)(
+    'never sets the boardsesh-locale cookie for %s visiting a locale-prefixed URL',
+    (_label, crawlerUa) => {
+      const response = middleware(makeRequestWithUserAgent('/es/some/page', crawlerUa));
+
+      expect(response.headers.has('set-cookie')).toBe(false);
+    },
+  );
+
+  it('sets the boardsesh-locale cookie for a human (non-bot UA) visiting a locale-prefixed URL', () => {
+    const response = middleware(makeRequestWithUserAgent('/es/some/page', CHROME_UA));
+
+    const setCookie = response.headers.get('set-cookie');
+    expect(setCookie).toContain(LOCALE_COOKIE);
+    expect(setCookie).toContain('es');
+  });
+
+  // The /api/v1 and /api/auth matcher entries reach the classifier call site,
+  // so the isApi short-circuit must leave their behaviour untouched.
+  it('leaves an /api/v1 request unchanged whether or not it carries a crawler UA', () => {
+    const crawlerResponse = middleware(
+      makeRequestWithUserAgent('/api/v1/kilter/climbs', 'Mozilla/5.0 (compatible; AhrefsBot/7.0)'),
+    );
+    const humanResponse = middleware(makeRequestWithUserAgent('/api/v1/kilter/climbs', CHROME_UA));
+
+    expect(crawlerResponse.status).toBe(humanResponse.status);
+    expect(crawlerResponse.headers.has('set-cookie')).toBe(false);
+    expect(humanResponse.headers.has('set-cookie')).toBe(false);
+    expect(crawlerResponse.headers.get(`x-middleware-request-${LOCALE_HEADER}`)).toBe(DEFAULT_LOCALE);
+    expect(humanResponse.headers.get(`x-middleware-request-${LOCALE_HEADER}`)).toBe(DEFAULT_LOCALE);
+  });
 });
 
 describe('middleware forwards the routing pathname header', () => {

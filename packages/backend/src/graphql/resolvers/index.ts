@@ -42,9 +42,10 @@ import { socialGymMatchQueries } from './social/gym-matching';
 import { socialGymStrayBoardQueries, socialGymStrayBoardMutations } from './social/gym-stray-boards';
 import { socialGymKioskQueries, socialGymKioskMutations } from './social/gym-kiosks';
 import { socialGymInsightsQueries } from './social/gym-insights';
-import { socialGymClaimQueries, socialGymClaimMutations } from './social/gym-claims';
+import { socialGymClaimQueries, socialGymClaimMutations, gymClaimFieldResolvers } from './social/gym-claims';
 import { socialGymDuplicateQueries, socialGymDuplicateMutations } from './social/gym-duplicates';
 import { socialLocationSyncFreezeQueries, socialLocationSyncFreezeMutations } from './social/location-sync-freezes';
+import { socialGymOwnerReassignQueries, socialGymOwnerReassignMutations } from './social/gym-owner-reassign';
 import { socialGymReportMutations } from './social/gym-reports';
 import {
   socialNotificationQueries,
@@ -60,6 +61,8 @@ import { newClimbFeedSubscription } from './social/new-climb-feed-subscription';
 import { boardPresenceResolvers } from './board-presence';
 import { feedbackMutations } from './feedback/mutations';
 import { feedbackQueries } from './feedback/queries';
+import { qaMutations } from './qa/mutations';
+import { qaQueries } from './qa/queries';
 import { integrationQueries } from './integrations/queries';
 import { integrationMutations } from './integrations/mutations';
 import { betaLinkQueries } from './beta-videos/queries';
@@ -98,6 +101,7 @@ export const resolvers = {
     ...socialGymClaimQueries,
     ...socialGymDuplicateQueries,
     ...socialLocationSyncFreezeQueries,
+    ...socialGymOwnerReassignQueries,
     ...activityFeedQueries,
     ...sessionFeedQueries,
     ...socialNotificationQueries,
@@ -112,6 +116,7 @@ export const resolvers = {
     ...otaQueries,
     ...syncQueries,
     ...feedbackQueries,
+    ...qaQueries,
   },
 
   Mutation: {
@@ -135,6 +140,7 @@ export const resolvers = {
     ...socialGymClaimMutations,
     ...socialGymDuplicateMutations,
     ...socialLocationSyncFreezeMutations,
+    ...socialGymOwnerReassignMutations,
     ...socialGymReportMutations,
     ...socialNotificationMutations,
     ...socialProposalMutations,
@@ -143,6 +149,7 @@ export const resolvers = {
     ...newClimbSubscriptionResolvers.Mutation,
     ...sessionEditMutations,
     ...feedbackMutations,
+    ...qaMutations,
     ...boardPresenceResolvers.Mutation,
     ...integrationMutations,
   },
@@ -160,6 +167,10 @@ export const resolvers = {
 
   // Field-level resolvers
   ClimbSearchResult: climbFieldResolvers,
+
+  // `Gym.myPendingClaim` only — every other Gym field comes off the enriched
+  // object the queries return, via the default resolver.
+  Gym: gymClaimFieldResolvers,
 
   // Climb type resolvers (derived fields)
   Climb: {

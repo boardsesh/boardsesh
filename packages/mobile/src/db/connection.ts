@@ -12,10 +12,15 @@ import {
   deleteUserCheckpoints,
   deleteAllSyncMeta,
   applyBusyTimeout,
+  beginImmediateWrite,
   classifySqliteLockError,
+  OFFLINE_DB_BUSY_TIMEOUT_MS,
   configureMainConnection,
   vacuumDatabase,
   BOARD_DATA_TABLES,
+  getUnfinishedDownloadScopeKeys,
+  claimAbandonedDownloadTerminal,
+  purgeNamespaceForScopeKey,
 } from '@boardsesh/offline-sync';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { reportError } from '../lib/error-reporting';
@@ -476,9 +481,24 @@ export type SignOutPurgeResult = {
  * failure is swallowed: the rows are already gone by then, so a SQLITE_FULL means
  * "the file didn't shrink", never data loss — and failing a sign-out over cosmetics
  * would be the worse bug.
+ *
+ * `onDownloadAbandoned` closes the download funnel for whatever was still
+ * downloading when this ran (issue #4452) — the same seam a board removal uses
+ * (`removeBoardScopeData`). It is called once per scope that had announced a
+ * download and never completed one; see the comments at the read and the call
+ * below for why the read has to precede the transaction and the report follow it.
  */
-export async function purgeLocalDataForSignOut(db: SQLiteDatabase): Promise<SignOutPurgeResult> {
+export async function purgeLocalDataForSignOut(
+  db: SQLiteDatabase,
+  options?: { onDownloadAbandoned?: (info: { scopeKey: string }) => void },
+): Promise<SignOutPurgeResult> {
   const bytesBefore = measureDatabaseBytesQuietly();
+
+  // READ BEFORE THE TRANSACTION, for the reason scope-teardown.ts spells out: the
+  // `deleteAllSyncMeta` at the bottom of it takes `scope-started:` along with
+  // every other row, and once that commits nothing anywhere can tell a download
+  // abandoned mid-flight from a board that was never downloaded at all.
+  const abandonedScopeKeys = options?.onDownloadAbandoned === undefined ? [] : await getUnfinishedDownloadScopeKeys(db);
 
   let pendingDiscarded = 0;
   let deadLettersDiscarded = 0;
@@ -487,7 +507,14 @@ export async function purgeLocalDataForSignOut(db: SQLiteDatabase): Promise<Sign
     // Same lock guard as clearUserData: this runs on its own connection alongside
     // in-flight sync reads/writes, so wait for the write lock rather than failing
     // instantly with SQLITE_BUSY (BOARDSESH-A9).
-    await applyBusyTimeout(txn);
+    //
+    // IMMEDIATE, not just a timeout (#4332): the two reads below run before the
+    // first DELETE, and expo's `BEGIN` is deferred — so a deferred transaction
+    // would open for READING here, and SQLite never consults `busy_timeout` when
+    // upgrading a read transaction to a write. A contended sign-out would fail in
+    // about a millisecond and leave the previous account's rows on disk, which is
+    // the exact hazard the owner stamp exists to defend against.
+    await beginImmediateWrite(txn, OFFLINE_DB_BUSY_TIMEOUT_MS);
     // Counted here, inside the transaction and immediately before the DELETE, because
     // this is the only place the number is both post-drain and exact. The count the
     // confirmation dialog showed was taken before sign-out's bounded 3s drain, so it
@@ -513,6 +540,19 @@ export async function purgeLocalDataForSignOut(db: SQLiteDatabase): Promise<Sign
     }
     await deleteAllSyncMeta(txn);
   });
+
+  // AFTER the commit, for the reason removeBoardScopeData reports after its own:
+  // the cycle this sign-out tore down is still unwinding while the transaction
+  // holds the write lock, and reporting first would race its `aborted-wipe` — the
+  // claim below would then be made before the report it exists to defer to.
+  for (const scopeKey of abandonedScopeKeys) {
+    const namespace = purgeNamespaceForScopeKey(scopeKey);
+    // A key we cannot parse has no namespace to claim against, and the registry
+    // never records one for it either — so nothing can be double-reported and it
+    // is reported unconditionally rather than dropped.
+    if (namespace !== undefined && !claimAbandonedDownloadTerminal(scopeKey, namespace)) continue;
+    options?.onDownloadAbandoned?.({ scopeKey });
+  }
 
   let vacuumed = false;
   try {

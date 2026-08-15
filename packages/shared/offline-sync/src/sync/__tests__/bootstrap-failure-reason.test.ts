@@ -12,6 +12,7 @@ import {
   SnapshotPermanentMissError,
   SnapshotWatermarkRegressionError,
   SnapshotArtifactTruncatedError,
+  SnapshotBackgroundTransferInterruptedError,
 } from '../snapshot-bootstrap';
 
 describe('classifySnapshotBootstrapFailure', () => {
@@ -82,6 +83,15 @@ describe('classifySnapshotBootstrapFailure', () => {
         new Error('snapshot bootstrap: board_climbs row_count 900 != actual 12 (truncated artifact?)'),
       ),
     ).toBe('artifact-invalid');
+  });
+
+  it('buckets a background-task decode marker by its stable error name', () => {
+    const localMarker = new SnapshotBackgroundTransferInterruptedError('cannot decode raw data');
+    const crossBundleMarker = new Error('cannot decode raw data');
+    crossBundleMarker.name = 'SnapshotBackgroundTransferInterruptedError';
+
+    expect(classifySnapshotBootstrapFailure(localMarker)).toBe('background-transfer-decode');
+    expect(classifySnapshotBootstrapFailure(crossBundleMarker)).toBe('background-transfer-decode');
   });
 
   it('buckets a dropped connection as network', () => {

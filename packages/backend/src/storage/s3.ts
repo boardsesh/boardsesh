@@ -323,3 +323,25 @@ export async function deleteGymLogosFromS3(gymUuid: string, keepExt?: string): P
     }),
   );
 }
+
+/**
+ * Delete a gym's photo files (the key is `gym-photos/<uuid>.<ext>`). Same
+ * write-first, clean-after contract as deleteGymLogosFromS3 — see its comment.
+ *
+ * `keepExt` omitted deletes every extension: that's the "owner removed the
+ * photo" path, which nulls gyms.image_url first and only then comes here, so a
+ * failure leaves an orphaned object (recoverable) rather than a dangling URL.
+ */
+export async function deleteGymPhotosFromS3(gymUuid: string, keepExt?: string): Promise<void> {
+  const extensions = ['jpg', 'png', 'gif', 'webp'].filter((ext) => ext !== keepExt);
+
+  await Promise.all(
+    extensions.map(async (ext) => {
+      try {
+        await deleteFromS3(`gym-photos/${gymUuid}.${ext}`);
+      } catch (deleteError) {
+        logger.warn(`Failed to delete stale gym photo gym-photos/${gymUuid}.${ext} from S3:`, deleteError);
+      }
+    }),
+  );
+}

@@ -6,13 +6,11 @@ vi.mock('next/headers', () => ({
 }));
 
 const aboutPage = await import('../about/page');
-const feedPage = await import('../feed/page');
 const loginPage = await import('../auth/login/page');
 const playlistsPage = await import('../playlists/page');
 const settingsPage = await import('../settings/page');
 
 const aboutMetadata = await aboutPage.generateMetadata();
-const feedMetadata = await feedPage.generateMetadata();
 const loginMetadata = await loginPage.generateMetadata();
 const playlistsMetadata = await playlistsPage.generateMetadata();
 const settingsMetadata = await settingsPage.generateMetadata();
@@ -48,7 +46,7 @@ describe('page metadata exports', () => {
     const aboutImages = toOpenGraphImageList(aboutMetadata.openGraph?.images);
     const aboutImageUrl = getOpenGraphImageUrl(aboutImages[0]);
 
-    expect(aboutMetadata.title).toBe('About | Boardsesh');
+    expect(aboutMetadata.title).toEqual({ absolute: 'About | Boardsesh' });
     expect(aboutMetadata.alternates?.canonical).toBe('/about');
     expect(aboutMetadata.alternates?.languages).toEqual({
       'en-US': '/about',
@@ -67,13 +65,8 @@ describe('page metadata exports', () => {
     expect(loginMetadata.robots).toEqual({ index: false, follow: true });
   });
 
-  it('keeps the activity feed indexable so it surfaces public climbing activity', () => {
-    expect(feedMetadata.robots).toBeUndefined();
-    expect(feedMetadata.alternates?.canonical).toBe('/feed');
-  });
-
   it('keeps the public playlists directory indexable because it exposes discoverable content', () => {
-    expect(playlistsMetadata.title).toBe('Discover Climbing Playlists | Boardsesh');
+    expect(playlistsMetadata.title).toEqual({ absolute: 'Discover Climbing Playlists | Boardsesh' });
     expect(playlistsMetadata.description).toBe(
       'Discover public climbing playlists and manage your own after signing in.',
     );

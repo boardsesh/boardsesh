@@ -5,6 +5,7 @@ import path, { extname } from 'path';
 import { applyCorsHeaders } from './cors';
 import { getAvatarsDir } from './avatars';
 import { getGymLogosDir } from './gym-logos';
+import { getGymPhotosDir } from './gym-photos';
 import { isS3Configured, getFromS3, uploadToS3 } from '../storage/s3';
 import { type AllowedImageSize, resizeImageBuffer, resizedVariantKey, streamToBuffer } from '../lib/image-resize';
 
@@ -192,27 +193,28 @@ export async function handleStaticAvatar(
 }
 
 /**
- * Static gym-logo file serving handler
- * GET /static/gym-logos/:filename
+ * Static gym-image file serving (logo and photo share every byte of this).
  *
  * Mirrors handleStaticAvatar: proxies the image from S3 when configured
  * (avoids ACL/public-access requirements), otherwise serves from local-dev
- * storage. Logos overwrite in place on re-upload (key = gymUuid.ext), so the
- * `?size=` resize path resizes on the fly without persisting a variant that
- * could shadow a new logo.
+ * storage. Both kinds overwrite in place on re-upload (key = gymUuid.ext), so
+ * the `?size=` resize path resizes on the fly without persisting a variant
+ * that could shadow a newly uploaded image.
  */
-export async function handleStaticGymLogo(
+async function serveStaticGymImage(
   req: IncomingMessage,
   res: ServerResponse,
+  s3Prefix: string,
+  localDir: string,
   fileName: string,
-  size: AllowedImageSize | null = null,
+  size: AllowedImageSize | null,
 ): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
 
-  // Logos render on unauthenticated kiosk/embed surfaces. The upload allowlist
-  // already guarantees the stored Content-Type is a raster image type (never
-  // image/svg+xml), so a spoofed SVG payload is served as e.g. image/png —
-  // inert in an <img>. nosniff closes the residual risk of a client/proxy
+  // These render on unauthenticated kiosk/embed/gym-page surfaces. The upload
+  // allowlist already guarantees the stored Content-Type is a raster image type
+  // (never image/svg+xml), so a spoofed SVG payload is served as e.g. image/png
+  // — inert in an <img>. nosniff closes the residual risk of a client/proxy
   // content-sniffing its way to executing it anyway.
   res.setHeader('X-Content-Type-Options', 'nosniff');
 
@@ -224,7 +226,7 @@ export async function handleStaticGymLogo(
   }
 
   if (isS3Configured()) {
-    const s3Key = `gym-logos/${fileName}`;
+    const s3Key = `${s3Prefix}/${fileName}`;
 
     if (size !== null) {
       const served = await serveResizedImageFromS3(res, s3Key, size, {
@@ -261,8 +263,7 @@ export async function handleStaticGymLogo(
 
   // Serve from local storage (the `?size=` resize path is S3-only; local-dev
   // serves the full-size original).
-  const gymLogosDir = getGymLogosDir();
-  const filePath = path.join(gymLogosDir, fileName);
+  const filePath = path.join(localDir, fileName);
 
   try {
     const fileStat = await stat(filePath);
@@ -300,6 +301,32 @@ export async function handleStaticGymLogo(
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not found' }));
   }
+}
+
+/**
+ * Static gym-logo file serving handler
+ * GET /static/gym-logos/:filename
+ */
+export function handleStaticGymLogo(
+  req: IncomingMessage,
+  res: ServerResponse,
+  fileName: string,
+  size: AllowedImageSize | null = null,
+): Promise<void> {
+  return serveStaticGymImage(req, res, 'gym-logos', getGymLogosDir(), fileName, size);
+}
+
+/**
+ * Static gym-photo file serving handler
+ * GET /static/gym-photos/:filename
+ */
+export function handleStaticGymPhoto(
+  req: IncomingMessage,
+  res: ServerResponse,
+  fileName: string,
+  size: AllowedImageSize | null = null,
+): Promise<void> {
+  return serveStaticGymImage(req, res, 'gym-photos', getGymPhotosDir(), fileName, size);
 }
 
 const BETA_THUMBNAIL_PLATFORMS = new Set(['instagram', 'tiktok']);

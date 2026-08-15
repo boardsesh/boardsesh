@@ -208,7 +208,7 @@ function ChartFrame({ height, loading, emptyLabel, isEmpty, zoomable, children }
             floatingElevation,
           ]}
           accessibilityRole="button"
-          accessibilityLabel={t('resetZoom')}
+          accessibilityLabel={t('board.resetZoom')}
           hitSlop={8}
         >
           <Icon name="crop.free" size={15} color={systemColors.label} />

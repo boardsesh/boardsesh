@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
@@ -45,6 +46,12 @@ vi.mock('../board-backgrounds-manifest', () => ({
     'moonboard/moonboard2016/holdsetb.webp': 410,
     'moonboard/moonboard2016/holdsetb.dark.webp': 411,
     'moonboard/moonboard2016/holdseta.webp': 420,
+    // Woods ships an opaque photo of the real board — full-res + thumb per size,
+    // and deliberately no `.dark.webp` sibling.
+    'woods/woods-12x12-bg.webp': 500,
+    'woods/thumbs/woods-12x12-bg.webp': 501,
+    'woods/woods-8x10-bg.webp': 510,
+    'woods/thumbs/woods-8x10-bg.webp': 511,
   },
 }));
 
@@ -457,5 +464,51 @@ describe('dark-mode art variants', () => {
     const result = await ensureBackgroundsCached({ ...moonboardParams, colorScheme: 'dark' });
 
     expect(result).toEqual({ paths: ['/bundled/401.webp', '/bundled/420.webp', '/bundled/411.webp'], missingCount: 0 });
+  });
+});
+
+describe('bundled Woods board art', () => {
+  // Read as SOURCE TEXT rather than imported: the generated manifest `require()`s
+  // the .webp binaries, which vitest has no loader for. What matters here is the
+  // key set, and a regenerated manifest that drops (or renames) a Woods entry
+  // would leave the board rendering a grey missing-layer placeholder.
+  const manifestSource = readFileSync(new URL('../board-backgrounds-manifest.ts', import.meta.url), 'utf8');
+  const manifestKeys = [...manifestSource.matchAll(/^\s*'([^']+)':/gm)].map((match) => match[1]);
+
+  it('bundles exactly the four Woods keys, with no dark variant', () => {
+    // No `.dark.webp`: the dark-art transforms exist for MoonBoard's near-black
+    // transparent hold sheets, and would only muddy an opaque board photo.
+    expect(manifestKeys.filter((key) => key.startsWith('woods/')).sort()).toEqual([
+      'woods/thumbs/woods-12x12-bg.webp',
+      'woods/thumbs/woods-8x10-bg.webp',
+      'woods/woods-12x12-bg.webp',
+      'woods/woods-8x10-bg.webp',
+    ]);
+  });
+
+  it('resolves the full-res, thumb and dark-mode paths for a Woods board', () => {
+    vi.mocked(getBoardRenderData).mockReturnValue({
+      boardWidth: 1225,
+      boardHeight: 1400,
+      edgeLeft: 0,
+      edgeRight: 33,
+      edgeBottom: 0,
+      edgeTop: 31,
+      holdsData: [],
+      backgroundImageKeys: ['woods/woods-12x12-bg.webp'],
+    } as ReturnType<typeof getBoardRenderData>);
+
+    const woodsParams = { boardName: 'woods' as const, layoutId: 1, sizeId: 2, setIds: [1] };
+
+    expect(tryGetBackgroundPathsSync(woodsParams)).toEqual({ paths: ['/bundled/500.webp'], missingCount: 0 });
+    expect(tryGetBackgroundPathsSync({ ...woodsParams, variant: 'thumb' })).toEqual({
+      paths: ['/bundled/501.webp'],
+      missingCount: 0,
+    });
+    // No dark sibling => falls through to the same asset, and counts no gap.
+    expect(tryGetBackgroundPathsSync({ ...woodsParams, colorScheme: 'dark' })).toEqual({
+      paths: ['/bundled/500.webp'],
+      missingCount: 0,
+    });
   });
 });

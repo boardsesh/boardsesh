@@ -4,6 +4,7 @@ import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { BoardRouteTarget } from '../../lib/routing/board-route-target';
+import type { Climb } from '@boardsesh/shared-schema';
 import type { BoardRouteStatus } from '../../lib/routing/use-board-route-target';
 
 // What the gate hands back, as a sentinel. This suite asserts the component
@@ -13,6 +14,12 @@ const LOGIN_HREF = vi.hoisted(() => '/auth/login?next=%2Fb%2Fthe-gym%2F40%2Flist
 
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 const routeStatus = vi.hoisted(() => ({ current: 'resolving' as BoardRouteStatus }));
+// The kill switch, as the component reads it. `true` = feature on.
+const anonymousClimbView = vi.hoisted(() => ({ enabled: true, seen: [] as (boolean | undefined)[] }));
+// What the anonymous branch renders instead of a redirect.
+const anonymousView = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
+// The resolved board's tilt setting, and whether the climb has landed yet.
+const anonymousResult = vi.hoisted(() => ({ isAngleAdjustable: true, climbHasLanded: true }));
 const redirect = vi.hoisted(() => ({ hrefs: [] as string[] }));
 const router = vi.hoisted(() => ({ replace: vi.fn() }));
 // The hand-off callback the hook holds. A successful hand-off never becomes a
@@ -55,12 +62,32 @@ vi.mock('../../lib/routing/anonymous-auth-gate', () => ({
   buildLoginHrefWithReturn: () => LOGIN_HREF,
 }));
 vi.mock('@tanstack/react-query', () => ({ onlineManager: { isOnline: () => connectivity.isOnline } }));
-vi.mock('../../lib/routing/use-board-route-target', () => ({
-  useBoardRouteTarget: (_target: unknown, options?: { onHandedOff?: () => void }) => {
-    handoff.current = options?.onHandedOff ?? null;
-    return routeStatus.current;
+vi.mock('../../providers/feature-flags-provider', () => ({
+  useAnonymousClimbViewEnabled: () => anonymousClimbView.enabled,
+}));
+vi.mock('../AnonymousClimbView', () => ({
+  AnonymousClimbView: (props: Record<string, unknown>) => {
+    anonymousView.props.push(props);
+    return createElement('div', { 'data-testid': 'anonymous-climb-view' });
   },
 }));
+vi.mock('../../lib/routing/use-board-route-target', () => ({
+  useBoardRouteTarget: (_target: unknown, options?: { onHandedOff?: () => void; anonymousClimbEnabled?: boolean }) => {
+    handoff.current = options?.onHandedOff ?? null;
+    anonymousClimbView.seen.push(options?.anonymousClimbEnabled);
+    return routeStatus.current === 'anonymous-climb' && anonymousResult.climbHasLanded
+      ? {
+          status: routeStatus.current,
+          climb: ANONYMOUS_CLIMB,
+          boardConfig: ANONYMOUS_BOARD_CONFIG,
+          isAngleAdjustable: anonymousResult.isAngleAdjustable,
+        }
+      : { status: routeStatus.current, climb: null, boardConfig: null, isAngleAdjustable: true };
+  },
+}));
+
+const ANONYMOUS_CLIMB = { uuid: '0A1B2C3D4E5F60718293A4B5C6D7E8F9', name: 'Crimpy Thing' } as unknown as Climb;
+const ANONYMOUS_BOARD_CONFIG = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
 
 const { BoardRouteHandoff, BoardRouteRedirect } = await import('../BoardRouteRedirect');
 
@@ -82,6 +109,11 @@ beforeEach(() => {
   routeStatus.current = 'resolving';
   handoff.current = null;
   connectivity.isOnline = true;
+  anonymousClimbView.enabled = true;
+  anonymousClimbView.seen = [];
+  anonymousView.props = [];
+  anonymousResult.isAngleAdjustable = true;
+  anonymousResult.climbHasLanded = true;
 });
 
 describe('BoardRouteRedirect', () => {
@@ -257,5 +289,81 @@ describe('Board Route Handoff event', () => {
       status: 'not_found',
       source: 'deep-link',
     });
+  });
+});
+
+// The signed-out reader who gets the climb instead of the login wall. The
+// hand-off telemetry is the same funnel — a status VALUE, not a new event — so
+// `Climb Handoff Clicked` ÷ `Board Route Handoff` keeps counting the whole hop.
+describe('BoardRouteHandoff anonymous climb', () => {
+  it('draws the climb in place rather than redirecting', () => {
+    routeStatus.current = 'anonymous-climb';
+
+    const { queryByTestId } = render(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
+
+    expect(queryByTestId('anonymous-climb-view')).not.toBeNull();
+    expect(redirect.hrefs).toEqual([]);
+    expect(anonymousView.props.at(-1)).toMatchObject({
+      climb: ANONYMOUS_CLIMB,
+      boardConfig: ANONYMOUS_BOARD_CONFIG,
+    });
+  });
+
+  it('reports the arrival on the existing funnel as a status value', () => {
+    routeStatus.current = 'anonymous-climb';
+
+    render(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
+
+    expect(analytics.track).toHaveBeenCalledTimes(1);
+    expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.BoardRouteHandoff, {
+      kind: 'climb',
+      status: 'anonymous',
+      source: 'deep-link',
+    });
+  });
+
+  // Only the slug branch resolves a board, and the flag lives on the board
+  // record. Dropping it here is invisible in the view, whose own default is an
+  // angle pill — so a gym wall bolted at one angle would still offer one.
+  it('hands a fixed-angle board’s no-tilt setting to the view', () => {
+    routeStatus.current = 'anonymous-climb';
+    anonymousResult.isAngleAdjustable = false;
+
+    render(createElement(BoardRouteHandoff, { target: SLUG_CLIMB_TARGET }));
+
+    expect(anonymousView.props.at(-1)?.isAngleAdjustable).toBe(false);
+  });
+
+  it('keeps the pill for a board that tilts', () => {
+    routeStatus.current = 'anonymous-climb';
+
+    render(createElement(BoardRouteHandoff, { target: SLUG_CLIMB_TARGET }));
+
+    expect(anonymousView.props.at(-1)?.isAngleAdjustable).toBe(true);
+  });
+
+  // `resolveStatus` refuses to say `anonymous-climb` before the climb lands, so
+  // this state is unreachable today. It is pinned because the fall-through is
+  // not benign: the redirector's only spinner used to be `resolving`, so a
+  // loosened guard upstream would paint "Not found" + Back-to-home over a URL
+  // that is one network round trip from rendering.
+  it('waits on the spinner rather than a dead end when the climb has not landed', () => {
+    routeStatus.current = 'anonymous-climb';
+    anonymousResult.climbHasLanded = false;
+
+    const { queryByTestId } = render(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
+
+    expect(queryByTestId('spinner')).not.toBeNull();
+    expect(queryByTestId('error-icon')).toBeNull();
+    expect(queryByTestId('back-home')).toBeNull();
+  });
+
+  // The kill switch has to reach the decision, not just exist.
+  it('passes the kill switch through to the gate', () => {
+    anonymousClimbView.enabled = false;
+
+    render(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
+
+    expect(anonymousClimbView.seen.at(-1)).toBe(false);
   });
 });

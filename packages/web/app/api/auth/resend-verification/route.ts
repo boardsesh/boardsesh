@@ -83,7 +83,11 @@ export async function POST(request: NextRequest) {
       });
     });
 
-    const baseUrl = process.env.BASE_URL ?? request.nextUrl.origin;
+    // `?.trim() ||`, not `??`: Dockerfile.web's runner stage declares
+    // `ENV BASE_URL=$BASE_URL`, which is the EMPTY STRING in an image built
+    // without the build arg. `??` keeps an empty string and every link in this
+    // email would lose its origin; falling back to the request origin is right.
+    const baseUrl = process.env.BASE_URL?.trim() || request.nextUrl.origin;
     await sendVerificationEmail(email, token, baseUrl);
 
     await consistentDelay(startTime);

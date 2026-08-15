@@ -8,7 +8,12 @@ import {
   getImageFilename,
   getHolePlacements,
 } from '@boardsesh/board-constants/product-sizes';
-import { BOARD_IMAGE_DIMENSIONS, getMoonBoardDetails, type SetIdList } from '@boardsesh/board-config';
+import {
+  BOARD_IMAGE_DIMENSIONS,
+  getMoonBoardDetails,
+  getWoodsBoardDetails,
+  type SetIdList,
+} from '@boardsesh/board-config';
 import type { BoardRenderDetails, RenderableHold } from './types';
 
 /** Tuple stored per hold in the generated placement tables. */
@@ -97,8 +102,9 @@ export const getBoardDetails = ({
 };
 
 /**
- * Get board details for any board type (Aurora or MoonBoard). Routes to
- * `getMoonBoardDetails` for MoonBoard; to `getBoardDetails` for Aurora boards.
+ * Get board details for any board type (Aurora, MoonBoard, or Woods). Routes to
+ * `getMoonBoardDetails` for MoonBoard and `getWoodsBoardDetails` for Woods (both
+ * carry their own art + hold geometry); to `getBoardDetails` for Aurora boards.
  */
 export function getBoardDetailsForBoard(params: {
   board_name: string;
@@ -111,6 +117,9 @@ export function getBoardDetailsForBoard(params: {
       layout_id: params.layout_id,
       set_ids: params.set_ids,
     });
+  }
+  if (params.board_name === 'woods') {
+    return getWoodsBoardDetails({ size_id: params.size_id });
   }
   return getBoardDetails(params as BoardDetailsParams);
 }

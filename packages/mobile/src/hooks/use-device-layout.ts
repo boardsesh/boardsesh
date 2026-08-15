@@ -20,13 +20,13 @@ import {
  * on a single JS `Tabs` navigator across the regular↔compact boundary (a tablet
  * in a narrow split is `compact` but must NOT swap to NativeTabs, or the boundary
  * cross would remount the navigator). It is launch-fixed — an iPad (`Platform.isPad`)
- * or an Android tablet (`sw600dp`, see `resolveIsTablet`) — unlike `widthClass`,
- * which is live.
+ * an Android tablet, or a qualifying web screen (`sw600dp`, see
+ * `resolveIsTablet`) — unlike `widthClass`, which is live.
  *
  * `wallDeviceClass` is the other launch-fixed axis: whether the device is
  * physically large enough for the persistent wall panel, from the screen long
  * side (see `resolveWallDeviceClass`). Both the long side (wall panel) and the
- * short side (Android tablet eligibility) are read from `Dimensions.get('screen')`
+ * short side (Android/web tablet eligibility) are read from `Dimensions.get('screen')`
  * — the PHYSICAL screen, not the app window (which shrinks under Split View /
  * multi-window / DeX) — and rotation-invariant via `max`/`min`, so memoized once.
  */
@@ -45,14 +45,14 @@ export function useDeviceLayout(): DeviceLayout & {
       screenShortSide: Math.min(screen.width, screen.height),
     };
   }, []);
-  // Adaptive-shell eligibility: an iPad, or an Android tablet at sw600dp. Launch-fixed,
-  // so an Android tablet in a small multi-window/DeX split is still a tablet but reads
-  // `compact` from the live width — exactly like an iPad in a narrow Split View.
+  // Adaptive-shell eligibility: an iPad, or an Android/web screen at sw600dp.
+  // Launch-fixed, so an eligible device in a small split/browser window is still
+  // a tablet surface but reads `compact` from the live width.
   const isTablet = resolveIsTablet({ platformOS: Platform.OS, isPad, screenShortSide });
-  // Android tablets are panel-capable regardless of the dp long side (the width
-  // budget decides the surface); only iPad consults the points floor.
-  const isAndroidTablet = Platform.OS === 'android' && isTablet;
-  const wallDeviceClass = resolveWallDeviceClass({ screenLongSide, isPad, isAndroidTablet });
+  // Android tablets and qualifying web screens are panel-capable regardless of
+  // the long side (the live width budget decides the surface); only iPad consults
+  // the points floor.
+  const wallDeviceClass = resolveWallDeviceClass({ screenLongSide, isPad, isTablet, platformOS: Platform.OS });
   return useMemo(
     () => ({ ...resolveDeviceLayout({ width, isTablet }), isPad, isTablet, wallDeviceClass }),
     [width, isPad, isTablet, wallDeviceClass],

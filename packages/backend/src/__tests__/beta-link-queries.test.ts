@@ -138,7 +138,9 @@ import {
   betaLinkQueries,
   warmRecentBetaLinksCache,
   invalidateRecentBetaLinksCache,
+  dropRecentBetaLinksFallback,
 } from '../graphql/resolvers/beta-videos/queries';
+import { resetSingleFlightForTests } from '../utils/single-flight';
 
 type Row = {
   boardType: string;
@@ -338,6 +340,10 @@ describe('recentBetaLinks resolver', () => {
     // underlying CTE on every call. Individual tests opt-in to a connected
     // mock when they want to exercise cache hit/miss behaviour.
     redisConnectedMock.mockReturnValue(false);
+    // With no Redis the resolver keeps a process-local copy for 10 minutes
+    // (#4463), which would otherwise answer the next test from the previous
+    // test's fixture instead of hitting `executeMock`.
+    dropRecentBetaLinksFallback();
   });
 
   // The CTE-based resolver returns flat snake_case rows from `db.execute` and
@@ -593,6 +599,12 @@ describe('recentBetaLinks Redis cache', () => {
     redisSetMock.mockReset();
     redisDelMock.mockReset();
     redisConnectedMock.mockReturnValue(true);
+    // The Redis-less branch keeps a process-local copy for 10 minutes (#4463);
+    // clear it so the one test here that disconnects Redis still reaches the CTE.
+    dropRecentBetaLinksFallback();
+    // Same reason, one layer up: a case that leaves a flight pending would
+    // otherwise hand its promise to the next case instead of hitting the CTE.
+    resetSingleFlightForTests();
   });
 
   it('returns cached rows without running the CTE on hit', async () => {
@@ -651,6 +663,37 @@ describe('recentBetaLinks Redis cache', () => {
     expect(redisSetMock).not.toHaveBeenCalled();
   });
 
+  // The other half of the home page's cold read (#4463). Same hazard as
+  // popularBoardConfigs: with no concurrency control, N simultaneous visitors
+  // during a cold window meant N copies of the CTE, each holding one of the
+  // pool's ten connections until it finished — after which every other query
+  // in the process queued behind them forever.
+  it('runs one CTE for callers that arrive while the first is still running', async () => {
+    redisConnectedMock.mockReturnValue(false);
+    let releaseCte!: (rows: unknown) => void;
+    executeMock.mockReturnValue(
+      new Promise((resolve) => {
+        releaseCte = resolve;
+      }),
+    );
+
+    const concurrent = [
+      betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }),
+      betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }),
+      betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }),
+      betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }),
+    ];
+    expect(executeMock).toHaveBeenCalledTimes(1);
+
+    releaseCte([cachedRow({ link: 'https://www.instagram.com/p/HERD/' })]);
+    const results = await Promise.all(concurrent);
+
+    expect(executeMock).toHaveBeenCalledTimes(1);
+    for (const result of results) {
+      expect(result).toHaveLength(1);
+    }
+  });
+
   it('still serves a result when the Redis read throws', async () => {
     redisGetMock.mockRejectedValueOnce(new Error('redis down mid-flight'));
     executeMock.mockReturnValueOnce([cachedRow({ link: 'https://www.instagram.com/p/REDISFAIL/' })]);
@@ -696,6 +739,44 @@ describe('recentBetaLinks Redis cache', () => {
     await invalidateRecentBetaLinksCache();
 
     expect(redisDelMock).not.toHaveBeenCalled();
+  });
+
+  it('invalidateRecentBetaLinksCache: a read already in flight cannot restore the pre-write strip', async () => {
+    redisConnectedMock.mockReturnValue(false);
+    let releaseFirstRead!: (rows: unknown) => void;
+    executeMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseFirstRead = resolve;
+      }),
+    );
+
+    const readStartedFirst = betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    // The climber saves their link while that CTE is still running, so its rows
+    // are the pre-save strip.
+    await invalidateRecentBetaLinksCache();
+    releaseFirstRead([cachedRow({ link: 'https://www.instagram.com/p/BEFORE/' })]);
+    await readStartedFirst;
+
+    executeMock.mockReturnValueOnce([cachedRow({ link: 'https://www.instagram.com/p/AFTER/' })]);
+    const readStartedAfter = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+
+    expect(executeMock).toHaveBeenCalledTimes(2);
+    expect(readStartedAfter[0]?.betaLink.link).toBe('https://www.instagram.com/p/AFTER/');
+  });
+
+  it('invalidateRecentBetaLinksCache: drops the Redis-less copy so a new link shows up', async () => {
+    redisConnectedMock.mockReturnValue(false);
+    executeMock.mockReturnValue([cachedRow({ link: 'https://www.instagram.com/p/BEFORE/' })]);
+
+    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    expect(executeMock).toHaveBeenCalledTimes(1);
+
+    // Without the drop, a dev/CI server serves the pre-save strip for up to
+    // REDISLESS_FALLBACK_TTL_MS (10 min) after a climber posts a beta link.
+    await invalidateRecentBetaLinksCache();
+
+    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    expect(executeMock).toHaveBeenCalledTimes(2);
   });
 });
 

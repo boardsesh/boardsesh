@@ -284,6 +284,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       onSubmit={() => void handleUpdate()}
       submitLabel={t('mobile.edit.save')}
       lockedConfig={lockedConfig}
+      currentBoardUuid={board.uuid}
     />
   );
 }

@@ -7,6 +7,10 @@ import {
   parseBuildTag,
   parseReleaseTag,
   pickBuildTagForVersion,
+  pickExactBuildTag,
+  selectReleaseCandidate,
+  selectReleaseCandidateFromEquivalentTags,
+  selectHighestAcceptedBuildTags,
   shortFingerprint,
 } from '../lib/release-tags';
 
@@ -103,6 +107,206 @@ describe('pickBuildTagForVersion', () => {
   it('returns null when nothing matches the version', () => {
     expect(pickBuildTagForVersion(tags, 'ios', '9.9.9')).toBeNull();
     expect(pickBuildTagForVersion([], 'ios', '2.1.0')).toBeNull();
+  });
+});
+
+describe('pickExactBuildTag', () => {
+  const tags = ['build-ios-v2.1.0-42-aaaaaaaaaaaa', 'build-android-v2.1.0-2000042-bbbbbbbbbbbb'];
+
+  it('finds iOS by version and build number, and Android by globally exact versionCode', () => {
+    expect(pickExactBuildTag(tags, 'ios', 42, '2.1.0')).toMatchObject({ version: '2.1.0', buildNumber: 42 });
+    expect(pickExactBuildTag(tags, 'android', 2_000_042)).toMatchObject({
+      version: '2.1.0',
+      buildNumber: 2_000_042,
+    });
+  });
+
+  it('never falls back to another build or ambiguous duplicate tags', () => {
+    expect(pickExactBuildTag(tags, 'android', 2_000_099)).toBeNull();
+    expect(pickExactBuildTag([...tags, 'build-android-v2.2.0-2000042-cccccccccccc'], 'android', 2_000_042)).toBeNull();
+  });
+});
+
+describe('selectReleaseCandidate', () => {
+  const iosFingerprint = 'aaaaaaaaaaaa1111';
+  const androidFingerprint = 'bbbbbbbbbbbb2222';
+  const tags = [
+    'build-ios-v2.1.0-41-aaaaaaaaaaaa',
+    'build-ios-v2.1.0-42-aaaaaaaaaaaa',
+    'build-android-v2.1.0-2000041-bbbbbbbbbbbb',
+    'build-android-v2.1.0-2000042-bbbbbbbbbbbb',
+    'build-ios-v2.0.9-99-aaaaaaaaaaaa',
+  ];
+
+  const acceptedBuilds = [
+    { platform: 'ios' as const, versionString: '2.1.0', buildNumber: 42, state: 'READY_FOR_DISTRIBUTION' },
+    {
+      platform: 'android' as const,
+      versionString: null,
+      buildNumber: 2_000_042,
+      state: 'RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED',
+    },
+  ];
+
+  it('returns the highest exact accepted builds matching HEAD version and fingerprints', () => {
+    expect(
+      selectReleaseCandidate(tags, acceptedBuilds, '2.1.0', {
+        ios: iosFingerprint,
+        android: androidFingerprint,
+      }),
+    ).toEqual({
+      ios: { platform: 'ios', version: '2.1.0', buildNumber: 42, shortFp: 'aaaaaaaaaaaa' },
+      android: { platform: 'android', version: '2.1.0', buildNumber: 2_000_042, shortFp: 'bbbbbbbbbbbb' },
+    });
+  });
+
+  it('allows JS-only HEAD drift because matching fingerprints, not commit SHAs, define native equivalence', () => {
+    const tagsFromEarlierCommits = [...tags];
+    expect(
+      selectReleaseCandidate(tagsFromEarlierCommits, acceptedBuilds, '2.1.0', {
+        ios: iosFingerprint,
+        android: androidFingerprint,
+      }),
+    ).not.toBeNull();
+  });
+
+  it('fails closed when the highest HEAD-equivalent build is not accepted', () => {
+    expect(
+      selectReleaseCandidate([...tags, 'build-ios-v2.1.0-43-aaaaaaaaaaaa'], acceptedBuilds, '2.1.0', {
+        ios: iosFingerprint,
+        android: androidFingerprint,
+      }),
+    ).toBeNull();
+  });
+
+  it('fails closed on wrong version, fingerprint, missing platform, or duplicate highest tag', () => {
+    expect(
+      selectReleaseCandidate(tags, acceptedBuilds, '2.2.0', {
+        ios: iosFingerprint,
+        android: androidFingerprint,
+      }),
+    ).toBeNull();
+    expect(
+      selectReleaseCandidate(tags, acceptedBuilds, '2.1.0', {
+        ios: 'cccccccccccc3333',
+        android: androidFingerprint,
+      }),
+    ).toBeNull();
+    expect(
+      selectReleaseCandidate(tags, acceptedBuilds.slice(0, 1), '2.1.0', {
+        ios: iosFingerprint,
+        android: androidFingerprint,
+      }),
+    ).toBeNull();
+    expect(
+      selectReleaseCandidate([...tags, 'build-ios-v2.1.0-42-aaaaaaaaaaaa'], acceptedBuilds, '2.1.0', {
+        ios: iosFingerprint,
+        android: androidFingerprint,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('selectReleaseCandidateFromEquivalentTags', () => {
+  const acceptedBuilds = [
+    { platform: 'ios' as const, versionString: '2.1.0', buildNumber: 42, state: 'READY_FOR_DISTRIBUTION' },
+    {
+      platform: 'android' as const,
+      versionString: null,
+      buildNumber: 2_000_042,
+      state: 'RELEASE_LIFECYCLE_STATE_PUBLISHED',
+    },
+  ];
+
+  it('selects highest exact store builds from tags proven data-only equivalent to release HEAD', () => {
+    expect(
+      selectReleaseCandidateFromEquivalentTags(
+        [
+          'build-ios-v2.1.0-41-aaaaaaaaaaaa',
+          'build-ios-v2.1.0-42-bbbbbbbbbbbb',
+          'build-android-v2.1.0-2000041-cccccccccccc',
+          'build-android-v2.1.0-2000042-dddddddddddd',
+        ],
+        acceptedBuilds,
+        '2.1.0',
+      ),
+    ).toEqual({
+      ios: { platform: 'ios', version: '2.1.0', buildNumber: 42, shortFp: 'bbbbbbbbbbbb' },
+      android: { platform: 'android', version: '2.1.0', buildNumber: 2_000_042, shortFp: 'dddddddddddd' },
+    });
+  });
+
+  it('blocks when a newer native-equivalent build tag is still pending store acceptance', () => {
+    expect(
+      selectReleaseCandidateFromEquivalentTags(
+        [
+          'build-ios-v2.1.0-42-bbbbbbbbbbbb',
+          'build-ios-v2.1.0-43-bbbbbbbbbbbb',
+          'build-android-v2.1.0-2000042-dddddddddddd',
+        ],
+        acceptedBuilds,
+        '2.1.0',
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('selectHighestAcceptedBuildTags', () => {
+  const acceptedBuilds = [
+    { platform: 'ios' as const, versionString: '2.1.0', buildNumber: 41, state: 'ACCEPTED' },
+    { platform: 'ios' as const, versionString: '2.1.0', buildNumber: 42, state: 'READY_FOR_DISTRIBUTION' },
+    {
+      platform: 'android' as const,
+      versionString: null,
+      buildNumber: 2_000_042,
+      state: 'RELEASE_LIFECYCLE_STATE_PUBLISHED',
+    },
+  ];
+
+  it('returns highest build tags only when those exact builds are accepted, without claiming HEAD equivalence', () => {
+    expect(
+      selectHighestAcceptedBuildTags(
+        [
+          'build-ios-v2.1.0-41-aaaaaaaaaaaa',
+          'build-ios-v2.1.0-42-bbbbbbbbbbbb',
+          'build-android-v2.1.0-2000042-dddddddddddd',
+        ],
+        acceptedBuilds,
+        '2.1.0',
+      ),
+    ).toEqual({
+      ios: { platform: 'ios', version: '2.1.0', buildNumber: 42, shortFp: 'bbbbbbbbbbbb' },
+      android: { platform: 'android', version: '2.1.0', buildNumber: 2_000_042, shortFp: 'dddddddddddd' },
+    });
+  });
+
+  it('blocks when a newer build tag exists but is still pending store acceptance', () => {
+    expect(
+      selectHighestAcceptedBuildTags(
+        [
+          'build-ios-v2.1.0-42-bbbbbbbbbbbb',
+          'build-ios-v2.1.0-43-cccccccccccc',
+          'build-android-v2.1.0-2000042-dddddddddddd',
+        ],
+        acceptedBuilds,
+        '2.1.0',
+      ),
+    ).toBeNull();
+  });
+
+  it('fails closed when either platform is missing or highest tag is ambiguous', () => {
+    expect(selectHighestAcceptedBuildTags(['build-ios-v2.1.0-42-bbbbbbbbbbbb'], acceptedBuilds, '2.1.0')).toBeNull();
+    expect(
+      selectHighestAcceptedBuildTags(
+        [
+          'build-ios-v2.1.0-42-bbbbbbbbbbbb',
+          'build-ios-v2.1.0-42-cccccccccccc',
+          'build-android-v2.1.0-2000042-dddddddddddd',
+        ],
+        acceptedBuilds,
+        '2.1.0',
+      ),
+    ).toBeNull();
   });
 });
 

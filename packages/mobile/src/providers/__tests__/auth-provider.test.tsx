@@ -30,6 +30,7 @@ const bumpAuthTransportRevisionMock = vi.hoisted(() => vi.fn());
 const consumeFreshOAuthPendingMock = vi.hoisted(() => vi.fn());
 const consumeWebOAuthReturnProviderMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
+const resetActiveBoardSelfHealValidationCacheMock = vi.hoisted(() => vi.fn());
 
 // expo-router and react-native both reach for the native runtime; stub the
 // thin surface AuthProvider consumes. `useSegments` returning `[]` keeps the
@@ -133,6 +134,7 @@ beforeEach(() => {
   consumeWebOAuthReturnProviderMock.mockReset();
   consumeWebOAuthReturnProviderMock.mockReturnValue(null);
   trackMock.mockReset();
+  resetActiveBoardSelfHealValidationCacheMock.mockReset();
   reportHandledErrorMock.mockReset();
   onlineManager.setOnline(true);
   captureAuthCredentialGenerationMock.mockReset();
@@ -262,6 +264,11 @@ vi.mock('../../lib/graphql/ws-client', () => ({
 
 vi.mock('../../lib/graphql/use-active-board', () => ({
   ACTIVE_BOARD_QUERY_KEY: ['activeBoard'] as const,
+  clearStoredActiveBoardCoordinated: (...args: unknown[]) => clearStoredActiveBoardMock(...args),
+}));
+
+vi.mock('../../lib/boards/active-board-self-heal-validation-cache', () => ({
+  resetActiveBoardSelfHealValidationCache: () => resetActiveBoardSelfHealValidationCacheMock(),
 }));
 
 const getDatabaseHandleMock = vi.fn((): unknown => null);
@@ -298,8 +305,19 @@ vi.mock('@boardsesh/offline-sync', () => ({
   getOutboxSummary: (...args: unknown[]) => getOutboxSummaryMock(...args),
   setSigningOut: vi.fn(),
 }));
+// The download funnel's sign-out terminal (issue #4452). The explicit wipe hands
+// its reporter to purgeLocalDataForSignOut — only that transaction can still see
+// the markers it is about to delete — while the selective paths report from the
+// provider, next to the `syncEnabledBoards` reset that is what actually ends
+// those downloads.
+const reportScopeDownloadAbandonedOnSignOutMock = vi.hoisted(() => vi.fn());
 vi.mock('../../offline/offline-sync-adapter', () => ({
   drainMutationQueue: (...args: unknown[]) => drainMutationQueueMock(...args),
+  reportScopeDownloadAbandonedOnSignOut: reportScopeDownloadAbandonedOnSignOutMock,
+}));
+const reportAbandonedDownloadsOnSignOutMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
+vi.mock('../../offline/abandoned-download-terminals', () => ({
+  reportAbandonedDownloadsOnSignOut: reportAbandonedDownloadsOnSignOutMock,
 }));
 // The offline-usage rollup's suppression map is in-memory and not keyed by user,
 // so the sign-out paths reset it (#4317) — otherwise a same-day account switch
@@ -459,6 +477,10 @@ describe('AuthProvider.signOut', () => {
     expect(authSignOutMock).toHaveBeenCalledTimes(1);
     expect(clearStoredSessionIdMock).toHaveBeenCalledTimes(1);
     expect(clearStoredActiveBoardMock).toHaveBeenCalledTimes(1);
+    expect(resetActiveBoardSelfHealValidationCacheMock).toHaveBeenCalledTimes(1);
+    expect(resetActiveBoardSelfHealValidationCacheMock.mock.invocationCallOrder[0]).toBeLessThan(
+      clearStoredActiveBoardMock.mock.invocationCallOrder[0]!,
+    );
     // Create-climb and session-recap drafts are wiped for account isolation
     // only on web. Native sign-out keeps its origin behavior and must not touch
     // these drafts, so this stays native-neutral when the PR ships via OTA.
@@ -1124,6 +1146,11 @@ describe('AuthProvider sign-out offline data wipe', () => {
       vacuumed: true,
     });
     resetSyncStatusMock.mockClear();
+    resetAnalyticsMock.mockClear();
+    setSettingMock.mockClear();
+    trackMock.mockClear();
+    reportScopeDownloadAbandonedOnSignOutMock.mockClear();
+    reportAbandonedDownloadsOnSignOutMock.mockClear();
     drainMutationQueueMock.mockReset();
     getOutboxSummaryMock.mockReset();
     setOnForcedSignOutMock.mockReset();
@@ -1237,6 +1264,73 @@ describe('AuthProvider sign-out offline data wipe', () => {
     });
 
     expect(trackMock.mock.calls.some((call) => call[0] === 'Offline Data Wiped On Sign Out')).toBe(false);
+  });
+
+  // Issue #4452. Production showed every `Offline Data Wiped On Sign Out` landing
+  // on a DIFFERENT person_id from the `Logout` half a second earlier, because
+  // resetAnalytics() ran first — so the wipe's own event, and every download
+  // terminal emitted beside it, arrived on a fresh anonymous distinct_id that no
+  // funnel query can pair with its `Offline Board Download Started`.
+  it('tracks the wipe before resetting analytics, not after', async () => {
+    purgeLocalDataForSignOutMock.mockResolvedValue({
+      pendingDiscarded: 0,
+      deadLettersDiscarded: 0,
+      hadDownloads: true,
+      vacuumed: true,
+    });
+    const result = await renderSignedIn();
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    const wipeCall = trackMock.mock.calls.findIndex((call) => call[0] === 'Offline Data Wiped On Sign Out');
+    expect(wipeCall).toBeGreaterThanOrEqual(0);
+    expect(resetAnalyticsMock).toHaveBeenCalled();
+    expect(trackMock.mock.invocationCallOrder[wipeCall]).toBeLessThan(resetAnalyticsMock.mock.invocationCallOrder[0]);
+  });
+
+  // The wipe is the only code that can still see the `scope-started:` markers its
+  // own transaction is about to delete, so the terminal has to be reported from
+  // inside it rather than from here.
+  it('hands the explicit wipe the download-abandoned reporter', async () => {
+    const result = await renderSignedIn();
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(purgeLocalDataForSignOutMock).toHaveBeenCalledWith(
+      { tag: 'db' },
+      { onDownloadAbandoned: reportScopeDownloadAbandonedOnSignOutMock },
+    );
+    // The selective sweep would double-report what the wipe already reported —
+    // and the markers are gone by then anyway.
+    expect(reportAbandonedDownloadsOnSignOutMock).not.toHaveBeenCalled();
+  });
+
+  // The selective sign-outs delete nothing and keep every marker, so nothing in
+  // the wipe can report for them — but `setSetting('syncEnabledBoards', [])` runs
+  // on these paths too, and pullSync only ever visits enabled scopes, so the
+  // download is over just the same.
+  it('closes the download funnel on a sign-out that kept the catalogs', async () => {
+    const result = await renderSignedIn();
+
+    deduplicatedRefreshMock.mockResolvedValue({ status: 'rejected', generation: 1 });
+    isTokenExpiringSoonMock.mockResolvedValue(true);
+    await act(async () => {
+      await result.current.refreshAuthState();
+    });
+
+    expect(reportAbandonedDownloadsOnSignOutMock).toHaveBeenCalledWith({ tag: 'db' });
+    // Order is the whole correctness of it, on both sides: after resetAnalytics()
+    // the terminal is unjoinable, and after the enabled-set reset there is no way
+    // to tell which boards were downloading.
+    const reportOrder = reportAbandonedDownloadsOnSignOutMock.mock.invocationCallOrder[0];
+    expect(reportOrder).toBeLessThan(resetAnalyticsMock.mock.invocationCallOrder[0]);
+    const enabledBoardsReset = setSettingMock.mock.calls.findIndex((call) => call[0] === 'syncEnabledBoards');
+    expect(enabledBoardsReset).toBeGreaterThanOrEqual(0);
+    expect(reportOrder).toBeLessThan(setSettingMock.mock.invocationCallOrder[enabledBoardsReset]);
   });
 
   // A wedged SQLite file must not strand someone in a half-signed-out app.
@@ -1431,6 +1525,7 @@ describe('AuthProvider forced sign-out registration', () => {
     expect(clearStoredSessionIdMock).toHaveBeenCalledWith(previousOwner);
     expect(clearStoredActiveBoardMock).toHaveBeenCalledWith(previousOwner);
     expect(clearStoredQueueSnapshotMock).toHaveBeenCalledWith(previousOwner);
+    expect(resetActiveBoardSelfHealValidationCacheMock).toHaveBeenCalledOnce();
     expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined();
     await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
     expect(userStorageOwnerState.current).toEqual({ userId: 'user-2', authSessionId: 'login-2' });

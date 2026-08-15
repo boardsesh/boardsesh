@@ -20,6 +20,15 @@ type UseMobilePlaybackInput = {
   /** Gates the BLE write loop only; the peer subscription stays armed regardless. */
   isOpen: boolean;
   /**
+   * True while the drawer shows a preview: playback keeps animating ON-SCREEN,
+   * but no frame reaches a connected wall. Without this, merely opening a
+   * preview of a multi-frame climb replaces the physical wall — the exact
+   * promise the Browsing chrome makes ("the wall stays put") broken by the
+   * writer below. The live climb's frames resume flowing when the preview
+   * clears (the climb-change reset re-arms the first-frame flush).
+   */
+  suppressWallWrites: boolean;
+  /**
    * Fired once per user-initiated `play()` on a route. Analytics seam: mobile
    * has no analytics transport yet, so the play drawer leaves this undefined.
    * Wiring it later (e.g. a 'Route Played' event) is a one-liner here.
@@ -64,6 +73,7 @@ export function useMobilePlayback({
   boardName,
   mirrored,
   isOpen,
+  suppressWallWrites,
   onRoutePlayed,
 }: UseMobilePlaybackInput): UseMobilePlaybackOutput {
   const { subscribeToPlaybackEvents, publishPlaybackState } = useQueueActions();
@@ -166,7 +176,7 @@ export function useMobilePlayback({
   const bluetoothConnected = bluetooth?.isConnected ?? false;
 
   useEffect(() => {
-    if (!isOpen || !isAnimatable || !bluetoothConnected || !bluetooth) return;
+    if (!isOpen || suppressWallWrites || !isAnimatable || !bluetoothConnected || !bluetooth) return;
     const frame = currentFrameString;
     if (!frame || frame === lastSentFrameRef.current) return;
     if (isWritingFrameRef.current) {
@@ -202,7 +212,7 @@ export function useMobilePlayback({
       }
     };
     void drain();
-  }, [isOpen, isAnimatable, bluetoothConnected, bluetooth, currentFrameString]);
+  }, [isOpen, suppressWallWrites, isAnimatable, bluetoothConnected, bluetooth, currentFrameString]);
 
   const play = useCallback(() => {
     // Fire the analytics seam only on a deliberate user play of a route — peer

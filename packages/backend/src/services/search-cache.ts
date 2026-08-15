@@ -20,8 +20,13 @@ export const DEFAULT_SEARCH_CACHE_TTL = 86400;
  *
  * Exported so search-cache.test.ts asserts the key layout against this constant
  * instead of re-typing the version literal in every assertion.
+ *
+ * v6: search rows now carry `compatibleSizeIds`. A cached v5 payload lacks it,
+ * and a missing value reads as "no compatibility data", which switches the
+ * client-side size check off — on Woods that is the difference between skipping
+ * an 8x10 climb on a 12x12 wall and lighting the wrong holds.
  */
-export const CACHE_VERSION = 'v5';
+export const CACHE_VERSION = 'v6';
 
 /**
  * Recursively sorts the keys of an object so that JSON.stringify produces

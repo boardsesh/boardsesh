@@ -47,6 +47,7 @@ vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     brandColors: { primary: '#6D28D9', error: '#C81E1E' },
     systemColors: { label: '#000', secondaryBackground: '#111', separator: '#333' },
+    radii: { button: 20 },
     variant: ctrl.variant,
   }),
 }));
@@ -118,6 +119,7 @@ vi.mock('../../PressableSurface', () => ({
   }) => createElement('button', { onClick: onPress, 'data-pressable': accessibilityLabel ?? '' }, children),
 }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 3: 12 } }));
+vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }));
 vi.mock('../../user-drawer/UserAvatarToolbarAction', () => ({
   UserAvatarToolbarAction: ({ variant }: { variant: 'glass' | 'material' }) => {
     if (variant === 'material') {
@@ -132,6 +134,10 @@ vi.mock('../../user-drawer/UserAvatarToolbarAction', () => ({
 }));
 
 import { RecordTopChrome } from '../RecordTopChrome';
+
+// The exit is a labelled pill in both variants, so it is found by its pressable
+// accessibility label rather than by a Paper app-bar action slot.
+const MATERIAL_STOP = '[data-pressable="mobile.session.inEndSession"]';
 
 function makeProps(over: Partial<Parameters<typeof RecordTopChrome>[0]> = {}) {
   return {
@@ -264,13 +270,33 @@ describe('RecordTopChrome', () => {
       expect(appbar.actions).not.toContain('mobile.session.editTitleAria');
     });
 
-    it('shows the End app-bar action only while a session is live (onEndSession set)', () => {
-      const { rerender } = render(<RecordTopChrome {...makeProps()} />);
-      expect(appbar.actions).not.toContain('mobile.session.inEndSession');
+    it('shows the End control only while a session is live (onEndSession set)', () => {
+      const { container, rerender } = render(<RecordTopChrome {...makeProps()} />);
+      expect(container.querySelector(MATERIAL_STOP)).toBeNull();
 
-      appbar.actions = [];
-      rerender(<RecordTopChrome {...makeProps({ onEndSession: vi.fn() })} />);
-      expect(appbar.actions).toContain('mobile.session.inEndSession');
+      const onEndSession = vi.fn();
+      rerender(<RecordTopChrome {...makeProps({ onEndSession })} />);
+      const stopButton = container.querySelector(MATERIAL_STOP) as HTMLButtonElement | null;
+      expect(stopButton).not.toBeNull();
+      stopButton!.click();
+      expect(onEndSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders the exit as a labelled Stop pill, not a bare icon app-bar action', () => {
+      const { container } = render(<RecordTopChrome {...makeProps({ onEndSession: vi.fn() })} />);
+      // The exit left the Paper action row — it is a pressable pill now.
+      expect(appbar.actions).not.toContain('mobile.session.inEndSession');
+      const stopButton = container.querySelector(MATERIAL_STOP);
+      expect(stopButton?.textContent).toContain('mobile.session.inStop');
+      // Destructive tint on the leader's Stop, same as the glass pill.
+      expect(stopButton?.querySelector('[data-icon="flag"]')?.getAttribute('data-color')).toBe('#C81E1E');
+    });
+
+    it('renders the joiner exit as a neutral labelled Leave pill', () => {
+      const { container } = render(<RecordTopChrome {...makeProps({ onEndSession: vi.fn(), exitVariant: 'leave' })} />);
+      const leaveButton = container.querySelector('[data-pressable="queueBar.ariaLabels.leaveSession"]');
+      expect(leaveButton?.textContent).toContain('mobile.session.inLeave');
+      expect(leaveButton?.querySelector('[data-icon="leave.session"]')?.getAttribute('data-color')).toBe('#000');
     });
   });
 });

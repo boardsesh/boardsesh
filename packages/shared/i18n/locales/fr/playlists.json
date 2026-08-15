@@ -6,7 +6,12 @@
     },
     "detail": {
       "fallbackTitle": "Playlist",
-      "fallbackDescription": "Playlist d'escalade sur Boardsesh"
+      "fallbackDescription": "Découvre les blocs de cette playlist sur Boardsesh.",
+      "privateTitle": "Playlist privée",
+      "privateDescription": "Cette playlist est privée.",
+      "climbCountDescription_one": "Une playlist de grimpe sur Boardsesh avec {{count}} bloc.",
+      "climbCountDescription_other": "Une playlist de grimpe sur Boardsesh avec {{count}} blocs.",
+      "ogAlt": "La playlist {{name}} sur Boardsesh"
     }
   },
   "library": {
@@ -113,8 +118,9 @@
       "subtitle": "Les données de board manquent pour cette voie."
     },
     "menu": {
-      "editClimbs": "Modifier les blocs",
-      "edit": "Modifier",
+      "addClimbs": "Ajouter des blocs",
+      "editDetails": "Modifier les détails",
+      "editClimbs": "Réorganiser et retirer des blocs",
       "delete": "Supprimer"
     },
     "visibility": {
@@ -175,9 +181,7 @@
     "title": "Modifier la playlist",
     "fields": {
       "name": "Nom de la playlist",
-      "namePlaceholder": "ex. : Réglettes qui piquent",
       "description": "Description",
-      "descriptionPlaceholder": "Description facultative pour votre playlist...",
       "color": "Couleur",
       "icon": "Icône",
       "iconHint": "Saisissez n'importe quel emoji, ou choisissez-en un ci-dessous",
@@ -187,7 +191,6 @@
       "privateHint": "Les playlists privées ne sont visibles que par vous"
     },
     "actions": {
-      "cancel": "Annuler",
       "save": "Enregistrer",
       "saving": "Enregistrement..."
     },
@@ -213,93 +216,8 @@
       "color": "Couleur"
     }
   },
-  "generator": {
-    "drawerTitle": "Générer une playlist",
-    "generatingTitle": "Génération...",
-    "optionsTitle": "Options",
-    "generatingProgress": "Ajout des blocs... {{current}} / {{total}}",
-    "generate": "Générer",
-    "reset": "Réinitialiser",
-    "totals": {
-      "total": "Total",
-      "climbs_one": "{{count}} bloc",
-      "climbs_other": "{{count}} blocs"
-    },
-    "summaryRow_one": "{{count}} bloc ({{range}})",
-    "summaryRow_other": "{{count}} blocs ({{range}})",
-    "options": {
-      "warmUp": "Échauffement",
-      "targetAngle": "Angle cible",
-      "targetGrade": "Cotation cible",
-      "minAscents": "Enchaînements min.",
-      "minRating": "Note min.",
-      "any": "Tous",
-      "minAscentsOption": "{{value}}+",
-      "minRatingOption_one": "{{count}} étoile et plus",
-      "minRatingOption_other": "{{count}} étoiles et plus",
-      "climbBias": "Préférence de blocs",
-      "tallClimbsLabel": "Blocs hauts uniquement",
-      "tallClimbsTooltip": "Affiche uniquement les blocs qui utilisent les prises des 8 rangées du bas (uniquement sur les boards 8x12 et 10x12)",
-      "wideClimbsLabel": "Blocs larges uniquement",
-      "wideClimbsTooltip": "Affiche uniquement les blocs qui utilisent les colonnes latérales supplémentaires 10x10",
-      "mainSetClimbs": "Blocs de la série principale",
-      "mainSetVariability": "Variabilité de la série principale",
-      "numberOfSteps": "Nombre de paliers",
-      "climbsPerStep": "Blocs par palier",
-      "numberOfClimbs": "Nombre de blocs"
-    },
-    "warmUpOptions": {
-      "standard": "Standard",
-      "extended": "Prolongé",
-      "none": "Aucun"
-    },
-    "climbBiasOptions": {
-      "unfamiliar": "Jamais essayés",
-      "attempted": "Déjà essayés",
-      "any": "Tous"
-    },
-    "workoutTypes": {
-      "volume": {
-        "name": "Volume",
-        "description": "Une séance à fort volume."
-      },
-      "pyramid": {
-        "name": "Pyramide",
-        "description": "Montez jusqu'à votre cotation max, puis redescendez."
-      },
-      "ladder": {
-        "name": "Échelle",
-        "description": "Progressez dans les cotations par paliers."
-      },
-      "gradeFocus": {
-        "name": "Cotation ciblée",
-        "description": "Choisissez une cotation et c'est parti !"
-      }
-    },
-    "sections": {
-      "warmUp": "Échauffement",
-      "increasing": "Montée",
-      "peak": "Pic",
-      "decreasing": "Descente",
-      "main": "Série principale"
-    },
-    "chart": {
-      "ariaLabel": "Aperçu de la distribution des cotations",
-      "configurePrompt": "Configurez les options pour prévisualiser"
-    },
-    "messages": {
-      "noClimbs": "Aucun bloc à générer"
-    }
-  },
   "bottomTabBar": {
-    "home": "Accueil",
-    "climb": "Blocs",
     "discover": "Découvrir",
-    "feed": "Fil",
-    "create": "Créer",
-    "you": "Vous",
-    "youSignInTitle": "Connectez-vous pour voir votre progression",
-    "youSignInDescription": "Connectez-vous pour suivre vos stats, vos sessions et votre carnet.",
     "selectBoardForPlaylist": "Choisissez une board avant de créer une playlist",
     "createdPlaylistToast": "Playlist « {{name}} » créée",
     "createPlaylistFailed": "Impossible de créer la playlist"

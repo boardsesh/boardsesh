@@ -32,9 +32,6 @@ import {
   VerifyEmailRequestSchema,
   ResendVerificationRequestSchema,
   ErrorResponseSchema,
-  AuroraLoginRequestSchema,
-  AuroraLoginResponseSchema,
-  SaveAscentRequestSchema,
   UserProfileSchema,
   UpdateProfileRequestSchema,
   WsAuthResponseSchema,
@@ -467,88 +464,6 @@ registry.registerPath({
     },
     429: {
       description: 'Rate limit exceeded',
-      content: {
-        'application/json': {
-          schema: ErrorResponseSchema,
-        },
-      },
-    },
-  },
-});
-
-// ============================================
-// Aurora Proxy Routes
-// ============================================
-
-registry.registerPath({
-  method: 'post',
-  path: '/api/v1/{board_name}/proxy/login',
-  summary: 'Login to Aurora board',
-  description:
-    'Authenticates with the Aurora Climbing API and returns a session token. This token is used for subsequent Aurora API calls.',
-  tags: ['Aurora Proxy'],
-  request: {
-    params: z.object({
-      board_name: BoardNameSchema,
-    }),
-    body: {
-      content: {
-        'application/json': {
-          schema: AuroraLoginRequestSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      description: 'Login successful',
-      content: {
-        'application/json': {
-          schema: AuroraLoginResponseSchema,
-        },
-      },
-    },
-    401: {
-      description: 'Invalid credentials',
-      content: {
-        'application/json': {
-          schema: ErrorResponseSchema,
-        },
-      },
-    },
-  },
-});
-
-registry.registerPath({
-  method: 'post',
-  path: '/api/v1/{board_name}/proxy/saveAscent',
-  summary: 'Save an ascent to Aurora',
-  description:
-    'Records a climb completion (ascent) to the Aurora Climbing platform. Requires a valid Aurora session token.',
-  tags: ['Aurora Proxy'],
-  request: {
-    params: z.object({
-      board_name: BoardNameSchema,
-    }),
-    body: {
-      content: {
-        'application/json': {
-          schema: SaveAscentRequestSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      description: 'Ascent saved successfully',
-      content: {
-        'application/json': {
-          schema: z.object({ success: z.boolean() }),
-        },
-      },
-    },
-    401: {
-      description: 'Invalid or expired token',
       content: {
         'application/json': {
           schema: ErrorResponseSchema,

@@ -156,7 +156,7 @@ export function WallFinderFilterChips({
       {hasActive ? (
         <Pressable onPress={onClear} hitSlop={8} accessibilityRole="button" style={styles.clear}>
           <Text variant="caption1" color={brandColors.primary} style={styles.chipLabel}>
-            {t('clear')}
+            {t('actions.clear')}
           </Text>
         </Pressable>
       ) : null}

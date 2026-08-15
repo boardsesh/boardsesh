@@ -34,6 +34,7 @@ import {
   MIRROR_CURRENT_CLIMB,
   PUBLISH_PLAYBACK_STATE,
   SET_QUEUE,
+  SET_QUEUE_WITH_BASELINE,
   REPLACE_QUEUE_ITEM,
   CONFIRM_CLIMB_ON_WALL,
   REPORT_WALL_DISCONNECT,
@@ -63,6 +64,23 @@ export type PublishPlaybackStateInput = {
 };
 
 const NOT_CONNECTED = 'Not connected to session';
+
+/**
+ * Does this failure mean the server doesn't know `setQueue`'s `baselineSequence`
+ * argument yet (#3933)?
+ *
+ * graphql-js emits `Unknown argument "baselineSequence" on field
+ * "Mutation.setQueue".` from `validate()`, before any resolver runs, and those
+ * validation errors carry no `extensions.code` — so this has to match the
+ * message. Kept deliberately narrow (the argument name AND a validation-shaped
+ * phrase) so a genuine server error is never mistaken for deploy skew and
+ * retried on the legacy document.
+ */
+function isUnknownBaselineArgumentError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  if (!message.includes('baselineSequence')) return false;
+  return /unknown argument|graphql_validation_failed|is not defined/i.test(message);
+}
 
 /**
  * Every action whose transport error is swallowed here and handed to
@@ -116,6 +134,23 @@ export type QueueMutationsDeps<TItem> = {
    * call's enqueue time; null means no session existed then.
    */
   ensureReady?: (capturedSessionId: string | null) => Promise<string | null>;
+  /**
+   * Last server sequence this client has APPLIED, or null when it has applied
+   * none (fresh connection) — mobile reads the sync gate's `getLastSequence()`.
+   *
+   * `setQueue` sends it so the server can re-append any climb a party member
+   * added while this payload was being composed, instead of overwriting it
+   * (#3933). It MUST be the applied sequence, never a locally invented counter:
+   * an add the client saw and deliberately dropped has a sequence at or below
+   * the baseline and so is never resurrected.
+   *
+   * Read synchronously at `setQueue` call time, not after its internal awaits,
+   * so it lines up with the payload the caller just composed.
+   *
+   * Absent (web) or null: `setQueue` sends the legacy document with no baseline
+   * argument and the server keeps its wholesale-overwrite behaviour.
+   */
+  getBaselineSequence?: () => number | null;
   /** Sink for swallowed transport errors (best-effort actions + coalescer drains). */
   onBestEffortError?: (action: BestEffortAction, error: unknown) => void;
   /**
@@ -139,6 +174,35 @@ export type QueueMutationsActions<TItem> = {
    */
   reorderQueueItem: (uuid: string, oldIndex: number, newIndex: number) => Promise<void>;
   setCurrentClimb: (item: TItem | null, shouldAddToQueue?: boolean, correlationId?: string) => Promise<void>;
+  /**
+   * Is the climber's LATEST intent for `uuid` "drop it" — set by a per-item
+   * `removeQueueItem` or by a wholesale `setQueue` replace that discarded a
+   * remembered add-candidate, and retracted by any later `addQueueItem`,
+   * queue-adding activation, or `setQueue` payload that contains it?
+   *
+   * Read-only, synchronous, side-effect free. It exists so a caller-side
+   * recovery can classify a LOCAL ABSENCE the same way `sendDeferredQueueAdd`
+   * does. An item that has left this client's queue left for one of two very
+   * different reasons:
+   *   - true  — the climber dropped it. Don't resurrect it; a bare ADD would put
+   *             a climb they just discarded back on the whole crew's queue.
+   *   - false — a wholesale server sync REPLACED the queue (INITIAL_QUEUE_DATA
+   *             from a FullSync) and wiped a not-yet-synced optimistic slot. The
+   *             absence says nothing about intent, so the add must still be sent.
+   * Mobile's `recoverThrottledQueueAdd` reads it for exactly that fork (#4009);
+   * reimplementing the heuristic there would have to duplicate the ledger this
+   * factory already keeps.
+   *
+   * Also false for an item a PEER removed mid-flight: that arrives as a server
+   * delta, indistinguishable at this layer from a wholesale sync, so it takes
+   * the send branch. Same deliberate gap `sendDeferredQueueAdd` documents.
+   *
+   * Latest-intent rather than ever-dropped matters because the ledger outlives
+   * any one session: the factory is memoised for the QueueProvider's lifetime,
+   * so an append-only answer would suppress the recovery for every climb the
+   * climber cleared earlier in the app process.
+   */
+  wasUuidExplicitlyRemoved: (uuid: string) => boolean;
   mirrorCurrentClimb: (mirrored: boolean) => Promise<void>;
   /**
    * Broadcast a playback engine state change for a multi-frame climb so party
@@ -175,8 +239,16 @@ export type QueueMutationsActions<TItem> = {
 };
 
 export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): QueueMutationsActions<TItem> {
-  const { getClient, getSessionId, toQueueItemInput, getQueuePosition, ensureReady, onBestEffortError, onRateLimited } =
-    deps;
+  const {
+    getClient,
+    getSessionId,
+    toQueueItemInput,
+    getQueuePosition,
+    ensureReady,
+    getBaselineSequence,
+    onBestEffortError,
+    onRateLimited,
+  } = deps;
 
   type Ready = { client: Client; sessionId: string };
 
@@ -199,6 +271,20 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
   // indistinguishable here from a wholesale sync, so it takes the append branch.
   // Pre-existing on the superseded path, which appended unconditionally.
   //
+  // Read back through the `wasUuidExplicitlyRemoved` action so callers running
+  // their OWN recovery against the same fork (mobile's recoverThrottledQueueAdd,
+  // #4009) consult this ledger instead of re-deriving the heuristic.
+  //
+  // It records the climber's LATEST intent for a uuid, not "ever dropped": every
+  // path that puts the climb back — `addQueueItem`, an activation carrying a
+  // queue-add, or a `setQueue` payload that contains it — forgets the entry. An
+  // append-only ledger keeps answering "dropped" for the rest of the app process
+  // (`useQueueMutations` memoises the factory for the QueueProvider's whole
+  // lifetime, and nothing but the cap below ever deletes), so a climber who
+  // cleared their queue and later re-picked one of those climbs would hit the
+  // very #4009 bail this exists to prevent. Re-queueing a project you cleared is
+  // ordinary, and mobile's clear-queue puts EVERY queued uuid in here at once.
+  //
   // Backed by an insertion-ordered Set rather than a small ring: mobile's
   // `clearQueue` fires one `removeQueueItem` per queued item in a single burst,
   // so a 50-entry ring evicted its own earliest entries on any queue longer than
@@ -213,6 +299,14 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       const oldest = removedUuids.values().next();
       if (!oldest.done) removedUuids.delete(oldest.value);
     }
+  }
+  // The climber put it back, so the earlier drop no longer describes what they
+  // want. Called from every add path BEFORE that path's own awaits, so a remove
+  // that races in afterwards still records and still wins — which is what keeps
+  // the #3934 undo leg alive (recovery's add forgets, the swipe during its
+  // back-off re-records, the undo check reads the swipe).
+  function forgetRemovedUuid(uuid: string): void {
+    removedUuids.delete(uuid);
   }
 
   // uuids of recent activations that carried a queue-add — the only uuids a
@@ -359,6 +453,9 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
 
   return {
     addQueueItem: async (item, position) => {
+      // Putting it back retracts any earlier drop, and before the session guards
+      // for the same reason `removeQueueItem` records before them.
+      forgetRemovedUuid(toQueueItemInput(item).uuid);
       const ready = await resolveCore({ allowCreate: true });
       if (!ready) return;
       await runMutation(ready.client, {
@@ -386,7 +483,15 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
     setCurrentClimb: async (item, shouldAddToQueue, correlationId) => {
       // Only an activation that carries a queue-add can ever produce a deferred
       // ADD, so only those uuids need tracking for the wholesale-replace diff.
-      if (item !== null && shouldAddToQueue) rememberAddCandidate(toQueueItemInput(item).uuid);
+      // Such an activation is also the climber asking for the climb back, so it
+      // retracts any earlier drop of the same uuid — otherwise a climb they
+      // cleared an hour ago is still "dropped" when this activation's own
+      // recovery asks (#4009).
+      if (item !== null && shouldAddToQueue) {
+        const activatedUuid = toQueueItemInput(item).uuid;
+        rememberAddCandidate(activatedUuid);
+        forgetRemovedUuid(activatedUuid);
+      }
       // Web throws upfront when disconnected (no ensureReady); mobile enqueues
       // and lets the coalescer's sendArgs resolve / create the session.
       if (!ensureReady && (!getClient() || !getSessionId())) {
@@ -394,6 +499,8 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       }
       await coalescer.enqueue({ item, shouldAddToQueue, correlationId });
     },
+
+    wasUuidExplicitlyRemoved: (uuid) => removedUuids.has(uuid),
 
     mirrorCurrentClimb: async (mirrored) => {
       const ready = await resolveCore({ allowCreate: false });
@@ -418,6 +525,16 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
 
     setQueue: async (queue, currentClimbQueueItem) => {
       const queueInputs = queue.map(toQueueItemInput);
+      // Read the baseline SYNCHRONOUSLY, before any await, so it describes what
+      // the caller knew when it handed over this payload (#3933). Reading it
+      // after `resolveCore` — which can await a session join — lets a peer add
+      // that landed during that wait advance the gate past what the payload
+      // contains: the server then sees no window to merge and the replace drops
+      // the very climb this exists to save. The baseline has to track the
+      // payload in both directions — too new drops peer adds, too old
+      // resurrects climbs the climber deliberately replaced away — and call
+      // time is when the payload was composed.
+      const baselineSequence = getBaselineSequence?.() ?? null;
       // A wholesale replace is climber intent exactly like a per-item remove —
       // web's Clear button and mobile's playlist "replace my queue" both land
       // here and never touch `removeQueueItem`. Any recent activation missing
@@ -428,6 +545,13 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       // placeholder reads as discarded — harmless, since the ledger is
       // consulted only once the item has also left the local queue, and an
       // activation is always a resolved climb.)
+      // The mirror image of the same intent: a uuid the payload DOES contain is
+      // one the climber just asserted belongs in their queue, so it retracts any
+      // earlier drop (#4009). Runs first, so a uuid that is both a stale
+      // add-candidate and absent from the payload still ends up recorded.
+      for (const queueInput of queueInputs) {
+        forgetRemovedUuid(queueInput.uuid);
+      }
       if (addCandidateUuids.length > 0) {
         const nextUuids = new Set(queueInputs.map((queueInput) => queueInput.uuid));
         for (const candidate of addCandidateUuids) {
@@ -436,13 +560,27 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       }
       const ready = await resolveCore({ allowCreate: false });
       if (!ready) return;
-      await runMutation(ready.client, {
-        query: SET_QUEUE,
-        variables: {
-          queue: queueInputs,
-          currentClimbQueueItem: currentClimbQueueItem ? toQueueItemInput(currentClimbQueueItem) : undefined,
-        },
-      });
+      const variables = {
+        queue: queueInputs,
+        currentClimbQueueItem: currentClimbQueueItem ? toQueueItemInput(currentClimbQueueItem) : undefined,
+      };
+      if (baselineSequence !== null) {
+        try {
+          await runMutation(ready.client, {
+            query: SET_QUEUE_WITH_BASELINE,
+            variables: { ...variables, baselineSequence },
+          });
+          return;
+        } catch (error) {
+          // A backend that predates the `baselineSequence` argument rejects the
+          // whole document at validation time. That is a deploy-skew artefact,
+          // not a user error — retry once on the legacy document so nobody's
+          // Clear button or playlist activation hard-fails during a rollout.
+          // Any other failure (rate limit, transport, auth) propagates.
+          if (!isUnknownBaselineArgumentError(error)) throw error;
+        }
+      }
+      await runMutation(ready.client, { query: SET_QUEUE, variables });
     },
 
     replaceQueueItem: async (uuid, item) => {

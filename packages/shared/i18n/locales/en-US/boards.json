@@ -1,36 +1,8 @@
 {
   "discovery": {
-    "section": {
-      "nearby": "Boards near you"
-    },
     "popular": {
       "title": "Popular boards",
       "meta": "{{boards}} boards · {{sends}} sends"
-    },
-    "findNearby": {
-      "loading": "Finding boards…",
-      "geoDenied": "Location unavailable",
-      "error": "Failed to load nearby boards",
-      "noResults": "No nearby boards found",
-      "idle": "Find nearby"
-    },
-    "search": {
-      "ariaLabel": "Search for a board",
-      "label": "Search"
-    },
-    "custom": {
-      "ariaLabel": "Build a custom board",
-      "label": "Custom board"
-    },
-    "create": {
-      "defaultLabel": "New Board"
-    },
-    "bluetooth": {
-      "scanning": "Scanning…",
-      "boardsFound": "Boards found",
-      "noBoardsFound": "No boards found",
-      "unavailable": "Bluetooth unavailable",
-      "idle": "Quick start"
     }
   },
   "mobile": {
@@ -198,6 +170,7 @@
       "subtitle": "Tap a gym to use its board",
       "locationNeeded": "Share your location to find gyms nearby",
       "grantLocation": "Use my location",
+      "locationBlocked": "Your browser is keeping your location to itself. Type a town in the search box instead — that works everywhere.",
       "empty": "No gyms nearby yet",
       "noBoards": "No boards here yet",
       "boardCount_one": "{{count}} board",
@@ -282,17 +255,22 @@
         "messageLabel": "Message (optional)",
         "messagePlaceholder": "Anything that helps us verify you run this gym",
         "submit": "Request review",
-        "sent": "We've emailed our team. They'll be in touch soon."
+        "sent": "Your claim is in the review queue. We'll email you as soon as it's decided."
       },
       "approved": {
         "sent": "{{gym}} is yours to manage.",
         "manageCta": "Set up your gym",
         "manageError": "Couldn't open gym setup. Try it in a browser."
+      },
+      "protections": {
+        "syncFreeze": "Once it's yours, your edits stay put — location sync never overwrites what an owner sets.",
+        "transfer": "Handing the gym to someone else later? Email {{email}} and we'll move ownership across."
       }
     },
     "offline": {
       "available": "Available offline",
       "pending": "Waiting to download",
+      "finalizing": "Finishing download…",
       "bootstrapping": "Downloading board…",
       "bootstrapPreparing": "Preparing download…",
       "bootstrapDownloading": "Downloading {{done}} of {{total}}",
@@ -400,19 +378,8 @@
   },
   "boardForm": {
     "create": {
-      "submit": "Create Board",
-      "authRequired": "You must be signed in to create a board",
-      "errorMessage": "Failed to create board. It may already exist for this configuration.",
       "limitReached": "You've reached the maximum number of boards for one account. Delete a board you no longer use to add another.",
-      "goToExisting": "Go to your board",
-      "nameRequired": "Board name is required",
-      "createdNamed": "Board \"{{name}}\" created!",
-      "namePlaceholder": "e.g., Home Board, Gym Name",
-      "locationPlaceholder": "e.g., City, Gym Name",
-      "duplicateTitle": "You already have this setup",
-      "duplicateBody": "You already have \"{{name}}\" with the same layout, size and hold sets. Add another only if it’s a different wall.",
-      "addAnyway": "Add it anyway",
-      "keepEditing": "Cancel"
+      "nameRequired": "Board name is required"
     },
     "fields": {
       "name": "Board Name",
@@ -455,6 +422,15 @@
       "duplicateBodyGeneric": "This change matches a board setup the owner already has.",
       "saveAnyway": "Save anyway",
       "cancel": "Cancel"
+    },
+    "serialReuse": {
+      "warning": "This serial number already belongs to \"{{name}}\". Joining that board keeps everyone's sends and stats on one wall.",
+      "warningPrivate": "This serial number is already registered to another climber's private board.",
+      "dialogTitle": "This wall is already on Boardsesh",
+      "dialogBody": "Serial number {{serial}} is registered to \"{{name}}\". Create a duplicate and your sends and sessions split away from the crew already climbing there.",
+      "dialogBodyPrivate": "Serial number {{serial}} is already registered to another climber's private board. If this really is a different wall, you can still create yours.",
+      "useExisting": "Use the existing board",
+      "createAnyway": "Create a duplicate anyway"
     }
   },
   "editBoard": {
@@ -495,43 +471,8 @@
       "hardest": "Hardest"
     }
   },
-  "boardConfigSelects": {
-    "board": "Board",
-    "layout": "Layout",
-    "size": "Size",
-    "holdSets": "Hold Sets",
-    "angle": "Angle"
-  },
-  "boardFilterStrip": {
-    "all": "All",
-    "allBoards": "All Boards"
-  },
   "boardPill": {
     "switchHint": "Opens the board switcher"
-  },
-  "boardSwitchConfirm": {
-    "session": {
-      "title": "Leave your session?",
-      "body": "You're in a session on {{lockedLabel}}. Switching to {{targetLabel}} disconnects your board but keeps the session running."
-    },
-    "connection": {
-      "title": "Disconnect your board?",
-      "body": "Your {{lockedLabel}} is still connected. Switching to {{targetLabel}} disconnects it."
-    },
-    "stay": "Stay",
-    "switch": "Switch boards"
-  },
-  "boardSearchDrawer": {
-    "title": "Find a board",
-    "searchPlaceholder": "Search boards by name or location",
-    "clear": "Clear",
-    "radiusInfo": "Showing boards within {{radiusKm}} km of map center",
-    "empty": "No boards in this area. Pan or zoom out to find more.",
-    "emptyWithQuery": "No boards match \"{{query}}\" here. Try zooming out or searching elsewhere.",
-    "open": "Open"
-  },
-  "boardSearchMap": {
-    "myLocation": "My location"
   },
   "zoomableBoard": {
     "reset": "Reset"
@@ -596,17 +537,6 @@
     "claim": "This is my gym — claim it",
     "createAnyway": "None of these? Add your gym with the button below."
   },
-  "selectorDrawer": {
-    "customTitle": "Custom Board",
-    "createTitle": "Create Board",
-    "createButton": "Create board",
-    "quickSession": "Quick session",
-    "configSection": {
-      "label": "Board config",
-      "title": "Board config",
-      "defaultSummary": "Select a board"
-    }
-  },
   "gymEntity": {
     "notFound": "Gym not found",
     "tabs": {
@@ -646,6 +576,7 @@
       "name": "Gym Name",
       "slug": "URL Slug",
       "description": "Description",
+      "hours": "Opening hours",
       "address": "Address",
       "contactEmail": "Contact Email",
       "contactPhone": "Contact Phone",
@@ -655,6 +586,7 @@
     "placeholders": {
       "name": "e.g., Boulder World, The Climbing Factory",
       "description": "Optional description",
+      "hours": "e.g., Mon-Fri 7am-11pm, Sat-Sun 9am-8pm",
       "address": "e.g., 123 Main St, City",
       "contactEmail": "Optional contact email",
       "contactPhone": "Optional contact phone",
@@ -672,7 +604,8 @@
       "createdNamed": "Gym \"{{name}}\" created!"
     },
     "helpers": {
-      "website": "Used to verify ownership when someone claims this gym"
+      "website": "Used to verify ownership when someone claims this gym",
+      "hours": "One line, however you write it. Your gym page shows the date you last confirmed it."
     }
   },
   "claimGym": {
@@ -682,7 +615,8 @@
     "switchToAdmin": "Don't have a work email? Request a review",
     "switchToDomain": "Verify with a work email instead",
     "errors": {
-      "generic": "Something went wrong. Try again."
+      "generic": "Something went wrong. Try again.",
+      "tokenUnavailable": "We couldn't confirm you're logged in. Reload the page and try again."
     },
     "domain": {
       "description": "Manage {{gym}}? Enter your email at {{domain}} and we'll send a link to confirm.",
@@ -697,11 +631,15 @@
       "messageLabel": "Message (optional)",
       "messagePlaceholder": "Anything that helps us verify you run this gym",
       "submit": "Request review",
-      "sent": "We've emailed our team. They'll be in touch soon."
+      "sent": "Your claim is in the review queue. We'll email you as soon as it's decided."
     },
     "approved": {
       "body": "{{gym}} is yours. Set it up whenever you're ready.",
       "manageCta": "Set up your gym"
+    },
+    "protections": {
+      "syncFreeze": "Once it's yours, your edits stay put — location sync never overwrites what an owner sets.",
+      "transfer": "Handing the gym to someone else later? Email {{email}} and we'll move ownership across."
     }
   },
   "claimLanding": {

@@ -87,7 +87,11 @@ export async function POST(request: NextRequest) {
       });
     });
 
-    const baseUrl = process.env.BASE_URL ?? request.nextUrl.origin;
+    // `?.trim() ||`, not `??`: Dockerfile.web's runner stage declares
+    // `ENV BASE_URL=$BASE_URL`, which is the EMPTY STRING in an image built
+    // without the build arg. `??` keeps an empty string and every link in this
+    // email would lose its origin; falling back to the request origin is right.
+    const baseUrl = process.env.BASE_URL?.trim() || request.nextUrl.origin;
     // Email is sent outside the transaction intentionally (nodemailer is not transactional).
     // If this throws, the token remains in the DB but unreachable to the user — the
     // delete-before-insert at the start of the next attempt cleans it up automatically.

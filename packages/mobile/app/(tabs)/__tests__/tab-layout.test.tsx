@@ -17,7 +17,7 @@ const cfg = vi.hoisted(() => ({
   // mounts only for the Liquid Glass variant on a capable device; everything else
   // (Material, plus Liquid Glass on iOS < 26 / Android) takes the JS tab bar.
   glassCapable: true,
-  platformOS: 'ios' as 'ios' | 'android',
+  platformOS: 'ios' as 'ios' | 'android' | 'web',
   // 'regular' takes the tablet sidebar shell; 'compact' keeps the phone tab bars.
   widthClass: 'compact' as 'compact' | 'regular',
   // Tablet in a narrow split: compact width but still a tablet, which the shell keeps on
@@ -425,6 +425,41 @@ describe('TabLayout', () => {
     expect(container.querySelector('[data-tabs-material="true"]')).not.toBeNull();
     expect(container.querySelector('[data-tablet-sidebar="true"]')).toBeNull();
     expect(container.querySelector('[data-tabs="true"]')).toBeNull();
+  });
+
+  it('adapts an eligible web screen from the Material bar to the desktop tablet shell', () => {
+    cfg.platformOS = 'web';
+    cfg.variant = 'material';
+    cfg.glassCapable = false;
+    cfg.isTablet = true;
+    cfg.widthClass = 'compact';
+    cfg.windowWidth = 699;
+
+    const { container, rerender } = render(<TabLayout />);
+    const tabsNavigator = container.querySelector('[data-tabs-material="true"]');
+
+    expect(tabsNavigator).not.toBeNull();
+    expect(container.querySelector('[data-tablet-sidebar="true"]')).toBeNull();
+
+    cfg.widthClass = 'regular';
+    cfg.windowWidth = 1440;
+    cfg.boardPresenceEnabled = true;
+    cfg.boardPresenceBoardId = 1;
+    cfg.activeBoard = { uuid: 'board-1' };
+    rerender(<TabLayout />);
+
+    expect(container.querySelector('[data-tabs-material="true"]')).toBe(tabsNavigator);
+    expect(container.querySelector('[data-tablet-sidebar="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-ipad-play-pane="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-ipad-wall-column="true"]')).not.toBeNull();
+    expect(cfg.materialScreens.map((screen) => screen.name)).toEqual([
+      'home',
+      'climbs',
+      'record',
+      'wall',
+      'discover',
+      'profile',
+    ]);
   });
 
   it('suppresses the detail pane on the tightest regular portraits, keeping the list full width', () => {

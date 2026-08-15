@@ -16,23 +16,52 @@ import {
   parseBoardRouteParams,
   getMoonBoardLayoutBySlug,
 } from './url-utils';
+import {
+  generateLayoutSlug,
+  generateSetNameSlug,
+  generateSetSlug,
+  generateSizeSlug,
+} from '@boardsesh/play-view/readable-url-utils';
 import { type MoonBoardLayoutKey, MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE } from './moonboard-config';
+import { WOODS_LAYOUTS, WOODS_SETS, WOODS_SIZES } from './woods-config';
 
 // Helper to parse MoonBoard size slug (always returns the single size)
 function getMoonBoardSizeBySlug(): { id: number; name: string } {
   return { id: MOONBOARD_SIZE.id, name: MOONBOARD_SIZE.name };
 }
 
-// Helper to parse MoonBoard set slugs
+/**
+ * A MoonBoard set slug back to the exact set ids it was built from.
+ *
+ * Generate-and-compare, the same rule the Expo app already ships
+ * (`resolveMoonBoardSegmentsToIds`, `readable-url-utils.ts`): split the slug on
+ * `_` — the separator `generateSetSlug` joins with — pick the layout's sets
+ * whose `generateSetNameSlug` is one of those parts, then accept only if
+ * re-emitting the selection rebuilds the incoming slug byte for byte.
+ *
+ * The rule this replaces split on `-` and substring-matched the pieces against
+ * set names, so it could not tell one subset from another. Two concrete
+ * failures it produced on every www MoonBoard URL: `generateSetNameSlug('Screw-on
+ * Feet')` is `screw`, which a `-`-split never yields as a standalone part, so
+ * masters-2017's own full-set slug parsed back WITHOUT set 15 and masters-2019's
+ * without set 20 — and `generateMetadata` then emitted a `<link rel="canonical">`
+ * pointing at a different URL than the one requested. It also matched far too
+ * much: `hold-set-a` contains the part `set`, which is a substring of every
+ * `Hold Set *` name on the layout.
+ *
+ * Returning an empty array is the caller's signal to fall back to every set on
+ * the layout, which keeps a hand-edited or pre-slug link rendering instead of
+ * 404ing. That fallback is now the only lenient path.
+ */
 function getMoonBoardSetsBySlug(layoutKey: MoonBoardLayoutKey, setSlug: string): { id: number; name: string }[] {
   const sets = MOONBOARD_SETS[layoutKey] || [];
-  const slugParts = setSlug.split('-').map((s) => s.toLowerCase());
+  const slugParts = new Set(setSlug.split('_'));
 
-  // Try to match sets by name
-  return sets.filter((set) => {
-    const setNameLower = set.name.toLowerCase().replace(/\s+/g, '-');
-    return slugParts.some((part) => setNameLower.includes(part) || set.name.toLowerCase().includes(part));
-  });
+  const selectedSets = sets.filter((set) => slugParts.has(generateSetNameSlug(set.name)));
+  if (selectedSets.length === 0) return [];
+  if (generateSetSlug(selectedSets.map((set) => set.name)) !== setSlug) return [];
+
+  return selectedSets.map((set) => ({ id: set.id, name: set.name }));
 }
 
 // Enhanced route parsing function that handles both slug and numeric formats
@@ -87,6 +116,76 @@ export async function parseBoardRouteParamsWithSlugs<T extends BoardRouteParamet
         parsedSetIds = sets.map((set) => set.id);
       }
     }
+
+    const parsedParams = {
+      board_name: board_name as BoardName,
+      layout_id: parsedLayoutId,
+      size_id: parsedSizeId,
+      set_ids: parsedSetIds,
+      angle: Number(angle),
+    };
+
+    if (climb_uuid) {
+      return {
+        ...parsedParams,
+        climb_uuid: extractUuidFromSlug(climb_uuid),
+      } as T extends BoardRouteParametersWithUuid ? ParsedBoardRouteParametersWithUuid : never;
+    }
+
+    return parsedParams as T extends BoardRouteParametersWithUuid ? never : ParsedBoardRouteParameters;
+  }
+
+  // Handle Woods separately (static config, single layout, one synthetic set).
+  if (board_name === 'woods') {
+    // Every Woods segment is validated against the static catalogue and a miss is
+    // a 404, the way the MoonBoard block above 404s an unknown layout. Woods has
+    // exactly one (layout, size, set) catalogue, so a segment outside it names a
+    // board that does not exist — passing it through instead made
+    // `getWoodsBoardDetails` throw on an unknown size id (a 500 on `/woods/1/99/…`)
+    // or silently render the wrong board for an unknown size slug.
+
+    // Woods ships a single layout, so its numeric id and its name slug
+    // (`original`) both land on it.
+    const decodedLayoutId = decodeURIComponent(layout_id).toLowerCase();
+    if (
+      decodedLayoutId !== String(WOODS_LAYOUTS.woods.id) &&
+      decodedLayoutId !== generateLayoutSlug(WOODS_LAYOUTS.woods.name)
+    ) {
+      return notFound();
+    }
+    parsedLayoutId = WOODS_LAYOUTS.woods.id;
+
+    // Size: the numeric id ('1' / '2'), the dimension slug `generateSizeSlug`
+    // emits ('8x10' / '12x12'), or its dashed variant ('8-10' / '12-12').
+    const decodedSizeId = decodeURIComponent(size_id).toLowerCase();
+    const matchedSize = Object.values(WOODS_SIZES).find((size) => {
+      const dimensionSlug = generateSizeSlug(size.name);
+      return (
+        decodedSizeId === String(size.id) ||
+        decodedSizeId === dimensionSlug ||
+        decodedSizeId === dimensionSlug.replace('x', '-')
+      );
+    });
+    if (!matchedSize) {
+      return notFound();
+    }
+    parsedSizeId = matchedSize.id;
+
+    // Woods has one synthetic hold set, so `standard`, `1` and an empty segment
+    // all resolve to it — and nothing else does, since there is no second set to
+    // combine it with. An empty set list would break the board builder and the
+    // `board/layout/size/sets/angle` path parser, so the empty segment resolves
+    // to the set rather than to nothing.
+    const decodedSetIds = decodeURIComponent(set_ids).toLowerCase();
+    const woodsSetIds = WOODS_SETS.map((set) => set.id);
+    if (
+      decodedSetIds !== '' &&
+      decodedSetIds !== woodsSetIds.join(',') &&
+      decodedSetIds !== generateSetSlug(WOODS_SETS.map((set) => set.name))
+    ) {
+      return notFound();
+    }
+    parsedSetIds = woodsSetIds;
 
     const parsedParams = {
       board_name: board_name as BoardName,

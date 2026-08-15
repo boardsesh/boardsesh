@@ -12,6 +12,11 @@ const { mockDb } = vi.hoisted(() => {
     insert: vi.fn(),
     delete: vi.fn(),
     update: vi.fn(),
+    // recordBoardSerial wraps its upsert in a transaction so it can take the
+    // linked board row FOR KEY SHARE before writing the pointer (#3407's
+    // deadlock fix). The stub runs the callback against itself, so the select /
+    // insert chains below cover the statements inside it too.
+    transaction: vi.fn(async (run: (tx: typeof mockDb) => Promise<unknown>) => run(mockDb)),
   };
   return { mockDb };
 });
@@ -517,7 +522,8 @@ describe('recordBoardSerial', () => {
     mockDb.select.mockImplementation(() => {
       const rows = selectCall++ === 0 ? savedMatch : [recordingRow];
       const limit = vi.fn().mockResolvedValue(rows);
-      const where = vi.fn().mockReturnValue({ limit });
+      const lockFor = vi.fn().mockResolvedValue(rows);
+      const where = vi.fn().mockReturnValue({ limit, for: lockFor });
       const leftJoin = vi.fn().mockReturnValue({ where });
       const from = vi.fn().mockReturnValue({ where, leftJoin });
       return { from };
@@ -619,7 +625,8 @@ describe('recordBoardSerial', () => {
     mockDb.select.mockImplementation(() => {
       const rows = selectResults[selectCall++] ?? [];
       const limit = vi.fn().mockResolvedValue(rows);
-      const where = vi.fn().mockReturnValue({ limit });
+      const lockFor = vi.fn().mockResolvedValue(rows);
+      const where = vi.fn().mockReturnValue({ limit, for: lockFor });
       const leftJoin = vi.fn().mockReturnValue({ where });
       const from = vi.fn().mockReturnValue({ where, leftJoin });
       return { from };
@@ -666,8 +673,13 @@ describe('recordBoardSerial', () => {
 
   it('links a boardUuid the caller is allowed to reach', async () => {
     // ownership check returns a row → uuid is owned-by-caller or public
+    // Four selects on this path, in order: saved-board lookup → ownership check
+    // → the FOR KEY SHARE lock on the linked board row inside the transaction →
+    // post-upsert re-select. Only a linked uuid takes the lock, which is why the
+    // forged-uuid case above still has three.
     const { values } = setupRecordSeq([
       [],
+      [{ uuid: OWNED_UUID }],
       [{ uuid: OWNED_UUID }],
       [recordingRow({ boardUuid: OWNED_UUID, boardSlug: 'my-board' })],
     ]);

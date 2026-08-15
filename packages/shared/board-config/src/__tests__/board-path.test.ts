@@ -34,6 +34,19 @@ describe('parseBoardPath', () => {
     });
   });
 
+  it('round-trips a Woods board path', () => {
+    // Woods' synthetic hold set earns its keep here: with an empty set segment
+    // `woods/1/2//40` parses as `setIds: '40', angle: null`, which silently
+    // reconfigures a party session onto a board that doesn't exist.
+    expect(parseBoardPath(buildBoardPath('woods', 1, 2, '1', 40))).toEqual({
+      boardName: 'woods',
+      layoutId: 1,
+      sizeId: 2,
+      setIds: '1',
+      angle: 40,
+    });
+  });
+
   it('parses the bare form and keeps comma-joined setIds intact', () => {
     expect(parseBoardPath('kilter/8/17/26,27/40')).toEqual({
       boardName: 'kilter',

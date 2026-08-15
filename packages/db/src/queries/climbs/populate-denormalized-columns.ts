@@ -39,6 +39,14 @@ export async function populateDenormalizedColumns(
 ): Promise<void> {
   if (climbUuids.length === 0) return;
 
+  // Woods writes both denormalised columns authoritatively at import time: its
+  // `required_set_ids` is always the empty set (one synthetic hold set, so
+  // `{} <@ {1}` holds) and its `compatible_size_ids` is the single board size the
+  // climb was set on. Neither can be re-derived here — Woods has no
+  // `board_placements` and no `board_product_sizes` rows — so running the Aurora
+  // path would null out what the importer put there.
+  if (boardType === 'woods') return;
+
   if (boardType === 'moonboard') {
     await populateMoonBoardRequiredSetIds(db, climbUuids);
     return;

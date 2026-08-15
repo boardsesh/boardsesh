@@ -6,7 +6,12 @@
     },
     "detail": {
       "fallbackTitle": "Playlist",
-      "fallbackDescription": "Playlist de escalada en Boardsesh"
+      "fallbackDescription": "Mira los bloques de esta playlist en Boardsesh.",
+      "privateTitle": "Playlist privada",
+      "privateDescription": "Esta playlist es privada.",
+      "climbCountDescription_one": "Una playlist de escalada en Boardsesh con {{count}} bloque.",
+      "climbCountDescription_other": "Una playlist de escalada en Boardsesh con {{count}} bloques.",
+      "ogAlt": "La playlist {{name}} en Boardsesh"
     }
   },
   "library": {
@@ -113,8 +118,9 @@
       "subtitle": "Faltan datos del plafón para este bloque."
     },
     "menu": {
-      "editClimbs": "Editar bloques",
-      "edit": "Editar",
+      "addClimbs": "Añadir bloques",
+      "editDetails": "Editar detalles",
+      "editClimbs": "Reordenar y quitar bloques",
       "delete": "Eliminar"
     },
     "visibility": {
@@ -175,9 +181,7 @@
     "title": "Editar lista",
     "fields": {
       "name": "Nombre de la lista",
-      "namePlaceholder": "ej., Pedazo de romos!",
       "description": "Descripción",
-      "descriptionPlaceholder": "Descripción opcional para tu lista...",
       "color": "Color",
       "icon": "Icono",
       "iconHint": "Escribe cualquier emoji o elige uno abajo",
@@ -187,7 +191,6 @@
       "privateHint": "Las listas privadas solo son visibles para ti"
     },
     "actions": {
-      "cancel": "Cancelar",
       "save": "Guardar",
       "saving": "Guardando..."
     },
@@ -213,93 +216,8 @@
       "color": "Color"
     }
   },
-  "generator": {
-    "drawerTitle": "Generar playlist",
-    "generatingTitle": "Generando...",
-    "optionsTitle": "Opciones",
-    "generatingProgress": "Añadiendo bloques... {{current}} / {{total}}",
-    "generate": "Generar",
-    "reset": "Restablecer",
-    "totals": {
-      "total": "Total",
-      "climbs_one": "{{count}} bloque",
-      "climbs_other": "{{count}} bloques"
-    },
-    "summaryRow_one": "{{count}} bloque ({{range}})",
-    "summaryRow_other": "{{count}} bloques ({{range}})",
-    "options": {
-      "warmUp": "Calentamiento",
-      "targetAngle": "Ángulo objetivo",
-      "targetGrade": "Grado objetivo",
-      "minAscents": "Encadenes mínimos",
-      "minRating": "Valoración mínima",
-      "climbBias": "Sesgo de bloques",
-      "tallClimbsLabel": "Solo bloques altos",
-      "tallClimbsTooltip": "Muestra solo bloques que usan presas en las 8 filas inferiores (solo disponible en plafones 8x12 y 10x12)",
-      "wideClimbsLabel": "Solo bloques anchos",
-      "wideClimbsTooltip": "Muestra solo bloques que usan las presas laterales extra del 10x10",
-      "mainSetClimbs": "Bloques de la serie principal",
-      "mainSetVariability": "Variabilidad de la serie principal",
-      "numberOfSteps": "Número de pasos",
-      "climbsPerStep": "Bloques por paso",
-      "numberOfClimbs": "Número de bloques",
-      "any": "Cualquiera",
-      "minAscentsOption": "{{value}}+",
-      "minRatingOption_one": "{{count}} estrella o más",
-      "minRatingOption_other": "{{count}} estrellas o más"
-    },
-    "warmUpOptions": {
-      "standard": "Estándar",
-      "extended": "Extendido",
-      "none": "Ninguno"
-    },
-    "climbBiasOptions": {
-      "unfamiliar": "Sin probar",
-      "attempted": "Intentados",
-      "any": "Cualquiera"
-    },
-    "workoutTypes": {
-      "volume": {
-        "name": "Volumen",
-        "description": "Genera un entreno de alto volumen."
-      },
-      "pyramid": {
-        "name": "Pirámide",
-        "description": "Sube hasta un grado pico y luego baja."
-      },
-      "ladder": {
-        "name": "Escalera",
-        "description": "Sube por los grados en pasos."
-      },
-      "gradeFocus": {
-        "name": "Foco de grado",
-        "description": "¡Elige un grado y a por ello!"
-      }
-    },
-    "sections": {
-      "warmUp": "Calentamiento",
-      "increasing": "Subida",
-      "peak": "Pico",
-      "decreasing": "Bajada",
-      "main": "Serie principal"
-    },
-    "chart": {
-      "ariaLabel": "Vista previa de la distribución de grados",
-      "configurePrompt": "Configura las opciones para previsualizar"
-    },
-    "messages": {
-      "noClimbs": "No hay bloques para generar"
-    }
-  },
   "bottomTabBar": {
-    "home": "Inicio",
-    "climb": "Vías",
     "discover": "Descubre",
-    "feed": "Actividad",
-    "create": "Crear",
-    "you": "Tú",
-    "youSignInTitle": "Inicia sesión para ver tu progreso",
-    "youSignInDescription": "Inicia sesión para registrar tus estadísticas, sesiones y logbook.",
     "selectBoardForPlaylist": "Selecciona un plafón antes de crear una playlist",
     "createdPlaylistToast": "Playlist «{{name}}» creada",
     "createPlaylistFailed": "No se pudo crear la playlist"

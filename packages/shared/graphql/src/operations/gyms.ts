@@ -1,7 +1,9 @@
 import { gql } from 'graphql-request';
 import type {
   Gym,
+  GymBoardSummary,
   GymConnection,
+  MyGymClaim,
   GymMemberConnection,
   CreateGymInput,
   UpdateGymInput,
@@ -41,6 +43,15 @@ import type {
 // Gym Queries
 // ============================================
 
+/**
+ * Shared by GET_GYM, GET_GYM_BY_SLUG, GET_MY_GYMS and SEARCH_GYMS, all typed
+ * `Gym`/`GymConnection` — so every field the `Gym` type declares as REQUIRED has
+ * to be selected here, or consumers read `undefined` while TypeScript promises a
+ * value. `isClaimed` is in for exactly that reason (and it's one boolean off
+ * `gym.ownerId`, already loaded, no extra query). `boardSummaries` stays out and
+ * is optional on the type instead: it's a list, only the directory renders it,
+ * and mobile's gym picker rides this fragment at limit 50.
+ */
 const GYM_FIELDS = `
   uuid
   slug
@@ -49,6 +60,8 @@ const GYM_FIELDS = `
   ownerAvatarUrl
   name
   description
+  hours
+  hoursUpdatedAt
   address
   website
   contactEmail
@@ -73,6 +86,7 @@ const GYM_FIELDS = `
   canEdit
   canGrantAccess
   canClaim
+  isClaimed
 `;
 
 export const GET_GYM = gql`
@@ -87,6 +101,35 @@ export const GET_GYM_BY_SLUG = gql`
   query GetGymBySlug($slug: String!) {
     gymBySlug(slug: $slug) {
       ${GYM_FIELDS}
+    }
+  }
+`;
+
+/**
+ * The viewer's own in-flight claim on a gym. A SEPARATE document from
+ * GET_GYM_BY_SLUG on purpose — this is a deploy-ordering firewall, not a style
+ * choice.
+ *
+ * A field is only answerable once the backend declaring it is live, and an
+ * unknown field fails validation for the WHOLE document. Folded into
+ * GET_GYM_BY_SLUG, a web-deploys-first ordering would therefore take the gym
+ * page and the manage console down together — both treat a failed fetch as
+ * "gym not found" and render a 404 — until the backend caught up. Split out,
+ * the same failure costs exactly one notice on one page.
+ *
+ * The mirror-image constraint is why it is not in GYM_FIELDS either: GET_GYM
+ * ships inside the mobile app, whose production OTA auto-publishes on every
+ * push to main and can reach devices BEFORE the backend deploy.
+ */
+export const GET_GYM_PENDING_CLAIM = gql`
+  query GetGymPendingClaim($slug: String!) {
+    gymBySlug(slug: $slug) {
+      uuid
+      myPendingClaim {
+        id
+        method
+        createdAt
+      }
     }
   }
 `;
@@ -111,6 +154,40 @@ export const SEARCH_GYMS = gql`
       }
       totalCount
       hasMore
+    }
+  }
+`;
+
+/**
+ * The public `/gyms` directory list. A separate document from SEARCH_GYMS on
+ * purpose: it selects only what a directory card renders, so the card's cost
+ * doesn't ride along on GET_GYM / GET_MY_GYMS / SEARCH_GYMS. `boardSummaries` in
+ * particular stays out of the shared GYM_FIELDS — it's a list, and mobile's
+ * useNearbyGyms rides that fragment at limit 50 for a picker that never draws
+ * board chips.
+ *
+ * It selects nothing the card doesn't draw, and that is a rule rather than an
+ * accident: `boardCount` is redundant next to `boardSummaries`, and `hasMore`
+ * is unused because paging is driven by `totalCount` and the page size. Add a
+ * field here only when something renders it.
+ */
+export const SEARCH_GYMS_DIRECTORY = gql`
+  query SearchGymsDirectory($input: SearchGymsInput!) {
+    searchGyms(input: $input) {
+      gyms {
+        uuid
+        slug
+        name
+        address
+        latitude
+        longitude
+        isClaimed
+        boardSummaries {
+          boardType
+          angle
+        }
+      }
+      totalCount
     }
   }
 `;
@@ -472,6 +549,19 @@ export type GetGymBySlugQueryResponse = {
   gymBySlug: Gym | null;
 };
 
+export type GetGymPendingClaimQueryVariables = {
+  slug: string;
+};
+
+/**
+ * Exactly what GET_GYM_PENDING_CLAIM selects. Deliberately not typed `Gym`: the
+ * document fetches two fields, and a consumer that reads more than that from it
+ * would be reading `undefined` behind a type that promises a value.
+ */
+export type GetGymPendingClaimQueryResponse = {
+  gymBySlug: { uuid: string; myPendingClaim: MyGymClaim | null } | null;
+};
+
 export type GetMyGymsQueryVariables = {
   input?: MyGymsInput;
 };
@@ -486,6 +576,30 @@ export type SearchGymsQueryVariables = {
 
 export type SearchGymsQueryResponse = {
   searchGyms: GymConnection;
+};
+
+/**
+ * Exactly the fields SEARCH_GYMS_DIRECTORY selects — the directory card
+ * contract. `boardSummaries` is re-declared as required: it's optional on the
+ * shared `Gym` because the GYM_FIELDS documents don't select it, but this
+ * document does, so a card consumer shouldn't have to null-check it.
+ */
+export type GymDirectoryCard = Pick<
+  Gym,
+  'uuid' | 'slug' | 'name' | 'address' | 'latitude' | 'longitude' | 'isClaimed'
+> & {
+  boardSummaries: GymBoardSummary[];
+};
+
+export type SearchGymsDirectoryQueryVariables = {
+  input: SearchGymsInput;
+};
+
+export type SearchGymsDirectoryQueryResponse = {
+  searchGyms: {
+    gyms: GymDirectoryCard[];
+    totalCount: number;
+  };
 };
 
 export type FindSimilarGymsQueryVariables = {

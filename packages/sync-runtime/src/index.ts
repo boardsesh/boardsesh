@@ -17,3 +17,5 @@ export { DaemonLease, DaemonLeaseLostError } from './lease';
 export type { DaemonLeaseIo, DaemonLeaseRuntime } from './lease';
 export { sanitizeFirstAscent, FIRST_ASCENT_EARLIEST_MS } from './sanitize-first-ascent';
 export type { FirstAscentFields } from './sanitize-first-ascent';
+export { formatSyncHealthSummary } from './health-summary';
+export type { SyncHealthSnapshot } from './health-summary';

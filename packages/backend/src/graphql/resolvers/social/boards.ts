@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { eq, ne, and, count, isNull, sql, ilike, or, asc, desc, inArray, like } from 'drizzle-orm';
+import { eq, ne, and, count, isNull, isNotNull, sql, ilike, or, asc, desc, inArray, like } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { normaliseSetIds } from '@boardsesh/board-config';
@@ -26,12 +26,19 @@ import { findBlockingDuplicate, type BoardLocation } from './board-duplicates';
 import { assertBoardCapNotReached } from './board-limits';
 import { syncLocationGeography } from './location-geography';
 import { getUserCommunityRoles, hasAdminOrLeader, rolesGrantAdminOrLeader } from './roles';
-import { SYSTEM_BOARD_OWNER_ID, isRowAnonReadable, requireAnonReadableBoard } from '../board-presence/shared';
+import {
+  SYSTEM_BOARD_OWNER_ID,
+  followBoardMergeChain,
+  isRowAnonReadable,
+  requireAnonReadableBoard,
+} from '../board-presence/shared';
 import { assertKnownBoardConfig } from '../board-presence/board-catalog';
 import { publishBoardQueuePreviewTombstoneForBoard } from '../../../services/board-queue-preview';
 import { logger } from '../../../utils/logger';
 import { redisClientManager } from '../../../redis/client';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
+import { REDISLESS_FALLBACK_TTL_MS, singleFlight } from '../../../utils/single-flight';
+import { lockAndAssertBoardSerialAvailable } from '../board-serial-write-lock';
 
 // ============================================
 // Helpers
@@ -298,6 +305,26 @@ async function requireBoardEditAccess(
  */
 function boardPresenceChannelId(board: { id: number; isPublic: boolean }, canEdit: boolean): number | null {
   return board.isPublic || canEdit ? board.id : null;
+}
+
+/**
+ * Follow a merge tombstone to the surviving canonical board.
+ *
+ * The serial-board dedupe soft-deletes duplicate rows for the same physical
+ * wall, stamping the loser's `mergedIntoBoardUuid` with the survivor's uuid.
+ * When a lookup lands on such a loser we chase that pointer (≤3 hops, bounded
+ * so a cyclic or broken chain can't spin) to the first ACTIVE board and return
+ * it, so stale links/bindings resolve to the survivor.
+ *
+ * An active row is returned unchanged. A plain soft-delete (tombstone null)
+ * returns null — ordinary deletions must NOT be resurrected.
+ */
+async function resolveBoardFollowingMerges(
+  boardRow: typeof dbSchema.userBoards.$inferSelect,
+): Promise<typeof dbSchema.userBoards.$inferSelect | null> {
+  if (!boardRow.deletedAt) return boardRow;
+  if (!boardRow.mergedIntoBoardUuid) return null;
+  return (await followBoardMergeChain(boardRow.mergedIntoBoardUuid)) ?? null;
 }
 
 /**
@@ -664,6 +691,7 @@ const BOARD_TYPE_LABELS: Record<string, string> = {
   touchstone: 'Touchstone',
   grasshopper: 'Grasshopper',
   soill: 'So iLL',
+  woods: 'Woods',
 };
 
 const GENERIC_SETS = new Set(['bolt ons', 'screw ons', 'foot set', 'plastic', 'wood']);
@@ -714,6 +742,46 @@ const REDIS_CACHE_TTL_SECONDS = 365 * 24 * 60 * 60; // 1 year
 const REDIS_LOCK_KEY = 'boardsesh:popular-board-configs:lock';
 const REDIS_LOCK_TTL_SECONDS = 120; // 2 min lock to prevent duplicate queries across nodes
 
+/**
+ * Key for the in-process single-flight. The statement below is the heaviest
+ * read in the app — one LATERAL with a nested NOT EXISTS per listed config,
+ * 51 of them today — and it is the resolver behind the home page, so a cold
+ * cache used to mean one copy per concurrent visitor, each holding a pool
+ * connection until it finished. See utils/single-flight.ts for what that did
+ * to every other query in the process.
+ */
+const POPULAR_CONFIGS_FLIGHT_KEY = 'popular-board-configs';
+
+/**
+ * Last-resort cache for deployments with no Redis (local dev, the e2e CI
+ * stack). With a shared cache there is nothing to fall back to and this is
+ * never read or written, so production behaviour — including the deliberate
+ * cache DELETE in `warmPopularConfigsCache` on every deploy — is unchanged.
+ * Without one, single-flight alone would still re-run the statement for the
+ * first caller after each completion, forever.
+ */
+let localFallbackConfigs: { configs: CachedPopularConfig[]; expiresAt: number } | null = null;
+
+/**
+ * Bumped on every drop. The statement runs for tens of seconds, so a deploy
+ * warm-up can easily land while an earlier copy is still executing — and
+ * without this that copy would repopulate the fallback with pre-deploy data
+ * *after* the drop, which is the one thing the warm-up exists to prevent. A
+ * flight captures the counter before it starts and declines to cache its
+ * result if the number moved underneath it.
+ */
+let fallbackGeneration = 0;
+
+/**
+ * The Redis-less twin of deleting REDIS_CACHE_KEY: force the next read to
+ * re-query. Called by the deploy warm-up, and by tests so one case cannot
+ * answer the next from the previous one's fixture.
+ */
+export function dropPopularConfigsFallback(): void {
+  localFallbackConfigs = null;
+  fallbackGeneration += 1;
+}
+
 async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
   // Try Redis cache first
   if (redisClientManager.isRedisConnected()) {
@@ -726,12 +794,35 @@ async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
     } catch (err) {
       logger.error('[PopularConfigs] Redis read failed:', err);
     }
+  } else if (localFallbackConfigs && localFallbackConfigs.expiresAt > Date.now()) {
+    return localFallbackConfigs.configs;
   }
+
+  return singleFlight(POPULAR_CONFIGS_FLIGHT_KEY, runPopularConfigsQuery);
+}
+
+async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
+  const generationAtStart = fallbackGeneration;
 
   // Query all per-size configs with climb counts filtered by size edges AND set membership.
   // A climb counts for a config only if ALL its holds belong to placements in that config's sets.
   // board_climb_holds.hold_id = board_placements.id (placement ID).
-  // ~31 configs, ~750ms worst case per LATERAL, cached in Redis for 1 year (refreshed on deploy).
+  //
+  // Cached in Redis for 1 year (deliberately re-run on deploy). Cost, measured
+  // 2026-08-22 against the dev-db image (51 listed configs, 648k board_climbs,
+  // idle 10-core box): 82 s for one execution. The header on this block used to
+  // read "~31 configs, ~750ms worst case per LATERAL" — that is long stale, and
+  // the gap is why an uncached window mattered so much (#4463).
+  //
+  // Production is faster than the dev image but not fast: the only production
+  // observation on record is ~10 s cold, measured through the sitemap's copy of
+  // this same read (`packages/web/app/lib/server-popular-configs.ts`, which
+  // wraps it in an in-process TTL + single-flight for exactly this reason —
+  // prior art for what happens below). Ten seconds × one connection per
+  // concurrent visitor is still a pool.
+  //
+  // Making this statement cheap is its own piece of work; what is fixed here is
+  // that a cold window can no longer run more than one copy of it at a time.
   const result = await db.execute(sql`
     SELECT
       configs.board_type,
@@ -836,6 +927,8 @@ async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
     } catch (err) {
       logger.error('[PopularConfigs] Redis write failed:', err);
     }
+  } else if (fallbackGeneration === generationAtStart) {
+    localFallbackConfigs = { configs, expiresAt: Date.now() + REDISLESS_FALLBACK_TTL_MS };
   }
   return configs;
 }
@@ -847,6 +940,11 @@ async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
  * other nodes skip — they'll read from Redis when the resolver executes.
  */
 export async function warmPopularConfigsCache(): Promise<void> {
+  // Mirrors the cache DELETE below for a deployment with no Redis: the warm-up
+  // exists to re-run the query on deploy, so it must not be answered by the
+  // copy the previous run left behind.
+  dropPopularConfigsFallback();
+
   if (redisClientManager.isRedisConnected()) {
     try {
       const { publisher } = redisClientManager.getClients();
@@ -899,18 +997,19 @@ export const socialBoardQueries = {
   board: async (_: unknown, { boardUuid }: { boardUuid: string }, ctx: ConnectionContext) => {
     validateInput(UUIDSchema, boardUuid, 'boardUuid');
 
-    const [board] = await db
-      .select()
-      .from(dbSchema.userBoards)
-      .where(and(eq(dbSchema.userBoards.uuid, boardUuid), isNull(dbSchema.userBoards.deletedAt)))
-      .limit(1);
+    // Look up WITHOUT the deletedAt filter so a merged-away loser is still
+    // visible here — we then follow its tombstone to the survivor. A plain
+    // soft-delete (no tombstone) resolves to null, as before.
+    const [board] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.uuid, boardUuid)).limit(1);
 
     if (!board) return null;
+    const canonical = board.deletedAt ? await resolveBoardFollowingMerges(board) : board;
+    if (!canonical) return null;
     const viewerId = ctx.isAuthenticated ? ctx.userId : undefined;
     // Gate before enrichment so a masked anonymous read never runs the
     // owner/count/follow lookups for a board it isn't allowed to see.
-    if (!viewerId && !isRowAnonReadable(board)) return null;
-    return enrichBoard(board, viewerId);
+    if (!viewerId && !isRowAnonReadable(canonical)) return null;
+    return enrichBoard(canonical, viewerId);
   },
 
   /**
@@ -926,16 +1025,53 @@ export const socialBoardQueries = {
       return null;
     }
 
-    const [board] = await db
+    const viewerId = ctx.isAuthenticated ? ctx.userId : undefined;
+
+    // The slug unique index is partial on active rows, so at most one active
+    // board holds a given slug — keep that as the indexed fast path (this
+    // resolver backs every board page view).
+    const [active] = await db
       .select()
       .from(dbSchema.userBoards)
       .where(and(eq(dbSchema.userBoards.slug, slug), isNull(dbSchema.userBoards.deletedAt)))
       .limit(1);
+    if (active) {
+      // Gate before enrichment so a masked anonymous read never runs the
+      // owner/count/follow lookups for a board it isn't allowed to see.
+      if (!viewerId && !isRowAnonReadable(active)) return null;
+      return enrichBoard(active, viewerId);
+    }
 
-    if (!board) return null;
-    const viewerId = ctx.isAuthenticated ? ctx.userId : undefined;
-    if (!viewerId && !isRowAnonReadable(board)) return null;
-    return enrichBoard(board, viewerId);
+    // No active board holds the slug. A merged-away loser keeps its old slug,
+    // so follow its tombstone to the survivor (the canonical board carries its
+    // own real slug/uuid, so clients detect the change and redirect). A reused
+    // slug can leave several merged losers behind — prefer the most recently
+    // deleted one so the pick is deterministic and tracks the latest holder.
+    // deletedAt IS NOT NULL is redundant with the active-row fast path above
+    // (which already claims any row with this slug that has deletedAt IS NULL,
+    // merged or not) — stated explicitly anyway so this query's own invariant
+    // doesn't rely on that ordering, and a corrupted row (mergedIntoBoardUuid
+    // set, deletedAt NULL) can't be mistaken for a tombstone here.
+    const [merged] = await db
+      .select()
+      .from(dbSchema.userBoards)
+      .where(
+        and(
+          eq(dbSchema.userBoards.slug, slug),
+          isNotNull(dbSchema.userBoards.mergedIntoBoardUuid),
+          isNotNull(dbSchema.userBoards.deletedAt),
+        ),
+      )
+      .orderBy(desc(dbSchema.userBoards.deletedAt))
+      .limit(1);
+    if (!merged) return null;
+
+    const canonical = await resolveBoardFollowingMerges(merged);
+    if (!canonical) return null;
+    // Same anonymous mask as the active path and `board(boardUuid)`: following a
+    // tombstone must not disclose a private survivor to an anonymous caller.
+    if (!viewerId && !isRowAnonReadable(canonical)) return null;
+    return enrichBoard(canonical, viewerId);
   },
 
   /**
@@ -1635,30 +1771,54 @@ export const socialBoardMutations = {
     // what *this* connect observed. The explicit null keeps the row honest.
     const apiLevelValue = apiLevel ?? null;
 
-    await db
-      .insert(dbSchema.userBoardSerials)
-      .values({
-        userId,
-        serialNumber,
-        boardName,
-        layoutId,
-        sizeId,
-        setIds,
-        apiLevel: apiLevelValue,
-        boardUuid: linkedBoardUuid,
-      })
-      .onConflictDoUpdate({
-        target: [dbSchema.userBoardSerials.userId, dbSchema.userBoardSerials.serialNumber],
-        set: {
+    // Board row first, pointer row second — the order every other serial-pointer
+    // writer follows (pointer healing, serial resolution, the explicit choice,
+    // the dedupe merge). Left bare, this upsert takes the (userId, serialNumber)
+    // row lock first and only then, in the end-of-statement referential-integrity
+    // check on `board_uuid`, asks for FOR KEY SHARE on the referenced user_boards
+    // row. Those writers hold that board row FOR UPDATE (which conflicts with KEY
+    // SHARE) before they touch the same pointer row, so the two orders close a
+    // deadlock cycle and PostgreSQL kills one of them — for the dedupe script,
+    // that aborts the whole cluster transaction.
+    //
+    // Taking the FK's KEY SHARE lock up front puts this path in the shared order.
+    // It must NOT instead take the per-serial advisory lock: acquiring the serial
+    // before waiting on the board row is the same inversion, just one hop further
+    // out. A null `board_uuid` runs no RI check, so it needs no board lock.
+    await db.transaction(async (tx) => {
+      if (linkedBoardUuid) {
+        await tx
+          .select({ uuid: dbSchema.userBoards.uuid })
+          .from(dbSchema.userBoards)
+          .where(eq(dbSchema.userBoards.uuid, linkedBoardUuid))
+          .for('key share');
+      }
+
+      await tx
+        .insert(dbSchema.userBoardSerials)
+        .values({
+          userId,
+          serialNumber,
           boardName,
           layoutId,
           sizeId,
           setIds,
           apiLevel: apiLevelValue,
           boardUuid: linkedBoardUuid,
-          updatedAt: new Date(),
-        },
-      });
+        })
+        .onConflictDoUpdate({
+          target: [dbSchema.userBoardSerials.userId, dbSchema.userBoardSerials.serialNumber],
+          set: {
+            boardName,
+            layoutId,
+            sizeId,
+            setIds,
+            apiLevel: apiLevelValue,
+            boardUuid: linkedBoardUuid,
+            updatedAt: new Date(),
+          },
+        });
+    });
 
     const [row] = await db
       .select({
@@ -1797,8 +1957,13 @@ export const socialBoardMutations = {
     }
 
     // One insert path for every case. The gym mint, when there is one, shares the
-    // board's transaction so we never leave a gym with no board behind. The
-    // PostGIS writes deliberately sit OUTSIDE it — see below.
+    // board's transaction so we never leave a gym with no board behind. Every
+    // path — the mint, the mint-failure fallback, and the plain insert — runs
+    // inside a transaction because `lockAndAssertBoardSerialAvailable` has to
+    // hold the serial's advisory lock across BOTH its guard read and the insert.
+    // An insert outside one reopens the cross-owner duplicate-serial race the
+    // guard exists to close (#3407). The PostGIS writes deliberately sit OUTSIDE
+    // the transaction — see below.
     let board: typeof dbSchema.userBoards.$inferSelect;
     let mintedGymId: number | null = null;
 
@@ -1825,12 +1990,35 @@ export const socialBoardMutations = {
       timerName: validatedInput.timerName ?? null,
     };
 
+    // The ONE way this resolver is allowed to insert a board without a gym mint.
+    // Both callers below go through it so neither can drift back into a bare,
+    // unlocked insert: the guard has to read and insert under the same serial
+    // lock, and the fallback re-runs it because a competing create can commit in
+    // the window between the mint's guard and this one.
+    const insertGuardedBoard = async (linkedGymId: number | null) => {
+      try {
+        return await db.transaction(async (tx) => {
+          await lockAndAssertBoardSerialAvailable(tx, validatedInput, userId);
+          const [insertedBoard] = await tx
+            .insert(dbSchema.userBoards)
+            .values({ ...boardValues, gymId: linkedGymId })
+            .returning();
+          return insertedBoard;
+        });
+      } catch (error) {
+        throwIfBoardSerialConflict(error);
+        throw error;
+      }
+    };
+
     if (mintGymNamed != null) {
       const gymName = mintGymNamed;
       try {
         const gymUuid = uuidv4();
         const gymSlug = await generateUniqueGymSlug(gymName);
         const result = await db.transaction(async (tx) => {
+          await lockAndAssertBoardSerialAvailable(tx, validatedInput, userId);
+
           const [newGym] = await tx
             .insert(dbSchema.gyms)
             .values({
@@ -1855,29 +2043,17 @@ export const socialBoardMutations = {
         board = result.newBoard;
       } catch (error) {
         throwIfBoardSerialConflict(error);
+        // The serial guard is a product decision, not an auto-gym failure. Never
+        // swallow it and retry the insert below — that fallback would create the
+        // very cross-owner duplicate the guard just refused.
+        if (error instanceof GraphQLError && error.extensions.code === 'BOARD_SERIAL_EXISTS') throw error;
         // The gym couldn't be minted; still create the board, unlinked, rather
         // than failing the whole create.
         logger.error('Auto-gym creation failed, creating board without gym:', error);
-        try {
-          [board] = await db
-            .insert(dbSchema.userBoards)
-            .values({ ...boardValues, gymId: null })
-            .returning();
-        } catch (fallbackError) {
-          throwIfBoardSerialConflict(fallbackError);
-          throw fallbackError;
-        }
+        board = await insertGuardedBoard(null);
       }
     } else {
-      try {
-        [board] = await db
-          .insert(dbSchema.userBoards)
-          .values({ ...boardValues, gymId })
-          .returning();
-      } catch (error) {
-        throwIfBoardSerialConflict(error);
-        throw error;
-      }
+      board = await insertGuardedBoard(gymId);
     }
 
     // Populate the PostGIS `location` columns. These run AFTER the transaction,
@@ -2085,11 +2261,66 @@ export const socialBoardMutations = {
 
     let updated: typeof dbSchema.userBoards.$inferSelect;
     try {
-      [updated] = await db
-        .update(dbSchema.userBoards)
-        .set(updateValues)
-        .where(eq(dbSchema.userBoards.id, board.id))
-        .returning();
+      const updatedRows = await db.transaction(async (tx) => {
+        // Serialize partial edits to the same board before deriving the final
+        // serial+config tuple. Without this row lock, a serial-only edit could
+        // validate against C1 while a concurrent config-only edit changes the
+        // row to C2, producing an unchecked S+C2 duplicate.
+        const [lockedBoard] = rowsFromResult<{
+          serialNumber: string | null;
+          boardType: string;
+          layoutId: number | string;
+          sizeId: number | string;
+          setIds: string;
+          deletedAt: Date | null;
+        }>(
+          await tx.execute(sql`
+            SELECT serial_number AS "serialNumber",
+                   board_type AS "boardType",
+                   layout_id AS "layoutId",
+                   size_id AS "sizeId",
+                   set_ids AS "setIds",
+                   deleted_at AS "deletedAt"
+              FROM user_boards
+             WHERE id = ${board.id}
+             FOR UPDATE
+          `),
+        );
+        if (!lockedBoard) {
+          throw new Error('Board not found');
+        }
+
+        const lockedLayoutId = Number(lockedBoard.layoutId);
+        const lockedSizeId = Number(lockedBoard.sizeId);
+        const resultingSerial =
+          validatedInput.serialNumber === undefined ? lockedBoard.serialNumber : validatedInput.serialNumber;
+        const serialChanged =
+          validatedInput.serialNumber !== undefined && validatedInput.serialNumber !== lockedBoard.serialNumber;
+        const serialConfigChanged =
+          (validatedInput.layoutId !== undefined && validatedInput.layoutId !== lockedLayoutId) ||
+          (validatedInput.sizeId !== undefined && validatedInput.sizeId !== lockedSizeId) ||
+          (validatedInput.setIds !== undefined &&
+            normaliseSetIds(validatedInput.setIds) !== normaliseSetIds(lockedBoard.setIds));
+        const serialOrConfigBecomesActive =
+          resultingSerial !== null && (serialChanged || serialConfigChanged || lockedBoard.deletedAt !== null);
+
+        if (serialOrConfigBecomesActive) {
+          await lockAndAssertBoardSerialAvailable(
+            tx,
+            {
+              serialNumber: resultingSerial,
+              boardType: lockedBoard.boardType,
+              layoutId: validatedInput.layoutId ?? lockedLayoutId,
+              sizeId: validatedInput.sizeId ?? lockedSizeId,
+              setIds: validatedInput.setIds ?? lockedBoard.setIds,
+            },
+            board.ownerId,
+            board.id,
+          );
+        }
+        return tx.update(dbSchema.userBoards).set(updateValues).where(eq(dbSchema.userBoards.id, board.id)).returning();
+      });
+      [updated] = updatedRows;
     } catch (error) {
       throwIfBoardSerialConflict(error);
       throw error;
@@ -2208,34 +2439,42 @@ export const socialBoardMutations = {
     const validatedInput = validateInput(FollowBoardInputSchema, input, 'input');
     const userId = ctx.userId!;
 
-    // Verify board exists and is accessible
-    const [board] = await db
-      .select({
-        uuid: dbSchema.userBoards.uuid,
-        ownerId: dbSchema.userBoards.ownerId,
-        isPublic: dbSchema.userBoards.isPublic,
-      })
-      .from(dbSchema.userBoards)
-      .where(and(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid), isNull(dbSchema.userBoards.deletedAt)))
-      .limit(1);
+    return db.transaction(
+      async (tx) => {
+        // Keep the active-row check and follow insert under one shared board
+        // lock. Concurrent followers can share it, while merge/privacy/delete
+        // writers must either finish first or wait until this follow commits.
+        const [board] = await tx
+          .select({
+            uuid: dbSchema.userBoards.uuid,
+            ownerId: dbSchema.userBoards.ownerId,
+            isPublic: dbSchema.userBoards.isPublic,
+          })
+          .from(dbSchema.userBoards)
+          .where(and(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid), isNull(dbSchema.userBoards.deletedAt)))
+          .limit(1)
+          .for('share');
 
-    if (!board) {
-      throw new Error('Board not found');
-    }
+        if (!board) {
+          throw new Error('Board not found');
+        }
 
-    if (!board.isPublic && board.ownerId !== userId) {
-      throw new Error('Cannot follow a private board');
-    }
+        if (!board.isPublic && board.ownerId !== userId) {
+          throw new Error('Cannot follow a private board');
+        }
 
-    await db
-      .insert(dbSchema.boardFollows)
-      .values({
-        userId,
-        boardUuid: validatedInput.boardUuid,
-      })
-      .onConflictDoNothing();
+        await tx
+          .insert(dbSchema.boardFollows)
+          .values({
+            userId,
+            boardUuid: board.uuid,
+          })
+          .onConflictDoNothing();
 
-    return true;
+        return true;
+      },
+      { isolationLevel: 'read committed' },
+    );
   },
 
   /**

@@ -17,16 +17,22 @@ import type {
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { pubsub } from '../pubsub';
+import { BoardPresenceStore } from '../pubsub/board-presence-store';
 import { redisClientManager } from '../redis/client';
 import { roomManager } from '../services/room-manager';
-import { boardPresenceMutations } from '../graphql/resolvers/board-presence/mutations';
+import {
+  boardPresenceMutations,
+  reserveAndPersistBoardClimbEvent,
+} from '../graphql/resolvers/board-presence/mutations';
 import { boardPresenceQueries } from '../graphql/resolvers/board-presence/queries';
 import { boardPresenceSubscriptions } from '../graphql/resolvers/board-presence/subscription';
 import { socialBoardQueries } from '../graphql/resolvers/social/boards';
-import { getBoardSeqFloor } from '../graphql/resolvers/board-presence/shared';
+import { allocateBoardPresenceSeq, getBoardSeqFloor } from '../graphql/resolvers/board-presence/shared';
 import { setCachedBoardPresenceStats } from '../graphql/resolvers/board-presence/stats';
-import { tickMutations } from '../graphql/resolvers/ticks/mutations';
+import { buildTickBoardLockQuery, tickMutations } from '../graphql/resolvers/ticks/mutations';
 import { seedAuroraCatalogFixtures } from './helpers/board-catalog-fixture';
+import { logger } from '../utils/logger';
+import { createBarrier, createValueBarrier, handleLater } from './helpers/concurrency';
 
 // Board presence is always-on (the BOARD_PRESENCE_ENABLED env gate and the
 // PostHog flag were removed when the feature went GA), so the suite needs no
@@ -85,6 +91,21 @@ beforeAll(async () => {
 afterAll(async () => {
   await cleanupBoardPresenceCatalogFixtures();
 });
+
+async function waitForSessionBlockedBy(blockingPid: number): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const [blockedSession] = await db.execute(sql`
+      SELECT activity.pid
+        FROM pg_stat_activity activity
+       WHERE ${blockingPid} = ANY(pg_blocking_pids(activity.pid))
+       LIMIT 1
+    `);
+    if (blockedSession) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`timed out waiting for a PostgreSQL session blocked by pid ${blockingPid}`);
+}
 
 function authCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext {
   return {
@@ -223,6 +244,36 @@ describe('board-presence pubsub', () => {
     const other = await pubsub.nextBoardSeq('seq-board-b');
     const otherNext = await pubsub.nextBoardSeq('seq-board-b');
     expect(otherNext).toBeGreaterThan(other);
+  });
+
+  it('uses the durable allocator as authority when the local candidate is stale', async () => {
+    const candidates: number[] = [];
+    const store = new BoardPresenceStore({
+      isRedisAvailable: () => false,
+      isRedisRequired: () => false,
+      logger: { error: vi.fn(), warn: vi.fn() },
+    });
+    store.setBoardSeqAllocator(async (_boardId, candidate) => {
+      candidates.push(candidate);
+      return Math.max(candidate, 500);
+    });
+
+    expect(await store.nextBoardSeq('123')).toBe(500);
+    expect(await store.nextBoardSeq('123')).toBe(501);
+    expect(candidates).toEqual([1, 501]);
+  });
+
+  it('fails closed instead of publishing an unreserved local sequence', async () => {
+    const store = new BoardPresenceStore({
+      isRedisAvailable: () => false,
+      isRedisRequired: () => false,
+      logger: { error: vi.fn(), warn: vi.fn() },
+    });
+    store.setBoardSeqAllocator(async () => {
+      throw new Error('database unavailable');
+    });
+
+    await expect(store.nextBoardSeq('123')).rejects.toThrow('database unavailable');
   });
 
   it('evicts expired local proof-of-presence stamps without a membership read', async () => {
@@ -813,10 +864,190 @@ describe('board-presence resolvers', () => {
       );
     });
 
+    it('follows a merged uuid to the active canonical board', async () => {
+      const canonicalUuid = uuidv4();
+      const loserUuid = uuidv4();
+      const suffix = Date.now().toString(36);
+      await db.execute(sql`
+        INSERT INTO user_boards
+          (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number, is_public)
+        VALUES
+          (${canonicalUuid}, ${`presence-merged-canonical-${suffix}`}, ${SECOND_USER_ID}, 'kilter', 5, 12, '1,2', 'Canonical Wall', null, true)
+      `);
+      await db.execute(sql`
+        INSERT INTO user_boards
+          (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number,
+           is_public, deleted_at, merged_into_board_uuid)
+        VALUES
+          (${loserUuid}, ${`presence-merged-loser-${suffix}`}, ${TEST_USER_ID}, 'kilter', 5, 12, '1,2', 'Old Wall', null,
+           false, now(), ${canonicalUuid})
+      `);
+
+      const resolved = await boardPresenceMutations.resolveBoardForUuid(undefined, { boardUuid: loserUuid }, authCtx());
+
+      expect(resolved.boardName).toBe('Canonical Wall');
+      const [canonical] = await db.execute(sql`SELECT id FROM user_boards WHERE uuid = ${canonicalUuid}`);
+      expect(resolved.boardId).toBe(Number((canonical as { id: number }).id));
+      expect(await pubsub.hasBoardMembership(String(resolved.boardId), TEST_USER_ID)).toBe(true);
+    });
+
+    it('checks privacy on the canonical board after following a tombstone', async () => {
+      const canonicalUuid = uuidv4();
+      const loserUuid = uuidv4();
+      const suffix = Date.now().toString(36);
+      await db.execute(sql`
+        INSERT INTO user_boards
+          (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number, is_public)
+        VALUES
+          (${canonicalUuid}, ${`presence-private-canonical-${suffix}`}, ${SECOND_USER_ID}, 'kilter', 6, 12, '1,2', 'Private Canonical', null, false)
+      `);
+      await db.execute(sql`
+        INSERT INTO user_boards
+          (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number,
+           is_public, deleted_at, merged_into_board_uuid)
+        VALUES
+          (${loserUuid}, ${`presence-private-loser-${suffix}`}, ${TEST_USER_ID}, 'kilter', 6, 12, '1,2', 'Owned Old Wall', null,
+           true, now(), ${canonicalUuid})
+      `);
+
+      await expect(
+        boardPresenceMutations.resolveBoardForUuid(undefined, { boardUuid: loserUuid }, authCtx()),
+      ).rejects.toThrow('Board not found');
+      await expect(
+        boardPresenceMutations.resolveBoardForUuid(
+          undefined,
+          { boardUuid: loserUuid },
+          authCtx({ isAuthenticated: false, userId: undefined }),
+        ),
+      ).rejects.toThrow('Board not found');
+
+      const resolvedForOwner = await boardPresenceMutations.resolveBoardForUuid(
+        undefined,
+        { boardUuid: loserUuid },
+        authCtx({ userId: SECOND_USER_ID }),
+      );
+      expect(resolvedForOwner.boardName).toBe('Private Canonical');
+    });
+
     it('rejects a board uuid that does not exist', async () => {
       await expect(
         boardPresenceMutations.resolveBoardForUuid(undefined, { boardUuid: uuidv4() }, authCtx()),
       ).rejects.toThrow('Board not found');
+    });
+  });
+
+  describe('allocateBoardPresenceSeq', () => {
+    it('reserves above both the durable event floor and prior reservations without Redis', async () => {
+      const boardUuid = uuidv4();
+      const slug = `presence-seq-authority-${Date.now()}`;
+      const [inserted] = await db.execute(sql`
+        INSERT INTO user_boards
+          (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number,
+           is_public, presence_seq)
+        VALUES (${boardUuid}, ${slug}, ${TEST_USER_ID}, 'kilter', 7, 12, '1,2', 'Sequence Wall', null, false, 25)
+        RETURNING id
+      `);
+      const boardId = Number((inserted as { id: number }).id);
+      await db.execute(sql`
+        INSERT INTO board_climb_events (board_id, board_type, climb_uuid, angle, seq, confirmed_at)
+        VALUES (${boardId}, 'kilter', ${TEST_CLIMB_UUID}, 40, 40, now())
+      `);
+
+      expect(await allocateBoardPresenceSeq(boardId, 3)).toBe(41);
+      expect(await allocateBoardPresenceSeq(boardId, 3)).toBe(42);
+
+      const [row] = await db.execute(sql`SELECT presence_seq FROM user_boards WHERE id = ${boardId}`);
+      expect(Number((row as { presence_seq: number }).presence_seq)).toBe(42);
+    });
+
+    it('fails closed for a merged-away board', async () => {
+      const boardUuid = uuidv4();
+      const slug = `presence-seq-deleted-${Date.now()}`;
+      const [inserted] = await db.execute(sql`
+        INSERT INTO user_boards
+          (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number, is_public)
+        VALUES (${boardUuid}, ${slug}, ${TEST_USER_ID}, 'kilter', 8, 12, '1,2', 'Merged Sequence Wall', null, false)
+        RETURNING id
+      `);
+      const boardId = Number((inserted as { id: number }).id);
+      await db.execute(sql`UPDATE user_boards SET deleted_at = now() WHERE id = ${boardId}`);
+
+      await expect(allocateBoardPresenceSeq(boardId, 1)).rejects.toThrow('Board not found');
+    });
+
+    it('does not insert a durable event after a waiting board is tombstoned', async () => {
+      const canonicalUuid = uuidv4();
+      const loserUuid = uuidv4();
+      const suffix = Date.now().toString(36);
+      const [canonical] = await db.execute(sql`
+        INSERT INTO user_boards
+          (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number, is_public)
+        VALUES (${canonicalUuid}, ${`presence-seq-race-canonical-${suffix}`}, ${TEST_USER_ID},
+                'kilter', 9, 12, '1,2', 'Sequence Survivor', null, false)
+        RETURNING id
+      `);
+      const [loser] = await db.execute(sql`
+        INSERT INTO user_boards
+          (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number, is_public)
+        VALUES (${loserUuid}, ${`presence-seq-race-loser-${suffix}`}, ${SECOND_USER_ID},
+                'kilter', 9, 12, '1,2', 'Sequence Loser', null, false)
+        RETURNING id
+      `);
+      const canonicalId = Number((canonical as { id: number }).id);
+      const loserId = Number((loser as { id: number }).id);
+
+      let confirmRowsLocked = () => {};
+      const rowsLocked = new Promise<void>((resolve) => {
+        confirmRowsLocked = () => resolve();
+      });
+      let allowMergeCommit = () => {};
+      const mayCommit = new Promise<void>((resolve) => {
+        allowMergeCommit = () => resolve();
+      });
+      const merge = db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT id FROM user_boards WHERE id IN (${canonicalId}, ${loserId}) FOR UPDATE`);
+        confirmRowsLocked();
+        await mayCommit;
+        await tx.execute(sql`
+          UPDATE user_boards
+             SET deleted_at = now(), merged_into_board_uuid = ${canonicalUuid}
+           WHERE id = ${loserId}
+        `);
+      });
+
+      await rowsLocked;
+      const persistenceResult = reserveAndPersistBoardClimbEvent(
+        {
+          boardId: loserId,
+          boardType: 'kilter',
+          climbUuid: TEST_CLIMB_UUID,
+          angle: 40,
+          userId: TEST_USER_ID,
+          sessionId: null,
+          frames: 'p1145r12',
+          name: 'Real Catalog Climb',
+          grade: 'V5',
+          setter: 'setter-bob',
+          confirmedAt: new Date().toISOString(),
+        },
+        1,
+      ).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      // Let the allocator reach the row lock, then commit the tombstone. Its
+      // UPDATE resumes against the now-deleted row and returns no reservation.
+      await Promise.resolve();
+      allowMergeCommit();
+      await merge;
+      const persistenceError = await persistenceResult;
+      expect(persistenceError).toBeInstanceOf(GraphQLError);
+      expect((persistenceError as Error).message).toBe('Board not found');
+
+      const [eventCount] = await db.execute(
+        sql`SELECT count(*)::int AS count FROM board_climb_events WHERE board_id = ${loserId}`,
+      );
+      expect(Number((eventCount as { count: number }).count)).toBe(0);
     });
   });
 
@@ -904,6 +1135,62 @@ describe('board-presence resolvers', () => {
       await expect(
         boardPresenceMutations.reportBoardClimb(undefined, { boardId, climb: bogus, angle: 40 }, authCtx()),
       ).rejects.toThrow('Unknown climb');
+    });
+
+    it('accepts a negative board angle (Aurora boards support negative tilt) and publishes it verbatim', async () => {
+      // reportBoardClimb fires on EVERY climb-light event from a connected/kiosk
+      // board, so a negative-tilt board (e.g. -5°) must not error here. There's
+      // no board_climb_stats row at -5° for TEST_CLIMB_UUID, so the grade join
+      // simply misses (grade: null) rather than rejecting the report.
+      const boardId = await makeBoard();
+      const received: BoardPresenceEvent[] = [];
+      const unsubscribe = await pubsub.subscribeBoardPresence(String(boardId), (event) => received.push(event));
+
+      const ok = await boardPresenceMutations.reportBoardClimb(
+        undefined,
+        { boardId, climb: makeQueueItemInput(), angle: -5 },
+        authCtx(),
+      );
+      expect(ok).toBe(true);
+
+      const climbSet = received.find((event): event is BoardClimbSet => event.__typename === 'BoardClimbSet');
+      expect(climbSet).toBeDefined();
+      expect(climbSet!.climb.angle).toBe(-5);
+      expect(climbSet!.climb.grade).toBeNull();
+      unsubscribe();
+    });
+
+    it('rejects angle -91 (outside the -90..90 board-tilt range) before touching the board', async () => {
+      const boardId = await makeBoard();
+      await expect(
+        boardPresenceMutations.reportBoardClimb(
+          undefined,
+          { boardId, climb: makeQueueItemInput(), angle: -91 },
+          authCtx(),
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('accepts a negative climb.angle (ClimbInputSchema) as the fallback when no top-level angle is sent', async () => {
+      // ReportBoardClimbInputSchema.climb extends ClimbInputSchema — this proves
+      // ITS angle bound (not just BoardPresenceAngleSchema's) accepts negative
+      // tilt: the top-level `angle` arg is omitted, so effectiveAngle falls back
+      // to validatedClimb.climb.angle.
+      const boardId = await makeBoard();
+      const received: BoardPresenceEvent[] = [];
+      const unsubscribe = await pubsub.subscribeBoardPresence(String(boardId), (event) => received.push(event));
+
+      const ok = await boardPresenceMutations.reportBoardClimb(
+        undefined,
+        { boardId, climb: makeQueueItemInput({ angle: -5 }) },
+        authCtx(),
+      );
+      expect(ok).toBe(true);
+
+      const climbSet = received.find((event): event is BoardClimbSet => event.__typename === 'BoardClimbSet');
+      expect(climbSet).toBeDefined();
+      expect(climbSet!.climb.angle).toBe(-5);
+      unsubscribe();
     });
 
     it('rejects a report from a user who never connected to the board (proof-of-presence)', async () => {
@@ -1019,6 +1306,7 @@ describe('board-presence resolvers', () => {
       // Prime the iterator: kick off the first next() (this runs up to the
       // first `yield`, establishing the subscription) then report a climb.
       const nextPromise = iterator.next();
+      handleLater(nextPromise);
       // Give the eager subscribe a tick to settle.
       await new Promise((r) => setTimeout(r, 50));
 
@@ -1114,6 +1402,231 @@ describe('board-presence resolvers', () => {
       await db.execute(sql`DELETE FROM boardsesh_ticks WHERE user_id = ${TEST_USER_ID}`);
       await tickMutations.saveTick(undefined, { input: baseTickInput({ boardId: tensionBoard.boardId }) }, authCtx());
       expect(await latestTickBoardId()).toBe(ownBoardId);
+    });
+
+    it('replays an offline tick with a merged boardUuid onto the surviving board', async () => {
+      const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+      const canonicalUuid = uuidv4();
+      const loserUuid = uuidv4();
+      const tickUuid = uuidv4();
+      const [canonical] = await db.execute(sql`
+        INSERT INTO user_boards
+          (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number, is_public)
+        VALUES (${canonicalUuid}, ${`tick-uuid-canonical-${suffix}`}, ${TEST_USER_ID},
+                'kilter', 1, 10, '1,2', 'Tick UUID survivor', ${`TICK-UUID-${suffix}`}, true)
+        RETURNING id
+      `);
+      await db.execute(sql`
+        INSERT INTO user_boards
+          (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number,
+           is_public, deleted_at, merged_into_board_uuid)
+        VALUES (${loserUuid}, ${`tick-uuid-loser-${suffix}`}, ${SECOND_USER_ID},
+                'kilter', 1, 10, '1,2', 'Tick UUID loser', ${`TICK-UUID-${suffix}`},
+                false, now(), ${canonicalUuid})
+      `);
+      const canonicalId = Number((canonical as { id: number }).id);
+
+      const saved = (await tickMutations.saveTick(
+        undefined,
+        { input: baseTickInput({ uuid: tickUuid, boardUuid: loserUuid }) },
+        authCtx(),
+      )) as { boardId: number | null };
+
+      expect(saved.boardId).toBe(canonicalId);
+      const [persistedTick] = await db.execute(sql`
+        SELECT board_id FROM boardsesh_ticks WHERE uuid = ${tickUuid}
+      `);
+      expect(Number((persistedTick as { board_id: number }).board_id)).toBe(canonicalId);
+    });
+
+    it('keeps an ordinary soft-deleted boardUuid unassociated without config fallback or warning', async () => {
+      const ownBoardId = await createOwnConfigBoard();
+      const staleBoardUuid = uuidv4();
+      const tickUuid = uuidv4();
+      await db.execute(sql`
+        INSERT INTO user_boards
+          (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name,
+           is_public, deleted_at, merged_into_board_uuid)
+        VALUES (${staleBoardUuid}, ${`tick-plain-deleted-${Date.now()}`}, ${SECOND_USER_ID},
+                'kilter', 1, 10, '1,2', 'Plain deleted tick board', false, now(), NULL)
+      `);
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+      const saved = (await tickMutations.saveTick(
+        undefined,
+        { input: baseTickInput({ uuid: tickUuid, boardUuid: staleBoardUuid }) },
+        authCtx(),
+      )) as { boardId: number | null };
+
+      expect(saved.boardId).toBeNull();
+      expect(saved.boardId).not.toBe(ownBoardId);
+      const [persistedTick] = await db.execute(sql`
+        SELECT board_id FROM boardsesh_ticks WHERE uuid = ${tickUuid}
+      `);
+      expect((persistedTick as { board_id: number | null }).board_id).toBeNull();
+      expect(warnSpy).not.toHaveBeenCalledWith(
+        '[saveTick] Board association became unavailable; saving tick without board association',
+        expect.anything(),
+      );
+    });
+
+    it('routes a tick that waited behind serial dedupe onto the surviving board', async () => {
+      const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+      const serial = `TICK-MERGE-${suffix}`.toUpperCase();
+      const canonicalUuid = uuidv4();
+      const loserUuid = uuidv4();
+      const tickUuid = uuidv4();
+      const [canonical] = await db.execute(sql`
+        INSERT INTO user_boards
+          (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number, is_public)
+        VALUES (${canonicalUuid}, ${`tick-merge-canonical-${suffix}`}, ${TEST_USER_ID},
+                'kilter', 1, 10, '1,2', 'Tick survivor', ${serial}, true)
+        RETURNING id
+      `);
+      const [loser] = await db.execute(sql`
+        INSERT INTO user_boards
+          (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number, is_public)
+        VALUES (${loserUuid}, ${`tick-merge-loser-${suffix}`}, ${SECOND_USER_ID},
+                'kilter', 1, 10, '1,2', 'Tick loser', ${serial}, true)
+        RETURNING id
+      `);
+      const canonicalId = Number((canonical as { id: number }).id);
+      const loserId = Number((loser as { id: number }).id);
+      const mergeReady = createValueBarrier<number>();
+      const releaseMerge = createBarrier();
+      let mergePromise: Promise<void> | undefined;
+      let savePromise: ReturnType<typeof tickMutations.saveTick> | undefined;
+
+      try {
+        mergePromise = db.transaction(async (transaction) => {
+          const [session] = await transaction.execute(sql`SELECT pg_backend_pid() AS pid`);
+          await transaction.execute(sql`
+            SELECT id
+              FROM user_boards
+             WHERE id IN (${canonicalId}, ${loserId})
+             ORDER BY id
+             FOR UPDATE
+          `);
+          // Match the maintenance ordering: the one-time repoint happens before
+          // the loser is tombstoned. A save that only relies on its FK lock can
+          // otherwise resume after commit and miss this UPDATE forever.
+          await transaction.execute(sql`
+            UPDATE boardsesh_ticks SET board_id = ${canonicalId} WHERE board_id = ${loserId}
+          `);
+          await transaction.execute(sql`
+            UPDATE user_boards
+               SET deleted_at = now(), merged_into_board_uuid = ${canonicalUuid}
+             WHERE id = ${loserId}
+          `);
+          mergeReady.release(Number((session as { pid: number }).pid));
+          await releaseMerge.promise;
+        });
+        handleLater(mergePromise);
+        const mergePid = await mergeReady.promise;
+
+        savePromise = tickMutations.saveTick(
+          undefined,
+          { input: baseTickInput({ uuid: tickUuid, boardId: loserId }) },
+          authCtx(),
+        );
+        handleLater(savePromise);
+        await waitForSessionBlockedBy(mergePid);
+
+        releaseMerge.release();
+        await mergePromise;
+        const saved = (await savePromise) as { boardId: number | null };
+        expect(saved.boardId).toBe(canonicalId);
+
+        const [lateTick] = await db.execute(sql`
+          SELECT board_id FROM boardsesh_ticks WHERE uuid = ${tickUuid}
+        `);
+        expect(Number((lateTick as { board_id: number }).board_id)).toBe(canonicalId);
+      } finally {
+        releaseMerge.release();
+        await Promise.allSettled([mergePromise, savePromise]);
+      }
+    });
+
+    it('keeps a tick when its explicit board is deleted while canonicalisation waits', async () => {
+      const boardId = await createSecondUserSharedBoard();
+      const tickUuid = uuidv4();
+      const deleteReady = createValueBarrier<number>();
+      const releaseDelete = createBarrier();
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+      let deletePromise: Promise<void> | undefined;
+      let savePromise: ReturnType<typeof tickMutations.saveTick> | undefined;
+
+      try {
+        deletePromise = db.transaction(async (transaction) => {
+          const [session] = await transaction.execute(sql`SELECT pg_backend_pid() AS pid`);
+          await transaction.execute(sql`SELECT id FROM user_boards WHERE id = ${boardId} FOR UPDATE`);
+          deleteReady.release(Number((session as { pid: number }).pid));
+          await releaseDelete.promise;
+          await transaction.execute(sql`UPDATE user_boards SET deleted_at = now() WHERE id = ${boardId}`);
+        });
+        handleLater(deletePromise);
+        const deletePid = await deleteReady.promise;
+
+        savePromise = tickMutations.saveTick(
+          undefined,
+          { input: baseTickInput({ uuid: tickUuid, boardId }) },
+          authCtx(),
+        );
+        handleLater(savePromise);
+        await waitForSessionBlockedBy(deletePid);
+
+        releaseDelete.release();
+        await deletePromise;
+
+        const saved = (await savePromise) as { boardId: number | null };
+        expect(saved.boardId).toBeNull();
+
+        const [persistedTick] = await db.execute(sql`
+          SELECT board_id FROM boardsesh_ticks WHERE uuid = ${tickUuid}
+        `);
+        expect((persistedTick as { board_id: number | null }).board_id).toBeNull();
+        expect(warnSpy).toHaveBeenCalledWith(
+          '[saveTick] Board association became unavailable; saving tick without board association',
+          expect.objectContaining({
+            tickUuid,
+            userId: TEST_USER_ID,
+            requestedBoardId: boardId,
+            boardAssociationSource: 'explicitBoardId',
+          }),
+        );
+      } finally {
+        releaseDelete.release();
+        await Promise.allSettled([deletePromise, savePromise]);
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('keeps the serial-cluster lock lookup eligible for the active-row partial indexes', async () => {
+      const sharedBoardId = await createSecondUserSharedBoard();
+      const planRows = await db.transaction(async (transaction) => {
+        // Tiny test tables naturally favor a sequential scan. Disabling it
+        // makes this a predicate-eligibility assertion: PostgreSQL can only use
+        // a partial index when the production query explicitly preserves that
+        // index's conditions.
+        await transaction.execute(sql`SET LOCAL enable_seqscan = off`);
+        return transaction.execute(sql`EXPLAIN (FORMAT TEXT, COSTS OFF) ${buildTickBoardLockQuery(sharedBoardId)}`);
+      });
+      const plan = planRows.map((row) => String((row as { 'QUERY PLAN': string })['QUERY PLAN'])).join('\n');
+
+      // Deliberately NOT pinned to one index name. #4166 added
+      // user_boards_owner_config_idx, and on tables this small the planner picks
+      // between it and user_boards_serial_idx on costs that move with whatever
+      // rows the rest of the suite has inserted — naming one made this flaky.
+      // Every candidate is partial on `deleted_at IS NULL`, so the cluster join
+      // can only reach any of them while the query keeps that condition. Drop it
+      // and the scan falls back to the primary key and this goes red.
+      //
+      // The serial nonblank conditions deliberately have no assertion of their
+      // own: the same two strings appear in the plan for the `requested_board`
+      // side of the join, so a `toContain` on them passes even with the
+      // candidate side's copy removed — it would read like coverage and prove
+      // nothing.
+      expect(plan).toMatch(/Index (Only )?Scan using user_boards_(serial_idx|owner_config_idx|unique_owner_serial)/);
     });
 
     it('pushes a BoardStatsUpdated event that excludes attempts, resolves grades, and equals the cold fetch', async () => {
@@ -2228,12 +2741,13 @@ describe('board-presence seq continuity across dormancy (Redis)', () => {
     }
     testRedis = new Redis(REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 1 });
     await testRedis.connect();
-    pubsub.setBoardSeqFloorProvider(getBoardSeqFloor);
+    pubsub.setBoardSeqAllocator(allocateBoardPresenceSeq);
   });
 
   afterAll(async () => {
-    // Restore the no-op default so later test files in the same worker never
-    // inherit a floor provider that hits Postgres.
+    // Restore DB-free defaults so later test files in the same worker never
+    // inherit an allocator/floor provider that hits Postgres.
+    pubsub.setBoardSeqAllocator(null);
     pubsub.setBoardSeqFloorProvider(async () => 0);
     if (testRedis) await testRedis.quit().catch(() => {});
   });
@@ -2358,6 +2872,7 @@ describe('board-presence seq continuity across dormancy (Redis)', () => {
   it('memoizes the floor check: one provider call while the counter grows, re-consulted after a counter loss', async () => {
     if (!redisOn || !testRedis) return;
     let providerCalls = 0;
+    pubsub.setBoardSeqAllocator(null);
     pubsub.setBoardSeqFloorProvider(async () => {
       providerCalls += 1;
       return 0;
@@ -2382,6 +2897,7 @@ describe('board-presence seq continuity across dormancy (Redis)', () => {
     } finally {
       // Restore this describe's real provider for any later Redis-gated test.
       pubsub.setBoardSeqFloorProvider(getBoardSeqFloor);
+      pubsub.setBoardSeqAllocator(allocateBoardPresenceSeq);
     }
   });
 
@@ -2395,6 +2911,7 @@ describe('board-presence seq continuity across dormancy (Redis)', () => {
     // stale and the live wall would freeze forever.
     let providerHealthy = false;
     let providerCalls = 0;
+    pubsub.setBoardSeqAllocator(null);
     pubsub.setBoardSeqFloorProvider(async () => {
       providerCalls += 1;
       if (!providerHealthy) throw new Error('simulated transient Postgres blip');
@@ -2425,6 +2942,7 @@ describe('board-presence seq continuity across dormancy (Redis)', () => {
       expect(providerCalls).toBe(callsAfterRecovery);
     } finally {
       pubsub.setBoardSeqFloorProvider(getBoardSeqFloor);
+      pubsub.setBoardSeqAllocator(allocateBoardPresenceSeq);
     }
   });
 });
@@ -2513,6 +3031,29 @@ describe('board-presence stats cache (Redis)', () => {
     };
   }
 
+  /**
+   * Wait for the read path's fire-and-forget cache SET to land.
+   *
+   * `boardPresenceStats` returns before its Redis write resolves, so a fixed
+   * sleep is a bet on how loaded the machine is — a 50ms one lost that bet on a
+   * full-suite CI shard and made the two cases below fail as "the cache missed".
+   * Poll for the key instead, so the wait costs a couple of milliseconds when
+   * things are quick and still holds up when they are not.
+   */
+  async function waitForCachedStats(
+    testRedisClient: Redis,
+    boardId: number,
+    timeoutMs = 10_000,
+  ): Promise<string | null> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const cachedRaw = await testRedisClient.get(statsCacheKey(boardId));
+      if (cachedRaw !== null) return cachedRaw;
+      if (Date.now() >= deadline) return null;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
   it('populates the cache on a miss and serves the same snapshot on a subsequent read', async () => {
     if (!redisOn || !testRedis) return;
     const boardId = await makeStatsBoard();
@@ -2523,9 +3064,7 @@ describe('board-presence stats cache (Redis)', () => {
     const first = await boardPresenceQueries.boardPresenceStats(undefined, { boardId }, authCtx());
     expect(first.climbsSentCount).toBe(1);
 
-    // The SET is fire-and-forget — give it a tick to land.
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const cachedRaw = await testRedis.get(statsCacheKey(boardId));
+    const cachedRaw = await waitForCachedStats(testRedis, boardId);
     expect(cachedRaw).not.toBeNull();
     expect(JSON.parse(cachedRaw!)).toEqual(first);
   });
@@ -2537,7 +3076,9 @@ describe('board-presence stats cache (Redis)', () => {
 
     const first = await boardPresenceQueries.boardPresenceStats(undefined, { boardId }, authCtx());
     expect(first.climbsSentCount).toBe(1);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // The second read below only exercises the cache once this landed; without
+    // the wait it silently becomes a second cold query and asserts nothing.
+    expect(await waitForCachedStats(testRedis, boardId)).not.toBeNull();
 
     // A second send lands straight in Postgres, bypassing saveTick (and so
     // never calling queueBoardStatsPublish) — the query must still serve the

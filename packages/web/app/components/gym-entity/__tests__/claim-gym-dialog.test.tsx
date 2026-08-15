@@ -80,7 +80,10 @@ describe('ClaimGymDialog — auto-approved claim', () => {
     renderDialog();
     await submit();
 
-    await screen.findByText("We've emailed our team. They'll be in touch soon.");
+    // The confirmation promises the outcome email the funnel now actually
+    // sends, rather than narrating an admin notification that a claimant with a
+    // backlog doesn't trigger.
+    await screen.findByText("Your claim is in the review queue. We'll email you as soon as it's decided.");
     // Nothing was transferred, so there is nothing to refresh.
     expect(mockRefresh).not.toHaveBeenCalled();
   });

@@ -1,13 +1,15 @@
 import React from 'react';
 import { ImageResponse } from '@vercel/og';
 import type { NextRequest } from 'next/server';
-import { dbz, executeRows } from '@/app/lib/db/db';
+import { dbzRead, executeRows } from '@/app/lib/db/db';
 import { sql } from 'drizzle-orm';
 import { themeTokens } from '@/app/theme/theme-config';
 import { FONT_GRADE_COLORS, getGradeColorWithOpacity } from '@/app/lib/grade-colors';
 import { BOULDER_GRADES } from '@/app/lib/board-data';
 import { createOgImageHeaders, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
 import { getSetterOgSummary } from '@/app/lib/seo/dynamic-og-data';
+import { ogErrorResponse } from '@/app/lib/seo/og-error';
+import { withReadDeadline } from '@/app/lib/db/read-deadline';
 
 export const runtime = 'nodejs';
 
@@ -33,30 +35,39 @@ export async function GET(request: NextRequest) {
     }
 
     const dbT0 = performance.now();
-    const [summary, gradeResult] = await Promise.all([
-      getSetterOgSummary(username),
-      executeRows<{
-        difficulty: number;
-        cnt: number;
-      }>(
-        dbz,
-        sql`
-        SELECT bt.difficulty, COUNT(*) as cnt
-        FROM boardsesh_ticks bt
-        JOIN board_climbs bc ON bc.uuid = bt.climb_uuid
-        WHERE bc.setter_username = ${username}
-          AND bt.status IN ('flash', 'send')
-          AND bt.difficulty IS NOT NULL
-        GROUP BY bt.difficulty
-        ORDER BY bt.difficulty
-      `,
-      ),
-    ]);
+    const [summary, gradeResult] = await withReadDeadline(
+      'og-setter',
+      Promise.all([
+        getSetterOgSummary(username),
+        executeRows<{
+          difficulty: number;
+          cnt: number;
+        }>(
+          dbzRead,
+          sql`
+          SELECT bt.difficulty, COUNT(*) as cnt
+          FROM boardsesh_ticks bt
+          JOIN board_climbs bc ON bc.uuid = bt.climb_uuid
+          WHERE bc.setter_username = ${username}
+            AND bt.status IN ('flash', 'send')
+            AND bt.difficulty IS NOT NULL
+          GROUP BY bt.difficulty
+          ORDER BY bt.difficulty
+        `,
+        ),
+      ]),
+    );
     const dbMs = performance.now() - dbT0;
     const gradeRows = gradeResult;
 
     const displayName = summary.displayName;
-    const origin = process.env.VERCEL_URL ? 'https://www.boardsesh.com' : 'http://localhost:3000';
+    // Absolute base for a relative avatar path. Host-agnostic: the request's own
+    // origin is correct on every deployment AND on localhost, and a configured
+    // https BASE_URL wins so the avatar fetch goes out through the CDN rather
+    // than looping back into this instance. Keying this on VERCEL_URL silently
+    // rewrote every avatar to localhost off Vercel (#4651).
+    const configuredOrigin = process.env.BASE_URL?.trim();
+    const origin = configuredOrigin?.startsWith('https://') ? configuredOrigin : new URL(request.url).origin;
     const rawAvatarUrl = summary.avatarUrl || null;
     const avatarUrl = rawAvatarUrl && !rawAvatarUrl.startsWith('http') ? `${origin}${rawAvatarUrl}` : rawAvatarUrl;
 
@@ -247,8 +258,6 @@ export async function GET(request: NextRequest) {
       },
     );
   } catch (error) {
-    console.error('Error generating setter OG image:', error);
-    const message = error instanceof Error ? error.message : String(error);
-    return new Response(`Error generating image: ${message}`, { status: 500 });
+    return ogErrorResponse('setter', error);
   }
 }

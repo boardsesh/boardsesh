@@ -315,7 +315,7 @@ function printRunbook(): void {
   log('Run these phases as infra comes online:');
   log('');
   log('  1. (cloud) create the boardsesh-ota-v3 bucket + a dedicated Railway Postgres,');
-  log('       deploy ghcr.io/mercuretechnologies/expo-open-ota:v3.0.5 on Railway,');
+  log('       deploy ghcr.io/mercuretechnologies/xprem:v3.1.2 on Railway,');
   log('       point updates.boardsesh.com at it (see docs/mobile-ota-updates.md).');
   log('  2. vp run mobile:ota-setup keys');
   log('       → prints the V3 Railway env block + the cert-export steps.');

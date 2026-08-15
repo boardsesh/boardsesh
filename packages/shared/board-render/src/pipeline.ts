@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 import { createOgBackgroundBuffer, getBackgroundRelPaths } from './background';
 import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
+import type { BoundedLru } from './lru';
 import type { OutputFormat, RenderableBoardDetails } from './types';
 
 const THUMBNAIL_WEBP_OPTIONS: sharp.WebpOptions = {
@@ -48,6 +49,28 @@ function getJpegOptions(thumbnail: boolean): sharp.JpegOptions {
 /** Resolve a public/-relative image path to an absolute filesystem path, or null if absent. */
 export type ResolveImagePath = (relPath: string) => string | null;
 
+/**
+ * Process-lifetime caches a caller can hand in so repeat renders of the same
+ * board skip re-decoding its photos. Both hold raw RGBA planes keyed by board
+ * config, which is what the board photo composite costs — the per-climb overlay
+ * is never cached here (the caller's byte cache covers that).
+ */
+export type RenderBoardImageCaches = {
+  /** Folded board photos (raw RGBA, dim already baked in) for the plain render path. */
+  boardBase?: BoundedLru<Buffer>;
+  /** Gradient backdrop + board photos (raw RGBA) for the OG social-card path. */
+  ogBase?: BoundedLru<OgBaseResult>;
+  /**
+   * Composes of `boardBase` entries currently running, so two climbs on the
+   * same board arriving together fold that board's photos once instead of
+   * twice (~10 MB of planes for the tallest Kilter board). Owned by the caller
+   * because the key describes the board and output size, not the caller's
+   * `resolveImagePath` — sharing one across resolvers would serve the wrong
+   * images. Omit it and each render composes its own base.
+   */
+  boardBaseInFlight?: Map<string, Promise<Buffer | null>>;
+};
+
 export type RenderBoardImageParams = {
   /** Raw RGBA overlay pixels from the WASM renderer (already header-stripped). */
   overlayBuffer: Buffer;
@@ -61,6 +84,8 @@ export type RenderBoardImageParams = {
   dimBackground: number;
   boardDetails: RenderableBoardDetails;
   resolveImagePath: ResolveImagePath;
+  /** Optional background caches. Omitted = every render composes its own base. */
+  caches?: RenderBoardImageCaches;
 };
 
 export type RenderTimings = {
@@ -74,12 +99,124 @@ export type RenderBoardImageResult = {
   buffer: Buffer;
   contentType: string;
   timings: RenderTimings;
+  /**
+   * Whether the board-photo base came from the caller's cache. `none` means no
+   * cache was in play (no caller cache, or a path that doesn't use one).
+   */
+  cache?: 'hit' | 'miss' | 'none';
 };
+
+type EncodedImage = {
+  /** Set when the final bytes are already encoded. */
+  outputBuffer: Buffer | null;
+  /** Set for the PNG intermediate the OG canvas composite consumes. */
+  imageBuffer: Buffer | null;
+  contentType: string;
+};
+
+/**
+ * Encode a prepared sharp pipeline in the requested format. The OG variant
+ * always lands on a PNG intermediate — its final encode happens after the
+ * social canvas composite.
+ */
+async function encodeRendered(
+  image: sharp.Sharp,
+  options: { isOgVariant: boolean; format: OutputFormat; thumbnail: boolean; webpOptions: sharp.WebpOptions },
+): Promise<EncodedImage> {
+  const { isOgVariant, format, thumbnail, webpOptions } = options;
+  if (!isOgVariant && format === 'webp') {
+    return { outputBuffer: await image.webp(webpOptions).toBuffer(), imageBuffer: null, contentType: 'image/webp' };
+  }
+  if (!isOgVariant && format === 'jpeg') {
+    return {
+      outputBuffer: await image.jpeg(getJpegOptions(thumbnail)).toBuffer(),
+      imageBuffer: null,
+      contentType: 'image/jpeg',
+    };
+  }
+  return { outputBuffer: null, imageBuffer: await image.png(DEFAULT_PNG_OPTIONS).toBuffer(), contentType: 'image/png' };
+}
+
+/**
+ * Compose the board's background photos into a single raw RGBA plane at the
+ * requested output size, with the dim scrim already baked in.
+ *
+ * Layers are decoded one at a time and folded into the accumulator as raw
+ * pixels: no layer is ever re-encoded, and peak memory stays at roughly three
+ * raw planes no matter how many hold-set images a board has. A layer that fails
+ * to decode is skipped (the board still renders with whatever did load).
+ *
+ * Dimming stays a composited black scrim, deliberately. Scaling RGB by
+ * `1 - dim` looks equivalent and allocates nothing, but only for *opaque*
+ * pixels: QA measured every board WebP and they all carry alpha — the board
+ * photos are transparent everywhere except the holds, so ~77% of pixels would
+ * come out with different alpha and up to 127 of RGB delta. `dim_background` is
+ * supposed to be a full-bleed wash over the whole image, which is what the iOS
+ * Live Activity widget asks for with `dim_background=0.18` and what mobile's
+ * LayeredClimbImage draws as a full-bleed `rgba(0, 0, 0, 0.18)` view. The scrim
+ * is composited over the *folded* base and baked into it, so a board pays for
+ * it once on a cold cache rather than once per request as before.
+ *
+ * Returns null when no background image resolves — the caller then falls back
+ * to an overlay-only render.
+ */
+export async function composeBoardBaseBuffer(params: {
+  boardDetails: RenderableBoardDetails;
+  width: number;
+  height: number;
+  thumbnail: boolean;
+  dimBackground: number;
+  resolveImagePath: ResolveImagePath;
+}): Promise<Buffer | null> {
+  const { boardDetails, width, height, thumbnail, dimBackground, resolveImagePath } = params;
+  const rawLayer = { width, height, channels: 4 as const };
+
+  const bgFsPaths = getBackgroundRelPaths(boardDetails, thumbnail)
+    .map((relPath) => resolveImagePath(relPath))
+    .filter((fsPath): fsPath is string => fsPath !== null);
+  if (bgFsPaths.length === 0) return null;
+
+  let base: Buffer | null = null;
+  for (const fsPath of bgFsPaths) {
+    try {
+      const layer = await sharp(fsPath).resize(width, height, { fit: 'fill' }).ensureAlpha().raw().toBuffer();
+      if (base === null) {
+        base = layer;
+        continue;
+      }
+      base = await sharp(base, { raw: rawLayer })
+        .composite([{ input: layer, raw: rawLayer, blend: 'over' }])
+        .raw()
+        .toBuffer();
+    } catch {
+      // A single unreadable board photo must not fail the whole render.
+    }
+  }
+
+  if (base === null) return null;
+  if (dimBackground <= 0) return base;
+
+  // Composited straight from a `create` descriptor: same pixels the old
+  // per-request PNG scrim produced, without encoding and decoding it first.
+  return sharp(base, { raw: rawLayer })
+    .composite([
+      {
+        input: { create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: dimBackground } } },
+        blend: 'over',
+      },
+    ])
+    .raw()
+    .toBuffer();
+}
 
 /**
  * Single-shot render used by the web `board-render` route: takes the WASM
  * overlay RGBA and produces the final encoded image, optionally compositing
  * background board photos and (for the OG variant) the social-card backdrop.
+ *
+ * Pass `caches` to reuse the board-photo base across requests. Without it every
+ * call re-decodes the board photos, which at ~50k renders/day is the bulk of
+ * both the CPU and the peak memory.
  */
 export async function renderBoardImageBuffer({
   overlayBuffer,
@@ -92,111 +229,151 @@ export async function renderBoardImageBuffer({
   dimBackground,
   boardDetails,
   resolveImagePath,
+  caches,
 }: RenderBoardImageParams): Promise<RenderBoardImageResult> {
   const sharpT0 = performance.now();
+  const rawPlane = { width, height, channels: 4 as const };
   let imageBuffer: Buffer | null = null;
   let outputBuffer: Buffer | null = null;
   let outputContentType = 'image/png';
   let bgMs = 0;
   let composeMs = 0;
-  let didCompositeBackground = false;
+  let cache: RenderBoardImageResult['cache'] = 'none';
 
-  if (includeBackground) {
+  const overlayOnlyImage = () => sharp(overlayBuffer, { raw: rawPlane });
+  const overlayWebpOptions: sharp.WebpOptions = thumbnail ? THUMBNAIL_WEBP_OPTIONS : { lossless: true };
+  const bgRelPaths = includeBackground ? getBackgroundRelPaths(boardDetails, thumbnail) : [];
+
+  if (includeBackground && isOgVariant && dimBackground === 0) {
+    // OG social card: backdrop + board photos are identical for every climb on
+    // the board, so the composed base is cached and only the overlay composite
+    // + encode runs per climb.
     const bgT0 = performance.now();
-    const bgRelPaths = getBackgroundRelPaths(boardDetails, thumbnail);
-    const bgFsPaths = bgRelPaths
-      .map((relPath) => resolveImagePath(relPath))
-      .filter((path): path is string => path !== null);
+    // The OG base always composes full-size photos, so key it on those paths —
+    // not on `bgRelPaths`, which honours `thumbnail`.
+    const ogKey = `${getBackgroundRelPaths(boardDetails, false).join('|')}:${width}x${height}:og`;
+    let ogBase = caches?.ogBase?.get(ogKey);
+    if (ogBase) {
+      cache = 'hit';
+    } else {
+      ogBase = await composeOgBaseBuffer({ boardDetails, boardWidth: width, boardHeight: height, resolveImagePath });
+      caches?.ogBase?.set(ogKey, ogBase);
+      cache = caches?.ogBase ? 'miss' : 'none';
+    }
     bgMs = performance.now() - bgT0;
 
-    if (bgFsPaths.length > 0) {
-      // Load and resize background images, skipping any that fail.
-      const results = await Promise.allSettled(
-        bgFsPaths.map((fsPath) => sharp(fsPath).resize(width, height, { fit: 'fill' }).toBuffer()),
-      );
-      const resizedBuffers = results
-        .filter((result): result is PromiseFulfilledResult<Buffer> => result.status === 'fulfilled')
-        .map((result) => result.value);
+    const composeT0 = performance.now();
+    const encoded = await encodeOgImage({
+      base: ogBase.base,
+      overlay: { buffer: overlayBuffer, width, height, left: ogBase.left, top: ogBase.top },
+      format,
+    });
+    outputBuffer = encoded.buffer;
+    outputContentType = encoded.contentType;
+    composeMs = performance.now() - composeT0;
+  } else if (includeBackground && isOgVariant) {
+    // Dimmed OG card: no caller asks for this today, so it keeps the original
+    // uncached composite rather than growing a third cache key.
+    const bgT0 = performance.now();
+    const bgFsPaths = bgRelPaths
+      .map((relPath) => resolveImagePath(relPath))
+      .filter((fsPath): fsPath is string => fsPath !== null);
+    bgMs = performance.now() - bgT0;
 
-      const [firstBg, ...restBgs] = resizedBuffers;
+    const composeT0 = performance.now();
+    const results = await Promise.allSettled(
+      bgFsPaths.map((fsPath) => sharp(fsPath).resize(width, height, { fit: 'fill' }).toBuffer()),
+    );
+    const [firstBg, ...restBgs] = results
+      .filter((result): result is PromiseFulfilledResult<Buffer> => result.status === 'fulfilled')
+      .map((result) => result.value);
 
-      if (firstBg) {
-        // Composite: first background as base → remaining backgrounds → optional
-        // dim scrim → WASM overlay on top.
-        const composeT0 = performance.now();
-        const dimLayer =
-          dimBackground > 0
-            ? await sharp({
-                create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: dimBackground } },
-              })
-                .png()
-                .toBuffer()
-            : null;
-        const compositedImage = sharp(firstBg).composite([
+    if (firstBg) {
+      imageBuffer = await sharp(firstBg)
+        .composite([
           ...restBgs.map((buf) => ({ input: buf, blend: 'over' as const })),
-          ...(dimLayer ? [{ input: dimLayer, blend: 'over' as const }] : []),
           {
-            input: overlayBuffer,
-            raw: { width, height, channels: 4 as const },
+            // Same `create` descriptor the cached path uses — no PNG round-trip.
+            input: { create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: dimBackground } } },
             blend: 'over' as const,
           },
-        ]);
-        if (!isOgVariant && format === 'webp') {
-          outputBuffer = await compositedImage
-            .webp(thumbnail ? THUMBNAIL_WEBP_OPTIONS : DEFAULT_WEBP_OPTIONS)
-            .toBuffer();
-          outputContentType = 'image/webp';
-        } else if (!isOgVariant && format === 'jpeg') {
-          outputBuffer = await compositedImage.jpeg(getJpegOptions(thumbnail)).toBuffer();
-          outputContentType = 'image/jpeg';
-        } else {
-          imageBuffer = await compositedImage.png(DEFAULT_PNG_OPTIONS).toBuffer();
-        }
-        composeMs = performance.now() - composeT0;
-        didCompositeBackground = true;
-      } else {
-        // All background loads failed — fall back to overlay-only.
-        const composeT0 = performance.now();
-        const overlayImage = sharp(overlayBuffer, { raw: { width, height, channels: 4 } });
-        if (!isOgVariant && format === 'webp') {
-          outputBuffer = await overlayImage.webp(thumbnail ? THUMBNAIL_WEBP_OPTIONS : { lossless: true }).toBuffer();
-          outputContentType = 'image/webp';
-        } else if (!isOgVariant && format === 'jpeg') {
-          outputBuffer = await overlayImage.jpeg(getJpegOptions(thumbnail)).toBuffer();
-          outputContentType = 'image/jpeg';
-        } else {
-          imageBuffer = await overlayImage.png(DEFAULT_PNG_OPTIONS).toBuffer();
-        }
-        composeMs = performance.now() - composeT0;
-      }
+          { input: overlayBuffer, raw: rawPlane, blend: 'over' as const },
+        ])
+        .png(DEFAULT_PNG_OPTIONS)
+        .toBuffer();
     } else {
-      // No background images found — fall back to overlay-only lossless.
-      const composeT0 = performance.now();
-      const overlayImage = sharp(overlayBuffer, { raw: { width, height, channels: 4 } });
-      if (!isOgVariant && format === 'webp') {
-        outputBuffer = await overlayImage.webp(thumbnail ? THUMBNAIL_WEBP_OPTIONS : { lossless: true }).toBuffer();
-        outputContentType = 'image/webp';
-      } else if (!isOgVariant && format === 'jpeg') {
-        outputBuffer = await overlayImage.jpeg(getJpegOptions(thumbnail)).toBuffer();
-        outputContentType = 'image/jpeg';
-      } else {
-        imageBuffer = await overlayImage.png(DEFAULT_PNG_OPTIONS).toBuffer();
-      }
-      composeMs = performance.now() - composeT0;
+      imageBuffer = await overlayOnlyImage().png(DEFAULT_PNG_OPTIONS).toBuffer();
     }
+    composeMs = performance.now() - composeT0;
+  } else if (includeBackground) {
+    // Board photos folded to one raw RGBA plane (dim baked in), cached per board
+    // config + size. The per-climb work is then a single decode-free composite.
+    const bgT0 = performance.now();
+    const baseKey = `${bgRelPaths.join('|')}:${width}x${height}:d${dimBackground}`;
+    let base = caches?.boardBase?.get(baseKey);
+    if (base) {
+      cache = 'hit';
+    } else {
+      const composeParams = { boardDetails, width, height, thumbnail, dimBackground, resolveImagePath };
+      const inFlightBases = caches?.boardBaseInFlight;
+      let composed: Buffer | null;
+      if (inFlightBases) {
+        const alreadyComposing = inFlightBases.get(baseKey);
+        const composePromise =
+          alreadyComposing ??
+          composeBoardBaseBuffer(composeParams).finally(() => {
+            inFlightBases.delete(baseKey);
+          });
+        if (!alreadyComposing) inFlightBases.set(baseKey, composePromise);
+        composed = await composePromise;
+      } else {
+        composed = await composeBoardBaseBuffer(composeParams);
+      }
+      base = composed ?? undefined;
+      if (base) caches?.boardBase?.set(baseKey, base);
+      cache = caches?.boardBase ? 'miss' : 'none';
+    }
+    bgMs = performance.now() - bgT0;
+
+    const composeT0 = performance.now();
+    if (base) {
+      const composited = sharp(base, { raw: rawPlane }).composite([
+        { input: overlayBuffer, raw: rawPlane, blend: 'over' as const },
+      ]);
+      const encoded = await encodeRendered(composited, {
+        isOgVariant,
+        format,
+        thumbnail,
+        webpOptions: thumbnail ? THUMBNAIL_WEBP_OPTIONS : DEFAULT_WEBP_OPTIONS,
+      });
+      outputBuffer = encoded.outputBuffer;
+      imageBuffer = encoded.imageBuffer;
+      outputContentType = encoded.contentType;
+    } else {
+      // No background image resolved — fall back to overlay-only lossless.
+      const encoded = await encodeRendered(overlayOnlyImage(), {
+        isOgVariant,
+        format,
+        thumbnail,
+        webpOptions: overlayWebpOptions,
+      });
+      outputBuffer = encoded.outputBuffer;
+      imageBuffer = encoded.imageBuffer;
+      outputContentType = encoded.contentType;
+    }
+    composeMs = performance.now() - composeT0;
   } else {
     // Default: overlay-only lossless WebP (25-30% smaller than PNG).
     const composeT0 = performance.now();
-    const overlayImage = sharp(overlayBuffer, { raw: { width, height, channels: 4 } });
-    if (!isOgVariant && format === 'webp') {
-      outputBuffer = await overlayImage.webp(thumbnail ? THUMBNAIL_WEBP_OPTIONS : { lossless: true }).toBuffer();
-      outputContentType = 'image/webp';
-    } else if (!isOgVariant && format === 'jpeg') {
-      outputBuffer = await overlayImage.jpeg(getJpegOptions(thumbnail)).toBuffer();
-      outputContentType = 'image/jpeg';
-    } else {
-      imageBuffer = await overlayImage.png(DEFAULT_PNG_OPTIONS).toBuffer();
-    }
+    const encoded = await encodeRendered(overlayOnlyImage(), {
+      isOgVariant,
+      format,
+      thumbnail,
+      webpOptions: overlayWebpOptions,
+    });
+    outputBuffer = encoded.outputBuffer;
+    imageBuffer = encoded.imageBuffer;
+    outputContentType = encoded.contentType;
     composeMs = performance.now() - composeT0;
   }
 
@@ -218,18 +395,10 @@ export async function renderBoardImageBuffer({
       outputBuffer = await ogImage.png(DEFAULT_PNG_OPTIONS).toBuffer();
       outputContentType = 'image/png';
     }
-  } else if (outputBuffer === null && imageBuffer && format === 'webp') {
-    const getWebpOptions = () => {
-      if (thumbnail) return THUMBNAIL_WEBP_OPTIONS;
-      if (didCompositeBackground) return DEFAULT_WEBP_OPTIONS;
-      return { lossless: true };
-    };
-    outputBuffer = await sharp(imageBuffer).webp(getWebpOptions()).toBuffer();
-    outputContentType = 'image/webp';
-  } else if (outputBuffer === null && imageBuffer && format === 'jpeg') {
-    outputBuffer = await sharp(imageBuffer).jpeg(getJpegOptions(thumbnail)).toBuffer();
-    outputContentType = 'image/jpeg';
   } else if (outputBuffer === null && imageBuffer) {
+    // Only PNG lands here: every branch above hands back finished bytes for
+    // WebP and JPEG, and the OG variant is taken by the branch above this one.
+    // There is nothing left to re-encode.
     outputBuffer = imageBuffer;
     outputContentType = 'image/png';
   }
@@ -245,6 +414,7 @@ export async function renderBoardImageBuffer({
     buffer: outputBuffer,
     contentType: outputContentType,
     timings: { sharpMs, composeMs, encodeMs, bgMs },
+    cache,
   };
 }
 

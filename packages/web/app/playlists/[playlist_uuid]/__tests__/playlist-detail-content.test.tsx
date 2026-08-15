@@ -76,10 +76,6 @@ vi.mock('@/app/components/social/comment-section', () => ({
   default: () => <div data-testid="comment-section" />,
 }));
 
-vi.mock('@/app/components/library/playlist-edit-drawer', () => ({
-  default: ({ open }: { open: boolean }) => (open ? <div data-testid="edit-drawer" /> : null),
-}));
-
 vi.mock('@/app/components/providers/snackbar-provider', () => ({
   useSnackbar: () => ({ showMessage: vi.fn() }),
 }));
@@ -138,13 +134,13 @@ describe('PlaylistDetailContent app hand-off', () => {
 });
 
 describe('PlaylistDetailContent owner menu', () => {
-  it('offers Edit and Delete but no Generate item', () => {
+  it('offers Delete but no Edit or Generate item — editing moved to the app', () => {
     renderDetail();
 
     fireEvent.click(screen.getByRole('button', { name: tFromCatalog('playlists', 'detail.actions') }));
 
-    expect(screen.getByText(tFromCatalog('playlists', 'detail.menu.edit'))).toBeTruthy();
     expect(screen.getByText(tFromCatalog('playlists', 'detail.menu.delete'))).toBeTruthy();
+    expect(screen.queryByText(tFromCatalog('playlists', 'detail.menu.edit'))).toBeNull();
     expect(screen.queryByText(/generate/i)).toBeNull();
   });
 });

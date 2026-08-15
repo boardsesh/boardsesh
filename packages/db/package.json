@@ -46,6 +46,11 @@
       "import": "./src/client/config.ts",
       "default": "./src/client/config.ts"
     },
+    "./catalog-snapshot": {
+      "types": "./src/catalog-snapshot.ts",
+      "import": "./src/catalog-snapshot.ts",
+      "default": "./src/catalog-snapshot.ts"
+    },
     "./queries": {
       "types": "./src/queries/index.ts",
       "import": "./src/queries/index.ts",
@@ -83,6 +88,7 @@
     "db:import-moonboard": "tsx scripts/import-moonboard-problems.ts",
     "db:import-moonboard-2024": "tsx scripts/import-moonboard-2024.ts",
     "db:import-moonboard-catalog": "NODE_OPTIONS=--max-old-space-size=8192 tsx scripts/import-moonboard-catalog.ts",
+    "db:import-woods-catalog": "NODE_OPTIONS=--max-old-space-size=8192 tsx scripts/import-woods-catalog.ts",
     "db:import-aurora-unified": "tsx scripts/import-aurora-board-unified.ts",
     "db:generate-moonboard-cell-sets": "tsx scripts/generate-moonboard-cell-sets.ts",
     "db:backfill-moonboard-set-ids": "tsx scripts/backfill-moonboard-set-ids.ts",
@@ -90,11 +96,13 @@
     "db:repair-moonboard-8c-grades": "tsx scripts/repair-moonboard-8c-grades.ts",
     "db:backfill-clamped-send-attempts": "tsx scripts/backfill-clamped-send-attempts.ts",
     "db:dedupe-gyms": "tsx scripts/dedupe-gym-locations.ts",
+    "db:dedupe-serial-boards": "tsx scripts/dedupe-serial-boards.ts",
     "db:dedupe-beta-links": "tsx scripts/dedupe-beta-links.ts",
     "db:refresh-climb-grades": "tsx scripts/refresh-climb-grades.ts",
     "db:seed-social": "tsx scripts/seed-social.ts",
     "db:create-test-user": "tsx scripts/create-test-user.ts",
-    "db:seed-beta-links": "tsx scripts/seed-dev-beta-links.ts"
+    "db:seed-beta-links": "tsx scripts/seed-dev-beta-links.ts",
+    "db:load-snapshots": "tsx scripts/load-board-snapshots.ts"
   },
   "dependencies": {
     "@boardsesh/board-config": "*",

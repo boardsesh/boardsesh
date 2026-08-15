@@ -25,10 +25,29 @@ export default defineConfig({
     // packages/mobile/src/data/changelog.generated.json) or by nested dir
     // (drizzle/meta/) live in .prettierignore — this `ignore` glob list does not
     // reliably match those forms in `vp check`, but .prettierignore does.
-    ignore: ['design/**', '**/generated/**', '**/board-controller/**', 'CHANGELOG.md'],
+    //
+    // Markdown is not formatted at all. The formatter rewrites emphasis spans,
+    // and its pairing does not follow CommonMark's intraword-underscore rule:
+    // on docs/websocket-implementation.md it paired the `_` inside the bare
+    // identifier `NOT_FOUND` with a later `_signed-in_` and emitted
+    // `NOT*FOUND` + `\_signed-in*`, silently corrupting an identifier in prose.
+    // Reproducible on every run. Prose gains little from auto-formatting and
+    // has content the formatter can get wrong, so `.md` is out of scope —
+    // mirrored in .prettierignore because a full-repo `vp check` only honours
+    // that file for some path forms.
+    ignore: ['design/**', '**/generated/**', '**/board-controller/**', 'CHANGELOG.md', '**/*.md'],
   },
   lint: {
-    ignorePatterns: ['**/board-controller/**'],
+    // Keep this list in lock-step with `ignorePatterns` in .oxlintrc.json.
+    // `vp check` — the pre-commit hook and CI's only linter — reads THIS block,
+    // not .oxlintrc.json (see issue #4548), so the two drifted: main's full-repo
+    // pass was type-aware-linting embedded firmware scripts and design/ that
+    // .oxlintrc.json excludes and that no PR ever linted. board-controller is a
+    // vendored minified bundle; embedded/ is ESP firmware helper scripts;
+    // design/, **/generated/** and the drizzle SQL journal are generated or
+    // hand-off artefacts nobody edits to satisfy a linter. Matches the fmt
+    // ignore list above.
+    ignorePatterns: ['**/board-controller/**', 'embedded/**', 'design/**', '**/generated/**', 'packages/db/drizzle/**'],
     options: {
       typeAware: true,
       typeCheck: true,
@@ -71,6 +90,12 @@ export default defineConfig({
               message:
                 'Hermes does not implement Intl.ListFormat — crashes mobile release builds. Join the parts manually or via i18n.',
             },
+            {
+              object: 'Linking',
+              property: 'openSettings',
+              message:
+                "Linking.openSettings() does not exist in the Expo web runtime (react-native-web's Linking has no such method) — it throws on app.boardsesh.com. Use openAppSettings() from src/lib/open-app-settings, which Platform-gates and never throws.",
+            },
           ],
         },
       },
@@ -102,9 +127,11 @@ export default defineConfig({
       './packages/crypto/vite.config.ts',
       './packages/shared/ble-protocol/vite.config.ts',
       './packages/shared/board-config/vite.config.ts',
+      './packages/shared/board-art-geometry/vite.config.ts',
       './packages/shared/board-render/vite.config.ts',
       './packages/shared/velvet-tokens/vite.config.ts',
       './packages/shared/text-redaction/vite.config.ts',
+      './packages/shared/pr-body/vite.config.ts',
       './packages/shared/board-react/vite.config.ts',
       './packages/shared/create-climb-react/vite.config.ts',
       './packages/shared/queue/vite.config.ts',
@@ -131,6 +158,7 @@ export default defineConfig({
       './packages/shared/graphql/vite.config.ts',
       './packages/shared/graphql-client/vite.config.ts',
       './packages/shared/email/vite.config.ts',
+      './packages/shared/static-assets/vite.config.ts',
       './packages/shared-schema/vite.config.ts',
       './packages/mobile/vite.config.ts',
       './scripts/vite.config.ts',
@@ -148,12 +176,19 @@ export default defineConfig({
     'packages/mobile/{src,app}/**/*.{ts,tsx}': () => 'vp run check:i18n:orphans',
     'packages/mobile/**/*.{ts,tsx,swift}': () => 'vp run check:mobile-board-art-network',
     'packages/shared/i18n/locales/**/*.json': () => 'vp run check:i18n:orphans',
+    // Anything that can change what /api/internal/board-render draws has to move
+    // the committed `&v=` constant with it, or Cloudflare keeps serving the old
+    // pixels `immutable` for a year (#4773). Broad globs on purpose: the generator
+    // derives its inputs from the board catalogue, so a narrow paths list here
+    // would be a guard that silently stops guarding.
+    '{packages/board-renderer/wasm/pkg/**,packages/shared/board-render/src/**,packages/shared/board-config/src/**,packages/board-constants/src/**,packages/web/public/images/**}':
+      () => 'vp run check:board-render-version',
   },
   run: {
     tasks: {
       // --- Database ---
       'db:up': {
-        command: 'sh scripts/dev-db-up.sh',
+        command: 'bash scripts/dev-db-up.sh',
         cache: false,
       },
       'db:migrate': {
@@ -218,16 +253,54 @@ export default defineConfig({
         // read-only validation/dry-runs before writing published grade rows.
         cache: false,
       },
+      'db:dedupe-serial-boards': {
+        command: 'bun run --filter=@boardsesh/db db:dedupe-serial-boards',
+        // No db:up dependency, same rationale as db:dedupe-gyms: a maintainer
+        // runs this by hand against DB_URL (often a remote database), not local
+        // Docker. Dry-run by default; --apply is the only write path. Forward
+        // flags with `vp run db:dedupe-serial-boards -- --only-serial <s> --apply`.
+        cache: false,
+      },
       'test:db': {
         command: 'bun run --filter=@boardsesh/db test',
       },
       // The one packages/db node:test file CI runs (from ci.yml's db-migrations
-      // job, against a stock postgres:17 service). It builds its own throwaway
+      // job, against its current PostgreSQL service). It builds its own throwaway
       // migrations folder and database, so it needs no board data and no db:up.
       // Locally it skips unless DATABASE_URL/MIGRATION_JOURNAL_DB_URL points at
       // a local Postgres.
       'test:db:migration-journal': {
         command: 'bun run --filter=@boardsesh/db test:migration-journal',
+        cache: false,
+      },
+      'test:postgres18-contract': {
+        command:
+          'node --import tsx --test packages/db/scripts/migration-owner-role.test.ts && bash packages/db/docker/dev-db-entrypoint.test.sh && bash packages/db/docker/apply-drizzle-migrations.test.sh && bash scripts/postgres-credentials.test.sh && bash scripts/neon-to-railway-replication.test.sh && bash scripts/postgres18-workflow-contract.test.sh && bash scripts/postgres18-spatial-surface.test.sh && bash -n packages/db/docker/dev-db-entrypoint.sh packages/db/docker/apply-drizzle-migrations.sh scripts/dev-db-up.sh scripts/dev-db-image-smoke.sh scripts/lib/postgres-credentials.sh scripts/postgres16-role-transition-smoke.sh scripts/postgres18-image-smoke.sh scripts/postgres18-architecture-smoke.sh scripts/postgres18-spatial-rehearsal.sh scripts/postgres18-spatial-surface.test.sh scripts/postgres18-production-role-transition.sh scripts/postgres18-workflow-contract.test.sh scripts/postgres-migration-audit.sh scripts/postgres-migration-verify-data.sh scripts/neon-to-railway-replication.sh scripts/neon-to-railway-replication.test.sh scripts/postgres-credentials.test.sh',
+        cache: false,
+      },
+      'test:postgres16-role-transition': {
+        command: 'bash scripts/postgres16-role-transition-smoke.sh',
+        cache: false,
+      },
+      'test:postgres18-image': {
+        command: 'bash scripts/postgres18-image-smoke.sh',
+        cache: false,
+      },
+      'test:postgres18-architecture-image': {
+        command: 'bash scripts/postgres18-architecture-smoke.sh',
+        cache: false,
+      },
+      // Boots the exact image production runs (postgis/postgis:16-master,
+      // PostGIS 3.7.0dev) beside the pinned PG18/3.6.4 artifact and copies the
+      // application's whole spatial surface between them. Needs docker and
+      // several minutes; it is the evidence behind the PostGIS blocker, not a
+      // per-PR gate.
+      'test:postgres18-spatial-rehearsal': {
+        command: 'bash scripts/postgres18-spatial-rehearsal.sh',
+        cache: false,
+      },
+      'test:postgres18-dev-db-image': {
+        command: 'bash scripts/dev-db-image-smoke.sh',
         cache: false,
       },
       'locations:aurora': {
@@ -253,6 +326,17 @@ export default defineConfig({
       'db:import-moonboard': {
         command: 'bun run --filter=@boardsesh/db db:import-moonboard',
         dependsOn: ['db:up'],
+        cache: false,
+      },
+      // Imports the full Woods Board catalog (5,400+ climbs) from a local
+      // checkout of boardsesh/woodsboard-scraper. Point it at the catalog dir
+      // with `vp run db:import-woods-catalog -- /path/to/catalog` (or set
+      // WOODS_CATALOG_DIR). No db:up dependency: the prod import targets a
+      // remote DB_URL, and the in-script guard (woods-import-guard.ts) is what
+      // gates a non-local host — it refuses unless WOODS_IMPORT_ALLOW_REMOTE=1.
+      // Booting local Docker first would only get in the way of that run.
+      'db:import-woods-catalog': {
+        command: 'bun run --filter=@boardsesh/db db:import-woods-catalog',
         cache: false,
       },
       // Regenerates the committed MoonBoard cell->set map from the per-set board
@@ -356,17 +440,20 @@ export default defineConfig({
         command: 'bun run --filter=@boardsesh/web build',
         dependsOn: ['build:shared', 'build:crypto', 'build:db', 'build:constants'],
         // Forwarded into the task (vp runs tasks with a filtered environment)
-        // and part of the cache key: BOARDSESH_WEB=1 bakes the /app static
-        // serving rewrites into the standalone build (see next.config.mjs).
+        // and part of the cache key. Since W-24 (#4438) BOARDSESH_WEB no longer
+        // bakes any /app rewrite into a production build — next.config.mjs gates
+        // the static fallback on NODE_ENV=development — but the flag is still
+        // read at request time (the Expo auth bridge in app/layout.tsx, the
+        // middleware /app carve-out), so keep it in the key.
         env: ['BOARDSESH_WEB'],
       },
       'build:expo-web': {
-        // Static Expo web export into packages/web/public/app — the same
-        // artifact Dockerfile.web bakes into the production image. Run this
-        // before a BOARDSESH_WEB=1 `vp run build:web` to verify /app serving
-        // locally; pass `-- <output-dir>` for a different target (the script
-        // strips vp's forwarded `--`). The output is gitignored
-        // (packages/web/public/app).
+        // Static Expo web export into packages/web/public/app (gitignored) —
+        // a LOCAL/dev artifact since W-24 (#4438) retired the /app static path.
+        // It backs `dev:mobile:web-static` and the CI bundle check; production
+        // publishes the `--subdomain` (baseUrl /) export to app.boardsesh.com.
+        // Pass `-- <output-dir>` for a different target (the script strips vp's
+        // forwarded `--`).
         command: 'bash scripts/build-expo-web-export.sh',
         dependsOn: ['mobile:web-runtime:install'],
         cache: false,
@@ -388,12 +475,26 @@ export default defineConfig({
         command: 'bun packages/web/scripts/check-untranslated-strings.ts',
         cache: false,
       },
+      // Two-way i18n guard: catalog keys with no reference, code references with
+      // no catalog key (#4416), and mobile files reading an unbundled namespace.
       'check:i18n:orphans': {
         command: 'bun packages/web/scripts/check-orphaned-i18n-keys.ts',
         cache: false,
       },
       'check:mobile-board-art-network': {
         command: 'bun scripts/mobile-board-art-network-check.ts',
+        cache: false,
+      },
+      'generate:static-assets': {
+        command: 'bun scripts/generate-static-assets.ts',
+        cache: false,
+      },
+      'check:static-assets': {
+        command: 'bun scripts/generate-static-assets.ts --check',
+        cache: false,
+      },
+      'upload:static-assets': {
+        command: 'bun scripts/upload-static-assets.ts',
         cache: false,
       },
       'generate:acknowledgements': {
@@ -404,12 +505,36 @@ export default defineConfig({
         command: 'node --import tsx scripts/generate-dark-board-art.ts',
         cache: false,
       },
+      // Traced hold silhouettes, per-hold art lightness and painted-LED offsets
+      // for every board in the catalogue (#2202). Committed because nothing at
+      // runtime can decode the board art; `check:` is the drift gate. ~110s for
+      // the whole catalogue, so it is a CI job rather than a pre-commit hook.
+      'generate:board-art-geometry': {
+        command: 'node --import tsx scripts/generate-board-art-geometry.ts',
+        cache: false,
+      },
+      'check:board-art-geometry': {
+        command: 'node --import tsx scripts/generate-board-art-geometry.ts --check',
+        cache: false,
+      },
       'generate:oss-licenses': {
         command: 'node --import tsx scripts/generate-oss-licenses.ts',
         cache: false,
       },
       'generate:changelog': {
         command: 'node --import tsx scripts/generate-changelog.ts',
+        cache: false,
+      },
+      // The `&v=` cache version in every /api/internal/board-render URL. Committed
+      // (not computed at build time) because the value has to be byte-identical in
+      // web's client bundle, the RSC graph and the Node route handler — see the
+      // header comment in the generator. `check:` is the drift gate.
+      'generate:board-render-version': {
+        command: 'node --import tsx scripts/generate-board-render-version.ts',
+        cache: false,
+      },
+      'check:board-render-version': {
+        command: 'node --import tsx scripts/generate-board-render-version.ts --check',
         cache: false,
       },
       'check:changelog': {
@@ -430,6 +555,10 @@ export default defineConfig({
       },
       'check:release-notes': {
         command: 'tsx scripts/check-release-notes.ts',
+        cache: false,
+      },
+      'check:pr-test-plan': {
+        command: 'tsx scripts/check-pr-test-plan.ts',
         cache: false,
       },
       'test:large-files': {
@@ -454,7 +583,8 @@ export default defineConfig({
         cache: false,
       },
       'test:service-deploy-inputs': {
-        command: 'node --test scripts/check-service-deploy-inputs.test.mjs scripts/railway-deployment-status.test.mjs',
+        command:
+          'node --test scripts/check-service-deploy-inputs.test.mjs scripts/production-backend-smoke.test.mjs scripts/production-deploy-changes.test.mjs scripts/production-deploy-watchdog.test.mjs scripts/railway-deployment-status.test.mjs',
         cache: false,
       },
       'check:service-deploy-inputs': {
@@ -537,6 +667,12 @@ export default defineConfig({
       'typecheck:analytics': {
         command: 'bun run --filter=@boardsesh/analytics typecheck',
       },
+      'typecheck:pr-body': {
+        command: 'bun run --filter=@boardsesh/pr-body typecheck',
+      },
+      'typecheck:static-assets': {
+        command: 'bun run --filter=@boardsesh/static-assets typecheck',
+      },
       'typecheck:climb-actions': {
         command: 'bun run --filter=@boardsesh/climb-actions typecheck',
       },
@@ -548,6 +684,10 @@ export default defineConfig({
       },
       'typecheck:board-render': {
         command: 'bun run --filter=@boardsesh/board-render typecheck',
+        dependsOn: ['build:constants'],
+      },
+      'typecheck:board-art-geometry': {
+        command: 'bun run --filter=@boardsesh/board-art-geometry typecheck',
         dependsOn: ['build:constants'],
       },
       'typecheck:play-view': {
@@ -639,6 +779,7 @@ export default defineConfig({
         command: 'true',
         dependsOn: [
           'typecheck:scripts',
+          'typecheck:pr-body',
           'build:shared',
           'build:db',
           'build:backend',
@@ -660,6 +801,7 @@ export default defineConfig({
           'typecheck:key-value-storage',
           'typecheck:board-config',
           'typecheck:board-render',
+          'typecheck:board-art-geometry',
           'typecheck:play-view',
           'typecheck:playback-react',
           'typecheck:profile-stats',
@@ -851,6 +993,14 @@ export default defineConfig({
       },
       'discord:feedback-scan': {
         command: 'tsx scripts/discord-feedback-scan.ts',
+        cache: false,
+      },
+      // Cloudflare config-as-code for the boardsesh.com zone (DNS proxied flag,
+      // the edge-cache rules and the WAF crawler rules). Dry-run by default;
+      // forward `-- --apply` (and optionally `--allow-zone-ssl`) to converge.
+      // See scripts/cloudflare-apply.ts + docs/cloudflare.md.
+      'cf:apply': {
+        command: 'tsx scripts/cloudflare-apply.ts',
         cache: false,
       },
 

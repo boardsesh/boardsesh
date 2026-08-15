@@ -101,6 +101,7 @@ describe('BoardDiscoveryCard', () => {
   it.each([
     ['downloaded', 'offline.downloaded'],
     ['downloading', 'offline.pending'],
+    ['finalizing', 'offline.pending'],
     ['pending', 'offline.pending'],
   ] as const)('shows a status badge for a %s board', (offlineState, icon) => {
     const { container } = render(

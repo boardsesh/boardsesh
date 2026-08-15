@@ -14,8 +14,91 @@ import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getStoredActiveBoard, setStoredActiveBoard, clearStoredActiveBoard } from '../active-board-store';
+import { getCurrentUserStorageOwner, type UserStorageOwner } from '../user-storage-owner';
 
 export const ACTIVE_BOARD_QUERY_KEY = ['activeBoard'] as const;
+
+// Active-board writes can overlap even on one JS thread because persistence is
+// async. Record each write *intent* synchronously, before its first await, and
+// serialize the storage operations in intent order. That gives us two useful
+// guarantees:
+//
+// 1. a stale self-heal fetch can see that the user has already started picking
+//    another board even before React Query has rendered that new selection;
+// 2. if an older storage write is already in progress, the newer user choice is
+//    queued behind it and therefore remains the final persisted value.
+let activeBoardWriteGeneration = 0;
+let activeBoardWriteQueue: Promise<void> = Promise.resolve();
+
+type ActiveBoardStorageWrite = () => Promise<void>;
+
+export function getActiveBoardWriteGeneration(): number {
+  return activeBoardWriteGeneration;
+}
+
+function beginActiveBoardWrite(): number {
+  activeBoardWriteGeneration += 1;
+  return activeBoardWriteGeneration;
+}
+
+function enqueueActiveBoardWrite(
+  generation: number,
+  writeStorage: ActiveBoardStorageWrite,
+  commitCache: () => void,
+): Promise<boolean> {
+  const operation = activeBoardWriteQueue.then(async () => {
+    // Always execute queued storage operations in intent order. In particular,
+    // auth cleanup may target the previous user's scoped key and must not be
+    // skipped merely because the next user already selected a board.
+    await writeStorage();
+
+    // A newer intent may have arrived while AsyncStorage was in flight. Its
+    // write is queued next, so do not briefly roll the React Query cache back.
+    if (generation !== activeBoardWriteGeneration) return false;
+    commitCache();
+    return true;
+  });
+
+  // A failed write must not poison the queue for every later board selection.
+  activeBoardWriteQueue = operation.then(
+    () => undefined,
+    () => undefined,
+  );
+  return operation;
+}
+
+function enqueueCurrentGenerationWrite(
+  expectedGeneration: number,
+  writeStorage: ActiveBoardStorageWrite,
+  commitCache: () => void,
+): Promise<boolean> {
+  if (expectedGeneration !== activeBoardWriteGeneration) return Promise.resolve(false);
+
+  // Claim the write synchronously. A user choice that starts after this point
+  // receives a newer generation and is queued after the heal, so it still wins.
+  const generation = beginActiveBoardWrite();
+  return enqueueActiveBoardWrite(generation, writeStorage, commitCache);
+}
+
+/**
+ * Auth transitions clear persisted board state outside React hooks. Route that
+ * clear through the same queue so an older selection cannot finish afterward
+ * and repopulate storage for the signed-out/next user.
+ */
+export async function clearStoredActiveBoardCoordinated(owner?: UserStorageOwner | null): Promise<void> {
+  const generation = beginActiveBoardWrite();
+  await enqueueActiveBoardWrite(
+    generation,
+    () => clearStoredActiveBoard(owner),
+    () => {},
+  );
+}
+
+/** Test-only reset; callers must invoke it only after pending writes settle. */
+export function resetActiveBoardWriteCoordinatorForTests(): void {
+  activeBoardWriteGeneration = 0;
+  activeBoardWriteQueue = Promise.resolve();
+}
 
 /**
  * Read the active board from storage. Returns `null` when the user hasn't
@@ -41,8 +124,33 @@ export function useSetActiveBoard() {
   const queryClient = useQueryClient();
   return useCallback(
     async (board: UserBoard) => {
-      await setStoredActiveBoard(board);
-      queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, board);
+      const generation = beginActiveBoardWrite();
+      const owner = getCurrentUserStorageOwner();
+      await enqueueActiveBoardWrite(
+        generation,
+        () => setStoredActiveBoard(board, owner),
+        () => queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, board),
+      );
+    },
+    [queryClient],
+  );
+}
+
+/**
+ * Conditional setter used by tombstone self-healing. The generation is
+ * captured before the network request; this refuses to write if any explicit
+ * selection/clear started while that request was in flight.
+ */
+export function useSetActiveBoardIfCurrentGeneration() {
+  const queryClient = useQueryClient();
+  return useCallback(
+    (expectedGeneration: number, board: UserBoard): Promise<boolean> => {
+      const owner = getCurrentUserStorageOwner();
+      return enqueueCurrentGenerationWrite(
+        expectedGeneration,
+        () => setStoredActiveBoard(board, owner),
+        () => queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, board),
+      );
     },
     [queryClient],
   );
@@ -57,7 +165,28 @@ export function useSetActiveBoard() {
 export function useClearActiveBoard() {
   const queryClient = useQueryClient();
   return useCallback(async () => {
-    await clearStoredActiveBoard();
-    queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, null);
+    const generation = beginActiveBoardWrite();
+    const owner = getCurrentUserStorageOwner();
+    await enqueueActiveBoardWrite(
+      generation,
+      () => clearStoredActiveBoard(owner),
+      () => queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, null),
+    );
   }, [queryClient]);
+}
+
+/** Conditional counterpart to `useClearActiveBoard` for stale-board healing. */
+export function useClearActiveBoardIfCurrentGeneration() {
+  const queryClient = useQueryClient();
+  return useCallback(
+    (expectedGeneration: number): Promise<boolean> => {
+      const owner = getCurrentUserStorageOwner();
+      return enqueueCurrentGenerationWrite(
+        expectedGeneration,
+        () => clearStoredActiveBoard(owner),
+        () => queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, null),
+      );
+    },
+    [queryClient],
+  );
 }

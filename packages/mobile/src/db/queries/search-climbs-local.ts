@@ -412,8 +412,14 @@ export type LocalClimbRow = {
   boardsesh_difficulty: number | null;
   /** Boardsesh grade confidence tier from board_climb_grades; null when unjoined. */
   boardsesh_confidence: string | null;
-  /** Selected by the detail read; absent (undefined) for search rows. */
-  description?: string | null;
+  /** Setter-written notes. Selected by both the detail read and the search read
+   *  (#4494 — the play drawer renders it for whatever climb the list opened),
+   *  so it is always present on the row; null when the setter wrote none. */
+  description: string | null;
+  /** `board_climbs.compatible_size_ids` as the pull client stores it: a JSON
+   *  array in TEXT (see the offline schema), not a native array. Null when the
+   *  server had no compatibility data for the climb. */
+  compatible_size_ids: string | null;
 };
 
 export function parseCharacteristics(raw: string | null): string[] | null {
@@ -421,6 +427,24 @@ export function parseCharacteristics(raw: string | null): string[] | null {
   try {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as string[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decode the JSON-in-TEXT `compatible_size_ids` column into the number array the
+ * shared `Climb` carries. Anything that isn't an array of finite numbers reads
+ * as "no compatibility data" (null) rather than as an empty list, because an
+ * empty list would otherwise be read as "fits nothing" by a stricter consumer.
+ */
+export function parseCompatibleSizeIds(raw: string | null): number[] | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const sizeIds = parsed.filter((sizeId): sizeId is number => typeof sizeId === 'number' && Number.isFinite(sizeId));
+    return sizeIds.length > 0 ? sizeIds : null;
   } catch {
     return null;
   }
@@ -441,6 +465,7 @@ export function mapRowToClimb(row: LocalClimbRow, boardType: string, layoutId: n
     setter_username: row.setter_username ?? '',
     userId: row.user_id ?? null,
     name: row.name ?? '',
+    description: row.description ?? '',
     frames: row.frames ?? '',
     angle,
     ascensionist_count: Number(row.ascensionist_count ?? 0),
@@ -463,6 +488,10 @@ export function mapRowToClimb(row: LocalClimbRow, boardType: string, layoutId: n
     // ascents); the UI keeps the Aurora grade then, exactly like the server.
     boardseshDifficulty: row.boardsesh_difficulty ?? null,
     boardseshConfidence: row.boardsesh_confidence ?? null,
+    // The sizes this climb fits on, so an offline queue add is judged the same
+    // way an online one is — on Woods this is the only signal that separates the
+    // 8x10 from the 12x12 (canAddClimbToBoard rule 5).
+    compatibleSizeIds: parseCompatibleSizeIds(row.compatible_size_ids),
   };
 }
 
@@ -508,8 +537,8 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
 
   const query = `
     SELECT
-      c.uuid, c.setter_username, c.user_id, c.name, c.frames, c.is_draft, c.characteristics,
-      c.created_at, c.published_at, c.frames_count, c.frames_pace,
+      c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.characteristics,
+      c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       s.ascensionist_count, s.display_difficulty, s.difficulty_average, s.quality_average,
       s.benchmark_difficulty,
       COALESCE(g.universal_grade, g.local_grade) AS boardsesh_difficulty,

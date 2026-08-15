@@ -30,10 +30,35 @@ export const gymsTypeDefs = /* GraphQL */ `
   enum GymClaimRequestStatus {
     "A verification email was sent to the claimant's work address."
     email_sent
-    "The claim was queued for admin review and our team was notified."
+    "The claim is queued for a Boardsesh admin to review, and the claimant gets emailed the outcome either way. Mailing the team is best-effort on top of that queue, not a guarantee, so don't promise the claimant a reply."
     admin_review
     "The claim was approved on the spot — the gym was an unclaimed listing and auto-approval is on. The claimant already manages the gym."
     approved
+  }
+
+  """
+  One board-type + angle pair present at a gym, for the directory's board chips.
+  Deliberately minimal: a card renders "Kilter 40°", nothing else. Distinct pairs
+  only, so two Kilter boards both at 40° collapse into one summary.
+  """
+  type GymBoardSummary {
+    "Board type (kilter, tension, moonboard, ...)"
+    boardType: String!
+    "Board angle in degrees"
+    angle: Int!
+  }
+
+  """
+  The viewer's own ownership claim on a gym that hasn't been resolved yet.
+  Viewer-scoped: null for signed-out viewers and for anyone with no live claim.
+  """
+  type MyGymClaim {
+    "Claim row id."
+    id: ID!
+    "How it gets verified: an emailed domain link, or a Boardsesh admin's review."
+    method: GymClaimMethod!
+    "ISO timestamp of when the claim was filed."
+    createdAt: String!
   }
 
   """
@@ -54,6 +79,10 @@ export const gymsTypeDefs = /* GraphQL */ `
     name: String!
     "Optional description"
     description: String
+    "Opening hours as one free-text line the gym maintains itself (no structured per-day model)."
+    hours: String
+    "ISO timestamp of the last time someone with edit access confirmed the hours. Shown publicly so a stale schedule reads as stale."
+    hoursUpdatedAt: String
     "Physical address"
     address: String
     "Website URL (used for domain-verified ownership claims)"
@@ -84,6 +113,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     boardCount: Int!
     "Distinct board types at this gym (kilter, tension, ...) — for filtering and badges"
     boardTypes: [String!]!
+    "Distinct board-type + angle pairs at this gym, for directory board chips. Ordered by board type then angle and capped, so a gym with a wall of boards returns a bounded list."
+    boardSummaries: [GymBoardSummary!]!
     "Number of members"
     memberCount: Int!
     "Number of followers"
@@ -102,6 +133,17 @@ export const gymsTypeDefs = /* GraphQL */ `
     canGrantAccess: Boolean!
     "Whether the current viewer may start an ownership claim for this gym (signed-in and not already the owner/gym admin)"
     canClaim: Boolean!
+    "Whether a real person owns this gym, as opposed to the system import user. Viewer-independent — unlike canClaim, which is false for every signed-out viewer."
+    isClaimed: Boolean!
+    """
+    The viewer's own unresolved claim on this gym, so a claimant who already
+    filed sees "under review" instead of the claim call-out. A lazy field
+    resolver with its own query — deliberately NOT part of enrichGym, which
+    already fires ~9 round trips per gym and runs per row for up to 50 rows.
+    Only the web gym page selects it; GYM_FIELDS leaves it out, which is why it
+    is nullable.
+    """
+    myPendingClaim: MyGymClaim
   }
 
   """
@@ -249,6 +291,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     slug: String
     "New description"
     description: String
+    "New free-text opening hours. Writing this stamps hoursUpdatedAt; pass null to clear both."
+    hours: String
     "New address"
     address: String
     "New website URL"
@@ -331,6 +375,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     sizeIds: [Int!]
     "Only gyms with two or more distinct board types"
     multiBoardTypeOnly: Boolean
+    "Only gyms that have a URL slug, i.e. that can be linked to at /gym/[slug]. Opt-in: omitting it leaves the emitted SQL untouched for existing callers."
+    requireSlug: Boolean
     "Latitude for proximity search"
     latitude: Float
     "Longitude for proximity search"

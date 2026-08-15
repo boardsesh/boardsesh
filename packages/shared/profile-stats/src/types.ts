@@ -114,6 +114,24 @@ export type RawGradeHighlight = {
   status: 'send' | 'flash';
 };
 
+// ── Period-over-period comparison (Progress tab headline) ───────────
+
+export type PeriodComparisonMode = 'trailing' | 'yearOverYear';
+
+export type RawPeriodSnapshot = {
+  sends: number; // distinct climbUuid with status 'send' | 'flash'
+  startDate: string; // YYYY-MM-DD
+  endDate: string;
+};
+
+export type RawPeriodComparison = {
+  mode: PeriodComparisonMode;
+  current: RawPeriodSnapshot;
+  previous: RawPeriodSnapshot;
+  sendsDelta: number; // current.sends - previous.sends
+  sendsPercentChange: number | null; // null when previous.sends === 0 (no divide-by-zero)
+};
+
 /** One calendar day in the activity heatmap (local date, ascent count). */
 export type RawActivityDay = {
   /** Local calendar date, `YYYY-MM-DD`. */

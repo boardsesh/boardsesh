@@ -4,10 +4,201 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
-## 2026-08-15
+## 2026-08-27
+
+### New
+
+- Tap a hold in the climb editor to cycle through its role (hand, start, finish, foot) instead of needing a long press to change it once it's set. ([#4830](https://github.com/boardsesh/boardsesh/pull/4830))
+- Tag climbs as "no kickboard" or "campus" (no feet) right in the climb editor, alongside no-matching. ([#4831](https://github.com/boardsesh/boardsesh/pull/4831))
+
+## 2026-08-26
 
 ### Fixed
 
+- Read toast messages clearly in light and dark mode. ([#4815](https://github.com/boardsesh/boardsesh/pull/4815))
+- Board images now refresh when we improve the renderer, instead of showing you last month's version for up to a year. ([#4780](https://github.com/boardsesh/boardsesh/pull/4780))
+  Every board photo, hold overlay and share card on the site now carries a version stamp, so a fix to how holds are drawn reaches you on the next page load.
+- Gym TVs and website embeds light up straight away — no login check standing between the screen and the wall. ([#4589](https://github.com/boardsesh/boardsesh/pull/4589))
+- Starting a big playlist no longer dies on one dropped page: a flaky page retries on its own, and backing out of a playlist actually cancels the load. ([#4713](https://github.com/boardsesh/boardsesh/pull/4713))
+- Kilter playlists that got cloned when you re-linked your account are merged back into one. Your edited version is the one that survives, with its pins and follows intact. ([#4747](https://github.com/boardsesh/boardsesh/pull/4747))
+- Similar climbs, climb details, board-presence live sends, playlists, and the setter filter now all work on boards set to a negative tilt ([#4677](https://github.com/boardsesh/boardsesh/pull/4677))
+
+## 2026-08-25
+
+### New
+
+- Woods Board owners can add their 12×12 or 8×10 board and browse 5,400+ climbs ([#3306](https://github.com/boardsesh/boardsesh/pull/3306))
+  Light up any Woods climb over Bluetooth straight from the play view
+  Grades, setters and angles come straight from the Woods app, so the problem you are projecting is the one you will find here
+- Play back routes up to 5x slower (down to 0.1x) ([#4708](https://github.com/boardsesh/boardsesh/pull/4708))
+- The queue now shows who put each climb up while you're in a session with your crew. ([#4727](https://github.com/boardsesh/boardsesh/pull/4727))
+  A small face sits on every row someone else added — upcoming, current, and the ones you've already worked through. Your own adds stay clean.
+
+### Improved
+
+- Say thanks to xprem, the update server that gets fixes to your phone without an app store wait ([#4784](https://github.com/boardsesh/boardsesh/pull/4784))
+- Tapping and swiping through climbs in a shared session puts them on the wall again, the way it did before the last update. ([#4745](https://github.com/boardsesh/boardsesh/pull/4745))
+
+### Fixed
+
+- Room for real beta when you log a send: the note box opens two lines tall and grows to hold a full paragraph, so what you're writing stays on screen instead of scrolling out of sight. ([#4718](https://github.com/boardsesh/boardsesh/pull/4718))
+- Re-linking your Kilter account no longer clones every playlist you already had — your existing lists get linked back up instead of sprouting a stale twin at the top of the list. ([#4746](https://github.com/boardsesh/boardsesh/pull/4746))
+  Playlists you've edited in Boardsesh keep your version. Kilter's older copy no longer overwrites them.
+
+## 2026-08-23
+
+### New
+
+- Browsing with your crew is now free: in a session with more than one climber, swiping and tapping around never touches the queue or the wall. One button — "Put on the wall" — makes the change, and if someone just lit a climb, the app checks before taking it. ([#4683](https://github.com/boardsesh/boardsesh/pull/4683))
+  Changing the angle mid-browse keeps your spot instead of kicking you back to the live climb.
+
+### Fixed
+
+- Fixed the Send/Save button being cut off below the screen when logging or editing a tick on Android ([#4684](https://github.com/boardsesh/boardsesh/pull/4684))
+  Fixed note text appearing cut in half when typing a note on Android
+- Climbers with very large Kilter histories now sync completely instead of giving up partway. ([#4690](https://github.com/boardsesh/boardsesh/pull/4690))
+- Your Kilter ratings, ticks and circuits sync again — a bad rating could jam the whole sync, and for some climbers it had been stuck for over a month. ([#4686](https://github.com/boardsesh/boardsesh/pull/4686))
+
+## 2026-08-22
+
+### New
+
+- The user-visible half of #4583 — tier-2 climbs actually reaching Google — shipped in #4661 and was verified in production there. What is left here is observability: nothing a climber sees, and a "What's New" line about a sitemap response header would be noise. ([#4676](https://github.com/boardsesh/boardsesh/pull/4676))
+- The play view now shows at a glance whether the climb on your screen is the one lit on the wall — a pill in the header reads "On the wall", "Live", or "Browsing". ([#4666](https://github.com/boardsesh/boardsesh/pull/4666))
+  Previewing a climb got cleaner: a proper "Put on the wall" button replaces the old orange banner, and the board art gets the space back.
+
+### Fixed
+
+- Ending a session is now a labelled button — "Stop" if you started it, "Leave" if you joined — instead of a bare flag icon. ([#4660](https://github.com/boardsesh/boardsesh/pull/4660))
+- Shared climb links open the climb again instead of a not-found page, on the web and in the app. Every MoonBoard link was affected, and so were about 48,000 Kilter climbs. ([#4576](https://github.com/boardsesh/boardsesh/pull/4576))
+  MoonBoard links now light exactly the hold sets named in the URL. Masters 2017 and Masters 2019 links were quietly dropping Screw-on Feet, and a single-hold-set link lit the whole layout.
+- Only affects a climb view URL that was already broken (an infinite-redirect 500-adjacent error page); nothing a climber would describe as a feature getting better. ([#4592](https://github.com/boardsesh/boardsesh/pull/4592))
+
+## 2026-08-21
+
+### New
+
+- Added two settings to control when the board lights up automatically: on swipe between climbs, and on tapping a climb in a list (both on by default). When off, the climb opens as a preview you can light with one tap. ([#4640](https://github.com/boardsesh/boardsesh/pull/4640))
+
+### Fixed
+
+- Fixed the long-press climb preview showing a see-through board on Android ([#4639](https://github.com/boardsesh/boardsesh/pull/4639))
+- Scrolling by touch (finger drag) now works everywhere in the browser app — climbs list, queue, and logbook. It was completely stuck before if you weren't using a mouse wheel or trackpad. ([#4641](https://github.com/boardsesh/boardsesh/pull/4641))
+
+## 2026-08-20
+
+### New
+
+- Find a climb on Google, tap through, and you see the climb — board, grade, community stats and beta — before anyone asks you to sign in. ([#4605](https://github.com/boardsesh/boardsesh/pull/4605))
+  Sign in from there and you land straight back on the climb you came for.
+- Nothing is reachable yet — the user-facing note ships with the stacked routing PR. ([#4604](https://github.com/boardsesh/boardsesh/pull/4604))
+
+### Fixed
+
+- Tell your boards apart in the picker: cards now show the gym or location under the name, fall back ([#4541](https://github.com/boardsesh/boardsesh/pull/4541))
+  to the layout and size, and add the size, angle or serial when two boards would otherwise read the
+  same
+  Long board names get two lines instead of being cut off mid-word
+- Your circuits keep syncing when a circuit lists the same climb twice — one repeat used to quietly stall every sync for that board account, ticks included. ([#4285](https://github.com/boardsesh/boardsesh/pull/4285))
+  Importing an Aurora export no longer drops a circuit that names the same climb more than once.
+- The Kilter 12 x 14 now reads "Commercial" instead of "Commerical" in the board picker and in board links. ([#4610](https://github.com/boardsesh/boardsesh/pull/4610))
+  Links you shared before the fix still open the same board.
+- A climb picked during a busy party session no longer goes missing for the rest of the crew when the app is pacing itself — including a climb you'd cleared off your queue earlier in the session and queued back up. ([#4289](https://github.com/boardsesh/boardsesh/pull/4289))
+- Hold shape, marker size and brush thickness now work in the browser app — picking a shape or ([#4587](https://github.com/boardsesh/boardsesh/pull/4587))
+  resizing your markers no longer wipes the holds off every climb.
+  Brush thickness actually changes how thick the outlines are drawn.
+- Gym embeds and kiosk screens no longer sit blank when the backend is slow — a cold render gives up after 3 seconds and shows the retry screen, which reloads itself. ([#4627](https://github.com/boardsesh/boardsesh/pull/4627))
+- Sharing a reel into Boardsesh shows the wall for every climb again, so you can spot the right send ([#4620](https://github.com/boardsesh/boardsesh/pull/4620))
+  instead of reading down a list of names.
+- Managing your own playlist works again on Android: the ⋯ menu's edit row now actually opens edit mode, so you can reorder and pull climbs out. ([#4621](https://github.com/boardsesh/boardsesh/pull/4621))
+  Rename a playlist, change its colour or icon straight from the ⋯ menu — no more hunting for the cog.
+  Empty playlist? There's a button that takes you to the climbs list instead of a dead end.
+
+## 2026-08-19
+
+### New
+
+- Setter's notes now show up on a climb — the description whoever set it wrote in the create form, right under your logbook in the play drawer and on the climb's web page. ([#4540](https://github.com/boardsesh/boardsesh/pull/4540))
+- The gym directory is open to everyone now — browse every gym with a board at /gyms, or filter to just Kilter, Tension or MoonBoard. ([#4534](https://github.com/boardsesh/boardsesh/pull/4534))
+
+### Fixed
+
+- The zoom reset button in the Play drawer says "Reset zoom" again instead of showing raw code ([#4543](https://github.com/boardsesh/boardsesh/pull/4543))
+  The gym directory wall finder now has a proper "Clear" on its filter row, and the ascents feed shows its Mirrored and Benchmark tags and who set the climb
+- Pages now always render in the language you asked for, even when the site is busy serving several languages at once ([#4545](https://github.com/boardsesh/boardsesh/pull/4545))
+- Fixed the gyms map crashing in the browser when location access is blocked — you'll now see a note pointing you to the search box instead. ([#4546](https://github.com/boardsesh/boardsesh/pull/4546))
+- Log a tick while a board is downloading and it sticks — the app now waits its turn for the database instead of quietly dropping the send. ([#4557](https://github.com/boardsesh/boardsesh/pull/4557))
+- Adding a climb to a playlist from another board now fails cleanly instead of ([#4304](https://github.com/boardsesh/boardsesh/pull/4304))
+  leaving a ghost entry you can't tap off again.
+- Dragging a climb in a playlist now drops it exactly where you let go, even when the playlist holds a climb the catalog has lost track of. ([#4294](https://github.com/boardsesh/boardsesh/pull/4294))
+- Queues you share with your crew stop losing climbs: when someone adds a climb while you're activating a playlist or reseeding the queue, their climb now sticks around instead of vanishing. ([#4296](https://github.com/boardsesh/boardsesh/pull/4296))
+- Signing in with Google or Apple on the web now brings you back to Boardsesh instead of dumping you on a dead localhost page. ([#4264](https://github.com/boardsesh/boardsesh/pull/4264))
+- Downloading a board for offline use no longer drops out partway through the grade sync when the servers are busy. ([#4538](https://github.com/boardsesh/boardsesh/pull/4538))
+  Your logbook and stats load reliably during peak hours instead of erroring out.
+- Fixed the Save button getting pushed off-screen when editing a multi-frame route/circuit in the climb editor ([#4530](https://github.com/boardsesh/boardsesh/pull/4530))
+
+## 2026-08-16
+
+### New
+
+- Admin-only tooling; no user-facing surface. ([#4520](https://github.com/boardsesh/boardsesh/pull/4520))
+- Your Progress tab now shows how this period's sends stack up against the last one — flip between "vs. last period" and "vs. same time last year" to see your trend. ([#4482](https://github.com/boardsesh/boardsesh/pull/4482))
+- Print a QR poster for your gym straight from the manage console — one page, A4 or Letter, in English, Spanish, French or German. ([#4516](https://github.com/boardsesh/boardsesh/pull/4516))
+- Find the boards near you — the gym directory now has a map and a "use my location" search, with a city search to fall back on if you'd rather not share it. ([#4517](https://github.com/boardsesh/boardsesh/pull/4517))
+- Claimed a gym? Your page now says it's under review, and we email you either way once we've looked at it — approved or not. ([#4515](https://github.com/boardsesh/boardsesh/pull/4515))
+- Flag-gated and noindex; Tier 2 launches it publicly. ([#4512](https://github.com/boardsesh/boardsesh/pull/4512))
+- Scan a gym's QR code and the app knows which poster or kiosk sent you — so gyms can finally see what their signage is actually doing. ([#4510](https://github.com/boardsesh/boardsesh/pull/4510))
+- Owners can put a real photo of their wall on their gym page — upload it from the manage console and it becomes the header image and the preview when someone shares the link. ([#4509](https://github.com/boardsesh/boardsesh/pull/4509))
+- Own a gym? You can start a claim straight from its page now, without signing in first — log in when prompted and you'll land right back where you were, ready to claim it. ([#4506](https://github.com/boardsesh/boardsesh/pull/4506))
+- Backend fields only; the directory that consumes them ships flag-gated and noindex in a later PR. ([#4505](https://github.com/boardsesh/boardsesh/pull/4505))
+- Pure instrumentation: no UI, copy, or behaviour changes. ([#4503](https://github.com/boardsesh/boardsesh/pull/4503))
+- Gyms can post their opening hours, and the page shows the date the owner last confirmed them — so you know the hours are current before you drive over. ([#4502](https://github.com/boardsesh/boardsesh/pull/4502))
+
+### Fixed
+
+- Analytics identity wiring; no user-visible change. ([#4526](https://github.com/boardsesh/boardsesh/pull/4526))
+- Sitemap caching and post-deploy smoke; no user-facing change. ([#4522](https://github.com/boardsesh/boardsesh/pull/4522))
+- CI and test-fixture typing only. ([#4521](https://github.com/boardsesh/boardsesh/pull/4521))
+
+## 2026-08-15
+
+### New
+
+- No user-visible change: this ships the contract module only, and nothing calls it until the wiring PR lands. ([#4501](https://github.com/boardsesh/boardsesh/pull/4501))
+- En español, un gimnasio ahora es un rocódromo en toda la app — una sola palabra en cada pantalla, en vez de dos. ([#4500](https://github.com/boardsesh/boardsesh/pull/4500))
+- Popular climbs that resolve to a stable board setup start showing up in Google under the same link the page itself uses. ([#4483](https://github.com/boardsesh/boardsesh/pull/4483))
+  Search results say something useful: setter, grade, stars and the board a climb lives on, instead of a bare title.
+  Star ratings only show where the number behind them is honest — a climb whose ratings haven't been converted to the 5-star scale ships without one rather than with a wrong one.
+- Boardsesh pages are easier to find from search — every board setup and public playlist now tells search engines where to look. Gym and setter pages are wired up and land next. ([#4464](https://github.com/boardsesh/boardsesh/pull/4464))
+- Expo web now starts dark and uses the roomy tablet layout on desktop. ([#4471](https://github.com/boardsesh/boardsesh/pull/4471))
+  Open a climb without losing the full action bar, queue, logbook, beta, community, or similar climbs.
+
+### Improved
+
+- Settings on the web now keeps what only the web can do — your ESP32 board controller, and setting a password if you signed in with Google or Apple. Your profile, connected apps and account deletion live in the app, and the page links you straight there. ([#4491](https://github.com/boardsesh/boardsesh/pull/4491))
+- Notifications live in the app now — who followed you, who commented, whose proposal landed. The old web page hands you straight over. ([#4490](https://github.com/boardsesh/boardsesh/pull/4490))
+- Climb and board pages now stay up when the database is slow, and stop turning a bad moment into a "page not found". ([#4481](https://github.com/boardsesh/boardsesh/pull/4481))
+  MoonBoard board pages load from cache instead of running a fresh search every time.
+- These endpoints have had no in-repo caller since the GraphQL migration and nothing climber-visible changes. If the new counter shows real third-party traffic, W-25b writes the climber-voice note instead. ([#4489](https://github.com/boardsesh/boardsesh/pull/4489))
+- Your feed, your stats and your profile live in the app now. Share links you've already sent keep working — www still opens every session, join link and climb page. ([#4479](https://github.com/boardsesh/boardsesh/pull/4479))
+- Installing the browser app now works. Open `app.boardsesh.com` in Chrome or Safari and you'll get the "Add to Home Screen" prompt, launching straight into the app instead of a browser tab. ([#4480](https://github.com/boardsesh/boardsesh/pull/4480))
+- The website is now the fast front door — browse and share climbs there, and do your climbing in the app. ([#4467](https://github.com/boardsesh/boardsesh/pull/4467))
+- Board pages slim down to the essentials — browsing and climbing live in the app now. ([#4448](https://github.com/boardsesh/boardsesh/pull/4448))
+  Every old board link still works: liked climbs, logbooks and playlists send you to the right place, and creating or remixing a climb opens the app on the board you were already looking at.
+  Importing MoonBoard screenshots moved to its own page — pick your board and drop the shots in.
+
+### Fixed
+
+- [x] This change is internal-only and needs no release note. ([#4484](https://github.com/boardsesh/boardsesh/pull/4484))
+- Download several boards for offline use without getting stuck after the snapshot finishes. ([#4469](https://github.com/boardsesh/boardsesh/pull/4469))
+  Pocketing your phone now resumes the download cleanly, and a slower fallback shows real progress instead of an interrupted spinner.
+- Similar climbs and offline board stats keep loading during busy sessions. ([#4468](https://github.com/boardsesh/boardsesh/pull/4468))
+- Keep every climber's sends and sessions together when the same wall was registered more than once ([#3422](https://github.com/boardsesh/boardsesh/pull/3422))
+  Saved walls now switch to the surviving board automatically after a merge
+  When a wall is already on Boardsesh, join the existing board or deliberately create a separate one
+- Grouped notifications open climbs with the correct board layout and angle, even across back-to-back releases. ([#4455](https://github.com/boardsesh/boardsesh/pull/4455))
+- Claiming a gym with your work email now auto-approves only when the gym's owner is the one who put that website on the listing. Anything else gets a quick human check first, so nobody can hand themselves the keys by editing the website field. ([#4058](https://github.com/boardsesh/boardsesh/pull/4058))
+  Fixes #3431
 - Offline board downloads recover automatically and keep bulk catalog updates on the fast CDN download instead of crawling through hundreds of 500-climb batches. ([#4456](https://github.com/boardsesh/boardsesh/pull/4456))
 
 ## 2026-08-14

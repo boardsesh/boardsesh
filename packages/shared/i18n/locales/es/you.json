@@ -1,16 +1,7 @@
 {
   "metadata": {
     "dashboard": {
-      "title": "Tú",
-      "description": "Tu plafón de escalada en Boardsesh"
-    },
-    "logbook": {
-      "title": "Historial",
-      "description": "Tu historial de escalada en Boardsesh"
-    },
-    "sessions": {
-      "title": "Sesiones",
-      "description": "Tus sesiones de escalada en Boardsesh"
+      "title": "Tú"
     }
   },
   "tabs": {
@@ -19,9 +10,6 @@
     "logbook": "Historial",
     "social": "Social",
     "climbs": "Bloques"
-  },
-  "progress": {
-    "title": "Progreso"
   },
   "mobile": {
     "unknownName": "Escalador",

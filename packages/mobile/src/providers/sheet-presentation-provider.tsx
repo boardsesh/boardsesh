@@ -418,8 +418,6 @@ type UseManagedSheetOptions = {
   onClose?: () => void;
   /** Fired AFTER the dismiss animation has really settled. */
   onFullyDismissed?: () => void;
-  /** Snap index used when presenting (default 0). */
-  presentIndex?: number;
 };
 
 /**
@@ -435,7 +433,6 @@ export function useManagedSheet({
   sheetRef,
   onClose,
   onFullyDismissed,
-  presentIndex = 0,
 }: UseManagedSheetOptions): {
   onChange: (index: number) => void;
   onFullyDismissed: () => void;
@@ -446,7 +443,7 @@ export function useManagedSheet({
   // True while the coordinator is the one dismissing, so the synchronous native
   // close callback isn't mistaken for a user pan-down.
   const selfDismissRef = useRef(false);
-  const desiredIndexRef = useRef(presentIndex);
+  const desiredIndexRef = useRef(0);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const onFullyDismissedRef = useRef(onFullyDismissed);

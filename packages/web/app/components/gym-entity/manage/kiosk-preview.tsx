@@ -4,8 +4,11 @@
 // (KioskThemeScope → header → preset grid with BoardSlot/LeaderboardRail),
 // driven by the LOCAL unsaved editor state and scaled from 1920×1080 logical
 // pixels into a 16:9 box. The presence hub is mounted for real, so assigned
-// boards light up live while the owner edits — the anonymous data path the TV
-// itself uses. Network cost is one ws connection + the presence subscriptions
+// boards light up live while the owner edits. Unlike the TV — which runs the
+// login-less `KioskPresenceHub` — the preview mounts `ViewerKioskPresenceHub`
+// and carries the editor's ws auth token, because `gymKiosk`'s edit branch
+// hands back PRIVATE gym boards that an anonymous presence read would mask as
+// NOT_FOUND. Network cost is one ws connection + the presence subscriptions
 // for the assigned boards (plus the period-leaderboard query when the rail is
 // in a day/week/month mode).
 
@@ -21,7 +24,7 @@ import KioskThemeScope from '../../kiosk/kiosk-theme-scope';
 import KioskHeader from '../../kiosk/kiosk-header';
 import KioskLayout from '../../kiosk/kiosk-layout';
 import KioskAttribution from '../../kiosk/kiosk-attribution';
-import KioskPresenceHub from '../../kiosk/presence/kiosk-presence-hub';
+import { ViewerKioskPresenceHub } from '../../kiosk/presence/viewer-kiosk-presence-hub';
 import BoardSlot from '../../kiosk/board-slot/board-slot';
 import LeaderboardRail from '../../kiosk/leaderboard-rail/leaderboard-rail';
 import { buildKioskViewModel } from '../../kiosk/kiosk-view-model';
@@ -152,7 +155,7 @@ export default function KioskPreview({ gym, kioskName, state, gymBoards }: Kiosk
       {scale > 0 && (
         <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
           <KioskThemeScope gym={gym}>
-            <KioskPresenceHub boardIds={distinctBoardIds}>
+            <ViewerKioskPresenceHub boardIds={distinctBoardIds}>
               <div className={styles.chrome}>
                 <KioskHeader gymName={gym.name} logoUrl={logoDisplayUrl} kioskName={kioskName} />
                 {preset === null ? (
@@ -188,7 +191,7 @@ export default function KioskPreview({ gym, kioskName, state, gymBoards }: Kiosk
                 )}
               </div>
               <KioskAttribution hasRail={rail !== null && preset !== null} />
-            </KioskPresenceHub>
+            </ViewerKioskPresenceHub>
           </KioskThemeScope>
         </div>
       )}

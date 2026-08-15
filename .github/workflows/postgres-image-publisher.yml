@@ -1,0 +1,1069 @@
+name: Publish Current Main PostgreSQL Images
+
+# This workflow is a protected-main authority boundary. It publishes only the
+# exact commit that currently owns this workflow on protected main. See
+# docs/postgres-image-publishing.md before configuring or dispatching it.
+on:
+  workflow_dispatch:
+    inputs:
+      expected_main_sha:
+        description: Exact lowercase 40-character SHA currently at the head of main
+        required: true
+        type: string
+
+concurrency:
+  group: postgres-image-publisher
+  cancel-in-progress: false
+
+env:
+  APPROVED_REPOSITORY: boardsesh/boardsesh
+  DEFAULT_BRANCH: main
+  PUBLISHER_ENVIRONMENT: postgres-image-publisher
+  REGISTRY: ghcr.io
+  PORTABLE_IMAGE: ghcr.io/boardsesh/boardsesh-postgres-postgis
+  SEEDED_IMAGE: ghcr.io/boardsesh/boardsesh-dev-db
+  MAIN_REF: refs/heads/main
+
+jobs:
+  authorize-current-main:
+    name: Bind publisher to exact current main
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Bind workflow and audit publisher environment
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_SHA: ${{ github.sha }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          EXPECTED_WORKFLOW_REF: boardsesh/boardsesh/.github/workflows/postgres-image-publisher.yml@refs/heads/main
+          GH_TOKEN: ${{ github.token }}
+          REF_IS_PROTECTED: ${{ github.ref_protected }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -Eeuo pipefail
+
+          fail() {
+            printf 'Publisher authorization failed: %s\n' "$*" >&2
+            exit 1
+          }
+
+          [[ "$GITHUB_REPOSITORY" == "$APPROVED_REPOSITORY" ]] ||
+            fail "repository must be $APPROVED_REPOSITORY"
+          [[ "$GITHUB_SERVER_URL" == 'https://github.com' ]] ||
+            fail 'publisher is restricted to github.com'
+          [[ "$GITHUB_API_URL" == 'https://api.github.com' ]] ||
+            fail 'publisher is restricted to the public GitHub API'
+          [[ "$GITHUB_EVENT_NAME" == 'workflow_dispatch' ]] ||
+            fail 'publisher must be manually dispatched'
+          [[ "$DISPATCH_REF" == "refs/heads/$DEFAULT_BRANCH" ]] ||
+            fail "dispatch the workflow from $DEFAULT_BRANCH"
+          [[ "$WORKFLOW_REF" == "$EXPECTED_WORKFLOW_REF" ]] ||
+            fail 'workflow definition was not loaded from its approved main path'
+          [[ "$REF_IS_PROTECTED" == 'true' ]] ||
+            fail 'main is not protected for this dispatch'
+          [[ "$EXPECTED_MAIN_SHA" =~ ^[0-9a-f]{40}$ ]] ||
+            fail 'expected_main_sha must be a lowercase full 40-character SHA'
+          [[ "$EXPECTED_MAIN_SHA" == "$DISPATCH_SHA" ]] ||
+            fail 'expected_main_sha does not equal github.sha'
+          [[ "$EXPECTED_MAIN_SHA" == "$WORKFLOW_SHA" ]] ||
+            fail 'workflow source SHA does not equal expected_main_sha'
+
+          repository_json="$(gh api "/repos/$APPROVED_REPOSITORY")"
+          jq -e --arg default_branch "$DEFAULT_BRANCH" '
+            .full_name == "boardsesh/boardsesh" and
+            .default_branch == $default_branch and
+            .fork == false and
+            .archived == false
+          ' <<<"$repository_json" >/dev/null ||
+            fail 'repository metadata does not match the approved repository'
+
+          live_main_sha="$(
+            gh api "/repos/$APPROVED_REPOSITORY/git/ref/heads/$DEFAULT_BRANCH" \
+              --jq '.object.sha'
+          )"
+          [[ "$live_main_sha" == "$EXPECTED_MAIN_SHA" ]] ||
+            fail 'expected_main_sha is no longer the live main head'
+
+          environment_json="$(
+            gh api "/repos/$APPROVED_REPOSITORY/environments/$PUBLISHER_ENVIRONMENT"
+          )"
+          jq -e --arg environment "$PUBLISHER_ENVIRONMENT" '
+            .name == $environment and
+            .can_admins_bypass == false and
+            .deployment_branch_policy.protected_branches == false and
+            .deployment_branch_policy.custom_branch_policies == true and
+            ([.protection_rules[] |
+              select(
+                .type == "required_reviewers" and
+                (.prevent_self_review | type == "boolean") and
+                ((.reviewers // []) | length > 0)
+              )] | length == 1)
+          ' <<<"$environment_json" >/dev/null ||
+            fail 'publisher environment must require reviewers, prevent self-review, disable bypass, and use a custom branch policy'
+
+          branch_policies_json="$(
+            gh api "/repos/$APPROVED_REPOSITORY/environments/$PUBLISHER_ENVIRONMENT/deployment-branch-policies"
+          )"
+          jq -e --arg default_branch "$DEFAULT_BRANCH" '
+            .total_count == 1 and
+            (.branch_policies | length == 1) and
+            .branch_policies[0].name == $default_branch and
+            .branch_policies[0].type == "branch"
+          ' <<<"$branch_policies_json" >/dev/null ||
+            fail 'publisher environment must allow exactly the main branch'
+
+  validate-main:
+    name: Validate exact current main without publish authority
+    needs: authorize-current-main
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact current main commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.expected_main_sha }}
+          path: source
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Validate checkout and Docker inputs
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -Eeuo pipefail
+
+          fail() {
+            printf 'Publisher input validation failed: %s\n' "$*" >&2
+            exit 1
+          }
+
+          [[ "$(git -C source rev-parse HEAD)" == "$EXPECTED_MAIN_SHA" ]] ||
+            fail 'checkout does not match expected_main_sha'
+          [[ -f source/vite.config.ts && ! -L source/vite.config.ts ]] ||
+            fail 'vite.config.ts must be a regular file'
+          grep -Fq "'test:postgres18-contract': {" source/vite.config.ts ||
+            fail 'producer prerequisite missing: merge the PostgreSQL 18 contract target before dispatching this publisher'
+          for dockerfile in \
+            source/packages/db/docker/Dockerfile.postgres \
+            source/packages/db/docker/Dockerfile.dev-db; do
+            [[ -f "$dockerfile" && ! -L "$dockerfile" ]] ||
+              fail "$dockerfile must be a regular file"
+            if perl -ne '
+              s/^\xEF\xBB\xBF// if $. == 1;
+              $found ||= /^[ \t]*#[ \t]*syntax[ \t]*=/i;
+              END { exit($found ? 0 : 1) }
+            ' "$dockerfile"; then
+              fail "$dockerfile must not select a Dockerfile frontend"
+            fi
+          done
+          [[ -f source/.dockerignore && ! -L source/.dockerignore ]] ||
+            fail '.dockerignore must be a regular file'
+          grep -Fxq '.git' source/.dockerignore ||
+            fail '.dockerignore must exclude .git'
+
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+      - name: Install locked dependencies
+        working-directory: source
+        run: bun install --frozen-lockfile
+
+      - name: Run PostgreSQL 18 contracts
+        working-directory: source
+        run: vp run test:postgres18-contract
+
+  publish-images:
+    name: Build offline and publish exact image layouts
+    needs: [authorize-current-main, validate-main]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: postgres-image-publisher
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    outputs:
+      portable_digest: ${{ steps.layouts.outputs.portable_digest }}
+      seeded_digest: ${{ steps.layouts.outputs.seeded_digest }}
+      sha_tag: ${{ steps.layouts.outputs.sha_tag }}
+    steps:
+      - name: Checkout exact current main commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.expected_main_sha }}
+          path: source
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Validate retired-digest configuration before build setup
+        env:
+          RETIRED_DIGESTS: ${{ vars.RETIRED_DB_IMAGE_DIGESTS }}
+        run: |
+          set -Eeuo pipefail
+
+          fail() {
+            printf 'Retired-digest configuration failed: %s\n' "$*" >&2
+            exit 1
+          }
+
+          [[ "$RETIRED_DIGESTS" =~ [^[:space:]] ]] ||
+            fail 'set RETIRED_DB_IMAGE_DIGESTS to none or one lowercase sha256 digest per non-empty line'
+          [[ "$RETIRED_DIGESTS" == 'none' ]] && exit 0
+
+          declare -A seen_retired_digests=()
+          while IFS= read -r retired_digest || [[ -n "$retired_digest" ]]; do
+            [[ -n "$retired_digest" ]] || continue
+            [[ "$retired_digest" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+              fail 'RETIRED_DB_IMAGE_DIGESTS must be none or contain one lowercase sha256 digest per non-empty line'
+            [[ -z "${seen_retired_digests[$retired_digest]:-}" ]] ||
+              fail "RETIRED_DB_IMAGE_DIGESTS contains a duplicate: $retired_digest"
+            seen_retired_digests["$retired_digest"]=1
+          done <<<"$RETIRED_DIGESTS"
+
+      - name: Enable multi-architecture emulation
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+        with:
+          image: tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: arm64
+
+      - name: Create temporary tool and credential boundary
+        run: |
+          set -Eeuo pipefail
+          auth_directory="$RUNNER_TEMP/boardsesh-ghcr-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-publish"
+          install -d -m 700 "$auth_directory"
+          printf 'DOCKER_CONFIG=%s\n' "$auth_directory" >>"$GITHUB_ENV"
+
+      - name: Set up Docker Buildx inside the temporary boundary
+        id: buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        with:
+          version: v0.36.1
+          driver-opts: |
+            image=moby/buildkit:v0.32.2@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
+          cleanup: false
+
+      - name: Set up pinned ORAS client
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1 (ORAS v1.3.3)
+        with:
+          url: https://github.com/oras-project/oras/releases/download/v1.3.3/oras_1.3.3_linux_amd64.tar.gz
+          checksum: 9ce999f8d2de03fc03968b29d743077a58783e545e5eaa53917ca177352d0e59
+
+      - name: Revalidate offline build inputs
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$(git -C source rev-parse HEAD)" == "$EXPECTED_MAIN_SHA" ]]
+          for dockerfile in \
+            source/packages/db/docker/Dockerfile.postgres \
+            source/packages/db/docker/Dockerfile.dev-db; do
+            [[ -f "$dockerfile" && ! -L "$dockerfile" ]]
+            if perl -ne '
+              s/^\xEF\xBB\xBF// if $. == 1;
+              $found ||= /^[ \t]*#[ \t]*syntax[ \t]*=/i;
+              END { exit($found ? 0 : 1) }
+            ' "$dockerfile"; then
+              printf 'Offline build input validation failed: %s must not select a Dockerfile frontend\n' "$dockerfile" >&2
+              exit 1
+            fi
+          done
+          [[ -f source/.dockerignore ]]
+          [[ ! -L source/.dockerignore ]]
+          grep -Fxq '.git' source/.dockerignore
+
+      - name: Build portable OCI layout without registry credentials
+        id: build-portable
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+          DOCKER_BUILD_SUMMARY: 'false'
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          context: ./source/packages/db/docker
+          file: ./source/packages/db/docker/Dockerfile.postgres
+          platforms: linux/amd64,linux/arm64
+          pull: true
+          push: false
+          provenance: false
+          sbom: false
+          github-token: ''
+          labels: |
+            org.opencontainers.image.revision=${{ inputs.expected_main_sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.ref.name=refs/heads/main
+          outputs: type=oci,dest=${{ runner.temp }}/portable-oci,tar=false,name=${{ env.PORTABLE_IMAGE }}:sha-${{ inputs.expected_main_sha }}
+
+      - name: Build seeded OCI layout without registry credentials
+        id: build-seeded
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+          DOCKER_BUILD_SUMMARY: 'false'
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          context: ./source
+          file: ./source/packages/db/docker/Dockerfile.dev-db
+          platforms: linux/amd64
+          pull: true
+          push: false
+          provenance: false
+          sbom: false
+          github-token: ''
+          labels: |
+            org.opencontainers.image.revision=${{ inputs.expected_main_sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.ref.name=refs/heads/main
+          outputs: type=oci,dest=${{ runner.temp }}/seeded-oci,tar=false,name=${{ env.SEEDED_IMAGE }}:sha-${{ inputs.expected_main_sha }}
+
+      - name: Validate offline layouts and retired digest policy
+        id: layouts
+        env:
+          EXPECTED_PORTABLE_DIGEST: ${{ steps.build-portable.outputs.digest }}
+          EXPECTED_SEEDED_DIGEST: ${{ steps.build-seeded.outputs.digest }}
+          PORTABLE_LAYOUT: ${{ runner.temp }}/portable-oci
+          RETIRED_DIGESTS: ${{ vars.RETIRED_DB_IMAGE_DIGESTS }}
+          SEEDED_LAYOUT: ${{ runner.temp }}/seeded-oci
+        run: |
+          set -Eeuo pipefail
+
+          fail() {
+            printf 'Offline image validation failed: %s\n' "$*" >&2
+            exit 1
+          }
+
+          layout_digest() {
+            local layout="$1"
+            local digest
+            local digest_hex
+            jq -e '
+              .schemaVersion == 2 and
+              (.manifests | type == "array" and length == 1)
+            ' "$layout/index.json" >/dev/null ||
+              fail "$layout/index.json must contain exactly one root descriptor"
+            digest="$(jq -er '.manifests[0].digest | select(test("^sha256:[0-9a-f]{64}$"))' "$layout/index.json")"
+            digest_hex="${digest#sha256:}"
+            [[ -f "$layout/blobs/sha256/$digest_hex" ]] ||
+              fail "$layout is missing its root manifest blob"
+            [[ "$(sha256sum "$layout/blobs/sha256/$digest_hex" | cut -d ' ' -f1)" == "$digest_hex" ]] ||
+              fail "$layout root manifest digest does not match its bytes"
+            printf '%s\n' "$digest"
+          }
+
+          platform_list() {
+            local layout="$1"
+            local digest="$2"
+            local root_manifest="$layout/blobs/sha256/${digest#sha256:}"
+            if jq -e '.manifests | type == "array"' "$root_manifest" >/dev/null; then
+              jq -c '[.manifests[].platform | "\(.os)/\(.architecture)"] | sort' "$root_manifest"
+            else
+              local config_digest
+              config_digest="$(jq -er '.config.digest | select(test("^sha256:[0-9a-f]{64}$"))' "$root_manifest")"
+              jq -c '["\(.os)/\(.architecture)"]' "$layout/blobs/sha256/${config_digest#sha256:}"
+            fi
+          }
+
+          portable_digest="$(layout_digest "$PORTABLE_LAYOUT")"
+          seeded_digest="$(layout_digest "$SEEDED_LAYOUT")"
+          [[ "$portable_digest" == "$EXPECTED_PORTABLE_DIGEST" ]] ||
+            fail 'portable Buildx output digest does not match its OCI layout'
+          [[ "$seeded_digest" == "$EXPECTED_SEEDED_DIGEST" ]] ||
+            fail 'seeded Buildx output digest does not match its OCI layout'
+          [[ "$(platform_list "$PORTABLE_LAYOUT" "$portable_digest")" == '["linux/amd64","linux/arm64"]' ]] ||
+            fail 'portable OCI layout does not contain exactly linux/amd64 and linux/arm64'
+          [[ "$(platform_list "$SEEDED_LAYOUT" "$seeded_digest")" == '["linux/amd64"]' ]] ||
+            fail 'seeded OCI layout does not contain exactly linux/amd64'
+
+          [[ "$RETIRED_DIGESTS" =~ [^[:space:]] ]] ||
+            fail 'RETIRED_DB_IMAGE_DIGESTS must be explicitly set to none or lowercase sha256 digests'
+          declare -A seen_retired_digests=()
+          if [[ "$RETIRED_DIGESTS" != 'none' ]]; then
+            while IFS= read -r retired_digest || [[ -n "$retired_digest" ]]; do
+              [[ -n "$retired_digest" ]] || continue
+              [[ "$retired_digest" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+                fail 'RETIRED_DB_IMAGE_DIGESTS must be none or contain one lowercase sha256 digest per non-empty line'
+              [[ -z "${seen_retired_digests[$retired_digest]:-}" ]] ||
+                fail "RETIRED_DB_IMAGE_DIGESTS contains a duplicate: $retired_digest"
+              seen_retired_digests["$retired_digest"]=1
+            done <<<"$RETIRED_DIGESTS"
+          fi
+
+          for proposed_digest in "$portable_digest" "$seeded_digest"; do
+            [[ -z "${seen_retired_digests[$proposed_digest]:-}" ]] ||
+              fail "refusing to publish retired digest $proposed_digest"
+          done
+
+          printf 'portable_digest=%s\n' "$portable_digest" >>"$GITHUB_OUTPUT"
+          printf 'seeded_digest=%s\n' "$seeded_digest" >>"$GITHUB_OUTPUT"
+          printf 'sha_tag=sha-%s\n' "${{ inputs.expected_main_sha }}" >>"$GITHUB_OUTPUT"
+
+      - name: Recheck exact current main and environment immediately before registry authentication
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          fail() {
+            printf 'Pre-authentication recheck failed: %s\n' "$*" >&2
+            exit 1
+          }
+
+          [[ "$EXPECTED_MAIN_SHA" == "$GITHUB_SHA" ]] ||
+            fail 'expected_main_sha no longer equals github.sha'
+          [[ "$(git -C source rev-parse HEAD)" == "$EXPECTED_MAIN_SHA" ]] ||
+            fail 'checkout no longer matches expected_main_sha'
+          live_main_sha="$(gh api "/repos/$APPROVED_REPOSITORY/git/ref/heads/$DEFAULT_BRANCH" --jq '.object.sha')"
+          [[ "$live_main_sha" == "$EXPECTED_MAIN_SHA" ]] ||
+            fail 'main moved before registry authentication'
+
+          environment_json="$(gh api "/repos/$APPROVED_REPOSITORY/environments/$PUBLISHER_ENVIRONMENT")"
+          jq -e --arg environment "$PUBLISHER_ENVIRONMENT" '
+            .name == $environment and
+            .can_admins_bypass == false and
+            .deployment_branch_policy.protected_branches == false and
+            .deployment_branch_policy.custom_branch_policies == true and
+            ([.protection_rules[] |
+              select(
+                .type == "required_reviewers" and
+                (.prevent_self_review | type == "boolean") and
+                ((.reviewers // []) | length > 0)
+              )] | length == 1)
+          ' <<<"$environment_json" >/dev/null ||
+            fail 'publisher environment protections changed before registry authentication'
+          branch_policies_json="$(
+            gh api "/repos/$APPROVED_REPOSITORY/environments/$PUBLISHER_ENVIRONMENT/deployment-branch-policies"
+          )"
+          jq -e --arg default_branch "$DEFAULT_BRANCH" '
+            .total_count == 1 and
+            (.branch_policies | length == 1) and
+            .branch_policies[0].name == $default_branch and
+            .branch_policies[0].type == "branch"
+          ' <<<"$branch_policies_json" >/dev/null ||
+            fail 'publisher environment main-only policy changed before registry authentication'
+
+      - name: Authenticate ORAS to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          printf '%s' "$GH_TOKEN" |
+            oras login "$REGISTRY" \
+              --username "$GITHUB_ACTOR" \
+              --password-stdin \
+              --registry-config "$DOCKER_CONFIG/config.json"
+
+      - name: Publish exact prevalidated OCI layouts
+        env:
+          PORTABLE_DIGEST: ${{ steps.layouts.outputs.portable_digest }}
+          PORTABLE_LAYOUT: ${{ runner.temp }}/portable-oci
+          SEEDED_DIGEST: ${{ steps.layouts.outputs.seeded_digest }}
+          SEEDED_LAYOUT: ${{ runner.temp }}/seeded-oci
+          SHA_TAG: ${{ steps.layouts.outputs.sha_tag }}
+        run: |
+          set -Eeuo pipefail
+          oras cp --from-oci-layout \
+            "$PORTABLE_LAYOUT@$PORTABLE_DIGEST" \
+            "$PORTABLE_IMAGE:$SHA_TAG" \
+            --to-registry-config "$DOCKER_CONFIG/config.json"
+          oras cp --from-oci-layout \
+            "$SEEDED_LAYOUT@$SEEDED_DIGEST" \
+            "$SEEDED_IMAGE:$SHA_TAG" \
+            --to-registry-config "$DOCKER_CONFIG/config.json"
+
+          [[ "$(oras resolve --registry-config "$DOCKER_CONFIG/config.json" "$PORTABLE_IMAGE:$SHA_TAG")" == "$PORTABLE_DIGEST" ]]
+          [[ "$(oras resolve --registry-config "$DOCKER_CONFIG/config.json" "$SEEDED_IMAGE:$SHA_TAG")" == "$SEEDED_DIGEST" ]]
+
+      - name: Remove temporary publisher credentials and builder
+        if: always()
+        env:
+          BUILDER_NAME: ${{ steps.buildx.outputs.name }}
+          PORTABLE_LAYOUT: ${{ runner.temp }}/portable-oci
+          SEEDED_LAYOUT: ${{ runner.temp }}/seeded-oci
+        run: |
+          set -Eeuo pipefail
+          [[ -n "${DOCKER_CONFIG:-}" ]] || exit 0
+          case "$DOCKER_CONFIG" in
+            "$RUNNER_TEMP"/boardsesh-ghcr-*-publish) ;;
+            *) printf 'Refusing to clean unexpected DOCKER_CONFIG: %s\n' "$DOCKER_CONFIG" >&2; exit 1 ;;
+          esac
+          cleanup_status=0
+          oras logout "$REGISTRY" --registry-config "$DOCKER_CONFIG/config.json" >/dev/null 2>&1 || true
+          if [[ -n "$BUILDER_NAME" ]]; then
+            docker buildx rm "$BUILDER_NAME" >/dev/null 2>&1 || cleanup_status=1
+          fi
+          find "$DOCKER_CONFIG" -type f -exec sh -c ': >"$1"' _ {} \;
+          find "$DOCKER_CONFIG" -depth -delete
+          find "$PORTABLE_LAYOUT" -depth -delete 2>/dev/null || true
+          find "$SEEDED_LAYOUT" -depth -delete 2>/dev/null || true
+          [[ ! -e "$DOCKER_CONFIG" ]]
+          ((cleanup_status == 0))
+
+  verify-published-images:
+    name: Verify published tags, digests, and platforms
+    needs: [authorize-current-main, publish-images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Set up pinned ORAS client
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1 (ORAS v1.3.3)
+        with:
+          url: https://github.com/oras-project/oras/releases/download/v1.3.3/oras_1.3.3_linux_amd64.tar.gz
+          checksum: 9ce999f8d2de03fc03968b29d743077a58783e545e5eaa53917ca177352d0e59
+
+      - name: Create temporary read-only registry boundary
+        run: |
+          set -Eeuo pipefail
+          auth_directory="$RUNNER_TEMP/boardsesh-ghcr-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-verify-images"
+          install -d -m 700 "$auth_directory"
+          printf 'DOCKER_CONFIG=%s\n' "$auth_directory" >>"$GITHUB_ENV"
+
+      - name: Recheck exact current main immediately before registry authentication
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$EXPECTED_MAIN_SHA" == "$GITHUB_SHA" ]]
+          [[ "$(gh api "/repos/$APPROVED_REPOSITORY/git/ref/heads/$DEFAULT_BRANCH" --jq '.object.sha')" == "$EXPECTED_MAIN_SHA" ]]
+
+      - name: Authenticate ORAS to GHCR read-only
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          printf '%s' "$GH_TOKEN" |
+            oras login "$REGISTRY" \
+              --username "$GITHUB_ACTOR" \
+              --password-stdin \
+              --registry-config "$DOCKER_CONFIG/config.json"
+
+      - name: Verify exact remote manifests
+        env:
+          PORTABLE_DIGEST: ${{ needs.publish-images.outputs.portable_digest }}
+          SEEDED_DIGEST: ${{ needs.publish-images.outputs.seeded_digest }}
+          SHA_TAG: ${{ needs.publish-images.outputs.sha_tag }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$(oras resolve --registry-config "$DOCKER_CONFIG/config.json" "$PORTABLE_IMAGE:$SHA_TAG")" == "$PORTABLE_DIGEST" ]]
+          [[ "$(oras resolve --registry-config "$DOCKER_CONFIG/config.json" "$SEEDED_IMAGE:$SHA_TAG")" == "$SEEDED_DIGEST" ]]
+
+          oras manifest fetch \
+            --registry-config "$DOCKER_CONFIG/config.json" \
+            --output portable-manifest.json \
+            "$PORTABLE_IMAGE@$PORTABLE_DIGEST"
+          jq -e '
+            .schemaVersion == 2 and
+            ([.manifests[].platform | "\(.os)/\(.architecture)"] | sort) ==
+              ["linux/amd64", "linux/arm64"]
+          ' portable-manifest.json >/dev/null
+
+          oras manifest fetch \
+            --registry-config "$DOCKER_CONFIG/config.json" \
+            --output seeded-manifest.json \
+            "$SEEDED_IMAGE@$SEEDED_DIGEST"
+          if jq -e '.manifests | type == "array"' seeded-manifest.json >/dev/null; then
+            jq -e '
+              .schemaVersion == 2 and
+              ([.manifests[].platform | "\(.os)/\(.architecture)"] | sort) ==
+                ["linux/amd64"]
+            ' seeded-manifest.json >/dev/null
+          else
+            oras manifest fetch-config \
+              --registry-config "$DOCKER_CONFIG/config.json" \
+              --output seeded-config.json \
+              "$SEEDED_IMAGE@$SEEDED_DIGEST"
+            jq -e '.os == "linux" and .architecture == "amd64"' seeded-config.json >/dev/null
+          fi
+
+      - name: Remove temporary read-only registry credentials
+        if: always()
+        run: |
+          set -Eeuo pipefail
+          [[ -n "${DOCKER_CONFIG:-}" ]] || exit 0
+          case "$DOCKER_CONFIG" in
+            "$RUNNER_TEMP"/boardsesh-ghcr-*-verify-images) ;;
+            *) printf 'Refusing to clean unexpected DOCKER_CONFIG: %s\n' "$DOCKER_CONFIG" >&2; exit 1 ;;
+          esac
+          oras logout "$REGISTRY" --registry-config "$DOCKER_CONFIG/config.json" >/dev/null 2>&1 || true
+          find "$DOCKER_CONFIG" -type f -exec sh -c ': >"$1"' _ {} \;
+          find "$DOCKER_CONFIG" -depth -delete
+          [[ ! -e "$DOCKER_CONFIG" ]]
+
+  smoke-portable:
+    name: Smoke portable (${{ matrix.platform }})
+    needs: [authorize-current-main, publish-images, verify-published-images]
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout exact current main commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.expected_main_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Enable multi-architecture emulation
+        if: matrix.platform == 'linux/arm64'
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+        with:
+          image: tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: arm64
+
+      - name: Create temporary read-only registry boundary
+        run: |
+          set -Eeuo pipefail
+          auth_directory="$RUNNER_TEMP/boardsesh-ghcr-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-portable-smoke"
+          install -d -m 700 "$auth_directory"
+          printf 'DOCKER_CONFIG=%s\n' "$auth_directory" >>"$GITHUB_ENV"
+
+      - name: Recheck exact current main immediately before registry authentication
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$EXPECTED_MAIN_SHA" == "$GITHUB_SHA" ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_MAIN_SHA" ]]
+          [[ "$(gh api "/repos/$APPROVED_REPOSITORY/git/ref/heads/$DEFAULT_BRANCH" --jq '.object.sha')" == "$EXPECTED_MAIN_SHA" ]]
+
+      - name: Log in to GHCR for exact digest pull
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          logout: false
+
+      - name: Pull exact portable digest and platform
+        env:
+          IMAGE: ${{ env.PORTABLE_IMAGE }}@${{ needs.publish-images.outputs.portable_digest }}
+          PLATFORM: ${{ matrix.platform }}
+        run: docker pull --platform "$PLATFORM" "$IMAGE"
+
+      - name: Remove registry credentials before image smoke
+        if: always()
+        run: |
+          set -Eeuo pipefail
+          [[ -n "${DOCKER_CONFIG:-}" ]] || exit 0
+          case "$DOCKER_CONFIG" in
+            "$RUNNER_TEMP"/boardsesh-ghcr-*-portable-smoke) ;;
+            *) printf 'Refusing to clean unexpected DOCKER_CONFIG: %s\n' "$DOCKER_CONFIG" >&2; exit 1 ;;
+          esac
+          docker logout "$REGISTRY" >/dev/null 2>&1 || true
+          find "$DOCKER_CONFIG" -type f -exec sh -c ': >"$1"' _ {} \;
+          find "$DOCKER_CONFIG" -depth -delete
+          [[ ! -e "$DOCKER_CONFIG" ]]
+
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+
+      - name: Set up Bun after registry credential removal
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+      - name: Install locked dependencies after registry credential removal
+        run: bun install --frozen-lockfile
+
+      - name: Verify labels and boot exact portable platform
+        env:
+          EXPECTED_REVISION: ${{ inputs.expected_main_sha }}
+          EXPECTED_SOURCE: ${{ github.server_url }}/${{ github.repository }}
+          IMAGE: ${{ env.PORTABLE_IMAGE }}@${{ needs.publish-images.outputs.portable_digest }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$IMAGE")" == "$EXPECTED_REVISION" ]]
+          [[ "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' "$IMAGE")" == "$EXPECTED_SOURCE" ]]
+          [[ "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.ref.name" }}' "$IMAGE")" == 'refs/heads/main' ]]
+          vp run test:postgres18-architecture-image "$IMAGE" "$PLATFORM"
+
+  smoke-seeded:
+    name: Smoke seeded (linux/amd64)
+    needs: [authorize-current-main, publish-images, verify-published-images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout exact current main commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.expected_main_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Create temporary read-only registry boundary
+        run: |
+          set -Eeuo pipefail
+          auth_directory="$RUNNER_TEMP/boardsesh-ghcr-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-seeded-smoke"
+          install -d -m 700 "$auth_directory"
+          printf 'DOCKER_CONFIG=%s\n' "$auth_directory" >>"$GITHUB_ENV"
+
+      - name: Recheck exact current main immediately before registry authentication
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$EXPECTED_MAIN_SHA" == "$GITHUB_SHA" ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_MAIN_SHA" ]]
+          [[ "$(gh api "/repos/$APPROVED_REPOSITORY/git/ref/heads/$DEFAULT_BRANCH" --jq '.object.sha')" == "$EXPECTED_MAIN_SHA" ]]
+
+      - name: Log in to GHCR for exact digest pull
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          logout: false
+
+      - name: Pull exact seeded digest
+        env:
+          IMAGE: ${{ env.SEEDED_IMAGE }}@${{ needs.publish-images.outputs.seeded_digest }}
+        run: docker pull --platform linux/amd64 "$IMAGE"
+
+      - name: Remove registry credentials before image smoke
+        if: always()
+        run: |
+          set -Eeuo pipefail
+          [[ -n "${DOCKER_CONFIG:-}" ]] || exit 0
+          case "$DOCKER_CONFIG" in
+            "$RUNNER_TEMP"/boardsesh-ghcr-*-seeded-smoke) ;;
+            *) printf 'Refusing to clean unexpected DOCKER_CONFIG: %s\n' "$DOCKER_CONFIG" >&2; exit 1 ;;
+          esac
+          docker logout "$REGISTRY" >/dev/null 2>&1 || true
+          find "$DOCKER_CONFIG" -type f -exec sh -c ': >"$1"' _ {} \;
+          find "$DOCKER_CONFIG" -depth -delete
+          [[ ! -e "$DOCKER_CONFIG" ]]
+
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+
+      - name: Set up Bun after registry credential removal
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+      - name: Install locked dependencies after registry credential removal
+        run: bun install --frozen-lockfile
+
+      - name: Verify labels, architecture, and seeded database
+        env:
+          EXPECTED_REVISION: ${{ inputs.expected_main_sha }}
+          EXPECTED_SOURCE: ${{ github.server_url }}/${{ github.repository }}
+          IMAGE: ${{ env.SEEDED_IMAGE }}@${{ needs.publish-images.outputs.seeded_digest }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$(docker inspect --format '{{ .Architecture }}' "$IMAGE")" == 'amd64' ]]
+          [[ "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$IMAGE")" == "$EXPECTED_REVISION" ]]
+          [[ "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' "$IMAGE")" == "$EXPECTED_SOURCE" ]]
+          [[ "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.ref.name" }}' "$IMAGE")" == 'refs/heads/main' ]]
+          vp run test:postgres18-dev-db-image "$IMAGE"
+
+  attest-published-digests:
+    name: Attest verified image digests
+    needs:
+      - authorize-current-main
+      - publish-images
+      - verify-published-images
+      - smoke-portable
+      - smoke-seeded
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: postgres-image-publisher
+    permissions:
+      actions: read
+      contents: read
+      attestations: write
+      id-token: write
+    outputs:
+      portable_attestation_url: ${{ steps.attest-portable.outputs.attestation-url }}
+      seeded_attestation_url: ${{ steps.attest-seeded.outputs.attestation-url }}
+    steps:
+      - name: Recheck exact current main and environment immediately before OIDC attestation
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          fail() {
+            printf 'Pre-attestation recheck failed: %s\n' "$*" >&2
+            exit 1
+          }
+
+          [[ "$EXPECTED_MAIN_SHA" == "$GITHUB_SHA" ]] ||
+            fail 'expected_main_sha no longer equals github.sha'
+          [[ "$(gh api "/repos/$APPROVED_REPOSITORY/git/ref/heads/$DEFAULT_BRANCH" --jq '.object.sha')" == "$EXPECTED_MAIN_SHA" ]] ||
+            fail 'main moved before OIDC attestation'
+          environment_json="$(gh api "/repos/$APPROVED_REPOSITORY/environments/$PUBLISHER_ENVIRONMENT")"
+          jq -e --arg environment "$PUBLISHER_ENVIRONMENT" '
+            .name == $environment and
+            .can_admins_bypass == false and
+            .deployment_branch_policy.protected_branches == false and
+            .deployment_branch_policy.custom_branch_policies == true and
+            ([.protection_rules[] |
+              select(
+                .type == "required_reviewers" and
+                (.prevent_self_review | type == "boolean") and
+                ((.reviewers // []) | length > 0)
+              )] | length == 1)
+          ' <<<"$environment_json" >/dev/null ||
+            fail 'publisher environment protections changed before OIDC attestation'
+          branch_policies_json="$(
+            gh api "/repos/$APPROVED_REPOSITORY/environments/$PUBLISHER_ENVIRONMENT/deployment-branch-policies"
+          )"
+          jq -e --arg default_branch "$DEFAULT_BRANCH" '
+            .total_count == 1 and
+            (.branch_policies | length == 1) and
+            .branch_policies[0].name == $default_branch and
+            .branch_policies[0].type == "branch"
+          ' <<<"$branch_policies_json" >/dev/null ||
+            fail 'publisher environment main-only policy changed before OIDC attestation'
+
+      - name: Attest exact portable digest
+        id: attest-portable
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.PORTABLE_IMAGE }}
+          subject-digest: ${{ needs.publish-images.outputs.portable_digest }}
+          push-to-registry: false
+
+      - name: Attest exact seeded digest
+        id: attest-seeded
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.SEEDED_IMAGE }}
+          subject-digest: ${{ needs.publish-images.outputs.seeded_digest }}
+          push-to-registry: false
+
+  verify-attestations:
+    name: Verify both provenance attestations
+    needs: [authorize-current-main, publish-images, attest-published-digests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    steps:
+      - name: Create temporary read-only registry boundary
+        run: |
+          set -Eeuo pipefail
+          auth_directory="$RUNNER_TEMP/boardsesh-ghcr-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-verify-attestations"
+          install -d -m 700 "$auth_directory"
+          printf 'DOCKER_CONFIG=%s\n' "$auth_directory" >>"$GITHUB_ENV"
+
+      - name: Recheck exact current main immediately before registry authentication
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$EXPECTED_MAIN_SHA" == "$GITHUB_SHA" ]]
+          [[ "$(gh api "/repos/$APPROVED_REPOSITORY/git/ref/heads/$DEFAULT_BRANCH" --jq '.object.sha')" == "$EXPECTED_MAIN_SHA" ]]
+
+      - name: Log in to GHCR for attestation verification
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          logout: false
+
+      - name: Validate attestation URLs and verify both exact subjects
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          GH_TOKEN: ${{ github.token }}
+          PORTABLE_ATTESTATION_URL: ${{ needs.attest-published-digests.outputs.portable_attestation_url }}
+          PORTABLE_DIGEST: ${{ needs.publish-images.outputs.portable_digest }}
+          SEEDED_ATTESTATION_URL: ${{ needs.attest-published-digests.outputs.seeded_attestation_url }}
+          SEEDED_DIGEST: ${{ needs.publish-images.outputs.seeded_digest }}
+        run: |
+          set -Eeuo pipefail
+          attestation_url_pattern='^https://github\.com/boardsesh/boardsesh/attestations/[0-9]+$'
+          [[ "$PORTABLE_ATTESTATION_URL" =~ $attestation_url_pattern ]]
+          [[ "$SEEDED_ATTESTATION_URL" =~ $attestation_url_pattern ]]
+
+          verify_attestation() {
+            local image="$1"
+            local digest="$2"
+            local output="$3"
+            local digest_hex="${digest#sha256:}"
+            gh attestation verify "oci://$image@$digest" \
+              --repo "$APPROVED_REPOSITORY" \
+              --signer-workflow "$APPROVED_REPOSITORY/.github/workflows/postgres-image-publisher.yml" \
+              --signer-digest "$EXPECTED_MAIN_SHA" \
+              --source-ref "$MAIN_REF" \
+              --source-digest "$EXPECTED_MAIN_SHA" \
+              --predicate-type 'https://slsa.dev/provenance/v1' \
+              --deny-self-hosted-runners \
+              --format json >"$output"
+            jq -e \
+              --arg image "$image" \
+              --arg digest_hex "$digest_hex" '
+                length > 0 and
+                all(.[].verificationResult.statement;
+                  .predicateType == "https://slsa.dev/provenance/v1" and
+                  any(.subject[]; .name == $image and .digest.sha256 == $digest_hex)
+                )
+              ' "$output" >/dev/null
+          }
+
+          verify_attestation "$PORTABLE_IMAGE" "$PORTABLE_DIGEST" portable-attestation.json
+          verify_attestation "$SEEDED_IMAGE" "$SEEDED_DIGEST" seeded-attestation.json
+
+      - name: Remove temporary attestation verification credentials
+        if: always()
+        run: |
+          set -Eeuo pipefail
+          [[ -n "${DOCKER_CONFIG:-}" ]] || exit 0
+          case "$DOCKER_CONFIG" in
+            "$RUNNER_TEMP"/boardsesh-ghcr-*-verify-attestations) ;;
+            *) printf 'Refusing to clean unexpected DOCKER_CONFIG: %s\n' "$DOCKER_CONFIG" >&2; exit 1 ;;
+          esac
+          docker logout "$REGISTRY" >/dev/null 2>&1 || true
+          find "$DOCKER_CONFIG" -type f -exec sh -c ': >"$1"' _ {} \;
+          find "$DOCKER_CONFIG" -depth -delete
+          [[ ! -e "$DOCKER_CONFIG" ]]
+
+  record-published-digests:
+    name: Record verified digest manifest
+    needs:
+      - authorize-current-main
+      - publish-images
+      - attest-published-digests
+      - verify-attestations
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Write machine-readable digest manifest and summary
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          PORTABLE_ATTESTATION_URL: ${{ needs.attest-published-digests.outputs.portable_attestation_url }}
+          PORTABLE_DIGEST: ${{ needs.publish-images.outputs.portable_digest }}
+          SEEDED_ATTESTATION_URL: ${{ needs.attest-published-digests.outputs.seeded_attestation_url }}
+          SEEDED_DIGEST: ${{ needs.publish-images.outputs.seeded_digest }}
+          SHA_TAG: ${{ needs.publish-images.outputs.sha_tag }}
+        run: |
+          set -Eeuo pipefail
+          attestation_url_pattern='^https://github\.com/boardsesh/boardsesh/attestations/[0-9]+$'
+          [[ "$PORTABLE_ATTESTATION_URL" =~ $attestation_url_pattern ]]
+          [[ "$SEEDED_ATTESTATION_URL" =~ $attestation_url_pattern ]]
+          jq -n \
+            --arg source_repository "$APPROVED_REPOSITORY" \
+            --arg source_url "$GITHUB_SERVER_URL/$APPROVED_REPOSITORY" \
+            --arg main_ref "$MAIN_REF" \
+            --arg main_sha "$EXPECTED_MAIN_SHA" \
+            --arg sha_tag "$SHA_TAG" \
+            --arg portable_image "$PORTABLE_IMAGE" \
+            --arg portable_digest "$PORTABLE_DIGEST" \
+            --arg portable_attestation_url "$PORTABLE_ATTESTATION_URL" \
+            --arg seeded_image "$SEEDED_IMAGE" \
+            --arg seeded_digest "$SEEDED_DIGEST" \
+            --arg seeded_attestation_url "$SEEDED_ATTESTATION_URL" '
+              {
+                schema_version: 2,
+                source: {
+                  repository: $source_repository,
+                  url: $source_url,
+                  ref: $main_ref,
+                  sha: $main_sha
+                },
+                tag_policy: {
+                  lookup_tag: $sha_tag,
+                  deployment_identity: "digest-only",
+                  tags_are_mutable: true
+                },
+                oci_labels: {
+                  "org.opencontainers.image.revision": $main_sha,
+                  "org.opencontainers.image.source": $source_url,
+                  "org.opencontainers.image.ref.name": $main_ref
+                },
+                images: {
+                  portable: {
+                    name: $portable_image,
+                    digest: $portable_digest,
+                    platforms: ["linux/amd64", "linux/arm64"],
+                    attestation_url: $portable_attestation_url,
+                    attestation_verified: true
+                  },
+                  seeded: {
+                    name: $seeded_image,
+                    digest: $seeded_digest,
+                    platforms: ["linux/amd64"],
+                    attestation_url: $seeded_attestation_url,
+                    attestation_verified: true
+                  }
+                }
+              }
+            ' >postgres-image-digests.json
+          jq -e '
+            .source.ref == "refs/heads/main" and
+            (.source.sha | test("^[0-9a-f]{40}$")) and
+            .tag_policy.deployment_identity == "digest-only" and
+            .tag_policy.tags_are_mutable == true and
+            ([.images[].digest | test("^sha256:[0-9a-f]{64}$")] | all) and
+            ([.images[].attestation_verified] | all)
+          ' postgres-image-digests.json >/dev/null
+
+          {
+            echo '## Verified PostgreSQL image digests'
+            echo
+            echo "- Source: \`$MAIN_REF@$EXPECTED_MAIN_SHA\`"
+            echo "- Portable (linux/amd64, linux/arm64): \`$PORTABLE_IMAGE@$PORTABLE_DIGEST\`"
+            echo "- Seeded (linux/amd64): \`$SEEDED_IMAGE@$SEEDED_DIGEST\`"
+            echo
+            echo "The \`$SHA_TAG\` tag is a mutable lookup alias. Pin only the exact digests above."
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Recheck exact current main and workflow before artifact upload
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          EXPECTED_WORKFLOW_REF: boardsesh/boardsesh/.github/workflows/postgres-image-publisher.yml@refs/heads/main
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -Eeuo pipefail
+
+          fail() {
+            printf 'Pre-artifact recheck failed: %s\n' "$*" >&2
+            exit 1
+          }
+
+          [[ "$EXPECTED_MAIN_SHA" == "$GITHUB_SHA" ]] ||
+            fail 'expected_main_sha no longer equals github.sha'
+          [[ "$EXPECTED_MAIN_SHA" == "$WORKFLOW_SHA" ]] ||
+            fail 'workflow source SHA no longer equals expected_main_sha'
+          [[ "$WORKFLOW_REF" == "$EXPECTED_WORKFLOW_REF" ]] ||
+            fail 'workflow definition is no longer bound to its approved main path'
+          [[ "$(gh api "/repos/$APPROVED_REPOSITORY/git/ref/heads/$DEFAULT_BRANCH" --jq '.object.sha')" == "$EXPECTED_MAIN_SHA" ]] ||
+            fail 'main moved before digest artifact upload'
+
+      - name: Upload verified digest manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: postgres-image-digests-${{ inputs.expected_main_sha }}
+          path: postgres-image-digests.json
+          if-no-files-found: error
+          retention-days: 90

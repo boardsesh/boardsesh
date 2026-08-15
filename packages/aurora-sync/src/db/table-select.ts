@@ -23,6 +23,7 @@ import {
   boardProductSizesLayoutsSets,
   boardKits,
 } from '@boardsesh/db/schema/boards';
+import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { type AuroraBoardName, AURORA_BOARDS } from '../api/types';
 
 // Re-export AuroraBoardName as BoardName for backward compatibility within this module
@@ -78,17 +79,23 @@ export function isValidBoardName(boardName: string): boardName is BoardName {
 }
 
 /**
- * Extended board name type that includes moonboard for unified tables
+ * Extended board name type for the unified tables: every supported board, not
+ * just the Aurora ones. Derived from `SUPPORTED_BOARDS` rather than listing the
+ * non-Aurora boards by hand — a code-driven board (MoonBoard, Woods) writes to
+ * the same `board_*` tables, and one missing from a hand-kept copy reads as an
+ * unknown board rather than as a table it has rows in.
  */
-export type UnifiedBoardName = BoardName | 'moonboard';
+export type UnifiedBoardName = (typeof SUPPORTED_BOARDS)[number];
+
+const VALID_UNIFIED_BOARD_NAMES = new Set<string>(SUPPORTED_BOARDS);
 
 /**
- * Check if a board name is valid for unified tables (includes moonboard)
+ * Check if a board name is valid for unified tables (every supported board)
  * @param boardName The name to check
  * @returns True if the board name is valid for unified tables
  */
 export function isValidUnifiedBoardName(boardName: string): boardName is UnifiedBoardName {
-  return boardName === 'moonboard' || VALID_AURORA_BOARD_NAMES.has(boardName);
+  return VALID_UNIFIED_BOARD_NAMES.has(boardName);
 }
 
 export default {

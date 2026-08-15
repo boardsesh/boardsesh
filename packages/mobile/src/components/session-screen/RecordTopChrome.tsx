@@ -12,10 +12,15 @@ import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction'
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { spacing } from '../../theme/tokens';
+import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 
 // Record's defining action is the Start/End footer button, so the chrome's
 // create island is gated off — its handler is never invoked.
 const noop = () => {};
+
+// M3 text-button height. The pill sits in a 56dp app-bar row, so 40dp leaves the
+// bar's own breathing room; `hitSlop` lifts the effective target back over 48dp.
+const MATERIAL_EXIT_HEIGHT = 40;
 
 type RecordTopChromeProps = {
   /** The session title — shown in the Material app bar; on glass the board pill +
@@ -57,10 +62,11 @@ type RecordTopChromeProps = {
  * and light islands come for free from `CollapsingTopChrome`.
  *
  * Material: an absolutely-positioned, `onHeightChange`-measured M3 small app bar
- * (mirroring `ClimbTopChrome`) — the session title via `Appbar.Content` and (only
- * while a session is live) a share `Appbar.Action`. The board is switched from the
- * in-body `BoardSummaryCard` (which carries the full name · size · angle), so the
- * app bar stays session-titled rather than duplicating a board switcher.
+ * (mirroring `ClimbTopChrome`) — the session title via `Appbar.Content`, and (only
+ * while a session is live) a share `Appbar.Action` plus a labelled M3 text button
+ * for the exit, the flat counterpart of the glass Stop pill. The board is switched
+ * from the in-body `BoardSummaryCard` (which carries the full name · size · angle),
+ * so the app bar stays session-titled rather than duplicating a board switcher.
  */
 export function RecordTopChrome({
   title,
@@ -73,7 +79,7 @@ export function RecordTopChrome({
 }: RecordTopChromeProps) {
   const { t } = useTranslation('session');
   const { t: tBoards } = useTranslation('boards');
-  const { brandColors, systemColors, variant } = useTheme();
+  const { brandColors, systemColors, variant, radii } = useTheme();
   const insets = useSafeAreaInsets();
 
   // Leaving is non-destructive, so it gets neither the red tint nor the stop
@@ -81,6 +87,10 @@ export function RecordTopChrome({
   // ships for the same action, so the two surfaces read identically.
   const isLeaveExit = exitVariant === 'leave';
   const exitLabel = isLeaveExit ? t('queueBar.ariaLabels.leaveSession') : t('mobile.session.inEndSession');
+  // The word printed on the control, deliberately shorter than the accessibility
+  // label. A bare flag glyph reads as "report this climb" to climbers who have
+  // never ended a session (#4281), so every exit control carries its verb.
+  const exitActionLabel = isLeaveExit ? t('mobile.session.inLeave') : t('mobile.session.inStop');
   const exitTint = isLeaveExit ? systemColors.label : brandColors.error;
   const exitIcon = isLeaveExit ? 'leave.session' : 'flag';
 
@@ -142,15 +152,35 @@ export function RecordTopChrome({
             />
           ) : null}
           {onEndSession ? (
-            <Appbar.Action
-              icon={iconMap[exitIcon].android}
-              // Cast matches the sibling Appbar props: Paper types `color` as a
-              // plain string, while the iOS-flavoured tokens are a dynamic-colour
-              // union.
-              color={exitTint as string}
+            // A labelled M3 text button rather than an `Appbar.Action`: Paper's
+            // action slot is a 48dp circle with room for a glyph and nothing
+            // else, and an icon-only exit is exactly what climbers misread
+            // (#4281). Rendered as a plain app-bar child, the way
+            // `BoardSwitcherButton` sits in the climbs chrome.
+            <PressableSurface
               onPress={onEndSession}
+              feedback="opacity"
+              // M3 state layer, tinted from the same role the label uses, so Stop
+              // ripples red and Leave ripples neutral. Cast matches the sibling
+              // Appbar props: the iOS-flavoured tokens are a dynamic-colour union,
+              // but the Material variant always resolves them to plain strings.
+              rippleColor={exitTint as string}
+              hitSlop={8}
+              accessibilityRole="button"
               accessibilityLabel={exitLabel}
-            />
+              style={[styles.materialExitAction, { borderRadius: radii.button }]}
+            >
+              <Icon name={exitIcon} size={20} color={exitTint} />
+              <Text
+                variant="subheadline"
+                color={exitTint}
+                numberOfLines={1}
+                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                style={styles.exitLabel}
+              >
+                {exitActionLabel}
+              </Text>
+            </PressableSurface>
           ) : null}
         </Appbar.Header>
       </View>
@@ -179,11 +209,19 @@ export function RecordTopChrome({
       hitSlop={4}
       accessibilityRole="button"
       accessibilityLabel={exitLabel}
-      style={styles.stopAction}
+      style={styles.glassExitAction}
     >
       <Icon name={exitIcon} size={20} color={exitTint} />
-      <Text variant="subheadline" color={exitTint} style={styles.stopLabel}>
-        {isLeaveExit ? t('mobile.session.inLeave') : t('mobile.session.inStop')}
+      <Text
+        variant="subheadline"
+        color={exitTint}
+        numberOfLines={1}
+        // The pill's height is pinned to the glass slot ladder, so the label has
+        // to stop growing before it clips.
+        maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+        style={styles.exitLabel}
+      >
+        {exitActionLabel}
       </Text>
     </PressableSurface>
   ) : undefined;
@@ -222,7 +260,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0,
   },
   // The labelled Stop pill fills the two trailing toolbar slots it reserves.
-  stopAction: {
+  glassExitAction: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -230,7 +268,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[3],
     height: TOP_ACTION_SIZE,
   },
-  stopLabel: {
+  // M3 text-button metrics: 40dp tall, 12dp side padding, pill corners from the
+  // variant radii. `overflow: hidden` keeps the Android ripple inside those
+  // corners; the trailing margin lands the label near the bar's 16dp edge inset.
+  materialExitAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[1],
+    paddingHorizontal: spacing[3],
+    height: MATERIAL_EXIT_HEIGHT,
+    marginRight: spacing[1],
+    overflow: 'hidden',
+  },
+  exitLabel: {
     fontWeight: '600',
   },
 });

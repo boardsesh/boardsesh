@@ -1,3 +1,82 @@
+import type { UserBoard } from './types/board-entities';
+
+/** The board config tuple needed to prefer a same-config serial match. */
+export type SerialBoardConfig = {
+  boardType: string;
+  layoutId: number;
+  sizeId: number;
+  /** Comma-separated set ids, as stored on UserBoard. */
+  setIds: string;
+};
+
+/**
+ * Normalise a comma-separated set-ids string to a deduped, numerically-sorted
+ * form so order/whitespace differences ('7,12' vs '12,7', trailing commas)
+ * never cause a spurious config mismatch.
+ *
+ * Intentionally re-implemented here rather than imported from
+ * `@boardsesh/board-config`'s `normaliseSetIds`: board-config depends on
+ * shared-schema, so importing it back would form a dependency cycle. Keep this
+ * mirror in sync with board-config's implementation.
+ */
+export function normalizeSetIdsForCompare(setIds: string): string {
+  return [
+    ...new Set(
+      setIds
+        .split(',')
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0),
+    ),
+  ]
+    .sort((first, second) => Number(first) - Number(second))
+    .join(',');
+}
+
+/**
+ * True when a board matches the given config. Set ids are compared normalised
+ * (order-independent), so '7,12' and '12,7' are treated as the same wall.
+ */
+export function boardConfigMatches(
+  board: { boardType: string; layoutId: number; sizeId: number; setIds: string },
+  config: SerialBoardConfig,
+): boolean {
+  return (
+    board.boardType === config.boardType &&
+    board.layoutId === config.layoutId &&
+    board.sizeId === config.sizeId &&
+    normalizeSetIdsForCompare(board.setIds) === normalizeSetIdsForCompare(config.setIds)
+  );
+}
+
+/**
+ * A physical wall's serial number can only belong to one board on Boardsesh.
+ * When a user is about to register a serial another climber already owns, we
+ * steer them onto that existing board instead of creating a duplicate wall that
+ * splits everyone's sends and stats.
+ *
+ * Returns the foreign boards (ones the user can't edit — reusing their own
+ * serial is fine) already using this serial, excluding the board currently being
+ * edited. When a `config` is supplied, same-config matches — the true physical
+ * duplicate — are ordered first so the caller can offer the most relevant board.
+ *
+ * The single shared implementation used by the React Native app's native and
+ * Expo-web renderers.
+ */
+export function selectForeignSerialBoards(
+  boards: UserBoard[],
+  config: SerialBoardConfig | null,
+  currentBoardUuid?: string | null,
+): UserBoard[] {
+  const foreign = boards.filter((board) => !board.canEdit && board.uuid !== currentBoardUuid);
+  if (!config) return foreign;
+  const sameConfig: UserBoard[] = [];
+  const otherConfig: UserBoard[] = [];
+  for (const board of foreign) {
+    (boardConfigMatches(board, config) ? sameConfig : otherConfig).push(board);
+  }
+  return [...sameConfig, ...otherConfig];
+}
+
 /**
  * @deprecated Aurora interop only. The structured `no_match` characteristic
  * (see {@link isNoMatch} and `board_climbs.characteristics`) is now the internal
@@ -30,6 +109,35 @@ export function withNoMatch(description: string | null | undefined, enabled: boo
   // toggling off can never delete a real description. A real is_no_match column
   // is the proper fix.
   return current.replace(/^no match(?:\r?\n|$)/i, '');
+}
+
+/**
+ * A description that says nothing beyond "this is a no-match climb" — the
+ * whole string, not a prefix. Aurora setters overwhelmingly type exactly this
+ * (83,864 of the 177,868 non-empty catalog descriptions), and the climb header
+ * already carries a no-match glyph, so repeating it as a notes block is noise.
+ *
+ * Anchored at both ends on purpose: "No matching feet allowed" and
+ * "No Houdini swap, spin around pls:). No matching." are real setter beta and
+ * must survive untouched. A prefix match here would eat both.
+ *
+ * The separator is optional (so "nomatch" is caught too) and any run of
+ * sentence-ending punctuation is tolerated, since setters end this one the same
+ * half-dozen ways.
+ */
+const ONLY_NO_MATCH = /^no[\s-]?match(ing)?[.!?;,\s]*$/i;
+
+/**
+ * The climb description to show a climber, or `''` when there is nothing worth
+ * showing. Three passes: strip Aurora's canonical `No match\n` marker line,
+ * trim, then drop a description that is only a restatement of "no match".
+ *
+ * Renderers should treat `''` as "render no notes section at all" rather than
+ * as an empty block. The text is user-written — never pass it through `t()`.
+ */
+export function getDisplayDescription(description: string | null | undefined): string {
+  const withoutMarker = withNoMatch(description, false).trim();
+  return ONLY_NO_MATCH.test(withoutMarker) ? '' : withoutMarker;
 }
 
 /**

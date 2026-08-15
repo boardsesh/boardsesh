@@ -1,6 +1,13 @@
 import { and, eq, exists, inArray } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
-import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE } from '@boardsesh/board-config';
+import {
+  MOONBOARD_LAYOUTS,
+  MOONBOARD_SETS,
+  MOONBOARD_SIZE,
+  WOODS_LAYOUTS,
+  WOODS_SETS,
+  WOODS_SIZES,
+} from '@boardsesh/board-config';
 import { AURORA_BOARDS } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -68,6 +75,25 @@ export async function assertKnownBoardConfig(
       MOONBOARD_SETS[layoutKey as keyof typeof MOONBOARD_SETS].map((boardSet) => boardSet.id),
     );
     if (uniqueSetIds.some((setId) => !layoutSetIds.has(setId))) {
+      throwUnknownBoardConfig();
+    }
+    return;
+  }
+
+  if (boardType === 'woods') {
+    if (layoutId !== WOODS_LAYOUTS.woods.id) {
+      throwUnknownBoardConfig();
+    }
+
+    const woodsSizeIds = new Set(Object.values(WOODS_SIZES).map((woodsSize) => woodsSize.id));
+    if (!woodsSizeIds.has(productSizeId)) {
+      throwUnknownBoardConfig();
+    }
+
+    // Woods ships one synthetic hold set, so the only membership that means
+    // anything is that set. Anything else names holds the board doesn't have.
+    const woodsSetIds = new Set<number>(WOODS_SETS.map((woodsSet) => woodsSet.id));
+    if (uniqueSetIds.length !== woodsSetIds.size || uniqueSetIds.some((setId) => !woodsSetIds.has(setId))) {
       throwUnknownBoardConfig();
     }
     return;

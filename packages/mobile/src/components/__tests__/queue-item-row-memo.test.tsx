@@ -50,6 +50,7 @@ type AccessibilityCapture = {
   onAccessibilityTap?: () => void;
   accessibilityActions?: { name: string; label?: string }[];
   onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
+  accessibilityLabel?: string;
 };
 const a11y = vi.hoisted(() => ({
   row: null as null | AccessibilityCapture,
@@ -112,6 +113,7 @@ vi.mock('react-native-reanimated', () => {
         onAccessibilityTap: rest.onAccessibilityTap,
         accessibilityActions: rest.accessibilityActions,
         onAccessibilityAction: rest.onAccessibilityAction,
+        accessibilityLabel: rest.accessibilityLabel,
       };
     }
     return createElement('div', null, children);
@@ -201,7 +203,13 @@ vi.mock('react-native-gesture-handler', () => {
 });
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  // Raw key passthrough (what the rest of this file asserts on), EXCEPT for the
+  // added-by label, which resolves its `{{name}}` placeholder. Asserting on a raw
+  // key there would pass even if the name argument never reached the catalog.
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) =>
+      key === 'mobile.queue.addedByAria' ? `Added by ${String(options?.name)}` : key,
+  }),
 }));
 
 vi.mock('../../providers/theme-provider', () => ({
@@ -230,6 +238,14 @@ vi.mock('../ClimbListItemContent', () => ({
 
 vi.mock('../ClimbListThumbnail', () => ({ THUMBNAIL_WIDTH: 96 }));
 
+// Without this mock the new import drags PressableAvatar → expo-router's
+// useRouter and Avatar → Image/PixelRatio into a graph whose `react-native` mock
+// above exports only Platform, PlatformColor, View, Pressable and StyleSheet —
+// which would break every test in this file, not just the attribution ones.
+vi.mock('../board-presence/BoardDriverAvatar', () => ({
+  BoardDriverAvatar: ({ name }: { name?: string | null }) => createElement('span', { 'data-added-by': name ?? '' }),
+}));
+
 vi.mock('../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12 } }));
 
 vi.mock('../../theme/animations', () => ({ springs: { interactive: {} } }));
@@ -246,12 +262,13 @@ const board: QueueItemRowBoard = {
   angle: 40,
 };
 
-function makeItem(uuid: string, name: string): ClimbQueueItem {
+function makeItem(uuid: string, name: string, addedByUser?: ClimbQueueItem['addedByUser']): ClimbQueueItem {
   return {
     uuid,
     climb: { uuid: `climb-${uuid}`, name } as ClimbQueueItem['climb'],
     addedBy: null,
     source: null,
+    addedByUser,
   } as ClimbQueueItem;
 }
 
@@ -820,6 +837,93 @@ describe('QueueItemRow React.memo', () => {
     // Single negative number = leftward-only activation; NOT a symmetric [-10, 10]
     // array (which would also activate on rightward / right-diagonal drags).
     expect(activeOffsetX?.args).toEqual([-10]);
+  });
+});
+
+describe('QueueItemRow added-by attribution', () => {
+  const peer = { id: 'peer-1', username: 'Mina', avatarUrl: null };
+  const baseProps = {
+    position: 1,
+    board,
+    isCurrentClimb: false,
+    onPress,
+    onRemove,
+    onToggleSelect,
+  };
+
+  beforeEach(() => {
+    renderCounter.count = 0;
+    a11y.row = null;
+    a11y.tick = null;
+    vi.clearAllMocks();
+  });
+
+  it('renders nothing outside a session', () => {
+    const { container } = render(
+      <QueueItemRow item={makeItem('a', 'Crimp Master', peer)} {...baseProps} showAddedBy={false} viewerUserId="me" />,
+    );
+    expect(container.querySelector('[data-added-by]')).toBeNull();
+    expect(a11y.row?.accessibilityLabel).not.toContain('Added by');
+  });
+
+  it('renders no empty slot for an item that predates attribution', () => {
+    const { container } = render(
+      <QueueItemRow item={makeItem('a', 'Crimp Master')} {...baseProps} showAddedBy viewerUserId="me" />,
+    );
+    expect(container.querySelector('[data-added-by]')).toBeNull();
+    expect(a11y.row?.accessibilityLabel).not.toContain('Added by');
+  });
+
+  it('renders nothing for the viewers own add', () => {
+    const own = { id: 'me', username: 'Marco', avatarUrl: null };
+    const { container } = render(
+      <QueueItemRow item={makeItem('a', 'Crimp Master', own)} {...baseProps} showAddedBy viewerUserId="me" />,
+    );
+    expect(container.querySelector('[data-added-by]')).toBeNull();
+    expect(a11y.row?.accessibilityLabel).not.toContain('Added by');
+  });
+
+  it('renders the peers face and names them in the row label', () => {
+    const { container } = render(
+      <QueueItemRow item={makeItem('a', 'Crimp Master', peer)} {...baseProps} showAddedBy viewerUserId="me" />,
+    );
+    expect(container.querySelector('[data-added-by]')?.getAttribute('data-added-by')).toBe('Mina');
+    expect(a11y.row?.accessibilityLabel).toContain('Added by Mina');
+  });
+
+  it('suppresses the face in edit mode but keeps the name in the row label', () => {
+    // Edit mode is the row's widest state, so the 20dp glyph goes. The
+    // accessibility label has no width budget though, and a VoiceOver user
+    // bulk-selecting rows to delete still needs to know whose climb each one is.
+    const { container } = render(
+      <QueueItemRow
+        item={makeItem('a', 'Crimp Master', peer)}
+        {...baseProps}
+        showAddedBy
+        viewerUserId="me"
+        isEditMode
+      />,
+    );
+    expect(container.querySelector('[data-added-by]')).toBeNull();
+    expect(a11y.row?.accessibilityLabel).toContain('Added by Mina');
+  });
+
+  it('still skips a re-render with attribution props set', () => {
+    const element = (
+      <QueueItemRow item={makeItem('a', 'Crimp Master', peer)} {...baseProps} showAddedBy viewerUserId="me" />
+    );
+    const { rerender } = render(element);
+    expect(renderCounter.count).toBe(1);
+    rerender(element);
+    expect(renderCounter.count).toBe(1);
+  });
+
+  it('re-renders exactly once when a session starts', () => {
+    const item = makeItem('a', 'Crimp Master', peer);
+    const { rerender } = render(<QueueItemRow item={item} {...baseProps} showAddedBy={false} viewerUserId="me" />);
+    expect(renderCounter.count).toBe(1);
+    rerender(<QueueItemRow item={item} {...baseProps} showAddedBy viewerUserId="me" />);
+    expect(renderCounter.count).toBe(2);
   });
 });
 

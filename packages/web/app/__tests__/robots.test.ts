@@ -40,10 +40,21 @@ describe('robots', () => {
     expect(toList(rules.allow)).toEqual(expect.arrayContaining(['/']));
   });
 
-  it('disallows crawling /feed, /api/, /auth/, and /settings', () => {
+  it('disallows crawling /api/, /auth/, and /settings', () => {
     const result = robots();
     const rules = getRules(result);
-    expect(rules.disallow).toEqual(expect.arrayContaining(['/feed', '/api/', '/auth/', '/settings']));
+    expect(rules.disallow).toEqual(expect.arrayContaining(['/api/', '/auth/', '/settings']));
+  });
+
+  it('never re-adds a Disallow for a surface that now redirects into the app', () => {
+    const rules = getRules(robots());
+
+    // W-19 (#4437) deleted /feed and /you*. Both now 307 to app.boardsesh.com,
+    // and a crawler that is not allowed to fetch the URL never sees the 307 —
+    // the dead URL would stay in the index forever.
+    expect(toList(rules.disallow)).not.toEqual(expect.arrayContaining(['/feed']));
+    expect(toList(rules.disallow)).not.toEqual(expect.arrayContaining(['/you']));
+    expect(toList(rules.disallow)).not.toEqual(expect.arrayContaining(['/you/*']));
   });
 
   it('includes a sitemap URL', () => {
@@ -63,16 +74,21 @@ describe('robots', () => {
 
     // The carve-outs must stay carve-outs: the rest of /api/ is still closed.
     expect(isPathCrawlable(rules, '/api/internal/dev-metadata')).toBe(false);
-    expect(isPathCrawlable(rules, '/api/v1/kilter/proxy/search')).toBe(false);
+    expect(isPathCrawlable(rules, '/api/v1/kilter/grades')).toBe(false);
   });
 
-  it('keeps the private surfaces closed while the climb list stays open', () => {
+  it('keeps the surviving private surfaces closed and lets crawlers reach the deleted ones', () => {
     const rules = getRules(robots());
 
-    expect(isPathCrawlable(rules, '/feed')).toBe(false);
     expect(isPathCrawlable(rules, '/auth/signin')).toBe(false);
     expect(isPathCrawlable(rules, '/settings')).toBe(false);
-    expect(isPathCrawlable(rules, '/you')).toBe(false);
+
+    // /feed and /you are deleted and redirect into the app. Googlebot has to be
+    // allowed to fetch them to see the 307; a surviving Disallow would leave the
+    // old URLs indexed forever.
+    expect(isPathCrawlable(rules, '/feed')).toBe(true);
+    expect(isPathCrawlable(rules, '/you')).toBe(true);
+    expect(isPathCrawlable(rules, '/you/sessions')).toBe(true);
 
     expect(isPathCrawlable(rules, '/kilter/1/7/1,20/40/list')).toBe(true);
     expect(isPathCrawlable(rules, '/b/my-board/40/list')).toBe(true);

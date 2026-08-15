@@ -9,12 +9,15 @@ import { join } from 'node:path';
 
 import {
   OFFLINE_DB_BUSY_TIMEOUT_MS,
+  OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS,
   OFFLINE_DB_WAL_SWITCH_TIMEOUT_MS,
   OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS,
   OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS,
   applyBusyTimeout,
+  beginImmediateWrite,
   configureMainConnection,
 } from '../pragmas';
+import { isDatabaseLockedError } from '../lock-errors';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
 
 let workDir: string;
@@ -57,6 +60,14 @@ describe('applyBusyTimeout', () => {
 
     const after = await db.getFirstAsync<{ timeout: number }>('PRAGMA busy_timeout');
     expect(after?.timeout).toBe(OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS);
+    expect(OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS).toBeLessThan(OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS);
+  });
+
+  // The ladder shortens each rung, and a user-facing first attempt is shorter than
+  // the background default because somebody is holding a phone waiting for it.
+  it('orders the ladder from the foreground attempt down to the fallback', () => {
+    expect(OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS).toBeLessThan(OFFLINE_DB_BUSY_TIMEOUT_MS);
+    expect(OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS).toBeLessThan(OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS);
     expect(OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS).toBeLessThan(OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS);
   });
 });
@@ -221,5 +232,156 @@ describe('ephemeral transaction connection', () => {
 
     expect(insideDefault).toBe(0);
     expect(insideAfterApply).toBe(OFFLINE_DB_BUSY_TIMEOUT_MS);
+  });
+});
+
+// #4332: expo's `withExclusiveTransactionAsync` opens a DEFERRED `BEGIN`, so a task
+// that reads before it writes — every tick and favorite does, for the owner stamp —
+// opens for READING and then has to upgrade. SQLite does not run the busy handler on
+// that upgrade, which made `busy_timeout` dead code on every user-facing offline
+// write: the pragma said "wait five seconds" and the tick died in about a
+// millisecond. These tests assert the WAIT, not the pragma's value. A test that only
+// checked "the contended write throws" passes in both worlds, which is exactly how
+// this shipped.
+describe('beginImmediateWrite', () => {
+  // Short enough to keep the suite fast, wide enough that "failed instantly" and
+  // "waited out the timeout" cannot be confused on a loaded CI box: a failure has
+  // 400ms of scheduling jitter to spend before it reads as a wait, and a wait has
+  // 200ms of slack under the timeout it is supposed to sit out.
+  const CONTENDED_TIMEOUT_MS = 1000;
+  const FAILED_INSTANTLY_MS = 400;
+  const WAITED_MS = 800;
+
+  /** Runs a transaction task and hands back what escaped, or null if it committed. */
+  async function captureFailure(task: (txn: TestSqliteDb) => Promise<void>): Promise<unknown> {
+    try {
+      await db.withExclusiveTransactionAsync(task);
+      return null;
+    } catch (error) {
+      return error;
+    }
+  }
+
+  beforeEach(async () => {
+    // WAL, exactly as the device runs it — the snapshot semantics below only exist there.
+    await configureMainConnection(db);
+    await db.execAsync('CREATE TABLE probe (id INTEGER PRIMARY KEY, note TEXT)');
+    await db.runAsync('INSERT INTO probe (id, note) VALUES (?, ?)', [1, 'seed']);
+  });
+
+  describe('with another connection holding the write lock', () => {
+    let holder: TestSqliteDb;
+
+    beforeEach(async () => {
+      // A snapshot import, a scope teardown, a VACUUM. It never releases inside a
+      // test: node:sqlite is synchronous, so a holder cannot let go while another
+      // connection blocks the same thread. Elapsed time is therefore the assertion.
+      holder = createTestDatabase(dbPath);
+      await holder.execAsync('BEGIN IMMEDIATE');
+      await holder.runAsync('INSERT INTO probe (id, note) VALUES (?, ?)', [2, 'held']);
+    });
+
+    afterEach(async () => {
+      await holder.execAsync('ROLLBACK').catch(() => {});
+      holder.close();
+    });
+
+    it('pins the bug: a read-first deferred task never consults busy_timeout', async () => {
+      const startedAt = Date.now();
+      const error = await captureFailure(async (txn) => {
+        await applyBusyTimeout(txn, CONTENDED_TIMEOUT_MS);
+        // The owner-stamp read every tick and favorite write starts with.
+        await txn.getFirstAsync('SELECT id FROM probe LIMIT 1');
+        await txn.runAsync('INSERT INTO probe (id, note) VALUES (?, ?)', [3, 'tick']);
+      });
+
+      expect((error as Error | null)?.message).toMatch(/database is locked/i);
+      expect(Date.now() - startedAt).toBeLessThan(FAILED_INSTANTLY_MS);
+    });
+
+    it('waits out the whole busy_timeout once the transaction opens IMMEDIATE', async () => {
+      const startedAt = Date.now();
+      const error = await captureFailure(async (txn) => {
+        await beginImmediateWrite(txn, CONTENDED_TIMEOUT_MS);
+        await txn.getFirstAsync('SELECT id FROM probe LIMIT 1');
+        await txn.runAsync('INSERT INTO probe (id, note) VALUES (?, ?)', [3, 'tick']);
+      });
+
+      expect((error as Error | null)?.message).toMatch(/database is locked/i);
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(WAITED_MS);
+    });
+
+    // The catch inside beginImmediateWrite is load-bearing, not defensive dressing.
+    it("lets the ORIGINAL lock error escape expo's unconditional ROLLBACK", async () => {
+      // Without the guard: a losing `BEGIN IMMEDIATE` leaves no open transaction, so
+      // the wrapper's ROLLBACK throws over the top of the lock error. The retry
+      // ladder would then see a broken database rather than contention, stop
+      // retrying, and file the failure under a brand-new Sentry aggregate.
+      const unguarded = await captureFailure(async (txn) => {
+        await applyBusyTimeout(txn, CONTENDED_TIMEOUT_MS);
+        await txn.execAsync('COMMIT');
+        await txn.execAsync('BEGIN IMMEDIATE');
+      });
+      expect((unguarded as Error | null)?.message).toMatch(/no transaction is active/i);
+      expect(isDatabaseLockedError(unguarded)).toBe(false);
+
+      // With the guard: the lock error survives intact and still classifies.
+      const guarded = await captureFailure(async (txn) => {
+        await beginImmediateWrite(txn, CONTENDED_TIMEOUT_MS);
+      });
+      expect((guarded as Error | null)?.message).toMatch(/database is locked/i);
+      expect(isDatabaseLockedError(guarded)).toBe(true);
+    });
+  });
+
+  it('commits the write when nothing contends', async () => {
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      await beginImmediateWrite(txn, OFFLINE_DB_BUSY_TIMEOUT_MS);
+      await txn.getFirstAsync('SELECT id FROM probe LIMIT 1');
+      await txn.runAsync('INSERT INTO probe (id, note) VALUES (?, ?)', [4, 'landed']);
+    });
+
+    const row = await db.getFirstAsync<{ note: string }>('SELECT note FROM probe WHERE id = 4');
+    expect(row?.note).toBe('landed');
+  });
+
+  // The case no `busy_timeout` can survive at any value: SQLITE_BUSY_SNAPSHOT (517,
+  // which prints as a plain "database is locked"). A deferred task takes its WAL read
+  // snapshot at the SELECT, and if any other connection commits before the task's
+  // INSERT the upgrade is refused OUTRIGHT — not waited on, not retried. Opening
+  // IMMEDIATE takes the write lock first, so nothing can move the snapshot underneath.
+  it('cannot lose a WAL snapshot race, because the write lock is taken up front', async () => {
+    const interloper = createTestDatabase(dbPath);
+    // Fail fast rather than block: node:sqlite is synchronous, so an interloper that
+    // waited would deadlock the test thread against the transaction it is racing.
+    await interloper.execAsync('PRAGMA busy_timeout = 0');
+
+    try {
+      const startedAt = Date.now();
+      const deferredError = await captureFailure(async (txn) => {
+        // The FULL five seconds armed, and it still buys nothing.
+        await applyBusyTimeout(txn, OFFLINE_DB_BUSY_TIMEOUT_MS);
+        await txn.getFirstAsync('SELECT id FROM probe LIMIT 1');
+        await interloper.runAsync('INSERT INTO probe (id, note) VALUES (?, ?)', [5, 'moved the snapshot']);
+        await txn.runAsync('INSERT INTO probe (id, note) VALUES (?, ?)', [6, 'tick']);
+      });
+      expect((deferredError as Error | null)?.message).toMatch(/database is locked/i);
+      expect(Date.now() - startedAt).toBeLessThan(FAILED_INSTANTLY_MS);
+
+      await db.withExclusiveTransactionAsync(async (txn) => {
+        await beginImmediateWrite(txn, OFFLINE_DB_BUSY_TIMEOUT_MS);
+        await txn.getFirstAsync('SELECT id FROM probe LIMIT 1');
+        // Same interleaving, opposite outcome: the interloper is the one that loses.
+        await expect(
+          interloper.runAsync('INSERT INTO probe (id, note) VALUES (?, ?)', [7, 'interloper']),
+        ).rejects.toThrow(/database is locked/i);
+        await txn.runAsync('INSERT INTO probe (id, note) VALUES (?, ?)', [8, 'tick']);
+      });
+
+      const row = await db.getFirstAsync<{ note: string }>('SELECT note FROM probe WHERE id = 8');
+      expect(row?.note).toBe('tick');
+    } finally {
+      interloper.close();
+    }
   });
 });

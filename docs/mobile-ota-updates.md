@@ -4,46 +4,81 @@ How JS/TS-only fixes reach the `packages/mobile` app without a new native build.
 
 `expo-updates` speaks an open protocol, so we self-host the manifest + asset server with
 [expo-open-ota](https://github.com/mercuretechnologies/expo-open-ota) (the mercuretechnologies fork)
-instead of paying for EAS Update hosting. We run it in **V3 control-plane mode** (`v3.0.5`): a
+instead of paying for EAS Update hosting (upstream renamed the project **expo-open-ota → xprem** at
+v3.1.0; the old image name is still published). We run it in **V3 control-plane mode**: a
 Postgres-backed server that owns channel↔branch mapping, code-signing keys, and progressive
 rollouts itself, so there's no dependency on Expo's API and no MAU/bandwidth billing. The only thing
 we still keep from Expo is a free account/token for the EAS free-tier _preview_ path (below).
 
-## Two servers: V2 frozen, V3 live (green-field migration)
+## One server: V3 live (V2 destroyed 2026-08-25)
 
 We migrated to V3 green-field rather than upgrading V2 in place, because a V2→V3 upgrade needs a
 destructive storage re-path and an in-place stateless→control-plane key-sealing migration. We were
 cutting a new native build anyway, so instead we stood up a fresh V3 server on an empty bucket + new
-Postgres and left V2 untouched. Two servers now run in parallel:
+Postgres and left V2 running untouched while its fleet drained. The URL cutover landed 2026-07-27
+(#3969) and V2 was torn down 2026-08-25. Only V3 remains:
 
-| Server          | Host                    | Version                                     | Who hits it                                                                                                                                                                     |
-| --------------- | ----------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **V2 (frozen)** | `ota.boardsesh.com`     | axelmarciano V2, stateless                  | Old store/TestFlight binaries built before the V3 cutover. They have `ota.boardsesh.com` + the old cert baked in, so V2 keeps serving them unchanged. **Do not publish to it.** |
-| **V3 (live)**   | `updates.boardsesh.com` | mercuretechnologies `v3.0.5`, control-plane | New/updated binaries (V3 URL + V3 cert + `expo-app-id` header baked in). CI publishes only here.                                                                                |
+| Server             | Host                    | Version                                                                                           | Who hits it                                                                                     |
+| ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **V3 (live)**      | `updates.boardsesh.com` | mercuretechnologies xprem, control-plane ([which tag](#versions-the-cli-pin-and-the-server-image)) | Every current binary (V3 URL + V3 cert + `expo-app-id` header baked in). CI publishes only here. |
+| **V2 (destroyed)** | `ota.boardsesh.com`     | axelmarciano V2, stateless — **gone**                                                             | Nothing. Service + bucket deleted 2026-08-25.                                                   |
 
-- Old installs migrate to V3 by store-updating to a V3 build; there's no cross-server backport.
-- **Rollback before the store rollout is free:** the V3 build bakes the V3 URL, so V3 must be proven
-  good on TestFlight/internal track before wide release. If V3 misbehaves pre-rollout, fix it — the
-  old fleet is untouched on V2. Post-rollout recovery is forward-only (publish a fixed OTA / roll
-  back on V3).
-- V3 is the Railway service `boardsesh-ota-v3` (image `ghcr.io/mercuretechnologies/expo-open-ota:v3.0.5`),
-  backed by a dedicated Railway Postgres and a Tigris bucket `boardsesh-ota-v3`.
-- **Retire V2 later**, telemetry-gated: watch the old-build share in PostHog (below); when it's
-  negligible, decommission the `boardsesh-ota` service + its bucket. Until then it's one small idle
-  service.
-- **The URL cutover happens at merge, not before.** The repo variable `EXPO_UPDATES_URL` (consumed by
-  the native build workflows + the OTA publish workflow) flips from the V2 `https://ota.boardsesh.com/manifest`
-  to the V3 `https://updates.boardsesh.com/manifest` **when the V3 client PR merges** — no earlier, no
-  later. Flip it early and V2-era publishes from `main` break; flip it late and the first V3 native
-  build bakes the stale V2 URL into the binary. Already-open PR branches keep pinning `eoas@2` and
-  targeting the old URL until they're rebased onto the merged change.
+- **A pre-V3 binary now gets no OTA at all.** Binaries built between 2026-06-10 (when V2 went live)
+  and the 2026-07-27 cutover baked in `ota.boardsesh.com`. That Railway service is deleted, so the
+  CNAME still resolves but Railway answers with its default `*.up.railway.app` wildcard cert — the
+  TLS handshake fails before any HTTP happens. `expo-updates` can't fetch a manifest and silently
+  runs the **embedded** bundle. That is *not* an emergency launch, so `vp run mobile:ota-health-check`
+  will not flag it: the fleet looks healthy while those installs sit frozen on the JS baked into
+  their binary. Only a **store update** recovers one.
+- There is no cross-server backport and V2 cannot be revived — its bucket is gone. Recovery for a
+  stranded install is store-side only.
+- V3 is the Railway service `boardsesh-ota-v3` (image `ghcr.io/mercuretechnologies/xprem:v3.1.2` —
+  see [Versions](#versions-the-cli-pin-and-the-server-image)), backed by a dedicated Railway Postgres
+  and a Tigris bucket `boardsesh-ota-v3`.
+- **Recovery on V3 is forward-only:** publish a fixed OTA, or roll back on V3.
+- **The URL cutover already happened (2026-07-27).** The repo variable `EXPO_UPDATES_URL` (consumed
+  by the native build workflows + the OTA publish workflow) now reads
+  `https://updates.boardsesh.com/manifest`. It flipped **when the V3 client PR merged** — no earlier,
+  no later. Keep that ordering for any future server move: flip it early and publishes from `main`
+  break against the old server; flip it late and the first native build on the new server bakes the
+  stale URL into the binary.
+
+### Versions: the CLI pin and the server image
+
+One version governs both halves of the self-hosted path, and it lives in exactly one place:
+`EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts`, currently **`eoas@3.1.2`**. The matching server image is
+`ghcr.io/mercuretechnologies/xprem:v3.1.2` — **which Railway is not on yet**: the deployed tag is
+still 3.0.5 until the hand-off below, and that is fine (see the CLI-leads-server rule). `scripts/__tests__/eoas-version-parity.test.ts` fails CI
+if this doc, the setup runbook or the rollback helper drifts off the pin — root `scripts/` has no
+typecheck task, so nothing else would catch it.
+
+**The CLI may lead the server; it must never trail it.** The old rule here demanded an exact match,
+but that was our own convention, not a protocol requirement — neither side exchanges a version, and
+there is no version endpoint on the server (the deployed tag is only visible in the Railway
+dashboard). 3.1.2 was checked against the still-3.0.5 server before the pin moved: the three routes
+a publish uses (`/{appId}/requestUploadUrl/{branch}`, `/uploadLocalFile`,
+`/markUpdateAsUploaded/{branch}`) are unchanged, and the `markUpdateAsUploaded` block is
+byte-identical between the two builds.
+
+Two things need the **Railway image on v3.1.2** and do not work before it:
+
+- server-side reuse of the previous update's assets (xprem #165) — see
+  [The throttle](#the-throttle-and-what-actually-fixes-it) for what that is worth;
+- `vp run mobile:ota-rollback -- --mode republish`: 3.1.2 lists republish candidates through a new
+  `.../runtimeVersion/<rv>/publish-groups` route that 3.0.5 does not serve, and can pass
+  `?publishGroup=` on the republish call itself; back-compat for older clients is server-side
+  (xprem #168). The helper prints a warning before running it. `--mode embedded` — the mode the
+  incident runbook uses — is unaffected.
+
+After any bump: re-verify `/hc` = 200, `/ready` = 200, a header-carrying manifest + asset probe, and
+run `eoas doctor`.
 
 ### Standing rules
 
 - **Never drop `expo-app-id`.** V3 clients must always send it (baked in `updates.requestHeaders` via
   `OTA_APP_ID`). Dropping it breaks both publishing and the in-app channel switcher — keep it forever.
-- **Bump the V3 server image and `eoas` in lockstep** (exact version match). After any bump,
-  re-verify `/ready` = 200 and a header-carrying manifest + asset probe, and run `eoas doctor`.
+- **Move the `eoas` pin first, the V3 server image second — never the other way round.** A CLI that
+  trails the server can 404 on app-scoped routes. Re-verify after every bump (above).
 - **Dashboard creds are production-release creds.** `/dashboard` mints API keys, exports the cert,
   remaps channels, and runs rollouts — treat the admin login as production-release access (one admin,
   read-only members).
@@ -151,14 +186,59 @@ its external map and uploads the OTA bundle to our storage via the server. `eoas
 URL from `updates.url` in `app.config.ts`, so `EXPO_UPDATES_URL` must be present.
 **Auth is `EOO_TOKEN`, not an Expo token:** the V3 control-plane server rejects Expo tokens, so
 publish/rollback need an app-scoped `eoo_` key minted in the dashboard. The CLI is pinned to
-**`eoas@3.0.5`** via `EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts` — it must match the deployed server
-version exactly (V3 routes are app-scoped; a `v2` CLI 404s). Bump the server image and the pin in
-lockstep.
+**`eoas@3.1.2`** via `EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts` (V3 routes are app-scoped; a `v2`
+CLI 404s) — see [Versions](#versions-the-cli-pin-and-the-server-image) for the pin↔image rule. Every
+self-hosted publish also passes `--upload-rate 5` to pace its asset uploads; the reasoning is below.
 
 For Android, use `--platform android` on both commands and provide the same
 `GOOGLE_MAPS_API_KEY` used by the Android native build while publishing. Do not use `--platform all`:
 each `eoas publish` removes and recreates `packages/mobile/dist`, so the second platform would erase
 the first platform's source maps before they reached Sentry.
+
+### The throttle, and what actually fixes it
+
+Tigris answers a too-fast run of asset PUTs with `503 <Code>SlowDown</Code>` on the
+`boardsesh-ota-v3` bucket. Three things multiply into that, and it is worth keeping them apart —
+an earlier version of this doc said waiting was the only lever we had, which stopped being true on
+2026-08-19.
+
+**How much we upload.** One export is 380 assets, and 356 of them are the board-background images
+`require()`d by `packages/mobile/src/lib/board-backgrounds-manifest.ts` — 94% of the asset count.
+Storage keys are `{appId}/{branch}/{runtimeVersion}/{updateId}/assets/{hash}`; `updateId` is in the
+path, so before server-side reuse every publish wrote a fresh full copy: ~760 PUTs for a two-platform
+run, none of them deduplicated against the previous update.
+
+**How the CLI uploaded it.** Up to and including 3.1.1, `eoas publish` fired every asset through one
+unbounded `Promise.all`, and `fetchWithRetries` used a `retryOn` that inspected only transport errors
+— never an HTTP status. One throttled asset therefore fell through `!response.ok` to
+`process.exit(1)` and killed the whole publish.
+
+**How many of them run at once.** `mobile-ota-preview.yml` scopes its publish job per PR
+(`mobile-ota-preview-publish-<number>`), unlike `mobile-ota-production.yml`, which is a single
+repo-wide group. On 2026-08-19 up to **11 preview publish jobs ran concurrently** (peak 13:15–13:23
+UTC), each firing its own burst at the one bucket. A single repo-wide group would be the wrong fix:
+GitHub keeps at most one pending run per group, so intermediate PRs' previews would be silently
+superseded.
+
+`eoas`/xprem **3.1.2** (2026-08-19) fixes the first two, and we take both:
+
+- **`--upload-rate`** caps how many uploads start per second, enforced by a token-bucket limiter
+  awaited before each upload. Every self-hosted publish passes `--upload-rate 5`
+  (`SELF_HOSTED_UPLOAD_RATE_PER_SECOND` in `scripts/lib/eoas.ts`) — production and per-PR previews
+  alike, since the previews are the concurrent ones. The CLI default is 10; the limiter is per
+  process, so at 11 concurrent jobs the default would still aim ~110 starts/sec at one bucket. At 5
+  that peak is ~55/sec and a lone publish still starts all 380 assets inside ~76 seconds.
+- **Status-aware retries.** `fetchWithRetries` now retries 429 and 5xx, honours `Retry-After`, backs
+  off exponentially up to 60s over four attempts, and rebuilds the multipart body so a retried upload
+  does not replay a consumed stream. A single throttled asset no longer kills the publish.
+- **Server-side asset reuse** (xprem #165) is the third fix and the largest, but it is server-side
+  only: `requestUploadUrl` loads the previous update's `metadata.json` for the same
+  app/branch/runtimeVersion/platform, server-side-copies everything already there, and hands back
+  upload URLs for the remainder — roughly 380 uploads down to a handful on a repeat publish to a
+  branch. **It needs the Railway image on `xprem:v3.1.2`**; until then the CLI-side halves above are
+  what we have. It degrades safely (an unavailable copy just falls back to a normal upload).
+
+The whole-command retry ladder below is therefore now a **backstop**, not the first line of defence.
 
 **Transient upload failures** are retried only when eoas output contains the exact S3 SlowDown XML
 response or an explicit HTTP 5xx status. Each platform gets at most six attempts, with 1, 3, 5, 10,
@@ -170,13 +250,12 @@ Child output stays live and is not echoed again from a captured tail. The EAS-ho
 The ladder is sized against the object store's observed cooldown rather than a guess. Two production
 incidents (2026-07-15 run 29387706795, 2026-08-03 run 30855435091) throttled every attempt across a
 ~17 minute window and only published after a cool-down; the earlier 30/60/120 second ladder gave up
-about 8 minutes in, so both needed a manual re-run. Waiting is the only lever available on this side
-of the process boundary: `eoas` uploads every asset (380 in a current bundle) through one unbounded
-`Promise.all`, and its `fetchWithRetries` retries network errors only — never an HTTP status — so a
-single 503 `SlowDown` response calls `process.exit(1)` and kills the publish. A whole-command retry
-re-runs the Metro export and re-fires the identical burst, which is what trips the limit, so shorter
-waits just fail faster. This is unchanged in `eoas@3.1.1`; capping upload concurrency needs an
-upstream expo-open-ota change (tracked by the reopened [#3620](https://github.com/boardsesh/boardsesh/issues/3620)).
+about 8 minutes in, so both needed a manual re-run. It has been holding since: preview run
+32249835065 (PR #4546, 2026-08-19) **succeeded** after five throttled iOS attempts, publishing on the
+sixth — but it took 45m39s to do it. That is the shape of the problem the rate cap addresses: the
+ladder converts a hard failure into a slow success, because each retry re-runs a ~90s Metro export
+and re-fires the identical burst. Do not shorten the ladder on the strength of 3.1.2 until a week of
+publishes says so — and note that three workflows' `timeout-minutes` floors are derived from it.
 
 Because both budgets are spent sequentially, a fully throttled production run can take ~98 minutes
 before it reports failure. The publish jobs' `timeout-minutes` must stay above that: a job killed
@@ -237,7 +316,7 @@ client requesting an unmapped channel gets `No branch mapping found`. Mapping is
   Delete the channel/mapping before the branch, or the branch delete is refused.
 - **Green-field consequence:** a legacy v1 client that sends **no** `expo-app-id` header gets an
   HTTP 400 from V3. That's correct — only new header-carrying V3 builds ever hit V3; old binaries
-  stay on V2.
+  pointed at V2, which no longer exists.
 
 ### Fingerprint parity — the one rule that matters
 
@@ -332,13 +411,20 @@ plain OTA to already-installed binaries. It's part of the `mobile-ci-env-parity.
 it can't silently drop out of one channel (which would revert that channel to the crashing
 `expo/fetch`), and `scripts/mobile-ota-compat-check.ts` writes it into the preview/`.env` too.
 
-## Native-build gating (OTA-only when the fingerprint is unchanged)
+## Native release train and build gating
 
-The OTA publish is cheap and runs on every push, but the native builds (`ios-testflight-rn`,
-~60 min on macOS; `android-apk-rn`, on Linux) only need to run when the fingerprint actually
-changes. A JS/TS-only change keeps the same fingerprint, so installed binaries pull the new JS over
-the air and a fresh native build is wasted. Each native workflow gates itself on the fingerprint —
-the self-hosted equivalent of Expo's `continuous-deploy-fingerprint`:
+`main` owns production OTA delivery; `release/next` owns automatic native
+TestFlight and Play-internal builds. Keeping native changes off `main` preserves
+the fingerprint requested by the current store fleet, so ordinary OTA fixes can
+continue while the next binary is tested and reviewed. A native change targets
+`release/next`; a JS-only mobile change targets `main`. Split mixed
+backend/native work so the backward-compatible backend or schema foundation can
+land on `main` before its mobile client targets the release train.
+
+The native builds (`ios-testflight-rn`, ~60 min on macOS;
+`android-apk-rn`, on Linux) only run when the fingerprint changes. A JS/TS-only
+change keeps the same fingerprint, so a fresh store build is wasted. Each native
+workflow gates itself on the fingerprint:
 
 1. A cheap Linux **`gate` job** resolves the platform fingerprint with `bunx expo-updates
 runtimeversion:resolve` using the same **workflow-level** env the build uses (iOS without
@@ -346,7 +432,7 @@ runtimeversion:resolve` using the same **workflow-level** env the build uses (iO
    and build can't drift, and the gate writes the same `.env` the build does — the `.env` is itself
    hashed into the fingerprint, so an absent or different one would resolve a different hash.
 2. If a git tag `fingerprint-<platform>-<hash>` already exists, a binary with that fingerprint has
-   already shipped → the native build **skips** (the OTA delivers the JS). Otherwise it **runs**.
+   already uploaded → the native build **skips**. Otherwise it **runs**.
 3. On a successful build + store upload, the build job pushes `fingerprint-<platform>-<hash>` — the
    gate value the binary embeds (see the pin below), not a re-resolved one.
 
@@ -359,44 +445,46 @@ worse — let the Linux OTA publish strand JS under a runtimeVersion the macOS b
 Android builds on Linux like its gate, so it was never divergent; it pins the same way for a uniform
 invariant.
 
-The OTA publish stays on the `fingerprint` policy (it does **not** read a tag or an override): it
-resolves the current commit's fingerprint and serves the JS under it. On a native-change commit it
-resolves the **new** fingerprint, so the new JS only reaches a binary built from that same commit —
-old binaries (still on the previous fingerprint) keep their embedded bundle until they store-update.
-That's the fingerprint policy working as intended; pinning the publish to the last shipped tag would
-instead serve native-dependent JS to old binaries and crash them.
+The production OTA publish stays `main`-only and on the `fingerprint` policy. It
+does not publish from `release/next`. Once both exact store candidates are
+approved and the release PR merges, the resulting `main` OTA resolves the
+accepted fingerprint and can deliver any JS-only drift accumulated during store
+review.
 
-**Fail-safe.** If the gate can't resolve the fingerprint, it builds. A manual `workflow_dispatch`
-bypasses the tag check and builds — for iOS that means dispatching on `main` (the iOS build is
-`main`-only by design, since it uploads to TestFlight). The Android workflow drives this with a
-`force_native` input (default **on**): on, it builds regardless of the fingerprint (the urgent-fix
-escape hatch below); off, it falls through to the same tag check as a push, so a dispatch can also be
-a no-op rebuild. A dispatch on any branch still produces an artifact-only APK, matching its
-pre-existing behavior.
+The acceptance monitor and store-draft verifier resolve each checkout with its
+own frozen historical lockfile and disabled lifecycle scripts. They run in the
+restricted `Native Release` environment but expose only `GOOGLE_MAPS_API_KEY` to
+release-tree code, because that key is a native Android fingerprint input. iOS
+explicitly removes it. Both the release-head and build-checkout fingerprints must
+match each other and the immutable 12-character fingerprint in the selected
+`build-<platform>-...` tag. This catches a fingerprint-affecting environment
+change after a binary upload instead of approving two equally drifted resolutions.
+
+**Fail-safe.** If the gate can't resolve the fingerprint, it builds. A manual
+`workflow_dispatch` on a trusted release ref bypasses the tag check and builds.
+Automatic store uploads never run from `main` or an arbitrary feature branch.
 
 **Manual overrides.**
 
-- **Ship an urgent JS-only fix to OTA-orphaned binaries.** A JS fix merged to `main` is delivered
-  OTA-only and skips the native build when its fingerprint already shipped — but a binary whose
-  fingerprint has since drifted (heavy native churn orphans older binaries, the root cause behind
-  issue #3098) can't pull that OTA. Dispatch `android-apk-rn.yml` with `force_native` on to rebuild
-  the native app so those installs get the fix via a store update.
-- Force a rebuild of a fingerprint that already has a tag:
-  `git push --delete origin fingerprint-<platform>-<hash>`, then re-push to `main` (or run the
-  workflow via dispatch).
-- The Android tag is recorded once the **sideload APK (GitHub Release) and the AAB build** succeed
-  — the reliable signal that a binary with this fingerprint exists. It is **not** gated on the Play
-  upload: that step is best-effort and can fail for Console-policy reasons (e.g. the
-  Foreground-services declaration) unrelated to the binary, and coupling the tag to it would let a
-  persistent Play issue rebuild Android forever. A failed Play upload is recovered by re-uploading
-  the retained AAB artifact (or rerunning the workflow), not by withholding the fingerprint tag.
-- The Android **gate** job runs in the `Production` environment so it can read
-  `GOOGLE_MAPS_API_KEY` (a Production-scoped secret that changes the Android fingerprint) and
+- **Ship an urgent JS-only fix to OTA-orphaned binaries.** A JS fix merged to
+  `main` normally ships OTA-only. If an orphaned cohort needs another store
+  binary, deliberately dispatch the native workflow from the trusted release
+  ref after preparing that release train.
+- **Force a rebuild of a fingerprint that already has a tag.** Dispatch the
+  platform workflow from `release/next` (or trusted `main` for an emergency).
+  Manual dispatch bypasses the fingerprint gate. The protected fingerprint tag
+  stays at the first build that established it, while the successful rebuild gets
+  a fresh build-number tag. Do not delete or move the fingerprint tag.
+- Android candidate APK/AAB files stay in private Actions artifacts. The build
+  and fingerprint tags are recorded only after the Play internal upload
+  succeeds; no public GitHub Release is created.
+- The Android **gate** job runs in the restricted `Native Release` environment so it can read
+  `GOOGLE_MAPS_API_KEY` (a secret that changes the Android fingerprint) and
   resolve the same hash the build bakes. Without it the gate computes a map-less fingerprint that
   never matches the binary, and Android never skips.
 
 Resolve the current fingerprint locally to predict what the gate will see: `cd packages/mobile &&
-bunx expo-updates runtimeversion:resolve --platform ios` (add the production env to match CI
+bunx expo-updates runtimeversion:resolve --platform ios` (add the Native Release env to match CI
 exactly — see the parity check above).
 
 ## Backporting a JS fix to an approved release (release anchors)
@@ -407,11 +495,9 @@ OTA-orphaned: a fix published from `main` goes out under the new fingerprint tha
 requests (issue #3098). The remedy is to publish an OTA under the _old_ release's fingerprint. We
 make that reproducible by anchoring each approved release with a tag.
 
-**Anchoring is tied to App Store approval, not to merge.** `main` iterates through many fingerprints
-between releases; we only care about the ones that actually shipped and were approved (an approved
-binary is frozen forever). The marketing `version` _is_ part of the fingerprint, so bumping it moves
-the fingerprint — which is fine, because we never rely on an intermediate fingerprint staying
-OTA-compatible; we only anchor approved ones.
+**Anchoring is tied to each store's approval, not to merge.** We only care
+about binaries that each platform actually accepted. The marketing `version`
+is part of the fingerprint, so bumping it moves the fingerprint.
 
 Two tag families do this:
 
@@ -419,15 +505,19 @@ Two tag families do this:
   (`ios-testflight-rn.yml` / `android-apk-rn.yml`) on a successful store upload. Maps a store build
   number (iOS `CFBundleVersion` / Android `versionCode`) to the commit and the canonical gate
   fingerprint the binary embeds. `<shortfp>` is the first 12 hex chars of the fingerprint.
-- `release/<platform>-v<version>-<shortfp>` — cut by `mobile-auto-version-bump.yml` when App Store
-  Connect reports a version accepted (`scripts/mobile-cut-release-tags.ts`). It points at the commit
-  the approved binary was built from; its `<shortfp>` records the fingerprint an OTA must resolve to
-  reach that release. This is the frozen **backport anchor**.
+- `release/<platform>-v<version>-<shortfp>` — cut by `mobile-auto-version-bump.yml`, or by
+  `release-next-monitor.yml` immediately before it promotes the native train, when that platform's store reports
+  the exact build accepted (`scripts/mobile-cut-release-tags.ts`). It points at the commit the approved binary was
+  built from; its `<shortfp>` records the fingerprint an OTA must resolve to reach that release. This is the frozen
+  **backport anchor**.
 
-`mobile-auto-version-bump.yml` runs on a schedule (every 6h) and, per accepted version, looks up the
-approved build's `build-*` tag (iOS by the approved build number, Android by the latest build of the
-same marketing version) and cuts the `release/*` anchor at that commit. It is idempotent, so the
-second platform's approval and any re-run are safe.
+`mobile-auto-version-bump.yml` runs on a schedule and looks up each store's
+exact approved build number before cutting that platform's anchor. The separate
+`release-next-monitor.yml` repeats that exact lookup before cutting/verifying the
+same idempotent anchors. It discovers the open `release/next` PR and merges it only when the latest
+matching iOS and Android candidate numbers are both approved, the PR is ready,
+approved, green, current and conflict-free. Unresolved review threads are not a
+merge gate.
 
 **It does not bump the marketing version.** An earlier revision auto-bumped the patch on `main` the
 moment App Store Connect reported a version accepted, on the theory that anchoring only approved
@@ -442,12 +532,10 @@ Release Anchor`) and file name are kept; only the bump was removed.
 `build-ios-v<version>-<buildNumber>-*` tag matches it, it skips (rather than anchoring a different
 build's commit + fingerprint) and retries on the next run once the tag exists.
 
-**Android caveat:** approval is detected from App Store Connect only — there is no Google Play query.
-The Android anchor is cut alongside the iOS approval, pointing at the _latest_ Android build of the
-same marketing version. If Android hasn't actually shipped that version to the store, the anchor is
-premature; a backport under it would just reach whatever installs hold that fingerprint (and the
-backport re-verifies the fingerprint before publishing), so it is ineffective rather than incorrect.
-Confirm the Android release actually shipped before relying on an Android backport.
+**Android anchoring is strict:** Google Play's production release lifecycle API
+must report the exact `versionCode` as approved-but-held or published. The
+monitor never infers Android approval from Apple's state and never falls back to
+the latest Android build.
 
 ### Backport runbook
 
@@ -659,7 +747,7 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    before boot. It seals the signing key in Postgres; **never regenerate it** (doing so makes every
    sealed key unreadable).
 4. **Deploy the server** — Railway service running
-   `ghcr.io/mercuretechnologies/expo-open-ota:v3.0.5` (see the
+   `ghcr.io/mercuretechnologies/xprem:v3.1.2` (see the
    [deployment](https://mercuretechnologies.github.io/expo-open-ota/docs/deployment/railway) /
    [env reference](https://mercuretechnologies.github.io/expo-open-ota/docs/reference/environment)
    docs). Required env:
@@ -698,7 +786,7 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    build).
 9. **Verify** — a header-carrying `GET https://updates.boardsesh.com/manifest` (with `expo-app-id`,
    `expo-channel-name: production`, platform/runtime headers) returns 200 with signature `keyid
-main` after the first publish, and its assets load. `bunx eoas@3.0.5 doctor --channel=production`
+main` after the first publish, and its assets load. `bunx eoas@3.1.2 doctor --channel=production`
    should be clean.
 
 ### Durability: Postgres holds the only private key

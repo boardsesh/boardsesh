@@ -1,197 +1,109 @@
-name: Build and Publish Dev Database Docker Images
+name: Validate Dev Database Docker Images
 
 on:
   push:
     branches: [main]
-    paths:
+    paths: &database_image_paths
       - 'packages/db/docker/**'
       - 'packages/db/scripts/**'
       - 'packages/db/src/schema/**'
       - 'packages/db/drizzle/**'
       - 'packages/db/package.json'
-      # Copied into the dev-db image's node_modules (fa_at guard used by
-      # import-aurora-board-unified) — rebuild when it changes.
       - 'packages/sync-runtime/**'
+      - 'packages/shared-schema/**'
+      - 'packages/board-constants/**'
       - '.github/workflows/dev-db-docker.yml'
-  workflow_dispatch:
+      - '.github/workflows/postgres-image-publisher.yml'
+      - 'scripts/dev-db-image-smoke.sh'
+      - 'scripts/dev-db-up.sh'
+      - 'scripts/lib/postgres-credentials.sh'
+      - 'scripts/neon-to-railway-replication.sh'
+      - 'scripts/neon-to-railway-replication.test.sh'
+      - 'scripts/postgres-credentials.test.sh'
+      - 'scripts/postgres18-architecture-smoke.sh'
+      - 'scripts/postgres18-spatial-rehearsal.sh'
+      - 'scripts/postgres18-spatial-surface.test.sh'
+      - 'scripts/postgres16-role-transition-smoke.sh'
+      - 'scripts/postgres18-image-smoke.sh'
+      - 'scripts/postgres18-production-role-transition.sh'
+      - 'scripts/postgres18-workflow-contract.test.sh'
+      - 'scripts/postgres-migration-audit.sh'
+      - 'scripts/postgres-migration-verify-data.sh'
+      - 'scripts/postgres-owned-sequence-setvals.sql'
+      - 'scripts/postgres-table-digests.sql'
+      - 'vite.config.ts'
+  pull_request:
+    paths: *database_image_paths
 
-env:
-  REGISTRY: ghcr.io
+# Feature-branch code is deliberately limited to read-only validation. Image
+# publication is defined by postgres-image-publisher.yml loaded from main.
+permissions:
+  contents: read
 
 jobs:
-  build-postgres-postgis:
+  test-postgres-postgis:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-
-    env:
-      IMAGE_NAME: boardsesh-postgres-postgis
-
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - name: Log in to Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+
+      - name: Validate PostgreSQL 18 migration and image contracts
+        run: vp run test:postgres18-contract
+
+      - name: Rehearse the restricted-role transition on PostgreSQL 16
+        run: vp run test:postgres16-role-transition
+
+      - name: Smoke-test native PostgreSQL 18 image
+        run: vp run test:postgres18-image
+
+      - name: Enable ARM64 emulation
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push Docker image
-        id: build
-        uses: docker/build-push-action@v7
+      - name: Build ARM64 portable candidate locally
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+          DOCKER_BUILD_SUMMARY: 'false'
         with:
           context: ./packages/db/docker
           file: ./packages/db/docker/Dockerfile.postgres
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/arm64
+          load: true
+          tags: boardsesh-postgres-postgis:arm64-smoke
           cache-from: type=gha,scope=postgres-postgis
-          cache-to: type=gha,mode=max,scope=postgres-postgis
 
-      - name: Generate artifact attestation
-        if: ${{ github.event_name != 'pull_request' }}
-        uses: actions/attest-build-provenance@v1
-        with:
-          subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true
+      - name: Boot-test ARM64 PostgreSQL and extensions
+        run: vp run test:postgres18-architecture-image boardsesh-postgres-postgis:arm64-smoke linux/arm64
 
-  build-dev-db:
+  test-dev-db:
+    needs: test-postgres-postgis
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-
-    env:
-      IMAGE_NAME: boardsesh-dev-db
-
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - name: Log in to Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
+      - name: Build seeded candidate locally
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+          DOCKER_BUILD_SUMMARY: 'false'
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push Docker image
-        id: build
-        uses: docker/build-push-action@v7
-        with:
-          # Root context so the build can also copy packages/shared-schema
-          # (the climb-characteristics helper the import scripts use). The root
-          # .dockerignore keeps node_modules/dist/etc. out of the context.
           context: .
           file: ./packages/db/docker/Dockerfile.dev-db
-          # arm64 excluded: QEMU emulation can't bind TCP sockets, which pgloader
-          # needs during build. Apple Silicon users can pull the amd64 image
-          # (Docker Desktop runs it via Rosetta 2) or build locally (native, no QEMU).
           platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          load: true
+          tags: boardsesh-dev-db:candidate-smoke
           cache-from: type=gha,scope=dev-db
-          cache-to: type=gha,mode=max,scope=dev-db
 
-      - name: Generate artifact attestation
-        if: ${{ github.event_name != 'pull_request' }}
-        uses: actions/attest-build-provenance@v1
-        with:
-          subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true
-
-  build-db-setup:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-
-    env:
-      IMAGE_NAME: boardsesh-db-setup
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Log in to Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push Docker image
-        id: build
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./packages/db/docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=db-setup
-          cache-to: type=gha,mode=max,scope=db-setup
-
-      - name: Generate artifact attestation
-        if: ${{ github.event_name != 'pull_request' }}
-        uses: actions/attest-build-provenance@v1
-        with:
-          subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true
+      - name: Smoke-test final seeded candidate
+        run: vp run test:postgres18-dev-db-image boardsesh-dev-db:candidate-smoke

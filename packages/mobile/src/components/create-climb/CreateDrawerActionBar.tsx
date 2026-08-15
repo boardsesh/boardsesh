@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, Pressable, ScrollView, StyleSheet } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
@@ -48,7 +48,8 @@ type CreateDrawerActionBarProps = {
  * The create-drawer two-row action bar, built on the shared drawer-action-bar
  * grammar. Row 1 (where the Play Drawer's play controls sit) is the five brush
  * chips; Row 2 is the other actions: undo / redo / clear, then set-active and
- * the save state-machine button.
+ * the save state-machine button. Row 2's editing actions scroll horizontally so
+ * set-active and save stay pinned no matter how wide that cluster grows.
  */
 export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   boardName,
@@ -135,61 +136,72 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
       </View>
 
       <View style={drawerActionBarStyles.rowSecondary}>
-        <ActionButton
-          size="sm"
-          iconName="undo"
-          onPress={onUndo}
-          disabled={!canUndo}
-          accessibilityLabel={t('mobile.create.actions.undo')}
-        />
-        <ActionButton
-          size="sm"
-          iconName="redo"
-          onPress={onRedo}
-          disabled={!canRedo}
-          accessibilityLabel={t('mobile.create.actions.redo')}
-        />
-        <ActionButton
-          size="sm"
-          iconName="delete"
-          onPress={onClear}
-          accessibilityLabel={t('mobile.create.actions.clear')}
-        />
-        <ActionButton
-          size="sm"
-          iconName="copy"
-          onPress={onDuplicateFrame}
-          accessibilityLabel={t('mobile.create.frames.duplicate')}
-        />
-        {frameCount > 1 && (
-          <>
-            <ActionButton
-              size="sm"
-              iconName="skip.previous"
-              onPress={onPrevFrame}
-              disabled={currentFrameIndex === 0}
-              accessibilityLabel={t('mobile.create.frames.prev')}
-            />
-            <Text variant="caption1" style={styles.frameCounter} numberOfLines={1}>
-              {t('mobile.create.frames.counter', { index: currentFrameIndex + 1, total: frameCount })}
-            </Text>
-            <ActionButton
-              size="sm"
-              iconName="skip.next"
-              onPress={onNextFrame}
-              disabled={currentFrameIndex >= frameCount - 1}
-              accessibilityLabel={t('mobile.create.frames.next')}
-            />
-            <ActionButton
-              size="sm"
-              iconName="frame.remove"
-              onPress={onDeleteFrame}
-              accessibilityLabel={t('mobile.create.frames.delete')}
-            />
-          </>
-        )}
-
-        <View style={drawerActionBarStyles.spacer} />
+        {/* The editing cluster grows by four controls once a climb has a second
+            frame, and RN views don't shrink — with no wrap and no scroll it used
+            to push Save clean off the right edge. The scroller takes the row's
+            leftover width in place of the shared `spacer`, so Set Active and Save
+            hold the same position whether or not the stepper is showing. */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          style={styles.actionScroll}
+          contentContainerStyle={styles.actionScrollContent}
+        >
+          <ActionButton
+            size="sm"
+            iconName="undo"
+            onPress={onUndo}
+            disabled={!canUndo}
+            accessibilityLabel={t('mobile.create.actions.undo')}
+          />
+          <ActionButton
+            size="sm"
+            iconName="redo"
+            onPress={onRedo}
+            disabled={!canRedo}
+            accessibilityLabel={t('mobile.create.actions.redo')}
+          />
+          <ActionButton
+            size="sm"
+            iconName="delete"
+            onPress={onClear}
+            accessibilityLabel={t('mobile.create.actions.clear')}
+          />
+          <ActionButton
+            size="sm"
+            iconName="copy"
+            onPress={onDuplicateFrame}
+            accessibilityLabel={t('mobile.create.frames.duplicate')}
+          />
+          {frameCount > 1 && (
+            <>
+              <ActionButton
+                size="sm"
+                iconName="skip.previous"
+                onPress={onPrevFrame}
+                disabled={currentFrameIndex === 0}
+                accessibilityLabel={t('mobile.create.frames.prev')}
+              />
+              <Text variant="caption1" style={styles.frameCounter} numberOfLines={1}>
+                {t('mobile.create.frames.counter', { index: currentFrameIndex + 1, total: frameCount })}
+              </Text>
+              <ActionButton
+                size="sm"
+                iconName="skip.next"
+                onPress={onNextFrame}
+                disabled={currentFrameIndex >= frameCount - 1}
+                accessibilityLabel={t('mobile.create.frames.next')}
+              />
+              <ActionButton
+                size="sm"
+                iconName="frame.remove"
+                onPress={onDeleteFrame}
+                accessibilityLabel={t('mobile.create.frames.delete')}
+              />
+            </>
+          )}
+        </ScrollView>
 
         <ActionButton
           size="sm"
@@ -257,5 +269,14 @@ const styles = StyleSheet.create({
   frameCounter: {
     minWidth: 44,
     textAlign: 'center',
+  },
+  actionScroll: {
+    // Claims the row's leftover width so the trailing Set Active + Save pair is
+    // pinned; anything that doesn't fit scrolls inside here, not off-screen.
+    flex: 1,
+  },
+  actionScrollContent: {
+    alignItems: 'center',
+    gap: spacing[2],
   },
 });

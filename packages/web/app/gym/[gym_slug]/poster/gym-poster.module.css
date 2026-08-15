@@ -1,0 +1,200 @@
+/* Print sheet for the per-gym QR poster (#4379).
+ *
+ * WHY A STYLESHEET AND NOT `sx`: `@page` is a top-level at-rule — it cannot be
+ * expressed through MUI's `sx`, and the print rules below have to sit next to
+ * the screen rules they override or the two drift. Same call the kiosk made for
+ * its install-QR tile.
+ *
+ * HARDCODED COLOURS ARE THE DOCUMENTED PRINT EXCEPTION (the theme-token rule
+ * says colours come from theme-config). This sheet is ALWAYS black on white,
+ * light theme or dark, screen or paper: the reader is a phone camera pointed at
+ * a laminated page, and a themed sheet would print a dark-on-dark code that
+ * does not scan. `board-install-qr.module.css` hardcodes #ffffff/#111111 for
+ * the same reason. What you see on screen is what comes out of the printer.
+ */
+
+/* `auto`, deliberately NOT `A4`. A fixed `size: A4` clips on US Letter (216 mm
+ * wide, so the driver shrinks or crops), and a fixed `size: letter` letterboxes
+ * A4. `auto` prints on whatever paper is loaded; the sheet below is bounded to
+ * the INTERSECTION of the two sizes so the identical layout fits either. */
+@page {
+  size: auto;
+  margin: 12mm;
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-4);
+  padding: var(--spacing-6) var(--spacing-4);
+  min-height: 100dvh;
+}
+
+.sheet {
+  /* A4 is the narrower paper (210 mm) and US Letter the shorter (279.4 mm), so
+   * the printable box common to both, at the 12 mm @page margin above, is
+   * 186 mm × 255.4 mm.
+   *
+   * WIDTH is enforced here by `max-width`. HEIGHT cannot be — a `max-height`
+   * would clip, and clipping the last block is worse than a second page: the
+   * last block is the trademark footer, so a laminated poster would lose its
+   * disclaimer while the QR above it still scanned, and nobody would notice.
+   * The height is instead held by BOUNDING EVERY BLOCK, so the worst case is
+   * computable rather than hoped for. With every element at its maximum wrap:
+   *
+   *   logo 18 + name 29.7 (3 lines, clamped) + heading 13.2 (2 lines)
+   *   + pitch 23.5 (4 lines) + QR 76 + typed URL 23.7 (3 lines)
+   *   + footer 30 (6 lines) + 6 gaps at 6 = 36        →  250.1 mm
+   *
+   * That leaves ~5 mm against the 255.4 mm ceiling. Any new block, or any
+   * loosened clamp, has to be subtracted from that budget — and checked with
+   * the 100-character-name fixture, which is what a `gyms.name` at its
+   * server-side cap actually produces. */
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 186mm;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6mm;
+  padding: 10mm;
+  background: #ffffff;
+  color: #111111;
+  border-radius: var(--border-radius-lg);
+  box-shadow: 0 2px 16px var(--overlay-dark);
+}
+
+.logo {
+  max-width: 40mm;
+  max-height: 18mm;
+  object-fit: contain;
+}
+
+.gymName {
+  margin: 0;
+  font-size: 9mm;
+  line-height: 1.1;
+  font-weight: 700;
+  /* Long gym names wrap rather than run off the sheet; a 30-character German
+   * compound gets broken instead of clipped. */
+  overflow-wrap: anywhere;
+  /* HARD LINE CLAMP, and it is load-bearing. `gyms.name` is capped at 100
+   * characters server-side, which is four-plus lines here — enough to push the
+   * trademark footer onto a second sheet that nobody prints. Three lines fits
+   * every real gym name; the rare 100-character outlier is ellipsised, which
+   * is the right trade against silently dropping the disclaimer. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+.heading {
+  margin: 0;
+  font-size: 5.5mm;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.pitch {
+  margin: 0;
+  max-width: 140mm;
+  font-size: 4.2mm;
+  line-height: 1.4;
+}
+
+.qr {
+  display: block;
+  /* ~72 mm of code plus the SVG's own 4-module quiet zone. At a typical 41
+   * modules that is ~1.6 mm per module — an order of magnitude over what a
+   * phone camera needs from a metre away, with room to spare for a scuffed
+   * laminate. */
+  width: 76mm;
+  height: 76mm;
+}
+
+.typedUrlLabel {
+  margin: 0 0 1mm;
+  font-size: 3.6mm;
+  line-height: 1.3;
+}
+
+.typedUrl {
+  margin: 0;
+  font-size: 5mm;
+  line-height: 1.2;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.footer {
+  margin: 0;
+  font-size: 3.4mm;
+  line-height: 1.4;
+  /* Deliberately not a neutral token: this has to stay legible in ink on paper,
+   * and a themed grey is picked for a backlit screen. */
+  color: #444444;
+}
+
+.wordmark {
+  margin: 0;
+  font-size: 5mm;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* The screen-only bar: the print button that opens the browser dialog, and the
+ * way back to the gym page. Neither means anything on paper — @media print
+ * below removes it. */
+.noPrint {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--spacing-2);
+}
+
+@media print {
+  .page {
+    display: block;
+    padding: 0;
+    min-height: 0;
+    background: #ffffff;
+  }
+
+  .noPrint {
+    display: none;
+  }
+
+  .sheet {
+    /* Force the ink even where the browser would inherit a dark theme, and keep
+     * the paper white when "background graphics" is off (its default) — the QR
+     * itself does not depend on this, because its colours are SVG fills passed
+     * as component props rather than CSS backgrounds. */
+    background: #ffffff;
+    color: #111111;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    box-shadow: none;
+    border-radius: 0;
+    /* @page already supplies the 12 mm paper margin; a second inner margin
+     * here is what pushes a nearly-full sheet onto page two. `auto` on the
+     * sides keeps the sheet centred on US Letter, whose printable box is
+     * ~6 mm wider than the A4-derived bound the layout is built to. */
+    margin: 0 auto;
+    padding: 0;
+    /* Keeps the sheet from being split mid-block when it fits. It is NOT the
+     * single-page guarantee — a box taller than the page fragments regardless
+     * of this property. The guarantee is the per-block height budget on
+     * `.sheet` above. */
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .footer {
+    color: #444444;
+  }
+}

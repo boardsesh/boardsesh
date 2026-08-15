@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,10 +16,10 @@ import { hapticSelection } from '../../src/lib/haptics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { Text } from '../../src/components/Text';
 import { Icon } from '../../src/components/Icon';
-import { Button } from '../../src/components/Button';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { GymMap, type GymMapHandle, type GymMapMarker } from '../../src/components/gym-directory/GymMap';
 import { GymListPanel, type GymListPanelHandle } from '../../src/components/gym-directory/GymListPanel';
+import { GymLocationPrompt } from '../../src/components/gym-directory/GymLocationPrompt';
 import { ClaimGymSheet } from '../../src/components/gym-directory/ClaimGymSheet';
 import { WallFinderFilterChips } from '../../src/components/gym-directory/WallFinderFilterChips';
 import { buildGymListRows } from '../../src/components/gym-directory/gym-list-rows';
@@ -487,29 +487,8 @@ export default function GymDiscovery() {
 
   // No place to show yet: prompt for location inside the panel (the header search
   // still works for browsing a typed place without granting it).
-  const waitingForLocation = location.status === 'idle' || location.status === 'loading';
   const locationPrompt = !center ? (
-    waitingForLocation ? (
-      <ActivityIndicator size="large" />
-    ) : (
-      <>
-        <Icon name="location" size={40} color={systemColors.tertiaryLabel} />
-        <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centerText}>
-          {t('mobile.gyms.locationNeeded')}
-        </Text>
-        <Button
-          title={t('mobile.gyms.grantLocation')}
-          variant="outlined"
-          // After a denial the one-shot hook won't re-prompt (iOS only asks once),
-          // so send the user to Settings instead of a no-op.
-          onPress={() => {
-            if (location.status === 'denied') void Linking.openSettings();
-            else void location.request();
-          }}
-          style={styles.centerButton}
-        />
-      </>
-    )
+    <GymLocationPrompt status={location.status} onRequest={() => void location.request()} />
   ) : undefined;
 
   return (
@@ -596,11 +575,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[3],
     paddingVertical: spacing[1],
     borderRadius: borderRadius.full,
-  },
-  centerText: {
-    textAlign: 'center',
-  },
-  centerButton: {
-    marginTop: spacing[2],
   },
 });

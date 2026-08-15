@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode, type Ref } from 'react';
 
 const ctrl = vi.hoisted(() => ({ variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
@@ -22,8 +22,8 @@ vi.mock('../../ModalSheet', async () => {
   };
 });
 vi.mock('../../ListRow', () => ({
-  ListRow: ({ title, leading }: { title: string; leading?: ReactNode }) =>
-    createElement('div', { 'data-row': title }, leading),
+  ListRow: ({ title, leading, onPress }: { title: string; leading?: ReactNode; onPress?: () => void }) =>
+    createElement('button', { 'data-row': title, onClick: onPress }, leading),
 }));
 vi.mock('../../Icon', () => ({
   Icon: ({ name, color }: { name: string; color?: unknown }) =>
@@ -49,19 +49,26 @@ vi.mock('../../../theme/tokens', () => ({ spacing: { 2: 8 } }));
 
 import { PlaylistActionsMenu } from '../PlaylistActionsMenu';
 
-const baseProps = {
-  visible: true,
+const handlers = {
   onTogglePin: vi.fn(),
+  onAddClimbs: vi.fn(),
+  onEditDetails: vi.fn(),
   onEdit: vi.fn(),
   onDelete: vi.fn(),
   onClose: vi.fn(),
 };
 
+const baseProps = { visible: true, ...handlers };
+
 beforeEach(() => {
   ctrl.variant = 'liquidGlass';
   modal.present.mockClear();
   modal.dismiss.mockClear();
+  for (const handler of Object.values(handlers)) handler.mockClear();
 });
+
+const rowTitles = (container: HTMLElement) =>
+  Array.from(container.querySelectorAll('[data-row]')).map((row) => row.getAttribute('data-row'));
 
 describe('PlaylistActionsMenu', () => {
   it('uses neutral pin/edit icons and destructive delete in Liquid Glass', () => {
@@ -81,5 +88,49 @@ describe('PlaylistActionsMenu', () => {
 
     rerender(<PlaylistActionsMenu {...baseProps} isPinned={false} />);
     expect(container.querySelector('[data-icon="pin"]')?.getAttribute('data-color')).toBe('#007AFF');
+  });
+
+  it('lays the owner rows out pin / add / details / climbs / delete', () => {
+    const { container } = render(<PlaylistActionsMenu {...baseProps} isPinned={false} />);
+
+    expect(rowTitles(container)).toEqual([
+      'library.pin.pin',
+      'detail.menu.addClimbs',
+      'detail.menu.editDetails',
+      'detail.menu.editClimbs',
+      'detail.menu.delete',
+    ]);
+  });
+
+  it('drops the add-climbs row (and its snap height) when the caller omits the handler', () => {
+    const { container } = render(<PlaylistActionsMenu {...baseProps} onAddClimbs={undefined} isPinned={false} />);
+
+    expect(rowTitles(container)).toEqual([
+      'library.pin.pin',
+      'detail.menu.editDetails',
+      'detail.menu.editClimbs',
+      'detail.menu.delete',
+    ]);
+  });
+
+  // #3966: these rows used to hand their work to the sheet's `onClose`, which
+  // the coordinator suppresses on a controlled close, so the taps did nothing.
+  // Each row must call its own handler, and none of them may touch `onClose`.
+  it('fires each row handler exactly once on press and never leans on onClose', () => {
+    const { container } = render(<PlaylistActionsMenu {...baseProps} isPinned={false} />);
+
+    const press = (title: string) => fireEvent.click(container.querySelector(`[data-row="${title}"]`) as HTMLElement);
+    press('library.pin.pin');
+    press('detail.menu.addClimbs');
+    press('detail.menu.editDetails');
+    press('detail.menu.editClimbs');
+    press('detail.menu.delete');
+
+    expect(handlers.onTogglePin).toHaveBeenCalledTimes(1);
+    expect(handlers.onAddClimbs).toHaveBeenCalledTimes(1);
+    expect(handlers.onEditDetails).toHaveBeenCalledTimes(1);
+    expect(handlers.onEdit).toHaveBeenCalledTimes(1);
+    expect(handlers.onDelete).toHaveBeenCalledTimes(1);
+    expect(handlers.onClose).not.toHaveBeenCalled();
   });
 });

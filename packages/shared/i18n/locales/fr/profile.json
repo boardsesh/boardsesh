@@ -6,7 +6,9 @@
       "fallbackDescription": "Profil de grimpe et stats",
       "notFoundTitle": "Profil introuvable",
       "notFoundDescription": "Impossible de trouver ce profil de grimpe.",
-      "ogAlt": "Profil de grimpe de {{name}}"
+      "ogAlt": "Profil de grimpe de {{name}}",
+      "title": "Les sessions de grimpe de {{name}}",
+      "titleWithBoard": "Les sessions {{board}} de {{name}}"
     },
     "statistics": {
       "title": "Statistiques"
@@ -72,7 +74,18 @@
     "gradeDistributionAria": "Répartition par cotation sur toutes les boards",
     "weeklyAttemptsAria": "Essais hebdo par difficulté",
     "flashRedpointAria": "Flash vs après-travail par cotation",
-    "layoutTooltip": "{{name}} : {{count}} blocs ({{percentage}} %)"
+    "layoutTooltip": "{{name}} : {{count}} blocs ({{percentage}} %)",
+    "periodComparison": {
+      "controlLabel": "Période de comparaison",
+      "trailing": "Période précédente",
+      "yearOverYear": "Année dernière",
+      "sends": "Croix",
+      "percentChange": "{{value}} %",
+      "vsTrailing": "vs. période précédente",
+      "vsYearOverYear": "vs. même période l'an dernier",
+      "firstPeriod": "Première période suivie",
+      "noComparisonData": "Aucune croix pour l'instant"
+    }
   },
   "empty": {
     "userNotFound": "Utilisateur introuvable",
@@ -94,140 +107,6 @@
     "ascentsOverTime": "Enchaînements dans le temps",
     "qualityOverTime": "Qualité dans le temps",
     "gradeOverTime": "Cotation dans le temps"
-  },
-  "logbook": {
-    "section": {
-      "noAscentsLogged": "Aucun enchaînement enregistré sur ce bloc"
-    },
-    "crew": {
-      "signInPrompt": "Connecte-toi pour voir le carnet de ta crew sur ce bloc",
-      "loadError": "Impossible de charger le carnet de ta crew. Réessaie dans un instant.",
-      "noneYet": "Personne de ta crew n'a encore coché ce bloc"
-    },
-    "entry": {
-      "mirroredTag": "Inversé",
-      "attemptsLabel": "Essais : {{count}}"
-    },
-    "form": {
-      "ascent": "Enchaînement",
-      "attempt": "Essai",
-      "boulder": "Bloc",
-      "dateAndTime": "Date et heure",
-      "angle": "Inclinaison",
-      "pickAngle": "Choisis une inclinaison",
-      "attempts": "Essais",
-      "quality": "Qualité",
-      "difficulty": "Difficulté",
-      "difficultyNoOverride": "Utiliser la cotation consensus",
-      "notes": "Notes",
-      "video": "Vidéo",
-      "videoPlaceholder": "Lien Instagram ou TikTok",
-      "videoHelper": "Colle un lien Instagram ou TikTok pour partager ta beta. (Facultatif)",
-      "mirrored": "Inversé",
-      "submit": "Enregistrer",
-      "submitAtAngle": "Logger à {{angle}}°",
-      "cancel": "Annuler",
-      "wallMoved": "Le mur est passé à {{wallClimb}}. Tu logges toujours {{loggingClimb}} ?",
-      "switchClimb": "Passer à {{climbName}}",
-      "switchDirtyConfirm": "Tu vas perdre ce que tu as tapé. Changer quand même ?",
-      "logType": "Type de log",
-      "saveFailed": "Impossible d'enregistrer ta croix. Réessaie.",
-      "sections": {
-        "details": "Détails",
-        "howItFelt": "Ton ressenti"
-      },
-      "validation": {
-        "flashOneAttempt": "Le flash demande exactement 1 essai"
-      }
-    },
-    "feed": {
-      "deleteSwipeLabel": "Supprimer",
-      "cancelEditing": "Annuler",
-      "saveEdit": "Enregistrer",
-      "moreActions": "Plus d'actions",
-      "editLog": "Modifier",
-      "deleteLog": "Supprimer",
-      "postToInstagram": "Publier sur Instagram",
-      "linkInstagramPost": "Lier la publication Instagram",
-      "stars": "étoiles",
-      "user": "utilisateur",
-      "grade": "cotation",
-      "tries": "essais",
-      "selectGrade": "Choisir la cotation enregistrée",
-      "status": {
-        "flash": "Flash",
-        "send": "Enchaîné",
-        "attempt": "Essai"
-      },
-      "snackbar": {
-        "boardsLinkMissing": "Board liée introuvable. Affichage de toutes tes entrées.",
-        "deleteFailed": "Impossible de supprimer la coche",
-        "tickDeleted": "Coche supprimée",
-        "undo": "Annuler"
-      }
-    },
-    "search": {
-      "placeholder": "Cherche un bloc ou une note",
-      "openFilters": "Ouvrir les filtres",
-      "search": "Rechercher",
-      "minGrade": "Min",
-      "maxGrade": "Max",
-      "any": "Tous",
-      "sort": "Trier",
-      "clearAll": "Tout effacer",
-      "filterCount_one": "filtre actif",
-      "filterCount_other": "filtres actifs",
-      "resultType": {
-        "includeSends": "Inclure les croix",
-        "includeAttempts": "Inclure les essais",
-        "flashOnly": "Flash uniquement",
-        "benchmarkOnly": "Références uniquement"
-      },
-      "dateAngle": {
-        "dateRange": "Plage de dates",
-        "startDate": "Date de début",
-        "endDate": "Date de fin",
-        "wallAngleRange": "Plage d'inclinaison ({{min}}°–{{max}}°)"
-      },
-      "sortFields": {
-        "date": "Date",
-        "climbName": "Nom du bloc",
-        "loggedGrade": "Cotation enregistrée",
-        "consensusGrade": "Cotation consensuelle",
-        "attemptCount": "Essais"
-      },
-      "sortDirection": {
-        "desc": "Décr."
-      }
-    },
-    "instagram": {
-      "back": "Retour",
-      "title": "Publier sur Instagram",
-      "subtitle": "Partage ton enchaînement et reviens le lier ici.",
-      "betaLoadFailed": "Impossible de charger les vidéos de beta.",
-      "retry": "Réessayer",
-      "steps": {
-        "copy": "Copie la légende et ouvre Instagram.",
-        "paste": "Colle la légende au moment de poster.",
-        "comeBack": "Une fois la publi en ligne, reviens ici.",
-        "pasteLink": "Colle le lien Instagram pour qu'on affiche ta vidéo d'enchaînement ici."
-      },
-      "addLinkSubmit": "Ajouter le lien Instagram",
-      "shareYourBeta": "Partage ta vidéo de beta",
-      "shareYourBetaBody": "On copie la légende, on ouvre Instagram, et tu reviens coller le lien final dans Boardsesh.",
-      "howItWorks": "Comment ça marche",
-      "caption": "Légende",
-      "copyAndOpen": "Copier et ouvrir Instagram",
-      "pasteLinkTitle": "Colle ton lien Instagram",
-      "pasteLinkBody": "Quand ta publi est en ligne, colle le lien du reel ou du post pour que Boardsesh affiche ta vidéo d'enchaînement.",
-      "pasteLinkHelper": "Colle l'URL du reel ou du post Instagram en ligne.",
-      "existingBetaVideos": "Vidéos de beta existantes",
-      "snackbar": {
-        "copyFailed": "Impossible de copier la légende. Réessaie.",
-        "openFailed": "Impossible d'ouvrir Instagram. Ouvre-le à la main et colle la légende.",
-        "copied": "Légende copiée. Instagram s'ouvre."
-      }
-    }
   },
   "mobile": {
     "account": "Compte",

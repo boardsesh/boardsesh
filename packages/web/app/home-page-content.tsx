@@ -20,7 +20,6 @@ import SvgIcon from '@mui/material/SvgIcon';
 import { isNativeApp, isCapacitorWebView, waitForCapacitor } from '@/app/lib/ble/capacitor-utils';
 import { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL } from '@/app/lib/store-urls';
 import { resolveHeroInstall, type InstallPlatform, type HeroInstallStore } from '@/app/lib/hero-install';
-import { useSession } from 'next-auth/react';
 import { useTranslation } from 'react-i18next';
 import { themeTokens } from '@/app/theme/theme-config';
 import LocaleLink from '@/app/components/i18n/locale-link';
@@ -32,6 +31,8 @@ import HomeRecentBetaSection from '@/app/components/beta-videos/home-recent-beta
 import HomeGymCard from '@/app/components/home-gym-card/home-gym-card';
 import StartClimbingButton from '@/app/components/start-climbing-button';
 import { track } from '@/app/lib/analytics';
+import { APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties } from '@/app/lib/app-install-event';
+import { resolveShellStaticAssetUrl } from '@/app/lib/shell-static-asset-url';
 
 const DISCORD_INVITE_URL = 'https://discord.gg/YXA8GsXfQK';
 
@@ -254,7 +255,10 @@ function InstallAppCard({ platform }: { platform: InstallPlatform }) {
         title={t('home.install.androidLiveTitle')}
         description={t('home.install.androidLiveDescription')}
         onClick={() => {
-          track('App Install Click', { platform: 'android', source: 'google-play' });
+          track(
+            APP_INSTALL_CLICK_EVENT,
+            buildAppInstallClickProperties({ platform: 'android', source: 'google-play' }),
+          );
           window.open(ANDROID_PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
         }}
       />
@@ -265,7 +269,7 @@ function InstallAppCard({ platform }: { platform: InstallPlatform }) {
     <OnboardingCard
       icon={
         <Image
-          src="/brand/boardsesh-mark.png"
+          src={resolveShellStaticAssetUrl('/brand/boardsesh-mark.png')}
           width={44}
           height={44}
           alt=""
@@ -276,7 +280,7 @@ function InstallAppCard({ platform }: { platform: InstallPlatform }) {
       description={t('home.install.iosDescription')}
       accent="none"
       onClick={() => {
-        track('App Install Click', { platform: 'ios', source: 'app-store' });
+        track(APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties({ platform: 'ios', source: 'app-store' }));
         window.open(IOS_APP_STORE_URL, '_blank', 'noopener,noreferrer');
       }}
     />
@@ -285,7 +289,6 @@ function InstallAppCard({ platform }: { platform: InstallPlatform }) {
 
 export default function HomePageContent({ initialPopularConfigs, initialRecentBeta = [] }: HomePageContentProps) {
   const { t } = useTranslation('marketing');
-  const { status } = useSession();
   const [installPlatform, setInstallPlatform] = useState<InstallPlatform>('unknown');
   // Which store a legacy native straggler installed from, so the hero "update"
   // CTA points at the right place. Only read once installPlatform === 'native',
@@ -342,8 +345,6 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
     setInstallPlatform(classifyWeb());
   }, []);
 
-  const isAuthenticated = status === 'authenticated';
-
   // Hero CTA now drives app installs instead of starting a sesh. Store target,
   // label, and icon all follow the detected platform.
   const heroInstall = resolveHeroInstall(installPlatform, nativeStore);
@@ -366,7 +367,6 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
         minHeight: '100dvh',
         display: 'flex',
         flexDirection: 'column',
-        pb: 'var(--bottom-bar-height)',
       }}
     >
       <Box
@@ -392,8 +392,14 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             py: 1,
           }}
         >
-          {/* i18n-ignore-next-line -- brand name, not translated */}
-          <Image src="/brand/boardsesh-mark.png" width={130} height={130} alt="Boardsesh" priority />
+          <Image
+            src={resolveShellStaticAssetUrl('/brand/boardsesh-mark.png')}
+            width={130}
+            height={130}
+            // i18n-ignore-next-line -- brand name, not translated
+            alt="Boardsesh"
+            priority
+          />
           {/* `variant` keeps the visual size; `component` fixes the semantics.
               MUI maps variant="h5" to a literal <h5>, so before this the
               homepage server-rendered no <h1> at all — the highest-traffic
@@ -424,12 +430,15 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             size="large"
             startIcon={<HeroInstallIcon />}
             onClick={() => {
-              track('App Install Click', {
-                platform: heroInstall.store,
-                source: heroInstall.store === 'android' ? 'google-play' : 'app-store',
-                placement: 'hero',
-                mode: heroInstall.mode,
-              });
+              track(
+                APP_INSTALL_CLICK_EVENT,
+                buildAppInstallClickProperties({
+                  platform: heroInstall.store,
+                  source: heroInstall.store === 'android' ? 'google-play' : 'app-store',
+                  placement: 'hero',
+                  mode: heroInstall.mode,
+                }),
+              );
               window.open(heroInstallUrl, '_blank', 'noopener,noreferrer');
             }}
             sx={HERO_CTA_SX}
@@ -524,18 +533,6 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             newTab
           />
         </Box>
-
-        {/* Authenticated users: nudge to feed */}
-        {isAuthenticated && (
-          <Box sx={{ textAlign: 'center', py: 2 }}>
-            <Typography variant="body2" sx={{ color: 'var(--neutral-400)', mb: 1 }}>
-              {t('home.feed.callout')}
-            </Typography>
-            <Button component={LocaleLink} href="/feed" variant="text" size="small" sx={{ textTransform: 'none' }}>
-              {t('home.feed.cta')}
-            </Button>
-          </Box>
-        )}
       </Box>
     </Box>
   );

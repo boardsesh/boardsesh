@@ -40,9 +40,259 @@ export function resolveExpoWebDevOrigin(rawOrigin) {
   return parsedOrigin.origin;
 }
 
+/**
+ * Path-prefixed locales. `en-US` is served at the root with no prefix, so it is
+ * absent here on purpose.
+ *
+ * `redirects()` runs before `middleware.ts`, and its sources are matched
+ * literally: `/logbook` never matches `/es/logbook`. Every rule therefore ships
+ * with its three locale twins (standing rule 4 of the web reposition), built by
+ * `expandLocaleRedirects` below so a hand-written rule can't forget them.
+ */
+const PATH_LOCALE_PREFIXES = ['/es', '/fr', '/de'];
+
+/**
+ * Origin of the Expo-web app. Mirrors `DEFAULT_APP_ORIGIN` in
+ * `@boardsesh/shared-schema/app-origins`, which cannot be imported here
+ * (next.config.mjs loads outside the TS path aliases), so
+ * `app/__tests__/next-config-redirects.test.ts` pins the literal against it.
+ *
+ * Exported separately from `APP_ORIGIN` on purpose: `NEXT_PUBLIC_APP_URL` is set
+ * to `http://localhost:8081` for local Expo-web work (see `.env.local`), and a
+ * test that pinned the env-resolved value would fail on a correct config the
+ * moment that export is in the shell.
+ */
+export const DEFAULT_CONFIG_APP_ORIGIN = 'https://app.boardsesh.com';
+
+export const APP_ORIGIN = process.env.NEXT_PUBLIC_APP_URL ?? DEFAULT_CONFIG_APP_ORIGIN;
+
+/**
+ * Board-route siblings deleted by the web reposition (W-17, #4433), plus the
+ * legacy library/profile paths that predate it.
+ *
+ * Same-origin destinations are `permanent: true` — they point at routes that
+ * exist on this deploy and consolidating the signal is the point. The
+ * cross-origin destinations are `permanent: false`: a browser caches a permanent
+ * cross-origin redirect indefinitely, with no server-side hatch left if the SPA
+ * route moves. They stay temporary until the app route is proven in prod.
+ *
+ * Order matters — Next matches these in array order, so a board-specific rule
+ * has to come before the `/:board/…` catch-all that would otherwise swallow it.
+ */
+const BASE_REDIRECTS = [
+  // Legacy library / profile paths.
+  {
+    source: '/my-library',
+    destination: '/playlists',
+    permanent: true,
+  },
+  {
+    source: '/my-library/:path*',
+    destination: '/playlists/:path*',
+    permanent: true,
+  },
+  {
+    source: '/:board/:layout/:size/:set/:angle/playlist/:uuid',
+    destination: '/playlists/:uuid',
+    permanent: true,
+  },
+  {
+    source: '/crusher/:user_id',
+    destination: '/profile/:user_id',
+    permanent: true,
+  },
+  {
+    source: '/logbook',
+    destination: '/playlists',
+    permanent: true,
+  },
+
+  // Climb creation moved to the app. A canonical numeric board URL hands its
+  // board over intact: these are exactly the params the app's create screen
+  // reads (`packages/mobile/app/(tabs)/climbs/create.tsx`), and it falls back to
+  // the signed-in user's active board for any it doesn't get.
+  {
+    source: '/:board/:layout(\\d+)/:size(\\d+)/:set([\\d,]+)/:angle(\\d+)/create',
+    destination: `${APP_ORIGIN}/climbs/create?boardName=:board&layoutId=:layout&sizeId=:size&setIds=:set&angle=:angle`,
+    permanent: false,
+  },
+  // The slug forms hand over bare. The app parses layoutId/sizeId with
+  // `Number()`, so forwarding `original`/`12x12-square` would seed the editor
+  // with NaN — worse than its active-board fallback — and resolving a slug needs
+  // a DB lookup a static redirect cannot do. Recorded on #4433.
+  {
+    source: '/:board/:layout/:size/:set/:angle/create',
+    destination: `${APP_ORIGIN}/climbs/create`,
+    permanent: false,
+  },
+  {
+    source: '/b/:board_slug/:angle/create',
+    destination: `${APP_ORIGIN}/climbs/create`,
+    permanent: false,
+  },
+
+  // The MoonBoard bulk importer stays on Next, re-homed to a board-agnostic
+  // route. Layout, hold sets and angle ride along so a bookmarked import URL
+  // opens the wall it named; anything unresolvable lands on the picker.
+  {
+    source: '/moonboard/:layout/:size/:set/:angle/import',
+    destination: '/moonboard-import?layout=:layout&sets=:set&angle=:angle',
+    permanent: true,
+  },
+  // Bulk import is MoonBoard-only — the deleted page sent a Kilter or Tension
+  // import URL to that board's own list instead of rendering the importer. This
+  // rule keeps that, and it has to exist: `MOONBOARD_LAYOUTS` ids run 1–7 and
+  // collide with Aurora layout ids, so without it `/kilter/1/…/import` would
+  // resolve to MoonBoard 2010 and render the importer for the wrong board.
+  {
+    source: '/:board/:layout/:size/:set/:angle/import',
+    destination: '/:board/:layout/:size/:set/:angle/list',
+    permanent: true,
+  },
+  // The `/b` tree can't make that split: the slug names a board row, and only a
+  // DB lookup says whether it's a MoonBoard. It goes to the importer because
+  // that is the only reason to open `/import` at all; a non-MoonBoard slug lands
+  // on the picker, which is a noindex utility page with a way back.
+  {
+    source: '/b/:board_slug/:angle/import',
+    destination: '/moonboard-import?angle=:angle',
+    permanent: true,
+  },
+
+  // Liked climbs live in the app; the board's own front door is the closest
+  // surviving surface on www.
+  {
+    source: '/:board/:layout/:size/:set/:angle/liked',
+    destination: '/:board/:layout/:size/:set/:angle/list',
+    permanent: true,
+  },
+  {
+    source: '/b/:board_slug/:angle/liked',
+    destination: '/b/:board_slug/:angle/list',
+    permanent: true,
+  },
+
+  // The board logbook rendered the playlists library — the same destination the
+  // top-level `/logbook` rule above already uses.
+  {
+    source: '/:board/:layout/:size/:set/:angle/logbook',
+    destination: '/playlists',
+    permanent: true,
+  },
+  {
+    source: '/b/:board_slug/:angle/logbook',
+    destination: '/playlists',
+    permanent: true,
+  },
+
+  // Board-scoped playlists consolidate onto the top-level library — the plural
+  // twin of the singular `/playlist/:uuid` rule above.
+  {
+    source: '/:board/:layout/:size/:set/:angle/playlists',
+    destination: '/playlists',
+    permanent: true,
+  },
+  {
+    source: '/:board/:layout/:size/:set/:angle/playlists/:uuid',
+    destination: '/playlists/:uuid',
+    permanent: true,
+  },
+  {
+    source: '/b/:board_slug/:angle/playlists',
+    destination: '/playlists',
+    permanent: true,
+  },
+  {
+    source: '/b/:board_slug/:angle/playlists/:uuid',
+    destination: '/playlists/:uuid',
+    permanent: true,
+  },
+
+  // W-19 (#4437): the private web surfaces. Your feed, dashboard and stats live
+  // in the app now. Cross-origin, so `permanent: false` — a browser caches a
+  // permanent cross-origin redirect indefinitely and there is no server-side
+  // hatch if the SPA route moves. `/you/:path*` swallows the old `/you/logbook`
+  // rule, which pointed at a page this PR deletes.
+  {
+    source: '/you',
+    destination: `${APP_ORIGIN}/profile`,
+    permanent: false,
+  },
+  {
+    source: '/you/:path*',
+    destination: `${APP_ORIGIN}/profile`,
+    permanent: false,
+  },
+  {
+    source: '/feed',
+    destination: `${APP_ORIGIN}/home`,
+    permanent: false,
+  },
+  // W-20b (#4439): the notification centre. The Home tab's bell is the app's
+  // primary entry point, and backing out of it lands on the feed — the same
+  // place `/feed` above already sends people, so the hand-off is one story
+  // rather than two. Cross-origin, so `permanent: false`.
+  {
+    source: '/notifications',
+    destination: `${APP_ORIGIN}/home/notifications`,
+    permanent: false,
+  },
+  // `/discover` lost its page in W-13a and this PR removes the orphan layout,
+  // but the URL still took 435 views from 117 people over the last 90 days.
+  // The app carries the surface under the same path, which is already how
+  // `playlists/library-page-content.tsx` hands off to it.
+  {
+    source: '/discover',
+    destination: `${APP_ORIGIN}/discover`,
+    permanent: false,
+  },
+  // The Instagram beta importer had zero users over two consecutive 90-day
+  // windows and no app twin. Same-origin, so `permanent: true`.
+  {
+    source: '/import-beta',
+    destination: '/',
+    permanent: true,
+  },
+];
+
+/**
+ * One rule per locale: the base (unprefixed, `en-US`) rule plus its `/es`,
+ * `/fr` and `/de` twins. Same-origin destinations keep the reader in their
+ * locale; the app origin has no locale routing, so its twins keep the same
+ * target — the accepted regression `buildAppHandoffUrl` already records.
+ */
+export function expandLocaleRedirects(rules) {
+  return rules.flatMap((rule) => [
+    rule,
+    ...PATH_LOCALE_PREFIXES.map((prefix) => ({
+      ...rule,
+      source: `${prefix}${rule.source}`,
+      destination: rule.destination.startsWith('http')
+        ? rule.destination
+        : // `/es` + `/` is `/es/`, and Next unshifts its own `/:path+/ → /:path+`
+          // 308 ahead of every custom rule while `trailingSlash` is at its
+          // default — so the naive twin would cost the reader a second hop. Next
+          // normalises the same case in its own i18n expansion
+          // (`load-custom-routes.js`: `destination === '/' && !trailingSlash`).
+          rule.destination === '/'
+          ? prefix
+          : `${prefix}${rule.destination}`,
+    })),
+  ]);
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'assets.boardsesh.com',
+        pathname: '/static/v1/**',
+      },
+    ],
+  },
   // Dev-only: let the HMR + RSC-debug WebSockets complete when the page is
   // opened via the machine's Tailscale hostname. Next dev only allows
   // localhost origins by default and hangs the WS handshake for anything else;
@@ -60,6 +310,7 @@ const nextConfig = {
     '@boardsesh/board-constants',
     '@boardsesh/aurora-sync',
     '@boardsesh/shared-schema',
+    '@boardsesh/static-assets',
     '@boardsesh/db',
     '@boardsesh/crypto',
     '@boardsesh/moonboard-ocr',
@@ -128,20 +379,13 @@ const nextConfig = {
         source: '/.well-known/apple-app-site-association',
         headers: [{ key: 'Content-Type', value: 'application/json' }],
       },
-      {
-        // Expo web is an authenticated utility surface. Keep it out of search
-        // while it is rolled out behind the /app proxy.
-        source: '/app/:path*',
-        headers: [{ key: 'X-Robots-Tag', value: 'noindex, follow' }],
-      },
-      {
-        // Exported Expo web bundles are content-hashed (entry-<hash>.js under
-        // _expo/static, md5-named files under assets/), so they can be cached
-        // forever. The SPA shell (/app/index.html) and the fixed-name WASM glue
-        // under /app/wasm keep the default no-store-ish behaviour on purpose.
-        source: '/app/:hashedDir(_expo|assets)/:path*',
-        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
-      },
+      // No /app rules live here any more (W-24, #4438). The browser app ships at
+      // app.boardsesh.com, whose response headers come from
+      // deploy/app-subdomain/_headers. The only /app surface left on www is the
+      // dev Metro proxy, and an external rewrite forwards Metro's own response
+      // headers straight past headers() — so middleware.ts is what stamps
+      // noindex/XFO/nosniff/HSTS there, pinned against Metro's canonical
+      // constants by expo-web-header-parity.test.ts.
       {
         // Every route EXCEPT /embed/** keeps the frame-denying default.
         // If this exclusion ever regresses, the fail-safe is SAMEORIGIN
@@ -186,33 +430,26 @@ const nextConfig = {
 
     const expoWebOrigin = resolveExpoWebDevOrigin(process.env.BOARDSESH_EXPO_WEB_ORIGIN);
     if (!expoWebOrigin) {
-      // In dev, BOARDSESH_WEB=1 with no BOARDSESH_EXPO_WEB_ORIGIN usually means
-      // a half-configured Metro proxy — surface it (the static-export fallback
-      // below still applies if public/app was built). In production this is the
-      // intended configuration: no Metro, serve the static export.
-      if (process.env.NODE_ENV === 'development') {
-        console.warn(
-          '[next.config] BOARDSESH_WEB=1 but BOARDSESH_EXPO_WEB_ORIGIN is unset — Expo web /app dev proxy is disabled; serving the static export from public/app if present.',
-        );
-      }
-      // Production: no Metro to proxy to. The static Expo web export is copied
-      // into public/app (scripts/build-expo-web-export.sh; Dockerfile.web runs
-      // it in the builder stage), so real files — /app/_expo/* bundles,
-      // /app/assets/*, /app/wasm/* — are served straight from public/ before
-      // these afterFiles rewrites are consulted. Everything else under /app is
-      // an Expo Router SPA route and falls back to the exported shell. When the
-      // export was not built into the deploy, /app/index.html resolves to
-      // nothing and /app 404s — that absence is the rollback lever (see
-      // docs/expo-web-deployment.md).
+      // Production never serves /app (W-24, #4438). The Expo browser app ships
+      // only at app.boardsesh.com; www's /app was a legacy static-export path
+      // whose artifact the Vercel build never produced, so it 404'd anyway.
+      // Keeping the SPA fallback behind NODE_ENV=development preserves
+      // `vp run dev:mobile:web-static` (bake once, serve at /app over the
+      // tailnet for device QA) while guaranteeing no production build — Vercel
+      // or Dockerfile.web — can ever bake an /app route again. That guarantee
+      // is what makes #3795 (web → Railway, whose image DOES build from
+      // Dockerfile.web) safe to land after this.
+      if (process.env.NODE_ENV !== 'development') return [];
+
+      console.warn(
+        '[next.config] BOARDSESH_WEB=1 but BOARDSESH_EXPO_WEB_ORIGIN is unset — serving the static export from public/app if present (development only; production never serves /app).',
+      );
       return [
         { source: '/app', destination: '/app/index.html' },
-        // SPA fallback for Expo Router routes ONLY. The content-hashed namespaces
-        // (_expo/, assets/) and the fixed-name WASM glue (wasm/) are excluded so a
-        // request for a missing hashed bundle 404s instead of falling through to
-        // the shell. Otherwise Next's headers() would stamp the index.html body
-        // with the immutable Cache-Control that matches the incoming .js/.wasm path
-        // (line 105), and a stale-shell or mid-deploy client would cache an HTML
-        // page at a bundle URL forever — permanently bricking that URL.
+        // SPA fallback for Expo Router routes ONLY. The content-hashed
+        // namespaces (_expo/, assets/) and the fixed-name WASM glue (wasm/) stay
+        // excluded so a request for a missing hashed bundle 404s instead of
+        // silently serving the HTML shell at a .js/.wasm URL.
         { source: '/app/:path((?!_expo/|assets/|wasm/).*)', destination: '/app/index.html' },
       ];
     }
@@ -267,34 +504,7 @@ const nextConfig = {
     };
   },
   async redirects() {
-    return [
-      // Redirect old playlist routes to /playlists
-      {
-        source: '/my-library',
-        destination: '/playlists',
-        permanent: true,
-      },
-      {
-        source: '/my-library/:path*',
-        destination: '/playlists/:path*',
-        permanent: true,
-      },
-      {
-        source: '/:board/:layout/:size/:set/:angle/playlist/:uuid',
-        destination: '/playlists/:uuid',
-        permanent: true,
-      },
-      {
-        source: '/crusher/:user_id',
-        destination: '/profile/:user_id',
-        permanent: true,
-      },
-      {
-        source: '/logbook',
-        destination: '/playlists',
-        permanent: true,
-      },
-    ];
+    return expandLocaleRedirects(BASE_REDIRECTS);
   },
 };
 

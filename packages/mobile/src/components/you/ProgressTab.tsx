@@ -10,6 +10,7 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { OfflineState } from '../OfflineState';
 import { ProfileBetaShelf } from './ProfileBetaShelf';
 import { StatsSummaryCard } from './StatsSummaryCard';
+import { PeriodComparisonCard } from './PeriodComparisonCard';
 import { StackedBarChart, GroupedBarChart, TotalAreaChart, type ChartLegendItem } from './YouCharts';
 import { ActivityHeatmap } from './ActivityHeatmap';
 import { LayoutShareDonut } from './LayoutShareDonut';
@@ -137,6 +138,12 @@ export const ProgressTab = memo(function ProgressTab({ data, topInset, userId }:
             hardestSend={data.hardestSend}
             hardestFlash={data.hardestFlash}
             percentile={data.percentile}
+          />
+
+          <PeriodComparisonCard
+            periodComparison={data.periodComparison}
+            comparisonMode={data.comparisonMode}
+            onComparisonModeChange={data.setComparisonMode}
           />
 
           {/* Recent beta videos shelf — sits below the stats summary, hidden when

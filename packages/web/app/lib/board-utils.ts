@@ -48,9 +48,9 @@ export function generateBoardTitle(boardDetails: BoardDetails): string {
   return `${parts.join(' ')} | Boardsesh`;
 }
 
-// Board-details routing (Aurora vs MoonBoard) lives in @boardsesh/board-render
-// so the backend OG renderer shares one implementation. Web keeps this export +
-// its BoardDetails return type for every existing importer.
+// Board-details routing (Aurora vs MoonBoard vs Woods) lives in
+// @boardsesh/board-render so the backend OG renderer shares one implementation.
+// Web keeps this export + its BoardDetails return type for every existing importer.
 export function getBoardDetailsForBoard(
   params: ParsedBoardRouteParameters | { board_name: string; layout_id: number; size_id: number; set_ids: SetIdList },
 ): BoardDetails {

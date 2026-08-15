@@ -19,6 +19,10 @@ type BleControlSheetProps = {
   autoDisconnectEnabled: boolean;
   autoDisconnectTimeoutLabel: string;
   onToggleAutoDisconnect: (enabled: boolean) => void;
+  lightOnSwipe: boolean;
+  onToggleLightOnSwipe: (enabled: boolean) => void;
+  lightOnClimbTap: boolean;
+  onToggleLightOnClimbTap: (enabled: boolean) => void;
   /** Show the MoonBoard "light hold above" row — only when the connected
    * board is a MoonBoard. */
   showLightAdjacentHolds: boolean;
@@ -38,6 +42,10 @@ function BleControlSheet({
   autoDisconnectEnabled,
   autoDisconnectTimeoutLabel,
   onToggleAutoDisconnect,
+  lightOnSwipe,
+  onToggleLightOnSwipe,
+  lightOnClimbTap,
+  onToggleLightOnClimbTap,
   showLightAdjacentHolds,
   lightAdjacentHoldsEnabled,
   onToggleLightAdjacentHolds,
@@ -100,6 +108,36 @@ function BleControlSheet({
             showSeparator
           />
         )}
+        <ListRow
+          title={tSettings('ble.lighting.onSwipeLabel')}
+          subtitle={tSettings('ble.lighting.onSwipeDescription')}
+          leading={<Icon name="lightbulb.fill" size={22} color={systemColors.secondaryLabel} />}
+          trailing={
+            <Switch
+              value={lightOnSwipe}
+              pointerEvents="none"
+              accessibilityLabel={tSettings('ble.lighting.onSwipeLabel')}
+            />
+          }
+          onPress={() => onToggleLightOnSwipe(!lightOnSwipe)}
+          accessibilityLabel={tSettings('ble.lighting.onSwipeLabel')}
+          showSeparator
+        />
+        <ListRow
+          title={tSettings('ble.lighting.onTapLabel')}
+          subtitle={tSettings('ble.lighting.onTapDescription')}
+          leading={<Icon name="lightbulb.fill" size={22} color={systemColors.secondaryLabel} />}
+          trailing={
+            <Switch
+              value={lightOnClimbTap}
+              pointerEvents="none"
+              accessibilityLabel={tSettings('ble.lighting.onTapLabel')}
+            />
+          }
+          onPress={() => onToggleLightOnClimbTap(!lightOnClimbTap)}
+          accessibilityLabel={tSettings('ble.lighting.onTapLabel')}
+          showSeparator
+        />
         <ListRow
           title={tSettings('ble.relightBoard')}
           leading={<Icon name="lightbulb.fill" size={22} color={brandColors.warning} />}

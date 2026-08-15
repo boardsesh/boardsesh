@@ -634,6 +634,14 @@ export const queriesTypeDefs = /* GraphQL */ `
     adminAppFeedback(input: AdminAppFeedbackInput): AdminAppFeedbackResult!
 
     """
+    Crowdsourced QA: the open pull requests among \`prNumbers\` (the tester's
+    loadable \`pr-<n>\` OTA branches), each with its title, \`## Test plan\`
+    steps, \`Risk: N/5\`, and the caller's latest verdict. Tester role required.
+    Closed/unknown numbers are omitted; at most 50 per call.
+    """
+    qaPreviews(prNumbers: [Int!]!): [QaPreview!]!
+
+    """
     A gym owner's activity snapshot: unique climbers, ascents, top climbs, and
     busiest weekdays for the current window plus the equally-long window before
     it (for week-over-week deltas). Requires gym edit access (owner, gym
@@ -661,6 +669,13 @@ export const queriesTypeDefs = /* GraphQL */ `
     deliberately resurrect them. Merged gyms are excluded.
     """
     frozenLocationSyncEntities(input: FrozenLocationSyncEntitiesInput!): FrozenLocationSyncEntityConnection!
+
+    """
+    Resolve both halves of a proposed gym ownership handover — the gym and the
+    incoming owner — so the confirm step can name them (global admin only).
+    Read-only; nothing moves until reassignGymOwner is called.
+    """
+    gymOwnershipLookup(input: GymOwnershipLookupInput!): GymOwnershipLookupResult!
 
     # ============================================
     # Gym Kiosk Queries

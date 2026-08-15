@@ -281,7 +281,7 @@ export function validateSourceMapOutput(
     }
   }
 
-  // EOAS 3.0.5 delegates to Expo 57's external-map export. Metro names the
+  // eoas delegates to Expo 57's external-map export. Metro names the
   // initial pair `<name>.js` + `<name>.js.map`; Hermes then changes both suffixes
   // to `<name>.hbc` + `<name>.hbc.map`. In either case the official Sentry
   // uploader groups the pair by the exact `${bundlePath}.map` convention.

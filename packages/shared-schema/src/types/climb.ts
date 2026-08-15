@@ -66,6 +66,13 @@ export type Climb = {
   // boards. Populated by `userClimbs` (the profile Climbs tab, where no board is
   // in the route); null everywhere the board comes from the URL.
   renderBoard?: RenderBoardConfig | null;
+  // `board_climbs.compatible_size_ids` — the product sizes this climb fits on.
+  // Null/undefined means the server has no compatibility data for it (a legacy
+  // row, or a fetch path that doesn't project the column) and imposes no
+  // constraint. Load-bearing on Woods, whose two sizes number their holds from
+  // their own origins, so hold-id containment alone can't tell them apart
+  // (canAddClimbToBoard rule 5).
+  compatibleSizeIds?: number[] | null;
 };
 
 // Input type for Climb (matches GraphQL ClimbInput)
@@ -107,6 +114,10 @@ export type ClimbInput = {
   // peers render the grade without a per-climb refetch. Null when unavailable.
   boardseshDifficulty?: number | null;
   boardseshConfidence?: string | null;
+  // `board_climbs.compatible_size_ids`, round-tripped through the queue so a
+  // party peer on a different-sized wall can tell the climb doesn't fit theirs.
+  // Null/undefined means unknown and imposes no constraint.
+  compatibleSizeIds?: number[] | null;
 };
 
 /**
@@ -236,6 +247,11 @@ export type SaveClimbInput = {
   framesCount?: number | null;
   framesPace?: number | null;
   angle: number;
+  // Freely-toggleable characteristics to set at creation. Only
+  // CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS are accepted here — no_match is
+  // server-derived from description, and MoonBoard method is creation-time-only
+  // via SaveMoonBoardClimbInput.
+  characteristics?: string[] | null;
 };
 
 export type SaveMoonBoardClimbInput = {
@@ -282,6 +298,10 @@ export type UpdateClimbInput = {
   isDraft?: boolean | null;
   framesCount?: number | null;
   framesPace?: number | null;
+  // Freely-toggleable characteristics: the full desired boolean state of
+  // CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS. Any other characteristic
+  // already on the row (no_match, MoonBoard method) is left untouched.
+  characteristics?: string[] | null;
 };
 
 export type UpdateClimbResult = {

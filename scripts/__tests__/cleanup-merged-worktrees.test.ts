@@ -29,7 +29,12 @@ type PullRequest = {
   url: string;
 };
 
-function run(command: string, args: string[], cwd: string, extraEnvironment: NodeJS.ProcessEnv = {}) {
+// An override bag layered over process.env, not a complete environment — typing
+// it as NodeJS.ProcessEnv would demand the NODE_ENV the repo's Next global.d.ts
+// makes required, which no caller here wants to set.
+type EnvironmentOverrides = Record<string, string | undefined>;
+
+function run(command: string, args: string[], cwd: string, extraEnvironment: EnvironmentOverrides = {}) {
   return spawnSync(command, args, {
     cwd,
     encoding: 'utf8',
@@ -42,7 +47,7 @@ function run(command: string, args: string[], cwd: string, extraEnvironment: Nod
   });
 }
 
-function runGit(args: string[], cwd: string, extraEnvironment: NodeJS.ProcessEnv = {}): string {
+function runGit(args: string[], cwd: string, extraEnvironment: EnvironmentOverrides = {}): string {
   const result = run('git', args, cwd, extraEnvironment);
   if (result.status !== 0) {
     throw new Error(`git ${args.join(' ')} failed:\n${result.stderr}`);
@@ -168,7 +173,7 @@ function runCleanup(
   fixture: Fixture,
   pullRequests: PullRequest[],
   args: string[] = [],
-  extraEnvironment: NodeJS.ProcessEnv = {},
+  extraEnvironment: EnvironmentOverrides = {},
 ) {
   return run('bash', [fixture.scriptPath, ...args], fixture.primaryWorktree, {
     GH_PR_JSON: JSON.stringify(pullRequests),

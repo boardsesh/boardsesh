@@ -1,8 +1,15 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "bunx bun@1.3.14 install --frozen-lockfile",
   "buildCommand": "bun run --filter=@boardsesh/web build",
   "framework": "nextjs",
   "git": { "deploymentEnabled": false },
+  "functions": {
+    "app/api/internal/board-render/route.ts": {
+      "memory": 1769,
+      "maxDuration": 30
+    }
+  },
   "crons": [
     {
       "path": "/api/internal/prewarm-heatmap/kilter",
@@ -31,6 +38,10 @@
     {
       "path": "/api/internal/cleanup",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/internal/refresh-sitemap-climbs",
+      "schedule": "0 */6 * * *"
     }
   ]
 }

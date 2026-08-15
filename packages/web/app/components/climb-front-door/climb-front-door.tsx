@@ -1,6 +1,6 @@
 import React from 'react';
 import Box from '@mui/material/Box';
-import type { SimilarClimb } from '@boardsesh/shared-schema';
+import { getDisplayDescription, type SimilarClimb } from '@boardsesh/shared-schema';
 import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-fragment';
 import SimilarClimbsList from '@/app/components/similar-climbs/similar-climbs-list';
 import ClimbSocialSection from '@/app/components/social/climb-social-section';
@@ -14,6 +14,7 @@ import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { BetaLink } from '@/app/lib/beta-video-url';
 import type { BoardDetails, BoardName, Climb } from '@/app/lib/types';
 import AngleCrossLinks from './angle-cross-links';
+import ClimbCreativeWorkJsonLd from './climb-creative-work-json-ld';
 import ClimbFacts from './climb-facts';
 import ClimbHandoffCta, { type HandoffTree } from './climb-handoff-cta';
 import FrontDoorBreadcrumb from './front-door-breadcrumb';
@@ -33,12 +34,32 @@ type ClimbFrontDoorProps = {
    */
   handoffPath: string;
   tree: HandoffTree;
+  /**
+   * True when the page is asking Google not to index it — today only `/b/{slug}`
+   * on an unlisted or non-public board.
+   *
+   * It gates the `CreativeWork` payload, and the reason is the same one that
+   * makes that page pass no `path` to `createPageMetadata`: a noindex URL that
+   * names an indexable twin is a conflicting signal Google can resolve by
+   * propagating the noindex, deindexing a public config-tuple climb page because
+   * one private board happens to share its configuration. `url` is the field
+   * Google uses for page association, so emitting it here would walk straight
+   * around the guard the metadata puts up.
+   */
+  noindex?: boolean;
 };
 
 const containerSx = {
   maxWidth: 900,
   margin: '0 auto',
   padding: `${themeTokens.spacing[4]}px`,
+};
+
+// Setters type notes with line breaks; keep them rather than collapsing the
+// whole thing onto one line.
+const setterNotesSx = {
+  whiteSpace: 'pre-line',
+  margin: 0,
 };
 
 /**
@@ -73,6 +94,7 @@ export default async function ClimbFrontDoor({
   betaLinks,
   handoffPath,
   tree,
+  noindex = false,
 }: ClimbFrontDoorProps) {
   const { t, locale } = await getServerTranslation('climbs');
 
@@ -82,8 +104,31 @@ export default async function ClimbFrontDoor({
   // those differ, and the JSON-LD has to name the URL the page claims.
   const canonicalClimbUrl = buildCanonicalClimbViewUrl(boardDetails, angle, climb.uuid, climbName);
   const overlayUrl = climb.frames ? buildOverlayUrl(boardDetails, climb.frames, false) : null;
+  // The setter's own words about the climb — the one genuinely unique piece of
+  // indexable prose on this page. User-written, so it renders verbatim (never
+  // through `t()`) and stays out of the JSON-LD `description` below, which is
+  // the synthesised catalogue string. Empty when the setter wrote nothing, or
+  // only Aurora's "No match" marker.
+  const setterNotes = getDisplayDescription(climb.description);
   const currentAngleStats = angleStats.find((stats) => stats.angle === angle);
   const layoutName = boardDetails.layout_name ?? '';
+  // The same catalog string `generateMetadata` fills, but structured data omits
+  // it unless the current angle has an honest five-star quality value. A missing
+  // stats row must not become "Quality: 0/5", and an Aurora-scale 1-3 value must
+  // not be labelled `/5`. Schema.org treats `description` as optional.
+  const jsonLdDescription =
+    climb.difficulty &&
+    climb.setter_username &&
+    currentAngleStats?.quality_normalized === true &&
+    currentAngleStats.quality_average !== null
+      ? t('metadata.view.description', {
+          climbName,
+          grade: climb.difficulty,
+          setter: climb.setter_username,
+          quality: currentAngleStats.quality_average,
+          ascents: currentAngleStats.ascensionist_count,
+        })
+      : null;
 
   return (
     <Box component="main" sx={containerSx}>
@@ -94,6 +139,18 @@ export default async function ClimbFrontDoor({
         currentLabel={climbName}
         currentUrl={canonicalClimbUrl}
       />
+
+      {noindex ? null : (
+        <ClimbCreativeWorkJsonLd
+          climb={climb}
+          climbName={climbName}
+          canonicalClimbUrl={canonicalClimbUrl}
+          overlayUrl={overlayUrl}
+          currentAngleStats={currentAngleStats}
+          description={jsonLdDescription}
+          locale={locale}
+        />
+      )}
 
       <ClimbViewSeoFragment climb={climb} boardDetails={boardDetails} />
 
@@ -118,6 +175,15 @@ export default async function ClimbFrontDoor({
       ) : null}
 
       <ClimbFacts climb={climb} boardDetails={boardDetails} angle={angle} currentAngleStats={currentAngleStats} />
+
+      {setterNotes ? (
+        <Box component="section">
+          <Box component="h2">{t('frontDoor.setterNotes.heading')}</Box>
+          <Box component="p" sx={setterNotesSx}>
+            {setterNotes}
+          </Box>
+        </Box>
+      ) : null}
 
       <ClimbHandoffCta
         pathname={handoffPath}

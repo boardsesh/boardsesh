@@ -113,6 +113,7 @@ describe('applyClimbRatings REMOVE → soft-detach (real DB)', () => {
       TEST_USER_ID,
       [putOp({ climbRatingUuid: 'kr-adopt', climbUuid, rating: 5 })],
       aliasCacheFor([climbUuid]),
+      () => {},
     );
 
     const row = await readRating(climbUuid);
@@ -135,9 +136,10 @@ describe('applyClimbRatings REMOVE → soft-detach (real DB)', () => {
       TEST_USER_ID,
       [putOp({ climbRatingUuid: 'kr-remove', climbUuid, rating: 5 })],
       aliasCacheFor([climbUuid]),
+      () => {},
     );
 
-    await applyClimbRatings(applyTx, TEST_USER_ID, [removeOp('kr-remove')], new Map());
+    await applyClimbRatings(applyTx, TEST_USER_ID, [removeOp('kr-remove')], new Map(), () => {});
 
     // On main this row is gone — the DELETE matched the adopted kilter_id.
     const row = await readRating(climbUuid);
@@ -157,8 +159,9 @@ describe('applyClimbRatings REMOVE → soft-detach (real DB)', () => {
       TEST_USER_ID,
       [putOp({ climbRatingUuid: 'kr-redeliver', climbUuid, rating: 5 })],
       aliasCacheFor([climbUuid]),
+      () => {},
     );
-    await applyClimbRatings(applyTx, TEST_USER_ID, [removeOp('kr-redeliver')], new Map());
+    await applyClimbRatings(applyTx, TEST_USER_ID, [removeOp('kr-redeliver')], new Map(), () => {});
     const detached = await readRating(climbUuid);
     expect(detached?.kilter_detached_at).not.toBeNull();
 
@@ -178,6 +181,7 @@ describe('applyClimbRatings REMOVE → soft-detach (real DB)', () => {
       TEST_USER_ID,
       [putOp({ climbRatingUuid: 'kr-redeliver', climbUuid, rating: 3 })],
       aliasCacheFor([climbUuid]),
+      () => {},
     );
 
     const row = await readRating(climbUuid);
@@ -200,9 +204,10 @@ describe('applyClimbRatings REMOVE → soft-detach (real DB)', () => {
       TEST_USER_ID,
       [putOp({ climbRatingUuid: 'kr-pure', climbUuid, rating: 2 })],
       aliasCacheFor([climbUuid]),
+      () => {},
     );
 
-    await applyClimbRatings(applyTx, TEST_USER_ID, [removeOp('kr-pure')], new Map());
+    await applyClimbRatings(applyTx, TEST_USER_ID, [removeOp('kr-pure')], new Map(), () => {});
 
     // Deliberate behaviour change, matching the tick precedent: the row stays
     // but is marked. The ascents feeds filter on kilter_detached_at, so the
@@ -242,8 +247,9 @@ describe('applyClimbRatings REMOVE → soft-detach (real DB)', () => {
         TEST_USER_ID,
         [putOp({ climbRatingUuid: 'kr-push', climbUuid, rating: 5 })],
         aliasCacheFor([climbUuid]),
+        () => {},
       );
-      await applyClimbRatings(applyTx, TEST_USER_ID, [removeOp('kr-push')], new Map());
+      await applyClimbRatings(applyTx, TEST_USER_ID, [removeOp('kr-push')], new Map(), () => {});
       vi.stubEnv('KILTER_SYNC_PUSH_ENABLED', 'true');
 
       // Same shape as the control above, minus the marker: drop the

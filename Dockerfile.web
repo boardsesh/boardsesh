@@ -27,9 +27,6 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# bash runs scripts/build-expo-web-export.sh (repo scripts are bash, not sh)
-RUN apk add --no-cache bash
-
 # Copy bun binary from deps stage (avoid re-downloading)
 COPY --from=deps /root/.bun/bin/bun /usr/local/bin/bun
 RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
@@ -51,38 +48,25 @@ COPY source/scripts ./scripts
 # Bun's isolated linker resolves workspace deps through per-package symlink
 # farms (packages/*/node_modules -> ../../node_modules/.bun). The deps stage
 # created them next to the manifests, but only the root node_modules (with the
-# .bun store) crosses the stage boundary, so relink before the Expo export
-# resolves modules from the source tree — `bunx expo` must find the workspace's
-# pinned expo, never fall back to fetching a floating version.
+# .bun store) crosses the stage boundary, so relink before the Next build
+# resolves modules from the source tree.
 RUN bun install --frozen-lockfile
 
 # Accept build arguments for environment variables baked into the Next.js build
 ARG NEXT_PUBLIC_WS_URL
 ARG BASE_URL
-# BOARDSESH_WEB=1 turns on the Expo web export below AND the /app serving
-# branch that next.config.mjs bakes into the standalone build. Rollback lever:
-# build with --build-arg BOARDSESH_WEB=0 to ship an image without the Expo web
-# app — /app then 404s while the rest of the site is untouched.
-ARG BOARDSESH_WEB=1
 
 ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 ENV BASE_URL=$BASE_URL
-ENV BOARDSESH_WEB=$BOARDSESH_WEB
 
-# Static Expo web export served by Next at /app. The nested web-runtime install
-# supplies the web-only renderer (react-native-web, react-dom, the gorhom sheet)
-# outside the native fingerprint graph — the export script runs it when missing.
-# The export lands in packages/web/public/app, which the runner stage picks up
-# through the existing public/ COPY and Next's standalone server then serves
-# statically. EXPO_PUBLIC_WEB_URL feeds the Expo Router head origin; the app's
-# runtime URLs (backend/WS) fall back to production defaults in src/lib/env.ts.
-# Only export EXPO_PUBLIC_WEB_URL when BASE_URL is non-empty: Expo inlines
-# EXPO_PUBLIC_* values verbatim, and a set-but-empty value would override the
-# production fallback in src/lib/env.ts with ''.
-RUN if [ "$BOARDSESH_WEB" = "1" ]; then \
-      if [ -n "$BASE_URL" ]; then export EXPO_PUBLIC_WEB_URL="$BASE_URL"; fi; \
-      bash scripts/build-expo-web-export.sh packages/web/public/app; \
-    fi
+# No Expo web export step here (W-24, #4438). The browser app ships only at
+# app.boardsesh.com, exported and published by production-deploy.yml's
+# deploy-app-web job. This image used to bake a second copy of it under
+# public/ for Next to serve at /app; that path is retired, and next.config.mjs
+# returns no /app rewrites outside NODE_ENV=development, so a production build
+# could not serve one even if an artifact reappeared. Guarded by
+# scripts/__tests__/dockerfile-web-no-expo-export.test.ts, which pins this file
+# by text because nothing in CI builds it.
 
 # Build the Next.js application (standalone output)
 RUN bun run --filter=@boardsesh/web build
@@ -94,15 +78,42 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# BOARDSESH_WEB is read at REQUEST time by the standalone server, not just at
-# build: app/layout.tsx gates the Expo auth session bridge on it
-# (enableExpoAuthBridge) and middleware.ts gates the /app dev proxy. The builder
-# ARG/ENV above does not cross the stage boundary, so redeclare it here or the
-# runtime flag is undefined and the bridge stays off even though /app is served.
-# The default mirrors the builder so a single --build-arg BOARDSESH_WEB=0
-# rollback disables both the export AND the runtime bridge consistently.
+# BOARDSESH_WEB is read at REQUEST time by the standalone server. Since W-24
+# (#4438) retired the /app static path it has exactly two remaining jobs, both
+# request-time: app/layout.tsx gates the cross-subdomain Expo auth session
+# bridge on it (enableExpoAuthBridge — the www half of what app.boardsesh.com
+# signs in through), and middleware.ts gates the /app carve-out. The builder
+# stage no longer declares it at all; there is no /app serving left to roll back
+# with --build-arg BOARDSESH_WEB=0. Setting it to 0 here now only turns the auth
+# bridge off, which would break sign-in on the subdomain — do not use it as a
+# rollback lever.
 ARG BOARDSESH_WEB=1
 ENV BOARDSESH_WEB=$BOARDSESH_WEB
+
+# The canonical origin this deployment serves. One of NEXTAUTH_URL / BASE_URL is
+# REQUIRED at runtime: with neither, the server cannot know its own origin,
+# next-auth falls back to http://localhost:3000, every session cookie loses its
+# `__Secure-` name and its `Domain=.boardsesh.com` scope, and the whole signed-in
+# fleet is logged out (issue #4651). instrumentation.ts now refuses to boot in
+# that state rather than serve it.
+#
+# The builder stage's ARG/ENV BASE_URL does NOT reach this stage, and neither
+# does `packages/web/.env.local` — Next's standalone writer copies only `.env`
+# and `.env.production`. So the runner has to declare it itself.
+#
+# Prefer supplying NEXTAUTH_URL and BASE_URL at `docker run` / in the Railway
+# service variables; this build arg is only a baked default for an image built
+# for one known origin, which is how branch-deploy.yml builds preview images.
+#
+# NOTE: with no `--build-arg BASE_URL`, this bakes the EMPTY STRING — BASE_URL is
+# then PRESENT and empty rather than absent. Everything that reads it must treat
+# empty as unset; the transactional-email routes use `?.trim() ||`, never `??`,
+# for exactly this reason.
+#
+# Pinned by scripts/__tests__/dockerfile-web-auth-origin.test.ts, because
+# nothing in CI builds this file.
+ARG BASE_URL
+ENV BASE_URL=$BASE_URL
 
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs && \
@@ -124,7 +135,12 @@ EXPOSE 3000
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 
+# An HTTP probe, not a TCP connect. Next keeps listening after a failed server
+# prepare and answers every request with a 500, so a socket that accepts proves
+# nothing — measured: the pre-#4651 container reported `healthy` while 100% of
+# requests 500'd. /robots.txt is prerendered static and touches no database, so
+# a non-5xx here means the app really did prepare.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
-  CMD node -e "const s=require('net').connect(3000,'127.0.0.1',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1))"
+  CMD node -e "require('http').get({host:'127.0.0.1',port:3000,path:'/robots.txt'},(r)=>{r.resume();process.exit(r.statusCode<500?0:1)}).on('error',()=>process.exit(1))"
 
 CMD ["node", "packages/web/server.js"]

@@ -67,9 +67,10 @@ export async function generateMetadata(props: {
       robots,
     });
   } catch {
-    // A board config the slug tables and the DB both fail to resolve. The page
-    // body 404s on the same request; claim no canonical for a URL that has no
-    // board behind it.
+    // A board config the slug tables and the DB both fail to resolve. Claim no
+    // canonical for a URL that has no board behind it. On the same request the
+    // page body 404s for an unresolvable config or an out-of-range `?page`, and
+    // 500s if the read itself failed (#4461) — metadata never decides that.
     return createPageMetadata({
       title: t('metadata.list.fallbackTitle'),
       description: t('metadata.list.fallbackDescription'),

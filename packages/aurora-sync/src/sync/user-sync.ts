@@ -415,20 +415,66 @@ export async function upsertTableData(
           if (item.climbs && Array.isArray(item.climbs)) {
             await db.delete(playlistClimbs).where(eq(playlistClimbs.playlistId, playlist.id));
 
+            // Build the full row set first and dedupe by climb_uuid before
+            // inserting: `unique_playlist_climb` is (playlist_id, climb_uuid)
+            // only — it doesn't know about angle — so an Aurora circuit that
+            // repeats the same climb at two angles collides on insert.
+            // First occurrence wins, matching what onConflictDoNothing below
+            // would keep anyway. #4023.
+            const seenClimbUuids = new Set<string>();
+            const climbRows: Array<{
+              playlistId: typeof playlist.id;
+              climbUuid: string;
+              angle: number | null;
+              position: number;
+            }> = [];
+            let droppedDuplicateClimbs = 0;
             for (let i = 0; i < item.climbs.length; i++) {
               const climb = item.climbs[i];
               const climbUuid = climb.climb_uuid || climb.uuid || climb;
               const climbAngle = climb.angle ?? null;
               const climbPosition = climb.position ?? i;
 
-              if (typeof climbUuid === 'string') {
-                await db.insert(playlistClimbs).values({
-                  playlistId: playlist.id,
-                  climbUuid: climbUuid,
-                  angle: climbAngle,
-                  position: climbPosition,
-                });
+              if (typeof climbUuid !== 'string') continue;
+              if (seenClimbUuids.has(climbUuid)) {
+                droppedDuplicateClimbs++;
+                continue;
               }
+              seenClimbUuids.add(climbUuid);
+              climbRows.push({
+                playlistId: playlist.id,
+                climbUuid,
+                angle: climbAngle,
+                position: climbPosition,
+              });
+            }
+
+            // Dropping a row is data loss the climber never asked for: the
+            // circuit they see in Aurora has an entry ours won't. Right trade
+            // against wedging their entire sync, but it has to be visible —
+            // without this line there is no way to tell "Aurora never repeats a
+            // climb" from "we have been quietly truncating circuits for
+            // months". If this fires in prod, widening the index to include
+            // angle is the real fix.
+            if (droppedDuplicateClimbs > 0) {
+              log(
+                `  Circuit ${item.uuid}: dropped ${droppedDuplicateClimbs} repeated climb_uuid row(s) — unique_playlist_climb is (playlist_id, climb_uuid) and ignores angle`,
+              );
+            }
+
+            if (climbRows.length > 0) {
+              // Chunked batch insert with onConflictDoNothing: a concurrent
+              // addClimbToPlaylist landing mid-transaction (both run under
+              // READ COMMITTED) no-ops instead of aborting the whole sync
+              // batch with a raw 23505. Same shape as kilter-sync's
+              // applyCircuits, which leans on a bare onConflictDoNothing with
+              // no JS dedupe in front of it.
+              await processBatches(climbRows, BATCH_SIZE, async (batch) => {
+                await db
+                  .insert(playlistClimbs)
+                  .values(batch)
+                  .onConflictDoNothing({ target: [playlistClimbs.playlistId, playlistClimbs.climbUuid] });
+              });
             }
           }
         }

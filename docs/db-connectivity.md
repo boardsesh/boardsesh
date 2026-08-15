@@ -99,6 +99,166 @@ off) rather than reaching into postgres.js's backoff.
 The connect-retry tests pin their pools to `backoff: () => 0` so they measure this
 wrapper's loop rather than that ramp.
 
+## What actually exhausts a pool: one uncached read, run concurrently (#4463)
+
+The deadlines above bound how long a caller _waits_. Neither bounds how many
+connections one logical read can hold at once, and that is what took the
+backend down in #4463.
+
+The home page's two backend reads — `popularBoardConfigs` and
+`recentBetaLinks` — are Redis-cached with a long TTL and both fall through to
+a heavy statement on a miss. The fall-through had no concurrency control, so N
+simultaneous visitors during a cold window meant N simultaneous copies, each
+holding one of the pool's ten connections. `popularBoardConfigs` costs 82 s on
+the dev-db image; the one production observation on record is ~10 s cold, read
+through the sitemap's copy of the same statement
+(`packages/web/app/lib/server-popular-configs.ts`). Either number times ten
+visitors empties the pool, and after that every _other_ query in the process
+queued forever on the untimed acquire queue described in the next section.
+`{ __typename }` kept answering in single-digit milliseconds through the same
+event loop, which is why it read as anything but saturation.
+
+`packages/backend/src/utils/single-flight.ts` is the fix: concurrent callers of
+one key share one in-flight promise, so a cold window costs one statement and
+one connection instead of one per caller. It is deliberately not a cache — the
+promise is dropped the moment it settles. A process-local copy
+(`REDISLESS_FALLBACK_TTL_MS`) covers deployments with no Redis, where
+single-flight alone would still re-run the statement for the first caller after
+every completion.
+
+The distributed Redis lock those reads' warm-up jobs take is not a substitute:
+it only stops a second _node_ from refreshing, and it is not held on the
+resolver path at all.
+
+**When adding a cache-with-fallthrough on a read that costs more than a few
+hundred milliseconds, wrap the fall-through.** The Redis hit rate is not the
+safety property; the concurrency of the miss is.
+
+## Front-door read deadlines and pool sizing (#4461)
+
+The connect retry above bounds a _failed_ connect. It does nothing about a
+_saturated_ pool, and that is the failure the climb sitemaps invite: postgres.js
+has no acquire timeout, and its internal queue is unbounded and untimed
+(`postgres/src/index.js:341`). A statement that cannot get a connection waits
+forever, so many concurrent SSR renders against a slow database look like a hang
+rather than an error.
+
+`packages/web/app/lib/db/read-deadline.ts` bounds one read client-side. It races
+the pending query against a timer and rejects with `DbReadTimeoutError`
+(`code: 'DB_READ_TIMEOUT'`) when the timer wins. It is wired at four
+front-door reads — the two statements behind `getClimb`, the all-angles
+stats select, and the shared climb search — and deliberately **not** inside
+`withConnectRetry` or `packages/db`, where it would change behaviour for the
+backend, the sync runners and every script.
+
+**Cancellation covers three of the four.** On a timeout the helper calls
+`query.cancel()` the way the health probe does, so a timed-out statement does not
+fire later against a recovered pool. That only works for raw postgres.js
+queries. The list front door's search is drizzle-issued and exposes no
+`.cancel()`, so there the deadline sheds the _caller_ while the statement runs to
+completion still holding its connection. Worth knowing mid-incident: shedding
+list renders does not immediately hand connections back.
+
+Cancelling a **queued** query is free — postgres.js removes it from the queue and
+rejects it locally. Cancelling one that is already **executing** opens a
+brand-new connection to send the cancel request, against a database that is by
+construction already struggling, and postgres.js keeps that connection's promise
+internally (`Query.cancel()` returns `null`), so a failure to open it surfaces as
+an unhandled rejection the runtime logs. Accepted: a zombie statement firing
+against a recovered pool is worse than a log line.
+
+**One budget per request, not per statement.** The climb page issues three reads
+in sequence, so three independent 6 s deadlines would be an ~18 s request
+ceiling — the opposite of shedding load. `app/lib/db/request-read-budget.ts`
+puts one deadline timestamp in React's per-render `cache` scope and hands each
+read whatever the earlier ones left, floored at 500 ms. Outside a render scope
+(scripts, unit tests) React's `cache` is a passthrough and each read gets its own
+deadline.
+
+**Since #4650 the same helper also wraps four more reads: the unauthenticated
+OG image routes**, one `withReadDeadline` call around each route's whole DB
+phase — `og-setter`, `og-profile`, `og-playlist`, `og-session` (`/api/og/climb`
+needs nothing; its `getClimb` read is already covered above). Those add a
+third outcome to the table below: a timed-out or rejected OG read does not
+404 or 500, it redirects to `/opengraph-image` — the existing DB-free branded
+card — with a 60 s CDN `s-maxage`. Unfurlers render nothing on a bare 5xx and
+cache that failed scrape for days, so a degraded-but-present card beats a
+blank embed for that whole window, and the short `s-maxage` lets the CDN
+answer a burst of scraper retries during the brownout without sending each
+one at the database.
+
+### What the reader sees when it fires
+
+| condition                           | before                               | after                                           |
+| ----------------------------------- | ------------------------------------ | ----------------------------------------------- |
+| climb row absent                    | 404                                  | 404 (unchanged — now for the right reason)      |
+| board slug resolves to nothing      | 404                                  | 404 (unchanged)                                 |
+| read fails or deadlines, climb page | hung to the platform limit, then 404 | 500 at ~6 s per request                         |
+| read fails or deadlines, list page  | 200 with zero climbs                 | 500 at ~6 s                                     |
+| backend `boardBySlug` fails, `/b/…` | 404                                  | 500                                             |
+| backend GraphQL wedged              | climb page hung indefinitely         | similar climbs / beta links render empty at 3 s |
+
+The 5xx is the point. Google retries a 5xx and keeps the URL, while a 404 — or a
+200 with nothing on it — on a sitemapped URL reads as "drop this page".
+
+**The CDN does not hide it, and that is fine.** `stale-while-revalidate` only
+cushions a URL whose `age` has already passed `s-maxage`: climb views are covered
+for age 1 h–7 h, list front doors for 24 h–7 d, and Vercel supports no
+`stale-if-error`. A cold-MISS crawl of a long-tail sitemap URL therefore sees the
+500 directly. The asymmetry that matters is what happens next: 5xx is **not** a
+cacheable status on Vercel, so it is never pinned, whereas the 404 this replaces
+**is** cacheable — one blip used to stick a 404 in the CDN for a full `s-maxage`.
+
+A genuinely missing climb is also not negatively cached: `fetchClimbFromDb`
+throws a private not-found error inside `unstable_cache` (which never stores a
+rejection) and the caller turns it back into `null`, so a climb crawled minutes
+before its import lands recovers on the next request rather than 404-ing for the
+rest of the hour-long entry.
+
+### Budgets
+
+| knob                      | default | meaning                                                                                  |
+| ------------------------- | ------- | ---------------------------------------------------------------------------------------- |
+| `DB_READ_DEADLINE_MS`     | 6000    | web front door: wall clock for one _request's_ reads (queue wait + connect + execute)    |
+| `DB_POOL_MAX`             | 10      | postgres.js `max`, clamped to a floor of 2                                               |
+| `DB_POOL_IDLE_TIMEOUT_S`  | 30      | seconds an idle connection is held open; `0` means "never close one" and is not clamped  |
+| `DB_STATEMENT_TIMEOUT_MS` | unset   | emits a `statement_timeout` startup parameter — **off by default**, see the hazard below |
+
+6000 sits deliberately below `DB_CONNECT_RETRY_BUDGET_MS` (10000): during a
+brownout the front door should shed load rather than spend a second and third
+connect attempt holding a pool slot while a crawler waits. That comparison only
+holds because the budget is per request — see the shared-budget note above.
+
+The pool knobs default to the values that used to be hard-coded, so nothing
+changes for a deployment that does not set them. They exist because peak
+server-side connections scale with **instance count × connections held idle**,
+not with per-instance `max` — a fleet of serverless instances each sitting on a
+few idle connections for 30 s is the term that grows during a crawl burst.
+Lowering `DB_POOL_MAX` and `DB_POOL_IDLE_TIMEOUT_S` on a serverless deployment
+shrinks that footprint; raising `max` never helps.
+
+### The `statement_timeout` hazard
+
+`DB_STATEMENT_TIMEOUT_MS` ships off. PgBouncer in transaction-pooling mode
+rejects startup parameters that are not in `ignore_startup_parameters`, and
+`statement_timeout` is not among the defaults — so setting it against a pooled
+`DATABASE_URL` fails _every connection_ instead of bounding one query. Two
+paths, chosen by what the URL actually points at:
+
+- **Direct Postgres** — set `DB_STATEMENT_TIMEOUT_MS` on the deployment.
+- **Pooled (PgBouncer) URL** — do it database-side instead, with
+  `ALTER ROLE <app_role> SET statement_timeout = '8s'`, which passes through a
+  pooler transparently.
+
+`psql "$DATABASE_URL" -c 'show pool_mode;'` tells you which you have: a direct
+Postgres errors, PgBouncer answers.
+
+### There is no web health probe
+
+`/health` and `/health/db` below are **backend** endpoints. `packages/web` has
+none, so during a web-pool incident `/health/db` stays green and says nothing
+about the surface that is actually failing. That gap is not filled here.
+
 ## Where the retry is wired
 
 `createDb()` / `createReadDb()` hand drizzle a retry-wrapped view of the pool

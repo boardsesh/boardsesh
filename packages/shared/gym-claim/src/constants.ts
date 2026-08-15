@@ -7,3 +7,11 @@
 
 /** Max length of the optional note on an admin-review claim (backend + both clients). */
 export const GYM_CLAIM_MESSAGE_MAX_LENGTH = 1000;
+
+/**
+ * Where an owner writes about a claim or an ownership handover. There is no
+ * in-product owner-reassignment action yet (#4378 builds one), so both clients
+ * name the channel that actually processes these — the same admin-reviewed
+ * inbox the claim queue mails.
+ */
+export const GYM_CLAIM_SUPPORT_EMAIL = 'admin@boardsesh.com';

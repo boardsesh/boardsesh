@@ -81,16 +81,39 @@
     "boardsHeading": "Plafones",
     "boardCount_one": "{{count}} plafón",
     "boardCount_other": "{{count}} plafones",
+    "hoursHeading": "Horario",
+    "hoursConfirmed": "Confirmado el {{date}}",
     "visitWebsite": "Visitar el sitio web",
+    "install": {
+      "heading": "Consigue la app para este muro",
+      "body": "Enciende los plafones de {{gymName}} desde el móvil y registra cada encadene.",
+      "googlePlay": "Disponible en Google Play",
+      "appStore": "Descárgala en el App Store"
+    },
     "noBoardsYet": "Aún no hay plafones aquí.",
-    "exploreFeed": "Mira qué están encadenando otros escaladores",
+    "explorePlaylists": "Mira las playlists que monta la gente",
     "claimTitle": "¿Es tuyo este rocódromo?",
     "claimBody": "Reclámalo para gestionar los plafones, la marca y lo que se ve en el muro.",
     "claimCta": "Reclamar este rocódromo",
+    "claimCtaSignedOut": "Inicia sesión y reclámalo",
+    "claimPendingTitle": "Tu solicitud está en revisión",
+    "claimPendingBody": "Estamos comprobando que gestionas este rocódromo. Te escribiremos igualmente, normalmente en unos días.",
+    "claimPendingDomainTitle": "Revisa tu bandeja de entrada",
+    "claimPendingDomainBody": "Te hemos enviado un enlace a tu correo de trabajo. Haz clic y el rocódromo será tuyo.",
+    "claimAuthTitle": "Reclama tu rocódromo",
+    "claimAuthBody": "Inicia sesión y te devolvemos aquí mismo para reclamarlo.",
     "owner": {
       "linkBoards": {
         "title": "Vincula tus plafones",
         "body": "Los escaladores todavía no ven ningún muro aquí."
+      },
+      "addHours": {
+        "title": "Añade tu horario",
+        "body": "Quien mira si le da tiempo a escalar esta noche no lo sabe."
+      },
+      "addDescription": {
+        "title": "Cuenta cómo se escala aquí",
+        "body": "Un par de líneas sobre los muros, el trazado y el ambiente."
       },
       "putOnTv": {
         "title": "Pon este muro en una tele",
@@ -100,6 +123,18 @@
         "title": "Añade tu marca",
         "body": "Añade tu logo y tus colores para que la página sea tuya."
       }
+    },
+    "photoAlt": "El muro de escalada de {{gymName}}",
+    "poster": {
+      "metaTitle": "Póster QR de {{gymName}}",
+      "metaDescription": "Un código listo para imprimir que los escaladores escanean en el muro.",
+      "heading": "Escanea el código y enciende el muro",
+      "pitch": "Consigue Boardsesh, elige un bloque y las presas se encienden en el plafón que tienes delante. Y de paso registra cada encadene.",
+      "typedUrlLabel": "¿Sin cámara? Escribe esto:",
+      "compatibility": "Compatible con Kilter, Tension y MoonBoard.",
+      "independence": "Boardsesh es una app independiente. No está afiliada ni respaldada por Aurora Climbing, Moon Climbing ni ningún fabricante de plafones.",
+      "printAction": "Imprimir este póster",
+      "backToGym": "Volver al rocódromo"
     }
   },
   "manage": {
@@ -343,6 +378,7 @@
       "quickLinksHeading": "Gestiona tu rocódromo",
       "viewPublicPage": "Ver la página pública",
       "embedAction": "Insertar en tu sitio web",
+      "printPoster": "Imprime tu póster",
       "stats": {
         "boards": "plafones",
         "members": "miembros",
@@ -378,7 +414,22 @@
     },
     "profile": {
       "heading": "Perfil del rocódromo",
-      "description": "El nombre, la dirección y lo que ven los escaladores en la página pública."
+      "description": "El nombre, la dirección y lo que ven los escaladores en la página pública.",
+      "photo": {
+        "heading": "Foto del rocódromo",
+        "description": "Una foto de tu muro o de la zona de plafones. Encabeza tu página pública y acompaña al enlace cuando alguien lo comparte.",
+        "upload": "Subir foto",
+        "replace": "Cambiar foto",
+        "remove": "Quitar",
+        "currentAlt": "Foto de {{gymName}}",
+        "emptyPlaceholder": "Todavía sin foto",
+        "formatsHint": "JPG, PNG o WebP, hasta {{maxMb}} MB. Se redimensiona a {{maxDimension}} px. Usa una foto real de tu muro o de la zona de plafones, nada generado con IA.",
+        "unsupportedType": "Usa una imagen JPG, PNG o WebP.",
+        "tooLarge": "Ese archivo supera los {{maxMb}} MB. Elige una imagen más pequeña.",
+        "uploadTooLarge": "Esa foto sigue superando los {{maxMb}} MB después de redimensionarla. Elige otra.",
+        "uploadFailed": "No se pudo subir la foto.",
+        "saveFailed": "No se pudo guardar la foto."
+      }
     },
     "comments": {
       "intro": "Responde al hilo de comentarios de tu rocódromo sin salir de la consola.",

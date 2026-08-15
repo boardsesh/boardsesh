@@ -26,20 +26,61 @@ const KNOWN_RENDER_CONFIG = {
   },
 };
 
+/** Opaque (alpha > 0) pixels in a render — the cheapest proxy for "the geometry changed". */
+function opaquePixelCount(config: Record<string, unknown>): number {
+  const { rgba } = _webRendererForTests.decodeRenderOutput(renderOverlay(JSON.stringify(config)));
+  let opaque = 0;
+  for (let pixelOffset = 3; pixelOffset < rgba.length; pixelOffset += 4) {
+    if (rgba[pixelOffset] !== 0) opaque += 1;
+  }
+  return opaque;
+}
+
+/**
+ * Sum of every pixel's alpha channel. `soft` and `plateau` glow falloff reach
+ * the same outer radius (measured: opaquePixelCount is identical to within
+ * antialiasing noise between the two), so `opaquePixelCount` can't see the
+ * difference — it's the falloff *shape* inside that radius (plateau holds
+ * near-max alpha longer before dropping) that differs, which only shows up
+ * in the total alpha weight.
+ */
+function alphaWeight(config: Record<string, unknown>): number {
+  const { rgba } = _webRendererForTests.decodeRenderOutput(renderOverlay(JSON.stringify(config)));
+  let sum = 0;
+  for (let pixelOffset = 3; pixelOffset < rgba.length; pixelOffset += 4) {
+    sum += rgba[pixelOffset];
+  }
+  return sum;
+}
+
+/** KNOWN_RENDER_CONFIG with the same marker `shape` stamped on every hold state. */
+function withHoldShape(shape: string): Record<string, unknown> {
+  return {
+    ...KNOWN_RENDER_CONFIG,
+    hold_state_map: Object.fromEntries(
+      Object.entries(KNOWN_RENDER_CONFIG.hold_state_map).map(([code, stateInfo]) => [code, { ...stateInfo, shape }]),
+    ),
+  };
+}
+
+let wasmReady: Promise<void> | null = null;
+function initCommittedWasm(): Promise<void> {
+  wasmReady ??= (async () => {
+    const publicWasm = await readFile(PUBLIC_WASM_URL);
+    await initWasm({ module_or_path: new WebAssembly.Module(Uint8Array.from(publicWasm)) });
+  })();
+  return wasmReady;
+}
+
 describe('committed web board renderer WASM', () => {
   it('renders a known climb into correctly-sized, nonblank RGBA pixels', async () => {
-    const [publicGlue, sourceGlue, publicWasm] = await Promise.all([
-      readFile(PUBLIC_GLUE_URL),
-      readFile(SOURCE_GLUE_URL),
-      readFile(PUBLIC_WASM_URL),
-    ]);
+    const [publicGlue, sourceGlue] = await Promise.all([readFile(PUBLIC_GLUE_URL), readFile(SOURCE_GLUE_URL)]);
 
     // The browser loads the public copy. Prove the glue exercised by this test
     // is byte-for-byte the same committed module that Expo serves.
     expect(publicGlue.equals(sourceGlue)).toBe(true);
 
-    const wasmBytes = Uint8Array.from(publicWasm);
-    await initWasm({ module_or_path: new WebAssembly.Module(wasmBytes) });
+    await initCommittedWasm();
 
     const output = renderOverlay(JSON.stringify(KNOWN_RENDER_CONFIG));
     const { width, height, rgba } = _webRendererForTests.decodeRenderOutput(output);
@@ -66,5 +107,97 @@ describe('committed web board renderer WASM', () => {
     expect(coloredPixelCount).toBeGreaterThan(0);
     expect(transparentPixelCount).toBeGreaterThan(0);
     expect(hasExpectedGreen).toBe(true);
+  });
+
+  // Issue #4495: the committed artifact sat three commits behind the Rust core
+  // for months. It predated stroke_width_multiplier, shape_size_multiplier and
+  // per-hold `shape`, and because RenderConfig has no `deny_unknown_fields`,
+  // serde dropped all three without a murmur — every one of these configs
+  // rendered an identical 273 opaque pixels. CI has no Rust toolchain and
+  // cannot rebuild the binary, so these assertions are the only thing standing
+  // between a stale artifact and a silently blank wall.
+  describe('honours every marker field the Rust core supports', () => {
+    it('draws a thinner outline for a low stroke multiplier and a thicker one for a high multiplier', async () => {
+      await initCommittedWasm();
+      const atDefault = opaquePixelCount(KNOWN_RENDER_CONFIG);
+
+      expect(opaquePixelCount({ ...KNOWN_RENDER_CONFIG, stroke_width_multiplier: 0.5 })).toBeLessThan(atDefault);
+      expect(opaquePixelCount({ ...KNOWN_RENDER_CONFIG, stroke_width_multiplier: 2 })).toBeGreaterThan(atDefault);
+    });
+
+    it('draws bigger markers for a larger shape-size multiplier', async () => {
+      await initCommittedWasm();
+
+      expect(opaquePixelCount({ ...KNOWN_RENDER_CONFIG, shape_size_multiplier: 2 })).toBeGreaterThan(
+        opaquePixelCount(KNOWN_RENDER_CONFIG),
+      );
+    });
+
+    it('draws each marker shape distinctly, with circle matching the default', async () => {
+      await initCommittedWasm();
+      const atDefault = opaquePixelCount(KNOWN_RENDER_CONFIG);
+
+      // An explicit `circle` is the serde default, so it must not move a pixel.
+      expect(opaquePixelCount(withHoldShape('circle'))).toBe(atDefault);
+      for (const shape of ['square', 'triangle-up', 'triangle-down', 'diamond', 'octagon']) {
+        expect(opaquePixelCount(withHoldShape(shape))).not.toBe(atDefault);
+      }
+    });
+
+    it('degrades an unrecognised shape to a circle rather than failing the parse', async () => {
+      await initCommittedWasm();
+
+      // `#[serde(other)]` on HoldMarkerShape — a newer JS bundle naming a shape
+      // this binary has never heard of must still render.
+      expect(opaquePixelCount(withHoldShape('pentagram'))).toBe(opaquePixelCount(KNOWN_RENDER_CONFIG));
+    });
+  });
+
+  // Issue #2202: the "boardsesh" render mode (veil + glow on traced hold
+  // silhouettes) is new Rust-core surface. As of this test the committed
+  // wasm artifact has already been rebuilt with it, so these currently pass —
+  // but keep them un-skipped: the next time this artifact drifts behind the
+  // Rust core (issue #4495's exact failure mode), a red here is the only
+  // signal, and the wasm rebuild + re-sync is
+  // packages/mobile/public/wasm/README.md's job, not this test's.
+  describe('boardsesh render mode', () => {
+    const BOARDSESH_SQUARE_HOLD_CONFIG = {
+      ...KNOWN_RENDER_CONFIG,
+      render_mode: 'boardsesh',
+      holds: KNOWN_RENDER_CONFIG.holds.map((hold) =>
+        hold.id === 1 ? { ...hold, outline: [-1, -1, 1, -1, 1, 1, -1, 1] } : hold,
+      ),
+    };
+
+    it('renders a different opaque-pixel count in boardsesh mode with a traced outline hold', async () => {
+      await initCommittedWasm();
+
+      const classicCount = opaquePixelCount(KNOWN_RENDER_CONFIG);
+      const boardseshCount = opaquePixelCount(BOARDSESH_SQUARE_HOLD_CONFIG);
+      expect(boardseshCount).not.toBe(classicCount);
+    });
+
+    it('renders a different total alpha weight for plateau glow falloff than soft', async () => {
+      await initCommittedWasm();
+
+      // opaquePixelCount is the wrong metric here: soft and plateau reach the
+      // same outer radius, so the alpha>0 pixel count barely moves. The two
+      // falloffs differ in *how quickly* alpha drops off inside that radius
+      // (plateau holds near-max longer), which shows up as total alpha weight.
+      const soft = alphaWeight({ ...BOARDSESH_SQUARE_HOLD_CONFIG, glow_falloff: 'soft' });
+      const plateau = alphaWeight({ ...BOARDSESH_SQUARE_HOLD_CONFIG, glow_falloff: 'plateau' });
+      expect(plateau).not.toBe(soft);
+    });
+
+    it('raises the opaque-pixel count when a veil is applied', async () => {
+      await initCommittedWasm();
+
+      const withoutVeil = opaquePixelCount(BOARDSESH_SQUARE_HOLD_CONFIG);
+      const withVeil = opaquePixelCount({
+        ...BOARDSESH_SQUARE_HOLD_CONFIG,
+        veil: { color: '#181225', opacity: 0.6 },
+      });
+      expect(withVeil).toBeGreaterThan(withoutVeil);
+    });
   });
 });

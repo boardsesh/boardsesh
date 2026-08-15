@@ -26,26 +26,23 @@ The board most specs land on:
   `[data-testid="climb-thumbnail"]` is the only row marker it emits — the
   classic list's `#onboarding-climb-card` and `[data-testid="climb-card"]` are
   gone from this route. `global-setup.ts` and `helpers/waits.ts` both accept all
-  three so the check keeps working either side of the W-16/W-17 cuts; the
-  seeded data requirement is unchanged (≥1 listed climb with stats at 40°).
+  three; the seeded data requirement is unchanged (≥1 listed climb with stats at
+  40°).
 - No onboarding-tagged rows are required any more. The queue-population flows
   that needed `#onboarding-climb-card` / `#onboarding-climb-card-2` are gone with
-  the interactive list: `queue-persistence.spec.ts` and
-  `play-view-swipe-close.spec.ts` are deleted, and `bottom-tab-bar.spec.ts`'s
-  queue block is skipped pending W-16.
+  the interactive list: `queue-persistence.spec.ts`,
+  `play-view-swipe-close.spec.ts` and `bottom-tab-bar.spec.ts` are all deleted.
 
 ## Per-spec assumptions
 
-| Spec                                                            | Additional data needed                                                                                                                                                                                                                                                                           | Status                                |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------- |
-| `bottom-tab-bar.spec.ts`                                        | Default test board contract (above). `/playlists` and `/feed` reachable for the global-setup warmup. The `Queue Integration` describe is skipped pending W-16 — it double-clicks a climb card the front door doesn't render.                                                                     | ✅                                    |
-| `help-screenshots.spec.ts` (unauthenticated)                    | None — the whole describe is skipped pending W-16, which owns the `/help` rewrite and its replacement screenshots.                                                                                                                                                                               | ⏸️                                    |
-| `help-screenshots.spec.ts` (authenticated)                      | Test user contract. Still live: it lands on the default board and drives the header's filters drawer, which the untouched `[angle]/layout.tsx` still mounts over the front door (until W-17 removes it). The `party mode active session` test runs off the dummy sesh mount, not a real session. | ⚠️                                    |
-| `layout-screenshots.spec.ts`                                    | One climb row (`[data-testid="climb-thumbnail"]`) on every supported Kilter/Tension layout URL, whose anchor resolves to that climb's front door — the spec follows it and shoots the board art there.                                                                                           | ✅                                    |
-| `climb-setter-zoom.spec.ts`                                     | `/create` route reachable; board renderer mounts an SVG inside `[data-testid="climb-setter-board"]`.                                                                                                                                                                                             | ✅                                    |
-| `i18n-locale-routing.spec.ts`, `i18n-locale-navigation.spec.ts` | English and Spanish locale catalogs present (covered by the in-repo `packages/shared/i18n/locales/` checked into git).                                                                                                                                                                           | ✅                                    |
-| `activity-feed-infinite-scroll.spec.ts`                         | `/feed` returns more than one page of activity items for the test user.                                                                                                                                                                                                                          | ⚠️ (data assumption not yet enforced) |
-| `expo-web/smoke.spec.ts`                                        | Test user contract, plus a Kilter board named "Dyno Den" bindable from the board sheet. The canonical-URL tests additionally need ≥1 listed, non-draft Kilter layout-1 climb with stats at 40° that fits size 10 and sets 1,20 — looked up at run time (lowest uuid wins), so no uuid is pinned. | ✅                                    |
+| Spec                                                            | Additional data needed                                                                                                                                                                                                                                                                                                  | Status |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `help-screenshots.spec.ts` (unauthenticated)                    | None — the whole describe is skipped pending W-16, which owns the `/help` rewrite and its replacement screenshots.                                                                                                                                                                                                      | ⏸️     |
+| `help-screenshots.spec.ts` (authenticated)                      | Test user contract. Still live, and now route-independent: W-17 (#4433) removed the board header, so the `personal progress filters` shot is gone and W-16 re-homes the drawer shots. The `party mode active session` test runs off the dummy sesh mount, not a real session.                                           | ✅     |
+| `layout-screenshots.spec.ts`                                    | One climb row (`[data-testid="climb-thumbnail"]`) on every supported Kilter/Tension layout URL, whose anchor resolves to that climb's front door — the spec follows it and shoots the board art there.                                                                                                                  | ✅     |
+| `board-route-teardown.spec.ts`                                  | Default test board contract (above), plus `/playlists` reachable. The deleted-path redirects are config rules, so they need no seeded board on the `/b` tree; the WebSocket checks need a real climb row to follow into a climb front door.                                                                             | ✅     |
+| `i18n-locale-routing.spec.ts`, `i18n-locale-navigation.spec.ts` | English and Spanish locale catalogs present (covered by the in-repo `packages/shared/i18n/locales/` checked into git).                                                                                                                                                                                                  | ✅     |
+| `expo-web/smoke.spec.ts`                                        | Test user contract, plus at least one Kilter board bindable from the board sheet. The canonical-URL tests additionally need a board named "Dyno Den" and ≥1 listed, non-draft Kilter layout-1 climb with stats at 40° that fits size 10 and sets 1,20 — looked up at run time (lowest uuid wins), so no uuid is pinned. | ✅     |
 
 ## Updating the contract
 
@@ -58,7 +55,11 @@ When adding a new spec:
 3. If the contract entry is broad enough that `global-setup.ts` could verify
    it cheaply, add the check there too.
 
-The dev-DB image is rebuilt automatically when files in `packages/db/docker/`,
-`packages/db/scripts/`, `packages/db/src/schema/`, `packages/db/drizzle/`, or
-`packages/db/package.json` change on `main` (see CLAUDE.md → "Pre-built
-database image").
+Changes to `packages/db/docker/`, `packages/db/scripts/`, `packages/db/src/schema/`,
+`packages/db/drizzle/` or `packages/db/package.json` are _validated_ on every PR
+by `.github/workflows/dev-db-docker.yml`, but the published image is **not**
+rebuilt automatically: that takes a manual dispatch of
+`.github/workflows/postgres-image-publisher.yml` with the exact `main` SHA, plus
+an environment approval, and then bumping the pinned digest where it is
+referenced (`docker-compose.yml`, `ci.yml`, `e2e-tests.yml`,
+`db-migration-renumber.yml`, `docs/postgres-image-digests.json`).

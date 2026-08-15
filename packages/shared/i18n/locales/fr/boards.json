@@ -1,36 +1,8 @@
 {
   "discovery": {
-    "section": {
-      "nearby": "Boards près de chez vous"
-    },
     "popular": {
       "title": "Boards populaires",
       "meta": "{{boards}} boards · {{sends}} croix"
-    },
-    "findNearby": {
-      "loading": "Recherche de boards…",
-      "geoDenied": "Localisation indisponible",
-      "error": "Échec du chargement des boards à proximité",
-      "noResults": "Aucune board près de chez vous",
-      "idle": "Chercher à proximité"
-    },
-    "search": {
-      "ariaLabel": "Rechercher une board",
-      "label": "Rechercher"
-    },
-    "custom": {
-      "ariaLabel": "Créer une board personnalisée",
-      "label": "Board personnalisée"
-    },
-    "create": {
-      "defaultLabel": "Nouvelle board"
-    },
-    "bluetooth": {
-      "scanning": "Recherche en cours…",
-      "boardsFound": "Boards trouvées",
-      "noBoardsFound": "Aucune board trouvée",
-      "unavailable": "Bluetooth indisponible",
-      "idle": "Démarrage rapide"
     }
   },
   "mobile": {
@@ -198,6 +170,7 @@
       "subtitle": "Touche une salle pour utiliser sa board",
       "locationNeeded": "Partage ta position pour trouver des salles à proximité",
       "grantLocation": "Utiliser ma position",
+      "locationBlocked": "Ton navigateur garde ta position pour lui. Tape une ville dans la recherche : ça marche partout.",
       "empty": "Aucune salle à proximité pour l'instant",
       "noBoards": "Aucune board ici pour l'instant",
       "boardCount_one": "{{count}} board",
@@ -282,17 +255,22 @@
         "messageLabel": "Message (facultatif)",
         "messagePlaceholder": "Tout ce qui nous aide à vérifier que tu gères cette salle",
         "submit": "Demander une vérification",
-        "sent": "Nous avons prévenu notre équipe. Elle te contactera bientôt."
+        "sent": "Ta demande est dans la file d'examen. On t'écrit dès qu'elle est tranchée."
       },
       "approved": {
         "sent": "{{gym}} est à toi.",
         "manageCta": "Configurer ta salle",
         "manageError": "Impossible d'ouvrir la configuration de la salle. Ouvre-la dans un navigateur."
+      },
+      "protections": {
+        "syncFreeze": "Une fois la salle à toi, tes modifications restent : la synchronisation des lieux n'écrase jamais ce que le gestionnaire a saisi.",
+        "transfer": "Tu passeras la main un jour ? Écris à {{email}} et on transfère la propriété."
       }
     },
     "offline": {
       "available": "Disponible hors ligne",
       "pending": "En attente de téléchargement",
+      "finalizing": "Finalisation du téléchargement…",
       "bootstrapping": "Téléchargement de la board…",
       "bootstrapPreparing": "Préparation du téléchargement…",
       "bootstrapDownloading": "Téléchargement de {{done}} sur {{total}}",
@@ -400,19 +378,8 @@
   },
   "boardForm": {
     "create": {
-      "submit": "Créer la board",
-      "authRequired": "Vous devez être connecté pour créer une board",
-      "errorMessage": "Impossible de créer la board. Elle existe peut-être déjà pour cette configuration.",
       "limitReached": "Vous avez atteint le nombre maximum de boards pour un compte. Supprimez une board que vous n'utilisez plus pour en ajouter une autre.",
-      "goToExisting": "Aller à votre board",
-      "nameRequired": "Le nom de la board est obligatoire",
-      "createdNamed": "Board « {{name}} » créée !",
-      "namePlaceholder": "ex. Home Board, nom de la salle",
-      "locationPlaceholder": "ex. ville, nom de la salle",
-      "duplicateTitle": "Vous avez déjà cette configuration",
-      "duplicateBody": "Vous avez déjà « {{name}} » avec le même layout, la même taille et les mêmes sets de prises. N'en ajoutez une autre que si c'est un autre mur.",
-      "addAnyway": "L'ajouter quand même",
-      "keepEditing": "Annuler"
+      "nameRequired": "Le nom de la board est obligatoire"
     },
     "fields": {
       "name": "Nom de la board",
@@ -455,6 +422,15 @@
       "duplicateBodyGeneric": "Avec ce changement, la board devient identique à une autre que son propriétaire a déjà.",
       "saveAnyway": "Enregistrer quand même",
       "cancel": "Annuler"
+    },
+    "serialReuse": {
+      "warning": "Ce numéro de série appartient déjà à « {{name}} ». Rejoindre cette board garde les croix et les stats de tout le monde sur un seul mur.",
+      "warningPrivate": "Ce numéro de série est déjà enregistré pour la board privée d'un autre grimpeur.",
+      "dialogTitle": "Ce mur est déjà sur Boardsesh",
+      "dialogBody": "Le numéro de série {{serial}} est enregistré pour « {{name}} ». Si vous créez un doublon, vos croix et vos sessions seront séparées du groupe qui y grimpe déjà.",
+      "dialogBodyPrivate": "Le numéro de série {{serial}} est déjà enregistré pour la board privée d'un autre grimpeur. Si c'est vraiment un mur différent, vous pouvez quand même créer le vôtre.",
+      "useExisting": "Utiliser la board existante",
+      "createAnyway": "Créer quand même un doublon"
     }
   },
   "editBoard": {
@@ -495,43 +471,8 @@
       "hardest": "Plus dur"
     }
   },
-  "boardConfigSelects": {
-    "board": "Board",
-    "layout": "Layout",
-    "size": "Taille",
-    "holdSets": "Jeux de prises",
-    "angle": "Inclinaison"
-  },
-  "boardFilterStrip": {
-    "all": "Tous",
-    "allBoards": "Toutes les boards"
-  },
   "boardPill": {
     "switchHint": "Ouvre le sélecteur de board"
-  },
-  "boardSwitchConfirm": {
-    "session": {
-      "title": "Quitter votre session ?",
-      "body": "Vous êtes en session sur {{lockedLabel}}. Passer à {{targetLabel}} déconnecte votre board, mais la session continue."
-    },
-    "connection": {
-      "title": "Déconnecter votre board ?",
-      "body": "Votre {{lockedLabel}} est toujours connecté. Passer à {{targetLabel}} le déconnecte."
-    },
-    "stay": "Rester",
-    "switch": "Changer de board"
-  },
-  "boardSearchDrawer": {
-    "title": "Trouver une board",
-    "searchPlaceholder": "Rechercher des boards par nom ou emplacement",
-    "clear": "Effacer",
-    "radiusInfo": "Affichage des boards dans un rayon de {{radiusKm}} km autour du centre de la carte",
-    "empty": "Aucune board dans le coin. Déplacez la carte ou dézoomez pour en trouver d'autres.",
-    "emptyWithQuery": "Aucune board ne correspond à « {{query}} » par ici. Dézoomez ou cherchez ailleurs.",
-    "open": "Ouvrir"
-  },
-  "boardSearchMap": {
-    "myLocation": "Ma position"
   },
   "zoomableBoard": {
     "reset": "Réinitialiser"
@@ -596,17 +537,6 @@
     "claim": "C'est ma salle — la revendiquer",
     "createAnyway": "Aucune ne correspond ? Ajoutez votre salle avec le bouton ci-dessous."
   },
-  "selectorDrawer": {
-    "customTitle": "Board personnalisée",
-    "createTitle": "Créer une board",
-    "createButton": "Créer une board",
-    "quickSession": "Session rapide",
-    "configSection": {
-      "label": "Configuration de la board",
-      "title": "Configuration de la board",
-      "defaultSummary": "Choisissez une board"
-    }
-  },
   "gymEntity": {
     "notFound": "Salle introuvable",
     "tabs": {
@@ -646,6 +576,7 @@
       "name": "Nom de la salle",
       "slug": "Slug d'URL",
       "description": "Description",
+      "hours": "Horaires d'ouverture",
       "address": "Adresse",
       "contactEmail": "E-mail de contact",
       "contactPhone": "Téléphone de contact",
@@ -655,6 +586,7 @@
     "placeholders": {
       "name": "ex. Boulder World, The Climbing Factory",
       "description": "Description facultative",
+      "hours": "ex. lun-ven 7h-23h, sam-dim 9h-20h",
       "address": "ex. 123 rue Principale, ville",
       "contactEmail": "E-mail de contact facultatif",
       "contactPhone": "Téléphone de contact facultatif",
@@ -672,7 +604,8 @@
       "createdNamed": "Salle « {{name}} » créée !"
     },
     "helpers": {
-      "website": "Sert à vérifier la propriété lorsque quelqu’un revendique cette salle"
+      "website": "Sert à vérifier la propriété lorsque quelqu’un revendique cette salle",
+      "hours": "Une ligne, comme tu veux l'écrire. Ta page affiche la date de ta dernière confirmation."
     }
   },
   "claimGym": {
@@ -682,7 +615,8 @@
     "switchToAdmin": "Pas d’e-mail professionnel ? Demandez une vérification",
     "switchToDomain": "Vérifier plutôt avec un e-mail professionnel",
     "errors": {
-      "generic": "Une erreur est survenue. Réessayez."
+      "generic": "Une erreur est survenue. Réessayez.",
+      "tokenUnavailable": "On n'arrive pas à confirmer ta connexion. Recharge la page et réessaie."
     },
     "domain": {
       "description": "Vous gérez {{gym}} ? Saisissez votre e-mail chez {{domain}} et nous enverrons un lien de confirmation.",
@@ -697,11 +631,15 @@
       "messageLabel": "Message (facultatif)",
       "messagePlaceholder": "Tout ce qui nous aide à vérifier que vous gérez cette salle",
       "submit": "Demander une vérification",
-      "sent": "Nous avons prévenu notre équipe. Elle vous contactera bientôt."
+      "sent": "Votre demande est dans la file d'examen. Nous vous écrirons dès qu'elle sera tranchée."
     },
     "approved": {
       "body": "{{gym}} est à vous. Configurez-la quand vous voulez.",
       "manageCta": "Configurer votre salle"
+    },
+    "protections": {
+      "syncFreeze": "Une fois la salle à vous, vos modifications restent : la synchronisation des lieux n'écrase jamais ce que le gestionnaire a saisi.",
+      "transfer": "Vous passerez la main un jour ? Écrivez à {{email}} et nous transférons la propriété."
     }
   },
   "claimLanding": {

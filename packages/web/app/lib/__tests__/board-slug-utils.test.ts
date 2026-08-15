@@ -25,6 +25,7 @@ vi.mock('@/app/lib/graphql/client', () => ({
 vi.stubGlobal('fetch', fetchMock);
 
 import { resolveBoardBySlug, type ResolvedBoard } from '../board-slug-utils';
+import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '../ssr-fetch-deadline';
 
 const publicBoard: ResolvedBoard = {
   uuid: '11111111-1111-4111-8111-111111111111',
@@ -116,6 +117,57 @@ describe('resolveBoardBySlug', () => {
     expect(authenticatedRequest).toMatchObject({ cache: 'no-store' });
     expect(anonymousRequest).toMatchObject({ next: { revalidate: 300 } });
     expect(new Headers(anonymousRequest?.headers).get('Authorization')).toBeNull();
+  });
+
+  // Every caller turns `null` into `notFound()`, and Vercel CDN-caches a 404 for
+  // the length of the front door's `s-maxage`. A failed read must never look
+  // like "no such board".
+  it('throws instead of returning null when the backend fetch rejects', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('fetch failed'));
+
+    await expect(resolveBoardBySlug(publicBoard.slug)).rejects.toThrow('fetch failed');
+  });
+
+  it('throws instead of returning null on a non-2xx backend response', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('bad gateway', { status: 502 }));
+
+    await expect(resolveBoardBySlug(publicBoard.slug)).rejects.toThrow(/HTTP 502/);
+  });
+
+  it('throws instead of returning null on a 200 carrying GraphQL errors', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ errors: [{ message: 'read deadline exceeded' }], data: { boardBySlug: null } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await expect(resolveBoardBySlug(publicBoard.slug)).rejects.toThrow(/GraphQL errors/);
+  });
+
+  // "Every failure throws" only holds if failures happen. A backend that
+  // accepts the socket and never answers is otherwise not a failure at all —
+  // it is a `/b/{slug}` render that never finishes.
+  it('bounds both the anonymous and the authenticated read with the SSR deadline', async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    getServerAuthTokenMock.mockResolvedValueOnce(undefined).mockResolvedValueOnce('signed-session-token');
+    fetchMock.mockResolvedValueOnce(graphQlResponse(publicBoard)).mockResolvedValueOnce(graphQlResponse(privateBoard));
+
+    await resolveBoardBySlug(publicBoard.slug);
+    await resolveBoardBySlug(privateBoard.slug);
+
+    expect(timeoutSpy.mock.calls).toEqual([[SSR_BACKEND_FETCH_TIMEOUT_MS], [SSR_BACKEND_FETCH_TIMEOUT_MS]]);
+    const [, anonymousRequest] = fetchMock.mock.calls[0];
+    const [, authenticatedRequest] = fetchMock.mock.calls[1];
+    expect(anonymousRequest?.signal).toBe(timeoutSpy.mock.results[0].value);
+    expect(authenticatedRequest?.signal).toBe(timeoutSpy.mock.results[1].value);
+    timeoutSpy.mockRestore();
+  });
+
+  it('throws instead of returning null when the deadline fires', async () => {
+    fetchMock.mockRejectedValueOnce(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
+
+    await expect(resolveBoardBySlug(publicBoard.slug)).rejects.toThrow(/aborted/);
   });
 
   it('does not let an anonymous miss cross into a later authenticated request', async () => {

@@ -6,6 +6,8 @@ import { FONT_GRADE_COLORS, getGradeColorWithOpacity } from '@/app/lib/grade-col
 import { BOULDER_GRADES } from '@/app/lib/board-data';
 import { createOgImageHeaders, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
 import { getSessionOgSummary } from '@/app/lib/seo/dynamic-og-data';
+import { ogErrorResponse } from '@/app/lib/seo/og-error';
+import { withReadDeadline } from '@/app/lib/db/read-deadline';
 
 export const runtime = 'nodejs';
 
@@ -49,7 +51,7 @@ export async function GET(request: NextRequest) {
     }
 
     const dbT0 = performance.now();
-    const summary = await getSessionOgSummary(sessionId);
+    const summary = await withReadDeadline('og-session', getSessionOgSummary(sessionId));
     const dbMs = performance.now() - dbT0;
 
     if (!summary.found) {
@@ -486,8 +488,6 @@ export async function GET(request: NextRequest) {
       }),
     });
   } catch (error) {
-    console.error('Error generating session OG image:', error);
-    const message = error instanceof Error ? error.message : String(error);
-    return new Response(`Error generating image: ${message}`, { status: 500 });
+    return ogErrorResponse('session', error);
   }
 }

@@ -29,6 +29,7 @@ type ManageRowProps = {
   onRetryFastDownload?: (board: UserBoard) => void;
   onDelete: (board: UserBoard) => void;
   onUnfollow: (board: UserBoard) => void;
+  onToggleOffline: (board: UserBoard) => void;
 };
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn() }));
@@ -40,6 +41,7 @@ const confirmMock = vi.hoisted(() => vi.fn().mockResolvedValue(false));
 const retryFastDownloadMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const estimateScopeDownloadMock = vi.hoisted(() => vi.fn(() => ({ kind: 'unknown' }) as { kind: string }));
 const storedUserIdEnabledMock = vi.hoisted(() => vi.fn());
+const reportAbandonedDownloadOnDisableMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
 
 const state = vi.hoisted(() => ({
   isOffline: false,
@@ -307,6 +309,12 @@ vi.mock('../../../src/offline/use-remember-downloaded-boards', () => ({
   useRememberDownloadedBoards: vi.fn(),
 }));
 vi.mock('../../../src/offline/use-snapshot-manifest', () => ({ useSnapshotManifest: () => null }));
+// The download funnel's terminal for a toggle-off (issue #4452). Nothing is
+// deleted on that path, so there is no teardown to hang it off — the screen has
+// to report it itself.
+vi.mock('../../../src/offline/abandoned-download-terminals', () => ({
+  reportAbandonedDownloadOnDisable: reportAbandonedDownloadOnDisableMock,
+}));
 vi.mock('../../../src/offline/use-snapshot-source', () => ({
   useSnapshotSource: () => (state.snapshotSourceAvailable ? {} : undefined),
 }));
@@ -316,6 +324,7 @@ vi.mock('../../../src/settings', () => ({
   getSetting: () => state.enabledBoards,
   useSetting: () => [state.enabledBoards, vi.fn()],
   setOfflineBoardEnabled: vi.fn(),
+  forgetDownloadTrigger: vi.fn(),
   forgetOfflineBoard: (uuid: string) => forgetOfflineBoardMock(uuid),
   forgetOfflineBoardScope: vi.fn(),
   useOfflineBoards: () => state.offlineCards,
@@ -359,6 +368,7 @@ vi.mock('../../../src/components/board-discovery/BoardManageRow', () => ({
     onRetryFastDownload,
     onDelete,
     onUnfollow,
+    onToggleOffline,
   }: ManageRowProps) =>
     createElement(
       'div',
@@ -374,6 +384,11 @@ vi.mock('../../../src/components/board-discovery/BoardManageRow', () => ({
       rowBoard.name,
       createElement('button', { type: 'button', onClick: () => onDelete(rowBoard) }, `delete ${rowBoard.uuid}`),
       createElement('button', { type: 'button', onClick: () => onUnfollow(rowBoard) }, `unfollow ${rowBoard.uuid}`),
+      createElement(
+        'button',
+        { type: 'button', onClick: () => onToggleOffline(rowBoard) },
+        `toggle-offline ${rowBoard.uuid}`,
+      ),
       canRetryFastDownload && onRetryFastDownload
         ? createElement(
             'button',
@@ -768,6 +783,190 @@ describe('My Boards with no usable network list', () => {
     expect(row?.getAttribute('data-download-count')).toBe('73');
   });
 
+  it.each(['deletions', 'user_data'] as const)(
+    'shows incomplete scopes as finalizing during shared %s work',
+    (phase) => {
+      state.profileId = 'me';
+      state.myBoards = {
+        data: {
+          boards: [
+            board({ uuid: 'board-a', name: 'Board A' }),
+            board({ uuid: 'board-b', name: 'Board B', boardType: 'tension', layoutId: 2, sizeId: 10 }),
+            board({ uuid: 'board-c', name: 'Board C', boardType: 'tension', layoutId: 3, sizeId: 12 }),
+          ],
+        },
+        isLoading: false,
+        isError: false,
+        isRefetching: false,
+      };
+      state.enabledBoards = ['kilter:8:17', 'tension:2:10', 'tension:3:12'];
+      state.downloadedScopeKeys = ['kilter:8:17'];
+      state.bootstrapMetadataByScope = new Map([
+        [
+          'tension:2:10',
+          {
+            attempts: 0,
+            isBootstrapDone: true,
+            isPagedFallback: false,
+            hasBoardCheckpoint: true,
+            isScopeComplete: false,
+          },
+        ],
+        [
+          'tension:3:12',
+          {
+            attempts: 1,
+            isBootstrapDone: false,
+            isPagedFallback: true,
+            hasBoardCheckpoint: false,
+            isScopeComplete: false,
+            isTerminal: true,
+          },
+        ],
+      ]);
+      state.syncStatus = {
+        isSyncing: true,
+        progress: {
+          phase,
+          currentTable: phase === 'user_data' ? 'boardsesh_ticks' : null,
+        },
+        bootstrapMetadataRevision: 0,
+        scopeCompletionRevision: 0,
+      };
+
+      render(createElement(ManageBoards));
+
+      expect(document.querySelector('[data-board="board-a"]')?.getAttribute('data-download-state')).toBe('downloaded');
+      expect(document.querySelector('[data-board="board-b"]')?.getAttribute('data-download-state')).toBe('finalizing');
+      expect(document.querySelector('[data-board="board-c"]')?.getAttribute('data-download-state')).toBe('pending');
+      expect(document.querySelector('[data-board="board-c"]')?.getAttribute('data-download-notice')).toBe(
+        'paged-fallback',
+      );
+    },
+  );
+
+  it.each([
+    ['bootstrap', 'tension:2:10', false],
+    ['board_data', 'board_climbs:tension:2:10', true],
+  ] as const)(
+    'keeps imported scope A finalizing while scope B is active in %s',
+    (phase, currentTable, isSecondBootstrapDone) => {
+      state.profileId = 'me';
+      state.myBoards = {
+        data: {
+          boards: [
+            board({ uuid: 'board-a', name: 'Board A' }),
+            board({ uuid: 'board-b', name: 'Board B', boardType: 'tension', layoutId: 2, sizeId: 10 }),
+          ],
+        },
+        isLoading: false,
+        isError: false,
+        isRefetching: false,
+      };
+      state.enabledBoards = ['kilter:8:17', 'tension:2:10'];
+      state.bootstrapMetadataByScope = new Map([
+        [
+          'kilter:8:17',
+          {
+            attempts: 0,
+            isBootstrapDone: true,
+            isPagedFallback: false,
+            hasBoardCheckpoint: true,
+            isScopeComplete: false,
+          },
+        ],
+        [
+          'tension:2:10',
+          {
+            attempts: 0,
+            isBootstrapDone: isSecondBootstrapDone,
+            isPagedFallback: false,
+            hasBoardCheckpoint: isSecondBootstrapDone,
+            isScopeComplete: false,
+          },
+        ],
+      ]);
+      state.syncStatus = {
+        isSyncing: true,
+        progress: { phase, currentTable },
+        bootstrapMetadataRevision: isSecondBootstrapDone ? 2 : 1,
+        scopeCompletionRevision: 0,
+      };
+
+      render(createElement(ManageBoards));
+
+      expect(document.querySelector('[data-board="board-a"]')?.getAttribute('data-download-state')).toBe('finalizing');
+      expect(document.querySelector('[data-board="board-b"]')?.getAttribute('data-download-state')).toBe('downloading');
+    },
+  );
+
+  it('uses the bootstrap metadata revision to finalize the last imported scope at deletion handoff', async () => {
+    state.profileId = 'me';
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'board-a', name: 'Board A' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+    state.enabledBoards = ['kilter:8:17'];
+    const beforeImport = new Map([
+      [
+        'kilter:8:17',
+        {
+          attempts: 0,
+          isBootstrapDone: false,
+          isPagedFallback: false,
+          hasBoardCheckpoint: false,
+          isScopeComplete: false,
+        },
+      ],
+    ]);
+    state.bootstrapQueryAsync = true;
+    state.bootstrapMetadataRead = Promise.resolve(beforeImport);
+    state.syncStatus = {
+      isSyncing: true,
+      progress: { phase: 'bootstrap', currentTable: 'kilter:8:17' },
+      bootstrapMetadataRevision: 0,
+      scopeCompletionRevision: 0,
+    };
+
+    const { rerender } = render(createElement(ManageBoards));
+    await waitFor(() =>
+      expect(document.querySelector('[data-board="board-a"]')?.getAttribute('data-download-state')).toBe('downloading'),
+    );
+
+    const afterImport = new Map([
+      [
+        'kilter:8:17',
+        {
+          attempts: 0,
+          isBootstrapDone: true,
+          isPagedFallback: false,
+          hasBoardCheckpoint: true,
+          isScopeComplete: false,
+        },
+      ],
+    ]);
+    const refreshedMetadata = deferred<ReadonlyMap<string, unknown>>();
+    state.bootstrapMetadataRead = refreshedMetadata.promise;
+    state.syncStatus = {
+      isSyncing: true,
+      progress: { phase: 'deletions', currentTable: null },
+      bootstrapMetadataRevision: 1,
+      scopeCompletionRevision: 0,
+    };
+    rerender(createElement(ManageBoards));
+
+    // The prior revision's unfinished marker is rejected while the new-key read
+    // is pending, so the row cannot claim finalizing until SQLite confirms it.
+    expect(document.querySelector('[data-board="board-a"]')?.getAttribute('data-download-state')).toBe('pending');
+
+    await act(async () => refreshedMetadata.resolve(afterImport));
+    await waitFor(() =>
+      expect(document.querySelector('[data-board="board-a"]')?.getAttribute('data-download-state')).toBe('finalizing'),
+    );
+  });
+
   it('clears the first scope on completion while a second scope keeps downloading', () => {
     state.profileId = 'me';
     state.myBoards = {
@@ -933,6 +1132,48 @@ describe('My Boards with no usable network list', () => {
     fireEvent.click(screen.getByText('delete net-1'));
 
     await waitFor(() => expect(forgetOfflineBoardMock).toHaveBeenCalledWith('net-1'));
+  });
+
+  // Issue #4452. Turning a board off deletes nothing, so no teardown reports for
+  // it — but the scope leaves `syncEnabledBoards` and pullSync only ever visits
+  // enabled scopes, so the download is over for good and its
+  // `Offline Board Download Started` would otherwise stay open forever.
+  it('closes the download funnel when a board is toggled off', async () => {
+    state.profileId = 'me';
+    state.enabledBoards = ['kilter:8:17'];
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+
+    render(createElement(ManageBoards));
+    await act(async () => {
+      fireEvent.click(screen.getByText('toggle-offline net-1'));
+    });
+
+    await waitFor(() => expect(reportAbandonedDownloadOnDisableMock).toHaveBeenCalledWith({}, 'kilter:8:17'));
+  });
+
+  // The other direction: enabling a board goes through the size-quote confirm,
+  // and there is no download of its own to close.
+  it('reports nothing when a board is toggled ON', async () => {
+    state.profileId = 'me';
+    state.enabledBoards = [];
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+
+    render(createElement(ManageBoards));
+    await act(async () => {
+      fireEvent.click(screen.getByText('toggle-offline net-1'));
+    });
+
+    expect(reportAbandonedDownloadOnDisableMock).not.toHaveBeenCalled();
   });
 
   it('forgets an unfollowed board too', async () => {

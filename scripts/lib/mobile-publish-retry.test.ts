@@ -14,6 +14,11 @@ import {
   type TextOutput,
 } from './mobile-publish-retry';
 
+// The repo's Next global.d.ts augments NodeJS.ProcessEnv to require NODE_ENV, so
+// a bare `{}` literal isn't assignable. These cases never read the child
+// environment, so an empty one is the honest fixture.
+const emptyChildEnvironment = {} as NodeJS.ProcessEnv;
+
 function outputCollector(): { output: TextOutput; read: () => string } {
   const chunks: string[] = [];
   return {
@@ -111,7 +116,7 @@ describe('self-hosted publish retries', () => {
     const stderr = outputCollector();
 
     const outcome = await publishSelfHostedPlatformWithRetry(
-      { platform: 'ios', command: 'bunx', args: ['eoas', 'publish'], cwd: '/repo', env: {} },
+      { platform: 'ios', command: 'bunx', args: ['eoas', 'publish'], cwd: '/repo', env: emptyChildEnvironment },
       { runner, sleeper, stdout: stdout.output, stderr: stderr.output },
     );
 
@@ -135,7 +140,7 @@ describe('self-hosted publish retries', () => {
     const stderr = outputCollector();
 
     const outcome = await publishSelfHostedPlatformWithRetry(
-      { platform: 'android', command: 'bunx', args: [], cwd: '/repo', env: {} },
+      { platform: 'android', command: 'bunx', args: [], cwd: '/repo', env: emptyChildEnvironment },
       { runner, sleeper, stdout: outputCollector().output, stderr: stderr.output },
     );
 
@@ -155,7 +160,7 @@ describe('self-hosted publish retries', () => {
     const stderr = outputCollector();
 
     const outcome = await publishSelfHostedPlatformWithRetry(
-      { platform: 'ios', command: 'bunx', args: [], cwd: '/repo', env: {} },
+      { platform: 'ios', command: 'bunx', args: [], cwd: '/repo', env: emptyChildEnvironment },
       { runner, sleeper, stdout: outputCollector().output, stderr: stderr.output },
     );
 
@@ -176,7 +181,7 @@ describe('self-hosted publish retries', () => {
     const stderr = outputCollector();
 
     await publishSelfHostedPlatformWithRetry(
-      { platform: 'ios', command: 'bunx', args: [], cwd: '/repo', env: {} },
+      { platform: 'ios', command: 'bunx', args: [], cwd: '/repo', env: emptyChildEnvironment },
       { runner, stdout: outputCollector().output, stderr: stderr.output },
     );
 

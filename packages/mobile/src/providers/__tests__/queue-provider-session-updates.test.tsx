@@ -121,8 +121,12 @@ const partyProfile = vi.hoisted(() => ({
 }));
 
 const queueMutations = vi.hoisted(() => ({
-  addQueueItem: vi.fn(async () => {}),
-  removeQueueItem: vi.fn(async () => {}),
+  // Typed args so a test can model the shared factory's removal ledger, where an
+  // add retracts an earlier drop of the same uuid (#4009).
+  addQueueItem: vi.fn(async (_item: { uuid: string }, _position?: number) => {}),
+  // Typed arg so a test can model the shared factory's removal ledger, which
+  // records here before any session guard (#4009).
+  removeQueueItem: vi.fn(async (_uuid: string) => {}),
   reorderQueueItem: vi.fn(async () => {}),
   setCurrentClimb: vi.fn(async () => {}),
   mirrorCurrentClimb: vi.fn(async () => {}),
@@ -133,6 +137,13 @@ const queueMutations = vi.hoisted(() => ({
   reportWallDisconnect: vi.fn(async () => {}),
   setSessionBoardSerial: vi.fn(async () => {}),
   setSessionBoardPath: vi.fn(async () => {}),
+  // Read-only classification of a LOCAL absence, backed in production by the
+  // shared factory's removal ledger (#4009). These tests verify how the
+  // provider BRANCHES on the verdict; the ledger that produces it is covered in
+  // packages/shared/queue-react/src/__tests__/create-queue-mutations.test.ts.
+  // Default false = "the climber didn't drop it", so an absence reads as a
+  // wholesale server sync; tests that model a removal override it.
+  wasUuidExplicitlyRemoved: vi.fn((_uuid: string) => false),
 }));
 
 const wallConfirm = vi.hoisted(() => ({
@@ -473,6 +484,11 @@ describe('QueueProvider session update subscription', () => {
       mutation.mockReset();
       mutation.mockResolvedValue(undefined);
     }
+    // The blanket reset above hands every action a resolved promise. For a
+    // SYNCHRONOUS boolean action that is a truthy Promise, which would read as
+    // "the climber removed it" everywhere. Restore the real default.
+    queueMutations.wasUuidExplicitlyRemoved.mockReset();
+    queueMutations.wasUuidExplicitlyRemoved.mockReturnValue(false);
     wallConfirm.emitWallConfirm.mockClear();
     sessionStore.getStoredSessionId.mockReset();
     sessionStore.getStoredSessionId.mockResolvedValue('session-1');
@@ -1652,7 +1668,54 @@ describe('QueueProvider session update subscription', () => {
 describe('QueueProvider mutation-failure resync', () => {
   beforeEach(() => {
     toast.showToast.mockClear();
+    installRemovalLedger();
   });
+
+  // This harness swaps the shared mutations factory for hand-rolled mocks, so
+  // the removal ledger those actions maintain has to be modelled here: the real
+  // `removeQueueItem` records the uuid before any session guard, and
+  // `wasUuidExplicitlyRemoved` reads that ledger back (#4009). The ledger itself
+  // is covered against the real factory in
+  // packages/shared/queue-react/src/__tests__/create-queue-mutations.test.ts;
+  // what these tests pin is how the provider BRANCHES on its verdict. Absence
+  // with no ledger hit means a wholesale server sync, not climber intent.
+  // It tracks the climber's LATEST intent, so `addQueueItem` retracts an earlier
+  // drop just as the real factory does. A test that stubs `addQueueItem` with
+  // `mockReturnValueOnce` bypasses this, which is fine — none of them assert on
+  // the retraction, and the retraction itself is covered against the real
+  // factory in the file above.
+  function installRemovalLedger() {
+    const explicitlyRemoved = new Set<string>();
+    queueMutations.removeQueueItem.mockImplementation(async (uuid: string) => {
+      explicitlyRemoved.add(uuid);
+    });
+    queueMutations.addQueueItem.mockImplementation(async (queueItem: { uuid: string }) => {
+      explicitlyRemoved.delete(queueItem.uuid);
+    });
+    queueMutations.wasUuidExplicitlyRemoved.mockImplementation((uuid: string) => explicitlyRemoved.has(uuid));
+  }
+
+  // A server FullSync — the event whose INITIAL_QUEUE_DATA mapping REPLACES the
+  // local queue wholesale, wiping any not-yet-synced optimistic slot (#4009).
+  function pushFullSync(items: ClimbQueueItem[], current: ClimbQueueItem | null, sequence: number) {
+    const sink = ws.getQueueUpdatesSink();
+    if (!sink) throw new Error('queueUpdates subscription was not opened');
+    const toWire = (item: ClimbQueueItem) => ({ uuid: item.uuid, climb: item.climb });
+    sink.next({
+      data: {
+        queueUpdates: {
+          __typename: 'FullSync',
+          sequence,
+          state: {
+            sequence,
+            stateHash: `hash-${sequence}`,
+            queue: items.map(toWire),
+            currentClimbQueueItem: current ? toWire(current) : null,
+          },
+        },
+      },
+    });
+  }
 
   // The harness routes both endSession and the queueState query through
   // http.request. Branch on the operation text so the resync query returns the
@@ -2072,6 +2135,9 @@ describe('QueueProvider mutation-failure resync', () => {
       expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
     });
     // Recovering the slot now would resurrect a climb the user just deleted.
+    // Absence alone no longer decides that (#4009) — the removal ledger does,
+    // and the swipe above put this uuid in it.
+    expect(queueMutations.wasUuidExplicitlyRemoved).toHaveBeenCalledWith('local-current');
     expect(queueMutations.addQueueItem).not.toHaveBeenCalled();
     expect(queueStateCalls).toBe(0);
   });
@@ -2126,7 +2192,9 @@ describe('QueueProvider mutation-failure resync', () => {
     });
 
     // The add landed after the remove, so it put the climb back on every peer's
-    // queue. Undo it instead of leaving a climb nobody asked for.
+    // queue. Undo it instead of leaving a climb nobody asked for. The removal
+    // ledger is what licenses that undo (#4009) — the swipe above wrote this
+    // uuid into it, so absence here reads as intent rather than as a sync.
     await waitFor(() => {
       expect(queueMutations.removeQueueItem).toHaveBeenCalledTimes(2);
     });
@@ -2259,6 +2327,190 @@ describe('QueueProvider mutation-failure resync', () => {
       ([uuid]) => uuid,
     );
     expect(removedUuids).not.toContain('swap-current');
+  });
+
+  // The #4009 regression. The burst's HEAD activation is itself an add, so the
+  // server answers it with a FullSync — which INITIAL_QUEUE_DATA applies by
+  // REPLACING the queue, wiping the optimistic slot seconds before the throttled
+  // mutation rejects. A bare "gone locally -> skip" reads that as intent and the
+  // climb reaches nobody.
+  it('still re-sends the queue add when a wholesale server sync wiped the local slot (#4009)', async () => {
+    const snapshots: Snapshot[] = [];
+    const alreadyQueued = makeQueueItem('item-1', 'climb-1');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([alreadyQueued], alreadyQueued), {
+      onQueueStateCall: () => (queueStateCalls += 1),
+    });
+    // Hold the mutation open so the sync below lands before it settles.
+    const inFlightSetCurrent = createDeferred<void>();
+    inFlightSetCurrent.promise.catch(() => {});
+    queueMutations.setCurrentClimb.mockReturnValueOnce(inFlightSetCurrent.promise);
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    act(() => {
+      snapshots.at(-1)?.setQueue([alreadyQueued], alreadyQueued);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue).toHaveLength(1);
+    });
+    queueMutations.addQueueItem.mockClear();
+
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(makeQueueItem('local-current', 'climb-local-current'));
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue).toHaveLength(2);
+    });
+
+    // The server's own answer to the burst head lands: a full snapshot that has
+    // never heard of the pending slot. Nobody removed anything.
+    act(() => {
+      pushFullSync([alreadyQueued], alreadyQueued, 1);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['item-1']);
+    });
+
+    await act(async () => {
+      inFlightSetCurrent.reject(makeRateLimitedError());
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(1);
+    });
+    const [recoveredItem, recoveredPosition] = queueMutations.addQueueItem.mock.calls[0] as unknown as [
+      ClimbQueueItem,
+      number | undefined,
+    ];
+    expect(recoveredItem.uuid).toBe('local-current');
+    // No local slot left to mirror, so no position is claimed — the server
+    // appends. Worse order than insert-after-current, far better than the climb
+    // existing nowhere.
+    expect(recoveredPosition).toBeUndefined();
+    // Recovering is not reconciling: no queue refetch, and the pacing hint still
+    // reaches the climber.
+    expect(queueStateCalls).toBe(0);
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
+  });
+
+  // The second-order half of #4009: the add DID land, and the only reason the
+  // slot is missing locally is the same wholesale sync. Undoing here deletes the
+  // picker's own pick off the whole crew's queue AND writes the uuid into the
+  // shared removal ledger, which then suppresses every later deferred add for it.
+  it('does not undo the re-sent queue add when a wholesale sync wiped the slot with no removal (#4009)', async () => {
+    const snapshots: Snapshot[] = [];
+    const alreadyQueued = makeQueueItem('sync-seed', 'climb-sync-seed');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([alreadyQueued], alreadyQueued), {
+      onQueueStateCall: () => (queueStateCalls += 1),
+    });
+    queueMutations.setCurrentClimb.mockRejectedValueOnce(makeRateLimitedError());
+    // Hold the recovery add open — this is `execute`'s back-off window.
+    const inFlightAdd = createDeferred<void>();
+    queueMutations.addQueueItem.mockReturnValueOnce(inFlightAdd.promise);
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    act(() => {
+      snapshots.at(-1)?.setQueue([alreadyQueued], alreadyQueued);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue).toHaveLength(1);
+    });
+    queueMutations.removeQueueItem.mockClear();
+
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(makeQueueItem('sync-current', 'climb-sync-current'));
+    });
+    await waitFor(() => {
+      const addedUuids = (queueMutations.addQueueItem.mock.calls as unknown as Array<[ClimbQueueItem, number]>).map(
+        ([item]) => item?.uuid,
+      );
+      expect(addedUuids).toContain('sync-current');
+    });
+
+    // A peer's activation lands a FullSync while our add is still backing off.
+    act(() => {
+      pushFullSync([alreadyQueued], alreadyQueued, 1);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['sync-seed']);
+    });
+
+    await act(async () => {
+      inFlightAdd.resolve();
+      await Promise.resolve();
+    });
+
+    const removedUuids = (queueMutations.removeQueueItem.mock.calls as unknown as Array<[string]>).map(
+      ([uuid]) => uuid,
+    );
+    expect(removedUuids).not.toContain('sync-current');
+    expect(queueStateCalls).toBe(0);
+  });
+
+  // The unpositioned re-send resolves the LIVE session, so without a captured
+  // room the recovery would append the old room's climb to the new crew's queue.
+  it('does not re-send the queue add into a session joined while the activation was backing off (#4009)', async () => {
+    const snapshots: Snapshot[] = [];
+    const seeded = makeQueueItem('flip-seed', 'climb-flip-seed');
+    const activated = makeQueueItem('flip-current', 'climb-flip-current');
+    routeHttpRequest(queueStateResponse([seeded], seeded));
+    const inFlightSetCurrent = createDeferred<void>();
+    inFlightSetCurrent.promise.catch(() => {});
+    queueMutations.setCurrentClimb.mockReturnValueOnce(inFlightSetCurrent.promise);
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    act(() => {
+      snapshots.at(-1)?.setQueue([seeded], seeded);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue).toHaveLength(1);
+    });
+
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(activated);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue).toHaveLength(2);
+    });
+
+    // The climber walks to another board's room while the activation is still
+    // throttled. session-2 never saw this climb and must not receive it.
+    await act(async () => {
+      await snapshots.at(-1)?.joinSession('session-2', {
+        boardPath: '/kilter/1/10/1,2/40/list',
+        userBoard: activeBoard.stored,
+      });
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-2');
+    });
+
+    await act(async () => {
+      inFlightSetCurrent.reject(makeRateLimitedError());
+      await Promise.resolve();
+    });
+
+    const addedUuids = (queueMutations.addQueueItem.mock.calls as unknown as Array<[ClimbQueueItem, number]>).map(
+      ([item]) => item?.uuid,
+    );
+    expect(addedUuids).not.toContain('flip-current');
   });
 
   it('toasts "slow down" rather than the generic failure when reorderQueue is rate-limited', async () => {
@@ -2708,6 +2960,11 @@ describe('QueueProvider always-live wall control', () => {
       mutation.mockReset();
       mutation.mockResolvedValue(undefined);
     }
+    // Same correction the other two harnesses make: the blanket loop above hands
+    // this SYNCHRONOUS boolean action a resolved Promise, which is truthy and so
+    // reads as "the climber removed it" for every uuid (#4009).
+    queueMutations.wasUuidExplicitlyRemoved.mockReset();
+    queueMutations.wasUuidExplicitlyRemoved.mockReturnValue(false);
     sessionStore.getStoredSessionId.mockReset();
     sessionStore.getStoredSessionId.mockResolvedValue('session-1');
     sessionStore.clearStoredSessionId.mockClear();

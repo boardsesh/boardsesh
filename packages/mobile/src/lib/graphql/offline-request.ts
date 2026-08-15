@@ -155,7 +155,7 @@ registerOfflineOperation<GetClimbQueryVariables, GetClimbQueryResponse>({
 // board_climb_grades by the exact key. A single-row null is a local miss (the
 // row may just not have synced, or the climb is from a non-downloaded scope of
 // the same board type) → retried over the network while online. The by-angle
-// list treats an empty result as a real answer (a MoonBoard / no-grade climb),
+// list treats an empty result as a real answer (a MoonBoard / Woods / no-grade climb),
 // exactly like an empty search — no needless network retry.
 registerOfflineOperation<BoardseshGradeVariables, BoardseshGradeResponse>({
   document: BOARDSESH_GRADE,

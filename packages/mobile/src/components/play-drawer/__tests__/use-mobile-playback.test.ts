@@ -136,21 +136,28 @@ beforeEach(() => {
   });
 });
 
-function renderPlayback(climb: Climb | null) {
+type PlaybackHarnessProps = { climb: Climb | null; suppressWallWrites?: boolean };
+
+function renderPlayback(climb: Climb | null, options?: { suppressWallWrites?: boolean }) {
   return renderHook(
-    (props: { climb: Climb | null }) =>
+    (props: PlaybackHarnessProps) =>
       useMobilePlayback({
         climb: props.climb,
         boardName: KILTER,
         mirrored: false,
         isOpen: true,
+        suppressWallWrites: props.suppressWallWrites ?? false,
       }),
-    { initialProps: { climb } },
+    { initialProps: { climb, suppressWallWrites: options?.suppressWallWrites } as PlaybackHarnessProps },
   );
 }
 
 /** Push a new current frame and rerender so the BLE effect re-evaluates. */
-async function setFrame(rerender: (props: { climb: Climb | null }) => void, climb: Climb | null, frame: string) {
+async function setFrame(
+  rerender: (props: { climb: Climb | null; suppressWallWrites?: boolean }) => void,
+  climb: Climb | null,
+  frame: string,
+) {
   await act(async () => {
     mocks.playback.currentFrameString = frame;
     rerender({ climb });
@@ -158,6 +165,33 @@ async function setFrame(rerender: (props: { climb: Climb | null }) => void, clim
 }
 
 describe('useMobilePlayback — BLE drain', () => {
+  // The Browsing chrome promises "the wall stays put": while the drawer shows a
+  // preview, playback animates on-screen but not one frame may reach the board.
+  it('suppressWallWrites keeps every frame off the wall, then resumes when it lifts', async () => {
+    const climb = climbWith('c1');
+    const { rerender } = renderPlayback(climb, { suppressWallWrites: true });
+
+    await act(async () => {
+      mocks.playback.currentFrameString = 'F0';
+      rerender({ climb, suppressWallWrites: true });
+    });
+    await act(async () => {
+      mocks.playback.currentFrameString = 'F1';
+      rerender({ climb, suppressWallWrites: true });
+    });
+    expect(mocks.bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
+
+    // Preview cleared (Back to live / commit): writes resume with the current frame.
+    await act(async () => {
+      rerender({ climb, suppressWallWrites: false });
+    });
+    expect(mocks.bluetooth.sendFramesToBoard).toHaveBeenCalledTimes(1);
+    expect(mocks.sendCalls[0].frame).toBe('F1');
+    await act(async () => {
+      mocks.sendCalls[0].resolve(true);
+    });
+  });
+
   it('collapses overlapping frame writes to the latest (GATT-safe)', async () => {
     const climb = climbWith('c1');
     const { rerender } = renderPlayback(climb);

@@ -25,7 +25,7 @@ export function parseClimbFrameHoldIds(frames: string | null | undefined): numbe
 
 export type BoardCompatibilityResult =
   | { ok: true }
-  | { ok: false; reason: 'board_name' | 'layout' | 'holds_out_of_range' };
+  | { ok: false; reason: 'board_name' | 'layout' | 'holds_out_of_range' | 'size' };
 
 // Cache valid hold ID sets per BoardCompatibilityTarget object so repeated queue-add
 // validation doesn't rebuild the Set on every call.
@@ -64,6 +64,16 @@ function getValidHoldIds(target: BoardCompatibilityTarget): Set<number> | null {
  *     rule 3 can't catch a wooden-set climb on a base-only wall — the cell-to-set
  *     map can. Aurora boards need no equivalent because their hold placements are
  *     per-set, so an uninstalled set's holds already fail rule 3.
+ *  5. Size containment: when the caller knows BOTH the wall's `target.size_id`
+ *     and the climb's `compatibleSizeIds`, the wall's size has to be one of
+ *     them. This is what separates two sizes whose hold ids overlap without
+ *     meaning the same holds — Woods numbers the 8x10's holds 0-484 and the
+ *     12x12's 0-893 from its own origin, so every 8x10 climb passes rule 3 on a
+ *     12x12 and would silently light a different set of holds. Aurora and
+ *     MoonBoard callers that pass neither field keep their previous answer.
+ *
+ * Rule 5 runs first among the hold checks: it is O(1) and its `'size'` reason is
+ * more specific than the `'holds_out_of_range'` rule 3 would report.
  */
 export function canAddClimbToBoard(
   climb: ClimbCompatibilityInput,
@@ -74,6 +84,9 @@ export function canAddClimbToBoard(
   }
   if (climb.layoutId != null && climb.layoutId !== target.layout_id) {
     return { ok: false, reason: 'layout' };
+  }
+  if (target.size_id != null && climb.compatibleSizeIds != null && !climb.compatibleSizeIds.includes(target.size_id)) {
+    return { ok: false, reason: 'size' };
   }
   if (target.board_name === 'moonboard' && target.set_ids && target.set_ids.length > 0) {
     const installedSetIds = new Set(target.set_ids);

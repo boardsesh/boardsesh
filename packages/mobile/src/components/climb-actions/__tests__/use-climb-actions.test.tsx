@@ -70,6 +70,7 @@ const ownerClimb = { ...climb, userId: 'user-1', is_draft: true } as unknown as 
 
 const kilterBoard = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 };
 const tensionBoard = { ...kilterBoard, boardName: 'tension' };
+const woodsBoard = { ...kilterBoard, boardName: 'woods', layoutId: 1, sizeId: 2, setIds: '1' };
 
 // `onSelectPlaylist` is required on the hook — it MUST host the playlist picker
 // inline (no root AddToPlaylistSheet, no flash-close over a modal route; see
@@ -121,6 +122,12 @@ describe('useClimbActions gating', () => {
     expect(ids({ climb, boardConfig: kilterBoard, isAuthenticated: false })).not.toContain('openInApp');
   });
 
+  // Only the Aurora boards have a `<board>boardapp.com` site — a code-driven board
+  // would otherwise get a row pointing at a domain that does not exist.
+  it('never offers "Open in app" for a code-driven board', () => {
+    expect(ids({ climb, boardConfig: woodsBoard, isAuthenticated: false })).not.toContain('openInApp');
+  });
+
   it('adds owner-only "Edit" only when the climb is editable by the current user', () => {
     ctrl.canUpdate = true;
     expect(
@@ -130,6 +137,22 @@ describe('useClimbActions gating', () => {
     expect(
       ids({ climb: ownerClimb, boardConfig: kilterBoard, isAuthenticated: false, currentUserId: 'someone-else' }),
     ).not.toContain('edit');
+  });
+
+  // Woods climbs can't be forked or edited — the create-climb editor has no way to
+  // paint its holds — so both rows drop out while the rest of the sheet stays.
+  it('drops "Fork" and "Edit" on a board that cannot have climbs set on it', () => {
+    ctrl.canUpdate = true;
+    const woodsIds = ids({
+      climb: ownerClimb,
+      boardConfig: woodsBoard,
+      isAuthenticated: false,
+      currentUserId: 'user-1',
+    });
+
+    expect(woodsIds).not.toContain('fork');
+    expect(woodsIds).not.toContain('edit');
+    expect(woodsIds).toEqual(['preview', 'queue', 'playlist', 'favorite', 'tick', 'share']);
   });
 
   it('returns nothing without a climb or board config', () => {

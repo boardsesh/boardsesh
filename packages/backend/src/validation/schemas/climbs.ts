@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { CONFIDENCE, MAX_SEARCH_PAGE } from '@boardsesh/db/queries';
-import { CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
+import { CLIMB_CHARACTERISTICS, TOGGLEABLE_CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 import { ExternalUUIDSchema, BoardNameSchema } from './primitives';
 
 // Cap holdsFilter entries: each ANY entry becomes a LIKE scan over board_climbs.frames
@@ -45,7 +45,12 @@ export const ClimbInputSchema = z.object({
     .max(10000)
     .nullish()
     .transform((v) => v ?? ''),
-  angle: z.number().min(0).max(90),
+  // Live board angle; Aurora supports negative tilt. ClimbInputSchema is only
+  // consumed by the presence/queue climb payload (ClimbQueueItemSchema,
+  // ReportBoardClimbInputSchema) — catalogue-write schemas (SaveClimbInputSchema,
+  // UpdateClimbInputSchema, SaveMoonBoardClimbInputSchema) define their own
+  // angle bound independently and stay strict.
+  angle: z.number().min(-90).max(90),
   ascensionist_count: z
     .number()
     .min(0)
@@ -109,6 +114,11 @@ export const ClimbInputSchema = z.object({
   // Source of truth for the tier set: CONFIDENCE / ConfidenceTier in
   // packages/db/src/queries/grade-model/constants.ts.
   boardseshConfidence: z.enum([CONFIDENCE.confirmed, CONFIDENCE.provisional, CONFIDENCE.setterOnly]).nullish(),
+  // The sizes the climb fits on, round-tripped through the queue so a peer on a
+  // different-sized wall keeps the one signal that separates Woods' two boards
+  // (their hold ids overlap as different holds). Bounded: a board type has a
+  // handful of product sizes, never dozens.
+  compatibleSizeIds: z.array(z.number().int()).max(50).nullish(),
 });
 
 /**
@@ -206,22 +216,19 @@ export const ClimbSearchInputSchema = z.object({
   onlyRatedByMe: z.boolean().optional(),
   onlyDrafts: z.boolean().optional(),
   projectsOnly: z.boolean().optional(),
-  // Intended to default to boulders-only so non-web GraphQL callers (mobile,
-  // scripts) get the same shape as the web UI when the field is omitted. This
-  // default is currently DEAD CODE: searchClimbs (see
-  // packages/backend/src/graphql/resolvers/climbs/queries.ts) calls
-  // validateInput(ClimbSearchInputSchema, input, 'input') only for its
-  // throw-on-invalid side effect and discards the parsed/defaulted return
-  // value, so every downstream consumer (mapSearchInputToParams) reads the
-  // raw, un-defaulted input — an omitted boulders/routes stays undefined, not
-  // true/false (see #2636). Do not "fix" this by wiring the parsed result
-  // into use without auditing every caller of @boardsesh/climb-filters'
-  // toClimbSearchInput first: its both-selected ("All") case now sends
-  // explicit boulders: true, routes: true (hardened by #2636) so it's safe,
-  // but its both-off case still relies on omission staying undefined, and
-  // reactivating this default would flip that to boulders-only.
-  boulders: z.boolean().optional().default(true),
-  routes: z.boolean().optional().default(false),
+  // No default here on purpose: omitted means "no climb-type constraint"
+  // (both boulders and routes match), not "boulders-only". searchClimbs (see
+  // packages/backend/src/graphql/resolvers/climbs/queries.ts) now uses the
+  // parsed/defaulted return of validateInput(ClimbSearchInputSchema, ...),
+  // so a `.default()` here would actually apply — a boulders-only default
+  // would silently narrow every caller that omits these fields, and
+  // @boardsesh/climb-filters' toClimbSearchInput relies on the both-off case
+  // staying undefined (hardened by #2636, which closed #3975's original
+  // symptom by always sending explicit values for the "All" case). If a
+  // future change wants a real default, audit every caller of
+  // toClimbSearchInput first, not just the web client.
+  boulders: z.boolean().optional(),
+  routes: z.boolean().optional(),
   zoneBox: z
     .object({
       edgeLeft: z.number().int(),
@@ -236,6 +243,26 @@ export const ClimbSearchInputSchema = z.object({
   zoneMode: z.enum(['allHolds', 'anyHold']).optional(),
 });
 
+// Only the freely-toggleable characteristics (no_kickboard, campus) are settable
+// through the SaveClimbInput/UpdateClimbInput `characteristics` field — no_match
+// is derived from `description` (see the resolver), and MoonBoard method tokens
+// are creation-time-only via SaveMoonBoardClimbInput.
+// .nullable(): the GraphQL field is a nullable list, and clients (mobile's
+// buildToggleableCharacteristics) send explicit `null` when both toggles are off —
+// `.optional()` alone rejects that literal null and 400s every ordinary
+// save/update, not just ones touching these two characteristics.
+// .refine: a client can only mean one thing by repeating a token twice, and
+// `withCharacteristic` is idempotent either way, but rejecting the duplicate
+// up front is cheaper to reason about than silently tolerating malformed input.
+const ToggleableCharacteristicsSchema = z
+  .array(z.enum([...TOGGLEABLE_CLIMB_CHARACTERISTICS]))
+  .max(TOGGLEABLE_CLIMB_CHARACTERISTICS.length)
+  .refine((tokens) => new Set(tokens).size === tokens.length, {
+    message: 'characteristics must not contain duplicate tokens',
+  })
+  .optional()
+  .nullable();
+
 export const SaveClimbInputSchema = z.object({
   boardType: BoardNameSchema,
   layoutId: z.number().int().positive('Layout ID must be positive'),
@@ -246,6 +273,7 @@ export const SaveClimbInputSchema = z.object({
   framesCount: z.number().int().min(1).optional(),
   framesPace: z.number().int().min(0).optional(),
   angle: z.number().int().min(0).max(90),
+  characteristics: ToggleableCharacteristicsSchema,
 });
 
 export const UpdateClimbInputSchema = z.object({
@@ -258,6 +286,7 @@ export const UpdateClimbInputSchema = z.object({
   isDraft: z.boolean().optional(),
   framesCount: z.number().int().min(1).optional(),
   framesPace: z.number().int().min(0).optional(),
+  characteristics: ToggleableCharacteristicsSchema,
 });
 
 export const MoonBoardHoldsInputSchema = z.object({
@@ -308,7 +337,9 @@ export const SetterStatsInputSchema = z.object({
   layoutId: z.number().int().positive('Layout ID must be positive'),
   sizeId: z.number().int().positive('Size ID must be positive'),
   setIds: z.string().min(1, 'Set IDs cannot be empty'),
-  angle: z.number().int().min(0).max(90),
+  // Live board angle; Aurora supports negative tilt. Mobile's setter filter
+  // sends the live angle here.
+  angle: z.number().int().min(-90).max(90),
   search: z.string().max(200).optional(),
 });
 
@@ -322,7 +353,9 @@ export const SimilarClimbsInputSchema = z
     // (favorites, playlists, etc.) and length-bounds them so a malformed
     // string can't reach the underlying SQL.
     excludeClimbUuid: ExternalUUIDSchema.optional(),
-    angle: z.number().int().min(0).max(90).optional(),
+    // Aurora boards support negative tilt (e.g. -5°); angle is only an optional
+    // stats-join key here, so a non-matching value nulls the join rather than erroring.
+    angle: z.number().int().min(-90).max(90).optional(),
     climbUuid: ExternalUUIDSchema.optional(),
     frames: z.string().min(1).max(10000).optional(),
   })

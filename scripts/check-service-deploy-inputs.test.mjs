@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { test } from 'node:test';
@@ -29,6 +29,7 @@ function createFixtureRepo() {
   // Declared as extraSourceFiles entries on the web service; context
   // generation fails when one is missing, so the fixture repo carries stubs.
   writeFixtureFile(repoRoot, 'scripts/build-expo-web-export.sh', '#!/usr/bin/env bash\n');
+  writeFixtureFile(repoRoot, 'scripts/lib/patch-expo-web-pwa-manifest.mjs', 'export {};\n');
   writeFixtureFile(repoRoot, 'scripts/lib/tailscale-hostname.ts', 'export {};\n');
   // Same for the backend service's extraSourceDirs entry.
   writeFixtureFile(repoRoot, 'packages/web/public/images/stub.webp', '');
@@ -80,12 +81,22 @@ function createFixtureRepo() {
       'concurrency:',
       '  group: production-deploy',
       '  cancel-in-progress: false',
-      'run: case "$file" in packages/*|Dockerfile.backend|scripts/create-service-docker-context.mjs|scripts/railway-deployment-status.mjs|railway.toml|bun.lock|package.json|.github/workflows/production-deploy.yml)',
+      'permissions:',
+      '  actions: read',
+      'outputs:',
+      '  deployment_base_sha: example',
+      '  static_assets_changed: example',
+      'BEFORE_SHA: ${{ needs.detect-changes.outputs.deployment_base_sha }}',
+      'run: node scripts/production-deploy-changes.mjs --runs-json "$RUNS_JSON"',
+      'run: vp run upload:static-assets',
+      "needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped'",
+      'SYNC_STATIC_ASSETS: ${{ needs.sync-static-assets.result }}',
       'run: vp run docker-context:backend',
       'context: .docker-context/backend',
       'file: .docker-context/backend/Dockerfile',
       'node scripts/railway-deployment-status.mjs capture-previous railway-before.json',
       'node scripts/railway-deployment-status.mjs find-new railway-deployments.json',
+      'node scripts/production-backend-smoke.mjs',
       'deploymentRollback',
       '',
     ].join('\n'),
@@ -107,6 +118,26 @@ function withFixtureRepo(callback) {
 void test('passes for generated Docker context inputs, including newly added workspaces', () => {
   withFixtureRepo((repoRoot) => {
     assert.deepEqual(createServiceDeployInputFailures({ repoRoot }), []);
+  });
+});
+
+void test('requires cumulative production detection outputs, permissions, notification range, and schema smoke', () => {
+  withFixtureRepo((repoRoot) => {
+    const workflowPath = join(repoRoot, '.github/workflows/production-deploy.yml');
+    const weakenedWorkflow = readFileSync(workflowPath, 'utf8')
+      .replace('  actions: read\n', '')
+      .replace('  deployment_base_sha: example\n', '')
+      .replace('BEFORE_SHA: ${{ needs.detect-changes.outputs.deployment_base_sha }}\n', '')
+      .replace('run: node scripts/production-deploy-changes.mjs --runs-json "$RUNS_JSON"\n', '')
+      .replace('node scripts/production-backend-smoke.mjs\n', '');
+    writeFileSync(workflowPath, weakenedWorkflow, 'utf8');
+
+    const failures = createServiceDeployInputFailures({ repoRoot }).join('\n');
+    assert.match(failures, /tested cumulative change detector/);
+    assert.match(failures, /read prior workflow runs/);
+    assert.match(failures, /expose its cumulative baseline/);
+    assert.match(failures, /report the same cumulative range/);
+    assert.match(failures, /verify the live GraphQL schema/);
   });
 });
 

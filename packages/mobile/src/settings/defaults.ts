@@ -10,6 +10,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoConnectBle: true,
   autoDisconnectBle: false,
   autoDisconnectTimeoutSeconds: 30,
+  lightOnSwipe: true,
+  lightOnClimbTap: true,
   moonboardLightAdjacentHolds: false,
   keepScreenAwake: true,
   theme: 'system',

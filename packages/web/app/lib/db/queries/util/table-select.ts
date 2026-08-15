@@ -75,35 +75,15 @@ export function getUnifiedTable<K extends keyof UnifiedTableSet>(tableName: K): 
   return UNIFIED_TABLES[tableName];
 }
 
-/**
- * Board name type that includes all supported boards (kilter, tension, moonboard, decoy, touchstone, grasshopper, soill)
- */
-export type UnifiedBoardName = BoardName | 'moonboard';
-
-/**
- * Check if a board name is valid (includes all supported boards)
- * @param boardName The name to check
- * @returns True if the board name is valid
- */
-export function isValidBoardName(boardName: string): boardName is UnifiedBoardName {
-  return (
-    boardName === 'kilter' ||
-    boardName === 'tension' ||
-    boardName === 'moonboard' ||
-    boardName === 'decoy' ||
-    boardName === 'touchstone' ||
-    boardName === 'grasshopper' ||
-    boardName === 'soill'
-  );
-}
-
-/** @deprecated Use isValidBoardName instead */
-export const isValidUnifiedBoardName = isValidBoardName;
+// `isValidBoardName` / `isValidUnifiedBoardName` used to live here as a hardcoded
+// `||` chain over seven board names. Nothing in the web package imported them (the
+// backend has its own copy at `packages/backend/src/db/queries/util/table-select.ts`,
+// which is the one every resolver calls), and the chain had already gone stale —
+// it never learned about Woods. Deleted rather than re-derived from
+// `SUPPORTED_BOARDS`: a board allowlist that nothing consults is a trap, not a guard.
 
 const tableSelectUtils = {
   getUnifiedTable,
-  isValidBoardName,
-  isValidUnifiedBoardName,
   UNIFIED_TABLES,
 };
 

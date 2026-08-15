@@ -209,19 +209,15 @@ export function toClimbSearchInput(
   //   never-both-off toggle and mobile's boulders/routes/both selector never
   //   produce it — kept as-is, out of scope for this fix).
   // - Both-on ("All") sends explicit boulders: true, routes: true rather than
-  //   omitting both fields. Omission and explicit true/true are proven
-  //   behaviourally identical today (both parse to no frames_count
-  //   constraint), but only because the backend resolver's Zod
-  //   default(true)/default(false) for these fields is dead code —
-  //   searchClimbs's validateInput() call at
-  //   packages/backend/src/graphql/resolvers/climbs/queries.ts discards its
-  //   parsed/defaulted return value, so the default never actually applies.
-  //   If that discard is ever "cleaned up" to use the parsed result, an
-  //   omitted both/both would silently start defaulting to
-  //   boulders=true/routes=false (boulders-only) — reintroducing the exact
-  //   regression reported in issue #2636. Sending explicit true/true removes
-  //   that footgun regardless of what the backend resolver does with its
-  //   validation return. See create-climb-filters.ts for the SQL this maps to.
+  //   omitting both fields. Omission and explicit true/true are behaviourally
+  //   identical (both parse to no frames_count constraint): the backend's
+  //   ClimbSearchInputSchema has no `.default()` on these fields (#3975
+  //   removed the dead-code default that searchClimbs's discarded
+  //   validateInput() return used to make unreachable), and
+  //   mapSearchInputToParams passes `undefined` through unchanged. Sending
+  //   explicit true/true here is still the right call — it keeps this
+  //   contract independent of the backend schema's defaulting choices. See
+  //   create-climb-filters.ts for the SQL this maps to.
   const bouldersOn = state.boulders ?? true;
   const routesOn = state.routes ?? false;
   if (bouldersOn && routesOn) {

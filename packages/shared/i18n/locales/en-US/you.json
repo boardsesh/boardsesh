@@ -1,16 +1,7 @@
 {
   "metadata": {
     "dashboard": {
-      "title": "You",
-      "description": "Your climbing dashboard on Boardsesh"
-    },
-    "logbook": {
-      "title": "Logbook",
-      "description": "Your climbing logbook on Boardsesh"
-    },
-    "sessions": {
-      "title": "Sessions",
-      "description": "Your climbing sessions on Boardsesh"
+      "title": "You"
     }
   },
   "tabs": {
@@ -19,9 +10,6 @@
     "logbook": "Logbook",
     "social": "Social",
     "climbs": "Climbs"
-  },
-  "progress": {
-    "title": "Progress"
   },
   "mobile": {
     "unknownName": "Climber",

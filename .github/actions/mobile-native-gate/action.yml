@@ -72,7 +72,8 @@ runs:
         if [ -z "$(changed \
               package.json packages/mobile/package.json bun.lock packages/mobile/app.config.ts \
               packages/mobile/fingerprint.config.js packages/mobile/plugins \
-              packages/mobile/modules patches)" ]; then
+              packages/mobile/modules packages/mobile/locales packages/mobile/eas.json \
+              packages/mobile/assets packages/mobile/targets patches)" ]; then
           skip "no native-input files changed vs main"
         fi
 

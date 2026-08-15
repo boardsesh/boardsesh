@@ -8,27 +8,27 @@
  * `blob:` object URL that react-native-web's <Image> renders exactly like a
  * `file://` URI.
  *
- * This is the Phase 0 (spike) implementation: main-thread WASM, no worker, no
- * disk cache. It honours the same exported contract the hook consumes:
+ * It honours the same exported contract the hook consumes:
  *   - `boardRendererNative` — truthy so the hook's presence check passes and
  *     it proceeds to call `renderHoldsOverlay` (see getNativeModule() in
  *     use-native-climb-render.ts).
  *   - `renderHoldsOverlay(configJson, cacheKey)` — resolves to an image URL.
  *   - `MARKER_RENDERER_UNAVAILABLE_MESSAGE` — for contract parity.
  *
- * Two marker overrides — shape size and per-hold `shape` — are NOT supported by
- * the committed WASM artifact: it is the overlay-only core (8-field
- * RenderConfig, no `shape_size_multiplier` and no per-hold `shape`). serde
- * silently ignores those extra fields, so such a config would render as plain
- * default-sized circles — the exact silent-wrong-output failure the native shim
- * guards against for old binaries. We therefore mirror the shim: detect those
- * two and throw MARKER_RENDERER_UNAVAILABLE_MESSAGE so the hook records the
- * signature as unsupported and falls back to default rendering, instead of
- * showing wrong markers.
+ * There is no marker-capability guard here any more. The committed artifact
+ * used to be the overlay-only core (8-field RenderConfig, no
+ * `stroke_width_multiplier` / `shape_size_multiplier` / per-hold `shape`), so
+ * this module refused shape and size overrides rather than let serde drop the
+ * keys and draw plain circles. That left every overlay blank once someone
+ * touched those settings (issue #4495). The pkg is now rebuilt from the
+ * marker-aware core and honours all three, so the refusal is gone:
+ * packages/mobile/public/wasm/README.md records the toolchain the binary was
+ * built with, and src/lib/__tests__/board-renderer-wasm-runtime.test.ts fails
+ * if a stale artifact is ever committed again.
  *
- * `stroke_width_multiplier` is deliberately NOT part of that guard — see
- * configRequiresModernRenderer below. It degrades to the renderer's built-in
- * default thickness rather than being refused.
+ * MARKER_RENDERER_UNAVAILABLE_MESSAGE stays exported: index.ts still throws it
+ * for native binaries that predate marker support, and the hook still matches
+ * on it to degrade to a colour-only render.
  */
 
 import {
@@ -112,45 +112,6 @@ function ensureWasmInitialized(): Promise<(configJson: string) => Uint8Array> {
     })();
   }
   return wasmInitPromise;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isNonDefaultMultiplier(value: unknown): boolean {
-  return typeof value === 'number' && Number.isFinite(value) && value !== 1;
-}
-
-// Mirrors index.ts's configRequiresModernRenderer: a config needs the
-// marker-aware renderer when it sets a non-default shape-size multiplier or any
-// non-circle hold shape. The committed WASM core cannot honour those.
-function configRequiresModernRenderer(configJson: string): boolean {
-  let parsedConfig: unknown;
-  try {
-    parsedConfig = JSON.parse(configJson);
-  } catch {
-    return false;
-  }
-  if (!isRecord(parsedConfig)) return false;
-  // stroke_width_multiplier is deliberately NOT a gate here, matching native
-  // (index.ts) — see issue #2202 and #4240. The committed WASM's RenderConfig
-  // has 8 fields and no `deny_unknown_fields` on the struct (see
-  // packages/board-renderer/core/src/types.rs), so serde ignores the
-  // unrecognised key and the overlay renders at the built-in default
-  // thickness — never a parse failure, never wrong geometry. Gating on it
-  // would instead throw MARKER_RENDERER_UNAVAILABLE_MESSAGE unconditionally
-  // for Grasshopper, whose board-level stroke default is 1.35 with zero user
-  // overrides (packages/board-constants/src/hold-states.ts), leaving the
-  // overlay permanently blank on Expo web. Slightly thin beats invisible.
-  if (isNonDefaultMultiplier(parsedConfig.shape_size_multiplier)) return true;
-
-  const holdStateMap = parsedConfig.hold_state_map;
-  if (!isRecord(holdStateMap)) return false;
-  return Object.values(holdStateMap).some((stateInfo) => {
-    if (!isRecord(stateInfo)) return false;
-    return typeof stateInfo.shape === 'string' && stateInfo.shape !== 'circle';
-  });
 }
 
 /**
@@ -332,13 +293,6 @@ export async function renderHoldsOverlay(configJson: string, cacheKey: string): 
   const cached = getRenderedObjectUrl(cacheKey);
   if (cached) return cached;
 
-  if (configRequiresModernRenderer(configJson)) {
-    // The committed WASM is overlay-only — same position as an old native
-    // binary. Throwing (rather than silently rendering plain circles) lets the
-    // hook record the signature as unsupported and fall back to defaults.
-    throw new Error(MARKER_RENDERER_UNAVAILABLE_MESSAGE);
-  }
-
   // 2. Persisted overlay from a prior session (survives a reload). On a hit this
   //    mints + retains a fresh object URL without touching the WASM core.
   const persisted = await readOverlayFromCache(cacheKey);
@@ -359,7 +313,6 @@ export async function renderHoldsOverlay(configJson: string, cacheKey: string): 
 }
 
 type WebRendererTestApi = {
-  configRequiresModernRenderer: typeof configRequiresModernRenderer;
   decodeRenderOutput: typeof decodeRenderOutput;
   rememberObjectUrl: typeof rememberObjectUrl;
   releaseAllObjectUrls: typeof releaseAllObjectUrls;
@@ -376,7 +329,6 @@ type WebRendererTestApi = {
 export const _webRendererForTests: WebRendererTestApi = (
   __DEV__
     ? {
-        configRequiresModernRenderer,
         decodeRenderOutput,
         rememberObjectUrl,
         releaseAllObjectUrls,

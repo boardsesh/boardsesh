@@ -14,9 +14,16 @@ import { spawn } from 'node:child_process';
  * Backoff ladder for one platform, in wait order: 34 minutes total, sized to
  * outlast the object store's observed throttle cooldown (runs 29387706795 and
  * 30855435091 both stayed throttled ~17 minutes; the old 30/60/120s ladder gave
- * up ~8 minutes in and needed a manual re-run). Do not shorten these — a retry
- * re-fires the same asset-upload burst that trips the limit, so waiting is the
- * only lever here. Rationale and the upstream eoas bugs: docs/mobile-ota-updates.md.
+ * up ~8 minutes in and needed a manual re-run).
+ *
+ * Since eoas@3.1.2 this ladder is a BACKSTOP, not the primary defence: the CLI
+ * now paces its own upload starts (`--upload-rate`, see scripts/lib/eoas.ts) and
+ * retries 429/5xx with `Retry-After` internally, so a whole-command retry should
+ * be rare. Leaving it long costs nothing on a healthy publish, which never
+ * sleeps. Revisit only after a week of green publishes on 3.1.2 — and note that
+ * shortening it means editing three workflows, since
+ * scripts/mobile-ota-publish-workflow.test.ts derives their `timeout-minutes`
+ * floors from these values. Rationale: docs/mobile-ota-updates.md.
  */
 export const SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS = [60_000, 180_000, 300_000, 600_000, 900_000] as const;
 export const SELF_HOSTED_PUBLISH_MAX_ATTEMPTS = SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS.length + 1;

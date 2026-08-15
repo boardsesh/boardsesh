@@ -1,9 +1,9 @@
-# Android sideload build (React Native rewrite)
+# Android release artifacts and Play internal build
 
 `.github/workflows/android-apk-rn.yml` builds a signed, sideloadable arm64
-Android APK for the Expo React Native app in `packages/mobile/` and attaches it
-to a GitHub Release. This is the Android counterpart to `ios-testflight-rn.yml`
-(iOS).
+Android APK and a signed AAB for the Expo React Native app in `packages/mobile/`.
+Both remain private Actions artifacts; the AAB is uploaded to Google Play's
+internal track. This is the Android counterpart to `ios-testflight-rn.yml`.
 
 There's also a separate **dev-client** build for Metro-server testing —
 `android-apk-dev-client.yml`, installs side-by-side as "Boardsesh Dev". See
@@ -19,30 +19,29 @@ needs a macOS runner, which is why that one prebuilds locally too.)
 
 ## How it runs
 
-- **Trigger:** push to `main` touching `packages/mobile/**` (+ the shared
-  packages it imports), and manual `workflow_dispatch`.
-- **Output:** a GitHub Release tagged `rn-android-<major>.<minor>.<run_number>`
-  with `boardsesh-rn-android-arm64-v8a.apk` attached, plus a 30-day build
-  artifact.
-- The job runs in the `Production` GitHub Environment so it can read the
+- **Trigger:** push to `release/next` touching `packages/mobile/**` (+ the shared
+  packages it imports), or a trusted manual dispatch from `release/next`/`main`.
+- **Output:** private 30-day APK/AAB Actions artifacts and an upload to the Play
+  internal track. No public GitHub Release is created.
+- The job runs in the `Native Release` GitHub Environment so it can read the
   signing and deployment-notification secrets.
 
 Steps: `bun install` → write `.env` (prod URLs + Sentry DSN) → disable Sentry
 Gradle source-map upload (`SENTRY_DISABLE_AUTO_UPLOAD`) → `expo prebuild` → set
 `versionCode` → derive the app version from `app.config.ts` → decode keystore →
 `gradlew assembleRelease` → verify the APK signature (`apksigner verify
---print-certs`) → publish the Release → notify the deploy channel → build the
-Play AAB.
+--print-certs`) → build/verify the Play AAB → upload to Play internal → publish
+protected build/fingerprint tags → notify the deploy channel.
 
-The sideload APK is intentionally `arm64-v8a` only. That covers modern physical
-Android devices while keeping the GitHub Release build reliable on
-`ubuntu-latest`. The Play Store path still receives a signed AAB, so Play can
-serve the right APKs for its supported device set.
+The diagnostic APK is intentionally `arm64-v8a` only. It covers modern physical
+Android devices while keeping the Linux build reliable. Play receives the AAB
+and serves the right APKs for its supported device set.
 
 ## Signing
 
 The release APK is signed with the **shared Android release keystore** (the same
-key the Capacitor app used), via the existing repo secrets — no new secrets:
+key the Capacitor app used), using credentials isolated in the `Native Release`
+environment. The credential names are unchanged:
 
 | Secret                              | Used for                                         |
 | ----------------------------------- | ------------------------------------------------ |
@@ -77,9 +76,9 @@ versionCode = max(
 )
 ```
 
-The `offset + run_number` term is the **sideload floor** — the deterministic
-line that every GitHub Release APK has shipped on, and the channel users
-actually sideload. The offset keeps it strictly above the Capacitor line (which
+The `offset + run_number` term preserves the historical **sideload floor** — the
+deterministic line used by the public APK channel before it moved to private
+artifacts. The offset keeps it strictly above the Capacitor line (which
 used a raw `run_number` in the low thousands), so RN always supersedes. The
 trade-off is deliberate: **the RN rewrite is the successor.** A Capacitor
 release can no longer upgrade a device already on the RN build.
@@ -115,25 +114,21 @@ Two invariants to respect:
 
 ## Play Store (AAB → internal testing track)
 
-The same workflow also builds a signed **AAB** (`./gradlew bundleRelease`, same
+The workflow builds a signed **AAB** (`./gradlew bundleRelease`, same
 prebuild / `release` signingConfig / `versionCode` as the APK, so the two
 channels never diverge) and uploads it to the Google Play **internal testing**
 track via [`r0adkll/upload-google-play`](https://github.com/r0adkll/upload-google-play)
-(pinned to a commit SHA). The APK stays the arm64 sideload channel (GitHub
-Release); the AAB is the Play channel.
+(pinned to a commit SHA). The APK/AAB remain available to maintainers as private
+Actions artifacts.
 
-The GitHub Release is created before the AAB/Play steps. A Play-specific failure
-should not block the already-signed sideload APK from being published. The
-workflow keeps the job green when the Play upload fails and emits a warning with
-the manual follow-up. If Play reports `You must let us know whether your app uses
-any Foreground Service permissions`, complete the Play Console foreground
-service declaration for `FOREGROUND_SERVICE_CONNECTED_DEVICE`, then rerun the
-workflow or upload the saved AAB artifact by hand.
+The Play upload is mandatory. A failure blocks the candidate and prevents the
+`build-android-*`/`fingerprint-android-*` tags from being written. If Play reports
+`You must let us know whether your app uses any Foreground Service permissions`,
+complete the Play Console declaration for
+`FOREGROUND_SERVICE_CONNECTED_DEVICE`, then rerun the workflow.
 
-After the GitHub Release is created, the workflow posts the release URL to the
-deployments Discord webhook. The notification is best-effort: if the webhook is
-unset or Discord rejects the request, the APK release remains successful and the
-run logs a warning.
+After Play accepts the upload, the workflow posts the versionCode and run URL to
+the deployments Discord webhook. The notification is best-effort.
 
 Both `assembleRelease` and `bundleRelease` run with
 `SENTRY_DISABLE_AUTO_UPLOAD=true`. Runtime Sentry remains active through
@@ -143,10 +138,9 @@ generated by Expo prebuild.
 
 ### One-time bootstrap (manual — the Play API can't do the first upload)
 
-The upload step is **gated on `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`** and skips
-cleanly (build stays green) until it exists. Before adding that secret, do this
-once in the Play Console — the Developer API cannot create the app or perform
-the initial upload:
+The upload step **requires `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`** and fails closed
+until it exists. Before adding that secret, do this once in the Play Console —
+the Developer API cannot create the app or perform the initial upload:
 
 1. Create the app `com.boardsesh.app` in the Play Console.
 2. Download the AAB artifact from a workflow run (`boardsesh-rn-android-aab-*`)
@@ -158,8 +152,9 @@ the initial upload:
 5. Complete the **Foreground Service declaration** form for
    `FOREGROUND_SERVICE_CONNECTED_DEVICE` (justification: keep a BLE-connected
    climbing board controllable in the background) — it can block the release.
-6. Add the service-account JSON as the `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` repo
-   secret (Production environment). Subsequent pushes to `main` auto-upload.
+6. Add the service-account JSON as `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` in the
+   `Native Release` environment. Subsequent native changes on `release/next`
+   auto-upload.
 
 ### Upload key vs app signing key
 
@@ -217,7 +212,7 @@ Android OAuth client (same package, different SHA-1 — they coexist):
 
 | Where it runs                                                        | Signing key                         | How to get the SHA-1                                                                                                                                                                                                                                                                                                                                                                           |
 | -------------------------------------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sideload GitHub Release APK (this workflow)                          | upload key (`ANDROID_KEYSTORE_*`)   | `apksigner verify --print-certs <apk>` — currently `12:21:33:D0:1B:E4:B0:05:0C:62:6D:ED:27:74:46:AD:D4:EC:CC:B2`                                                                                                                                                                                                                                                                               |
+| Private Actions APK artifact (this workflow)                         | upload key (`ANDROID_KEYSTORE_*`)   | `apksigner verify --print-certs <apk>` — currently `12:21:33:D0:1B:E4:B0:05:0C:62:6D:ED:27:74:46:AD:D4:EC:CC:B2`                                                                                                                                                                                                                                                                               |
 | Play install — internal track **and public production rollout**      | Play app-signing key (Google holds) | **App signing key certificate** SHA-1 `14:E9:A5:67:87:E7:43:E4:30:9B:66:92:C6:56:E9:AD:05:F6:D0:F2` — Google re-signs the upload, so it's _not_ the upload-key SHA-1 above. Find it via the Play Console search bar (`app signing`) or the `…/app/<id>/keymanagement` URL; it's under the integrity/security area, not "Setup". This is the row that blocked the June 2026 production rollout. |
 | Local `expo run:android` / debug-signed PR APK (`android-pr-rn.yml`) | Expo debug keystore                 | after a prebuild: `keytool -list -v -keystore packages/mobile/android/app/debug.keystore -alias androiddebugkey -storepass android`                                                                                                                                                                                                                                                            |
 

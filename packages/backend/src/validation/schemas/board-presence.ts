@@ -9,7 +9,8 @@ export const BoardPresenceConfigInputSchema = z.object({
   setIds: NumericCsvSchema,
 });
 
-export const BoardPresenceAngleSchema = z.number().int().min(0).max(90).nullable().optional();
+// Live board angle; Aurora supports negative tilt.
+export const BoardPresenceAngleSchema = z.number().int().min(-90).max(90).nullable().optional();
 
 export const ReportBoardClimbInputSchema = z.object({
   uuid: z.string().min(1, 'Queue item UUID cannot be empty').max(100, 'Queue item UUID too long'),

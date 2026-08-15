@@ -91,6 +91,18 @@ describe('OverviewTab', () => {
     expect(link.getAttribute('href')).toBe('/gym/test-gym');
   });
 
+  it('links to the printable QR poster', async () => {
+    renderTab(makeGym());
+    const link = await screen.findByRole('link', { name: /print your poster/i });
+    expect(link.getAttribute('href')).toBe('/gym/test-gym/poster');
+  });
+
+  it('hides the poster link for a slug-less gym — the printed code encodes the slug', async () => {
+    renderTab(makeGym({ slug: null }));
+    await screen.findByRole('link', { name: /put it on the tv/i });
+    expect(screen.queryByRole('link', { name: /print your poster/i })).toBeNull();
+  });
+
   it('shows the follower/member/board counts from the gym and the kiosk count from the query', async () => {
     renderTab(makeGym());
 

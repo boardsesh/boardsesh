@@ -66,6 +66,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'Show the data-science "Boardsesh grade" section in the play drawer (cross-board grade, confidence tier, send counts). Off hides the section.',
   },
   {
+    key: 'anonymous-climb-view-kill',
+    label: 'Disable the anonymous climb view',
+    description:
+      'Emergency kill switch: send signed-out visitors on app.boardsesh.com climb URLs back to the login wall instead of rendering the read-only climb. Web export only — native never serves those routes signed-out.',
+  },
+  {
     key: 'moonboard-wide-angles',
     label: 'MoonBoard wide angles',
     description:
@@ -167,6 +173,20 @@ export function useOfflineDownloadProgressEnabled(): boolean {
  */
 export function useOfflineNudgesEnabled(): boolean {
   return useFeatureFlag('offline-discovery-nudges') === true;
+}
+
+/**
+ * Kill switch for the signed-out read-only climb view on app.boardsesh.com.
+ *
+ * A KILL switch rather than a positive rollout flag, and the direction matters:
+ * PostHog flags resolve asynchronously, so a positive flag reads as OFF for the
+ * first frames of a cold open — which on this surface means an anonymous visitor
+ * watching a login redirect flash before the flag lands. Missing/undefined
+ * therefore reads as "not killed", i.e. the feature is on, and flipping the flag
+ * ON in PostHog restores the old login-wall behaviour.
+ */
+export function useAnonymousClimbViewEnabled(): boolean {
+  return useFeatureFlag('anonymous-climb-view-kill') !== true;
 }
 
 /**

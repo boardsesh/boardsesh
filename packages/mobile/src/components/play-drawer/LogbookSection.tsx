@@ -8,6 +8,7 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { LogbookEntryRow } from './LogbookEntryRow';
 import { useLocalPendingTicks } from '../../hooks/use-local-ticks';
+import { useAuth } from '../../providers/auth-provider';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 
@@ -25,6 +26,7 @@ export const LogbookSection = memo(function LogbookSection({
   userAttempts,
 }: LogbookSectionProps) {
   const { t } = useTranslation('session');
+  const { isAuthenticated } = useAuth();
   const { logbook, isLoading } = useLogbook(boardName as BoardName, [climbUuid]);
   const { data: pendingTicks = 0 } = useLocalPendingTicks(climbUuid, boardName);
 
@@ -61,6 +63,25 @@ export const LogbookSection = memo(function LogbookSection({
   // their own angle chip. Sessions = distinct days, matching the logbook's
   // day-scoped grouping.
   const angleSections = useMemo(() => groupEntriesByAngle(entries), [entries]);
+
+  // A reader with no account has no logbook, so every string below would be a
+  // lie about them: `useLogbook` is disabled signed-out (so `entries` is empty
+  // and `isLoading` false), and `userAscents` / `userAttempts` are viewer-scoped
+  // and arrive null — which lands squarely on "No tries yet. Get on it." for
+  // someone who has never had a try to record. Ahead of every other branch,
+  // because the emptiness that reaches them is not the empty state.
+  if (!isAuthenticated) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.emptyContainer}>
+          <Icon name="history" size={20} color={iosSystemColors.systemGray} />
+          <Text variant="subheadline" color={iosSystemColors.systemGray}>
+            {t('mobile.logbook.signedOut')}
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   if (entries.length > 0) {
     return (

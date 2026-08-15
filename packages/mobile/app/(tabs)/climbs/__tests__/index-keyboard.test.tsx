@@ -28,6 +28,14 @@ const mocks = vi.hoisted(() => ({
   searchFailed: false,
   offlineCatalog: null as 'missing' | 'queued' | null,
   activateClimb: vi.fn(),
+  openPlayDrawer: vi.fn(),
+  setSetting: vi.fn(),
+  // Deep-link params, mutable so the screenshot-mode auto-opens can be driven
+  // without a second mock scaffold.
+  searchParams: {} as Record<string, string>,
+  // Mutable per-test setting: false exercises the preview-open branch instead
+  // of the committing activateClimb path.
+  lightOnClimbTap: true,
   dismissKeyboard: vi.fn(),
   getLastSearch: vi.fn(),
   saveLastSearch: vi.fn(),
@@ -101,7 +109,7 @@ vi.mock('react-native-safe-area-context', () => ({
 vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
   useRouter: () => ({ push: vi.fn() }),
-  useLocalSearchParams: () => ({}),
+  useLocalSearchParams: () => mocks.searchParams,
   useFocusEffect: () => {},
 }));
 
@@ -205,6 +213,7 @@ vi.mock('../../../../src/providers/drawer-host-provider', () => ({
     openClimbActions: vi.fn(),
     openAddToPlaylist: vi.fn(),
     openBoardSheet: vi.fn(),
+    openPlayDrawer: mocks.openPlayDrawer,
   }),
 }));
 
@@ -229,6 +238,11 @@ vi.mock('../../../../src/theme/variants', () => ({
 vi.mock('../../../../src/providers/queue-provider', () => ({
   useActiveClimbUuid: () => null,
   useQueueActions: () => ({ addToQueue: vi.fn() }),
+}));
+
+vi.mock('../../../../src/settings', () => ({
+  useSetting: (key: string) => (key === 'lightOnClimbTap' ? [mocks.lightOnClimbTap, vi.fn()] : [false, vi.fn()]),
+  setSetting: mocks.setSetting,
 }));
 
 vi.mock('../../../../src/hooks/use-bottom-accessory', () => ({ useNativeAccessoryActive: () => false }));
@@ -354,6 +368,9 @@ import ClimbList from '../index';
 
 beforeEach(() => {
   mocks.activateClimb.mockClear();
+  mocks.openPlayDrawer.mockClear();
+  mocks.setSetting.mockClear();
+  mocks.lightOnClimbTap = true;
   mocks.dismissKeyboard.mockClear();
   mocks.getLogbook.mockClear();
   mocks.getLastSearch.mockReset();
@@ -370,6 +387,7 @@ beforeEach(() => {
   mocks.isOffline = false;
   mocks.searchFailed = false;
   mocks.offlineCatalog = null;
+  mocks.searchParams = {};
 });
 
 // The dead end this branch exists to remove, and the one it nearly reintroduced:
@@ -449,6 +467,83 @@ describe('ClimbList keyboard handling', () => {
     // Logbook is fetched for every visible row, not just the pressed one — the
     // default fixture now has two climbs (added for the rank-tracking tests).
     await waitFor(() => expect(mocks.getLogbook).toHaveBeenCalledWith(['climb-1', 'climb-2']));
+  });
+});
+
+describe('ClimbList lightOnClimbTap setting', () => {
+  it('opens the pressed climb as a view-only preview instead of activating it when the setting is off', async () => {
+    mocks.lightOnClimbTap = false;
+    const { findByText } = render(<ClimbList />);
+
+    fireEvent.click(await findByText('Moonage'));
+
+    expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
+    const [openedClimb, options] = mocks.openPlayDrawer.mock.calls[0];
+    expect(openedClimb).toBe(mocks.climb);
+    expect(options?.previewQueueItem?.climb?.uuid).toBe('climb-1');
+    // Doesn't touch the queue or the board — no commit, no BLE re-arm.
+    expect(mocks.activateClimb).not.toHaveBeenCalled();
+  });
+});
+
+// The App Store capture drives the app by deep link rather than coordinate taps
+// (Maestro can't reliably match RN rows on this iOS build). These two params are
+// the only way into the drawer's wall-state shots, so a silent regression here
+// ships a store screenshot of the wrong state.
+describe('ClimbList screenshot-mode wall-state deep links', () => {
+  const withScreenshotMode = async (run: () => Promise<void>) => {
+    const original = process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+    try {
+      await run();
+    } finally {
+      if (original === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
+      else process.env.EXPO_PUBLIC_SCREENSHOT_MODE = original;
+    }
+  };
+
+  it('opens the first climb as a browse preview for the browsing shot', async () => {
+    await withScreenshotMode(async () => {
+      mocks.searchParams = { screenshotOpenPreview: '1' };
+      render(<ClimbList />);
+
+      await waitFor(() => expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1));
+      const [openedClimb, options] = mocks.openPlayDrawer.mock.calls[0];
+      expect(openedClimb).toBe(mocks.climb);
+      expect(options?.previewQueueItem?.climb?.uuid).toBe('climb-1');
+      // Browsing, not on the wall — otherwise the shot shows the wrong pill.
+      expect(options?.previewIsWallClimb).toBe(false);
+      // A preview commits nothing, so the capture can't drift into the queue.
+      expect(mocks.activateClimb).not.toHaveBeenCalled();
+      // The drawer only claims "Browsing" while a swipe genuinely stays
+      // view-only, so the capture puts the device in that state rather than
+      // photographing a promise the app wouldn't keep.
+      expect(mocks.setSetting).toHaveBeenCalledWith('lightOnSwipe', false);
+    });
+  });
+
+  it('marks the preview as the lit climb for the on-the-wall shot', async () => {
+    await withScreenshotMode(async () => {
+      mocks.searchParams = { screenshotOpenWallPreview: '1' };
+      render(<ClimbList />);
+
+      await waitFor(() => expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1));
+      const [, options] = mocks.openPlayDrawer.mock.calls[0];
+      expect(options?.previewIsWallClimb).toBe(true);
+      expect(mocks.activateClimb).not.toHaveBeenCalled();
+      // The on-the-wall pill comes from displayed-equals-lit, not from the
+      // latch, so this shot leaves the climber's own setting alone.
+      expect(mocks.setSetting).not.toHaveBeenCalled();
+    });
+  });
+
+  it('leaves the plain climb list alone', async () => {
+    await withScreenshotMode(async () => {
+      const { findByText } = render(<ClimbList />);
+      await findByText('Moonage');
+
+      expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+    });
   });
 });
 

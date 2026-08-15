@@ -23,6 +23,7 @@ const base = {
   toDate: '',
   gradeFormat: 'v-grade' as const,
   profileStats: null,
+  comparisonMode: 'trailing' as const,
 };
 
 describe('deriveProfileViewModel', () => {
@@ -84,5 +85,48 @@ describe('deriveProfileViewModel', () => {
     expect(vm.vPointsTimeline).not.toBeNull();
     expect(vm.statisticsSummary.totalAscents).toBe(3);
     expect(vm.statisticsSummary.layoutPercentages.reduce((s, l) => s + l.percentage, 0)).toBe(100);
+  });
+});
+
+describe('deriveProfileViewModel periodComparison', () => {
+  it('is present for week/month/year timeframes and null otherwise', () => {
+    for (const timeframe of ['lastWeek', 'lastMonth', 'lastYear'] as const) {
+      const vm = deriveProfileViewModel({ ...base, allBoardsTicks, selectedBoard: 'all', timeframe });
+      expect(vm.periodComparison).not.toBeNull();
+    }
+    for (const timeframe of ['today', 'all', 'custom'] as const) {
+      const vm = deriveProfileViewModel({ ...base, allBoardsTicks, selectedBoard: 'all', timeframe });
+      expect(vm.periodComparison).toBeNull();
+    }
+  });
+
+  it('threads comparisonMode through to the built comparison', () => {
+    const trailing = deriveProfileViewModel({
+      ...base,
+      allBoardsTicks,
+      selectedBoard: 'all',
+      timeframe: 'lastYear',
+      comparisonMode: 'trailing',
+    });
+    const yoy = deriveProfileViewModel({
+      ...base,
+      allBoardsTicks,
+      selectedBoard: 'all',
+      timeframe: 'lastYear',
+      comparisonMode: 'yearOverYear',
+    });
+    expect(trailing.periodComparison?.mode).toBe('trailing');
+    expect(yoy.periodComparison?.mode).toBe('yearOverYear');
+  });
+
+  it('scopes the comparison to the selected board, like every other builder', () => {
+    const vm = deriveProfileViewModel({
+      ...base,
+      allBoardsTicks,
+      selectedBoard: 'kilter',
+      timeframe: 'lastYear',
+    });
+    // Only kilter's 2 ticks (both "now") are in scope for the current window.
+    expect(vm.periodComparison?.current.sends).toBe(2);
   });
 });

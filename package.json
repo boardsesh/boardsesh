@@ -13,7 +13,6 @@
     "check": "vp check",
     "format": "vp fmt",
     "test:layout-screenshots": "bunx playwright test --project=layout-screenshots --config=packages/web/playwright.config.ts",
-    "test:help-screenshots": "TEST_USER_EMAIL=$(op read 'op://Boardsesh/Boardsesh local/username') TEST_USER_PASSWORD=$(op read 'op://Boardsesh/Boardsesh local/password') bunx playwright test --project=help-screenshots --config=packages/web/playwright.config.ts",
     "backend:start": "bun run --filter=boardsesh-backend start",
     "controller:codegen": "node embedded/scripts/generate-graphql-types.mjs",
     "controller:codegen:board-data": "node embedded/scripts/generate-board-data.mjs",
@@ -33,6 +32,8 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1101.0",
+    "@boardsesh/pr-body": "*",
     "@boardsesh/text-redaction": "*",
     "@expo/cli": "^57.0.11",
     "@graphql-codegen/add": "^5.0.3",
@@ -52,7 +53,8 @@
     "typescript": "~7.0.2",
     "vite": "^8.2.0",
     "vite-plus": "^0.1.24",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "yaml": "^2.9.0"
   },
   "overrides": {
     "react-native-screens": "4.26.2"

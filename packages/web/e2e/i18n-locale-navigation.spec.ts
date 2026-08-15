@@ -6,8 +6,8 @@ import { test, expect } from '@playwright/test';
  *
  * Sister spec to i18n-locale-routing.spec.ts which covers the static
  * middleware → server-component → catalog pipeline. This one exercises
- * the runtime navigation surface introduced with the drawer language
- * switcher.
+ * the runtime navigation surface behind the language switcher, which now
+ * lives in the SiteFooter (it moved there from the deleted user drawer).
  */
 test.describe('i18n locale navigation', () => {
   test('cookie pre-set redirects unprefixed URL to the cookie locale', async ({ context, page }) => {

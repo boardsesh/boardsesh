@@ -11,6 +11,8 @@ import {
   readLedgerHashesWith,
   runMigrationJournalGate,
 } from './migration-journal.js';
+import { migrationExecutionContractFromEnvironment, reserveMigrationOwnerSession } from './migration-owner-role.js';
+import { runMigrationWithRuntimeAclContract } from './migration-runtime-acl.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,17 +41,46 @@ async function runMigrations() {
   const isLocalUrl =
     databaseUrl.includes('localhost') || databaseUrl.includes('localtest.me') || databaseUrl.includes('127.0.0.1');
 
+  // TODO(#4656): host-agnostic form — see db-connection.ts for why a CI term
+  // here would break the workflows that migrate a localhost service container.
   if (process.env.VERCEL && isLocalUrl) {
     console.error('❌ Refusing to run migrations with local DATABASE_URL in Vercel build');
     console.error('   Set DATABASE_URL in Vercel project environment variables');
     process.exit(1);
   }
 
-  const dbHost = databaseUrl.split('@')[1]?.split('/')[0] || 'unknown';
+  let dbHost = 'unknown';
+  try {
+    const parsedDatabaseUrl = new URL(databaseUrl);
+    if (parsedDatabaseUrl.protocol === 'postgres:' || parsedDatabaseUrl.protocol === 'postgresql:') {
+      dbHost = parsedDatabaseUrl.hostname || 'unknown';
+    }
+  } catch {
+    // postgres-js will provide the actionable parse error without us logging
+    // any substring which might contain URL userinfo.
+  }
   console.info(`🔄 Running migrations on: ${dbHost}`);
 
-  const client = postgres(databaseUrl, { max: 1 });
+  const connectionPool = postgres(databaseUrl, { max: 1 });
+  let closeMigrationSession: (() => Promise<void>) | undefined;
   try {
+    // SET ROLE is session state. Reserve one physical connection so no pool
+    // reconnect or checkout can silently put later DDL back under the LOGIN
+    // credential while a migration is in progress.
+    const migrationContract = migrationExecutionContractFromEnvironment(process.env);
+
+    let client: postgres.Sql;
+    if (migrationContract) {
+      const migrationSession = await reserveMigrationOwnerSession(connectionPool, migrationContract.owner);
+      client = migrationSession.client;
+      closeMigrationSession = migrationSession.close;
+      console.info(`🔐 Running DDL as NOLOGIN owner: ${migrationContract.owner.ownerRole}`);
+    } else {
+      // No session state is needed in local/dev mode. Keep the normal pool:
+      // postgres-js ReservedSql omits runtime fields Drizzle requires.
+      client = connectionPool;
+    }
+
     const db = drizzle(client, {
       logger: {
         logQuery: (query: string) => {
@@ -67,7 +98,20 @@ async function runMigrations() {
     }
     console.info(`📋 Found ${expectedMigrations.length} migrations in journal`);
 
-    await migrate(db, { migrationsFolder });
+    if (migrationContract) {
+      await runMigrationWithRuntimeAclContract(
+        client as postgres.ReservedSql,
+        {
+          ownerRole: migrationContract.owner.ownerRole,
+          runtimeRole: migrationContract.runtimeRole,
+          schemas: migrationContract.runtimeSchemas,
+        },
+        () => migrate(db, { migrationsFolder }),
+      );
+      console.info(`🔒 Reconciled runtime ACLs for ${migrationContract.runtimeRole}`);
+    } else {
+      await migrate(db, { migrationsFolder });
+    }
 
     // Per-entry, hash-keyed verification (#2933). The old check asserted
     // `max(created_at) >= the newest journal entry's when`, which is exactly the
@@ -100,7 +144,8 @@ async function runMigrations() {
     console.error('❌ Migration failed:', error);
     process.exitCode = 1;
   } finally {
-    await client.end().catch(() => {});
+    await closeMigrationSession?.().catch(() => {});
+    await connectionPool.end().catch(() => {});
   }
 }
 

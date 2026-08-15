@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import * as Haptics from 'expo-haptics';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { useLogbook } from '@boardsesh/board-react';
+import { getBoardCapabilities } from '@boardsesh/board-config';
 import { deriveOtherAngleActivity } from './logbook-summary';
 import { CollapsibleSection } from '../CollapsibleSection';
 import { Icon } from '../Icon';
@@ -11,9 +12,10 @@ import { LogbookSection } from './LogbookSection';
 import { SimilarClimbsSection } from './SimilarClimbsSection';
 import { CommunitySection } from './CommunitySection';
 import { BoardseshGradeSection } from './BoardseshGradeSection';
-import { buildBoardseshGradeView, buildBoardseshGradeSummary, isMoonBoard } from './boardsesh-grade-utils';
+import { buildBoardseshGradeView, buildBoardseshGradeSummary } from './boardsesh-grade-utils';
 import { buildAngleGradeBars } from './community-utils';
 import { BetaVideosSection } from './BetaVideosSection';
+import { SetterNotesSection } from './SetterNotesSection';
 import { useAuth } from '../../providers/auth-provider';
 import { useBoardseshGradeEnabled } from '../../providers/feature-flags-provider';
 import { useTheme } from '../../providers/theme-provider';
@@ -113,7 +115,8 @@ export const DeferredSections = memo(function DeferredSections({
   // only tried at (a send always leads; 3+ angles collapse to a count).
   const logbookSummary = useMemo(() => {
     // Logged-out visitors have no logbook, so "not tried yet" would be a lie —
-    // show no subtitle at all (the section still expands to the sign-in prompt).
+    // show no subtitle at all. The section body carries the sign-in line instead
+    // (LogbookSection's signed-out branch).
     if (!isAuthenticated) return null;
     const sends = climb.userAscents ?? 0;
     const attempts = climb.userAttempts ?? 0;
@@ -155,8 +158,11 @@ export const DeferredSections = memo(function DeferredSections({
   // (rather than read from BoardseshGradeSection) because that section
   // unmounts while collapsed — React Query dedupes this fetch with the
   // section's identical-key one once it expands, so this costs no extra request.
-  const moonboard = isMoonBoard(boardName);
-  const boardseshReady = boardseshGradeEnabled && !moonboard && readyToRender;
+  // MoonBoard and Woods carry no crowd grade, so the Boardsesh-grade and
+  // stats-history queries below have nothing to answer with — skip them for
+  // both. (BoardseshGradeSection gates its own by-angle query the same way.)
+  const noCrowdGrade = !getBoardCapabilities(boardName).crowdGrade;
+  const boardseshReady = boardseshGradeEnabled && !noCrowdGrade && readyToRender;
   const { data: boardseshGrade } = useBoardseshGrade(boardName, climb.uuid, angle, {
     enabled: boardseshReady,
   });
@@ -202,6 +208,13 @@ export const DeferredSections = memo(function DeferredSections({
 
       {readyToRender && (
         <>
+          {/* The setter's own notes. First below-fold section AFTER the Logbook,
+              never before it: PlayDrawer's `firstScreenReserve` /
+              `computeLogbookScrollTarget` assume the Logbook is the first
+              section here, so anything inserted above it breaks the fold math.
+              Renders nothing when the climb has no notes worth showing. */}
+          <SetterNotesSection description={climb.description} />
+
           <CollapsibleSection
             title={t('mobile.betaVideos.title')}
             defaultExpanded

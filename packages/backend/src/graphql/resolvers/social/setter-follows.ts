@@ -266,6 +266,10 @@ export const setterFollowQueries = {
           frames: tables.climbs.frames,
           frames_count: tables.climbs.framesCount,
           frames_pace: tables.climbs.framesPace,
+          // The sizes this climb fits on; the client's size-compatibility check
+          // needs it to tell Woods' two sizes apart (their hold ids overlap as
+          // different holds).
+          compatible_size_ids: tables.climbs.compatibleSizeIds,
           ascensionist_count: tables.climbStats.ascensionistCount,
           difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
           quality_average: sql<number>`ROUND(${tables.climbStats.qualityAverage}::numeric, 2)`,
@@ -315,6 +319,7 @@ export const setterFollowQueries = {
         frames: result.frames || '',
         framesCount: result.frames_count ?? null,
         framesPace: result.frames_pace ?? null,
+        compatibleSizeIds: result.compatible_size_ids ?? null,
         angle,
         ascensionist_count: Number(result.ascensionist_count || 0),
         difficulty: getGradeLabel(result.difficulty_id),
@@ -371,6 +376,7 @@ export const setterFollowQueries = {
           frames: tables.climbs.frames,
           frames_count: tables.climbs.framesCount,
           frames_pace: tables.climbs.framesPace,
+          compatible_size_ids: tables.climbs.compatibleSizeIds,
           statsAngle: tables.climbStats.angle,
           ascensionist_count: tables.climbStats.ascensionistCount,
           difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
@@ -433,6 +439,7 @@ export const setterFollowQueries = {
           frames: result.frames || '',
           framesCount: result.frames_count ?? null,
           framesPace: result.frames_pace ?? null,
+          compatibleSizeIds: result.compatible_size_ids ?? null,
           angle: result.statsAngle ?? DEFAULT_ANGLE,
           ascensionist_count: Number(result.ascensionist_count || 0),
           difficulty: getGradeLabel(result.difficulty_id),
@@ -633,6 +640,7 @@ export const setterFollowQueries = {
         frames: result.frames || '',
         framesCount: result.frames_count ?? null,
         framesPace: result.frames_pace ?? null,
+        compatibleSizeIds: result.compatible_size_ids ?? null,
         angle: result.stats_angle ?? DEFAULT_ANGLE,
         ascensionist_count: Number(result.ascensionist_count || 0),
         difficulty: getGradeLabel(result.difficulty_id),

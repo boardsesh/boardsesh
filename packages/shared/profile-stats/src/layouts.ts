@@ -17,6 +17,7 @@ export const LAYOUT_ORDER = [
   'moonboard-3',
   'moonboard-4',
   'moonboard-5',
+  'woods-1',
 ];
 
 // Display name overrides for layouts whose constant name doesn't match the
@@ -33,6 +34,9 @@ const LAYOUT_DISPLAY_OVERRIDES: Record<string, string> = {
   'decoy-2': 'Decoy Dungeon Trainer',
   'touchstone-1': 'Touchstone Winter 2020',
   'grasshopper-1': 'Grasshopper 2020',
+  // Woods is code-driven: no rows in the Aurora layout tables for `getLayout` to
+  // read, so without this the profile charts would label it "Woods (Layout 1)".
+  'woods-1': 'Woods Board',
 };
 
 export const getLayoutKey = (boardType: string, layoutId: number | null | undefined): string => {

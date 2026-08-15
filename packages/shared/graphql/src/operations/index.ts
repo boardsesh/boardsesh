@@ -17,9 +17,11 @@ export * from './climb-stats-history';
 export * from './climb-stats-for-angles';
 export * from './boardsesh-grade';
 export * from './feedback';
+export * from './qa';
 export * from './beta-links';
 export * from './integrations';
 export * from './location-sync-admin';
+export * from './gym-owner-reassign';
 // queue-session.ts is intentionally NOT re-exported here: its CREATE_SESSION,
 // END_SESSION etc. collide with the per-feature operations above. Import it
 // directly via `@boardsesh/graphql/operations/queue-session`.

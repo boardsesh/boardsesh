@@ -5,7 +5,7 @@ import { track } from '@/app/lib/analytics.server';
 import type { BoardName } from '@/app/lib/types';
 import { getBoardClimbSearchTag } from '@/app/lib/climb-search-cache';
 
-export type ClimbSearchInvalidationSource = 'internal-route' | 'save-climb-proxy';
+export type ClimbSearchInvalidationSource = 'internal-route';
 
 type RevalidateClimbSearchTagsOptions = {
   boardName: BoardName;

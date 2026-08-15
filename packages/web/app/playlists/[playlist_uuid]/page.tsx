@@ -10,7 +10,7 @@ import styles from '@/app/components/ui/page-container.module.css';
 
 export async function generateMetadata({ params }: { params: Promise<{ playlist_uuid: string }> }): Promise<Metadata> {
   const { playlist_uuid } = await params;
-  return generatePlaylistMetadata(playlist_uuid);
+  return generatePlaylistMetadata(playlist_uuid, await getLocale());
 }
 
 export default async function PlaylistDetailPage({ params }: { params: Promise<{ playlist_uuid: string }> }) {

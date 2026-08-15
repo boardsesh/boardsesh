@@ -34,8 +34,8 @@ type BoardDriverAvatarProps = {
 /**
  * A climber rendered as the board's BLE driver: a (pressable) avatar with a
  * status badge tucked into the top-right corner. The single visual atom behind
- * the play-drawer on-wall banner, the lightbulb holder pip and the board-sheet
- * hero / history rows.
+ * the wall-state pill's on-wall face, the lightbulb holder pip and the
+ * board-sheet hero / history rows.
  *
  * Presentational only — the parent decides whether to render it at all (a free
  * wall renders nothing) and what the corner shows. The badge is amber to match

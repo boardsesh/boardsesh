@@ -24,10 +24,11 @@ import { defaultAngle } from '../../lib/boards/default-angle';
  *   opens with that proposal surfaced; mobile has no proposal UI at all (no
  *   component, route, or drawer reads a proposal), so a `proposal_*` row opens
  *   the plain climb. Thread it through here the day a proposal surface lands.
- * - The climb page is reached by the flat `ref` route rather than web's
- *   `/api/internal/climb-redirect`. Both need the same three coordinates
- *   (layout, angle, size) and both now read layout + angle from `board_climbs`;
- *   see the ladder below for what fills the gaps.
+ * - The climb page is reached by the flat `ref` route. It needs three
+ *   coordinates (layout, angle, size) and reads layout + angle from
+ *   `board_climbs`; see the ladder below for what fills the gaps. www had a
+ *   server-side twin of this resolution until W-20b (#4439) removed the web
+ *   notification centre — mobile is the only client now.
  *
  * Every other type (`comment_*`, `vote_*`, a bare `proposal_*` with no climb)
  * marks read and stays put — the resolver never enriches those with a

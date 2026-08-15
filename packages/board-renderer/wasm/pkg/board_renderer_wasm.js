@@ -1,13 +1,6 @@
 /* @ts-self-types="./board_renderer_wasm.d.ts" */
 
 /**
- * Render a transparent overlay image with hold circles.
- *
- * Takes a JSON config string with board dimensions, frames string, holds data,
- * and hold state color mapping. Returns raw RGBA pixel data prefixed with
- * width (u32 LE) and height (u32 LE) as the first 8 bytes.
- *
- * The caller is responsible for encoding to the desired image format (e.g. WebP via sharp).
  * @param {string} config_json
  * @returns {Uint8Array}
  */
@@ -22,7 +15,6 @@ export function render_overlay(config_json) {
   wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
   return v2;
 }
-
 function __wbg_get_imports() {
   const import0 = {
     __proto__: null,
@@ -53,8 +45,7 @@ function getArrayU8FromWasm0(ptr, len) {
 }
 
 function getStringFromWasm0(ptr, len) {
-  ptr = ptr >>> 0;
-  return decodeText(ptr, len);
+  return decodeText(ptr >>> 0, len);
 }
 
 let cachedUint8ArrayMemory0 = null;
@@ -139,8 +130,9 @@ if (!('encodeInto' in cachedTextEncoder)) {
 
 let WASM_VECTOR_LEN = 0;
 
-let wasmModule, wasm;
+let wasmModule, wasmInstance, wasm;
 function __wbg_finalize_init(instance, module) {
+  wasmInstance = instance;
   wasm = instance.exports;
   wasmModule = module;
   cachedUint8ArrayMemory0 = null;

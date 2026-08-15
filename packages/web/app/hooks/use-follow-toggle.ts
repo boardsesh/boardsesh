@@ -14,6 +14,13 @@ type UseFollowToggleConfig = {
   entityLabel: string;
   getFollowVariables: (entityId: string) => Record<string, unknown>;
   onFollowChange?: (isFollowing: boolean) => void;
+  /**
+   * Fired once per accepted click, after the auth guard and before any state
+   * moves. Deliberately separate from `onFollowChange`, which fires optimistically
+   * and AGAIN on rollback — instrumenting a click through that callback would
+   * report a phantom unfollow every time the mutation failed.
+   */
+  onToggleClick?: () => void;
 };
 
 export function useFollowToggle({
@@ -24,6 +31,7 @@ export function useFollowToggle({
   entityLabel,
   getFollowVariables,
   onFollowChange,
+  onToggleClick,
 }: UseFollowToggleConfig) {
   const [isFollowing, setIsFollowing] = useState(initialIsFollowing);
   // Sync internal state when the prop changes (e.g. after parent re-fetches)
@@ -40,6 +48,8 @@ export function useFollowToggle({
       showMessage(`Sign in to follow ${entityLabel}s`, 'info');
       return;
     }
+
+    onToggleClick?.();
 
     const previousState = isFollowing;
     setIsFollowing(!isFollowing);
@@ -73,6 +83,7 @@ export function useFollowToggle({
     unfollowMutation,
     getFollowVariables,
     onFollowChange,
+    onToggleClick,
     showMessage,
   ]);
 

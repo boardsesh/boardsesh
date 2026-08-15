@@ -8,6 +8,7 @@ import {
 } from '@boardsesh/board-constants/hold-states';
 import type { BoardName } from '@boardsesh/board-constants';
 import { executeRows } from '@boardsesh/db/client';
+import { withSerialPlan } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
 import { climbStatsEffectiveAngleSql } from '../../../db/queries/util/climb-stats-join';
 
@@ -292,23 +293,29 @@ export async function findSimilarClimbs({
   const safeLimit = Math.max(1, Math.min(200, limit));
   const targetHoldIdsJson = JSON.stringify(targetHoldIds);
 
-  const rows = await executeRows<{
-    uuid: string;
-    name: string | null;
-    setter_username: string | null;
-    angle: number | null;
-    layout_id: number;
-    frames: string | null;
-    difficulty_name: string | null;
-    quality_average: number | null;
-    ascensionist_count: number | null;
-    compatible_size_ids: number[] | null;
-    shared: number;
-    candidate_hold_count: number;
-    jaccard: number;
-  }>(
-    db,
-    sql`
+  // Production plans this catalog-wide aggregate with a Gather Merge. Bursts
+  // of similar-climb requests then allocate one DSM segment per worker until
+  // Railway Postgres's small /dev/shm is exhausted (Sentry BOARDSESH-AK,
+  // pgCode 53100). SET LOCAL only applies on the transaction connection, so
+  // both the guard and executeRows must use the handle supplied here.
+  const rows = await withSerialPlan(db, (transactionDb) =>
+    executeRows<{
+      uuid: string;
+      name: string | null;
+      setter_username: string | null;
+      angle: number | null;
+      layout_id: number;
+      frames: string | null;
+      difficulty_name: string | null;
+      quality_average: number | null;
+      ascensionist_count: number | null;
+      compatible_size_ids: number[] | null;
+      shared: number;
+      candidate_hold_count: number;
+      jaccard: number;
+    }>(
+      transactionDb,
+      sql`
       WITH target_holds AS (
         SELECT (value)::int AS hold_id
         FROM jsonb_array_elements(${targetHoldIdsJson}::jsonb) AS value
@@ -393,7 +400,8 @@ export async function findSimilarClimbs({
       WHERE (o.shared::float / (${targetSize} + cs.n - o.shared)) >= ${safeThreshold}
       ORDER BY jaccard DESC, COALESCE(${dbSchema.boardClimbStats.ascensionistCount}, 0) DESC, c.uuid ASC
       LIMIT ${safeLimit}
-    `,
+      `,
+    ),
   );
 
   return rows.map((row) => ({
