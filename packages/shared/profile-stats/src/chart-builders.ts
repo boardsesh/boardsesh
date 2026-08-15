@@ -555,25 +555,23 @@ export function getComparisonWindows(
 }
 
 /**
- * `start` is always strictly-after, matching `filterLogbookByTimeframe`'s
- * lower-bound comparator exactly — a tick timestamped to the precise cutoff
- * instant is excluded the same way here as everywhere else on the page,
- * rather than being counted here and not there.
+ * Every window is a half-open `(start, end]` interval — start strictly-after,
+ * end inclusive — for both `current` and `previous`, in both modes. Two
+ * properties fall out of that uniform rule without any mode-specific
+ * carve-out:
  *
- * `inclusiveEnd` matters at the trailing-mode seam: `previous.end` and
- * `current.start` are the same instant (`now - 1 unit`). Both windows now
- * exclude a tick landing exactly there (start is strict; `previous`'s end is
- * exclusive too), so it simply isn't counted by the comparison card at all —
- * consistent with `filterLogbookByTimeframe` also excluding it, rather than
- * being double-counted across the two windows. `current`'s end (`now`) stays
- * inclusive since it's the outermost edge, shared with nothing.
+ * - `start` matches `filterLogbookByTimeframe`'s lower-bound comparator
+ *   exactly, so a tick timestamped to `current`'s precise cutoff instant is
+ *   excluded the same way here as everywhere else on the page.
+ * - Adjacent windows never double-count a shared boundary. In trailing mode,
+ *   `previous.end` and `current.start` are the same instant (`now - 1 unit`):
+ *   `previous.end` is inclusive so a tick exactly there lands in `previous`,
+ *   and `current.start` is exclusive so that same tick is excluded from
+ *   `current` — one bucket, not both, not neither. Year-over-year's windows
+ *   don't share a boundary at all, so this same rule just applies without
+ *   needing a separate justification.
  */
-function periodSnapshot(
-  entries: LogbookEntry[],
-  start: dayjs.Dayjs,
-  end: dayjs.Dayjs,
-  inclusiveEnd: boolean,
-): RawPeriodSnapshot {
+function periodSnapshot(entries: LogbookEntry[], start: dayjs.Dayjs, end: dayjs.Dayjs): RawPeriodSnapshot {
   const sends = new Set<string>();
   for (const entry of entries) {
     // Mirrors buildAggregatedStackedBars's exclusion: attempts and entries
@@ -581,7 +579,7 @@ function periodSnapshot(
     if (entry.status === 'attempt' || !entry.climbUuid) continue;
     const climbedAt = parseTickTime(entry.climbed_at);
     if (!climbedAt.isAfter(start)) continue;
-    if (inclusiveEnd ? !climbedAt.isSameOrBefore(end) : !climbedAt.isBefore(end)) continue;
+    if (!climbedAt.isSameOrBefore(end)) continue;
     sends.add(entry.climbUuid);
   }
   return {
@@ -609,8 +607,8 @@ export function buildPeriodComparison(
   const allEntries = Object.values(allBoardsTicks).flat();
   const { current, previous } = getComparisonWindows(timeframe, mode, now);
 
-  const currentSnapshot = periodSnapshot(allEntries, current.start, current.end, true);
-  const previousSnapshot = periodSnapshot(allEntries, previous.start, previous.end, false);
+  const currentSnapshot = periodSnapshot(allEntries, current.start, current.end);
+  const previousSnapshot = periodSnapshot(allEntries, previous.start, previous.end);
   const sendsDelta = currentSnapshot.sends - previousSnapshot.sends;
   const sendsPercentChange = previousSnapshot.sends === 0 ? null : (sendsDelta / previousSnapshot.sends) * 100;
 

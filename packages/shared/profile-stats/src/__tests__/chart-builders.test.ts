@@ -673,30 +673,32 @@ describe('buildPeriodComparison', () => {
     expect(result.previous.sends).toBe(1); // only 'b'
   });
 
-  it('excludes a tick exactly on the trailing seam from both windows, matching filterLogbookByTimeframe', () => {
+  it('a tick exactly on the trailing seam lands in previous only, not current and not both', () => {
     const now = dayjs('2024-06-15T00:00:00.000Z');
     const kilter: LogbookEntry[] = [
       // Exactly `now - 1 week`: current.start and (trailing) previous.end land
-      // on the same instant. Both bounds are strict, so this tick belongs to
-      // neither window — the same treatment filterLogbookByTimeframe gives it
-      // (its lower bound is strictly-after too), rather than being
-      // double-counted across the two windows.
+      // on the same instant. current.start is exclusive so this tick is
+      // excluded there (same treatment filterLogbookByTimeframe gives its own
+      // strictly-after lower bound); previous.end is inclusive so the tick
+      // belongs to previous. One bucket, not zero, not two.
       makeEntry({ climbed_at: now.subtract(1, 'week').toISOString(), status: 'send', climbUuid: 'seam' }),
     ];
     const result = buildPeriodComparison({ kilter }, 'lastWeek', 'trailing', now)!;
     expect(result.current.sends).toBe(0);
-    expect(result.previous.sends).toBe(0);
+    expect(result.previous.sends).toBe(1);
   });
 
-  it('agrees with filterLogbookByTimeframe at the exact lastWeek cutoff (no headline-count divergence)', () => {
-    // No injected `now` on either side — both functions read the real wall
-    // clock, same as production. A tick timestamped to precisely `now - 1
-    // week` must be excluded by both, not counted here and not there.
-    const boundary = dayjs().subtract(1, 'week');
+  it('a tick exactly on the year-over-year boundary (now - 1 year) lands in previous, symmetric with trailing', () => {
+    // yearOverYear's windows don't share a seam with current the way trailing's
+    // do, but periodSnapshot applies the same (start, end] rule uniformly, so
+    // a tick at precisely `previous.end` (now - 1 year) still counts here
+    // rather than being silently dropped.
+    const now = dayjs('2024-06-15T00:00:00.000Z');
     const kilter: LogbookEntry[] = [
-      makeEntry({ climbed_at: boundary.toISOString(), status: 'send', climbUuid: 'boundary' }),
+      makeEntry({ climbed_at: now.subtract(1, 'year').toISOString(), status: 'send', climbUuid: 'yoy-boundary' }),
     ];
-    expect(filterLogbookByTimeframe(kilter, 'lastWeek', '', '')).toHaveLength(0);
-    expect(buildPeriodComparison({ kilter }, 'lastWeek', 'trailing')!.current.sends).toBe(0);
+    const result = buildPeriodComparison({ kilter }, 'lastWeek', 'yearOverYear', now)!;
+    expect(result.current.sends).toBe(0);
+    expect(result.previous.sends).toBe(1);
   });
 });
