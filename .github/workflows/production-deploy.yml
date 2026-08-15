@@ -726,7 +726,13 @@ jobs:
             # Read the body too. The href and content-type can both be right
             # while start_url sits outside scope — a manifest that parses
             # cleanly and still never offers the install prompt.
-            local body; body=$(curl -sS --max-time 20 "$base$href")
+            # Fetch and check the body separately, so a timed-out or empty
+            # response reports as a fetch failure rather than a JSON parse
+            # error from node — the retry loop handles both, but only one of
+            # them tells you what actually went wrong.
+            local body
+            body=$(curl -sS --max-time 20 "$base$href") || { echo "  manifest body fetch failed"; return 1; }
+            [ -n "$body" ] || { echo "  manifest body is empty"; return 1; }
             echo "$body" | node -e '
               const manifest = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
               if (manifest.start_url !== "/" || manifest.scope !== "/") {
