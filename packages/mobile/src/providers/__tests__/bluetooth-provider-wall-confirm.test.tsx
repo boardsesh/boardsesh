@@ -125,9 +125,8 @@ vi.mock('../../settings', async () => {
   const { useState } = await import('react');
   return {
     useSetting: (key: string) => {
-      const moonboardLightAdjacentHolds = useState(false);
-      if (key === 'moonboardLightAdjacentHolds') return moonboardLightAdjacentHolds;
-      return key === 'autoDisconnectBle' ? [false, vi.fn()] : [30, vi.fn()];
+      const initialValue = key === 'autoDisconnectBle' || key === 'moonboardLightAdjacentHolds' ? false : 30;
+      return useState(initialValue);
     },
   };
 });
@@ -209,10 +208,16 @@ vi.mock('../../components/ble/DevicePickerSheet', () => ({
 }));
 
 vi.mock('../../components/ble/BleControlSheet', () => ({
-  BleControlSheet: ({ onToggleLightAdjacentHolds }: { onToggleLightAdjacentHolds: (enabled: boolean) => void }) =>
+  BleControlSheet: ({
+    lightAdjacentHoldsEnabled,
+    onToggleLightAdjacentHolds,
+  }: {
+    lightAdjacentHoldsEnabled: boolean;
+    onToggleLightAdjacentHolds: (enabled: boolean) => void;
+  }) =>
     createElement(
       'button',
-      { type: 'button', onClick: () => onToggleLightAdjacentHolds(true) },
+      { type: 'button', onClick: () => onToggleLightAdjacentHolds(!lightAdjacentHoldsEnabled) },
       'toggle adjacent holds',
     ),
 }));
@@ -398,7 +403,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
     expect(queue.confirmClimbOnWall).toHaveBeenCalledWith('climb-1');
   });
 
-  it('writes the updated MoonBoard packet after the control sheet enables adjacent holds', async () => {
+  it('writes updated MoonBoard packets when the control sheet toggles adjacent holds', async () => {
     queue.currentClimbQueueItem = makeQueueItem('moon-climb', 'p1r42');
     const adapterWrite = vi.fn(async (_packet: Uint8Array) => {});
     bluetooth.sendFramesToBoardForOptions = (options) => async (frames) => {
@@ -425,6 +430,14 @@ describe('BluetoothProvider wall-confirm integration', () => {
     });
     expect(bluetooth.options?.moonboardLightAdjacentHolds).toBe(true);
     expect(new TextDecoder().decode(adapterWrite.mock.calls[1]?.[0])).toBe('~Dl#S0#');
+
+    fireEvent.click(getByText('toggle adjacent holds'));
+
+    await waitFor(() => {
+      expect(adapterWrite).toHaveBeenCalledTimes(3);
+    });
+    expect(bluetooth.options?.moonboardLightAdjacentHolds).toBe(false);
+    expect(new TextDecoder().decode(adapterWrite.mock.calls[2]?.[0])).toBe('l#S0#');
   });
 
   it('skips the duplicate send when connect() already wrote the same frames, but still confirms', async () => {
