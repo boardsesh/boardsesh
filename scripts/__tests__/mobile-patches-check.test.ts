@@ -141,8 +141,8 @@ describe('checkPatchesApplied', () => {
 // rule is the only thing between a forgotten re-key and a silent regression.
 const SCOPED_PKG = '@expo/ui';
 const SCOPED_FILE = 'src/community/bottom-sheet/BottomSheet.android.tsx';
-const SCOPED_KEY = '@expo/ui@57.0.8';
-const SCOPED_PATCH_PATH = 'patches/@expo%2Fui@57.0.8.patch';
+const SCOPED_KEY = '@expo/ui@57.0.11';
+const SCOPED_PATCH_PATH = 'patches/@expo%2Fui@57.0.11.patch';
 const SCOPED_RULES: PatchRule[] = [
   { package: SCOPED_PKG, file: SCOPED_FILE, sentinels: ['swallowMissingNativeHandler'], patchedKey: SCOPED_KEY },
 ];
@@ -194,7 +194,7 @@ describe('checkPatchesApplied on a scoped package', () => {
   it('passes when the scoped key matches and the sentinel is present', () => {
     const env = makeEnv({
       patchedDependencies: { [SCOPED_KEY]: SCOPED_PATCH_PATH },
-      versions: { [SCOPED_PKG]: '57.0.8' },
+      versions: { [SCOPED_PKG]: '57.0.11' },
       files: { [`${SCOPED_PKG}::${SCOPED_FILE}`]: SCOPED_PATCHED_SOURCE },
     });
 
@@ -207,7 +207,7 @@ describe('checkPatchesApplied on a scoped package', () => {
   it('fails on version drift — the scope must not swallow the version segment', () => {
     const env = makeEnv({
       patchedDependencies: { [SCOPED_KEY]: SCOPED_PATCH_PATH },
-      versions: { [SCOPED_PKG]: '57.0.9' },
+      versions: { [SCOPED_PKG]: '57.0.12' },
       files: { [`${SCOPED_PKG}::${SCOPED_FILE}`]: SCOPED_PATCHED_SOURCE },
     });
 
@@ -215,14 +215,14 @@ describe('checkPatchesApplied on a scoped package', () => {
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain('version drift');
-    expect(result.errors[0]).toContain('57.0.9');
-    expect(result.errors[0]).toContain('57.0.8');
+    expect(result.errors[0]).toContain('57.0.12');
+    expect(result.errors[0]).toContain('57.0.11');
   });
 
   it('fails when the key still matches but the sentinel is gone (patch silently dropped)', () => {
     const env = makeEnv({
       patchedDependencies: { [SCOPED_KEY]: SCOPED_PATCH_PATH },
-      versions: { [SCOPED_PKG]: '57.0.8' },
+      versions: { [SCOPED_PKG]: '57.0.11' },
       files: { [`${SCOPED_PKG}::${SCOPED_FILE}`]: SCOPED_UPSTREAM_SOURCE },
     });
 
@@ -324,6 +324,46 @@ const close = hideSwallowingMissingNativeHandler;
   });
 });
 
+describe('the shipped @expo/ui iOS rule', () => {
+  const iosFile = 'src/community/bottom-sheet/BottomSheet.ios.tsx';
+  const iosRule = REAL_RULES.find((rule) => rule.package === SCOPED_PKG && rule.file === iosFile);
+  const onChangeClosedCall = 'onChangeRef.current?.(-1);';
+  const onFullyDismissedCall = 'onFullyDismissedRef.current?.();';
+  const installedSource = readFileSync(
+    resolve(import.meta.dirname, '../../packages/mobile/node_modules/@expo/ui', iosFile),
+    'utf8',
+  );
+
+  function checkInstalledSource(source: string) {
+    if (!iosRule) throw new Error('no @expo/ui iOS rule registered');
+    return checkPatchesApplied(
+      [iosRule],
+      makeEnv({
+        patchedDependencies: { [iosRule.patchedKey]: SCOPED_PATCH_PATH },
+        versions: { [iosRule.package]: versionFromKey(iosRule.patchedKey) },
+        files: { [`${iosRule.package}::${iosRule.file}`]: source },
+      }),
+    );
+  }
+
+  it('pins index -1 before the fully-dismissed signal in the shipped rule', () => {
+    expect(iosRule?.orderedSentinels).toEqual([onChangeClosedCall, onFullyDismissedCall]);
+    expect(checkInstalledSource(installedSource).errors).toEqual([]);
+  });
+
+  it('goes red if the fully-dismissed signal moves before index -1', () => {
+    const reversedSource = installedSource
+      .replace(onChangeClosedCall, '__BOARDSESH_ON_CHANGE_CLOSED__')
+      .replace(onFullyDismissedCall, onChangeClosedCall)
+      .replace('__BOARDSESH_ON_CHANGE_CLOSED__', onFullyDismissedCall);
+
+    expect(reversedSource).not.toBe(installedSource);
+    expect(checkInstalledSource(reversedSource).errors).toEqual([
+      expect.stringContaining(`"${onChangeClosedCall}" must appear before "${onFullyDismissedCall}"`),
+    ]);
+  });
+});
+
 describe('the shipped expo-image local-asset guard', () => {
   const imageViewSource = readFileSync(
     resolve(import.meta.dirname, '../../packages/mobile/node_modules/expo-image/ios/ImageView.swift'),
@@ -414,7 +454,7 @@ describe('checkPatchesApplied across several packages', () => {
   it('checks every rule and reports each package independently', () => {
     const env = makeEnv({
       patchedDependencies: { [KEY]: `patches/${KEY}.patch`, [SCOPED_KEY]: SCOPED_PATCH_PATH },
-      versions: { [PKG]: '4.25.2', [SCOPED_PKG]: '57.0.8' },
+      versions: { [PKG]: '4.25.2', [SCOPED_PKG]: '57.0.11' },
       files: {
         [`${PKG}::${FILE}`]: PATCHED_SOURCE,
         // Only the scoped package lost its patch.
@@ -709,9 +749,9 @@ describe('checkPatchInventory', () => {
 
   it('resolves the URL-encoded scoped patch filename against the directory listing', () => {
     const errors = checkPatchInventory({
-      patchedDependencies: { '@expo/ui@57.0.8': 'patches/@expo%2Fui@57.0.8.patch' },
-      patchFilenames: ['@expo%2Fui@57.0.8.patch'],
-      guardedKeys: ['@expo/ui@57.0.8'],
+      patchedDependencies: { '@expo/ui@57.0.11': 'patches/@expo%2Fui@57.0.11.patch' },
+      patchFilenames: ['@expo%2Fui@57.0.11.patch'],
+      guardedKeys: ['@expo/ui@57.0.11'],
       allowUnguarded: {},
     });
 
@@ -797,7 +837,7 @@ if url.scheme == "file" {
 }
 `;
     const env = makeEnv({
-      patchedDependencies: { [expoImageRule.patchedKey]: 'patches/expo-image@57.0.1.patch' },
+      patchedDependencies: { [expoImageRule.patchedKey]: 'patches/expo-image@57.0.3.patch' },
       versions: { [expoImageRule.package]: versionFromKey(expoImageRule.patchedKey) },
       files: { [`${expoImageRule.package}::${expoImageRule.file}`]: postNormalizationGuardSource },
     });

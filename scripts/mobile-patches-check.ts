@@ -32,6 +32,10 @@
  * every autolinked native module for a nested node_modules directory and hashes
  * the source as null; peer-resolution store suffixes also leak into hash ids.
  *
+ * For expo-image, the patch keeps filesystem-backed board art out of
+ * `UIImage(named:)`, avoiding a synchronous bundle-directory scan on every
+ * reload before SDWebImage handles the file URL.
+ *
  * This check resolves the COPY packages/mobile actually uses (the same one
  * CocoaPods compiles) and asserts the patch's sentinel symbols are present in
  * the installed source. It fails the PR on a cheap Linux runner the instant a
@@ -68,6 +72,8 @@ export interface PatchRule {
   file: string;
   /** Symbols the patch introduces; ALL must be present in the installed file. */
   sentinels: readonly string[];
+  /** Source fragments that must all be present in this exact order. */
+  orderedSentinels?: readonly string[];
   /** The exact `patchedDependencies` key expected in the root package.json. */
   patchedKey: string;
   /** Optional negative assertions scoped to a single method body. */
@@ -91,13 +97,13 @@ export const RULES: readonly PatchRule[] = [
     package: '@expo/fingerprint',
     file: 'build/utils/Path.js',
     sentinels: ['normalizeBunIsolatedModulePath', 'BUN_ISOLATED_MODULE_ROOT_REGEX'],
-    patchedKey: '@expo/fingerprint@0.20.6',
+    patchedKey: '@expo/fingerprint@0.20.7',
   },
   {
     package: '@expo/fingerprint',
     file: 'build/hash/Hash.js',
     sentinels: ['normalizeBunIsolatedModulePath'],
-    patchedKey: '@expo/fingerprint@0.20.6',
+    patchedKey: '@expo/fingerprint@0.20.7',
   },
   {
     package: 'react-native-screens',
@@ -165,7 +171,7 @@ export const RULES: readonly PatchRule[] = [
       'hideSwallowingMissingNativeHandler();',
       'const close = hideSwallowingMissingNativeHandler;',
     ],
-    patchedKey: '@expo/ui@57.0.8',
+    patchedKey: '@expo/ui@57.0.11',
   },
   // The iOS half wires the native post-animation dismiss signal through to the
   // `onFullyDismissed` prop. Drop it and the prop still TYPE-checks (the types
@@ -174,8 +180,9 @@ export const RULES: readonly PatchRule[] = [
   {
     package: '@expo/ui',
     file: 'src/community/bottom-sheet/BottomSheet.ios.tsx',
-    sentinels: ['onFullyDismissedRef', 'handleNativeDismiss'],
-    patchedKey: '@expo/ui@57.0.8',
+    sentinels: ['onFullyDismissedRef', 'onDismiss={fireCloseCallbacks}', 'coordinator must observe index -1'],
+    orderedSentinels: ['onChangeRef.current?.(-1);', 'onFullyDismissedRef.current?.();'],
+    patchedKey: '@expo/ui@57.0.11',
   },
   // ExpoModulesCore uses relative file URLs for xcasset names, so
   // `localAssetName` must keep those while rejecting absolute/hosted file URLs
@@ -193,7 +200,7 @@ export const RULES: readonly PatchRule[] = [
       'if hasFileHost || hasAbsoluteFilePath',
       'Images/MyIcon',
     ],
-    patchedKey: 'expo-image@57.0.1',
+    patchedKey: 'expo-image@57.0.3',
   },
 ];
 
@@ -204,7 +211,7 @@ export const RULES: readonly PatchRule[] = [
  * of quietly landing unguarded.
  */
 export const UNGUARDED_PATCHES: Readonly<Record<string, string>> = {
-  'expo-dev-launcher@57.0.10':
+  'expo-dev-launcher@57.0.12':
     "raises the iOS dev-launcher request timeout from 10s to 120s. Under Bun's isolated linker the package is " +
     'only reachable through expo-dev-client, so createNodeEnv cannot resolve it from packages/mobile. It is also ' +
     'dev-client-only — it never ships in a store binary.',
@@ -417,7 +424,30 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
       );
     }
 
-    // (4) Shape assertions: a symbol can survive a re-keyed patch while the
+    // (4) Ordered shape assertions: some native contracts depend on callback
+    //     sequence, not just the presence of both calls. Keep this in the
+    //     shipped check so a re-keyed patch cannot preserve every symbol while
+    //     silently reversing the behavior.
+    const orderedSentinels = rule.orderedSentinels ?? [];
+    const orderedIndexes = orderedSentinels.map((sentinel) => source.indexOf(sentinel));
+    const missingOrderedSentinels = orderedSentinels.filter((_, index) => orderedIndexes[index] === -1);
+    if (missingOrderedSentinels.length > 0) {
+      errors.push(
+        `${rule.package}: patch order cannot be verified — ${rule.file} is missing ` +
+          `${missingOrderedSentinels.map((sentinel) => `"${sentinel}"`).join(', ')}.`,
+      );
+    } else {
+      for (let index = 1; index < orderedSentinels.length; index += 1) {
+        if (orderedIndexes[index - 1] >= orderedIndexes[index]) {
+          errors.push(
+            `${rule.package}: ${rule.file} violates required source order — ` +
+              `"${orderedSentinels[index - 1]}" must appear before "${orderedSentinels[index]}".`,
+          );
+        }
+      }
+    }
+
+    // (5) Shape assertions: a symbol can survive a re-keyed patch while the
     //     dangerous line it replaced comes back with it.
     for (const forbidden of rule.forbiddenInMethod ?? []) {
       const body = extractObjCMethodBody(source, forbidden.method);

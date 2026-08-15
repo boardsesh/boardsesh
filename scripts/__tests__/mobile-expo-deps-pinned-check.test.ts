@@ -31,7 +31,7 @@ describe('findUnpinnedExpoDeps', () => {
         expo: '56.0.12',
         'expo-image': '56.0.11',
         'expo-router': '56.2.11',
-        'expo-share-intent': '7.0.0',
+        'expo-share-intent': '8.0.1',
       }),
     ).toEqual([]);
   });

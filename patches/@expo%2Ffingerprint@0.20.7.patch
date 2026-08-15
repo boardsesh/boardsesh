@@ -1,5 +1,4 @@
 diff --git a/build/hash/Hash.js b/build/hash/Hash.js
-index f3c867f..f5b65a6 100644
 --- a/build/hash/Hash.js
 +++ b/build/hash/Hash.js
 @@ -132,6 +132,6 @@ async function createFileHashResultsAsync(filePath, limiter, projectRoot, option
@@ -32,13 +31,12 @@ index f3c867f..f5b65a6 100644
              throw new Error('Unsupported source type');
      }
 diff --git a/build/utils/Path.d.ts b/build/utils/Path.d.ts
-index 99b6b43..157bb0d 100644
 --- a/build/utils/Path.d.ts
 +++ b/build/utils/Path.d.ts
-@@ -31,6 +31,11 @@ export declare function isIgnoredPathWithMatchObjects(filePath: string, matchObj
-  * @param options.stripParentPrefix
-  */
- export declare function normalizeFilePath(filePath: string, options: { stripParentPrefix: boolean }): string;
+@@ -31,6 +31,11 @@
+ export declare function normalizeFilePath(filePath: string, options: {
+     stripParentPrefix?: boolean;
+ }): string;
 +/**
 + * Collapse Bun isolated-linker store wrappers to their logical node_modules
 + * path so peer-resolution hashes do not affect source ids or ignore matching.
@@ -48,7 +46,6 @@ index 99b6b43..157bb0d 100644
   * Convert any platform-specific path to a POSIX path.
   */
 diff --git a/build/utils/Path.js b/build/utils/Path.js
-index 1cbfb5f..f49915e 100644
 --- a/build/utils/Path.js
 +++ b/build/utils/Path.js
 @@ -7,6 +7,7 @@ exports.appendIgnorePath = appendIgnorePath;
