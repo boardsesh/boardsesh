@@ -689,7 +689,8 @@
       "boardType": "Board",
       "layout": "Aufbau",
       "board": "Wand",
-      "gym": "Halle"
+      "gym": "Halle",
+      "pickerLabel": "Rangliste wählen"
     },
     "viewer": {
       "rankOf": "{{rank}} von {{total}}",
@@ -713,6 +714,11 @@
     "entryCard": {
       "accessibility": "Rangliste: {{rank}} von {{total}}. Öffnet die vollständige Rangliste.",
       "topPercent": "Top {{percent}} %"
+    },
+    "boardType": {
+      "kilter": "Kilter",
+      "tension": "Tension",
+      "moonboard": "MoonBoard"
     }
   }
 }

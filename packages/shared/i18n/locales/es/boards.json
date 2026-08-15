@@ -689,7 +689,8 @@
       "boardType": "Plafón",
       "layout": "Configuración",
       "board": "Pared",
-      "gym": "Rocódromo"
+      "gym": "Rocódromo",
+      "pickerLabel": "Elige una clasificación"
     },
     "viewer": {
       "rankOf": "{{rank}} de {{total}}",
@@ -713,6 +714,11 @@
     "entryCard": {
       "accessibility": "Clasificación: {{rank}} de {{total}}. Abre la clasificación completa.",
       "topPercent": "Top {{percent}}%"
+    },
+    "boardType": {
+      "kilter": "Kilter",
+      "tension": "Tension",
+      "moonboard": "MoonBoard"
     }
   }
 }

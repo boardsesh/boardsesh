@@ -4,15 +4,24 @@ import { describe, expect, it } from 'vitest';
 import { SCOPE_KINDS } from '@boardsesh/leaderboard';
 
 /**
- * The extensibility guarantee, made enforceable.
+ * The extensibility guarantee, made enforceable — and stated precisely.
  *
- * The whole point of the scope registry is that adding a granularity later —
- * city, serial number, crew, event — is a registry entry plus four locale
- * strings, and touches neither the screen nor the row. If a scope kind's name
- * ever appears in the rendering code, that promise has quietly stopped being
- * true, and the next contributor will discover it the hard way.
+ * The point of the scope registry is that adding a granularity later (city,
+ * serial number, crew, event) does not ripple through the UI. What that means
+ * exactly, so nobody over-claims it:
  *
- * This asserts the negative: the UI must not branch on any specific kind.
+ * - **Rendering is scope-agnostic, and this test enforces it.** No `.tsx` in
+ *   this folder may branch on a specific kind. If one ever does, the promise
+ *   has quietly stopped being true and the next contributor finds out the hard
+ *   way.
+ * - **Two `.ts` files do know kinds exist, unavoidably**, and are deliberately
+ *   excluded: `scope-labels.ts` (the i18n linter hard-fails on a dynamic `t()`,
+ *   so the keys need keep-markers) and `use-scope-options.ts` (building a key
+ *   is inherently kind-specific — a board uuid is not a layout composite).
+ *
+ * So the real cost of a new granularity is: one registry entry, four locale
+ * strings, one keep-marker, and one enumeration branch. Nothing in the
+ * rendering path. That is the claim this file defends.
  */
 
 const STANDINGS_DIR = join(__dirname, '..');

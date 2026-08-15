@@ -689,7 +689,8 @@
       "boardType": "Panneau",
       "layout": "Configuration",
       "board": "Mur",
-      "gym": "Salle"
+      "gym": "Salle",
+      "pickerLabel": "Choisis un classement"
     },
     "viewer": {
       "rankOf": "{{rank}} sur {{total}}",
@@ -713,6 +714,11 @@
     "entryCard": {
       "accessibility": "Classement : {{rank}} sur {{total}}. Ouvre le classement complet.",
       "topPercent": "Top {{percent}} %"
+    },
+    "boardType": {
+      "kilter": "Kilter",
+      "tension": "Tension",
+      "moonboard": "MoonBoard"
     }
   }
 }

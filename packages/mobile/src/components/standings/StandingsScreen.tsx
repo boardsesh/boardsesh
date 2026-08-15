@@ -13,7 +13,9 @@ import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { useStandings, type StandingsEntry, type StandingsWindow } from '../../lib/graphql/hooks/use-standings';
+import { AppMenu } from '../AppMenu';
 import { StandingsRow } from './StandingsRow';
+import { useScopeOptions } from './use-scope-options';
 import { useScopeKindLabel } from './scope-labels';
 import { ViewerStandingCard } from './ViewerStandingCard';
 
@@ -33,7 +35,8 @@ export function StandingsScreen({ initialScope = GLOBAL_SCOPE }: StandingsScreen
   const { scrollBottomPadding } = useBottomChromeMetrics();
   const scopeKindLabel = useScopeKindLabel();
 
-  const [scope] = useState<Scope>(initialScope);
+  const [scope, setScope] = useState<Scope>(initialScope);
+  const scopeOptions = useScopeOptions();
   const [window, setWindow] = useState<StandingsWindow>('month');
 
   const query = useStandings(scope, window);
@@ -83,13 +86,40 @@ export function StandingsScreen({ initialScope = GLOBAL_SCOPE }: StandingsScreen
     }
   }, [query]);
 
+  const scopeActions = useMemo(
+    () =>
+      scopeOptions.map((option) => ({
+        label: option.label,
+        // Compares the REQUESTED scope, not the resolved one: after a demotion
+        // the tick must stay on what the climber chose, or the menu looks like
+        // it silently changed their selection.
+        selected: option.scope.kind === scope.kind && option.scope.key === scope.key,
+      })),
+    [scope.key, scope.kind, scopeOptions],
+  );
+
+  const handleSelectScope = useCallback(
+    (index: number) => {
+      const next = scopeOptions[index];
+      if (next) setScope(next.scope);
+    },
+    [scopeOptions],
+  );
+
   const header = useMemo(() => {
     if (!head) return null;
     const scopeLabel = head.resolvedScope.label || scopeKindLabel(head.resolvedScope.kind);
 
     return (
       <View style={styles.header}>
-        <Text variant="title3">{scopeLabel}</Text>
+        {/* Anchor shows the scope actually being ranked, which after a demotion
+            is not the one that was picked — the notice below explains why. */}
+        <AppMenu
+          label={scopeLabel}
+          actions={scopeActions}
+          onSelectIndex={handleSelectScope}
+          accessibilityLabel={t('standings.scope.pickerLabel')}
+        />
         <Text variant="footnote" color={systemColors.secondaryLabel}>
           {t('standings.climberCount', { count: head.totalCount })}
         </Text>
@@ -116,7 +146,17 @@ export function StandingsScreen({ initialScope = GLOBAL_SCOPE }: StandingsScreen
         {head.viewer ? <ViewerStandingCard viewer={head.viewer} cohortSize={head.totalCount} /> : null}
       </View>
     );
-  }, [head, scopeKindLabel, systemColors.fill, systemColors.secondaryLabel, t, window, windowOptions]);
+  }, [
+    handleSelectScope,
+    head,
+    scopeActions,
+    scopeKindLabel,
+    systemColors.fill,
+    systemColors.secondaryLabel,
+    t,
+    window,
+    windowOptions,
+  ]);
 
   const footer = useMemo(
     () => (

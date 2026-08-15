@@ -689,7 +689,8 @@
       "boardType": "Board",
       "layout": "Setup",
       "board": "Wall",
-      "gym": "Gym"
+      "gym": "Gym",
+      "pickerLabel": "Choose a leaderboard"
     },
     "viewer": {
       "rankOf": "{{rank}} of {{total}}",
@@ -713,6 +714,11 @@
     "entryCard": {
       "accessibility": "Standings: {{rank}} of {{total}}. Opens the full standings.",
       "topPercent": "Top {{percent}}%"
+    },
+    "boardType": {
+      "kilter": "Kilter",
+      "tension": "Tension",
+      "moonboard": "MoonBoard"
     }
   }
 }
