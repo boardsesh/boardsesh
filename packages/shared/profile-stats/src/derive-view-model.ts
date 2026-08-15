@@ -58,11 +58,13 @@ export type ProfileViewModel = {
 };
 
 /**
- * Pure orchestration shared by web's `useProfileData` and mobile's
- * `useYouProfileData`. Given the raw per-board ticks plus the active board /
- * timeframe / grade-format filters, derives every chart's renderer-agnostic
- * data plus the hardest send/flash highlights. Color resolution happens at
- * each platform's component layer.
+ * Pure orchestration behind mobile's `useYouProfileData`. Given the raw
+ * per-board ticks plus the active board / timeframe / grade-format filters,
+ * derives every chart's renderer-agnostic data plus the hardest send/flash
+ * highlights. Color resolution happens at the component layer. Web's
+ * `useProfileData` does its own orchestration (calls the individual raw
+ * builders directly via a local color-adapter) rather than going through this
+ * function — see the web/mobile split noted on each raw builder.
  */
 export function deriveProfileViewModel(input: DeriveProfileViewModelInput): ProfileViewModel {
   const { allBoardsTicks, selectedBoard, timeframe, fromDate, toDate, gradeFormat, profileStats, comparisonMode } =
