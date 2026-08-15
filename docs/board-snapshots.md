@@ -17,16 +17,20 @@ that catalog comes down as serial, authenticated GraphQL pages of 500 rows each 
 
 The snapshot turns that into one CDN-cached `GET` of a pre-built SQLite file per `(boardType, layoutId)`,
 followed by a normal incremental pull that only has to cover the gap between the snapshot's build time and
-now — typically under a day.
+now. Once that gap reaches one full 500-row GraphQL page, a live-prefix threshold scan republishes the
+affected layout so a bulk gap does not remain in the first-download path.
 
 ## Architecture
 
-### Nightly export
+### Nightly export and live threshold refresh
 
 `.github/workflows/export-board-snapshots.yml` runs `export-board-snapshots.ts` at **07:15 UTC** daily
+for the full export and at **:07, :22, :37, and :52 every hour** for a bounded live-prefix scan
 (`workflow_dispatch` also available), with `environment: Production` so it gets the Production secrets.
 `concurrency.group: export-board-snapshots` with `cancel-in-progress: false` means overlapping runs queue
-instead of stepping on each other.
+instead of stepping on each other. `queue: max` is important: GitHub's default single pending slot lets a
+newer scan replace an older pending run, which could otherwise displace the nightly full export. The
+offset avoids GitHub's busiest quarter-hour schedule boundary.
 
 **Dual-publish.** The nightly runs the export **twice**, targeting two prefixes via `--key-prefix`
 (default `board-snapshots/v1`):
@@ -40,6 +44,34 @@ instead of stepping on each other.
 Each prefix is a self-contained, single-encoding manifest: the merge and prune logic below scope entirely
 to whichever prefix the run targets, so a gzip run never reads or prunes the identity prefix. A later
 cleanup drops the identity pass and deletes the `v1` prefix (see Rollout plan).
+
+**Live threshold refresh.** The 15-minute schedule targets only `board-snapshots/v1-gzip`, the prefix the
+fleet reads, with `--refresh-threshold 500`. For every discovered layout it reads the published manifest
+watermark and runs a bounded cursor probe for `board_climbs`, `board_climb_stats`, and
+`board_climb_grades`:
+
+```sql
+SELECT 1
+FROM <table>
+WHERE <layout scope and stability window>
+  AND (<cursor timestamp>, sync_seq) > (<manifest timestamp>, <manifest seq>)
+LIMIT 500;
+```
+
+The cursor timestamp is `updated_at` for climbs/stats and `computed_at` for grades. These are index-backed
+`LIMIT` probes, never full `COUNT(*)` scans: a 300k-row catalog rewrite stops after finding row 500. A
+layout is rebuilt when any table reaches 500 stable rows, when its manifest entry is missing, or when an
+existing main/grades artifact has an older client schema. If the optional grades artifact is absent, the
+grades probe starts at epoch and still requires 500 rows, so grade-less MoonBoard layouts remain a no-op.
+
+Selected layouts go through the same repeatable-read build and artifact-first/manifest-last publish path
+as the nightly. Layouts below threshold ride through the manifest byte-for-byte. If no layout is stale,
+the command returns without uploading an artifact, rewriting `generatedAt`, invalidating the five-minute
+manifest cache, or pruning. Threshold runs never prune or drop vanished entries because they are partial
+by design. The full nightly remains responsible for the identity rollback prefix, removing vanished
+layouts, and pruning old objects. Thus a genuine bulk catalog refresh reaches the CDN on the next scan
+(scheduled every 15 minutes on a best-effort basis), followed by export time and up to five minutes of
+manifest caching, instead of making every phone issue hundreds of authenticated requests indefinitely.
 
 For every `(board_type, layout_id)` pair with at least one climb (`discoverLayoutPairs`), each pass:
 
@@ -83,6 +115,8 @@ entries over the previous manifest's, keyed by `(boardType, layoutId)`:
 
 - A **filtered run** (`--board`/`--layout`) only rebuilds a subset, so every entry it didn't touch is kept
   verbatim — otherwise a filtered run would silently drop every other board from the manifest.
+- A **threshold refresh** is also a partial run: only entries whose post-manifest delta reaches the
+  threshold are rebuilt; all others are preserved verbatim. A clean scan performs no manifest write.
 - Only an **unfiltered** run has the full picture, so only it may drop an entry whose layout no longer has
   climbs (passes `livePairs`; filtered runs pass `null` and keep everything).
 - A layout whose export **failed** this run keeps its previous (still-valid, immutable) artifact entry —
@@ -92,7 +126,7 @@ entries over the previous manifest's, keyed by `(boardType, layoutId)`:
 Previous-manifest failure matrix (`fetchPreviousManifest`), because the merge above needs those entries to
 avoid dropping data on a broken read:
 
-| Previous manifest state        | Filtered run                                            | Unfiltered run                                                                                                                     |
+| Previous manifest state        | Filtered or threshold refresh                           | Full unfiltered run                                                                                                                |
 | ------------------------------ | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Missing (404/NoSuchKey)        | proceed, merge against empty (legitimately a first run) | same                                                                                                                               |
 | S3 read error (anything else)  | **THROW**, no upload happens                            | **THROW**, no upload happens                                                                                                       |
@@ -125,6 +159,8 @@ Artifacts superseded by a newer build for the same `(boardType, layoutId)` are d
 `pruneStaleArtifacts`, but only when **all** of the following hold:
 
 - the run was **unfiltered** (a filtered run doesn't have the full manifest picture to prune safely), and
+- the run was a **full export**, not a threshold refresh (a threshold scan intentionally leaves most
+  entries untouched), and
 - the run had **zero layout failures** (a failed night just defers pruning to the next green run).
 
 An object is eligible for deletion when it's under the prefix the run targets (`board-snapshots/v1/` for
@@ -177,7 +213,7 @@ layout artifact but intentionally outside the enabled size.
   than imported, because importing it would NULL-fill the client's newer columns and then stamp the resume
   cursor _past_ those rows — the strict `>` delta pull would never backfill them. A staler artifact is a
   **permanent miss for that run, no bootstrap attempt burned** — the scope falls back to the always-correct
-  paged crawl, and the next nightly export rebuilds the artifact at the new schema.
+  paged crawl, and the next live threshold scan rebuilds the stale-schema artifact.
 
 ### The two artifact sizes in a manifest entry
 
@@ -793,17 +829,24 @@ From a local shell, from `packages/backend/`:
 DATABASE_URL=<primary connection string> \
 AWS_S3_BUCKET_NAME=... AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_ENDPOINT_URL=... AWS_DEFAULT_REGION=... \
 node --import tsx src/scripts/export-board-snapshots.ts \
-  [--dry-run] [--gzip] [--key-prefix <prefix>] [--board <boardType>] [--layout <layoutId>]
+  [--dry-run] [--gzip] [--key-prefix <prefix>] [--refresh-threshold <rows>] \
+  [--board <boardType>] [--layout <layoutId>]
 ```
 
 - `--dry-run` builds artifacts locally (in a temp dir, cleaned up after) and logs sizes/row counts, but
-  never uploads anything and never touches the manifest. Works with **no AWS credentials at all**.
+  never uploads anything and never touches the manifest. Works with **no AWS credentials at all**. It
+  cannot be combined with `--refresh-threshold`, whose selection requires reading the live manifest.
 - `--gzip` compresses artifact objects and publishes manifest entries with `contentEncoding: 'gzip'`.
   Pair it with `--key-prefix board-snapshots/v1-gzip` so gzip artifacts land beside — never overwrite — the
-  identity `v1` prefix the live fleet reads.
+  identity `v1` rollback prefix.
 - `--key-prefix <prefix>` (default `board-snapshots/v1`) targets a self-contained prefix: its own manifest,
   merge, and prune, isolated from every other prefix. Validated against a safe key charset. The nightly
   workflow uses it to publish `v1` (identity) and `v1-gzip` (gzip) in one run.
+- `--refresh-threshold <rows>` reads that prefix's current manifest and rebuilds only layouts with at
+  least that many stable rows after any artifact-table watermark. The production schedule uses `500`
+  with `--gzip --key-prefix board-snapshots/v1-gzip`; the identity rollback remains a nightly full export.
+  A scan with no stale layout makes zero S3 writes. Missing manifests recover by rebuilding every
+  discovered pair; invalid manifests abort before upload because a partial run cannot merge safely.
 - `--board`/`--layout` filter to a subset. A filter matching **zero** `(boardType, layoutId)` pairs is
   treated as an operator error and throws loudly (e.g. `--board=kilterr` typo) rather than silently leaving
   that board's artifacts stale.
@@ -889,13 +932,14 @@ coordinated change, not just a constant flip:
 
 ### Schema-bump staleness window
 
-A schema-version bump on the client (a new migration touching `board_climbs`/`board_climb_stats`) makes
-every existing artifact `schema_version`-stale until the next nightly export rebuilds them — that's a
-window of **at most one nightly run** (worst case: the client release ships right after 07:15 UTC). During
-that window, freshly-enabled scopes on the new client fall back to the paged crawl (a permanent miss, no
-attempt burned, always correct) rather than importing a stale artifact — see the `schema_version` semantics
-above. No manual action needed; it self-heals at the next nightly run. A manual `workflow_dispatch` closes
-the window immediately if a release needs it sooner.
+A schema-version bump on the client (a new migration touching `board_climbs`, `board_climb_stats`, or
+`board_climb_grades`) makes existing artifacts `schema_version`-stale. The live threshold scan treats an
+old schema as stale without waiting for 500 rows, so the fleet's gzip artifacts self-heal on the next
+best-effort scan (scheduled every 15 minutes); the identity rollback catches up in the 07:15 nightly.
+During that window, freshly-enabled scopes on the new client fall back to the paged crawl (a permanent
+miss, no attempt burned, always correct) rather than importing a stale artifact — see the `schema_version`
+semantics above. A manual `workflow_dispatch` starts the rebuild without waiting for the next scheduled
+scan if a release needs it sooner.
 
 ### Deferred: correlated-EXISTS cost on the fallback path
 
