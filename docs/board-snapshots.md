@@ -262,9 +262,12 @@ engine does). A board scope (`boardType:layoutId:sizeId`) qualifies in one of tw
 
 - **fresh** — no checkpoint on either snapshot-backed table (`board_climbs`, `board_climb_stats`).
 - **heal-over-partial** — it HAS checkpoints, has **not** reached `scope-complete:`, has not already
-  imported an artifact, and carries snapshot-path failures behind it. This is the un-strand for issue
-  #4313: a board that gave up on the snapshot and then crawled part of its catalog can jump the rest of
-  the climbs/stats crawl from an artifact.
+  imported an artifact, and can jump the rest of the climbs/stats crawl from an artifact. Failure history
+  is not required: an older launch could begin the 500-row crawl before its snapshot flag/source resolved,
+  leaving a checkpoint but no recorded snapshot failure. The automatic heal is still restricted to an
+  unmetered link and the watermark-regression guard below prevents it from moving progress backwards. If
+  the climber explicitly re-enables the scope and accepts the size-disclosing dialog, that consent arms the
+  same one-shot `userRequested` override as **Try the fast download again**, including on a metered link.
 
 Both also require that neither retry budget is spent and that any scheduled cooldown has elapsed. A
 `scope-complete:` scope is never healed — it already serves the whole catalog locally, so ~100 MB buys it
@@ -272,12 +275,12 @@ nothing. The ordinary paged sync still downloads `board_climb_grades` before a s
 (it is not in `SNAPSHOT_TABLES`), so a heal removes part of the slow path, not all of it. One artifact
 download is shared across every size of the same `(boardType, layoutId)` within a cycle.
 
-**Failure taxonomy and budgets** (issue #4313). Before this, `MAX_BOOTSTRAP_ATTEMPTS = 2` was doing two
-jobs: it was the retry policy (there is none — the artifact GET is unresumable and never retried) and the
-total-spend bound. Because a dropped connection at the DOWNLOAD stage burned the same counter as a corrupt
-artifact, two bad-reception launches condemned a board to the 400+-round-trip crawl for the life of the
-install. The two jobs are now separate: kind-specific budgets bound total spend, a cooldown ladder bounds
-frequency.
+**Failure taxonomy and budgets** (issue #4313). Before this, `MAX_BOOTSTRAP_ATTEMPTS = 2` conflated retry
+frequency with the total-spend bound. The artifact GET is still not resumable, but failed transfers now
+retry on a scheduler alarm rather than waiting for an unrelated foreground/reconnect. Because a dropped
+connection at the DOWNLOAD stage burned the same counter as a corrupt artifact, two bad-reception launches
+condemned a board to the 400+-round-trip crawl for the life of the install. Kind-specific budgets bound
+total spend; the cooldown ladder and scheduler alarm bound frequency.
 
 | Kind                  | Raised by                                                                            | Budget                                | Cooldown ladder      | Re-armed by a new `builtAt`?                         |
 | --------------------- | ------------------------------------------------------------------------------------ | ------------------------------------- | -------------------- | ---------------------------------------------------- |
@@ -285,12 +288,19 @@ frequency.
 | `structural-artifact` | anything raised inside the import (`quick_check`, `snapshot_meta` mismatch, throw)   | `MAX_BOOTSTRAP_ATTEMPTS` = 2          | 6 h → 24 h           | yes, `MAX_STRUCTURAL_REARMS` = 1 per scope, lifetime |
 | `structural-device`   | every other non-transport cause (disk space, cache dir, CDN non-2xx, unclassifiable) | `MAX_BOOTSTRAP_ATTEMPTS` = 2          | 6 h → 24 h           | **no**                                               |
 
-A successful download resets `transportFailures` to 0 and drops its cooldown. The manifest stage stays
-entirely free for transport failures (a few KB of JSON, and the stage an offline launch dies at — issue
-#4238); everything else is charged at either stage. The `structural-device` default is deliberately
-conservative: a plain `Error` from an adapter's downloader cannot be told apart from a disk-full or
-cache-dir fault, and the export is **nightly**, so a `builtAt` reset for a device-side fault would be
-2 × ~100 MB every day, forever.
+A successful download resets `transportFailures` to 0 and drops its cooldown. Every manifest failure is
+cap-exempt because the manifest is one global object shared by all enabled scopes: charging a per-scope
+budget for one malformed or unavailable response could terminal every board on the device. A 404 or an
+unsupported manifest format fails open to the paged path. Network, HTTP, malformed JSON, and malformed
+current-format responses skip the fresh crawl and schedule another manifest attempt in 30 seconds. After
+two consecutive waits, the third failure starts the paged crawl and schedules a lower-frequency five-minute
+probe; this keeps the fast path recoverable without leaving every fresh board empty during a broken publish.
+The consecutive counter is process-local and keyed to the database's global wipe epoch, so it cannot write
+after sign-out or carry one account's state into another. A new process gets the same two-attempt grace.
+The mobile manifest request itself aborts after 15 seconds, so a native fetch that never resolves cannot
+hold the scheduler's global single-flight latch indefinitely.
+Everything after manifest resolution is charged normally. The `structural-device` default is deliberately
+conservative: a plain downloader error cannot be told apart from a disk-full or cache-dir fault.
 
 **Worst-case lifetime spend per scope: 7 artifact downloads** — 3 transport + 2 structural + 2 for the
 single re-armed structural round — each separated by at least one cooldown rung. A test in
@@ -304,11 +314,14 @@ re-arm left — that one still reads the manifest, because a differently built a
 fix it. Terminal is cleared by scope teardown or by the user tapping **Try the fast download again** in My
 Boards, which restores both budgets behind the same size-disclosing confirm dialog the enable toggle uses.
 
-**Cooldowns and skipping the paged crawl.** The skip is a grace window, not all-or-nothing: only a FRESH,
-non-terminal scope whose retry lands within 30 minutes waits for it, because a first-page checkpoint used
-to disqualify the snapshot path permanently and the crawl is 400+ serial round trips it is about to throw
-away. Past that window the crawl runs, so a board is never left empty waiting on a 2-hour cooldown, and a
-scope that already holds rows always crawls — a failed heal must not stall progress already being made.
+**Cooldowns and scheduler alarms.** A persisted `retryAfter` is also registered with
+`startSyncScheduler`, including when it is first observed after a cold launch. The earliest absolute
+deadline wakes a drain+pull cycle; later scope deadlines remain armed, ad-hoc download triggers feed the
+same coordinator, and scheduler cleanup cancels its alarms. The paged skip is still a grace window: only a
+FRESH, non-terminal scope whose retry lands within 30 minutes waits for it. Past that window the crawl runs,
+and a scope that already holds rows keeps crawling while a failed heal cools down. Failures outside snapshot
+bootstrap (queue drain, deletions, paged GraphQL, or SQLite) arm a separate 30-second cycle retry, so a
+foregrounded connected app does not depend on a later reconnect or foreground event to resume.
 
 **The metered-network probe.** `SyncOptions.isOnUnmeteredNetwork` (default `() => true`, so web and every
 existing caller are unchanged) gates ONE decision: the automatic heal of a partly-crawled scope, which is a
@@ -316,6 +329,8 @@ existing caller are unchanged) gates ONE decision: the automatic heal of a partl
 nothing. A fresh bootstrap (they just confirmed the size) ignores it, and so does a user-requested retry:
 `restoreBootstrapRetryBudget` arms a `userRequested` flag on the persisted state, `runBootstrapPhase` skips
 the defer while it is set, and the flag is spent the instant the download starts (one tap, one artifact).
+The ordinary enable dialog does the same for an incomplete checkpointed scope whenever it quotes the
+snapshot size, keeping the UI promise and the engine's transport decision aligned.
 That last part matters — a settled scope has always crawled, so it can only ever come back as a
 heal-over-partial, and without the flag "Try the fast download again" was a silent 6-hour deferral on
 cellular. A recovery on that path reports `trigger: 'user-request'`.
@@ -367,27 +382,27 @@ drop one; the heal marker is the only one with no UI and stays out of that list.
 Per-stage outcomes, copied from the `runBootstrapPhase` doc comment (the source of truth — keep this in
 sync if the code comment changes):
 
-| Condition                                                            | Budget burned             | Result this cycle                                                                         |
-| -------------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------- |
-| `scope-complete:` / `bootstrap-done:` / mid-crawl with no failures   | —                         | not eligible → normal paged pull                                                          |
-| `isOnline()` reports offline                                         | —                         | whole cycle skipped before the phase starts; retried on reconnect                         |
-| a scheduled retry has not elapsed                                    | —                         | not eligible this cycle; crawl runs unless the retry is inside the 30-minute grace window |
-| terminal, last failure `structural-artifact`, re-arm left, new build | — (grants a round)        | budget restored once → snapshot path runs                                                 |
-| terminal, otherwise                                                  | —                         | settled → normal paged pull, manifest not fetched                                         |
-| heal-over-partial on a metered link                                  | **no** (defers 6 h)       | normal paged pull                                                                         |
-| the same, with `userRequested` armed by the retry action             | — (spends the tap)        | snapshot path runs now; recovery reports `trigger: 'user-request'`                        |
-| manifest `absent` (404/missing or invalid JSON/shape)                | **no**                    | permanent miss → normal paged pull                                                        |
-| manifest `error`, transport-shaped (offline/DNS/TLS/timeout)         | **no**, nothing persisted | skip paged pull this cycle; reported as `expected`                                        |
-| manifest `error`, anything else (HTTP non-2xx except 404, …)         | `structural-device`       | 6 h ladder; crawl runs (past the grace window)                                            |
-| manifest `ok` but no entry for `(boardType, layoutId)`               | **no**                    | permanent miss (not exported yet) → normal paged pull                                     |
-| download fails or returns `null`, transport-shaped                   | `transport`               | 2 min ladder; paged pull skipped while the retry is imminent                              |
-| download fails or returns `null`, anything else                      | `structural-device`       | 6 h ladder; crawl runs                                                                    |
-| download throws `SnapshotPermanentMissError`                         | **no**                    | permanent miss → normal paged pull                                                        |
-| import throws — corrupt/short artifact, row-count/format mismatch    | `structural-artifact`     | 6 h ladder; a new `builtAt` may re-arm it once                                            |
-| import throws `SnapshotSchemaStaleError`                             | **no**                    | permanent miss this run → normal paged pull                                               |
-| import throws `SnapshotWatermarkRegressionError`                     | `structural-artifact`     | nothing written → normal paged pull; 6 h ladder; reported `expected: false`               |
-| a sign-out wipe is detected mid-phase                                | **no**                    | whole phase bails, mirrors `syncTable`'s wipe guard                                       |
-| success                                                              | transport counter reset   | marked done; deletions rewound; paged pull runs as a small delta from scoped watermarks   |
+| Condition                                                            | Budget burned           | Result this cycle                                                                         |
+| -------------------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------- |
+| `scope-complete:` / `bootstrap-done:`                                | —                       | not eligible → normal delta/paged pull                                                    |
+| incomplete scope with board checkpoints                              | —                       | heal on unmetered; a size-confirmed re-enable also heals on metered                       |
+| `isOnline()` reports offline                                         | —                       | whole cycle skipped before the phase starts; retried on reconnect                         |
+| a scheduled retry has not elapsed                                    | —                       | not eligible this cycle; crawl runs unless the retry is inside the 30-minute grace window |
+| terminal, last failure `structural-artifact`, re-arm left, new build | — (grants a round)      | budget restored once → snapshot path runs                                                 |
+| terminal, otherwise                                                  | —                       | settled → normal paged pull, manifest not fetched                                         |
+| heal-over-partial on a metered link                                  | **no** (defers 6 h)     | normal paged pull                                                                         |
+| the same, with `userRequested` armed by the retry action             | — (spends the tap)      | snapshot path runs now; recovery reports `trigger: 'user-request'`                        |
+| manifest `absent` (404/missing or unsupported format version)        | **no**                  | permanent miss this cycle → normal paged pull                                             |
+| manifest `error` (transport, HTTP, invalid JSON/current shape)       | **no** per-scope        | wait twice at 30 s; third failure starts paged sync and probes again in 5 min             |
+| manifest `ok` but no entry for `(boardType, layoutId)`               | **no**                  | permanent miss (not exported yet) → normal paged pull                                     |
+| download fails or returns `null`, transport-shaped                   | `transport`             | 2 min ladder; paged pull skipped while the retry is imminent                              |
+| download fails or returns `null`, anything else                      | `structural-device`     | 6 h ladder; crawl runs                                                                    |
+| download throws `SnapshotPermanentMissError`                         | `structural-device`     | full bytes were spent; bounded retry ladder, with paged progress this cycle               |
+| import throws — corrupt/short artifact, row-count/format mismatch    | `structural-artifact`   | 6 h ladder; a new `builtAt` may re-arm it once                                            |
+| import throws `SnapshotSchemaStaleError`                             | **no**                  | permanent miss this run → normal paged pull                                               |
+| import throws `SnapshotWatermarkRegressionError`                     | `structural-artifact`   | nothing written → normal paged pull; 6 h ladder; reported `expected: false`               |
+| a sign-out wipe is detected mid-phase                                | **no**                  | whole phase bails, mirrors `syncTable`'s wipe guard                                       |
+| success                                                              | transport counter reset | marked done; deletions rewound; paged pull runs as a small delta from scoped watermarks   |
 
 Resumable / ranged artifact downloads are **not** in scope here — artifacts ship gzip-encoded and rely on
 the native stack to decode, so byte-offset resume needs a JS gunzipper (a native dependency, OTA-forbidden).
@@ -480,16 +495,9 @@ pre-import empty result set.
   Frames are throttled to one per 400 ms plus a rounded-percent/rounded-megabyte change gate — Android
   emits natively every 100 ms, which is ~5,300 events over an 8m52s Kilter download.
 
-  `offline-download-progress` is the kill switch and **defaults ON** (the inverse of every other flag
-  in `feature-flags-provider.tsx`, because the frozen spinner is the bug). Off does two things:
-  restores the static caption, and stops passing `onProgress` into `File.downloadFileAsync` at the
-  source (`use-snapshot-source.ts`) — that callback makes expo take a different **native** download
-  implementation, so the flag has to restore the original call exactly, not just hide the UI. It drops
-  the download **options** (`onProgress`, and with it `signal` — pre-existing and deliberate, since the
-  restored call must be byte-identical) but never a capability: the wrapper still forwards `releaseArtifact` and
-  `downloadGradesArtifact`, because omitting `releaseArtifact` made the engine fall back to
-  `deleteArtifact` and throw away a completed-but-unimported artifact at the end of every cycle —
-  silently opting this cohort out of retention (#4310) and out of the backgrounding fix below.
+  Byte progress is permanently enabled on native. `useSnapshotSource` always hands out the full source,
+  including progress, cancellation, artifact retention, and the grades artifact. There is no PostHog
+  cohort that can silently lose byte progress or retention behaviour.
 
 - **Backgrounding: a pocketed phone pauses a download, it does not kill it (issue #4390)**. The rule
   `runBootstrapPhase` encodes is **start new work only in the foreground; never kill work already in
@@ -523,36 +531,23 @@ pre-import empty result set.
   follows the same rule: `importGradesForScope` checks the teardown reason before spending one of the
   three attempts that artifact ever gets.
 
-- **Download transport (issues #4394 / #4390)**. Which expo-file-system API moves the bytes is chosen by
-  `resolveSnapshotDownloadStrategy` (`packages/mobile/src/offline/download-strategy.ts`) from two PostHog
-  booleans plus `Platform.OS`:
+- **Download transport (issues #4394 / #4390)**. Every snapshot uses expo-file-system's DownloadTask.
+  `resolveSnapshotDownloadStrategy` (`packages/mobile/src/offline/download-strategy.ts`) selects only by
+  `Platform.OS`:
 
-  | `offline-download-task-api` | `offline-download-background-session` | iOS                   | Android               |
-  | --------------------------- | ------------------------------------- | --------------------- | --------------------- |
-  | unset or `false`            | anything                              | `download-file-async` | `download-file-async` |
-  | `true`                      | unset or `true`                       | `task-background`     | `task-foreground`     |
-  | `true`                      | `false`                               | `task-foreground`     | `task-foreground`     |
+  | Platform | Strategy          | Reason                                                                               |
+  | -------- | ----------------- | ------------------------------------------------------------------------------------ |
+  | iOS      | `task-background` | A background URLSession keeps a large transfer alive while the app is suspended.     |
+  | Android  | `task-foreground` | Android ignores session type, but DownloadTask uses its task-specific OkHttp client. |
 
-  **The unresolved default is today's shipped path on BOTH platforms, on purpose.** Production OTAs
-  auto-publish on every push to `main`, and a PostHog key that does not exist yet reads `undefined` on
-  every device — so an "undefined → background session" default would flip the whole iOS fleet the hour
-  it merged. The downside is not symmetric: a background `URLSession` runs out of `nsurlsessiond`, a
-  different process from the in-process default-config sessions the gzip cutover was validated against,
-  and if it does not transparently gunzip, `snapshot-source` raises `SnapshotPermanentMissError`, which
-  at the download stage burns the structural budget **and** marks the paged fallback — a durable settle
-  that flipping the flag back does not undo. Roll out by SETTING the flag (10% → 50% → 100%, watching
-  `sizeMismatch`, `reason: 'permanent-miss'` and `wireKbps`), never by merging.
+  The strategy is fixed for the bundle lifetime. No feature-flag resolution can restart the scheduler or
+  replace a transfer's transport mid-download. Continue watching `sizeMismatch`,
+  `reason: 'permanent-miss'`, and `wireKbps`; the gzip sniff and paged fallback remain the safety net if a
+  platform HTTP stack ever stops decoding `Content-Encoding: gzip` transparently.
 
-  The strategy lives in **module state**, set by an effect in `use-snapshot-source.ts`, because
-  `mobileSnapshotSource`'s object identity is a dependency of the scheduler effect in
-  `offline-sync-bridge.tsx` — a factory would restart the sync scheduler mid-download the moment a flag
-  resolved. It is latched at the start of each transfer so a flag resolving mid-download cannot mislabel
-  the measurement.
-
-  Both platforms are real arms, not relabels: Android ignores `sessionType` but a `DownloadTask` builds
-  its **own** `OkHttpClient` (60 s connect/read/write timeouts), and on iOS the task sessions use
-  `delegateQueue: .main` where the legacy `downloadFileAsync` store uses `nil` — which makes
-  `task-foreground` double as a main-thread-contention probe at zero native cost.
+  Both platforms are real task arms: Android ignores `sessionType` but a `DownloadTask` builds
+  its **own** `OkHttpClient` (60 s connect/read/write timeouts), while iOS hands the transfer to a
+  background URLSession so it can continue while the app is suspended.
 
 - **Why continuation and not persisted pause/resume.** Measured against the live CDN object on
   2026-08-13: `Content-Encoding: gzip` comes back **unconditionally** (even under
@@ -626,33 +621,28 @@ pre-import empty result set.
 - **`EXPO_PUBLIC_SNAPSHOT_BASE_URL`** (`packages/mobile/src/lib/env.ts`) — base URL for
   `<base>/manifest.json`; each manifest entry carries its own absolute artifact URL, so this constant is
   only used for the manifest fetch. There is deliberately **no production fallback**: if the env var is
-  unset or empty, `OfflineSyncBridge` does not pass `mobileSnapshotSource` to the scheduler, even when the
-  PostHog flag is on, and fresh boards use the paged crawl. Set this as a real EAS build-time env var
-  before ramping the flag. `EXPO_PUBLIC_*` vars are inlined at build time, not read at runtime, so this
-  needs a new build to take effect, not just a config change.
-- **PostHog flags** (`packages/mobile/src/providers/feature-flags-provider.tsx`):
-  - `offline-board-downloads` — the offline engine's _new_ work: downloads, the **online** local-first
-    read optimization, queued offline writes, and background sync. **A kill switch, on by default**:
-    missing/undefined reads as **on** (issue #4312) and only an explicit `false` disables it, so disable
-    the flag or set it to 0% rather than deleting it. Reading an already-downloaded board while the
-    network is unavailable is NOT gated by this flag — see the flag-gate section in
-    `docs/offline-sync-plan.md` and issue #3888.
-  - `offline-snapshot-bootstrap-v2` — nested under the flag above: whether a freshly-enabled scope warms
-    from the snapshot at all. Unlike its parent this one stays `=== true`, i.e. **off by default**, so the
-    snapshot path stays remotely killable; a download needs connectivity anyway, and connectivity resolves
-    the flags within seconds. With `offline-board-downloads` on and `offline-snapshot-bootstrap-v2` off, a
-    fresh board still downloads — just via the paged crawl. `useSnapshotSource`
-    (`packages/mobile/src/offline/use-snapshot-source.ts`) is the single place snapshot I/O is handed out,
-    and it requires all three: `useOfflineDownloadsEnabled()`, `useSnapshotBootstrapEnabled()`, and a
-    configured `EXPO_PUBLIC_SNAPSHOT_BASE_URL`. Otherwise it returns `undefined`, which makes `pullSync`
-    skip the bootstrap phase entirely — behaviourally identical to before this feature existed.
+  unset or empty, `OfflineSyncBridge` does not pass `mobileSnapshotSource` to the scheduler and fresh
+  boards use the paged crawl. Set this as a real EAS build-time env var. `EXPO_PUBLIC_*` vars are inlined
+  at build time, not read at runtime, so this needs a new build to take effect, not just a config change.
+- **No PostHog gates**: native offline downloads, snapshot bootstrap, byte progress, and the fixed task
+  transport are baked on. `useSnapshotSource` (`packages/mobile/src/offline/use-snapshot-source.ts`)
+  hands out the full source whenever `EXPO_PUBLIC_SNAPSHOT_BASE_URL` is configured; a missing build-time
+  URL is the only reason it returns `undefined`. Expo web remains unsupported and keeps the native engine
+  disabled through its platform fork.
+- **No lost wake after an offline-surface tap**: `armBoardsOffline` persists the enabled scope, then reads
+  current NetInfo reachability. If reconnect landed just before the setting write, that read starts the
+  cycle and synchronizes React Query's online singleton before the pull guard runs. A rejected or
+  stale-negative read gets two bounded re-probes; if the link remains unreachable, the scheduler's next
+  reachability edge reads the durable setting. This closes the ordering window that otherwise left a
+  reachable device on “Waiting to download” with no future edge to wake it.
 - **Gzip magic-byte sniff** (`packages/mobile/src/offline/snapshot-source.ts`): identity artifacts skip
   gzip verification. For manifest entries with `contentEncoding: 'gzip'`, the expectation is that the
-  native HTTP stack (`NSURLSession` / OkHttp via `expo-file-system`'s `File.downloadFileAsync`)
+  native HTTP stack (`NSURLSession` / OkHttp via `expo-file-system`'s `DownloadTask`)
   transparently decompresses the object while downloading. `looksGzipCompressed` reads just the first two
   bytes of the downloaded file and checks for the gzip magic number (`0x1f 0x8b`). If they're still present
   — the stack did **not** auto-decode — the file is deleted, the download throws
-  `SnapshotPermanentMissError` (no attempt burned, same-cycle paged fallback), and a handled error is
+  `SnapshotPermanentMissError` (the structural-device budget is charged because all bytes were already
+  spent, while paging can still progress in the same cycle), and a handled error is
   reported to Sentry with
   `tags: { source: 'offline-sync', kind: 'snapshot-bootstrap' }`. This client does not attempt to gunzip
   the file itself — it relies on the native stack's transparent decode, and the sniff is the safety net if
@@ -842,22 +832,15 @@ manifest) and the export re-bases entry URLs onto it. Keep it consistent with
 `EXPO_PUBLIC_SNAPSHOT_BASE_URL` in the mobile workflows: the mobile value is
 `${SNAPSHOT_PUBLIC_BASE_URL}/board-snapshots/v1-gzip`.
 
-### Kill switches
+### Recovery controls
 
-- **Fastest, no deploy**: flip the `offline-snapshot-bootstrap-v2` PostHog flag off. Every client falls back
-  to the paged crawl for newly-enabled boards; nothing already bootstrapped is affected (it's already past
-  the eligibility check).
+Native offline downloads, snapshot bootstrap, progress, and transfer strategy have no PostHog kill
+switches. Recover by fixing or withdrawing the published snapshot inputs:
+
 - **Grades only** (issue #4310): the grades import runs only when the manifest entry carries a `grades`
   block, so publishing a manifest without one — or rolling the fleet back to the identity `board-snapshots/v1`
   prefix, which never publishes grades — reverts every client to the paged grades crawl with no deploy. It
   is a slower download, not a broken one.
-- **Download transport** (issue #4394): `offline-download-task-api` off (or deleted — unset reads as off)
-  puts every device back on today's `File.downloadFileAsync`, and
-  `offline-download-background-session` off pins an iOS task to a foreground session without leaving the
-  DownloadTask arm. Both default OFF, so a merge changes nobody's transport; the rollback signal to watch
-  is a spike in the `snapshot artifact arrived still gzip-compressed` Sentry handled error or in
-  `reason: 'permanent-miss'`, because a background session runs out of `nsurlsessiond` rather than
-  in-process.
 - **Nuclear, affects every client regardless of flag state after cache expiry**: delete the
   `board-snapshots/v1-gzip/manifest.json` object from the bucket — that's the prefix the fleet reads;
   deleting `board-snapshots/v1/manifest.json` stops nothing. The manifest is cached for up to 5 minutes
@@ -925,18 +908,19 @@ page — that's the trigger to prioritize the fix.
 
 ## Rollout plan
 
-1. **Internal testers**: flip `offline-snapshot-bootstrap-v2` on for the `tester` PostHog cohort only.
-2. **Two pre-ramp manual verifications** (do both before any percentage ramp):
-   - Confirm `EXPO_PUBLIC_SNAPSHOT_BASE_URL` is set to the real Tigris bucket URL in the build that will
-     ship to testers. With the env var missing, the flag is inert and the app intentionally uses the paged
-     crawl (see Mobile wiring above).
+1. **Build configuration**: confirm `EXPO_PUBLIC_SNAPSHOT_BASE_URL` is set to the real Tigris bucket URL
+   in every native build. With the env var missing, the app intentionally uses the paged crawl (see Mobile
+   wiring above).
+2. **Two pre-release manual verifications**:
    - One real on-device bootstrap, confirmed end to end: the `ATTACH` uses a bare filesystem path (no
      `file://` scheme — SQLite's ATTACH resolution isn't guaranteed URI-mode-safe on either platform's
      bundled sqlite3), the artifact attaches and imports, and Sentry reports no gzip-magic-byte handled
      error for that download (the fleet reads the gzip prefix, so decode is on the live path).
-3. **Percentage ramp**: increase the PostHog rollout gradually, watching `Offline Board Download Completed`
-   duration percentiles split by `method`, and the Sentry `snapshot-bootstrap` failure rate, at each step.
-   Hold or roll back on a `snapshot` p95 that doesn't clearly beat `paged`, or a failure-rate step change.
+   - Background and foreground transfers on iOS, plus foreground transfers on Android, report useful byte
+     progress and complete against the production CDN.
+3. **Release monitoring**: watch `Offline Board Download Completed` duration percentiles split by `method`
+   and the Sentry `snapshot-bootstrap` failure rate. Withdraw a bad manifest if snapshot p95 no longer
+   clearly beats paged downloads or failures jump.
 
 ## Gzip transition & cutover
 

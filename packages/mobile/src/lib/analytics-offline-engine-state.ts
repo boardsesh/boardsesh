@@ -5,8 +5,9 @@ import { getPostHogClient } from './posthog-client';
  * The `offline_engine_state` super property: HOW the offline engine got its
  * state this launch, stamped onto every subsequent event.
  *
- * - `flag-on` / `flag-off` — PostHog resolved `offline-board-downloads`.
- * - `default-on` — the flag never landed, so the #4312 bake decided it.
+ * - `baked-on` — the shipped native capability.
+ * - legacy `flag-on` / `flag-off` / `default-on` values remain accepted so old
+ *   tests and queued analytics calls can be replayed safely.
  * - `web-off` — Expo web, which has no offline engine regardless of the flag.
  *
  * It lives in its own module (rather than an inline `registerSuperProperties`
@@ -18,7 +19,7 @@ import { getPostHogClient } from './posthog-client';
  * a sign-out, forced 401, or account switch would drop the property and the
  * bake measurement would end at the first logout of the launch.
  */
-export type OfflineEngineState = 'flag-on' | 'flag-off' | 'default-on' | 'web-off';
+export type OfflineEngineState = 'baked-on' | 'flag-on' | 'flag-off' | 'default-on' | 'web-off';
 
 export const OFFLINE_ENGINE_STATE_SUPER_PROPERTY = 'offline_engine_state';
 
@@ -50,7 +51,7 @@ export function registerOfflineEngineState(state: OfflineEngineState): void {
 
 /**
  * Puts the remembered state back after `analytics.reset()` wiped it. No-op
- * before the flag effect has decided anything — there is nothing to restore,
+ * before the root effect has published anything — there is nothing to restore,
  * and the effect's own registration is still coming.
  */
 export function reregisterOfflineEngineState(client?: Pick<PostHog, 'register'> | null): void {

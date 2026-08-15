@@ -1,12 +1,10 @@
 /**
- * Module-level mirror of the `offline-board-downloads` feature flag, for the
- * non-React offline paths (the GraphQL read interceptor) that can't call
- * `useFeatureFlag`. The value is published from React by `OfflineEngineFlagSync`
- * so the single flag decision — PostHog + env override + tester overrides —
- * happens in one place and this store never disagrees with the UI.
+ * Module-level mirror of the permanently enabled native offline engine, for the
+ * non-React offline paths (the GraphQL read interceptor). The value is published
+ * from React by `OfflineEngineFlagSync`; the Expo web fork publishes false.
  *
- * Defaults to `false` even though the flag gate itself now defaults to ON
- * (issue #4312). This literal is NOT the flag decision — it is the value that
+ * Defaults to `false` until the platform-specific root effect publishes. This
+ * literal is NOT the platform decision — it is the value that
  * holds for the few microseconds before `OfflineEngineFlagSync`'s effect
  * publishes one. That component is the first child inside
  * `FeatureFlagsProvider` (`app/_layout.tsx`), so its effect flushes before any

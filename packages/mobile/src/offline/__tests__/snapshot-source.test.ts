@@ -126,6 +126,15 @@ vi.mock('expo-file-system', () => {
           signal?: AbortSignal;
         },
       ) => {
+        // Generic transfer record retained for the assertions below that do not
+        // care which expo API moved the bytes. The task-specific record beside
+        // it pins session type and handle lifecycle.
+        state.downloadCalls.push({
+          url,
+          idempotent: true,
+          hasOnProgress: options?.onProgress !== undefined,
+          hasSignal: options?.signal !== undefined,
+        });
         state.taskCalls.push({
           url,
           sessionType: options?.sessionType,
@@ -249,11 +258,7 @@ vi.mock('../artifact-transfer-telemetry', () => ({
 // The FAKE File class the vi.mock above installs — imported so the strategy
 // tests can read the exact options object each transport was handed.
 import { File } from 'expo-file-system';
-import {
-  mobileSnapshotSource,
-  setSnapshotDownloadStrategyFromFlags,
-  __resetSnapshotDownloadStrategyForTests,
-} from '../snapshot-source';
+import { mobileSnapshotSource, SNAPSHOT_MANIFEST_FETCH_TIMEOUT_MS } from '../snapshot-source';
 import {
   setBackgrounded,
   SnapshotArtifactTruncatedError,
@@ -310,7 +315,6 @@ beforeEach(() => {
   state.taskReleases = 0;
   state.taskResolvesNull = false;
   state.downloadedFileSize = null;
-  __resetSnapshotDownloadStrategyForTests();
 });
 
 const ARTIFACT_URI = 'file://cache-root/board-snapshots/kilter-8-2026-06-01T00-00-00-000Z.db';
@@ -332,6 +336,7 @@ describe('fetchManifest', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('https://example.test/board-snapshots/v1/manifest.json', {
       cache: 'no-store',
+      signal: expect.any(AbortSignal),
     });
     expect(result).toEqual(manifestBody);
     vi.unstubAllGlobals();
@@ -357,13 +362,13 @@ describe('fetchManifest', () => {
     vi.unstubAllGlobals();
   });
 
-  it('returns null for unparseable JSON so the engine falls back to paged sync', async () => {
+  it('throws for unparseable JSON so the engine retries the manifest path', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => brokenJsonResponse()),
     );
 
-    await expect(mobileSnapshotSource.fetchManifest()).resolves.toBeNull();
+    await expect(mobileSnapshotSource.fetchManifest()).rejects.toThrow();
     vi.unstubAllGlobals();
   });
 
@@ -377,6 +382,37 @@ describe('fetchManifest', () => {
 
     await expect(mobileSnapshotSource.fetchManifest()).rejects.toThrow('network request failed');
     vi.unstubAllGlobals();
+  });
+
+  it('aborts a manifest request that hangs so the scheduler can retry', async () => {
+    vi.useFakeTimers();
+    try {
+      const onAbort = vi.fn();
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          (_url: string, options?: RequestInit) =>
+            new Promise<Response>((_resolve, reject) => {
+              options?.signal?.addEventListener('abort', () => {
+                onAbort();
+                reject(new Error('manifest request aborted'));
+              });
+            }),
+        ),
+      );
+
+      const request = mobileSnapshotSource.fetchManifest();
+      const rejection = expect(request).rejects.toThrow('manifest request aborted');
+      await vi.advanceTimersByTimeAsync(SNAPSHOT_MANIFEST_FETCH_TIMEOUT_MS - 1);
+      expect(onAbort).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(onAbort).toHaveBeenCalledTimes(1);
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
   });
 });
 
@@ -412,10 +448,7 @@ describe('downloadArtifact', () => {
     expect(result?.filePath).toContain('kilter-8-2026-06-01T00-00-00-000Z.db');
   });
 
-  it('omits the onProgress option entirely when the caller does not ask for it (kill-switch path)', async () => {
-    // Passing onProgress makes expo take a DIFFERENT native download
-    // implementation, so the flag-off path has to reproduce the original call
-    // exactly — not merely discard the callback's output.
+  it('omits the onProgress option when a direct caller does not ask for it', async () => {
     await mobileSnapshotSource.downloadArtifact(ENTRY);
 
     expect(state.downloadCalls).toEqual([{ url: ENTRY.url, idempotent: true, hasOnProgress: false, hasSignal: false }]);
@@ -566,59 +599,33 @@ describe('downloadArtifact', () => {
   });
 });
 
-// Which expo API moves the bytes (issue #4394). The default is deliberately
-// today's shipped call on both platforms — the new transports roll out by
-// setting a PostHog flag after on-device QA, never by merging an OTA.
-describe('download transport strategies', () => {
+// Which expo API moves the bytes (issue #4394). This test module stubs iOS, so
+// every transfer must use a background DownloadTask; the pure strategy test
+// separately pins Android to the foreground task arm.
+describe('fixed download transport', () => {
   const DECODED = { ...ENTRY, uncompressedBytes: 3_000_000 };
 
-  it('uses downloadFileAsync with EXACTLY the shipped options when the flags are unresolved', async () => {
+  it('always drives a background URLSession task on iOS', async () => {
     await mobileSnapshotSource.downloadArtifact(ENTRY);
 
-    expect(state.taskCalls).toEqual([]);
-    const call = (File.downloadFileAsync as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(call[2]).toEqual({ idempotent: true, signal: undefined });
-  });
-
-  it('passes the four-key options object when the caller asked for progress', async () => {
-    await mobileSnapshotSource.downloadArtifact(ENTRY, { onProgress: () => {} });
-
-    const call = (File.downloadFileAsync as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(Object.keys(call[2] as object).sort()).toEqual(['idempotent', 'onProgress', 'signal']);
-    expect((call[2] as { idempotent: boolean }).idempotent).toBe(true);
-  });
-
-  it('stays on downloadFileAsync when the task-api flag is explicitly off', async () => {
-    setSnapshotDownloadStrategyFromFlags({ taskApiFlag: false, backgroundSessionFlag: true });
-
-    await mobileSnapshotSource.downloadArtifact(ENTRY);
-
-    expect(state.taskCalls).toEqual([]);
-    expect(state.downloadCalls).toHaveLength(1);
-  });
-
-  it('drives a background URLSession task on iOS when the task-api flag is on', async () => {
-    setSnapshotDownloadStrategyFromFlags({ taskApiFlag: true, backgroundSessionFlag: undefined });
-
-    await mobileSnapshotSource.downloadArtifact(ENTRY, { onProgress: () => {} });
-
-    expect(state.downloadCalls).toEqual([]);
+    expect(state.downloadCalls).toEqual([{ url: ENTRY.url, idempotent: true, hasOnProgress: false, hasSignal: false }]);
     expect(state.taskCalls).toEqual([
-      { url: ENTRY.url, sessionType: 'background', hasOnProgress: true, hasSignal: false },
+      { url: ENTRY.url, sessionType: 'background', hasOnProgress: false, hasSignal: false },
     ]);
   });
 
-  it('pins the task to a foreground session when the background-session flag is off', async () => {
-    setSnapshotDownloadStrategyFromFlags({ taskApiFlag: true, backgroundSessionFlag: false });
+  it('passes progress and cancellation through the permanent task path', async () => {
+    const signal = new AbortController().signal;
+    await mobileSnapshotSource.downloadArtifact(ENTRY, { onProgress: () => {}, signal });
 
-    await mobileSnapshotSource.downloadArtifact(ENTRY);
-
-    expect(state.taskCalls[0].sessionType).toBe('foreground');
+    expect(state.downloadCalls).toEqual([{ url: ENTRY.url, idempotent: true, hasOnProgress: true, hasSignal: true }]);
+    expect(state.taskCalls).toEqual([
+      { url: ENTRY.url, sessionType: 'background', hasOnProgress: true, hasSignal: true },
+    ]);
+    expect(signal.aborted).toBe(false);
   });
 
   it('releases the native task handle on the success AND the throw path', async () => {
-    setSnapshotDownloadStrategyFromFlags({ taskApiFlag: true, backgroundSessionFlag: undefined });
-
     await mobileSnapshotSource.downloadArtifact(ENTRY);
     expect(state.taskReleases).toBe(1);
 
@@ -633,20 +640,18 @@ describe('download transport strategies', () => {
 
   it('treats a task that resolves null as a failed transfer, not a silent success', async () => {
     // expo resolves null only for a PAUSED transfer, which we never request.
-    setSnapshotDownloadStrategyFromFlags({ taskApiFlag: true, backgroundSessionFlag: undefined });
     state.taskResolvesNull = true;
 
     await expect(mobileSnapshotSource.downloadArtifact(ENTRY)).rejects.toThrow(/ended without a file/);
   });
 
   it('reports the strategy it actually used on the transfer event', async () => {
-    setSnapshotDownloadStrategyFromFlags({ taskApiFlag: true, backgroundSessionFlag: false });
     state.downloadedFileSize = DECODED.uncompressedBytes;
 
     await mobileSnapshotSource.downloadArtifact(DECODED);
 
     expect(reportArtifactTransfer).toHaveBeenCalledWith(
-      expect.objectContaining({ strategy: 'task-foreground', outcome: 'completed' }),
+      expect.objectContaining({ strategy: 'task-background', outcome: 'completed' }),
     );
   });
 });
@@ -797,7 +802,7 @@ describe('Offline Artifact Transfer telemetry', () => {
     expect(reportArtifactTransfer).toHaveBeenCalledTimes(1);
     const report = reportArtifactTransfer.mock.calls[0][0] as Record<string, unknown>;
     expect(report).toMatchObject({
-      strategy: 'download-file-async',
+      strategy: 'task-background',
       artifact: 'layout',
       boardType: 'kilter',
       layoutId: 8,

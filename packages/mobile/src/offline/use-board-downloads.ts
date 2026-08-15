@@ -17,12 +17,14 @@ import { track } from '../lib/analytics';
 import { isOfflineEngineEnabled } from '../lib/offline-engine';
 import { getHttpClient } from '../lib/graphql/client';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
-import { triggerSync, drainMutationQueue } from './offline-sync-adapter';
+import { triggerSync, drainMutationQueue, hasUsableInternetConnection } from './offline-sync-adapter';
 import { useSnapshotSource } from './use-snapshot-source';
 import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
 
 /** Which surface flipped the switch, for the Toggled event (issue #4316). */
 export type ToggleSource = 'manage' | 'storage' | 'more' | 'adopt';
+
+const ARM_REACHABILITY_RETRY_DELAYS_MS = [750, 3_000] as const;
 
 /**
  * Enable one or more boards for offline and kick a single sync so their catalogs
@@ -72,6 +74,59 @@ export function useBoardDownloads() {
   // "Download" tap doing visibly nothing, which is what discovery nudges send people
   // straight into.
   const downloadKickPendingRef = useRef(false);
+  const schemaReadyRef = useRef(schemaReady);
+  schemaReadyRef.current = schemaReady;
+  const mountedRef = useRef(true);
+  const reachabilityProbeGenerationRef = useRef(0);
+  const reachabilityRetryTimeoutsRef = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      reachabilityProbeGenerationRef.current += 1;
+      for (const timeout of reachabilityRetryTimeoutsRef.current) clearTimeout(timeout);
+      reachabilityRetryTimeoutsRef.current.clear();
+    };
+  }, []);
+
+  const startDownloadCycleIfReachable = useCallback(() => {
+    const generation = reachabilityProbeGenerationRef.current + 1;
+    reachabilityProbeGenerationRef.current = generation;
+
+    function runProbe(attemptIndex: number): void {
+      const scheduleNext = (): void => {
+        if (!mountedRef.current || reachabilityProbeGenerationRef.current !== generation) return;
+        const delay = ARM_REACHABILITY_RETRY_DELAYS_MS[attemptIndex];
+        if (delay === undefined) return;
+        const timeout = setTimeout(() => {
+          reachabilityRetryTimeoutsRef.current.delete(timeout);
+          runProbe(attemptIndex + 1);
+        }, delay);
+        reachabilityRetryTimeoutsRef.current.add(timeout);
+      };
+
+      void hasUsableInternetConnection()
+        .then((isReachable) => {
+          if (!mountedRef.current || reachabilityProbeGenerationRef.current !== generation) return;
+          if (!isReachable) {
+            scheduleNext();
+            return;
+          }
+          // Invalidate any delayed callback before kicking. The cycle reads the
+          // current enabled-board setting, so one kick covers every arm that
+          // arrived while the reachability probe was pending.
+          reachabilityProbeGenerationRef.current += 1;
+          if (!schemaReadyRef.current) {
+            downloadKickPendingRef.current = true;
+            return;
+          }
+          startDownloadCycle();
+        })
+        .catch(scheduleNext);
+    }
+
+    runProbe(0);
+  }, [startDownloadCycle]);
 
   // The enable half both entry points share: flip the per-scope setting, persist
   // the attribution, emit Toggled, and snapshot the board identities while we
@@ -151,35 +206,29 @@ export function useBoardDownloads() {
   );
 
   /**
-   * Mark boards for offline WITHOUT kicking a sync cycle.
+   * Mark boards for offline and kick only when NetInfo currently sees a usable
+   * upstream connection.
    *
-   * Deliberately no `triggerSync`. Every surface that can fire while the device
-   * has no usable connection — the offline board picker, the offline climbs
-   * empty state — reaches this instead of `enableBoardsOffline`, because
-   * `onlineManager.isOnline()` is TRUE on captive-portal / dead-upstream wifi, so
-   * `triggerSync`'s own guard would not short-circuit: the cycle would run,
-   * every request would fail, and `recordRetryableBootstrapFailure` would spend
-   * one of the two `MAX_BOOTSTRAP_ATTEMPTS` per tap. Two taps and the scope is
-   * pinned to the multi-minute paged crawl forever (issue #4313).
+   * Every surface that can fire while the device has no usable connection — the
+   * offline board picker, the offline climbs empty state — reaches this instead
+   * of `enableBoardsOffline`. It probes NetInfo before triggering so a known
+   * captive portal/dead upstream does not start doomed work.
    *
-   * Nothing is lost by waiting: the scheduler's own connectivity trigger
-   * (`subscribeConnectivity` in the adapter) runs a cycle the moment the device
-   * reconnects, and that cycle reads the latest `syncEnabledBoards`. That
-   * trigger forwards NetInfo REACHABILITY rather than bare `isConnected`,
-   * precisely so the connection that produced this arm counts: on a captive
-   * portal `isConnected` never stops being true, so the reachability edge is the
-   * only signal that the upstream came back without the user changing networks
-   * or backgrounding the app. The board sits in the documented `'pending'` state
-   * until then, which the My Boards row already renders as "Waiting to
-   * download".
+   * The current-state probe closes a narrow lost-wake race: reconnect can land
+   * immediately before the setting write, when the scheduler sees no enabled
+   * board yet and there may be no second edge. A rejected or stale-negative read
+   * is retried twice; after that the durable setting remains armed and the
+   * scheduler's next reachability event reads it. Captive portals still do not
+   * start a cycle.
    */
   const armBoardsOffline = useCallback(
     (boards: UserBoard | UserBoard[], options?: { trigger?: OfflineDownloadTrigger; source?: ToggleSource }) => {
       const list = Array.isArray(boards) ? boards : [boards];
       if (list.length === 0) return;
       markBoardsEnabled(list, options);
+      startDownloadCycleIfReachable();
     },
-    [markBoardsEnabled],
+    [markBoardsEnabled, startDownloadCycleIfReachable],
   );
 
   return { enableBoardsOffline, armBoardsOffline, retryFastDownload };

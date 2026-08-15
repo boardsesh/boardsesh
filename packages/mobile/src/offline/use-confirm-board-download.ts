@@ -23,12 +23,14 @@ import {
   isBootstrapDone,
   isScopeDownloadComplete,
   readBootstrapRetryState,
+  restoreBootstrapRetryBudget,
 } from '@boardsesh/offline-sync';
 import { offlineBoardKeyForBoard, offlineBoardScopeForBoard, type OfflineDownloadTrigger } from '../settings';
 import { useConfirm } from '../providers/dialog-provider';
 import { formatBytes } from '../lib/format-bytes';
 import { useBoardDownloads, type ToggleSource } from './use-board-downloads';
 import { useSnapshotManifest } from './use-snapshot-manifest';
+import { notifyBootstrapMetadataChanged } from '../sync';
 
 export function useConfirmBoardDownload() {
   const { t, i18n } = useTranslation('boards');
@@ -57,11 +59,11 @@ export function useConfirmBoardDownload() {
       const scope = offlineBoardScopeForBoard(board);
       const key = offlineBoardKeyForBoard(board);
       // How big is this download? Only the snapshot path can answer honestly, and
-      // only for a scope that would actually bootstrap — a board toggled off and
-      // back on keeps its rows + checkpoint and resumes as a small delta, so
-      // quoting the full artifact size there would be wrong. estimateScopeDownload
-      // owns those rules (shared with the engine's own eligibility check); anything
-      // it can't vouch for falls back to the sizeless copy.
+      // only for a scope that would actually bootstrap. An incomplete board
+      // toggled off and back on can now heal from the artifact; if that size is
+      // quoted and accepted below, the one-shot user-request marker makes the
+      // engine honor the consent even on a metered link. Anything the estimator
+      // cannot vouch for falls back to the sizeless copy.
       //
       // Concurrent, not sequential: these are four independent reads and the
       // dialog opens behind them, so serialising them would show up as a stall on
@@ -102,6 +104,13 @@ export function useConfirmBoardDownload() {
         cancelLabel: t('mobile.manage.cancel'),
       });
       if (!confirmed) return false;
+      if (estimate.kind === 'snapshot' && hasBoardCheckpoint) {
+        // The dialog just disclosed the artifact size. Mark this partial-scope
+        // heal as explicitly requested so the engine does not quote ~128 MB and
+        // then silently choose 500-row paging solely because the link is metered.
+        await restoreBootstrapRetryBudget(db, key);
+        notifyBootstrapMetadataChanged({ scopeKey: key });
+      }
       // Enable + kick a download now via the shared hook (single-flight, reads the
       // latest syncEnabledBoards setting).
       enableBoardsOffline(board, options);

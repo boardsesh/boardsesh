@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const onlineManagerIsOnline = vi.fn(() => true);
+const onlineManagerSetOnline = vi.fn();
 // The adapter reads the persisted download-trigger attribution (issue #4316),
 // which pulls the settings store — and its native MMKV entry breaks the test
 // bundler's scan. Same in-memory stand-in as remove-offline-board.test.ts.
@@ -21,7 +22,10 @@ vi.mock('react-native-mmkv', () => {
 });
 
 vi.mock('@tanstack/react-query', () => ({
-  onlineManager: { isOnline: () => onlineManagerIsOnline() },
+  onlineManager: {
+    isOnline: () => onlineManagerIsOnline(),
+    setOnline: (online: boolean) => onlineManagerSetOnline(online),
+  },
 }));
 
 type AppStateListener = (state: string) => void;
@@ -87,6 +91,7 @@ import {
   triggerSync,
   pullSync,
   startBackgroundTracking,
+  hasUsableInternetConnection,
   subscribeMutationDelivery,
   reportScopeDownloadAbandoned,
   __resetCoverageVerdictDedupeForTests,
@@ -373,6 +378,16 @@ describe('scheduler trigger bindings', () => {
 
     netInfoListener?.({ isConnected: true, isInternetReachable: null });
     expect(callback).toHaveBeenCalledWith(true);
+  });
+
+  it('reads current upstream reachability for an already-consumed reconnect edge', async () => {
+    netInfoFetch.mockResolvedValueOnce({ isConnected: true, isInternetReachable: true, type: 'wifi' });
+    await expect(hasUsableInternetConnection()).resolves.toBe(true);
+    expect(onlineManagerSetOnline).toHaveBeenCalledWith(true);
+
+    netInfoFetch.mockResolvedValueOnce({ isConnected: true, isInternetReachable: false, type: 'wifi' });
+    await expect(hasUsableInternetConnection()).resolves.toBe(false);
+    expect(onlineManagerSetOnline).toHaveBeenCalledTimes(1);
   });
 
   it('binds schema-drift telemetry to Sentry with the offline-sync tags', () => {

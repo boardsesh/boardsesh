@@ -11,22 +11,13 @@ function captionFor(key: string, overrides: Record<string, boolean>, baseFlags: 
 }
 
 describe('buildFeatureFlagRows', () => {
-  it('reports an unresolved offline flag as effectively on', () => {
-    // The regression: `override ?? base ?? false` collapsed "unset" into an
-    // explicit false, so the screen said "off" for a flag that was on.
-    expect(captionFor('offline-board-downloads', {}, {})).toBe('Live default: not set · Effective: on');
-  });
-
-  it('reports an explicitly disabled offline flag as off', () => {
-    expect(captionFor('offline-board-downloads', {}, { 'offline-board-downloads': false })).toBe(
-      'Live default: off · Effective: off',
-    );
-  });
-
-  it('lets a tester override off beat an unresolved offline flag', () => {
-    expect(captionFor('offline-board-downloads', { 'offline-board-downloads': false }, {})).toBe(
-      'Live default: not set · Effective: off',
-    );
+  it('does not expose permanently shipped offline capabilities as overrides', () => {
+    const keys = FEATURE_FLAG_DEFINITIONS.map((definition) => definition.key);
+    expect(keys).not.toContain('offline-board-downloads');
+    expect(keys).not.toContain('offline-snapshot-bootstrap-v2');
+    expect(keys).not.toContain('offline-download-progress');
+    expect(keys).not.toContain('offline-download-task-api');
+    expect(keys).not.toContain('offline-download-background-session');
   });
 
   it('keeps ordinary flags on `=== true` semantics', () => {

@@ -171,6 +171,61 @@ describe('sync-scheduler', () => {
     expect(mockPullSync).toHaveBeenCalledTimes(2);
   });
 
+  it('runs a queued follow-up with the latest source, options, and enabled-board reader', async () => {
+    const firstDrain = deferred();
+    const firstQueue: DrainQueue = vi.fn(() => firstDrain.promise);
+    const latestQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+    const queryClient = createMockQueryClient();
+    const latestSnapshotSource = { fetchManifest: vi.fn() } as never;
+    const latestProgress = vi.fn();
+
+    triggerSync(mockDb, queryClient, mockGraphqlFetch, () => ['kilter:1:5'], firstQueue, {
+      snapshotSource: undefined,
+    });
+    await flush();
+
+    // This is the cold-start race: the replacement scheduler now has snapshot
+    // I/O, but the old implementation remembered only a boolean and replayed
+    // the first run's undefined source.
+    triggerSync(mockDb, queryClient, mockGraphqlFetch, () => ['tension:11:8'], latestQueue, {
+      snapshotSource: latestSnapshotSource,
+      onProgress: latestProgress,
+    });
+    firstDrain.resolve();
+    await flush();
+
+    expect(firstQueue).toHaveBeenCalledTimes(1);
+    expect(latestQueue).toHaveBeenCalledTimes(1);
+    expect(mockPullSync).toHaveBeenCalledTimes(2);
+    expect(mockPullSync.mock.calls[1]?.[3]).toEqual(
+      expect.objectContaining({
+        enabledBoards: ['tension:11:8'],
+        snapshotSource: latestSnapshotSource,
+        onProgress: latestProgress,
+      }),
+    );
+  });
+
+  it('coalesces queued replacements with latest-wins semantics', async () => {
+    const firstDrain = deferred();
+    const firstQueue: DrainQueue = vi.fn(() => firstDrain.promise);
+    const middleQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+    const latestQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+    const queryClient = createMockQueryClient();
+
+    triggerSync(mockDb, queryClient, mockGraphqlFetch, () => ['first'], firstQueue);
+    await flush();
+    triggerSync(mockDb, queryClient, mockGraphqlFetch, () => ['middle'], middleQueue);
+    triggerSync(mockDb, queryClient, mockGraphqlFetch, () => ['latest'], latestQueue);
+
+    firstDrain.resolve();
+    await flush();
+
+    expect(middleQueue).not.toHaveBeenCalled();
+    expect(latestQueue).toHaveBeenCalledTimes(1);
+    expect(mockPullSync.mock.calls[1]?.[3]).toEqual(expect.objectContaining({ enabledBoards: ['latest'] }));
+  });
+
   it('collapses many concurrent triggers into at most one follow-up', async () => {
     const drainGate = deferred();
     let drainCalls = 0;
@@ -325,6 +380,166 @@ describe('sync-scheduler', () => {
     expect(drainQueue).toHaveBeenCalledTimes(2);
   });
 
+  it('wakes exactly when an absolute snapshot retry deadline is due', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-14T00:00:00.000Z'));
+    try {
+      const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+      const fakeTriggers = createFakeTriggers();
+      let pullCalls = 0;
+      mockPullSync.mockImplementation(async (_db, _queryClient, _fetch, options) => {
+        pullCalls += 1;
+        if (pullCalls === 1) {
+          options.onBootstrapRetryDue?.({ scopeKey: 'kilter:1:5', retryAt: Date.now() + 2_000 });
+        }
+      });
+
+      const stop = startSyncScheduler(
+        mockDb,
+        createMockQueryClient(),
+        mockGraphqlFetch,
+        getEnabledBoards,
+        drainQueue,
+        fakeTriggers.triggers,
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mockPullSync).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(mockPullSync).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(mockPullSync).toHaveBeenCalledTimes(2);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retains later scope deadlines when the earliest retry wakes', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-14T00:00:00.000Z'));
+    try {
+      const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+      const fakeTriggers = createFakeTriggers();
+      mockPullSync.mockImplementationOnce(async (_db, _queryClient, _fetch, options) => {
+        options.onBootstrapRetryDue?.({ scopeKey: 'tension:11:8', retryAt: Date.now() + 5_000 });
+        options.onBootstrapRetryDue?.({ scopeKey: 'kilter:1:5', retryAt: Date.now() + 1_000 });
+      });
+
+      const stop = startSyncScheduler(
+        mockDb,
+        createMockQueryClient(),
+        mockGraphqlFetch,
+        getEnabledBoards,
+        drainQueue,
+        fakeTriggers.triggers,
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(mockPullSync).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(3_999);
+      expect(mockPullSync).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(mockPullSync).toHaveBeenCalledTimes(3);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lets an ad-hoc trigger arm the active scheduler retry timer', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-14T00:00:00.000Z'));
+    try {
+      const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+      const fakeTriggers = createFakeTriggers();
+      const stop = startSyncScheduler(
+        mockDb,
+        createMockQueryClient(),
+        mockGraphqlFetch,
+        getEnabledBoards,
+        drainQueue,
+        fakeTriggers.triggers,
+      );
+      await vi.advanceTimersByTimeAsync(0);
+
+      mockPullSync.mockImplementationOnce(async (_db, _queryClient, _fetch, options) => {
+        options.onBootstrapRetryDue?.({ scopeKey: 'kilter:1:5', retryAt: Date.now() + 500 });
+      });
+      triggerSync(mockDb, createMockQueryClient(), mockGraphqlFetch, getEnabledBoards, drainQueue);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mockPullSync).toHaveBeenCalledTimes(2);
+
+      await vi.advanceTimersByTimeAsync(500);
+      expect(mockPullSync).toHaveBeenCalledTimes(3);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels retry alarms when the scheduler stops', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-14T00:00:00.000Z'));
+    try {
+      const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+      const fakeTriggers = createFakeTriggers();
+      mockPullSync.mockImplementationOnce(async (_db, _queryClient, _fetch, options) => {
+        options.onBootstrapRetryDue?.({ scopeKey: 'kilter:1:5', retryAt: Date.now() + 1_000 });
+      });
+      const stop = startSyncScheduler(
+        mockDb,
+        createMockQueryClient(),
+        mockGraphqlFetch,
+        getEnabledBoards,
+        drainQueue,
+        fakeTriggers.triggers,
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      stop();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(mockPullSync).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retries a cycle error while the app remains foregrounded and connected', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-14T00:00:00.000Z'));
+    try {
+      const cycleError = new Error('paged request failed');
+      const drainQueue: DrainQueue = vi.fn().mockRejectedValueOnce(cycleError).mockResolvedValue(undefined);
+      const onCycleError = vi.fn();
+      const stop = startSyncScheduler(
+        mockDb,
+        createMockQueryClient(),
+        mockGraphqlFetch,
+        getEnabledBoards,
+        drainQueue,
+        createFakeTriggers().triggers,
+        { onCycleError },
+      );
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onCycleError).toHaveBeenCalledWith(cycleError);
+      expect(drainQueue).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(drainQueue).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(drainQueue).toHaveBeenCalledTimes(2);
+      expect(mockPullSync).toHaveBeenCalledTimes(1);
+
+      // The successful retry clears the generic alarm; it must not loop.
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(drainQueue).toHaveBeenCalledTimes(2);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('a trigger queued behind an in-flight cycle does NOT re-run after cleanup', async () => {
     // Sign-out / flag-flip stops the scheduler while a cycle is mid-pull; the
     // pending follow-up captured before the stop must die with it, or a "new"
@@ -357,6 +572,49 @@ describe('sync-scheduler', () => {
 
     // The queued follow-up must NOT have fired a second cycle.
     expect(mockPullSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands an in-flight cycle off to a replacement scheduler with its new snapshot source', async () => {
+    const oldPull = deferred();
+    mockPullSync.mockImplementationOnce(() => oldPull.promise).mockResolvedValue(undefined);
+    const oldTriggers = createFakeTriggers();
+    const newTriggers = createFakeTriggers();
+    const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+    const queryClient = createMockQueryClient();
+
+    const stopOld = startSyncScheduler(
+      mockDb,
+      queryClient,
+      mockGraphqlFetch,
+      () => ['kilter:1:5'],
+      drainQueue,
+      oldTriggers.triggers,
+      { snapshotSource: undefined },
+    );
+    await flush();
+    expect(mockPullSync).toHaveBeenCalledTimes(1);
+
+    stopOld();
+    const snapshotSource = { fetchManifest: vi.fn() } as never;
+    const stopNew = startSyncScheduler(
+      mockDb,
+      queryClient,
+      mockGraphqlFetch,
+      () => ['tension:11:8'],
+      drainQueue,
+      newTriggers.triggers,
+      { snapshotSource },
+    );
+    await flush();
+    expect(mockPullSync).toHaveBeenCalledTimes(1);
+
+    oldPull.resolve();
+    await flush();
+    expect(mockPullSync).toHaveBeenCalledTimes(2);
+    expect(mockPullSync.mock.calls[1]?.[3]).toEqual(
+      expect.objectContaining({ enabledBoards: ['tension:11:8'], snapshotSource }),
+    );
+    stopNew();
   });
 
   // Issue #4406. A removal's exclusive transaction latches its namespace for

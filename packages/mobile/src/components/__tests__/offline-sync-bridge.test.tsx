@@ -18,9 +18,8 @@ vi.mock('../../lib/analytics-offline-engine-state', () => ({
   registerOfflineEngineState: (state: string) => registerOfflineEngineStateMock(state),
 }));
 
-// The bridge is the flag boundary of the offline engine: scheduler only when
-// `offline-board-downloads` is on, a one-shot leftover drain when it's off
-// (queued writes must never strand), notifications always.
+// Native offline mode is baked on. The bridge still owns auth/schema lifecycle,
+// scheduler teardown, progress wiring, and notifications.
 
 const startSyncSchedulerStop = vi.fn();
 const startSyncSchedulerMock = vi.fn(() => startSyncSchedulerStop);
@@ -48,10 +47,8 @@ vi.mock('../../offline/offline-sync-adapter', () => ({
 // expo-file-system-backed implementation). vi.hoisted because vi.mock
 // factories are hoisted above regular top-level const declarations.
 const mobileSnapshotSourceStub = vi.hoisted(() => ({ tag: 'snapshot-source' }));
-const setSnapshotDownloadStrategyFromFlagsMock = vi.hoisted(() => vi.fn());
 vi.mock('../../offline/snapshot-source', () => ({
   mobileSnapshotSource: mobileSnapshotSourceStub,
-  setSnapshotDownloadStrategyFromFlags: (flags: unknown) => setSnapshotDownloadStrategyFromFlagsMock(flags),
 }));
 
 const getPendingCountMock = vi.fn(async (..._args: unknown[]) => 0);
@@ -147,7 +144,7 @@ vi.mock('@react-native-async-storage/async-storage', () => {
   };
 });
 
-import { OfflineSyncBridge, OfflineEngineFlagSync, FLAG_SETTLE_MS } from '../offline-sync-bridge';
+import { OfflineSyncBridge, OfflineEngineFlagSync } from '../offline-sync-bridge';
 import { FeatureFlagsProvider, type FeatureFlags } from '../../providers/feature-flags-provider';
 import { isOfflineEngineEnabled, __resetOfflineEngineForTests } from '../../lib/offline-engine';
 import { setSchemaReady, __resetSchemaReadyForTests } from '../../db/schema-ready';
@@ -179,7 +176,6 @@ function FlagSyncHarness({ flags }: { flags: FeatureFlags }) {
 
 const FLAG_ON: FeatureFlags = { 'offline-board-downloads': true };
 const FLAG_OFF: FeatureFlags = { 'offline-board-downloads': false };
-// PostHog never resolved — the #4312 cohort. Since the bake this reads as ON.
 const FLAG_UNSET: FeatureFlags = {};
 const FLAG_ON_WITH_SNAPSHOT: FeatureFlags = {
   'offline-board-downloads': true,
@@ -276,15 +272,15 @@ describe('OfflineSyncBridge — local user-data owner stamp', () => {
     expect(stampLocalUserIdMock).not.toHaveBeenCalled();
   });
 
-  it('runs regardless of the offline-downloads flag — the stamp guards reads, not downloads', async () => {
+  it('ignores a stale offline-downloads false value', async () => {
     assertLocalUserDataOwnerMock.mockResolvedValue('unstamped');
     render(<Harness flags={FLAG_OFF} queryClient={makeQueryClient()} />);
     await waitFor(() => expect(stampLocalUserIdMock).toHaveBeenCalledTimes(1));
   });
 });
 
-describe('OfflineSyncBridge — flag ON', () => {
-  it('starts the sync scheduler and skips the leftover drain', async () => {
+describe('OfflineSyncBridge — baked-on native engine', () => {
+  it('starts the sync scheduler', async () => {
     render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
     await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
     expect(getPendingCountMock).not.toHaveBeenCalled();
@@ -311,34 +307,9 @@ describe('OfflineSyncBridge — flag ON', () => {
     expect(startBackgroundTrackingStop).toHaveBeenCalledTimes(1);
   });
 
-  it('passes no snapshotSource when offline-snapshot-bootstrap is off', async () => {
-    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+  it('passes the mobile snapshot source even when legacy rollout flags are false', async () => {
+    render(<Harness flags={FLAG_OFF} queryClient={makeQueryClient()} />);
     await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
-    expect(getStartSyncSchedulerSnapshotSource()).toBeUndefined();
-  });
-
-  it('passes the mobile snapshot source when offline-snapshot-bootstrap is also on', async () => {
-    render(<Harness flags={FLAG_ON_WITH_SNAPSHOT} queryClient={makeQueryClient()} />);
-    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
-    expect(getStartSyncSchedulerSnapshotSource()).toBe(mobileSnapshotSourceStub);
-  });
-
-  it('pushes the resolved transport flags into the source WITHOUT churning its identity', async () => {
-    // Issue #4394. The source's object identity is a dependency of the
-    // scheduler effect, so a flag resolving mid-download must not rebuild it —
-    // which is exactly why the strategy rides module state instead of the memo.
-    render(
-      <Harness
-        flags={{ ...FLAG_ON_WITH_SNAPSHOT, 'offline-download-task-api': true }}
-        queryClient={makeQueryClient()}
-      />,
-    );
-    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
-
-    expect(setSnapshotDownloadStrategyFromFlagsMock).toHaveBeenCalledWith({
-      taskApiFlag: true,
-      backgroundSessionFlag: undefined,
-    });
     expect(getStartSyncSchedulerSnapshotSource()).toBe(mobileSnapshotSourceStub);
   });
 
@@ -371,35 +342,6 @@ describe('OfflineSyncBridge — flag ON', () => {
   });
 });
 
-describe('OfflineSyncBridge — flag OFF', () => {
-  it('never starts the scheduler; with an empty queue it does not drain', async () => {
-    render(<Harness flags={FLAG_OFF} queryClient={makeQueryClient()} />);
-    await waitFor(() => expect(getPendingCountMock).toHaveBeenCalledTimes(1));
-    expect(startSyncSchedulerMock).not.toHaveBeenCalled();
-    expect(drainMutationQueueMock).not.toHaveBeenCalled();
-  });
-
-  it('drains leftover queued writes exactly once (the non-stranding rule)', async () => {
-    getPendingCountMock.mockResolvedValue(3);
-    render(<Harness flags={FLAG_OFF} queryClient={makeQueryClient()} />);
-    await waitFor(() => expect(drainMutationQueueMock).toHaveBeenCalledTimes(1));
-    expect(startSyncSchedulerMock).not.toHaveBeenCalled();
-  });
-
-  it('still sets up notification handlers (notifications are not flag-gated)', async () => {
-    render(<Harness flags={FLAG_OFF} queryClient={makeQueryClient()} />);
-    await waitFor(() => expect(setupNotificationHandlersMock).toHaveBeenCalledTimes(1));
-  });
-
-  it('still starts background tracking (not flag-gated — covers the leftover drain too) and tears it down on unmount', async () => {
-    const { unmount } = render(<Harness flags={FLAG_OFF} queryClient={makeQueryClient()} />);
-    await waitFor(() => expect(startBackgroundTrackingMock).toHaveBeenCalledTimes(1));
-    expect(startBackgroundTrackingStop).not.toHaveBeenCalled();
-    unmount();
-    expect(startBackgroundTrackingStop).toHaveBeenCalledTimes(1);
-  });
-});
-
 describe('OfflineSyncBridge — auth gating', () => {
   it('signed out: no scheduler, no leftover drain, no sync traffic at all', async () => {
     isAuthenticated = false;
@@ -414,8 +356,8 @@ describe('OfflineSyncBridge — auth gating', () => {
   });
 });
 
-describe('OfflineSyncBridge — mid-session flag flips', () => {
-  it('ON→OFF stops the scheduler and invalidates the local-first read caches', async () => {
+describe('OfflineSyncBridge — legacy flag changes', () => {
+  it('does not restart or stop the scheduler when stale PostHog values change', async () => {
     const queryClient = makeQueryClient();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const { rerender } = render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
@@ -423,41 +365,18 @@ describe('OfflineSyncBridge — mid-session flag flips', () => {
 
     rerender(<Harness flags={FLAG_OFF} queryClient={queryClient} />);
 
-    await waitFor(() => expect(startSyncSchedulerStop).toHaveBeenCalledTimes(1));
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['infiniteSearchClimbs'] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['searchClimbsCount'] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['climb'] });
-  });
-
-  it('OFF→ON starts the scheduler without invalidating anything', async () => {
-    const queryClient = makeQueryClient();
-    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
-    const { rerender } = render(<Harness flags={FLAG_OFF} queryClient={queryClient} />);
-    await waitFor(() => expect(getPendingCountMock).toHaveBeenCalled());
-
-    rerender(<Harness flags={FLAG_ON} queryClient={queryClient} />);
-
     await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
+    expect(startSyncSchedulerStop).not.toHaveBeenCalled();
     expect(invalidateSpy).not.toHaveBeenCalled();
   });
 });
 
-// Issue #4315: a kill-switched user's queued writes are exactly as stranded as a
-// flag-on user's — and sign-out deletes them all — so the launch gauge has to
-// run on both sides of the flag, and never on a signed-out launch.
 describe('OfflineSyncBridge — outbox backlog gauge', () => {
-  it('reads the backlog once with the flag ON', async () => {
+  it('reads the backlog once for a signed-in launch', async () => {
     render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
 
     await waitFor(() => expect(reportOutboxBacklogOnceMock).toHaveBeenCalledTimes(1));
     expect(reportOutboxBacklogOnceMock).toHaveBeenCalledWith(fakeDb);
-  });
-
-  it('reads the backlog with the flag OFF too', async () => {
-    render(<Harness flags={FLAG_OFF} queryClient={makeQueryClient()} />);
-
-    await waitFor(() => expect(reportOutboxBacklogOnceMock).toHaveBeenCalledTimes(1));
   });
 
   it('does not read anything while signed out', async () => {
@@ -468,13 +387,13 @@ describe('OfflineSyncBridge — outbox backlog gauge', () => {
     expect(reportOutboxBacklogOnceMock).not.toHaveBeenCalled();
   });
 
-  it('does not re-read when the flag flips mid-session', async () => {
+  it('does not re-read when unrelated feature flags change', async () => {
     const queryClient = makeQueryClient();
     const { rerender } = render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
     await waitFor(() => expect(reportOutboxBacklogOnceMock).toHaveBeenCalledTimes(1));
 
     rerender(<Harness flags={FLAG_OFF} queryClient={queryClient} />);
-    await waitFor(() => expect(getPendingCountMock).toHaveBeenCalled());
+    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
 
     expect(reportOutboxBacklogOnceMock).toHaveBeenCalledTimes(1);
   });
@@ -497,7 +416,7 @@ describe('OfflineSyncBridge — outbox backlog gauge', () => {
 // The launch gate opens after the FIRST init attempt whatever it did, so on a
 // contended launch SQLiteProvider renders this bridge against a connection whose
 // migrations never ran — no board_climb_grades, no characteristics column. Both
-// branches of the sync effect WRITE, so both have to wait.
+// the sync effect writes, so it has to wait.
 describe('OfflineSyncBridge — schema readiness gating', () => {
   it('does not start the scheduler against a database whose migrations have not run', async () => {
     setSchemaReady(false);
@@ -519,22 +438,10 @@ describe('OfflineSyncBridge — schema readiness gating', () => {
 
     await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
   });
-
-  it('holds the flag-off leftover drain until the schema is stamped', async () => {
-    setSchemaReady(false);
-    getPendingCountMock.mockResolvedValue(3);
-    render(<Harness flags={FLAG_OFF} queryClient={makeQueryClient()} />);
-    await waitFor(() => expect(setupNotificationHandlersMock).toHaveBeenCalledTimes(1));
-    expect(getPendingCountMock).not.toHaveBeenCalled();
-
-    act(() => setSchemaReady(true));
-
-    await waitFor(() => expect(drainMutationQueueMock).toHaveBeenCalledTimes(1));
-  });
 });
 
-describe('OfflineSyncBridge — flag never resolved', () => {
-  it('runs the engine anyway: scheduler starts and the module store flips on', async () => {
+describe('OfflineSyncBridge — no PostHog values', () => {
+  it('starts the scheduler and publishes the baked-on module state', async () => {
     render(<Harness flags={FLAG_UNSET} queryClient={makeQueryClient()} />);
     await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(isOfflineEngineEnabled()).toBe(true));
@@ -543,58 +450,20 @@ describe('OfflineSyncBridge — flag never resolved', () => {
 });
 
 describe('OfflineEngineFlagSync — offline_engine_state super property', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('registers flag-on for a resolved true, without waiting', () => {
-    render(<FlagSyncHarness flags={FLAG_ON} />);
-    expect(registerOfflineEngineStateMock).toHaveBeenCalledWith('flag-on');
-  });
-
-  it('registers flag-off for a resolved false', () => {
+  it('registers baked-on immediately even when a stale flag says false', () => {
     render(<FlagSyncHarness flags={FLAG_OFF} />);
-    expect(registerOfflineEngineStateMock).toHaveBeenCalledWith('flag-off');
-  });
-
-  it('registers default-on only once the flag has failed to resolve for FLAG_SETTLE_MS', () => {
-    render(<FlagSyncHarness flags={FLAG_UNSET} />);
-    expect(registerOfflineEngineStateMock).not.toHaveBeenCalled();
-
-    act(() => {
-      vi.advanceTimersByTime(FLAG_SETTLE_MS);
-    });
-    expect(registerOfflineEngineStateMock).toHaveBeenCalledWith('default-on');
-  });
-
-  it('never registers default-on when the flag resolves inside the settle window', () => {
-    const { rerender } = render(<FlagSyncHarness flags={FLAG_UNSET} />);
-    act(() => {
-      vi.advanceTimersByTime(FLAG_SETTLE_MS / 2);
-    });
-
-    rerender(<FlagSyncHarness flags={FLAG_ON} />);
-    act(() => {
-      vi.advanceTimersByTime(FLAG_SETTLE_MS);
-    });
-
-    expect(registerOfflineEngineStateMock).toHaveBeenCalledWith('flag-on');
-    expect(registerOfflineEngineStateMock).not.toHaveBeenCalledWith('default-on');
+    expect(registerOfflineEngineStateMock).toHaveBeenCalledWith('baked-on');
   });
 });
 
 describe('OfflineEngineFlagSync', () => {
-  it('publishes the flag decision to the module-level store, tracking flips', async () => {
+  it('publishes true to the module store and ignores legacy flag flips', async () => {
     expect(isOfflineEngineEnabled()).toBe(false);
     const queryClient = makeQueryClient();
     const { rerender } = render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
     await waitFor(() => expect(isOfflineEngineEnabled()).toBe(true));
 
     rerender(<Harness flags={FLAG_OFF} queryClient={queryClient} />);
-    await waitFor(() => expect(isOfflineEngineEnabled()).toBe(false));
+    await waitFor(() => expect(isOfflineEngineEnabled()).toBe(true));
   });
 });

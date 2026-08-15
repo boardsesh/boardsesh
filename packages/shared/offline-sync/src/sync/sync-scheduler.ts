@@ -10,6 +10,7 @@ import {
   type CoverageEvaluatedReporter,
   type BootstrapRetryScheduledReporter,
   type BootstrapPathRecoveredReporter,
+  type BootstrapRetryWakeInfo,
 } from './pull-client';
 import type { SnapshotSource, SnapshotBootstrapErrorReporter } from './snapshot-bootstrap';
 import { onPurgeSettled } from '../mutation-queue/drainer';
@@ -93,7 +94,42 @@ export type SchedulerOptions = {
 };
 
 let isSyncing = false;
-let pendingTrigger = false;
+
+type SyncRunRequest = {
+  db: OfflineDatabase;
+  queryClient: QueryInvalidator;
+  graphqlFetch: GraphqlFetch;
+  getEnabledBoards: () => string[];
+  drainQueue: DrainQueue;
+  options?: SchedulerOptions;
+  schedulerOwner?: symbol;
+};
+
+// Latest-wins, not a boolean. A replacement scheduler can be mounted with a
+// newly available snapshot source while the old cycle is still running; keeping
+// only "something happened" made the follow-up reuse the OLD options and start
+// the 500-row crawl anyway.
+let pendingRunRequest: SyncRunRequest | null = null;
+
+type RetryWakeCoordinator = {
+  db: OfflineDatabase;
+  owner: symbol;
+  schedule(info: BootstrapRetryWakeInfo): void;
+  clear(scopeKey: string): void;
+  dispose(): void;
+};
+
+// One mobile bridge owns the scheduler, while ad-hoc download taps call
+// `triggerSync`. Keeping the coordinator here lets either path arm the same
+// timer without creating competing alarms.
+let activeRetryWakeCoordinator: RetryWakeCoordinator | null = null;
+
+// A cycle can fail outside snapshot bootstrap (queue drain, deletions, paged
+// GraphQL, SQLite). Without its own wake, a foregrounded connected app had no
+// reason to try again. Share the same exact-deadline coordinator so these
+// failures cannot recreate the indefinite "Waiting to download" state.
+const CYCLE_ERROR_RETRY_KEY = '__sync-cycle-error__';
+const CYCLE_ERROR_RETRY_DELAY_MS = 30_000;
 
 /**
  * Is a drain+pull cycle running right now? The scheduler's single-flight latch,
@@ -109,26 +145,22 @@ export function isSyncInFlight(): boolean {
 
 export function __resetSyncSchedulerStateForTests(): void {
   isSyncing = false;
-  pendingTrigger = false;
+  pendingRunRequest = null;
+  activeRetryWakeCoordinator?.dispose();
+  activeRetryWakeCoordinator = null;
 }
 
 // Each cycle does drain-first (push local mutations) then pull (fetch server
 // state), so a write that failed to send is reattempted on every sync trigger
 // — not just on the next user write (B12). Single-flight: concurrent triggers
 // collapse into one in-flight run plus at most one queued follow-up.
-async function runSync(
-  db: OfflineDatabase,
-  queryClient: QueryInvalidator,
-  graphqlFetch: GraphqlFetch,
-  getEnabledBoards: () => string[],
-  drainQueue: DrainQueue,
-  options?: SchedulerOptions,
-): Promise<void> {
+async function runSync(request: SyncRunRequest): Promise<void> {
   if (isSyncing) {
-    pendingTrigger = true;
+    pendingRunRequest = request;
     return;
   }
 
+  const { db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, options } = request;
   isSyncing = true;
   try {
     // Push first so the subsequent pull reflects our own just-flushed writes.
@@ -148,8 +180,26 @@ async function runSync(
       onBootstrapRetryScheduled: options?.onBootstrapRetryScheduled,
       onBootstrapPathRecovered: options?.onBootstrapPathRecovered,
       isOnUnmeteredNetwork: options?.isOnUnmeteredNetwork,
+      // Lifecycle-only callbacks. The active scheduler may be newer than this
+      // run (for example after a React effect replacement), so resolve it at
+      // callback time and require the same database before handing it a wake.
+      onBootstrapRetryDue: (info) => {
+        if (activeRetryWakeCoordinator?.db === db) activeRetryWakeCoordinator.schedule(info);
+      },
+      onBootstrapRetryCleared: (scopeKey) => {
+        if (activeRetryWakeCoordinator?.db === db) activeRetryWakeCoordinator.clear(scopeKey);
+      },
     });
+    if (activeRetryWakeCoordinator?.db === db) {
+      activeRetryWakeCoordinator.clear(CYCLE_ERROR_RETRY_KEY);
+    }
   } catch (error) {
+    if (activeRetryWakeCoordinator?.db === db) {
+      activeRetryWakeCoordinator.schedule({
+        scopeKey: CYCLE_ERROR_RETRY_KEY,
+        retryAt: Date.now() + CYCLE_ERROR_RETRY_DELAY_MS,
+      });
+    }
     options?.onCycleError?.(error);
     // pullSync only emits its terminal `idle` frame on success, so a throw mid-pull
     // would leave the Settings status row stuck on "Downloading…". Emit idle here so
@@ -162,10 +212,9 @@ async function runSync(
     // follow-up run, even if the cycle above threw. The try/catch above
     // swallows cycle errors so we always reach here; consume the flag and
     // re-run once. (runSync is async, so it can't throw synchronously here.)
-    if (pendingTrigger) {
-      pendingTrigger = false;
-      void runSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, options);
-    }
+    const nextRequest = pendingRunRequest;
+    pendingRunRequest = null;
+    if (nextRequest) void runSync(nextRequest);
   }
 }
 
@@ -177,7 +226,15 @@ export function triggerSync(
   drainQueue: DrainQueue,
   options?: SchedulerOptions,
 ): void {
-  void runSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, options);
+  void runSync({
+    db,
+    queryClient,
+    graphqlFetch,
+    getEnabledBoards,
+    drainQueue,
+    options,
+    schedulerOwner: activeRetryWakeCoordinator?.db === db ? activeRetryWakeCoordinator.owner : undefined,
+  });
 }
 
 export function startSyncScheduler(
@@ -191,18 +248,82 @@ export function startSyncScheduler(
 ): () => void {
   let foregroundTimeout: ReturnType<typeof setTimeout> | null = null;
   let wasConnected = true;
+  let stopped = false;
+  const schedulerOwner = Symbol('sync-scheduler');
+
+  const schedulerRequest = (): SyncRunRequest => ({
+    db,
+    queryClient,
+    graphqlFetch,
+    getEnabledBoards,
+    drainQueue,
+    options,
+    schedulerOwner,
+  });
+  const runScheduledSync = (): void => {
+    if (!stopped) void runSync(schedulerRequest());
+  };
+
+  // Snapshot cooldowns are persisted, but persistence alone does not wake an
+  // app that stays foregrounded and connected. Keep one exact-deadline timer,
+  // retaining every scope so the earliest wake cannot erase a later one.
+  const retryDeadlines = new Map<string, number>();
+  let retryTimeout: ReturnType<typeof setTimeout> | null = null;
+  const armNextRetryWake = (): void => {
+    if (retryTimeout !== null) {
+      clearTimeout(retryTimeout);
+      retryTimeout = null;
+    }
+    if (stopped || retryDeadlines.size === 0) return;
+    let earliestDeadline = Number.POSITIVE_INFINITY;
+    for (const deadline of retryDeadlines.values()) earliestDeadline = Math.min(earliestDeadline, deadline);
+    retryTimeout = setTimeout(
+      () => {
+        retryTimeout = null;
+        const firedAt = Date.now();
+        for (const [scopeKey, deadline] of retryDeadlines) {
+          if (deadline <= firedAt) retryDeadlines.delete(scopeKey);
+        }
+        // Preserve later scopes before starting a cycle; that cycle may replace
+        // or clear any deadline it observes from SQLite.
+        armNextRetryWake();
+        runScheduledSync();
+      },
+      Math.max(0, earliestDeadline - Date.now()),
+    );
+  };
+  const retryCoordinator: RetryWakeCoordinator = {
+    db,
+    owner: schedulerOwner,
+    schedule({ scopeKey, retryAt }) {
+      if (stopped || !Number.isFinite(retryAt)) return;
+      retryDeadlines.set(scopeKey, retryAt);
+      armNextRetryWake();
+    },
+    clear(scopeKey) {
+      if (!retryDeadlines.delete(scopeKey)) return;
+      armNextRetryWake();
+    },
+    dispose() {
+      if (retryTimeout !== null) clearTimeout(retryTimeout);
+      retryTimeout = null;
+      retryDeadlines.clear();
+    },
+  };
+  activeRetryWakeCoordinator?.dispose();
+  activeRetryWakeCoordinator = retryCoordinator;
 
   const unsubscribeForeground = triggers.subscribeForeground(() => {
     if (foregroundTimeout) clearTimeout(foregroundTimeout);
     foregroundTimeout = setTimeout(() => {
       foregroundTimeout = null;
-      void runSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, options);
+      runScheduledSync();
     }, FOREGROUND_DEBOUNCE_MS);
   });
 
   const unsubscribeConnectivity = triggers.subscribeConnectivity((isConnected) => {
     if (!wasConnected && isConnected) {
-      void runSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, options);
+      runScheduledSync();
     }
     wasConnected = isConnected;
   });
@@ -227,14 +348,17 @@ export function startSyncScheduler(
       (scopeKey) => purgeNamespaceForScopeKey(scopeKey) === namespace,
     );
     if (!isNamespaceStillWanted) return;
-    void runSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, options);
+    runScheduledSync();
   });
 
   // Run initial sync immediately
-  void runSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, options);
+  runScheduledSync();
 
   return () => {
+    stopped = true;
     if (foregroundTimeout) clearTimeout(foregroundTimeout);
+    retryCoordinator.dispose();
+    if (activeRetryWakeCoordinator === retryCoordinator) activeRetryWakeCoordinator = null;
     unsubscribeForeground();
     unsubscribeConnectivity();
     unsubscribePurge();
@@ -242,6 +366,6 @@ export function startSyncScheduler(
     // cycle's finally-block re-run AFTER this scheduler stopped (sign-out,
     // flag flip). React runs this cleanup before any replacement scheduler's
     // effect, so a remounting bridge can't lose its own trigger here.
-    pendingTrigger = false;
+    if (pendingRunRequest?.schedulerOwner === schedulerOwner) pendingRunRequest = null;
   };
 }

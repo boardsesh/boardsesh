@@ -205,17 +205,12 @@ registerOfflineOperation<BoardseshGradesForAnglesVariables, BoardseshGradesForAn
  * through to plain HTTP for any unregistered document, so it's a safe drop-in for
  * `getHttpClient().request`.
  *
- * Reading data that's ALREADY on disk is never gated by the
- * `offline-board-downloads` flag — the same rule the mutation drainer follows
- * (offline-sync-bridge.tsx: the flag gates NEW offline work, never the draining
- * of existing work). So whenever the network is down we serve a downloaded board
- * from local SQLite — or the per-op empty fallback when nothing is downloaded —
- * regardless of the flag. The flag only decides whether we ALSO short-circuit to
- * local while ONLINE (a latency optimization); with it off, an online request is
- * a straight network passthrough that never even probes local, so a killed
- * device keeps exactly the pre-offline behavior and its cost. Since #4312 that
- * is the minority — an unresolved flag reads as ON, so the online local-first
- * probe is now the default. It stays cheap for a user with nothing downloaded:
+ * Native offline mode is permanently enabled, so whenever the network is down
+ * we serve a downloaded board from local SQLite — or the per-op empty fallback
+ * when nothing is downloaded. The platform gate also enables the online
+ * local-first latency optimization; Expo web publishes the gate as false and
+ * uses straight network passthrough. The native probe stays cheap for a user
+ * with nothing downloaded:
  * `canServeLocal` short-circuits on the in-memory enabled-boards setting before
  * it ever touches SQLite (see db/queries/board-download-status.ts).
  *
