@@ -89,8 +89,10 @@ export const BOOTSTRAP_DONE_PREFIX = 'bootstrap-done:';
 const EPOCH_WATERMARK: SyncCheckpoint = { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' };
 
 // Only snake_case identifiers may be spliced into the INSERT/SELECT column list.
-// The names come from PRAGMA table_info over our own DDL (trusted), but validating
-// keeps the string-built SQL provably injection-free — same guard the export uses.
+// Every offline DDL column uses that contract (`board_type`, never the app-level
+// `boardType`), and the snapshot exporter enforces the same regex. The names come
+// from PRAGMA table_info over our own DDL (trusted), but validating keeps the
+// string-built SQL provably injection-free.
 const SAFE_IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
 
 /** Byte progress for one artifact download, as the transport observes it. */
@@ -350,6 +352,11 @@ export const BOOTSTRAP_METADATA_PATTERNS = [
   `${BOARD_STATS_CHECKPOINT_PREFIX}*`,
   `${SCOPE_COMPLETE_PREFIX}*`,
 ] as const;
+
+// GRADES_BOOTSTRAP_ATTEMPTS_PREFIX is intentionally absent. That independent
+// retry budget is read on demand by the grades importer and is not a field in
+// BootstrapScopeMetadata; pulling it into this UI batch would create phantom
+// metadata rows for scopes whose whole-layout bootstrap state is untouched.
 
 // GLOB's literal-prefix optimization uses sync_meta's binary primary-key index.
 // SQLite's default case-insensitive LIKE cannot use that index and scans every

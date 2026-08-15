@@ -377,7 +377,8 @@ crawl — and `onScopeDownloadComplete` attributes it honestly instead of report
 `method: 'snapshot'` for a run that actually paged. The marker prefixes stay package-internal (not
 re-exported from `index.ts`). `BOOTSTRAP_METADATA_QUERY` is built from `BOOTSTRAP_METADATA_PATTERNS` rather
 than hand-written, and a test asserts the placeholder count matches, so adding a prefix cannot silently
-drop one; the heal marker is the only one with no UI and stays out of that list.
+drop one. Grades-import attempt counts are engine-only too: they are read by exact key when that importer
+runs and intentionally stay out of the whole-layout UI metadata query.
 
 Per-stage outcomes, copied from the `runBootstrapPhase` doc comment (the source of truth — keep this in
 sync if the code comment changes):
