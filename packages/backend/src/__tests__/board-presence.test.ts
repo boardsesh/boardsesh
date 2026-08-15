@@ -3197,11 +3197,20 @@ describe('board-presence stats cache (Redis)', () => {
 
   // Polls the Redis cache key directly (never the rate-limited GraphQL
   // query) so a several-second debounce wait can't trip applyRateLimit.
+  //
+  // The deadline is generous on purpose. This is a *poll*: it returns the
+  // instant the predicate matches, so a longer budget costs nothing when the
+  // debounced publish lands promptly and only buys headroom when it doesn't.
+  // 6s was thin enough that a contended CI runner missed it deterministically
+  // once `saveTick` gained a rate limit — that added a Redis round-trip to the
+  // very path these two tests time, and they call saveTick nine times. Failing
+  // on a machine being slow is not the behaviour worth asserting here; whether
+  // the cache eventually reflects the tick is.
   async function pollCacheUntil(
     testRedisClient: Redis,
     boardId: number,
     predicate: (stats: BoardPresenceStats) => boolean,
-    timeoutMs = 6000,
+    timeoutMs = 20_000,
   ): Promise<BoardPresenceStats | null> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
