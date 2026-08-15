@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-15T06:10:59.770Z",
+  "generatedAt": "2026-08-15T06:30:54.301Z",
   "entries": [
+    {
+      "prNumber": 4467,
+      "category": "improved",
+      "title": "The website is now the fast front door — browse and share climbs there, and do your climbing in the app.",
+      "mergedAt": "2026-08-15T06:29:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4467"
+    },
     {
       "prNumber": 4471,
       "category": "new",

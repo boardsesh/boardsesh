@@ -13,6 +13,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Improved
 
+- The website is now the fast front door — browse and share climbs there, and do your climbing in the app. ([#4467](https://github.com/boardsesh/boardsesh/pull/4467))
 - Board pages slim down to the essentials — browsing and climbing live in the app now. ([#4448](https://github.com/boardsesh/boardsesh/pull/4448))
   Every old board link still works: liked climbs, logbooks and playlists send you to the right place, and creating or remixing a climb opens the app on the board you were already looking at.
   Importing MoonBoard screenshots moved to its own page — pick your board and drop the shots in.
