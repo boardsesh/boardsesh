@@ -721,7 +721,19 @@ jobs:
               | grep -oE 'href="[^"]+"' | head -n1 | cut -d'"' -f2)
             [ "$href" = "/manifest.json" ] || { echo "  manifest href is '$href', expected /manifest.json"; return 1; }
             local out; out=$(curl -sS --max-time 20 -o /dev/null -w '%{http_code} %{content_type}' "$base$href")
-            echo "$out" | grep -q '^200 ' && echo "$out" | grep -qi 'application/json'
+            echo "$out" | grep -q '^200 ' || { echo "  manifest fetch: $out"; return 1; }
+            echo "$out" | grep -qi 'application/json' || { echo "  manifest content-type: $out"; return 1; }
+            # Read the body too. The href and content-type can both be right
+            # while start_url sits outside scope — a manifest that parses
+            # cleanly and still never offers the install prompt.
+            local body; body=$(curl -sS --max-time 20 "$base$href")
+            echo "$body" | node -e '
+              const manifest = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+              if (manifest.start_url !== "/" || manifest.scope !== "/") {
+                console.error(`  manifest start_url is "${manifest.start_url}" and scope is "${manifest.scope}"; expected "/" for both`);
+                process.exit(1);
+              }
+            '
           }
 
           retry "root / → 200 text/html"                 check_root
@@ -730,7 +742,7 @@ jobs:
           retry "wasm binary → 200 wasm/octet-stream"     check_wasm
           retry "index.html is NOT immutable-cached"      check_index_not_immutable
           retry "hashed _expo asset is immutable-cached"  check_hashed_asset_immutable
-          retry "PWA manifest link → 200 application/json"  check_manifest_link
+          retry "PWA manifest → JSON with start_url/scope /"  check_manifest_link
 
       - name: Install Playwright chromium
         run: cd packages/web && bunx playwright install --with-deps chromium

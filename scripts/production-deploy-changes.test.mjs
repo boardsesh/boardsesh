@@ -109,6 +109,17 @@ void test('keeps production deploy unit tests CI-only', () => {
   }
 });
 
+void test('treats every input of the app.boardsesh.com export as app-affecting', () => {
+  // The export recipe and the manifest patcher it shells out to both decide what
+  // the subdomain serves, so a change to either has to fire deploy-app-web (and
+  // with it the post-deploy manifest smoke). A patcher-only PR would otherwise
+  // merge green, deploy nothing, and leave the author believing it shipped.
+  // W-24 / #4438.
+  for (const filePath of ['scripts/build-expo-web-export.sh', 'scripts/lib/patch-expo-web-pwa-manifest.mjs']) {
+    assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: false, app: true });
+  }
+});
+
 void test('keeps every backend build and runtime control path backend-affecting', () => {
   for (const filePath of ['Dockerfile.backend', 'railway.toml', 'bun.lock', 'package.json']) {
     assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: true, app: false });

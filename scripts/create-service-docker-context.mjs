@@ -28,16 +28,23 @@ const services = {
   },
   web: {
     dockerfile: 'Dockerfile.web',
-    // @boardsesh/mobile rides along because Dockerfile.web's builder stage runs
-    // the static Expo web export (served by Next at /app); the union walk pulls
-    // in the mobile app plus its transitive workspace deps.
+    // @boardsesh/mobile used to ride along because Dockerfile.web's builder
+    // stage ran the static Expo web export. W-24 (#4438) deleted that step, so
+    // the mobile workspace and the export script below are now dead weight in
+    // this context — retained only until W-26 (#4442) does the slimming pass.
+    // Nothing in the image invokes either.
     rootPackageNames: ['@boardsesh/web', '@boardsesh/mobile'],
-    // Repo-root scripts the web image build needs, copied under source/scripts:
-    // the Expo web export recipe the Dockerfile invokes, plus the tailscale
-    // helper that packages/web/scripts/dev-with-tailscale.ts imports — Next's
-    // production type-check covers packages/web/scripts, so the module must
-    // resolve inside the build context.
-    extraSourceFiles: ['scripts/build-expo-web-export.sh', 'scripts/lib/tailscale-hostname.ts'],
+    // Repo-root scripts copied under source/scripts. `tailscale-hostname.ts` is
+    // load-bearing: packages/web/scripts/dev-with-tailscale.ts imports it and
+    // Next's production type-check covers packages/web/scripts, so the module
+    // must resolve inside the build context. The export script (and the manifest
+    // patcher it shells out to) is no longer invoked by the Dockerfile — kept as
+    // a pair so the copied script stays runnable, and both go in W-26 (#4442).
+    extraSourceFiles: [
+      'scripts/build-expo-web-export.sh',
+      'scripts/lib/patch-expo-web-pwa-manifest.mjs',
+      'scripts/lib/tailscale-hostname.ts',
+    ],
   },
   sync: {
     dockerfile: 'Dockerfile.sync',
@@ -68,15 +75,23 @@ const ignoredFileNames = new Set(['.DS_Store']);
 // without also dropping `packages/web/app` / `packages/mobile/app`), these match
 // the exact path from the repo root.
 //
-// `packages/web/public/app` is the default local output of
-// `vp run build:expo-web` (and of `vp run dev:mobile:web-static`). This
-// exclusion is load-bearing on its own since W-24 (#4438): the builder stage no
-// longer rebuilds the export, so a stale local copy riding into the context
-// would be copied verbatim to the runner's `public/` and served as real files
-// under /app — the exact second-SPA-copy problem the retirement closes, and the
-// one #3795 must not reintroduce. Guarded by
-// scripts/__tests__/dockerfile-web-no-expo-export.test.ts.
-const ignoredRepoRelativePaths = new Set(['packages/web/public/app']);
+// These are the two DEFAULT_OUTPUT_DIR values of
+// scripts/build-expo-web-export.sh: `packages/web/public/app` (the default
+// baseUrl-/app export, written by `vp run build:expo-web` and
+// `vp run dev:mobile:web-static`) and `packages/web/public/app-standalone` (the
+// --subdomain export, the exact command production-deploy.yml runs and the
+// natural way to verify a change locally). Both are gitignored, so a stale copy
+// sits in a working tree invisibly.
+//
+// This exclusion is load-bearing on its own since W-24 (#4438): the builder
+// stage no longer rebuilds any export, so a stale local copy riding into the
+// context would be copied verbatim to the runner's `public/` and served as real
+// files under /app or /app-standalone — the exact second-SPA-copy problem the
+// retirement closes, and the one #3795 must not reintroduce. The walk is a
+// plain fs walk with no gitignore awareness, so the exclusion has to be
+// explicit. Guarded by scripts/__tests__/dockerfile-web-no-expo-export.test.ts,
+// which reads the export script's own defaults rather than trusting this list.
+const ignoredRepoRelativePaths = new Set(['packages/web/public/app', 'packages/web/public/app-standalone']);
 
 const toPosix = (filePath) => filePath.split(sep).join(posix.sep);
 const readJson = (filePath) => JSON.parse(readFileSync(filePath, 'utf8'));
@@ -340,5 +355,6 @@ export {
   getServiceSourcePackageDirs,
   getWorkspacePackageJsonPaths,
   getWorkspacePackageMap,
+  ignoredRepoRelativePaths,
   services,
 };

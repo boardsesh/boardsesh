@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { join, sep } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -13,10 +13,14 @@ import { describe, expect, it } from 'vitest';
 //      produce a new runtimeVersion — but fingerprint-neutrality only
 //      guarantees DELIVERY, so on its own it would be the weaker half.
 //   2. public/ is never read by native code. Expo consumes it only on the web
-//      export path (@expo/cli's publicFolder.js + webTemplate.js), and
-//      assetBundlePatterns is ['assets/**/*'], so Metro never bundles it into a
-//      binary. That is the safety half: the native app never reads the byte we
-//      changed.
+//      export path (@expo/cli's publicFolder.js + webTemplate.js). That is the
+//      safety half: the native app never reads the byte we changed.
+//
+// assetBundlePatterns is deliberately NOT part of the claim, and NOT asserted
+// below: it filters assets Metro has already resolved from the JS module graph,
+// and public/ is not in that graph, so widening it would not embed public/ in a
+// binary either. Pinning it here would red an unrelated legitimate change for a
+// reason that isn't true.
 
 const mobileRoot = fileURLToPath(new URL('../..', import.meta.url));
 const require = createRequire(import.meta.url);
@@ -40,9 +44,14 @@ describe('packages/mobile/public is a web-only surface', () => {
     // configs, the resolved Expo config, package.json scripts and the patch dir
     // — public/ is in none of them. These extraSources are the only additions,
     // so the whole allowlist just has to stay clear of public/.
-    const publicSources = fingerprintConfig.extraSources.filter(
-      ({ filePath }) => filePath === 'public' || filePath.startsWith('public/') || filePath.includes('/public/'),
-    );
+    // Resolve before comparing. @expo/fingerprint joins each filePath against
+    // the project root, so './public' and '../mobile/public' reach the same
+    // directory as 'public' — a literal string match would call those clean.
+    const publicDir = join(mobileRoot, 'public');
+    const publicSources = fingerprintConfig.extraSources.filter(({ filePath }) => {
+      const resolved = resolve(mobileRoot, filePath);
+      return resolved === publicDir || resolved.startsWith(publicDir + sep);
+    });
 
     expect(publicSources).toEqual([]);
   });

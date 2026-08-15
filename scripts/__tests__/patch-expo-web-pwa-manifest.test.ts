@@ -91,17 +91,21 @@ describe('patch-expo-web-pwa-manifest', () => {
     expect(() => patchExpoWebPwaManifest({ exportDir, basePrefix: '' })).toThrow(/2 <link rel="manifest"> tags/);
   });
 
-  it('fails when manifest.json is missing', () => {
+  it('fails when manifest.json is missing, leaving the shell untouched', () => {
     rmSync(join(exportDir, 'manifest.json'));
 
     expect(() => patchExpoWebPwaManifest({ exportDir, basePrefix: '' })).toThrow(/missing manifest\.json/);
+    // All-or-nothing: a half-patched export whose shell points at a manifest
+    // path with no file behind it is the exact symptom this script removes.
+    expect(readShell()).toBe(SHELL_WITH_APP_HREF);
   });
 
-  it('fails on invalid manifest JSON without truncating the file', () => {
+  it('fails on invalid manifest JSON without truncating the file or touching the shell', () => {
     writeFileSync(join(exportDir, 'manifest.json'), '{ "name": "Boardsesh", ');
 
     expect(() => patchExpoWebPwaManifest({ exportDir, basePrefix: '' })).toThrow(/not valid JSON/);
     expect(readFileSync(join(exportDir, 'manifest.json'), 'utf8')).toBe('{ "name": "Boardsesh", ');
+    expect(readShell()).toBe(SHELL_WITH_APP_HREF);
   });
 
   it('fails when the raw template overwrote the rendered shell', () => {

@@ -33,8 +33,10 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# /app is the default so the dev proxy and the legacy prod-static path are
-# unchanged; --subdomain flips it to root-serving for app.boardsesh.com.
+# /app is the default so the dev proxy and the dev:mobile:web-static bake are
+# unchanged; --subdomain flips it to root-serving for app.boardsesh.com. There
+# is no prod-static path left for the default to keep working — W-24 (#4438)
+# retired it (see the header block).
 WEB_BASE_URL="/app"
 DEFAULT_OUTPUT_DIR="$ROOT_DIR/packages/web/public/app"
 OUTPUT_DIR=""

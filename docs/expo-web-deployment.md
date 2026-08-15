@@ -71,6 +71,13 @@ is a checked-in template whose `<link rel="manifest">` href is a fixed
 `packages/mobile/public/manifest.json` is copied verbatim with `start_url`/`scope`
 written for root serving. Neither knows which baseUrl an export was built with.
 
+Do **not** hand-edit that href to `/manifest.json` to "fix" the install prompt —
+it is the value the dev Metro proxy needs, a single literal cannot be right for
+both baseUrls, and `packages/mobile/src/__tests__/web-shell-appearance.test.ts`
+reds if you try. The same suite pins `%WEB_TITLE%` / `%LANG_ISO_CODE%` in the
+template, because the patcher treats their survival into an export as proof that
+`copyPublicFolderAsync` clobbered Expo's rendered shell with the raw template.
+
 `scripts/lib/patch-expo-web-pwa-manifest.mjs` runs after the WASM assertion and
 rewrites both from `WEB_BASE_URL`:
 
@@ -91,7 +98,10 @@ runs in **both** modes so the CI gate (`vp run check:mobile-web-bundle`, which
 only ever exercises the default mode) covers the code path that ships.
 
 `deploy-app-web`'s post-deploy smoke re-checks it against the live subdomain
-(`PWA manifest link → 200 application/json`).
+(`PWA manifest → JSON with start_url/scope /`): the shell's href, the fetched
+content-type, and the manifest body's `start_url`/`scope`. Body included because
+a manifest can serve as perfectly valid JSON at the right URL and still put
+`start_url` outside `scope` — parses clean, never offers the install prompt.
 
 Known dev gap: under the Metro proxy the shell and manifest come straight from
 Metro and never pass through this script, so an install prompt in dev keeps

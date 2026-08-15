@@ -8,13 +8,8 @@
     <meta name="robots" content="noindex, follow" />
     <meta name="application-name" content="Boardsesh" />
     <meta name="theme-color" content="#000000" />
-    <!-- Metro serves public/ from the server root while the export's baseUrl
-         may be /app or / — a single literal cannot be right for both. This
-         value is the DEV/Metro-proxy value (next.config.mjs rewrites
-         /app/manifest.json to Metro's /manifest.json). Every export rewrites it
-         from the export's baseUrl in scripts/lib/patch-expo-web-pwa-manifest.mjs
-         and asserts the result, so do NOT hand-edit it for app.boardsesh.com.
-         Pinned by src/__tests__/web-shell-appearance.test.ts. -->
+    <!-- Dev/Metro-proxy value; every export rewrites it from its own baseUrl.
+         Don't hand-edit: docs/expo-web-deployment.md, "PWA manifest". -->
     <link rel="manifest" href="/app/manifest.json" />
     <link rel="icon" href="https://www.boardsesh.com/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="https://www.boardsesh.com/icons/apple-touch-icon.png" />

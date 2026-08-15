@@ -32,7 +32,12 @@ const manifestLinkPattern = () => /<link\b[^>]*\brel=["']manifest["'][^>]*>/gi;
 // (@expo/cli's webTemplate.js). Their survival into the export means
 // copyPublicFolderAsync clobbered the rendered shell with the raw template — a
 // failure an href-only assertion cannot see.
-const UNRENDERED_TEMPLATE_TOKENS = ['%WEB_TITLE%', '%LANG_ISO_CODE%'];
+//
+// Exported so packages/mobile/src/__tests__/web-shell-appearance.test.ts can
+// assert the real template still contains every one of them. Without that pin,
+// hardcoding the template's title/lang — a natural, harmless-looking edit —
+// would silently turn this whole check into dead code.
+export const UNRENDERED_TEMPLATE_TOKENS = ['%WEB_TITLE%', '%LANG_ISO_CODE%'];
 
 function fail(message) {
   throw new Error(`${LOG_PREFIX} ${message}`);
@@ -90,10 +95,11 @@ export function patchExpoWebPwaManifest({ exportDir, basePrefix }) {
     );
   }
 
-  const originalLink = manifestLinks[0];
-  const patchedLink = originalLink.replace(/\bhref=["'][^"']*["']/i, `href="${expectedHref}"`);
-  writeFileSync(shellPath, shellHtml.replace(originalLink, patchedLink));
-
+  // Validate BOTH files before writing EITHER. A manifest-side failure after
+  // index.html was already rewritten would leave a half-patched export on disk:
+  // a shell pointing at a manifest path with no file behind it, which is the
+  // very symptom this script exists to remove — and nothing tells the operator
+  // the directory is poisoned. All-or-nothing instead.
   const manifestSource = readRequired(manifestPath, 'manifest.json');
   let manifest;
   try {
@@ -103,6 +109,11 @@ export function patchExpoWebPwaManifest({ exportDir, basePrefix }) {
       `manifest.json is not valid JSON (${manifestPath}): ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+
+  const originalLink = manifestLinks[0];
+  const patchedLink = originalLink.replace(/\bhref=["'][^"']*["']/i, `href="${expectedHref}"`);
+  writeFileSync(shellPath, shellHtml.replace(originalLink, patchedLink));
+
   manifest.start_url = expectedStartUrl;
   manifest.scope = expectedStartUrl;
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
