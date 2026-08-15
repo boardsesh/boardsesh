@@ -8,8 +8,10 @@ import ProfilePageContent from './profile-page-content';
 import { getProfileData } from './server-profile-data';
 import { fetchProfileStatsData } from './server-profile-stats';
 import { getUserBetaLinks } from '@/app/lib/server-user-beta-links';
-import { buildVersionedOgImagePath, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
+import { buildVersionedOgImagePath } from '@/app/lib/seo/og';
+import { createNoIndexMetadata, createPageMetadata } from '@/app/lib/seo/metadata';
 import { getProfileOgSummary } from '@/app/lib/seo/dynamic-og-data';
+import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import I18nProvider from '@/app/components/providers/i18n-provider';
@@ -18,56 +20,64 @@ type PageProps = {
   params: Promise<{ user_id: string }>;
 };
 
+/**
+ * Public profiles stay **indexable**, deliberately: the repo's SEO rules name
+ * "public profile" as a search surface, `user_profiles` carries no privacy flag,
+ * and the page `notFound()`s for real when the row is missing. What changes here
+ * is that the two accidental-index paths close — a profile that 404s and a
+ * profile whose data fetch threw are both `noindex, follow` now, where the catch
+ * branch used to emit a canonical and no robots at all.
+ *
+ * Profiles are not sitemapped: they stay link-discovered, so a profile only
+ * enters the index once something on the site links to it.
+ */
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { user_id } = await params;
-  const { t } = await getServerTranslation('profile');
+  // `locale` is load-bearing: without it /es, /fr and /de profiles canonicalise
+  // onto their en-US twins.
+  const { t, locale } = await getServerTranslation('profile');
+  const path = `/profile/${encodeURIComponent(user_id)}`;
 
   try {
     const summary = await getProfileOgSummary(user_id);
 
     if (!summary) {
-      return {
-        title: `${t('metadata.profile.notFoundTitle')} | Boardsesh`,
+      return createNoIndexMetadata({
+        title: t('metadata.profile.notFoundTitle'),
         description: t('metadata.profile.notFoundDescription'),
-        robots: { index: false, follow: false },
-      };
+        path,
+        locale,
+        imagePath: null,
+      });
     }
 
     const displayName = summary.displayName;
-    const description = t('metadata.profile.description', { name: displayName });
-    const ogImagePath = buildVersionedOgImagePath('/api/og/profile', { user_id }, summary.version);
+    // Lead with what people search for — a climber's name plus the board they
+    // actually climb on — instead of a bare "{name} | Boardsesh".
+    const title = summary.topBoardType
+      ? t('metadata.profile.titleWithBoard', {
+          name: displayName,
+          board: formatBoardDisplayName(summary.topBoardType),
+        })
+      : t('metadata.profile.title', { name: displayName });
 
-    return {
-      title: `${displayName} | Boardsesh`,
-      description,
-      alternates: { canonical: `/profile/${user_id}` },
-      openGraph: {
-        title: `${displayName} | Boardsesh`,
-        description,
-        type: 'profile',
-        url: `/profile/${user_id}`,
-        images: [
-          {
-            url: ogImagePath,
-            width: OG_IMAGE_WIDTH,
-            height: OG_IMAGE_HEIGHT,
-            alt: t('metadata.profile.ogAlt', { name: displayName }),
-          },
-        ],
-      },
-      twitter: {
-        card: 'summary_large_image',
-        title: `${displayName} | Boardsesh`,
-        description,
-        images: [ogImagePath],
-      },
-    };
+    return createPageMetadata({
+      title,
+      description: t('metadata.profile.description', { name: displayName }),
+      path,
+      locale,
+      openGraphType: 'profile',
+      imagePath: buildVersionedOgImagePath('/api/og/profile', { user_id }, summary.version),
+      imageAlt: t('metadata.profile.ogAlt', { name: displayName }),
+    });
   } catch {
-    return {
-      title: `${t('metadata.profile.fallbackTitle')} | Boardsesh`,
+    return createNoIndexMetadata({
+      title: t('metadata.profile.fallbackTitle'),
       description: t('metadata.profile.fallbackDescription'),
-      alternates: { canonical: `/profile/${user_id}` },
-    };
+      path,
+      locale,
+      imagePath: null,
+    });
   }
 }
 

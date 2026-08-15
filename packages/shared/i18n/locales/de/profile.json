@@ -6,7 +6,9 @@
       "fallbackDescription": "Kletterprofil und Statistiken ansehen",
       "notFoundTitle": "Profil nicht gefunden",
       "notFoundDescription": "Dieses Kletterprofil konnte nicht gefunden werden.",
-      "ogAlt": "Kletterprofil von {{name}}"
+      "ogAlt": "Kletterprofil von {{name}}",
+      "title": "Klettersessions von {{name}}",
+      "titleWithBoard": "{{board}}-Sessions von {{name}}"
     },
     "statistics": {
       "title": "Statistiken"

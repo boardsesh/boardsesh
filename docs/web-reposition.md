@@ -330,6 +330,68 @@ assertions are green: no kept file imports the delete set, and no allowlist entr
 is stale. The gate is not vacuous — adding `climb-icons` to
 `DELETED_CLIMB_CARD_STEMS` still reports the five real edges into it.
 
+## W-22 — the sitemap index and its shards (#4434)
+
+`app/sitemap.ts` submitted 8 static paths × 4 locales — 32 URLs, and not one
+board, gym, setter or playlist. It is gone. `/sitemap.xml` is now a
+`<sitemapindex>` over `/sitemaps/{static,boards,gyms,setters,playlists}.xml`,
+which is what W-23's climb shards plug into.
+
+**`generateSitemaps()` is rejected, on evidence.** `MetadataRoute.Sitemap` can
+only produce a `<urlset>`: `resolveSitemap()` in
+`next/dist/build/webpack/loaders/metadata/resolve-route-data.js` writes that tag
+unconditionally, and grepping the whole of `next@16.2.12`'s dist for
+`sitemapindex` returns zero hits. `generateSitemaps` shards to
+`/…/sitemap/[id].xml` with opaque numeric ids and still leaves the index to be
+hand-written. Route handlers are a first-class shape instead —
+`normalizeMetadataRoute` documents _"Support both /<metadata-route.ext> and
+custom routes /<metadata-route>/route.ts"_ — with one caveat that makes
+`export const dynamic = 'force-dynamic'` mandatory rather than decorative:
+`isMetadataRoute('/sitemap.xml/route')` is true, and the app-route exporter uses
+that to skip its static-gen bail-out, so without the opt-out Next would try to
+prerender a database-backed route at build time. `vp run build` confirms the six
+routes land at `/sitemap.xml` and `/sitemaps/*.xml`.
+
+**The cap is 45,000 URLs, but the budget is 11,250 items.** Every item is
+emitted once per locale with an identical five-entry `xhtml:link` block, so the
+item budget is `45,000 / 4`. Measured against the dev database (same data shape
+as production): 4 public playlists with climbs, 51 listed board configs
+(→ ~765 items, ~3,060 URLs at all angles), 108,000 distinct (board, setter)
+pairs. Only the setters shard would need paging, and it ships empty.
+
+**Failure doctrine: 503, never a truncated 200.** A shard whose builder throws
+returns 503 so the crawler retries and keeps its last good copy; a short 200
+tells Google the missing URLs were deleted. The index applies the same rule —
+it throws rather than publishing an index that quietly dropped a shard — and it
+lists only shards carrying at least one URL. For the same reason the boards
+shard uses a _throwing_ popular-configs fetch, not the homepage's
+swallow-and-return-`[]` wrapper.
+
+**Two shards ship declared-empty, and that is the point.** `gyms.xml` waits on
+#4381's public-gyms enumeration query, which the gym-discovery epic (#4372)
+gates behind draining the duplicate queue — indexing a directory with live
+duplicates is an SEO own-goal. `setters.xml` waits on an SSR fragment for
+`/setter/[setter_username]`, whose first HTML is a spinner today, and on
+`getSetterOgSummary` learning to return null so `/setter/{anything}` stops
+answering 200. Both routes exist and serve a valid empty `<urlset>`, so filling
+them is one builder function away.
+
+**The boards shard carries no `<lastmod>`, deliberately.** There is no per-config
+content timestamp in the data, `<lastmod>` is optional in the protocol, and
+inventing one with `new Date()` is the exact thing the standing rule bans. A
+follow-up adds `lastClimbAt` to `popularBoardConfigs` so the real timestamp can
+arrive from the backend.
+
+**`/profile/[user_id]` stays indexable, explicitly.** Public profiles are named
+as a search surface, `user_profiles` carries no privacy flag, and the page
+`notFound()`s for real when the row is missing. What closed are the two
+_accidental_ index paths: the not-found branch (now the house `index: false,
+follow: true`) and the `catch` branch, which used to emit a canonical and no
+robots at all, so an errored profile was indexable. Profiles are not sitemapped
+— they stay link-discovered. Their titles also moved off the bare
+`{name} | Boardsesh` shape onto `{name}'s {board} Sessions`, driven by the
+climber's most-ticked board.
+
 ## Phase A0 — blocking pre-delete QA gate (real devices)
 
 The teardown is a **hard delete** with no retained `?classic=1` runtime fallback,

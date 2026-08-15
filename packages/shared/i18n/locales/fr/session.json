@@ -6,7 +6,8 @@
   },
   "metadata": {
     "detail": {
-      "notFoundTitle": "Session introuvable"
+      "notFoundTitle": "Session introuvable",
+      "notFoundDescription": "Impossible de trouver cette session de grimpe."
     },
     "join": {
       "title": "Rejoindre la session",

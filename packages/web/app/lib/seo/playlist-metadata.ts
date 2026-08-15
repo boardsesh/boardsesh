@@ -1,64 +1,60 @@
 import type { Metadata } from 'next';
-import { createNoIndexMetadata } from './metadata';
-import { buildVersionedOgImagePath, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './og';
+import type { Locale } from '@/app/lib/i18n/config';
+import { getServerTranslation } from '@/app/lib/i18n/server';
+import { createNoIndexMetadata, createPageMetadata } from './metadata';
+import { buildVersionedOgImagePath } from './og';
 import { getPlaylistOgSummary } from './dynamic-og-data';
 
-const FALLBACK_METADATA: Metadata = {
-  title: 'Playlist | Boardsesh',
-  description: 'View playlist details and climbs',
-};
+/**
+ * Every branch goes through `createPageMetadata` / `createNoIndexMetadata` so a
+ * playlist page emits exactly one canonical string plus the full hreflang set,
+ * whichever route rendered it — the same "one canonical string per surface"
+ * doctrine the climb list pages follow. `locale` is a required parameter rather
+ * than a defaulted one so a call site cannot silently canonicalise /es onto
+ * en-US.
+ */
+export async function generatePlaylistMetadata(playlistUuid: string, locale: Locale): Promise<Metadata> {
+  const { t } = await getServerTranslation('playlists');
+  const path = `/playlists/${encodeURIComponent(playlistUuid)}`;
 
-export async function generatePlaylistMetadata(playlistUuid: string): Promise<Metadata> {
   try {
     const playlist = await getPlaylistOgSummary(playlistUuid);
 
     if (!playlist) {
-      return FALLBACK_METADATA;
-    }
-
-    if (!playlist.isPublic) {
       return createNoIndexMetadata({
-        title: 'Private Playlist',
-        description: 'This playlist is private',
+        title: t('metadata.detail.fallbackTitle'),
+        description: t('metadata.detail.fallbackDescription'),
+        path,
+        locale,
         imagePath: null,
       });
     }
 
-    const name = playlist.name;
-    const climbCount = playlist.climbCount;
-    const description =
-      playlist.description || `A climbing playlist on Boardsesh with ${climbCount} climb${climbCount === 1 ? '' : 's'}`;
-    const title = `${name} | Boardsesh`;
+    if (!playlist.isPublic) {
+      return createNoIndexMetadata({
+        title: t('metadata.detail.privateTitle'),
+        description: t('metadata.detail.privateDescription'),
+        path,
+        locale,
+        imagePath: null,
+      });
+    }
 
-    const ogImagePath = buildVersionedOgImagePath('/api/og/playlist', { uuid: playlistUuid }, playlist.version);
-    const canonicalUrl = `/playlists/${playlistUuid}`;
-
-    return {
-      title,
-      description,
-      alternates: { canonical: canonicalUrl },
-      openGraph: {
-        title,
-        description,
-        type: 'website',
-        url: canonicalUrl,
-        images: [
-          {
-            url: ogImagePath,
-            width: OG_IMAGE_WIDTH,
-            height: OG_IMAGE_HEIGHT,
-            alt: `${name} playlist`,
-          },
-        ],
-      },
-      twitter: {
-        card: 'summary_large_image',
-        title,
-        description,
-        images: [ogImagePath],
-      },
-    };
+    return createPageMetadata({
+      title: playlist.name,
+      description: playlist.description || t('metadata.detail.climbCountDescription', { count: playlist.climbCount }),
+      path,
+      locale,
+      imagePath: buildVersionedOgImagePath('/api/og/playlist', { uuid: playlistUuid }, playlist.version),
+      imageAlt: t('metadata.detail.ogAlt', { name: playlist.name }),
+    });
   } catch {
-    return FALLBACK_METADATA;
+    return createNoIndexMetadata({
+      title: t('metadata.detail.fallbackTitle'),
+      description: t('metadata.detail.fallbackDescription'),
+      path,
+      locale,
+      imagePath: null,
+    });
   }
 }

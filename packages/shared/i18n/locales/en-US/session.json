@@ -6,7 +6,8 @@
   },
   "metadata": {
     "detail": {
-      "notFoundTitle": "Session Not Found"
+      "notFoundTitle": "Session Not Found",
+      "notFoundDescription": "This climbing session could not be found."
     },
     "join": {
       "title": "Join Session",

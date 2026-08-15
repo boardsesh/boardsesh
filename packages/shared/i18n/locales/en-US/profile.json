@@ -6,7 +6,9 @@
       "fallbackDescription": "View climbing profile and stats",
       "notFoundTitle": "Profile Not Found",
       "notFoundDescription": "This climbing profile could not be found.",
-      "ogAlt": "{{name}}'s climbing profile"
+      "ogAlt": "{{name}}'s climbing profile",
+      "title": "{{name}}'s Climbing Sessions",
+      "titleWithBoard": "{{name}}'s {{board}} Sessions"
     },
     "statistics": {
       "title": "Statistics"

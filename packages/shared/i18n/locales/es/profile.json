@@ -6,7 +6,9 @@
       "fallbackDescription": "Mira el perfil de escalada y las estadísticas",
       "notFoundTitle": "Perfil no encontrado",
       "notFoundDescription": "No se ha podido encontrar este perfil de escalada.",
-      "ogAlt": "Perfil de escalada de {{name}}"
+      "ogAlt": "Perfil de escalada de {{name}}",
+      "title": "Sesiones de escalada de {{name}}",
+      "titleWithBoard": "Sesiones de {{board}} de {{name}}"
     },
     "statistics": {
       "title": "Estadísticas"

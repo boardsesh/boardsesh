@@ -6,7 +6,8 @@
   },
   "metadata": {
     "detail": {
-      "notFoundTitle": "Sesión no encontrada"
+      "notFoundTitle": "Sesión no encontrada",
+      "notFoundDescription": "No se ha podido encontrar esta sesión de escalada."
     },
     "join": {
       "title": "Únete a la sesión",

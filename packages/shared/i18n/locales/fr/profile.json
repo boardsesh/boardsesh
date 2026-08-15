@@ -6,7 +6,9 @@
       "fallbackDescription": "Profil de grimpe et stats",
       "notFoundTitle": "Profil introuvable",
       "notFoundDescription": "Impossible de trouver ce profil de grimpe.",
-      "ogAlt": "Profil de grimpe de {{name}}"
+      "ogAlt": "Profil de grimpe de {{name}}",
+      "title": "Les sessions de grimpe de {{name}}",
+      "titleWithBoard": "Les sessions {{board}} de {{name}}"
     },
     "statistics": {
       "title": "Statistiques"
