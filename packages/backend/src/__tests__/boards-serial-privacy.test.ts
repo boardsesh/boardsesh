@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { socialBoardQueries, socialBoardMutations } from '../graphql/resolvers/social/boards';
 
@@ -627,13 +629,66 @@ describe('recordBoardSerial', () => {
     const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
     const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
     mockDb.insert.mockReturnValue({ values });
-    return { values };
+    return { values, onConflictDoUpdate };
   }
 
   // Saved-board uuids are RFC 4122 (the input schema validates strictly), so the
   // ownership tests use real UUIDs rather than placeholder strings.
   const FORGED_UUID = '11111111-1111-4111-8111-111111111111';
   const OWNED_UUID = '22222222-2222-4222-8222-222222222222';
+
+  function conflictSetOf(onConflictDoUpdate: ReturnType<typeof vi.fn>): Record<string, unknown> {
+    const [config] = onConflictDoUpdate.mock.calls[0] as [{ set: Record<string, unknown> }];
+    return config.set;
+  }
+
+  it('leaves an existing board link alone when this connect resolved no board', async () => {
+    const { onConflictDoUpdate } = setupRecord({ savedMatch: [], recordingRow: recordingRow() });
+
+    await socialBoardMutations.recordBoardSerial(
+      null,
+      { input: { serialNumber: 'SN42', boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', apiLevel: 3 } },
+      makeAuthCtx('user-1'),
+    );
+
+    // The board-presence resolver writes this same column on the same BLE
+    // connect (rememberBoardForSerial). Setting `boardUuid: null` here would
+    // wipe the link it just established and send the next connect back to
+    // serial matching — the race behind the wrong-board bug.
+    expect(conflictSetOf(onConflictDoUpdate)).not.toHaveProperty('boardUuid');
+  });
+
+  it('fills the board link only when the stored one is still null', async () => {
+    const { onConflictDoUpdate } = setupRecordSeq([
+      [],
+      [{ uuid: OWNED_UUID }],
+      [recordingRow({ boardUuid: OWNED_UUID, boardSlug: 'my-board' })],
+    ]);
+
+    await socialBoardMutations.recordBoardSerial(
+      null,
+      {
+        input: {
+          serialNumber: 'SN42',
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,2',
+          apiLevel: 3,
+          boardUuid: OWNED_UUID,
+        },
+      },
+      makeAuthCtx('user-1'),
+    );
+
+    // This mutation knows only which board the route was showing; the presence
+    // resolver knows which wall the climber is on and writes the same column on
+    // the same connect. COALESCE against the stored row is what stops the
+    // recording overwriting it, whichever of the two lands second.
+    const rendered = new PgDialect().sqlToQuery(conflictSetOf(onConflictDoUpdate).boardUuid as SQL);
+    expect(rendered.sql.toLowerCase().replace(/\s+/g, ' ')).toContain('coalesce("user_board_serials"."board_uuid"');
+    expect(rendered.params).toContain(OWNED_UUID);
+  });
 
   it('drops a forged boardUuid (not owned by the caller and not public) to null', async () => {
     // saved lookup: no match → proceeds to write

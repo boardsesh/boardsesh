@@ -42,15 +42,22 @@ import { track } from '../lib/analytics';
 import { BoardDisambiguationSheet } from '../components/board-discovery/BoardDisambiguationSheet';
 
 /** Board config needed to find-or-bind the shared board on first sighting. */
-export type ResolveBoardArgs = {
-  serial: string;
+export type ResolveBoardConfigArgs = {
   boardType: string;
   layoutId: number;
   sizeId: number;
   setIds: string;
 };
 
-export type ResolveBoardConfigArgs = Omit<ResolveBoardArgs, 'serial'>;
+export type ResolveBoardArgs = ResolveBoardConfigArgs & {
+  serial: string;
+  /**
+   * The board the user already had selected when this connect landed. The
+   * backend prefers it over serial matching when its config matches the
+   * controller, so plugging in never moves them off the wall they picked.
+   */
+  selectedBoardUuid?: string | null;
+};
 
 export type ResolveBoardUuidArgs = {
   boardUuid: string;
@@ -96,8 +103,11 @@ function boardConfigResolveKey({ boardType, layoutId, sizeId, setIds }: ResolveB
   return `config:${boardType}:${layoutId}:${sizeId}:${setIds}`;
 }
 
+// The selected board is part of the key: switching boards while connected has
+// to re-resolve, or the cached binding would pin the feed to the wall the user
+// just navigated away from.
 function boardSerialResolveKey(args: ResolveBoardArgs): string {
-  return `serial:${args.serial}:${args.boardType}:${args.layoutId}:${args.sizeId}:${args.setIds}`;
+  return `serial:${args.serial}:${args.boardType}:${args.layoutId}:${args.sizeId}:${args.setIds}:${args.selectedBoardUuid ?? ''}`;
 }
 
 function boardUuidResolveKey({ boardUuid }: ResolveBoardUuidArgs): string {

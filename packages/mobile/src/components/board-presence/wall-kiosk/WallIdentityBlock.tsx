@@ -7,6 +7,7 @@ import { BoardDriverAvatar } from '../BoardDriverAvatar';
 import { readableTextColor } from '../../grade/grade-chip-colors';
 import { useTheme } from '../../../providers/theme-provider';
 import { useDisplayGrade } from '../../../hooks/use-display-grade';
+import { wallDriverForClimb } from '../../../lib/board-presence/presence-climb';
 import { borderRadius, spacing } from '../../../theme/tokens';
 import type { WallKioskTypeScale } from './wall-kiosk-type';
 
@@ -50,7 +51,7 @@ function WallIdentityBlockComponent({
   const gradeColor = resolvedGrade.color;
   const gradeTextColor = readableTextColor(gradeColor);
   const setter = climb.setter?.trim();
-  const litBy = climb.sentByDisplayName?.trim() || null;
+  const driver = wallDriverForClimb(climb, t('mobile.boardPresence.unnamedClimber'));
   const angleLabel = climb.angle != null ? `${climb.angle}°` : null;
 
   return (
@@ -107,22 +108,24 @@ function WallIdentityBlockComponent({
         </Text>
       ) : null}
 
-      {litBy && !compact ? (
+      {driver && !compact ? (
         <View style={styles.driverRow}>
           <BoardDriverAvatar
             size={driverSize}
             userId={climb.sentByUserId}
             uri={climb.sentByAvatarUrl}
-            name={litBy}
+            name={driver.avatarName}
             status="connected"
-            accessibilityLabel={t('mobile.boardPresence.drivenByA11y', { name: litBy })}
+            accessibilityLabel={t('mobile.boardPresence.drivenByA11y', { name: driver.label })}
           />
           <Text
             numberOfLines={1}
             color={systemColors.secondaryLabel}
             style={[styles.driverName, { fontSize: typeScale.metaFontSize, lineHeight: typeScale.metaLineHeight }]}
           >
-            {t('mobile.boardPresence.sentByLine', { name: litBy })}
+            {driver.isUnnamed
+              ? t('mobile.boardPresence.sentByUnknownClimber')
+              : t('mobile.boardPresence.sentByLine', { name: driver.label })}
           </Text>
         </View>
       ) : null}

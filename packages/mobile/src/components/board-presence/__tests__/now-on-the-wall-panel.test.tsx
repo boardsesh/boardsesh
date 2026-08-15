@@ -435,4 +435,23 @@ describe('NowOnTheWallPanel', () => {
       }),
     );
   });
+
+  // A large slice of the durable wall log was sent by accounts with no
+  // `users.name` and no profile (Apple private-relay signups), which used to
+  // drop the whole avatar-plus-name block and made those rows look empty.
+  it('still attributes a history row whose climber has no display name', () => {
+    presence.history = [makeClimb('nameless-1', 4, { sentByUserId: 'user-nameless', sentByDisplayName: null })];
+
+    const { container } = render(panelElement());
+
+    expect(container.textContent).toContain('mobile.boardPresence.unnamedClimber');
+  });
+
+  it('shows nothing where there is no climber at all', () => {
+    presence.history = [makeClimb('anon-1', 5, { sentByUserId: null, sentByDisplayName: null })];
+
+    const { container } = render(panelElement());
+
+    expect(container.textContent).not.toContain('mobile.boardPresence.unnamedClimber');
+  });
 });

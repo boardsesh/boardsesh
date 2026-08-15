@@ -142,6 +142,169 @@ export async function findActiveBoardsBySerial(serial: string): Promise<SerialCa
   }));
 }
 
+/** A board the caller had selected when they connected, plus what the serial claim needs. */
+export type SelectedConnectBoard = ActivePresenceBoard & { uuid: string; ownerId: string; gymId: number | null };
+
+/** A synced gym listing: the system-owned mirror of a wall that belongs to a gym. */
+export function isSyncedGymListing(board: Pick<SelectedConnectBoard, 'ownerId' | 'gymId'>): boolean {
+  return board.ownerId === SYSTEM_BOARD_OWNER_ID && board.gymId !== null;
+}
+
+/**
+ * Whether a synced gym listing carries this serial *and* describes the wall
+ * that just connected.
+ *
+ * The config comparison is the half that keeps a reused serial local. The LED
+ * supplier hands the same serial to unrelated walls — 9 genuine cross-gym
+ * reuses in production, 4 km to 7,400 km apart — so a listing at some other gym
+ * with a different layout / size / hold sets says nothing about the controller
+ * in front of this climber, and must not outrank the board they picked. Only a
+ * listing that could actually BE this wall gets to. `normalizeSetIds` runs in
+ * JS because synced catalog rows keep the upstream set-id string verbatim while
+ * our own writers store the canonical form.
+ */
+export async function hasSyncedGymBoardForSerial(
+  serial: string,
+  config: { boardType: string; layoutId: number; sizeId: number; setIds: string },
+): Promise<boolean> {
+  const listings = await db
+    .select({ setIds: dbSchema.userBoards.setIds })
+    .from(dbSchema.userBoards)
+    .where(
+      and(
+        eq(dbSchema.userBoards.serialNumber, serial),
+        isNull(dbSchema.userBoards.deletedAt),
+        eq(dbSchema.userBoards.ownerId, SYSTEM_BOARD_OWNER_ID),
+        isNotNull(dbSchema.userBoards.gymId),
+        eq(dbSchema.userBoards.boardType, config.boardType),
+        eq(dbSchema.userBoards.layoutId, config.layoutId),
+        eq(dbSchema.userBoards.sizeId, config.sizeId),
+      ),
+    );
+  const connectedSetIds = normalizeSetIds(config.setIds);
+  return listings.some((listing) => normalizeSetIds(listing.setIds) === connectedSetIds);
+}
+
+/**
+ * The board the caller already had selected when the BLE connect landed (the
+ * map finder / board picker choice), when it is reachable, active, and
+ * genuinely describes the wall they just plugged into.
+ *
+ * The config equality check is what makes this safe to trust over serial
+ * matching: a selection whose board type / layout / size / hold sets don't
+ * match what the controller advertised is stale (they picked one wall and
+ * walked to another), so the serial stays authoritative there. Set ids are
+ * compared through `normalizeSetIds` because synced catalog boards store the
+ * upstream string verbatim while our own writers store the canonical form.
+ */
+export async function findSelectedBoardForConnect(
+  userId: string,
+  boardUuid: string,
+  config: { boardType: string; layoutId: number; sizeId: number; setIds: string },
+): Promise<SelectedConnectBoard | undefined> {
+  const [board] = await db
+    .select({
+      id: dbSchema.userBoards.id,
+      uuid: dbSchema.userBoards.uuid,
+      ownerId: dbSchema.userBoards.ownerId,
+      name: dbSchema.userBoards.name,
+      boardType: dbSchema.userBoards.boardType,
+      layoutId: dbSchema.userBoards.layoutId,
+      sizeId: dbSchema.userBoards.sizeId,
+      setIds: dbSchema.userBoards.setIds,
+      serialNumber: dbSchema.userBoards.serialNumber,
+      angle: dbSchema.userBoards.angle,
+      gymId: dbSchema.userBoards.gymId,
+    })
+    .from(dbSchema.userBoards)
+    .where(
+      and(
+        eq(dbSchema.userBoards.uuid, boardUuid),
+        isNull(dbSchema.userBoards.deletedAt),
+        // Same reachability rule as findReachableActiveBoardByUuid: the caller
+        // reaches public boards plus their own.
+        or(eq(dbSchema.userBoards.ownerId, userId), eq(dbSchema.userBoards.isPublic, true)),
+      ),
+    )
+    .limit(1);
+  if (!board) return undefined;
+  if (
+    board.boardType !== config.boardType ||
+    Number(board.layoutId) !== config.layoutId ||
+    Number(board.sizeId) !== config.sizeId ||
+    normalizeSetIds(board.setIds) !== normalizeSetIds(config.setIds)
+  ) {
+    return undefined;
+  }
+  return {
+    ...board,
+    id: Number(board.id),
+    layoutId: Number(board.layoutId),
+    sizeId: Number(board.sizeId),
+    gymId: board.gymId === null ? null : Number(board.gymId),
+  };
+}
+
+/**
+ * Whether a connect may stamp its controller serial onto this board. Limited to
+ * the caller's own boards and the system-owned synced catalog: a gym listing we
+ * mirror is exactly the row that should learn its serial, whereas letting
+ * anyone brand a stranger's board would redirect that serial for every climber
+ * who connects to it afterwards.
+ */
+export function canClaimSerialForBoard(board: Pick<SelectedConnectBoard, 'ownerId'>, userId: string): boolean {
+  return board.ownerId === userId || board.ownerId === SYSTEM_BOARD_OWNER_ID;
+}
+
+/**
+ * Stamp a controller serial onto a board that carries none, so the next
+ * climber's connect resolves straight to it instead of minting a private
+ * duplicate. `WHERE serial_number IS NULL` makes a concurrent claim fail-safe —
+ * the loser re-reads and binds the same board either way.
+ *
+ * Returns the refreshed board. Never throws on the per-owner duplicate-serial
+ * index: if the caller already has this serial on another of their boards the
+ * claim is simply skipped and the board is returned unchanged, because binding
+ * to the selected board still has to succeed.
+ */
+export async function claimSerialForBoard(board: SelectedConnectBoard, serial: string): Promise<SelectedConnectBoard> {
+  try {
+    const [updated] = await db
+      .update(dbSchema.userBoards)
+      .set({ serialNumber: serial, updatedAt: new Date() })
+      .where(
+        and(
+          eq(dbSchema.userBoards.id, board.id),
+          isNull(dbSchema.userBoards.serialNumber),
+          isNull(dbSchema.userBoards.deletedAt),
+        ),
+      )
+      .returning({ serialNumber: dbSchema.userBoards.serialNumber });
+    if (updated) {
+      return { ...board, serialNumber: updated.serialNumber };
+    }
+  } catch (error) {
+    if (!isDuplicateBoardSerialError(error)) {
+      throw error;
+    }
+    logger.warn(`[board-presence] serial claim skipped, already bound elsewhere: ${String(error)}`);
+    return board;
+  }
+  // Lost the `serial_number IS NULL` race — re-read what the winner wrote so
+  // the caller reports the board's real serial. Same `deleted_at` guard as the
+  // UPDATE: if the board was soft-deleted in between, reporting a serial read
+  // off a dead row would be worse than reporting none. That degenerate case
+  // (the owner deleted the board mid-connect) reports no serial and binds this
+  // one connect to the just-deleted board; the next connect skips it, because
+  // findChosenBoardForSerial only joins rows with `deleted_at IS NULL`.
+  const [current] = await db
+    .select({ serialNumber: dbSchema.userBoards.serialNumber })
+    .from(dbSchema.userBoards)
+    .where(and(eq(dbSchema.userBoards.id, board.id), isNull(dbSchema.userBoards.deletedAt)))
+    .limit(1);
+  return { ...board, serialNumber: current?.serialNumber ?? board.serialNumber };
+}
+
 /**
  * The board this user previously settled on for this serial (either by
  * explicitly picking it in the disambiguation prompt, or by connecting while

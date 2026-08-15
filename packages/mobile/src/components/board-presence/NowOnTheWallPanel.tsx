@@ -51,7 +51,7 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { offlineAwareRequest } from '../../lib/graphql/offline-request';
 import { GET_CLIMB, type GetClimbQueryResponse } from '../../lib/graphql/operations';
-import { boardPresenceClimbToClimb } from '../../lib/board-presence/presence-climb';
+import { boardPresenceClimbToClimb, wallDriverForClimb } from '../../lib/board-presence/presence-climb';
 import { withAlpha } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 
@@ -858,7 +858,7 @@ function NowOnTheWallHeroContent({
   pressableAvatar = true,
 }: HeroContentProps) {
   const { t } = useTranslation('session');
-  const litBy = climb.sentByDisplayName?.trim() || null;
+  const driver = wallDriverForClimb(climb, t('mobile.boardPresence.unnamedClimber'));
   const setter = climb.setter?.trim();
 
   return (
@@ -887,18 +887,18 @@ function NowOnTheWallHeroContent({
             {t('mobile.boardPresence.setByLine', { setter })}
           </Text>
         ) : null}
-        {litBy ? (
+        {driver ? (
           <View style={styles.heroDriverRow}>
             <BoardDriverAvatar
               size={20}
               userId={pressableAvatar ? climb.sentByUserId : null}
               uri={climb.sentByAvatarUrl}
-              name={litBy}
+              name={driver.avatarName}
               status="connected"
-              accessibilityLabel={t('mobile.boardPresence.drivenByA11y', { name: litBy })}
+              accessibilityLabel={t('mobile.boardPresence.drivenByA11y', { name: driver.label })}
             />
             <Text variant="caption1" color={accentColor} numberOfLines={1} style={styles.heroDriverName}>
-              {litBy}
+              {driver.label}
             </Text>
           </View>
         ) : null}
@@ -1053,7 +1053,7 @@ function HistoryRowContent({
   pressableAvatar = true,
 }: HistoryRowContentProps) {
   const { t } = useTranslation('session');
-  const litBy = climb.sentByDisplayName?.trim() || null;
+  const driver = wallDriverForClimb(climb, t('mobile.boardPresence.unnamedClimber'));
 
   return (
     <>
@@ -1062,7 +1062,7 @@ function HistoryRowContent({
         <Text variant="subheadline" color={labelColor} numberOfLines={1} style={styles.historyName}>
           {climb.name ?? ''}
         </Text>
-        {litBy ? (
+        {driver ? (
           <View style={styles.historyDriverRow}>
             {/* Past send — no Bluetooth glyph (nobody's driving it now); just a
                 pressable face for attribution. */}
@@ -1070,12 +1070,12 @@ function HistoryRowContent({
               size={18}
               userId={pressableAvatar ? climb.sentByUserId : null}
               uri={climb.sentByAvatarUrl}
-              name={litBy}
+              name={driver.avatarName}
               status="none"
-              accessibilityLabel={t('mobile.boardPresence.drivenByA11y', { name: litBy })}
+              accessibilityLabel={t('mobile.boardPresence.drivenByA11y', { name: driver.label })}
             />
             <Text variant="caption1" color={secondaryColor} numberOfLines={1} style={styles.historyDriverName}>
-              {litBy}
+              {driver.label}
             </Text>
           </View>
         ) : null}
@@ -1243,7 +1243,7 @@ function HardestSendRow({
   gradeColor,
 }: HardestSendRowProps) {
   const { t } = useTranslation('session');
-  const climberName = hardestSend.sentByDisplayName?.trim();
+  const driver = wallDriverForClimb(hardestSend, t('mobile.boardPresence.unnamedClimber'));
 
   return (
     <View style={[styles.hardestSendRow, { backgroundColor: surfaceColor }]}>
@@ -1251,7 +1251,7 @@ function HardestSendRow({
         <PressableAvatar
           userId={hardestSend.sentByUserId}
           uri={hardestSend.sentByAvatarUrl}
-          name={climberName}
+          name={driver?.avatarName}
           size={34}
         />
         <View style={[styles.crownBadge, { backgroundColor: withAlpha(crownColor, 0.18) }]}>
@@ -1265,9 +1265,14 @@ function HardestSendRow({
         <Text variant="subheadline" color={labelColor} numberOfLines={1} style={styles.hardestName}>
           {hardestSend.name ?? ''}
         </Text>
-        {climberName ? (
+        {driver ? (
           <Text variant="caption1" color={secondaryColor} numberOfLines={1}>
-            {t('mobile.boardPresence.sentByLine', { name: climberName })}
+            {/* Separate key rather than feeding the fallback label into
+                `sentByLine`: German needs the dative ("von jemandem"), which no
+                single interpolated noun satisfies in both slots. */}
+            {driver.isUnnamed
+              ? t('mobile.boardPresence.sentByUnknownClimber')
+              : t('mobile.boardPresence.sentByLine', { name: driver.label })}
           </Text>
         ) : null}
       </View>

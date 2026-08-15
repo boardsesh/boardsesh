@@ -453,6 +453,8 @@
       "litAgoDays": "{{count}} d",
       "litAgoWeeks": "{{count}} sem",
       "sentByLine": "Encadenado por {{name}}",
+      "unnamedClimber": "Alguien",
+      "sentByUnknownClimber": "Encadenado por alguien",
       "emptyTitle": "Aún no hay nadie en este muro",
       "emptyBody": "Conéctate y envía un bloque para empezar el historial.",
       "historyHeader": "Encendidos en este muro",

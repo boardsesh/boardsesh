@@ -453,6 +453,8 @@
       "litAgoDays": "{{count}} j",
       "litAgoWeeks": "{{count}} sem",
       "sentByLine": "Enchaîné par {{name}}",
+      "unnamedClimber": "Quelqu'un",
+      "sentByUnknownClimber": "Enchaîné par quelqu'un",
       "emptyTitle": "Personne sur ce mur pour l'instant",
       "emptyBody": "Connecte-toi et allume un bloc pour lancer l'historique.",
       "historyHeader": "Allumés sur ce mur",

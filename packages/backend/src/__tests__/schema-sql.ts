@@ -815,6 +815,19 @@ export const schemaSQL = `
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "board_follows_unique_user_board" ON "board_follows" ("user_id", "board_uuid");
 
+  -- Which physical boards a party session touched. Declared after user_boards so
+  -- the board FK resolves.
+  DROP TABLE IF EXISTS "session_boards" CASCADE;
+  CREATE TABLE IF NOT EXISTS "session_boards" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "session_id" text NOT NULL REFERENCES "board_sessions"("id") ON DELETE CASCADE,
+    "board_id" bigint NOT NULL REFERENCES "user_boards"("id") ON DELETE CASCADE,
+    "created_at" timestamp DEFAULT now()
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "session_boards_session_board_idx" ON "session_boards" ("session_id", "board_id");
+  CREATE INDEX IF NOT EXISTS "session_boards_session_idx" ON "session_boards" ("session_id");
+  CREATE INDEX IF NOT EXISTS "session_boards_board_idx" ON "session_boards" ("board_id");
+
   -- Auto-recorded serial→config rows + the user's remembered board choice for a
   -- serial (board_uuid). Resolver reads this to skip the disambiguation prompt.
   CREATE TABLE IF NOT EXISTS "user_board_serials" (

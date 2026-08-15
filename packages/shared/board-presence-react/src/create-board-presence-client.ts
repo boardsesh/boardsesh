@@ -62,6 +62,12 @@ export type SerialResolveArgs = {
   layoutId: number;
   sizeId: number;
   setIds: string;
+  /**
+   * The board the caller already had selected when the connect landed. Wins
+   * over serial matching when its config matches the connected controller —
+   * see the `resolveBoardCandidatesForSerial` SDL docs.
+   */
+  selectedBoardUuid?: string | null;
 };
 
 /** A GraphQL operation: the query/mutation/subscription string plus variables. */

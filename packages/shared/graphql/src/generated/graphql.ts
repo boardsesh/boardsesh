@@ -3285,6 +3285,13 @@ export type Mutation = {
    * the serial and the user must pick which wall they're at. Confirm the pick
    * with `chooseBoardForSerial`. The config args create the board the first
    * time a serial is seen.
+   *
+   * Pass `selectedBoardUuid` when the caller already has a board selected (map
+   * finder / board picker). A selection whose config matches the connected
+   * controller wins over serial matching, so a Bluetooth connect never silently
+   * moves you off the wall you picked. If that board carries no serial yet, the
+   * connect claims this one for it, which is how a synced gym board becomes
+   * discoverable by serial for everyone after you.
    */
   resolveBoardCandidatesForSerial: ResolveBoardResult;
   /**
@@ -3300,6 +3307,9 @@ export type Mutation = {
    * (the caller's own board if present, else the oldest) and remembers it.
    * New clients should call `resolveBoardCandidatesForSerial`. The board config
    * args are used only to create the board the first time a serial is seen.
+   * `selectedBoardUuid` is the board the caller already has selected (map
+   * finder / board picker); when it matches the connected config it wins over
+   * serial matching — see `resolveBoardCandidatesForSerial`.
    */
   resolveBoardForSerial: ResolvedBoard;
   /**
@@ -3828,6 +3838,7 @@ export type MutationRequestGymClaimArgs = {
 export type MutationResolveBoardCandidatesForSerialArgs = {
   boardType: Scalars['String']['input'];
   layoutId: Scalars['Int']['input'];
+  selectedBoardUuid?: InputMaybe<Scalars['ID']['input']>;
   serial: Scalars['String']['input'];
   setIds: Scalars['String']['input'];
   sizeId: Scalars['Int']['input'];
@@ -3845,6 +3856,7 @@ export type MutationResolveBoardForConfigArgs = {
 export type MutationResolveBoardForSerialArgs = {
   boardType: Scalars['String']['input'];
   layoutId: Scalars['Int']['input'];
+  selectedBoardUuid?: InputMaybe<Scalars['ID']['input']>;
   serial: Scalars['String']['input'];
   setIds: Scalars['String']['input'];
   sizeId: Scalars['Int']['input'];

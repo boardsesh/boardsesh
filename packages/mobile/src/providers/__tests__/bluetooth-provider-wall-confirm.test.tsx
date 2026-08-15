@@ -667,7 +667,29 @@ describe('BluetoothProvider wall-confirm integration', () => {
         layoutId: 1,
         sizeId: 10,
         setIds: '1,20',
+        selectedBoardUuid: null,
       });
+    });
+
+    it('sends the selected board along so the serial cannot move the feed off the wall the user picked', () => {
+      presence.enabled = true;
+      const boardUuid = '33333333-3333-4333-8333-333333333333';
+      render(
+        createElement(BluetoothProvider, {
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,20',
+          boardUuid,
+          children: createElement('div', null),
+        }),
+      );
+
+      bluetooth.options?.onConnectSuccess?.('SERIAL-1', makeConnectionHandle());
+
+      expect(presence.resolveAndBindBoard).toHaveBeenCalledWith(
+        expect.objectContaining({ serial: 'SERIAL-1', selectedBoardUuid: boardUuid }),
+      );
     });
 
     it('resolves against the immutable connection snapshot after the rendered route changes', () => {
@@ -694,6 +716,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
         layoutId: 1,
         sizeId: 10,
         setIds: '1,20',
+        selectedBoardUuid: null,
       });
     });
 
