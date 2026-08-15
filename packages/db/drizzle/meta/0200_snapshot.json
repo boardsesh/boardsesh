@@ -1,6 +1,6 @@
 {
-  "id": "73bf3310-7c54-4f5e-92e3-e419bb9a627b",
-  "prevId": "d79e6a34-c132-4d7a-a99c-05ed35aa8584",
+  "id": "51108e4f-1208-4be6-ab7a-552ed46b1e89",
+  "prevId": "53832fff-dc6f-40e5-86a2-2dd4c5435ea5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4529,6 +4529,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "website_vouched_by_owner": {
+          "name": "website_vouched_by_owner",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "contact_email": {
           "name": "contact_email",
           "type": "text",
@@ -5315,6 +5322,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "presence_seq": {
+          "name": "presence_seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "deleted_at": {
           "name": "deleted_at",
           "type": "timestamp",
@@ -5324,6 +5338,12 @@
         "sync_frozen_at": {
           "name": "sync_frozen_at",
           "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "merged_into_board_uuid": {
+          "name": "merged_into_board_uuid",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         }
@@ -5499,6 +5519,22 @@
           ],
           "isUnique": false,
           "where": "\"user_boards\".\"serial_number\" IS NOT NULL AND \"user_boards\".\"serial_number\" <> '' AND \"user_boards\".\"deleted_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "user_boards_merged_slug_idx": {
+          "name": "user_boards_merged_slug_idx",
+          "columns": [
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"user_boards\".\"merged_into_board_uuid\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
