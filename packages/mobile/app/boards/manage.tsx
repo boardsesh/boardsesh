@@ -121,13 +121,10 @@ export default function ManageBoards() {
   // ONCE here (not per row) and derive a primitive state per row, so a download's
   // frequent progress frames only re-render the one row that's changing.
   //
-  // This surface is behind the offline-board-downloads flag, which since #4312 is
-  // a kill switch rather than a rollout gate: only an EXPLICIT false hides the
-  // per-row toggle + status caption; an unresolved flag reads as on. The flag
-  // gates the entire offline engine, not just this screen — killed, the sync
-  // scheduler never starts, reads/writes stay network-only, and only
-  // previously-queued writes still flush (see OfflineSyncBridge). This screen
-  // stays the only writer of syncEnabledBoards.
+  // The hook preserves the native/web platform split: native offline mode is
+  // permanently on, while Expo web remains off because it lacks the native
+  // SQLite/filesystem stack. This screen stays the only writer of
+  // syncEnabledBoards.
   const offlineDownloadsEnabled = useOfflineDownloadsEnabled();
   const { retryFastDownload } = useBoardDownloads();
   const { confirmAndDownload } = useConfirmBoardDownload();
@@ -151,16 +148,13 @@ export default function ManageBoards() {
   // its identity and re-render every memoised row.
   const syncStatusRef = useRef(syncStatus);
   syncStatusRef.current = syncStatus;
-  // This must be the same gate the sync bridge uses. A previous app version can
-  // leave bootstrap markers in SQLite, but they are meaningless while this build
-  // is intentionally running the ordinary paged downloader.
+  // This must be the same source the sync bridge uses. A build without the
+  // snapshot base URL safely gets the ordinary paged downloader.
   const snapshotSource = useSnapshotSource();
   const snapshotSourceAvailable = snapshotSource !== undefined;
-  // A flag-off interval can run the ordinary paged downloader without advancing
-  // either snapshot revision (for example, when only the first page lands). Keep
-  // a local source generation so turning snapshot bootstrap back on cannot reuse
-  // the pre-toggle React Query entry. The transition render is deliberately
-  // unresolved; its effect advances the generation, then the new key reads SQLite.
+  // Keep the source generation defensive for build/runtime source transitions:
+  // a paged interval must not reuse stale snapshot metadata if availability ever
+  // changes. Production availability is fixed by the build-time URL.
   const [snapshotSourceState, setSnapshotSourceState] = useState(() => ({
     available: snapshotSourceAvailable,
     generation: 0,
@@ -183,11 +177,8 @@ export default function ManageBoards() {
   // Read once here and matched per row below, so a row that is NOT the one
   // downloading gets a stable `null` prop and its memo holds.
   const snapshotFrame = syncStatus.progress?.snapshot;
-  // The UI half of the download-progress kill switch: `useSnapshotSource` drops
-  // the native progress callback, but the engine keeps flushing its three stage
-  // frames regardless, so the row would otherwise sit on "Downloading 0 MB of
-  // 103 MB" with the switch off. `boardDownloadProgress` takes this as a
-  // required input so no call site can forget it.
+  // Compatibility seam retained while the row API still accepts a boolean;
+  // native snapshot progress is permanently enabled.
   const downloadProgressEnabled = useOfflineDownloadProgressEnabled();
 
   // Per-scope "downloaded" signal: which scopes actually have a board_climbs
@@ -257,11 +248,8 @@ export default function ManageBoards() {
           currentTable: syncStatusRef.current.progress?.currentTable ?? null,
           phase: syncStatusRef.current.progress?.phase ?? null,
           snapshot: syncStatusRef.current.progress?.snapshot,
-          // With the progress kill switch off the frames still exist but carry no
-          // bytes, so a Cancelled event built from them would report a fake
-          // stage-and-zero. The abandonment itself is still counted — the
-          // Toggled(enabled:false) above always fires — just without the detail
-          // the progress feature is what supplies.
+          // The progress hook is permanently true on native. Keeping the value
+          // explicit here makes the cancellation telemetry contract obvious.
           progressEnabled: downloadProgressEnabled,
         });
         // Disabling just drops the setting entry; the cached rows + checkpoint stay
@@ -481,7 +469,7 @@ export default function ManageBoards() {
       // per-scope callback. Let either committed marker win so a scheduling race
       // between those two reads cannot briefly put a completed row back in pending.
       const isDownloaded = downloadedSet.has(scopeKey) || (bootstrapMetadata?.isScopeComplete ?? false);
-      // undefined (flag off) hides the row's toggle + caption entirely.
+      // undefined is reserved for platforms without native offline support.
       const downloadStateInput = {
         scopeKey,
         enabled: enabledSet.has(scopeKey),

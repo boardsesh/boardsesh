@@ -135,9 +135,9 @@ export interface SnapshotSource {
    * Fetch the raw manifest JSON (the engine validates it via parseSnapshotManifest).
    * Return `null` when the manifest resource does not exist yet (e.g. a 404 before
    * the first export run) — a permanent miss this cycle, not a failure. THROW on a
-   * transport/network error, which the engine counts as a bootstrap attempt so it
-   * retries next cycle. (`unknown` already admits `null`; the return is `unknown`
-   * rather than `unknown | null` only because the linter forbids that redundancy.)
+   * transport/parse error so the engine applies its global, cap-exempt manifest
+   * retry policy. (`unknown` already admits `null`; the return is `unknown` rather
+   * than `unknown | null` only because the linter forbids that redundancy.)
    */
   fetchManifest(): Promise<unknown>;
   /**

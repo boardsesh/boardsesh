@@ -81,12 +81,12 @@ export function isSnapshotEntryUsable(entry: Pick<SnapshotManifestEntry, 'schema
  * paged crawl runs instead of a snapshot import, because the crawl has no byte
  * total at all:
  *
- * - `manifest` is null: not fetched yet, unreachable, unparseable, or the
- *   snapshot path is switched off entirely (flag/base URL) so nothing is downloaded.
+ * - `manifest` is null: not fetched yet, unreachable, invalid, or the snapshot
+ *   base URL is not configured, so nothing can be downloaded.
  * - the engine's gate says no: a scope that already serves the full catalog, one
- *   that already imported an artifact, one mid-cooldown, one whose budgets are
- *   spent, and a mid-crawl scope with no snapshot failures behind it all resume
- *   as a delta or a crawl instead of downloading.
+ *   that already imported an artifact, one mid-cooldown, or one whose budgets
+ *   are spent resumes as a delta or crawl instead of downloading. An incomplete
+ *   mid-crawl scope is snapshot-healed on an unmetered link.
  * - no entry for the layout: not exported yet.
  * - schema-stale entry: rejected before the download (`isSnapshotEntryUsable`).
  *

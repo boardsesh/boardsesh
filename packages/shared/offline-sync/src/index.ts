@@ -92,6 +92,8 @@ export type {
   CoverageEvaluatedReporter,
   BootstrapRetryScheduledInfo,
   BootstrapRetryScheduledReporter,
+  BootstrapRetryWakeInfo,
+  BootstrapRetryWakeReporter,
   BootstrapPathRecoveredInfo,
   BootstrapPathRecoveredReporter,
 } from './sync/pull-client';

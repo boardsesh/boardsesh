@@ -237,7 +237,7 @@ export default function BoardSelection() {
       </Section>
     ) : null;
   // Tap-to-download, scoped to boards the user owns or follows. Gated on the
-  // engine's kill switch so the glyph never renders in the Expo browser app
+  // engine's platform gate so the glyph never renders in the Expo browser app
   // (offline-downloads-enabled.web.ts hard-returns false) or with offline off.
   const onDownloadMyBoard = useCallback(
     (item: DiscoveryBoardItem) => {

@@ -3,15 +3,10 @@ import { isOfflineDownloadsEnabled as isNativeOfflineDownloadsEnabled } from '..
 import { isOfflineDownloadsEnabled as isWebOfflineDownloadsEnabled } from '../offline-downloads-enabled.web';
 
 describe('offline downloads platform gate', () => {
-  it('is on by default on native, including when the flag never resolved', () => {
+  it('is permanently on on native, regardless of legacy flag input', () => {
     expect(isNativeOfflineDownloadsEnabled(true)).toBe(true);
-    // The #4312 behaviour change: PostHog's /flags response never landing means
-    // the user opened the app with no signal — this feature's audience.
     expect(isNativeOfflineDownloadsEnabled(undefined)).toBe(true);
-  });
-
-  it('still kills the engine on an explicit false (the kill switch)', () => {
-    expect(isNativeOfflineDownloadsEnabled(false)).toBe(false);
+    expect(isNativeOfflineDownloadsEnabled(false)).toBe(true);
   });
 
   it('stays disabled on web for every flag value', () => {

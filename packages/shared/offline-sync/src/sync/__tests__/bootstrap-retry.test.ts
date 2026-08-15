@@ -264,8 +264,8 @@ describe('evaluateBootstrapEligibility', () => {
     ).toEqual({ eligible: true, kind: 'heal-over-partial' });
   });
 
-  it('refuses a mid-crawl scope with no snapshot history — it is just a crawl in progress', () => {
-    expect(evaluate({ hasBoardCheckpoint: true })).toMatchObject({ eligible: false, reason: 'no-failure-evidence' });
+  it('admits a mid-crawl scope even when startup paged before any snapshot failure was recorded', () => {
+    expect(evaluate({ hasBoardCheckpoint: true })).toEqual({ eligible: true, kind: 'heal-over-partial' });
   });
 
   it('never heals a scope that already serves the whole catalog offline', () => {
@@ -407,9 +407,8 @@ describe('clearRetryStateForUserRequest', () => {
   });
 
   it('makes the scope actually eligible again — a settled board has always crawled', () => {
-    // The regression this pins: dropping `hasPriorSnapshotFailure` alongside the
-    // budgets left a checkpointed scope on `no-failure-evidence`, so the whole
-    // "Try the fast download again" action was a silent no-op.
+    // Keep this pinned for rollback compatibility: older bundles still use the
+    // retained failure-history bit to admit a checkpointed retry.
     const settled = state({
       structuralFailures: MAX_BOOTSTRAP_ATTEMPTS,
       retryAfter: NOW + 24 * HOUR,
