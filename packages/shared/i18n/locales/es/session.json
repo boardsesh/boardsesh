@@ -24,29 +24,10 @@
     }
   },
   "boardPresence": {
-    "title": "Ahora en el muro",
     "open": "En el muro",
     "railDark": "Nada encendido ahora",
     "openAria": "Ver qué hay en el muro",
-    "openAriaWithClimb": "Ver qué hay en el muro: {{name}}",
-    "nowOnWallAnnouncement": "Ahora en el muro: {{name}}",
-    "close": "Cerrar",
-    "switchBoard": "Cambiar de muro",
-    "switchBoardAria": "Cambiar a otro muro",
-    "setByLine": "Abierto por {{setter}}",
-    "litByLine": "Encendido por {{name}}",
-    "emptyTitle": "Aún no hay nadie en este muro",
-    "emptyBody": "Conéctate y envía un bloque para empezar el historial.",
-    "historyHeader": "Encendidos en este muro",
-    "statsHeader": "Este muro",
-    "statSent": "encadenes",
-    "statClimbers": "escaladores",
-    "statHardest": "más difícil",
-    "statTopGrade": "más repetido",
-    "wallChanged": "Has cambiado el muro",
-    "undo": "Deshacer",
-    "loadMore": "Cargar más",
-    "loadingMore": "Cargando…"
+    "openAriaWithClimb": "Ver qué hay en el muro: {{name}}"
   },
   "detail": {
     "subtitleSends_one": "{{count}} encadene",
@@ -96,22 +77,8 @@
     "ordinalSecond": "{{n}}º",
     "ordinalThird": "{{n}}º",
     "ordinalDefault": "{{n}}º",
-    "noClimbsYet": "Sin bloques todavía",
-    "logSomeClimbs": "Registra algunos bloques para ver el desglose por grados",
-    "climbsLogged_one": "{{count}} bloque registrado",
-    "climbsLogged_other": "{{count}} bloques registrados",
-    "gradesCount_one": "{{count}} grado",
-    "gradesCount_other": "{{count}} grados",
     "gradeDistribution": "Distribución de grados",
-    "gradesClimbedThisSession": "Grados escalados en esta sesión",
     "sessionGradeDistribution": "Distribución de grados de la sesión",
-    "sections": {
-      "invite": "Invitar",
-      "inviteTitle": "Invita a otros a unirse",
-      "inviteSummary": "Comparte el enlace o el código QR",
-      "activity": "Actividad",
-      "analytics": "Estadísticas"
-    },
     "sendsCount_one": "{{count}} encadene",
     "sendsCount_other": "{{count}} encadenes",
     "flashesCount_one": "{{count}} flash",
@@ -129,75 +96,17 @@
   "join": {
     "joining": "Uniéndote a la sesión..."
   },
-  "settings": {
-    "fallbackTitle": "Sesión",
-    "stopSession": "Detener sesión",
-    "dismiss": "Cerrar",
-    "loadFailed": "No se pudieron cargar todos los detalles de la sesión. Las estadísticas en directo continuarán cuando estén disponibles.",
-    "share": {
-      "shareTitle": "Únete a mi sesión de escalada",
-      "shareText": "Métete y escala conmigo en Boardsesh",
-      "shareLink": "Compartir enlace de la sesión",
-      "shareLinkPreview": "Compartir enlace de la sesión (vista previa)",
-      "linkCopied": "¡Enlace copiado!",
-      "shareError": "Error al compartir",
-      "showQr": "Mostrar código QR",
-      "hideQr": "Ocultar código QR",
-      "showQrPreview": "Mostrar código QR (vista previa)",
-      "inviteCopy": "Mete a tu grupo compartiendo este enlace o escaneando el código QR",
-      "inviteCopyPreview": "Comparte este enlace o código QR con tu grupo y aparecerán en directo."
-    }
-  },
   "creation": {
-    "drawerTitle": "Empezar sesión",
-    "submitDefault": "Sesh",
-    "dialogTitle": "Crear sesión",
-    "dialogSubmit": "Crear sesión",
-    "started": "¡Sesión empezada!",
-    "selectBoardWarning": "Selecciona un plafón primero",
-    "boardsNearYou": "Plafones cerca de ti",
-    "loggedInBlurb": "Registra tus bloques e invita a otros a unirse.",
-    "anonymousBlurb": "Métete sin cuenta. Inicia sesión más tarde para guardar tu progreso.",
-    "signInForMore": "Inicia sesión para más funciones",
-    "signInModalTitle": "Inicia sesión para guardar tu sesión",
-    "signInModalDescription": "Tus encadenes no desaparecerán cuando cierres la pestaña.",
     "form": {
-      "sessionNameLabel": "Nombre de la sesión",
-      "sessionNamePlaceholder": "ej. Proyectando el martes",
-      "sessionGoalLabel": "Objetivo de la sesión",
-      "sessionGoalPlaceholder": "ej. Encadenar V5 hoy",
-      "sessionGoalHelper": "{{count}}/500",
-      "sessionColor": "Color de la sesión",
-      "discoverableLabel": "Visible para escaladores cercanos",
-      "discoverableDescription": "Otros cerca pueden encontrar y unirse a tu sesión",
-      "permanentLabel": "Sesión permanente (no termina sola)"
-    },
-    "errors": {
-      "createFailed": "No se pudo empezar la sesión"
-    },
-    "generateQueue": {
-      "button": "Generar cola de entrenamiento",
-      "buttonHint": "Elige un plafón primero",
-      "regenerate": "Regenerar",
-      "clear": "Limpiar",
-      "summary_one": "{{count}} bloque en cola",
-      "summary_other": "{{count}} bloques en cola",
-      "addedAll_one": "{{count}} bloque en cola para tu sesión",
-      "addedAll_other": "{{count}} bloques en cola para tu sesión",
-      "addedPartial": "Añadidos {{added}} bloques. No se pudieron rellenar {{failed}} huecos.",
-      "failed": "No se pudo generar la cola. No se encontraron bloques que coincidan."
+      "sessionNamePlaceholder": "ej. Proyectando el martes"
     }
   },
   "summary": {
     "dialogTitle": "Resumen de la sesión",
-    "autoFinishedDialogTitle": "Sesión finalizada",
     "sends": "Encadenes",
     "attempts": "Intentos",
-    "duration": "Duración",
-    "hardestSend": "Encadene más duro:",
     "goal": "Objetivo:",
     "gradeDistribution": "Distribución de grados",
-    "participants": "Participantes",
     "done": "Hecho",
     "saveToAppleHealth": "Guardar en Apple Health",
     "savingToAppleHealth": "Guardando en Apple Health…",
@@ -233,48 +142,14 @@
     "recapSaveError": "No se pudo guardar tu resumen. Inténtalo de nuevo.",
     "commentLabel": "Resumen",
     "commentPlaceholder": "¿Qué tal la sesión? Añade unas palabras…",
-    "commentHelper": "{{count}}/{{max}}",
-    "commentSaveFailed": "No se pudieron guardar tus notas. Inténtalo de nuevo."
+    "commentHelper": "{{count}}/{{max}}"
   },
   "overview": {
     "goal": "Objetivo: {{goal}}"
   },
   "queueBar": {
-    "cancelReconnectConfirm": "Cancelar te sacará de la sesión. ¿Es lo que quieres?",
-    "startSesh": "Empezar sesh",
-    "linkCopied": "¡Enlace copiado!",
-    "shareFailed": "Error al compartir",
-    "leaveFailed": "No se pudo salir de la sesión. Inténtalo de nuevo.",
-    "cancelReconnect": "Cancelar",
-    "tickError": "No se pudo guardar tu encadene. Inténtalo otra vez.",
-    "tickCommentPlaceholder": "Comentario...",
-    "tickAttemptLabel": "intento",
-    "reconnect": {
-      "connectionError": "Error de conexión – reintentando…",
-      "reconnecting": "Reconectando…"
-    },
-    "tickBar": {
-      "collapse": "Contraer",
-      "expand": "Expandir",
-      "expandAria": "Expandir barra de encadene",
-      "collapseAria": "Contraer barra de encadene",
-      "commentAria": "Comentario de encadene"
-    },
     "ariaLabels": {
-      "leaveSession": "Salir de la sesión",
-      "keepReconnecting": "Seguir reconectando",
-      "dismissOfflineNotice": "Descartar aviso sin conexión",
-      "shareSessionLink": "Compartir enlace de sesión",
-      "closeTickBar": "Cerrar barra de encadene",
-      "logAttempt": "Registrar intento",
-      "showParticipants": "Mostrar participantes",
-      "hideParticipants": "Ocultar participantes",
-      "openPlayDrawer": "Abrir el bloque del muro"
-    },
-    "offline": {
-      "idle": "Sin conexión",
-      "party": "Sin conexión. Las vías encoladas se sincronizarán.",
-      "solo": "Sin conexión. Los cambios se sincronizarán cuando vuelvas."
+      "leaveSession": "Salir de la sesión"
     }
   },
   "queueDrawer": {
@@ -284,19 +159,10 @@
     "removeItems_other": "Eliminar {{count}} elementos"
   },
   "queueList": {
-    "editClimb": "Editar este bloque",
-    "addedViaBluetooth": "Añadido por Bluetooth",
-    "nextUpHeader": "A continuación",
-    "endMessage": "Eso es todo por ahora",
     "showFullHistory_one": "Mostrar historial completo ({{count}} más)",
     "showFullHistory_other": "Mostrar historial completo ({{count}} más)",
     "showFullHistoryAria_one": "Mostrar {{count}} elemento más del historial",
-    "showFullHistoryAria_other": "Mostrar {{count}} elementos más del historial",
-    "tickHistoryClimb": "Registrar un tick para {{name}}"
-  },
-  "queueProvider": {
-    "offlineLimitReached": "Has alcanzado el límite de la cola sin conexión. Vuelve a conectarte para sincronizar tus vías.",
-    "rateLimitCatchUp": "Sincronizando tus cambios…"
+    "showFullHistoryAria_other": "Mostrar {{count}} elementos más del historial"
   },
   "mobile": {
     "logbook": {
@@ -610,13 +476,6 @@
     "replay": "Repetir",
     "speed": "Velocidad de reproducción",
     "peerFrameMismatch": "Reproduciendo por tu cuenta. Alguien de la sesión usa otra versión de la app que lee los fotogramas de esta vía de otra forma.",
-    "audienceCount_one": "{{count}} más mirando",
-    "audienceCount_other": "{{count}} más mirando",
-    "yourAscents_one": "Tu ascenso ({{count}})",
-    "yourAscents_other": "Tus ascensos ({{count}})",
-    "triesCount_one": "{{count}} intento",
-    "triesCount_other": "{{count}} intentos",
-    "tickError": "No se pudo guardar tu encadene — guardado como borrador",
     "shareError": "No se pudo compartir — inténtalo otra vez",
     "favoriteError": "No se pudieron actualizar tus favoritos — inténtalo otra vez",
     "closeAria": "Cerrar",
@@ -628,29 +487,13 @@
       "addFavoriteAria": "Añadir favorito",
       "removeFavoriteAria": "Quitar favorito",
       "climbActionsAria": "Acciones del bloque",
-      "openQueueAria": "Abrir cola",
-      "queueCountAria": "Cola, {{count}} bloques",
-      "lightbulb": {
-        "turnOff": "Apagar el muro",
-        "sendNamed": "Enviar “{{name}}” al muro",
-        "send": "Enviar la vía al muro",
-        "coachmark": "Enviar al muro"
-      }
+      "queueCountAria": "Cola, {{count}} bloques"
     },
     "tickFab": {
       "logAscentAria": "Registrar ascenso"
     },
     "tickBar": {
-      "commentPlaceholder": "Comentario...",
-      "commentAria": "Comentario del encadene",
-      "closeAria": "Cerrar barra de encadene",
-      "collapseAria": "Contraer barra de encadene",
-      "expandAria": "Expandir barra de encadene",
       "attemptLabel": "intento",
-      "flashLabel": "flash",
-      "tickLabel": "encadene",
-      "logAttemptAria": "Registrar intento",
-      "saveTickAria": "Guardar encadene",
       "flashSaveLabel": "Flash",
       "sendSaveLabel": "Envío",
       "starRating_one": "{{count}} estrella",

@@ -43,7 +43,6 @@ vi.mock('@/app/lib/board-utils', () => ({
 
 // The two client modules the shell still pulls in. Neither renders here — the
 // layout function only constructs the element tree — but both must load.
-vi.mock('@/app/components/board-page/last-used-board-tracker', () => ({ default: () => null }));
 vi.mock('@/app/components/providers/i18n-provider', () => ({ default: () => null }));
 
 import BoardLayout from '../layout';

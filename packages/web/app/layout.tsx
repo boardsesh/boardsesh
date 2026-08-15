@@ -6,19 +6,14 @@ import { VercelAnalytics, VercelSpeedInsights } from './components/providers/ver
 import AnalyticsClient from './components/analytics-client';
 import SessionProviderWrapper from './components/providers/session-provider';
 import QueryClientProvider from './components/providers/query-client-provider';
-import PersistentSessionWrapper from './components/providers/persistent-session-wrapper';
+import SiteChrome from './components/providers/site-chrome';
 import { SnackbarProvider } from './components/providers/snackbar-provider';
 import { AuthModalProvider } from './components/providers/auth-modal-provider';
 import { NotificationSubscriptionManager } from './components/providers/notification-subscription-manager';
 import I18nProvider from './components/providers/i18n-provider';
 import { VercelToolbar } from '@vercel/toolbar/next';
-import { getAllBoardConfigs } from './lib/server-board-configs';
 import { EMPTY_FEATURE_FLAGS } from './flags';
 import { FeatureFlagsProvider } from './components/providers/feature-flags-provider';
-import { OnboardingTourProvider } from './components/onboarding/onboarding-tour-provider';
-import OnboardingTourOverlay from './components/onboarding/onboarding-tour-overlay';
-import OnboardingDummySeshMount from './components/onboarding/onboarding-dummy-sesh-mount';
-import NativeDeepLinkListener from './components/providers/native-deep-link-listener';
 import CapacitorRetirementGate from './components/capacitor-retirement/capacitor-retirement-gate';
 import { getLocale } from './lib/i18n/get-locale';
 import { getServerTranslation } from './lib/i18n/server';
@@ -68,7 +63,7 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const [boardConfigs, locale] = await Promise.all([getAllBoardConfigs(), getLocale()]);
+  const locale = await getLocale();
 
   return (
     <html lang={LOCALE_HTML_LANG[locale]} data-theme="dark" suppressHydrationWarning>
@@ -111,16 +106,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     {/* Everything below is torn down inside the retired
                         Capacitor app, which gets a dead-end update screen. */}
                     <CapacitorRetirementGate>
-                      <NativeDeepLinkListener />
                       <AuthModalProvider>
                         <FeatureFlagsProvider flags={EMPTY_FEATURE_FLAGS}>
-                          <PersistentSessionWrapper boardConfigs={boardConfigs}>
-                            <OnboardingTourProvider>
-                              <NotificationSubscriptionManager>{children}</NotificationSubscriptionManager>
-                              <OnboardingTourOverlay />
-                              <OnboardingDummySeshMount />
-                            </OnboardingTourProvider>
-                          </PersistentSessionWrapper>
+                          <SiteChrome>
+                            <NotificationSubscriptionManager>{children}</NotificationSubscriptionManager>
+                          </SiteChrome>
                         </FeatureFlagsProvider>
                       </AuthModalProvider>
                     </CapacitorRetirementGate>

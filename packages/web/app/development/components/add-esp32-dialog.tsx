@@ -10,7 +10,7 @@ import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 
-import BoardConfigSelects from '@/app/components/board-selector-drawer/board-config-selects';
+import BoardConfigSelects from './board-config-selects';
 import { getDefaultSizeForLayout } from '@/app/lib/board-constants';
 import type { BoardConfigData } from '@/app/lib/server-board-configs';
 import type { BoardName } from '@/app/lib/types';

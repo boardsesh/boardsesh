@@ -155,10 +155,7 @@ export default async function GymPage(props: GymRouteProps) {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }}
         />
       )}
-      <Container
-        maxWidth="md"
-        sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)', pb: 'var(--bottom-bar-height)' }}
-      >
+      <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
         <Box sx={{ mb: 2 }}>
           <MuiLink component={LocaleLink} href="/" underline="hover" sx={{ color: 'var(--color-primary)' }}>
             {t('gymPage.breadcrumbHome')}

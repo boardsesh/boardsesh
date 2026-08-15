@@ -27,26 +27,6 @@
   },
   "list": {
     "noMore": "No more climbs",
-    "viewMode": {
-      "list": "List view",
-      "grid": "Grid view"
-    },
-    "biggerBoard": {
-      "title": "Won't fit your board",
-      "description": "This one runs off the edge of your wall. You'll need a bigger size to send it."
-    },
-    "sort": {
-      "ascents": "Ascents",
-      "popular": "Popular",
-      "difficulty": "Difficulty",
-      "name": "Name",
-      "quality": "Quality",
-      "creation": "Creation",
-      "random": "Random",
-      "reshuffle": "Shuffle again",
-      "ascending": "Asc",
-      "descending": "Desc"
-    },
     "frontDoor": {
       "heading": "{{boardName}} climbs at {{angle}}°",
       "intro": "Every climb set on this {{boardName}} configuration at {{angle}}°, most-climbed first. Tap any of them for the board render, the grade at every angle and the beta.",
@@ -62,171 +42,22 @@
   },
   "header": {},
   "share": {
-    "actionLabel": "Share",
-    "actionText": "Check out \"{{climbName}}\" ({{difficulty}}) on Boardsesh",
-    "linkCopied": "Link copied",
-    "shareFailed": "Failed to share"
+    "actionLabel": "Share"
   },
   "angleSelector": {
-    "selectAngle": "Select Angle",
-    "loadingStats": "Loading stats...",
-    "noData": "No data",
-    "sends_one": "{{count}} send",
-    "sends_other": "{{count}} sends"
+    "selectAngle": "Select Angle"
   },
   "search": {
-    "categories": {
-      "climbs": "Climbs",
-      "boards": "Boards",
-      "gyms": "Gyms",
-      "users": "Users",
-      "playlists": "Playlists"
-    },
     "placeholders": {
-      "boards": "Search boards...",
-      "gyms": "Search gyms...",
-      "users": "Search climbers...",
-      "playlists": "Search playlists...",
-      "climbs": "Search climbs...",
-      "setters": "Search setters..."
-    },
-    "fields": {
-      "climbName": "Climb Name",
-      "gradeRange": "Grade range",
-      "gradeRangeBetween": "{{min}} to {{max}}",
-      "gradeRangeOnly": "{{grade}} only",
-      "gradeRangeAndUp": "{{grade}} and up",
-      "gradeRangeUpTo": "Up to {{grade}}",
-      "setter": "Setter",
-      "boulder": "Boulder",
-      "route": "Route",
-      "minAscents": "Min Ascents",
-      "minRating": "Min Rating",
-      "any": "Any",
-      "minAscentsOption": "{{value}}+",
-      "minRatingOption_one": "{{count}} star and up",
-      "minRatingOption_other": "{{count}} stars and up",
-      "tallClimbsOnly": "Tall Climbs Only",
-      "tallClimbsTooltip": "Show only climbs that use holds in the bottom 8 rows (only available on 8x12 and 10x12 boards)",
-      "wideClimbsOnly": "Wide Climbs Only",
-      "wideClimbsTooltip": "Show only climbs that use the 10x10 side expansion holds",
-      "betaVideosOnly": "Beta Videos Only",
-      "betaVideosTooltip": "Show only climbs that have a beta video",
-      "gradeAccuracy": "Grade Accuracy",
-      "somewhatAccurate": "Somewhat Accurate (<0.2)",
-      "veryAccurate": "Very Accurate (<0.1)",
-      "extremelyAccurate": "Extremely Accurate (<0.05)",
-      "classicsOnly": "Classics Only",
-      "setterPromptOpen": "Open dropdown to see setters",
-      "setterNoResults": "No setters found"
-    },
-    "panels": {
-      "quality": "Quality",
-      "status": "Ascent Status",
-      "progress": "Progress",
-      "allClimbs": "All climbs",
-      "zone": "Zone",
-      "holdsAndZone": "Holds & Zone",
-      "anyDefault": "Any"
-    },
-    "quality": {
-      "tallClimbsOnly": "Tall",
-      "wideClimbsOnly": "Wide",
-      "betaVideosOnly": "Beta"
+      "climbs": "Search climbs..."
     },
     "summary": {
-      "default": "What do you want to climb?",
-      "gradeFallback": "Grade {{gradeId}}",
-      "upToGrade": "Up to {{grade}}",
-      "setterCount_one": "{{count}} setter",
-      "setterCount_other": "{{count}} setters",
-      "ascents_one": "{{count}}+ ascent",
-      "ascents_other": "{{count}}+ ascents",
-      "rating": "{{rating}}+ rating",
-      "classics": "Classics",
-      "gradeAccuracy": "Grade accuracy",
-      "drafts": "Drafts",
-      "attempted": "attempted",
-      "completed": "completed",
-      "hide": "Hide {{filters}}",
-      "only": "Only {{filters}}",
-      "holds_one": "{{count}} hold",
-      "holds_other": "{{count}} holds",
       "routesOnly": "Routes only",
-      "bouldersAndRoutes": "Boulders & routes",
-      "more": "+{{count}} more"
-    },
-    "status": {
-      "any": "Any",
-      "established": "Established",
-      "establishedTooltip": "Climbs with 2 or more ascents",
-      "projects": "Projects",
-      "projectsTooltip": "Climbs with zero recorded ascents",
-      "myDrafts": "My Drafts",
-      "myDraftsSignedOut": "My Drafts (sign in)",
-      "signInToFilterDrafts": "Sign in to filter by your drafts.",
-      "signInModalTitle": "Sign in to Boardsesh",
-      "signInModalDescription": "Sign in to browse your draft climbs."
-    },
-    "progress": {
-      "signInTitle": "Sign in to filter by your data",
-      "signInBody": "Login to filter climbs based on your attempt and completion history.",
-      "signInModalTitle": "Sign in to Boardsesh",
-      "signInModalDescription": "Create an account to filter by your climbing progress and save favorites.",
-      "hideAttempted": "Hide Attempted",
-      "hideCompleted": "Hide Completed",
-      "onlyAttempted": "Only Attempted",
-      "onlyCompleted": "Only Completed"
-    },
-    "actions": {
-      "clearAll": "Clear all",
-      "signIn": "Sign In"
-    },
-    "results": {
-      "count": "results"
+      "bouldersAndRoutes": "Boulders & routes"
     },
     "holds": {
       "include": "Include",
-      "exclude": "Exclude",
-      "included": "{{count}} included",
-      "excluded": "{{count}} excluded",
-      "showHeatmap": "Show heatmap",
-      "hideHeatmap": "Hide heatmap"
-    },
-    "zone": {
-      "draw": "Draw zone",
-      "clear": "Clear zone",
-      "modeLabel": "Zone type",
-      "allHolds": "All holds inside",
-      "anyHold": "At least 1 hold"
-    },
-    "holdsAndZone": {
-      "description": "Tap holds to filter, or draw a zone to focus results on part of the board."
-    },
-    "sortToggle": "Sort"
-  },
-  "create": {
-    "auth": {
-      "signInTitle": "Sign in to save your climb",
-      "signInDescription": "Create an account or sign in to save your climb to the board.",
-      "signInAria": "Sign in to save",
-      "logInTitle": "Log in to save your climb",
-      "logInAria": "Log in to save",
-      "editLockedTitle": "Published climbs can only be edited for 24 hours after first publish.",
-      "editLockedAria": "Edit window closed",
-      "savedTitle": "Saved",
-      "savedAria": "Saved"
-    },
-    "clear": {
-      "title": "Clear climb",
-      "description": "This will clear all holds and reset the form. Are you sure?",
-      "tooltip": "Clear all holds"
-    },
-    "frames": {
-      "duplicateTooltip": "Duplicate frame",
-      "deleteTooltip": "Delete frame",
-      "deleteTitle": "Delete frame",
-      "deleteDescription": "This will delete the current frame. Are you sure?"
+      "exclude": "Exclude"
     }
   },
   "actions": {
@@ -238,94 +69,20 @@
         "removeFailed": "Failed to remove from playlist",
         "addFailedNamed": "Couldn't add to \"{{playlist}}\"",
         "removeFailedNamed": "Couldn't remove from \"{{playlist}}\"",
-        "createdNamed": "Created playlist \"{{name}}\"",
         "createFailed": "Failed to create playlist"
       },
       "validation": {
-        "nameRequired": "Please enter a playlist name",
-        "nameTooLong": "Name too long",
-        "descriptionTooLong": "Description too long"
-      },
-      "auth": {
-        "title": "Sign in to create playlists",
-        "description": "Sign in to organize your climbs into custom playlists."
+        "nameRequired": "Please enter a playlist name"
       },
       "popover": {
         "title": "Add to Playlist",
         "empty": "No playlists yet",
-        "createFirst": "Create Your First Playlist",
         "createNew": "Create New Playlist",
         "signInBlurb": "Sign in to create and manage playlists"
       },
       "create": {
-        "nameLabel": "Playlist Name",
         "namePlaceholder": "e.g., Hard Crimps",
-        "descriptionLabel": "Description (optional)",
-        "descriptionPlaceholder": "Optional description...",
-        "colorLabel": "Color (optional)",
         "submit": "Create"
-      },
-      "row": {
-        "removeAria": "Remove from playlist {{name}}",
-        "addAria": "Add to playlist {{name}}",
-        "climbCount_one": "{{count}} climb",
-        "climbCount_other": "{{count}} climbs"
-      }
-    },
-    "sendToBoard": {
-      "label": "Send to board",
-      "active": "On the wall",
-      "tooltip": "Send to the board",
-      "activeTooltip": "Currently on the wall"
-    },
-    "tick": {
-      "drawer": {
-        "signInRequired": "Sign in required",
-        "selectBoard": "Select board",
-        "logAscent": "Log ascent",
-        "signInToRecord": "Sign in to record ticks",
-        "createAccountBlurb": "Create a Boardsesh account to log your climbs and track your progress.",
-        "signIn": "Sign In",
-        "orLogInOfficialApp": "Or log your tick in the official app:",
-        "openInApp": "Open in App",
-        "alwaysOpenInApp": "Always open in app",
-        "authModalTitle": "Sign in to record ticks",
-        "authModalDescription": "Create an account to log your climbs and track your progress.",
-        "mirroredTooltip": "Click the tag to toggle whether you completed this climb on the mirrored side",
-        "whichBoard": "Which board did you climb on?"
-      }
-    },
-    "navigation": {
-      "nextClimb": "Next climb on the wall",
-      "previousClimb": "Previous climb on the wall"
-    },
-    "mirror": {
-      "label": {
-        "mirrored": "Mirrored",
-        "mirror": "Mirror"
-      },
-      "tooltip": {
-        "mirrored": "Mirrored (click to reset)",
-        "mirror": "Mirror climb"
-      }
-    },
-    "favorite": {
-      "label": {
-        "favorited": "Favorited",
-        "favorite": "Favorite"
-      },
-      "tooltip": {
-        "add": "Add to favorites",
-        "remove": "Remove from favorites"
-      },
-      "auth": {
-        "title": "Sign in to save favorites",
-        "descriptionWithName": "Sign in to save \"{{climbName}}\" to your favorites.",
-        "description": "Sign in to save climbs to your favorites."
-      },
-      "toast": {
-        "updateFailed": "Failed to update favorite. Please try again.",
-        "saveFailed": "Failed to save favorite. Please try again."
       }
     }
   },
@@ -335,41 +92,14 @@
       "project": "project",
       "projectAtAngle": "project @ {{angle}}°"
     },
-    "list": {
-      "moreActions": "More actions",
-      "tickError": "Couldn't save your tick — it's saved as a draft"
-    },
-    "detailHeader": {
-      "project": "project"
-    },
     "method": {
       "footless": "Footless",
       "footlessKickboard": "Footless + KB",
       "noKickboard": "No KB"
     }
   },
-  "detail": {
-    "sections": {
-      "beta": "Beta",
-      "similarClimbs": "Similar climbs",
-      "similarClimbsSummary": "Climbs sharing 50%+ of these holds"
-    }
-  },
   "boardseshGrade": {
-    "label": "Boardsesh grade",
     "title": "Boardsesh grade",
-    "summary": "How hard it really climbs",
-    "universalLabel": "Boardsesh grade",
-    "localLabel": "On this board",
-    "localScopeNote": "On this board's scale — not comparable across boards yet",
-    "universalComparison": "Tension scale: {{grade}}",
-    "geometryEstimate": "From the holds: {{grade}}",
-    "confirmedSubline_one": "Confirmed by {{count}} send",
-    "confirmedSubline_other": "Confirmed by {{count}} sends",
-    "provisionalSubline_one": "Still settling — {{count}} send in",
-    "provisionalSubline_other": "Still settling — {{count}} sends in",
-    "setterOnly": "Setter's call — not enough sends yet.",
-    "moonboardTitle": "Not standardized yet",
     "moonboardBody": "We don't have community grade data for MoonBoard yet. Log your Moon sends on Boardsesh to help unlock it.",
     "loadError": "Couldn't load the grade right now.",
     "byAngle": "How it climbs by angle",
@@ -415,7 +145,6 @@
     "loadError": "Couldn't load similar climbs.",
     "emptyDefault": "No similar climbs yet.",
     "emptyOnLayout": "No similar climbs on this layout.",
-    "emptyIdentical": "No identical climbs found right now.",
     "untitledClimb": "Untitled climb"
   },
   "multiboardList": {
@@ -425,62 +154,21 @@
     "count_one": "{{count}} climb",
     "count_other": "{{count}} climbs"
   },
-  "tick": {
-    "controls": {
-      "selectGrade": "Select logged grade",
-      "userByline": "user",
-      "starsLabel": "stars",
-      "triesLabel": "tries",
-      "starRating": "Star rating",
-      "noRating": "No rating",
-      "starOption_one": "{{count}} star",
-      "starOption_other": "{{count}} stars",
-      "gradeOverride": "Grade override",
-      "clearGradeOverride": "Clear grade override",
-      "consensusSuffix": "consensus",
-      "attemptCount": "Attempt count"
-    },
-    "bar": {
-      "logAscent": "Log ascent",
-      "logAttempt": "Log attempt",
-      "cancel": "Cancel"
-    }
-  },
   "createClimbForm": {
     "draftBadge": "Draft",
     "namePlaceholder": "Climb name",
     "descriptionPlaceholder": "Add beta or notes about your climb...",
-    "openDrafts": "Open drafts",
-    "processing": "Processing...",
-    "importFromScreenshot": "Import from screenshot",
-    "bulkImport": "Bulk import",
     "dismiss": "Dismiss",
     "alerts": {
-      "importFailed": "Import Failed: {{error}}",
-      "importWarnings": "Import Warnings:",
-      "checkingMoonBoardDuplicate": "Checking whether this MoonBoard climb already exists...",
       "publishDuplicateNamed": "This hold pattern matches \"{{name}}\". Toggle Draft to save it without publishing, or change a hold.",
       "publishDuplicateUnnamed": "This hold pattern matches an existing climb. Toggle Draft to save it without publishing, or change a hold.",
       "viewMatchingClimb": "View matching climb",
-      "identicalClimbDrawerTitle": "Identical climb",
       "saveFailedFallback": "Failed to save climb. Please try again."
     },
-    "settings": {
-      "tooltip": "Climb settings",
-      "title": "Climb Settings"
-    },
     "fields": {
-      "name": "Name",
-      "holds": "Holds",
-      "angle": "Angle",
-      "grade": "Grade",
-      "gradeNone": "None",
-      "benchmark": "Benchmark",
-      "method": "Method",
       "description": "Description (optional)"
     },
     "holds": {
-      "starting": "Starting",
       "start": "Start",
       "hand": "Hand",
       "finish": "Finish",
@@ -488,22 +176,14 @@
     },
     "validation": {
       "needsStartFinish": "A valid climb needs at least 1 start hold and 1 finish hold"
-    },
-    "methodOptions": {
-      "feetFollowHands": "Feet follow hands",
-      "footless": "Footless",
-      "footlessKickboard": "Footless + kickboard",
-      "noKickboard": "No kickboard"
     }
   },
   "draftsDrawer": {
-    "title": "Drafts",
     "count_one": "{{count}} draft",
     "count_other": "{{count}} drafts",
     "loadError": "Couldn't load your drafts. Try again.",
     "empty": {
-      "title": "No drafts yet",
-      "subtitle": "Save a climb as a draft to pick it up later."
+      "title": "No drafts yet"
     },
     "delete": {
       "tooltip": "Delete draft",
@@ -527,39 +207,6 @@
       "finish": "Finish",
       "foot": "Foot",
       "any": "Any"
-    }
-  },
-  "directionPicker": {
-    "down": "Down"
-  },
-  "holdClassification": {
-    "drawerTitle": "Hold Classification",
-    "classifyHoldTitle": "Classify Hold",
-    "loadingHolds": "Loading holds...",
-    "emptyState": "No holds found for this board configuration.",
-    "progress": "Hold {{current}} of {{total}} ({{classified}} classified)",
-    "complete": {
-      "title": "Classification Complete!",
-      "subtitle": "You've classified {{classified}} of {{total}} holds. You can run through this wizard again anytime to update your ratings."
-    },
-    "fields": {
-      "holdType": "Hold Type",
-      "handRating": "Hand Rating (1-5)",
-      "footRating": "Foot Rating (1-5)",
-      "pullDirection": "Direction of Pull"
-    },
-    "hints": {
-      "handRating": "5 = Easy to grip, 1 = Very difficult",
-      "footRating": "5 = Easy to stand on, 1 = Very difficult",
-      "pullDirection": "Click or drag to set the best pulling direction"
-    },
-    "actions": {
-      "previous": "Previous",
-      "skip": "Skip",
-      "finish": "Finish"
-    },
-    "toast": {
-      "saveFailed": "Failed to save classification"
     }
   },
   "moonboardImport": {

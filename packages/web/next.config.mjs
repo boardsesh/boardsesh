@@ -106,6 +106,13 @@ const BASE_REDIRECTS = [
     destination: '/playlists',
     permanent: true,
   },
+  // The /you logbook tab was the web logbook feed; logging and history live in
+  // the app now, so the tab collapses back onto /you.
+  {
+    source: '/you/logbook',
+    destination: '/you',
+    permanent: true,
+  },
 
   // Climb creation moved to the app. A canonical numeric board URL hands its
   // board over intact: these are exactly the params the app's create screen

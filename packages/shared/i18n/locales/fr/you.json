@@ -4,10 +4,6 @@
       "title": "Vous",
       "description": "Votre tableau de bord d'escalade sur Boardsesh"
     },
-    "logbook": {
-      "title": "Carnet",
-      "description": "Votre carnet de croix sur Boardsesh"
-    },
     "sessions": {
       "title": "Sessions",
       "description": "Vos sessions de grimpe sur Boardsesh"

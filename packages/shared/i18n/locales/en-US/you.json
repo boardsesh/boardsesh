@@ -4,10 +4,6 @@
       "title": "You",
       "description": "Your climbing dashboard on Boardsesh"
     },
-    "logbook": {
-      "title": "Logbook",
-      "description": "Your climbing logbook on Boardsesh"
-    },
     "sessions": {
       "title": "Sessions",
       "description": "Your climbing sessions on Boardsesh"

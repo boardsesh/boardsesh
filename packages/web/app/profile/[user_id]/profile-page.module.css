@@ -27,7 +27,6 @@
 
 .content {
   padding: 24px; /* spacing.6 */
-  padding-bottom: calc(var(--bottom-bar-height) + 50px);
   max-width: 800px;
   margin: 0 auto;
   width: 100%;
@@ -265,7 +264,6 @@
 @media (max-width: 768px) {
   .content {
     padding: 16px; /* spacing.4 */
-    padding-bottom: calc(var(--bottom-bar-height) + 50px);
   }
 
   .header {

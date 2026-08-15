@@ -24,29 +24,10 @@
     }
   },
   "boardPresence": {
-    "title": "Sur le mur maintenant",
     "open": "Sur le mur",
     "railDark": "Rien d'allumé pour l'instant",
     "openAria": "Voir ce qui est sur le mur",
-    "openAriaWithClimb": "Voir ce qui est sur le mur : {{name}}",
-    "nowOnWallAnnouncement": "Sur le mur maintenant : {{name}}",
-    "close": "Fermer",
-    "switchBoard": "Changer de mur",
-    "switchBoardAria": "Passer à un autre mur",
-    "setByLine": "Ouvert par {{setter}}",
-    "litByLine": "Allumé par {{name}}",
-    "emptyTitle": "Personne sur ce mur pour l'instant",
-    "emptyBody": "Connecte-toi et allume un bloc pour lancer l'historique.",
-    "historyHeader": "Allumés sur ce mur",
-    "statsHeader": "Ce mur",
-    "statSent": "croix",
-    "statClimbers": "grimpeurs",
-    "statHardest": "le plus dur",
-    "statTopGrade": "la plus enchaînée",
-    "wallChanged": "Tu as changé le mur",
-    "undo": "Annuler",
-    "loadMore": "Charger plus",
-    "loadingMore": "Chargement…"
+    "openAriaWithClimb": "Voir ce qui est sur le mur : {{name}}"
   },
   "detail": {
     "subtitleSends_one": "{{count}} croix",
@@ -96,22 +77,8 @@
     "ordinalSecond": "{{n}}e",
     "ordinalThird": "{{n}}e",
     "ordinalDefault": "{{n}}e",
-    "noClimbsYet": "Aucun bloc pour l'instant",
-    "logSomeClimbs": "Enregistre quelques blocs pour voir la répartition par cotation",
-    "climbsLogged_one": "{{count}} bloc enregistré",
-    "climbsLogged_other": "{{count}} blocs enregistrés",
-    "gradesCount_one": "{{count}} cotation",
-    "gradesCount_other": "{{count}} cotations",
     "gradeDistribution": "Répartition des cotations",
-    "gradesClimbedThisSession": "Cotations grimpées cette session",
     "sessionGradeDistribution": "Répartition des cotations de la session",
-    "sections": {
-      "invite": "Inviter",
-      "inviteTitle": "Invite la crew à rejoindre",
-      "inviteSummary": "Partage le lien ou le QR code",
-      "activity": "Activité",
-      "analytics": "Statistiques"
-    },
     "sendsCount_one": "{{count}} croix",
     "sendsCount_other": "{{count}} croix",
     "flashesCount_one": "{{count}} flash",
@@ -129,75 +96,17 @@
   "join": {
     "joining": "On te connecte…"
   },
-  "settings": {
-    "fallbackTitle": "Session",
-    "stopSession": "Arrêter la session",
-    "dismiss": "Fermer",
-    "loadFailed": "Impossible de charger tous les détails. Les stats en direct reprendront dès que possible.",
-    "share": {
-      "shareTitle": "Rejoins ma session de grimpe",
-      "shareText": "Viens grimper avec moi sur Boardsesh",
-      "shareLink": "Partager le lien de la session",
-      "shareLinkPreview": "Partager le lien de la session (aperçu)",
-      "linkCopied": "Lien copié !",
-      "shareError": "Échec du partage",
-      "showQr": "Afficher le QR code",
-      "hideQr": "Masquer le QR code",
-      "showQrPreview": "Afficher le QR code (aperçu)",
-      "inviteCopy": "Embarque ta crew en partageant ce lien ou en scannant le QR code",
-      "inviteCopyPreview": "Partage ce lien ou ce QR code avec ta crew et ils apparaîtront en direct."
-    }
-  },
   "creation": {
-    "drawerTitle": "Lancer la session",
-    "submitDefault": "Sesh",
-    "dialogTitle": "Créer une session",
-    "dialogSubmit": "Créer la session",
-    "started": "Session lancée !",
-    "selectBoardWarning": "Sélectionne d'abord une board",
-    "boardsNearYou": "Boards près de toi",
-    "loggedInBlurb": "Suis tes blocs et invite la crew à grimper avec toi.",
-    "anonymousBlurb": "Lance-toi sans compte. Connecte-toi plus tard pour garder ta progression.",
-    "signInForMore": "Connecte-toi pour plus de fonctionnalités",
-    "signInModalTitle": "Connecte-toi pour sauvegarder ta session",
-    "signInModalDescription": "Tes croix ne disparaîtront pas en fermant l'onglet.",
     "form": {
-      "sessionNameLabel": "Nom de la session",
-      "sessionNamePlaceholder": "ex. Projet du mardi",
-      "sessionGoalLabel": "Objectif de la session",
-      "sessionGoalPlaceholder": "ex. Enchaîner du V5 aujourd'hui",
-      "sessionGoalHelper": "{{count}}/500",
-      "sessionColor": "Couleur de la session",
-      "discoverableLabel": "Visible par les grimpeurs à proximité",
-      "discoverableDescription": "Les autres à proximité pourront trouver et rejoindre ta session",
-      "permanentLabel": "Session permanente (ne se terminera pas automatiquement)"
-    },
-    "errors": {
-      "createFailed": "Échec du lancement de la session"
-    },
-    "generateQueue": {
-      "button": "Générer une file d'entraînement",
-      "buttonHint": "Choisis d'abord une board",
-      "regenerate": "Régénérer",
-      "clear": "Effacer",
-      "summary_one": "{{count}} voie en file",
-      "summary_other": "{{count}} voies en file",
-      "addedAll_one": "{{count}} voie ajoutée à ta session",
-      "addedAll_other": "{{count}} voies ajoutées à ta session",
-      "addedPartial": "{{added}} voies ajoutées. {{failed}} créneaux n'ont pas pu être remplis.",
-      "failed": "Impossible de générer une file. Aucune voie correspondante trouvée."
+      "sessionNamePlaceholder": "ex. Projet du mardi"
     }
   },
   "summary": {
     "dialogTitle": "Résumé de la session",
-    "autoFinishedDialogTitle": "Session terminée",
     "sends": "Croix",
     "attempts": "Essais",
-    "duration": "Durée",
-    "hardestSend": "Croix la plus dure :",
     "goal": "Objectif :",
     "gradeDistribution": "Répartition des cotations",
-    "participants": "Participants",
     "done": "Terminé",
     "saveToAppleHealth": "Enregistrer dans Apple Santé",
     "savingToAppleHealth": "Enregistrement dans Apple Santé…",
@@ -233,48 +142,14 @@
     "recapSaveError": "Impossible d'enregistrer ton récap. Réessaie.",
     "commentLabel": "Récap",
     "commentPlaceholder": "Alors, cette session ? Ajoute quelques mots…",
-    "commentHelper": "{{count}}/{{max}}",
-    "commentSaveFailed": "Impossible d'enregistrer tes notes. Réessaie."
+    "commentHelper": "{{count}}/{{max}}"
   },
   "overview": {
     "goal": "Objectif : {{goal}}"
   },
   "queueBar": {
-    "cancelReconnectConfirm": "Annuler quittera la session. C'est ce que tu veux ?",
-    "startSesh": "Lancer la sesh",
-    "linkCopied": "Lien copié !",
-    "shareFailed": "Échec du partage",
-    "leaveFailed": "Impossible de quitter la session. Réessaie.",
-    "cancelReconnect": "Annuler",
-    "tickError": "Impossible d'enregistrer ton tick. Réessaie.",
-    "tickCommentPlaceholder": "Commentaire…",
-    "tickAttemptLabel": "essai",
-    "reconnect": {
-      "connectionError": "Erreur de connexion. Nouvelle tentative…",
-      "reconnecting": "Reconnexion…"
-    },
-    "tickBar": {
-      "collapse": "Réduire",
-      "expand": "Développer",
-      "expandAria": "Développer la barre de tick",
-      "collapseAria": "Réduire la barre de tick",
-      "commentAria": "Commentaire du tick"
-    },
     "ariaLabels": {
-      "leaveSession": "Quitter la session",
-      "keepReconnecting": "Continuer à reconnecter",
-      "dismissOfflineNotice": "Fermer l'avis hors ligne",
-      "shareSessionLink": "Partager le lien de la session",
-      "closeTickBar": "Fermer la barre de tick",
-      "logAttempt": "Enregistrer un essai",
-      "showParticipants": "Afficher les participants",
-      "hideParticipants": "Masquer les participants",
-      "openPlayDrawer": "Ouvrir le bloc du mur"
-    },
-    "offline": {
-      "idle": "Hors ligne",
-      "party": "Hors ligne. Les blocs en file d'attente seront synchronisés.",
-      "solo": "Hors ligne. Les changements seront synchronisés à la reconnexion."
+      "leaveSession": "Quitter la session"
     }
   },
   "queueDrawer": {
@@ -284,19 +159,10 @@
     "removeItems_other": "Retirer {{count}} éléments"
   },
   "queueList": {
-    "editClimb": "Modifier ce bloc",
-    "addedViaBluetooth": "Ajouté via Bluetooth",
-    "nextUpHeader": "À suivre",
-    "endMessage": "C'est tout pour l'instant",
     "showFullHistory_one": "Afficher l'historique complet ({{count}} de plus)",
     "showFullHistory_other": "Afficher l'historique complet ({{count}} de plus)",
     "showFullHistoryAria_one": "Afficher {{count}} element de plus de l'historique",
-    "showFullHistoryAria_other": "Afficher {{count}} elements de plus de l'historique",
-    "tickHistoryClimb": "Enregistrer une croix pour {{name}}"
-  },
-  "queueProvider": {
-    "offlineLimitReached": "Tu as atteint la limite hors ligne de la file d'attente. Reconnecte-toi pour synchroniser tes blocs.",
-    "rateLimitCatchUp": "Synchronisation de tes modifications…"
+    "showFullHistoryAria_other": "Afficher {{count}} elements de plus de l'historique"
   },
   "mobile": {
     "logbook": {
@@ -610,13 +476,6 @@
     "replay": "Rejouer",
     "speed": "Vitesse de lecture",
     "peerFrameMismatch": "Lecture en solo. Quelqu'un dans la session utilise une autre version de l'app qui lit les images de cette voie différemment.",
-    "audienceCount_one": "{{count}} autre en train de regarder",
-    "audienceCount_other": "{{count}} autres en train de regarder",
-    "yourAscents_one": "Ton ascension ({{count}})",
-    "yourAscents_other": "Tes ascensions ({{count}})",
-    "triesCount_one": "{{count}} essai",
-    "triesCount_other": "{{count}} essais",
-    "tickError": "Impossible d'enregistrer ton tick. Sauvegardé en brouillon.",
     "shareError": "Impossible de partager — réessaie",
     "favoriteError": "Impossible de mettre à jour tes favoris — réessaie",
     "closeAria": "Fermer",
@@ -628,29 +487,13 @@
       "addFavoriteAria": "Ajouter aux favoris",
       "removeFavoriteAria": "Retirer des favoris",
       "climbActionsAria": "Actions du bloc",
-      "openQueueAria": "Ouvrir la file d'attente",
-      "queueCountAria": "File, {{count}} blocs",
-      "lightbulb": {
-        "turnOff": "Éteindre le mur",
-        "sendNamed": "Allumer «{{name}}» au mur",
-        "send": "Allumer la voie au mur",
-        "coachmark": "Allumer au mur"
-      }
+      "queueCountAria": "File, {{count}} blocs"
     },
     "tickFab": {
       "logAscentAria": "Enregistrer une ascension"
     },
     "tickBar": {
-      "commentPlaceholder": "Commentaire…",
-      "commentAria": "Commentaire du tick",
-      "closeAria": "Fermer la barre de tick",
-      "collapseAria": "Réduire la barre de tick",
-      "expandAria": "Développer la barre de tick",
       "attemptLabel": "essai",
-      "flashLabel": "flash",
-      "tickLabel": "tick",
-      "logAttemptAria": "Enregistrer un essai",
-      "saveTickAria": "Enregistrer le tick",
       "flashSaveLabel": "Flash",
       "sendSaveLabel": "Enchaîné",
       "starRating_one": "{{count}} étoile",

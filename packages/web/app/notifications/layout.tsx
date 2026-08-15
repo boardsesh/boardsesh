@@ -6,7 +6,6 @@ export default function NotificationsLayout({ children }: { children: React.Reac
       style={{
         minHeight: '100dvh',
         paddingTop: 'var(--global-header-height)',
-        paddingBottom: 'var(--bottom-bar-height)',
       }}
     >
       {children}

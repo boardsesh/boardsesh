@@ -26,13 +26,12 @@ The board most specs land on:
   `[data-testid="climb-thumbnail"]` is the only row marker it emits — the
   classic list's `#onboarding-climb-card` and `[data-testid="climb-card"]` are
   gone from this route. `global-setup.ts` and `helpers/waits.ts` both accept all
-  three so the check keeps working either side of the remaining W-16 cut; the
-  seeded data requirement is unchanged (≥1 listed climb with stats at 40°).
+  three; the seeded data requirement is unchanged (≥1 listed climb with stats at
+  40°).
 - No onboarding-tagged rows are required any more. The queue-population flows
   that needed `#onboarding-climb-card` / `#onboarding-climb-card-2` are gone with
-  the interactive list: `queue-persistence.spec.ts` and
-  `play-view-swipe-close.spec.ts` are deleted, and `bottom-tab-bar.spec.ts`'s
-  queue block is skipped pending W-16.
+  the interactive list: `queue-persistence.spec.ts`,
+  `play-view-swipe-close.spec.ts` and `bottom-tab-bar.spec.ts` are all deleted.
 
 ## Per-spec assumptions
 

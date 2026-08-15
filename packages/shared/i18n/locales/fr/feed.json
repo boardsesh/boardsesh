@@ -52,10 +52,7 @@
     "empty": "Aucune ascension pour le moment"
   },
   "betaVideos": {
-    "shareBetaFor": "Partager la beta de {{name}}",
-    "shareBetaVideo": "Partager une vidéo beta",
     "shareBeta": "Partager la beta",
-    "dialogHelper": "Collez le lien d'un reel ou d'un post pour partager votre beta.",
     "addedToast": "Vidéo ajoutée à la beta",
     "addError": "Impossible d'ajouter la vidéo. Réessayez.",
     "urlPlaceholder": "URL Instagram ou TikTok",
@@ -67,7 +64,6 @@
     "instagramCopyFailed": "Impossible de copier la légende. Réessayez.",
     "instagramCopiedAndOpened": "Légende copiée. Collez-la dans Instagram.",
     "instagramCopiedOnly": "Légende copiée dans le presse-papiers.",
-    "addSubmit": "Ajouter",
     "steps": {
       "optional": "Optionnel",
       "step1Title": "Ouvrez Instagram et copiez votre légende",
@@ -177,11 +173,6 @@
     "frozen": "Ce bloc est gelé : aucune nouvelle proposition acceptée.",
     "reasonPrefix": "Raison : {{reason}}"
   },
-  "newClimbFeed": {
-    "title": "Nouveaux blocs",
-    "errorLoad": "Impossible de charger les blocs. Réessayez.",
-    "empty": "Aucun bloc sur ce layout. Soyez le premier à en ouvrir un !"
-  },
   "proposalCard": {
     "quotedReason": "« {{reason}} »",
     "support": "Soutenir",
@@ -207,15 +198,6 @@
     "votesNeeded": "{{current}} / {{required}} votes requis",
     "opposed": "{{count}} contre"
   },
-  "search": {
-    "minCharsHint": "Tapez au moins 2 caractères pour rechercher",
-    "noBoards": "Aucune board pour « {{query}} »",
-    "noGyms": "Aucune salle pour « {{query}} »",
-    "noPlaylists": "Aucune playlist pour « {{query}} »",
-    "noUsers": "Aucun grimpeur ni ouvreur pour « {{query}} »",
-    "climbCount_one": "{{count}} bloc",
-    "climbCount_other": "{{count}} blocs"
-  },
   "sessionFeedCard": {
     "climbCount_one": "{{count}} bloc",
     "climbCount_other": "{{count}} blocs",
@@ -239,9 +221,6 @@
     "openHint": "Ouvre la session",
     "openHardestClimb": "Ouvrir {{climb}}"
   },
-  "sessionSummary": {
-    "completed": "Session terminée"
-  },
   "socialActions": {
     "upvoteWithCount_one": "Aimer, {{count}} j'aime",
     "upvoteWithCount_other": "Aimer, {{count}} j'aime",
@@ -252,19 +231,6 @@
   },
   "socialFeedItem": {
     "climbed": "a enchaîné"
-  },
-  "subscribeButton": {
-    "signInPrompt": "Connectez-vous pour gérer vos abonnements",
-    "subscribed": "Abonné aux nouveaux blocs",
-    "unsubscribed": "Désabonné des nouveaux blocs",
-    "updateFailed": "Impossible de mettre à jour l'abonnement"
-  },
-  "userSearch": {
-    "ascentsThisMonth": "{{count}} ascensions ce mois-ci",
-    "climbsSet_one": "{{count}} bloc ouvert",
-    "climbsSet_other": "{{count}} blocs ouverts",
-    "climbCount_one": "{{count}} bloc",
-    "climbCount_other": "{{count}} blocs"
   },
   "userSmartCard": {
     "follower_one": "{{count}} abonné",

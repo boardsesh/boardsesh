@@ -253,6 +253,83 @@ in W-16, not here — it is a large cascade and the importer's edges have to be
 lifted out first. `components/board-page/last-used-board-tracker.tsx` stays for
 the same reason, as the one allowlisted edge W-16 cuts.
 
+## W-16 (+W-18) — deleting the climbing UI and swapping the root chrome (#4435)
+
+The irreversible one. `git diff --stat` against the merge base: roughly **1.7k
+insertions against −131,350 deletions across ~680 files** — a net loss of about
+**−130k** lines, against the epic row's estimate of −110k. (Run
+`git diff --shortstat origin/main...HEAD` for the exact figure at merge; the
+insertion count moves every time this section is edited.) The gap is second-order orphanage the row did not
+name (the 338-line `persistent-session-wrapper` and its 402-line test, the
+`climb-detail` tree, 22 `app/lib` modules, 19 orphaned hooks, four
+`social/*-search-results`, the `lib/ble` adapters) plus the `public/help/`
+screenshot set and the i18n prune.
+
+**Rollback is `release/classic-web`, not `git revert`.** The restore procedure is
+in the W-14 section below — reverting this commit would mean reintroducing ~130k
+lines, re-mounting a provider tree and passing `check:i18n:orphans` under
+incident pressure on a rebase over everything that merged since.
+
+### What replaced the root chrome
+
+`PersistentSessionWrapper` mounted the whole interactive climbing stack on
+**every** route, `/about` and `/legal` included: a `connectionName: 'session'`
+WebSocket, the queue bridge, the BLE provider, the queue control bar, the bottom
+tab bar and the `ResizeObserver` that published `--bottom-bar-height-measured`.
+`components/providers/site-chrome.tsx` keeps three providers and nothing else:
+
+- `StatsFilterBridgeProvider` — the `/profile` and `/you` statistics filter button.
+- `ProfileHeaderShareProvider` — the viewed-profile share button.
+- `PlaylistsAdapterProvider` — **required**, not optional: every hook in
+  `@boardsesh/playlists-react` calls `usePlaylistsAdapter()` unconditionally.
+
+`AuthModalProvider` stayed exactly where it already was, at `app/layout.tsx`. It
+was never inside the wrapper.
+
+Socket counts, before → after: `/kiosk` **2 → 1** (only `connectionName: 'kiosk'`
+remains); `/embed` **1 → 0**, which is what `embed-access.test.ts` and
+`embed/gym/[gym_uuid]/leaderboard/page.tsx` already claimed. A kiosk regression
+is invisible for up to 24 hours (`kiosk-reliability.tsx` reloads at 04:00 local,
+and a kiosk is an unattended TV), so watch two reload cycles post-deploy, not one
+hour.
+
+### The nine IndexedDB stores that went with it
+
+Deleted, with any unsent contents: `create-climb-autosave-db`,
+`feedback-prompt-db`, `last-used-board-db`, `led-color-overrides-db`,
+`onboarding-db`, `party-profile-db`, `saved-boards-db`, `session-history-db`,
+`tick-draft-db`. Two of those held **unsaved user work** that
+`app.boardsesh.com` cannot read (a different origin): `create-climb-autosave-db`
+(one in-progress climb form per browser) and `tick-draft-db` (unsent per-climb,
+per-angle tick drafts). Server-side `is_draft` climbs are a different artefact
+and are unaffected.
+
+Kept, all with live importers: `gym-welcome-db`, `moonboard-climbs-db`,
+`oauth-pending-db`, `recent-playlists-db`, `user-preferences-db`.
+
+### Two files that look deletable and are not
+
+- **`app/lib/ble/capacitor-types.d.ts`** — the ambient `window.Capacitor`
+  declaration. Six surviving source files type against it (`home-page-content`,
+  `capacitor-retirement-gate`, `auth/social-login-buttons`, `use-geolocation`,
+  `open-external-url`, `lib/hooks/use-wake-lock`) plus four test files — the
+  count `import-graph-invariant.test.ts` records alongside `KEPT_BLE_FILES`.
+  Taking the epic row's "delete `lib/ble/*` except `capacitor-utils.ts`"
+  literally reds the whole typecheck in files that have nothing to do with
+  Bluetooth. It is pinned in `KEPT_BLE_FILES`.
+- **`middleware.ts`'s `?session=` → `CLIMB_SESSION_COOKIE` rewrite** — it lost
+  its last client-side _reader_ here, but `api/internal/join/[sessionId]/route.ts`
+  still _writes_ the same cookie and the app reads it. Written-and-not-read on
+  www is the correct state; removing it is a separate call that belongs with
+  W-19's `/session` review.
+
+### The machine-checkable finish line
+
+`app/__tests__/import-graph-allowlist.json` is `{"entries": []}` and both
+assertions are green: no kept file imports the delete set, and no allowlist entry
+is stale. The gate is not vacuous — adding `climb-icons` to
+`DELETED_CLIMB_CARD_STEMS` still reports the five real edges into it.
+
 ## Phase A0 — blocking pre-delete QA gate (real devices)
 
 The teardown is a **hard delete** with no retained `?classic=1` runtime fallback,

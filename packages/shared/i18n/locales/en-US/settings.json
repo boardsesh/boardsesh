@@ -53,11 +53,6 @@
       "label": "Grade Display Format",
       "vGrade": "V-Grade (V3, V6, ...)",
       "font": "Font (6A, 7C+, ...)"
-    },
-    "appleHealth": {
-      "label": "Apple Health",
-      "switchLabel": "Save sessions to Apple Health automatically",
-      "subtitle": "Turn this off to save sessions only when you tap the Save to Apple Health button."
     }
   },
   "logbook": {
@@ -368,12 +363,6 @@
       "passwordHelp": "Your credentials are encrypted before they are stored."
     }
   },
-  "healthkit": {
-    "save": "Save to Apple Health",
-    "saving": "Saving to Apple Health…",
-    "saved": "Saved to Apple Health",
-    "retry": "Save to Apple Health (retry)"
-  },
   "feedbackDialog": {
     "titleRating": "Rate Boardsesh",
     "titleBug": "Report a bug",
@@ -386,12 +375,6 @@
     "joinDiscord": "Join Discord"
   },
   "feedbackForm": {
-    "missingHeading": "What's missing?",
-    "compactPlaceholder": "Tell us what would help",
-    "skip": "Skip",
-    "sendAria": "Send",
-    "cancel": "Cancel",
-    "saveDefault": "Save",
     "bugPlaceholder": "What were you doing? What did you expect vs see?",
     "ratingPlaceholder": "What's on your mind?",
     "remainingChars": "{{count}} more characters to go",
@@ -402,50 +385,10 @@
     "contactConsentLabel": "Can we contact you about this?",
     "contactConsentDescription": "Lets us email you the issue link and follow up if we need more detail.",
     "starRating_one": "{{count}} star",
-    "starRating_other": "{{count}} stars",
-    "nextAria": "Next"
-  },
-  "feedbackBanner": {
-    "successToast": "Thanks — logged.",
-    "errorToast": "Couldn't send — we'll keep your rating.",
-    "dismissAria": "Dismiss"
-  },
-  "storeReview": {
-    "title": "Help others find Boardsesh",
-    "body": "Thanks for the rating. Would you also leave a quick review on your app store? It's the single best thing you can do to help other climbers find us.",
-    "notNow": "Not now",
-    "leaveReview": "Leave a review"
-  },
-  "sessionProvider": {
-    "deepLinkError": "Sign-in with Google, Apple, or Facebook may not work. Try restarting the app."
-  },
-  "onboarding": {
-    "skipTour": "Skip tour",
-    "finish": "Finish",
-    "next": "Next"
-  },
-  "devUrlDialog": {
-    "title": "Dev URL",
-    "intro": "Point the WebView at a different origin. The app will restart after saving.",
-    "urlLabel": "Server URL",
-    "useProduction": "Use production",
-    "currentlyOverriding": "Currently overriding to: {{url}}",
-    "cancel": "Cancel",
-    "clearOverride": "Clear override",
-    "save": "Save & restart",
-    "restarting": "Restarting…",
-    "validation": {
-      "enterUrl": "Enter a URL",
-      "mustBeHttp": "URL must start with http:// or https://",
-      "invalid": "Not a valid URL",
-      "generic": "Something went wrong"
-    }
+    "starRating_other": "{{count}} stars"
   },
   "boardConfigMismatch": {
     "title": "Board configuration doesn't match",
-    "intro": "Our records show this board has a different config than you have configured.",
-    "currentLabel": "<strong>You're configured for:</strong>",
-    "recordedLabel": "<strong>Recorded for this controller:</strong>",
     "mobileCurrentLabel": "You're configured for: {{config}}",
     "mobileRecordedLabel": "Recorded for this controller: {{config}}",
     "mobileConfigValue": "{{board}} layout {{layoutId}}, size {{sizeId}}, sets {{setIds}}",
@@ -454,24 +397,15 @@
     "skippedSpillToast_other": "Skipped {{count}} climbs set for a different board",
     "mobileSwitchFailed": "Couldn't switch to that board's config. Try Connect anyway.",
     "cancel": "Cancel",
-    "connectAnyway": "Connect anyway",
-    "switchToCorrect": "Switch to correct config",
     "mobileConnectAnyway": "Connect anyway",
     "mobileConnectAnywayWarning": "Our records show this controller belongs to another board setup. Connecting anyway may light climbs incorrectly.",
     "mobileSwitchSetup": "Switch board setup",
     "mobileUseRecordedSetup": "Use recorded setup"
   },
   "devicePicker": {
-    "title": "Select your board",
-    "scanning": "Scanning for boards nearby…",
     "lastConnected": "Last connected board",
     "unknownDevice": "Unknown device",
-    "lastConnectedAt": "Last connected {{time}}",
-    "cancel": "Cancel"
-  },
-  "bluetoothMismatch": {
-    "switchNoAngleToast": "Couldn't switch — open a climb at a specific angle first.",
-    "switchUrlFailedToast": "Couldn't switch to that board's config. Try Connect anyway."
+    "lastConnectedAt": "Last connected {{time}}"
   },
   "auroraImport": {
     "unlinkSuccessToast": "Account unlinked successfully",

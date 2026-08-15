@@ -25,7 +25,7 @@ const STATIC_ENTRIES: StaticEntry[] = [
   { path: '/', changeFrequency: 'weekly', priority: 1.0, lastModified: new Date('2026-04-30') },
   { path: '/aurora-migration', changeFrequency: 'weekly', priority: 0.9, lastModified: new Date('2026-04-30') },
   { path: '/about', changeFrequency: 'monthly', priority: 0.8, lastModified: new Date('2026-04-30') },
-  { path: '/help', changeFrequency: 'monthly', priority: 0.7, lastModified: new Date('2026-04-30') },
+  { path: '/help', changeFrequency: 'monthly', priority: 0.7, lastModified: new Date('2026-08-15') },
   { path: '/docs', changeFrequency: 'monthly', priority: 0.5, lastModified: new Date('2026-04-30') },
   { path: '/legal', changeFrequency: 'monthly', priority: 0.4, lastModified: new Date('2026-02-08') },
   { path: '/privacy', changeFrequency: 'monthly', priority: 0.4, lastModified: new Date('2026-04-01') },

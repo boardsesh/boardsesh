@@ -13,27 +13,22 @@
     "edit": "Editar",
     "close": "Cerrar",
     "back": "Atrás",
-    "next": "Siguiente",
     "done": "Listo",
     "retry": "Reintentar",
-    "loading": "Cargando...",
-    "clear": "Limpiar"
+    "loading": "Cargando..."
   },
   "ariaLabels": {
     "close": "Cerrar",
     "back": "Atrás",
-    "openQueue": "Abrir cola",
     "openStatsFilters": "Abrir filtros de estadísticas",
     "shareProfile": "Compartir perfil",
     "settings": "Ajustes",
     "notifications": "Notificaciones",
-    "searchClimbsByName": "Buscar bloques por nombre",
     "userMenu": "Menú de usuario",
-    "toggleDarkMode": "Cambiar modo oscuro",
-    "startClimbing": "Empieza a escalar en la app"
-  },
-  "boardSelector": {
-    "title": "Elige un plafón"
+    "startClimbing": "Empieza a escalar en la app",
+    "home": "Inicio de Boardsesh",
+    "yourProfile": "Tu perfil",
+    "yourDashboard": "Tu panel"
   },
   "header": {
     "you": "Tú",
@@ -42,8 +37,8 @@
     "sessions": "Sesiones",
     "createdClimbs": "Bloques creados",
     "auroraMigration": "Migración de Aurora",
-    "searchPlaceholder": "¿Qué quieres escalar?",
-    "startClimbing": "Empieza a escalar"
+    "startClimbing": "Empieza a escalar",
+    "signIn": "Iniciar sesión"
   },
   "share": {
     "profileTitle": "Perfil de escalada de {{name}}",
@@ -54,50 +49,25 @@
     "shareFailed": "No se pudo compartir"
   },
   "myBoards": {
-    "title": "Mis plafones",
-    "findBoard": "Buscar plafón",
-    "boardDetail": "Plafón",
-    "searchPlaceholder": "Busca por nombre o ubicación...",
-    "ariaFindBoard": "Buscar plafón",
-    "ariaCreateBoard": "Crear plafón",
-    "empty": "Aún no tienes plafones. Crea uno desde el selector de plafones."
+    "title": "Mis plafones"
   },
   "myGyms": {
-    "title": "Mis gimnasios",
-    "empty": "Puede que tu gimnasio ya esté en Boardsesh. Encuéntralo para gestionar tus plafones y tu equipo.",
-    "findGym": "Encuentra tu gimnasio",
-    "ariaFindGym": "Encuentra tu gimnasio",
     "roleOwner": "Propietario",
     "roleAdmin": "Administrador",
     "roleEditor": "Editor",
-    "roleMember": "Miembro",
-    "manage": "Gestionar",
-    "view": "Ver",
-    "loadError": "No pudimos cargar tus gimnasios. Inténtalo de nuevo."
+    "roleMember": "Miembro"
   },
   "userDrawer": {
     "signIn": "Iniciar sesión",
-    "signInModalTitle": "Inicia sesión en Boardsesh",
-    "signInModalDescription": "Inicia sesión para guardar favoritos, registrar ascensos y más.",
     "changeBoard": "Cambiar plafón",
-    "devUrl": "URL de dev",
-    "development": "Desarrollo",
-    "classifyHolds": "Clasificar presas",
     "myPlaylists": "Mis listas",
-    "recentSessions": "Sesiones recientes",
-    "help": "Ayuda",
     "about": "Sobre",
     "whatsNew": "Novedades",
     "newBadge": "Nuevo",
     "rateBoardsesh": "Valorar Boardsesh",
     "reportBug": "Reportar un bug",
     "joinDiscord": "Únete a Discord",
-    "logout": "Cerrar sesión",
-    "logoutError": "No hemos podido cerrar tu sesión. Comprueba la conexión e inténtalo de nuevo.",
-    "devBuild": "Build de dev",
-    "branch": "Rama",
-    "qaNotes": "Notas de QA",
-    "qaNotesEmpty": "Sin archivo de notas de QA"
+    "logout": "Cerrar sesión"
   },
   "loading": {
     "messages": [
@@ -120,7 +90,6 @@
     "placeholder": "Escribe un comentario...",
     "replyPlaceholder": "Escribe una respuesta...",
     "thoughtsPlaceholder": "Comparte tus pensamientos...",
-    "shortPlaceholder": "Comentar...",
     "submit": "Publicar",
     "save": "Guardar",
     "cancel": "Cancelar",
@@ -206,9 +175,6 @@
     "follow": "Seguir",
     "following": "Siguiendo",
     "unfollow": "Dejar de seguir"
-  },
-  "feedback": {
-    "title": "¿Te gusta Boardsesh?"
   },
   "betaVideos": {
     "empty": "Sin vídeos de beta todavía"
@@ -572,42 +538,15 @@
     }
   },
   "lightControl": {
-    "title": "Luces",
     "turnOffAll": "Apagar todas las luces",
-    "partyMode": "Modo fiesta",
-    "stopParty": "Parar fiesta",
-    "partyUnsupported": "El modo fiesta no está disponible en este plafón",
-    "discoMode": "Modo disco",
-    "stopDisco": "Parar disco",
-    "discoNeedsClimb": "Carga un bloque para empezar el disco",
-    "clearFailed": "No se pudo limpiar el plafón",
-    "lightShowFailed": "Se perdió el plafón a mitad del show. Reconéctate e inténtalo de nuevo.",
-    "customizeColors": "Personalizar colores",
-    "customizeColorsUnsupported": "Los colores personalizados no están disponibles en este plafón",
-    "customizeColorsTitle": "Colores de los LED",
-    "customizeColorsHelp": "Elige los colores con los que tu plafón ilumina las manos, los pies y la presa final. Las presas de inicio mantienen su verde por defecto.",
-    "resetColors": "Restablecer",
-    "disconnect": "Desconectar plafón",
-    "role": {
-      "HAND": "Manos",
-      "FOOT": "Pies",
-      "FINISH": "Final"
-    }
+    "disconnect": "Desconectar plafón"
   },
   "bluetooth": {
-    "boardTaken": "Se perdió el plafón: otro teléfono o app se conectó a él.",
-    "takeItBack": "Recuperarlo",
     "boardNotFound": "No se encontró tu plafón. Asegúrate de que esté encendido y cerca; y si otro teléfono está conectado, desconéctalo allí primero.",
     "connectFailed": "No se pudo conectar. Acércate al plafón e inténtalo de nuevo.",
     "serviceMissing": "Conectado, pero el plafón no respondió. Reinícialo e inténtalo de nuevo.",
     "unavailable": "El Bluetooth está apagado. Actívalo para conectar con tu plafón.",
-    "unknownError": "No se pudo conectar con tu plafón. Inténtalo de nuevo.",
-    "incompatibleClimb": "Este bloque es de otro plafón, así que no se encendió.",
-    "unrecognisedHoldData": "Este bloque tiene datos de presas no reconocidos y no se puede enviar al plafón.",
-    "ledDataMissing": "No se pudo enviar al plafón: faltan los datos LED de esta configuración.",
-    "partialHoldsSkipped_one": "{{count}} presa no se pudo encender; puede que tu plafón sea de un tamaño distinto al del bloque.",
-    "partialHoldsSkipped_other": "{{count}} presas no se pudieron encender; puede que tu plafón sea de un tamaño distinto al del bloque.",
-    "allHoldsSkipped": "No se pudo encender ninguna presa de este bloque; puede que sea de otro plafón."
+    "unknownError": "No se pudo conectar con tu plafón. Inténtalo de nuevo."
   },
   "ascents": {
     "deleteTitle": "Eliminar encadene",
@@ -621,20 +560,6 @@
     "sent_other": "{{count}} encadenes",
     "attempts_one": "1 intento",
     "attempts_other": "{{count}} intentos"
-  },
-  "playback": {
-    "play": "Reproducir",
-    "pause": "Pausar",
-    "replay": "Repetir",
-    "controls": "Controles de reproducción",
-    "speed": "Velocidad",
-    "frameOfTotal": "Cuadro {{index}} de {{total}}",
-    "prevFrame": "Cuadro anterior",
-    "nextFrame": "Cuadro siguiente",
-    "speedHalf": "0.5×",
-    "speedNormal": "1×",
-    "speedCustom": "{{value}}×",
-    "speedCustomLabel": "Velocidad personalizada"
   },
   "capacitorRetirement": {
     "title": "Boardsesh tiene una app nueva",
@@ -659,5 +584,20 @@
     "noteNative": "Si esta pull request tocó código nativo no hay versión de prueba que cargar: esa necesita una compilación nueva de TestFlight o de Play.",
     "noteManual": "A mano: Novedades → Prueba una versión previa → <code>{{channel}}</code>.",
     "viewPullRequest": "Lee la pull request #{{number}} en GitHub"
+  },
+  "footer": {
+    "tagline": "Encuentra bloques, compártelos y mira qué hay en el plafón de tu rocódromo. La escalada pasa en la app.",
+    "navLabel": "Pie de página",
+    "trademarkNote": "Compatible con Kilter, Tension y MoonBoard. Sin relación con Aurora Climbing ni Moon Climbing.",
+    "links": {
+      "home": "Inicio",
+      "about": "Sobre nosotros",
+      "help": "Ayuda",
+      "docs": "Documentación",
+      "playlists": "Listas",
+      "auroraMigration": "Migración desde Aurora",
+      "legal": "Aviso legal",
+      "privacy": "Privacidad"
+    }
   }
 }

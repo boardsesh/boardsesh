@@ -128,8 +128,10 @@ Deeply nested dynamic routes: `/[board_name]/[layout_id]/[size_id]/[set_ids]/[an
 
 ### Key components
 
-- **BoardProvider** (`packages/web/app/components/board-provider-context.tsx`) — auth, sessions, logbook, IndexedDB.
-- **QueueProvider** (`packages/web/app/components/queue-control/queue-context.tsx`) — climb queue (reducer), search, GraphQL-WS sync.
+The climbing UI (board provider, queue provider, play view, BLE control) moved to
+the Expo app in W-16 (#4435) — www keeps marketing, account and gym surfaces only.
+
+- **SiteChrome** (`packages/web/app/components/providers/site-chrome.tsx`) — the root chrome: `MarketingHeader` + `SiteFooter`, wrapped in the three bridges the surviving pages need (`StatsFilterBridgeProvider`, `ProfileHeaderShareProvider`, `PlaylistsAdapterProvider`).
 
 ### Data flow
 
@@ -140,7 +142,7 @@ Deeply nested dynamic routes: `/[board_name]/[layout_id]/[size_id]/[set_ids]/[an
 
 ### Integration points
 
-Web Bluetooth (board LEDs), GraphQL-WS backend, Redis (pub/sub for multi-instance), IndexedDB (client persistence), Aurora API (user sync).
+GraphQL-WS backend (kiosk presence, comments, notifications), Redis (pub/sub for multi-instance), IndexedDB (client persistence), Aurora API (user sync). Web Bluetooth LED control is gone — BLE lives in the mobile app and `packages/shared/ble-protocol/`.
 
 ### Types
 

@@ -366,7 +366,6 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
         minHeight: '100dvh',
         display: 'flex',
         flexDirection: 'column',
-        pb: 'var(--bottom-bar-height)',
       }}
     >
       <Box

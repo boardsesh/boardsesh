@@ -1,36 +1,8 @@
 {
   "discovery": {
-    "section": {
-      "nearby": "Plafones cerca de ti"
-    },
     "popular": {
       "title": "Plafones populares",
       "meta": "{{boards}} plafones · {{sends}} encadenes"
-    },
-    "findNearby": {
-      "loading": "Buscando plafones...",
-      "geoDenied": "Ubicación no disponible",
-      "error": "Error al cargar plafones cercanos",
-      "noResults": "No se encontraron plafones cercanos",
-      "idle": "Buscar cerca"
-    },
-    "search": {
-      "ariaLabel": "Buscar un plafón",
-      "label": "Buscar"
-    },
-    "custom": {
-      "ariaLabel": "Crear un plafón personalizado",
-      "label": "Plafón personalizado"
-    },
-    "create": {
-      "defaultLabel": "Nuevo plafón"
-    },
-    "bluetooth": {
-      "scanning": "Escaneando…",
-      "boardsFound": "Plafones encontrados",
-      "noBoardsFound": "No se encontraron plafones",
-      "unavailable": "Bluetooth no disponible",
-      "idle": "Inicio rápido"
     }
   },
   "mobile": {
@@ -401,19 +373,8 @@
   },
   "boardForm": {
     "create": {
-      "submit": "Crear plafón",
-      "authRequired": "Debes iniciar sesión para crear un plafón",
-      "errorMessage": "Error al crear el plafón. Puede que ya exista para esta configuración.",
       "limitReached": "Has llegado al número máximo de plafones para una cuenta. Borra uno que ya no uses para añadir otro.",
-      "goToExisting": "Ir a tu plafón",
-      "nameRequired": "Se requiere el nombre del plafón",
-      "createdNamed": "¡Plafón \"{{name}}\" creado!",
-      "namePlaceholder": "p. ej., Plafón de casa, Nombre del gimnasio",
-      "locationPlaceholder": "p. ej., Ciudad, Nombre del gimnasio",
-      "duplicateTitle": "Ya tienes esta configuración",
-      "duplicateBody": "Ya tienes «{{name}}» con el mismo layout, tamaño y sets de presas. Añade otro solo si es otro muro.",
-      "addAnyway": "Añadirlo igualmente",
-      "keepEditing": "Cancelar"
+      "nameRequired": "Se requiere el nombre del plafón"
     },
     "fields": {
       "name": "Nombre del plafón",
@@ -512,36 +473,8 @@
     "holdSets": "Conjuntos de presas",
     "angle": "Ángulo"
   },
-  "boardFilterStrip": {
-    "all": "Todos",
-    "allBoards": "Todos los plafones"
-  },
   "boardPill": {
     "switchHint": "Abre el selector de plafones"
-  },
-  "boardSwitchConfirm": {
-    "session": {
-      "title": "¿Salir de tu sesión?",
-      "body": "Estás en una sesión en {{lockedLabel}}. Cambiar a {{targetLabel}} desconecta tu plafón pero mantiene la sesión activa."
-    },
-    "connection": {
-      "title": "¿Desconectar tu plafón?",
-      "body": "Tu {{lockedLabel}} sigue conectado. Cambiar a {{targetLabel}} lo desconecta."
-    },
-    "stay": "Quedarse",
-    "switch": "Cambiar de plafón"
-  },
-  "boardSearchDrawer": {
-    "title": "Buscar un plafón",
-    "searchPlaceholder": "Busca plafones por nombre o ubicación",
-    "clear": "Limpiar",
-    "radiusInfo": "Mostrando plafones en un radio de {{radiusKm}} km del centro del mapa",
-    "empty": "No hay plafones en esta zona. Mueve el mapa o aleja el zoom para encontrar más.",
-    "emptyWithQuery": "No hay plafones que coincidan con \"{{query}}\" aquí. Aleja el zoom o busca en otra zona.",
-    "open": "Abrir"
-  },
-  "boardSearchMap": {
-    "myLocation": "Mi ubicación"
   },
   "zoomableBoard": {
     "reset": "Restablecer"
@@ -605,17 +538,6 @@
     "viewGym": "Ver el gimnasio",
     "claim": "Este es mi gimnasio: reclamarlo",
     "createAnyway": "¿Ninguno es el tuyo? Añade tu gimnasio con el botón de abajo."
-  },
-  "selectorDrawer": {
-    "customTitle": "Plafón personalizado",
-    "createTitle": "Crear plafón",
-    "createButton": "Crear plafón",
-    "quickSession": "Sesión rápida",
-    "configSection": {
-      "label": "Configuración del plafón",
-      "title": "Configuración del plafón",
-      "defaultSummary": "Selecciona un plafón"
-    }
   },
   "gymEntity": {
     "notFound": "Gimnasio no encontrado",

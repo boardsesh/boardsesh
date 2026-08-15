@@ -11,7 +11,7 @@
     },
     "help": {
       "title": "Ayuda",
-      "description": "Descubre las funciones de Boardsesh: mapas de calor, modo fiesta, generador de playlists y más."
+      "description": "Qué puedes hacer en boardsesh.com, qué pasa en la app y dónde pedir ayuda."
     },
     "docs": {
       "title": "Documentación de la API",
@@ -268,233 +268,43 @@
     "footer": "Este documento se proporciona con fines informativos y no constituye asesoramiento legal. Última actualización: 08-02-2026"
   },
   "help": {
-    "headerTitle": "Ayuda",
     "hero": {
-      "title": "¿En qué te podemos ayudar?",
-      "subtitle": "Conoce las funciones de Boardsesh y saca el máximo partido a tus sesiones de escalada"
+      "title": "Ayuda",
+      "subtitle": "En esta web viven los bloques. En la app los escalas. Esto hace cada una."
     },
-    "sections": {
-      "visualization": {
-        "label": "Visualización y análisis"
-      },
-      "collaboration": {
-        "label": "Sesión y colaboración"
-      },
-      "training": {
-        "label": "Entrenamiento"
-      },
-      "search": {
-        "label": "Búsqueda y descubrimiento"
-      },
-      "connectivity": {
-        "label": "Sincronización y conectividad"
-      }
+    "web": {
+      "title": "En esta web",
+      "intro": "Todo lo de aquí es un enlace que puedes mandar a alguien. Sin instalar nada, sin iniciar sesión.",
+      "item1": "Busca un bloque y consulta su grado, quién lo equipó y sus encadenes.",
+      "item2": "Explora el catálogo completo de un plafón por layout, tamaño y ángulo.",
+      "item3": "Comparte un bloque, una lista o tu perfil con una URL normal.",
+      "item4": "Encuentra un rocódromo y mira qué hay en su plafón desde su pantalla de kiosco.",
+      "playlistsLink": "Ver listas",
+      "aboutLink": "Sobre Boardsesh"
     },
-    "heatmap": {
-      "q": "¿Cómo uso el mapa de calor?",
-      "imgAlt": "Visualización del mapa de calor",
-      "intro": "El mapa de calor muestra patrones de uso de las presas en todos los bloques, lo que te ayuda a identificar presas populares y oportunidades de entrenamiento.",
-      "accessLabel": "Para acceder al mapa de calor:",
-      "access1": "Abre el panel de búsqueda y despliega la sección «Presas»",
-      "access2": "Pulsa el botón «Mostrar mapa de calor»",
-      "access3": "El plafón mostrará una capa de color que va de verde (poco uso) a rojo (mucho uso)",
-      "modesLabel": "Modos de color disponibles:",
-      "modes": {
-        "ascentsLabel": "Encadenes:",
-        "ascentsBody": "Popularidad general basada en el total de encadenes",
-        "startLabel": "Presas de salida:",
-        "startBody": "Posiciones habituales de inicio",
-        "handFootLabel": "Presas de mano/pie:",
-        "handFootBody": "Uso por tipo de extremidad",
-        "finishLabel": "Presas de top:",
-        "finishBody": "Posiciones habituales de top out"
-      },
-      "outro": "Usa los interruptores para mostrar/ocultar los números de presa e incluir/excluir las presas de pie."
+    "app": {
+      "title": "En la app",
+      "intro": "Todo lo que habla con el plafón pasa en la app.",
+      "item1": "Monta una cola y ve pasando bloques con tu gente.",
+      "item2": "Abre una sesión compartida para que todos los móviles muevan la misma cola.",
+      "item3": "Enciende las presas por Bluetooth en plafones Kilter, Tension y MoonBoard.",
+      "item4": "Registra tus encadenes y ten el cuaderno en un solo sitio.",
+      "cta": "Abrir la app",
+      "ctaAriaLabel": "Abrir la app de Boardsesh"
     },
-    "holdClassification": {
-      "q": "¿Cómo clasifico las presas de mi plafón?",
-      "imgAlt": "Asistente de clasificación de presas",
-      "intro": "La clasificación de presas te permite crear valoraciones personales para cada presa de tu plafón, ayudándote a entender tus puntos fuertes y a encontrar bloques que te encajen.",
-      "attrsLabel": "Atributos de clasificación:",
-      "attrs": {
-        "holdTypeLabel": "Tipo de presa:",
-        "holdTypeBody": "Jug, sloper, pinza, regleta o agujero",
-        "handRatingLabel": "Valoración de mano:",
-        "handRatingBody": "Escala de dificultad 1-5 para el uso con la mano",
-        "footRatingLabel": "Valoración de pie:",
-        "footRatingBody": "Escala de dificultad 1-5 para el uso con el pie",
-        "pullDirectionLabel": "Dirección de tracción:",
-        "pullDirectionBody": "Ángulo óptimo de tracción de 0 a 360"
-      },
-      "outro": "Las clasificaciones son personales y se guardan en tu cuenta, así puedes ir construyendo con el tiempo una comprensión a medida de tu plafón."
+    "aurora": {
+      "title": "Si vienes de las apps de Aurora",
+      "intro": "Boardsesh lee tu cuenta actual, así que tus encadenes se vienen contigo.",
+      "item1": "Inicia sesión con tu cuenta de Kilter o Tension y tu cuaderno se sincroniza.",
+      "item2": "Tus ascensiones siguen siendo tuyas. Nunca escribimos nada que no hayas registrado.",
+      "link": "Leer la guía de migración"
     },
-    "partyMode": {
-      "q": "¿Cómo empiezo una sesión colaborativa?",
-      "imgAlt": "Sesión del Modo Fiesta activa",
-      "intro": "El Modo Fiesta permite que varios escaladores compartan una cola y se vayan turnando en el plafón en tiempo real.",
-      "startLabel": "Para empezar una sesión:",
-      "start1": "Toca el icono de la bombilla en la barra de la cola, abajo",
-      "start2": "Ve a la pestaña «Empezar sesión» e inicia sesión si aún no lo has hecho",
-      "start3": "Pulsa «Empezar Modo Fiesta» para crear una nueva sesión",
-      "start4": "Comparte la sesión con tus amigos mediante código QR o enlace",
-      "joinLabel": "Para unirte a una sesión:",
-      "join": {
-        "qrLabel": "Escanear código QR:",
-        "qrBody": "El anfitrión de la sesión puede mostrar un código QR para que los demás lo escaneen con la cámara del móvil",
-        "shareLabel": "Compartir enlace:",
-        "shareBody": "Copia y comparte la URL de la sesión: cualquiera con el enlace puede unirse",
-        "idLabel": "Introducir ID de sesión:",
-        "idBody": "Ve a la pestaña «Unirse a sesión» y pega la URL completa o solo el ID de sesión"
-      },
-      "featuresLabel": "Funciones de la sesión:",
-      "feature1": "Sincronización de la cola en tiempo real en todos los dispositivos",
-      "feature2": "Varios usuarios pueden añadir/quitar bloques",
-      "feature3": "El líder de la sesión controla lo que se muestra en el plafón",
-      "feature4": "Traspaso automático del liderazgo si el líder actual se desconecta",
-      "feature5": "La sesión se mantiene tras recargar la página y reconexiones"
-    },
-    "queueManagement": {
-      "q": "¿Cómo gestiono la cola de bloques?",
-      "imgAlt": "Gestión de la cola",
-      "intro": "La cola te permite organizar los bloques para tu sesión, ya escales solo o con otros.",
-      "actionsLabel": "Acciones de la cola:",
-      "actions": {
-        "addLabel": "Añadir bloques:",
-        "addBody": "Toca dos veces cualquier bloque de la lista para añadirlo a tu cola",
-        "reorderLabel": "Reordenar:",
-        "reorderBody": "Arrastra y suelta los bloques para cambiar el orden",
-        "currentLabel": "Marcar actual:",
-        "currentBody": "Pulsa un bloque para convertirlo en el bloque activo",
-        "removeLabel": "Quitar:",
-        "removeBody": "Pulsa la X de cualquier bloque en cola",
-        "mirrorLabel": "Espejo:",
-        "mirrorBody": "Activa el modo espejo para entrenamiento bilateral"
-      },
-      "outro": "La cola se sincroniza automáticamente con los miembros del grupo y se mantiene offline para que tu sesión no se corte."
-    },
-    "playlistGenerator": {
-      "q": "¿Cómo genero una playlist de entrenamiento?",
-      "intro": "El Generador de Playlists crea entrenamientos estructurados a la medida de tus objetivos.",
-      "typesLabel": "Tipos de entrenamiento:",
-      "types": {
-        "volumeLabel": "Volumen:",
-        "volumeBody": "Muchas repeticiones a un grado constante para resistencia",
-        "pyramidLabel": "Pirámide:",
-        "pyramidBody": "Sube hasta un grado tope y luego baja",
-        "ladderLabel": "Escalera:",
-        "ladderBody": "Progresión por escalones subiendo grados",
-        "gradeFocusLabel": "Foco en grado:",
-        "gradeFocusBody": "Trabajo concentrado en un único grado objetivo"
-      },
-      "optionsLabel": "Opciones de configuración:",
-      "option1": "Estilo de calentamiento (estándar, extendido o ninguno)",
-      "option2": "Selección del grado objetivo",
-      "option3": "Sesgo de bloques (desconocidos, intentados o cualquiera)",
-      "option4": "Filtros de encadenes/valoración mínima",
-      "option5": "Número de bloques por sección"
-    },
-    "mirroring": {
-      "q": "¿Cómo hago un bloque en espejo?",
-      "intro": "El espejo de bloques invierte todas las presas al lado opuesto del plafón, perfecto para entrenamiento de fuerza bilateral.",
-      "howLabel": "Para hacer un bloque en espejo:",
-      "step1": "Busca el bloque que quieres invertir",
-      "step2": "Busca el icono de espejo en las acciones del bloque",
-      "step3": "Actívalo para invertir el bloque horizontalmente",
-      "outro": "Cuando estés conectado por Bluetooth, el plafón con LEDs mostrará automáticamente el patrón invertido. Esta función está disponible en plafones compatibles como la Kilter Homewall."
-    },
-    "searchFilters": {
-      "q": "¿Qué filtros de búsqueda hay disponibles?",
-      "imgAlt": "Filtros de búsqueda",
-      "basicLabel": "Filtros de búsqueda básicos:",
-      "basic": {
-        "nameLabel": "Nombre del bloque:",
-        "nameBody": "Busca por el título del bloque",
-        "gradeLabel": "Rango de grado:",
-        "gradeBody": "Define grado mínimo y máximo",
-        "setterLabel": "Setter:",
-        "setterBody": "Filtra por el creador del bloque",
-        "minAscentsLabel": "Encadenes mín.:",
-        "minAscentsBody": "Muestra solo bloques populares",
-        "minRatingLabel": "Valoración mín.:",
-        "minRatingBody": "Filtra por valoración de calidad",
-        "classicsLabel": "Solo clásicos:",
-        "classicsBody": "Muestra solo bloques marcados como clásicos"
-      },
-      "personalLabel": "Filtros de progreso personal",
-      "personalRequires": "(requiere iniciar sesión):",
-      "personalImgAlt": "Filtros de progreso personal",
-      "personal1": "Ocultar bloques encadenados",
-      "personal2": "Ocultar bloques intentados",
-      "personal3": "Mostrar solo bloques intentados",
-      "personal4": "Mostrar solo bloques encadenados"
-    },
-    "searchByHold": {
-      "q": "¿Cómo busco por presas concretas?",
-      "imgAlt": "Buscar por presa",
-      "intro": "Buscar por Presa te permite encontrar bloques que usen (o eviten) presas concretas del plafón.",
-      "howLabel": "Para buscar por presas:",
-      "step1": "Abre el panel de búsqueda y despliega la sección «Presas»",
-      "step2": "Elige el modo «Incluir» o «Excluir» en el desplegable",
-      "step3": "Toca las presas del plafón para seleccionarlas",
-      "step4": "Los resultados se actualizan automáticamente conforme seleccionas presas",
-      "includeLabel": "Modo incluir:",
-      "includeBody": "Los bloques deben usar las presas seleccionadas",
-      "excludeLabel": "Modo excluir:",
-      "excludeBody": "Los bloques no deben usar las presas seleccionadas"
-    },
-    "bluetooth": {
-      "q": "¿Cómo conecto los LEDs de mi plafón?",
-      "intro": "Boardsesh usa Web Bluetooth para controlar el sistema de LEDs de tu plafón directamente desde el navegador.",
-      "requirementsLabel": "Requisitos:",
-      "req1": "Navegador Chrome (recomendado) u otro navegador compatible con Web Bluetooth",
-      "req2": "Usuarios de iOS: usa la app de Boardsesh (Safari no soporta Web Bluetooth)",
-      "req3": "Bluetooth activado en tu dispositivo",
-      "req4": "Plafón encendido y al alcance",
-      "connectLabel": "Para conectar:",
-      "connect1": "Toca el icono de la bombilla en la barra de la cola",
-      "connect2": "Selecciona tu plafón en la lista de dispositivos",
-      "connect3": "Una vez conectado, los LEDs muestran automáticamente el bloque actual",
-      "outro": "La conexión admite patrones en espejo y se actualizará automáticamente cuando cambies de bloque."
-    },
-    "userSync": {
-      "q": "¿Cómo sincronizo con mi cuenta de Kilter/Tension?",
-      "imgAlt": "Ajustes de la cuenta de Aurora",
-      "intro": "Vincula tu cuenta de Aurora (Kilter o Tension) para sincronizar tu historial de escalada y tu progreso.",
-      "linkLabel": "Para vincular tu cuenta:",
-      "link1": "Abre el menú (toca tu avatar) y ve a Ajustes",
-      "link2": "Busca la sección «Cuentas de Aurora»",
-      "link3": "Introduce tus credenciales de Kilter o Tension",
-      "link4": "Pulsa «Vincular cuenta»",
-      "syncsLabel": "Qué se sincroniza:",
-      "syncs1": "Historial de encadenes (bloques completados)",
-      "syncs2": "Intentos",
-      "syncs3": "Circuitos/playlists",
-      "outro": "Los cambios se sincronizan en ambos sentidos, así que los encadenes registrados en Boardsesh aparecerán también en las apps oficiales."
-    },
-    "logbook": {
-      "q": "¿Cómo registro mis bloques?",
-      "imgAlt": "Detalle del bloque con acciones",
-      "intro": "Sigue tu progreso registrando encadenes e intentos.",
-      "fromLabel": "Desde cualquier bloque:",
-      "actions": {
-        "tickLabel": "Marcar:",
-        "tickBody": "Registra un intento en el bloque",
-        "logLabel": "Registrar encadene:",
-        "logBody": "Marca el bloque como completado (encadene)",
-        "favoriteLabel": "Favorito:",
-        "favoriteBody": "Guarda bloques para acceder rápido"
-      },
-      "outro": "Tu logbook se sincroniza con las cuentas de Aurora vinculadas y puedes filtrarlo en los resultados de búsqueda para encontrar retos nuevos o retomar viejos proyectos."
-    },
-    "offline": {
-      "q": "¿Funciona Boardsesh sin conexión?",
-      "intro": "¡Sí! Boardsesh está diseñado para funcionar de forma fiable incluso con conexión intermitente.",
-      "worksLabel": "Qué funciona sin conexión:",
-      "works1": "Tu cola se guarda en local mediante IndexedDB",
-      "works2": "Los tokens de sesión se cachean para reconectar rápido",
-      "works3": "Los datos del perfil se guardan en local",
-      "works4": "El control de los LEDs por Bluetooth funciona de forma independiente",
-      "outro": "Cuando se restablece la conexión, los cambios pendientes se sincronizan automáticamente en segundo plano."
+    "ask": {
+      "title": "¿Sigues atascado?",
+      "intro": "Pregúntanos. Leemos los tres.",
+      "discord": "Preguntar en Discord",
+      "github": "Reportar un fallo en GitHub",
+      "docs": "Leer la documentación para desarrolladores"
     }
   },
   "docs": {
