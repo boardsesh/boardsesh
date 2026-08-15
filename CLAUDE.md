@@ -119,6 +119,7 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/db-connectivity.md` — Postgres connect retries (what is retried and why it can't double-execute a write), the retry budgets, and the `/health` vs `/health/db` split
 - `docs/og-climb.md` — backend-served climb OG share cards (`GET /og/climb`: caches, env vars, timings)
 - `docs/mobile-sheets-vs-routes.md` — mobile: which surface to use (bottom sheet vs route), with the decision tree + the hard rules (incl. why `fullScreenModal` breaks the iOS 26 native tab bar)
+- `docs/gym-funnel-analytics.md` — the www gym funnel event contract in `@boardsesh/analytics` (seven event names, their property sets, the QR `?src=qr&medium=` landing params, and why `boardTypes` must be a joined string)
 
 ## Architecture Overview
 
