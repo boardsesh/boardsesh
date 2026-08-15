@@ -1,5 +1,13 @@
 import { test, expect, type APIResponse } from '@playwright/test';
 
+// The `aa-` prefix is load-bearing: Playwright orders spec files
+// alphabetically within a shard, and this file's raw APIRequestContext
+// requests hang for 60s+ if certain browser-driven specs run against the
+// same server first — first-in-shard they pass every time, and the whole
+// suite is green. Which test poisons the server for raw requests is
+// unsolved and tracked; do not rename this file below its neighbours
+// until that is fixed.
+
 // These are raw APIRequestContext gets against a server that is concurrently
 // SSR-ing front-door pages for the other worker's browser tests. On a 2-core
 // CI runner that contention can hold a response past the default 15s (the
