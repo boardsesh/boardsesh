@@ -74,19 +74,18 @@ function sourceMatcher(source: string): RegExp {
     const [token, , customGroup, modifier] = match;
     const literal = source.slice(cursor, match.index);
     const inner = customGroup ? customGroup.slice(1, -1) : '[^/]+';
-    // `/:path*` and `/:path?` swallow the slash in front of them.
-    const swallowsSlash = (modifier === '*' || modifier === '?') && literal.endsWith('/');
-
-    pattern += escapeLiteral(swallowsSlash ? literal.slice(0, -1) : literal);
-
+    const optional = modifier === '*' || modifier === '?';
     const repeated = modifier === '*' || modifier === '+';
     const body = repeated ? `(?:${inner})(?:/(?:${inner}))*` : `(?:${inner})`;
-    const optional = modifier === '*' || modifier === '?';
+    // `/:path*` and `/:path?` fold the slash in front of them into the optional
+    // group — which is exactly why `/settings/:path*` matches a bare `/settings`.
+    const swallowsSlash = optional && literal.endsWith('/');
 
+    pattern += escapeLiteral(swallowsSlash ? literal.slice(0, -1) : literal);
     if (optional) {
       pattern += swallowsSlash ? `(?:/${body})?` : `(?:${body})?`;
     } else {
-      pattern += swallowsSlash ? `/${body}` : body;
+      pattern += body;
     }
 
     cursor = (match.index ?? 0) + token.length;
