@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-15T22:37:36.923Z",
+  "generatedAt": "2026-08-15T23:16:41.905Z",
   "entries": [
+    {
+      "prNumber": 4500,
+      "category": "new",
+      "title": "En español, un gimnasio ahora es un rocódromo en toda la app — una sola palabra en cada pantalla, en vez de dos.",
+      "mergedAt": "2026-08-15T23:15:26Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4500"
+    },
     {
       "prNumber": 4483,
       "category": "new",

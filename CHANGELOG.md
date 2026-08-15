@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- En español, un gimnasio ahora es un rocódromo en toda la app — una sola palabra en cada pantalla, en vez de dos. ([#4500](https://github.com/boardsesh/boardsesh/pull/4500))
 - Popular climbs that resolve to a stable board setup start showing up in Google under the same link the page itself uses. ([#4483](https://github.com/boardsesh/boardsesh/pull/4483))
   Search results say something useful: setter, grade, stars and the board a climb lives on, instead of a bare title.
   Star ratings only show where the number behind them is honest — a climb whose ratings haven't been converted to the 5-star scale ships without one rather than with a wrong one.
