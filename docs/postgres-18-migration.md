@@ -65,8 +65,9 @@ out the foundation in two steps:
    mutable database-image tags in CI, end-to-end tests, or renumber workflows.
 
 Root Compose defaults to `boardsesh-dev-db:pg18` so it cannot silently initialize
-a PG17 server under a PG18 path during this transition. To test a branch image,
-set `BOARDSESH_DEV_DB_IMAGE` to the branch/SHA image emitted by the workflow.
+a PG17 server under a PG18 path during this transition. Before that tag exists,
+set `BOARDSESH_DEV_DB_IMAGE` to an already-published branch/SHA image from a
+publisher run, or to a locally built image tag.
 
 ## PostgreSQL 18 volume contract
 

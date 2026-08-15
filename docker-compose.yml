@@ -1,5 +1,8 @@
 services:
   postgres:
+    # The first PG18 merge publishes this tag asynchronously. During that brief
+    # window, use an already-published branch/SHA image or a local build; see
+    # docs/postgres-18-migration.md.
     image: ${BOARDSESH_DEV_DB_IMAGE:-ghcr.io/boardsesh/boardsesh-dev-db:pg18}
     shm_size: '256mb'
     command: postgres -c listen_addresses='*' -c max_connections=300 -c log_min_messages=warning
