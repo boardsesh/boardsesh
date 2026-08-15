@@ -4,6 +4,7 @@ import { SignJWT, createRemoteJWKSet, jwtVerify } from 'jose';
 import { compare, hash } from 'bcryptjs';
 import { eq, and, isNull, lt, or, isNotNull } from 'drizzle-orm';
 import { mobileRefreshTokens, users, userCredentials, accounts, userProfiles } from '@boardsesh/db/schema/auth';
+import { normalizeEmail } from '@boardsesh/db/utils';
 import { db } from '../db/client';
 import { redisClientManager } from '../redis/client';
 import { applyCorsHeaders } from './cors';
@@ -523,7 +524,7 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
   }
 
   // Normalize the email to match how NextAuth's adapter stores it.
-  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedEmail = normalizeEmail(email);
 
   try {
     const userRows = await db.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
@@ -625,7 +626,7 @@ export async function handleNativeAuthRegister(req: IncomingMessage, res: Server
     sendJson(res, 400, { error: 'email and password are required' });
     return;
   }
-  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedEmail = normalizeEmail(email);
   if (!REGISTER_EMAIL_REGEX.test(normalizedEmail)) {
     sendJson(res, 400, { error: 'Invalid email address' });
     return;
@@ -893,7 +894,7 @@ async function findOrCreateOAuthUser(
       return { status: 'ok', tokenPair, userId: linked.userId };
     }
 
-    const normalizedEmail = identity.email ? identity.email.trim().toLowerCase() : null;
+    const normalizedEmail = identity.email ? normalizeEmail(identity.email) : null;
 
     // 2. Link by email — ONLY when the provider asserts the email is verified.
     // This is the security boundary NextAuth's allowDangerousEmailAccountLinking

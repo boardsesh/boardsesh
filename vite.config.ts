@@ -218,6 +218,14 @@ export default defineConfig({
         // read-only validation/dry-runs before writing published grade rows.
         cache: false,
       },
+      'db:merge-accounts': {
+        command: 'bun run --filter=@boardsesh/db db:merge-accounts',
+        // No db:up dependency, same rationale as db:dedupe-gyms: a maintainer
+        // runs this by hand against DB_URL (often a remote database), not local
+        // Docker. Dry-run by default; --apply is the only write path. Forward
+        // flags with `vp run db:merge-accounts -- --apply`.
+        cache: false,
+      },
       'test:db': {
         command: 'bun run --filter=@boardsesh/db test',
       },

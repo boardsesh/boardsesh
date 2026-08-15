@@ -2,7 +2,8 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { hash } from 'bcryptjs';
-import { eq } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
+import { normalizeEmail } from '@boardsesh/db/utils';
 import { z } from 'zod';
 import { sendVerificationEmail } from '@boardsesh/email';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
@@ -44,11 +45,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validationResult.error.issues[0].message }, { status: 400 });
     }
 
-    const { email, password, name } = validationResult.data;
+    const { password, name } = validationResult.data;
+    // Canonicalise the email so `Foo@x.com` and `foo@x.com` resolve to one
+    // account. Stored as the normalized form; the existence check below is
+    // case-insensitive so a different-cased re-signup is caught even before the
+    // backfill lower-cases legacy rows.
+    const email = normalizeEmail(validationResult.data.email);
     const db = getDb();
 
-    // Check if user already exists
-    const existingUser = await db.select().from(schema.users).where(eq(schema.users.email, email)).limit(1);
+    // Check if user already exists (case-insensitive — legacy rows may still be mixed-case)
+    const existingUser = await db
+      .select()
+      .from(schema.users)
+      .where(sql`lower(${schema.users.email}) = ${email}`)
+      .limit(1);
 
     if (existingUser.length > 0) {
       // An account with this email already exists

@@ -10,7 +10,16 @@ vi.mock('@/app/lib/auth/rate-limiter', () => ({
   getClientIp: (...args: unknown[]) => mockGetClientIp(...args),
 }));
 
+// NOTE: `getPasswordResetIdentifier` is stubbed as the bare prefix plus the
+// email it is handed, WITHOUT normalizing. That is deliberate — it makes the
+// identifier a pure function of its argument, so these tests can observe which
+// email string the route passes in (normalized vs. raw-cased, for the
+// pre-deploy token fallback) instead of folding both into one value and
+// proving nothing. The trade-off: a regression in the real helper that dropped
+// its own normalizeEmail call wouldn't fail here. That behaviour is covered
+// directly by the normalizeEmail unit tests in @boardsesh/db.
 vi.mock('@/app/lib/auth/password-reset', () => ({
+  PASSWORD_RESET_IDENTIFIER_PREFIX: 'password-reset:',
   getPasswordResetIdentifier: (email: string) => `password-reset:${email}`,
   hashResetToken: (token: string) => `sha256:${token}`,
   consistentDelay: async () => {},

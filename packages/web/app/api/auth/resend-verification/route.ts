@@ -1,7 +1,8 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
+import { normalizeEmail } from '@boardsesh/db/utils';
 import { z } from 'zod';
 import { sendVerificationEmail } from '@boardsesh/email';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
@@ -55,11 +56,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validationResult.error.issues[0].message }, { status: 400 });
     }
 
-    const { email } = validationResult.data;
+    const email = normalizeEmail(validationResult.data.email);
     const db = getDb();
 
-    // Check if user exists and is unverified
-    const user = await db.select().from(schema.users).where(eq(schema.users.email, email)).limit(1);
+    // Check if user exists and is unverified (case-insensitive — legacy rows may be mixed-case)
+    const user = await db
+      .select()
+      .from(schema.users)
+      .where(sql`lower(${schema.users.email}) = ${email}`)
+      .limit(1);
 
     // Don't reveal user status - return same message for all cases
     // Use consistent delay for all paths to prevent timing attacks
