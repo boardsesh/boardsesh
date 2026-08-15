@@ -123,8 +123,41 @@ later died on `relation "location_sync_gym_sources" does not exist`.
 With `VERIFY_MIGRATION_JOURNAL=1`, `packages/db/scripts/migrate.ts` now checks **every**
 journal entry against the ledger, keyed on the migration hash, and throws with the missing
 tags named. `production-deploy.yml` and `db-migration-renumber.yml` both set it. It stays
-opt-in for now because the `boardsesh-dev-db` image is missing `0187_sad_freak`'s ledger
-row, so a default-on check would redden every developer's `vp run db:migrate`.
+opt-in, because a dev database can still carry gaps the developer did not cause and a
+default-on check would redden every `vp run db:migrate`.
+
+#### Ledger timestamps on the dev DB (`vp run db:normalize-ledger`)
+
+The `boardsesh-dev-db` image applies the journal itself, in a psql loop. Until #4211 it
+stamped each ledger row with the image's **build clock** instead of the journal entry's
+`when`, which drags the high-water mark forward to the moment the image was built.
+
+What that skips is not the newest migrations — a migration generated today has a `when`
+later than any image built yesterday, so it still applies. It is the migrations whose `when`
+sits _below_ the build clock and that the image did not itself apply: a branch's migration,
+generated before the image was built and applied to that database afterwards. On the two e2e
+jobs, which run `boardsesh-dev-db:latest`, that is most open PRs — the image is rebuilt on
+every db-touching merge to `main`, so any branch older than the last such merge lands under
+the mark. The migration is skipped with no error at all: `vp run db:migrate` says nothing,
+the table never appears, and `db:verify-journal` reports it as a real gap. The mark only ever
+moves up, so it never recovers.
+
+The image now writes `when`, and fails its own build if the ledger's high-water mark is not
+the journal's newest `when`. That only helps images built after the fix, though: CI pins a
+digest and developers keep a persistent `db_data` volume. So a database already on disk is
+repaired in place:
+
+```
+DATABASE_URL=postgres://... vp run db:normalize-ledger        # add -- --dry-run to plan only
+```
+
+It rewrites `created_at` to each entry's `when` — exactly the value drizzle writes itself —
+so it is a no-op on any drizzle-managed database, and it refuses a non-local target without
+`--force`. `vp run db:up` runs it automatically, as do the CI jobs that boot the image. One
+gap: the tailnet/remote fast path in `scripts/dev-db-up.sh` returns before that point, so on
+a shared remote dev DB run the command by hand once.
+
+A gate firing on a dev database is therefore a real gap again, not ledger noise.
 
 Run it read-only against any database, without applying anything:
 

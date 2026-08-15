@@ -823,6 +823,15 @@ jobs:
           cache: true
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      # The pinned image's ledger was stamped with the image build clock, not
+      # each journal entry's `when` (#4211). That mark only moves up, so without
+      # this repair the next step silently skips any journal entry whose `when`
+      # predates the pinned image's build — including a PR's own migration when
+      # the branch is older than the pin. Must stay ahead of db:migrate.
+      - name: Normalize the dev-db image migration ledger
+        env:
+          DATABASE_URL: postgres://postgres:password@localhost:5432/main
+        run: bun run --filter=@boardsesh/db db:normalize-ledger
       - name: Apply the full migration journal
         env:
           DATABASE_URL: postgres://postgres:password@localhost:5432/main
