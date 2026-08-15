@@ -273,6 +273,14 @@ vi.mock('../../lib/graphql/ws-client', () => ({
 
 vi.mock('../../lib/graphql/use-active-board', () => ({
   ACTIVE_BOARD_QUERY_KEY: ['activeBoard'] as const,
+  clearStoredActiveBoardCoordinated: vi.fn(),
+}));
+
+// Another load guard: sign-out clears the self-heal's per-account validation
+// cache, and the real module reaches storage this env doesn't provide. What
+// sign-out actually does with it is asserted in `auth-provider.test.tsx`.
+vi.mock('../../lib/boards/active-board-self-heal-validation-cache', () => ({
+  resetActiveBoardSelfHealValidationCache: vi.fn(),
 }));
 
 const getDatabaseHandleMock = vi.fn((): unknown => null);

@@ -89,10 +89,10 @@ async function skipReason(commandDb: ExecuteDb): Promise<string | null> {
       `,
     );
     if (!state?.hasTombstone) {
-      return 'user_boards.merged_into_board_uuid missing; apply migration 0189 before this integration test';
+      return 'user_boards.merged_into_board_uuid missing; apply the true_hellion migration before this integration test';
     }
     if (!state.hasPresenceSeq) {
-      return 'user_boards.presence_seq missing; apply migration 0190 before this integration test';
+      return 'user_boards.presence_seq missing; apply the windy_fenris migration before this integration test';
     }
     if (!state.hasVoteTrigger) {
       return 'votes_count_trigger is missing; run migrations before this integration test';
@@ -113,7 +113,11 @@ async function lockTestSkipReason(commandDb: ExecuteDb): Promise<string | null> 
   } catch (error: unknown) {
     return `database unavailable: ${error instanceof Error ? error.message : String(error)}`;
   }
-  return null;
+  // The lock cases go through the same cluster refetch as the apply path, so
+  // they need the same columns. Checking only for the table left them failing
+  // with a raw "column does not exist" on a database that hadn't taken this
+  // branch's migrations, while the apply cases next door skipped cleanly.
+  return skipReason(commandDb);
 }
 
 async function insertBoard(

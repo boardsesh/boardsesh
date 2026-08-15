@@ -1918,6 +1918,27 @@ export const socialBoardMutations = {
       timerName: validatedInput.timerName ?? null,
     };
 
+    // The ONE way this resolver is allowed to insert a board without a gym mint.
+    // Both callers below go through it so neither can drift back into a bare,
+    // unlocked insert: the guard has to read and insert under the same serial
+    // lock, and the fallback re-runs it because a competing create can commit in
+    // the window between the mint's guard and this one.
+    const insertGuardedBoard = async (linkedGymId: number | null) => {
+      try {
+        return await db.transaction(async (tx) => {
+          await lockAndAssertBoardSerialAvailable(tx, validatedInput, userId);
+          const [insertedBoard] = await tx
+            .insert(dbSchema.userBoards)
+            .values({ ...boardValues, gymId: linkedGymId })
+            .returning();
+          return insertedBoard;
+        });
+      } catch (error) {
+        throwIfBoardSerialConflict(error);
+        throw error;
+      }
+    };
+
     if (mintGymNamed != null) {
       const gymName = mintGymNamed;
       try {
@@ -1957,34 +1978,10 @@ export const socialBoardMutations = {
         // The gym couldn't be minted; still create the board, unlinked, rather
         // than failing the whole create.
         logger.error('Auto-gym creation failed, creating board without gym:', error);
-        try {
-          board = await db.transaction(async (tx) => {
-            await lockAndAssertBoardSerialAvailable(tx, validatedInput, userId);
-            const [insertedBoard] = await tx
-              .insert(dbSchema.userBoards)
-              .values({ ...boardValues, gymId: null })
-              .returning();
-            return insertedBoard;
-          });
-        } catch (fallbackError) {
-          throwIfBoardSerialConflict(fallbackError);
-          throw fallbackError;
-        }
+        board = await insertGuardedBoard(null);
       }
     } else {
-      try {
-        board = await db.transaction(async (tx) => {
-          await lockAndAssertBoardSerialAvailable(tx, validatedInput, userId);
-          const [insertedBoard] = await tx
-            .insert(dbSchema.userBoards)
-            .values({ ...boardValues, gymId })
-            .returning();
-          return insertedBoard;
-        });
-      } catch (error) {
-        throwIfBoardSerialConflict(error);
-        throw error;
-      }
+      board = await insertGuardedBoard(gymId);
     }
 
     // Populate the PostGIS `location` columns. These run AFTER the transaction,

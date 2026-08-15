@@ -6,7 +6,7 @@ import { createElement } from 'react';
 import type { CreateBoardInput, UserBoard } from '@boardsesh/shared-schema';
 
 const routerMock = vi.hoisted(() => ({ dismissTo: vi.fn() }));
-const showToastMock = vi.hoisted(() => vi.fn());
+const trackMock = vi.hoisted(() => vi.fn());
 const setActiveBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const createBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue({}));
 const followBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -64,9 +64,9 @@ vi.mock('../../../src/providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true }),
 }));
 
-vi.mock('../../../src/providers/toast-provider', () => ({
-  useToast: () => ({ showToast: showToastMock }),
-}));
+vi.mock('../../../src/lib/analytics', () => ({ track: trackMock }));
+
+vi.mock('@boardsesh/board-config', () => ({ toBoardName: (value: string) => value }));
 
 vi.mock('../../../src/lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../src/lib/boards/board-return-to', () => ({ resolveBoardReturnTo: () => '/boards' }));
@@ -86,8 +86,15 @@ vi.mock('../../../src/components/board-discovery/board-builder-labels', () => ({
 }));
 
 vi.mock('../../../src/components/board-discovery/BoardForm', () => ({
-  BoardForm: ({ onSubmit }: { onSubmit: () => void }) =>
-    createElement('button', { type: 'button', onClick: onSubmit }, 'submit board'),
+  BoardForm: ({ onSubmit, errorMessage }: { onSubmit: () => void; errorMessage?: string | null }) =>
+    createElement('div', null, [
+      createElement('button', { key: 'submit', type: 'button', onClick: onSubmit }, 'submit board'),
+      errorMessage ? createElement('span', { key: 'error', 'data-testid': 'error' }, errorMessage) : null,
+    ]),
+}));
+
+vi.mock('../../../src/components/board-discovery/BoardDuplicatePromptSheet', () => ({
+  BoardDuplicatePromptSheet: () => createElement('div', { 'data-testid': 'duplicate-prompt' }),
 }));
 
 vi.mock('../../../src/components/board-discovery/SerialReuseConfirmSheet', () => ({
@@ -187,6 +194,9 @@ describe('create-board serial reuse privacy', () => {
     await waitFor(() => expect(followBoardMock).toHaveBeenCalledTimes(1));
     expect(setActiveBoardMock).not.toHaveBeenCalled();
     expect(routerMock.dismissTo).not.toHaveBeenCalled();
-    expect(showToastMock).toHaveBeenCalledWith('mobile.create.createError', 'error');
+    // Inline, not a toast: this screen is a `presentation: 'modal'` route and
+    // the toast overlay renders behind it (#4166).
+    expect(await screen.findByTestId('error')).toBeTruthy();
+    expect(screen.getByTestId('error').textContent).toBe('mobile.create.createError');
   });
 });

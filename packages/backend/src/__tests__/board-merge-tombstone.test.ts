@@ -1086,6 +1086,214 @@ describe('createBoard cross-owner duplicate-serial backstop', () => {
   });
 });
 
+/**
+ * The auto-gym insert paths.
+ *
+ * Every create above passes no location, so `resolveAutoGymForBoard` answers
+ * `none` and they all land on the same plain insert. When #4166's
+ * duplicate-CONFIG guard landed it split createBoard's single insert into three
+ * — a gym-mint transaction, an unlinked fallback for when that mint fails, and
+ * the plain insert — and each one has to hold the serial write lock across both
+ * the guard read and the INSERT. An unguarded path reopens the exact race this
+ * PR closes, and the cases above cannot see it: they never reach a mint.
+ *
+ * Location NAME only, never coordinates, so none of the PostGIS proximity tiers
+ * run (the backend test DB has no PostGIS extension).
+ */
+describe('createBoard serial guard on the auto-gym insert paths', () => {
+  const mintBaseInput = { boardType: 'kilter', layoutId: 11, sizeId: 12, setIds: '1,2' };
+
+  async function countBoards(ownerId: string): Promise<number> {
+    const [row] = rowsFromResult<{ count: number }>(
+      await db.execute(sql`SELECT count(*)::int AS count FROM user_boards WHERE owner_id = ${ownerId}`),
+    );
+    return row.count;
+  }
+
+  async function countGyms(ownerId: string): Promise<number> {
+    const [row] = rowsFromResult<{ count: number }>(
+      await db.execute(sql`SELECT count(*)::int AS count FROM gyms WHERE owner_id = ${ownerId}`),
+    );
+    return row.count;
+  }
+
+  async function cleanupOwner(ownerId: string): Promise<void> {
+    await db.execute(sql`DELETE FROM user_boards WHERE owner_id = ${ownerId}`);
+    await db.execute(sql`DELETE FROM gyms WHERE owner_id = ${ownerId}`);
+    await db.execute(sql`DELETE FROM users WHERE id = ${ownerId}`);
+  }
+
+  /**
+   * Make the gym INSERT fail so the create falls through to the unlinked
+   * fallback. A CHECK constraint scoped to one sentinel name is the smallest
+   * lever that reproduces a real mint failure: the whole mint transaction rolls
+   * back exactly as it would on a slug collision or a dead extension.
+   */
+  async function withFailingGymMint(gymName: string, body: () => Promise<void>): Promise<void> {
+    const constraint = `mt_forced_mint_failure_${SERIAL_SUFFIX}`.toLowerCase();
+    await db.execute(sql.raw(`ALTER TABLE gyms ADD CONSTRAINT ${constraint} CHECK (name <> '${gymName}')`));
+    try {
+      await body();
+    } finally {
+      await db.execute(sql.raw(`ALTER TABLE gyms DROP CONSTRAINT IF EXISTS ${constraint}`));
+    }
+  }
+
+  it('blocks the gym-mint path on a cross-owner duplicate serial, and mints no gym', async () => {
+    const owner = `${PREFIX}-mint-block`;
+    await insertUser(owner);
+    try {
+      let thrown: unknown;
+      try {
+        await socialBoardMutations.createBoard(
+          null,
+          {
+            input: {
+              ...mintBaseInput,
+              name: 'Mint Dup',
+              locationName: `${PREFIX} Mint Block Gym`,
+              serialNumber: EXISTING_SERIAL,
+            },
+          },
+          authCtx(owner),
+        );
+      } catch (error) {
+        thrown = error;
+      }
+      expect((thrown as { extensions?: Record<string, unknown> })?.extensions?.code).toBe('BOARD_SERIAL_EXISTS');
+      // The guard sits at the top of the mint transaction, so a rejected create
+      // leaves neither a board nor a gym. An orphan gym here would be the tell
+      // that the lock was taken after the gym insert rather than before it.
+      expect(await countBoards(owner)).toBe(0);
+      expect(await countGyms(owner)).toBe(0);
+    } finally {
+      await cleanupOwner(owner);
+    }
+  });
+
+  it('mints the gym and links the board when the serial is free', async () => {
+    const owner = `${PREFIX}-mint-ok`;
+    const serial = `MINT-OK-${SERIAL_SUFFIX}`;
+    await insertUser(owner);
+    try {
+      const board = (await socialBoardMutations.createBoard(
+        null,
+        {
+          input: {
+            ...mintBaseInput,
+            layoutId: 42,
+            name: 'Mint Ok',
+            locationName: `${PREFIX} Mint Ok Gym`,
+            serialNumber: serial,
+          },
+        },
+        authCtx(owner),
+      )) as { uuid: string };
+      const [row] = rowsFromResult<{ gym_id: number | null; serial_number: string | null }>(
+        await db.execute(sql`SELECT gym_id, serial_number FROM user_boards WHERE uuid = ${board.uuid}`),
+      );
+      expect(row.gym_id).not.toBeNull();
+      expect(row.serial_number).toBe(serial.toUpperCase());
+      expect(await countGyms(owner)).toBe(1);
+    } finally {
+      await cleanupOwner(owner);
+    }
+  });
+
+  it('lets allowDuplicateSerial through the mint path', async () => {
+    const owner = `${PREFIX}-mint-allow`;
+    await insertUser(owner);
+    try {
+      const board = (await socialBoardMutations.createBoard(
+        null,
+        {
+          input: {
+            ...mintBaseInput,
+            name: 'Mint Allowed Dup',
+            locationName: `${PREFIX} Mint Allow Gym`,
+            serialNumber: EXISTING_SERIAL,
+            allowDuplicateSerial: true,
+          },
+        },
+        authCtx(owner),
+      )) as { uuid: string };
+      const [row] = rowsFromResult<{ gym_id: number | null }>(
+        await db.execute(sql`SELECT gym_id FROM user_boards WHERE uuid = ${board.uuid}`),
+      );
+      expect(row.gym_id).not.toBeNull();
+    } finally {
+      await cleanupOwner(owner);
+    }
+  });
+
+  it('falls back to an unlinked board — through the guarded insert — when the gym mint fails', async () => {
+    const owner = `${PREFIX}-fallback-ok`;
+    const gymName = `${PREFIX} Fallback Gym`;
+    const serial = `FALLBACK-${SERIAL_SUFFIX}`;
+    await insertUser(owner);
+    try {
+      await withFailingGymMint(gymName, async () => {
+        const board = (await socialBoardMutations.createBoard(
+          null,
+          {
+            input: { ...mintBaseInput, layoutId: 99, name: 'Fallback Ok', locationName: gymName, serialNumber: serial },
+          },
+          authCtx(owner),
+        )) as { uuid: string };
+        const [row] = rowsFromResult<{ gym_id: number | null; serial_number: string | null }>(
+          await db.execute(sql`SELECT gym_id, serial_number FROM user_boards WHERE uuid = ${board.uuid}`),
+        );
+        // Unlinked, but created — and the serial still landed, so the fallback
+        // went through the same guarded insert the plain path uses.
+        expect(row.gym_id).toBeNull();
+        expect(row.serial_number).toBe(serial.toUpperCase());
+        expect(await countGyms(owner)).toBe(0);
+      });
+    } finally {
+      await cleanupOwner(owner);
+    }
+  });
+
+  it('never uses the unlinked fallback to escape a serial rejection', async () => {
+    const owner = `${PREFIX}-fallback-block`;
+    const gymName = `${PREFIX} Fallback Block Gym`;
+    await insertUser(owner);
+    try {
+      await withFailingGymMint(gymName, async () => {
+        let thrown: unknown;
+        try {
+          await socialBoardMutations.createBoard(
+            null,
+            {
+              input: {
+                ...mintBaseInput,
+                name: 'Fallback Block',
+                locationName: gymName,
+                serialNumber: EXISTING_SERIAL,
+              },
+            },
+            authCtx(owner),
+          );
+        } catch (error) {
+          thrown = error;
+        }
+        // The mint fails for two reasons at once here: the serial guard rejects,
+        // and the gym insert would too. The rejection has to win — retrying
+        // without the gym would create the very cross-owner duplicate the guard
+        // just refused, and the failure would look like an auto-gym hiccup.
+        // Two things hold that up, and either alone is enough: the rejection is
+        // rethrown rather than read as a mint failure, and the fallback insert
+        // runs the guard again regardless. Put main's bare, unguarded fallback
+        // insert back and this case goes red.
+        expect((thrown as { extensions?: Record<string, unknown> })?.extensions?.code).toBe('BOARD_SERIAL_EXISTS');
+        expect(await countBoards(owner)).toBe(0);
+      });
+    } finally {
+      await cleanupOwner(owner);
+    }
+  });
+});
+
 describe('serial pointer lock ordering', () => {
   it('locks an explicit choice row before the serial advisory lock', async () => {
     const tag = `${PREFIX}-explicit-choice-lock-order-${Date.now()}`;

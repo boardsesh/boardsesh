@@ -19,7 +19,6 @@ import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useDeviceLocation } from '../../lib/use-device-location';
 import { useForeignSerialBoard } from '../../lib/boards/use-foreign-serial-board';
 import { serialReuseDisclosure } from '../../lib/boards/serial-reuse';
-import { iosSystemColors } from '../../theme/ios-colors';
 import type { useBoardBuilder } from './use-board-builder';
 import { BoardConfigChips } from './BoardConfigChips';
 import { boardTypeLabel, cleanLayoutName, formatSizeLabel } from './board-builder-labels';
