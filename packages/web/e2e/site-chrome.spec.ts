@@ -60,10 +60,28 @@ test.describe('Site chrome - visibility', () => {
     });
   }
 
+  // `/notifications` on purpose, not `/settings`: the `/settings` branch of
+  // `MarketingHeader` renders the brand link and a spacer and never reads the
+  // session, so a signed-in run there would assert nothing the unauthenticated
+  // `/settings` case above doesn't already cover. `/notifications` falls through
+  // to the default branch, which is where the account affordance renders.
   test('renders the header and footer for a signed-in visitor', async ({ page }) => {
-    await loginAs(page, '/settings');
+    await loginAs(page, '/notifications');
     await expectChrome(page);
     await expectNoBottomBar(page);
+  });
+
+  // W-19 deleted `/you`, and with it the only other www link to these two
+  // surfaces. Until W-20b (#4439) removes `/notifications` and W-21 (#4440)
+  // reworks `/settings`, the account slot in this header is the sole way in.
+  test('keeps notifications and settings reachable once signed in', async ({ page }) => {
+    await loginAs(page, '/notifications');
+    await expectChrome(page);
+
+    const header = page.locator(marketingHeader);
+    await expect(header.locator('a[href="/notifications"]')).toBeVisible();
+    await expect(header.locator('a[href="/settings"]')).toBeVisible();
+    await expect(header.locator('a[href^="/you"]')).toHaveCount(0);
   });
 });
 

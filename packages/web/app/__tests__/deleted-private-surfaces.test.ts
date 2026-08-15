@@ -10,7 +10,9 @@
  *    into `/session`, `/join`, `climb-search-cache` or `/api/internal/profile`
  *    reds here rather than in production),
  *  - every deleted path 30x's in all four locales, and
- *  - no same-origin redirect lands on a path that is itself a redirect source.
+ *  - no same-origin redirect lands on a path that any other rule would redirect
+ *    again — matched against the compiled source patterns, not literal strings,
+ *    because most sources here are parameterised.
  *
  * That last one is the trap this PR fixes: `/you/logbook` used to 301 onto
  * `/you`, which is now itself a redirect, so shipping both would have made every
@@ -38,9 +40,17 @@ const DELETED_PATHS = [
   'app/components/activity-feed/comment-feed.tsx',
 ];
 
+/**
+ * Concrete entry points, not bare directories: `existsSync` is true for an empty
+ * directory, so a sweep that emptied `app/join/` while leaving the folder would
+ * pass a directory-only assertion and 404 every session share link the mobile
+ * app has ever emitted.
+ */
 const KEPT_PATHS = [
   'app/session',
+  'app/session/[sessionId]/page.tsx',
   'app/join',
+  'app/join/[sessionId]/page.tsx',
   'app/api/internal/climb-search-cache/revalidate/route.ts',
   'app/lib/climb-search-cache.ts',
   'app/api/internal/profile/route.ts',
@@ -50,12 +60,19 @@ const KEPT_PATHS = [
   'app/lib/server-popular-configs.ts',
   'app/components/activity-feed/activity-feed.tsx',
   'app/components/activity-feed/social-feed-item.tsx',
+  // The three assets the epic marks never-touch. `board-render` is carved out
+  // of `robots.ts`'s allow list as the climb page's LCP image for
+  // Googlebot-Image; `ws-auth` is the party-session handshake; `climb-card/` is
+  // the shared card the board lists and the social feeds both render.
+  'app/api/internal/ws-auth/route.ts',
+  'app/api/internal/board-render/route.ts',
+  'app/components/climb-card/climb-title.tsx',
 ];
 
 const LOCALE_PREFIXES = ['/es', '/fr', '/de'];
 
 /** Base sources this PR must 30x, before locale expansion. */
-const REDIRECTED_SOURCES = ['/you', '/you/:path*', '/feed', '/import-beta'];
+const REDIRECTED_SOURCES = ['/you', '/you/:path*', '/feed', '/discover', '/import-beta'];
 
 type Redirect = { source: string; destination: string; permanent: boolean };
 type NextConfigWithRedirects = { redirects?: () => Promise<Redirect[]> };
@@ -68,6 +85,61 @@ const redirectSources = new Set(redirects.map((redirect) => redirect.source));
 function isCrossOrigin(destination: string): boolean {
   return destination.startsWith('http://') || destination.startsWith('https://');
 }
+
+function escapeLiteral(literal: string): string {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Compile a Next redirect `source` into a matcher.
+ *
+ * The chain guard has to compare a destination against the *patterns* the rule
+ * table declares, not against the literal source strings: most sources here are
+ * parameterised, so `redirectSources.has('/you/sessions')` is false even though
+ * `/you/:path*` matches it in production. A literal-only guard would let a later
+ * wave ship `/old-logbook → /you/sessions → app.boardsesh.com/profile` — two
+ * hops — while staying green.
+ *
+ * This covers the path-to-regexp subset the table actually uses: `:name`,
+ * `:name(custom)` and the `*`/`+`/`?` modifiers.
+ */
+const PARAM_PATTERN = /:([A-Za-z0-9_]+)(?:\(((?:[^()\\]|\\.)*)\))?([*+?])?/;
+
+function compileSource(source: string): RegExp {
+  let pattern = '';
+  let rest = source;
+
+  while (rest.length > 0) {
+    const match = PARAM_PATTERN.exec(rest);
+    if (!match) {
+      pattern += escapeLiteral(rest);
+      break;
+    }
+
+    const [whole, , custom, modifier] = match;
+    const literal = rest.slice(0, match.index);
+    const segment = custom ?? '[^/]+';
+
+    if (modifier === '*' || modifier === '+') {
+      // `/:path*` repeats whole segments, so the slash in front of it belongs
+      // inside the repeat group — `/you/:path*` must match a bare `/you`.
+      const slashLed = literal.endsWith('/');
+      pattern += escapeLiteral(slashLed ? literal.slice(0, -1) : literal);
+      pattern += slashLed ? `(?:/(?:${segment}))${modifier}` : `(?:${segment})${modifier}`;
+    } else {
+      pattern += `${escapeLiteral(literal)}(?:${segment})${modifier ?? ''}`;
+    }
+
+    rest = rest.slice(match.index + whole.length);
+  }
+
+  return new RegExp(`^${pattern}$`);
+}
+
+const sourceMatchers = redirects.map((redirect) => ({
+  source: redirect.source,
+  matches: compileSource(redirect.source),
+}));
 
 describe('deleted private surfaces', () => {
   it('leaves no trace of a deleted surface in the tree', () => {
@@ -105,9 +177,32 @@ describe('deleted private surfaces', () => {
   it('never chains one redirect into another', () => {
     const chained = redirects
       .filter((redirect) => !isCrossOrigin(redirect.destination))
-      .filter((redirect) => redirectSources.has(redirect.destination.split('?')[0]))
-      .map((redirect) => `${redirect.source} -> ${redirect.destination}`);
+      .flatMap((redirect) => {
+        const destinationPath = redirect.destination.split('?')[0];
+        const hit = sourceMatchers.find(
+          (candidate) => candidate.source !== redirect.source && candidate.matches.test(destinationPath),
+        );
+
+        return hit ? [`${redirect.source} -> ${redirect.destination} (matched by ${hit.source})`] : [];
+      });
 
     expect(chained).toEqual([]);
+  });
+
+  it('never lands a same-origin redirect on a trailing slash', () => {
+    // `trailingSlash` is at its default and `skipTrailingSlashRedirect` is
+    // unset, so Next unshifts its own `/:path+/ → /:path+` 308 ahead of every
+    // custom rule. A destination that ends in `/` is therefore a two-hop
+    // redirect that the chain guard above cannot see — the extra hop comes from
+    // Next, not from this rule table.
+    const trailing = redirects
+      .filter((redirect) => !isCrossOrigin(redirect.destination))
+      .filter((redirect) => {
+        const destinationPath = redirect.destination.split('?')[0];
+        return destinationPath !== '/' && destinationPath.endsWith('/');
+      })
+      .map((redirect) => `${redirect.source} -> ${redirect.destination}`);
+
+    expect(trailing).toEqual([]);
   });
 });
