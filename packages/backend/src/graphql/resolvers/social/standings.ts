@@ -1,10 +1,17 @@
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { isRankedBoardType, parseLayoutScopeKey, scopeDefinition, type ScopeKind } from '@boardsesh/leaderboard';
+import {
+  isRankedBoardType,
+  parseLayoutScopeKey,
+  scopeDefinition,
+  scopeToId,
+  type ScopeKind,
+} from '@boardsesh/leaderboard';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { anonymousClimberId, applyRateLimit, validateInput } from '../shared/helpers';
 import { StandingsInputSchema } from '../../../validation/schemas/standings';
+import { getCachedStandings, setCachedStandings, standingsCacheKey } from './standings-cache';
 
 /**
  * Standings — ranked leaderboards over a rolling window.
@@ -353,6 +360,25 @@ export const standingsQueries = {
       viewerId,
     };
 
+    // Measured on production: ~95 ms server-side warm, but ~1.25 s cold. The
+    // three CTE layers touch enough pages that a post-deploy or evicted cache
+    // costs an order of magnitude more than the steady state — and that cold
+    // path is precisely what climbers meet right after a release. A ranking is
+    // stale-tolerant, so 60 seconds of staleness buys that back.
+    //
+    // Keyed on the viewer too: the payload carries their real name and id on a
+    // row anonymised for everyone else, so a shared entry would leak exactly
+    // what the anonymity setting exists to withhold.
+    const cacheKey = standingsCacheKey({
+      scopeId: scopeToId({ kind: requestedKind, key: requestedKey }),
+      window: validated.window,
+      limit: validated.limit,
+      offset: validated.offset,
+      viewerId,
+    });
+    const cached = await getCachedStandings<StandingsResult>(cacheKey);
+    if (cached) return cached;
+
     /**
      * Demote to global rather than returning an empty list. The intermediate
      * rungs of the ladder need a key we no longer have once the original entity
@@ -373,7 +399,11 @@ export const standingsQueries = {
     };
 
     const requested = await scopePredicate(requestedKind, requestedKey);
-    if (!requested) return demoteToGlobal('unknownScope');
+    if (!requested) {
+      const demoted = await demoteToGlobal('unknownScope');
+      setCachedStandings(cacheKey, demoted);
+      return demoted;
+    }
 
     const result = await runStandings({
       ...common,
@@ -384,9 +414,17 @@ export const standingsQueries = {
       demotionReason: null,
     });
 
-    if (result.totalCount === 0 && requestedKind !== 'global') {
-      return demoteToGlobal('empty');
-    }
-    return result;
+    // Demote only from the FIRST page. `totalCount` is read off the returned
+    // rows (COUNT(*) OVER ()), so a page past the end of the list comes back
+    // empty and reports zero — without this guard, scrolling to the bottom of a
+    // real wall's standings would silently swap the reader onto the global
+    // board, which is far worse than the empty tail they actually asked for.
+    const isEmptyFirstPage = result.totalCount === 0 && validated.offset === 0;
+    const resolved = isEmptyFirstPage && requestedKind !== 'global' ? await demoteToGlobal('empty') : result;
+
+    // Cache the demoted response under the REQUESTED key, so a repeat request
+    // for the same empty wall skips the wasted round trip too.
+    setCachedStandings(cacheKey, resolved);
+    return resolved;
   },
 };

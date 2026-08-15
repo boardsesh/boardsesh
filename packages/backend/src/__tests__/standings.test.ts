@@ -306,6 +306,25 @@ describeWithDatabase('standings', () => {
     expect(result.entries.map((entry) => entry.userId)).toEqual([ALICE]);
   });
 
+  it('does NOT demote when a later page is empty, only when the first one is', async () => {
+    const climb = await makeClimb();
+    await logSend({ userId: ALICE, climbUuid: climb, boardId });
+
+    // Page past the end of a wall that genuinely has climbers on it. totalCount
+    // is read off the returned rows, so an empty tail reports zero — without the
+    // first-page guard this would silently swap the reader onto the global
+    // board, which is far worse than the empty tail they asked for.
+    const tail = await standingsQueries.standings(
+      undefined,
+      { input: { scope: { kind: 'board', key: boardUuid }, offset: 50 } },
+      ctxFor(ALICE),
+    );
+    expect(tail.resolvedScope.kind).toBe('board');
+    expect(tail.demotionReason).toBeNull();
+    expect(tail.entries).toEqual([]);
+    expect(tail.hasMore).toBe(false);
+  });
+
   it('ranks a layout without needing any board attribution', async () => {
     const climb = await makeClimb();
     // No board_id at all — the layout tier resolves through board_climbs, which
