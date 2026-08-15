@@ -60,8 +60,20 @@ describe('www production smoke checks', () => {
   it('rejects a sitemap.xml that is not an index pointing at shards', () => {
     const check = checkNamed('sitemap index');
     const healthyIndex =
-      '<sitemapindex><sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap></sitemapindex>';
+      '<sitemapindex>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
+      '</sitemapindex>';
     expect(check.assert(response({ contentType: 'application/xml', body: healthyIndex }))).toBeNull();
+
+    // The regression this check has to keep catching after #4476. The index now
+    // degrades rather than 503ing, so a cold-start failure of the boards builder
+    // ships a 200 that quietly lost ~2,600 URLs. `static` is hardcoded and cannot
+    // fail, so an "any one shard <loc>" assertion would be green on every
+    // possible outage — the detector that found the bug would never fire again.
+    const degradedIndex =
+      '<sitemapindex><sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap></sitemapindex>';
+    expect(check.assert(response({ contentType: 'application/xml', body: degradedIndex }))).toMatch(/boards/);
 
     // A regression to the old flat urlset — the shape this replaced.
     expect(

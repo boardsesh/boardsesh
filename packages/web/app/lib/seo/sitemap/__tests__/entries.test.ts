@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { SUPPORTED_LOCALES } from '@/app/lib/i18n/config';
-import { buildAlternates, expandAllLocales, expandLocales, latestLastModified } from '../entries';
+import { allLocalesUrlCount, buildAlternates, expandAllLocales, expandLocales, latestLastModified } from '../entries';
 
 describe('expandLocales', () => {
   const entries = expandLocales({ path: '/playlists/abc', lastModified: new Date('2026-04-30T00:00:00.000Z') });
@@ -45,6 +45,17 @@ describe('expandLocales', () => {
   it('carries a null lastModified through rather than inventing one', () => {
     for (const entry of expandLocales({ path: '/about' })) {
       expect(entry.lastModified).toBeNull();
+    }
+  });
+});
+
+describe('allLocalesUrlCount', () => {
+  it('matches what expandAllLocales would actually build', () => {
+    // The index checks the URL budget with the cheap count instead of building
+    // up to 45,000 entries it would throw away. That is only sound while the two
+    // agree, so pin them against each other rather than against a literal.
+    for (const items of [[], [{ path: '/about' }], [{ path: '/a' }, { path: '/b' }, { path: '/c' }]]) {
+      expect(allLocalesUrlCount(items)).toBe(expandAllLocales(items).length);
     }
   });
 });

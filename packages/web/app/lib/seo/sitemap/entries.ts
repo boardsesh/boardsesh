@@ -57,6 +57,19 @@ export function expandAllLocales(items: readonly SitemapItem[]): SitemapUrlEntry
   return items.flatMap((item) => expandLocales(item));
 }
 
+/**
+ * How many `<url>` entries `expandAllLocales` would produce, without building
+ * them. The index checks every shard against the URL budget on a `force-dynamic`
+ * route, and materialising up to 45,000 entries — each carrying a five-key
+ * alternates record — only to read `.length` turns a guard into a cost.
+ * `expandLocales` emits exactly one entry per supported locale for every item,
+ * which is what makes this arithmetic exact rather than an estimate; a unit test
+ * pins the two against each other so a future expansion rule cannot drift.
+ */
+export function allLocalesUrlCount(items: readonly SitemapItem[]): number {
+  return items.length * SUPPORTED_LOCALES.length;
+}
+
 /** Newest real timestamp across a shard's items, or null when none carries one. */
 export function latestLastModified(items: readonly SitemapItem[]): Date | null {
   let latest: Date | null = null;
