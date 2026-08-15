@@ -246,8 +246,8 @@ RUN set -e && \
     DB_FILE=/db/tmp/kilter.modified.db pgloader /db/kilter_db.load && \
     \
     # ── Apply drizzle migrations via psql ─────────────────────────────── \
-    # The helper fails closed before writing either ledger row if psql reports \
-    # any migration error. Its contract test injects a deliberately bad file. \
+    # The helper applies each migration and both exact-time ledger rows in one \
+    # transaction. Its contracts cover SQL and second-ledger rollback. \
     echo ">>> Applying drizzle migrations..." && \
     PGHOST=/var/run/postgresql PGDATABASE=main \
       gosu postgres boardsesh-apply-drizzle-migrations && \

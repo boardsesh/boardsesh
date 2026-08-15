@@ -235,8 +235,9 @@ instead of silently copying a filtered subset.
    Pre-create extensions as the target admin, then remove `EXTENSION` and
    `COMMENT ON EXTENSION` entries from the custom archive restore list. Those
    entries cannot safely run as the application owner. Give the owner `CREATE`
-   on the database, make it owner of any pre-existing application schema such
-   as `public`, and restore the filtered list while set to that role:
+   on the database, pre-create every included application schema (`public` and
+   `drizzle`) under that owner, and restore the filtered list while set to that
+   role:
 
    ```bash
    pg_dump --schema-only --no-owner --no-acl \
@@ -245,10 +246,10 @@ instead of silently copying a filtered subset.
      --file "$SCHEMA_DUMP" "$SOURCE_DATABASE_URL"
 
    pg_restore --list "$SCHEMA_DUMP" >"$RESTORE_LIST"
-   awk '$0 !~ / EXTENSION - / && $0 !~ / COMMENT - EXTENSION / { print }' \
+   awk '$0 !~ / SCHEMA - / && $0 !~ / EXTENSION - / && $0 !~ / COMMENT - EXTENSION / { print }' \
      "$RESTORE_LIST" >"$FILTERED_RESTORE_LIST"
 
-   pg_restore --schema-only --no-owner --no-acl \
+   pg_restore --exit-on-error --schema-only --no-owner --no-acl \
      --role "$MIGRATION_OWNER_ROLE" \
      --use-list "$FILTERED_RESTORE_LIST" \
      --dbname "$TARGET_DATABASE_URL" "$SCHEMA_DUMP"

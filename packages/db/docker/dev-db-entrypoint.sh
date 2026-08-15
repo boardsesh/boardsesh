@@ -30,10 +30,15 @@ validate_seed() {
 reject_other_clusters() {
   local version_file cluster_major
   while IFS= read -r -d '' version_file; do
-    [[ "$version_file" == "$PGDATA/PG_VERSION" ]] && continue
     cluster_major="$(read_major "${version_file%/PG_VERSION}")"
     fail "mounted parent volume contains a PostgreSQL ${cluster_major} cluster outside ${PGDATA}; use a fresh PostgreSQL 18 volume"
-  done < <(find "$POSTGRES_ROOT" -type f -name PG_VERSION -print0 2>/dev/null)
+  done < <(
+    # A valid cluster also contains per-database base/<oid>/PG_VERSION files.
+    # Prune the expected PGDATA subtree entirely; prepare_pgdata validates its
+    # top-level version and completion marker separately below.
+    find "$POSTGRES_ROOT" -path "$PGDATA" -prune -o \
+      -type f -name PG_VERSION -print0 2>/dev/null
+  )
 }
 
 prepare_pgdata() {

@@ -15,6 +15,8 @@ AUDIT_REPORT_FILE="$(mktemp "${TMPDIR:-/tmp}/boardsesh-pg18-audit.XXXXXX")"
 readonly AUDIT_REPORT_FILE
 SYNC_REPORT_FILE="$(mktemp "${TMPDIR:-/tmp}/boardsesh-pg18-sync.XXXXXX")"
 readonly SYNC_REPORT_FILE
+MIGRATION_CONTRACT_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/boardsesh-pg18-migrations.XXXXXX")"
+readonly MIGRATION_CONTRACT_ROOT
 
 cleanup() {
   docker rm --force "$TARGET_CONTAINER_NAME" >/dev/null 2>&1 || true
@@ -24,6 +26,7 @@ cleanup() {
   docker network rm "$NETWORK_NAME" >/dev/null 2>&1 || true
   docker image rm "$IMAGE_TAG" >/dev/null 2>&1 || true
   rm -f "$SEQUENCE_SQL_FILE" "$AUDIT_REPORT_FILE" "$SYNC_REPORT_FILE"
+  rm -rf "$MIGRATION_CONTRACT_ROOT"
 }
 trap cleanup EXIT
 
@@ -54,6 +57,84 @@ wait_for_postgres() {
   docker logs "$container_name" >&2 || true
   printf 'PostgreSQL did not become ready within 120 seconds\n' >&2
   exit 1
+}
+
+run_dev_db_migration_contract() {
+  local contract_database=pg18_dev_db_migration_contract
+  local successful_tag=0000_transaction_scope
+  local successful_when=1734255307302
+  local failing_tag=0001_second_ledger_failure
+  local failing_when=1734255307303
+  local migration_state rollback_state
+
+  mkdir -p "$MIGRATION_CONTRACT_ROOT/meta"
+  printf '%s\n' \
+    "{\"entries\":[{\"tag\":\"$successful_tag\",\"when\":$successful_when}]}" \
+    >"$MIGRATION_CONTRACT_ROOT/meta/_journal.json"
+  cat >"$MIGRATION_CONTRACT_ROOT/$successful_tag.sql" <<'SQL'
+CREATE TEMP TABLE migration_contract_temp ON COMMIT DROP AS SELECT 42 AS id;
+CREATE TABLE migration_contract_effect AS
+SELECT id FROM migration_contract_temp;
+SQL
+
+  docker exec "$CONTAINER_NAME" createdb -U postgres "$contract_database"
+  PGHOST=127.0.0.1 \
+    PGPORT="$host_port" \
+    PGUSER=postgres \
+    PGPASSWORD=postgres \
+    PGDATABASE="$contract_database" \
+    DRIZZLE_MIGRATIONS_DIR="$MIGRATION_CONTRACT_ROOT" \
+    "$REPOSITORY_ROOT/packages/db/docker/apply-drizzle-migrations.sh" >/dev/null
+
+  migration_state="$(docker exec "$CONTAINER_NAME" \
+    psql -X -Atq -F '|' -U postgres -d "$contract_database" -c "
+SELECT (SELECT id FROM migration_contract_effect) || '|' ||
+       (SELECT count(*) FROM public.\"__drizzle_migrations\") || '|' ||
+       (SELECT count(*) FROM drizzle.\"__drizzle_migrations\") || '|' ||
+       (SELECT max(created_at) FROM public.\"__drizzle_migrations\") || '|' ||
+       (SELECT max(created_at) FROM drizzle.\"__drizzle_migrations\");")"
+  [[ "$migration_state" == "42|1|1|$successful_when|$successful_when" ]] || {
+    printf 'Dev-db migration transaction contract failed: %s\n' "$migration_state" >&2
+    exit 1
+  }
+
+  # Force the second ledger insert to fail after the migration DDL and first
+  # ledger insert have run. --single-transaction must roll all three back.
+  docker exec "$CONTAINER_NAME" \
+    psql -X -v ON_ERROR_STOP=1 -U postgres -d "$contract_database" \
+    -c "ALTER TABLE drizzle.\"__drizzle_migrations\" ADD CONSTRAINT reject_contract_timestamp CHECK (created_at <> $failing_when);" \
+    >/dev/null
+  printf '%s\n' \
+    "{\"entries\":[{\"tag\":\"$failing_tag\",\"when\":$failing_when}]}" \
+    >"$MIGRATION_CONTRACT_ROOT/meta/_journal.json"
+  cat >"$MIGRATION_CONTRACT_ROOT/$failing_tag.sql" <<'SQL'
+CREATE TABLE migration_contract_ledger_failure (id integer PRIMARY KEY);
+INSERT INTO migration_contract_ledger_failure VALUES (1);
+SQL
+
+  if PGHOST=127.0.0.1 \
+    PGPORT="$host_port" \
+    PGUSER=postgres \
+    PGPASSWORD=postgres \
+    PGDATABASE="$contract_database" \
+    DRIZZLE_MIGRATIONS_DIR="$MIGRATION_CONTRACT_ROOT" \
+    "$REPOSITORY_ROOT/packages/db/docker/apply-drizzle-migrations.sh" \
+    >"$AUDIT_REPORT_FILE" 2>&1; then
+    printf 'Expected the second-ledger contract migration to fail\n' >&2
+    exit 1
+  fi
+  grep -Fq 'schema and ledger changes were rolled back' "$AUDIT_REPORT_FILE"
+
+  rollback_state="$(docker exec "$CONTAINER_NAME" \
+    psql -X -Atq -F '|' -U postgres -d "$contract_database" -c "
+SELECT (to_regclass('public.migration_contract_ledger_failure') IS NULL)::text || '|' ||
+       (SELECT count(*) FROM public.\"__drizzle_migrations\" WHERE created_at = $failing_when) || '|' ||
+       (SELECT count(*) FROM drizzle.\"__drizzle_migrations\" WHERE created_at = $failing_when);")"
+  [[ "$rollback_state" == 'true|0|0' ]] || {
+    printf 'Second-ledger failure did not roll back schema and ledgers: %s\n' \
+      "$rollback_state" >&2
+    exit 1
+  }
 }
 
 docker build \
@@ -205,6 +286,8 @@ host_port="$(docker port "$CONTAINER_NAME" 5432/tcp | awk -F: 'NR == 1 { print $
 [[ "$host_port" =~ ^[0-9]+$ ]]
 readonly host_port
 readonly smoke_database_url="postgresql://postgres:postgres@127.0.0.1:${host_port}/main"
+
+run_dev_db_migration_contract
 
 SOURCE_DATABASE_URL="$smoke_database_url" \
   TARGET_DATABASE_URL="$smoke_database_url" \

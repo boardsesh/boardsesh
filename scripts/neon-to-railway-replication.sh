@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 umask 077
 
 PUBLICATION_NAME="${PUBLICATION_NAME:-boardsesh_migration}"
@@ -30,9 +30,9 @@ Environment:
   SOURCE_DATABASE_URL               Generic alias for NEON_DATABASE_URL.
   TARGET_DATABASE_URL               Generic alias for RAILWAY_DATABASE_URL.
   SOURCE_REPLICATION_DATABASE_URL   Generic alias for NEON_REPLICATION_DATABASE_URL.
-  TARGET_OWNER_ROLE                 Required for setup. Existing NOLOGIN,
-                                    non-superuser role with database CREATE that owns
-                                    restored app schemas and objects.
+  TARGET_OWNER_ROLE                 Required for setup/status/sequence sync. Existing
+                                    NOLOGIN, non-superuser role with database CREATE
+                                    that owns restored app schemas and objects.
   TARGET_SUBSCRIBER_ROLE            Required for setup/status/sequence sync. Dedicated
                                     temporary LOGIN subscription owner with no app
                                     credential that can SET ROLE to TARGET_OWNER_ROLE;

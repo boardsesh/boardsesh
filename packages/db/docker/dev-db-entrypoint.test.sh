@@ -14,6 +14,11 @@ readonly FAKE_BIN="$TEST_ROOT/bin"
 
 mkdir -p "$SEED" "$FAKE_BIN"
 printf '18\n' >"$SEED/PG_VERSION"
+# Real PostgreSQL clusters contain a PG_VERSION file in each database
+# directory. These descendants belong to the expected cluster and must not be
+# mistaken for a sibling/legacy cluster when the same volume restarts.
+mkdir -p "$SEED/base/1"
+printf '18\n' >"$SEED/base/1/PG_VERSION"
 printf 'seeded\n' >"$SEED_MARKER"
 printf 'original\n' >"$SEED/sentinel"
 
@@ -57,15 +62,21 @@ if run_entrypoint "$LEGACY_ROOT" "$TEST_ROOT/legacy-result" 2>"$TEST_ROOT/legacy
 fi
 grep -Fq 'contains a PostgreSQL 17 cluster' "$TEST_ROOT/legacy-error"
 
-readonly PARTIAL_ROOT="$TEST_ROOT/partial-copy"
-mkdir -p "$PARTIAL_ROOT/18/docker/base"
-printf '18\n' >"$PARTIAL_ROOT/18/docker/PG_VERSION"
-printf 'partial\n' >"$PARTIAL_ROOT/18/docker/base/1"
-if run_entrypoint "$PARTIAL_ROOT" "$TEST_ROOT/partial-result" 2>"$TEST_ROOT/partial-error"; then
+# Simulate a crash after PG_VERSION and some seed files were copied but before
+# the completion marker was written. Restart must reject, not boot, that cluster.
+readonly PARTIAL_SEEDED_ROOT="$TEST_ROOT/partial-seeded-copy"
+mkdir -p "$PARTIAL_SEEDED_ROOT/18/docker/base"
+printf '18\n' >"$PARTIAL_SEEDED_ROOT/18/docker/PG_VERSION"
+printf 'partial\n' >"$PARTIAL_SEEDED_ROOT/18/docker/base/1"
+[[ ! -e "$PARTIAL_SEEDED_ROOT/18/docker/.boardsesh-dev-db-ready" ]]
+if run_entrypoint \
+  "$PARTIAL_SEEDED_ROOT" \
+  "$TEST_ROOT/partial-seeded-result" \
+  2>"$TEST_ROOT/partial-seeded-error"; then
   printf 'expected an interrupted PostgreSQL 18 seed copy to be rejected\n' >&2
   exit 1
 fi
-grep -Fq 'is incomplete' "$TEST_ROOT/partial-error"
+grep -Fq 'is incomplete' "$TEST_ROOT/partial-seeded-error"
 
 readonly PARTIAL_WITHOUT_VERSION_ROOT="$TEST_ROOT/partial-without-version"
 mkdir -p "$PARTIAL_WITHOUT_VERSION_ROOT/18/docker/base"

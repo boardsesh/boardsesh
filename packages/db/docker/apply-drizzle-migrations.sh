@@ -38,14 +38,16 @@ while IFS=$'\t' read -r tag journal_created_at; do
   applied=$((applied + 1))
   printf '  [%s/%s] Applying: %s\n' "$applied" "$migration_count" "$tag"
 
-  if ! psql -X -v ON_ERROR_STOP=1 -f "$sql_file"; then
-    fail "migration $tag failed; refusing to record it as applied"
+  # One psql process and transaction are required for migrations that use
+  # transaction-scoped state such as CREATE TEMP TABLE ... ON COMMIT DROP.
+  # Keeping both ledger writes in that transaction also prevents applied DDL
+  # from being committed when either ledger insert fails.
+  if ! psql -X -v ON_ERROR_STOP=1 --single-transaction \
+    -f "$sql_file" \
+    -c "INSERT INTO \"__drizzle_migrations\" (hash, created_at) VALUES ('$hash', $journal_created_at)" \
+    -c "INSERT INTO drizzle.\"__drizzle_migrations\" (hash, created_at) VALUES ('$hash', $journal_created_at)"; then
+    fail "migration $tag failed; its schema and ledger changes were rolled back"
   fi
-
-  psql -X -v ON_ERROR_STOP=1 \
-    -c "INSERT INTO \"__drizzle_migrations\" (hash, created_at) VALUES ('$hash', $journal_created_at)"
-  psql -X -v ON_ERROR_STOP=1 \
-    -c "INSERT INTO drizzle.\"__drizzle_migrations\" (hash, created_at) VALUES ('$hash', $journal_created_at)"
 done < <(jq -er '.entries[] | [.tag, .when] | @tsv' "$JOURNAL_FILE")
 
 [[ "$applied" -eq "$migration_count" ]] ||

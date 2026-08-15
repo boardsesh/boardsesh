@@ -14,8 +14,8 @@
 
 set -Eeuo pipefail
 
-PGDATA_DIR="/var/lib/postgresql/18/docker"
-HBA_FILE="$PGDATA_DIR/pg_hba.conf"
+PGDATA_DIR=""
+HBA_FILE=""
 REPO_ROOT="$(cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DRIZZLE_DIR="$REPO_ROOT/packages/db/drizzle"
 GENERATED_ENV_DIR="$REPO_ROOT/.boardsesh"
@@ -36,6 +36,23 @@ ensure_docker_daemon() {
     echo "ERROR: Docker daemon is not running or cannot be reached."
     echo "       Start Docker Desktop (macOS/Windows) or the Docker service and retry."
     echo "       On Linux, try 'sudo systemctl start docker' or 'dockerd'."
+    exit 1
+  fi
+}
+
+resolve_postgres_paths() {
+  if ! PGDATA_DIR="$(docker exec "$PG_CONTAINER" printenv PGDATA 2>/dev/null)"; then
+    echo "ERROR: The running Boardsesh dev database does not declare PGDATA."
+    exit 1
+  fi
+  if [[ -z "$PGDATA_DIR" || "$PGDATA_DIR" != /* || "$PGDATA_DIR" == *$'\n'* ]]; then
+    echo "ERROR: The running Boardsesh dev database declares an invalid PGDATA path: $PGDATA_DIR"
+    exit 1
+  fi
+
+  HBA_FILE="$PGDATA_DIR/pg_hba.conf"
+  if ! docker exec "$PG_CONTAINER" test -f "$HBA_FILE"; then
+    echo "ERROR: The running Boardsesh dev database has no pg_hba.conf at $HBA_FILE."
     exit 1
   fi
 }
@@ -79,7 +96,8 @@ ensure_postgres_network_access() {
   else
     echo "  Adding IPv4 md5 auth rule..."
     docker exec "$PG_CONTAINER" sed -i '/host all all 0\.0\.0\.0\/0 trust/d' "$HBA_FILE" 2>/dev/null || true
-    docker exec -u postgres "$PG_CONTAINER" bash -c "echo 'host all all 0.0.0.0/0 md5' >> $HBA_FILE"
+    docker exec -u postgres "$PG_CONTAINER" bash -c \
+      'printf "%s\n" "host all all 0.0.0.0/0 md5" >> "$1"' _ "$HBA_FILE"
     hba_updated=true
   fi
 
@@ -88,7 +106,8 @@ ensure_postgres_network_access() {
   else
     echo "  Adding IPv6 md5 auth rule..."
     docker exec "$PG_CONTAINER" sed -i '/host all all ::\/0 trust/d' "$HBA_FILE" 2>/dev/null || true
-    docker exec -u postgres "$PG_CONTAINER" bash -c "echo 'host all all ::/0 md5' >> $HBA_FILE"
+    docker exec -u postgres "$PG_CONTAINER" bash -c \
+      'printf "%s\n" "host all all ::/0 md5" >> "$1"' _ "$HBA_FILE"
     hba_updated=true
   fi
 
@@ -127,13 +146,14 @@ sync_drizzle_migration_tracker() {
 }
 
 prepare_docker_postgres() {
+  resolve_postgres_paths
   server_major=$(docker exec -u postgres "$PG_CONTAINER" psql -U postgres -d main -t -A -c \
     "SELECT current_setting('server_version_num')::integer / 10000;")
   if [ "$server_major" -ne 18 ]; then
     echo "ERROR: The running Boardsesh dev database is PostgreSQL $server_major; PostgreSQL 18 is required."
     echo "       Stop the old stack and rerun vp run db:up. The pre-PG18 volume is retained for recovery."
-    echo "       After confirming it is no longer needed, find the exact old volume with:"
-    echo "         docker volume ls --filter label=com.docker.compose.volume=db_data"
+    echo "       After confirming it is no longer needed, list Compose volumes with the db_data label:"
+    echo "         docker volume ls --filter label=com.docker.compose.volume=db_data --format '{{.Name}}'"
     echo "       Then remove only that confirmed volume with: docker volume rm <volume-name>"
     exit 1
   fi

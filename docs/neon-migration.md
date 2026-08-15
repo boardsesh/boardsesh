@@ -100,15 +100,19 @@ The operator script generates the full table list from Neon, excluding system sc
 
 **On Railway (subscriber):**
 
-Load schema only before creating the subscription. The subscriber tables must exist and should be empty:
+Load schema only before creating the subscription. The subscriber tables must
+exist and should be empty. Pre-create `public` and `drizzle` on the target and
+make `TARGET_OWNER_ROLE` their owner before filtering their `SCHEMA` entries
+from the restore list; the guarded helper below performs that ownership step.
 
 ```bash
-pg_dump --schema-only --no-owner --no-acl --no-publications --no-subscriptions --format=custom \
+pg_dump --schema-only --no-owner --no-acl --schema=public --schema=drizzle \
+  --no-publications --no-subscriptions --format=custom \
   --file boardsesh-schema.dump "$NEON_DATABASE_URL"
 pg_restore --list boardsesh-schema.dump >boardsesh-schema.list
-awk '$0 !~ / EXTENSION - / && $0 !~ / COMMENT - EXTENSION / { print }' \
+awk '$0 !~ / SCHEMA - / && $0 !~ / EXTENSION - / && $0 !~ / COMMENT - EXTENSION / { print }' \
   boardsesh-schema.list >boardsesh-schema.filtered.list
-pg_restore --schema-only --no-owner --no-acl \
+pg_restore --exit-on-error --schema-only --no-owner --no-acl \
   --role "$TARGET_OWNER_ROLE" \
   --use-list boardsesh-schema.filtered.list \
   --dbname "$RAILWAY_DATABASE_URL" boardsesh-schema.dump
@@ -144,6 +148,9 @@ scripts/neon-to-railway-replication.sh status
 ```
 
 The `setup` command verifies `wal_level = logical`, creates Railway extensions, loads Neon schema only, verifies target app tables are empty, creates/updates the Neon publication with app tables only, and creates the Railway subscription with `copy_data = true`. It does not update application environment variables.
+
+Both target role variables remain required for `status` and `sync-sequences`,
+because those commands revalidate the exact subscription ownership contract.
 
 ### 4.3 Verify Replication Is Streaming
 
