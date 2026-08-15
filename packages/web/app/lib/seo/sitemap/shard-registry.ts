@@ -8,7 +8,7 @@ import { playlistRowsToItems } from './playlist-entries';
 import { fetchPlaylistSitemapRows } from './playlist-query';
 import { buildSetterEntries } from './setter-entries';
 import { buildStaticEntries } from './static-entries';
-import { renderSitemapIndex, renderUrlset } from './sitemap-xml';
+import { MAX_URLS_PER_SHARD, renderSitemapIndex, renderUrlset } from './sitemap-xml';
 
 export type ShardId = 'static' | 'boards' | 'gyms' | 'setters' | 'playlists';
 
@@ -16,25 +16,39 @@ export type SitemapShard = {
   id: ShardId;
   path: `/sitemaps/${string}.xml`;
   build: () => Promise<SitemapItem[]>;
+  /**
+   * True when zero URLs means something broke rather than "nothing to list".
+   * `static` is hardcoded and `boards` derives from the listed board catalogue,
+   * so an empty result there is a poisoned cache or a regressed query, and the
+   * shard must 503 instead of publishing an empty `<urlset>` that tells Google
+   * those pages were deleted.
+   *
+   * False for `gyms`/`setters` (declared-empty by design) and for `playlists`,
+   * where zero public playlists holding a climb is a legitimate state — failing
+   * closed there would take the whole index down because nobody shared a list.
+   */
+  expectsUrls: boolean;
 };
 
 /**
  * Single source of truth: the index and the five route files both read this, so
  * a shard can never exist in one and not the other (pinned by a unit test that
- * checks each id has a matching route file on disk).
+ * walks `app/sitemaps/` on disk in both directions).
  */
 export const SHARD_REGISTRY: readonly SitemapShard[] = [
-  { id: 'static', path: '/sitemaps/static.xml', build: async () => buildStaticEntries() },
+  { id: 'static', path: '/sitemaps/static.xml', expectsUrls: true, build: async () => buildStaticEntries() },
   {
     id: 'boards',
     path: '/sitemaps/boards.xml',
+    expectsUrls: true,
     build: async () => boardConfigsToItems(await getAllBoardConfigsOrThrow()),
   },
-  { id: 'gyms', path: '/sitemaps/gyms.xml', build: async () => buildGymEntries() },
-  { id: 'setters', path: '/sitemaps/setters.xml', build: async () => buildSetterEntries() },
+  { id: 'gyms', path: '/sitemaps/gyms.xml', expectsUrls: false, build: async () => buildGymEntries() },
+  { id: 'setters', path: '/sitemaps/setters.xml', expectsUrls: false, build: async () => buildSetterEntries() },
   {
     id: 'playlists',
     path: '/sitemaps/playlists.xml',
+    expectsUrls: false,
     build: async () => playlistRowsToItems(await fetchPlaylistSitemapRows()),
   },
 ];
@@ -67,32 +81,77 @@ function unavailableResponse(): Response {
   });
 }
 
+/**
+ * A data-backed shard that comes back empty is a failure wearing a 200: the
+ * whole surface disappears from the index behind an hour of `s-maxage` with
+ * nothing thrown. Fail closed instead — same reasoning as a throwing builder.
+ */
+function emptinessError(shard: SitemapShard): Error | null {
+  return shard.expectsUrls
+    ? new Error(`[sitemap] shard "${shard.id}" expects URLs but built none — refusing to publish an empty shard`)
+    : null;
+}
+
+/**
+ * A shard past the protocol's 50,000-URL ceiling is rejected wholesale by Search
+ * Console, so serving it is strictly worse than serving nothing: 503 keeps the
+ * last good copy while the shard gets split into paged files.
+ */
+function overBudgetError(shard: SitemapShard, urlCount: number): Error | null {
+  return urlCount > MAX_URLS_PER_SHARD
+    ? new Error(
+        `[sitemap] shard "${shard.id}" built ${urlCount} locale-expanded URLs, past the ${MAX_URLS_PER_SHARD} budget — split it into paged shards`,
+      )
+    : null;
+}
+
 export async function shardRouteHandler(id: ShardId): Promise<Response> {
   const shard = SHARD_REGISTRY.find((candidate) => candidate.id === id);
   if (!shard) {
     return unavailableResponse();
   }
 
-  let items: SitemapItem[];
+  let body: string;
   try {
-    items = await shard.build();
+    const items = await shard.build();
+    const emptiness = emptinessError(shard);
+    if (items.length === 0 && emptiness) {
+      throw emptiness;
+    }
+
+    const urls = expandAllLocales(items);
+    const overBudget = overBudgetError(shard, urls.length);
+    if (overBudget) {
+      throw overBudget;
+    }
+
+    body = renderUrlset(urls);
   } catch (err) {
     console.error(`[sitemap] shard "${id}" failed to build:`, err instanceof Error ? err.message : err);
     return unavailableResponse();
   }
 
-  return xmlResponse(renderUrlset(expandAllLocales(items)));
+  return xmlResponse(body);
 }
 
 /**
  * The index lists only shards that carry at least one URL — pointing Google at
  * an empty `<urlset>` burns a fetch and teaches it the shard is worthless.
  *
- * Throws if any builder throws, so the route answers 503 rather than publishing
- * an index that quietly dropped a shard. Same doctrine as the shards themselves.
+ * Throws if any builder throws, or if a shard that expects URLs built none, so
+ * the route answers 503 rather than publishing an index that quietly dropped a
+ * shard. Same doctrine as the shards themselves.
  */
 export async function buildSitemapIndexXml(): Promise<string> {
   const built = await Promise.all(SHARD_REGISTRY.map(async (shard) => ({ shard, items: await shard.build() })));
+
+  for (const { shard, items } of built) {
+    if (items.length > 0) continue;
+    const emptiness = emptinessError(shard);
+    if (emptiness) {
+      throw emptiness;
+    }
+  }
 
   return renderSitemapIndex(
     built

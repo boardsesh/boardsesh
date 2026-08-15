@@ -356,16 +356,28 @@ routes land at `/sitemap.xml` and `/sitemaps/*.xml`.
 emitted once per locale with an identical five-entry `xhtml:link` block, so the
 item budget is `45,000 / 4`. Measured against the dev database (same data shape
 as production): 4 public playlists with climbs, 51 listed board configs
-(→ ~765 items, ~3,060 URLs at all angles), 108,000 distinct (board, setter)
-pairs. Only the setters shard would need paging, and it ships empty.
+(→ 660 items, 2,640 URLs at all angles — 51 × 15 is the pre-filter upper bound,
+which the MoonBoard 2-angle set and the zero-climb skip bring down to 660),
+108,000 distinct (board, setter) pairs. Only the setters shard would need
+paging, and it ships empty. The cap is enforced rather than merely declared:
+`shardRouteHandler` counts the locale-expanded URLs it is about to serve and
+503s past the budget instead of publishing a file Search Console rejects
+wholesale.
 
 **Failure doctrine: 503, never a truncated 200.** A shard whose builder throws
 returns 503 so the crawler retries and keeps its last good copy; a short 200
-tells Google the missing URLs were deleted. The index applies the same rule —
-it throws rather than publishing an index that quietly dropped a shard — and it
-lists only shards carrying at least one URL. For the same reason the boards
-shard uses a _throwing_ popular-configs fetch, not the homepage's
-swallow-and-return-`[]` wrapper.
+tells Google the missing URLs were deleted. Three more cases fail the same way:
+a shard past its URL budget, a shard that `expectsUrls` but built none (a
+poisoned cache or a regressed query silently emptying `static` or `boards`), and
+a boards fetch whose `hasMore` says the 100-config API cap — the schema's hard
+max, so the fix is paging, not a bigger constant — dropped the tail. The index
+applies the same rule: it throws rather than publishing an index that quietly
+dropped a shard, and it lists only shards carrying at least one URL. For the
+same reason the boards shard uses a _throwing_ popular-configs fetch, not the
+homepage's swallow-and-return-`[]` wrapper. `playlists` is deliberately **not**
+`expectsUrls` — zero public playlists holding a climb is a legitimate state, and
+failing closed there would take the whole index down over nobody having shared
+a list.
 
 **Two shards ship declared-empty, and that is the point.** `gyms.xml` waits on
 #4381's public-gyms enumeration query, which the gym-discovery epic (#4372)

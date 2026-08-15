@@ -9,7 +9,7 @@ import type { SitemapItem } from './entries';
  * Public gym pages (/gym/[slug]) are not listed here — they get their own shard
  * once #4381 lands the public-gyms enumeration query.
  */
-export const STATIC_ENTRIES: SitemapItem[] = [
+export const STATIC_ENTRIES: readonly SitemapItem[] = [
   { path: '/', changeFrequency: 'weekly', priority: 1.0, lastModified: new Date('2026-04-30') },
   { path: '/aurora-migration', changeFrequency: 'weekly', priority: 0.9, lastModified: new Date('2026-04-30') },
   { path: '/about', changeFrequency: 'monthly', priority: 0.8, lastModified: new Date('2026-04-30') },
@@ -21,6 +21,7 @@ export const STATIC_ENTRIES: SitemapItem[] = [
   { path: '/playlists', changeFrequency: 'weekly', priority: 0.6, lastModified: new Date('2026-04-30') },
 ];
 
+/** A copy: a caller that sorts or splices the result must not rewrite the constant. */
 export function buildStaticEntries(): SitemapItem[] {
-  return STATIC_ENTRIES;
+  return [...STATIC_ENTRIES];
 }

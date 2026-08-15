@@ -1,13 +1,15 @@
 import { ANGLES, toBoardName } from '@boardsesh/board-config';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
-import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
+import { popularConfigListUrl } from '@/app/lib/url-utils';
 import type { SitemapItem } from './entries';
 
 /**
  * One entry per (board config × angle). Angles are genuinely different content —
  * grades shift with the wall angle and each angle page is self-canonical — so all
- * of them ship. With ~51 listed configs that is ~765 items (~3,060 locale-expanded
- * URLs), far inside the 11,250-item shard budget.
+ * of them ship. Measured against the dev database, 51 listed configs give 660
+ * items (2,640 locale-expanded URLs): 51 × 15 is the pre-filter upper bound, and
+ * the MoonBoard 2-angle set plus the zero-climb skip below bring it to 660.
+ * Either way it sits far inside the 11,250-item shard budget.
  *
  * Deliberately no `<lastmod>`: there is no per-config content timestamp in the
  * data today, and `new Date()` would be a lie. `<lastmod>` is optional in the
@@ -25,23 +27,17 @@ export function boardConfigsToItems(configs: readonly PopularBoardConfig[]): Sit
     // climb shards (W-23) need and offers nothing to rank.
     if (config.climbCount <= 0) continue;
 
-    const identity = {
-      board_name: boardName,
-      layout_id: config.layoutId,
-      size_id: config.sizeId,
-      set_ids: config.setIds,
-      layout_name: config.layoutName ?? undefined,
-      size_name: config.sizeName ?? undefined,
-      size_description: config.sizeDescription ?? undefined,
-      set_names: config.setNames,
-    };
-
     for (const angle of ANGLES[boardName]) {
       items.push({
-        // The same builder both `/list` front doors canonicalise to, so the
-        // sitemap and the pages emit one identical string. Page 1 only — never
-        // `?page=N`; crawlers walk the rel=next chain from here.
-        path: buildCanonicalClimbListUrl(identity, angle),
+        // The one popular-config → list-URL builder, shared with every other
+        // caller that starts from this row shape, so the sitemap and the `/list`
+        // front doors emit an identical string. Hand-rolling a
+        // `BoardRouteIdentity` and calling `buildCanonicalClimbListUrl` would be
+        // a sixth copy of the priority decision, and it takes the name branch on
+        // a config whose `setNames` is empty — which renders an empty path
+        // segment (`/kilter/layout/size//40/list`), i.e. a 404 submitted to
+        // Google. Page 1 only — never `?page=N`; crawlers walk rel=next.
+        path: popularConfigListUrl(config, angle),
         changeFrequency: 'weekly',
         priority: 0.7,
       });

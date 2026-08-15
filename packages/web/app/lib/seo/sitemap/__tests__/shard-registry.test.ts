@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { buildGymEntries } from '../gym-entries';
@@ -25,17 +25,39 @@ describe('SHARD_REGISTRY', () => {
     }
   });
 
-  it('has no route file that the registry does not know about', () => {
+  it('has no route directory on disk that the registry does not know about', () => {
+    // Reads the real directory instead of restating the ids: an orphaned
+    // `app/sitemaps/climbs.xml/route.ts` — exactly what W-23 adds — is a route
+    // crawlers can reach that the index never lists, and only the filesystem
+    // knows it is there.
+    const onDisk = readdirSync(join(APP_ROOT, 'sitemaps'), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name.endsWith('.xml'))
+      .map((entry) => entry.name);
     const registered = new Set(SHARD_REGISTRY.map((shard) => `${shard.id}.xml`));
-    // Kept in step with the directory listing so an orphaned route is caught too.
-    for (const id of ['static', 'boards', 'gyms', 'setters', 'playlists']) {
-      expect(registered.has(`${id}.xml`)).toBe(true);
+
+    expect(onDisk.length).toBeGreaterThan(0);
+    for (const directory of onDisk) {
+      expect(registered.has(directory)).toBe(true);
     }
-    expect(registered.size).toBe(5);
+    expect(onDisk).toHaveLength(registered.size);
   });
 
   it('uses unique ids', () => {
     expect(new Set(SHARD_REGISTRY.map((shard) => shard.id)).size).toBe(SHARD_REGISTRY.length);
+  });
+
+  it('marks the catalogue-derived shards as expecting URLs and the user-content ones as not', () => {
+    // `expectsUrls` is what turns an unexpectedly empty shard into a 503 rather
+    // than a `<urlset></urlset>` that tells Google the pages were deleted.
+    expect(Object.fromEntries(SHARD_REGISTRY.map((shard) => [shard.id, shard.expectsUrls]))).toEqual({
+      static: true,
+      boards: true,
+      // Zero public playlists holding a climb is a legitimate state, and zero
+      // gyms/setters is the declared-empty design — none of these may 503.
+      playlists: false,
+      gyms: false,
+      setters: false,
+    });
   });
 });
 

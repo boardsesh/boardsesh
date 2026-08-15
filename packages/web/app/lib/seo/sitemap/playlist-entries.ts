@@ -2,7 +2,8 @@ import type { SitemapItem } from './entries';
 
 export type PlaylistSitemapRow = {
   uuid: string;
-  updatedAt: Date | null;
+  /** `playlists.updated_at` is `notNull().defaultNow()`, so a row always has one. */
+  updatedAt: Date;
 };
 
 /**
@@ -13,7 +14,7 @@ export type PlaylistSitemapRow = {
 export function playlistRowsToItems(rows: readonly PlaylistSitemapRow[]): SitemapItem[] {
   return rows.map((row) => ({
     path: `/playlists/${encodeURIComponent(row.uuid)}`,
-    lastModified: row.updatedAt ?? null,
+    lastModified: row.updatedAt,
     changeFrequency: 'weekly' as const,
     priority: 0.6,
   }));

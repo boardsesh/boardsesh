@@ -21,6 +21,16 @@ export type SitemapItem = {
   priority?: number;
 };
 
+/**
+ * One documented exemption from "the sitemap and the page emit one identical
+ * string": `absoluteUrl('/')` returns the bare `https://www.boardsesh.com`,
+ * while the homepage's own canonical is the relative `/` that Next resolves
+ * against `metadataBase` into `.../`. Crawlers normalise an empty HTTP path to
+ * `/`, so they are the same URL; the deleted `app/sitemap.ts` emitted the same
+ * bare form, and `absoluteUrl` is shared with the canonical/OG helpers
+ * site-wide, so it is left alone rather than changed underneath them.
+ */
+
 /** hreflang code → absolute URL, identical for every locale variant of one item. */
 export function buildAlternates(path: string): Record<string, string> {
   const alternates: Record<string, string> = {};

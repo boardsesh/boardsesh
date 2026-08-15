@@ -59,7 +59,13 @@ describe('renderSitemapIndex', () => {
 });
 
 describe('shard budget', () => {
-  it('keeps every shard under the 45k-URL cap once items are locale-expanded', () => {
-    expect(MAX_ITEMS_PER_SHARD * SUPPORTED_LOCALES.length).toBeLessThanOrEqual(MAX_URLS_PER_SHARD);
+  it('derives the item budget from the URL cap and the locale count', () => {
+    // Deliberately not `items * locales <= cap`: MAX_ITEMS_PER_SHARD is *derived*
+    // by dividing, so that comparison holds for every possible pair of constants
+    // and can never fail. The cap is enforced where it can actually be breached —
+    // `shardRouteHandler`, which counts the locale-expanded URLs it is about to
+    // serve and 503s past the budget (see shard-route-handler.test.ts).
+    expect(MAX_URLS_PER_SHARD).toBe(45_000);
+    expect(MAX_ITEMS_PER_SHARD).toBe(Math.floor(MAX_URLS_PER_SHARD / SUPPORTED_LOCALES.length));
   });
 });

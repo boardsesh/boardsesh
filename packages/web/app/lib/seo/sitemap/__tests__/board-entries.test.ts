@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { ANGLES } from '@boardsesh/board-config';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
-import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
+import { popularConfigListUrl } from '@/app/lib/url-utils';
 import { boardConfigsToItems } from '../board-entries';
 
 const kilterConfig: PopularBoardConfig = {
@@ -39,25 +39,40 @@ describe('boardConfigsToItems', () => {
     expect(ANGLES.moonboard).toHaveLength(2);
   });
 
-  it('uses the same canonical builder the list pages canonicalise to', () => {
+  it('uses the shared popular-config list-URL builder', () => {
     const items = boardConfigsToItems([kilterConfig]);
     for (const [index, angle] of ANGLES.kilter.entries()) {
-      expect(items[index].path).toBe(
-        buildCanonicalClimbListUrl(
-          {
-            board_name: 'kilter',
-            layout_id: kilterConfig.layoutId,
-            size_id: kilterConfig.sizeId,
-            set_ids: kilterConfig.setIds,
-            layout_name: kilterConfig.layoutName ?? undefined,
-            size_name: kilterConfig.sizeName ?? undefined,
-            size_description: kilterConfig.sizeDescription ?? undefined,
-            set_names: kilterConfig.setNames,
-          },
-          angle,
-        ),
-      );
+      expect(items[index].path).toBe(popularConfigListUrl(kilterConfig, angle));
     }
+  });
+
+  it('keeps the id-aware slug for a shadowed size rather than the name-based one', () => {
+    // Kilter layout 1 sizes 10/27 share the `12x12-square` base slug. Slugging
+    // from names alone collapses this config onto the other physical board.
+    const [item] = boardConfigsToItems([kilterConfig]);
+    expect(item.path).not.toContain('12-x-12-square');
+  });
+
+  it('falls back to numeric ids, never an empty path segment, when set names are missing', () => {
+    // A config the static slug tables can't resolve, with no set names: the
+    // name-based branch would emit `/kilter/weird-layout/weird-size//40/list`,
+    // a 404 submitted straight to Google.
+    const unresolvable: PopularBoardConfig = {
+      ...kilterConfig,
+      layoutId: 9999,
+      sizeId: 8888,
+      setIds: [7777],
+      layoutName: 'Weird Layout',
+      sizeName: 'Weird Size',
+      sizeDescription: null,
+      setNames: [],
+    };
+
+    const items = boardConfigsToItems([unresolvable]);
+    for (const item of items) {
+      expect(item.path).not.toContain('//');
+    }
+    expect(items[0].path).toBe(`/kilter/9999/8888/7777/${ANGLES.kilter[0]}/list`);
   });
 
   it('never emits a paged variant or a /b/{slug} URL', () => {
