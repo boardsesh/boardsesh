@@ -511,5 +511,34 @@
     "generating": "Obtention d'un code…",
     "error": "Impossible d'obtenir un code. Réessaie.",
     "close": "Terminé"
+  },
+  "standings": {
+    "title": "Classements",
+    "rowSubtitle": "Choisis comment tu apparais dans les classements",
+    "rowFooter": "Toute personne qui enregistre un bloc entre au classement. À toi de décider si ton nom suit.",
+    "intro": "Toute personne qui enregistre un bloc entre au classement. Ces deux réglages décident de ce que les autres grimpeurs voient de toi, et tu peux y répondre différemment pour l’app et pour les écrans de la salle.",
+    "inApp": {
+      "title": "Dans l’app",
+      "description": "Concerne les classements partout dans Boardsesh : pages de panneau, de salle et la tienne."
+    },
+    "gymScreens": {
+      "title": "Sur les écrans de la salle",
+      "description": "Concerne le classement affiché sur l’écran mural d’une salle. Réglage distinct, car ceux qui le lisent sont déjà dans la salle avec toi."
+    },
+    "options": {
+      "public": {
+        "title": "Afficher mon nom",
+        "subtitle": "Les autres grimpeurs voient ton nom, ta photo et tes croix."
+      },
+      "anonymous": {
+        "title": "Compté, pas nommé",
+        "subtitle": "Tu gardes ton rang et tu comptes toujours dans le total. Les autres voient un grimpeur sans nom."
+      },
+      "off": {
+        "title": "Laisse-moi en dehors",
+        "subtitle": "Aucun rang, aucune ligne, nulle part. Tu peux toujours lire les classements."
+      }
+    },
+    "saveFailed": "Enregistrement impossible. Vérifie ta connexion et réessaie."
   }
 }

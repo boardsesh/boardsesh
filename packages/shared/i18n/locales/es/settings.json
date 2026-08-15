@@ -511,5 +511,34 @@
     "generating": "Obteniendo un código…",
     "error": "No se pudo obtener el código. Inténtalo de nuevo.",
     "close": "Listo"
+  },
+  "standings": {
+    "title": "Clasificaciones",
+    "rowSubtitle": "Elige cómo apareces en las clasificaciones",
+    "rowFooter": "Quien registra un bloque entra en la clasificación. Tú decides si tu nombre va contigo.",
+    "intro": "Quien registra un bloque entra en la clasificación. Estos dos ajustes deciden cuánto ven de ti los demás escaladores, y puedes responderlos distinto para la app y para las pantallas del rocódromo.",
+    "inApp": {
+      "title": "En la app",
+      "description": "Cubre las clasificaciones en todo Boardsesh: páginas de plafón, de rocódromo y la tuya."
+    },
+    "gymScreens": {
+      "title": "En pantallas del rocódromo",
+      "description": "Cubre la clasificación en la pantalla de pared de un rocódromo. Va aparte porque quien la lee ya está en la sala contigo."
+    },
+    "options": {
+      "public": {
+        "title": "Mostrar mi nombre",
+        "subtitle": "Los demás escaladores ven tu nombre, tu foto y tus bloques."
+      },
+      "anonymous": {
+        "title": "Contar sin nombre",
+        "subtitle": "Sigues teniendo puesto y sigues contando en el total. Los demás ven un escalador sin nombre."
+      },
+      "off": {
+        "title": "Déjame fuera",
+        "subtitle": "Sin puesto, sin fila, en ningún sitio. Puedes seguir leyendo las clasificaciones."
+      }
+    },
+    "saveFailed": "No se pudo guardar. Revisa tu conexión e inténtalo de nuevo."
   }
 }

@@ -841,16 +841,36 @@ type UserProfile {
   createdAt: String!
   "Total number of climbs favourited by this user, across all boards"
   favoriteCount: Int!
+  "How this climber appears on Boardsesh's own ranked surfaces."
+  leaderboardVisibility: BoardLeaderboardVisibility!
+  "How this climber appears on gym-operated screens (the kiosk rail, wall feeds). Held separately from leaderboardVisibility on purpose: being named on a screen inside the gym you are standing in is a different decision from being named in an app a stranger can open."
+  gymScreenVisibility: BoardLeaderboardVisibility!
 }
 
 """
-Input for updating user profile.
+How much of a climber is shown on a ranked surface.
+"""
+enum BoardLeaderboardVisibility {
+  "Name, avatar and score, tappable through to the profile."
+  public
+  "Ranked and counted toward the field size, but shown as an unnamed climber."
+  anonymous
+  "No rank, no row, and not in the denominator. They can still read every list and still see their own numbers."
+  off
+}
+
+"""
+Input for updating user profile. Every field is optional; omitted fields are left unchanged.
 """
 input UpdateProfileInput {
   "New display name"
   displayName: String
   "New avatar URL"
   avatarUrl: String
+  "How this climber appears on Boardsesh's own ranked surfaces"
+  leaderboardVisibility: BoardLeaderboardVisibility
+  "How this climber appears on gym-operated screens"
+  gymScreenVisibility: BoardLeaderboardVisibility
 }
 
 """
@@ -2437,13 +2457,15 @@ A leaderboard entry for a board.
 type BoardLeaderboardEntry {
   "User ID"
   userId: ID!
-  "Display name"
+  "Display name. Null when the climber is anonymous on this surface — check `isAnonymous` rather than inferring intent from a null name, which also happens when someone simply never set one."
   userDisplayName: String
-  "Avatar URL"
+  "Avatar URL. Null when the climber is anonymous on this surface."
   userAvatarUrl: String
-  "Rank on the leaderboard"
+  "True when the climber chose to be counted but not named on this surface. They still rank and still count toward `totalCount`; render them as an unnamed climber rather than hiding the row, which would leave a gap in the ranking."
+  isAnonymous: Boolean!
+  "Rank on the leaderboard. Computed with RANK(), so equal scores genuinely SHARE a rank and the next rank skips accordingly (1, 2, 2, 4). Do not assume ranks are dense or unique."
   rank: Int!
-  "Total sends (flash + send)"
+  "Number of DISTINCT climbs topped in the period (flash + send). Repeats of the same climb count once, so this is not a row count."
   totalSends: Int!
   "Total flashes"
   totalFlashes: Int!
@@ -2467,7 +2489,14 @@ type BoardLeaderboard {
   totalCount: Int!
   "Whether more entries are available"
   hasMore: Boolean!
-  "Label for the time period"
+  """
+  Label for the time period.
+
+  DEPRECATED: this is a hardcoded English string built server-side ("This Week",
+  "All Time"). It cannot be localized, so any client shipping es/fr/de must
+  derive its own label from the `period` it requested and ignore this field.
+  Kept only for the existing web caller.
+  """
   periodLabel: String!
 }
 
@@ -2582,6 +2611,20 @@ input BoardLeaderboardInput {
   limit: Int
   "Offset for pagination"
   offset: Int
+  "Which consent column decides whether a climber is named. Defaults to `app`. Gym-operated screens (kiosk rail, wall displays) must pass `gymScreen`."
+  surface: BoardLeaderboardSurface
+}
+
+"""
+Which audience a leaderboard is being rendered for. Climbers hold separate
+consent for each: being named on a screen inside the gym you are standing in
+is a different decision from being named in an app a stranger can open.
+"""
+enum BoardLeaderboardSurface {
+  "Boardsesh's own in-app surfaces. Reads `user_profiles.leaderboard_visibility`."
+  app
+  "Gym-operated displays — the kiosk leaderboard rail and wall feeds. Reads `user_profiles.gym_screen_visibility`."
+  gymScreen
 }
 
 """

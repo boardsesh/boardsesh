@@ -2215,6 +2215,158 @@ describe('board-presence connection holder', () => {
       expect(owned.entries).toEqual([]);
       expect(owned.totalCount).toBe(0);
     });
+
+    // --- consent, internal accounts, distinct counting and tied ranks ---
+
+    async function setVisibility(userId: string, values: { leaderboard?: string; gymScreen?: string }): Promise<void> {
+      await db.execute(sql`
+        INSERT INTO user_profiles (user_id, leaderboard_visibility, gym_screen_visibility)
+        VALUES (${userId}, ${values.leaderboard ?? 'public'}, ${values.gymScreen ?? 'public'})
+        ON CONFLICT (user_id) DO UPDATE
+          SET leaderboard_visibility = EXCLUDED.leaderboard_visibility,
+              gym_screen_visibility = EXCLUDED.gym_screen_visibility
+      `);
+    }
+
+    /** One send per (user, climb) on the given board, all inside every window. */
+    async function seedSends(boardId: number, rows: { userId: string; climbUuid: string }[]): Promise<void> {
+      let sequence = 0;
+      for (const row of rows) {
+        await db.execute(sql`
+          INSERT INTO boardsesh_ticks
+            (uuid, user_id, board_type, climb_uuid, angle, is_mirror, status, attempt_count,
+             difficulty, is_benchmark, comment, climbed_at, created_at, updated_at, board_id)
+          VALUES
+            (${`tick-vis-${Date.now()}-${sequence++}`}, ${row.userId}, 'kilter', ${row.climbUuid}, 40, false,
+             'send', 1, 17, false, '', now(), now(), now(), ${boardId})
+        `);
+      }
+    }
+
+    afterEach(async () => {
+      // Visibility and is_internal would otherwise leak between tests in this
+      // block. Both default to the permissive value, so a leaked 'off' silently
+      // empties a later leaderboard and reads as a ranking bug.
+      await setVisibility(TEST_USER_ID, {});
+      await setVisibility(SECOND_USER_ID, {});
+      await db.execute(sql`UPDATE users SET is_internal = false WHERE id IN (${TEST_USER_ID}, ${SECOND_USER_ID})`);
+    });
+
+    it("drops an 'off' climber from the entries AND the denominator, so nobody else's rank shifts", async () => {
+      const { boardId, boardUuid } = await makeLeaderboardBoard(true);
+      await seedSends(boardId, [
+        { userId: TEST_USER_ID, climbUuid: TEST_CLIMB_UUID },
+        { userId: SECOND_USER_ID, climbUuid: OTHER_TEST_CLIMB_UUID },
+      ]);
+
+      const beforeOptOut = await socialBoardQueries.boardLeaderboard(undefined, { input: { boardUuid } }, authCtx());
+      expect(beforeOptOut.totalCount).toBe(2);
+
+      await setVisibility(SECOND_USER_ID, { leaderboard: 'off' });
+
+      const afterOptOut = await socialBoardQueries.boardLeaderboard(undefined, { input: { boardUuid } }, authCtx());
+      expect(afterOptOut.entries.map((entry) => entry.userId)).toEqual([TEST_USER_ID]);
+      // Filtered inside the ranking query, not stripped from the page: were the
+      // opted-out climber merely hidden, totalCount would still read 2 and the
+      // UI would promise a row it can never show.
+      expect(afterOptOut.totalCount).toBe(1);
+    });
+
+    it('keeps an anonymous climber ranked and counted but strips their name, avatar and real user id', async () => {
+      const { boardId, boardUuid } = await makeLeaderboardBoard(true);
+      await seedSends(boardId, [{ userId: TEST_USER_ID, climbUuid: TEST_CLIMB_UUID }]);
+      await setVisibility(TEST_USER_ID, { leaderboard: 'anonymous' });
+
+      const board = await socialBoardQueries.boardLeaderboard(undefined, { input: { boardUuid } }, authCtx());
+
+      expect(board.totalCount).toBe(1);
+      const [entry] = board.entries;
+      expect(entry.isAnonymous).toBe(true);
+      expect(entry.rank).toBe(1);
+      expect(entry.totalSends).toBe(1);
+      expect(entry.userDisplayName).toBeNull();
+      expect(entry.userAvatarUrl).toBeNull();
+      // The whole point: a real user id resolves to a profile page, so handing
+      // one out beside isAnonymous would leak the name that was just withheld.
+      expect(entry.userId).not.toBe(TEST_USER_ID);
+      expect(entry.userId.startsWith('anon:')).toBe(true);
+
+      // Stable across calls, or the kiosk's cross-board merge and client-side
+      // React keys break for every anonymous climber.
+      const again = await socialBoardQueries.boardLeaderboard(undefined, { input: { boardUuid } }, authCtx());
+      expect(again.entries[0].userId).toBe(entry.userId);
+    });
+
+    it('reads gym_screen_visibility for the gymScreen surface, so a climber can be named in-app but not on the gym wall', async () => {
+      const { boardId, boardUuid } = await makeLeaderboardBoard(true);
+      await seedSends(boardId, [{ userId: TEST_USER_ID, climbUuid: TEST_CLIMB_UUID }]);
+      await setVisibility(TEST_USER_ID, { leaderboard: 'public', gymScreen: 'anonymous' });
+
+      const inApp = await socialBoardQueries.boardLeaderboard(
+        undefined,
+        { input: { boardUuid, surface: 'app' } },
+        authCtx(),
+      );
+      expect(inApp.entries[0].isAnonymous).toBe(false);
+      expect(inApp.entries[0].userDisplayName).toBe(SENDER_DISPLAY_NAME);
+
+      const onWall = await socialBoardQueries.boardLeaderboard(
+        undefined,
+        { input: { boardUuid, surface: 'gymScreen' } },
+        authCtx(),
+      );
+      expect(onWall.entries[0].isAnonymous).toBe(true);
+      expect(onWall.entries[0].userDisplayName).toBeNull();
+
+      // Omitting `surface` must fall back to the in-app column, never the
+      // gym-screen one — a forgetful caller should under-publish, not over-.
+      const defaulted = await socialBoardQueries.boardLeaderboard(undefined, { input: { boardUuid } }, authCtx());
+      expect(defaulted.entries[0].isAnonymous).toBe(false);
+    });
+
+    it('excludes internal accounts entirely', async () => {
+      const { boardId, boardUuid } = await makeLeaderboardBoard(true);
+      await seedSends(boardId, [
+        { userId: TEST_USER_ID, climbUuid: TEST_CLIMB_UUID },
+        { userId: SECOND_USER_ID, climbUuid: OTHER_TEST_CLIMB_UUID },
+      ]);
+      await db.execute(sql`UPDATE users SET is_internal = true WHERE id = ${SECOND_USER_ID}`);
+
+      const board = await socialBoardQueries.boardLeaderboard(undefined, { input: { boardUuid } }, authCtx());
+      expect(board.entries.map((entry) => entry.userId)).toEqual([TEST_USER_ID]);
+      expect(board.totalCount).toBe(1);
+    });
+
+    it('counts distinct climbs, so re-logging the same climb does not climb the ranking', async () => {
+      const { boardId, boardUuid } = await makeLeaderboardBoard(true);
+      // Three ticks, two of them the same climb → two distinct climbs.
+      await seedSends(boardId, [
+        { userId: TEST_USER_ID, climbUuid: TEST_CLIMB_UUID },
+        { userId: TEST_USER_ID, climbUuid: TEST_CLIMB_UUID },
+        { userId: TEST_USER_ID, climbUuid: OTHER_TEST_CLIMB_UUID },
+      ]);
+
+      const board = await socialBoardQueries.boardLeaderboard(undefined, { input: { boardUuid } }, authCtx());
+      expect(board.entries[0].totalSends).toBe(2);
+    });
+
+    it('gives tied climbers the SAME rank rather than ordering them arbitrarily', async () => {
+      const { boardId, boardUuid } = await makeLeaderboardBoard(true);
+      await seedSends(boardId, [
+        { userId: TEST_USER_ID, climbUuid: TEST_CLIMB_UUID },
+        { userId: SECOND_USER_ID, climbUuid: OTHER_TEST_CLIMB_UUID },
+      ]);
+
+      const board = await socialBoardQueries.boardLeaderboard(undefined, { input: { boardUuid } }, authCtx());
+      expect(board.entries).toHaveLength(2);
+      expect(board.entries.map((entry) => entry.totalSends)).toEqual([1, 1]);
+      expect(board.entries.map((entry) => entry.rank)).toEqual([1, 1]);
+
+      // And the in-tie order is stable across refetches, so rows do not shuffle
+      // under a reader between polls.
+      const again = await socialBoardQueries.boardLeaderboard(undefined, { input: { boardUuid } }, authCtx());
+      expect(again.entries.map((entry) => entry.userId)).toEqual(board.entries.map((entry) => entry.userId));
+    });
   });
 
   // Per-connection backstop bookkeeping is pure in-memory roomManager state, so

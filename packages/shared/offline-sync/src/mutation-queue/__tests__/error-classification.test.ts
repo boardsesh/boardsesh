@@ -118,6 +118,31 @@ describe('isRetryable', () => {
     expect(isRetryable({ status: 429 })).toBe(true);
   });
 
+  // The backend's rate limiter reports a STRING extensions.code. Until that was
+  // mapped, a rate-limited saveTick resolved to "no status", which isRetryable
+  // treats as a programmer bug and the drainer dead-letters — so a climber whose
+  // queued session tripped the limit on reconnect would LOSE those sends rather
+  // than the drainer waiting a minute. Newer backends also send `status: 429`,
+  // but a current client can still meet an older one.
+  it('a RATE_LIMITED GraphQL error is retryable even without a numeric status', () => {
+    const rateLimited = {
+      response: { errors: [{ extensions: { code: 'RATE_LIMITED', operation: 'saveTick', retryAfterSeconds: 42 } }] },
+    };
+    expect(getErrorStatus(rateLimited)).toBe(429);
+    expect(isRetryable(rateLimited)).toBe(true);
+  });
+
+  it('a RATE_LIMITED error carrying an explicit numeric status still reads 429', () => {
+    const rateLimited = { response: { errors: [{ extensions: { code: 'RATE_LIMITED', status: 429 } }] } };
+    expect(isRetryable(rateLimited)).toBe(true);
+  });
+
+  it('an unrelated string extensions.code stays unclassifiable and dead-letters', () => {
+    const badInput = { response: { errors: [{ extensions: { code: 'BAD_USER_INPUT' } }] } };
+    expect(getErrorStatus(badInput)).toBeNull();
+    expect(isRetryable(badInput)).toBe(false);
+  });
+
   it('500 is retryable', () => {
     expect(isRetryable({ status: 500 })).toBe(true);
   });

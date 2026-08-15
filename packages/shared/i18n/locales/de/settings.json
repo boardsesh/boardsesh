@@ -511,5 +511,34 @@
     "generating": "Code kommt…",
     "error": "Kein Code bekommen. Versuch es nochmal.",
     "close": "Fertig"
+  },
+  "standings": {
+    "title": "Rangliste",
+    "rowSubtitle": "Wähle, wie du in Ranglisten auftauchst",
+    "rowFooter": "Wer ein Boulder einträgt, kommt in die Rangliste. Du entscheidest, ob dein Name mitkommt.",
+    "intro": "Wer ein Boulder einträgt, kommt in die Rangliste. Diese zwei Einstellungen bestimmen, wie viel andere von dir sehen — und du kannst sie für die App und für Bildschirme in der Halle unterschiedlich beantworten.",
+    "inApp": {
+      "title": "In der App",
+      "description": "Gilt für Ranglisten überall in Boardsesh: Board-Seiten, Hallenseiten und deine eigene."
+    },
+    "gymScreens": {
+      "title": "Auf Hallen-Bildschirmen",
+      "description": "Gilt für die Rangliste auf dem Wandbildschirm einer Halle. Getrennt geregelt, weil die Leute, die sie lesen, schon mit dir im Raum stehen."
+    },
+    "options": {
+      "public": {
+        "title": "Meinen Namen zeigen",
+        "subtitle": "Andere sehen deinen Namen, dein Foto und deine Begehungen."
+      },
+      "anonymous": {
+        "title": "Gezählt, nicht genannt",
+        "subtitle": "Du bekommst weiter einen Rang und zählst weiter mit. Alle anderen sehen eine*n Kletterer*in ohne Namen."
+      },
+      "off": {
+        "title": "Lass mich raus",
+        "subtitle": "Kein Rang, keine Zeile, nirgends. Ranglisten lesen kannst du trotzdem."
+      }
+    },
+    "saveFailed": "Konnte nicht gespeichert werden. Prüfe deine Verbindung und versuche es erneut."
   }
 }

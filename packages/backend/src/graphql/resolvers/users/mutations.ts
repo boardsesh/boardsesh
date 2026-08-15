@@ -6,6 +6,7 @@ import type {
   UserProfile,
   AuroraCredentialStatus,
   DeleteAccountInput,
+  LeaderboardVisibility,
 } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -46,7 +47,16 @@ export const userMutations = {
    */
   updateProfile: async (
     _: unknown,
-    { input }: { input: { displayName?: string; avatarUrl?: string } },
+    {
+      input,
+    }: {
+      input: {
+        displayName?: string;
+        avatarUrl?: string;
+        leaderboardVisibility?: LeaderboardVisibility;
+        gymScreenVisibility?: LeaderboardVisibility;
+      };
+    },
     ctx: ConnectionContext,
   ): Promise<UserProfile> => {
     requireAuthenticated(ctx);
@@ -61,9 +71,23 @@ export const userMutations = {
         // optional in the input schema; with neither present there is nothing
         // to write, and an empty `set` would be invalid SQL — so skip the
         // write entirely in that case.
-        const profileUpdates: { displayName?: string; avatarUrl?: string } = {};
+        const profileUpdates: {
+          displayName?: string;
+          avatarUrl?: string;
+          leaderboardVisibility?: LeaderboardVisibility;
+          gymScreenVisibility?: LeaderboardVisibility;
+        } = {};
         if (input.displayName !== undefined) profileUpdates.displayName = input.displayName;
         if (input.avatarUrl !== undefined) profileUpdates.avatarUrl = input.avatarUrl;
+        // The two consent settings are independent, so each is written only when
+        // sent — toggling the in-app one must never quietly reset the gym-screen
+        // one back to its default.
+        if (input.leaderboardVisibility !== undefined) {
+          profileUpdates.leaderboardVisibility = input.leaderboardVisibility;
+        }
+        if (input.gymScreenVisibility !== undefined) {
+          profileUpdates.gymScreenVisibility = input.gymScreenVisibility;
+        }
 
         if (Object.keys(profileUpdates).length > 0) {
           await tx
@@ -84,6 +108,8 @@ export const userMutations = {
             createdAt: dbSchema.users.createdAt,
             displayName: dbSchema.userProfiles.displayName,
             avatarUrl: dbSchema.userProfiles.avatarUrl,
+            leaderboardVisibility: dbSchema.userProfiles.leaderboardVisibility,
+            gymScreenVisibility: dbSchema.userProfiles.gymScreenVisibility,
             favoriteCount: FAVORITE_COUNT_SUBQUERY,
           })
           .from(dbSchema.users)
@@ -110,6 +136,10 @@ export const userMutations = {
         isTester: await userIsTester(row.id),
         createdAt: row.createdAt.toISOString(),
         favoriteCount: row.favoriteCount,
+        // LEFT JOIN: a climber with no user_profiles row yet reads NULL even
+        // though the column is NOT NULL, so fall back to the column default.
+        leaderboardVisibility: row.leaderboardVisibility ?? 'public',
+        gymScreenVisibility: row.gymScreenVisibility ?? 'public',
       };
     } catch (error) {
       // A GraphQLError here is already client-safe and intentional (the

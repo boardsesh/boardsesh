@@ -464,7 +464,8 @@
       "sends": "Sends",
       "flashes": "Flashes",
       "hardest": "Hardest"
-    }
+    },
+    "anonymousClimber": "A climber"
   },
   "boardConfigSelects": {
     "board": "Board",

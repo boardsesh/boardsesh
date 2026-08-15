@@ -172,6 +172,13 @@ export const boardseshTicks = pgTable(
     flashSendUpdatedAtIdx: index('boardsesh_ticks_flash_send_updated_at_idx')
       .on(table.updatedAt)
       .where(sql`${table.status} IN ('flash','send')`),
+    // Sibling of the above on climbed_at, for the Standings rolling-window
+    // scan. Every ranked query filters `status IN ('flash','send')` and a
+    // climbed_at range; without the partial index that filter is a post-scan
+    // heap re-check over ~3,830 rows on the plain climbed_at index.
+    flashSendClimbedAtIdx: index('boardsesh_ticks_flash_send_climbed_at_idx')
+      .on(table.climbedAt)
+      .where(sql`${table.status} IN ('flash','send')`),
     // quality is a 1-5 star rating (NULL for attempts / unrated). Enforce the
     // range at the DB so a bad conversion (raw Aurora 0-3 stars, an old
     // proportional formula, etc.) can never re-poison the column. Backfills that
@@ -185,6 +192,15 @@ export const boardseshTicks = pgTable(
     qualityRangeCheck: check(
       'boardsesh_ticks_quality_range',
       sql`${table.quality} IS NULL OR (${table.quality} >= 1 AND ${table.quality} <= 5)`,
+    ),
+    // difficulty is the climber's own grade opinion, on the shared 1-39 scale
+    // every board type uses (board_difficulty_grades: 10 = 4a/V0, 22 = 7a/V6,
+    // 33 = 8c+/V16). It was previously unbounded in both zod and the DB, so a
+    // single row could carry INT_MAX and permanently own any surface that reads
+    // MAX(difficulty). Same manually-managed check() caveat as above.
+    difficultyRangeCheck: check(
+      'boardsesh_ticks_difficulty_range',
+      sql`${table.difficulty} IS NULL OR (${table.difficulty} >= 1 AND ${table.difficulty} <= 39)`,
     ),
   }),
 );

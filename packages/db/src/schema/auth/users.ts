@@ -1,4 +1,4 @@
-import { pgTable, text, integer, timestamp, primaryKey } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, timestamp, primaryKey, boolean } from 'drizzle-orm/pg-core';
 import type { AdapterAccount } from 'next-auth/adapters';
 
 // NextAuth.js tables
@@ -11,6 +11,10 @@ export const users = pgTable('users', {
   email: text('email').notNull(),
   emailVerified: timestamp('emailVerified', { mode: 'date' }),
   image: text('image'),
+  // Test, demo and system accounts. Excluded from every ranked surface.
+  // A regex over the email domain inside a ranking query is not a control —
+  // `testanother` carries 1,183 ticks and would otherwise rank #101 all-time.
+  isInternal: boolean('is_internal').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

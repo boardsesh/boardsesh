@@ -12,6 +12,14 @@ function statusFromGraphqlErrors(errors: unknown): number | null {
     if (extensions && typeof extensions.status === 'number') {
       return extensions.status;
     }
+    // The backend's own rate-limit taxonomy uses a STRING code. Newer servers
+    // also send `status: 429` (resolvers/shared/helpers.ts), but a client can
+    // meet an older one, and reading this as "no status" would dead-letter a
+    // queued mutation that only needed to wait — losing a climber's sends on a
+    // burst drain. Map it to its HTTP equivalent so `isRetryable` backs off.
+    if (extensions && extensions.code === 'RATE_LIMITED') {
+      return 429;
+    }
   }
   return null;
 }

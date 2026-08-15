@@ -511,5 +511,34 @@
     "generating": "Getting a code…",
     "error": "Couldn't get a code. Try again.",
     "close": "Done"
+  },
+  "standings": {
+    "title": "Standings",
+    "rowSubtitle": "Choose how you show up in rankings",
+    "rowFooter": "Everyone who logs a climb gets a rank. You choose whether your name rides along.",
+    "intro": "Everyone who logs a climb gets a rank. These two settings decide how much of you other climbers see — and you can answer them differently for the app and for screens in the gym.",
+    "inApp": {
+      "title": "In the app",
+      "description": "Covers standings anywhere in Boardsesh — board pages, gym pages and your own."
+    },
+    "gymScreens": {
+      "title": "On gym screens",
+      "description": "Covers the leaderboard on a gym’s wall display. Kept separate because the people reading it are already in the room with you."
+    },
+    "options": {
+      "public": {
+        "title": "Show my name",
+        "subtitle": "Other climbers see your name, your photo and your climbs."
+      },
+      "anonymous": {
+        "title": "Counted, not named",
+        "subtitle": "You still get a rank and still shape the field. Everyone else sees an unnamed climber."
+      },
+      "off": {
+        "title": "Keep me out",
+        "subtitle": "No rank, no row, nowhere. You can still read the standings."
+      }
+    },
+    "saveFailed": "Couldn’t save that. Check your connection and try again."
   }
 }

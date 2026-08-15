@@ -586,6 +586,25 @@ export default function MoreScreen() {
     });
   }
 
+  // Standings privacy (nav). Reuses the editProfile glyph rather than adding a
+  // new MoreIconName: a new name needs an entry in all three MoreForm platform
+  // maps plus an Android Material XML asset, and "how you appear" is exactly
+  // what person.crop.circle already says.
+  sections.push({
+    key: 'standings-privacy',
+    footer: tSettings('standings.rowFooter'),
+    rows: [
+      {
+        kind: 'nav',
+        key: 'standings-privacy',
+        label: tSettings('standings.title'),
+        subtitle: tSettings('standings.rowSubtitle'),
+        icon: 'editProfile',
+        onPress: navAction(() => router.push('/(tabs)/profile/standings-privacy')),
+      },
+    ],
+  });
+
   // Accessibility (nav).
   sections.push({
     key: 'accessibility',

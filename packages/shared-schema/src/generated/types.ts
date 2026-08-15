@@ -569,7 +569,14 @@ export type BoardLeaderboard = {
   entries: Array<BoardLeaderboardEntry>;
   /** Whether more entries are available */
   hasMore: Scalars['Boolean']['output'];
-  /** Label for the time period */
+  /**
+   * Label for the time period.
+   *
+   * DEPRECATED: this is a hardcoded English string built server-side ("This Week",
+   * "All Time"). It cannot be localized, so any client shipping es/fr/de must
+   * derive its own label from the `period` it requested and ignore this field.
+   * Kept only for the existing web caller.
+   */
   periodLabel: Scalars['String']['output'];
   /** Total number of entries */
   totalCount: Scalars['Int']['output'];
@@ -582,17 +589,19 @@ export type BoardLeaderboardEntry = {
   hardestGrade?: Maybe<Scalars['Int']['output']>;
   /** Human-readable hardest grade name */
   hardestGradeName?: Maybe<Scalars['String']['output']>;
-  /** Rank on the leaderboard */
+  /** True when the climber chose to be counted but not named on this surface. They still rank and still count toward `totalCount`; render them as an unnamed climber rather than hiding the row, which would leave a gap in the ranking. */
+  isAnonymous: Scalars['Boolean']['output'];
+  /** Rank on the leaderboard. Computed with RANK(), so equal scores genuinely SHARE a rank and the next rank skips accordingly (1, 2, 2, 4). Do not assume ranks are dense or unique. */
   rank: Scalars['Int']['output'];
   /** Total flashes */
   totalFlashes: Scalars['Int']['output'];
-  /** Total sends (flash + send) */
+  /** Number of DISTINCT climbs topped in the period (flash + send). Repeats of the same climb count once, so this is not a row count. */
   totalSends: Scalars['Int']['output'];
   /** Total sessions */
   totalSessions: Scalars['Int']['output'];
-  /** Avatar URL */
+  /** Avatar URL. Null when the climber is anonymous on this surface. */
   userAvatarUrl?: Maybe<Scalars['String']['output']>;
-  /** Display name */
+  /** Display name. Null when the climber is anonymous on this surface — check `isAnonymous` rather than inferring intent from a null name, which also happens when someone simply never set one. */
   userDisplayName?: Maybe<Scalars['String']['output']>;
   /** User ID */
   userId: Scalars['ID']['output'];
@@ -608,7 +617,29 @@ export type BoardLeaderboardInput = {
   offset?: InputMaybe<Scalars['Int']['input']>;
   /** Time period (day, week, month, year, all). 'day' is a rolling last-24-hours window (NOW() - INTERVAL '1 day'), not the calendar day so far. */
   period?: InputMaybe<Scalars['String']['input']>;
+  /** Which consent column decides whether a climber is named. Defaults to `app`. Gym-operated screens (kiosk rail, wall displays) must pass `gymScreen`. */
+  surface?: InputMaybe<BoardLeaderboardSurface>;
 };
+
+/**
+ * Which audience a leaderboard is being rendered for. Climbers hold separate
+ * consent for each: being named on a screen inside the gym you are standing in
+ * is a different decision from being named in an app a stranger can open.
+ */
+export type BoardLeaderboardSurface =
+  /** Boardsesh's own in-app surfaces. Reads `user_profiles.leaderboard_visibility`. */
+  | 'app'
+  /** Gym-operated displays — the kiosk leaderboard rail and wall feeds. Reads `user_profiles.gym_screen_visibility`. */
+  | 'gymScreen';
+
+/** How much of a climber is shown on a ranked surface. */
+export type BoardLeaderboardVisibility =
+  /** Ranked and counted toward the field size, but shown as an unnamed climber. */
+  | 'anonymous'
+  /** No rank, no row, and not in the denominator. They can still read every list and still see their own numbers. */
+  | 'off'
+  /** Name, avatar and score, tappable through to the profile. */
+  | 'public';
 
 /**
  * A climb reported as lit on a physical board. Denormalised for display (mirrors
@@ -7705,12 +7736,16 @@ export type UpdatePlaylistInput = {
   playlistId: Scalars['ID']['input'];
 };
 
-/** Input for updating user profile. */
+/** Input for updating user profile. Every field is optional; omitted fields are left unchanged. */
 export type UpdateProfileInput = {
   /** New avatar URL */
   avatarUrl?: InputMaybe<Scalars['String']['input']>;
   /** New display name */
   displayName?: InputMaybe<Scalars['String']['input']>;
+  /** How this climber appears on gym-operated screens */
+  gymScreenVisibility?: InputMaybe<BoardLeaderboardVisibility>;
+  /** How this climber appears on Boardsesh's own ranked surfaces */
+  leaderboardVisibility?: InputMaybe<BoardLeaderboardVisibility>;
 };
 
 /**
@@ -7913,10 +7948,14 @@ export type UserProfile = {
   email: Scalars['String']['output'];
   /** Total number of climbs favourited by this user, across all boards */
   favoriteCount: Scalars['Int']['output'];
+  /** How this climber appears on gym-operated screens (the kiosk rail, wall feeds). Held separately from leaderboardVisibility on purpose: being named on a screen inside the gym you are standing in is a different decision from being named in an app a stranger can open. */
+  gymScreenVisibility: BoardLeaderboardVisibility;
   /** Unique user identifier */
   id: Scalars['ID']['output'];
   /** Whether this user can reach tester-only developer tooling (has the tester or admin community role) */
   isTester: Scalars['Boolean']['output'];
+  /** How this climber appears on Boardsesh's own ranked surfaces. */
+  leaderboardVisibility: BoardLeaderboardVisibility;
 };
 
 /** Paginated user search results. */
@@ -8168,6 +8207,8 @@ export type ResolversTypes = ResolversObject<{
   BoardLeaderboard: ResolverTypeWrapper<BoardLeaderboard>;
   BoardLeaderboardEntry: ResolverTypeWrapper<BoardLeaderboardEntry>;
   BoardLeaderboardInput: BoardLeaderboardInput;
+  BoardLeaderboardSurface: BoardLeaderboardSurface;
+  BoardLeaderboardVisibility: BoardLeaderboardVisibility;
   BoardPresenceClimb: ResolverTypeWrapper<BoardPresenceClimb>;
   BoardPresenceEvent: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['BoardPresenceEvent']>;
   BoardPresenceHardestSend: ResolverTypeWrapper<BoardPresenceHardestSend>;
@@ -9156,6 +9197,7 @@ export type BoardLeaderboardEntryResolvers<
 > = ResolversObject<{
   hardestGrade?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   hardestGradeName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  isAnonymous?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   rank?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   totalFlashes?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   totalSends?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
@@ -13086,8 +13128,10 @@ export type UserProfileResolvers<
   displayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   email?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   favoriteCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  gymScreenVisibility?: Resolver<ResolversTypes['BoardLeaderboardVisibility'], ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   isTester?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  leaderboardVisibility?: Resolver<ResolversTypes['BoardLeaderboardVisibility'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 

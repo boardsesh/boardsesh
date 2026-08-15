@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { GraphQLError } from 'graphql';
 import { checkRateLimit, RateLimitError } from '../../../utils/rate-limiter';
@@ -14,6 +15,32 @@ export { validateInput, parseArrayTolerant } from '../../../validation/schemas';
 // Re-export MAX_RETRIES from types
 export { MAX_RETRIES } from './types';
 export { isNoMatchClimb, isNoMatch } from '@boardsesh/shared-schema';
+
+/**
+ * Stable pseudonym for a climber who ranks anonymously.
+ *
+ * Returning the real user id alongside `isAnonymous: true` would make the
+ * promise hollow — every client can already turn a user id into a profile at
+ * `/users/[userId]`, so "counted, not named" would leak the name one tap away.
+ * Returning `null` instead is no good either: the kiosk rail merges the same
+ * climber across several boards by user id, and a shared null would fuse every
+ * anonymous climber into one row.
+ *
+ * So: an HMAC of the user id, keyed on a server-side secret. Stable for a given
+ * climber (cross-board merge and React keys keep working) and not reversible
+ * into a user id by anyone holding only the output.
+ *
+ * Keyed on NEXTAUTH_SECRET, which the backend already requires in every
+ * deployed environment. The dev fallback is a fixed string: it keeps ids
+ * deterministic across a restart so local UI work behaves, and dev has no real
+ * identities to protect.
+ */
+const ANONYMOUS_ID_DEV_KEY = 'boardsesh-dev-anonymous-id-key';
+
+export function anonymousClimberId(userId: string): string {
+  const key = process.env.NEXTAUTH_SECRET || ANONYMOUS_ID_DEV_KEY;
+  return `anon:${createHmac('sha256', key).update(userId).digest('base64url').slice(0, 22)}`;
+}
 
 /**
  * Configuration for session membership retry behavior.
@@ -515,7 +542,14 @@ export async function applyRateLimit(ctx: ConnectionContext, limit?: number, ope
   } catch (error) {
     if (error instanceof RateLimitError) {
       throw new GraphQLError(error.message, {
-        extensions: { code: 'RATE_LIMITED', operation, retryAfterSeconds: error.retryAfterSeconds },
+        // `status: 429` rides alongside the string `code` because status-reading
+        // clients can't interpret the code. The offline mutation drainer resolves
+        // retryability from a NUMERIC extensions.code/status
+        // (offline-sync/src/mutation-queue/error-classification.ts) — with neither
+        // present it reads the error as unclassifiable and dead-letters the
+        // mutation rather than backing off, which would drop a climber's queued
+        // sends on a burst drain instead of retrying them.
+        extensions: { code: 'RATE_LIMITED', status: 429, operation, retryAfterSeconds: error.retryAfterSeconds },
       });
     }
     throw error;

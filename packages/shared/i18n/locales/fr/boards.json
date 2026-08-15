@@ -464,7 +464,8 @@
       "sends": "Croix",
       "flashes": "Flashs",
       "hardest": "Plus dur"
-    }
+    },
+    "anonymousClimber": "Un grimpeur"
   },
   "boardConfigSelects": {
     "board": "Board",

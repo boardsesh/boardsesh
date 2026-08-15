@@ -464,7 +464,8 @@
       "sends": "Encadenes",
       "flashes": "Flashes",
       "hardest": "Más difícil"
-    }
+    },
+    "anonymousClimber": "Un escalador"
   },
   "boardConfigSelects": {
     "board": "Plafón",

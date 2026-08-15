@@ -31,6 +31,8 @@ export const userQueries = {
         createdAt: dbSchema.users.createdAt,
         displayName: dbSchema.userProfiles.displayName,
         avatarUrl: dbSchema.userProfiles.avatarUrl,
+        leaderboardVisibility: dbSchema.userProfiles.leaderboardVisibility,
+        gymScreenVisibility: dbSchema.userProfiles.gymScreenVisibility,
         favoriteCount: FAVORITE_COUNT_SUBQUERY,
       })
       .from(dbSchema.users)
@@ -50,6 +52,10 @@ export const userQueries = {
       isTester: await userIsTester(row.id),
       createdAt: row.createdAt.toISOString(),
       favoriteCount: row.favoriteCount,
+      // LEFT JOIN: a climber with no user_profiles row yet reads NULL even
+      // though the column is NOT NULL, so fall back to the column default.
+      leaderboardVisibility: row.leaderboardVisibility ?? 'public',
+      gymScreenVisibility: row.gymScreenVisibility ?? 'public',
     };
   },
 
