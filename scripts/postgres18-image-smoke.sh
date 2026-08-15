@@ -13,6 +13,8 @@ SEQUENCE_SQL_FILE="$(mktemp "${TMPDIR:-/tmp}/boardsesh-pg18-sequences.XXXXXX")"
 readonly SEQUENCE_SQL_FILE
 AUDIT_REPORT_FILE="$(mktemp "${TMPDIR:-/tmp}/boardsesh-pg18-audit.XXXXXX")"
 readonly AUDIT_REPORT_FILE
+SYNC_REPORT_FILE="$(mktemp "${TMPDIR:-/tmp}/boardsesh-pg18-sync.XXXXXX")"
+readonly SYNC_REPORT_FILE
 
 cleanup() {
   docker rm --force "$TARGET_CONTAINER_NAME" >/dev/null 2>&1 || true
@@ -21,7 +23,7 @@ cleanup() {
   docker volume rm "$VOLUME_NAME" >/dev/null 2>&1 || true
   docker network rm "$NETWORK_NAME" >/dev/null 2>&1 || true
   docker image rm "$IMAGE_TAG" >/dev/null 2>&1 || true
-  rm -f "$SEQUENCE_SQL_FILE" "$AUDIT_REPORT_FILE"
+  rm -f "$SEQUENCE_SQL_FILE" "$AUDIT_REPORT_FILE" "$SYNC_REPORT_FILE"
 }
 trap cleanup EXIT
 
@@ -55,6 +57,16 @@ docker build \
   --tag "$IMAGE_TAG" \
   "$REPOSITORY_ROOT/packages/db/docker"
 
+IMAGE_POSTGIS_VERSION="$(docker image inspect \
+  --format '{{ index .Config.Labels "org.boardsesh.postgis.version" }}' \
+  "$IMAGE_TAG")"
+[[ "$IMAGE_POSTGIS_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+  printf 'image has an invalid org.boardsesh.postgis.version label: %s\n' \
+    "$IMAGE_POSTGIS_VERSION" >&2
+  exit 1
+}
+readonly IMAGE_POSTGIS_VERSION
+
 docker network create "$NETWORK_NAME" >/dev/null
 docker volume create "$VOLUME_NAME" >/dev/null
 docker run --detach \
@@ -71,11 +83,14 @@ wait_for_postgres
 
 [[ "$(docker exec "$CONTAINER_NAME" printenv PGDATA)" == '/var/lib/postgresql/18/docker' ]]
 
-docker exec -i "$CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main <<'SQL'
+docker exec -i "$CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
+  -v expected_postgis_version="$IMAGE_POSTGIS_VERSION" <<'SQL'
 CREATE EXTENSION postgis;
 CREATE EXTENSION "uuid-ossp";
 CREATE EXTENSION pg_trgm;
 CREATE EXTENSION hypopg;
+
+SELECT set_config('boardsesh.expected_postgis_version', :'expected_postgis_version', false);
 
 DO $$
 BEGIN
@@ -85,8 +100,9 @@ BEGIN
   IF current_setting('data_checksums') <> 'on' THEN
     RAISE EXCEPTION 'expected data_checksums=on';
   END IF;
-  IF postgis_lib_version() <> '3.6.4' THEN
-    RAISE EXCEPTION 'expected PostGIS 3.6.4, got %', postgis_lib_version();
+  IF postgis_lib_version() <> current_setting('boardsesh.expected_postgis_version') THEN
+    RAISE EXCEPTION 'expected PostGIS %, got %',
+      current_setting('boardsesh.expected_postgis_version'), postgis_lib_version();
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_available_extensions
@@ -106,6 +122,14 @@ INSERT INTO pg18_smoke_persistence (marker) VALUES ('survives-restart');
 CREATE TABLE pg18_smoke_never_called (
   id bigserial PRIMARY KEY
 );
+
+CREATE TABLE pg18_smoke_partitioned (
+  id integer PRIMARY KEY,
+  marker text NOT NULL
+) PARTITION BY RANGE (id);
+CREATE TABLE pg18_smoke_partitioned_low
+  PARTITION OF pg18_smoke_partitioned FOR VALUES FROM (0) TO (100);
+INSERT INTO pg18_smoke_partitioned VALUES (1, 'partition-survives-copy');
 
 CREATE SCHEMA drizzle;
 CREATE TABLE drizzle.__drizzle_migrations (
@@ -135,16 +159,20 @@ ALTER SCHEMA public OWNER TO pg18_smoke_owner;
 ALTER SCHEMA drizzle OWNER TO pg18_smoke_owner;
 ALTER TABLE public.pg18_smoke_persistence OWNER TO pg18_smoke_owner;
 ALTER TABLE public.pg18_smoke_never_called OWNER TO pg18_smoke_owner;
+ALTER TABLE public.pg18_smoke_partitioned OWNER TO pg18_smoke_owner;
+ALTER TABLE public.pg18_smoke_partitioned_low OWNER TO pg18_smoke_owner;
 ALTER TABLE drizzle.__drizzle_migrations OWNER TO pg18_smoke_owner;
 
 GRANT USAGE ON SCHEMA public, drizzle TO pg18_smoke_runtime;
 GRANT USAGE ON SCHEMA public, drizzle TO pg18_smoke_publisher;
 GRANT SELECT, INSERT, UPDATE, DELETE
   ON public.pg18_smoke_persistence, public.pg18_smoke_never_called,
+     public.pg18_smoke_partitioned, public.pg18_smoke_partitioned_low,
      drizzle.__drizzle_migrations
   TO pg18_smoke_runtime;
 GRANT SELECT
   ON public.pg18_smoke_persistence, public.pg18_smoke_never_called,
+     public.pg18_smoke_partitioned, public.pg18_smoke_partitioned_low,
      drizzle.__drizzle_migrations
   TO pg18_smoke_publisher;
 GRANT USAGE
@@ -177,6 +205,7 @@ readonly smoke_database_url="postgresql://postgres:postgres@127.0.0.1:${host_por
 SOURCE_DATABASE_URL="$smoke_database_url" \
   TARGET_DATABASE_URL="$smoke_database_url" \
   EXPECTED_SOURCE_MAJOR=18 \
+  EXPECTED_POSTGIS_VERSION="$IMAGE_POSTGIS_VERSION" \
   MIGRATION_OWNER_ROLE=pg18_smoke_owner \
   MIGRATION_RUNTIME_ROLE=pg18_smoke_runtime \
   MIGRATION_MIGRATOR_ROLE=pg18_smoke_migrator \
@@ -238,6 +267,57 @@ readonly source_admin_url="postgresql://postgres:postgres@${CONTAINER_NAME}:5432
 readonly source_publisher_url="postgresql://pg18_smoke_publisher:publisher@${CONTAINER_NAME}:5432/main"
 readonly target_admin_url="postgresql://postgres:postgres@${TARGET_CONTAINER_NAME}:5432/main"
 
+run_two_host_audit() {
+  docker run --rm \
+    --network "$NETWORK_NAME" \
+    --volume "$REPOSITORY_ROOT:/workspace:ro" \
+    --entrypoint bash \
+    --env SOURCE_DATABASE_URL="$source_admin_url" \
+    --env SOURCE_REPLICATION_DATABASE_URL="$source_publisher_url" \
+    --env TARGET_DATABASE_URL="$target_admin_url" \
+    --env EXPECTED_SOURCE_MAJOR=18 \
+    --env EXPECTED_POSTGIS_VERSION="$IMAGE_POSTGIS_VERSION" \
+    --env REQUIRE_PUBLICATION=true \
+    --env MIGRATION_PUBLICATION_NAME=pg18_smoke_publication \
+    --env MIGRATION_SUBSCRIPTION_NAME=pg18_smoke_subscription \
+    --env MIGRATION_SLOT_NAME=pg18_smoke_subscription \
+    --env MIGRATION_OWNER_ROLE=pg18_smoke_owner \
+    --env MIGRATION_RUNTIME_ROLE=pg18_smoke_runtime \
+    --env MIGRATION_MIGRATOR_ROLE=pg18_smoke_migrator \
+    --env MIGRATION_REPLICATION_ROLE=pg18_smoke_standby \
+    --env MIGRATION_SUBSCRIBER_ROLE=pg18_smoke_subscriber \
+    --env 'MIGRATION_RUNTIME_SCHEMAS=public drizzle' \
+    "$IMAGE_TAG" /workspace/scripts/postgres-migration-audit.sh
+}
+
+run_sequence_sync() {
+  docker run --rm \
+    --network "$NETWORK_NAME" \
+    --volume "$REPOSITORY_ROOT:/workspace:ro" \
+    --entrypoint bash \
+    --env NEON_DATABASE_URL="$source_admin_url" \
+    --env RAILWAY_DATABASE_URL="$target_admin_url" \
+    --env TARGET_OWNER_ROLE=pg18_smoke_owner \
+    --env TARGET_SUBSCRIBER_ROLE=pg18_smoke_subscriber \
+    --env PUBLICATION_NAME=pg18_smoke_publication \
+    --env SUBSCRIPTION_NAME=pg18_smoke_subscription \
+    --env SLOT_NAME=pg18_smoke_subscription \
+    --env WRITES_FENCED=true \
+    --env 'FENCED_WRITER_ROLES=pg18_smoke_runtime pg18_smoke_migrator' \
+    "$IMAGE_TAG" /workspace/scripts/neon-to-railway-replication.sh sync-sequences
+}
+
+run_data_verification() {
+  docker run --rm \
+    --network "$NETWORK_NAME" \
+    --volume "$REPOSITORY_ROOT:/workspace:ro" \
+    --entrypoint bash \
+    --env SOURCE_DATABASE_URL="$source_admin_url" \
+    --env TARGET_DATABASE_URL="$target_admin_url" \
+    --env WRITES_FENCED=true \
+    "$IMAGE_TAG" /workspace/scripts/postgres-migration-verify-data.sh
+}
+
 docker run --rm \
   --network "$NETWORK_NAME" \
   --volume "$REPOSITORY_ROOT:/workspace:ro" \
@@ -278,6 +358,7 @@ ALTER SCHEMA drizzle OWNER TO pg18_smoke_owner;
 GRANT USAGE ON SCHEMA public, drizzle TO pg18_smoke_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE
   ON public.pg18_smoke_persistence, public.pg18_smoke_never_called,
+     public.pg18_smoke_partitioned, public.pg18_smoke_partitioned_low,
      drizzle.__drizzle_migrations
   TO pg18_smoke_runtime;
 GRANT USAGE
@@ -299,27 +380,11 @@ docker exec -i "$CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main 
 ALTER PUBLICATION pg18_smoke_publication SET TABLE
   public.pg18_smoke_persistence (id),
   public.pg18_smoke_never_called,
+  public.pg18_smoke_partitioned,
+  public.pg18_smoke_partitioned_low,
   drizzle.__drizzle_migrations;
 SQL
-if docker run --rm \
-  --network "$NETWORK_NAME" \
-  --volume "$REPOSITORY_ROOT:/workspace:ro" \
-  --entrypoint bash \
-  --env SOURCE_DATABASE_URL="$source_admin_url" \
-  --env SOURCE_REPLICATION_DATABASE_URL="$source_publisher_url" \
-  --env TARGET_DATABASE_URL="$target_admin_url" \
-  --env EXPECTED_SOURCE_MAJOR=18 \
-  --env REQUIRE_PUBLICATION=true \
-  --env MIGRATION_PUBLICATION_NAME=pg18_smoke_publication \
-  --env MIGRATION_SUBSCRIPTION_NAME=pg18_smoke_subscription \
-  --env MIGRATION_SLOT_NAME=pg18_smoke_subscription \
-  --env MIGRATION_OWNER_ROLE=pg18_smoke_owner \
-  --env MIGRATION_RUNTIME_ROLE=pg18_smoke_runtime \
-  --env MIGRATION_MIGRATOR_ROLE=pg18_smoke_migrator \
-  --env MIGRATION_REPLICATION_ROLE=pg18_smoke_standby \
-  --env MIGRATION_SUBSCRIBER_ROLE=pg18_smoke_subscriber \
-  --env 'MIGRATION_RUNTIME_SCHEMAS=public drizzle' \
-  "$IMAGE_TAG" /workspace/scripts/postgres-migration-audit.sh >"$AUDIT_REPORT_FILE" 2>&1; then
+if run_two_host_audit >"$AUDIT_REPORT_FILE" 2>&1; then
   printf 'Expected the audit to reject a publication column list\n' >&2
   exit 1
 fi
@@ -329,37 +394,91 @@ docker exec -i "$CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main 
 ALTER PUBLICATION pg18_smoke_publication SET TABLE
   public.pg18_smoke_persistence,
   public.pg18_smoke_never_called,
+  public.pg18_smoke_partitioned,
+  public.pg18_smoke_partitioned_low,
   drizzle.__drizzle_migrations;
 SQL
 
-docker run --rm \
-  --network "$NETWORK_NAME" \
-  --volume "$REPOSITORY_ROOT:/workspace:ro" \
-  --entrypoint bash \
-  --env SOURCE_DATABASE_URL="$source_admin_url" \
-  --env SOURCE_REPLICATION_DATABASE_URL="$source_publisher_url" \
-  --env TARGET_DATABASE_URL="$target_admin_url" \
-  --env EXPECTED_SOURCE_MAJOR=18 \
-  --env REQUIRE_PUBLICATION=true \
-  --env MIGRATION_PUBLICATION_NAME=pg18_smoke_publication \
-  --env MIGRATION_SUBSCRIPTION_NAME=pg18_smoke_subscription \
-  --env MIGRATION_SLOT_NAME=pg18_smoke_subscription \
-  --env MIGRATION_OWNER_ROLE=pg18_smoke_owner \
-  --env MIGRATION_RUNTIME_ROLE=pg18_smoke_runtime \
-  --env MIGRATION_MIGRATOR_ROLE=pg18_smoke_migrator \
-  --env MIGRATION_REPLICATION_ROLE=pg18_smoke_standby \
-  --env MIGRATION_SUBSCRIBER_ROLE=pg18_smoke_subscriber \
-  --env 'MIGRATION_RUNTIME_SCHEMAS=public drizzle' \
-  "$IMAGE_TAG" /workspace/scripts/postgres-migration-audit.sh >"$AUDIT_REPORT_FILE"
+# An owner-correct but source-only index must still block the catalog gate.
+docker exec -i "$TARGET_CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main <<'SQL'
+SET ROLE pg18_smoke_owner;
+CREATE INDEX pg18_smoke_unexpected_idx ON public.pg18_smoke_persistence (marker);
+RESET ROLE;
+SQL
+if run_two_host_audit >"$AUDIT_REPORT_FILE" 2>&1; then
+  printf 'Expected the audit to reject target DDL drift\n' >&2
+  exit 1
+fi
+grep -Fq 'catalog DDL manifest differs' "$AUDIT_REPORT_FILE"
+docker exec "$TARGET_CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
+  -c 'DROP INDEX public.pg18_smoke_unexpected_idx;' >/dev/null
+
+run_two_host_audit >"$AUDIT_REPORT_FILE"
 grep -Fq 'Audit result: 0 blocker(s).' "$AUDIT_REPORT_FILE"
 
-docker run --rm \
+# The destructive teardown path must remain inert until an operator explicitly
+# confirms the post-cutover acceptance and restore-drill gate.
+if docker run --rm \
   --network "$NETWORK_NAME" \
   --volume "$REPOSITORY_ROOT:/workspace:ro" \
   --entrypoint bash \
-  --env SOURCE_DATABASE_URL="$source_admin_url" \
-  --env TARGET_DATABASE_URL="$target_admin_url" \
-  --env WRITES_FENCED=true \
-  "$IMAGE_TAG" /workspace/scripts/postgres-migration-verify-data.sh
+  --env NEON_DATABASE_URL="$source_admin_url" \
+  --env RAILWAY_DATABASE_URL="$target_admin_url" \
+  "$IMAGE_TAG" /workspace/scripts/neon-to-railway-replication.sh teardown \
+  >"$AUDIT_REPORT_FILE" 2>&1; then
+  printf 'Expected teardown without TEARDOWN_CONFIRMED=true to be rejected\n' >&2
+  exit 1
+fi
+grep -Fq 'teardown requires TEARDOWN_CONFIRMED=true' "$AUDIT_REPORT_FILE"
+
+# Deliberately diverge every target sequence, then exercise the real guarded
+# source-to-subscriber sequence copy, including the never-called state.
+docker exec -i "$TARGET_CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main <<'SQL'
+SELECT setval('public.pg18_smoke_persistence_id_seq', 900, true);
+SELECT setval('public.pg18_smoke_never_called_id_seq', 900, true);
+SELECT setval('drizzle.__drizzle_migrations_id_seq', 900, true);
+SQL
+docker exec -i "$CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main <<'SQL'
+ALTER ROLE pg18_smoke_runtime NOLOGIN;
+ALTER ROLE pg18_smoke_migrator NOLOGIN;
+SQL
+
+attempt=0
+while ! run_sequence_sync >"$SYNC_REPORT_FILE" 2>&1; do
+  if ! grep -Fq 'has not replayed the source flush LSN' "$SYNC_REPORT_FILE" || \
+    [[ "$attempt" -ge 120 ]]; then
+    cat "$SYNC_REPORT_FILE" >&2
+    exit 1
+  fi
+  attempt=$((attempt + 1))
+  sleep 1
+done
+
+target_sequence_state="$(docker exec -i "$TARGET_CONTAINER_NAME" \
+  psql -X -Atq -F '|' -U postgres -d main <<'SQL'
+SELECT last_value, is_called FROM public.pg18_smoke_persistence_id_seq;
+SELECT last_value, is_called FROM public.pg18_smoke_never_called_id_seq;
+SELECT last_value, is_called FROM drizzle.__drizzle_migrations_id_seq;
+SQL
+)"
+if [[ "$target_sequence_state" != $'1|t\n1|f\n1|t' ]]; then
+  printf 'Target sequence state did not match the source after sync:\n%s\n' \
+    "$target_sequence_state" >&2
+  exit 1
+fi
+
+# A row drift in a leaf partition must be visible through the logical parent
+# digest even though the partition itself is not hashed a second time.
+docker exec "$TARGET_CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
+  -c "UPDATE public.pg18_smoke_partitioned SET marker = 'target-drift' WHERE id = 1;" >/dev/null
+if run_data_verification >"$AUDIT_REPORT_FILE" 2>&1; then
+  printf 'Expected partition row drift to fail data verification\n' >&2
+  exit 1
+fi
+grep -Fq 'Table data verification failed' "$AUDIT_REPORT_FILE"
+docker exec "$TARGET_CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
+  -c "UPDATE public.pg18_smoke_partitioned SET marker = 'partition-survives-copy' WHERE id = 1;" >/dev/null
+
+run_data_verification
 
 printf 'PostgreSQL 18.4 image, audit, and two-host logical-migration smoke test passed.\n'

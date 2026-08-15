@@ -409,6 +409,9 @@ TARGET_DATABASE_URL="$TARGET_DATABASE_URL" \
   scripts/postgres-migration-verify-data.sh
 ```
 
+The verifier reads standalone tables and top-level partitioned parents, so
+every leaf-partition row is covered exactly once.
+
 Re-run the full catalog audit one final time. Refresh and verify every reported
 materialized view. Run business invariants for users, ticks, comments, votes,
 board catalogs, and sync cursors. Any mismatch aborts before PG18 receives a
@@ -439,6 +442,14 @@ Revoke/drop `boardsesh_pg18_subscriber` and revoke the PG16 publisher credential
 neither is a permanent application identity. Keep PG16 fenced throughout. If
 dropping the subscription cannot reach the publisher, inspect and remove the
 orphaned source slot deliberately so retained WAL cannot fill the source disk.
+The helper makes this destructive transition explicit:
+
+```bash
+TEARDOWN_CONFIRMED=true \
+SOURCE_DATABASE_URL="$SOURCE_DATABASE_URL" \
+TARGET_DATABASE_URL="$TARGET_DATABASE_URL" \
+  scripts/neon-to-railway-replication.sh teardown
+```
 
 ## Availability follow-ups after PG18 is stable
 

@@ -33,6 +33,16 @@ if ! docker image inspect "$IMAGE_REFERENCE" >/dev/null 2>&1; then
   docker pull "$IMAGE_REFERENCE"
 fi
 
+EXPECTED_POSTGIS_VERSION="$(docker image inspect \
+  --format '{{ index .Config.Labels "org.boardsesh.postgis.version" }}' \
+  "$IMAGE_REFERENCE")"
+[[ "$EXPECTED_POSTGIS_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+  printf 'image has an invalid org.boardsesh.postgis.version label: %s\n' \
+    "$EXPECTED_POSTGIS_VERSION" >&2
+  exit 1
+}
+readonly EXPECTED_POSTGIS_VERSION
+
 wait_for_postgres() {
   local attempt=0
   while [[ "$attempt" -lt 300 ]]; do
@@ -62,8 +72,10 @@ wait_for_postgres
 docker exec "$CONTAINER_NAME" test -f /var/lib/postgresql/18/docker/.boardsesh-dev-db-ready
 
 docker exec -i "$CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
-  -v expected_migration_count="$EXPECTED_MIGRATION_COUNT" <<'SQL'
+  -v expected_migration_count="$EXPECTED_MIGRATION_COUNT" \
+  -v expected_postgis_version="$EXPECTED_POSTGIS_VERSION" <<'SQL'
 SELECT set_config('boardsesh.expected_migration_count', :'expected_migration_count', false);
+SELECT set_config('boardsesh.expected_postgis_version', :'expected_postgis_version', false);
 DO $$
 DECLARE
   migration_count bigint;
@@ -75,8 +87,9 @@ BEGIN
   IF current_setting('data_checksums') <> 'on' THEN
     RAISE EXCEPTION 'expected data_checksums=on';
   END IF;
-  IF postgis_lib_version() <> '3.6.4' THEN
-    RAISE EXCEPTION 'expected PostGIS 3.6.4, got %', postgis_lib_version();
+  IF postgis_lib_version() <> current_setting('boardsesh.expected_postgis_version') THEN
+    RAISE EXCEPTION 'expected PostGIS %, got %',
+      current_setting('boardsesh.expected_postgis_version'), postgis_lib_version();
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_available_extensions

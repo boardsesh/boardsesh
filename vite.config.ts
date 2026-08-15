@@ -153,7 +153,7 @@ export default defineConfig({
     tasks: {
       // --- Database ---
       'db:up': {
-        command: 'sh scripts/dev-db-up.sh',
+        command: 'bash scripts/dev-db-up.sh',
         cache: false,
       },
       'db:migrate': {
@@ -240,7 +240,7 @@ export default defineConfig({
       },
       'test:postgres18-contract': {
         command:
-          'bash packages/db/docker/dev-db-entrypoint.test.sh && bash packages/db/docker/apply-drizzle-migrations.test.sh && bash -n scripts/postgres-migration-audit.sh scripts/postgres-migration-verify-data.sh scripts/neon-to-railway-replication.sh',
+          'bash packages/db/docker/dev-db-entrypoint.test.sh && bash packages/db/docker/apply-drizzle-migrations.test.sh && bash -n packages/db/docker/dev-db-entrypoint.sh packages/db/docker/apply-drizzle-migrations.sh scripts/dev-db-up.sh scripts/dev-db-image-smoke.sh scripts/postgres18-image-smoke.sh scripts/postgres-migration-audit.sh scripts/postgres-migration-verify-data.sh scripts/neon-to-railway-replication.sh',
         cache: false,
       },
       'test:postgres18-image': {

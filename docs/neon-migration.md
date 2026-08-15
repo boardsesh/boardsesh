@@ -209,27 +209,38 @@ FENCED_WRITER_ROLES='boardsesh_runtime boardsesh_sync boardsesh_migrator' \
 5. Set `DATABASE_URL` in Vercel project settings to the Railway app/runtime connection string.
 6. Update the Railway backend service `DATABASE_URL` env var to the Railway app/runtime connection string.
 7. Deploy web + backend. The first successful Railway write is the forward-only rollback boundary.
-8. On Railway, drop the subscription only after the observation window:
+8. Keep the old source fenced and monitor error rates, query latency, connections,
+   replication-slot retention, disk, and backup success for 72 hours. Complete a
+   successful PG18 backup and restore drill before removing the logical link.
+   Specifically watch:
+   - **Sentry** for HTTP 5xx, GraphQL resolver errors, and `prepared statement "X" already exists` (the canary signal that `prepare:false` regressed somewhere).
+     - **TODO before cutover:** record the Sentry project URL / saved-search filter here.
+   - **Vercel Functions** logs for elevated p95 latency on `/api/og/*`, `/api/internal/*`, and the climb-search SSR pages.
+     - **TODO before cutover:** record the Vercel project / function-filter URL here.
+   - **Railway PostgreSQL metrics** — connection count, CPU, query throughput, pgbouncer wait time.
+     - **TODO before cutover:** record the Railway metrics dashboard URL here.
+9. Only after that 72-hour acceptance window and successful restore drill, drop
+   the subscription on Railway and publication on Neon. The manual SQL and the
+   helper are equivalent destructive paths; neither bypasses the acceptance gate.
+
+   On Railway:
+
    ```sql
    ALTER SUBSCRIPTION boardsesh_neon_sub DISABLE;
    DROP SUBSCRIPTION boardsesh_neon_sub;
    ```
-9. On Neon, drop the publication:
+
+   On Neon:
+
    ```sql
    DROP PUBLICATION boardsesh_migration;
    ```
-   Or use:
-   ```bash
-   scripts/neon-to-railway-replication.sh teardown
-   ```
-10. Monitor error rates and query latency for 24-48 hours. Specifically watch:
 
-- **Sentry** for HTTP 5xx, GraphQL resolver errors, and `prepared statement "X" already exists` (the canary signal that `prepare:false` regressed somewhere).
-  - **TODO before cutover:** record the Sentry project URL / saved-search filter here.
-- **Vercel Functions** logs for elevated p95 latency on `/api/og/*`, `/api/internal/*`, and the climb-search SSR pages.
-  - **TODO before cutover:** record the Vercel project / function-filter URL here.
-- **Railway PostgreSQL metrics** — connection count, CPU, query throughput, pgbouncer wait time.
-  - **TODO before cutover:** record the Railway metrics dashboard URL here.
+   Or use:
+
+   ```bash
+   TEARDOWN_CONFIRMED=true scripts/neon-to-railway-replication.sh teardown
+   ```
 
 ## 6. Rollback Procedure
 

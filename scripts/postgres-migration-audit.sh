@@ -164,6 +164,26 @@ WHERE relation.relkind IN ('r', 'p')
 ORDER BY 1;"
 }
 
+replication_tables() {
+  local connection_url="$1"
+  psql_readonly "$connection_url" -Atq -c "
+SELECT pg_catalog.format('%I.%I', namespace.nspname, relation.relname)
+FROM pg_catalog.pg_class AS relation
+JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+WHERE relation.relkind = 'r'
+  AND relation.relpersistence = 'p'
+  AND namespace.nspname IN (${included_schemas_sql})
+  AND namespace.nspname NOT IN (${excluded_schemas_sql})
+  AND NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_depend AS extension_dependency
+    WHERE extension_dependency.classid = 'pg_catalog.pg_class'::pg_catalog.regclass
+      AND extension_dependency.objid = relation.oid
+      AND extension_dependency.deptype = 'e'
+  )
+ORDER BY 1;"
+}
+
 sequence_ownership() {
   local connection_url="$1"
   psql_readonly "$connection_url" -Atq -F $'\t' -c "
@@ -466,6 +486,7 @@ audit_directory="$(mktemp -d "${TMPDIR:-/tmp}/boardsesh-pg-migration-audit.XXXXX
 trap 'rm -rf "$audit_directory"' EXIT
 
 source_tables_file="$audit_directory/source-tables"
+source_replication_tables_file="$audit_directory/source-replication-tables"
 source_sequences_file="$audit_directory/source-sequences"
 source_extensions_file="$audit_directory/source-extensions"
 source_schema_file="$audit_directory/source-schema"
@@ -521,6 +542,7 @@ printf 'Source replication capacity: free_slots=%s, free_wal_senders=%s, slot_wa
   "$available_replication_slots" "$available_wal_senders" "$slot_wal_cap"
 
 catalog_tables "$SOURCE_DATABASE_URL" >"$source_tables_file"
+replication_tables "$SOURCE_DATABASE_URL" >"$source_replication_tables_file"
 sequence_ownership "$SOURCE_DATABASE_URL" >"$source_sequences_file"
 extension_manifest "$SOURCE_DATABASE_URL" >"$source_extensions_file"
 schema_catalog "$SOURCE_DATABASE_URL" manifest >"$source_schema_file"
@@ -568,7 +590,7 @@ SELECT pg_catalog.format('%I.%I', schemaname, tablename)
 FROM pg_catalog.pg_publication_tables
 WHERE pubname = '${MIGRATION_PUBLICATION_NAME}'
 ORDER BY 1;" >"$publication_tables_file"
-    compare_manifests "publication table coverage" "$source_tables_file" "$publication_tables_file"
+    compare_manifests "publication table coverage" "$source_replication_tables_file" "$publication_tables_file"
 
     publication_projection_blockers="$(scalar "$SOURCE_DATABASE_URL" "
 SELECT count(*)
@@ -1029,7 +1051,7 @@ JOIN pg_catalog.pg_class AS relation ON relation.oid = subscription_relation.srr
 JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
 WHERE subscription.subname = '${MIGRATION_SUBSCRIPTION_NAME}'
 ORDER BY 1;" >"$target_subscription_tables_file"
-    compare_manifests 'target subscription table coverage' "$source_tables_file" "$target_subscription_tables_file"
+    compare_manifests 'target subscription table coverage' "$source_replication_tables_file" "$target_subscription_tables_file"
 
     nonready_subscription_tables="$(scalar "$TARGET_DATABASE_URL" "
 SELECT count(*)

@@ -26,8 +26,9 @@ chmod +x "$FAKE_BIN/docker-entrypoint.sh"
 run_entrypoint() {
   local postgres_root="$1"
   local result_file="$2"
-    BOARDSESH_POSTGRES_ROOT="$postgres_root" \
-    BOARDSESH_DEV_DB_SEED="$SEED" \
+  local seed="${3:-$SEED}"
+  BOARDSESH_POSTGRES_ROOT="$postgres_root" \
+    BOARDSESH_DEV_DB_SEED="$seed" \
     BOARDSESH_DEV_DB_SEED_MARKER="$SEED_MARKER" \
     BOARDSESH_ENTRYPOINT_RESULT="$result_file" \
     PGDATA="$postgres_root/18/docker" \
@@ -77,6 +78,19 @@ if run_entrypoint \
   exit 1
 fi
 grep -Fq 'PGDATA is partially initialized' "$TEST_ROOT/partial-without-version-error"
+
+readonly WRONG_MAJOR_SEED="$TEST_ROOT/wrong-major-seed/18/docker"
+mkdir -p "$WRONG_MAJOR_SEED"
+printf '17\n' >"$WRONG_MAJOR_SEED/PG_VERSION"
+if run_entrypoint \
+  "$TEST_ROOT/wrong-major-root" \
+  "$TEST_ROOT/wrong-major-result" \
+  "$WRONG_MAJOR_SEED" \
+  2>"$TEST_ROOT/wrong-major-error"; then
+  printf 'expected an image seed with the wrong PostgreSQL major to be rejected\n' >&2
+  exit 1
+fi
+grep -Fq 'image seed is PostgreSQL 17; expected 18' "$TEST_ROOT/wrong-major-error"
 
 readonly UNSEEDED_ROOT="$TEST_ROOT/unseeded"
 mkdir -p "$UNSEEDED_ROOT/18/docker"

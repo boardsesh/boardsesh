@@ -315,6 +315,7 @@ COPY --from=builder --chown=postgres:postgres \
 COPY --from=builder /opt/boardsesh/dev-db-seed.complete /usr/local/share/boardsesh-dev-db/SEED_COMPLETE
 
 COPY packages/db/docker/dev-db-entrypoint.sh /usr/local/bin/boardsesh-dev-db-entrypoint
+RUN chmod +x /usr/local/bin/boardsesh-dev-db-entrypoint
 
 LABEL org.boardsesh.postgresql.version="18.4" \
       org.boardsesh.postgis.version="3.6.4" \

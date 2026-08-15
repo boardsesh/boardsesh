@@ -55,6 +55,8 @@ Environment:
   FENCED_WRITER_ROLES              Space-separated app/sync/migrator role names. Every
                                     role must be NOLOGIN with zero active sessions before
                                     sync-sequences will proceed.
+  TEARDOWN_CONFIRMED               Must be true for teardown. Set only after the 72-hour
+                                    acceptance window and successful PG18 restore drill.
 
 Commands:
   setup
@@ -71,7 +73,8 @@ Commands:
     never-called state. Run only after every source writer is fenced.
 
   teardown
-    Drops the Railway subscription and Neon publication after cutover.
+    Drops the Railway subscription and Neon publication after the guarded
+    post-cutover acceptance window.
 USAGE
 }
 
@@ -187,7 +190,10 @@ publication_table_manifest() {
 SELECT format('%I.%I', n.nspname, c.relname)
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE c.relkind IN ('r', 'p')
+-- With publish_via_partition_root=false, PostgreSQL registers and synchronizes
+-- leaf relations. A partitioned root belongs in CREATE PUBLICATION so future
+-- partitions are included, but it does not get a pg_subscription_rel row.
+WHERE c.relkind = 'r'
   AND c.relpersistence = 'p'
   AND n.nspname NOT IN ('pg_catalog', 'information_schema')
   AND n.nspname NOT LIKE 'pg_toast%'
@@ -338,24 +344,22 @@ WHERE subscription.subname = '${SUBSCRIPTION_NAME}'
     fail "subscription $SUBSCRIPTION_NAME does not match the required owner/publication/slot/enabled/binary/origin/run_as_owner/password/failover contract"
 
   local source_manifest target_manifest
-  source_manifest="$(mktemp "${TMPDIR:-/tmp}/boardsesh-source-subscription-tables.XXXXXX")"
-  target_manifest="$(mktemp "${TMPDIR:-/tmp}/boardsesh-target-subscription-tables.XXXXXX")"
-  publication_table_manifest >"$source_manifest"
-  psql_railway -X -Atq -c "
+  source_manifest="$(publication_table_manifest)"
+  target_manifest="$(psql_railway -X -Atq -c "
 SELECT format('%I.%I', namespace.nspname, relation.relname)
 FROM pg_subscription_rel AS subscription_relation
 JOIN pg_subscription AS subscription ON subscription.oid = subscription_relation.srsubid
 JOIN pg_class AS relation ON relation.oid = subscription_relation.srrelid
 JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
 WHERE subscription.subname = '${SUBSCRIPTION_NAME}'
-ORDER BY 1;" >"$target_manifest"
+ORDER BY 1;")"
 
-  if ! cmp -s "$source_manifest" "$target_manifest"; then
-    diff -u "$source_manifest" "$target_manifest" >&2 || true
-    rm -f "$source_manifest" "$target_manifest"
+  if [[ "$source_manifest" != "$target_manifest" ]]; then
+    diff -u \
+      <(printf '%s\n' "$source_manifest") \
+      <(printf '%s\n' "$target_manifest") >&2 || true
     fail "subscription table coverage differs from the source manifest; REFRESH PUBLICATION WITH (copy_data=true), re-audit, or restart the rehearsal"
   fi
-  rm -f "$source_manifest" "$target_manifest"
 }
 
 publication_table_list() {
@@ -472,12 +476,13 @@ SQL
   fi
 
   if [[ "$LOAD_SCHEMA" == "true" ]]; then
-    local dump_file restore_list filtered_restore_list schema
+    local dump_file restore_list filtered_restore_list restore_stderr schema
     local -a schema_dump_args=()
     dump_file="$(mktemp "${TMPDIR:-/tmp}/boardsesh-schema.XXXXXX")"
     restore_list="$(mktemp "${TMPDIR:-/tmp}/boardsesh-schema-list.XXXXXX")"
     filtered_restore_list="$(mktemp "${TMPDIR:-/tmp}/boardsesh-schema-filtered.XXXXXX")"
-    trap 'rm -f "${dump_file:-}" "${restore_list:-}" "${filtered_restore_list:-}"' EXIT
+    restore_stderr="$(mktemp "${TMPDIR:-/tmp}/boardsesh-schema-restore-stderr.XXXXXX")"
+    trap 'rm -f "${dump_file:-}" "${restore_list:-}" "${filtered_restore_list:-}" "${restore_stderr:-}"' EXIT
 
     for schema in $INCLUDE_SCHEMAS; do
       require_identifier INCLUDE_SCHEMAS "$schema"
@@ -502,10 +507,17 @@ SQL
     done
 
     echo "Restoring schema to Railway..."
-    pg_restore --schema-only --no-owner --no-acl --role "$TARGET_OWNER_ROLE" \
-      --use-list "$filtered_restore_list" \
-      --dbname "$RAILWAY_DATABASE_URL" "$dump_file"
-    rm -f "$dump_file" "$restore_list" "$filtered_restore_list"
+    if ! pg_restore --exit-on-error --schema-only --no-owner --no-acl \
+      --role "$TARGET_OWNER_ROLE" --use-list "$filtered_restore_list" \
+      --dbname "$RAILWAY_DATABASE_URL" "$dump_file" 2>"$restore_stderr"; then
+      cat "$restore_stderr" >&2
+      fail "schema restore failed; the target must be recreated or reconciled before retrying"
+    fi
+    if [[ -s "$restore_stderr" ]]; then
+      cat "$restore_stderr" >&2
+      fail "schema restore reported diagnostics; treat every restore warning as a failed migration gate"
+    fi
+    rm -f "$dump_file" "$restore_list" "$filtered_restore_list" "$restore_stderr"
     trap - EXIT
   else
     echo "Skipping schema load because LOAD_SCHEMA=false."
@@ -684,6 +696,8 @@ WHERE subname = '${SUBSCRIPTION_NAME}'
     -v included_schemas="$included_schemas" \
     -v excluded_schemas="$excluded_schemas" \
     --file "$SCRIPT_DIR/postgres-owned-sequence-setvals.sql" >"$sql_file"
+  [[ -s "$sql_file" ]] ||
+    fail "no owned-sequence state was generated; keep writers fenced and verify INCLUDE_SCHEMAS coverage"
 
   echo "Applying sequence values to Railway in one transaction..."
   psql_railway -X --single-transaction --file "$sql_file"
@@ -701,6 +715,8 @@ WHERE subname = '${SUBSCRIPTION_NAME}'
 }
 
 teardown_replication() {
+  [[ "${TEARDOWN_CONFIRMED:-false}" == "true" ]] ||
+    fail "teardown requires TEARDOWN_CONFIRMED=true after the 72-hour acceptance window and a successful PG18 restore drill"
   check_common_requirements
 
   echo "Dropping Railway subscription if present..."

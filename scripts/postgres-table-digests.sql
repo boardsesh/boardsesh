@@ -11,7 +11,9 @@
 \set excluded_schemas 'neon_auth,neon_control_plane'
 \endif
 
--- Generate and execute one full-table read per explicitly covered table. The
+-- Generate and execute one full-table read per explicitly covered logical
+-- table. Query top-level partitioned parents so their leaf rows are covered
+-- exactly once; query ordinary tables only when they are not partitions. The
 -- digest is order-independent so physical row order may differ on a logical
 -- subscriber. It is an operational drift detector, not a cryptographic proof.
 SELECT pg_catalog.format(
@@ -29,7 +31,8 @@ $generated_query$,
 )
 FROM pg_catalog.pg_class AS relation
 JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
-WHERE relation.relkind = 'r'
+WHERE relation.relkind IN ('r', 'p')
+  AND NOT relation.relispartition
   AND relation.relpersistence = 'p'
   AND namespace.nspname = ANY (pg_catalog.string_to_array(:'included_schemas', ','))
   AND NOT namespace.nspname = ANY (pg_catalog.string_to_array(:'excluded_schemas', ','))

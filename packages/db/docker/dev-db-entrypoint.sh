@@ -62,9 +62,14 @@ prepare_pgdata() {
   mkdir -p "$PGDATA"
   cp -a "$SEED_PGDATA"/. "$PGDATA"/
   if [[ "$(id -u)" == '0' ]]; then
-    chown postgres:postgres "$PGDATA"
+    # The image seed is postgres-owned, but rootless/overlay copy semantics can
+    # change ownership below PGDATA. This recursive repair happens only on the
+    # first seed copy, never on normal restarts.
+    chown -R postgres:postgres "$PGDATA"
+    install -o postgres -g postgres -m 0600 /dev/null "$RUNTIME_READY_MARKER"
+  else
+    touch "$RUNTIME_READY_MARKER"
   fi
-  touch "$RUNTIME_READY_MARKER"
 }
 
 prepare_pgdata
