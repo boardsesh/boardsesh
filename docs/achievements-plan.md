@@ -29,7 +29,8 @@ Concretely, achievements should:
 
 **Non-goals:**
 
-- A point/XP economy or leaderboard. We don't want to optimize for whales or invite cheating via fake ticks.
+- A point/XP economy. Achievements are categorical, not numeric.
+  > **Superseded 2026-08-15 — the leaderboard half of this non-goal was reversed by the product owner.** Ranked surfaces are being built ("Standings", mobile only). The worry that motivated the non-goal stands and shaped that design: ranking is on **distinct climbs in a rolling 30 days** rather than raw volume, there is **no all-time board at any scope**, a per-day cap sits at the measured p99, and grade never sorts — so there is little for a whale to accumulate and little a fake tick buys. Achievements themselves stay categorical. See §9.7, whose stated trigger condition has now fired.
 - Aurora-style "training plan" prescriptions. Achievements describe what happened, they don't dictate what to do.
 - Anything that requires synchronous heavy computation on the hot path. Achievement evaluation must never block tick save.
 
@@ -662,13 +663,17 @@ The mirror evaluators are cheap to add (small cohort, narrow query surface) and 
 5. **HealthKit hand-off.** Sessions already optionally write to HealthKit (`healthKitWorkoutId`). Should achievements get a HealthKit metadata field too, or stay app-internal? Suggest app-internal until there's user demand.
 6. **Cross-board grade scaling.** A "First V8 on Tension" should probably count differently from a "First V8 on Kilter" because the grading scales differ. Variant = `V8:kilter` keeps them separate by construction; if we want a unified "Hardest V-grade" achievement we'd need a board-grade calibration table. Out of scope for v1.
 7. **Anti-cheating.** Anyone can write a tick. Do we need rate limits, "achievement granted but unverified" badges, or anything? For v1, no — the social cost of fake sends in a friend graph is enough deterrent. Revisit if leaderboards ever exist.
+   > **Resolved 2026-08-15.** Leaderboards now exist, so this fired. The owner's call is that the community keeps the system honest rather than a technical regime — no verification badges, no tick auditing. What did ship is plain input validation, which was missing: `climbedAt` on the **create** path had no future-date guard (only the edit path did), `difficulty` was an unbounded int on both paths, and `saveTick` had no rate limit at all. See `docs/db-migrations.md` for the `boardsesh_ticks_difficulty_range` check and the `users.is_internal` / `user_boards.is_virtual` flags that keep bots and system pseudo-boards off ranked surfaces.
+   >
+   > One caveat worth recording: social deterrence assumes a friend graph, and this one is nearly empty — 236 users (4.8%) follow anyone, and only 59 follow two or more recently-active climbers. A _global_ board therefore has no social cost by construction. That is a known accepted risk, not an oversight.
 
 ---
 
 ## 10. What we're explicitly not doing
 
 - **Points / XP / levels.** No "Climber Level 27." Achievements are categorical, not numeric.
-- **Global leaderboards.** Closest thing is the existing follower feed; we won't add ranking screens.
+- ~~**Global leaderboards.** Closest thing is the existing follower feed; we won't add ranking screens.~~
+  > **Reversed 2026-08-15** by the product owner. Ranking screens ship as "Standings" in the mobile app. This document still governs _achievements_, which stay categorical and separate from any ranking. See the note under §2 Non-goals.
 - **Daily-streak push notifications.** See §2 principle 2 — bad climbing advice.
 - **Per-user custom goals as achievements.** Goals already exist on `board_sessions.goal`. Merging them with the achievements system muddles "I described what I wanted" with "the system noticed something happened."
 - **Aurora-synced achievement state.** Achievements are a Boardsesh primitive; we don't push them back to Aurora.

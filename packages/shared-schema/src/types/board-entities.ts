@@ -50,10 +50,15 @@ export type UserBoardConnection = {
 };
 
 export type BoardLeaderboardEntry = {
+  /** An opaque stable pseudonym (`anon:...`), not a real user id, when `isAnonymous`. */
   userId: string;
-  userDisplayName?: string;
-  userAvatarUrl?: string;
+  userDisplayName?: string | null;
+  userAvatarUrl?: string | null;
+  /** Counted but not named on this surface. Render an unnamed climber; do not hide the row. */
+  isAnonymous: boolean;
+  /** RANK(): tied climbers share a rank and the next rank skips. Neither dense nor unique. */
   rank: number;
+  /** DISTINCT climbs topped in the period, not a count of tick rows. */
   totalSends: number;
   totalFlashes: number;
   hardestGrade?: number | null;
@@ -129,11 +134,16 @@ export type UpdateBoardInput = {
   allowDuplicateConfig?: boolean;
 };
 
+/** Which consent column governs naming. Gym-operated screens must pass `gymScreen`. */
+export type BoardLeaderboardSurface = 'app' | 'gymScreen';
+
 export type BoardLeaderboardInput = {
   boardUuid: string;
   period?: string;
   limit?: number;
   offset?: number;
+  /** Defaults to `app` server-side, so forgetting it under-publishes rather than over-publishes. */
+  surface?: BoardLeaderboardSurface;
 };
 
 export type MyBoardsInput = {

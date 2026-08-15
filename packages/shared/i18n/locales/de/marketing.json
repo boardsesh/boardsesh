@@ -372,6 +372,11 @@
       "body2Start": "Boardsesh ist Open Source. Im Quellcode auf ",
       "body2Link": "GitHub",
       "body2End": " siehst du genau, welche Daten die App erhebt und wie sie verarbeitet werden."
+    },
+    "standings": {
+      "title": "Ranglisten und öffentliche Platzierungen",
+      "body": "Wenn du eine Begehung einträgst, zählt sie für Ranglisten — Platzierungen von Kletternden an einem Board, in einer Halle oder über ganz Boardsesh. Standardmäßig erscheinen dort dein Name, dein Foto und die Zahl deiner Begehungen, und andere können dein Profil öffnen. Ranglisten auf dem Wandbildschirm einer Halle funktionieren genauso.",
+      "control": "Du entscheidest. In der App unter Mehr → Rangliste kannst du benannt werden, gezählt werden ohne benannt zu sein, oder ganz aus Ranglisten herausbleiben — und du kannst das für die App und für Hallen-Bildschirme getrennt beantworten. Ranglisten zu verlassen löscht nichts aus deinem Logbuch."
     }
   }
 }

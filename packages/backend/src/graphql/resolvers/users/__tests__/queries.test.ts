@@ -93,7 +93,37 @@ describe('userQueries.profile', () => {
       isTester: false,
       createdAt: '2024-01-01T00:00:00.000Z',
       favoriteCount: 7,
+      // The mocked row carries no user_profiles columns at all, which is what
+      // the LEFT JOIN yields for a climber with no profile row. Both consent
+      // fields must fall back to the column default rather than surfacing null:
+      // a null reads as "no opinion" downstream and could drop a climber from
+      // rankings they never opted out of.
+      leaderboardVisibility: 'public',
+      gymScreenVisibility: 'public',
     });
+  });
+
+  it('passes stored visibility choices through instead of always reporting the default', async () => {
+    limitMock.mockReturnValue([
+      {
+        id: 'user-3',
+        email: 'private@example.com',
+        name: 'Quiet Climber',
+        image: null,
+        createdAt: new Date('2025-02-02T00:00:00.000Z'),
+        displayName: null,
+        avatarUrl: null,
+        favoriteCount: 0,
+        leaderboardVisibility: 'off',
+        gymScreenVisibility: 'anonymous',
+      },
+    ]);
+
+    const result = await userQueries.profile(undefined, undefined, makeCtx({ userId: 'user-3' }));
+
+    // The two settings are independent — reading one must not coerce the other.
+    expect(result?.leaderboardVisibility).toBe('off');
+    expect(result?.gymScreenVisibility).toBe('anonymous');
   });
 
   it('reflects isTester from userIsTester and a zero favoriteCount', async () => {

@@ -28,7 +28,11 @@ vi.mock('../graphql/resolvers/beta-videos/queries', () => betaMocks);
 
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { UpdateTickInputSchema, readTimestampFractionalSeconds } from '../validation/schemas/ticks';
+import {
+  SaveTickInputSchema,
+  UpdateTickInputSchema,
+  readTimestampFractionalSeconds,
+} from '../validation/schemas/ticks';
 import { tickMutations } from '../graphql/resolvers/ticks/mutations';
 
 const TEST_USER_ID = 'tick-validation-test-user';
@@ -186,6 +190,60 @@ describe('UpdateTickInputSchema', () => {
         angle: 27.5,
       }),
     ).toThrow();
+  });
+
+  it('bounds difficulty to the 1-39 grade scale', () => {
+    expect(() => UpdateTickInputSchema.parse({ difficulty: 2147483647 })).toThrowError(/Difficulty must be at most 39/);
+    expect(() => UpdateTickInputSchema.parse({ difficulty: 0 })).toThrowError(/Difficulty must be at least 1/);
+    expect(() => UpdateTickInputSchema.parse({ difficulty: 39 })).not.toThrow();
+    expect(() => UpdateTickInputSchema.parse({ difficulty: null })).not.toThrow();
+  });
+});
+
+/**
+ * The create path had neither guard, and both matter specifically because a
+ * ranked surface reads them: an unbounded difficulty owns MAX(difficulty)
+ * permanently, and a far-future climbed_at sits inside every rolling window
+ * forever. The update path already had the date refine; creates did not.
+ */
+describe('SaveTickInputSchema', () => {
+  const validSaveTick = {
+    boardType: 'kilter',
+    climbUuid: '11111111-1111-1111-1111-111111111111',
+    angle: 40,
+    isMirror: false,
+    status: 'send' as const,
+    attemptCount: 1,
+    isBenchmark: false,
+    comment: '',
+    climbedAt: new Date(Date.now() - 60_000).toISOString(),
+  };
+
+  it('accepts an ordinary recent send', () => {
+    expect(() => SaveTickInputSchema.parse(validSaveTick)).not.toThrow();
+  });
+
+  it('rejects a climbed-at in the future, which the update path already rejected', () => {
+    const nextYear = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+    expect(() => SaveTickInputSchema.parse({ ...validSaveTick, climbedAt: nextYear })).toThrowError(
+      /Climbed at cannot be in the future/,
+    );
+  });
+
+  it('still tolerates small clock skew, matching the update path tolerance', () => {
+    const slightlyAhead = new Date(Date.now() + 30_000).toISOString();
+    expect(() => SaveTickInputSchema.parse({ ...validSaveTick, climbedAt: slightlyAhead })).not.toThrow();
+  });
+
+  it('bounds difficulty to the 1-39 grade scale', () => {
+    expect(() => SaveTickInputSchema.parse({ ...validSaveTick, difficulty: 2147483647 })).toThrowError(
+      /Difficulty must be at most 39/,
+    );
+    expect(() => SaveTickInputSchema.parse({ ...validSaveTick, difficulty: 0 })).toThrowError(
+      /Difficulty must be at least 1/,
+    );
+    expect(() => SaveTickInputSchema.parse({ ...validSaveTick, difficulty: 22 })).not.toThrow();
+    expect(() => SaveTickInputSchema.parse({ ...validSaveTick, difficulty: null })).not.toThrow();
   });
 });
 

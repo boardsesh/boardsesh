@@ -95,6 +95,14 @@ export const BoardLeaderboardInputSchema = z.object({
   period: z.enum(['day', 'week', 'month', 'year', 'all']).optional().default('all'),
   limit: z.number().int().min(1).max(100).optional().default(50),
   offset: z.number().int().min(0).optional().default(0),
+  // Which consent column decides whether a climber is named. The app's own
+  // surfaces read `user_profiles.leaderboard_visibility`; gym-operated screens
+  // (the kiosk rail, wall displays) read `gym_screen_visibility`. They are
+  // deliberately independent — a climber happy to be named on a screen inside
+  // the gym they are standing in may still not want to be named in an app a
+  // stranger can open. Defaults to `app`, so a caller that forgets to pass it
+  // cannot publish someone under a consent they only gave for the gym screen.
+  surface: z.enum(['app', 'gymScreen']).optional().default('app'),
 });
 
 /**

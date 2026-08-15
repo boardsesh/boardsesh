@@ -372,6 +372,11 @@
       "body2Start": "Boardsesh est open source. Vous pouvez voir exactement quelles données l'app collecte et comment elles sont traitées en lisant le code source sur ",
       "body2Link": "GitHub",
       "body2End": "."
+    },
+    "standings": {
+      "title": "Classements et rankings publics",
+      "body": "Quand tu enregistres une croix, elle compte pour les classements : les rankings de grimpeurs sur un panneau, dans une salle ou sur tout Boardsesh. Par défaut, ton nom, ta photo et ton nombre de blocs y apparaissent, et les autres grimpeurs peuvent ouvrir ton profil. Les classements sur l’écran mural d’une salle fonctionnent pareil.",
+      "control": "Tu gardes la main. Dans l’app, sous Plus → Classements, tu peux être nommé, être compté sans être nommé, ou rester hors des classements — et tu peux y répondre séparément pour l’app et pour les écrans de salle. Quitter les classements n’efface rien de ton carnet."
     }
   }
 }

@@ -1401,6 +1401,13 @@
       "when": 1786760972161,
       "tag": "0199_windy_fenris",
       "breakpoints": true
+    },
+    {
+      "idx": 200,
+      "version": "7",
+      "when": 1786777994522,
+      "tag": "0200_standings_visibility_and_tick_bounds",
+      "breakpoints": true
     }
   ]
 }

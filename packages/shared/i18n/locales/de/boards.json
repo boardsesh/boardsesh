@@ -464,7 +464,8 @@
       "sends": "Begehungen",
       "flashes": "Flashes",
       "hardest": "Schwerste"
-    }
+    },
+    "anonymousClimber": "Ein*e Kletterer*in"
   },
   "boardConfigSelects": {
     "board": "Board",

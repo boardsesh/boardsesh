@@ -21,16 +21,36 @@ export const userTypeDefs = /* GraphQL */ `
     createdAt: String!
     "Total number of climbs favourited by this user, across all boards"
     favoriteCount: Int!
+    "How this climber appears on Boardsesh's own ranked surfaces."
+    leaderboardVisibility: BoardLeaderboardVisibility!
+    "How this climber appears on gym-operated screens (the kiosk rail, wall feeds). Held separately from leaderboardVisibility on purpose: being named on a screen inside the gym you are standing in is a different decision from being named in an app a stranger can open."
+    gymScreenVisibility: BoardLeaderboardVisibility!
   }
 
   """
-  Input for updating user profile.
+  How much of a climber is shown on a ranked surface.
+  """
+  enum BoardLeaderboardVisibility {
+    "Name, avatar and score, tappable through to the profile."
+    public
+    "Ranked and counted toward the field size, but shown as an unnamed climber."
+    anonymous
+    "No rank, no row, and not in the denominator. They can still read every list and still see their own numbers."
+    off
+  }
+
+  """
+  Input for updating user profile. Every field is optional; omitted fields are left unchanged.
   """
   input UpdateProfileInput {
     "New display name"
     displayName: String
     "New avatar URL"
     avatarUrl: String
+    "How this climber appears on Boardsesh's own ranked surfaces"
+    leaderboardVisibility: BoardLeaderboardVisibility
+    "How this climber appears on gym-operated screens"
+    gymScreenVisibility: BoardLeaderboardVisibility
   }
 
   """

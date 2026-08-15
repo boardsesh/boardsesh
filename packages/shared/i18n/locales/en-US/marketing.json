@@ -372,6 +372,11 @@
       "body2Start": "Boardsesh is open source. You can see exactly what data the app collects and how it is processed by reading the source code on ",
       "body2Link": "GitHub",
       "body2End": "."
+    },
+    "standings": {
+      "title": "Standings and public rankings",
+      "body": "When you log a send, it counts toward standings — rankings of climbers on a board, at a gym, or across Boardsesh as a whole. By default your display name, your photo and your number of climbs appear there, and other climbers can tap through to your profile. Standings on a gym’s wall display work the same way.",
+      "control": "You control this. In the app, under More → Standings, you can be named, be counted without being named, or be left out of rankings entirely — and you can answer that separately for the app and for gym screens. Leaving rankings does not delete anything from your logbook."
     }
   }
 }

@@ -39,6 +39,12 @@ export const userBoards = pgTable(
     isUnlisted: boolean('is_unlisted').default(false).notNull(),
     hideLocation: boolean('hide_location').default(false).notNull(),
     isOwned: boolean('is_owned').default(true).notNull(),
+    // System-owned catch-all rows ("<X> Board Shared Feed") that collect ticks
+    // for a board config nobody has claimed a physical wall for. They are not
+    // walls and must never appear in a ranking — 39 of them absorb ~7,780 ticks
+    // and would otherwise hold the top slots by climber count, ahead of every
+    // real board (the largest of which has 17 climbers in 30 days).
+    isVirtual: boolean('is_virtual').default(false).notNull(),
     angle: bigint('angle', { mode: 'number' }).notNull().default(40),
     isAngleAdjustable: boolean('is_angle_adjustable').notNull().default(true),
     createdAt: timestamp('created_at').defaultNow().notNull(),

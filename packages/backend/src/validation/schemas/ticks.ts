@@ -5,6 +5,35 @@ import { ExternalUUIDSchema, BoardNameSchema, UUIDSchema } from './primitives';
 const CLIMBED_AT_FUTURE_TOLERANCE_MS = 60_000;
 
 /**
+ * Bounds of the shared difficulty scale every board type grades on
+ * (`board_difficulty_grades`): 1..39, where 10 = 4a/V0, 22 = 7a/V6 and
+ * 33 = 8c+/V16. `difficulty` on a tick is the climber's own grade opinion.
+ *
+ * It used to be an unbounded `z.number().int()` on both the create and the
+ * update path, so one row could carry INT_MAX and permanently own any surface
+ * reading MAX(difficulty). Mirrored by the `boardsesh_ticks_difficulty_range`
+ * DB check so the bound holds for writers that don't go through this schema.
+ */
+const TICK_DIFFICULTY_MIN = 1;
+const TICK_DIFFICULTY_MAX = 39;
+
+const TickDifficultySchema = z
+  .number()
+  .int()
+  .min(TICK_DIFFICULTY_MIN, `Difficulty must be at least ${TICK_DIFFICULTY_MIN}`)
+  .max(TICK_DIFFICULTY_MAX, `Difficulty must be at most ${TICK_DIFFICULTY_MAX}`)
+  .optional()
+  .nullable();
+
+/**
+ * A climb can't have been sent in the future. Applied to creates as well as
+ * updates: a rolling-window ranking treats a far-future `climbed_at` as
+ * permanently inside every window, so a create-path hole is not cosmetic.
+ */
+const isNotFutureClimbedAt = (value: string) =>
+  new Date(value).getTime() <= Date.now() + CLIMBED_AT_FUTURE_TOLERANCE_MS;
+
+/**
  * Fractional seconds of a client timestamp, capture group 1.
  *
  * The trailing zone alternatives cover every shape `new Date()` accepts
@@ -45,13 +74,14 @@ export const SaveTickInputSchema = z
     status: TickStatusSchema,
     attemptCount: z.number().int().min(1).max(999),
     quality: z.number().int().min(1).max(5).optional().nullable(),
-    difficulty: z.number().int().optional().nullable(),
+    difficulty: TickDifficultySchema,
     isBenchmark: z.boolean(),
     comment: z.string().max(2000),
     climbedAt: z
       .string()
       .refine((value) => !Number.isNaN(new Date(value).getTime()), 'Climbed at must be a valid date')
-      .refine(hasSupportedPostgresTimestampPrecision, 'Climbed at supports at most six fractional-second digits'),
+      .refine(hasSupportedPostgresTimestampPrecision, 'Climbed at supports at most six fractional-second digits')
+      .refine(isNotFutureClimbedAt, 'Climbed at cannot be in the future'),
     sessionId: z.string().optional(),
     layoutId: z.number().int().positive().optional(),
     sizeId: z.number().int().positive().optional(),
@@ -170,17 +200,14 @@ export const UpdateTickInputSchema = z
     status: z.enum(['flash', 'send', 'attempt']).optional(),
     attemptCount: z.number().int().min(1).max(999).optional(),
     quality: z.number().int().min(1).max(5).optional().nullable(),
-    difficulty: z.number().int().optional().nullable(),
+    difficulty: TickDifficultySchema,
     isBenchmark: z.boolean().optional(),
     comment: z.string().max(2000).optional(),
     climbedAt: z
       .string()
       .refine((value) => !Number.isNaN(new Date(value).getTime()), 'Climbed at must be a valid date')
       .refine(hasSupportedPostgresTimestampPrecision, 'Climbed at supports at most six fractional-second digits')
-      .refine(
-        (value) => new Date(value).getTime() <= Date.now() + CLIMBED_AT_FUTURE_TOLERANCE_MS,
-        'Climbed at cannot be in the future',
-      )
+      .refine(isNotFutureClimbedAt, 'Climbed at cannot be in the future')
       .optional(),
     angle: z.number().int().min(0).max(90).optional(),
   })

@@ -144,6 +144,10 @@ export async function lockCanonicalTickBoardId(
   return null;
 }
 
+// Ceiling on tick writes per user per minute. See the note at the saveTick
+// call site for how this number was chosen and why a burst drain survives it.
+const SAVE_TICK_RATE_LIMIT_PER_MINUTE = 120;
+
 // Beta links are only attached on successful ascents (flash / send), never
 // on `attempt`. Returns the URL to attach, or null if the tick shouldn't
 // carry one. Typed against the shared TickStatus enum so adding a new
@@ -746,6 +750,18 @@ export const tickMutations = {
    */
   saveTick: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<unknown> => {
     requireAuthenticated(ctx);
+
+    // The tick write path had no limit at all beyond Yoga's depth/cost caps.
+    // 120/min is deliberately far above any human session — the 99th percentile
+    // climber logs 25 climbs in a *day* — and above a burst drain of the offline
+    // outbox, which replays a whole session's queued sends on reconnect. It only
+    // bites a script. A tripped limit returns RATE_LIMITED with `status: 429`,
+    // which the drainer classifies as retryable and backs off on, so a legitimate
+    // burst waits rather than dead-lettering.
+    //
+    // Bulk logbook ingestion does NOT come through here — it has its own handler
+    // (handlers/aurora-import.ts), so this does not throttle an import.
+    await applyRateLimit(ctx, SAVE_TICK_RATE_LIMIT_PER_MINUTE, 'saveTick');
 
     // Validate input with business rules
     const validatedInput = validateInput(SaveTickInputSchema, input, 'input');

@@ -6,7 +6,7 @@ import { normaliseSetIds } from '@boardsesh/board-config';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
+import { requireAuthenticated, applyRateLimit, validateInput, anonymousClimberId } from '../shared/helpers';
 import { consensusDifficultyExpr } from '../shared/sql-expressions';
 import {
   CreateBoardInputSchema,
@@ -1435,6 +1435,7 @@ export const socialBoardQueries = {
     await applyRateLimit(ctx, 60, 'boardLeaderboard');
     const validatedInput = validateInput(BoardLeaderboardInputSchema, input, 'input');
     const { boardUuid, period } = validatedInput;
+    const surface = validatedInput.surface ?? 'app';
     const limit = validatedInput.limit ?? 20;
     const offset = validatedInput.offset ?? 0;
 
@@ -1474,9 +1475,23 @@ export const socialBoardQueries = {
       periodLabel = 'This Year';
     }
 
+    // Which consent column governs this render. `user_profiles` is LEFT JOINed
+    // (a climber can have no profile row at all), so the column can come back
+    // NULL even though it is NOT NULL in the table — COALESCE to the 'public'
+    // default rather than letting NULL fall through every comparison as unknown.
+    const visibilityColumn =
+      surface === 'gymScreen' ? dbSchema.userProfiles.gymScreenVisibility : dbSchema.userProfiles.leaderboardVisibility;
+    const effectiveVisibility = sql`COALESCE(${visibilityColumn}::text, 'public')`;
+
     const conditions = [
       eq(dbSchema.boardseshTicks.boardId, board.id),
       or(eq(dbSchema.boardseshTicks.status, 'flash'), eq(dbSchema.boardseshTicks.status, 'send'))!,
+      // Opted out entirely: no row AND no place in the denominator. Filtered
+      // here rather than dropped from the result page, so hiding someone does
+      // not silently shift everyone below them up a rank.
+      sql`${effectiveVisibility} <> 'off'`,
+      // Test, demo and system accounts never rank.
+      eq(dbSchema.users.isInternal, false),
     ];
 
     if (timeFilter) {
@@ -1485,10 +1500,15 @@ export const socialBoardQueries = {
 
     const whereClause = and(...conditions);
 
-    // Get total distinct users
+    // Both this count and the entries query below join users/user_profiles, so
+    // the visibility and internal-account filters apply identically to the
+    // denominator and to the page. A filter on only one of them would render
+    // "88th of 645" against a 640-row list.
     const [countResult] = await db
       .select({ count: sql<number>`COUNT(DISTINCT ${dbSchema.boardseshTicks.userId})` })
       .from(dbSchema.boardseshTicks)
+      .innerJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.boardseshTicks.userId))
+      .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, dbSchema.users.id))
       .where(whereClause);
 
     const totalCount = Number(countResult?.count || 0);
@@ -1497,17 +1517,36 @@ export const socialBoardQueries = {
     // consensus grade when the user didn't attach a personal override (NULL
     // difficulty means "use consensus" — see docs/ascents-and-attempts.md).
     // board_climb_stats joined on its PK so the join doesn't multiply rows.
+    // `totalSends` counts DISTINCT climbs, not tick rows. Logging the same climb
+    // five times in a session is five rows but one climb sent, and a row count
+    // made re-logging the cheapest way up the ranking (there are 41,598 excess
+    // same-day repeat rows in production).
+    const distinctClimbsExpr = sql<number>`COUNT(DISTINCT ${dbSchema.boardseshTicks.climbUuid})`;
+
+    // Window functions are evaluated after GROUP BY, so RANK() here ranks over
+    // every grouped climber for this board and the LIMIT/OFFSET below then pages
+    // that ranking — the rank is absolute, not page-relative like the previous
+    // `offset + idx + 1`, which also gave tied climbers different ranks purely
+    // from row order and let them swap places between refetches.
     const entries = await db
       .select({
         userId: dbSchema.boardseshTicks.userId,
-        totalSends: count(),
-        totalFlashes: sql<number>`SUM(CASE WHEN ${dbSchema.boardseshTicks.status} = 'flash' THEN 1 ELSE 0 END)`,
+        totalSends: distinctClimbsExpr,
+        totalFlashes: sql<number>`COUNT(DISTINCT CASE WHEN ${dbSchema.boardseshTicks.status} = 'flash' THEN ${dbSchema.boardseshTicks.climbUuid} END)`,
         hardestGrade: sql<
           number | null
         >`MAX(COALESCE(${dbSchema.boardseshTicks.difficulty}, ${consensusDifficultyExpr}))`,
         totalSessions: sql<number>`COUNT(DISTINCT DATE(${dbSchema.boardseshTicks.climbedAt}))`,
+        rank: sql<number>`RANK() OVER (ORDER BY ${distinctClimbsExpr} DESC)`,
+        isAnonymous: sql<boolean>`${effectiveVisibility} = 'anonymous'`,
+        name: dbSchema.users.name,
+        image: dbSchema.users.image,
+        displayName: dbSchema.userProfiles.displayName,
+        avatarUrl: dbSchema.userProfiles.avatarUrl,
       })
       .from(dbSchema.boardseshTicks)
+      .innerJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.boardseshTicks.userId))
+      .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, dbSchema.users.id))
       .leftJoin(
         dbSchema.boardClimbStats,
         and(
@@ -1517,43 +1556,38 @@ export const socialBoardQueries = {
         ),
       )
       .where(whereClause)
-      .groupBy(dbSchema.boardseshTicks.userId)
-      .orderBy(sql`COUNT(*) DESC`)
+      // Display columns join 1:1 on the user, so grouping by them alongside the
+      // user id cannot split a climber across rows — it just satisfies Postgres,
+      // which won't infer functional dependency from a non-PK grouping column.
+      .groupBy(
+        dbSchema.boardseshTicks.userId,
+        dbSchema.users.name,
+        dbSchema.users.image,
+        dbSchema.userProfiles.displayName,
+        dbSchema.userProfiles.avatarUrl,
+        visibilityColumn,
+      )
+      // Deterministic in-tie order. Arbitrary, but stable across refetches, so
+      // tied rows can't shuffle under the reader between polls.
+      .orderBy(sql`${distinctClimbsExpr} DESC, ${dbSchema.boardseshTicks.userId} ASC`)
       .limit(limit)
       .offset(offset);
 
-    // Batch fetch user profiles
-    const userIds = entries.map((e) => e.userId);
-    const userMap = new Map<string, { displayName?: string; avatarUrl?: string }>();
-
-    if (userIds.length > 0) {
-      const users = await db
-        .select({
-          id: dbSchema.users.id,
-          name: dbSchema.users.name,
-          image: dbSchema.users.image,
-          displayName: dbSchema.userProfiles.displayName,
-          avatarUrl: dbSchema.userProfiles.avatarUrl,
-        })
-        .from(dbSchema.users)
-        .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
-        .where(inArray(dbSchema.users.id, userIds));
-
-      for (const u of users) {
-        userMap.set(u.id, {
-          displayName: u.displayName || u.name || undefined,
-          avatarUrl: u.avatarUrl || u.image || undefined,
-        });
-      }
-    }
-
-    const enrichedEntries = entries.map((entry, idx) => {
-      const userInfo = userMap.get(entry.userId);
+    const enrichedEntries = entries.map((entry) => {
+      const isAnonymous = Boolean(entry.isAnonymous);
       return {
-        userId: entry.userId,
-        userDisplayName: userInfo?.displayName,
-        userAvatarUrl: userInfo?.avatarUrl,
-        rank: offset + idx + 1,
+        // A real user id resolves to a profile, so handing one out beside
+        // `isAnonymous: true` would leak the name the climber just withheld.
+        // The pseudonym is stable per climber, which keeps the kiosk's
+        // cross-board merge and client-side React keys working.
+        userId: isAnonymous ? anonymousClimberId(entry.userId) : entry.userId,
+        // An anonymous climber keeps their rank and their score but surrenders
+        // both identifying fields. Resolved server-side so a client cannot
+        // render a name it was never supposed to receive.
+        userDisplayName: isAnonymous ? null : entry.displayName || entry.name || undefined,
+        userAvatarUrl: isAnonymous ? null : entry.avatarUrl || entry.image || undefined,
+        isAnonymous,
+        rank: Number(entry.rank),
         totalSends: Number(entry.totalSends),
         totalFlashes: Number(entry.totalFlashes),
         hardestGrade: entry.hardestGrade ? Number(entry.hardestGrade) : null,
