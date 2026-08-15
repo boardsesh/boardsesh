@@ -14,6 +14,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Improved
 
+- Climb and board pages now stay up when the database is slow, and stop turning a bad moment into a "page not found". ([#4481](https://github.com/boardsesh/boardsesh/pull/4481))
+  MoonBoard board pages load from cache instead of running a fresh search every time.
+- These endpoints have had no in-repo caller since the GraphQL migration and nothing climber-visible changes. If the new counter shows real third-party traffic, W-25b writes the climber-voice note instead. ([#4489](https://github.com/boardsesh/boardsesh/pull/4489))
 - Your feed, your stats and your profile live in the app now. Share links you've already sent keep working — www still opens every session, join link and climb page. ([#4479](https://github.com/boardsesh/boardsesh/pull/4479))
 - Installing the browser app now works. Open `app.boardsesh.com` in Chrome or Safari and you'll get the "Add to Home Screen" prompt, launching straight into the app instead of a browser tab. ([#4480](https://github.com/boardsesh/boardsesh/pull/4480))
 - The website is now the fast front door — browse and share climbs there, and do your climbing in the app. ([#4467](https://github.com/boardsesh/boardsesh/pull/4467))

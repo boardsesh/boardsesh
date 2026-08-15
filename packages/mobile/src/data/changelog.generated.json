@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-08-15T10:44:34.177Z",
+  "generatedAt": "2026-08-15T21:05:31.076Z",
   "entries": [
+    {
+      "prNumber": 4481,
+      "category": "improved",
+      "title": "Climb and board pages now stay up when the database is slow, and stop turning a bad moment into a \"page not found\".",
+      "mergedAt": "2026-08-15T21:04:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4481",
+      "body": "MoonBoard board pages load from cache instead of running a fresh search every time."
+    },
+    {
+      "prNumber": 4489,
+      "category": "improved",
+      "title": "These endpoints have had no in-repo caller since the GraphQL migration and nothing climber-visible changes. If the new counter shows real third-party traffic, W-25b writes the climber-voice note instead.",
+      "mergedAt": "2026-08-15T21:03:50Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4489"
+    },
     {
       "prNumber": 4479,
       "category": "improved",
