@@ -6,23 +6,9 @@
   background: var(--semantic-background);
 }
 
-.header {
-  background: var(--semantic-surface);
-  padding: 0 16px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  box-shadow: var(--shadow-xs);
-}
-
-.headerTitle {
-  margin: 0;
-  flex: 1;
-}
-
 .content {
   padding: 24px;
-  max-width: 800px;
+  max-width: 720px;
   margin: 0 auto;
   width: 100%;
 }
@@ -34,19 +20,14 @@
 }
 
 .heroSection {
-  text-align: center;
-  margin-bottom: 24px;
-}
-
-.heroIcon {
-  font-size: 48px;
-  color: var(--color-primary);
-  margin-bottom: 16px;
+  margin-bottom: 32px;
 }
 
 .heroTitle {
   margin-top: 0;
   margin-bottom: 8px;
+  font-size: 32px;
+  line-height: 1.2;
 }
 
 .heroSubtitle {
@@ -54,8 +35,8 @@
 }
 
 @media (max-width: 576px) {
-  .heroIcon {
-    font-size: 36px;
+  .heroTitle {
+    font-size: 26px;
   }
 
   .heroSubtitle {
@@ -63,56 +44,44 @@
   }
 }
 
-.sectionIcon {
-  margin-right: 8px;
-  color: var(--color-primary);
+.section {
+  margin-bottom: 32px;
 }
 
-.mainCollapse {
-  background: transparent;
+.sectionTitle {
+  font-size: 20px;
+  line-height: 1.3;
+  margin: 0 0 8px;
 }
 
-.nestedCollapse {
-  background: var(--neutral-50);
+.sectionIntro {
+  margin: 0 0 12px;
 }
 
-.answerContent {
-  padding: 8px 0;
-}
-
-.answerContent ul,
-.answerContent ol {
+.list {
   padding-left: 20px;
-  margin-bottom: 16px;
+  margin: 0 0 12px;
 }
 
-.answerContent li {
+.list li {
   margin-bottom: 8px;
   line-height: 1.6;
 }
 
 @media (max-width: 576px) {
-  .answerContent ul,
-  .answerContent ol {
+  .list {
     padding-left: 16px;
   }
 
-  .answerContent li {
+  .list li {
     margin-bottom: 6px;
   }
 }
 
-.featureImage {
-  width: 100%;
-  max-width: 100%;
-  border-radius: 8px;
-  margin-bottom: 16px;
-  border: 1px solid var(--neutral-200);
+.sectionOutro {
+  margin: 0;
 }
 
-@media (max-width: 576px) {
-  .featureImage {
-    border-radius: 4px;
-    margin-bottom: 12px;
-  }
+.ctaRow {
+  margin-top: 4px;
 }

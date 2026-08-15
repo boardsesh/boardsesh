@@ -1,6 +1,74 @@
 {
-  "generatedAt": "2026-08-15T01:49:16.630Z",
+  "generatedAt": "2026-08-15T06:43:20.639Z",
   "entries": [
+    {
+      "prNumber": 4464,
+      "category": "new",
+      "title": "Boardsesh pages are easier to find from search — every board setup and public playlist now tells search engines where to look. Gym and setter pages are wired up and land next.",
+      "mergedAt": "2026-08-15T06:42:20Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4464"
+    },
+    {
+      "prNumber": 4467,
+      "category": "improved",
+      "title": "The website is now the fast front door — browse and share climbs there, and do your climbing in the app.",
+      "mergedAt": "2026-08-15T06:29:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4467"
+    },
+    {
+      "prNumber": 4471,
+      "category": "new",
+      "title": "Expo web now starts dark and uses the roomy tablet layout on desktop.",
+      "mergedAt": "2026-08-15T06:09:54Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4471",
+      "body": "Open a climb without losing the full action bar, queue, logbook, beta, community, or similar climbs."
+    },
+    {
+      "prNumber": 4469,
+      "category": "fixed",
+      "title": "Download several boards for offline use without getting stuck after the snapshot finishes.",
+      "mergedAt": "2026-08-15T05:37:55Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4469",
+      "body": "Pocketing your phone now resumes the download cleanly, and a slower fallback shows real progress instead of an interrupted spinner."
+    },
+    {
+      "prNumber": 4468,
+      "category": "fixed",
+      "title": "Similar climbs and offline board stats keep loading during busy sessions.",
+      "mergedAt": "2026-08-15T04:34:57Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4468"
+    },
+    {
+      "prNumber": 3422,
+      "category": "fixed",
+      "title": "Keep every climber's sends and sessions together when the same wall was registered more than once",
+      "mergedAt": "2026-08-15T04:21:37Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3422",
+      "body": "Saved walls now switch to the surviving board automatically after a merge\nWhen a wall is already on Boardsesh, join the existing board or deliberately create a separate one"
+    },
+    {
+      "prNumber": 4455,
+      "category": "fixed",
+      "title": "Grouped notifications open climbs with the correct board layout and angle, even across back-to-back releases.",
+      "mergedAt": "2026-08-15T04:05:44Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4455"
+    },
+    {
+      "prNumber": 4448,
+      "category": "improved",
+      "title": "Board pages slim down to the essentials — browsing and climbing live in the app now.",
+      "mergedAt": "2026-08-15T03:11:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4448",
+      "body": "Every old board link still works: liked climbs, logbooks and playlists send you to the right place, and creating or remixing a climb opens the app on the board you were already looking at.\nImporting MoonBoard screenshots moved to its own page — pick your board and drop the shots in."
+    },
+    {
+      "prNumber": 4058,
+      "category": "fixed",
+      "title": "Claiming a gym with your work email now auto-approves only when the gym's owner is the one who put that website on the listing. Anything else gets a quick human check first, so nobody can hand themselves the keys by editing the website field.",
+      "mergedAt": "2026-08-15T02:28:59Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4058",
+      "body": "Fixes #3431"
+    },
     {
       "prNumber": 4456,
       "category": "fixed",

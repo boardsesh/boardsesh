@@ -4,7 +4,8 @@ import { GraphQLClient } from 'graphql-request';
 import { getGraphQLHttpUrl } from '@/app/lib/graphql/client';
 import { GET_SESSION_DETAIL, type GetSessionDetailQueryResponse } from '@boardsesh/graphql/operations/activity-feed';
 import SessionDetailContent from './session-detail-content';
-import { buildVersionedOgImagePath, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
+import { buildVersionedOgImagePath } from '@/app/lib/seo/og';
+import { createNoIndexMetadata, createPageMetadata } from '@/app/lib/seo/metadata';
 import { getSessionOgSummary } from '@/app/lib/seo/dynamic-og-data';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
@@ -32,15 +33,21 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { sessionId: rawSessionId } = await params;
   const sessionId = decodeURIComponent(rawSessionId);
   const summary = await getSessionOgSummary(sessionId);
-  const { t } = await getServerTranslation('session');
+  const { t, locale } = await getServerTranslation('session');
+  const path = `/session/${encodeURIComponent(sessionId)}`;
 
   if (!summary.found) {
-    return { title: `${t('metadata.detail.notFoundTitle')} | Boardsesh` };
+    return createNoIndexMetadata({
+      title: t('metadata.detail.notFoundTitle'),
+      description: t('metadata.detail.notFoundDescription'),
+      path,
+      locale,
+      imagePath: null,
+    });
   }
 
   const participantNames = summary.participantNames.join(', ');
   const sessionName = summary.sessionName;
-  const title = `${sessionName} | Boardsesh`;
 
   let description: string;
   if (summary.totalSends > 0) {
@@ -52,27 +59,18 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       : t('detail.sessionNameOnBoardsesh', { name: sessionName });
   }
 
-  const ogImage = buildVersionedOgImagePath('/api/og/session', { sessionId }, summary.version);
-  const canonicalUrl = `/session/${sessionId}`;
-
-  return {
-    title,
+  // Indexability is deliberately unchanged: this is the kept public share
+  // surface, so flipping it to noindex is a product decision, not a hreflang
+  // fix. All that changes here is that the canonical now carries its locale and
+  // the full alternates set.
+  return createPageMetadata({
+    title: sessionName,
     description,
-    alternates: { canonical: canonicalUrl },
-    openGraph: {
-      title,
-      description,
-      type: 'website',
-      url: `/session/${sessionId}`,
-      images: [{ url: ogImage, width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT, alt: title }],
-    },
-    twitter: {
-      card: 'summary_large_image',
-      title,
-      description,
-      images: [ogImage],
-    },
-  };
+    path,
+    locale,
+    imagePath: buildVersionedOgImagePath('/api/og/session', { sessionId }, summary.version),
+    imageAlt: sessionName,
+  });
 }
 
 export default async function SessionDetailPage({ params }: Props) {

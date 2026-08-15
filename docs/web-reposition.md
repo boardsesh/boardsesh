@@ -157,16 +157,16 @@ read-only routes".
 
 Four **page subtrees** are now server-rendered front doors with no interactive
 climbing UI: the climb view and `/list` on the config-tuple tree, and their
-`/b/{slug}` twins. The page subtree is what changed — on the config-tuple pair
-the surrounding board shell
-(`app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout.tsx`) still
-renders `BoardSeshHeader` above the front door and still mounts the queue and
-WebSocket providers. That shell comes down in W-16/W-17, and until it does the
-import-graph invariant walks the three promoted page files but not their parent
-layout (the `KEPT_ENTRY_FILES` docblock in
-`app/__tests__/import-graph-invariant.test.ts` spells out which eight edges that
-leaves unwalked, and why adding them would grow the allowlist W-15 shrinks).
-What each front door is, and the two constraints that shaped them:
+`/b/{slug}` twins. W-15 changed the page subtrees; the surrounding board shells
+(`app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout.tsx` and its
+`/b` twin) still rendered `BoardSeshHeader` and still mounted the queue and
+WebSocket providers until **W-17 (#4433)** deleted the sibling routes that
+consumed them and stripped both shells. They are now server-only apart from
+`LastUsedBoardTracker`, so the import-graph invariant walks the config-tuple
+shell too (`KEPT_ENTRY_FILES` in
+`app/__tests__/import-graph-invariant.test.ts`), leaving that one allowlisted
+edge for W-16 to cut with `components/board-page`. What each front door is, and
+the two constraints that shaped them:
 
 **The climb front door** (`app/components/climb-front-door/`) renders a
 breadcrumb, the promoted `ClimbViewSeoFragment` heading, the board art as a
@@ -212,6 +212,197 @@ rate on the highest-traffic pages.
 **The Boardsesh-grade section is deliberately absent.** That flag is a live,
 staged PostHog rollout; SSR-ing the section would end it for every visitor and
 crawler in a single deploy, irreversibly without another one.
+
+## W-17 — deleting the board-route siblings (#4433)
+
+Twelve sibling routes came out of the two board trees (`create`, `import`,
+`liked`, `logbook`, `playlists`, `playlists/[playlist_uuid]`), plus the session
+providers and `BoardSeshHeader` above them. `next.config.mjs` holds the redirect
+table, every rule with its three locale twins. Three of those rules carry
+context rather than dropping it, and the reasons are worth keeping:
+
+- **Create → the app, with the board attached.** A canonical numeric board URL
+  hands `boardName`/`layoutId`/`sizeId`/`setIds`/`angle` to the app's create
+  screen, which reads exactly those. Slug forms (`/kilter/original/…` and the
+  whole `/b/{slug}` tree) hand over bare: the app parses the ids with `Number()`,
+  so forwarding a slug would seed the editor with `NaN`, and resolving one needs
+  a DB lookup a static redirect can't do. **Everything on www that used to link
+  at `…/create` now links at the app directly** — the Create tab in the bottom
+  bar, the remix/edit action — through `buildAppCreateClimbUrl`, so there is no
+  redirect hop and no board context lost in it.
+- **Import → `/moonboard-import`, with the hold sets.** Bulk import is
+  MoonBoard-only, so `/moonboard/…/import` goes to the importer carrying
+  `layout`, `sets` and `angle`, and every other board's `…/import` goes to that
+  board's own list — the same split the deleted page made. It needs its own rule
+  because `MOONBOARD_LAYOUTS` ids run 1–7 and collide with Aurora layout ids;
+  without it `/kilter/1/…/import` would render the importer for MoonBoard 2010.
+  The `sets` param matters for the same reason: without it a 2024 wall gets all
+  six of the layout's hold sets stacked on the preview instead of the two it
+  named. The `/b/{slug}` tree can't make that split — the slug names a DB row —
+  so it goes to the importer and an unresolvable one lands on the picker.
+- **Cross-origin rules stay `permanent: false`.** A permanent cross-origin
+  redirect is cached by the browser indefinitely with no server-side hatch. They
+  go 308 once the app route is proven in production.
+
+**Parked, not forgotten.** `components/create-climb/` (the www climb editor,
+including `drafts-drawer` and `create-climb-form`) lost its last route here and
+is now reachable only through the MoonBoard importer's shared pieces
+(`hold-indicator`, `hold-type-picker`, `use-hold-type-picker`,
+`use-moonboard-create-climb`). Deleting the rest belongs with `teardown:components-create-climb`
+in W-16, not here — it is a large cascade and the importer's edges have to be
+lifted out first. `components/board-page/last-used-board-tracker.tsx` stays for
+the same reason, as the one allowlisted edge W-16 cuts.
+
+## W-16 (+W-18) — deleting the climbing UI and swapping the root chrome (#4435)
+
+The irreversible one. `git diff --stat` against the merge base: roughly **1.7k
+insertions against −131,350 deletions across ~680 files** — a net loss of about
+**−130k** lines, against the epic row's estimate of −110k. (Run
+`git diff --shortstat origin/main...HEAD` for the exact figure at merge; the
+insertion count moves every time this section is edited.) The gap is second-order orphanage the row did not
+name (the 338-line `persistent-session-wrapper` and its 402-line test, the
+`climb-detail` tree, 22 `app/lib` modules, 19 orphaned hooks, four
+`social/*-search-results`, the `lib/ble` adapters) plus the `public/help/`
+screenshot set and the i18n prune.
+
+**Rollback is `release/classic-web`, not `git revert`.** The restore procedure is
+in the W-14 section below — reverting this commit would mean reintroducing ~130k
+lines, re-mounting a provider tree and passing `check:i18n:orphans` under
+incident pressure on a rebase over everything that merged since.
+
+### What replaced the root chrome
+
+`PersistentSessionWrapper` mounted the whole interactive climbing stack on
+**every** route, `/about` and `/legal` included: a `connectionName: 'session'`
+WebSocket, the queue bridge, the BLE provider, the queue control bar, the bottom
+tab bar and the `ResizeObserver` that published `--bottom-bar-height-measured`.
+`components/providers/site-chrome.tsx` keeps three providers and nothing else:
+
+- `StatsFilterBridgeProvider` — the `/profile` and `/you` statistics filter button.
+- `ProfileHeaderShareProvider` — the viewed-profile share button.
+- `PlaylistsAdapterProvider` — **required**, not optional: every hook in
+  `@boardsesh/playlists-react` calls `usePlaylistsAdapter()` unconditionally.
+
+`AuthModalProvider` stayed exactly where it already was, at `app/layout.tsx`. It
+was never inside the wrapper.
+
+Socket counts, before → after: `/kiosk` **2 → 1** (only `connectionName: 'kiosk'`
+remains); `/embed` **1 → 0**, which is what `embed-access.test.ts` and
+`embed/gym/[gym_uuid]/leaderboard/page.tsx` already claimed. A kiosk regression
+is invisible for up to 24 hours (`kiosk-reliability.tsx` reloads at 04:00 local,
+and a kiosk is an unattended TV), so watch two reload cycles post-deploy, not one
+hour.
+
+### The nine IndexedDB stores that went with it
+
+Deleted, with any unsent contents: `create-climb-autosave-db`,
+`feedback-prompt-db`, `last-used-board-db`, `led-color-overrides-db`,
+`onboarding-db`, `party-profile-db`, `saved-boards-db`, `session-history-db`,
+`tick-draft-db`. Two of those held **unsaved user work** that
+`app.boardsesh.com` cannot read (a different origin): `create-climb-autosave-db`
+(one in-progress climb form per browser) and `tick-draft-db` (unsent per-climb,
+per-angle tick drafts). Server-side `is_draft` climbs are a different artefact
+and are unaffected.
+
+Kept, all with live importers: `gym-welcome-db`, `moonboard-climbs-db`,
+`oauth-pending-db`, `recent-playlists-db`, `user-preferences-db`.
+
+### Two files that look deletable and are not
+
+- **`app/lib/ble/capacitor-types.d.ts`** — the ambient `window.Capacitor`
+  declaration. Six surviving source files type against it (`home-page-content`,
+  `capacitor-retirement-gate`, `auth/social-login-buttons`, `use-geolocation`,
+  `open-external-url`, `lib/hooks/use-wake-lock`) plus four test files — the
+  count `import-graph-invariant.test.ts` records alongside `KEPT_BLE_FILES`.
+  Taking the epic row's "delete `lib/ble/*` except `capacitor-utils.ts`"
+  literally reds the whole typecheck in files that have nothing to do with
+  Bluetooth. It is pinned in `KEPT_BLE_FILES`.
+- **`middleware.ts`'s `?session=` → `CLIMB_SESSION_COOKIE` rewrite** — it lost
+  its last client-side _reader_ here, but `api/internal/join/[sessionId]/route.ts`
+  still _writes_ the same cookie and the app reads it. Written-and-not-read on
+  www is the correct state; removing it is a separate call that belongs with
+  W-19's `/session` review.
+
+### The machine-checkable finish line
+
+`app/__tests__/import-graph-allowlist.json` is `{"entries": []}` and both
+assertions are green: no kept file imports the delete set, and no allowlist entry
+is stale. The gate is not vacuous — adding `climb-icons` to
+`DELETED_CLIMB_CARD_STEMS` still reports the five real edges into it.
+
+## W-22 — the sitemap index and its shards (#4434)
+
+`app/sitemap.ts` submitted 8 static paths × 4 locales — 32 URLs, and not one
+board, gym, setter or playlist. It is gone. `/sitemap.xml` is now a
+`<sitemapindex>` over `/sitemaps/{static,boards,gyms,setters,playlists}.xml`,
+which is what W-23's climb shards plug into.
+
+**`generateSitemaps()` is rejected, on evidence.** `MetadataRoute.Sitemap` can
+only produce a `<urlset>`: `resolveSitemap()` in
+`next/dist/build/webpack/loaders/metadata/resolve-route-data.js` writes that tag
+unconditionally, and grepping the whole of `next@16.2.12`'s dist for
+`sitemapindex` returns zero hits. `generateSitemaps` shards to
+`/…/sitemap/[id].xml` with opaque numeric ids and still leaves the index to be
+hand-written. Route handlers are a first-class shape instead —
+`normalizeMetadataRoute` documents _"Support both /<metadata-route.ext> and
+custom routes /<metadata-route>/route.ts"_ — with one caveat that makes
+`export const dynamic = 'force-dynamic'` mandatory rather than decorative:
+`isMetadataRoute('/sitemap.xml/route')` is true, and the app-route exporter uses
+that to skip its static-gen bail-out, so without the opt-out Next would try to
+prerender a database-backed route at build time. `vp run build` confirms the six
+routes land at `/sitemap.xml` and `/sitemaps/*.xml`.
+
+**The cap is 45,000 URLs, but the budget is 11,250 items.** Every item is
+emitted once per locale with an identical five-entry `xhtml:link` block, so the
+item budget is `45,000 / 4`. Measured against the dev database (same data shape
+as production): 4 public playlists with climbs, 51 listed board configs
+(→ 660 items, 2,640 URLs at all angles — 51 × 15 is the pre-filter upper bound,
+which the MoonBoard 2-angle set and the zero-climb skip bring down to 660),
+108,000 distinct (board, setter) pairs. Only the setters shard would need
+paging, and it ships empty. The cap is enforced rather than merely declared:
+`shardRouteHandler` counts the locale-expanded URLs it is about to serve and
+503s past the budget instead of publishing a file Search Console rejects
+wholesale.
+
+**Failure doctrine: 503, never a truncated 200.** A shard whose builder throws
+returns 503 so the crawler retries and keeps its last good copy; a short 200
+tells Google the missing URLs were deleted. Three more cases fail the same way:
+a shard past its URL budget, a shard that `expectsUrls` but built none (a
+poisoned cache or a regressed query silently emptying `static` or `boards`), and
+a boards fetch whose `hasMore` says the 100-config API cap — the schema's hard
+max, so the fix is paging, not a bigger constant — dropped the tail. The index
+applies the same rule: it throws rather than publishing an index that quietly
+dropped a shard, and it lists only shards carrying at least one URL. For the
+same reason the boards shard uses a _throwing_ popular-configs fetch, not the
+homepage's swallow-and-return-`[]` wrapper. `playlists` is deliberately **not**
+`expectsUrls` — zero public playlists holding a climb is a legitimate state, and
+failing closed there would take the whole index down over nobody having shared
+a list.
+
+**Two shards ship declared-empty, and that is the point.** `gyms.xml` waits on
+#4381's public-gyms enumeration query, which the gym-discovery epic (#4372)
+gates behind draining the duplicate queue — indexing a directory with live
+duplicates is an SEO own-goal. `setters.xml` waits on an SSR fragment for
+`/setter/[setter_username]`, whose first HTML is a spinner today, and on
+`getSetterOgSummary` learning to return null so `/setter/{anything}` stops
+answering 200. Both routes exist and serve a valid empty `<urlset>`, so filling
+them is one builder function away.
+
+**The boards shard carries no `<lastmod>`, deliberately.** There is no per-config
+content timestamp in the data, `<lastmod>` is optional in the protocol, and
+inventing one with `new Date()` is the exact thing the standing rule bans. A
+follow-up adds `lastClimbAt` to `popularBoardConfigs` so the real timestamp can
+arrive from the backend.
+
+**`/profile/[user_id]` stays indexable, explicitly.** Public profiles are named
+as a search surface, `user_profiles` carries no privacy flag, and the page
+`notFound()`s for real when the row is missing. What closed are the two
+_accidental_ index paths: the not-found branch (now the house `index: false,
+follow: true`) and the `catch` branch, which used to emit a canonical and no
+robots at all, so an errored profile was indexable. Profiles are not sitemapped
+— they stay link-discovered. Their titles also moved off the bare
+`{name} | Boardsesh` shape onto `{name}'s {board} Sessions`, driven by the
+climber's most-ticked board.
 
 ## Phase A0 — blocking pre-delete QA gate (real devices)
 
@@ -592,7 +783,7 @@ Cut **2026-08-14**. **Expires 2026-11-12.** Put a reminder on the epic
   and `git push origin --delete classic-web-last-good` (plus the local tag
   with `git tag -d classic-web-last-good` if you have it checked out) — don't
   let it silently rot as an ever-growing, never-reviewed fork of history.
-- If the programme is still mid-flight (W-16/W-17 not yet landed, or there's
+- If the programme is still mid-flight (W-16 not yet landed, or there's
   active incident risk), **consciously re-cut** — same commands as the
   "advances past this point" case above — and push the expiry another 90 days.
 

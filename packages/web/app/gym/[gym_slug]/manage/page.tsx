@@ -109,10 +109,7 @@ export default async function ManageGymPage(props: ManageGymRouteProps) {
     const { t } = await getServerTranslation('kiosk');
     return (
       <I18nProvider locale={locale} namespaces={['common', 'boards', 'kiosk']}>
-        <Container
-          maxWidth="md"
-          sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)', pb: 'var(--bottom-bar-height)' }}
-        >
+        <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
           <Alert severity="error">{t('manage.accessDenied')}</Alert>
         </Container>
       </I18nProvider>

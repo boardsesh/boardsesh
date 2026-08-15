@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { eq, ne, and, count, isNull, sql, ilike, or, asc, desc, inArray, like } from 'drizzle-orm';
+import { eq, ne, and, count, isNull, isNotNull, sql, ilike, or, asc, desc, inArray, like } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { normaliseSetIds } from '@boardsesh/board-config';
@@ -26,12 +26,18 @@ import { findBlockingDuplicate, type BoardLocation } from './board-duplicates';
 import { assertBoardCapNotReached } from './board-limits';
 import { syncLocationGeography } from './location-geography';
 import { getUserCommunityRoles, hasAdminOrLeader, rolesGrantAdminOrLeader } from './roles';
-import { SYSTEM_BOARD_OWNER_ID, isRowAnonReadable, requireAnonReadableBoard } from '../board-presence/shared';
+import {
+  SYSTEM_BOARD_OWNER_ID,
+  followBoardMergeChain,
+  isRowAnonReadable,
+  requireAnonReadableBoard,
+} from '../board-presence/shared';
 import { assertKnownBoardConfig } from '../board-presence/board-catalog';
 import { publishBoardQueuePreviewTombstoneForBoard } from '../../../services/board-queue-preview';
 import { logger } from '../../../utils/logger';
 import { redisClientManager } from '../../../redis/client';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
+import { lockAndAssertBoardSerialAvailable } from '../board-serial-write-lock';
 
 // ============================================
 // Helpers
@@ -298,6 +304,26 @@ async function requireBoardEditAccess(
  */
 function boardPresenceChannelId(board: { id: number; isPublic: boolean }, canEdit: boolean): number | null {
   return board.isPublic || canEdit ? board.id : null;
+}
+
+/**
+ * Follow a merge tombstone to the surviving canonical board.
+ *
+ * The serial-board dedupe soft-deletes duplicate rows for the same physical
+ * wall, stamping the loser's `mergedIntoBoardUuid` with the survivor's uuid.
+ * When a lookup lands on such a loser we chase that pointer (≤3 hops, bounded
+ * so a cyclic or broken chain can't spin) to the first ACTIVE board and return
+ * it, so stale links/bindings resolve to the survivor.
+ *
+ * An active row is returned unchanged. A plain soft-delete (tombstone null)
+ * returns null — ordinary deletions must NOT be resurrected.
+ */
+async function resolveBoardFollowingMerges(
+  boardRow: typeof dbSchema.userBoards.$inferSelect,
+): Promise<typeof dbSchema.userBoards.$inferSelect | null> {
+  if (!boardRow.deletedAt) return boardRow;
+  if (!boardRow.mergedIntoBoardUuid) return null;
+  return (await followBoardMergeChain(boardRow.mergedIntoBoardUuid)) ?? null;
 }
 
 /**
@@ -899,18 +925,19 @@ export const socialBoardQueries = {
   board: async (_: unknown, { boardUuid }: { boardUuid: string }, ctx: ConnectionContext) => {
     validateInput(UUIDSchema, boardUuid, 'boardUuid');
 
-    const [board] = await db
-      .select()
-      .from(dbSchema.userBoards)
-      .where(and(eq(dbSchema.userBoards.uuid, boardUuid), isNull(dbSchema.userBoards.deletedAt)))
-      .limit(1);
+    // Look up WITHOUT the deletedAt filter so a merged-away loser is still
+    // visible here — we then follow its tombstone to the survivor. A plain
+    // soft-delete (no tombstone) resolves to null, as before.
+    const [board] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.uuid, boardUuid)).limit(1);
 
     if (!board) return null;
+    const canonical = board.deletedAt ? await resolveBoardFollowingMerges(board) : board;
+    if (!canonical) return null;
     const viewerId = ctx.isAuthenticated ? ctx.userId : undefined;
     // Gate before enrichment so a masked anonymous read never runs the
     // owner/count/follow lookups for a board it isn't allowed to see.
-    if (!viewerId && !isRowAnonReadable(board)) return null;
-    return enrichBoard(board, viewerId);
+    if (!viewerId && !isRowAnonReadable(canonical)) return null;
+    return enrichBoard(canonical, viewerId);
   },
 
   /**
@@ -926,16 +953,53 @@ export const socialBoardQueries = {
       return null;
     }
 
-    const [board] = await db
+    const viewerId = ctx.isAuthenticated ? ctx.userId : undefined;
+
+    // The slug unique index is partial on active rows, so at most one active
+    // board holds a given slug — keep that as the indexed fast path (this
+    // resolver backs every board page view).
+    const [active] = await db
       .select()
       .from(dbSchema.userBoards)
       .where(and(eq(dbSchema.userBoards.slug, slug), isNull(dbSchema.userBoards.deletedAt)))
       .limit(1);
+    if (active) {
+      // Gate before enrichment so a masked anonymous read never runs the
+      // owner/count/follow lookups for a board it isn't allowed to see.
+      if (!viewerId && !isRowAnonReadable(active)) return null;
+      return enrichBoard(active, viewerId);
+    }
 
-    if (!board) return null;
-    const viewerId = ctx.isAuthenticated ? ctx.userId : undefined;
-    if (!viewerId && !isRowAnonReadable(board)) return null;
-    return enrichBoard(board, viewerId);
+    // No active board holds the slug. A merged-away loser keeps its old slug,
+    // so follow its tombstone to the survivor (the canonical board carries its
+    // own real slug/uuid, so clients detect the change and redirect). A reused
+    // slug can leave several merged losers behind — prefer the most recently
+    // deleted one so the pick is deterministic and tracks the latest holder.
+    // deletedAt IS NOT NULL is redundant with the active-row fast path above
+    // (which already claims any row with this slug that has deletedAt IS NULL,
+    // merged or not) — stated explicitly anyway so this query's own invariant
+    // doesn't rely on that ordering, and a corrupted row (mergedIntoBoardUuid
+    // set, deletedAt NULL) can't be mistaken for a tombstone here.
+    const [merged] = await db
+      .select()
+      .from(dbSchema.userBoards)
+      .where(
+        and(
+          eq(dbSchema.userBoards.slug, slug),
+          isNotNull(dbSchema.userBoards.mergedIntoBoardUuid),
+          isNotNull(dbSchema.userBoards.deletedAt),
+        ),
+      )
+      .orderBy(desc(dbSchema.userBoards.deletedAt))
+      .limit(1);
+    if (!merged) return null;
+
+    const canonical = await resolveBoardFollowingMerges(merged);
+    if (!canonical) return null;
+    // Same anonymous mask as the active path and `board(boardUuid)`: following a
+    // tombstone must not disclose a private survivor to an anonymous caller.
+    if (!viewerId && !isRowAnonReadable(canonical)) return null;
+    return enrichBoard(canonical, viewerId);
   },
 
   /**
@@ -1635,30 +1699,54 @@ export const socialBoardMutations = {
     // what *this* connect observed. The explicit null keeps the row honest.
     const apiLevelValue = apiLevel ?? null;
 
-    await db
-      .insert(dbSchema.userBoardSerials)
-      .values({
-        userId,
-        serialNumber,
-        boardName,
-        layoutId,
-        sizeId,
-        setIds,
-        apiLevel: apiLevelValue,
-        boardUuid: linkedBoardUuid,
-      })
-      .onConflictDoUpdate({
-        target: [dbSchema.userBoardSerials.userId, dbSchema.userBoardSerials.serialNumber],
-        set: {
+    // Board row first, pointer row second — the order every other serial-pointer
+    // writer follows (pointer healing, serial resolution, the explicit choice,
+    // the dedupe merge). Left bare, this upsert takes the (userId, serialNumber)
+    // row lock first and only then, in the end-of-statement referential-integrity
+    // check on `board_uuid`, asks for FOR KEY SHARE on the referenced user_boards
+    // row. Those writers hold that board row FOR UPDATE (which conflicts with KEY
+    // SHARE) before they touch the same pointer row, so the two orders close a
+    // deadlock cycle and PostgreSQL kills one of them — for the dedupe script,
+    // that aborts the whole cluster transaction.
+    //
+    // Taking the FK's KEY SHARE lock up front puts this path in the shared order.
+    // It must NOT instead take the per-serial advisory lock: acquiring the serial
+    // before waiting on the board row is the same inversion, just one hop further
+    // out. A null `board_uuid` runs no RI check, so it needs no board lock.
+    await db.transaction(async (tx) => {
+      if (linkedBoardUuid) {
+        await tx
+          .select({ uuid: dbSchema.userBoards.uuid })
+          .from(dbSchema.userBoards)
+          .where(eq(dbSchema.userBoards.uuid, linkedBoardUuid))
+          .for('key share');
+      }
+
+      await tx
+        .insert(dbSchema.userBoardSerials)
+        .values({
+          userId,
+          serialNumber,
           boardName,
           layoutId,
           sizeId,
           setIds,
           apiLevel: apiLevelValue,
           boardUuid: linkedBoardUuid,
-          updatedAt: new Date(),
-        },
-      });
+        })
+        .onConflictDoUpdate({
+          target: [dbSchema.userBoardSerials.userId, dbSchema.userBoardSerials.serialNumber],
+          set: {
+            boardName,
+            layoutId,
+            sizeId,
+            setIds,
+            apiLevel: apiLevelValue,
+            boardUuid: linkedBoardUuid,
+            updatedAt: new Date(),
+          },
+        });
+    });
 
     const [row] = await db
       .select({
@@ -1797,8 +1885,13 @@ export const socialBoardMutations = {
     }
 
     // One insert path for every case. The gym mint, when there is one, shares the
-    // board's transaction so we never leave a gym with no board behind. The
-    // PostGIS writes deliberately sit OUTSIDE it — see below.
+    // board's transaction so we never leave a gym with no board behind. Every
+    // path — the mint, the mint-failure fallback, and the plain insert — runs
+    // inside a transaction because `lockAndAssertBoardSerialAvailable` has to
+    // hold the serial's advisory lock across BOTH its guard read and the insert.
+    // An insert outside one reopens the cross-owner duplicate-serial race the
+    // guard exists to close (#3407). The PostGIS writes deliberately sit OUTSIDE
+    // the transaction — see below.
     let board: typeof dbSchema.userBoards.$inferSelect;
     let mintedGymId: number | null = null;
 
@@ -1825,12 +1918,35 @@ export const socialBoardMutations = {
       timerName: validatedInput.timerName ?? null,
     };
 
+    // The ONE way this resolver is allowed to insert a board without a gym mint.
+    // Both callers below go through it so neither can drift back into a bare,
+    // unlocked insert: the guard has to read and insert under the same serial
+    // lock, and the fallback re-runs it because a competing create can commit in
+    // the window between the mint's guard and this one.
+    const insertGuardedBoard = async (linkedGymId: number | null) => {
+      try {
+        return await db.transaction(async (tx) => {
+          await lockAndAssertBoardSerialAvailable(tx, validatedInput, userId);
+          const [insertedBoard] = await tx
+            .insert(dbSchema.userBoards)
+            .values({ ...boardValues, gymId: linkedGymId })
+            .returning();
+          return insertedBoard;
+        });
+      } catch (error) {
+        throwIfBoardSerialConflict(error);
+        throw error;
+      }
+    };
+
     if (mintGymNamed != null) {
       const gymName = mintGymNamed;
       try {
         const gymUuid = uuidv4();
         const gymSlug = await generateUniqueGymSlug(gymName);
         const result = await db.transaction(async (tx) => {
+          await lockAndAssertBoardSerialAvailable(tx, validatedInput, userId);
+
           const [newGym] = await tx
             .insert(dbSchema.gyms)
             .values({
@@ -1855,29 +1971,17 @@ export const socialBoardMutations = {
         board = result.newBoard;
       } catch (error) {
         throwIfBoardSerialConflict(error);
+        // The serial guard is a product decision, not an auto-gym failure. Never
+        // swallow it and retry the insert below — that fallback would create the
+        // very cross-owner duplicate the guard just refused.
+        if (error instanceof GraphQLError && error.extensions.code === 'BOARD_SERIAL_EXISTS') throw error;
         // The gym couldn't be minted; still create the board, unlinked, rather
         // than failing the whole create.
         logger.error('Auto-gym creation failed, creating board without gym:', error);
-        try {
-          [board] = await db
-            .insert(dbSchema.userBoards)
-            .values({ ...boardValues, gymId: null })
-            .returning();
-        } catch (fallbackError) {
-          throwIfBoardSerialConflict(fallbackError);
-          throw fallbackError;
-        }
+        board = await insertGuardedBoard(null);
       }
     } else {
-      try {
-        [board] = await db
-          .insert(dbSchema.userBoards)
-          .values({ ...boardValues, gymId })
-          .returning();
-      } catch (error) {
-        throwIfBoardSerialConflict(error);
-        throw error;
-      }
+      board = await insertGuardedBoard(gymId);
     }
 
     // Populate the PostGIS `location` columns. These run AFTER the transaction,
@@ -2085,11 +2189,66 @@ export const socialBoardMutations = {
 
     let updated: typeof dbSchema.userBoards.$inferSelect;
     try {
-      [updated] = await db
-        .update(dbSchema.userBoards)
-        .set(updateValues)
-        .where(eq(dbSchema.userBoards.id, board.id))
-        .returning();
+      const updatedRows = await db.transaction(async (tx) => {
+        // Serialize partial edits to the same board before deriving the final
+        // serial+config tuple. Without this row lock, a serial-only edit could
+        // validate against C1 while a concurrent config-only edit changes the
+        // row to C2, producing an unchecked S+C2 duplicate.
+        const [lockedBoard] = rowsFromResult<{
+          serialNumber: string | null;
+          boardType: string;
+          layoutId: number | string;
+          sizeId: number | string;
+          setIds: string;
+          deletedAt: Date | null;
+        }>(
+          await tx.execute(sql`
+            SELECT serial_number AS "serialNumber",
+                   board_type AS "boardType",
+                   layout_id AS "layoutId",
+                   size_id AS "sizeId",
+                   set_ids AS "setIds",
+                   deleted_at AS "deletedAt"
+              FROM user_boards
+             WHERE id = ${board.id}
+             FOR UPDATE
+          `),
+        );
+        if (!lockedBoard) {
+          throw new Error('Board not found');
+        }
+
+        const lockedLayoutId = Number(lockedBoard.layoutId);
+        const lockedSizeId = Number(lockedBoard.sizeId);
+        const resultingSerial =
+          validatedInput.serialNumber === undefined ? lockedBoard.serialNumber : validatedInput.serialNumber;
+        const serialChanged =
+          validatedInput.serialNumber !== undefined && validatedInput.serialNumber !== lockedBoard.serialNumber;
+        const serialConfigChanged =
+          (validatedInput.layoutId !== undefined && validatedInput.layoutId !== lockedLayoutId) ||
+          (validatedInput.sizeId !== undefined && validatedInput.sizeId !== lockedSizeId) ||
+          (validatedInput.setIds !== undefined &&
+            normaliseSetIds(validatedInput.setIds) !== normaliseSetIds(lockedBoard.setIds));
+        const serialOrConfigBecomesActive =
+          resultingSerial !== null && (serialChanged || serialConfigChanged || lockedBoard.deletedAt !== null);
+
+        if (serialOrConfigBecomesActive) {
+          await lockAndAssertBoardSerialAvailable(
+            tx,
+            {
+              serialNumber: resultingSerial,
+              boardType: lockedBoard.boardType,
+              layoutId: validatedInput.layoutId ?? lockedLayoutId,
+              sizeId: validatedInput.sizeId ?? lockedSizeId,
+              setIds: validatedInput.setIds ?? lockedBoard.setIds,
+            },
+            board.ownerId,
+            board.id,
+          );
+        }
+        return tx.update(dbSchema.userBoards).set(updateValues).where(eq(dbSchema.userBoards.id, board.id)).returning();
+      });
+      [updated] = updatedRows;
     } catch (error) {
       throwIfBoardSerialConflict(error);
       throw error;
@@ -2208,34 +2367,42 @@ export const socialBoardMutations = {
     const validatedInput = validateInput(FollowBoardInputSchema, input, 'input');
     const userId = ctx.userId!;
 
-    // Verify board exists and is accessible
-    const [board] = await db
-      .select({
-        uuid: dbSchema.userBoards.uuid,
-        ownerId: dbSchema.userBoards.ownerId,
-        isPublic: dbSchema.userBoards.isPublic,
-      })
-      .from(dbSchema.userBoards)
-      .where(and(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid), isNull(dbSchema.userBoards.deletedAt)))
-      .limit(1);
+    return db.transaction(
+      async (tx) => {
+        // Keep the active-row check and follow insert under one shared board
+        // lock. Concurrent followers can share it, while merge/privacy/delete
+        // writers must either finish first or wait until this follow commits.
+        const [board] = await tx
+          .select({
+            uuid: dbSchema.userBoards.uuid,
+            ownerId: dbSchema.userBoards.ownerId,
+            isPublic: dbSchema.userBoards.isPublic,
+          })
+          .from(dbSchema.userBoards)
+          .where(and(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid), isNull(dbSchema.userBoards.deletedAt)))
+          .limit(1)
+          .for('share');
 
-    if (!board) {
-      throw new Error('Board not found');
-    }
+        if (!board) {
+          throw new Error('Board not found');
+        }
 
-    if (!board.isPublic && board.ownerId !== userId) {
-      throw new Error('Cannot follow a private board');
-    }
+        if (!board.isPublic && board.ownerId !== userId) {
+          throw new Error('Cannot follow a private board');
+        }
 
-    await db
-      .insert(dbSchema.boardFollows)
-      .values({
-        userId,
-        boardUuid: validatedInput.boardUuid,
-      })
-      .onConflictDoNothing();
+        await tx
+          .insert(dbSchema.boardFollows)
+          .values({
+            userId,
+            boardUuid: board.uuid,
+          })
+          .onConflictDoNothing();
 
-    return true;
+        return true;
+      },
+      { isolationLevel: 'read committed' },
+    );
   },
 
   /**

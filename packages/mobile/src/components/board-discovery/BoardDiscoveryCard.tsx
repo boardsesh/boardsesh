@@ -132,7 +132,9 @@ export function BoardDiscoveryCard({ item, onPress, onDownload, downloadLabel }:
           <View style={styles.offlineBadge}>
             <Icon name="offline.downloaded" size={15} color={brandColors.primary} />
           </View>
-        ) : item.offlineState === 'downloading' || item.offlineState === 'pending' ? (
+        ) : item.offlineState === 'downloading' ||
+          item.offlineState === 'finalizing' ||
+          item.offlineState === 'pending' ? (
           <View style={styles.offlineBadge}>
             <Icon name="offline.pending" size={15} color={systemColors.secondaryLabel} />
           </View>

@@ -15,7 +15,7 @@ import {
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../lib/analytics';
 import { isOfflineEngineEnabled } from '../lib/offline-engine';
-import { getHttpClient } from '../lib/graphql/client';
+import { getOfflineSyncHttpClient } from '../lib/graphql/client';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
 import { triggerSync, drainMutationQueue, hasUsableInternetConnection } from './offline-sync-adapter';
 import { useSnapshotSource } from './use-snapshot-source';
@@ -49,7 +49,10 @@ export function useBoardDownloads() {
   // it has no tables yet and a snapshot import would land in a half-set-up file.
   const schemaReady = useOfflineSchemaReady();
 
-  const graphqlFetch = useMemo<GraphQLFetch>(() => (query, variables) => getHttpClient().request(query, variables), []);
+  const graphqlFetch = useMemo<GraphQLFetch>(
+    () => (query, variables) => getOfflineSyncHttpClient().request(query, variables),
+    [],
+  );
   const drainQueue = useCallback(
     () => drainMutationQueue(db, queryClient, graphqlFetch),
     [db, queryClient, graphqlFetch],

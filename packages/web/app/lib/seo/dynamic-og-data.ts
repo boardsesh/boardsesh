@@ -18,6 +18,12 @@ export type ProfileOgSummary = {
   displayName: string;
   avatarUrl: string | null;
   fallbackImageUrl: string | null;
+  /**
+   * Board this climber has logged the most ticks on, or null when they have
+   * none. Drives the search-first page title ("Marco's Kilter Sessions") — a
+   * bare "Marco | Boardsesh" matches nothing anyone types into Google.
+   */
+  topBoardType: string | null;
   version: string;
 };
 
@@ -28,6 +34,7 @@ export const getProfileOgSummary = cache(async (userId: string): Promise<Profile
     image: string | null;
     display_name: string | null;
     avatar_url: string | null;
+    top_board_type: string | null;
     version_at: string | Date | null;
   }>(
     await rawSql`
@@ -36,6 +43,14 @@ export const getProfileOgSummary = cache(async (userId: string): Promise<Profile
       u.image,
       p.display_name,
       p.avatar_url,
+      (
+        SELECT bt.board_type
+        FROM boardsesh_ticks bt
+        WHERE bt.user_id = ${userId}
+        GROUP BY bt.board_type
+        ORDER BY COUNT(*) DESC, bt.board_type
+        LIMIT 1
+      ) AS top_board_type,
       GREATEST(
         COALESCE(u.updated_at, to_timestamp(0)),
         COALESCE(p.updated_at, to_timestamp(0)),
@@ -57,6 +72,7 @@ export const getProfileOgSummary = cache(async (userId: string): Promise<Profile
     displayName: row.display_name || row.name || 'Crusher',
     avatarUrl: row.avatar_url || null,
     fallbackImageUrl: row.image || null,
+    topBoardType: row.top_board_type || null,
     version: buildOgVersionToken(row.version_at),
   };
 });

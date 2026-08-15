@@ -33,7 +33,6 @@ import { useConfirmBoardDownload } from '../../src/offline/use-confirm-board-dow
 import { useDownloadedScopeKeys } from '../../src/offline/use-downloaded-scope-keys';
 import { useRememberDownloadedBoards } from '../../src/offline/use-remember-downloaded-boards';
 import { useSnapshotSource } from '../../src/offline/use-snapshot-source';
-import { useOfflineSchemaReady } from '../../src/db/use-offline-schema-ready';
 import { formatBytes } from '../../src/lib/format-bytes';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../src/lib/analytics';
@@ -139,9 +138,6 @@ export default function ManageBoards() {
   const snapshotManifestRef = useRef(snapshotManifest);
   snapshotManifestRef.current = snapshotManifest;
   const db = useSQLiteContext();
-  // This connection is handed out as soon as the launch gate opens — after the first
-  // init attempt, whatever it did — so on a contended launch it has no tables yet.
-  const schemaReady = useOfflineSchemaReady();
   const syncStatus = useSyncStatus();
   // Mirrored for the toggle-off handler, which only reads it at tap time: keeping
   // the live status out of that callback's deps means a progress frame can't churn
@@ -473,6 +469,7 @@ export default function ManageBoards() {
       const downloadStateInput = {
         scopeKey,
         enabled: enabledSet.has(scopeKey),
+        isBootstrapDone: bootstrapMetadata?.isBootstrapDone ?? false,
         isSyncing,
         downloaded: isDownloaded,
         currentTable,

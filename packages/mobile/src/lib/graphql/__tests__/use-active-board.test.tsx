@@ -117,6 +117,29 @@ describe('useActiveBoard', () => {
     await expect(getStoredActiveBoard()).resolves.toEqual(otherBoard);
   });
 
+  it('fences a stale conditional heal as soon as a newer user selection starts', async () => {
+    const { getActiveBoardWriteGeneration, useSetActiveBoard, useSetActiveBoardIfCurrentGeneration } =
+      await import('../use-active-board');
+    const { getStoredActiveBoard } = await import('../../active-board-store');
+    const sharedWrapper = wrapper();
+    const setter = renderHook(() => useSetActiveBoard(), { wrapper: sharedWrapper });
+    const conditionalSetter = renderHook(() => useSetActiveBoardIfCurrentGeneration(), { wrapper: sharedWrapper });
+    const staleGeneration = getActiveBoardWriteGeneration();
+
+    let staleHealAccepted = true;
+    await act(async () => {
+      const userWrite = setter.result.current(otherBoard);
+      // The generation changes synchronously, before the AsyncStorage promise
+      // above settles or React Query has a chance to render the new board.
+      expect(getActiveBoardWriteGeneration()).toBe(staleGeneration + 1);
+      staleHealAccepted = await conditionalSetter.result.current(staleGeneration, storedBoard);
+      await userWrite;
+    });
+
+    expect(staleHealAccepted).toBe(false);
+    await expect(getStoredActiveBoard()).resolves.toEqual(otherBoard);
+  });
+
   // Mirrors what AuthProvider.signOut does: removeQueries on the active-board
   // key must evict the staleTime: Infinity entry so the next signed-in user
   // doesn't inherit the previous user's board from the in-memory cache.

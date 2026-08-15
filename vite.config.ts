@@ -218,6 +218,14 @@ export default defineConfig({
         // read-only validation/dry-runs before writing published grade rows.
         cache: false,
       },
+      'db:dedupe-serial-boards': {
+        command: 'bun run --filter=@boardsesh/db db:dedupe-serial-boards',
+        // No db:up dependency, same rationale as db:dedupe-gyms: a maintainer
+        // runs this by hand against DB_URL (often a remote database), not local
+        // Docker. Dry-run by default; --apply is the only write path. Forward
+        // flags with `vp run db:dedupe-serial-boards -- --only-serial <s> --apply`.
+        cache: false,
+      },
       'test:db': {
         command: 'bun run --filter=@boardsesh/db test',
       },
@@ -454,7 +462,8 @@ export default defineConfig({
         cache: false,
       },
       'test:service-deploy-inputs': {
-        command: 'node --test scripts/check-service-deploy-inputs.test.mjs scripts/railway-deployment-status.test.mjs',
+        command:
+          'node --test scripts/check-service-deploy-inputs.test.mjs scripts/production-backend-smoke.test.mjs scripts/production-deploy-changes.test.mjs scripts/railway-deployment-status.test.mjs',
         cache: false,
       },
       'check:service-deploy-inputs': {

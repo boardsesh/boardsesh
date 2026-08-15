@@ -6,7 +6,8 @@
   },
   "metadata": {
     "detail": {
-      "notFoundTitle": "Session nicht gefunden"
+      "notFoundTitle": "Session nicht gefunden",
+      "notFoundDescription": "Diese Klettersession konnte nicht gefunden werden."
     },
     "join": {
       "title": "Session beitreten",
@@ -24,29 +25,10 @@
     }
   },
   "boardPresence": {
-    "title": "Jetzt an der Wand",
     "open": "An der Wand",
     "railDark": "Gerade ist nichts beleuchtet",
     "openAria": "Zeigen, was an der Wand ist",
-    "openAriaWithClimb": "Zeigen, was an der Wand ist: {{name}}",
-    "nowOnWallAnnouncement": "Jetzt an der Wand: {{name}}",
-    "close": "Schließen",
-    "switchBoard": "Board wechseln",
-    "switchBoardAria": "Zu einem anderen Board wechseln",
-    "setByLine": "Gebaut von {{setter}}",
-    "litByLine": "Beleuchtet von {{name}}",
-    "emptyTitle": "Noch niemand an dieser Wand",
-    "emptyBody": "Verbinde dich und beleuchte einen Boulder, um die Historie zu starten.",
-    "historyHeader": "An dieser Wand beleuchtet",
-    "statsHeader": "Diese Wand",
-    "statSent": "Begehungen",
-    "statClimbers": "Kletterer*innen",
-    "statHardest": "schwerste",
-    "statTopGrade": "am häufigsten getoppt",
-    "wallChanged": "Du hast die Wand geändert",
-    "undo": "Rückgängig",
-    "loadMore": "Mehr laden",
-    "loadingMore": "Lädt…"
+    "openAriaWithClimb": "Zeigen, was an der Wand ist: {{name}}"
   },
   "detail": {
     "subtitleSends_one": "{{count}} Begehung",
@@ -96,22 +78,8 @@
     "ordinalSecond": "{{n}}.",
     "ordinalThird": "{{n}}.",
     "ordinalDefault": "{{n}}.",
-    "noClimbsYet": "Noch keine Boulder",
-    "logSomeClimbs": "Trag ein paar Boulder ein, um deine Grad-Verteilung zu sehen",
-    "climbsLogged_one": "{{count}} Boulder eingetragen",
-    "climbsLogged_other": "{{count}} Boulder eingetragen",
-    "gradesCount_one": "{{count}} Grad",
-    "gradesCount_other": "{{count}} Grade",
     "gradeDistribution": "Grad-Verteilung",
-    "gradesClimbedThisSession": "Grade in dieser Session",
     "sessionGradeDistribution": "Grad-Verteilung der Session",
-    "sections": {
-      "invite": "Einladen",
-      "inviteTitle": "Andere einladen",
-      "inviteSummary": "Link oder QR-Code teilen",
-      "activity": "Aktivität",
-      "analytics": "Auswertung"
-    },
     "sendsCount_one": "{{count}} Begehung",
     "sendsCount_other": "{{count}} Begehungen",
     "flashesCount_one": "{{count}} Flash",
@@ -129,75 +97,17 @@
   "join": {
     "joining": "Session wird betreten…"
   },
-  "settings": {
-    "fallbackTitle": "Session",
-    "stopSession": "Session stoppen",
-    "dismiss": "Ausblenden",
-    "loadFailed": "Die vollständigen Session-Details konnten nicht geladen werden. Live-Statistiken laufen weiter, sobald sie verfügbar sind.",
-    "share": {
-      "shareTitle": "Komm in meine Kletter-Session",
-      "shareText": "Spring rein und klettere mit mir auf Boardsesh",
-      "shareLink": "Session-Link teilen",
-      "shareLinkPreview": "Session-Link teilen (Vorschau)",
-      "linkCopied": "Link kopiert!",
-      "shareError": "Teilen fehlgeschlagen",
-      "showQr": "QR-Code zeigen",
-      "hideQr": "QR-Code ausblenden",
-      "showQrPreview": "QR-Code zeigen (Vorschau)",
-      "inviteCopy": "Hol deine Crew dazu: Link teilen oder QR-Code scannen lassen",
-      "inviteCopyPreview": "Teil den Link oder QR-Code mit deiner Crew, dann tauchen sie live hier auf."
-    }
-  },
   "creation": {
-    "drawerTitle": "Session starten",
-    "submitDefault": "Sesh",
-    "dialogTitle": "Session erstellen",
-    "dialogSubmit": "Session erstellen",
-    "started": "Session läuft!",
-    "selectBoardWarning": "Wähl zuerst ein Board aus",
-    "boardsNearYou": "Boards in deiner Nähe",
-    "loggedInBlurb": "Trag deine Boulder ein und lade andere dazu ein.",
-    "anonymousBlurb": "Leg ohne Account los. Melde dich später an, um deinen Fortschritt zu sichern.",
-    "signInForMore": "Anmelden für mehr Funktionen",
-    "signInModalTitle": "Melde dich an, um deine Session zu sichern",
-    "signInModalDescription": "Deine Begehungen verschwinden nicht, wenn du den Tab schließt.",
     "form": {
-      "sessionNameLabel": "Session-Name",
-      "sessionNamePlaceholder": "z. B. Dienstag am Projekt",
-      "sessionGoalLabel": "Session-Ziel",
-      "sessionGoalPlaceholder": "z. B. Heute einen 7A toppen",
-      "sessionGoalHelper": "{{count}}/500",
-      "sessionColor": "Session-Farbe",
-      "discoverableLabel": "Für Kletterer*innen in der Nähe sichtbar",
-      "discoverableDescription": "Andere in der Nähe finden deine Session und können beitreten",
-      "permanentLabel": "Dauer-Session (endet nicht automatisch)"
-    },
-    "errors": {
-      "createFailed": "Session konnte nicht gestartet werden"
-    },
-    "generateQueue": {
-      "button": "Workout-Warteschlange erstellen",
-      "buttonHint": "Wähl zuerst ein Board",
-      "regenerate": "Neu erstellen",
-      "clear": "Leeren",
-      "summary_one": "{{count}} Boulder in der Warteschlange",
-      "summary_other": "{{count}} Boulder in der Warteschlange",
-      "addedAll_one": "{{count}} Boulder für deine Session eingereiht",
-      "addedAll_other": "{{count}} Boulder für deine Session eingereiht",
-      "addedPartial": "{{added}} Boulder eingereiht. {{failed}} Plätze konnten nicht gefüllt werden.",
-      "failed": "Warteschlange konnte nicht erstellt werden. Keine passenden Boulder gefunden."
+      "sessionNamePlaceholder": "z. B. Dienstag am Projekt"
     }
   },
   "summary": {
     "dialogTitle": "Session-Zusammenfassung",
-    "autoFinishedDialogTitle": "Session beendet",
     "sends": "Begehungen",
     "attempts": "Versuche",
-    "duration": "Dauer",
-    "hardestSend": "Schwerste Begehung:",
     "goal": "Ziel:",
     "gradeDistribution": "Grad-Verteilung",
-    "participants": "Teilnehmende",
     "done": "Fertig",
     "saveToAppleHealth": "In Apple Health speichern",
     "savingToAppleHealth": "Wird in Apple Health gespeichert…",
@@ -233,49 +143,14 @@
     "recapSaveError": "Dein Rückblick konnte nicht gespeichert werden. Versuch es nochmal.",
     "commentLabel": "Rückblick",
     "commentPlaceholder": "Wie war die Sesh? Schreib ein paar Worte…",
-    "commentHelper": "{{count}}/{{max}}",
-    "commentSaveFailed": "Deine Notizen konnten nicht gespeichert werden. Versuch es nochmal."
+    "commentHelper": "{{count}}/{{max}}"
   },
   "overview": {
     "goal": "Ziel: {{goal}}"
   },
   "queueBar": {
-    "cancelReconnectConfirm": "Abbrechen heißt, die Session zu verlassen. Willst du das?",
-    "shellMessage": "Kein Boulder ausgewählt",
-    "startSesh": "Sesh starten",
-    "linkCopied": "Link kopiert!",
-    "shareFailed": "Teilen fehlgeschlagen",
-    "leaveFailed": "Die Session konnte nicht verlassen werden. Versuch es nochmal.",
-    "cancelReconnect": "Abbrechen",
-    "tickError": "Dein Eintrag konnte nicht gespeichert werden. Versuch es nochmal.",
-    "tickCommentPlaceholder": "Kommentar…",
-    "tickAttemptLabel": "Versuch",
-    "reconnect": {
-      "connectionError": "Verbindungsfehler – neuer Versuch…",
-      "reconnecting": "Verbinde neu…"
-    },
-    "tickBar": {
-      "collapse": "Einklappen",
-      "expand": "Ausklappen",
-      "expandAria": "Eintragsleiste ausklappen",
-      "collapseAria": "Eintragsleiste einklappen",
-      "commentAria": "Kommentar zum Eintrag"
-    },
     "ariaLabels": {
-      "leaveSession": "Session verlassen",
-      "keepReconnecting": "Weiter neu verbinden",
-      "dismissOfflineNotice": "Offline-Hinweis ausblenden",
-      "shareSessionLink": "Session-Link teilen",
-      "closeTickBar": "Eintragsleiste schließen",
-      "logAttempt": "Versuch eintragen",
-      "showParticipants": "Teilnehmende zeigen",
-      "hideParticipants": "Teilnehmende ausblenden",
-      "openPlayDrawer": "Boulder an der Wand öffnen"
-    },
-    "offline": {
-      "idle": "Offline",
-      "party": "Offline. Eingereihte Boulder werden später synchronisiert.",
-      "solo": "Offline. Änderungen werden synchronisiert, sobald du wieder online bist."
+      "leaveSession": "Session verlassen"
     }
   },
   "queueDrawer": {
@@ -285,19 +160,10 @@
     "removeItems_other": "{{count}} Einträge entfernen"
   },
   "queueList": {
-    "editClimb": "Diesen Boulder bearbeiten",
-    "addedViaBluetooth": "Über Bluetooth hinzugefügt",
-    "nextUpHeader": "Als Nächstes",
-    "endMessage": "Das war's für jetzt",
     "showFullHistory_one": "Ganze Historie zeigen (noch {{count}})",
     "showFullHistory_other": "Ganze Historie zeigen (noch {{count}})",
     "showFullHistoryAria_one": "{{count}} weiteren Eintrag aus der Historie zeigen",
-    "showFullHistoryAria_other": "{{count}} weitere Einträge aus der Historie zeigen",
-    "tickHistoryClimb": "Eintrag für {{name}} machen"
-  },
-  "queueProvider": {
-    "offlineLimitReached": "Du hast das Offline-Limit für „Als Nächstes“ erreicht. Verbinde dich neu, um deine Boulder zu synchronisieren.",
-    "rateLimitCatchUp": "Deine Änderungen werden nachgezogen…"
+    "showFullHistoryAria_other": "{{count}} weitere Einträge aus der Historie zeigen"
   },
   "mobile": {
     "logbook": {
@@ -611,13 +477,6 @@
     "replay": "Nochmal",
     "speed": "Wiedergabegeschwindigkeit",
     "peerFrameMismatch": "Wiedergabe läuft eigenständig. Jemand in der Session nutzt eine andere App-Version, die die Bilder dieser Route anders liest.",
-    "audienceCount_one": "{{count}} weitere Person schaut zu",
-    "audienceCount_other": "{{count}} weitere Personen schauen zu",
-    "yourAscents_one": "Deine Begehung ({{count}})",
-    "yourAscents_other": "Deine Begehungen ({{count}})",
-    "triesCount_one": "{{count}} Versuch",
-    "triesCount_other": "{{count}} Versuche",
-    "tickError": "Dein Eintrag konnte nicht gespeichert werden — er liegt als Entwurf bereit",
     "shareError": "Teilen hat nicht geklappt — versuch es nochmal",
     "favoriteError": "Deine Favoriten konnten nicht aktualisiert werden — versuch es nochmal",
     "closeAria": "Schließen",
@@ -629,29 +488,13 @@
       "addFavoriteAria": "Zu Favoriten hinzufügen",
       "removeFavoriteAria": "Aus Favoriten entfernen",
       "climbActionsAria": "Boulder-Aktionen",
-      "openQueueAria": "„Als Nächstes“ öffnen",
-      "queueCountAria": "Warteschlange, {{count}} Boulder",
-      "lightbulb": {
-        "turnOff": "Board ausschalten",
-        "sendNamed": "„{{name}}“ am Board beleuchten",
-        "send": "Boulder am Board beleuchten",
-        "coachmark": "Board beleuchten"
-      }
+      "queueCountAria": "Warteschlange, {{count}} Boulder"
     },
     "tickFab": {
       "logAscentAria": "Begehung eintragen"
     },
     "tickBar": {
-      "commentPlaceholder": "Kommentar…",
-      "commentAria": "Kommentar zum Eintrag",
-      "closeAria": "Eintragsleiste schließen",
-      "collapseAria": "Eintragsleiste einklappen",
-      "expandAria": "Eintragsleiste ausklappen",
       "attemptLabel": "Versuch",
-      "flashLabel": "Flash",
-      "tickLabel": "Eintrag",
-      "logAttemptAria": "Versuch eintragen",
-      "saveTickAria": "Eintrag speichern",
       "flashSaveLabel": "Flash",
       "sendSaveLabel": "Getoppt",
       "starRating_one": "{{count}} Stern",

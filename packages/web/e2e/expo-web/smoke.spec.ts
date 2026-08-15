@@ -31,6 +31,9 @@ const WARM_TIMEOUT_MS = 30_000;
 /** The five Material tab-bar entries, in mobile's canonical order. */
 const TAB_NAMES = ['Home', 'Climbs', 'Record', 'Discover', 'Profile'] as const;
 
+/** Android-tablet destinations: the wall view is promoted into the rail. */
+const DESKTOP_TAB_NAMES = ['Home', 'Climbs', 'Record', 'On the Wall', 'Discover', 'Profile'] as const;
+
 /**
  * Console/page-error budget: the smoke fails on error classes that historically
  * meant a broken surface rather than noise.
@@ -119,9 +122,10 @@ test.describe('expo-web smoke', () => {
   });
 
   /**
-   * Binds the seeded kilter board (Dyno Den) via the board sheet so the Climbs
-   * tab has a list and play-drawer actions aren't blocked by the switch-board
-   * overlay (feed climbs live on other boards). Fresh contexts start unbound.
+   * Binds one of the test user's seeded Kilter boards via the board sheet so
+   * the Climbs tab has a list and play-drawer actions aren't blocked by the
+   * switch-board overlay (feed climbs live on other boards). Fresh contexts
+   * start unbound; the exact followed-board sample can vary across seed images.
    */
   async function bindSeededBoard(page: Page): Promise<void> {
     await tabButton(page, 'Climbs').click();
@@ -136,7 +140,7 @@ test.describe('expo-web smoke', () => {
     if (await findBoardButton.isVisible()) {
       await findBoardButton.click({ force: true });
       await page
-        .getByRole('button', { name: /Dyno Den/ })
+        .getByRole('button', { name: /\bkilter$/i })
         .first()
         .click({ force: true });
     }
@@ -199,7 +203,7 @@ test.describe('expo-web smoke', () => {
     // Log-ascent sheet: the save row ("Log attempt" outlined + "Log flash"/
     // "Log send" filled) proves the sheet presented; dismiss restores the
     // drawer.
-    const saveTickButton = page.getByRole('button', { name: /Log (flash|send|attempt)/ }).first();
+    const saveTickButton = page.getByRole('button', { name: /Log (flash|send|attempt)/i }).first();
     await expect(saveTickButton).toBeVisible({ timeout: 15_000 });
     await dismissSheet(page, saveTickButton);
     expect(fatalErrors).toEqual([]);
@@ -220,6 +224,95 @@ test.describe('expo-web smoke', () => {
     await expect(editQueueButton).toBeVisible({ timeout: 15_000 });
     await dismissSheet(page, editQueueButton);
     expect(fatalErrors).toEqual([]);
+  });
+
+  test.describe('desktop adaptive shell', () => {
+    test('uses the tablet rail and keeps every play action and deferred section in the detail pane', async ({
+      browser,
+    }) => {
+      // `screen` is a browser-context option rather than a per-test fixture.
+      // Create the context here so Dimensions.get('screen') sees desktop
+      // eligibility before the Expo bundle evaluates.
+      const context = await browser.newContext({
+        baseURL: process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://localhost:3000',
+        viewport: { width: 1440, height: 900 },
+        screen: { width: 1440, height: 900 },
+        isMobile: false,
+        hasTouch: false,
+        // A fresh web install must start dark even when the browser prefers light.
+        colorScheme: 'light',
+      });
+      const page = await context.newPage();
+      const fatalErrors = collectFatalConsoleErrors(page);
+
+      try {
+        await ensureSignedIn(page);
+
+        await expect
+          .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme))
+          .toBe('dark');
+        await expect
+          .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor))
+          .toBe('rgb(21, 16, 30)');
+
+        for (const tabName of DESKTOP_TAB_NAMES) {
+          await expect(page.getByRole('tab', { name: tabName, exact: true })).toBeVisible();
+        }
+
+        await openPlayDrawerFromClimbsList(page);
+        expect(new URL(page.url()).pathname).not.toContain('/play');
+
+        // The persistent detail pane embeds the same action bar as the mobile
+        // route. Check both rows so a desktop-only gate cannot silently strip an
+        // action while the main Log ascent button still makes the pane look live.
+        // The leading action is mirror on boards that support it and favorite
+        // otherwise. Both are the same capability-gated slot used on mobile.
+        await expect(
+          page
+            .getByRole('button', {
+              name: /^(Mirror climb|Unmirror climb|Add favorite|Remove favorite)$/,
+            })
+            .first(),
+        ).toBeVisible();
+
+        for (const actionName of [
+          'Previous climb',
+          'Log ascent',
+          'Next climb',
+          'Connect Board',
+          'Choose Angle',
+          'Climb actions',
+          'Share climb',
+        ]) {
+          await expect(page.getByRole('button', { name: actionName, exact: true })).toBeVisible();
+        }
+        const queueButton = page.getByRole('button', { name: /^Queue, \d+ climbs$/ });
+        await expect(queueButton).toBeVisible();
+
+        const logAscentButton = page.getByRole('button', { name: 'Log ascent', exact: true });
+        await tapThroughGestureLayer(logAscentButton);
+        const saveTickButton = page.getByRole('button', { name: /Log (flash|send|attempt)/i }).first();
+        await expect(saveTickButton).toBeVisible({ timeout: 15_000 });
+        await dismissSheet(page, saveTickButton);
+
+        await tapThroughGestureLayer(queueButton);
+        const editQueueButton = page.getByRole('button', { name: 'Edit queue', exact: true });
+        await expect(editQueueButton).toBeVisible({ timeout: 15_000 });
+        await dismissSheet(page, editQueueButton);
+
+        // Desktop wheel/trackpad scrolling does not emit RN's begin-drag event.
+        // Scrolling over the pane must still open the deferred-content gate.
+        await logAscentButton.hover({ force: true });
+        await page.mouse.wheel(0, 1200);
+
+        for (const sectionName of ['Logbook', 'Beta Videos', 'Community', 'Similar Climbs']) {
+          await expect(page.getByText(sectionName, { exact: true }).first()).toBeVisible({ timeout: WARM_TIMEOUT_MS });
+        }
+        expect(fatalErrors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
   });
 
   test('deep route reloads through the /app proxy without losing the shell', async ({ page }) => {

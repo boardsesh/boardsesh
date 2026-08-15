@@ -32,6 +32,11 @@ export function computeFirstScreenHeight(windowHeight: number, reserve: number, 
   return Math.max(windowHeight - reserve, windowHeight * minFraction);
 }
 
+/** A persistent detail pane needs an explicit empty state; a modal route does not. */
+export function shouldShowPanePlaceholder(isPane: boolean, hasDisplayedClimb: boolean): boolean {
+  return isPane && !hasDisplayedClimb;
+}
+
 /**
  * Scroll offset that brings a just-expanded Logbook section into view. The
  * Logbook is the first below-fold section, so it starts at

@@ -9,10 +9,10 @@ const DEBUG = process.env.NODE_ENV === 'development';
 let safeWsCounter = 0;
 
 // Re-export shared primitives so every importer of this module keeps getting
-// `execute`/`subscribe` and friends from one place. The legacy
-// `components/graphql-queue` tree still imports them from here rather than from
-// `@boardsesh/graphql-client` directly, so the re-exports stay until that tree
-// is deleted (W-16).
+// `execute`/`subscribe` and friends from one place. The `components/graphql-queue`
+// tree that used to drive most of this went with W-16; the surviving consumers
+// are `board-presence-client.ts`, `kiosk/presence/kiosk-presence-hub.tsx`,
+// `social/comment-section.tsx` and `use-notification-subscription.ts`.
 export {
   execute,
   subscribe,

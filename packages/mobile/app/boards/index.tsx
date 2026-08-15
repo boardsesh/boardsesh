@@ -176,6 +176,7 @@ export default function BoardSelection() {
       boardDownloadState({
         scopeKey: offlineBoardKeyForBoard(board),
         enabled: enabledScopeKeys.includes(offlineBoardKeyForBoard(board)),
+        isBootstrapDone: false,
         downloaded: (downloadedScopeKeys ?? []).includes(offlineBoardKeyForBoard(board)),
         isSyncing: false,
         currentTable: null,

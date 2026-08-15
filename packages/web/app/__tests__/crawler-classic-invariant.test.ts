@@ -130,24 +130,15 @@ vi.mock('@/app/components/board-renderer/util', () => ({
   buildOverlayUrl: vi.fn(() => '/api/internal/board-render'),
 }));
 
-// Render stubs: none of these render on the redirect path — every module below
+// Render stubs: neither renders on the redirect path — every module below
 // throws its redirect before returning JSX — but they still need to import
-// cleanly, since the page/layout modules import them at the top level.
-vi.mock('@/app/components/board-page/board-page-climbs-list', () => ({ default: () => null }));
+// cleanly, since the page/layout modules import them at the top level. The
+// eight climbing-stack stubs that used to sit here (board-page, graphql-queue,
+// connection-manager, persistent-session, queue-control) came out with W-16:
+// the modules they mocked no longer exist, and vitest throws on a mock whose
+// path the module graph never reaches.
 vi.mock('@/app/components/climb-detail/climb-view-seo-fragment', () => ({ default: () => null }));
-vi.mock('@/app/components/board-page/header', () => ({ default: () => null }));
-vi.mock('@/app/components/board-page/last-used-board-tracker', () => ({ default: () => null }));
 vi.mock('@/app/components/providers/i18n-provider', () => ({ default: () => null }));
-vi.mock('@/app/components/graphql-queue', () => ({ GraphQLQueueProvider: () => null }));
-vi.mock('@/app/components/connection-manager/connection-settings-context', () => ({
-  ConnectionSettingsProvider: () => null,
-}));
-vi.mock('@/app/components/connection-manager/websocket-connection-provider', () => ({
-  WebSocketConnectionProvider: () => null,
-}));
-vi.mock('@/app/components/persistent-session', () => ({ BoardSessionBridge: () => null }));
-vi.mock('@/app/components/queue-control/ui-searchparams-provider', () => ({ UISearchParamsProvider: () => null }));
-vi.mock('@/app/components/queue-control/queue-bridge-context', () => ({ QueueBridgeInjector: () => null }));
 
 const { middleware } = await import('@/middleware');
 const BoardAngleLayout = (await import('@/app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout')).default;

@@ -6,8 +6,30 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-08-15
 
+### New
+
+- Boardsesh pages are easier to find from search — every board setup and public playlist now tells search engines where to look. Gym and setter pages are wired up and land next. ([#4464](https://github.com/boardsesh/boardsesh/pull/4464))
+- Expo web now starts dark and uses the roomy tablet layout on desktop. ([#4471](https://github.com/boardsesh/boardsesh/pull/4471))
+  Open a climb without losing the full action bar, queue, logbook, beta, community, or similar climbs.
+
+### Improved
+
+- The website is now the fast front door — browse and share climbs there, and do your climbing in the app. ([#4467](https://github.com/boardsesh/boardsesh/pull/4467))
+- Board pages slim down to the essentials — browsing and climbing live in the app now. ([#4448](https://github.com/boardsesh/boardsesh/pull/4448))
+  Every old board link still works: liked climbs, logbooks and playlists send you to the right place, and creating or remixing a climb opens the app on the board you were already looking at.
+  Importing MoonBoard screenshots moved to its own page — pick your board and drop the shots in.
+
 ### Fixed
 
+- Download several boards for offline use without getting stuck after the snapshot finishes. ([#4469](https://github.com/boardsesh/boardsesh/pull/4469))
+  Pocketing your phone now resumes the download cleanly, and a slower fallback shows real progress instead of an interrupted spinner.
+- Similar climbs and offline board stats keep loading during busy sessions. ([#4468](https://github.com/boardsesh/boardsesh/pull/4468))
+- Keep every climber's sends and sessions together when the same wall was registered more than once ([#3422](https://github.com/boardsesh/boardsesh/pull/3422))
+  Saved walls now switch to the surviving board automatically after a merge
+  When a wall is already on Boardsesh, join the existing board or deliberately create a separate one
+- Grouped notifications open climbs with the correct board layout and angle, even across back-to-back releases. ([#4455](https://github.com/boardsesh/boardsesh/pull/4455))
+- Claiming a gym with your work email now auto-approves only when the gym's owner is the one who put that website on the listing. Anything else gets a quick human check first, so nobody can hand themselves the keys by editing the website field. ([#4058](https://github.com/boardsesh/boardsesh/pull/4058))
+  Fixes #3431
 - Offline board downloads recover automatically and keep bulk catalog updates on the fast CDN download instead of crawling through hundreds of 500-climb batches. ([#4456](https://github.com/boardsesh/boardsesh/pull/4456))
 
 ## 2026-08-14

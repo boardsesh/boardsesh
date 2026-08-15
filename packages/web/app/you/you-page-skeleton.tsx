@@ -5,7 +5,6 @@ import Box from '@mui/material/Box';
 import MuiCard from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Skeleton from '@mui/material/Skeleton';
-import LogbookItemSkeleton from '@/app/components/library/logbook-item-skeleton';
 import styles from '@/app/profile/[user_id]/profile-page.module.css';
 
 export default function YouPageSkeleton() {
@@ -29,7 +28,7 @@ export default function YouPageSkeleton() {
 
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
         {Array.from({ length: 5 }).map((_, index) => (
-          <LogbookItemSkeleton key={index} />
+          <Skeleton key={index} variant="rounded" height={72} animation="wave" sx={{ borderRadius: '12px' }} />
         ))}
       </Box>
     </Box>

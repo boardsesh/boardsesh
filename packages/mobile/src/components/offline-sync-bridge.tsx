@@ -13,7 +13,7 @@ import { startSyncScheduler, drainMutationQueue, startBackgroundTracking } from 
 import { reportOutboxBacklogOnce } from '../offline/outbox-telemetry';
 import { getSetting } from '../settings';
 import { setupNotificationHandlers } from '../notifications';
-import { getHttpClient } from '../lib/graphql/client';
+import { getOfflineSyncHttpClient } from '../lib/graphql/client';
 import { setOfflineEngineEnabled } from '../lib/offline-engine';
 import { registerOfflineEngineState } from '../lib/analytics-offline-engine-state';
 import { useAuth } from '../providers/auth-provider';
@@ -61,9 +61,13 @@ export function OfflineSyncBridge() {
   // this db has no tables yet. See src/db/schema-ready.ts.
   const schemaReady = useOfflineSchemaReady();
 
-  // getHttpClient() already carries auth + endpoint; binding .request keeps the
+  // getOfflineSyncHttpClient() carries auth, endpoint, and a hard request
+  // deadline; binding .request keeps the
   // GraphQLFetch shape the scheduler and drainer expect.
-  const graphqlFetch = useMemo<GraphQLFetch>(() => (query, variables) => getHttpClient().request(query, variables), []);
+  const graphqlFetch = useMemo<GraphQLFetch>(
+    () => (query, variables) => getOfflineSyncHttpClient().request(query, variables),
+    [],
+  );
 
   // Who the local user-data rows belong to. Written here rather than inside
   // pullSync because this is the layer that knows the signed-in climber, and

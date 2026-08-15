@@ -171,7 +171,6 @@ export default function ImportBetaContent() {
         component="main"
         sx={{
           padding: 3,
-          paddingBottom: 'var(--bottom-bar-height)',
           maxWidth: 720,
           margin: '0 auto',
           width: '100%',

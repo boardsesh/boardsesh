@@ -6,7 +6,12 @@
     },
     "detail": {
       "fallbackTitle": "Playlist",
-      "fallbackDescription": "Kletter-Playlist auf Boardsesh"
+      "fallbackDescription": "Sieh dir die Boulder in dieser Playlist auf Boardsesh an.",
+      "privateTitle": "Private Playlist",
+      "privateDescription": "Diese Playlist ist privat.",
+      "climbCountDescription_one": "Eine Kletter-Playlist auf Boardsesh mit {{count}} Boulder.",
+      "climbCountDescription_other": "Eine Kletter-Playlist auf Boardsesh mit {{count}} Bouldern.",
+      "ogAlt": "Die Playlist {{name}} auf Boardsesh"
     }
   },
   "library": {
@@ -114,7 +119,6 @@
     },
     "menu": {
       "editClimbs": "Boulder bearbeiten",
-      "edit": "Bearbeiten",
       "delete": "Löschen"
     },
     "visibility": {
@@ -175,9 +179,7 @@
     "title": "Playlist bearbeiten",
     "fields": {
       "name": "Name der Playlist",
-      "namePlaceholder": "z. B. Fiese Leisten",
       "description": "Beschreibung",
-      "descriptionPlaceholder": "Optionale Beschreibung für deine Playlist ...",
       "color": "Farbe",
       "icon": "Icon",
       "iconHint": "Tipp ein beliebiges Emoji oder wähl eins unten",
@@ -187,7 +189,6 @@
       "privateHint": "Private Playlists siehst nur du"
     },
     "actions": {
-      "cancel": "Abbrechen",
       "save": "Speichern",
       "saving": "Wird gespeichert ..."
     },
@@ -213,93 +214,8 @@
       "color": "Farbe"
     }
   },
-  "generator": {
-    "drawerTitle": "Playlist generieren",
-    "generatingTitle": "Wird generiert ...",
-    "optionsTitle": "Optionen",
-    "generatingProgress": "Boulder werden hinzugefügt ... {{current}} / {{total}}",
-    "generate": "Generieren",
-    "reset": "Zurücksetzen",
-    "totals": {
-      "total": "Gesamt",
-      "climbs_one": "{{count}} Boulder",
-      "climbs_other": "{{count}} Boulder"
-    },
-    "summaryRow_one": "{{count}} Boulder ({{range}})",
-    "summaryRow_other": "{{count}} Boulder ({{range}})",
-    "options": {
-      "warmUp": "Aufwärmen",
-      "targetAngle": "Ziel-Winkel",
-      "targetGrade": "Ziel-Grad",
-      "minAscents": "Min. Begehungen",
-      "minRating": "Min. Bewertung",
-      "any": "Alle",
-      "minAscentsOption": "{{value}}+",
-      "minRatingOption_one": "ab {{count}} Stern",
-      "minRatingOption_other": "ab {{count}} Sternen",
-      "climbBias": "Boulder-Auswahl",
-      "tallClimbsLabel": "Nur hohe Boulder",
-      "tallClimbsTooltip": "Zeigt nur Boulder, die Griffe in den unteren 8 Reihen nutzen (nur bei 8x12- und 10x12-Boards)",
-      "wideClimbsLabel": "Nur breite Boulder",
-      "wideClimbsTooltip": "Zeigt nur Boulder, die die seitlichen Erweiterungsgriffe der 10x10 nutzen",
-      "mainSetClimbs": "Boulder im Hauptteil",
-      "mainSetVariability": "Streuung im Hauptteil",
-      "numberOfSteps": "Anzahl Stufen",
-      "climbsPerStep": "Boulder pro Stufe",
-      "numberOfClimbs": "Anzahl Boulder"
-    },
-    "warmUpOptions": {
-      "standard": "Standard",
-      "extended": "Erweitert",
-      "none": "Ohne"
-    },
-    "climbBiasOptions": {
-      "unfamiliar": "Unbekannt",
-      "attempted": "Versucht",
-      "any": "Alle"
-    },
-    "workoutTypes": {
-      "volume": {
-        "name": "Volumen",
-        "description": "Erzeugt ein Workout mit vielen Bouldern."
-      },
-      "pyramid": {
-        "name": "Pyramide",
-        "description": "Arbeite dich zu einem Maximal-Grad hoch und wieder runter."
-      },
-      "ladder": {
-        "name": "Leiter",
-        "description": "Arbeite dich Stufe für Stufe durch die Grade nach oben."
-      },
-      "gradeFocus": {
-        "name": "Grad-Fokus",
-        "description": "Grad wählen und los!"
-      }
-    },
-    "sections": {
-      "warmUp": "Aufwärmen",
-      "increasing": "Aufsteigend",
-      "peak": "Spitze",
-      "decreasing": "Absteigend",
-      "main": "Hauptteil"
-    },
-    "chart": {
-      "ariaLabel": "Vorschau der Gradverteilung",
-      "configurePrompt": "Stell die Optionen ein für die Vorschau"
-    },
-    "messages": {
-      "noClimbs": "Keine Boulder zum Generieren"
-    }
-  },
   "bottomTabBar": {
-    "home": "Start",
-    "climb": "Klettern",
     "discover": "Entdecken",
-    "feed": "Feed",
-    "create": "Erstellen",
-    "you": "Du",
-    "youSignInTitle": "Melde dich an für deinen Fortschritt",
-    "youSignInDescription": "Melde dich an für deine Statistiken, Sessions und dein Routenbuch.",
     "selectBoardForPlaylist": "Wähl erst ein Board, dann leg die Playlist an",
     "createdPlaylistToast": "Playlist „{{name}}“ erstellt",
     "createPlaylistFailed": "Die Playlist ließ sich nicht erstellen"

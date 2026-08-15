@@ -268,13 +268,13 @@ describe('YouTabBar', () => {
     vi.clearAllMocks();
   });
 
-  it('has three tabs: Progress, Sessions, Logbook', () => {
+  // The logbook lives in the app now — /you/logbook was deleted in W-16 and
+  // 308s back to /you, so a third tab here would be a control that does nothing.
+  it('has exactly two tabs: Progress and Sessions', () => {
     mockUsePathname.mockReturnValue('/you');
     render(<YouTabBar />);
 
-    expect(screen.getByRole('tab', { name: 'Progress' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Sessions' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Logbook' })).toBeTruthy();
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Progress', 'Sessions']);
   });
 
   it('highlights Progress tab on /you path', () => {
@@ -291,13 +291,6 @@ describe('YouTabBar', () => {
     expect(screen.getByRole('tab', { name: 'Sessions', selected: true })).toBeTruthy();
   });
 
-  it('highlights Logbook tab on /you/logbook path', () => {
-    mockUsePathname.mockReturnValue('/you/logbook');
-    render(<YouTabBar />);
-
-    expect(screen.getByRole('tab', { name: 'Logbook', selected: true })).toBeTruthy();
-  });
-
   it('navigates to /you/sessions when Sessions tab is clicked', () => {
     mockUsePathname.mockReturnValue('/you');
     render(<YouTabBar />);
@@ -305,15 +298,6 @@ describe('YouTabBar', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Sessions' }));
 
     expect(mockPush).toHaveBeenCalledWith('/you/sessions', { scroll: false });
-  });
-
-  it('navigates to /you/logbook when Logbook tab is clicked', () => {
-    mockUsePathname.mockReturnValue('/you');
-    render(<YouTabBar />);
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Logbook' }));
-
-    expect(mockPush).toHaveBeenCalledWith('/you/logbook', { scroll: false });
   });
 
   it('navigates to /you when Progress tab is clicked', () => {

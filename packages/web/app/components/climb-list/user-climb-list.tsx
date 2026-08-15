@@ -63,9 +63,7 @@ export default function UserClimbList({ userId }: UserClimbListProps) {
       isLoading={isLoading}
       hasMore={hasNextPage ?? false}
       onLoadMore={handleLoadMore}
-      showBoardFilter={false}
       selectedBoard={null}
-      onBoardSelect={() => {}}
       showSortToggle
       sortBy={sortBy}
       onSortChange={setSortBy}

@@ -40,6 +40,199 @@ export function resolveExpoWebDevOrigin(rawOrigin) {
   return parsedOrigin.origin;
 }
 
+/**
+ * Path-prefixed locales. `en-US` is served at the root with no prefix, so it is
+ * absent here on purpose.
+ *
+ * `redirects()` runs before `middleware.ts`, and its sources are matched
+ * literally: `/logbook` never matches `/es/logbook`. Every rule therefore ships
+ * with its three locale twins (standing rule 4 of the web reposition), built by
+ * `expandLocaleRedirects` below so a hand-written rule can't forget them.
+ */
+const PATH_LOCALE_PREFIXES = ['/es', '/fr', '/de'];
+
+/**
+ * Origin of the Expo-web app. Mirrors `DEFAULT_APP_ORIGIN` in
+ * `@boardsesh/shared-schema/app-origins`, which cannot be imported here
+ * (next.config.mjs loads outside the TS path aliases), so
+ * `app/__tests__/next-config-redirects.test.ts` pins the literal against it.
+ *
+ * Exported separately from `APP_ORIGIN` on purpose: `NEXT_PUBLIC_APP_URL` is set
+ * to `http://localhost:8081` for local Expo-web work (see `.env.local`), and a
+ * test that pinned the env-resolved value would fail on a correct config the
+ * moment that export is in the shell.
+ */
+export const DEFAULT_CONFIG_APP_ORIGIN = 'https://app.boardsesh.com';
+
+export const APP_ORIGIN = process.env.NEXT_PUBLIC_APP_URL ?? DEFAULT_CONFIG_APP_ORIGIN;
+
+/**
+ * Board-route siblings deleted by the web reposition (W-17, #4433), plus the
+ * legacy library/profile paths that predate it.
+ *
+ * Same-origin destinations are `permanent: true` — they point at routes that
+ * exist on this deploy and consolidating the signal is the point. The
+ * cross-origin destinations are `permanent: false`: a browser caches a permanent
+ * cross-origin redirect indefinitely, with no server-side hatch left if the SPA
+ * route moves. They stay temporary until the app route is proven in prod.
+ *
+ * Order matters — Next matches these in array order, so a board-specific rule
+ * has to come before the `/:board/…` catch-all that would otherwise swallow it.
+ */
+const BASE_REDIRECTS = [
+  // Legacy library / profile paths.
+  {
+    source: '/my-library',
+    destination: '/playlists',
+    permanent: true,
+  },
+  {
+    source: '/my-library/:path*',
+    destination: '/playlists/:path*',
+    permanent: true,
+  },
+  {
+    source: '/:board/:layout/:size/:set/:angle/playlist/:uuid',
+    destination: '/playlists/:uuid',
+    permanent: true,
+  },
+  {
+    source: '/crusher/:user_id',
+    destination: '/profile/:user_id',
+    permanent: true,
+  },
+  {
+    source: '/logbook',
+    destination: '/playlists',
+    permanent: true,
+  },
+  // The /you logbook tab was the web logbook feed; logging and history live in
+  // the app now, so the tab collapses back onto /you.
+  {
+    source: '/you/logbook',
+    destination: '/you',
+    permanent: true,
+  },
+
+  // Climb creation moved to the app. A canonical numeric board URL hands its
+  // board over intact: these are exactly the params the app's create screen
+  // reads (`packages/mobile/app/(tabs)/climbs/create.tsx`), and it falls back to
+  // the signed-in user's active board for any it doesn't get.
+  {
+    source: '/:board/:layout(\\d+)/:size(\\d+)/:set([\\d,]+)/:angle(\\d+)/create',
+    destination: `${APP_ORIGIN}/climbs/create?boardName=:board&layoutId=:layout&sizeId=:size&setIds=:set&angle=:angle`,
+    permanent: false,
+  },
+  // The slug forms hand over bare. The app parses layoutId/sizeId with
+  // `Number()`, so forwarding `original`/`12x12-square` would seed the editor
+  // with NaN — worse than its active-board fallback — and resolving a slug needs
+  // a DB lookup a static redirect cannot do. Recorded on #4433.
+  {
+    source: '/:board/:layout/:size/:set/:angle/create',
+    destination: `${APP_ORIGIN}/climbs/create`,
+    permanent: false,
+  },
+  {
+    source: '/b/:board_slug/:angle/create',
+    destination: `${APP_ORIGIN}/climbs/create`,
+    permanent: false,
+  },
+
+  // The MoonBoard bulk importer stays on Next, re-homed to a board-agnostic
+  // route. Layout, hold sets and angle ride along so a bookmarked import URL
+  // opens the wall it named; anything unresolvable lands on the picker.
+  {
+    source: '/moonboard/:layout/:size/:set/:angle/import',
+    destination: '/moonboard-import?layout=:layout&sets=:set&angle=:angle',
+    permanent: true,
+  },
+  // Bulk import is MoonBoard-only — the deleted page sent a Kilter or Tension
+  // import URL to that board's own list instead of rendering the importer. This
+  // rule keeps that, and it has to exist: `MOONBOARD_LAYOUTS` ids run 1–7 and
+  // collide with Aurora layout ids, so without it `/kilter/1/…/import` would
+  // resolve to MoonBoard 2010 and render the importer for the wrong board.
+  {
+    source: '/:board/:layout/:size/:set/:angle/import',
+    destination: '/:board/:layout/:size/:set/:angle/list',
+    permanent: true,
+  },
+  // The `/b` tree can't make that split: the slug names a board row, and only a
+  // DB lookup says whether it's a MoonBoard. It goes to the importer because
+  // that is the only reason to open `/import` at all; a non-MoonBoard slug lands
+  // on the picker, which is a noindex utility page with a way back.
+  {
+    source: '/b/:board_slug/:angle/import',
+    destination: '/moonboard-import?angle=:angle',
+    permanent: true,
+  },
+
+  // Liked climbs live in the app; the board's own front door is the closest
+  // surviving surface on www.
+  {
+    source: '/:board/:layout/:size/:set/:angle/liked',
+    destination: '/:board/:layout/:size/:set/:angle/list',
+    permanent: true,
+  },
+  {
+    source: '/b/:board_slug/:angle/liked',
+    destination: '/b/:board_slug/:angle/list',
+    permanent: true,
+  },
+
+  // The board logbook rendered the playlists library — the same destination the
+  // top-level `/logbook` rule above already uses.
+  {
+    source: '/:board/:layout/:size/:set/:angle/logbook',
+    destination: '/playlists',
+    permanent: true,
+  },
+  {
+    source: '/b/:board_slug/:angle/logbook',
+    destination: '/playlists',
+    permanent: true,
+  },
+
+  // Board-scoped playlists consolidate onto the top-level library — the plural
+  // twin of the singular `/playlist/:uuid` rule above.
+  {
+    source: '/:board/:layout/:size/:set/:angle/playlists',
+    destination: '/playlists',
+    permanent: true,
+  },
+  {
+    source: '/:board/:layout/:size/:set/:angle/playlists/:uuid',
+    destination: '/playlists/:uuid',
+    permanent: true,
+  },
+  {
+    source: '/b/:board_slug/:angle/playlists',
+    destination: '/playlists',
+    permanent: true,
+  },
+  {
+    source: '/b/:board_slug/:angle/playlists/:uuid',
+    destination: '/playlists/:uuid',
+    permanent: true,
+  },
+];
+
+/**
+ * One rule per locale: the base (unprefixed, `en-US`) rule plus its `/es`,
+ * `/fr` and `/de` twins. Same-origin destinations keep the reader in their
+ * locale; the app origin has no locale routing, so its twins keep the same
+ * target — the accepted regression `buildAppHandoffUrl` already records.
+ */
+export function expandLocaleRedirects(rules) {
+  return rules.flatMap((rule) => [
+    rule,
+    ...PATH_LOCALE_PREFIXES.map((prefix) => ({
+      ...rule,
+      source: `${prefix}${rule.source}`,
+      destination: rule.destination.startsWith('http') ? rule.destination : `${prefix}${rule.destination}`,
+    })),
+  ]);
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
@@ -267,34 +460,7 @@ const nextConfig = {
     };
   },
   async redirects() {
-    return [
-      // Redirect old playlist routes to /playlists
-      {
-        source: '/my-library',
-        destination: '/playlists',
-        permanent: true,
-      },
-      {
-        source: '/my-library/:path*',
-        destination: '/playlists/:path*',
-        permanent: true,
-      },
-      {
-        source: '/:board/:layout/:size/:set/:angle/playlist/:uuid',
-        destination: '/playlists/:uuid',
-        permanent: true,
-      },
-      {
-        source: '/crusher/:user_id',
-        destination: '/profile/:user_id',
-        permanent: true,
-      },
-      {
-        source: '/logbook',
-        destination: '/playlists',
-        permanent: true,
-      },
-    ];
+    return expandLocaleRedirects(BASE_REDIRECTS);
   },
 };
 

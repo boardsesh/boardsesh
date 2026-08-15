@@ -71,7 +71,7 @@ jobs:
     # like @next/swc, sharp, lightningcss load against, and keeps the
     # shared node_modules cache safe across the build → e2e boundary.
     container:
-      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
     steps:
       - uses: actions/checkout@v6
 
@@ -215,7 +215,7 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
     container:
-      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
 
     services:
       postgres:
@@ -470,7 +470,7 @@ jobs:
     timeout-minutes: 20
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
 
     services:
       postgres:
@@ -589,21 +589,19 @@ jobs:
           NEXT_PUBLIC_WS_URL: ws://localhost:8080/graphql
 
       - name: Clear tracked screenshot output dirs
-        # `packages/web/public/help/` and the layout screenshots are product
-        # assets tracked in git. If the Playwright capture step fails partway
-        # through, the stage step below would otherwise pick up the stale
-        # tracked PNGs and bundle them into the uploaded artifact as though
-        # this run produced them. Wipe them first so the artifact only ever
-        # contains files the current Playwright run actually wrote.
+        # The layout screenshots are product assets tracked in git. If the
+        # Playwright capture step fails partway through, the stage step below
+        # would otherwise pick up the stale tracked PNGs and bundle them into
+        # the uploaded artifact as though this run produced them. Wipe them
+        # first so the artifact only ever contains files the current Playwright
+        # run actually wrote.
         run: |
-          rm -f packages/web/public/help/*.png \
-                packages/web/e2e/screenshots/layouts/*.png
+          rm -f packages/web/e2e/screenshots/layouts/*.png
 
       - name: Capture screenshots
         run: |
           bunx playwright test \
-            --project=layout-screenshots \
-            --project=help-screenshots
+            --project=layout-screenshots
         working-directory: packages/web
         env:
           PLAYWRIGHT_TEST_BASE_URL: http://localhost:3000
@@ -625,9 +623,8 @@ jobs:
       - name: Stage screenshots for upload
         if: always()
         run: |
-          mkdir -p screenshots-out/layouts screenshots-out/help
+          mkdir -p screenshots-out/layouts
           cp packages/web/e2e/screenshots/layouts/*.png    screenshots-out/layouts/   2>/dev/null || true
-          cp packages/web/public/help/*.png                screenshots-out/help/      2>/dev/null || true
           ls -R screenshots-out || true
 
       - name: Upload screenshots artifact

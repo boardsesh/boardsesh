@@ -11,7 +11,7 @@
     },
     "help": {
       "title": "Aide",
-      "description": "Découvrez les fonctionnalités de Boardsesh : heatmap, mode party, générateur de playlists et bien plus."
+      "description": "Ce que vous pouvez faire sur boardsesh.com, ce qui se passe dans l'app et où demander de l'aide."
     },
     "docs": {
       "title": "Documentation API",
@@ -192,233 +192,43 @@
     "footer": "Ce document est fourni à titre informatif et ne constitue pas un avis juridique. Dernière mise à jour : 02-08-2026"
   },
   "help": {
-    "headerTitle": "Aide",
     "hero": {
-      "title": "Comment pouvons-nous vous aider ?",
-      "subtitle": "Découvrez les fonctionnalités de Boardsesh et tirez le meilleur de vos sessions"
+      "title": "Aide",
+      "subtitle": "Ce site, c'est là que vivent les blocs. L'app, c'est là que vous les grimpez. Voici ce que fait chacun."
     },
-    "sections": {
-      "visualization": {
-        "label": "Visualisation et analyse"
-      },
-      "collaboration": {
-        "label": "Sessions et collaboration"
-      },
-      "training": {
-        "label": "Entraînement et workouts"
-      },
-      "search": {
-        "label": "Recherche et découverte"
-      },
-      "connectivity": {
-        "label": "Sync et connectivité"
-      }
+    "web": {
+      "title": "Sur ce site",
+      "intro": "Tout ici est un lien que vous pouvez envoyer à quelqu'un. Rien à installer, pas de connexion.",
+      "item1": "Cherchez un bloc et consultez sa cotation, son ouvreur et ses croix.",
+      "item2": "Parcourez tout le catalogue d'un board par layout, taille et inclinaison.",
+      "item3": "Partagez un bloc, une playlist ou votre profil avec une simple URL.",
+      "item4": "Trouvez une salle et voyez ce qu'il y a sur son mur depuis son écran kiosque.",
+      "playlistsLink": "Voir les playlists",
+      "aboutLink": "À propos de Boardsesh"
     },
-    "heatmap": {
-      "q": "Comment utiliser la heatmap ?",
-      "imgAlt": "Visualisation de la heatmap",
-      "intro": "La heatmap montre les schémas d'utilisation des prises sur l'ensemble des blocs, ce qui aide à repérer les prises populaires et les pistes d'entraînement.",
-      "accessLabel": "Pour accéder à la heatmap :",
-      "access1": "Ouvrez le tiroir de recherche et déployez la section « Prises »",
-      "access2": "Cliquez sur « Afficher la heatmap »",
-      "access3": "La board affichera un dégradé du vert (faible utilisation) au rouge (forte utilisation)",
-      "modesLabel": "Modes de couleur disponibles :",
-      "modes": {
-        "ascentsLabel": "Enchaînements :",
-        "ascentsBody": "Popularité globale basée sur le nombre total d'enchaînements",
-        "startLabel": "Prises de départ :",
-        "startBody": "Positions de départ courantes",
-        "handFootLabel": "Prises mains/pieds :",
-        "handFootBody": "Utilisation par type de membre",
-        "finishLabel": "Prises d'arrivée :",
-        "finishBody": "Positions de top courantes"
-      },
-      "outro": "Utilisez les interrupteurs pour afficher ou masquer les numéros des prises et pour inclure ou exclure les prises de pied."
+    "app": {
+      "title": "Dans l'app",
+      "intro": "Tout ce qui parle au mur se passe dans l'app.",
+      "item1": "Montez une file et enchaînez les blocs avec votre équipe.",
+      "item2": "Lancez une session partagée : tous les téléphones pilotent la même file.",
+      "item3": "Allumez les prises en Bluetooth sur les murs Kilter, Tension et MoonBoard.",
+      "item4": "Notez vos croix et gardez votre carnet au même endroit.",
+      "cta": "Ouvrir l'app",
+      "ctaAriaLabel": "Ouvrir l'app Boardsesh"
     },
-    "holdClassification": {
-      "q": "Comment classer les prises de ma board ?",
-      "imgAlt": "Assistant de classification des prises",
-      "intro": "La classification des prises vous permet de noter chaque prise de votre board à votre manière, ce qui vous aide à cerner vos points forts et à trouver des blocs qui vous correspondent.",
-      "attrsLabel": "Attributs de classification :",
-      "attrs": {
-        "holdTypeLabel": "Type de prise :",
-        "holdTypeBody": "Bac, plat, pince, réglette ou trou",
-        "handRatingLabel": "Note main :",
-        "handRatingBody": "Échelle de difficulté de 1 à 5 pour l'usage à la main",
-        "footRatingLabel": "Note pied :",
-        "footRatingBody": "Échelle de difficulté de 1 à 5 pour l'usage au pied",
-        "pullDirectionLabel": "Direction de traction :",
-        "pullDirectionBody": "Angle optimal de traction de 0 à 360"
-      },
-      "outro": "Les classifications sont personnelles et stockées dans votre compte. Au fil du temps, vous construisez ainsi une lecture de votre board qui vous est propre."
+    "aurora": {
+      "title": "Vous venez des apps Aurora ?",
+      "intro": "Boardsesh lit votre compte existant, donc vos croix vous suivent.",
+      "item1": "Connectez-vous avec votre compte Kilter ou Tension et votre carnet se synchronise.",
+      "item2": "Vos ascensions restent les vôtres. On n'écrit jamais rien que vous n'ayez pas noté.",
+      "link": "Lire le guide de migration"
     },
-    "partyMode": {
-      "q": "Comment démarrer une session collaborative ?",
-      "imgAlt": "Session active en mode party",
-      "intro": "Le mode Party permet à plusieurs grimpeurs de partager une file et de se relayer sur la board en temps réel.",
-      "startLabel": "Pour démarrer une session :",
-      "start1": "Touchez l'icône ampoule dans la barre de file en bas",
-      "start2": "Allez à l'onglet « Démarrer la session » et connectez-vous si ce n'est pas déjà fait",
-      "start3": "Cliquez sur « Démarrer le mode Party » pour créer une nouvelle session",
-      "start4": "Partagez la session avec vos amis via QR code ou lien",
-      "joinLabel": "Pour rejoindre une session :",
-      "join": {
-        "qrLabel": "Scanner le QR code :",
-        "qrBody": "L'hôte de la session peut afficher un QR code que les autres scannent avec l'appareil photo de leur téléphone",
-        "shareLabel": "Partager le lien :",
-        "shareBody": "Copiez et partagez l'URL de la session : toute personne avec le lien peut rejoindre",
-        "idLabel": "Saisir l'ID de session :",
-        "idBody": "Allez à l'onglet « Rejoindre la session » et collez soit l'URL complète, soit l'ID de la session"
-      },
-      "featuresLabel": "Fonctionnalités de session :",
-      "feature1": "Synchronisation en temps réel de la file sur tous les appareils",
-      "feature2": "Plusieurs personnes peuvent ajouter ou retirer des blocs",
-      "feature3": "Le leader de la session contrôle l'affichage de la board",
-      "feature4": "Passage automatique du leadership si le leader actuel se déconnecte",
-      "feature5": "La session tient bon en cas de rafraîchissement de page ou de reconnexion"
-    },
-    "queueManagement": {
-      "q": "Comment gérer la file de blocs ?",
-      "imgAlt": "Gestion de la file",
-      "intro": "La file vous permet d'organiser les blocs de votre session, que vous grimpiez seul ou à plusieurs.",
-      "actionsLabel": "Actions sur la file :",
-      "actions": {
-        "addLabel": "Ajouter des blocs :",
-        "addBody": "Double-touchez n'importe quel bloc de la liste pour l'ajouter à votre file",
-        "reorderLabel": "Réorganiser :",
-        "reorderBody": "Glissez-déposez les blocs pour changer l'ordre",
-        "currentLabel": "Définir le bloc actuel :",
-        "currentBody": "Cliquez sur un bloc pour le rendre actif",
-        "removeLabel": "Retirer :",
-        "removeBody": "Cliquez sur la croix d'un bloc de la file",
-        "mirrorLabel": "Miroir :",
-        "mirrorBody": "Activez le mode miroir pour un entraînement bilatéral"
-      },
-      "outro": "La file se synchronise automatiquement avec les membres de la party et tient bon hors-ligne, pour des sessions sans interruption."
-    },
-    "playlistGenerator": {
-      "q": "Comment générer une playlist d'entraînement ?",
-      "intro": "Le générateur de playlist construit des workouts structurés adaptés à vos objectifs.",
-      "typesLabel": "Types de workout :",
-      "types": {
-        "volumeLabel": "Volume :",
-        "volumeBody": "Beaucoup de répétitions à une cotation constante pour l'endurance",
-        "pyramidLabel": "Pyramide :",
-        "pyramidBody": "Montée jusqu'à une cotation maximale, puis redescente",
-        "ladderLabel": "Échelle :",
-        "ladderBody": "Progression par paliers à travers des cotations croissantes",
-        "gradeFocusLabel": "Focus cotation :",
-        "gradeFocusBody": "Travail concentré sur une seule cotation cible"
-      },
-      "optionsLabel": "Options de configuration :",
-      "option1": "Style d'échauffement (Standard, Étendu ou Aucun)",
-      "option2": "Choix de la cotation cible",
-      "option3": "Type de bloc (inconnus, déjà tentés ou tous)",
-      "option4": "Filtres de nombre minimum d'enchaînements ou de note",
-      "option5": "Nombre de blocs par section"
-    },
-    "mirroring": {
-      "q": "Comment mettre un bloc en miroir ?",
-      "intro": "Le miroir d'un bloc inverse toutes les prises sur le côté opposé de la board, idéal pour un entraînement de force bilatéral.",
-      "howLabel": "Pour mettre un bloc en miroir :",
-      "step1": "Trouvez le bloc que vous voulez inverser",
-      "step2": "Cherchez l'icône de bascule miroir dans les actions du bloc",
-      "step3": "Activez-la pour inverser le bloc horizontalement",
-      "outro": "Quand vous êtes connecté en Bluetooth, la board affiche automatiquement le motif inversé. Cette fonctionnalité est disponible sur les boards compatibles comme le Kilter Homewall."
-    },
-    "searchFilters": {
-      "q": "Quels filtres de recherche sont disponibles ?",
-      "imgAlt": "Filtres de recherche",
-      "basicLabel": "Filtres de recherche de base :",
-      "basic": {
-        "nameLabel": "Nom du bloc :",
-        "nameBody": "Recherche par titre de bloc",
-        "gradeLabel": "Plage de cotation :",
-        "gradeBody": "Définissez les cotations minimale et maximale",
-        "setterLabel": "Ouvreur :",
-        "setterBody": "Filtrer par créateur du bloc",
-        "minAscentsLabel": "Enchaînements min :",
-        "minAscentsBody": "Afficher uniquement les blocs populaires",
-        "minRatingLabel": "Note min :",
-        "minRatingBody": "Filtrer par note de qualité",
-        "classicsLabel": "Classiques uniquement :",
-        "classicsBody": "Afficher seulement les blocs classés classiques"
-      },
-      "personalLabel": "Filtres de progression personnelle",
-      "personalRequires": "(connexion requise) :",
-      "personalImgAlt": "Filtres de progression personnelle",
-      "personal1": "Masquer les blocs enchaînés",
-      "personal2": "Masquer les blocs tentés",
-      "personal3": "Afficher uniquement les blocs tentés",
-      "personal4": "Afficher uniquement les blocs enchaînés"
-    },
-    "searchByHold": {
-      "q": "Comment chercher par prises spécifiques ?",
-      "imgAlt": "Recherche par prise",
-      "intro": "La recherche par prise vous permet de trouver des blocs qui utilisent (ou évitent) des prises précises de la board.",
-      "howLabel": "Pour rechercher par prises :",
-      "step1": "Ouvrez le tiroir de recherche et déployez la section « Prises »",
-      "step2": "Sélectionnez le mode « Inclure » ou « Exclure » dans le menu déroulant",
-      "step3": "Touchez les prises sur la board pour les sélectionner",
-      "step4": "Les résultats se mettent à jour automatiquement au fur et à mesure",
-      "includeLabel": "Mode Inclure :",
-      "includeBody": "Les blocs doivent utiliser les prises sélectionnées",
-      "excludeLabel": "Mode Exclure :",
-      "excludeBody": "Les blocs ne doivent pas utiliser les prises sélectionnées"
-    },
-    "bluetooth": {
-      "q": "Comment connecter les LEDs de ma board ?",
-      "intro": "Boardsesh utilise Web Bluetooth pour piloter le système LED de votre board directement depuis le navigateur.",
-      "requirementsLabel": "Prérequis :",
-      "req1": "Navigateur Chrome (recommandé) ou autre navigateur compatible Web Bluetooth",
-      "req2": "Sur iOS : utilisez l'app Boardsesh (Safari ne prend pas en charge Web Bluetooth)",
-      "req3": "Bluetooth activé sur votre appareil",
-      "req4": "Board allumée et à portée",
-      "connectLabel": "Pour vous connecter :",
-      "connect1": "Touchez l'icône ampoule dans la barre de file",
-      "connect2": "Sélectionnez votre board dans la liste des appareils",
-      "connect3": "Une fois connecté, les LEDs affichent automatiquement le bloc en cours",
-      "outro": "La connexion gère les motifs en miroir et se met à jour automatiquement quand vous changez de bloc."
-    },
-    "userSync": {
-      "q": "Comment synchroniser avec mon compte Kilter/Tension ?",
-      "imgAlt": "Paramètres de compte Aurora",
-      "intro": "Liez votre compte Aurora (Kilter ou Tension) pour synchroniser votre historique et votre progression.",
-      "linkLabel": "Pour lier votre compte :",
-      "link1": "Ouvrez le menu (touchez votre avatar) et allez dans Paramètres",
-      "link2": "Trouvez la section « Comptes Aurora »",
-      "link3": "Saisissez vos identifiants Kilter ou Tension",
-      "link4": "Cliquez sur « Lier le compte »",
-      "syncsLabel": "Ce qui est synchronisé :",
-      "syncs1": "Historique des enchaînements (blocs réussis)",
-      "syncs2": "Essais",
-      "syncs3": "Circuits et playlists",
-      "outro": "Les modifications se synchronisent dans les deux sens : les enchaînements enregistrés dans Boardsesh apparaissent dans les apps officielles."
-    },
-    "logbook": {
-      "q": "Comment suivre mes blocs ?",
-      "imgAlt": "Détail du bloc avec actions",
-      "intro": "Suivez votre progression en enregistrant vos croix et vos essais.",
-      "fromLabel": "Depuis n'importe quel bloc :",
-      "actions": {
-        "tickLabel": "Essai :",
-        "tickBody": "Enregistre un essai sur le bloc",
-        "logLabel": "Faire la croix :",
-        "logBody": "Marque le bloc comme enchaîné (une croix dans ton carnet)",
-        "favoriteLabel": "Favori :",
-        "favoriteBody": "Sauvegardez des blocs pour y accéder rapidement"
-      },
-      "outro": "Votre carnet se synchronise avec les comptes Aurora liés et peut être filtré dans les résultats de recherche pour trouver de nouveaux défis ou retrouver d'anciens projets."
-    },
-    "offline": {
-      "q": "Boardsesh fonctionne-t-il hors-ligne ?",
-      "intro": "Oui. Boardsesh tient bon même avec une connexion qui flanche.",
-      "worksLabel": "Ce qui fonctionne hors-ligne :",
-      "works1": "Votre file est stockée localement via IndexedDB",
-      "works2": "Les jetons de session sont mis en cache pour se reconnecter rapidement",
-      "works3": "Les données de profil sont stockées localement",
-      "works4": "Le contrôle Bluetooth des LEDs fonctionne de manière indépendante",
-      "outro": "Quand la connexion revient, toute modification en attente se synchronise automatiquement en arrière-plan."
+    "ask": {
+      "title": "Toujours bloqué ?",
+      "intro": "Demandez-nous. On lit les trois.",
+      "discord": "Demander sur Discord",
+      "github": "Signaler un bug sur GitHub",
+      "docs": "Lire la doc développeur"
     }
   },
   "docs": {

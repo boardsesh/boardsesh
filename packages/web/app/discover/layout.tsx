@@ -6,7 +6,6 @@ export default function DiscoverLayout({ children }: { children: React.ReactNode
       style={{
         minHeight: '100dvh',
         paddingTop: 'var(--global-header-height)',
-        paddingBottom: 'var(--bottom-bar-height)',
       }}
     >
       {children}

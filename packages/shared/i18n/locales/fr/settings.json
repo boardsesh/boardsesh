@@ -53,11 +53,6 @@
       "label": "Format des cotations",
       "vGrade": "V-Grade (V3, V6, ...)",
       "font": "Font (6A, 7C+, ...)"
-    },
-    "appleHealth": {
-      "label": "Apple Health",
-      "switchLabel": "Envoyer les sessions vers Apple Health automatiquement",
-      "subtitle": "Désactivez pour n'envoyer une session que quand vous appuyez sur Enregistrer dans Apple Health."
     }
   },
   "logbook": {
@@ -368,12 +363,6 @@
       }
     }
   },
-  "healthkit": {
-    "save": "Enregistrer dans Apple Health",
-    "saving": "Enregistrement dans Apple Health…",
-    "saved": "Enregistré dans Apple Health",
-    "retry": "Enregistrer dans Apple Health (réessayer)"
-  },
   "feedbackDialog": {
     "titleRating": "Noter Boardsesh",
     "titleBug": "Signaler un bug",
@@ -386,12 +375,6 @@
     "joinDiscord": "Rejoindre Discord"
   },
   "feedbackForm": {
-    "missingHeading": "Qu'est-ce qui manque ?",
-    "compactPlaceholder": "Dites-nous ce qui aiderait",
-    "skip": "Passer",
-    "sendAria": "Envoyer",
-    "cancel": "Annuler",
-    "saveDefault": "Enregistrer",
     "bugPlaceholder": "Que faisiez-vous ? Qu'attendiez-vous et qu'avez-vous vu ?",
     "ratingPlaceholder": "Qu'avez-vous en tête ?",
     "remainingChars": "Encore {{count}} caractères à écrire",
@@ -402,50 +385,10 @@
     "bluetoothBugLabel": "J'ai des problèmes de Bluetooth",
     "bluetoothBugDescription": "Recherche les boards à proximité et nous envoie ce qu'elles diffusent, pour comprendre pourquoi la tienne ne se connecte pas. Aucune board n'est commandée : on se contente d'écouter.",
     "contactConsentLabel": "Pouvons-nous vous contacter à ce sujet ?",
-    "contactConsentDescription": "Nous permet de vous envoyer le lien du problème par e-mail et de revenir vers vous si besoin de plus de détails.",
-    "nextAria": "Suivant"
-  },
-  "feedbackBanner": {
-    "successToast": "Merci, c'est noté.",
-    "errorToast": "Envoi impossible. On garde votre note.",
-    "dismissAria": "Ignorer"
-  },
-  "storeReview": {
-    "title": "Aidez les autres à trouver Boardsesh",
-    "body": "Merci pour la note. Vous laisseriez aussi un petit avis sur votre app store ? C'est la meilleure façon d'aider d'autres grimpeurs à nous trouver.",
-    "notNow": "Pas maintenant",
-    "leaveReview": "Laisser un avis"
-  },
-  "sessionProvider": {
-    "deepLinkError": "La connexion avec Google, Apple ou Facebook peut ne pas marcher. Redémarrez l'app."
-  },
-  "onboarding": {
-    "skipTour": "Passer la visite",
-    "finish": "Terminer",
-    "next": "Suivant"
-  },
-  "devUrlDialog": {
-    "title": "URL de dev",
-    "intro": "Pointez la WebView vers une autre origine. L'app redémarre après l'enregistrement.",
-    "urlLabel": "URL du serveur",
-    "useProduction": "Utiliser la production",
-    "currentlyOverriding": "Remplacement actuel par : {{url}}",
-    "cancel": "Annuler",
-    "clearOverride": "Effacer le remplacement",
-    "save": "Enregistrer et redémarrer",
-    "restarting": "Redémarrage…",
-    "validation": {
-      "enterUrl": "Saisissez une URL",
-      "mustBeHttp": "L'URL doit commencer par http:// ou https://",
-      "invalid": "URL non valide",
-      "generic": "Quelque chose a planté"
-    }
+    "contactConsentDescription": "Nous permet de vous envoyer le lien du problème par e-mail et de revenir vers vous si besoin de plus de détails."
   },
   "boardConfigMismatch": {
     "title": "La configuration de la board ne correspond pas",
-    "intro": "D'après nos enregistrements, cette board est configurée différemment de votre réglage actuel.",
-    "currentLabel": "<strong>Votre configuration :</strong>",
-    "recordedLabel": "<strong>Enregistré pour ce contrôleur :</strong>",
     "mobileCurrentLabel": "Votre configuration : {{config}}",
     "mobileRecordedLabel": "Enregistré pour ce contrôleur : {{config}}",
     "mobileConfigValue": "{{board}} layout {{layoutId}}, taille {{sizeId}}, sets {{setIds}}",
@@ -454,24 +397,15 @@
     "skippedSpillToast_other": "{{count}} blocs ignorés, prévus pour une autre board",
     "mobileSwitchFailed": "Impossible de passer à la configuration de cette board. Essayez Connecter quand même.",
     "cancel": "Annuler",
-    "connectAnyway": "Connecter quand même",
-    "switchToCorrect": "Passer à la bonne configuration",
     "mobileConnectAnyway": "Connecter quand même",
     "mobileConnectAnywayWarning": "D'après nos enregistrements, ce contrôleur appartient à une autre configuration de board. Connecter quand même pourrait allumer les voies de façon incorrecte.",
     "mobileSwitchSetup": "Changer de board",
     "mobileUseRecordedSetup": "Utiliser la configuration enregistrée"
   },
   "devicePicker": {
-    "title": "Sélectionnez votre board",
-    "scanning": "Recherche de boards à proximité…",
     "lastConnected": "Dernière board connectée",
     "unknownDevice": "Appareil inconnu",
-    "lastConnectedAt": "Dernière connexion {{time}}",
-    "cancel": "Annuler"
-  },
-  "bluetoothMismatch": {
-    "switchNoAngleToast": "Impossible de changer. Ouvrez d'abord un bloc à une inclinaison précise.",
-    "switchUrlFailedToast": "Impossible de basculer sur la config de cette board. Essayez Connecter quand même."
+    "lastConnectedAt": "Dernière connexion {{time}}"
   },
   "auroraImport": {
     "unlinkSuccessToast": "Compte délié avec succès",

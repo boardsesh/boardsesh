@@ -147,12 +147,26 @@ export const WWW_CHECKS: SmokeCheck[] = [
       ),
   },
   {
-    name: 'sitemap.xml serves at least one URL',
+    // A `<loc>`-only check would pass on the old flat `<urlset>` too — and on a
+    // broken index — so assert the index shape *and* that it points at a shard.
+    name: 'sitemap.xml serves a sitemap index pointing at shards',
     path: '/sitemap.xml',
     assert: (response) =>
       firstFailure(
         expectStatus(response, 200),
         expectContentType(response, 'xml'),
+        expectBodyContains(response, '<sitemapindex', '<sitemapindex> root element'),
+        expectBodyContains(response, '<loc>https://www.boardsesh.com/sitemaps/', 'shard <loc> entry'),
+      ),
+  },
+  {
+    name: 'the static sitemap shard serves URLs',
+    path: '/sitemaps/static.xml',
+    assert: (response) =>
+      firstFailure(
+        expectStatus(response, 200),
+        expectContentType(response, 'xml'),
+        expectBodyContains(response, '<urlset', '<urlset> root element'),
         expectBodyContains(response, '<loc>', '<loc> entry'),
       ),
   },

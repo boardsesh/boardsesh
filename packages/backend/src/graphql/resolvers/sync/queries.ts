@@ -3,6 +3,7 @@ import type { ConnectionContext, SyncResult, SyncDeletionsResult, SyncCursorInpu
 import { isSizeScopedBoard } from '@boardsesh/board-config';
 import { db } from '../../../db/client';
 import { rowsFromResult } from '@boardsesh/db/client';
+import { withSerialPlan, type SerialPlanDb } from '@boardsesh/db/queries';
 import { requireAuthenticated } from '../shared/helpers';
 import { normalizeRow, toIso, type RawRow } from './row-normalize';
 import {
@@ -69,6 +70,7 @@ function cursorBounds(cursor: SyncCursorInput | null | undefined): { ts: string;
  * pass fully-qualified column references to avoid an ambiguous-column error.
  */
 async function runSyncPage(params: {
+  executor?: SerialPlanDb;
   selectList: SQL;
   fromClause: SQL;
   scope: SQL;
@@ -77,10 +79,10 @@ async function runSyncPage(params: {
   cursor: SyncCursorInput | null | undefined;
   limit: number;
 }): Promise<SyncResult> {
-  const { selectList, fromClause, scope, updatedAtColumn, seqColumn, cursor, limit } = params;
+  const { executor = db, selectList, fromClause, scope, updatedAtColumn, seqColumn, cursor, limit } = params;
   const { ts, seq } = cursorBounds(cursor);
 
-  const result = await db.execute(sql`
+  const result = await executor.execute(sql`
     SELECT ${selectList}, ${updatedAtColumn} AS __updated_at, ${seqColumn} AS __seq
     FROM ${fromClause}
     WHERE ${scope}
@@ -433,16 +435,24 @@ export const syncQueries = {
       scope = sql`board_type = ${validBoardType} AND EXISTS (SELECT 1 FROM board_climbs bc WHERE ${sub})`;
     }
 
-    return runSyncPage({
-      selectList: sql`board_type, climb_uuid, angle, display_difficulty, benchmark_difficulty,
-        ascensionist_count, difficulty_average, quality_average, fa_username, fa_at, updated_at, sync_seq`,
-      fromClause: sql`board_climb_stats`,
-      scope,
-      updatedAtColumn: sql`board_climb_stats.updated_at`,
-      seqColumn: sql`board_climb_stats.sync_seq`,
-      cursor,
-      limit: lim,
-    });
+    // A scoped stats pull walks board_climb_stats in cursor order and probes
+    // board_climbs through the EXISTS filter. Production chooses a Gather
+    // Merge for that shape, which has exhausted Postgres's DSM during sync
+    // bursts (Sentry BOARDSESH-AK, pgCode 53100). Keep SET LOCAL and the page
+    // SELECT on the exact same transaction handle.
+    return withSerialPlan(db, (transactionDb) =>
+      runSyncPage({
+        executor: transactionDb,
+        selectList: sql`board_type, climb_uuid, angle, display_difficulty, benchmark_difficulty,
+          ascensionist_count, difficulty_average, quality_average, fa_username, fa_at, updated_at, sync_seq`,
+        fromClause: sql`board_climb_stats`,
+        scope,
+        updatedAtColumn: sql`board_climb_stats.updated_at`,
+        seqColumn: sql`board_climb_stats.sync_seq`,
+        cursor,
+        limit: lim,
+      }),
+    );
   },
 
   /**

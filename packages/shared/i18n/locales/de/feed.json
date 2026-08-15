@@ -52,10 +52,7 @@
     "empty": "Noch keine Begehungen eingetragen"
   },
   "betaVideos": {
-    "shareBetaFor": "Beta für {{name}} teilen",
-    "shareBetaVideo": "Beta-Video teilen",
     "shareBeta": "Beta teilen",
-    "dialogHelper": "Füg einen Reel- oder Post-Link ein, damit andere deine Beta sehen.",
     "addedToast": "Video zur Beta hinzugefügt",
     "addError": "Video ließ sich nicht hinzufügen. Versuch's nochmal.",
     "urlPlaceholder": "Instagram- oder TikTok-URL",
@@ -67,7 +64,6 @@
     "instagramCopyFailed": "Die Bildunterschrift ließ sich nicht kopieren. Versuch's nochmal.",
     "instagramCopiedAndOpened": "Bildunterschrift kopiert — füg sie in Instagram ein.",
     "instagramCopiedOnly": "Bildunterschrift in die Zwischenablage kopiert.",
-    "addSubmit": "Hinzufügen",
     "steps": {
       "optional": "Optional",
       "step1Title": "Instagram öffnen und deine Bildunterschrift kopieren",
@@ -177,11 +173,6 @@
     "frozen": "Für diesen Boulder sind neue Vorschläge gesperrt.",
     "reasonPrefix": "Grund: {{reason}}"
   },
-  "newClimbFeed": {
-    "title": "Neue Boulder",
-    "errorLoad": "Die Boulder ließen sich nicht laden. Versuch's nochmal.",
-    "empty": "Für dieses Layout gibt es noch keine Boulder. Schraub den ersten!"
-  },
   "proposalCard": {
     "quotedReason": "„{{reason}}“",
     "support": "Dafür",
@@ -207,15 +198,6 @@
     "votesNeeded": "{{current}} / {{required}} Stimmen nötig",
     "opposed": "{{count}} dagegen"
   },
-  "search": {
-    "minCharsHint": "Tipp mindestens 2 Zeichen zum Suchen",
-    "noBoards": "Keine Boards für „{{query}}“ gefunden",
-    "noGyms": "Keine Hallen für „{{query}}“ gefunden",
-    "noPlaylists": "Keine Playlists für „{{query}}“ gefunden",
-    "noUsers": "Keine Nutzer*innen oder Routenbauer*innen für „{{query}}“ gefunden",
-    "climbCount_one": "{{count}} Boulder",
-    "climbCount_other": "{{count}} Boulder"
-  },
   "sessionFeedCard": {
     "climbCount_one": "{{count}} Boulder",
     "climbCount_other": "{{count}} Boulder",
@@ -239,9 +221,6 @@
     "openHint": "Öffnet die Session",
     "openHardestClimb": "{{climb}} öffnen"
   },
-  "sessionSummary": {
-    "completed": "Session beendet"
-  },
   "socialActions": {
     "upvoteWithCount_one": "Liken, {{count}} Like",
     "upvoteWithCount_other": "Liken, {{count}} Likes",
@@ -252,19 +231,6 @@
   },
   "socialFeedItem": {
     "climbed": "war klettern"
-  },
-  "subscribeButton": {
-    "signInPrompt": "Melde dich an, um Abos zu verwalten",
-    "subscribed": "Neue Boulder abonniert",
-    "unsubscribed": "Neue Boulder abbestellt",
-    "updateFailed": "Das Abo ließ sich nicht ändern"
-  },
-  "userSearch": {
-    "ascentsThisMonth": "{{count}} Begehungen diesen Monat",
-    "climbsSet_one": "{{count}} Boulder geschraubt",
-    "climbsSet_other": "{{count}} Boulder geschraubt",
-    "climbCount_one": "{{count}} Boulder",
-    "climbCount_other": "{{count}} Boulder"
   },
   "userSmartCard": {
     "follower_one": "{{count}} Follower",

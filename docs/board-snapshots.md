@@ -88,7 +88,17 @@ For every `(board_type, layout_id)` pair with at least one climb (`discoverLayou
    than risking a watermark that covers it before it's actually visible.
 4. Computes each table's watermark — the max `(updated_at, sync_seq)` over the exported rows — from the
    **same transaction snapshot** as the row stream, and writes it into `snapshot_meta` alongside
-   `row_count`, `schema_version` (`LATEST_SCHEMA_VERSION`), and `format_version`.
+   `row_count`, `schema_version` (`LATEST_SCHEMA_VERSION`), and `format_version`. The transaction also
+   captures a conservative tombstone boundary into a metadata-only `sync_deletions` row: the oldest of
+   run `builtAt`, export-transaction start minus `SYNC_STABILITY_WINDOW_SECONDS`, and the oldest active
+   same-role transaction start. A second primary-pool connection samples `pg_stat_activity` while the
+   export transaction is open but before its first artifact SELECT fixes the `REPEATABLE READ` snapshot.
+   That ordering covers a delete transaction that began before the snapshot but committed after it.
+   The row is omitted (clients use the legacy scoped-watermark fallback) if the pool has fewer than two
+   connections, the activity probe fails, another-role client or prepared transaction exists in the
+   database, activity tracking/visibility is incomplete, or any timestamp is invalid. Every per-layout
+   build/upload log carries `deletionsReplayFrom` and `deletionsReplayFallbackReason`: success is a
+   timestamp plus a null reason; fallback is a null timestamp plus one stable, low-cardinality reason.
 5. Uploads the SQLite file to `<keyPrefix>/<boardType>/<layoutId>/<builtAt-colon-free>.db` — identity by
    default, or `gzip` (with `Content-Encoding: gzip`) under `--gzip`. The manifest's `contentEncoding`
    field records which, so the client stays agnostic.
@@ -174,12 +184,12 @@ logged and swallowed, never fails the run.
 
 ## Artifact format
 
-The whole-layout `.db` file carries exactly two data tables — `board_climbs` and `board_climb_stats` —
-plus `snapshot_meta`. That has not changed since the first release and must not: every shipped binary
-verifies the file against its own two-table list and throws `snapshot_meta missing row for <table>` on a
-mismatch, which is a **counted** import failure. Two of those settle the scope onto the paged crawl, so
-widening this file's meta would break the fleet for the whole 14-day prune-grace window. Boardsesh grades
-ride in a separate file for exactly that reason (see "Grades artifact" below).
+The whole-layout `.db` file carries exactly two **data tables** — `board_climbs` and `board_climb_stats` —
+plus `snapshot_meta`. That data-table list has not changed since the first release and must not: every
+shipped binary verifies its required metadata rows by table name and throws
+`snapshot_meta missing row for <table>` when one is absent. The additive `sync_deletions` metadata row is
+safe because old clients ignore rows they do not query; it does not add a data table. Boardsesh grades ride
+in a separate file for exactly that reason (see "Grades artifact" below).
 
 ```sql
 CREATE TABLE snapshot_meta (
@@ -193,7 +203,9 @@ CREATE TABLE snapshot_meta (
 );
 ```
 
-One row per data table (`board_climbs`, `board_climb_stats`).
+There is one required row per data table (`board_climbs`, `board_climb_stats`) plus a metadata-only
+`sync_deletions` row in newly-built whole-layout artifacts. The latter has `row_count = 0`,
+`watermark_sync_seq = '0'`, and uses `watermark_updated_at` for the conservative deletion replay boundary.
 
 These rows are artifact-level metadata for the whole `(boardType, layoutId)` artifact. A client importing
 one narrower size scope uses them to validate the file, then computes its checkpoint watermarks from the
@@ -320,7 +332,7 @@ total spend; the cooldown ladder and scheduler alarm bound frequency.
 
 | Kind                  | Raised by                                                                            | Budget                                | Cooldown ladder      | Re-armed by a new `builtAt`?                         |
 | --------------------- | ------------------------------------------------------------------------------------ | ------------------------------------- | -------------------- | ---------------------------------------------------- |
-| `transport`           | `isNetworkError(cause)` at the download stage (offline, DNS, TLS, timeout)           | `MAX_TRANSPORT_DOWNLOAD_FAILURES` = 3 | 2 min → 15 min → 2 h | no                                                   |
+| `transport`           | network/DNS/TLS/timeout, short body, or iOS background-session decode interruption   | `MAX_TRANSPORT_DOWNLOAD_FAILURES` = 3 | 2 min → 15 min → 2 h | no                                                   |
 | `structural-artifact` | anything raised inside the import (`quick_check`, `snapshot_meta` mismatch, throw)   | `MAX_BOOTSTRAP_ATTEMPTS` = 2          | 6 h → 24 h           | yes, `MAX_STRUCTURAL_REARMS` = 1 per scope, lifetime |
 | `structural-device`   | every other non-transport cause (disk space, cache dir, CDN non-2xx, unclassifiable) | `MAX_BOOTSTRAP_ATTEMPTS` = 2          | 6 h → 24 h           | **no**                                               |
 
@@ -461,15 +473,26 @@ inside the artifact, then in **one exclusive transaction**:
 - Imports `board_climb_stats` via a correlated `EXISTS` against the just-scoped `board_climbs`, mirroring
   the resolver's semi-join.
 - Stamps both table checkpoints at the scoped imported-row watermarks.
-- **Rewinds the deletions checkpoint** to the older scoped table watermark timestamp with deletion cursor
-  `syncSeq = '0'`, in the _same_ transaction as the import. Deletion cursors page over deletion-row ids, not
-  board table `sync_seq` values. A committed import stamps `bootstrap-done:`, which disqualifies the scope
-  from ever bootstrapping again, so a crash between the import commit and a separate rewind step would
-  permanently strand any board-row deletions that fell in `(watermark, deletions-head]` — they'd never
-  replay against the freshly-imported rows. Doing it in the same transaction closes that gap. Note the
-  rewind target is `min(scoped watermarks)`, the max `updated_at` of the artifact's rows FOR THIS SCOPE:
-  on a quiet layout that timestamp can be weeks old, so the replay window is bounded by the 80-day
-  tombstone retention, not by one nightly export window.
+- **Rewinds the deletions checkpoint** to the artifact's `sync_deletions` replay boundary with deletion
+  cursor `syncSeq = '0'`, in the _same_ transaction as the import. Deletion cursors page over deletion-row
+  ids, not board table `sync_seq` values. A 30-second stability boundary alone is not safe: a delete
+  transaction can run longer, remain invisible to the snapshot, then commit afterwards with an older
+  `deleted_at`. The exporter therefore includes the oldest visible same-role `xact_start`; it samples from
+  a second connection before the RR snapshot is acquired, so a commit cannot disappear from activity while
+  remaining invisible to an already-fixed artifact snapshot. `pg_stat_activity` exposes full details to
+  ordinary users only for same-role sessions, so production writers and the exporter deliberately share
+  one DB role. Any other-role client fails the optimization closed. Prepared transactions are absent from
+  `pg_stat_activity`, so their presence does too. Old artifacts and malformed/missing/future optional
+  metadata fall back to the older scoped row watermark. Rewind and imported rows commit together so a
+  crash cannot permanently strand tombstones against the freshly-imported scope.
+
+The following deletions pull applies each fetched tombstone page **and that page's checkpoint** in one
+SQLite exclusive transaction. Playlist-child cleanup, resurrection guards, and composite-key validation
+run inside that same transaction. A failed tombstone rolls back the whole page; a successful page pays one
+lock/commit instead of one autocommit per row. Expo opens the wrapper with deferred `BEGIN`, so the page
+first rewrites its current deletion cursor to acquire SQLite's writer lock, then rechecks the global purge
+epoch. It checks again before publishing the fetched cursor; a purge that wins the lock makes the page roll
+back, while a purge that starts after the page owns the lock necessarily clears the cursor after commit.
 
 **Wipe-epoch guard**: a sign-out wipe can start (or fully complete) across any of the `await`s above. The
 bootstrap captures the monotonic wipe epoch before its first `await` and re-checks it (and the
@@ -549,9 +572,10 @@ pre-import empty result set.
     survived the pocket, so a later failure belongs to the network or the device. Without the closing
     rule, one screen lock during a nine-minute Android transfer would launder every subsequent wifi
     drop, HTTP 500 or disk error into a free, cooldown-free 100 MB retry loop.
-  - the cause must be **network-shaped** (`isNetworkError`), which is what a suspension kill produces
-    (`NSURLErrorNetworkConnectionLost`, a timeout, a `SocketException`) and what a disk-full or an
-    HTTP 500 is not.
+  - the cause must be **transport-shaped**: either `isNetworkError` (for example
+    `NSURLErrorNetworkConnectionLost`, a timeout, or a `SocketException`) or iOS background
+    URLSession's exact `cannot decode raw data` response-decoding interruption. A disk-full or HTTP 500
+    is not a pause.
 
   Free pauses are **bounded at three per scope** (`MAX_FREE_BACKGROUND_PAUSES`, persisted as
   `BootstrapRetryState.backgroundPauses`). The fourth is charged to the **transport** budget on its
@@ -579,8 +603,11 @@ pre-import empty result set.
 
   The strategy is fixed for the bundle lifetime. No feature-flag resolution can restart the scheduler or
   replace a transfer's transport mid-download. Continue watching `sizeMismatch`,
-  `reason: 'permanent-miss'`, and `wireKbps`; the gzip sniff and paged fallback remain the safety net if a
-  platform HTTP stack ever stops decoding `Content-Encoding: gzip` transparently.
+  `reason: 'permanent-miss'`, `reason: 'background-transfer-decode'`, and `wireKbps`; the gzip sniff and
+  paged fallback remain the safety net if a platform HTTP stack ever stops decoding
+  `Content-Encoding: gzip` transparently. The exact iOS decode interruption is a known transport failure,
+  not a structural device defect: within an open suspension window it gets the bounded free-pause path;
+  otherwise it uses the normal transport ladder instead of the six-hour structural cooldown.
 
   Both platforms are real task arms: Android ignores `sessionType` but a `DownloadTask` builds
   its **own** `OkHttpClient` (60 s connect/read/write timeouts), while iOS hands the transfer to a
@@ -634,7 +661,7 @@ pre-import empty result set.
   Swift, reachable only via a bun patch or an upstream PR.
 
 - **Download fallback status**: My Boards keeps the normal per-row download state (`pending`,
-  `downloading`, or `downloaded`) and separately derives a `BoardDownloadNotice` from the persisted
+  `downloading`, `finalizing`, or `downloaded`) and separately derives a `BoardDownloadNotice` from the persisted
   attempt, done, and explicit paged-fallback markers plus board checkpoints. The explicit outcome closes
   the ambiguous failure-then-permanent-miss path; checkpoints keep a restored or flag-toggled mid-crawl
   scope from being labelled as a retry after restart. Active bootstrap always outranks persisted history,
@@ -644,6 +671,12 @@ pre-import empty result set.
   waiting for a multi-scope cycle to finish. The full transition message wraps instead of truncating.
   Android exposes it as the only polite live region; iOS announces semantic notice changes through
   VoiceOver explicitly. The changing climb count remains readable but is never auto-announced per page.
+  An active paged crawl always outranks a future fast-path retry notice, so the row shows the slower-path
+  explanation and its live count instead of a static “Faster download interrupted” spinner while 500-row
+  pages are landing.
+  Once a snapshot's durable import marker lands, that row stays `finalizing` throughout work on sibling
+  snapshots and shared deletion/user-data phases instead of falling back to “Waiting to download.” A
+  scope on the paged fallback has no import marker and therefore never gets that label prematurely.
 
 - **Per-connection ATTACH invariant (BOARDSESH-AA)**: expo-sqlite's
   `withExclusiveTransactionAsync` runs its task on a **new native connection**
@@ -672,6 +705,16 @@ pre-import empty result set.
   stale-negative read gets two bounded re-probes; if the link remains unreachable, the scheduler's next
   reachability edge reads the durable setting. This closes the ordering window that otherwise left a
   reachable device on “Waiting to download” with no future edge to wake it.
+- **Bounded offline GraphQL requests**: only the client used by the mutation drainer and pull engine has a
+  30-second hard deadline. It forwards caller cancellation and aborts the underlying native request, but
+  releases the scheduler even if the platform fetch never settles. Interactive GraphQL calls keep their
+  existing transport behaviour. A deadline failure reaches the ordinary 30-second cycle retry rather than
+  holding the global single-flight latch forever.
+- **Interrupted cycles terminalize their live status**: every expected background/offline/purge/sign-out
+  exit emits `phase: 'idle', interrupted: true`. This clears the per-board spinner without stamping
+  `lastSyncedAt`. Bootstrap and grades downloads also latch a cycle teardown across their native awaits,
+  so a foreground event that arrives before a rejection is handled queues a fresh cycle instead of letting
+  the stale one continue into deletions or paged pulls.
 - **Gzip magic-byte sniff** (`packages/mobile/src/offline/snapshot-source.ts`): identity artifacts skip
   gzip verification. For manifest entries with `contentEncoding: 'gzip'`, the expectation is that the
   native HTTP stack (`NSURLSession` / OkHttp via `expo-file-system`'s `DownloadTask`)
@@ -704,10 +747,15 @@ pre-import empty result set.
     only: at the manifest stage it also skips the attempt counter, but a transport-shaped download failure
     still burns an attempt (see the matrix above). The real exception is attached as the wrapper's `cause`,
     which is what lets the shared classifier recognise them at all (issue #4238).
+  - `Offline Sync Cycle Failed` records a bounded `phase`, `currentTable`, document count, HTTP status,
+    and stable error kind when a whole drain/pull cycle throws. It never sends raw exception text. An
+    unchanged signature is emitted at most once per five minutes; unexpected failures also reach Sentry
+    under the same throttle. Reporter failures are swallowed by the scheduler so telemetry cannot suppress
+    the failed-idle frame or retry alarm.
 
 ## Download funnel events
 
-Five PostHog events (`@boardsesh/analytics`'s `SHARED_EVENTS`) make board downloads measurable
+Six PostHog events (`@boardsesh/analytics`'s `SHARED_EVENTS`) make board downloads measurable
 end-to-end (issue #4316). Before them the feature had exactly one — `Offline Board Download
 Completed` — so abandonment was structurally unmeasurable and failures went only to Sentry.
 
@@ -853,6 +901,98 @@ node --import tsx src/scripts/export-board-snapshots.ts \
 - `DATABASE_URL` must point at the **primary**, never a read replica (see the rationale above) — this is
   read-only-sufficient (the export only `SELECT`s) but the write-time/commit-order mismatch on a replica is
   a correctness bug, not a permissions one.
+
+### Verify deletion replay metadata after a live full refresh
+
+After an unfiltered full gzip refresh, inspect the `Export board snapshots (gzip →
+board-snapshots/v1-gzip)` job logs before treating the refresh as complete. Every rebuilt layout — including
+Kilter, Tension, and So iLL — must have a non-null `deletionsReplayFrom` and
+`deletionsReplayFallbackReason: null` in its `[export-snapshots] uploaded` record. The live gzip pass refuses
+to replace a layout's previous manifest entry when the boundary is unavailable and fails the run after the
+remaining layouts finish; the next queued refresh retries it. Identity exports and dry-runs remain log-only
+so operators can diagnose the environment without blocking the live pass. The bounded reasons are
+`observer-pool-capacity`,
+`activity-probe-failed`, `exporter-transaction-not-observed`, `activity-visibility-incomplete`, and
+`invalid-probe-timestamp`; none include database session details.
+
+Then verify the objects actually published behind the live manifest, not just the local build result. This
+uses a no-cache request plus a unique query tag so the manifest's five-minute CDN TTL cannot return the
+pre-refresh object. It checks every current layout artifact against the same metadata gates as the client:
+
+```sh
+set -euo pipefail
+snapshot_check_dir="$(mktemp -d)"
+snapshot_manifest="$snapshot_check_dir/manifest.json"
+manifest_url='https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip/manifest.json'
+manifest_cache_tag="$(date +%s)"
+latest_schema_version="$(vp node --import tsx -e \
+  "import('./packages/shared/offline-sync/src/db/migrations.ts').then(({ LATEST_SCHEMA_VERSION }) => console.log(LATEST_SCHEMA_VERSION))")"
+curl -fsSL -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+  "$manifest_url?verify=$manifest_cache_tag" \
+  -o "$snapshot_manifest"
+
+jq -e --argjson current_schema "$latest_schema_version" '
+  .formatVersion == 1
+  and (.entries | length) > 0
+  and all(.entries[];
+    (.schemaVersion | type) == "number"
+    and .schemaVersion >= $current_schema
+    and (.builtAt | type) == "string"
+    and (.url | type) == "string")
+' "$snapshot_manifest" >/dev/null
+
+selected_artifacts="$(jq -r '.entries[]
+  | [.boardType, (.layoutId | tostring), .builtAt, (.schemaVersion | tostring), .url]
+  | @tsv' "$snapshot_manifest")"
+if [ -z "$selected_artifacts" ]; then
+  echo 'FAIL live manifest contains no layout artifacts' >&2
+  exit 1
+fi
+
+while IFS="$(printf '\t')" read -r board_type layout_id manifest_built_at manifest_schema_version artifact_url; do
+  artifact_path="$snapshot_check_dir/$board_type-$layout_id.db"
+  curl -fsSL --compressed "$artifact_url" -o "$artifact_path"
+  replay_meta="$(sqlite3 "$artifact_path" \
+    "SELECT deletions.watermark_updated_at || char(9) || deletions.built_at
+     FROM snapshot_meta AS deletions
+     JOIN snapshot_meta AS climbs ON climbs.table_name = 'board_climbs'
+     JOIN snapshot_meta AS stats ON stats.table_name = 'board_climb_stats'
+     WHERE deletions.table_name = 'sync_deletions'
+       AND deletions.row_count = 0
+       AND deletions.watermark_sync_seq = '0'
+       AND deletions.format_version = 1
+       AND climbs.format_version = 1
+       AND stats.format_version = 1
+       AND deletions.schema_version = $manifest_schema_version
+       AND climbs.schema_version = $manifest_schema_version
+       AND stats.schema_version = $manifest_schema_version
+       AND deletions.schema_version >= $latest_schema_version
+       AND deletions.built_at = climbs.built_at
+       AND deletions.built_at = stats.built_at
+       AND julianday(deletions.built_at) IS NOT NULL
+       AND julianday(deletions.watermark_updated_at) IS NOT NULL
+       AND julianday(deletions.watermark_updated_at) <= julianday(deletions.built_at)
+       AND climbs.row_count = (SELECT COUNT(*) FROM board_climbs)
+       AND stats.row_count = (SELECT COUNT(*) FROM board_climb_stats)")"
+  IFS="$(printf '\t')" read -r replay_from artifact_built_at <<< "$replay_meta"
+  if [ -z "$replay_from" ] || [ "$artifact_built_at" != "$manifest_built_at" ]; then
+    echo "FAIL $board_type:$layout_id artifact/manifest deletion metadata mismatch" >&2
+    exit 1
+  fi
+  echo "OK $board_type:$layout_id $replay_from <= $artifact_built_at"
+done <<< "$selected_artifacts"
+```
+
+The timestamp on the left may be much older than `built_at` when a long-running same-role transaction was
+open during export; that is expected and is the safety property.
+
+The optimized replay boundary exists only in newly published live gzip artifacts. Older artifacts, the
+identity rollback prefix, and a live manifest retained by the CDN for up to five minutes use the compatible
+legacy rewind to table watermarks, which can replay a much longer deletion history. Deploy the client and
+exporter first, complete this unfiltered live gzip refresh, and wait for the canonical manifest cache to
+serve the verified keys before using multi-board download speed as release evidence.
+That compatibility fallback can also miss a tombstone from a transaction that began before its scoped
+watermark; only a verified live gzip replay boundary carries the stronger long-transaction guarantee.
 
 ### Required Production secrets
 

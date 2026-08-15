@@ -30,3 +30,56 @@ export function buildAppHandoffUrl(pathname: string): string {
   const path = withoutLocale.startsWith('/') ? withoutLocale : `/${withoutLocale}`;
   return `${APP_URL.replace(/\/+$/, '')}${path}`;
 }
+
+/** The board a new climb gets painted on, in the shape the app's route reads. */
+export type AppCreateClimbBoard = {
+  boardName: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: number[];
+  angle: number;
+};
+
+/** Seed values for a remix or a draft edit. */
+export type AppCreateClimbSeed = {
+  frames?: string;
+  name?: string;
+  description?: string;
+  editClimbUuid?: string;
+};
+
+/**
+ * The app's climb editor, with the board and any remix seed attached.
+ *
+ * Unlike `buildAppHandoffUrl` this one carries a query string, because the
+ * app's create route is the one handoff target that reads params:
+ * `packages/mobile/app/(tabs)/climbs/create.tsx` takes `boardName`, `layoutId`,
+ * `sizeId`, `setIds` and `angle`, validates the board name against
+ * `SUPPORTED_BOARDS`, and falls back to the signed-in user's active board for
+ * anything missing. Call it with no board when there is nothing to say — a bare
+ * `/climbs/create` opens on the active board, which is the right answer for a
+ * reader who has never opened one.
+ *
+ * W-17 (#4433) deleted www's own `…/[angle]/create` routes. Everything that
+ * used to link there links here instead, so there is no redirect hop and no
+ * board context quietly dropped on the way.
+ */
+export function buildAppCreateClimbUrl(board?: AppCreateClimbBoard | null, seed?: AppCreateClimbSeed): string {
+  const base = `${APP_URL.replace(/\/+$/, '')}/climbs/create`;
+  const params = new URLSearchParams();
+
+  if (board) {
+    params.set('boardName', board.boardName);
+    params.set('layoutId', String(board.layoutId));
+    params.set('sizeId', String(board.sizeId));
+    params.set('setIds', board.setIds.join(','));
+    params.set('angle', String(board.angle));
+  }
+  if (seed?.frames) params.set('forkFrames', seed.frames);
+  if (seed?.name) params.set('forkName', seed.name);
+  if (seed?.description) params.set('forkDescription', seed.description);
+  if (seed?.editClimbUuid) params.set('editClimbUuid', seed.editClimbUuid);
+
+  const query = params.toString();
+  return query ? `${base}?${query}` : base;
+}

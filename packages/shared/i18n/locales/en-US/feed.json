@@ -52,10 +52,7 @@
     "empty": "No ascents logged yet"
   },
   "betaVideos": {
-    "shareBetaFor": "Share beta for {{name}}",
-    "shareBetaVideo": "Share beta video",
     "shareBeta": "Share beta",
-    "dialogHelper": "Paste a reel or post link so others can see your beta.",
     "addedToast": "Video added to beta",
     "addError": "Couldn't add video. Try again.",
     "urlPlaceholder": "Instagram or TikTok URL",
@@ -67,7 +64,6 @@
     "instagramCopyFailed": "Couldn't copy the caption. Try again.",
     "instagramCopiedAndOpened": "Caption copied — paste it into Instagram.",
     "instagramCopiedOnly": "Caption copied to clipboard.",
-    "addSubmit": "Add",
     "steps": {
       "optional": "Optional",
       "step1Title": "Open Instagram and copy your caption",
@@ -177,11 +173,6 @@
     "frozen": "This climb is frozen from receiving new proposals.",
     "reasonPrefix": "Reason: {{reason}}"
   },
-  "newClimbFeed": {
-    "title": "New Climbs",
-    "errorLoad": "Failed to load climbs. Please try again.",
-    "empty": "No climbs yet for this layout. Be the first to set one!"
-  },
   "proposalCard": {
     "quotedReason": "“{{reason}}”",
     "support": "Support",
@@ -207,15 +198,6 @@
     "votesNeeded": "{{current}} / {{required}} votes needed",
     "opposed": "{{count}} opposed"
   },
-  "search": {
-    "minCharsHint": "Type at least 2 characters to search",
-    "noBoards": "No boards found for \"{{query}}\"",
-    "noGyms": "No gyms found for \"{{query}}\"",
-    "noPlaylists": "No playlists found for \"{{query}}\"",
-    "noUsers": "No users or setters found for \"{{query}}\"",
-    "climbCount_one": "{{count}} climb",
-    "climbCount_other": "{{count}} climbs"
-  },
   "sessionFeedCard": {
     "climbCount_one": "{{count}} climb",
     "climbCount_other": "{{count}} climbs",
@@ -239,9 +221,6 @@
     "openHint": "Opens the session",
     "openHardestClimb": "Open {{climb}}"
   },
-  "sessionSummary": {
-    "completed": "Session completed"
-  },
   "socialActions": {
     "upvoteWithCount_one": "Like, {{count}} like",
     "upvoteWithCount_other": "Like, {{count}} likes",
@@ -252,19 +231,6 @@
   },
   "socialFeedItem": {
     "climbed": "climbed"
-  },
-  "subscribeButton": {
-    "signInPrompt": "Please sign in to manage subscriptions",
-    "subscribed": "Subscribed to new climbs",
-    "unsubscribed": "Unsubscribed from new climbs",
-    "updateFailed": "Couldn't update subscription"
-  },
-  "userSearch": {
-    "ascentsThisMonth": "{{count}} ascents this month",
-    "climbsSet_one": "{{count}} climb set",
-    "climbsSet_other": "{{count}} climbs set",
-    "climbCount_one": "{{count}} climb",
-    "climbCount_other": "{{count}} climbs"
   },
   "userSmartCard": {
     "follower_one": "{{count}} follower",

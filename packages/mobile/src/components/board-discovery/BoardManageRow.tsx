@@ -171,9 +171,11 @@ function BoardManageRowComponent({
             : t('mobile.offline.downloadingCount', { count: downloadCount ?? 0 })
           : downloadState === 'downloaded'
             ? t('mobile.offline.available')
-            : downloadState === 'pending'
-              ? t('mobile.offline.pending')
-              : null;
+            : downloadState === 'finalizing'
+              ? t('mobile.offline.finalizing')
+              : downloadState === 'pending'
+                ? t('mobile.offline.pending')
+                : null;
 
   const offlineStatusAccessibilityLabel =
     effectiveDownloadNotice === 'snapshot-retrying'

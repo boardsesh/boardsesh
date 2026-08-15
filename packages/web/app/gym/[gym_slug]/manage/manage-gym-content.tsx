@@ -138,10 +138,7 @@ export default function ManageGymContent({ initialGym }: { initialGym: Gym }) {
   };
 
   return (
-    <Container
-      maxWidth="md"
-      sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)', pb: 'var(--bottom-bar-height)' }}
-    >
+    <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
       {gym.slug && (
         <Box sx={{ mb: 1.5 }}>
           <MuiLink

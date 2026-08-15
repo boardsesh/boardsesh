@@ -18,6 +18,8 @@ type Children = { children?: ReactNode };
 
 const createBoardMock = vi.hoisted(() => vi.fn());
 const setActiveBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const followBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const fetchBoardsBySerialNumbersMock = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 const fetchBoardByUuidMock = vi.hoisted(() => vi.fn());
 const dismissToMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
@@ -31,7 +33,26 @@ const existingBoard = {
   name: 'Boulder Space - MoonBoard 2024 Standard',
 } as unknown as UserBoard;
 
-/** A graphql-request ClientError carrying the server's duplicate rejection. */
+/** A graphql-request ClientError carrying the server's duplicate-SERIAL rejection. */
+function serialExistsError() {
+  return {
+    response: {
+      errors: [
+        {
+          message: 'That serial is already registered to another board',
+          extensions: {
+            code: 'BOARD_SERIAL_EXISTS',
+            boardUuid: 'existing-uuid',
+            slug: 'other-wall',
+            name: 'Other wall',
+          },
+        },
+      ],
+    },
+  };
+}
+
+/** A graphql-request ClientError carrying the server's duplicate-CONFIG rejection. */
 function duplicateError() {
   return {
     response: {
@@ -62,8 +83,10 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('../../../src/lib/graphql/hooks', () => ({
   useCreateBoard: () => ({ mutateAsync: createBoardMock }),
+  useFollowBoard: () => ({ mutateAsync: followBoardMock }),
   useProfile: () => ({ data: { displayName: 'Marco' } }),
   fetchBoardByUuid: fetchBoardByUuidMock,
+  fetchBoardsBySerialNumbers: fetchBoardsBySerialNumbersMock,
 }));
 
 vi.mock('../../../src/lib/graphql/use-active-board', () => ({
@@ -130,6 +153,24 @@ vi.mock('../../../src/components/board-discovery/BoardDuplicatePromptSheet', () 
     ]),
 }));
 
+vi.mock('../../../src/components/board-discovery/SerialReuseConfirmSheet', () => ({
+  SerialReuseConfirmSheet: ({
+    visible,
+    onCreateAnyway,
+    onUseExisting,
+  }: {
+    visible: boolean;
+    onCreateAnyway: () => void;
+    onUseExisting: () => void;
+  }) =>
+    visible
+      ? createElement('div', { 'data-testid': 'serial-prompt' }, [
+          createElement('button', { key: 'anyway', type: 'button', onClick: onCreateAnyway }, 'create anyway'),
+          createElement('button', { key: 'existing', type: 'button', onClick: onUseExisting }, 'use that wall'),
+        ])
+      : null,
+}));
+
 vi.mock('@boardsesh/board-config', () => ({ toBoardName: (value: string) => value }));
 
 vi.mock('react-native', () => ({
@@ -144,6 +185,8 @@ beforeEach(() => {
   state.params = {};
   createBoardMock.mockResolvedValue({ uuid: 'new-uuid', name: 'Klimmuur MoonBoard' } as unknown as UserBoard);
   fetchBoardByUuidMock.mockResolvedValue(existingBoard);
+  fetchBoardsBySerialNumbersMock.mockResolvedValue([]);
+  followBoardMock.mockResolvedValue(undefined);
 });
 
 describe('CreateBoard', () => {
@@ -209,6 +252,36 @@ describe('CreateBoard', () => {
 
     await waitFor(() => expect(createBoardMock).toHaveBeenCalledTimes(2));
     expect(createBoardMock.mock.calls[1][0].allowDuplicateConfig).toBe(true);
+    // Saying "this is a different wall" answers the CONFIG guard and nothing
+    // else. The serial guard is a separate question with a separate prompt.
+    expect(createBoardMock.mock.calls[1][0].allowDuplicateSerial).toBeUndefined();
+    await waitFor(() => expect(dismissToMock).toHaveBeenCalled());
+  });
+
+  it('chains the two guards, carrying both confirmations onto the retry', async () => {
+    // The serial guard and the config guard ask different questions about the
+    // same create, and the server can raise them one after the other. Answering
+    // the second must not silently drop the answer to the first — otherwise the
+    // retry re-trips the serial guard and the climber loops forever.
+    createBoardMock.mockRejectedValueOnce(serialExistsError()).mockRejectedValueOnce(duplicateError());
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(screen.getByTestId('serial-prompt')).toBeTruthy());
+    fireEvent.click(screen.getByText('create anyway'));
+
+    await waitFor(() => expect(createBoardMock).toHaveBeenCalledTimes(2));
+    expect(createBoardMock.mock.calls[1][0].allowDuplicateSerial).toBe(true);
+    expect(createBoardMock.mock.calls[1][0].allowDuplicateConfig).toBeUndefined();
+
+    await waitFor(() => expect(screen.getByTestId('duplicate-prompt')).toBeTruthy());
+    fireEvent.click(screen.getByText('add another'));
+
+    await waitFor(() => expect(createBoardMock).toHaveBeenCalledTimes(3));
+    expect(createBoardMock.mock.calls[2][0]).toMatchObject({
+      allowDuplicateSerial: true,
+      allowDuplicateConfig: true,
+    });
     await waitFor(() => expect(dismissToMock).toHaveBeenCalled());
   });
 

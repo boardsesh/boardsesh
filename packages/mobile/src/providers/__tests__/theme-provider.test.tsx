@@ -6,19 +6,25 @@ import type { ReactNode } from 'react';
 // Mock the secure-store adapter, not expo-secure-store directly. The adapter
 // is the seam ThemeProvider depends on; controlling its three methods is enough
 // to drive every persistence + hydration path in the provider.
-const { appearanceSetColorSchemeMock, getMock, removeMock, setMock, useColorSchemeMock } = vi.hoisted(() => ({
-  appearanceSetColorSchemeMock: vi.fn(),
-  getMock: vi.fn(),
-  removeMock: vi.fn(),
-  setMock: vi.fn(),
-  useColorSchemeMock: vi.fn(),
-}));
+const { appearanceSetColorSchemeMock, getMock, removeMock, setMock, syncDocumentAppearanceMock, useColorSchemeMock } =
+  vi.hoisted(() => ({
+    appearanceSetColorSchemeMock: vi.fn(),
+    getMock: vi.fn(),
+    removeMock: vi.fn(),
+    setMock: vi.fn(),
+    syncDocumentAppearanceMock: vi.fn(),
+    useColorSchemeMock: vi.fn(),
+  }));
 vi.mock('../../lib/preferences/secure-store-adapter', () => ({
   secureStorePreferences: {
     get: (key: string) => getMock(key),
     set: (key: string, value: unknown) => setMock(key, value),
     remove: (key: string) => removeMock(key),
   },
+}));
+vi.mock('../../lib/theme/document-appearance', () => ({
+  syncDocumentAppearance: (colorScheme: string, backgroundColor: string) =>
+    syncDocumentAppearanceMock(colorScheme, backgroundColor),
 }));
 
 // react-native isn't satisfiable under jsdom. Replace it with a minimal
@@ -65,6 +71,7 @@ describe('ThemeProvider', () => {
     removeMock.mockReset();
     useColorSchemeMock.mockReset();
     appearanceSetColorSchemeMock.mockReset();
+    syncDocumentAppearanceMock.mockReset();
     // Defaults: no stored preference, OS in light mode, Android platform.
     getMock.mockResolvedValue(null);
     setMock.mockResolvedValue(undefined);
@@ -73,12 +80,34 @@ describe('ThemeProvider', () => {
   });
 
   describe('resolved colorScheme (without persistence)', () => {
-    it('does not call the native Appearance override on web', async () => {
+    it('defaults a fresh web session to dark without calling native Appearance', async () => {
       platform.os = 'web';
-      renderHook(() => useTheme(), { wrapper });
+      useColorSchemeMock.mockReturnValue(null);
+      const { result } = renderHook(() => useTheme(), { wrapper });
 
       await waitFor(() => expect(getMock).toHaveBeenCalled());
+      expect(result.current.themeOverride).toBe('dark');
+      expect(result.current.colorScheme).toBe('dark');
+      expect(syncDocumentAppearanceMock).toHaveBeenLastCalledWith('dark', expect.any(String));
       expect(appearanceSetColorSchemeMock).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['light', 'light'],
+      ['dark', 'dark'],
+      ['system', 'light'],
+    ] as const)('honours a saved %s choice over the web dark default', async (storedOverride, expectedScheme) => {
+      platform.os = 'web';
+      useColorSchemeMock.mockReturnValue('light');
+      getMock.mockImplementation((key: string) => Promise.resolve(key === THEME_OVERRIDE_KEY ? storedOverride : null));
+
+      const { result } = renderHook(() => useTheme(), { wrapper });
+
+      await waitFor(() => expect(result.current.themeOverride).toBe(storedOverride));
+      expect(result.current.colorScheme).toBe(expectedScheme);
+      await waitFor(() =>
+        expect(syncDocumentAppearanceMock).toHaveBeenLastCalledWith(expectedScheme, expect.any(String)),
+      );
     });
 
     it("'system' override follows the device scheme", async () => {
@@ -129,11 +158,32 @@ describe('ThemeProvider', () => {
       expect(result.current.themeOverride).toBe('system');
     });
 
+    it('keeps the web dark default when the stored override is invalid', async () => {
+      platform.os = 'web';
+      useColorSchemeMock.mockReturnValue(null);
+      getMock.mockResolvedValue('lavender');
+      const { result } = renderHook(() => useTheme(), { wrapper });
+
+      await waitFor(() => expect(getMock).toHaveBeenCalledWith(THEME_OVERRIDE_KEY));
+      expect(result.current.themeOverride).toBe('dark');
+      expect(result.current.colorScheme).toBe('dark');
+    });
+
     it('does not crash if the SecureStore read rejects', async () => {
       getMock.mockRejectedValue(new Error('secure store unavailable'));
       const { result } = renderHook(() => useTheme(), { wrapper });
       await waitFor(() => expect(getMock).toHaveBeenCalled());
       expect(result.current.themeOverride).toBe('system');
+    });
+
+    it('keeps the web dark default if browser preference storage rejects', async () => {
+      platform.os = 'web';
+      getMock.mockRejectedValue(new Error('indexeddb unavailable'));
+      const { result } = renderHook(() => useTheme(), { wrapper });
+
+      await waitFor(() => expect(getMock).toHaveBeenCalled());
+      expect(result.current.themeOverride).toBe('dark');
+      expect(result.current.colorScheme).toBe('dark');
     });
   });
 

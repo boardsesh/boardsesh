@@ -41,7 +41,6 @@ export default async function GymClaimSuccessPage({ searchParams }: { searchPara
         sx={{
           py: 8,
           pt: 'calc(var(--global-header-height) + 48px)',
-          pb: 'var(--bottom-bar-height)',
           textAlign: 'center',
         }}
       >

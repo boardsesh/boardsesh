@@ -100,7 +100,7 @@ vi.mock('../../notifications', () => ({
 }));
 
 vi.mock('../../lib/graphql/client', () => ({
-  getHttpClient: () => ({ request: vi.fn() }),
+  getOfflineSyncHttpClient: () => ({ request: vi.fn() }),
 }));
 
 const snapshotBaseUrlConfigured = vi.hoisted(() => ({ value: true }));

@@ -595,6 +595,16 @@ export const SHARED_EVENTS = {
   // 'reset' | 'probe_failed' }. Deduped once-per-launch-per-verdict in the
   // mobile binding, because the engine evaluates on every foreground.
   OfflineSyncCoverageEvaluated: 'Offline Sync Coverage Evaluated',
+  // Offline sync — a whole drain+pull cycle threw before reaching its idle
+  // frame. The scheduler retries these after a bounded delay, but without this
+  // event a device could show several downloaded artifacts followed by silence
+  // and production telemetry could not distinguish a transport timeout from a
+  // SQLite/import defect. Props: { phase, currentTable, documentsProcessed,
+  // expected, status, errorKind, offlineEngineEnabled }. `currentTable` is null
+  // during global deletion work; `expected` is true for transport-shaped
+  // failures. Raw exception text stays in Sentry rather than analytics; an
+  // unchanged signature is emitted at most once per five minutes.
+  OfflineSyncCycleFailed: 'Offline Sync Cycle Failed',
   // Offline sync — the local SQLite setup lost the write lock at launch and a
   // later retry won, so offline storage came up after all. Fired at most once
   // per process, only when attempt 1 failed (a clean launch stays silent).
