@@ -145,7 +145,7 @@ const PUBLISHER_NEEDS: Record<string, string[]> = {
 // step, including in validation and artifact generation.
 const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
   'authorize-current-main': {
-    'Bind workflow and audit publisher environment': 'ddec8fd3b70bbbce3f6ece43dcf76d6511a390e13dde2a3a4646c34ae46570ac',
+    'Bind workflow and audit publisher environment': 'a5bdefbc565f8a9d530316b439ab2560cb506f8223fa907e424c8a71335e9708',
   },
   'validate-main': {
     'Validate checkout and Docker inputs': 'd93f8b5c79e732dfa0d06bb5469b9437d690374d7f92441f128f64053ba08245',
@@ -160,7 +160,7 @@ const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
     'Validate offline layouts and retired digest policy':
       '110821eff07459d4dc1299e88bc9e71da20b0a3ce23cb89b0162cef0159b421d',
     'Recheck exact current main and environment immediately before registry authentication':
-      '1dd7ee111026f09c11a161be8e486d09e453ac724467238b87d7761a8a1d56b7',
+      '64ddc967602b4458fc2a6c4cf6c58d4bdf629fcd173db97d2c80e2f4e1e2d509',
     'Authenticate ORAS to GHCR': '2409cc90e42b7448aba3c40d18a741735d513a6fdc0f2212544407fb09f3a4ce',
     'Publish exact prevalidated OCI layouts': 'd1d1889c4b883ccdde4e2ecfc5f7d4d039caff1752ac16470d730f9005890942',
     'Remove temporary publisher credentials and builder':
@@ -201,7 +201,7 @@ const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
   },
   'attest-published-digests': {
     'Recheck exact current main and environment immediately before OIDC attestation':
-      '9d18bd8f70b61b36c639797ebe7851aa3f0947f1cfed0903c313e2d7703771ea',
+      'ba63aad32d3c4db72db7bbed48281df422c0be9f1441cdbec1464649635262af',
   },
   'verify-attestations': {
     'Create temporary read-only registry boundary': 'a5e51a8c6a73ccc35f8f25aa870fed6434dada853729687d5ce8fb8414cf4a3c',
@@ -224,13 +224,13 @@ const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
 // conditions, outputs, and matrices. Together with the readable assertions,
 // this makes the whole publisher an exact structural allowlist.
 const PRIVILEGED_JOB_SHA256: Record<string, string> = {
-  'authorize-current-main': 'de925dca4eba05dc42accdb6fe0ed3c996fe37079d620da7fc35166900e70c29',
+  'authorize-current-main': '012c58011b4370b349d5f7dcfe89171bcfdf3e0653b459ab9fcbd865d3fc54c7',
   'validate-main': '79a3b6710f2f3268d467ae5a8d467d78fd212627f90f3da8c6505b1a4c51b29d',
-  'publish-images': '47364440a1d9768c74511febb7adb076db49911e7dd388529993082f4fc0d451',
+  'publish-images': '7230e1b43868539815cd52a82a3fa651647cd7b75a2d4f53ed976d75afa18002',
   'verify-published-images': '05f165fb989b0c7c920b470b19bf4f14b5f3dd1f0c2880bd79e3f2b79228e1c8',
   'smoke-portable': 'b5061e0cb86febdc3216af60b967ddf3825b7c74b43016d006d0d1aa245351ba',
   'smoke-seeded': '95bf708acbe676a46dde4981cc83ba978c37f6b6c3ca463ef2239647260ebdf9',
-  'attest-published-digests': 'd4955025ba90ce538e2966676a44c4d65c4a400a407e557550427349d603991b',
+  'attest-published-digests': 'f3815b58609bfc7c88061071e23ef1bdefe2c945613d79d15ae3ef3353b6bf5a',
   'verify-attestations': 'e3e536f61601ef9d8681dc5809065ff814612c227a70afbc14e1c3cb21a6ff8c',
   'record-published-digests': '8332efc25368a20c05a3ed6e4c79ecb7eef69b1886e41e9ff90963b765d9a5ed',
 };
@@ -615,7 +615,10 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
     [/\[\[ "\$REF_IS_PROTECTED" == 'true' \]\]/, 'publisher must require protected main'],
     [/git\/ref\/heads\/\$DEFAULT_BRANCH/, 'publisher must query the live main head'],
     [/\.can_admins_bypass == false/, 'publisher environment must disable administrator bypass'],
-    [/\.prevent_self_review == true/, 'publisher environment must prevent self-review'],
+    [
+      /\(\.prevent_self_review \| type == "boolean"\)/,
+      'publisher environment must assert an explicit self-review policy',
+    ],
     [/\(\(\.reviewers \/\/ \[\]\) \| length > 0\)/, 'publisher environment must require a reviewer'],
     [/\.total_count == 1/, 'publisher environment must allow exactly one branch policy'],
   ] as const) {
@@ -742,8 +745,8 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
     failures,
     publish,
     'Recheck exact current main and environment immediately before registry authentication',
-    /\.can_admins_bypass == false[\s\S]*\.prevent_self_review == true/,
-    'publisher must re-audit no-bypass and no-self-review immediately before GHCR authentication',
+    /\.can_admins_bypass == false[\s\S]*\(\.prevent_self_review \| type == "boolean"\)/,
+    'publisher must re-audit no-bypass and the explicit self-review policy immediately before GHCR authentication',
   );
   const publishRun = stringAt(stepByName(publish, 'Publish exact prevalidated OCI layouts') ?? {}, 'run') ?? '';
   if ((publishRun.match(/oras cp --from-oci-layout/g) ?? []).length !== 2) {
@@ -852,8 +855,8 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
     failures,
     attest,
     'Recheck exact current main and environment immediately before OIDC attestation',
-    /\.can_admins_bypass == false[\s\S]*\.prevent_self_review == true/,
-    'attestation must re-audit no-bypass and no-self-review before OIDC authority',
+    /\.can_admins_bypass == false[\s\S]*\(\.prevent_self_review \| type == "boolean"\)/,
+    'attestation must re-audit no-bypass and the explicit self-review policy before OIDC authority',
   );
   for (const [stepName, subjectName, subjectDigest] of [
     [

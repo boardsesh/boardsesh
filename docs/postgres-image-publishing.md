@@ -18,8 +18,8 @@ Create a dedicated GitHub environment named `postgres-image-publisher` before
 the first dispatch. It must have all of these settings:
 
 1. One or more required reviewers.
-2. **Prevent self-review** enabled. The person who dispatches the run cannot
-   approve its publisher jobs.
+2. An explicit **prevent self-review** setting, either on or off. See the
+   accepted risk below before choosing.
 3. Administrator bypass disabled.
 4. A custom deployment branch policy containing exactly the `main` branch.
 5. No tag or wildcard deployment policy.
@@ -29,6 +29,26 @@ starts and again immediately before package-write and OIDC operations. A
 missing field, missing permission, API error, reviewer-free rule, enabled
 bypass, or policy other than exactly `main` fails closed. GitHub still enforces
 the environment approval independently of this audit.
+
+### Accepted risk: self-review is permitted
+
+The audit requires `prevent_self_review` to be present and boolean, but accepts
+either value. Boardsesh runs with a single maintainer, so requiring a second
+approver would leave no one able to approve a dispatch, and a GitHub App cannot
+act as an environment reviewer.
+
+What this gives up: one account that can both dispatch the publisher and approve
+its environment gate can publish an image without a second person seeing it. The
+remaining controls still hold — publication is limited to the exact live `main`
+head, `main` requires a pull-request review, administrator bypass is off, the
+deployment policy is `main`-only, no candidate code runs while registry
+credentials exist, and every published digest carries a verified provenance
+attestation naming its source commit. Compromise of the maintainer account is
+the uncovered case; a compromise of any _other_ account still cannot publish.
+
+Enable prevent self-review as soon as a second reviewer with repository access
+exists. Nothing in the workflow needs to change — the audit accepts `true`
+today.
 
 Also keep these repository controls in place:
 

@@ -99,7 +99,7 @@ jobs:
             ([.protection_rules[] |
               select(
                 .type == "required_reviewers" and
-                .prevent_self_review == true and
+                (.prevent_self_review | type == "boolean") and
                 ((.reviewers // []) | length > 0)
               )] | length == 1)
           ' <<<"$environment_json" >/dev/null ||
@@ -434,7 +434,7 @@ jobs:
             ([.protection_rules[] |
               select(
                 .type == "required_reviewers" and
-                .prevent_self_review == true and
+                (.prevent_self_review | type == "boolean") and
                 ((.reviewers // []) | length > 0)
               )] | length == 1)
           ' <<<"$environment_json" >/dev/null ||
@@ -822,7 +822,7 @@ jobs:
             ([.protection_rules[] |
               select(
                 .type == "required_reviewers" and
-                .prevent_self_review == true and
+                (.prevent_self_review | type == "boolean") and
                 ((.reviewers // []) | length > 0)
               )] | length == 1)
           ' <<<"$environment_json" >/dev/null ||

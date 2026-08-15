@@ -203,8 +203,8 @@ describe('trusted PostgreSQL image publisher contract', () => {
     },
     {
       name: 'self-review accepted',
-      mutate: (workflow: string) => replaceRequired(workflow, '.prevent_self_review == true', 'true'),
-      expected: /prevent self-review/,
+      mutate: (workflow: string) => replaceRequired(workflow, '(.prevent_self_review | type == "boolean")', 'true'),
+      expected: /must assert an explicit self-review policy/,
     },
     {
       name: 'reviewer-free environment accepted',
