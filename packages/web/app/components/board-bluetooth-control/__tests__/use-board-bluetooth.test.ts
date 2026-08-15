@@ -273,6 +273,7 @@ describe('useBoardBluetooth', () => {
       apiLevel: 3,
       deviceName: 'Test Board',
       colorOverrides: undefined,
+      lightAdjacentHolds: false,
     });
   });
 
@@ -353,10 +354,53 @@ describe('useBoardBluetooth', () => {
 
     expect(sendResult).toBe(true);
     // Standard board (layout 2) → 18-row serpentine; Mini layouts pass 12.
-    expect(mockGetMoonboardBluetoothPacket).toHaveBeenCalledWith('p1r42p2r43p198r44', 18);
+    expect(mockGetMoonboardBluetoothPacket).toHaveBeenCalledWith('p1r42p2r43p198r44', 18, {
+      lightAdjacentHolds: false,
+    });
     expect(mockGetAuroraBluetoothPacket).not.toHaveBeenCalled();
     expect(mockGetLedPlacements).not.toHaveBeenCalled();
     expect(mockAdapter.write).toHaveBeenCalledWith(new Uint8Array([9, 8, 7]), undefined);
+  });
+
+  it('threads moonboardLightAdjacentHolds through to the packet builder', async () => {
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardDetails: mockMoonboardDetails, moonboardLightAdjacentHolds: true }),
+    );
+
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    await act(async () => {
+      await result.current.sendFramesToBoard('p1r42p2r43p198r44');
+    });
+
+    expect(mockGetMoonboardBluetoothPacket).toHaveBeenCalledWith('p1r42p2r43p198r44', 18, {
+      lightAdjacentHolds: true,
+    });
+  });
+
+  it('uses a preference updated while disconnected on the first write after connect', async () => {
+    const { result, rerender } = renderHook(
+      ({ lightAdjacentHolds }: { lightAdjacentHolds: boolean }) =>
+        useBoardBluetooth({
+          boardDetails: mockMoonboardDetails,
+          moonboardLightAdjacentHolds: lightAdjacentHolds,
+        }),
+      { initialProps: { lightAdjacentHolds: false } },
+    );
+
+    expect(result.current.isConnected).toBe(false);
+    rerender({ lightAdjacentHolds: true });
+
+    await act(async () => {
+      await result.current.connect();
+      await result.current.sendFramesToBoard('p1r42p2r43p198r44');
+    });
+
+    expect(mockGetMoonboardBluetoothPacket).toHaveBeenCalledWith('p1r42p2r43p198r44', 18, {
+      lightAdjacentHolds: true,
+    });
   });
 
   it('clear-all writes the MoonBoard clear packet; only user-initiated clears are tracked (#3420)', async () => {

@@ -11,6 +11,37 @@ struct BoardBleConfiguration: Codable, Equatable {
     // MoonBoard grid rows (18 standard, 12 Mini). Optional so configs
     // persisted by builds that predate it still decode (#3392).
     let numRows: Int?
+    // MoonBoard "V2" additional-LED feature (light each hold's neighbour LED,
+    // firmware-defined — see BoardBleEncoding.makeMoonboardPacket). Optional,
+    // like `numRows` above: Swift's synthesized Decodable only skips a missing
+    // key for an Optional-typed property (`decodeIfPresent`) — a non-optional
+    // stored property's default-value expression is NOT consulted by Codable
+    // synthesis, so `Bool = false` here would still throw `keyNotFound` and
+    // fail the whole decode for configs persisted before this field existed
+    // (readConfiguration() swallows that via `try?`, silently dropping the
+    // saved config). `Bool?` decodes those as nil; callers read
+    // `lightAdjacentHolds ?? false`.
+    let lightAdjacentHolds: Bool?
+
+    init(
+        boardName: String,
+        layoutId: Int,
+        sizeId: Int,
+        apiLevel: Int?,
+        deviceName: String?,
+        colorOverrides: [String: String],
+        numRows: Int?,
+        lightAdjacentHolds: Bool? = nil
+    ) {
+        self.boardName = boardName
+        self.layoutId = layoutId
+        self.sizeId = sizeId
+        self.apiLevel = apiLevel
+        self.deviceName = deviceName
+        self.colorOverrides = colorOverrides
+        self.numRows = numRows
+        self.lightAdjacentHolds = lightAdjacentHolds
+    }
 }
 
 struct BoardBlePacketResult: Equatable {
@@ -381,6 +412,9 @@ enum BoardBleEncoding {
     private static let moonboardRoleMap: [Int: String] = [42: "S", 43: "P", 44: "E"]
     private static let moonboardFramePrefix = "l#"
     private static let moonboardFrameSuffix = "#"
+    // MoonBoard "V2" config prefix — mirrors MOONBOARD_V2_ADDITIONAL_LED_PREFIX
+    // in packages/shared/ble-protocol/src/moonboard.ts. Keep in lockstep.
+    private static let moonboardV2AdditionalLedPrefix = "~D"
 
     static func moonboardSerialPosition(holdId: Int, numRows: Int? = nil) -> Int? {
         let gridRows = numRows ?? moonboardDefaultGridRows
@@ -398,7 +432,7 @@ enum BoardBleEncoding {
         return colIndex * gridRows + (gridRows - 1 - rowIndex)
     }
 
-    static func makeMoonboardPacket(frames: String, numRows: Int? = nil) -> BoardBlePacketResult {
+    static func makeMoonboardPacket(frames: String, numRows: Int? = nil, lightAdjacentHolds: Bool = false) -> BoardBlePacketResult {
         // `l##` (empty frame) is MoonBoard's clear-all: community firmware
         // (ArduinoMoonBoardLED) clears every LED on each incoming frame; unverified
         // on official Moon controllers (at worst a no-op). Gate on the RAW string —
@@ -446,7 +480,8 @@ enum BoardBleEncoding {
             )
         }
 
-        let payload = moonboardFramePrefix + encodedHolds.joined(separator: ",") + moonboardFrameSuffix
+        let framePayload = moonboardFramePrefix + encodedHolds.joined(separator: ",") + moonboardFrameSuffix
+        let payload = lightAdjacentHolds ? moonboardV2AdditionalLedPrefix + framePayload : framePayload
         return BoardBlePacketResult(
             packet: Data(payload.utf8),
             skippedPositionCount: skippedPositionCount,

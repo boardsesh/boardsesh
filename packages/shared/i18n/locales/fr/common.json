@@ -373,6 +373,8 @@
     "customizeColorsTitle": "Couleurs des LED",
     "customizeColorsHelp": "Choisissez les couleurs des prises pour les mains, les pieds et l'arrivée. Les prises de départ gardent leur vert par défaut.",
     "resetColors": "Réinitialiser",
+    "lightAdjacentHolds": "Allumer la prise du dessus",
+    "lightAdjacentHoldsHelp": "Allume une seconde LED, plus tamisée, au-dessus de chaque prise de départ ou de main allumée. Nécessite un contrôleur MoonBoard avec la fonction LED additionnelle.",
     "disconnect": "Déconnecter la board",
     "role": {
       "HAND": "Mains",

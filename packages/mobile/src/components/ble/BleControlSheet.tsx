@@ -19,6 +19,11 @@ type BleControlSheetProps = {
   autoDisconnectEnabled: boolean;
   autoDisconnectTimeoutLabel: string;
   onToggleAutoDisconnect: (enabled: boolean) => void;
+  /** Show the MoonBoard "light hold above" row — only when the connected
+   * board is a MoonBoard. */
+  showLightAdjacentHolds: boolean;
+  lightAdjacentHoldsEnabled: boolean;
+  onToggleLightAdjacentHolds: (enabled: boolean) => void;
   onClose: () => void;
 };
 
@@ -33,6 +38,9 @@ function BleControlSheet({
   autoDisconnectEnabled,
   autoDisconnectTimeoutLabel,
   onToggleAutoDisconnect,
+  showLightAdjacentHolds,
+  lightAdjacentHoldsEnabled,
+  onToggleLightAdjacentHolds,
   onClose,
 }: BleControlSheetProps) {
   const { t: tSettings } = useTranslation('settings');
@@ -75,6 +83,23 @@ function BleControlSheet({
           accessibilityLabel={tSettings('ble.autoDisconnect.toggleAccessibility')}
           showSeparator
         />
+        {showLightAdjacentHolds && (
+          <ListRow
+            title={tCommon('lightControl.lightAdjacentHolds')}
+            subtitle={tCommon('lightControl.lightAdjacentHoldsHelp')}
+            leading={<Icon name="lightbulb" size={22} color={systemColors.secondaryLabel} />}
+            trailing={
+              <Switch
+                value={lightAdjacentHoldsEnabled}
+                pointerEvents="none"
+                accessibilityLabel={tCommon('lightControl.lightAdjacentHolds')}
+              />
+            }
+            onPress={() => onToggleLightAdjacentHolds(!lightAdjacentHoldsEnabled)}
+            accessibilityLabel={tCommon('lightControl.lightAdjacentHolds')}
+            showSeparator
+          />
+        )}
         <ListRow
           title={tSettings('ble.relightBoard')}
           leading={<Icon name="lightbulb.fill" size={22} color={brandColors.warning} />}

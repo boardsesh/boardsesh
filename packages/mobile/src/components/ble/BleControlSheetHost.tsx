@@ -23,6 +23,7 @@ export function BleControlSheetHost({ visible, onClose }: BleControlSheetHostPro
   const bluetooth = useOptionalBluetoothContext();
   const isConnected = bluetooth?.isConnected ?? false;
   const [autoDisconnectEnabled, setAutoDisconnectEnabled] = useSetting('autoDisconnectBle');
+  const showLightAdjacentHolds = bluetooth?.boardName === 'moonboard';
   const timeoutSeconds = bluetooth?.autoDisconnectTimeoutSeconds ?? 30;
   const timeoutLabels = useAutoDisconnectTimeoutLabels();
   const autoDisconnectTimeoutLabel = timeoutLabels[timeoutSeconds] ?? String(timeoutSeconds);
@@ -42,6 +43,14 @@ export function BleControlSheetHost({ visible, onClose }: BleControlSheetHostPro
     void bluetooth?.clearBoard();
   }, [bluetooth]);
 
+  const handleToggleLightAdjacentHolds = useCallback(
+    (enabled: boolean) => {
+      bluetooth?.setMoonboardLightAdjacentHolds(enabled);
+      bluetooth?.reassertWall();
+    },
+    [bluetooth],
+  );
+
   if (!bluetooth) return null;
 
   return (
@@ -53,6 +62,9 @@ export function BleControlSheetHost({ visible, onClose }: BleControlSheetHostPro
       autoDisconnectEnabled={autoDisconnectEnabled}
       autoDisconnectTimeoutLabel={autoDisconnectTimeoutLabel}
       onToggleAutoDisconnect={setAutoDisconnectEnabled}
+      showLightAdjacentHolds={showLightAdjacentHolds}
+      lightAdjacentHoldsEnabled={bluetooth.moonboardLightAdjacentHolds}
+      onToggleLightAdjacentHolds={handleToggleLightAdjacentHolds}
       onClose={onClose}
     />
   );

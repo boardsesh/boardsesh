@@ -62,6 +62,13 @@ export type UserPreferenceKeyMap = {
   lastUsedGrade: number;
   /** Saved colour mode; mirrored to localStorage for the pre-paint theme script. */
   colorMode: ColorMode;
+  /**
+   * MoonBoard "V2" BLE feature: also light each active hold's firmware-defined
+   * neighbour LED (typically the hold above), dimmer, in addition to its role
+   * colour. See `MOONBOARD_V2_ADDITIONAL_LED_PREFIX` in
+   * `@boardsesh/ble-protocol/moonboard`. No-op on Aurora boards.
+   */
+  moonboardLightAdjacentHolds: boolean;
 };
 
 // Map of IDB preference keys to their legacy localStorage keys for one-time migration
@@ -174,6 +181,21 @@ export const getAlwaysTickInApp = async (): Promise<boolean> => {
  */
 export const setAlwaysTickInApp = async (enabled: boolean): Promise<void> => {
   await setPreference('alwaysTickInApp', enabled);
+};
+
+/**
+ * Get the MoonBoard "light hold above" (V2 additional-LED) preference.
+ */
+export const getMoonboardLightAdjacentHolds = async (): Promise<boolean> => {
+  const value = await getPreference<boolean>('moonboardLightAdjacentHolds');
+  return value === true;
+};
+
+/**
+ * Set the MoonBoard "light hold above" (V2 additional-LED) preference.
+ */
+export const setMoonboardLightAdjacentHolds = async (enabled: boolean): Promise<void> => {
+  await setPreference('moonboardLightAdjacentHolds', enabled);
 };
 
 export type { GradeDisplayFormat } from './grade-colors';

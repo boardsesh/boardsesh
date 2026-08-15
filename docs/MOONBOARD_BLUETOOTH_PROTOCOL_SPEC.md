@@ -31,19 +31,20 @@ Each claim is tagged so you can separate what was observed in the app from what 
 
 ## TL;DR
 
-| Question                               | Answer                                                                                                                  | Tag  |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---- |
-| BLE library                            | `flutter_reactive_ble` (not `flutter_blue_plus`).                                                                       | ✅   |
-| How many controller generations?       | **Two.** The app carries UUIDs for both an original **RedBearLab** service and the newer **Nordic UART** one.           | ✅   |
-| Original-hardware service / write char | `713d0000-…` service, write to `713d0003-…`.                                                                            | ✅   |
-| Newer-hardware service / write char    | `6e400001-…` (Nordic UART) service, write to `6e400002-…` (Nordic UART RX).                                             | ✅   |
-| Subscribes to board notifications?     | **No.** Neither notify characteristic (`713d0002`, `6e400003`) is referenced — the app is write-only.                   | ✅   |
-| Bonds / pairs with the board?          | **No.** The app explicitly tells users _"DO NOT pair your phone to the board"_ — a plain GATT connect, no bond.         | ✅   |
-| Per-board LED version?                 | **Yes.** Boards persist a `led_version`; the app tracks LED hardware generation per board.                              | ✅   |
-| LED payload format                     | ASCII `l#<marker><pos>,<marker><pos>,…#` over the chosen write characteristic.                                          | 🔁   |
-| LED position numbering                 | Column-major **serpentine** over the 11×18 grid (positions 0–197).                                                      | 🔁   |
-| Clearing the board                     | Empty frame `l##` clears all LEDs (community firmware); Boardsesh sends it only on a deliberate clear (§5.5).           | 🔁❓ |
-| Two extra 128-bit UUIDs in the binary  | Present, but match **neither** BLE service family; they live in the app's `uuid`-package / SDK realm, not the LED path. | ❓   |
+| Question                               | Answer                                                                                                                               | Tag  |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---- |
+| BLE library                            | `flutter_reactive_ble` (not `flutter_blue_plus`).                                                                                    | ✅   |
+| How many controller generations?       | **Two.** The app carries UUIDs for both an original **RedBearLab** service and the newer **Nordic UART** one.                        | ✅   |
+| Original-hardware service / write char | `713d0000-…` service, write to `713d0003-…`.                                                                                         | ✅   |
+| Newer-hardware service / write char    | `6e400001-…` (Nordic UART) service, write to `6e400002-…` (Nordic UART RX).                                                          | ✅   |
+| Subscribes to board notifications?     | **No.** Neither notify characteristic (`713d0002`, `6e400003`) is referenced — the app is write-only.                                | ✅   |
+| Bonds / pairs with the board?          | **No.** The app explicitly tells users _"DO NOT pair your phone to the board"_ — a plain GATT connect, no bond.                      | ✅   |
+| Per-board LED version?                 | **Yes.** Boards persist a `led_version`; the app tracks LED hardware generation per board.                                           | ✅   |
+| LED payload format                     | ASCII `l#<marker><pos>,<marker><pos>,…#` over the chosen write characteristic.                                                       | 🔁   |
+| LED position numbering                 | Column-major **serpentine** over the 11×18 grid (positions 0–197).                                                                   | 🔁   |
+| Clearing the board                     | Empty frame `l##` clears all LEDs (community firmware); Boardsesh sends it only on a deliberate clear (§5.5).                        | 🔁❓ |
+| "V2" additional-LED feature            | Optional `~D` prefix asks community firmware to also light a firmware-defined neighbour LED per hold (§5.6). Opt-in, off by default. | 🔁❓ |
+| Two extra 128-bit UUIDs in the binary  | Present, but match **neither** BLE service family; they live in the app's `uuid`-package / SDK realm, not the LED path.              | ❓   |
 
 ---
 
@@ -220,6 +221,22 @@ The position index is a property of the **physical LED string**, so it is identi
 ❓ Unconfirmed on official Moon controllers (flagged for a live BLE capture); at worst it is a no-op there.
 
 Boardsesh sends `l##` **only on a deliberate clear** (the "Turn off all lights" control, or advancing the queue past the last compatible climb). A climb whose holds all drop out (unrecognised roles / out-of-range ids) is **never** cleared this way — it refuses to write and surfaces an incompatible-climb error instead, so a corrupt climb can't silently dark the wall.
+
+### 5.6 "V2" config prefix — the additional-LED feature
+
+🔁 Community controller firmware ([`FabianRig/ArduinoMoonBoardLED`](https://github.com/FabianRig/ArduinoMoonBoardLED), a reverse-engineered open-source LED box the app's own README describes as compatible with "the 'new' MoonBoard app") accepts an **optional config prefix** immediately before the `l#…#` frame:
+
+```
+~D l# <marker><pos> , … #
+```
+
+The community firmware's serial parser is a small state machine: state 0 waits for either `~` (config) or `l` (frame start). Seeing `~` moves to state 1, which reads exactly one config character — `D` sets a `useadditionalled` flag for the _next_ frame only — before falling through to normal frame parsing. A client that never sends `~` sees the plain V1 `l#…#` path unchanged, and old Boardsesh clients therefore keep working against firmware that understands the prefix. Behavior on firmware without the state-1 branch is not established: a controller might ignore the entire write or recover when it reaches the later `l` frame marker.
+
+When `useadditionalled` is set, the firmware renders each hold twice: its normal role colour (§5.2) at its own LED position, **and** a second, dimmer LED lit yellow at `ledmapping[hold] + additionalledmapping[hold]` — an installation-specific offset table baked into that board's `config.h`, conventionally pointing at the physical LED for the hold above. Finish holds (`E`) never get a second LED. The flag is consumed once per frame (reset to false after rendering), so a client must resend `~D` on every write it wants the effect on.
+
+**What Boardsesh does with this.** `getMoonboardBluetoothPacket(frames, numRows, { lightAdjacentHolds: true })` (`packages/shared/ble-protocol/src/moonboard.ts`, mirrored in `BoardBleEncoding.makeMoonboardPacket` for the native iOS re-light path) prepends `~D` to a non-empty frame. Boardsesh has no way to read a given board's `additionalledmapping[]` table, so this only toggles the firmware's own behaviour — it does not compute or claim a specific "above" vs "below" direction itself, which is why the user-facing copy says "light the hold above" (the README's own framing: "show lights above holds") rather than promising an exact offset. The clear-all `l##` frame never gets the prefix (prefixing it has no visible effect and would exercise the firmware's empty-string parsing edge case for no benefit). The feature is opt-in per user (a persisted preference, off by default) since it depends on firmware most controllers don't ship.
+
+**Unconfirmed on official Moon controllers** — like §5.5's clear-all, this is corroborated against the open-source firmware and Boardsesh's own working client, not captured from the official app (see [§9](#9-methodology--limitations)). Unsupported-prefix behavior must be verified on RedBearLab and Nordic controllers before release: they may ignore the whole write or continue at the normal `l#…#` frame.
 
 ---
 

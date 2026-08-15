@@ -87,6 +87,7 @@ type CapacitorGlobal = {
         apiLevel?: number;
         deviceName?: string;
         colorOverrides?: Record<string, string>;
+        lightAdjacentHolds?: boolean;
       }): Promise<void>;
       addListener(
         eventName: string,

@@ -27,6 +27,7 @@ const mockSendFramesToBoard =
 const mockSetPartyMode = vi.fn();
 const mockClearBoard = vi.fn<() => Promise<boolean | undefined>>();
 const mockDisconnect = vi.fn();
+const mockReassertWall = vi.fn();
 
 let mockBtContext: Record<string, unknown>;
 vi.mock('../../board-bluetooth-control/bluetooth-context', () => ({
@@ -90,6 +91,9 @@ function baseContext(overrides: Record<string, unknown> = {}): Record<string, un
     setPartyMode: mockSetPartyMode,
     ledColorOverrides: {},
     setLedColorOverrides: vi.fn(),
+    moonboardLightAdjacentHolds: false,
+    setMoonboardLightAdjacentHolds: vi.fn(),
+    reassertWall: mockReassertWall,
     ...overrides,
   };
 }
@@ -304,5 +308,49 @@ describe('LightControlDrawer handleClearAll', () => {
     // "turn off all" during a show must not issue its own clear.
     expect(mockSetPartyMode).toHaveBeenCalledWith('off');
     expect(mockClearBoard).not.toHaveBeenCalled();
+  });
+});
+
+describe('LightControlDrawer MoonBoard light-adjacent-holds toggle', () => {
+  it('shows the toggle only for a MoonBoard', () => {
+    render(<LightControlDrawer open onClose={() => {}} boardDetails={boardDetails} />);
+    expect(screen.queryByText('lightControl.lightAdjacentHolds')).toBeNull();
+  });
+
+  it('reflects the persisted preference and toggles it', () => {
+    const setMoonboardLightAdjacentHolds = vi.fn();
+    mockBtContext = baseContext({ setMoonboardLightAdjacentHolds });
+    render(<LightControlDrawer open onClose={() => {}} boardDetails={moonboardDetails} />);
+
+    const toggle = screen.getByLabelText('lightControl.lightAdjacentHolds') as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+
+    fireEvent.click(toggle);
+    expect(setMoonboardLightAdjacentHolds).toHaveBeenCalledWith(true);
+    expect(mockReassertWall).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts checked when the preference is already enabled', () => {
+    mockBtContext = baseContext({ moonboardLightAdjacentHolds: true });
+    render(<LightControlDrawer open onClose={() => {}} boardDetails={moonboardDetails} />);
+
+    const toggle = screen.getByLabelText('lightControl.lightAdjacentHolds') as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+  });
+
+  it('uses the checked value emitted by the switch', () => {
+    const setMoonboardLightAdjacentHolds = vi.fn();
+    mockBtContext = baseContext({ moonboardLightAdjacentHolds: true, setMoonboardLightAdjacentHolds });
+    render(<LightControlDrawer open onClose={() => {}} boardDetails={moonboardDetails} />);
+
+    const toggle = screen.getByLabelText('lightControl.lightAdjacentHolds') as HTMLInputElement;
+    // Simulate MUI reporting `checked=true` while the controlled context value
+    // is already true. The handler must trust MUI's value instead of inverting
+    // the potentially stale render value.
+    toggle.checked = false;
+    fireEvent.click(toggle);
+
+    expect(setMoonboardLightAdjacentHolds).toHaveBeenCalledWith(true);
+    expect(mockReassertWall).toHaveBeenCalledTimes(1);
   });
 });

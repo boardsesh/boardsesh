@@ -152,6 +152,17 @@ vi.mock('@/app/components/persistent-session', () => ({
   usePersistentSessionState: () => mockPersistentSessionState,
 }));
 
+let mockInitialMoonboardLightAdjacentHolds = false;
+let mockHydrateMoonboardLightAdjacentHolds: React.Dispatch<React.SetStateAction<boolean>> | null = null;
+const mockSetMoonboardLightAdjacentHolds = vi.fn();
+vi.mock('@/app/hooks/use-moonboard-light-adjacent-holds', () => ({
+  useMoonboardLightAdjacentHolds: () => {
+    const [enabled, setEnabled] = React.useState(mockInitialMoonboardLightAdjacentHolds);
+    mockHydrateMoonboardLightAdjacentHolds = setEnabled;
+    return [enabled, mockSetMoonboardLightAdjacentHolds];
+  },
+}));
+
 // Board-presence controls. Default inert (boardId null), matching the real
 // DISABLED_CONTROLS fallback when no provider is mounted, so existing tests are
 // unaffected. A test can set mockPresenceBoardId to assert the BLE-drop holder
@@ -159,13 +170,14 @@ vi.mock('@/app/components/persistent-session', () => ({
 let mockPresenceBoardId: number | null = null;
 const mockReportBoardDisconnect = vi.fn().mockResolvedValue(true);
 const mockResolveAndBindBoard = vi.fn().mockResolvedValue(null);
+const mockReportWallClimb = vi.fn().mockResolvedValue(true);
 vi.mock('../../board-presence/board-presence-context', () => ({
   useBoardPresenceControls: () => ({
     boardId: mockPresenceBoardId,
     resolveAndBindBoard: mockResolveAndBindBoard,
     reportDisconnect: mockReportBoardDisconnect,
   }),
-  useOptionalWallReport: () => ({ currentClimb: null, previousClimb: null, reportClimb: vi.fn() }),
+  useOptionalWallReport: () => ({ currentClimb: null, previousClimb: null, reportClimb: mockReportWallClimb }),
 }));
 
 type MockQueueItem = {
@@ -250,6 +262,9 @@ describe('BluetoothProvider', () => {
     mockResolveSerialNumbers.mockResolvedValue(new Map());
     mockPresenceBoardId = null;
     mockReportBoardDisconnect.mockResolvedValue(true);
+    mockReportWallClimb.mockResolvedValue(true);
+    mockInitialMoonboardLightAdjacentHolds = false;
+    mockHydrateMoonboardLightAdjacentHolds = null;
     mockPersistentSessionState = { session: null };
     mockConfirmClimbOnWall.mockResolvedValue(undefined);
     mockSetSessionBoardSerial.mockResolvedValue(undefined);
@@ -906,6 +921,114 @@ describe('BluetoothProvider', () => {
         expect.any(AbortSignal),
         expect.objectContaining({ climbUuid: 'climb-3' }),
       );
+    });
+
+    it('drains a mid-write reassert through the latest encoder callback exactly once', async () => {
+      let resolveFirstSend: (value: boolean) => void = () => {};
+      const firstEncoder = vi.fn(
+        () =>
+          new Promise<boolean>((resolve) => {
+            resolveFirstSend = resolve;
+          }),
+      );
+      const updatedEncoder = vi.fn().mockResolvedValue(true);
+      mockBluetoothState = { ...mockBluetoothState, isConnected: true, sendFramesToBoard: firstEncoder };
+      mockCurrentClimbQueueItem = {
+        climb: { uuid: 'climb-1', frames: 'p1r12', mirrored: false },
+      };
+
+      const { result, rerender } = renderHook(() => useBluetoothContext(), {
+        wrapper: createWrapper(createTestBoardDetails({ board_name: 'moonboard' })),
+      });
+
+      await act(async () => {
+        await vi.waitFor(() => expect(firstEncoder).toHaveBeenCalledTimes(1));
+      });
+
+      // The adjacent-LED toggle rebuilds the encoder callback, then asks the
+      // provider to repaint. Both updates arrive while the old write is still
+      // unresolved, so the latest-wins queue must retain the new callback and
+      // the reassert latch until that first write finishes.
+      mockBluetoothState = { ...mockBluetoothState, sendFramesToBoard: updatedEncoder };
+      await act(async () => {
+        rerender();
+      });
+      act(() => {
+        result.current.reassertWall();
+      });
+      expect(updatedEncoder).not.toHaveBeenCalled();
+
+      await act(async () => {
+        resolveFirstSend(true);
+        await vi.waitFor(() => expect(updatedEncoder).toHaveBeenCalledTimes(1));
+      });
+
+      expect(firstEncoder).toHaveBeenCalledTimes(1);
+      expect(updatedEncoder).toHaveBeenCalledWith(
+        'p1r12',
+        false,
+        expect.any(AbortSignal),
+        expect.objectContaining({ climbUuid: 'climb-1' }),
+      );
+    });
+
+    it('repaints after an adjacent-LED preference hydrates without reporting a new wall climb', async () => {
+      mockPresenceBoardId = 123;
+      mockBluetoothState.isConnected = true;
+      mockCurrentClimbQueueItem = {
+        climb: { uuid: 'climb-1', frames: 'p1r12', mirrored: false },
+      };
+
+      renderHook(() => useBluetoothContext(), {
+        wrapper: createWrapper(createTestBoardDetails({ board_name: 'moonboard' })),
+      });
+
+      await act(async () => {
+        await vi.waitFor(() => {
+          expect(mockSendFramesToBoard).toHaveBeenCalledTimes(1);
+          expect(mockReportWallClimb).toHaveBeenCalledTimes(1);
+          expect(mockShowMessage).toHaveBeenCalledTimes(1);
+        });
+      });
+
+      // IndexedDB hydration changes the encoder output without invoking the UI
+      // toggle callback or changing the climb. The physical-write signature
+      // must notice it, while the climb-only wall signature still deduplicates
+      // presence reporting and its Undo snackbar.
+      act(() => {
+        mockHydrateMoonboardLightAdjacentHolds?.(true);
+      });
+      await act(async () => {
+        await vi.waitFor(() => expect(mockSendFramesToBoard).toHaveBeenCalledTimes(2));
+      });
+
+      expect(mockReportWallClimb).toHaveBeenCalledTimes(1);
+      expect(mockShowMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('uses a preference hydrated while disconnected on the first reconnect write', async () => {
+      mockBluetoothState.isConnected = false;
+      mockCurrentClimbQueueItem = {
+        climb: { uuid: 'climb-1', frames: 'p1r12', mirrored: false },
+      };
+
+      const { result, rerender } = renderHook(() => useBluetoothContext(), {
+        wrapper: createWrapper(createTestBoardDetails({ board_name: 'moonboard' })),
+      });
+      expect(mockSendFramesToBoard).not.toHaveBeenCalled();
+
+      act(() => {
+        mockHydrateMoonboardLightAdjacentHolds?.(true);
+      });
+      expect(result.current.moonboardLightAdjacentHolds).toBe(true);
+      expect(mockSendFramesToBoard).not.toHaveBeenCalled();
+
+      await act(async () => {
+        mockBluetoothState.isConnected = true;
+        rerender();
+      });
+      await vi.waitFor(() => expect(mockSendFramesToBoard).toHaveBeenCalledTimes(1));
+      expect(result.current.moonboardLightAdjacentHolds).toBe(true);
     });
 
     it('deduplicates the WRITE for byte-identical re-broadcasts but re-confirms the wall', async () => {

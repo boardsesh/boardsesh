@@ -507,6 +507,32 @@ describe('useBoardBluetooth', () => {
     expect(activityListener).toHaveBeenCalledTimes(2);
   });
 
+  it('threads moonboardLightAdjacentHolds through to the packet builder', async () => {
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockGetMoonboardBluetoothPacket.mockReturnValue({
+      packet: new Uint8Array([1]),
+      skippedRoleCount: 0,
+      skippedPositionCount: 0,
+      totalPlacements: 1,
+      isClear: false,
+    });
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1, moonboardLightAdjacentHolds: true }),
+    );
+
+    await act(async () => {
+      await result.current.connect();
+    });
+    await act(async () => {
+      await result.current.sendFramesToBoard('p1r12');
+    });
+
+    expect(mockGetMoonboardBluetoothPacket).toHaveBeenCalledWith('p1r12', 18, { lightAdjacentHolds: true });
+  });
+
   it('tracks connect-initial MoonBoard frames until the adapter write settles', async () => {
     const writeActivityStore = createBleWriteActivityStore();
     let resolveWrite!: () => void;

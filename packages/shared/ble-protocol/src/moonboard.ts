@@ -3,6 +3,19 @@ import { MOONBOARD_GRID, MOONBOARD_DEVICE_NAME_PREFIXES } from '@boardsesh/board
 const MOONBOARD_FRAME_PREFIX = 'l#';
 const MOONBOARD_FRAME_SUFFIX = '#';
 
+// MoonBoard "V2" config prefix: sent immediately before the `l#...#` frame,
+// it tells the firmware to also light a dimmer "additional LED" next to each
+// hold — on community firmware (ArduinoMoonBoardLED) that's a per-hold offset
+// baked into the board's own `additionalledmapping[]` table (typically the
+// hold above), lit yellow; finish holds never get one. Boardsesh has no way to
+// know that table's contents, so this only toggles the firmware's own
+// behaviour — it doesn't compute a position itself. The community firmware's
+// parser treats `~` as an optional config marker before `l` and resets the flag
+// after every frame (one write, one effect). Official-controller handling of
+// this prefix is unverified, so the feature stays opt-in and requires real-
+// device coverage. See docs/MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md.
+const MOONBOARD_V2_ADDITIONAL_LED_PREFIX = '~D';
+
 // Boardsesh persists MoonBoard frames with the shared basic role codes only.
 // The newer controller firmware can render extra preview-only roles, but the
 // web client does not emit them in climb frames.
@@ -60,9 +73,21 @@ export function getMoonboardSerialPosition(holdId: number, numRows: number = MOO
   return colIndex * numRows + (numRows - 1 - rowIndex);
 }
 
+export type MoonboardPacketOptions = {
+  /**
+   * MoonBoard "V2" feature: prefix the frame with `~D`, asking the firmware to
+   * additionally light each hold's neighbour LED (see
+   * `MOONBOARD_V2_ADDITIONAL_LED_PREFIX` above). Only applied to a non-empty
+   * frame — prefixing the bare `l##` clear-all would have no visible effect
+   * and would needlessly exercise the firmware's empty-string parsing path.
+   */
+  lightAdjacentHolds?: boolean;
+};
+
 export function getMoonboardBluetoothPacket(
   frames: string,
   numRows: number = MOONBOARD_GRID.numRows,
+  options: MoonboardPacketOptions = {},
 ): MoonboardPacketResult {
   const encodedHolds: string[] = [];
   let skippedRoleCount = 0;
@@ -92,6 +117,11 @@ export function getMoonboardBluetoothPacket(
   }
 
   const holdPayload = encodedHolds.join(',');
+  const framePayload = `${MOONBOARD_FRAME_PREFIX}${holdPayload}${MOONBOARD_FRAME_SUFFIX}`;
+  const packetText =
+    options.lightAdjacentHolds && holdPayload !== ''
+      ? `${MOONBOARD_V2_ADDITIONAL_LED_PREFIX}${framePayload}`
+      : framePayload;
 
   // `l##` (empty holdPayload) is MoonBoard's clear-all: community firmware
   // (ArduinoMoonBoardLED) clears every LED on each incoming frame; unverified on
@@ -99,7 +129,7 @@ export function getMoonboardBluetoothPacket(
   // (frames === '') marks the result `isClear` — a climb that merely encodes to
   // nothing produces the same bytes but must be refused by the caller.
   return {
-    packet: new TextEncoder().encode(`${MOONBOARD_FRAME_PREFIX}${holdPayload}${MOONBOARD_FRAME_SUFFIX}`),
+    packet: new TextEncoder().encode(packetText),
     skippedRoleCount,
     skippedPositionCount,
     totalPlacements: frameParts.length,

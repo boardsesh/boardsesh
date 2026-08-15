@@ -244,6 +244,7 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
     apiLevel?: number;
     deviceName?: string;
     colorOverrides?: Record<string, string>;
+    lightAdjacentHolds?: boolean;
   }): Promise<void> {
     await getNativeBoardBlePlugin().configureBoard(options);
   }
