@@ -51,11 +51,24 @@ Everything that can hold a stale board reference follows the chain
   override still takes the lock but skips the conflict check. `createBoard` is authenticated and rate-limited;
   the private-board identity mask additionally prevents the conflict response from
   exposing a private wall's name, slug, or uuid.
+- `createBoard` has **three** insert paths since #4166 added the duplicate-config
+  guard: a gym-mint transaction, an unlinked fallback for when that mint fails,
+  and the plain insert. All three hold the serial lock — the fallback and the
+  plain one share a single `insertGuardedBoard` helper so a later edit can't
+  reintroduce a bare insert. A `BOARD_SERIAL_EXISTS` raised inside the mint is
+  rethrown rather than treated as an auto-gym failure: retrying without the gym
+  would create the very duplicate the guard just refused.
 - The React Native create flow (native and Expo web) pre-checks the serial
   (`boardsBySerialNumbers`) and steers the user onto the existing board (follow
   - activate) before creating; a de-emphasized "create a duplicate anyway"
     remains available, including when the conflicting board is private
     (identity-masked dialog variant).
+- The duplicate-**serial** prompt and the duplicate-**config** prompt are separate
+  questions and can fire one after the other on the same create. The create screen
+  shows whichever the server raised, and a confirmation only ever sets its own
+  flag. Confirming serial reuse and then hitting the config guard carries **both**
+  flags on the retry — otherwise the second answer would re-trip the first guard
+  and the climber would loop.
 
 ## Follow/write concurrency
 

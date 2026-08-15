@@ -1128,10 +1128,16 @@ describe('createBoard serial guard on the auto-gym insert paths', () => {
    * fallback. A CHECK constraint scoped to one sentinel name is the smallest
    * lever that reproduces a real mint failure: the whole mint transaction rolls
    * back exactly as it would on a slug collision or a dead extension.
+   *
+   * `NOT VALID` matters — it still rejects new rows, but skips the scan of the
+   * existing ones, so the ACCESS EXCLUSIVE lock on `gyms` is a catalog write and
+   * nothing more. Test files run in parallel workers against one database and
+   * plenty of them touch gyms; a validating ALTER would park them all behind a
+   * full-table scan.
    */
   async function withFailingGymMint(gymName: string, body: () => Promise<void>): Promise<void> {
     const constraint = `mt_forced_mint_failure_${SERIAL_SUFFIX}`.toLowerCase();
-    await db.execute(sql.raw(`ALTER TABLE gyms ADD CONSTRAINT ${constraint} CHECK (name <> '${gymName}')`));
+    await db.execute(sql.raw(`ALTER TABLE gyms ADD CONSTRAINT ${constraint} CHECK (name <> '${gymName}') NOT VALID`));
     try {
       await body();
     } finally {
