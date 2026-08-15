@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { act, render, waitFor, cleanup } from '@testing-library/react';
+import { act, render, waitFor, cleanup, fireEvent } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement, type ReactNode } from 'react';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import type { BoardSerialConfig } from '@boardsesh/graphql/operations';
+import { getMoonboardBluetoothPacket } from '@boardsesh/ble-protocol/moonboard';
 import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
 import type { BleConnectionEnded, BleConnectionHandle, PickerState } from '../../lib/ble/use-board-bluetooth';
 import { setHoldColorOverridesPreference } from '../../lib/hold-color-overrides';
@@ -15,6 +16,7 @@ type BluetoothHookOptions = {
   onConnectSuccess?: (serial: string | null, connection: BleConnectionHandle) => void;
   onConnectionEnded?: (connection: BleConnectionEnded) => void;
   holdsData?: unknown;
+  moonboardLightAdjacentHolds?: boolean;
 };
 
 function makeConnectionHandle(
@@ -61,6 +63,7 @@ const queue = vi.hoisted(() => ({
 const bluetooth = vi.hoisted(() => {
   const mock = {
     options: undefined as BluetoothHookOptions | undefined,
+    sendFramesToBoardForOptions: null as ((options: BluetoothHookOptions) => SendFramesToBoard) | null,
     state: {
       isConnected: true,
       loading: false,
@@ -73,6 +76,12 @@ const bluetooth = vi.hoisted(() => {
     },
     useBoardBluetooth: vi.fn((options: BluetoothHookOptions) => {
       mock.options = options;
+      if (mock.sendFramesToBoardForOptions) {
+        return {
+          ...mock.state,
+          sendFramesToBoard: mock.sendFramesToBoardForOptions(options),
+        };
+      }
       return mock.state;
     }),
   };
@@ -112,9 +121,16 @@ vi.mock('react-native', () => ({
   AppState: { addEventListener: () => ({ remove: vi.fn() }) },
 }));
 
-vi.mock('../../settings', () => ({
-  useSetting: (key: string) => (key === 'autoDisconnectBle' ? [false, vi.fn()] : [30, vi.fn()]),
-}));
+vi.mock('../../settings', async () => {
+  const { useState } = await import('react');
+  return {
+    useSetting: (key: string) => {
+      const moonboardLightAdjacentHolds = useState(false);
+      if (key === 'moonboardLightAdjacentHolds') return moonboardLightAdjacentHolds;
+      return key === 'autoDisconnectBle' ? [false, vi.fn()] : [30, vi.fn()];
+    },
+  };
+});
 
 vi.mock('@boardsesh/play-view', () => ({
   emitWallConfirm: wallConfirm.emitWallConfirm,
@@ -159,6 +175,7 @@ vi.mock('../../lib/ble/resolve-serials', () => ({
 
 vi.mock('../../lib/ble/bluetooth-status-store', () => ({
   registerBluetoothConnection: vi.fn(() => vi.fn()),
+  disconnectAllBluetooth: vi.fn(),
 }));
 
 vi.mock('../../lib/haptics', () => ({
@@ -189,6 +206,15 @@ vi.mock('../../components/ble/DevicePickerSheet', () => ({
     pickerSheet.props = props;
     return createElement('div', { 'data-testid': 'device-picker' });
   },
+}));
+
+vi.mock('../../components/ble/BleControlSheet', () => ({
+  BleControlSheet: ({ onToggleLightAdjacentHolds }: { onToggleLightAdjacentHolds: (enabled: boolean) => void }) =>
+    createElement(
+      'button',
+      { type: 'button', onClick: () => onToggleLightAdjacentHolds(true) },
+      'toggle adjacent holds',
+    ),
 }));
 
 vi.mock('../queue-provider', () => ({
@@ -224,6 +250,7 @@ vi.mock('../../lib/board-details', () => ({
 }));
 
 import { BluetoothProvider, useBluetoothContext } from '../bluetooth-provider';
+import { BleControlSheetHost } from '../../components/ble/BleControlSheetHost';
 
 function makeQueueItem(uuid: string, frames = 'p1r12', mirrored = false): ClimbQueueItem {
   return {
@@ -272,6 +299,18 @@ function renderProvider(children?: ReactNode) {
   );
 }
 
+function renderMoonboardProvider(children?: ReactNode) {
+  return render(
+    createElement(BluetoothProvider, {
+      boardName: 'moonboard',
+      layoutId: 1,
+      sizeId: 1,
+      setIds: '1',
+      children: children ?? createElement('div', null),
+    }),
+  );
+}
+
 let capturedBluetooth: ReturnType<typeof useBluetoothContext> | null = null;
 
 function BluetoothProbe() {
@@ -310,6 +349,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
     pickerSheet.props = null;
     resolvedBoards.value = new Map();
     bluetooth.options = undefined;
+    bluetooth.sendFramesToBoardForOptions = null;
     bluetooth.state.isConnected = true;
     bluetooth.state.loading = false;
     bluetooth.state.pickerState = null;
@@ -356,6 +396,35 @@ describe('BluetoothProvider wall-confirm integration', () => {
 
     expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1');
     expect(queue.confirmClimbOnWall).toHaveBeenCalledWith('climb-1');
+  });
+
+  it('writes the updated MoonBoard packet after the control sheet enables adjacent holds', async () => {
+    queue.currentClimbQueueItem = makeQueueItem('moon-climb', 'p1r42');
+    const adapterWrite = vi.fn(async (_packet: Uint8Array) => {});
+    bluetooth.sendFramesToBoardForOptions = (options) => async (frames) => {
+      const { packet } = getMoonboardBluetoothPacket(frames, 18, {
+        lightAdjacentHolds: options.moonboardLightAdjacentHolds,
+      });
+      await adapterWrite(packet);
+      return true;
+    };
+
+    const { getByText } = renderMoonboardProvider(
+      createElement(BleControlSheetHost, { visible: true, onClose: vi.fn() }),
+    );
+
+    await waitFor(() => {
+      expect(adapterWrite).toHaveBeenCalledTimes(1);
+    });
+    expect(new TextDecoder().decode(adapterWrite.mock.calls[0]?.[0])).toBe('l#S0#');
+
+    fireEvent.click(getByText('toggle adjacent holds'));
+
+    await waitFor(() => {
+      expect(adapterWrite).toHaveBeenCalledTimes(2);
+    });
+    expect(bluetooth.options?.moonboardLightAdjacentHolds).toBe(true);
+    expect(new TextDecoder().decode(adapterWrite.mock.calls[1]?.[0])).toBe('~Dl#S0#');
   });
 
   it('skips the duplicate send when connect() already wrote the same frames, but still confirms', async () => {
