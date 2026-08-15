@@ -390,8 +390,7 @@
     "userMenu": "Nutzer*innen-Menü",
     "startClimbing": "In der App loslegen",
     "home": "Boardsesh-Startseite",
-    "yourProfile": "Dein Profil",
-    "yourDashboard": "Dein Dashboard"
+    "yourProfile": "Dein Profil"
   },
   "header": {
     "you": "Du",
@@ -406,7 +405,6 @@
   "share": {
     "profileTitle": "Kletterprofil von {{name}}",
     "profileText": "Schau dir das Kletterprofil von {{name}} auf Boardsesh an",
-    "fallbackName": "mir",
     "viewedFallbackName": "dieser Person",
     "linkCopied": "Link kopiert!",
     "shareFailed": "Teilen fehlgeschlagen"

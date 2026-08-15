@@ -60,10 +60,6 @@
       "manage": "Verwalten",
       "viewPage": "Seite ansehen"
     },
-    "feed": {
-      "callout": "Deine Leute klettern gerade.",
-      "cta": "Feed ansehen"
-    },
     "recentBeta": {
       "title": "Frische Beta"
     }

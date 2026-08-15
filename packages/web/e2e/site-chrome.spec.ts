@@ -61,7 +61,7 @@ test.describe('Site chrome - visibility', () => {
   }
 
   test('renders the header and footer for a signed-in visitor', async ({ page }) => {
-    await loginAs(page, '/you');
+    await loginAs(page, '/settings');
     await expectChrome(page);
     await expectNoBottomBar(page);
   });

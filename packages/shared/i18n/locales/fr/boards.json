@@ -466,13 +466,6 @@
       "hardest": "Plus dur"
     }
   },
-  "boardConfigSelects": {
-    "board": "Board",
-    "layout": "Layout",
-    "size": "Taille",
-    "holdSets": "Jeux de prises",
-    "angle": "Inclinaison"
-  },
   "boardPill": {
     "switchHint": "Ouvre le sélecteur de board"
   },

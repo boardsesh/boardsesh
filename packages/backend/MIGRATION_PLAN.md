@@ -106,8 +106,8 @@ Reimplement Next.js REST APIs as GraphQL queries/mutations. Only endpoints that 
 | `POST /api/aurora-credentials`          | Backend REST + shared credential service | ✅ DONE |
 | `DELETE /api/aurora-credentials`        | Backend REST + shared credential service | ✅ DONE |
 | `POST /api/board-credentials/kilter/*`  | Backend REST OAuth handoff/finalize      | ✅ DONE |
-| `GET /api/internal/user-board-mapping`  | `Query.userBoardMappings`                | TODO    |
-| `POST /api/internal/user-board-mapping` | `Mutation.createUserBoardMapping(...)`   | TODO    |
+| `GET /api/internal/user-board-mapping`  | n/a — route deleted in W-19 (#4437)      | ❌ GONE |
+| `POST /api/internal/user-board-mapping` | n/a — route deleted in W-19 (#4437)      | ❌ GONE |
 
 ### 2.5 Endpoints Staying in Next.js
 

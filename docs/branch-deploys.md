@@ -1179,17 +1179,13 @@ Organized by migration priority (pure reads first, then mutations, then proxies)
 | `/api/v1/grades/[board]`                                      | `query gradeSystem(board)`      |
 | `/api/v1/[board]/slugs/**`                                    | `query slugs(board, ...)`       |
 | `/api/internal/profile/[userId]`                              | `query profile(userId)`         |
-| `/api/internal/favorites`                                     | `query favorites`               |
-| `/api/internal/hold-classifications`                          | `query holdClassifications`     |
-| `/api/internal/user-board-mapping`                            | `query userBoardMapping`        |
 | `/api/internal/climb-redirect`                                | `query climbRedirect(...)`      |
 
 #### Batch 2: Mutations
 
-| Current Route                           | GraphQL Mutation               |
-| --------------------------------------- | ------------------------------ |
-| `/api/internal/profile` (POST/PUT)      | `mutation updateProfile(...)`  |
-| `/api/internal/favorites` (POST/DELETE) | `mutation toggleFavorite(...)` |
+| Current Route                      | GraphQL Mutation              |
+| ---------------------------------- | ----------------------------- |
+| `/api/internal/profile` (POST/PUT) | `mutation updateProfile(...)` |
 
 #### Batch 3: Aurora API Proxies
 

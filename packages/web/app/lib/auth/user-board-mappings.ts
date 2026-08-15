@@ -14,35 +14,6 @@ export type UserBoardMapping = {
 };
 
 /**
- * Create a mapping between a NextAuth user and an Aurora board user
- */
-export async function createUserBoardMapping(
-  userId: string,
-  boardType: BoardName,
-  boardUserId: number,
-  boardUsername?: string,
-): Promise<void> {
-  const db = getDb();
-
-  await db
-    .insert(userBoardMappings)
-    .values({
-      userId,
-      boardType,
-      boardUserId,
-      boardUsername: boardUsername || null,
-    })
-    .onConflictDoUpdate({
-      target: [userBoardMappings.userId, userBoardMappings.boardType],
-      set: {
-        boardUserId,
-        boardUsername: boardUsername || null,
-        linkedAt: new Date(),
-      },
-    });
-}
-
-/**
  * Get the Aurora board user ID for a NextAuth user on a specific board
  */
 export async function getBoardUserId(userId: string, boardType: BoardName): Promise<number | null> {

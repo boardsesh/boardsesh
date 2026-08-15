@@ -1,12 +1,7 @@
 {
   "metadata": {
     "dashboard": {
-      "title": "Du",
-      "description": "Dein Kletter-Dashboard auf Boardsesh"
-    },
-    "sessions": {
-      "title": "Sessions",
-      "description": "Deine Kletter-Sessions auf Boardsesh"
+      "title": "Du"
     }
   },
   "tabs": {
@@ -15,9 +10,6 @@
     "logbook": "Routenbuch",
     "social": "Social",
     "climbs": "Boulder"
-  },
-  "progress": {
-    "title": "Fortschritt"
   },
   "mobile": {
     "unknownName": "Kletterer*in",

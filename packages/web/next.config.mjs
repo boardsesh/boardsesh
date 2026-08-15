@@ -106,13 +106,6 @@ const BASE_REDIRECTS = [
     destination: '/playlists',
     permanent: true,
   },
-  // The /you logbook tab was the web logbook feed; logging and history live in
-  // the app now, so the tab collapses back onto /you.
-  {
-    source: '/you/logbook',
-    destination: '/you',
-    permanent: true,
-  },
 
   // Climb creation moved to the app. A canonical numeric board URL hands its
   // board over intact: these are exactly the params the app's create screen
@@ -212,6 +205,34 @@ const BASE_REDIRECTS = [
   {
     source: '/b/:board_slug/:angle/playlists/:uuid',
     destination: '/playlists/:uuid',
+    permanent: true,
+  },
+
+  // W-19 (#4437): the private web surfaces. Your feed, dashboard and stats live
+  // in the app now. Cross-origin, so `permanent: false` — a browser caches a
+  // permanent cross-origin redirect indefinitely and there is no server-side
+  // hatch if the SPA route moves. `/you/:path*` swallows the old `/you/logbook`
+  // rule, which pointed at a page this PR deletes.
+  {
+    source: '/you',
+    destination: `${APP_ORIGIN}/profile`,
+    permanent: false,
+  },
+  {
+    source: '/you/:path*',
+    destination: `${APP_ORIGIN}/profile`,
+    permanent: false,
+  },
+  {
+    source: '/feed',
+    destination: `${APP_ORIGIN}/home`,
+    permanent: false,
+  },
+  // The Instagram beta importer had zero users over two consecutive 90-day
+  // windows and no app twin. Same-origin, so `permanent: true`.
+  {
+    source: '/import-beta',
+    destination: '/',
     permanent: true,
   },
 ];
