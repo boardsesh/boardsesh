@@ -60,6 +60,7 @@ import { UserDrawerProvider } from '../src/components/user-drawer/UserDrawerProv
 import { OfflineSyncBridge, OfflineEngineFlagSync } from '../src/components/offline-sync-bridge';
 import { useMobileClimbActionsData } from '../src/lib/graphql/hooks';
 import { useActiveBoard } from '../src/lib/graphql/use-active-board';
+import { useActiveBoardSelfHeal } from '../src/lib/boards/use-active-board-self-heal';
 import { ScreenshotBoardAutoActivator } from '../src/components/screenshot-board-auto-activator';
 import { Text } from '../src/components/Text';
 import { Icon } from '../src/components/Icon';
@@ -373,6 +374,9 @@ function ClimbActionsDataWrapper({ children }: { children: ReactNode }) {
 // than send an empty `boardType`.
 function BoardProviderWrapper({ children }: { children: ReactNode }) {
   const { data: activeBoard } = useActiveBoard();
+  // Reconcile a stored active board that a server-side merge collapsed away
+  // after hydration and whenever the app returns to the foreground.
+  useActiveBoardSelfHeal();
   return (
     <BoardProvider
       boardName={toBoardName(activeBoard?.boardType)}

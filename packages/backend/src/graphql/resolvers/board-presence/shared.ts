@@ -1,15 +1,18 @@
 import { GraphQLError } from 'graphql';
-import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import type { SQLWrapper } from 'drizzle-orm';
 import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import type { BoardConnectionHolder, ResolvedBoard } from '@boardsesh/shared-schema';
 import { normaliseSetIds } from '@boardsesh/board-config';
+import { executeRows } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { pubsub } from '../../../pubsub/index';
 import { logger } from '../../../utils/logger';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
 import { assertKnownBoardConfig } from './board-catalog';
+import { lockBoardSerialWrite, type BoardSerialWriteCommandDb } from '../board-serial-write-lock';
 
 /**
  * Validate the `boardId` argument is a positive integer. The SDL types it as
@@ -95,13 +98,25 @@ export function candidateToActiveBoard(candidate: SerialCandidateBoard): ActiveP
   };
 }
 
+type BoardPresenceReadDb = Pick<typeof db, 'select'>;
+type BoardPresenceWriteDb = Pick<typeof db, 'insert'>;
+type BoardPresenceSerialTransactionDb = BoardPresenceReadDb & BoardSerialWriteCommandDb;
+
+type ChosenBoardLookup = {
+  board: ActivePresenceBoard;
+  stalePointer?: { loserUuid: string; canonicalUuid: string };
+};
+
 /**
  * All active boards carrying this serial. Serials are no longer globally
  * unique (the supplier reuses them), so this can return many rows — the user
  * disambiguates. Oldest-first so the legacy auto-pick is deterministic.
  */
-export async function findActiveBoardsBySerial(serial: string): Promise<SerialCandidateBoard[]> {
-  const rows = await db
+export async function findActiveBoardsBySerial(
+  serial: string,
+  readDb: BoardPresenceReadDb = db,
+): Promise<SerialCandidateBoard[]> {
+  const rows = await readDb
     .select({
       id: dbSchema.userBoards.id,
       uuid: dbSchema.userBoards.uuid,
@@ -152,9 +167,34 @@ export async function findChosenBoardForSerial(
   userId: string,
   serial: string,
 ): Promise<ActivePresenceBoard | undefined> {
-  const [board] = await db
+  // Keep the serial-first lookup read-only. Updating board_uuid would make the
+  // FK acquire an implicit user_boards KEY SHARE lock after the serial lock,
+  // inverting every row-changing writer's row→serial order.
+  const lookup = await db.transaction(async (tx) => {
+    await lockBoardSerialWrite(tx, serial);
+    return findChosenBoardForSerialLocked(tx, userId, serial);
+  });
+
+  if (!lookup) return undefined;
+  if (lookup.stalePointer) {
+    await healChosenBoardForSerial(userId, serial, lookup.stalePointer);
+  }
+  return lookup.board;
+}
+
+async function findChosenBoardForSerialLocked(
+  transactionDb: BoardPresenceSerialTransactionDb,
+  userId: string,
+  serial: string,
+): Promise<ChosenBoardLookup | undefined> {
+  // Join the remembered pointer to its board WITHOUT the deletedAt filter: a
+  // pointer left dangling at a merged-away loser must still surface here so we
+  // can follow the tombstone. (The old inner-join on `deletedAt IS NULL`
+  // silently dropped it, forcing a needless re-prompt.)
+  const [row] = await transactionDb
     .select({
       id: dbSchema.userBoards.id,
+      uuid: dbSchema.userBoards.uuid,
       name: dbSchema.userBoards.name,
       boardType: dbSchema.userBoards.boardType,
       layoutId: dbSchema.userBoards.layoutId,
@@ -162,12 +202,11 @@ export async function findChosenBoardForSerial(
       setIds: dbSchema.userBoards.setIds,
       serialNumber: dbSchema.userBoards.serialNumber,
       angle: dbSchema.userBoards.angle,
+      deletedAt: dbSchema.userBoards.deletedAt,
+      mergedIntoBoardUuid: dbSchema.userBoards.mergedIntoBoardUuid,
     })
     .from(dbSchema.userBoardSerials)
-    .innerJoin(
-      dbSchema.userBoards,
-      and(eq(dbSchema.userBoards.uuid, dbSchema.userBoardSerials.boardUuid), isNull(dbSchema.userBoards.deletedAt)),
-    )
+    .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.userBoardSerials.boardUuid))
     .where(
       and(
         eq(dbSchema.userBoardSerials.userId, userId),
@@ -176,7 +215,113 @@ export async function findChosenBoardForSerial(
       ),
     )
     .limit(1);
-  return board;
+
+  if (!row) return undefined;
+
+  // Active pointer: use it directly (the common case).
+  if (!row.deletedAt) return { board: toActivePresenceBoard(row) };
+
+  // The pointer landed on a merged-away loser: follow its tombstone to the
+  // surviving canonical board. A plain soft-delete (no tombstone) is treated as
+  // gone — return undefined so the caller falls through to the candidate list.
+  const canonical = await followBoardMergeChain(row.mergedIntoBoardUuid, transactionDb);
+  if (!canonical) return undefined;
+
+  return {
+    board: toActivePresenceBoard(canonical),
+    stalePointer: { loserUuid: row.uuid, canonicalUuid: canonical.uuid },
+  };
+}
+
+/**
+ * Heal a merged-away serial pointer without taking a board FK lock after the
+ * serial advisory lock. The canonical row is locked first, then the serial is
+ * locked and both facts that justified the heal are revalidated: the survivor
+ * is still active and this user's pointer still targets the original loser.
+ */
+async function healChosenBoardForSerial(
+  userId: string,
+  serial: string,
+  { loserUuid, canonicalUuid }: { loserUuid: string; canonicalUuid: string },
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`
+      SELECT id
+        FROM user_boards
+       WHERE uuid = ${canonicalUuid}
+       FOR UPDATE
+    `);
+    await lockBoardSerialWrite(tx, serial);
+
+    const [canonical] = await tx
+      .select({ deletedAt: dbSchema.userBoards.deletedAt })
+      .from(dbSchema.userBoards)
+      .where(eq(dbSchema.userBoards.uuid, canonicalUuid))
+      .limit(1);
+    if (!canonical || canonical.deletedAt) return;
+
+    await tx
+      .update(dbSchema.userBoardSerials)
+      .set({ boardUuid: canonicalUuid, updatedAt: new Date() })
+      .where(
+        and(
+          eq(dbSchema.userBoardSerials.userId, userId),
+          eq(dbSchema.userBoardSerials.serialNumber, serial),
+          eq(dbSchema.userBoardSerials.boardUuid, loserUuid),
+        ),
+      );
+  });
+}
+
+function toActivePresenceBoard(row: ActivePresenceBoard): ActivePresenceBoard {
+  return {
+    id: Number(row.id),
+    name: row.name,
+    boardType: row.boardType,
+    layoutId: Number(row.layoutId),
+    sizeId: Number(row.sizeId),
+    setIds: row.setIds,
+    serialNumber: row.serialNumber,
+    angle: Number(row.angle),
+  };
+}
+
+/**
+ * Follow a merge tombstone (≤3 hops, bounded so a cyclic/broken chain can't
+ * spin) to the surviving canonical board. Returns undefined when the pointer is
+ * null, the chain is broken, or it ends at an ordinary (non-merge) soft-delete.
+ *
+ * The single tombstone-walk implementation — the social board resolvers wrap
+ * this too, so the hop bound and termination rules can't drift between lookup
+ * paths.
+ */
+export async function followBoardMergeChain(
+  startUuid: string | null,
+  readDb: BoardPresenceReadDb = db,
+): Promise<typeof dbSchema.userBoards.$inferSelect | undefined> {
+  let nextUuid = startUuid;
+  for (let hop = 0; hop < 3 && nextUuid; hop++) {
+    const [candidate] = await readDb
+      .select()
+      .from(dbSchema.userBoards)
+      .where(eq(dbSchema.userBoards.uuid, nextUuid))
+      .limit(1);
+    if (!candidate) {
+      // The tombstone column has no FK, so a dangling pointer would otherwise
+      // be indistinguishable from a plain soft-delete — surface it for oncall.
+      logger.warn(`[board-merge] tombstone chain from ${startUuid} dangles at missing board ${nextUuid}`);
+      return undefined;
+    }
+    if (!candidate.deletedAt) return candidate;
+    nextUuid = candidate.mergedIntoBoardUuid;
+  }
+  if (nextUuid) {
+    // Should be unreachable: the dedupe script flattens chains to depth 1 on
+    // every merge. A chain this deep means a script bug — make it visible
+    // rather than reading like a plain soft-delete.
+    logger.warn(`[board-merge] tombstone chain from ${startUuid} exceeded the hop limit at ${nextUuid}`);
+  }
+  return undefined;
 }
 
 /** Most-recent tick time per board, for the "which board did I last use" hint. */
@@ -209,8 +354,9 @@ export async function rememberBoardForSerial(
   userId: string,
   serial: string,
   board: Pick<SerialCandidateBoard, 'uuid' | 'boardType' | 'layoutId' | 'sizeId' | 'setIds'>,
+  writeDb: BoardPresenceWriteDb = db,
 ): Promise<void> {
-  await db
+  await writeDb
     .insert(dbSchema.userBoardSerials)
     .values({
       userId,
@@ -249,26 +395,25 @@ export async function findReachableActiveBoardByUuid(
   userId: string | null,
   boardUuid: string,
 ): Promise<ActivePresenceBoard | undefined> {
-  // Anonymous callers (board presence is auth-optional) can only reach public
-  // boards; a logged-in caller additionally reaches the boards they own.
-  const reachability = userId
-    ? or(eq(dbSchema.userBoards.ownerId, userId), eq(dbSchema.userBoards.isPublic, true))
-    : eq(dbSchema.userBoards.isPublic, true);
-  const [board] = await db
-    .select({
-      id: dbSchema.userBoards.id,
-      name: dbSchema.userBoards.name,
-      boardType: dbSchema.userBoards.boardType,
-      layoutId: dbSchema.userBoards.layoutId,
-      sizeId: dbSchema.userBoards.sizeId,
-      setIds: dbSchema.userBoards.setIds,
-      serialNumber: dbSchema.userBoards.serialNumber,
-      angle: dbSchema.userBoards.angle,
-    })
+  // Load the requested row even when it is soft-deleted: a merge tombstone is
+  // a durable redirect for stale mobile selections. Ordinary soft-deletes still
+  // resolve to nothing because they have no merge pointer.
+  const [requested] = await db
+    .select()
     .from(dbSchema.userBoards)
-    .where(and(eq(dbSchema.userBoards.uuid, boardUuid), isNull(dbSchema.userBoards.deletedAt), reachability))
+    .where(eq(dbSchema.userBoards.uuid, boardUuid))
     .limit(1);
-  return board;
+  if (!requested) return undefined;
+
+  const canonical = requested.deletedAt ? await followBoardMergeChain(requested.mergedIntoBoardUuid) : requested;
+  if (!canonical) return undefined;
+
+  // Reachability is deliberately evaluated on the canonical board, never the
+  // stale loser. Owning a private loser must not grant access to another
+  // owner's private survivor; anonymous callers can only reach public boards.
+  if (!canonical.isPublic && canonical.ownerId !== userId) return undefined;
+
+  return toActivePresenceBoard(canonical);
 }
 
 /**
@@ -464,9 +609,10 @@ export async function findOwnActiveBoardByConfig(
   sizeId: number,
   setIds: string,
   preferredSerial?: string,
+  readDb: BoardPresenceReadDb = db,
 ): Promise<ActivePresenceBoard | undefined> {
   const normalizedSetIds = normaliseSetIds(setIds);
-  const [board] = await db
+  const [board] = await readDb
     .select({
       id: dbSchema.userBoards.id,
       name: dbSchema.userBoards.name,
@@ -586,13 +732,58 @@ async function ensureSystemBoardOwner(): Promise<void> {
 }
 
 /**
- * Durable seq floor for a board: the highest `seq` ever persisted to
- * `board_climb_events`. Backs the Redis `board:{id}:seq` counter's dormancy
- * reseed (see `PubSub.nextBoardSeq` / A3) — after the 1-week Redis TTL
- * expires, INCR would otherwise restart at 1 and collide with / precede rows
- * that still exist in Postgres. Injected via `pubsub.setBoardSeqFloorProvider`
- * at backend bootstrap so the pubsub module itself stays DB-free (and easy to
- * unit test without Postgres).
+ * Reserve a board-presence sequence in PostgreSQL. `candidate` normally comes
+ * from Redis INCR, but Redis is only an acceleration layer: this row update is
+ * the authority and serializes against the board-row locks taken by the serial
+ * dedupe. Existing durable history is included for rows created before the
+ * counter migration was deployed.
+ *
+ * An allocation waiting behind a merge re-checks `deleted_at` after the row
+ * lock is released. A merged-away loser therefore fails closed instead of
+ * publishing another event under an obsolete board id.
+ */
+export type BoardPresenceSeqCommandDb = {
+  execute(query: SQLWrapper | string): PromiseLike<unknown>;
+};
+
+export async function reserveBoardPresenceSeq(
+  commandDb: BoardPresenceSeqCommandDb,
+  boardId: number,
+  candidate: number,
+): Promise<number> {
+  const [row] = await executeRows<{ seq: number | string }>(
+    commandDb,
+    sql`
+      UPDATE user_boards
+         SET presence_seq = GREATEST(
+           presence_seq + 1,
+           ${candidate},
+           COALESCE((
+             SELECT max(seq) + 1
+               FROM board_climb_events
+              WHERE board_id = ${boardId}
+           ), 1)
+         )
+       WHERE id = ${boardId}
+         AND deleted_at IS NULL
+       RETURNING presence_seq AS seq
+    `,
+  );
+
+  if (!row) {
+    throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+  }
+  return Number(row.seq);
+}
+
+export async function allocateBoardPresenceSeq(boardId: number, candidate: number): Promise<number> {
+  return reserveBoardPresenceSeq(db, boardId, candidate);
+}
+
+/**
+ * Legacy durable floor lookup retained for isolated pubsub tests and callers
+ * that have not installed the authoritative allocator. The running server
+ * wires `allocateBoardPresenceSeq` instead.
  */
 export async function getBoardSeqFloor(boardId: number): Promise<number> {
   const [row] = await db

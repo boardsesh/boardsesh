@@ -30,6 +30,7 @@ const bumpAuthTransportRevisionMock = vi.hoisted(() => vi.fn());
 const consumeFreshOAuthPendingMock = vi.hoisted(() => vi.fn());
 const consumeWebOAuthReturnProviderMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
+const resetActiveBoardSelfHealValidationCacheMock = vi.hoisted(() => vi.fn());
 
 // expo-router and react-native both reach for the native runtime; stub the
 // thin surface AuthProvider consumes. `useSegments` returning `[]` keeps the
@@ -133,6 +134,7 @@ beforeEach(() => {
   consumeWebOAuthReturnProviderMock.mockReset();
   consumeWebOAuthReturnProviderMock.mockReturnValue(null);
   trackMock.mockReset();
+  resetActiveBoardSelfHealValidationCacheMock.mockReset();
   reportHandledErrorMock.mockReset();
   onlineManager.setOnline(true);
   captureAuthCredentialGenerationMock.mockReset();
@@ -262,6 +264,11 @@ vi.mock('../../lib/graphql/ws-client', () => ({
 
 vi.mock('../../lib/graphql/use-active-board', () => ({
   ACTIVE_BOARD_QUERY_KEY: ['activeBoard'] as const,
+  clearStoredActiveBoardCoordinated: (...args: unknown[]) => clearStoredActiveBoardMock(...args),
+}));
+
+vi.mock('../../lib/boards/active-board-self-heal-validation-cache', () => ({
+  resetActiveBoardSelfHealValidationCache: () => resetActiveBoardSelfHealValidationCacheMock(),
 }));
 
 const getDatabaseHandleMock = vi.fn((): unknown => null);
@@ -459,6 +466,10 @@ describe('AuthProvider.signOut', () => {
     expect(authSignOutMock).toHaveBeenCalledTimes(1);
     expect(clearStoredSessionIdMock).toHaveBeenCalledTimes(1);
     expect(clearStoredActiveBoardMock).toHaveBeenCalledTimes(1);
+    expect(resetActiveBoardSelfHealValidationCacheMock).toHaveBeenCalledTimes(1);
+    expect(resetActiveBoardSelfHealValidationCacheMock.mock.invocationCallOrder[0]).toBeLessThan(
+      clearStoredActiveBoardMock.mock.invocationCallOrder[0]!,
+    );
     // Create-climb and session-recap drafts are wiped for account isolation
     // only on web. Native sign-out keeps its origin behavior and must not touch
     // these drafts, so this stays native-neutral when the PR ships via OTA.
@@ -1431,6 +1442,7 @@ describe('AuthProvider forced sign-out registration', () => {
     expect(clearStoredSessionIdMock).toHaveBeenCalledWith(previousOwner);
     expect(clearStoredActiveBoardMock).toHaveBeenCalledWith(previousOwner);
     expect(clearStoredQueueSnapshotMock).toHaveBeenCalledWith(previousOwner);
+    expect(resetActiveBoardSelfHealValidationCacheMock).toHaveBeenCalledOnce();
     expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined();
     await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
     expect(userStorageOwnerState.current).toEqual({ userId: 'user-2', authSessionId: 'login-2' });

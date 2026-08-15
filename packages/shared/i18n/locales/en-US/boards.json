@@ -455,6 +455,15 @@
       "duplicateBodyGeneric": "This change matches a board setup the owner already has.",
       "saveAnyway": "Save anyway",
       "cancel": "Cancel"
+    },
+    "serialReuse": {
+      "warning": "This serial number already belongs to \"{{name}}\". Joining that board keeps everyone's sends and stats on one wall.",
+      "warningPrivate": "This serial number is already registered to another climber's private board.",
+      "dialogTitle": "This wall is already on Boardsesh",
+      "dialogBody": "Serial number {{serial}} is registered to \"{{name}}\". Create a duplicate and your sends and sessions split away from the crew already climbing there.",
+      "dialogBodyPrivate": "Serial number {{serial}} is already registered to another climber's private board. If this really is a different wall, you can still create yours.",
+      "useExisting": "Use the existing board",
+      "createAnyway": "Create a duplicate anyway"
     }
   },
   "editBoard": {

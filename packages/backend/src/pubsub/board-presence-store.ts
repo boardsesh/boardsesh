@@ -115,6 +115,8 @@ export type BoardPresenceStoreDeps = {
   logger: BoardPresenceStoreLogger;
 };
 
+export type BoardSeqAllocator = (boardId: number, candidate: number) => Promise<number>;
+
 /**
  * Board-presence Redis KV helpers, extracted out of `PubSub` so the pub/sub
  * fan-out class (`PubSubChannel`-backed) doesn't also carry these
@@ -127,9 +129,9 @@ export type BoardPresenceStoreDeps = {
  * matching the single-instance-only guarantees these features already had.
  */
 export class BoardPresenceStore {
-  // Local-only fallback for the per-board monotonic seq counter. In Redis
-  // mode the authoritative counter is `board:${boardId}:seq` (INCR); this map
-  // only ever serves single-instance deployments that have no Redis.
+  // Local candidate/fallback for the per-board monotonic seq counter. In the
+  // running server PostgreSQL is authoritative; Redis (or this map without
+  // Redis) supplies the candidate passed to that allocator.
   private localBoardSeq = new Map<string, number>();
   // Per-board watermark for the seq dormancy reseed (see
   // `ensureBoardSeqClearOfDurableFloor`): the highest seq this instance has
@@ -162,31 +164,39 @@ export class BoardPresenceStore {
   private localBoardSession = new Map<string, { value: string; expiresAtMs: number }>();
   private localBoardMembershipCleanupTimer: ReturnType<typeof setTimeout> | null = null;
   private localBoardMembershipCleanupExpiry: number | null = null;
-  // Durable seq floor lookup for the `nextBoardSeq` dormancy reseed (A3).
-  // Injected via `setBoardSeqFloorProvider` at bootstrap so pubsub itself
-  // stays DB-free (and trivially unit-testable without Postgres). Defaults to
-  // "no durable floor" — a board with no floor provider wired never reseeds,
-  // matching pre-A3 behavior.
+  // Legacy durable seq floor lookup for the `nextBoardSeq` dormancy reseed.
+  // Available to DB-free legacy tests through `setBoardSeqFloorProvider`.
+  // Production installs `boardSeqAllocator` below instead. Defaults to "no
+  // durable floor" so a store with neither hook retains the old behavior.
   private boardSeqFloorProvider: (boardId: number) => Promise<number> = async () => 0;
+  // Production sequence authority. Redis INCR supplies a candidate, then this
+  // callback atomically reserves the final value in PostgreSQL. Nullable so
+  // DB-free unit tests retain the legacy local/floor behavior.
+  private boardSeqAllocator: BoardSeqAllocator | null = null;
 
   constructor(private readonly deps: BoardPresenceStoreDeps) {}
 
   /**
-   * Inject the durable seq-floor lookup used by `nextBoardSeq`'s dormancy
-   * reseed (A3). Wired once at backend bootstrap (`server.ts`) to a Drizzle
-   * query over `board_climb_events`; defaults to `async () => 0` so pubsub
-   * unit tests never need a database.
+   * Inject the legacy durable seq-floor lookup used by DB-free dormancy tests.
+   * Production installs `setBoardSeqAllocator` instead.
    */
   setBoardSeqFloorProvider(provider: (boardId: number) => Promise<number>): void {
     this.boardSeqFloorProvider = provider;
   }
 
+  setBoardSeqAllocator(provider: BoardSeqAllocator | null): void {
+    this.boardSeqAllocator = provider;
+  }
+
   /**
-   * Atomically allocate the next monotonic sequence number for a board.
-   * Redis `INCR` + `EXPIRE` (pipelined — 1 RTT), cluster-safe across
-   * instances; falls back to an in-memory counter in local-only mode.
+   * Atomically allocate the next monotonic sequence number for a board. Redis
+   * `INCR` + `EXPIRE` (pipelined — 1 RTT) supplies a cluster-wide candidate;
+   * the injected PostgreSQL allocator reserves the authoritative value and is
+   * safe against a stale Redis key. Local-only mode supplies an in-memory
+   * candidate to the same allocator.
    *
-   * The key expires after a week of inactivity. For a genuinely fresh board
+   * When no authoritative allocator is installed (DB-free tests / legacy
+   * embedding), the key expires after a week of inactivity. For a fresh board
    * that's harmless (INCR restarts at 1 and the empty history buffer expired
    * along with it). For a board dormant *longer* than the TTL whose durable
    * `board_climb_events` rows outlive the key, restarting at 1 would collide
@@ -202,8 +212,10 @@ export class BoardPresenceStore {
    * the reseed window would leave the counter permanently below the durable
    * floor.
    */
-  async nextBoardSeq(boardId: string): Promise<number> {
+  async nextBoardSeq(boardId: string, allocatorOverride?: BoardSeqAllocator): Promise<number> {
+    const authoritativeAllocator = allocatorOverride ?? this.boardSeqAllocator;
     if (this.deps.isRedisAvailable()) {
+      let redisCandidate: number | null = null;
       try {
         const { publisher } = redisClientManager.getClients();
         const key = `board:${boardId}:seq`;
@@ -213,13 +225,7 @@ export class BoardPresenceStore {
         }
         const [incrError, incrResult] = results[0];
         if (incrError) throw incrError;
-        const next = incrResult as number;
-
-        if (next <= BOARD_SEQ_RESEED_THRESHOLD || this.boardSeqReseedPending.has(boardId)) {
-          return await this.ensureBoardSeqClearOfDurableFloor(boardId, next);
-        }
-
-        return next;
+        redisCandidate = incrResult as number;
       } catch (error) {
         if (this.deps.isRedisRequired()) {
           this.deps.logger.error('[PubSub] Failed to allocate board seq from required Redis:', error);
@@ -227,11 +233,72 @@ export class BoardPresenceStore {
         }
         this.deps.logger.error('[PubSub] Failed to allocate board seq from Redis, falling back to local:', error);
       }
+
+      if (redisCandidate !== null) {
+        // Keep the authoritative callback outside the Redis try/catch. A
+        // Postgres/event-write failure is not a Redis outage and must reach the
+        // caller once, rather than being mislabeled and retried with a local
+        // candidate.
+        if (authoritativeAllocator) {
+          return await this.allocateAuthoritativeBoardSeq(boardId, redisCandidate, true, authoritativeAllocator);
+        }
+
+        try {
+          if (redisCandidate <= BOARD_SEQ_RESEED_THRESHOLD || this.boardSeqReseedPending.has(boardId)) {
+            return await this.ensureBoardSeqClearOfDurableFloor(boardId, redisCandidate);
+          }
+          return redisCandidate;
+        } catch (error) {
+          if (this.deps.isRedisRequired()) {
+            this.deps.logger.error('[PubSub] Failed to reseed board seq with required Redis:', error);
+            throw error;
+          }
+          this.deps.logger.error('[PubSub] Failed to reseed board seq, falling back to local:', error);
+        }
+      }
     }
 
     const next = (this.localBoardSeq.get(boardId) ?? 0) + 1;
+    if (authoritativeAllocator) {
+      return await this.allocateAuthoritativeBoardSeq(boardId, next, false, authoritativeAllocator);
+    }
     this.localBoardSeq.set(boardId, next);
     return next;
+  }
+
+  private async allocateAuthoritativeBoardSeq(
+    boardId: string,
+    candidate: number,
+    candidateCameFromRedis: boolean,
+    allocator: BoardSeqAllocator,
+  ): Promise<number> {
+    const numericBoardId = Number(boardId);
+    if (!Number.isSafeInteger(numericBoardId) || numericBoardId <= 0) {
+      throw new Error(`Cannot reserve a durable sequence for invalid board id ${boardId}`);
+    }
+
+    const allocated = await allocator(numericBoardId, candidate);
+    if (!Number.isSafeInteger(allocated) || allocated < candidate) {
+      throw new Error(
+        `Durable board sequence allocator returned invalid value ${allocated} for candidate ${candidate}`,
+      );
+    }
+    this.localBoardSeq.set(boardId, Math.max(this.localBoardSeq.get(boardId) ?? 0, allocated));
+
+    if (candidateCameFromRedis && allocated > candidate) {
+      try {
+        const mirrored = await this.raiseBoardSeqToAtLeast(boardId, allocated);
+        if (mirrored === null) throw new Error('Redis became unavailable before the board sequence could be mirrored');
+      } catch (error) {
+        // PostgreSQL has already reserved `allocated`, so this mirror is only
+        // an acceleration hint: every later candidate is checked against the
+        // durable counter again. Do not fail the accepted report after its
+        // reservation (and possibly its durable event) has committed.
+        this.deps.logger.error('[PubSub] Failed to mirror authoritative board seq to Redis:', error);
+      }
+    }
+
+    return allocated;
   }
 
   /**
@@ -332,6 +399,25 @@ export class BoardPresenceStore {
     const result = await publisher.eval(
       "local cur = tonumber(redis.call('get', KEYS[1]) or '0'); " +
         'local nxt = math.max(cur, tonumber(ARGV[1])) + 1; ' +
+        "redis.call('set', KEYS[1], nxt); " +
+        "redis.call('expire', KEYS[1], ARGV[2]); " +
+        'return nxt',
+      1,
+      key,
+      floor,
+      BOARD_SEQ_TTL,
+    );
+    return Number(result);
+  }
+
+  /** Raise Redis to `floor` without consuming another sequence value. */
+  private async raiseBoardSeqToAtLeast(boardId: string, floor: number): Promise<number | null> {
+    if (!this.deps.isRedisAvailable()) return null;
+    const { publisher } = redisClientManager.getClients();
+    const key = `board:${boardId}:seq`;
+    const result = await publisher.eval(
+      "local cur = tonumber(redis.call('get', KEYS[1]) or '0'); " +
+        'local nxt = math.max(cur, tonumber(ARGV[1])); ' +
         "redis.call('set', KEYS[1], nxt); " +
         "redis.call('expire', KEYS[1], ARGV[2]); " +
         'return nxt',

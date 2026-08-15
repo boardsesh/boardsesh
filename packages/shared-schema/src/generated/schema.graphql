@@ -2517,6 +2517,8 @@ input CreateBoardInput {
   a physically different wall (another gym, another room) — never by default.
   """
   allowDuplicateConfig: Boolean
+  "Create even when the serial is already registered to another user's board with the same configuration (default false — such creates fail with BOARD_SERIAL_EXISTS so clients can route the user to the existing board)"
+  allowDuplicateSerial: Boolean
 }
 
 """

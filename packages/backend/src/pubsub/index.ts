@@ -14,6 +14,7 @@ import { createRedisPubSubAdapter, type RedisPubSubAdapter } from './redis-adapt
 import { PubSubChannel, type ChannelSubscriber } from './channel';
 import {
   BoardPresenceStore,
+  type BoardSeqAllocator,
   type BoardReportGate,
   type CommitBoardClimbInput,
   type CommitBoardClimbResult,
@@ -555,17 +556,19 @@ class PubSub {
   // for the full rationale on each method; signatures and behavior here are
   // unchanged from before the extraction.
 
-  /**
-   * Inject the durable seq-floor lookup used by `nextBoardSeq`'s dormancy
-   * reseed (A3). Wired once at backend bootstrap (`server.ts`).
-   */
+  /** Inject the legacy durable seq-floor lookup used by isolated tests. */
   setBoardSeqFloorProvider(provider: (boardId: number) => Promise<number>): void {
     this.boardPresenceStore.setBoardSeqFloorProvider(provider);
   }
 
-  /** Atomically allocate the next monotonic sequence number for a board (with dormancy reseed). */
-  async nextBoardSeq(boardId: string): Promise<number> {
-    return this.boardPresenceStore.nextBoardSeq(boardId);
+  /** Install/remove PostgreSQL's authoritative board-sequence allocator. */
+  setBoardSeqAllocator(provider: BoardSeqAllocator | null): void {
+    this.boardPresenceStore.setBoardSeqAllocator(provider);
+  }
+
+  /** Atomically allocate the next monotonic sequence number for a board. */
+  async nextBoardSeq(boardId: string, allocatorOverride?: BoardSeqAllocator): Promise<number> {
+    return this.boardPresenceStore.nextBoardSeq(boardId, allocatorOverride);
   }
 
   /** Atomically allocate a board seq guaranteed past `floor`; null without Redis. Public for unit tests. */

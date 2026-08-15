@@ -243,9 +243,12 @@ export function useBoard(boardUuid: string | null) {
  * One board by uuid, fetched imperatively. For the moments a board is identified
  * mid-interaction rather than at render — the duplicate-board prompt names an
  * existing board the user may not have in any loaded page (myBoards is
- * paginated), and it has to be resolved inside the tap handler.
+ * paginated), and it has to be resolved inside the tap handler. It also backs
+ * the active-board self-heal: the backend follows merge tombstones, so a
+ * merged-away uuid resolves to the surviving canonical board (a *different*
+ * uuid) while a plain-deleted board resolves to `null`.
  */
-export async function fetchBoardByUuid(boardUuid: string) {
+export async function fetchBoardByUuid(boardUuid: string): Promise<UserBoard | null> {
   const data = await getHttpClient().request<GetBoardQueryResponse>(GET_BOARD, { boardUuid });
   return data.board;
 }
@@ -319,6 +322,17 @@ export function useSearchBoards(input: SearchBoardsInput, enabled = true) {
     select: (data) => data.searchBoards,
     enabled,
   });
+}
+
+/**
+ * Resolve boards for a set of serial numbers outside a hook — backs the create
+ * flow's pre-submit serial-reuse check, where the lookup runs imperatively in a
+ * submit handler rather than as a query.
+ */
+export function fetchBoardsBySerialNumbers(serialNumbers: string[]): Promise<UserBoard[]> {
+  return getHttpClient()
+    .request<GetBoardsBySerialNumbersQueryResponse>(GET_BOARDS_BY_SERIAL_NUMBERS, { serialNumbers })
+    .then((data) => data.boardsBySerialNumbers);
 }
 
 export function useBoardsBySerialNumbers(serialNumbers: string[]) {
@@ -657,6 +671,11 @@ export function useDeleteBoard() {
  * it. Idempotent on the server (`onConflictDoNothing`), so callers can fire it
  * without first checking whether the board is already followed. Invalidates
  * `myBoards` so the newly-followed board shows up.
+ *
+ * Used both by board discovery's adopt flow and by the create-board serial-reuse
+ * flow ("Use the existing board" — see `boards/create.tsx`), which awaits
+ * `mutateAsync` before navigating away rather than relying on the config
+ * callbacks below.
  *
  * `onFollowed` runs from the config-level `onSuccess` — which the mutation itself
  * invokes, so it still fires after the calling screen unmounts. The adopt flow

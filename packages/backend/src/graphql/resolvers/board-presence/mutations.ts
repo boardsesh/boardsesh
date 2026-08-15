@@ -20,6 +20,7 @@ import {
 import { generateUniqueSlug } from '../social/boards';
 import { assertBoardCapNotReached } from '../social/board-limits';
 import { assertKnownBoardConfig } from './board-catalog';
+import { lockBoardSerialWrite } from '../board-serial-write-lock';
 import { logger } from '../../../utils/logger';
 import { pubsub } from '../../../pubsub/index';
 import { roomManager } from '../../../services/room-manager';
@@ -37,6 +38,7 @@ import {
   isDuplicateBoardSerialError,
   lastSentAtByBoardIds,
   rememberBoardForSerial,
+  reserveBoardPresenceSeq,
   requireActiveBoardById,
   resolveSharedBoardForConfig,
   serialAlreadyBoundError,
@@ -49,6 +51,10 @@ import {
 type SerialResolution =
   | { kind: 'board'; board: ActivePresenceBoard }
   | { kind: 'candidates'; candidates: SerialCandidateBoard[] };
+
+type SerialResolutionAttempt = SerialResolution | { kind: 'retry' };
+
+const SERIAL_RESOLUTION_MAX_ATTEMPTS = 3;
 
 type BoardCandidatePayload = {
   boardId: number;
@@ -64,6 +70,53 @@ type BoardCandidatePayload = {
   isPublic: boolean;
   lastSentAt: string | null;
 };
+
+type DurableBoardClimbEventInput = {
+  boardId: number;
+  boardType: string;
+  climbUuid: string;
+  angle: number;
+  userId: string;
+  sessionId: null;
+  frames: string | null;
+  name: string | null;
+  grade: string | null;
+  setter: string | null;
+  confirmedAt: string;
+};
+
+class DurableBoardClimbPersistenceError extends Error {
+  constructor(readonly persistenceCause: unknown) {
+    super('Failed to persist durable board climb event');
+    this.name = 'DurableBoardClimbPersistenceError';
+  }
+}
+
+/**
+ * Reserve the authoritative sequence and insert its durable event before the
+ * board-row lock is released. The dedupe locks that same row before moving
+ * events and tombstoning losers, so either it sees/moves this event or this
+ * reservation resumes after the merge and fails the active-row predicate.
+ */
+export async function reserveAndPersistBoardClimbEvent(
+  input: DurableBoardClimbEventInput,
+  candidate: number,
+): Promise<number> {
+  try {
+    return await db.transaction(async (tx) => {
+      const seq = await reserveBoardPresenceSeq(tx, input.boardId, candidate);
+      await tx.insert(dbSchema.boardClimbEvents).values({ ...input, seq });
+      return seq;
+    });
+  } catch (error) {
+    // Preserve the authoritative tombstone signal so reportBoardClimb fails a
+    // stale request instead of falling back and publishing on the loser.
+    if (error instanceof GraphQLError && error.extensions.code === 'NOT_FOUND') throw error;
+    throw new DurableBoardClimbPersistenceError(error);
+  }
+}
+
+type BoardPresenceCommandDb = Pick<typeof db, 'select' | 'update' | 'insert'>;
 
 function toBoardCandidate(
   candidate: SerialCandidateBoard,
@@ -104,6 +157,7 @@ function toBoardCandidate(
  * (the per-owner *config* index this comment used to cite is gone).
  */
 async function bindOrCreateOwnBoardForSerial(
+  commandDb: BoardPresenceCommandDb,
   userId: string,
   serial: string,
   config: { boardType: string; layoutId: number; sizeId: number; setIds: string },
@@ -115,13 +169,14 @@ async function bindOrCreateOwnBoardForSerial(
     config.sizeId,
     config.setIds,
     serial,
+    commandDb,
   );
   if (ownBoard) {
     if (ownBoard.serialNumber && ownBoard.serialNumber !== serial) {
       throw serialAlreadyBoundError();
     }
     try {
-      const [updated] = await db
+      const [updated] = await commandDb
         .update(dbSchema.userBoards)
         .set({ serialNumber: serial, updatedAt: new Date() })
         .where(and(eq(dbSchema.userBoards.id, ownBoard.id), isNull(dbSchema.userBoards.serialNumber)))
@@ -139,6 +194,7 @@ async function bindOrCreateOwnBoardForSerial(
           config.sizeId,
           config.setIds,
           serial,
+          commandDb,
         );
         if (winner?.serialNumber === serial) {
           return winner;
@@ -153,6 +209,7 @@ async function bindOrCreateOwnBoardForSerial(
       config.sizeId,
       config.setIds,
       serial,
+      commandDb,
     );
     if (refreshed?.serialNumber === serial) {
       return refreshed;
@@ -172,7 +229,7 @@ async function bindOrCreateOwnBoardForSerial(
   const name = defaultBoardName(config.boardType);
   const slug = await generateUniqueSlug(name);
   try {
-    const [created] = await db
+    const [created] = await commandDb
       .insert(dbSchema.userBoards)
       .values({
         uuid,
@@ -197,6 +254,7 @@ async function bindOrCreateOwnBoardForSerial(
         config.sizeId,
         config.setIds,
         serial,
+        commandDb,
       );
       if (winner?.serialNumber === serial) {
         return winner;
@@ -205,6 +263,102 @@ async function bindOrCreateOwnBoardForSerial(
     throwIfDuplicateBoardSerial(error);
     throw error;
   }
+}
+
+async function planActiveBoardsForSerial(serial: string): Promise<SerialCandidateBoard[]> {
+  return findActiveBoardsBySerial(serial, db);
+}
+
+function selectResolvedSerialCandidate(
+  candidates: SerialCandidateBoard[],
+  userId: string,
+  autoPickMultiple: boolean,
+): SerialCandidateBoard | undefined {
+  if (candidates.length === 1) return candidates[0];
+  if (!autoPickMultiple) return undefined;
+  return candidates.find((candidate) => candidate.ownerId === userId) ?? candidates[0];
+}
+
+function haveSameSerialCandidateIds(candidates: SerialCandidateBoard[], plannedBoardIds: number[]): boolean {
+  return (
+    candidates.length === plannedBoardIds.length &&
+    candidates.every((candidate, candidateIndex) => candidate.id === plannedBoardIds[candidateIndex])
+  );
+}
+
+async function resolveEmptySerialPlan(
+  userId: string,
+  serial: string,
+  config: { boardType: string; layoutId: number; sizeId: number; setIds: string },
+  autoPickMultiple: boolean,
+): Promise<SerialResolutionAttempt> {
+  return db.transaction(async (tx): Promise<SerialResolutionAttempt> => {
+    // The zero-candidate path may bind this config-matching row, so lock it
+    // before the serial. If a candidate appeared after planning, never lock it
+    // after the serial: return a stable prompt or replan outside this tx.
+    await tx.execute(sql`
+      SELECT id
+        FROM user_boards
+       WHERE owner_id = ${userId}
+         AND board_type = ${config.boardType}
+         AND layout_id = ${config.layoutId}
+         AND size_id = ${config.sizeId}
+         AND set_ids = ${normaliseSetIds(config.setIds)}
+         AND deleted_at IS NULL
+       ORDER BY id
+       LIMIT 1
+       FOR UPDATE
+    `);
+    await lockBoardSerialWrite(tx, serial);
+
+    const candidates = await findActiveBoardsBySerial(serial, tx);
+    if (candidates.length > 0) {
+      if (!autoPickMultiple && candidates.length > 1) {
+        return { kind: 'candidates', candidates };
+      }
+      return { kind: 'retry' };
+    }
+
+    const board = await bindOrCreateOwnBoardForSerial(tx, userId, serial, config);
+    return { kind: 'board', board };
+  });
+}
+
+async function resolvePlannedSerialCandidate(
+  userId: string,
+  serial: string,
+  plannedBoardId: number,
+  plannedBoardIds: number[],
+  autoPickMultiple: boolean,
+): Promise<SerialResolutionAttempt> {
+  return db.transaction(async (tx): Promise<SerialResolutionAttempt> => {
+    // The pointer FK takes KEY SHARE on this parent row. Lock the exact planned
+    // candidate before the serial so a concurrent row→serial writer can never
+    // form an advisory-lock/FK cycle with this transaction.
+    await tx.execute(sql`
+      SELECT id
+        FROM user_boards
+       WHERE id = ${plannedBoardId}
+       FOR UPDATE
+    `);
+    await lockBoardSerialWrite(tx, serial);
+
+    const candidates = await findActiveBoardsBySerial(serial, tx);
+    if (!autoPickMultiple && candidates.length > 1) {
+      return { kind: 'candidates', candidates };
+    }
+    if (!haveSameSerialCandidateIds(candidates, plannedBoardIds)) {
+      return { kind: 'retry' };
+    }
+
+    const candidate = selectResolvedSerialCandidate(candidates, userId, autoPickMultiple);
+    if (!candidate || candidate.id !== plannedBoardId) {
+      return { kind: 'retry' };
+    }
+
+    await rememberBoardForSerial(userId, serial, candidate, tx);
+    return { kind: 'board', board: candidateToActiveBoard(candidate) };
+  });
 }
 
 /**
@@ -218,22 +372,77 @@ async function resolveSerialForUser(
   userId: string,
   serial: string,
   config: { boardType: string; layoutId: number; sizeId: number; setIds: string },
+  options: { autoPickMultiple: true },
+): Promise<{ kind: 'board'; board: ActivePresenceBoard }>;
+async function resolveSerialForUser(
+  userId: string,
+  serial: string,
+  config: { boardType: string; layoutId: number; sizeId: number; setIds: string },
+  options?: { autoPickMultiple?: false },
+): Promise<SerialResolution>;
+async function resolveSerialForUser(
+  userId: string,
+  serial: string,
+  config: { boardType: string; layoutId: number; sizeId: number; setIds: string },
+  options: { autoPickMultiple?: boolean } = {},
 ): Promise<SerialResolution> {
   const chosen = await findChosenBoardForSerial(userId, serial);
   if (chosen) {
     return { kind: 'board', board: chosen };
   }
 
-  const candidates = await findActiveBoardsBySerial(serial);
-  if (candidates.length === 0) {
-    const board = await bindOrCreateOwnBoardForSerial(userId, serial, config);
-    return { kind: 'board', board };
+  const autoPickMultiple = options.autoPickMultiple ?? false;
+  for (let attempt = 0; attempt < SERIAL_RESOLUTION_MAX_ATTEMPTS; attempt++) {
+    const plannedCandidates = await planActiveBoardsForSerial(serial);
+    if (!autoPickMultiple && plannedCandidates.length > 1) {
+      return { kind: 'candidates', candidates: plannedCandidates };
+    }
+
+    const plannedCandidate = selectResolvedSerialCandidate(plannedCandidates, userId, autoPickMultiple);
+    const resolution = plannedCandidate
+      ? await resolvePlannedSerialCandidate(
+          userId,
+          serial,
+          plannedCandidate.id,
+          plannedCandidates.map((candidate) => candidate.id),
+          autoPickMultiple,
+        )
+      : await resolveEmptySerialPlan(userId, serial, config, autoPickMultiple);
+    if (resolution.kind !== 'retry') return resolution;
   }
-  if (candidates.length === 1) {
-    await rememberBoardForSerial(userId, serial, candidates[0]);
-    return { kind: 'board', board: candidateToActiveBoard(candidates[0]) };
-  }
-  return { kind: 'candidates', candidates };
+
+  throw new GraphQLError('Board choices changed while connecting. Try again.', {
+    extensions: { code: 'CONFLICT' },
+  });
+}
+
+/**
+ * Lock the requested board before the per-serial lock, then re-read the active
+ * candidates and persist only when that exact board still carries the serial.
+ * The pointer upsert's FK takes an implicit KEY SHARE lock on user_boards, so
+ * the explicit row lock is also what keeps that FK edge in the global
+ * row→serial order used by updateBoard, first-connect binding, and dedupe.
+ */
+async function chooseAndRememberActiveBoardForSerial(
+  userId: string,
+  serial: string,
+  boardId: number,
+): Promise<SerialCandidateBoard | undefined> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`
+      SELECT id
+        FROM user_boards
+       WHERE id = ${boardId}
+       FOR UPDATE
+    `);
+    await lockBoardSerialWrite(tx, serial);
+    const candidates = await findActiveBoardsBySerial(serial, tx);
+    const candidate = candidates.find((board) => board.id === boardId);
+    if (!candidate) return undefined;
+
+    await rememberBoardForSerial(userId, serial, candidate, tx);
+    return candidate;
+  });
 }
 
 export const boardPresenceMutations = {
@@ -262,17 +471,11 @@ export const boardPresenceMutations = {
     const config = validateInput(BoardPresenceConfigInputSchema, { boardType, layoutId, sizeId, setIds }, 'input');
     const userId = ctx.userId!;
 
-    const resolution = await resolveSerialForUser(userId, validSerial, config);
-    if (resolution.kind === 'board') {
-      await pubsub.stampBoardMembership(String(resolution.board.id), userId);
-      return toResolvedBoard(resolution.board);
-    }
-    // Old clients can't prompt — auto-pick (owned first, else oldest) and remember.
-    const owned = resolution.candidates.find((candidate) => candidate.ownerId === userId);
-    const pick = owned ?? resolution.candidates[0];
-    await rememberBoardForSerial(userId, validSerial, pick);
-    await pubsub.stampBoardMembership(String(pick.id), userId);
-    return toResolvedBoard(candidateToActiveBoard(pick));
+    // Old clients can't prompt. The auto-pick's final candidate read and
+    // pointer write happen inside resolveSerialForUser's row→serial transaction.
+    const resolution = await resolveSerialForUser(userId, validSerial, config, { autoPickMultiple: true });
+    await pubsub.stampBoardMembership(String(resolution.board.id), userId);
+    return toResolvedBoard(resolution.board);
   },
 
   /**
@@ -332,12 +535,11 @@ export const boardPresenceMutations = {
     const validSerial = validateInput(BoardSerialSchema, serial, 'serial');
     const userId = ctx.userId!;
 
-    const candidate = (await findActiveBoardsBySerial(validSerial)).find((board) => board.id === boardId);
+    const candidate = await chooseAndRememberActiveBoardForSerial(userId, validSerial, boardId);
     if (!candidate) {
       throw new GraphQLError('That board is not linked to this serial', { extensions: { code: 'NOT_FOUND' } });
     }
 
-    await rememberBoardForSerial(userId, validSerial, candidate);
     await pubsub.stampBoardMembership(String(candidate.id), userId);
     return toResolvedBoard(candidateToActiveBoard(candidate));
   },
@@ -418,12 +620,9 @@ export const boardPresenceMutations = {
    *  - Stage A: board lookup + the combined report gate (proof-of-presence,
    *    first-seen, and the write-side dedup marker) run in parallel — one
    *    Redis pipeline instead of the old separate hasBoardMembership call.
-   *  - Stage B: the catalog climb lookup, sender identity lookup, and seq
-   *    allocation run in parallel too. This means a seq can be burned even
-   *    when the catalog lookup below turns out empty (climb unknown) — that's
-   *    a benign gap: seq only needs to stay monotonic per board, not
-   *    contiguous, and a gap never surfaces in any published event or durable
-   *    row.
+   *  - Stage B: the catalog climb and sender identity lookups run in parallel.
+   *    Sequence allocation follows validation; for dwell-qualified sends its
+   *    PostgreSQL reservation and durable event insert share one transaction.
    *  - The Redis writes (history append, writer handoff, dedup marker,
    *    session→board mapping) are one pipeline via `commitBoardClimb`.
    */
@@ -493,7 +692,7 @@ export const boardPresenceMutations = {
       return true;
     }
 
-    const [catalogClimbRows, sender, seq] = await Promise.all([
+    const [catalogClimbRows, sender] = await Promise.all([
       db
         .select({
           uuid: dbSchema.boardClimbs.uuid,
@@ -541,7 +740,6 @@ export const boardPresenceMutations = {
             .limit(1)
             .then((rows) => rows[0])
         : Promise.resolve(undefined),
-      pubsub.nextBoardSeq(String(boardId)),
     ]);
 
     const catalogClimb = catalogClimbRows[0];
@@ -550,6 +748,54 @@ export const boardPresenceMutations = {
     }
 
     const sentAt = new Date().toISOString();
+
+    // Logged-in senders with sustained presence get durable history. Reserve
+    // the seq through an allocator override that keeps the board-row lock until
+    // the matching board_climb_events insert commits. A concurrent dedupe can
+    // no longer tombstone the loser in the gap between those two operations.
+    const DURABLE_DWELL_MS = 60_000;
+    const durableUserId = typeof ctx.userId === 'string' ? ctx.userId : null;
+    const hasDurableDwell = gate.firstSeenMs !== null && Date.parse(sentAt) - gate.firstSeenMs >= DURABLE_DWELL_MS;
+
+    let seq: number;
+    if (durableUserId !== null && hasDurableDwell) {
+      try {
+        seq = await pubsub.nextBoardSeq(String(boardId), (resolvedBoardId, candidate) =>
+          reserveAndPersistBoardClimbEvent(
+            {
+              boardId: resolvedBoardId,
+              boardType: board.boardType,
+              climbUuid,
+              angle: effectiveAngle,
+              userId: durableUserId,
+              sessionId: null,
+              frames: catalogClimb.frames ?? null,
+              name: catalogClimb.name ?? null,
+              grade: catalogClimb.grade ?? null,
+              setter: catalogClimb.setterUsername ?? null,
+              confirmedAt: sentAt,
+            },
+            candidate,
+          ),
+        );
+      } catch (error) {
+        // A merge/delete is authoritative: never publish a fresh event under a
+        // tombstoned board id. Other persistence failures retain the existing
+        // best-effort history contract and fall back to a normal reservation.
+        if (error instanceof DurableBoardClimbPersistenceError) {
+          logger.warn('[board-presence] durable board_climb_events insert failed', {
+            boardId,
+            climbUuid,
+            cause: error.persistenceCause instanceof Error ? error.persistenceCause.message : 'Unknown error',
+          });
+          seq = await pubsub.nextBoardSeq(String(boardId));
+        } else {
+          throw error;
+        }
+      }
+    } else {
+      seq = await pubsub.nextBoardSeq(String(boardId));
+    }
 
     const presenceClimb: BoardPresenceClimb = {
       climbUuid,
@@ -656,53 +902,6 @@ export const boardPresenceMutations = {
           logger.warn(`[board-presence] Live Activity dispatch on writer change failed: ${String(error)}`);
         }
       })();
-    }
-
-    // Durable history (logged-in + dwell-gated): persist this push to
-    // board_climb_events only for an authenticated sender who has had sustained
-    // presence on the board (>= 60s). Anonymous sends drive the live feed + holder
-    // but never the durable, leaderboard-backing log — they're unattributable
-    // (userId null) and otherwise let an anon spam null rows into a public board's
-    // history. App-swiping noise is filtered by the dwell gate. The live feed
-    // already showed everything; only the Postgres write is gated. Non-fatal — a
-    // failed durable insert never fails the accepted report.
-    const DURABLE_DWELL_MS = 60_000;
-    try {
-      // `sentAt` is the server-generated ISO timestamp from above, so
-      // `Date.parse(sentAt)` is always valid; `gate.firstSeenMs` (read in Stage
-      // A, above) is already guarded to a plausible epoch-ms or null. A null
-      // firstSeenMs correctly skips the insert (presence not yet proven for 60s).
-      if (ctx.userId && gate.firstSeenMs !== null && Date.parse(sentAt) - gate.firstSeenMs >= DURABLE_DWELL_MS) {
-        await db
-          .insert(dbSchema.boardClimbEvents)
-          .values({
-            boardId,
-            boardType: board.boardType,
-            climbUuid,
-            angle: effectiveAngle,
-            userId: ctx.userId,
-            // Reserved for session recaps. reportBoardClimb has no sessionId arg
-            // yet, so every durable row is solo-attributed until the
-            // session-attribution follow-up threads the active session through.
-            // Do NOT wire `reportingSessionId` here even though it's in scope
-            // above: it's a room-manager party-session uuid, not a
-            // `board_sessions` row id — board_climb_events.sessionId is a real
-            // FK to `board_sessions`, a different id space entirely. Writing a
-            // party-session uuid would violate the FK and roll back this whole
-            // insert, silently losing the durable row.
-            sessionId: null,
-            seq,
-            frames: catalogClimb.frames ?? null,
-            name: catalogClimb.name ?? null,
-            grade: catalogClimb.grade ?? null,
-            setter: catalogClimb.setterUsername ?? null,
-            confirmedAt: sentAt,
-          })
-          // (boardId, seq) is unique — makes a multi-instance double-flush a no-op.
-          .onConflictDoNothing();
-      }
-    } catch (error) {
-      logger.warn(`[board-presence] durable board_climb_events insert failed: ${String(error)}`);
     }
 
     return true;

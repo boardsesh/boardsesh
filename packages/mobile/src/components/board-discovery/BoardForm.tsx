@@ -17,6 +17,8 @@ import { useTheme } from '../../providers/theme-provider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useDeviceLocation } from '../../lib/use-device-location';
+import { useForeignSerialBoard } from '../../lib/boards/use-foreign-serial-board';
+import { serialReuseDisclosure } from '../../lib/boards/serial-reuse';
 import type { useBoardBuilder } from './use-board-builder';
 import { BoardConfigChips } from './BoardConfigChips';
 import { boardTypeLabel, cleanLayoutName, formatSizeLabel } from './board-builder-labels';
@@ -55,6 +57,11 @@ type BoardFormProps = {
    * so a toast here would never be seen (#4166) — feedback lives in the form.
    */
   errorMessage?: string | null;
+  /**
+   * The uuid of the board being edited, if any. Excluded from the serial-reuse
+   * warning so editing your own board never warns about its own serial.
+   */
+  currentBoardUuid?: string;
 };
 
 /**
@@ -72,9 +79,27 @@ export function BoardForm({
   submitLabel,
   lockedConfig = false,
   errorMessage = null,
+  currentBoardUuid,
 }: BoardFormProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
+  // Only warn on a same-config foreign board — cross-model serial reuse is
+  // legitimate (see useForeignSerialBoard). Config is null until the form has
+  // a complete layout/size/sets selection.
+  const serialConflictConfig = useMemo(
+    () =>
+      builder.layoutId != null && builder.sizeId != null && builder.setIds.length > 0
+        ? {
+            boardType: builder.boardName,
+            layoutId: builder.layoutId,
+            sizeId: builder.sizeId,
+            setIds: builder.setIds.join(','),
+          }
+        : null,
+    [builder.boardName, builder.layoutId, builder.sizeId, builder.setIds],
+  );
+  const foreignSerialBoard = useForeignSerialBoard(builder.serialNumber, currentBoardUuid, serialConflictConfig);
+  const foreignSerialDisclosure = foreignSerialBoard ? serialReuseDisclosure(foreignSerialBoard) : null;
   const insets = useSafeAreaInsets();
   const bottomChrome = useBottomChromeMetrics();
   const { width: windowWidth } = useWindowDimensions();
@@ -378,6 +403,17 @@ export function BoardForm({
             <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.serialHint}>
               {t('mobile.create.timerHint')}
             </Text>
+
+            {foreignSerialDisclosure ? (
+              <View style={[styles.serialWarning, { borderColor: iosSystemColors.systemOrange }]}>
+                <Icon name="info" size={16} color={iosSystemColors.systemOrange} />
+                <Text variant="footnote" color={systemColors.label} style={styles.serialWarningText}>
+                  {foreignSerialDisclosure.kind === 'public'
+                    ? t('boardForm.serialReuse.warning', { name: foreignSerialDisclosure.board.name })
+                    : t('boardForm.serialReuse.warningPrivate')}
+                </Text>
+              </View>
+            ) : null}
           </View>
         ) : null}
       </ScrollView>
@@ -602,6 +638,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[2],
+  },
+  serialWarning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing[2],
+    padding: spacing[3],
+    borderRadius: borderRadius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: spacing[2],
+  },
+  serialWarningText: {
+    flex: 1,
   },
   footer: {
     paddingHorizontal: spacing[4],
