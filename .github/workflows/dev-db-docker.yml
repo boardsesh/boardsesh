@@ -174,7 +174,9 @@ jobs:
       - name: Smoke-test final seeded dev database image
         env:
           IMAGE_REFERENCE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
-        run: vp run test:postgres18-dev-db-image -- "$IMAGE_REFERENCE"
+        # Vite+ forwards a literal `--` to shell-backed tasks. Pass the image
+        # reference directly so dev-db-image-smoke.sh receives exactly one arg.
+        run: vp run test:postgres18-dev-db-image "$IMAGE_REFERENCE"
 
       - name: Generate artifact attestation
         if: ${{ github.event_name != 'pull_request' }}
