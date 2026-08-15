@@ -151,8 +151,12 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
   } catch (error) {
     // Same contract as the config-tuple twin: a missing climb is the
     // `notFound()` above, a failed read is a 500. Swallowing a brownout into a
-    // 404 on an indexed URL reads as "delete this page".
-    console.error('Error fetching climb view:', error);
+    // 404 on an indexed URL reads as "delete this page". A digest is Next.js
+    // control flow (the `notFound()` above), not a failure — logging it would
+    // bury the brownout signal under routine 404s.
+    if (!(error !== null && typeof error === 'object' && 'digest' in error)) {
+      console.error('Error fetching climb view:', error);
+    }
     throw error;
   }
 }

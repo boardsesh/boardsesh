@@ -11,18 +11,27 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
  * identity stub used elsewhere: an identity stub cannot tell a cached call from
  * an uncached one, which is exactly what this test is about.
  */
-const { searchExecutions, cacheStore } = vi.hoisted(() => ({
+const { searchExecutions, cacheStore, revalidateByKey } = vi.hoisted(() => ({
   searchExecutions: { count: 0 },
   cacheStore: new Map<string, unknown>(),
+  revalidateByKey: new Map<string, number | undefined>(),
 }));
 
 vi.mock('server-only', () => ({}));
 
 vi.mock('next/cache', () => ({
   unstable_cache:
-    <T extends (...args: unknown[]) => Promise<unknown>>(fn: T, keyParts: string[]) =>
+    <T extends (...args: unknown[]) => Promise<unknown>>(
+      fn: T,
+      keyParts: string[],
+      options?: { revalidate?: number; tags?: string[] },
+    ) =>
     async (...args: Parameters<T>) => {
       const key = `${keyParts.join('|')}::${JSON.stringify(args)}`;
+      // The TTL is the whole freshness argument for caching MoonBoard at all, so
+      // the recorder has to see the options object — an identity stub that drops
+      // it leaves `revalidate` free to be changed to anything.
+      revalidateByKey.set(key, options?.revalidate);
       if (!cacheStore.has(key)) {
         cacheStore.set(key, await fn(...args));
       }
@@ -55,10 +64,22 @@ const moonboardParams: ParsedBoardRouteParameters = {
 
 const searchParams = { page: 0, pageSize: 50 } as SearchRequestPagination;
 
+/** 15 minutes — see `CACHE_DURATION_MOONBOARD_FRONT_DOOR` in the module under test. */
+const MOONBOARD_FRONT_DOOR_TTL_SECONDS = 900;
+/** 24 hours — the default-search TTL every other board keeps. */
+const DEFAULT_SEARCH_TTL_SECONDS = 86400;
+
+function onlyRevalidate(): number | undefined {
+  const values = [...revalidateByKey.values()];
+  expect(values).toHaveLength(1);
+  return values[0];
+}
+
 describe('cachedSearchClimbs — MoonBoard front-door caching', () => {
   beforeEach(() => {
     searchExecutions.count = 0;
     cacheStore.clear();
+    revalidateByKey.clear();
   });
 
   it('caches a MoonBoard search the front door asked to cache', async () => {
@@ -66,6 +87,15 @@ describe('cachedSearchClimbs — MoonBoard front-door caching', () => {
     await cachedSearchClimbs(moonboardParams, searchParams, true, undefined, { cacheable: true });
 
     expect(searchExecutions.count).toBe(1);
+  });
+
+  it('holds a MoonBoard front-door entry for 15 minutes, not the 24-hour default', async () => {
+    // The freshness contract that replaces the blanket bypass: an in-progress
+    // import shows up within a quarter hour. If this becomes the default TTL,
+    // MoonBoard front doors serve day-old import state.
+    await cachedSearchClimbs(moonboardParams, searchParams, true, undefined, { cacheable: true });
+
+    expect(onlyRevalidate()).toBe(MOONBOARD_FRONT_DOOR_TTL_SECONDS);
   });
 
   it('still bypasses the cache for MoonBoard when the caller did not ask for it', async () => {
@@ -105,5 +135,7 @@ describe('cachedSearchClimbs — MoonBoard front-door caching', () => {
     await cachedSearchClimbs(kilterParams, searchParams, true, undefined, { cacheable: true });
 
     expect(searchExecutions.count).toBe(1);
+    // Unchanged by the MoonBoard branch: the default-search TTL still applies.
+    expect(onlyRevalidate()).toBe(DEFAULT_SEARCH_TTL_SECONDS);
   });
 });

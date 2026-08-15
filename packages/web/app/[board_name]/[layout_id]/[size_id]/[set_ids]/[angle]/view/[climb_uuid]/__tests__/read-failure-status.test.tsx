@@ -100,9 +100,11 @@ const props = {
 } as unknown as Parameters<typeof ClimbViewPage>[0];
 
 describe('climb view read-failure status (config-tuple tree)', () => {
+  let consoleError: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   it('404s when the climb genuinely does not exist', async () => {
@@ -112,11 +114,22 @@ describe('climb view read-failure status (config-tuple tree)', () => {
     expect(notFound).toHaveBeenCalled();
   });
 
+  it('does not log a 404 as an error', async () => {
+    vi.mocked(getClimb).mockResolvedValue(null);
+
+    await expect(ClimbViewPage(props)).rejects.toMatchObject({ digest: NOT_FOUND_DIGEST });
+    // Stale sitemap entries and legacy-URL 308s are routine and high-volume on
+    // the crawl path. Logging them at error level buries the read failures this
+    // catch exists to surface.
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
   it('rethrows a read deadline instead of 404-ing an indexed URL', async () => {
     vi.mocked(getClimb).mockRejectedValue(new DbReadTimeoutError('climb-select', 6000));
 
     await expect(ClimbViewPage(props)).rejects.toBeInstanceOf(DbReadTimeoutError);
     expect(notFound).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalled();
   });
 
   it('rethrows any other read failure instead of 404-ing an indexed URL', async () => {
@@ -124,5 +137,6 @@ describe('climb view read-failure status (config-tuple tree)', () => {
 
     await expect(ClimbViewPage(props)).rejects.toThrow('connection terminated unexpectedly');
     expect(notFound).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalled();
   });
 });

@@ -109,39 +109,78 @@ forever, so many concurrent SSR renders against a slow database look like a hang
 rather than an error.
 
 `packages/web/app/lib/db/read-deadline.ts` bounds one read client-side. It races
-the pending query against a timer, rejects with `DbReadTimeoutError`
-(`code: 'DB_READ_TIMEOUT'`) when the timer wins, and calls `query.cancel()` the
-way the health probe does, so a timed-out statement does not fire later against
-a recovered pool. It is wired at the four front-door reads only — the two
-statements behind `getClimb`, the all-angles stats select, and the shared climb
-search — and deliberately **not** inside `withConnectRetry` or `packages/db`,
-where it would change behaviour for the backend, the sync runners and every
-script.
+the pending query against a timer and rejects with `DbReadTimeoutError`
+(`code: 'DB_READ_TIMEOUT'`) when the timer wins. It is wired at the four
+front-door reads only — the two statements behind `getClimb`, the all-angles
+stats select, and the shared climb search — and deliberately **not** inside
+`withConnectRetry` or `packages/db`, where it would change behaviour for the
+backend, the sync runners and every script.
+
+**Cancellation covers three of the four.** On a timeout the helper calls
+`query.cancel()` the way the health probe does, so a timed-out statement does not
+fire later against a recovered pool. That only works for raw postgres.js
+queries. The list front door's search is drizzle-issued and exposes no
+`.cancel()`, so there the deadline sheds the _caller_ while the statement runs to
+completion still holding its connection. Worth knowing mid-incident: shedding
+list renders does not immediately hand connections back.
+
+Cancelling a **queued** query is free — postgres.js removes it from the queue and
+rejects it locally. Cancelling one that is already **executing** opens a
+brand-new connection to send the cancel request, against a database that is by
+construction already struggling, and postgres.js keeps that connection's promise
+internally (`Query.cancel()` returns `null`), so a failure to open it surfaces as
+an unhandled rejection the runtime logs. Accepted: a zombie statement firing
+against a recovered pool is worse than a log line.
+
+**One budget per request, not per statement.** The climb page issues three reads
+in sequence, so three independent 6 s deadlines would be an ~18 s request
+ceiling — the opposite of shedding load. `app/lib/db/request-read-budget.ts`
+puts one deadline timestamp in React's per-render `cache` scope and hands each
+read whatever the earlier ones left, floored at 500 ms. Outside a render scope
+(scripts, unit tests) React's `cache` is a passthrough and each read gets its own
+deadline.
 
 ### What the reader sees when it fires
 
-| condition                           | before                               | after                                                   |
-| ----------------------------------- | ------------------------------------ | ------------------------------------------------------- |
-| climb row absent                    | 404                                  | 404 (unchanged — now for the right reason)              |
-| read fails or deadlines, climb page | hung to the platform limit, then 404 | 500 at ~6 s; the CDN stale window keeps serving readers |
-| read fails or deadlines, list page  | 200 with zero climbs                 | 500 at ~6 s; same CDN window                            |
-| backend GraphQL wedged              | climb page hung indefinitely         | similar climbs / beta links render empty at 3 s         |
+| condition                           | before                               | after                                           |
+| ----------------------------------- | ------------------------------------ | ----------------------------------------------- |
+| climb row absent                    | 404                                  | 404 (unchanged — now for the right reason)      |
+| board slug resolves to nothing      | 404                                  | 404 (unchanged)                                 |
+| read fails or deadlines, climb page | hung to the platform limit, then 404 | 500 at ~6 s per request                         |
+| read fails or deadlines, list page  | 200 with zero climbs                 | 500 at ~6 s                                     |
+| backend `boardBySlug` fails, `/b/…` | 404                                  | 500                                             |
+| backend GraphQL wedged              | climb page hung indefinitely         | similar climbs / beta links render empty at 3 s |
 
 The 5xx is the point. Google retries a 5xx and keeps the URL, while a 404 — or a
 200 with nothing on it — on a sitemapped URL reads as "drop this page".
+
+**The CDN does not hide it, and that is fine.** `stale-while-revalidate` only
+cushions a URL whose `age` has already passed `s-maxage`: climb views are covered
+for age 1 h–7 h, list front doors for 24 h–7 d, and Vercel supports no
+`stale-if-error`. A cold-MISS crawl of a long-tail sitemap URL therefore sees the
+500 directly. The asymmetry that matters is what happens next: 5xx is **not** a
+cacheable status on Vercel, so it is never pinned, whereas the 404 this replaces
+**is** cacheable — one blip used to stick a 404 in the CDN for a full `s-maxage`.
+
+A genuinely missing climb is also not negatively cached: `fetchClimbFromDb`
+throws a private not-found error inside `unstable_cache` (which never stores a
+rejection) and the caller turns it back into `null`, so a climb crawled minutes
+before its import lands recovers on the next request rather than 404-ing for the
+rest of the hour-long entry.
 
 ### Budgets
 
 | knob                      | default | meaning                                                                                  |
 | ------------------------- | ------- | ---------------------------------------------------------------------------------------- |
-| `DB_READ_DEADLINE_MS`     | 6000    | web front door: wall clock for one read (queue wait + connect + execute)                 |
+| `DB_READ_DEADLINE_MS`     | 6000    | web front door: wall clock for one _request's_ reads (queue wait + connect + execute)    |
 | `DB_POOL_MAX`             | 10      | postgres.js `max`, clamped to a floor of 2                                               |
-| `DB_POOL_IDLE_TIMEOUT_S`  | 30      | seconds an idle connection is held open                                                  |
+| `DB_POOL_IDLE_TIMEOUT_S`  | 30      | seconds an idle connection is held open; `0` means "never close one" and is not clamped  |
 | `DB_STATEMENT_TIMEOUT_MS` | unset   | emits a `statement_timeout` startup parameter — **off by default**, see the hazard below |
 
 6000 sits deliberately below `DB_CONNECT_RETRY_BUDGET_MS` (10000): during a
 brownout the front door should shed load rather than spend a second and third
-connect attempt holding a pool slot while a crawler waits.
+connect attempt holding a pool slot while a crawler waits. That comparison only
+holds because the budget is per request — see the shared-budget note above.
 
 The pool knobs default to the values that used to be hard-coded, so nothing
 changes for a deployment that does not set them. They exist because peak

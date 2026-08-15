@@ -90,23 +90,76 @@ describe('pool configuration', () => {
   // on the options postgres-js actually resolved instead — the backend must
   // keep the pre-#4461 sizing unless someone sets the env vars on it, which
   // only the Vercel project is expected to do.
-  it('keeps the pre-#4461 pool defaults when the env knobs are unset', async () => {
+  //
+  // These overlap `packages/db/src/client/__tests__/postgres.test.ts` on
+  // purpose. `packages/db` is not a Vitest project and the only db test CI runs
+  // is the migration-journal one, so knob assertions living only there would be
+  // inert in CI. The backend project runs on every PR.
+  async function poolOptionsWith(env: Record<string, string | undefined>) {
     const { createPool, closePool } = await import('@boardsesh/db/client');
-    const previousMax = process.env.DB_POOL_MAX;
-    const previousIdle = process.env.DB_POOL_IDLE_TIMEOUT_S;
-    delete process.env.DB_POOL_MAX;
-    delete process.env.DB_POOL_IDLE_TIMEOUT_S;
+    const previous: Record<string, string | undefined> = {};
+    for (const [name, value] of Object.entries(env)) {
+      previous[name] = process.env[name];
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
 
     await closePool();
     try {
-      const { max, idle_timeout: idleTimeout } = createPool().options;
-      expect(max).toBe(10);
-      expect(idleTimeout).toBe(30);
+      return createPool().options;
     } finally {
       await closePool();
-      if (previousMax !== undefined) process.env.DB_POOL_MAX = previousMax;
-      if (previousIdle !== undefined) process.env.DB_POOL_IDLE_TIMEOUT_S = previousIdle;
+      for (const [name, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
     }
+  }
+
+  it('keeps the pre-#4461 pool defaults when the env knobs are unset', async () => {
+    const { max, idle_timeout: idleTimeout } = await poolOptionsWith({
+      DB_POOL_MAX: undefined,
+      DB_POOL_IDLE_TIMEOUT_S: undefined,
+    });
+
+    expect(max).toBe(10);
+    expect(idleTimeout).toBe(30);
+  });
+
+  it('honours the per-deployment knobs when they are set', async () => {
+    const { max, idle_timeout: idleTimeout } = await poolOptionsWith({
+      DB_POOL_MAX: '4',
+      DB_POOL_IDLE_TIMEOUT_S: '10',
+    });
+
+    expect(max).toBe(4);
+    expect(idleTimeout).toBe(10);
+  });
+
+  it('clamps DB_POOL_MAX to the two-connection floor and falls back on garbage', async () => {
+    // getClimb issues two sequential statements; a pool of one serialises every
+    // front-door render behind a single connection.
+    expect((await poolOptionsWith({ DB_POOL_MAX: '1' })).max).toBe(2);
+    expect((await poolOptionsWith({ DB_POOL_MAX: 'abc' })).max).toBe(10);
+  });
+
+  it('lets DB_POOL_IDLE_TIMEOUT_S=0 mean "never close an idle connection"', async () => {
+    // postgres.js reads a falsy idle_timeout as disabled. Clamping it up to 1
+    // would turn "hold connections open" into a teardown every second.
+    expect((await poolOptionsWith({ DB_POOL_IDLE_TIMEOUT_S: '0' })).idle_timeout).toBe(0);
+  });
+
+  it('ships with no statement_timeout startup parameter', async () => {
+    // PgBouncer in transaction-pooling mode rejects unknown startup parameters,
+    // so enabling this against a pooled URL fails every connection rather than
+    // bounding one query. See docs/db-connectivity.md.
+    const options = await poolOptionsWith({ DB_STATEMENT_TIMEOUT_MS: undefined });
+    expect(options.connection.statement_timeout).toBeUndefined();
+  });
+
+  it('emits statement_timeout only when DB_STATEMENT_TIMEOUT_MS is set', async () => {
+    const options = await poolOptionsWith({ DB_STATEMENT_TIMEOUT_MS: '8000' });
+    expect(options.connection.statement_timeout).toBe(8000);
   });
 });
 

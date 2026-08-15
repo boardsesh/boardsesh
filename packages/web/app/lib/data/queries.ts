@@ -15,6 +15,20 @@ import type { Climb, ParsedBoardRouteParametersWithUuid, BoardName, LayoutId, Si
 import { getSizesForLayoutId, getAllLayouts, getSetsForLayoutAndSize } from '@/app/lib/board-constants';
 import { isNoMatchClimb, isNoMatch } from '@/app/lib/no-match-climb';
 import { withReadDeadline } from '@/app/lib/db/read-deadline';
+import { remainingReadBudgetMs } from '@/app/lib/db/request-read-budget';
+
+/**
+ * Thrown by the cached executor for a genuinely missing row, and translated back
+ * to `null` outside the cache. `unstable_cache` never stores a rejection, so a
+ * climb the crawler reached before the import finished re-reads on the next
+ * request instead of answering 404 for the rest of the hour-long entry.
+ */
+class ClimbRowMissingError extends Error {
+  constructor(climbUuid: string) {
+    super(`[db] no climb row for ${climbUuid}`);
+    this.name = 'ClimbRowMissingError';
+  }
+}
 
 // Resolves an old/bookmarked/shared climb link through board_climb_aliases:
 // a climb that's since been merged into another (e.g. the MoonBoard
@@ -33,23 +47,25 @@ async function resolveCanonicalClimbUuidWeb(boardName: BoardName, climbUuid: str
       WHERE board_type = ${boardName} AND alias_uuid = ${climbUuid}
       LIMIT 1
     `,
+      remainingReadBudgetMs(),
     ),
   );
   return result[0]?.canonical_uuid ?? climbUuid;
 }
 
 /**
- * Returns `null` when no row matches — a genuinely missing climb. Anything else
- * (a saturated pool, a read deadline, a dead database) throws, so the page can
- * tell "this climb does not exist" from "we could not answer right now". The
- * two used to be indistinguishable, and both rendered a 404 on an indexed URL.
+ * Throws `ClimbRowMissingError` when no row matches — a genuinely missing climb,
+ * which the caller turns back into `null`. Anything else (a saturated pool, a
+ * read deadline, a dead database) throws its own error, so the page can tell
+ * "this climb does not exist" from "we could not answer right now". The two used
+ * to be indistinguishable, and both rendered a 404 on an indexed URL.
  */
 async function fetchClimbFromDb(
   boardName: BoardName,
   layoutId: LayoutId,
   angle: number,
   requestedClimbUuid: string,
-): Promise<Climb | null> {
+): Promise<Climb> {
   const climbUuid = await resolveCanonicalClimbUuidWeb(boardName, requestedClimbUuid);
 
   // Direct-by-UUID lookups intentionally do NOT filter `frames_count = 1`.
@@ -78,10 +94,11 @@ async function fetchClimbFromDb(
         AND climbs.uuid = ${climbUuid}
         limit 1
       `,
+      remainingReadBudgetMs(),
     ),
   );
   const row = result[0];
-  if (!row) return null;
+  if (!row) throw new ClimbRowMissingError(climbUuid);
   return {
     ...row,
     difficulty: getGradeLabel(row.difficulty_id),
@@ -97,12 +114,27 @@ async function fetchClimbFromDb(
  * text, so passing a stable module-level function with explicit primitive
  * arguments (the pattern `search-climbs.ts` documents) keeps the key derivation
  * deterministic instead of resting on a fresh closure per request.
+ *
+ * The miss is translated from a rejection to `null` out here, on purpose: a
+ * `null` returned from inside would be stored for the full hour, so a climb
+ * crawled minutes before its import landed would keep 404-ing until the entry
+ * expired. `unstable_cache` does not store rejections.
  */
-function cachedClimbFetch(boardName: BoardName, layoutId: LayoutId, angle: number, climbUuid: string) {
-  return unstable_cache(fetchClimbFromDb, ['climb', boardName, String(layoutId), climbUuid, String(angle)], {
-    revalidate: 3600,
-    tags: [`climb-${climbUuid}`],
-  })(boardName, layoutId, angle, climbUuid);
+async function cachedClimbFetch(
+  boardName: BoardName,
+  layoutId: LayoutId,
+  angle: number,
+  climbUuid: string,
+): Promise<Climb | null> {
+  try {
+    return await unstable_cache(fetchClimbFromDb, ['climb', boardName, String(layoutId), climbUuid, String(angle)], {
+      revalidate: 3600,
+      tags: [`climb-${climbUuid}`],
+    })(boardName, layoutId, angle, climbUuid);
+  } catch (error) {
+    if (error instanceof ClimbRowMissingError) return null;
+    throw error;
+  }
 }
 
 /**
@@ -159,6 +191,7 @@ async function fetchClimbStatsForAllAnglesFromDb(
     AND climb_stats.climb_uuid = ${climbUuid}
     ORDER BY climb_stats.angle ASC
   `,
+      remainingReadBudgetMs(),
     ),
   );
   return result.map((row) => ({

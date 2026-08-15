@@ -92,6 +92,13 @@ void describe('postgres client', () => {
       assert.equal(options.max, 10);
     });
 
+    void it('keeps DB_POOL_IDLE_TIMEOUT_S=0 as "never close an idle connection"', async () => {
+      // postgres.js treats a falsy idle_timeout as disabled, so 0 is meaningful
+      // and must not be clamped up the way DB_POOL_MAX is.
+      const options = await poolOptionsWith({ DB_POOL_IDLE_TIMEOUT_S: '0' });
+      assert.equal(options.idle_timeout, 0);
+    });
+
     void it('emits no statement_timeout startup parameter by default', async () => {
       // PgBouncer in transaction-pooling mode rejects unknown startup
       // parameters, so this must stay off until the Railway URL is confirmed

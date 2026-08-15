@@ -30,6 +30,16 @@ export const DEFAULT_POOL_IDLE_TIMEOUT_S = 30;
  * a single connection. Clamp rather than trust a typo in a dashboard.
  */
 export const MIN_POOL_MAX = 2;
+/**
+ * The idle knob has no floor, on purpose. postgres.js reads a falsy
+ * `idle_timeout` as "never close an idle connection" (`connection.js`'s
+ * `timer()` returns a no-op pair for `!seconds`), which is a meaningful setting
+ * and the pre-knob behaviour of several drivers. Clamping `0` up to `1` would
+ * turn "hold connections open" into "tear one down a second after it goes idle"
+ * — the opposite of the request, and a TCP+TLS+startup round trip on the front
+ * of most requests.
+ */
+export const MIN_POOL_IDLE_TIMEOUT_S = 0;
 
 /**
  * Mirrors `readEnvInt` in connect-retry.ts: a missing or unparseable value falls
@@ -61,7 +71,7 @@ function readPoolInt(name: string, fallback: number, minimum: number): number {
 function basePoolOptions() {
   return {
     max: readPoolInt('DB_POOL_MAX', DEFAULT_POOL_MAX, MIN_POOL_MAX),
-    idle_timeout: readPoolInt('DB_POOL_IDLE_TIMEOUT_S', DEFAULT_POOL_IDLE_TIMEOUT_S, 1),
+    idle_timeout: readPoolInt('DB_POOL_IDLE_TIMEOUT_S', DEFAULT_POOL_IDLE_TIMEOUT_S, MIN_POOL_IDLE_TIMEOUT_S),
     connect_timeout: 30,
     prepare: false,
     ...statementTimeoutOption(),

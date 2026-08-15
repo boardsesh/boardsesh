@@ -3,7 +3,34 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 vi.mock('server-only', () => ({}));
 
-import { DbReadTimeoutError, FRONT_DOOR_READ_DEADLINE_MS, withReadDeadline } from '../read-deadline';
+import {
+  DEFAULT_READ_DEADLINE_MS,
+  DbReadTimeoutError,
+  FRONT_DOOR_READ_DEADLINE_MS,
+  parseReadDeadlineMs,
+  withReadDeadline,
+} from '../read-deadline';
+
+describe('parseReadDeadlineMs', () => {
+  // `FRONT_DOOR_READ_DEADLINE_MS` is captured at module load, so reading it back
+  // can only ever exercise the unset branch — the escape valve the docs
+  // advertise (`DB_READ_DEADLINE_MS`) needs the parser tested directly.
+  it('falls back to the default when unset', () => {
+    expect(parseReadDeadlineMs(undefined)).toBe(DEFAULT_READ_DEADLINE_MS);
+    expect(parseReadDeadlineMs('')).toBe(DEFAULT_READ_DEADLINE_MS);
+  });
+
+  it('honours a valid override', () => {
+    expect(parseReadDeadlineMs('8000')).toBe(8000);
+    expect(parseReadDeadlineMs('1500')).toBe(1500);
+  });
+
+  it('rejects values that would disable or invert the deadline', () => {
+    expect(parseReadDeadlineMs('0')).toBe(DEFAULT_READ_DEADLINE_MS);
+    expect(parseReadDeadlineMs('-1')).toBe(DEFAULT_READ_DEADLINE_MS);
+    expect(parseReadDeadlineMs('abc')).toBe(DEFAULT_READ_DEADLINE_MS);
+  });
+});
 
 describe('withReadDeadline', () => {
   beforeEach(() => {

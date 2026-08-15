@@ -79,12 +79,8 @@ describe('climb front door statement budget', () => {
     expect(mockSqlTag).toHaveBeenCalledTimes(1);
   });
 
-  it('a full climb-page data pass costs exactly three statements', async () => {
-    // Mirrors the page: the climb first (the redirect branch needs its name),
-    // then the angle table alongside the two backend calls.
-    await getClimb(params);
-    await getClimbStatsForAllAngles(params);
-
-    expect(mockSqlTag).toHaveBeenCalledTimes(3);
-  });
+  // The whole-page budget lives in `climb-request-dedupe.test.ts`, where React's
+  // `cache` is a real memo. Asserting 3 here would be arithmetic on the two
+  // cases above (2 + 1) and would pin the number while being unable to tell the
+  // deduped page pass from the un-deduped one — the regression that matters.
 });

@@ -70,6 +70,7 @@ vi.mock('@/app/lib/seo/metadata', () => ({
 
 import { notFound } from 'next/navigation';
 import { getClimb } from '@/app/lib/data/queries';
+import { resolveBoardBySlug } from '@/app/lib/board-slug-utils';
 import BoardSlugViewPage from '../page';
 import { DbReadTimeoutError } from '@/app/lib/db/read-deadline';
 
@@ -78,9 +79,11 @@ const props = {
 } as unknown as Parameters<typeof BoardSlugViewPage>[0];
 
 describe('climb view read-failure status (/b slug tree)', () => {
+  let consoleError: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   it('404s when the climb genuinely does not exist', async () => {
@@ -88,6 +91,25 @@ describe('climb view read-failure status (/b slug tree)', () => {
 
     await expect(BoardSlugViewPage(props)).rejects.toMatchObject({ digest: NOT_FOUND_DIGEST });
     expect(notFound).toHaveBeenCalled();
+    // Control flow, not a failure. A 404 per stale sitemap entry in the error
+    // log is exactly the volume that hides a real brownout.
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  it('404s when the board slug resolves cleanly to nothing', async () => {
+    vi.mocked(resolveBoardBySlug).mockResolvedValueOnce(null);
+
+    await expect(BoardSlugViewPage(props)).rejects.toMatchObject({ digest: NOT_FOUND_DIGEST });
+    expect(notFound).toHaveBeenCalled();
+  });
+
+  it('rethrows a failed board-slug lookup instead of 404-ing an indexed URL', async () => {
+    // The first read on the request, and it sits above the try — a backend blip
+    // used to become a 404 that Vercel then CDN-cached for up to 24 hours.
+    vi.mocked(resolveBoardBySlug).mockRejectedValueOnce(new Error('boardBySlug lookup failed with HTTP 502'));
+
+    await expect(BoardSlugViewPage(props)).rejects.toThrow('HTTP 502');
+    expect(notFound).not.toHaveBeenCalled();
   });
 
   it('rethrows a read deadline instead of 404-ing an indexed URL', async () => {

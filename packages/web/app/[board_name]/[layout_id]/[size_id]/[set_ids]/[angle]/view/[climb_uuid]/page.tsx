@@ -177,7 +177,14 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
     // deindex. Google retries a 5xx and keeps the URL; that is the property
     // that matters here. `notFound()` above still fires for a climb that really
     // is not there.
-    console.error('Error fetching results or climb:', error);
+    //
+    // A digest is control flow, not a failure: `needsSlugRedirect` fires a 308
+    // on every legacy/uuid-only URL and `notFound()` fires on every stale
+    // sitemap entry, both routine and both high-volume on the crawl path.
+    // Logging them would bury the brownout signal this catch exists to surface.
+    if (!(error !== null && typeof error === 'object' && 'digest' in error)) {
+      console.error('Error fetching results or climb:', error);
+    }
     throw error;
   }
 }

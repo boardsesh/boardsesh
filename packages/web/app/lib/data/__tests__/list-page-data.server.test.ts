@@ -3,12 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 vi.mock('server-only', () => ({}));
 
-// `fetchListPageData` (the sibling helper) pulls in NextAuth, which pulls in the
-// db client at module load. The front-door helper under test never touches a
-// session, so stub the chain rather than requiring a DATABASE_URL.
-vi.mock('next-auth/next', () => ({ getServerSession: vi.fn(async () => null) }));
-vi.mock('@/app/lib/auth/auth-options', () => ({ authOptions: {} }));
-
 vi.mock('@/app/lib/db/queries/climbs/search-climbs', () => ({
   cachedSearchClimbs: vi.fn(),
 }));

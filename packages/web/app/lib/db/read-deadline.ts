@@ -7,6 +7,9 @@
  * only Vitest project in this repo with a live Postgres — exercise it.
  */
 
+/** The deadline when `DB_READ_DEADLINE_MS` is unset or unparseable. */
+export const DEFAULT_READ_DEADLINE_MS = 6000;
+
 /**
  * Wall-clock ceiling for one front-door read: queue wait + connect + execute.
  *
@@ -14,16 +17,26 @@
  * docs/db-connectivity.md). On a brownout we want the front door to shed load,
  * not to spend a second and third connect attempt holding a pool slot while a
  * crawler waits. It is also far inside Vercel's function limit and inside
- * Googlebot's patience, and every front-door URL carries a CDN
- * `stale-while-revalidate` window, so a shed request is usually invisible.
+ * Googlebot's patience.
+ *
+ * It does NOT hide behind the CDN. `stale-while-revalidate` only cushions a URL
+ * whose `age` is already past `s-maxage` — climb views are covered for age 1 h
+ * to 7 h, lists for 24 h to 7 d — and Vercel supports no `stale-if-error`
+ * (https://vercel.com/docs/caching/cdn-cache). A cold-MISS crawl of a long-tail
+ * sitemap URL therefore sees the 500 directly. That is still the right answer:
+ * 5xx is not a cacheable status on Vercel, so it is never pinned, where the 404
+ * this replaces *is* cacheable and could stick for a full `s-maxage`.
  */
-export const FRONT_DOOR_READ_DEADLINE_MS = readDeadlineMs();
+export const FRONT_DOOR_READ_DEADLINE_MS = parseReadDeadlineMs(process.env.DB_READ_DEADLINE_MS);
 
-function readDeadlineMs(): number {
-  const raw = process.env.DB_READ_DEADLINE_MS;
-  if (!raw) return 6000;
+/**
+ * Exported for its own test: the constant above is captured at module load, so
+ * the parse branches are unreachable from a test that only reads it.
+ */
+export function parseReadDeadlineMs(raw: string | undefined): number {
+  if (!raw) return DEFAULT_READ_DEADLINE_MS;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 6000;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_READ_DEADLINE_MS;
 }
 
 export class DbReadTimeoutError extends Error {
@@ -88,15 +101,27 @@ export async function withReadDeadline<T>(
   }
 }
 
+/**
+ * What `.cancel()` actually costs, because the two regimes differ and only one
+ * of them is free:
+ *
+ * - **Still queued** — the saturated-pool case this deadline exists for.
+ *   `postgres/src/index.js:350` removes the query from the queue and rejects it
+ *   locally (`57014`). No connection is opened. The rejection is already handled
+ *   because `settled` above attached to `pending` before the race.
+ * - **Already executing on the server.** postgres.js opens a *brand new*
+ *   connection to send the cancel request. During a brownout that connect can
+ *   itself fail, and postgres.js keeps the promise for it internally —
+ *   `Query.cancel()` returns `null` (a comma expression ending in an
+ *   assignment, `postgres/src/query.js:52`), so there is nothing to attach a
+ *   handler to from out here. Such a failure surfaces as an unhandled rejection
+ *   that Next's process-level handler logs. Accepted: leaving a zombie
+ *   statement to fire against a recovered pool is worse than one log line.
+ */
 function cancelQuietly(pending: Cancellable): void {
   if (typeof pending.cancel !== 'function') return;
   try {
-    // Typed `void`, but postgres.js hands back a promise when the query already
-    // reached the server, so swallow its rejection too.
-    const cancelled: unknown = pending.cancel();
-    if (cancelled && typeof (cancelled as PromiseLike<unknown>).then === 'function') {
-      void Promise.resolve(cancelled).catch(() => {});
-    }
+    pending.cancel();
   } catch {
     // Cancelling is best effort; a failure here must not mask the deadline.
   }

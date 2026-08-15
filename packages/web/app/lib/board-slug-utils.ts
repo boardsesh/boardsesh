@@ -33,6 +33,15 @@ export type ResolvedBoard = {
  * is what #4087 changes: it forwards the viewer's token and splits the cache so
  * `boardBySlug` can mask a private board. Until it lands, `isPublic` here is
  * only good enough to drive `noindex` — never to decide what a page renders.
+ *
+ * `null` means one thing only: the backend answered cleanly and there is no such
+ * board (or it is masked from this viewer). Every failure — a rejected fetch, a
+ * non-2xx, a 200 carrying GraphQL `errors` — throws, because every caller turns
+ * `null` into `notFound()`. Swallowing a wedged backend into `null` put a 404 on
+ * `/b/{slug}/{angle}/list` and `/b/{slug}/{angle}/view/{uuid}`, and 404 is on
+ * Vercel's cacheable-status list — one blip pinned a cached 404 on an indexed
+ * front door for the length of its `s-maxage` (24 h on lists). A 5xx is never
+ * CDN-cached, and Google retries it and keeps the URL.
  */
 export const resolveBoardBySlug = cache(async (slug: string): Promise<ResolvedBoard | null> => {
   const url = getGraphQLHttpUrl();
@@ -58,33 +67,40 @@ export const resolveBoardBySlug = cache(async (slug: string): Promise<ResolvedBo
     }
   `;
 
-  try {
-    const authToken = await getServerAuthToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (authToken) {
-      headers.Authorization = `Bearer ${authToken}`;
-    }
-
-    // Authenticated responses can contain private boards, so they must never
-    // enter the shared data cache. Anonymous responses remain safely reusable.
-    const cacheOptions = authToken ? { cache: 'no-store' as const } : { next: { revalidate: 300 } };
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ query, variables: { slug } }),
-      ...cacheOptions,
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json();
-    return data?.data?.boardBySlug ?? null;
-  } catch {
-    return null;
+  const authToken = await getServerAuthToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`;
   }
+
+  // Authenticated responses can contain private boards, so they must never
+  // enter the shared data cache. Anonymous responses remain safely reusable.
+  const cacheOptions = authToken ? { cache: 'no-store' as const } : { next: { revalidate: 300 } };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ query, variables: { slug } }),
+    ...cacheOptions,
+  });
+
+  if (!response.ok) {
+    throw new Error(`[board-slug] boardBySlug lookup for "${slug}" failed with HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as {
+    data?: { boardBySlug?: ResolvedBoard | null } | null;
+    errors?: unknown[];
+  };
+
+  // A 200 carrying `errors` is the shape a backend read deadline produces, and
+  // `data.boardBySlug` is `null` alongside it — indistinguishable from a real
+  // miss unless we look at `errors`.
+  if (Array.isArray(payload.errors) && payload.errors.length > 0) {
+    throw new Error(`[board-slug] boardBySlug lookup for "${slug}" returned GraphQL errors`);
+  }
+
+  return payload.data?.boardBySlug ?? null;
 });
 
 /**

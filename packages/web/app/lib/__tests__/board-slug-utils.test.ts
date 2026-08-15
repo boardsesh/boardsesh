@@ -118,6 +118,32 @@ describe('resolveBoardBySlug', () => {
     expect(new Headers(anonymousRequest?.headers).get('Authorization')).toBeNull();
   });
 
+  // Every caller turns `null` into `notFound()`, and Vercel CDN-caches a 404 for
+  // the length of the front door's `s-maxage`. A failed read must never look
+  // like "no such board".
+  it('throws instead of returning null when the backend fetch rejects', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('fetch failed'));
+
+    await expect(resolveBoardBySlug(publicBoard.slug)).rejects.toThrow('fetch failed');
+  });
+
+  it('throws instead of returning null on a non-2xx backend response', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('bad gateway', { status: 502 }));
+
+    await expect(resolveBoardBySlug(publicBoard.slug)).rejects.toThrow(/HTTP 502/);
+  });
+
+  it('throws instead of returning null on a 200 carrying GraphQL errors', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ errors: [{ message: 'read deadline exceeded' }], data: { boardBySlug: null } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await expect(resolveBoardBySlug(publicBoard.slug)).rejects.toThrow(/GraphQL errors/);
+  });
+
   it('does not let an anonymous miss cross into a later authenticated request', async () => {
     getServerAuthTokenMock.mockResolvedValueOnce(undefined).mockResolvedValueOnce('signed-session-token');
     fetchMock.mockResolvedValueOnce(graphQlResponse(null)).mockResolvedValueOnce(graphQlResponse(privateBoard));
