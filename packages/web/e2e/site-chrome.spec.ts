@@ -59,28 +59,33 @@ test.describe('Site chrome - visibility', () => {
     });
   }
 
-  // `/notifications` on purpose, not `/settings`: the `/settings` branch of
+  // `/playlists` on purpose, not `/settings`: the `/settings` branch of
   // `MarketingHeader` renders the brand link and a spacer and never reads the
   // session, so a signed-in run there would assert nothing the unauthenticated
-  // `/settings` case above doesn't already cover. `/notifications` falls through
-  // to the default branch, which is where the account affordance renders.
+  // `/settings` case above doesn't already cover. `/playlists` falls through to
+  // the default branch, which is where the account affordance renders. It also
+  // has to be a path that still serves 200 on www: W-20b (#4439) turned
+  // `/notifications` — the page this used to sign in to — into a cross-origin
+  // 307, and `loginAs` waits for the callback URL to be the browser's final URL.
   test('renders the header and footer for a signed-in visitor', async ({ page }) => {
-    await loginAs(page, '/notifications');
+    await loginAs(page, '/playlists');
     await expectChrome(page);
     await expectNoBottomBar(page);
   });
 
-  // W-19 deleted `/you`, and with it the only other www link to these two
-  // surfaces. Until W-20b (#4439) removes `/notifications` and W-21 (#4440)
-  // reworks `/settings`, the account slot in this header is the sole way in.
-  test('keeps notifications and settings reachable once signed in', async ({ page }) => {
-    await loginAs(page, '/notifications');
+  // W-19 deleted `/you`, and with it the only other www link to `/settings`.
+  // Until W-21 (#4440) reworks `/settings`, the account slot in this header is
+  // the sole way in. W-20b (#4439) moved notifications to the app, so the bell
+  // that used to sit beside the cog is gone — the negative assertion is the e2e
+  // twin of `marketing-header.test.tsx`'s `links nowhere into /notifications`.
+  test('keeps settings reachable once signed in', async ({ page }) => {
+    await loginAs(page, '/playlists');
     await expectChrome(page);
 
     const header = page.locator(marketingHeader);
-    await expect(header.locator('a[href="/notifications"]')).toBeVisible();
     await expect(header.locator('a[href="/settings"]')).toBeVisible();
     await expect(header.locator('a[href^="/you"]')).toHaveCount(0);
+    await expect(header.locator('a[href^="/notifications"]')).toHaveCount(0);
   });
 });
 

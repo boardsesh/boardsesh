@@ -206,11 +206,6 @@ export const themeTokens = {
     disabled: 0.5, // Disabled/unsupported state
   },
 
-  // Badge sizing — applied via sx={{ '& .MuiBadge-badge': themeTokens.badge.small }}
-  badge: {
-    small: { fontSize: 10, height: 16, minWidth: 16 },
-  },
-
   // Layout constants
   layout: {
     /** CSS height value for a spacer that prevents the bottom nav bar from covering content on mobile Safari. */

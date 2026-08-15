@@ -59,16 +59,22 @@ things. Neither is fixable by us for the copies already in the field.
   persists `render_base_url`), so it is recoverable, but only by hand, one device
   at a time.
 
-### `/app` redirect destinations (for the route redirects in A6)
+### App redirect destinations (for the route redirects in A6)
 
-| Web route removed  | `/app` destination                                          | Status                                                                                                                                                 |
-| ------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `join/[sessionId]` | `/app/join/{sessionId}`                                     | exists (`packages/mobile/app/join/[sessionId].tsx`; universal-link `/join` registered)                                                                 |
-| `/you`             | `/app/profile`                                              | exists (`(tabs)/profile/index.tsx`)                                                                                                                    |
-| `/settings`        | `/app/profile/more`                                         | no bare `/app/settings` — redirect to `/app/profile/more`                                                                                              |
-| `/notifications`   | `/home/notifications`                                       | exists (`packages/mobile/app/(tabs)/home/notifications.tsx`, W-20a #4432); `(tabs)/profile/notifications.tsx` renders the same screen in the You stack |
-| climb view         | `/app/climbs/{uuid}?boardName&layoutId&sizeId&setIds&angle` | exists; **all five query params required**, numeric IDs                                                                                                |
-| `/list`            | `/app/climbs`                                               | exists, but the Climbs tab reads its board from the persisted active board, **not** the URL — board context is lost on a bare `/list` redirect         |
+Destinations are paths on `${APP_ORIGIN}` (`app.boardsesh.com`), not on www. They
+used to be written with an `/app/` prefix, back when www proxied the Expo bundle
+at `/app`; W-24 (#4480) retired that static path, so the prefix is gone and the
+shipped rules read `` `${APP_ORIGIN}${path}` `` — see `BASE_REDIRECTS` in
+`packages/web/next.config.mjs`.
+
+| Web route removed  | `${APP_ORIGIN}` destination                             | Status                                                                                                                                         |
+| ------------------ | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `join/[sessionId]` | `/join/{sessionId}`                                     | exists (`packages/mobile/app/join/[sessionId].tsx`; universal-link `/join` registered)                                                         |
+| `/you`             | `/profile`                                              | shipped in W-19 (#4479)                                                                                                                        |
+| `/settings`        | `/profile/more`                                         | no bare `/settings` in the app — redirect to `/profile/more`                                                                                   |
+| `/notifications`   | `/home/notifications`                                   | shipped in W-20b (#4439); `packages/mobile/app/(tabs)/home/notifications.tsx`, and `(tabs)/profile/notifications.tsx` renders the same screen  |
+| climb view         | `/climbs/{uuid}?boardName&layoutId&sizeId&setIds&angle` | exists; **all five query params required**, numeric IDs                                                                                        |
+| `/list`            | `/climbs`                                               | exists, but the Climbs tab reads its board from the persisted active board, **not** the URL — board context is lost on a bare `/list` redirect |
 
 ### Board layout provider mounts (asymmetric — matters for A5)
 
