@@ -11,7 +11,9 @@
 export const DEFAULT_READ_DEADLINE_MS = 6000;
 
 /**
- * Wall-clock ceiling for one front-door read: queue wait + connect + execute.
+ * Wall-clock ceiling for one front-door *request's* reads — queue wait +
+ * connect + execute, shared across them by `request-read-budget.ts`. A caller
+ * that passes no explicit `ms` gets the whole thing for a single read.
  *
  * 6 s is deliberately *below* `DB_CONNECT_RETRY_BUDGET_MS` (10 s, see
  * docs/db-connectivity.md). On a brownout we want the front door to shed load,
