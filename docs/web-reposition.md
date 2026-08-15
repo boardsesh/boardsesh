@@ -421,38 +421,40 @@ been permanently green afterwards. It now names both `expectsUrls` shards
 (`static.xml`, `boards.xml`); the three declared-empty ones are legitimately
 absent and stay out of it.
 
-**Slow is a failure mode, and a try/catch cannot see it.** Each builder in the
-index walk is raced against `SHARD_DEADLINE_MS` (3 s, the value W-23 settled on
-for its paged summary, so the two collapse into one constant on merge). Be
+**Slow is a failure mode, and a try/catch cannot see it.** Each fixed builder and
+paged-shard summary in the index walk is raced against `SHARD_DEADLINE_MS` (3 s,
+the value W-23 settled on for its summary, so both paths share one constant). Be
 precise about why: the two recorded production failures were _rejections_ — a 503
 is the route's own `unavailableResponse`, and `getAllBoardConfigsOrThrow`'s 10 s
 abort surfaces as a throw — so the try/catch alone covers what was measured. The
-deadline covers the mode a try/catch structurally cannot see, a builder that never
+deadline covers the mode a try/catch structurally cannot see, work that never
 settles (`fetchPlaylistSitemapRows` has no bound of its own), which would hold the
-index to the platform timeout and 5xx all five shards. The index's 3 s and the
+index to the platform timeout and 5xx all six shards. The index's 3 s and the
 boards builder's own 10 s are _supposed_ to disagree: failing the shard route
 costs a working URL, while missing the index deadline costs one shard for sixty
 seconds. Cheap to be wrong, so be impatient.
 
 **Concurrent, with only a per-shard deadline.** An earlier draft of this fix
-sequenced the walk under a total 8 s budget, and that made the tail of the
+sequenced the fixed walk under a total 8 s budget, and that made the tail of the
 registry the deterministic victim: five builders each a comfortable 1.9 s — every
 one inside its own deadline — spend the budget before `playlists` runs, so it is
-dropped for its position rather than its latency. `Promise.allSettled` bounds the
-walk by max(builder) instead of sum(builder), which removes the starvation and
-the need for a total budget at once. The fan-out is two I/O calls against two
-different backends plus three hardcoded builders — not the many-concurrent-heavy-
-scans shape of #4461, which W-23 sequences _within_ its climbs query for exactly
-that reason. Sequencing would not have bounded pool load anyway: `withDeadline`
-stops waiting, it does not cancel.
+dropped for its position rather than its latency. The five fixed builders and the
+paged climbs summary now settle concurrently, so the walk is bounded by their
+maximum rather than their sum and no shard is dropped for its registry position.
+The fan-out is one GraphQL fetch, the playlists query, the cached climbs summary,
+and three hardcoded builders. The climbs summary still sequences its heavy
+per-board scans internally, which is where #4461's pool-starvation guard belongs.
+Sequencing at the registry would not bound pool load anyway: `withDeadline` stops
+waiting, it does not cancel.
 
 **Known follow-ups.** `withDeadline` bounds this request's latency, not the
 abandoned query still holding a connection — a real bound needs an `AbortSignal`
 threaded into `fetchPlaylistSitemapRows` or a statement timeout on its query.
 `getAllBoardConfigsOrThrow` is uncached (the `unstable_cache` in that file wraps
 `fetchPopularBoardConfigs`, the limit=12 homepage variant) and `/sitemap.xml` is
-`force-dynamic`, so every CDN miss re-runs it live; caching the per-shard
-summaries is what would make 3 s comfortably attainable on a cold instance.
+`force-dynamic`, so every CDN miss re-runs the fixed builders live; caching those
+per-shard summaries is what would make 3 s comfortably attainable on a cold
+instance. The climbs summary already has Data Cache plus in-process caching.
 
 **Two shards ship declared-empty, and that is the point.** `gyms.xml` waits on
 #4381's public-gyms enumeration query, which the gym-discovery epic (#4372)
@@ -487,10 +489,17 @@ emitted from one escaping helper.
 
 **The climb shards submit the default locale only.** This is a deliberate
 inconsistency with the boards shard, which does fan out to all four locales, and
-the difference is volume: boards is 690 items → 2,760 URLs, climbs is ~128,655
-items → 514,620 URLs, each carrying a five-entry `xhtml:link` block. That renders
+the difference is volume: boards is 690 items → 2,760 URLs, climbs is ~85,600
+items → ~342,000 URLs, each carrying a five-entry `xhtml:link` block. That renders
 ~36 MB per 45,000-URL shard, past Vercel's 4.5 MB serverless response ceiling and
-past any sane crawl budget. Do not "fix" the inconsistency by fanning climbs out.
+past any sane crawl budget.
+
+(Measured on the full-board dev image, one row per climb: 85,596 tier-2 climbs,
+of which 44,011 sit on MoonBoard layouts with no popular board config, leaving
+~41,600 shippable → 5 pages. The epic's 128,655 counted tier-2 **(climb, angle)
+pairs** — 124,253 on the same snapshot — and this shard emits one URL per climb,
+so the pair count was never the right target. Nothing in the code depends on
+either figure; the page count is derived from the summary at request time.) Do not "fix" the inconsistency by fanning climbs out.
 Nothing is noindexed — the locked decision on `/es`, `/fr` and `/de` climbing
 pages is untouched. They stay indexable, they stay link-discovered, and they
 carry reciprocal HTML hreflang from `createPageMetadata`'s `alternates.languages`,
@@ -550,7 +559,7 @@ property of a climb — `board_climbs` carries `board_type`, `layout_id`,
 `compatible_size_ids[]` and `required_set_ids[]`. The shard therefore picks one
 configuration per `(board_type, layout_id)` from `getAllBoardConfigsOrThrow()`,
 ranked by board count, then climb count, then lowest size id, then lowest set
-list. Determinism is the point: an unstable pick churns 128k URLs between crawls.
+list. Determinism is the point: an unstable pick churns every URL between crawls.
 A group whose configuration has no readable URL is dropped whole (resolvability
 depends only on board/layout/size/sets, never on the angle, uuid or name), which
 is what keeps the count query and the item builder selecting one identical set. A
@@ -561,7 +570,7 @@ gap against the addressable tier-2 universe.
 `buildCanonicalClimbViewUrl`, so anything it resolves is byte-identical to the
 page's own canonical. If it returns null the climb is dropped and counted, not
 published under the name-based or numeric fallback — a URL we cannot prove
-matches is the "alternate page with proper canonical" own-goal at 128k scale.
+matches is the "alternate page with proper canonical" own-goal at shard scale.
 The name always goes through `resolveClimbDisplayName` first, so an unnamed
 climb's sitemap URL carries the same `-{board} Climb-` slug its canonical does.
 `static-climb-row.tsx` was fixed in the same PR for the same reason: its anchor
@@ -612,7 +621,7 @@ is that a bulk upstream re-sync stamps `updated_at` across the board and flatten
 the signal for one cycle; dropping the field is a one-line change if that turns
 out to hurt, and the boards shard already ships without one.
 
-**Four caching layers, because a 128k-row scan is not a playlists query.**
+**Four caching layers, because a ~124k-row scan is not a playlists query.**
 `dbzRead` (the read pool), `withSerialPlan` (the parallel-hash-join guard behind
 the `could not resize shared memory segment` class), an in-process TTL plus
 single-flight promise so one instance builds the list once, and a six-hour CDN

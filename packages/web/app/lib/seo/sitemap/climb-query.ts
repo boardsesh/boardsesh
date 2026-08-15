@@ -195,9 +195,9 @@ export async function fetchTier2ClimbRows(group: ClimbConfigGroup): Promise<Clim
 }
 
 /**
- * `unstable_cache`d, and only the summary is: a 128k-item payload serialises to
- * ~20 MB, past Vercel's 2 MB Data Cache entry ceiling, so caching the items
- * there would silently never cache.
+ * `unstable_cache`d, and only the summary is: an ~85k-item payload serialises to
+ * well over 10 MB, past Vercel's 2 MB Data Cache entry ceiling, so caching the
+ * items there would silently never cache.
  *
  * The summary's RESULT is two numbers. Its COST is not: it is the same
  * `DISTINCT ON` scan as the item build, once per `(board_type, layout_id)` group

@@ -295,7 +295,7 @@ describe('buildSitemapIndexXml', () => {
   });
 
   it('omits — and logs — a shard that expects URLs but comes back empty', async () => {
-    // Still a failure, still loud, but no longer fatal to the other four: the
+    // Still a failure, still loud, but no longer fatal to the other ready shards: the
     // shard's own route keeps 503ing on exactly this condition (above), which is
     // where the fail-closed promise is actually kept.
     boardConfigs.empty = true;

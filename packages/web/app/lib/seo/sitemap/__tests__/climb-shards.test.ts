@@ -196,7 +196,7 @@ describe('the index and the climbs shard', () => {
 
   it('NEVER builds the items to render the index', async () => {
     // The pool-starvation guard (#4461), and the assertion most likely to be
-    // quietly broken later: a 128k-row scan on every /sitemap.xml hit is the
+    // quietly broken later: a ~124k-row scan on every /sitemap.xml hit is the
     // failure this whole summary/build split exists to avoid.
     await buildSitemapIndexXml();
 
@@ -239,7 +239,7 @@ describe('the index and the climbs shard', () => {
   it('omits the climb pages when there are none, but says so loudly', async () => {
     // Still a 200 — the index degrades rather than 503ing. But a shard that
     // expects URLs and reports zero has lost its whole surface, and dropping
-    // ~128k URLs behind six hours of s-maxage with nothing in the logs is how
+    // every tier-2 URL behind six hours of s-maxage with nothing in the logs is how
     // that goes unnoticed until Search Console reports them removed.
     climbs.itemCount = 0;
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});

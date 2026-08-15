@@ -75,10 +75,13 @@ export function allLocalesUrlCount(items: readonly SitemapItem[]): number {
  *
  * The climb shards' expansion, and a deliberate inconsistency with the boards
  * shard (which does fan out to all four locales). The difference is volume:
- * boards is 690 items → 2,760 URLs, climbs is ~128,655 items → 514,620 URLs
+ * boards is 690 items → 2,760 URLs, climbs is ~85,600 items → ~342,000 URLs
  * with a 5-entry alternates block on each, which is ~36 MB per 45k-URL shard —
  * past Vercel's 4.5 MB response ceiling and past any sane crawl budget. Do not
  * "fix" the inconsistency by fanning climbs out.
+ *
+ * (The item figure is measured, one row per climb. The epic's 128,655 counted
+ * tier-2 (climb, angle) PAIRS; this shard emits one URL per climb.)
  *
  * Dropping the sitemap-side hreflang costs nothing: `createPageMetadata` already
  * emits `alternates.languages` for en-US/es/fr/de/x-default on both climb-view

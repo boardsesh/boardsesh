@@ -322,7 +322,7 @@ describe('climb-view canonical parity (A1 landed in W-15)', () => {
 
 describe('sitemap ↔ canonical parity (W-23)', () => {
   /**
-   * The own-goal the climb shards exist to avoid: submitting ~128k URLs that
+   * The own-goal the climb shards exist to avoid: submitting ~85k URLs that
    * differ from the pages' own canonicals, which Google drops wholesale as
    * "alternate page with proper canonical". `toBe` against the literal string
    * the page emits — not a regex, not `toContain`.

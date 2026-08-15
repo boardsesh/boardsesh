@@ -494,7 +494,7 @@ export type SitemapIndexResult = { xml: string; degradedShards: SitemapIndexShar
  * unexpectedly empty or blows the URL budget is logged loudly and its `<sitemap>`
  * entry omitted, and the index still answers 200 with whatever built — under a
  * one-minute cache window, so the omission self-heals. One slow builder taking
- * the other four shards down with it is #4476, and a partial sitemap is strictly
+ * every other ready shard down with it is #4476, and a partial sitemap is strictly
  * better than no sitemap when the shards Google is told about are each still
  * served fail-closed at their own URL.
  *

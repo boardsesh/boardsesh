@@ -49,7 +49,7 @@ function row(overrides: Partial<ClimbSitemapRow> = {}): ClimbSitemapRow {
 describe('climbRowsToItems', () => {
   it('emits the byte-identical string the climb page claims as its canonical', () => {
     // THE assertion of this PR. Not a regex, not toContain: the sitemap URL and
-    // the page's own canonical are the same call, or 128k URLs get dropped as
+    // the page's own canonical are the same call, or every submitted URL gets dropped as
     // "alternate page with proper canonical".
     const { items, dropped } = climbRowsToItems([row()], KILTER_GROUP);
 
@@ -142,7 +142,7 @@ describe('resolveClimbSitemapGroups', () => {
     expect(groups[0].sizeId).toBe(10);
   });
 
-  it('breaks ties deterministically so 128k URLs do not churn between crawls', () => {
+  it('breaks ties deterministically so the whole shard does not churn between crawls', () => {
     const tied = [
       config({ sizeId: 27, boardCount: 5, climbCount: 100 }),
       config({ sizeId: 10, boardCount: 5, climbCount: 100 }),
