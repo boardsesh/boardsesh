@@ -1555,19 +1555,32 @@ describe('board-presence resolvers', () => {
       }
     });
 
-    it('keeps the serial-cluster lock lookup eligible for the active-serial index', async () => {
+    it('keeps the serial-cluster lock lookup eligible for the active-row partial indexes', async () => {
       const sharedBoardId = await createSecondUserSharedBoard();
       const planRows = await db.transaction(async (transaction) => {
         // Tiny test tables naturally favor a sequential scan. Disabling it
         // makes this a predicate-eligibility assertion: PostgreSQL can only use
-        // the partial index when the production query explicitly preserves its
-        // nonblank + active-row conditions.
+        // a partial index when the production query explicitly preserves that
+        // index's conditions.
         await transaction.execute(sql`SET LOCAL enable_seqscan = off`);
         return transaction.execute(sql`EXPLAIN (FORMAT TEXT, COSTS OFF) ${buildTickBoardLockQuery(sharedBoardId)}`);
       });
       const plan = planRows.map((row) => String((row as { 'QUERY PLAN': string })['QUERY PLAN'])).join('\n');
 
-      expect(plan).toContain('user_boards_serial_idx');
+      // Deliberately NOT pinned to one index name. #4166 added
+      // user_boards_owner_config_idx, and on tables this small the planner picks
+      // between it and user_boards_serial_idx on costs that move with whatever
+      // rows the rest of the suite has inserted — naming one made this flaky.
+      // Every candidate is partial on `deleted_at IS NULL`, so the cluster join
+      // can only reach any of them while the query keeps that condition. Drop it
+      // and the scan falls back to the primary key and this goes red.
+      //
+      // The serial nonblank conditions deliberately have no assertion of their
+      // own: the same two strings appear in the plan for the `requested_board`
+      // side of the join, so a `toContain` on them passes even with the
+      // candidate side's copy removed — it would read like coverage and prove
+      // nothing.
+      expect(plan).toMatch(/Index (Only )?Scan using user_boards_(serial_idx|owner_config_idx|unique_owner_serial)/);
     });
 
     it('pushes a BoardStatsUpdated event that excludes attempts, resolves grades, and equals the cold fetch', async () => {
