@@ -2,6 +2,15 @@
 
 Migration from Neon PostgreSQL to Railway PostgreSQL with a homelab read replica.
 
+> [!WARNING]
+> This document records the completed Neon-to-Railway move. It is not the
+> PostgreSQL 16-to-18 procedure. For the current one-way upgrade, fencing,
+> validation, rollback boundary, and PG18 volume contract, use
+> [PostgreSQL 18 migration and portability runbook](postgres-18-migration.md).
+> In particular, never follow the historical rollback or manual homelab
+> reinitialization steps without reconciling them with that runbook and the
+> Ansible-managed deployment.
+
 ---
 
 ## 1. Why We Migrated
@@ -96,9 +105,19 @@ Load schema only before creating the subscription. The subscriber tables must ex
 ```bash
 pg_dump --schema-only --no-owner --no-acl --no-publications --no-subscriptions --format=custom \
   --file boardsesh-schema.dump "$NEON_DATABASE_URL"
+pg_restore --list boardsesh-schema.dump >boardsesh-schema.list
+awk '$0 !~ / EXTENSION - / && $0 !~ / COMMENT - EXTENSION / { print }' \
+  boardsesh-schema.list >boardsesh-schema.filtered.list
 pg_restore --schema-only --no-owner --no-acl \
+  --role "$TARGET_OWNER_ROLE" \
+  --use-list boardsesh-schema.filtered.list \
   --dbname "$RAILWAY_DATABASE_URL" boardsesh-schema.dump
 ```
+
+`TARGET_OWNER_ROLE` must be a pre-created `NOLOGIN`, non-superuser application
+owner with `CREATE` on the target database and ownership of pre-existing app
+schemas such as `public`. Reapply and audit runtime grants/default privileges
+separately; `--no-acl` intentionally does not preserve them.
 
 Create a subscription pointing back at Neon. Use the Neon replication role connection string for `CONNECTION`:
 
@@ -117,6 +136,8 @@ The repo includes a guarded helper for the setup and verification flow:
 export NEON_DATABASE_URL='postgresql://...'
 export RAILWAY_DATABASE_URL='postgresql://...'
 export NEON_REPLICATION_DATABASE_URL='postgresql://replication-user:...'
+export TARGET_OWNER_ROLE='boardsesh_owner'
+export TARGET_SUBSCRIBER_ROLE='boardsesh_pg18_subscriber'
 
 scripts/neon-to-railway-replication.sh setup
 scripts/neon-to-railway-replication.sh status
@@ -158,27 +179,20 @@ Lag should be under a few seconds for our write volume.
 
 Logical replication does not replicate sequences. Before cutover, sync sequence values from Neon to Railway so new inserts get the correct IDs:
 
-```sql
--- Generate this on Neon:
-SELECT format(
-  'SELECT setval(%L, %s, %L);',
-  quote_ident(s.sequence_schema) || '.' || quote_ident(s.sequence_name),
-  ps.last_value,
-  ps.is_called
-)
-FROM information_schema.sequences s
-JOIN pg_sequences ps ON ps.schemaname = s.sequence_schema AND ps.sequencename = s.sequence_name
-WHERE s.sequence_schema NOT IN ('pg_catalog', 'information_schema');
-```
+`pg_sequences` does not expose `is_called`. The helper discovers sequences
+owned by application-table columns, queries each sequence relation for its
+actual `last_value`/`is_called` pair, applies all values in one target
+transaction, and compares the resulting target state. A brand-new sequence has
+`last_value = 1, is_called = false`; changing that flag skips its first ID.
 
-`is_called` matters: a brand-new sequence has `last_value = 1, is_called = false`, meaning the next `nextval()` returns 1. Hardcoding `true` on a never-used sequence would skip its first ID.
-
-Run the output on Railway.
-
-The helper script can do this directly:
+The helper refuses to run until every named writer role is `NOLOGIN`, no session
+for those roles remains, every subscription table is ready, and the subscriber
+has reached a source flush LSN:
 
 ```bash
-scripts/neon-to-railway-replication.sh sync-sequences
+WRITES_FENCED=true \
+FENCED_WRITER_ROLES='boardsesh_runtime boardsesh_sync boardsesh_migrator' \
+  scripts/neon-to-railway-replication.sh sync-sequences
 ```
 
 ## 5. Cutover Steps
@@ -187,16 +201,20 @@ scripts/neon-to-railway-replication.sh sync-sequences
    - `Railway table sync states` shows `srsubstate = 'r'` (ready) for **all** rows. Anything else (`i` initialize, `d` data copy, `s` synchronizing) means initial sync is still running — do not proceed.
    - `replication_lag` on Railway is well under 1 second.
    - `Row count comparison` shows matching counts on the listed `CHECK_TABLES` (`boardsesh_ticks`, `board_user_syncs`, `comments`, `votes`, `feed_items`, `users`).
-2. Sync sequences from Neon → Railway (section 4.5).
-3. Set `DATABASE_URL` in Vercel project settings to the Railway app/runtime connection string.
-4. Update the Railway backend service `DATABASE_URL` env var to the Railway app/runtime connection string.
-5. Deploy web + backend.
-6. On Railway, drop the subscription (it's no longer needed):
+2. Stop every application, worker, cron, sync process, and migration job that can
+   write to Neon. Revoke login from every writer role, terminate old sessions,
+   and prove the source rejects a write using each runtime credential.
+3. Sync sequences from Neon → Railway with the guarded command in section 4.5.
+4. Run the full source/target data verifier described in the PG18 runbook.
+5. Set `DATABASE_URL` in Vercel project settings to the Railway app/runtime connection string.
+6. Update the Railway backend service `DATABASE_URL` env var to the Railway app/runtime connection string.
+7. Deploy web + backend. The first successful Railway write is the forward-only rollback boundary.
+8. On Railway, drop the subscription only after the observation window:
    ```sql
    ALTER SUBSCRIPTION boardsesh_neon_sub DISABLE;
    DROP SUBSCRIPTION boardsesh_neon_sub;
    ```
-7. On Neon, drop the publication:
+9. On Neon, drop the publication:
    ```sql
    DROP PUBLICATION boardsesh_migration;
    ```
@@ -204,19 +222,25 @@ scripts/neon-to-railway-replication.sh sync-sequences
    ```bash
    scripts/neon-to-railway-replication.sh teardown
    ```
-8. Monitor error rates and query latency for 24-48 hours. Specifically watch:
-   - **Sentry** for HTTP 5xx, GraphQL resolver errors, and `prepared statement "X" already exists` (the canary signal that `prepare:false` regressed somewhere).
-     - **TODO before cutover:** record the Sentry project URL / saved-search filter here.
-   - **Vercel Functions** logs for elevated p95 latency on `/api/og/*`, `/api/internal/*`, and the climb-search SSR pages.
-     - **TODO before cutover:** record the Vercel project / function-filter URL here.
-   - **Railway PostgreSQL metrics** — connection count, CPU, query throughput, pgbouncer wait time.
-     - **TODO before cutover:** record the Railway metrics dashboard URL here.
+10. Monitor error rates and query latency for 24-48 hours. Specifically watch:
+
+- **Sentry** for HTTP 5xx, GraphQL resolver errors, and `prepared statement "X" already exists` (the canary signal that `prepare:false` regressed somewhere).
+  - **TODO before cutover:** record the Sentry project URL / saved-search filter here.
+- **Vercel Functions** logs for elevated p95 latency on `/api/og/*`, `/api/internal/*`, and the climb-search SSR pages.
+  - **TODO before cutover:** record the Vercel project / function-filter URL here.
+- **Railway PostgreSQL metrics** — connection count, CPU, query throughput, pgbouncer wait time.
+  - **TODO before cutover:** record the Railway metrics dashboard URL here.
 
 ## 6. Rollback Procedure
 
 - Keep Neon credentials saved. Do not delete the Neon project for at least 30 days after cutover.
-- **Before dropping the subscription** (step 5.6): rollback is instant — just flip `DATABASE_URL` back to Neon and redeploy. Neon still has all the data since it was the primary.
-- **After dropping the subscription**: flip `DATABASE_URL` back to Neon, but any writes that happened on Railway after cutover won't be on Neon. For a quick rollback, set up reverse logical replication (Railway → Neon) before deleting the Neon project. For the volume of writes we get, a few hours of lost data is recoverable from Aurora sync re-import.
+- **Before the first Railway write:** keep Railway fenced, confirm Neon is still the
+  sole writable database, and then a connection-string failback remains possible.
+- **After the first Railway write:** do not point writers back at Neon and do not
+  improvise reverse logical replication. PostgreSQL major-version logical
+  replication is not a bidirectional failback protocol. Fix forward on Railway,
+  or restore/reseed a PG18 target from the authoritative PG18 data. Never allow
+  both databases to accept writes.
 
 ### 6.1 Pin Neon as Read-Only After Cutover
 
@@ -250,19 +274,12 @@ psql "$NEON_DATABASE_URL" -c "SELECT pg_drop_replication_slot('boardsesh_neon_su
 
 ### 7.1 PostgreSQL Installation
 
-Install PostgreSQL **at the same major version** Railway is running. Physical streaming replication via `pg_basebackup` requires identical major versions on primary and standby — a 17 → 18 mismatch fails on startup. Whenever Railway upgrades the major version, the homelab replica must be re-baselined at the new version (drop, reinstall the matching `postgresql-N` packages, redo section 7.4).
-
-```bash
-sudo apt install postgresql-17 postgresql-17-postgis-3
-```
-
-Then in `psql`:
-
-```sql
-CREATE EXTENSION IF NOT EXISTS postgis;
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-```
+Physical streaming replication requires the same major version on both sides.
+Provision the standby through the `blackheathdc-ansible` repository, using the exact
+attested PG18.4/PostGIS artifact digest selected for Railway and a fresh PG18
+parent volume. The role must inspect `PG_VERSION` and the image metadata before
+start and fail closed on an existing PG16/PG17 cluster. A major-version change
+requires a new base backup; it is never an in-place mount of the old volume.
 
 ### 7.2 Replication User on Railway
 
@@ -288,27 +305,18 @@ Pick one:
 
 ### 7.4 Initial Base Backup
 
-Stop PostgreSQL on the homelab, clear the data directory, and take a base backup:
-
-```bash
-sudo systemctl stop postgresql
-sudo rm -rf /var/lib/postgresql/17/main/*
-
-pg_basebackup -h railway-host -p 5432 -U replicator \
-  -D /var/lib/postgresql/17/main -Fp -Xs -P -R
-
-sudo chown -R postgres:postgres /var/lib/postgresql/17/main
-sudo systemctl start postgresql
-```
-
-The `-R` flag writes `standby.signal` and sets `primary_conninfo` in `postgresql.auto.conf`.
+The Ansible role must create a new, versioned volume, take `pg_basebackup` with
+WAL streaming and `-R`, validate the backup manifest, then start the standby.
+Do not manually clear a shared data directory. Keep the old volume detached and
+recoverable until the new standby has passed replay, restart, and restore
+rehearsals. `-R` writes `standby.signal` and the replication connection settings.
 
 ### 7.5 Streaming Replication Config
 
 Verify or adjust the following in `postgresql.conf` on the homelab:
 
 ```
-primary_conninfo = 'host=railway-host port=5432 user=replicator password=xxx sslmode=require'
+primary_conninfo = 'host=railway-host port=5432 user=replicator sslmode=verify-full passfile=/run/credentials/postgres-replication.pgpass'
 primary_slot_name = 'homelab_replica'
 hot_standby = on
 ```
@@ -326,6 +334,14 @@ SELECT now() - pg_last_xact_replay_timestamp() AS replication_lag;
 ```
 
 ### 7.6 Application Read Routing
+
+> [!CAUTION]
+> Do not set `READ_REPLICA_URL` to the homelab standby for the current DR
+> rollout. The application seam has no health-aware fallback to the primary, so
+> a residential/tunnel outage would turn a healthy Railway primary into failed
+> user reads. Keep it unset and treat the homelab as disaster recovery first.
+> The only planned standby workload is the separately fenced offline snapshot
+> exporter after the shadow/correctness gates in `docs/board-snapshots.md` pass.
 
 The application has a `READ_REPLICA_URL` seam wired through `packages/db/src/client/postgres.ts`:
 
@@ -360,13 +376,15 @@ When adding new read paths, default to `getReadDb()` / `dbRead` for stale-tolera
 
 If Railway goes down:
 
-1. Promote the homelab replica:
-   ```bash
-   pg_ctl promote -D /var/lib/postgresql/17/main
-   ```
-2. Update `DATABASE_URL` in Vercel and the backend service to point at the homelab.
-3. Accept higher latency temporarily (AU to global users).
-4. Once Railway recovers, re-establish replication in the opposite direction or re-baseline from the homelab.
+1. Fence every Railway writer and prove the old primary cannot accept writes. If
+   Railway cannot be fenced, do not promote the homelab standby writable.
+2. Confirm replay lag, the last received/replayed LSN, backup freshness, and the
+   complete writer inventory in the incident checklist.
+3. Promote through the Ansible/incident procedure, then update all application,
+   worker, cron, and migration credentials together.
+4. Treat the homelab database as the new authority after its first write. Rebuild
+   Railway as a standby from it; do not reconnect the old Railway primary as a
+   writer or attempt ad hoc reverse replication.
 
 ## 8. Verification Checklist
 

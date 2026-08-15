@@ -8,20 +8,26 @@
 # Build context: packages/db/ (not packages/db/docker/) so we can access
 # both docker/ scripts and drizzle/ migrations.
 #
-# Key trick: PGDATA is set to /var/lib/postgresql/pgdata (not the default
-# /var/lib/postgresql/data) because the official postgres image declares a
-# VOLUME on the default path, which discards data written during build.
+# PostgreSQL 18 declares /var/lib/postgresql as its VOLUME and defaults PGDATA
+# to /var/lib/postgresql/18/docker. The builder therefore creates the seed
+# cluster outside the volume. The final image copies that immutable seed into
+# PGDATA on the first start of a fresh parent volume.
 # =============================================================================
 
 # ---------------------------------------------------------------------------
 # Stage 1: postgres + PostGIS base (same as Dockerfile.postgres)
 # ---------------------------------------------------------------------------
-FROM postgres:17 AS postgres-postgis
+FROM postgres:18.4-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382 AS postgres-postgis
+
+ARG POSTGIS_PACKAGE_VERSION=3.6.4+dfsg-2.pgdg12+1
+ARG HYPOPG_PACKAGE_VERSION=1.4.3-1.pgdg12+1
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      postgresql-17-postgis-3 \
-      postgresql-17-hypopg && \
+      "postgresql-18-postgis-3=${POSTGIS_PACKAGE_VERSION}" \
+      "postgresql-18-postgis-3-scripts=${POSTGIS_PACKAGE_VERSION}" \
+      "postgresql-18-hypopg=${HYPOPG_PACKAGE_VERSION}" && \
+    test "$(postgres --version)" = 'postgres (PostgreSQL) 18.4 (Debian 18.4-1.pgdg12+1)' && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -45,8 +51,9 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Custom PGDATA to avoid the VOLUME at /var/lib/postgresql/data
-ENV PGDATA=/var/lib/postgresql/pgdata
+# Build outside the parent image's /var/lib/postgresql VOLUME. Data written
+# below a declared volume during docker build is not a portable image layer.
+ENV PGDATA=/opt/boardsesh/dev-db-seed/18/docker
 
 # Build context is the repo root (see dev-db-docker.yml) so we can also reach
 # packages/shared-schema below. All paths here are repo-root-relative.
@@ -301,6 +308,7 @@ RUN set -e && \
     # ── Stop PostgreSQL ──────────────────────────────────────────────── \
     echo ">>> Stopping PostgreSQL..." && \
     gosu postgres pg_ctl -D "$PGDATA" stop -m fast && \
+    touch /opt/boardsesh/dev-db-seed.complete && \
     \
     # ── Clean up temporary files ─────────────────────────────────────── \
     rm -rf /db/tmp /tmp/*.apk /tmp/com.auroraclimbing.*.apk /tmp/moonboard /drizzle /app && \
@@ -311,7 +319,19 @@ RUN set -e && \
 # ---------------------------------------------------------------------------
 FROM postgres-postgis
 
-ENV PGDATA=/var/lib/postgresql/pgdata
+ENV PGDATA=/var/lib/postgresql/18/docker \
+    BOARDSESH_DEV_DB_SEED=/usr/local/share/boardsesh-dev-db/18/docker \
+    BOARDSESH_DEV_DB_SEED_MARKER=/usr/local/share/boardsesh-dev-db/SEED_COMPLETE
 
 COPY --from=builder --chown=postgres:postgres \
-     /var/lib/postgresql/pgdata /var/lib/postgresql/pgdata
+     /opt/boardsesh/dev-db-seed/18/docker /usr/local/share/boardsesh-dev-db/18/docker
+COPY --from=builder /opt/boardsesh/dev-db-seed.complete /usr/local/share/boardsesh-dev-db/SEED_COMPLETE
+
+COPY packages/db/docker/dev-db-entrypoint.sh /usr/local/bin/boardsesh-dev-db-entrypoint
+
+LABEL org.boardsesh.postgresql.version="18.4" \
+      org.boardsesh.postgis.version="3.6.4" \
+      org.boardsesh.postgresql.base-digest="sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382"
+
+ENTRYPOINT ["boardsesh-dev-db-entrypoint"]
+CMD ["postgres"]

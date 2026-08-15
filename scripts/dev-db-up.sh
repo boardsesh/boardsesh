@@ -14,7 +14,8 @@
 
 set -e
 
-HBA_FILE="/var/lib/postgresql/pgdata/pg_hba.conf"
+PGDATA_DIR="/var/lib/postgresql/18/docker"
+HBA_FILE="$PGDATA_DIR/pg_hba.conf"
 REPO_ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 DRIZZLE_DIR="$REPO_ROOT/packages/db/drizzle"
 GENERATED_ENV_DIR="$REPO_ROOT/.boardsesh"
@@ -92,7 +93,7 @@ ensure_postgres_network_access() {
   fi
 
   if [ "$hba_updated" = true ]; then
-    docker exec -u postgres "$PG_CONTAINER" pg_ctl reload -D /var/lib/postgresql/pgdata
+    docker exec -u postgres "$PG_CONTAINER" pg_ctl reload -D "$PGDATA_DIR"
     echo "  pg_hba.conf updated and reloaded."
   fi
 }
@@ -126,6 +127,13 @@ sync_drizzle_migration_tracker() {
 }
 
 prepare_docker_postgres() {
+  server_major=$(docker exec -u postgres "$PG_CONTAINER" psql -U postgres -d main -t -A -c \
+    "SELECT current_setting('server_version_num')::integer / 10000;")
+  if [ "$server_major" -ne 18 ]; then
+    echo "ERROR: The running Boardsesh dev database is PostgreSQL $server_major; PostgreSQL 18 is required."
+    echo "       Stop the old stack and rerun vp run db:up. The pre-PG18 volume will be retained."
+    exit 1
+  fi
   ensure_postgres_network_access
   ensure_postgres_password
   sync_drizzle_migration_tracker
@@ -249,11 +257,12 @@ PG_CONTAINER=$(docker compose ps -q postgres)
 
 echo "Waiting for postgres to be healthy..."
 attempts=0
-max_attempts=30
+max_attempts=120
 until docker exec "$PG_CONTAINER" pg_isready -U postgres -q 2>/dev/null; do
   attempts=$((attempts + 1))
   if [ "$attempts" -ge "$max_attempts" ]; then
     echo "ERROR: Postgres did not become ready within ${max_attempts}s"
+    docker compose logs --no-color postgres >&2 || true
     exit 1
   fi
   sleep 1

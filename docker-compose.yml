@@ -1,16 +1,17 @@
 services:
   postgres:
-    image: ghcr.io/boardsesh/boardsesh-dev-db:latest
+    image: ${BOARDSESH_DEV_DB_IMAGE:-ghcr.io/boardsesh/boardsesh-dev-db:pg18}
     shm_size: '256mb'
     command: postgres -c listen_addresses='*' -c max_connections=300 -c log_min_messages=warning
     volumes:
-      - db_data:/var/lib/postgresql/pgdata
+      - db_data_pg18:/var/lib/postgresql
     ports:
       - '5432:5432'
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
       POSTGRES_DB: main
+      PGDATA: /var/lib/postgresql/18/docker
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U postgres']
       interval: 10s
@@ -28,4 +29,4 @@ services:
       retries: 5
 
 volumes:
-  db_data:
+  db_data_pg18:

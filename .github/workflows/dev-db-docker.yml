@@ -13,6 +13,33 @@ on:
       # import-aurora-board-unified) — rebuild when it changes.
       - 'packages/sync-runtime/**'
       - '.github/workflows/dev-db-docker.yml'
+      - 'docker-compose.yml'
+      - 'scripts/dev-db-image-smoke.sh'
+      - 'scripts/postgres18-image-smoke.sh'
+      - 'scripts/postgres-migration-audit.sh'
+      - 'scripts/postgres-migration-verify-data.sh'
+      - 'scripts/postgres-owned-sequence-setvals.sql'
+      - 'scripts/postgres-table-digests.sql'
+      - 'scripts/neon-to-railway-replication.sh'
+      - 'vite.config.ts'
+  pull_request:
+    paths:
+      - 'packages/db/docker/**'
+      - 'packages/db/scripts/**'
+      - 'packages/db/src/schema/**'
+      - 'packages/db/drizzle/**'
+      - 'packages/db/package.json'
+      - 'packages/sync-runtime/**'
+      - '.github/workflows/dev-db-docker.yml'
+      - 'docker-compose.yml'
+      - 'scripts/dev-db-image-smoke.sh'
+      - 'scripts/postgres18-image-smoke.sh'
+      - 'scripts/postgres-migration-audit.sh'
+      - 'scripts/postgres-migration-verify-data.sh'
+      - 'scripts/postgres-owned-sequence-setvals.sql'
+      - 'scripts/postgres-table-digests.sql'
+      - 'scripts/neon-to-railway-replication.sh'
+      - 'vite.config.ts'
   workflow_dispatch:
 
 env:
@@ -33,6 +60,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+
+      - uses: voidzero-dev/setup-vp@v1
+
+      - name: Validate PostgreSQL 18 entrypoint contract
+        run: vp run test:postgres18-contract
+
+      - name: Smoke-test PostgreSQL 18 image
+        run: vp run test:postgres18-image
 
       - name: Log in to Container Registry
         uses: docker/login-action@v4
@@ -77,6 +112,7 @@ jobs:
           push-to-registry: true
 
   build-dev-db:
+    needs: build-postgres-postgis
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -90,6 +126,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+
+      - uses: voidzero-dev/setup-vp@v1
 
       - name: Log in to Container Registry
         uses: docker/login-action@v4
@@ -111,6 +149,7 @@ jobs:
             type=ref,event=pr
             type=sha
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=pg18,enable={{is_default_branch}}
 
       - name: Build and push Docker image
         id: build
@@ -126,10 +165,16 @@ jobs:
           # (Docker Desktop runs it via Rosetta 2) or build locally (native, no QEMU).
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=dev-db
           cache-to: type=gha,mode=max,scope=dev-db
+
+      - name: Smoke-test final seeded dev database image
+        env:
+          IMAGE_REFERENCE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+        run: vp run test:postgres18-dev-db-image -- "$IMAGE_REFERENCE"
 
       - name: Generate artifact attestation
         if: ${{ github.event_name != 'pull_request' }}

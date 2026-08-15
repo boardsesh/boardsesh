@@ -2,13 +2,14 @@ version: '3.8'
 
 services:
   db:
-    image: postgres:15
+    image: postgres:18.4-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382
     ports:
       - '5433:5432'
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: boardsesh_backend_test
+      PGDATA: /var/lib/postgresql/18/docker
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U postgres']
       interval: 5s

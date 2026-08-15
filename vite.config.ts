@@ -230,12 +230,25 @@ export default defineConfig({
         command: 'bun run --filter=@boardsesh/db test',
       },
       // The one packages/db node:test file CI runs (from ci.yml's db-migrations
-      // job, against a stock postgres:17 service). It builds its own throwaway
+      // job, against a stock postgres:18.4 service). It builds its own throwaway
       // migrations folder and database, so it needs no board data and no db:up.
       // Locally it skips unless DATABASE_URL/MIGRATION_JOURNAL_DB_URL points at
       // a local Postgres.
       'test:db:migration-journal': {
         command: 'bun run --filter=@boardsesh/db test:migration-journal',
+        cache: false,
+      },
+      'test:postgres18-contract': {
+        command:
+          'bash packages/db/docker/dev-db-entrypoint.test.sh && bash -n scripts/postgres-migration-audit.sh scripts/postgres-migration-verify-data.sh scripts/neon-to-railway-replication.sh',
+        cache: false,
+      },
+      'test:postgres18-image': {
+        command: 'bash scripts/postgres18-image-smoke.sh',
+        cache: false,
+      },
+      'test:postgres18-dev-db-image': {
+        command: 'bash scripts/dev-db-image-smoke.sh',
         cache: false,
       },
       'locations:aurora': {

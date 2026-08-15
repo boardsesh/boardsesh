@@ -1,15 +1,16 @@
 services:
   postgres:
-    image: postgres:17
+    image: postgres:18.4-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382
     command: '-d 1'
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - db_data_pg18:/var/lib/postgresql
     ports:
       - '5432:5432'
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
       POSTGRES_DB: main
+      PGDATA: /var/lib/postgresql/18/docker
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U postgres']
       interval: 10s
@@ -50,4 +51,4 @@ services:
         condition: service_healthy
     command: /db/setup-development-db.sh
 volumes:
-  db_data:
+  db_data_pg18:
