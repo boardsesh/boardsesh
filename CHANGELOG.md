@@ -8,12 +8,16 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Popular climbs that resolve to a stable board setup start showing up in Google under the same link the page itself uses. ([#4483](https://github.com/boardsesh/boardsesh/pull/4483))
+  Search results say something useful: setter, grade, stars and the board a climb lives on, instead of a bare title.
+  Star ratings only show where the number behind them is honest — a climb whose ratings haven't been converted to the 5-star scale ships without one rather than with a wrong one.
 - Boardsesh pages are easier to find from search — every board setup and public playlist now tells search engines where to look. Gym and setter pages are wired up and land next. ([#4464](https://github.com/boardsesh/boardsesh/pull/4464))
 - Expo web now starts dark and uses the roomy tablet layout on desktop. ([#4471](https://github.com/boardsesh/boardsesh/pull/4471))
   Open a climb without losing the full action bar, queue, logbook, beta, community, or similar climbs.
 
 ### Improved
 
+- Settings on the web now keeps what only the web can do — your ESP32 board controller, and setting a password if you signed in with Google or Apple. Your profile, connected apps and account deletion live in the app, and the page links you straight there. ([#4491](https://github.com/boardsesh/boardsesh/pull/4491))
 - Notifications live in the app now — who followed you, who commented, whose proposal landed. The old web page hands you straight over. ([#4490](https://github.com/boardsesh/boardsesh/pull/4490))
 - Climb and board pages now stay up when the database is slow, and stop turning a bad moment into a "page not found". ([#4481](https://github.com/boardsesh/boardsesh/pull/4481))
   MoonBoard board pages load from cache instead of running a fresh search every time.

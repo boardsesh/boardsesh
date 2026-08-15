@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-08-15T21:13:12.164Z",
+  "generatedAt": "2026-08-15T22:37:36.923Z",
   "entries": [
+    {
+      "prNumber": 4483,
+      "category": "new",
+      "title": "Popular climbs that resolve to a stable board setup start showing up in Google under the same link the page itself uses.",
+      "mergedAt": "2026-08-15T22:36:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4483",
+      "body": "Search results say something useful: setter, grade, stars and the board a climb lives on, instead of a bare title.\nStar ratings only show where the number behind them is honest — a climb whose ratings haven't been converted to the 5-star scale ships without one rather than with a wrong one."
+    },
+    {
+      "prNumber": 4491,
+      "category": "improved",
+      "title": "Settings on the web now keeps what only the web can do — your ESP32 board controller, and setting a password if you signed in with Google or Apple. Your profile, connected apps and account deletion live in the app, and the page links you straight there.",
+      "mergedAt": "2026-08-15T22:36:32Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4491"
+    },
     {
       "prNumber": 4490,
       "category": "improved",
