@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { renderToString } from 'react-dom/server';
 
 /**
  * Reposition invariant — A1 (canonical consolidation), LANDED in W-15 (#4369).
@@ -149,11 +150,23 @@ vi.mock('@/app/components/board-renderer/util', () => ({
   buildOverlayUrl: vi.fn(() => '/api/internal/board-render'),
 }));
 vi.mock('@/app/lib/warm-overlay-cache', () => ({ scheduleOverlayWarming: vi.fn() }));
-vi.mock('@/app/components/climb-front-door/climb-front-door', () => ({ default: () => null }));
+// Recorded rather than discarded: the `noindex` prop is what stops the
+// CreativeWork JSON-LD from naming the indexable twin on a hidden `/b` page, and
+// the prop is the only place that decision is made.
+const frontDoorProps = vi.fn();
+vi.mock('@/app/components/climb-front-door/climb-front-door', () => ({
+  default: (props: Record<string, unknown>) => {
+    frontDoorProps(props);
+    return null;
+  },
+}));
 vi.mock('@/app/components/climb-front-door/static-list-front-door', () => ({ default: () => null }));
 
 // `@/app/lib/url-utils` is deliberately left REAL: the canonical every page
 // emits must reflect the true helper output, which is the whole point of A1.
+
+const { climbRowsToItems } = await import('@/app/lib/seo/sitemap/climb-entries');
+const { expandDefaultLocaleOnly } = await import('@/app/lib/seo/sitemap/entries');
 
 const legacyViewPage =
   await import('@/app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]/page');
@@ -202,6 +215,19 @@ function legacyListMetadata(searchParams: Record<string, string> = {}) {
     }),
     searchParams: Promise.resolve(searchParams as never),
   });
+}
+
+/** Renders the `/b` view page body so the props it hands the front door are observable. */
+async function renderSlugViewPage() {
+  renderToString(
+    await slugViewPage.default({
+      params: Promise.resolve({
+        board_slug: 'kilter-original-12x12',
+        angle: String(boardConfig.angle),
+        climb_uuid: CLIMB_UUID,
+      }),
+    } as never),
+  );
 }
 
 function slugListMetadata(searchParams: Record<string, string> = {}) {
@@ -267,6 +293,66 @@ describe('climb-view canonical parity (A1 landed in W-15)', () => {
 
     expect(metadata.robots).toEqual({ index: false, follow: true });
     expect(metadata.alternates).toBeUndefined();
+  });
+
+  it('tells the front door to withhold the CreativeWork url on a hidden /b board', async () => {
+    // `generateMetadata` withholding `alternates` is only half the guard: the
+    // page body renders the same canonical again as `CreativeWork.url`, which is
+    // the field Google actually uses for page association. Both halves have to
+    // agree, so the body gets the same `shouldNoindex` decision.
+    for (const hidden of [{ isUnlisted: true }, { isPublic: false }]) {
+      frontDoorProps.mockClear();
+      resolveBoardBySlug.mockResolvedValueOnce({ ...resolvedBoard, ...hidden });
+
+      await renderSlugViewPage();
+
+      expect(frontDoorProps.mock.calls[0]?.[0]).toMatchObject({ noindex: true });
+    }
+  });
+
+  it('still emits the CreativeWork url on a public /b board', async () => {
+    // Non-vacuous: the gate must be the hidden-board condition, not "always on".
+    frontDoorProps.mockClear();
+
+    await renderSlugViewPage();
+
+    expect(frontDoorProps.mock.calls[0]?.[0]).toMatchObject({ noindex: false });
+  });
+});
+
+describe('sitemap ↔ canonical parity (W-23)', () => {
+  /**
+   * The own-goal the climb shards exist to avoid: submitting ~85k URLs that
+   * differ from the pages' own canonicals, which Google drops wholesale as
+   * "alternate page with proper canonical". `toBe` against the literal string
+   * the page emits — not a regex, not `toContain`.
+   */
+  const sitemapPath = (sizeId: number) =>
+    climbRowsToItems(
+      [{ uuid: CLIMB_UUID, name: 'My Test Climb', angle: boardConfig.angle, updatedAt: new Date('2026-05-04') }],
+      { boardType: 'kilter', layoutId: boardConfig.layoutId, sizeId, setIds: boardConfig.setIds },
+    ).items[0].path;
+
+  it('the sitemap URL is byte-identical to the canonical both trees emit', async () => {
+    const [legacy, slug] = await Promise.all([legacyViewMetadata(), slugViewMetadata()]);
+
+    expect(sitemapPath(boardConfig.sizeId)).toBe(canonicalPath(legacy.alternates?.canonical));
+    expect(sitemapPath(boardConfig.sizeId)).toBe(canonicalPath(slug.alternates?.canonical));
+  });
+
+  it('the emitted <loc> is the absolute form of that same canonical', () => {
+    const [entry] = expandDefaultLocaleOnly([{ path: sitemapPath(boardConfig.sizeId) }]);
+
+    expect(entry.loc).toBe(`https://www.boardsesh.com${sitemapPath(boardConfig.sizeId)}`);
+    expect(entry.alternates).toBeUndefined();
+  });
+
+  it('follows both trees onto the shadowed size (Kilter layout 1 size 27)', async () => {
+    boardConfig.sizeId = 27;
+    const legacy = await legacyViewMetadata();
+
+    expect(sitemapPath(27)).toBe(canonicalPath(legacy.alternates?.canonical));
+    expect(sitemapPath(27)).not.toBe(sitemapPath(10));
   });
 });
 

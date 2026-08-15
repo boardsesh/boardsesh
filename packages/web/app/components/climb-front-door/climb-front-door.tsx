@@ -14,6 +14,7 @@ import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { BetaLink } from '@/app/lib/beta-video-url';
 import type { BoardDetails, BoardName, Climb } from '@/app/lib/types';
 import AngleCrossLinks from './angle-cross-links';
+import ClimbCreativeWorkJsonLd from './climb-creative-work-json-ld';
 import ClimbFacts from './climb-facts';
 import ClimbHandoffCta, { type HandoffTree } from './climb-handoff-cta';
 import FrontDoorBreadcrumb from './front-door-breadcrumb';
@@ -33,6 +34,19 @@ type ClimbFrontDoorProps = {
    */
   handoffPath: string;
   tree: HandoffTree;
+  /**
+   * True when the page is asking Google not to index it — today only `/b/{slug}`
+   * on an unlisted or non-public board.
+   *
+   * It gates the `CreativeWork` payload, and the reason is the same one that
+   * makes that page pass no `path` to `createPageMetadata`: a noindex URL that
+   * names an indexable twin is a conflicting signal Google can resolve by
+   * propagating the noindex, deindexing a public config-tuple climb page because
+   * one private board happens to share its configuration. `url` is the field
+   * Google uses for page association, so emitting it here would walk straight
+   * around the guard the metadata puts up.
+   */
+  noindex?: boolean;
 };
 
 const containerSx = {
@@ -73,6 +87,7 @@ export default async function ClimbFrontDoor({
   betaLinks,
   handoffPath,
   tree,
+  noindex = false,
 }: ClimbFrontDoorProps) {
   const { t, locale } = await getServerTranslation('climbs');
 
@@ -84,6 +99,23 @@ export default async function ClimbFrontDoor({
   const overlayUrl = climb.frames ? buildOverlayUrl(boardDetails, climb.frames, false) : null;
   const currentAngleStats = angleStats.find((stats) => stats.angle === angle);
   const layoutName = boardDetails.layout_name ?? '';
+  // The same catalog string `generateMetadata` fills, but structured data omits
+  // it unless the current angle has an honest five-star quality value. A missing
+  // stats row must not become "Quality: 0/5", and an Aurora-scale 1-3 value must
+  // not be labelled `/5`. Schema.org treats `description` as optional.
+  const jsonLdDescription =
+    climb.difficulty &&
+    climb.setter_username &&
+    currentAngleStats?.quality_normalized === true &&
+    currentAngleStats.quality_average !== null
+      ? t('metadata.view.description', {
+          climbName,
+          grade: climb.difficulty,
+          setter: climb.setter_username,
+          quality: currentAngleStats.quality_average,
+          ascents: currentAngleStats.ascensionist_count,
+        })
+      : null;
 
   return (
     <Box component="main" sx={containerSx}>
@@ -94,6 +126,18 @@ export default async function ClimbFrontDoor({
         currentLabel={climbName}
         currentUrl={canonicalClimbUrl}
       />
+
+      {noindex ? null : (
+        <ClimbCreativeWorkJsonLd
+          climb={climb}
+          climbName={climbName}
+          canonicalClimbUrl={canonicalClimbUrl}
+          overlayUrl={overlayUrl}
+          currentAngleStats={currentAngleStats}
+          description={jsonLdDescription}
+          locale={locale}
+        />
+      )}
 
       <ClimbViewSeoFragment climb={climb} boardDetails={boardDetails} />
 

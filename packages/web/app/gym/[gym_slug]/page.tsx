@@ -30,6 +30,7 @@ import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createPageMetadata, createNoIndexMetadata, absoluteUrl } from '@/app/lib/seo/metadata';
+import { JsonLd } from '@/app/lib/seo/json-ld';
 import { safeExternalHref } from '@/app/lib/safe-external-url';
 import { themeTokens } from '@/app/theme/theme-config';
 import I18nProvider from '@/app/components/providers/i18n-provider';
@@ -148,13 +149,7 @@ export default async function GymPage(props: GymRouteProps) {
 
   return (
     <I18nProvider locale={locale} namespaces={['common', 'boards', 'kiosk']}>
-      {jsonLd && (
-        <script
-          type="application/ld+json"
-          // JSON.stringify escapes quotes; guard the one XSS vector for inline JSON-LD.
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }}
-        />
-      )}
+      {jsonLd && <JsonLd data={jsonLd} />}
       <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
         <Box sx={{ mb: 2 }}>
           <MuiLink component={LocaleLink} href="/" underline="hover" sx={{ color: 'var(--color-primary)' }}>

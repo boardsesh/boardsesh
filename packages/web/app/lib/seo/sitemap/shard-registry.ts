@@ -2,13 +2,28 @@ import 'server-only';
 import { getAllBoardConfigsOrThrow } from '@/app/lib/server-popular-configs';
 import { absoluteUrl } from '@/app/lib/seo/base-url';
 import { boardConfigsToItems } from './board-entries';
-import { allLocalesUrlCount, expandAllLocales, latestLastModified, type SitemapItem } from './entries';
+import { buildTier2ClimbItems, fetchTier2Summary } from './climb-query';
+import {
+  allLocalesUrlCount,
+  expandAllLocales,
+  expandDefaultLocaleOnly,
+  latestLastModified,
+  type SitemapItem,
+} from './entries';
 import { buildGymEntries } from './gym-entries';
 import { playlistRowsToItems } from './playlist-entries';
 import { fetchPlaylistSitemapRows } from './playlist-query';
 import { buildSetterEntries } from './setter-entries';
 import { buildStaticEntries } from './static-entries';
-import { MAX_URLS_PER_SHARD, renderSitemapIndex, renderUrlset, type SitemapIndexEntry } from './sitemap-xml';
+import {
+  CLIMB_URLS_PER_SHARD,
+  MAX_SHARD_BYTES,
+  MAX_URLS_PER_SHARD,
+  renderSitemapIndex,
+  renderUrlset,
+  type SitemapIndexEntry,
+  type SitemapUrlEntry,
+} from './sitemap-xml';
 
 export type ShardId = 'static' | 'boards' | 'gyms' | 'setters' | 'playlists';
 
@@ -77,6 +92,14 @@ const DEGRADED_CACHE_CONTROL = 'public, s-maxage=60, must-revalidate';
  */
 const DEGRADED_HEADER = 'X-Sitemap-Degraded';
 
+/**
+ * Climb shards get a far longer window than the hourly one the small shards use.
+ * Google refetches a sitemap on the order of days, tier 2 changes on the order of
+ * hours, and the CDN is what absorbs a crawl burst across a dozen pages before it
+ * reaches a ten-connection pool.
+ */
+const CLIMB_CACHE_CONTROL = 'public, s-maxage=21600, stale-while-revalidate=604800';
+
 function xmlResponse(
   body: string,
   cacheControl: string = CACHE_CONTROL,
@@ -88,6 +111,21 @@ function xmlResponse(
       'Content-Type': 'application/xml; charset=utf-8',
       'Cache-Control': cacheControl,
       ...extraHeaders,
+    },
+  });
+}
+
+/**
+ * A page number that was never valid is not a transient failure: `/…/0.xml`,
+ * `/…/abc.xml` and a page past the end must 404 so a crawler stops asking,
+ * where a 503 would have it retry forever.
+ */
+function notFoundResponse(): Response {
+  return new Response('sitemap shard page not found', {
+    status: 404,
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
     },
   });
 }
@@ -178,31 +216,182 @@ export async function shardRouteHandler(id: ShardId): Promise<Response> {
   return xmlResponse(body);
 }
 
+// ---------------------------------------------------------------------------
+// Paged shards
+// ---------------------------------------------------------------------------
+
 /**
- * How long the index waits for one builder before publishing without it.
+ * How a shard's items become `<url>` entries. `all-locales` is W-22's original
+ * behaviour; `default-locale-only` exists for the climb shards, where the
+ * four-locale fan-out is what makes the payload undeployable (see
+ * `expandDefaultLocaleOnly`).
+ */
+export type ShardExpansion = 'all-locales' | 'default-locale-only';
+
+export type PagedShardId = 'climbs';
+
+/**
+ * The shard's total item count and freshness.
+ *
+ * A small ANSWER, not a cheap question: the climbs summary is the same
+ * `DISTINCT ON` scan as the item build. That is why the index calls it behind a
+ * deadline (`SHARD_DEADLINE_MS`) and why `fetchTier2Summary` keeps its own
+ * single-flight in front of the Data Cache.
+ */
+export type PagedShardSummary = { itemCount: number; lastModified: Date | null };
+
+/** One page's slice, plus the length of the list it was sliced from. */
+export type PagedShardPage = { items: SitemapItem[]; totalItems: number };
+
+/**
+ * A shard too large for one file, split across `/sitemaps/<dir>/1.xml … N.xml`.
+ *
+ * `N` is derived from `summary()` at request time, never from the filesystem:
+ * Next has no partial dynamic segments, so a `climbs-1.xml` shape would need one
+ * directory per page and would hardcode today's page count in the tree.
+ */
+export type PagedSitemapShard = {
+  id: PagedShardId;
+  /** Directory under `app/sitemaps/`, pinned against the on-disk walk. */
+  routeDirectory: string;
+  pagePath: (page: number) => string;
+  expansion: ShardExpansion;
+  urlsPerShard: number;
+  expectsUrls: boolean;
+  cacheControl: string;
+  /** The index calls this, never `buildPage`. Raced against `SHARD_DEADLINE_MS`. */
+  summary: () => Promise<PagedShardSummary>;
+  buildPage: (page: number) => Promise<PagedShardPage>;
+};
+
+export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
+  {
+    id: 'climbs',
+    routeDirectory: 'climbs',
+    pagePath: (page: number) => `/sitemaps/climbs/${page}.xml`,
+    expansion: 'default-locale-only',
+    urlsPerShard: CLIMB_URLS_PER_SHARD,
+    // A climbs page that renders zero URLs is a regressed query, not a state:
+    // the summary already said there were items on it.
+    expectsUrls: true,
+    cacheControl: CLIMB_CACHE_CONTROL,
+    summary: () => fetchTier2Summary(),
+    buildPage: async (page: number) => {
+      const items = await buildTier2ClimbItems();
+      const start = (page - 1) * CLIMB_URLS_PER_SHARD;
+      return { items: items.slice(start, start + CLIMB_URLS_PER_SHARD), totalItems: items.length };
+    },
+  },
+];
+
+function expandForShard(items: readonly SitemapItem[], expansion: ShardExpansion): SitemapUrlEntry[] {
+  return expansion === 'all-locales' ? expandAllLocales(items) : expandDefaultLocaleOnly(items);
+}
+
+export function pagedShardPageCount(summary: PagedShardSummary, urlsPerShard: number): number {
+  return Math.ceil(summary.itemCount / urlsPerShard);
+}
+
+export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string): Promise<Response> {
+  const shard = PAGED_SHARD_REGISTRY.find((candidate) => candidate.id === id);
+  if (!shard) {
+    return unavailableResponse();
+  }
+
+  // `[1-9]\d*` and not `\d+`: `Number('007')` is 7, so a permissive parser gives
+  // every real page an unbounded family of alias URLs (`01.xml`, `0000001.xml`)
+  // that each 200 with a six-hour cache header and each look to Search Console
+  // like a separate submission of the same URLs. A page number that was never
+  // canonical is exactly the "never valid" case this route 404s.
+  const parsed = /^([1-9]\d*)\.xml$/.exec(rawPage);
+  if (!parsed) {
+    return notFoundResponse();
+  }
+  const page = Number(parsed[1]);
+  if (!Number.isSafeInteger(page)) {
+    return notFoundResponse();
+  }
+
+  let body: string;
+  try {
+    const summary = await shard.summary();
+    if (page > pagedShardPageCount(summary, shard.urlsPerShard)) {
+      return notFoundResponse();
+    }
+
+    const { items, totalItems } = await shard.buildPage(page);
+    // The summary and item list have independent epochs — the summary is in the
+    // Next Data Cache (global), while the list is an in-process TTL (per instance).
+    // A fresh summary can therefore advertise page 2 while a warm instance still
+    // holds exactly 10,000 items. That empty slice is transient disagreement, not
+    // a permanently invalid URL: 503/no-store asks the crawler to retry after the
+    // item epoch catches up. A true out-of-range page was already rejected above
+    // by the current summary and remains a 404.
+    if (items.length === 0 && totalItems > 0) {
+      throw new Error(
+        `[sitemap] paged shard "${shard.id}" page ${page} is listed by a ${summary.itemCount}-item summary but its cached ${totalItems}-item build has no slice — cache epochs disagree`,
+      );
+    }
+    if (items.length === 0 && shard.expectsUrls) {
+      throw new Error(
+        `[sitemap] paged shard "${shard.id}" page ${page} built no items although the summary listed it — refusing to publish an empty page`,
+      );
+    }
+
+    const urls = expandForShard(items, shard.expansion);
+    if (urls.length > shard.urlsPerShard) {
+      throw new Error(
+        `[sitemap] paged shard "${shard.id}" page ${page} built ${urls.length} URLs, past its ${shard.urlsPerShard} budget`,
+      );
+    }
+
+    body = renderUrlset(urls);
+    // The guard runs on the rendered body, not on a row count: a constant that
+    // nothing measures is a comment, and Vercel truncates a response past
+    // 4.5 MB into a platform error that looks like a sitemap outage.
+    const bytes = Buffer.byteLength(body, 'utf8');
+    if (bytes > MAX_SHARD_BYTES) {
+      throw new Error(
+        `[sitemap] paged shard "${shard.id}" page ${page} rendered ${bytes} bytes, past the ${MAX_SHARD_BYTES} response budget — lower urlsPerShard`,
+      );
+    }
+  } catch (err) {
+    console.error(
+      `[sitemap] paged shard "${id}" page "${rawPage}" failed to build:`,
+      err instanceof Error ? err.message : err,
+    );
+    return unavailableResponse();
+  }
+
+  return xmlResponse(body, shard.cacheControl);
+}
+
+/**
+ * How long the index waits for one fixed builder or paged-shard summary before
+ * publishing without it.
  *
  * Read it as a property of the *index*, not a verdict on the builder. The two
  * recorded production failures were rejections, not stalls — a 503 is this
  * file's own `unavailableResponse`, and `getAllBoardConfigsOrThrow`'s 10 s abort
  * surfaces as a throw — so the try/catch alone already covers what was measured.
- * The deadline covers the mode a try/catch structurally cannot see: a builder
- * that never settles (`fetchPlaylistSitemapRows` has no bound of its own) would
- * otherwise hold the whole index to the platform timeout, taking down the four
- * shards that were ready.
+ * The deadline covers the mode a try/catch structurally cannot see: a builder or
+ * paged summary that never settles would otherwise hold the whole index to the
+ * platform timeout, taking down every shard that was ready.
  *
  * Three seconds rather than the boards builder's own 10 s, and the two layers are
  * *supposed* to disagree: the shard route gives that fetch its full 10 s because
  * failing it costs a working URL, while here the cost of guessing low is one
  * shard omitted under `DEGRADED_CACHE_CONTROL` — sixty seconds, then re-attempted.
- * Cheap to be wrong, so be impatient. It is also the value W-23 (#4483) settled
- * on for its paged summary, so the two collapse into one constant on merge.
+ * Cheap to be wrong, so be impatient. W-23 (#4483) settled on the same value for
+ * its paged summary, so fixed and paged work intentionally share one constant.
  *
  * Not a claim that the builders are cached: `getAllBoardConfigsOrThrow` is a bare
  * `executeGraphQLInternal` call (the `unstable_cache` wrapper in that file is
  * `fetchPopularBoardConfigs`, the limit=12 homepage variant), and `/sitemap.xml`
  * is `force-dynamic`, so every CDN miss re-runs it live. Caching the per-shard
  * summaries is the follow-up; the short degraded window is what makes missing it
- * survivable in the meantime.
+ * survivable in the meantime. The climb summary is already cached at two levels,
+ * but the scan behind a cold miss is still expensive enough to need this bound.
  */
 export const SHARD_DEADLINE_MS = 3_000;
 
@@ -263,8 +452,36 @@ async function buildIndexEntry(shard: SitemapShard): Promise<SitemapIndexEntry |
   return { loc: absoluteUrl(shard.path), lastModified: latestLastModified(items) };
 }
 
+async function buildPagedIndexEntries(shard: PagedSitemapShard): Promise<SitemapIndexEntry[] | null> {
+  // `summary()`, NEVER `buildPage()`. Running the full climb-item build on every
+  // `/sitemap.xml` hit is the pool-starvation failure (#4461) this split avoids.
+  const summary = await withDeadline(shard.summary(), SHARD_DEADLINE_MS, `paged shard "${shard.id}" summary`);
+  const pageCount = pagedShardPageCount(summary, shard.urlsPerShard);
+
+  if (pageCount === 0) {
+    if (shard.expectsUrls) {
+      throw new Error(
+        `[sitemap] paged shard "${shard.id}" expects URLs but its summary reports 0 — the entire surface is absent from the index`,
+      );
+    }
+    return null;
+  }
+
+  // Every page carries the shard's global max of the climb-content and stats
+  // clocks, so one content or stats update can make all N pages look changed. A
+  // per-page `<lastmod>` would require building the items to know which page a
+  // climb fell on — the exact scan the summary/build split exists to avoid — so
+  // the uniform value is the deliberate trade.
+  return Array.from({ length: pageCount }, (_, pageIndex) => ({
+    loc: absoluteUrl(shard.pagePath(pageIndex + 1)),
+    lastModified: summary.lastModified,
+  }));
+}
+
+export type SitemapIndexShardId = ShardId | PagedShardId;
+
 /** The index XML plus the shards it had to drop, so the caller can pick a cache window. */
-export type SitemapIndexResult = { xml: string; degradedShards: ShardId[] };
+export type SitemapIndexResult = { xml: string; degradedShards: SitemapIndexShardId[] };
 
 /**
  * The index lists only shards that carry at least one URL — pointing Google at
@@ -277,22 +494,18 @@ export type SitemapIndexResult = { xml: string; degradedShards: ShardId[] };
  * unexpectedly empty or blows the URL budget is logged loudly and its `<sitemap>`
  * entry omitted, and the index still answers 200 with whatever built — under a
  * one-minute cache window, so the omission self-heals. One slow builder taking
- * the other four shards down with it is #4476, and a partial sitemap is strictly
+ * every other ready shard down with it is #4476, and a partial sitemap is strictly
  * better than no sitemap when the shards Google is told about are each still
  * served fail-closed at their own URL.
  *
  * **Concurrent, with only a per-shard deadline.** An earlier draft sequenced the
- * walk under a total budget, which made the last entries in the registry the
- * deterministic victims: five builders each a comfortable 1.9 s — every one of
- * them inside its own deadline — spend the budget before `playlists` runs, and it
- * is dropped for its position rather than its latency. `Promise.allSettled`
- * bounds the walk by max(builder) instead of sum(builder), so no shard can starve
- * another and the total budget stops being needed at all. The fan-out this
- * "widens" is two I/O calls against two different backends (one GraphQL fetch,
- * one indexed query holding one connection of ten) plus three hardcoded builders
- * — not the many-concurrent-heavy-scans shape of #4461, which W-23 sequences
- * *within* its climbs query for exactly that reason. And sequencing would not
- * have bounded pool load anyway: `withDeadline` stops waiting, it does not cancel.
+ * fixed walk under a total budget, which made the tail of the registry the
+ * deterministic victim even when every builder met its own deadline.
+ * `Promise.allSettled` bounds the walk by max(builder or summary) instead of their
+ * sum, so no shard is dropped for its position. The climb query still sequences
+ * its heavy per-board scans internally; the registry only starts its cached
+ * summary alongside the boards fetch and playlists query. `withDeadline` stops
+ * waiting rather than cancelling, so sequencing here would not bound pool load.
  *
  * Throws only when there is nothing left to publish — every builder failed, or
  * every shard that survived was declared-empty. An empty `<sitemapindex>` served
@@ -300,13 +513,16 @@ export type SitemapIndexResult = { xml: string; degradedShards: ShardId[] };
  * exact harm the fail-closed rule exists to avoid.
  */
 export async function buildSitemapIndexXml(): Promise<SitemapIndexResult> {
-  const settled = await Promise.allSettled(SHARD_REGISTRY.map((shard) => buildIndexEntry(shard)));
+  const [fixedSettled, pagedSettled] = await Promise.all([
+    Promise.allSettled(SHARD_REGISTRY.map((shard) => buildIndexEntry(shard))),
+    Promise.allSettled(PAGED_SHARD_REGISTRY.map((shard) => buildPagedIndexEntries(shard))),
+  ]);
 
   const entries: SitemapIndexEntry[] = [];
-  const degradedShards: ShardId[] = [];
-  const emptyShards: ShardId[] = [];
+  const degradedShards: SitemapIndexShardId[] = [];
+  const emptyShards: SitemapIndexShardId[] = [];
 
-  settled.forEach((outcome, index) => {
+  fixedSettled.forEach((outcome, index) => {
     const shard = SHARD_REGISTRY[index];
     if (outcome.status === 'rejected') {
       degradedShards.push(shard.id);
@@ -323,6 +539,23 @@ export async function buildSitemapIndexXml(): Promise<SitemapIndexResult> {
     entries.push(outcome.value);
   });
 
+  pagedSettled.forEach((outcome, index) => {
+    const shard = PAGED_SHARD_REGISTRY[index];
+    if (outcome.status === 'rejected') {
+      degradedShards.push(shard.id);
+      console.error(
+        `[sitemap] paged shard "${shard.id}" failed — serving the index WITHOUT its pages:`,
+        outcome.reason instanceof Error ? outcome.reason.message : outcome.reason,
+      );
+      return;
+    }
+    if (outcome.value === null) {
+      emptyShards.push(shard.id);
+      return;
+    }
+    entries.push(...outcome.value);
+  });
+
   if (emptyShards.length > 0) {
     // Not a failure — but "the site genuinely has no public playlists" and "the
     // playlists query regressed and now returns []" look identical from here,
@@ -331,8 +564,9 @@ export async function buildSitemapIndexXml(): Promise<SitemapIndexResult> {
   }
 
   if (entries.length === 0) {
+    const builderCount = SHARD_REGISTRY.length + PAGED_SHARD_REGISTRY.length;
     throw new Error(
-      `[sitemap] index has no shards to publish (${degradedShards.length} of ${SHARD_REGISTRY.length} builders failed) — refusing to publish an empty index`,
+      `[sitemap] index has no shards to publish (${degradedShards.length} of ${builderCount} builders failed) — refusing to publish an empty index`,
     );
   }
 

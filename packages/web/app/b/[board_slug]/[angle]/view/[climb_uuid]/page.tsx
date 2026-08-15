@@ -145,6 +145,11 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
           // config-tuple tree (A1).
           handoffPath={`/b/${params.board_slug}/${params.angle}/view/${params.climb_uuid}`}
           tree="slug"
+          // Same condition `generateMetadata` uses to withhold the canonical, for
+          // the same reason: on a noindex page a `CreativeWork.url` naming the
+          // indexable config-tuple twin re-introduces exactly the conflicting
+          // signal the missing `alternates` block avoids.
+          noindex={board.isUnlisted || !board.isPublic}
         />
       </>
     );

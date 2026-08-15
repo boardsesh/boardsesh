@@ -9,6 +9,7 @@ import ClimbThumbnail from '@/app/components/climb-card/climb-thumbnail';
 import ClimbTitle from '@/app/components/climb-card/climb-title';
 import { AscentStatus } from '@/app/components/climb-card/ascent-status';
 import ascentStyles from '@/app/components/climb-card/ascent-status.module.css';
+import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbViewUrl } from '@/app/lib/url-utils';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { BoardDetails, Climb } from '@/app/lib/types';
@@ -86,7 +87,19 @@ const StaticClimbRow = ({
   fetchPriority,
 }: StaticClimbRowProps) => {
   const href = useMemo(
-    () => (unlinked ? null : buildCanonicalClimbViewUrl(boardDetails, climb.angle, climb.uuid, climb.name)),
+    () =>
+      unlinked
+        ? null
+        : // `resolveClimbDisplayName`, not the raw name. An unnamed climb's own
+          // canonical carries the `-{board} Climb-` slug, and so does its sitemap
+          // URL; a row anchor built from the raw null would be a THIRD URL for
+          // one page, splitting the signal three ways.
+          buildCanonicalClimbViewUrl(
+            boardDetails,
+            climb.angle,
+            climb.uuid,
+            resolveClimbDisplayName(climb.name, boardDetails.board_name),
+          ),
     [unlinked, boardDetails, climb.angle, climb.uuid, climb.name],
   );
 

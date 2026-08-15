@@ -167,6 +167,27 @@ export type ClimbStatsForAngle = {
   fa_username: string | null;
   fa_at: string | null;
   difficulty: string | null;
+  /**
+   * True once `quality_average` is on the canonical 1-5 scale. Aurora reports
+   * quality on 1-3, and the 1-3→1-5 backfill (migrations 0115/0116) records
+   * itself here. Publishing an unnormalized average as a schema.org rating with
+   * `bestRating: 5` would understate every row it touched.
+   */
+  quality_normalized: boolean;
+  /**
+   * The quality blend's OWN denominator — how many ratings are behind
+   * `quality_average`.
+   *
+   * Not `ascensionist_count`, which is the blended ascent total
+   * (`upstream + boardsesh`). Precisely: the upstream side counts only when
+   * upstream actually supplied a quality, plus Boardsesh's one-vote-per-climber
+   * count. On an upstream-sourced climb with no native ratings that lands close
+   * to `upstream_ascensionist_count`, and legitimately so — Aurora's quality
+   * average IS an average over the ascents that rated it, so those ascents are
+   * its rating population. What it never does is claim Boardsesh ascents, or
+   * upstream ascents on a climb upstream never rated, as ratings.
+   */
+  rating_count: string; // comes as string from DB
 };
 
 async function fetchClimbStatsForAllAnglesFromDb(
@@ -185,6 +206,13 @@ async function fetchClimbStatsForAllAnglesFromDb(
       climb_stats.display_difficulty,
       climb_stats.fa_username,
       climb_stats.fa_at,
+      climb_stats.quality_normalized,
+      -- The blend's own denominator, verbatim from the definition on
+      -- board_climb_stats.quality_average: the upstream side counts only when it
+      -- actually supplied a quality, plus Boardsesh's one-vote-per-climber count.
+      COALESCE(CASE WHEN climb_stats.upstream_quality_average IS NOT NULL
+                    THEN climb_stats.upstream_ascensionist_count END, 0)
+        + COALESCE(climb_stats.boardsesh_quality_count, 0) as rating_count,
       ROUND(climb_stats.display_difficulty::numeric, 0) as difficulty_id
     FROM board_climb_stats climb_stats
     WHERE climb_stats.board_type = ${boardName}

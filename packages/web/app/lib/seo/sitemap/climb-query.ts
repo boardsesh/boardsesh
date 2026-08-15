@@ -1,0 +1,351 @@
+import 'server-only';
+import { unstable_cache } from 'next/cache';
+import { and, asc, desc, eq, gte, inArray, ne, notExists, sql } from 'drizzle-orm';
+import { ANGLES, toBoardName } from '@boardsesh/board-config';
+import { withSerialPlan, type SerialPlanDb } from '@boardsesh/db/queries';
+import { dbzRead } from '@/app/lib/db/db';
+import { boardClimbAliases, boardClimbStats, boardClimbs } from '@/app/lib/db/schema';
+import { getAllBoardConfigsOrThrow } from '@/app/lib/server-popular-configs';
+import {
+  climbRowsToItems,
+  resolveClimbSitemapGroups,
+  type ClimbConfigGroup,
+  type ClimbSitemapRow,
+} from './climb-entries';
+import type { SitemapItem } from './entries';
+
+/**
+ * Tier 2 is the slice of the catalogue worth a crawl budget: a climb people have
+ * actually done. Tier 3 (every listed climb) is deliberately NOT submitted until
+ * Search Console shows healthy tier-2 coverage.
+ */
+export const TIER_2_MIN_ASCENTS = 10;
+
+/**
+ * Per-group safety cap. Not a tuning knob — it exists so one pathological group
+ * cannot pull an unbounded result set into memory. Hitting it means the shard is
+ * silently losing its tail, so it warns rather than truncating quietly.
+ */
+export const MAX_ROWS_PER_GROUP = 250_000;
+
+/** In-process TTL for the full item list; matches the shard's CDN freshness window. */
+const ITEMS_TTL_MS = 6 * 60 * 60 * 1000;
+/** Same window for the summary, in front of the Data Cache (which does not dedupe misses). */
+const SUMMARY_TTL_MS = 6 * 60 * 60 * 1000;
+/** Next Data Cache window for the (small) summary the index reads on every hit. */
+const SUMMARY_REVALIDATE_SECONDS = 21_600;
+const SUMMARY_CACHE_TAG = 'sitemap-climbs';
+
+export type Tier2Summary = { itemCount: number; lastModified: Date | null };
+
+function setIdArray(setIds: readonly number[]) {
+  return sql`ARRAY[${sql.join(
+    setIds.map((id) => sql`${id}`),
+    sql`, `,
+  )}]::int[]`;
+}
+
+/**
+ * The tier-2 selection for one board configuration, one row per climb.
+ *
+ * `DISTINCT ON (climb_uuid)` keeps the angle with the most ascents. Other angles
+ * of the same climb stay self-canonical and reachable through W-15's angle
+ * cross-links — they are just not submitted, because submitting fifteen URLs per
+ * climb spends the crawl budget on near-duplicates.
+ *
+ * Three raw `sql` fragments, all of them things Drizzle has no operator for and
+ * all of them copied from the predicate the `/list` front door already runs
+ * (`create-climb-filters.ts`): the `@>` size containment, the `<@` set
+ * containment, and the `COALESCE(...)` angle tie-break.
+ */
+function buildChosenSubquery(db: SerialPlanDb, group: ClimbConfigGroup) {
+  const boardName = toBoardName(group.boardType);
+  if (!boardName) {
+    throw new Error(`[sitemap] climbs shard: unknown board type "${group.boardType}"`);
+  }
+  const isMoonboard = boardName === 'moonboard';
+
+  return db
+    .selectDistinctOn([boardClimbStats.climbUuid], {
+      uuid: boardClimbStats.climbUuid,
+      angle: boardClimbStats.angle,
+      name: boardClimbs.name,
+      // Both source columns are named `updated_at`; explicit aliases keep them
+      // distinct through the `chosen` subquery. `mapWith` preserves drizzle's
+      // UTC timestamp decoder for the per-URL item path.
+      statsUpdatedAt: sql`${boardClimbStats.updatedAt}`.mapWith(boardClimbStats.updatedAt).as('stats_updated_at'),
+      climbUpdatedAt: sql`${boardClimbs.updatedAt}`.mapWith(boardClimbs.updatedAt).as('climb_updated_at'),
+    })
+    .from(boardClimbStats)
+    .innerJoin(
+      boardClimbs,
+      and(eq(boardClimbs.uuid, boardClimbStats.climbUuid), eq(boardClimbs.boardType, boardClimbStats.boardType)),
+    )
+    .where(
+      and(
+        eq(boardClimbs.boardType, group.boardType),
+        eq(boardClimbs.layoutId, group.layoutId),
+        eq(boardClimbs.isListed, true),
+        eq(boardClimbs.isDraft, false),
+        gte(boardClimbStats.ascensionistCount, TIER_2_MIN_ASCENTS),
+        // Never publish an angle the route tables don't carry — that URL 404s.
+        inArray(boardClimbStats.angle, [...ANGLES[boardName]]),
+        // The same two predicates the /list front door filters on, so the climb
+        // genuinely renders on the configuration we are about to name in its URL.
+        // MoonBoard has one fixed size, so it has no size predicate at all.
+        ...(isMoonboard ? [] : [sql`${boardClimbs.compatibleSizeIds} @> ARRAY[${group.sizeId}]::int[]`]),
+        ...(group.setIds.length === 0
+          ? []
+          : [
+              isMoonboard
+                ? sql`(${boardClimbs.requiredSetIds} IS NULL OR ${boardClimbs.requiredSetIds} <@ ${setIdArray(group.setIds)})`
+                : sql`${boardClimbs.requiredSetIds} <@ ${setIdArray(group.setIds)}`,
+            ]),
+        // A *genuine* alias uuid keeps its own URL and self-canonicalises there,
+        // so submitting both forms is duplicate content by construction.
+        //
+        // `alias_uuid <> canonical_uuid` is load-bearing, not defensive.
+        // `board_climb_aliases` is mostly SELF-aliases: every synced Kilter climb
+        // has a row mapping its uuid to itself (migration
+        // 0160_backfill_kilter_self_aliases, plus catalog-sync's identity path),
+        // because deletion reconciliation resolves upstream removals through this
+        // table. Measured in production: the broken predicate would drop 106,550
+        // of 127,131 tier-2 climbs (84%), while zero genuine aliases currently
+        // meet the tier-2 threshold. Excluding "any uuid present as alias_uuid"
+        // would therefore remove most of the sitemap silently, because the
+        // remaining boards keep the shard non-empty and `expectsUrls` never fires.
+        notExists(
+          db
+            .select({ one: sql<number>`1` })
+            .from(boardClimbAliases)
+            .where(
+              and(
+                eq(boardClimbAliases.boardType, boardClimbs.boardType),
+                eq(boardClimbAliases.aliasUuid, boardClimbs.uuid),
+                ne(boardClimbAliases.aliasUuid, boardClimbAliases.canonicalUuid),
+              ),
+            ),
+        ),
+      ),
+    )
+    .orderBy(
+      boardClimbStats.climbUuid,
+      desc(boardClimbStats.ascensionistCount),
+      // COALESCE rather than a bare `stats.angle = climbs.angle`, but DEFENSIVE
+      // rather than load-bearing, and the earlier claim that it was load-bearing
+      // was wrong. `board_climbs.uuid` is the primary key and the join is on
+      // `(uuid, board_type)`, so every row inside one `DISTINCT ON (climb_uuid)`
+      // group joins to the SAME `board_climbs` row. A null `climbs.angle` makes
+      // the comparison NULL for every row in the group, NULLs sort equal, and the
+      // tie-break falls through to `asc(stats.angle)` with or without the
+      // COALESCE — measured over kilter layout 1 (16,233 tier-2 climbs with a
+      // NULL `board_climbs.angle`): zero differing rows. Kept because it costs
+      // nothing and survives a future join that does compare across climbs.
+      desc(sql`COALESCE(${boardClimbStats.angle} = ${boardClimbs.angle}, false)`),
+      asc(boardClimbStats.angle),
+    )
+    .as('chosen');
+}
+
+/**
+ * Split out from the fetch so a test can render this query's real SQL with
+ * `.toSQL()` instead of grepping the source for the predicate it hopes is there.
+ */
+export function buildTier2ClimbQuery(db: SerialPlanDb, group: ClimbConfigGroup, limit = MAX_ROWS_PER_GROUP) {
+  const chosen = buildChosenSubquery(db, group);
+  return db.select().from(chosen).orderBy(asc(chosen.uuid)).limit(limit);
+}
+
+/**
+ * The count and freshness of exactly what `buildTier2ClimbQuery` would return —
+ * same `buildChosenSubquery`, so the two can never describe different sets.
+ *
+ * The freshness clock covers both halves of the visible page. Stats changes
+ * advance `board_climb_stats.updated_at`; name, description and frame edits
+ * independently advance `board_climbs.updated_at`. Production's update triggers
+ * guarantee both clocks, so the later one is the honest `<lastmod>`.
+ *
+ * `to_char(...)` rather than a bare timestamp aggregate: the raw `sql` fragment
+ * bypasses drizzle's timestamp mapper, so the driver otherwise hands back pg text
+ * like `2026-08-10 20:39:19.492499`. `new Date()` reads that non-ISO form in the
+ * process timezone. Both columns are `timestamp without time zone` holding UTC;
+ * rendering an explicit `Z` keeps the summary aligned with the per-row values
+ * that go through drizzle's ordinary timestamp mapper.
+ */
+export function buildTier2ClimbSummaryQuery(db: SerialPlanDb, group: ClimbConfigGroup) {
+  const chosen = buildChosenSubquery(db, group);
+  return db
+    .select({
+      itemCount: sql<number>`count(*)::int`,
+      lastModified: sql<
+        string | null
+      >`to_char(max(GREATEST(${chosen.statsUpdatedAt}, ${chosen.climbUpdatedAt})), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
+    })
+    .from(chosen);
+}
+
+export async function fetchTier2ClimbRows(group: ClimbConfigGroup): Promise<ClimbSitemapRow[]> {
+  const rows = await withSerialPlan(dbzRead, async (tx) => buildTier2ClimbQuery(tx, group));
+
+  if (rows.length === MAX_ROWS_PER_GROUP) {
+    console.warn(
+      `[sitemap] climbs group ${group.boardType}/${group.layoutId} hit its ${MAX_ROWS_PER_GROUP}-row cap — the tail is missing.`,
+    );
+  }
+
+  return rows.map((row) => ({
+    uuid: row.uuid,
+    name: row.name,
+    angle: row.angle,
+    updatedAt: row.climbUpdatedAt > row.statsUpdatedAt ? row.climbUpdatedAt : row.statsUpdatedAt,
+  }));
+}
+
+/**
+ * `unstable_cache`d, and only the summary is: the production 52,842-item payload
+ * serialises to well over 10 MB, past Vercel's 2 MB Data Cache entry ceiling, so
+ * caching the items there would silently never cache.
+ *
+ * The summary's RESULT is two numbers. Its COST is not: it is the same
+ * `DISTINCT ON` scan as the item build, once per `(board_type, layout_id)` group
+ * — measured on the full-board dev image at 9.2 s cold / 0.94 s warm for the
+ * single largest group, times ~18 groups. Read that as "small answer, expensive
+ * question" and do not add another per-request caller.
+ *
+ * Dates do not survive the Data Cache intact, so the ISO string is what gets
+ * stored and the public wrapper rehydrates it.
+ */
+const cachedTier2Summary = unstable_cache(
+  async (): Promise<{ itemCount: number; lastModifiedIso: string | null }> => {
+    const groups = resolveClimbSitemapGroups(await getAllBoardConfigsOrThrow());
+
+    let itemCount = 0;
+    let lastModified: Date | null = null;
+
+    // Sequential, never Promise.all: a fan-out of concurrent heavy scans is the
+    // pool starvation #4461 describes, on a pool of 10.
+    for (const group of groups) {
+      const [summary] = await withSerialPlan(dbzRead, async (tx) => buildTier2ClimbSummaryQuery(tx, group));
+      if (!summary) continue;
+      itemCount += summary.itemCount;
+      const groupLatest = summary.lastModified ? new Date(summary.lastModified) : null;
+      if (groupLatest && (!lastModified || groupLatest > lastModified)) {
+        lastModified = groupLatest;
+      }
+    }
+
+    return { itemCount, lastModifiedIso: lastModified ? lastModified.toISOString() : null };
+  },
+  ['sitemap-climbs-summary'],
+  { revalidate: SUMMARY_REVALIDATE_SECONDS, tags: [SUMMARY_CACHE_TAG] },
+);
+
+let cachedSummary: { builtAt: number; summary: Tier2Summary } | null = null;
+let summaryInFlight: Promise<Tier2Summary> | null = null;
+
+/**
+ * The tier-2 count and freshness, behind the SAME in-process TTL + single-flight
+ * the item build gets.
+ *
+ * `unstable_cache` alone is not enough: it does not deduplicate concurrent
+ * misses, and on a cold Data Cache a crawl burst is `/sitemap.xml` plus every
+ * `/sitemaps/climbs/N.xml` page arriving together — each of which calls this.
+ * Without the single-flight that is one full-catalogue scan per request against
+ * a ten-connection pool, which is #4461 exactly. The item build already had this
+ * guard; the summary costs the same scan and was missing it.
+ */
+export async function fetchTier2Summary(): Promise<Tier2Summary> {
+  if (cachedSummary && Date.now() - cachedSummary.builtAt < SUMMARY_TTL_MS) {
+    return cachedSummary.summary;
+  }
+  if (summaryInFlight) {
+    return summaryInFlight;
+  }
+
+  const build = (async () => {
+    const { itemCount, lastModifiedIso } = await cachedTier2Summary();
+    const summary: Tier2Summary = { itemCount, lastModified: lastModifiedIso ? new Date(lastModifiedIso) : null };
+    cachedSummary = { builtAt: Date.now(), summary };
+    return summary;
+  })();
+  summaryInFlight = build;
+
+  try {
+    return await build;
+  } finally {
+    summaryInFlight = null;
+  }
+}
+
+let cachedItems: { builtAt: number; items: SitemapItem[] } | null = null;
+let inFlight: Promise<SitemapItem[]> | null = null;
+
+async function buildAllTier2Items(): Promise<SitemapItem[]> {
+  const groups = resolveClimbSitemapGroups(await getAllBoardConfigsOrThrow());
+  const items: SitemapItem[] = [];
+  let dropped = 0;
+
+  // Sequential, for the same pool reason as the summary.
+  for (const group of groups) {
+    const built = climbRowsToItems(await fetchTier2ClimbRows(group), group);
+    for (const item of built.items) {
+      items.push(item);
+    }
+    dropped += built.dropped;
+  }
+
+  if (dropped > 0) {
+    // Should be zero: unresolvable configurations are filtered out a group at a
+    // time. A non-zero count means a climb was dropped rather than published
+    // under a URL we cannot prove matches its own canonical.
+    console.warn(`[sitemap] climbs shard dropped ${dropped} climbs with no resolvable canonical URL.`);
+  }
+
+  return items;
+}
+
+/**
+ * The full ordered item list, behind a 6-hour TTL and a single-flight promise.
+ *
+ * One in-flight build per instance is the point: a crawl burst across N shard
+ * pages on a cold instance would otherwise run N full scans against a
+ * ten-connection pool while the front door waits behind them.
+ *
+ * Scope, stated plainly because the comment above overstates it on its own:
+ * this is a PER-INSTANCE defence. The item list is deliberately not in the Next
+ * Data Cache (~20 MB, past the 2 MB entry ceiling), so on Vercel the only
+ * cross-instance protection is the CDN — and on a genuinely cold crawl, where
+ * Googlebot fetches N pages that all miss the CDN and land on N lambdas, the
+ * cost really is N full builds. Per-page Data Cache entries would not fix it
+ * either: building page N still needs the whole ordered list before it can
+ * slice, so it would be N full builds plus N cache writes. The real fix is a
+ * materialised tier-2 table, recorded as the tier-3 follow-up.
+ */
+export async function buildTier2ClimbItems(): Promise<SitemapItem[]> {
+  if (cachedItems && Date.now() - cachedItems.builtAt < ITEMS_TTL_MS) {
+    return cachedItems.items;
+  }
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const build = buildAllTier2Items().then((items) => {
+    cachedItems = { builtAt: Date.now(), items };
+    return items;
+  });
+  inFlight = build;
+
+  try {
+    return await build;
+  } finally {
+    inFlight = null;
+  }
+}
+
+/** Test seam: drops the in-process TTL caches. */
+export function resetTier2ItemCacheForTests(): void {
+  cachedItems = null;
+  inFlight = null;
+  cachedSummary = null;
+  summaryInFlight = null;
+}
