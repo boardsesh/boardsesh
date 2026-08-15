@@ -507,7 +507,7 @@ describe('useBoardBluetooth', () => {
     expect(activityListener).toHaveBeenCalledTimes(2);
   });
 
-  it('threads moonboardLightAdjacentHolds through to the packet builder', async () => {
+  it('uses an updated moonboardLightAdjacentHolds setting on the live connection', async () => {
     const fakeAdapter = makeFakeAdapter();
     vi.mocked(createBluetoothAdapter).mockReturnValue(
       fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
@@ -519,8 +519,15 @@ describe('useBoardBluetooth', () => {
       totalPlacements: 1,
       isClear: false,
     });
-    const { result } = renderHook(() =>
-      useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1, moonboardLightAdjacentHolds: true }),
+    const { result, rerender } = renderHook(
+      ({ lightAdjacentHolds }) =>
+        useBoardBluetooth({
+          boardName: 'moonboard',
+          layoutId: 1,
+          sizeId: 1,
+          moonboardLightAdjacentHolds: lightAdjacentHolds,
+        }),
+      { initialProps: { lightAdjacentHolds: false } },
     );
 
     await act(async () => {
@@ -529,8 +536,13 @@ describe('useBoardBluetooth', () => {
     await act(async () => {
       await result.current.sendFramesToBoard('p1r12');
     });
+    rerender({ lightAdjacentHolds: true });
+    await act(async () => {
+      await result.current.sendFramesToBoard('p1r12');
+    });
 
-    expect(mockGetMoonboardBluetoothPacket).toHaveBeenCalledWith('p1r12', 18, { lightAdjacentHolds: true });
+    expect(mockGetMoonboardBluetoothPacket).toHaveBeenNthCalledWith(1, 'p1r12', 18, { lightAdjacentHolds: false });
+    expect(mockGetMoonboardBluetoothPacket).toHaveBeenNthCalledWith(2, 'p1r12', 18, { lightAdjacentHolds: true });
   });
 
   it('tracks connect-initial MoonBoard frames until the adapter write settles', async () => {
