@@ -5,8 +5,7 @@
       "description": "Descubre playlists públicas de escalada y gestiona las tuyas al iniciar sesión."
     },
     "detail": {
-      "fallbackTitle": "Playlist",
-      "fallbackDescription": "Playlist de escalada en Boardsesh"
+      "fallbackTitle": "Playlist"
     }
   },
   "library": {

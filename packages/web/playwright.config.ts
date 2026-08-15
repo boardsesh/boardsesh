@@ -16,8 +16,17 @@ export default defineConfig({
   /* 1 retry in CI and locally — enough to absorb a single transient infra blip,
    * but not enough to bury a hard-broken test the way `retries: 3` did before. */
   retries: 1,
-  /* Opt out of parallel tests on CI. */
-  workers: process.env.CI ? 2 : undefined,
+  /* 1 in CI, deliberately. The suite already fans out as 8 shard jobs, each
+   * with its own server + database, so cross-shard parallelism carries the
+   * wall-clock. A second in-shard worker makes front-door page loads (SSR
+   * with direct Postgres reads) compete for the web server's DB pool against
+   * the raw-request specs, and on the 2-core runner's postgres that queue can
+   * exceed any sane request timeout. Which files share a shard reshuffles
+   * whenever specs are added or removed, so the resulting flake jumps between
+   * unrelated files instead of staying put. (Diagnosed on #4448: the embed
+   * header checks hung >60s whenever they shared shard 7 with the rewritten
+   * tab-bar spec's front-door loads.) */
+  workers: process.env.CI ? 1 : undefined,
   /* Global per-test timeout — some tests (zoom, login flows) need more than Playwright's 30 s default */
   timeout: 60_000,
   /* Raise the default assertion timeout from Playwright's 5 s to 10 s */

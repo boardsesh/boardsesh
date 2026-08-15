@@ -412,8 +412,6 @@
   "ariaLabels": {
     "close": "Fermer",
     "back": "Retour",
-    "clearSearch": "Effacer la recherche",
-    "openFilters": "Ouvrir les filtres",
     "openQueue": "Ouvrir la file d'attente",
     "openStatsFilters": "Ouvrir les filtres de statistiques",
     "shareProfile": "Partager le profil",
@@ -435,7 +433,6 @@
     "createdClimbs": "Blocs créés",
     "auroraMigration": "Migration Aurora",
     "searchPlaceholder": "Qu'est-ce qu'on grimpe ?",
-    "searchClimbsPlaceholder": "Rechercher des blocs...",
     "startClimbing": "Commencer à grimper"
   },
   "share": {

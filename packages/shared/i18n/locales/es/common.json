@@ -22,8 +22,6 @@
   "ariaLabels": {
     "close": "Cerrar",
     "back": "Atrás",
-    "clearSearch": "Limpiar búsqueda",
-    "openFilters": "Abrir filtros",
     "openQueue": "Abrir cola",
     "openStatsFilters": "Abrir filtros de estadísticas",
     "shareProfile": "Compartir perfil",
@@ -45,7 +43,6 @@
     "createdClimbs": "Bloques creados",
     "auroraMigration": "Migración de Aurora",
     "searchPlaceholder": "¿Qué quieres escalar?",
-    "searchClimbsPlaceholder": "Busca bloques...",
     "startClimbing": "Empieza a escalar"
   },
   "share": {

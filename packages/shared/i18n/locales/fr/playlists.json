@@ -5,8 +5,7 @@
       "description": "Parcourez des playlists publiques et gérez les vôtres une fois connecté."
     },
     "detail": {
-      "fallbackTitle": "Playlist",
-      "fallbackDescription": "Playlist d'escalade sur Boardsesh"
+      "fallbackTitle": "Playlist"
     }
   },
   "library": {

@@ -157,16 +157,16 @@ read-only routes".
 
 Four **page subtrees** are now server-rendered front doors with no interactive
 climbing UI: the climb view and `/list` on the config-tuple tree, and their
-`/b/{slug}` twins. The page subtree is what changed — on the config-tuple pair
-the surrounding board shell
-(`app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout.tsx`) still
-renders `BoardSeshHeader` above the front door and still mounts the queue and
-WebSocket providers. That shell comes down in W-16/W-17, and until it does the
-import-graph invariant walks the three promoted page files but not their parent
-layout (the `KEPT_ENTRY_FILES` docblock in
-`app/__tests__/import-graph-invariant.test.ts` spells out which eight edges that
-leaves unwalked, and why adding them would grow the allowlist W-15 shrinks).
-What each front door is, and the two constraints that shaped them:
+`/b/{slug}` twins. W-15 changed the page subtrees; the surrounding board shells
+(`app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout.tsx` and its
+`/b` twin) still rendered `BoardSeshHeader` and still mounted the queue and
+WebSocket providers until **W-17 (#4433)** deleted the sibling routes that
+consumed them and stripped both shells. They are now server-only apart from
+`LastUsedBoardTracker`, so the import-graph invariant walks the config-tuple
+shell too (`KEPT_ENTRY_FILES` in
+`app/__tests__/import-graph-invariant.test.ts`), leaving that one allowlisted
+edge for W-16 to cut with `components/board-page`. What each front door is, and
+the two constraints that shaped them:
 
 **The climb front door** (`app/components/climb-front-door/`) renders a
 breadcrumb, the promoted `ClimbViewSeoFragment` heading, the board art as a
@@ -212,6 +212,46 @@ rate on the highest-traffic pages.
 **The Boardsesh-grade section is deliberately absent.** That flag is a live,
 staged PostHog rollout; SSR-ing the section would end it for every visitor and
 crawler in a single deploy, irreversibly without another one.
+
+## W-17 — deleting the board-route siblings (#4433)
+
+Twelve sibling routes came out of the two board trees (`create`, `import`,
+`liked`, `logbook`, `playlists`, `playlists/[playlist_uuid]`), plus the session
+providers and `BoardSeshHeader` above them. `next.config.mjs` holds the redirect
+table, every rule with its three locale twins. Three of those rules carry
+context rather than dropping it, and the reasons are worth keeping:
+
+- **Create → the app, with the board attached.** A canonical numeric board URL
+  hands `boardName`/`layoutId`/`sizeId`/`setIds`/`angle` to the app's create
+  screen, which reads exactly those. Slug forms (`/kilter/original/…` and the
+  whole `/b/{slug}` tree) hand over bare: the app parses the ids with `Number()`,
+  so forwarding a slug would seed the editor with `NaN`, and resolving one needs
+  a DB lookup a static redirect can't do. **Everything on www that used to link
+  at `…/create` now links at the app directly** — the Create tab in the bottom
+  bar, the remix/edit action — through `buildAppCreateClimbUrl`, so there is no
+  redirect hop and no board context lost in it.
+- **Import → `/moonboard-import`, with the hold sets.** Bulk import is
+  MoonBoard-only, so `/moonboard/…/import` goes to the importer carrying
+  `layout`, `sets` and `angle`, and every other board's `…/import` goes to that
+  board's own list — the same split the deleted page made. It needs its own rule
+  because `MOONBOARD_LAYOUTS` ids run 1–7 and collide with Aurora layout ids;
+  without it `/kilter/1/…/import` would render the importer for MoonBoard 2010.
+  The `sets` param matters for the same reason: without it a 2024 wall gets all
+  six of the layout's hold sets stacked on the preview instead of the two it
+  named. The `/b/{slug}` tree can't make that split — the slug names a DB row —
+  so it goes to the importer and an unresolvable one lands on the picker.
+- **Cross-origin rules stay `permanent: false`.** A permanent cross-origin
+  redirect is cached by the browser indefinitely with no server-side hatch. They
+  go 308 once the app route is proven in production.
+
+**Parked, not forgotten.** `components/create-climb/` (the www climb editor,
+including `drafts-drawer` and `create-climb-form`) lost its last route here and
+is now reachable only through the MoonBoard importer's shared pieces
+(`hold-indicator`, `hold-type-picker`, `use-hold-type-picker`,
+`use-moonboard-create-climb`). Deleting the rest belongs with `teardown:components-create-climb`
+in W-16, not here — it is a large cascade and the importer's edges have to be
+lifted out first. `components/board-page/last-used-board-tracker.tsx` stays for
+the same reason, as the one allowlisted edge W-16 cuts.
 
 ## Phase A0 — blocking pre-delete QA gate (real devices)
 
@@ -592,7 +632,7 @@ Cut **2026-08-14**. **Expires 2026-11-12.** Put a reminder on the epic
   and `git push origin --delete classic-web-last-good` (plus the local tag
   with `git tag -d classic-web-last-good` if you have it checked out) — don't
   let it silently rot as an ever-growing, never-reviewed fork of history.
-- If the programme is still mid-flight (W-16/W-17 not yet landed, or there's
+- If the programme is still mid-flight (W-16 not yet landed, or there's
   active incident risk), **consciously re-cut** — same commands as the
   "advances past this point" case above — and push the expiry another 90 days.
 

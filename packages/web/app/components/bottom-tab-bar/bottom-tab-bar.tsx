@@ -16,12 +16,11 @@ import type { BoardDetails, BoardName, BoardRouteIdentity } from '@/app/lib/type
 import {
   constructClimbListWithSlugs,
   constructBoardSlugListUrl,
-  constructCreateClimbUrl,
   tryConstructSlugListUrl,
   popularConfigListUrl,
-  tryConstructSlugCreateUrl,
   getPlaylistsBasePath,
 } from '@/app/lib/url-utils';
+import { buildAppCreateClimbUrl } from '@/app/lib/app-handoff';
 import { themeTokens } from '@/app/theme/theme-config';
 import { useColorMode } from '@/app/hooks/use-color-mode';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
@@ -38,7 +37,7 @@ import type { StoredBoardConfig } from '@/app/lib/saved-boards-db';
 import { useBoardSwitchGuard } from '@/app/components/board-lock/use-board-switch-guard';
 import { BOARD_PRESENCE_SWITCH_BOARD_EVENT } from '../board-presence/board-presence-events';
 
-type Tab = 'home' | 'climbs' | 'library' | 'feed' | 'create' | 'you';
+type Tab = 'home' | 'climbs' | 'library' | 'feed' | 'you';
 
 type BottomTabBarProps = {
   boardDetails?: BoardDetails | null;
@@ -46,21 +45,17 @@ type BottomTabBarProps = {
   boardConfigs?: BoardConfigData;
 };
 
+/**
+ * The Create tab is absent on purpose: it leaves www for the app, so no www
+ * pathname ever belongs to it and it never renders selected.
+ */
 const getActiveTab = (pathname: string): Tab => {
   if (pathname === '/') return 'home';
-  if (pathname.endsWith('/create')) return 'create';
   if (pathname.startsWith('/feed')) return 'feed';
   if (pathname.startsWith('/you')) return 'you';
   if (pathname.startsWith('/discover/')) return 'library';
   if (pathname.startsWith('/playlists') || pathname.includes('/playlists')) return 'library';
   return 'climbs';
-};
-
-const listUrlToCreateUrl = (url: string): string => {
-  const [path, query = ''] = url.split('?');
-  if (!path.endsWith('/list')) return url;
-  const createPath = `${path.slice(0, -5)}/create`;
-  return query ? `${createPath}?${query}` : createPath;
 };
 
 const actionSx = {
@@ -80,12 +75,6 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
   const [isBoardSelectorRendered, setIsBoardSelectorRendered] = useState(false);
   const [isCustomBoardOpen, setIsCustomBoardOpen] = useState(false);
   const [isCustomBoardRendered, setIsCustomBoardRendered] = useState(false);
-  const [isCreateClimbFlow, setIsCreateClimbFlow] = useState(false);
-  // Synchronous fallback href for the Create tab: read once from IndexedDB on
-  // mount so the tab can render a stable <a> even before QueueBridge has
-  // populated `effectiveBoardDetails`. Mirrors the climbs-tab pattern that
-  // routes via getLastUsedBoard when no board context is in scope.
-  const [lastUsedCreateHref, setLastUsedCreateHref] = useState<string | null>(null);
 
   // Stable callbacks for drawer unmount-after-close-animation pattern.
   // Avoids invalidating MUI's SlideProps memo on every parent render.
@@ -160,45 +149,23 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
     return null;
   })();
 
-  // Built from the canonical board form rather than from `listUrl`, which may be
-  // a /b/{slug} route the create form doesn't serve.
-  const createClimbUrl = (() => {
-    if (!effectiveBoardDetails) return null;
-    const { board_name, layout_id, size_id, set_ids, layout_name, size_name, size_description, set_names } =
-      effectiveBoardDetails;
-    if (layout_name && size_name && set_names) {
-      return (
-        tryConstructSlugCreateUrl(board_name, layout_id, size_id, set_ids, effectiveAngle) ??
-        constructCreateClimbUrl(board_name, layout_name, size_name, size_description, set_names, effectiveAngle)
-      );
-    }
-    return null;
-  })();
-
-  useEffect(() => {
-    let cancelled = false;
-    void getLastUsedBoard().then((lastUsed) => {
-      if (cancelled || !lastUsed?.url) return;
-      setLastUsedCreateHref(listUrlToCreateUrl(lastUsed.url));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Stable href for the Create tab so it always renders as a real <a> when
-  // we have any signal about what board to create on. Prefer the in-scope
-  // board details; otherwise use the last-used board the user visited.
-  // Only when both are unknown do we fall through to the drawer picker.
-  const createClimbHref = (() => {
-    if (createClimbUrl) return createClimbUrl;
-    if (!lastUsedCreateHref) return null;
-    if (activeSession?.sessionId) {
-      const separator = lastUsedCreateHref.includes('?') ? '&' : '?';
-      return `${lastUsedCreateHref}${separator}session=${activeSession.sessionId}`;
-    }
-    return lastUsedCreateHref;
-  })();
+  // The climb editor lives in the app — W-17 (#4433) deleted www's own
+  // `…/[angle]/create` routes. This is a real cross-origin <a> rather than a
+  // link into a route that would 307 straight back off the site, and the board
+  // in scope rides along so the editor opens on the wall the reader is looking
+  // at. With no board in scope it hands over bare and the app falls back to the
+  // signed-in user's active board.
+  const createClimbHref = buildAppCreateClimbUrl(
+    effectiveBoardDetails
+      ? {
+          boardName: effectiveBoardDetails.board_name,
+          layoutId: effectiveBoardDetails.layout_id,
+          sizeId: effectiveBoardDetails.size_id,
+          setIds: effectiveBoardDetails.set_ids,
+          angle: effectiveAngle,
+        }
+      : null,
+  );
 
   const playlistsUrl = getPlaylistsBasePath(pathname);
 
@@ -231,21 +198,8 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
     setIsBoardSelectorOpen(true);
   }, [activeSession?.sessionId, router]);
 
-  const handleCreateFallback = useCallback(() => {
-    if (!boardConfigs) return;
-    setIsCreateClimbFlow(true);
-    setIsBoardSelectorRendered(true);
-    setIsBoardSelectorOpen(true);
-  }, [boardConfigs]);
-
   const handleBoardSelected = useCallback(
     (url: string, config?: StoredBoardConfig) => {
-      if (isCreateClimbFlow) {
-        router.push(listUrlToCreateUrl(url));
-        setIsCreateClimbFlow(false);
-        return;
-      }
-
       if (config) {
         const target: BoardRouteIdentity = {
           board_name: config.board,
@@ -258,7 +212,7 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
         router.push(url);
       }
     },
-    [isCreateClimbFlow, router, guardBoardSwitch],
+    [router, guardBoardSwitch],
   );
 
   const handleDiscoveryBoardClick = useCallback(
@@ -371,26 +325,16 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
           href="/feed"
           sx={actionSx}
         />
-        {createClimbHref ? (
-          <BottomNavigationAction
-            label={t('bottomTabBar.create')}
-            icon={<AddOutlined sx={{ fontSize: 20 }} />}
-            value="create"
-            component={LocaleLink}
-            href={createClimbHref}
-            sx={actionSx}
-          />
-        ) : (
-          <BottomNavigationAction
-            label={t('bottomTabBar.create')}
-            icon={<AddOutlined sx={{ fontSize: 20 }} />}
-            value="create"
-            onClick={() => {
-              handleCreateFallback();
-            }}
-            sx={actionSx}
-          />
-        )}
+        {/* Cross-origin: a plain <a>, not LocaleLink — the app has no /es, /fr
+            or /de routing and Next's client router doesn't own this hop. */}
+        <BottomNavigationAction
+          label={t('bottomTabBar.create')}
+          icon={<AddOutlined sx={{ fontSize: 20 }} />}
+          value="create"
+          component="a"
+          href={createClimbHref}
+          sx={actionSx}
+        />
         <BottomNavigationAction
           label={t('bottomTabBar.you')}
           icon={<PersonOutlined sx={{ fontSize: 20 }} />}
@@ -423,10 +367,7 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
           title={t('common:boardSelector.title')}
           placement="bottom"
           open={isBoardSelectorOpen}
-          onClose={() => {
-            setIsBoardSelectorOpen(false);
-            setIsCreateClimbFlow(false);
-          }}
+          onClose={() => setIsBoardSelectorOpen(false)}
           onTransitionEnd={handleBoardSelectorTransitionEnd}
         >
           <BoardDiscoveryScroll

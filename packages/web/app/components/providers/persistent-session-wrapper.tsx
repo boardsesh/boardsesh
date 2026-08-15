@@ -9,7 +9,6 @@ import { useWakeLock } from '@/app/lib/hooks/use-wake-lock';
 import { QueueBridgeProvider, useQueueBridgeBoardInfo } from '../queue-control/queue-bridge-context';
 import { useCurrentClimb, useQueueList } from '../graphql-queue';
 import QueueControlBar from '../queue-control/queue-control-bar';
-import QueueControlBarShell from '../queue-control/queue-control-bar-shell';
 import BottomTabBar from '../bottom-tab-bar/bottom-tab-bar';
 import { BoardProvider, useBoardProvider } from '../board-provider/board-provider-context';
 import { ConnectionSettingsProvider } from '../connection-manager/connection-settings-context';
@@ -23,11 +22,9 @@ import { useClimbActionsData } from '@/app/hooks/use-climb-actions-data';
 import ErrorBoundary from '../error-boundary';
 import bottomBarStyles from '../bottom-tab-bar/bottom-bar-wrapper.module.css';
 import type { BoardConfigData } from '@/app/lib/server-board-configs';
-import { isBoardRoutePath } from '@/app/lib/board-route-paths';
 import { isChromeLessPath } from '@/app/lib/chrome-less-routes';
 import GlobalHeader from '../global-header/global-header';
 import SessionSummaryDialog from '../session-summary/session-summary-dialog';
-import { SearchDrawerBridgeProvider } from '../search-drawer/search-drawer-bridge-context';
 import { StatsFilterBridgeProvider } from '../stats-filter-bridge/stats-filter-bridge-context';
 import { ProfileHeaderShareProvider } from '../profile-header-bridge/profile-header-bridge-context';
 import { isNativeApp } from '@/app/lib/ble/capacitor-utils';
@@ -59,30 +56,28 @@ export default function PersistentSessionWrapper({ children, boardConfigs }: Per
       <PersistentSessionProvider>
         <QueueBridgeProvider>
           <BoardSwitchConfirmProvider>
-            <SearchDrawerBridgeProvider>
-              <StatsFilterBridgeProvider>
-                <ProfileHeaderShareProvider>
-                  {/* WebBoardPresenceProvider wraps the BLE provider so the
-                      connect→resolveBoardForSerial and wall-confirm→reportClimb
-                      wiring inside BluetoothProvider can read the wall context.
-                      Inert (no client, null boardId) until a BLE serial resolves
-                      to a board. */}
-                  <WebBoardPresenceProvider>
-                    <RootBluetoothProvider>
-                      <PlaylistsAdapterProvider>
-                        <GlobalHeader boardConfigs={boardConfigs} />
-                        {children}
-                        <RootBottomBar boardConfigs={boardConfigs} />
-                        <BoardPresencePanel />
-                        <RootSessionSummaryDialog />
-                        <RootSeshSettingsDrawer />
-                        <SessionWakeLock />
-                      </PlaylistsAdapterProvider>
-                    </RootBluetoothProvider>
-                  </WebBoardPresenceProvider>
-                </ProfileHeaderShareProvider>
-              </StatsFilterBridgeProvider>
-            </SearchDrawerBridgeProvider>
+            <StatsFilterBridgeProvider>
+              <ProfileHeaderShareProvider>
+                {/* WebBoardPresenceProvider wraps the BLE provider so the
+                    connect→resolveBoardForSerial and wall-confirm→reportClimb
+                    wiring inside BluetoothProvider can read the wall context.
+                    Inert (no client, null boardId) until a BLE serial resolves
+                    to a board. */}
+                <WebBoardPresenceProvider>
+                  <RootBluetoothProvider>
+                    <PlaylistsAdapterProvider>
+                      <GlobalHeader boardConfigs={boardConfigs} />
+                      {children}
+                      <RootBottomBar boardConfigs={boardConfigs} />
+                      <BoardPresencePanel />
+                      <RootSessionSummaryDialog />
+                      <RootSeshSettingsDrawer />
+                      <SessionWakeLock />
+                    </PlaylistsAdapterProvider>
+                  </RootBluetoothProvider>
+                </WebBoardPresenceProvider>
+              </ProfileHeaderShareProvider>
+            </StatsFilterBridgeProvider>
           </BoardSwitchConfirmProvider>
         </QueueBridgeProvider>
       </PersistentSessionProvider>
@@ -207,7 +202,6 @@ export function RootBottomBar({ boardConfigs }: { boardConfigs: BoardConfigData 
     isDevelopmentRoute || (HIDE_TAB_BAR_PAGES.some((prefix) => pathname.startsWith(prefix)) && !hasActiveQueue);
   // Gym + admin surfaces never host the queue control bar, even mid-session.
   const hideQueueBar = isQueueBarHiddenPath(pathname);
-  const shouldShowQueueShell = !isDevelopmentRoute && isBoardRoutePath(pathname) && !hasActiveQueue && !boardDetails;
 
   // Measure the bottom bar's visual occlusion and publish it into the
   // sidecar --bottom-bar-height-measured custom property. The visible
@@ -285,7 +279,6 @@ export function RootBottomBar({ boardConfigs }: { boardConfigs: BoardConfigData 
           </BoardProvider>
         </ErrorBoundary>
       )}
-      {shouldShowQueueShell && <QueueControlBarShell />}
       {!hideTabBar && <BottomTabBar boardDetails={boardDetails} angle={angle} boardConfigs={boardConfigs} />}
     </div>
   );

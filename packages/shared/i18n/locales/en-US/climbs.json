@@ -20,21 +20,9 @@
       "seoSetterSuffix": " set by {{setter}}",
       "seoAscentsSuffix": ". {{ascents}} ascents logged"
     },
-    "create": {
-      "title": "Create a climb",
-      "description": "Set a new climb on your board"
-    },
     "import": {
       "title": "Import climbs",
       "description": "Import MoonBoard climbs from screenshots"
-    },
-    "liked": {
-      "title": "Liked climbs",
-      "description": "Climbs you've liked"
-    },
-    "logbook": {
-      "title": "Logbook",
-      "description": "Your climbing history for this board"
     }
   },
   "list": {
@@ -72,9 +60,7 @@
       }
     }
   },
-  "header": {
-    "createNewClimb": "Create new climb"
-  },
+  "header": {},
   "share": {
     "actionLabel": "Share",
     "actionText": "Check out \"{{climbName}}\" ({{difficulty}}) on Boardsesh",
@@ -193,7 +179,6 @@
       "onlyCompleted": "Only Completed"
     },
     "actions": {
-      "search": "Search",
       "clearAll": "Clear all",
       "signIn": "Sign In"
     },
@@ -461,24 +446,6 @@
       "cancel": "Cancel"
     }
   },
-  "liked": {
-    "heroTitle": "Liked Climbs",
-    "heroSubtitle": "Your favorite climbs",
-    "signInRequired": "Sign In Required",
-    "signInBody": "Please sign in to view your liked climbs.",
-    "actionsAriaLabel": "Actions",
-    "queueAll": "Add all to up next",
-    "adding": "Adding...",
-    "noClimbsToAdd": "No climbs to add",
-    "addedToQueue_one": "Added {{count}} climb to up next",
-    "addedToQueue_other": "Added {{count}} climbs to up next",
-    "addToQueueFailed": "Failed to add climbs to up next",
-    "loadFailed": "Failed to load liked climbs",
-    "emptyState": "No liked climbs yet. Heart some climbs to see them here!"
-  },
-  "moonboard": {
-    "invalidLayout": "Invalid MoonBoard layout"
-  },
   "createClimbForm": {
     "draftBadge": "Draft",
     "namePlaceholder": "Climb name",
@@ -596,6 +563,11 @@
     }
   },
   "moonboardImport": {
+    "picker": {
+      "title": "Pick your MoonBoard",
+      "hint": "Choose the board and angle you're importing from, then drop in your screenshots.",
+      "angleOption": "{{angle}}°"
+    },
     "card": {
       "skipping": "Skipping",
       "duplicate": "Skipping: Already Exists",

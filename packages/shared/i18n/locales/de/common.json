@@ -412,8 +412,6 @@
   "ariaLabels": {
     "close": "Schließen",
     "back": "Zurück",
-    "clearSearch": "Suche leeren",
-    "openFilters": "Filter öffnen",
     "openQueue": "Warteschlange öffnen",
     "openStatsFilters": "Statistik-Filter öffnen",
     "shareProfile": "Profil teilen",
@@ -435,7 +433,6 @@
     "createdClimbs": "Gebaute Boulder",
     "auroraMigration": "Aurora-Migration",
     "searchPlaceholder": "Was willst du klettern?",
-    "searchClimbsPlaceholder": "Boulder suchen...",
     "startClimbing": "Loslegen"
   },
   "share": {

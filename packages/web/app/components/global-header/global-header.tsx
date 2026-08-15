@@ -6,8 +6,6 @@ import IconButton from '@mui/material/IconButton';
 import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
 import SearchOutlined from '@mui/icons-material/SearchOutlined';
-import ClearOutlined from '@mui/icons-material/ClearOutlined';
-import FilterListOutlined from '@mui/icons-material/FilterListOutlined';
 import SettingsOutlined from '@mui/icons-material/SettingsOutlined';
 import IosShareOutlined from '@mui/icons-material/IosShare';
 import NotificationsOutlined from '@mui/icons-material/NotificationsOutlined';
@@ -17,12 +15,10 @@ import { useUnreadNotificationCount } from '@/app/hooks/use-unread-notification-
 import { useSession } from 'next-auth/react';
 import UnifiedSearchDrawer from '@/app/components/search-drawer/unified-search-drawer';
 import { shareWithFallback } from '@/app/lib/share-utils';
-import { useSearchDrawerBridge } from '@/app/components/search-drawer/search-drawer-bridge-context';
 import UserDrawer from '@/app/components/user-drawer/user-drawer';
 import StartClimbingButton from '@/app/components/start-climbing-button';
 import { useIsOnBoardRoute } from '@/app/components/persistent-session/persistent-session-context';
 import type { BoardConfigData } from '@/app/lib/server-board-configs';
-import { isBoardCreatePath, isBoardListPath } from '@/app/lib/board-route-paths';
 import { isChromeLessPath } from '@/app/lib/chrome-less-routes';
 
 import TuneOutlined from '@mui/icons-material/TuneOutlined';
@@ -184,12 +180,6 @@ export default function GlobalHeader({ boardConfigs }: GlobalHeaderProps) {
 
   const isOnBoardRoute = useIsOnBoardRoute();
   const notificationUnreadCount = useUnreadNotificationCount();
-  const {
-    openClimbSearchDrawer,
-    nameFilter,
-    setNameFilter,
-    hasActiveNonNameFilters: nonNameFiltersActive,
-  } = useSearchDrawerBridge();
   const statsFilterBridge = useStatsFilterBridge();
   const profileHeaderShare = useProfileHeaderShare();
   const pathname = usePathnameWithoutLocale();
@@ -248,11 +238,6 @@ export default function GlobalHeader({ boardConfigs }: GlobalHeaderProps) {
   // Chrome-less surfaces (kiosk TVs, embeds) render zero app chrome — the
   // kiosk brings its own 64px brand header and a strict 100dvh no-scroll frame.
   if (isChromeLessPath(pathname)) {
-    return null;
-  }
-
-  // On board create routes, hide the header entirely
-  if (isBoardCreatePath(pathname)) {
     return null;
   }
 
@@ -386,32 +371,14 @@ export default function GlobalHeader({ boardConfigs }: GlobalHeaderProps) {
   };
   const titleHeaderPagePrefix = TITLE_HEADER_PAGE_PREFIXES.find((prefix) => pathname.startsWith(prefix));
 
-  // Pathname-derived gate: lets us SSR the filter and queue buttons before the
-  // board-route bridge injectors run on the client. The bridge callbacks
-  // (`openClimbSearchDrawer`, `boardDetails`) are still null on the server, so
-  // the click handlers no-op until hydration — but the icons themselves render
-  // in the initial HTML and don't pop in.
-  const isClimbListPage = isBoardListPath(pathname);
-
-  // When the bridge is active (on a board list page), delegate to the board route's drawer
-  const useClimbSearchBridge = openClimbSearchDrawer !== null;
-
+  // Every surface gets the same read-only search trigger: the board list's
+  // in-place name filter and filter drawer were wired by the board header's
+  // bridge injector, which came down with the board-route siblings (#4433).
   const handleSearchFocus = () => {
-    // On non-list pages, the input acts as a fake search trigger
-    if (!isClimbListPage) {
-      inputRef.current?.blur();
-      setSearchRendered(true);
-      setSearchOpen(true);
-    }
+    inputRef.current?.blur();
+    setSearchRendered(true);
+    setSearchOpen(true);
   };
-
-  const handleFilterClick = () => {
-    if (useClimbSearchBridge) {
-      openClimbSearchDrawer();
-    }
-  };
-
-  const searchPlaceholder = isClimbListPage ? t('header.searchClimbsPlaceholder') : t('header.searchPlaceholder');
 
   // Simple title header for specific pages (back button + title, no search/sesh)
   if (titleHeaderPagePrefix) {
@@ -423,57 +390,28 @@ export default function GlobalHeader({ boardConfigs }: GlobalHeaderProps) {
       <header className={styles.header}>
         <UserDrawer boardConfigs={boardConfigs} />
 
-        <div id={isClimbListPage ? 'onboarding-search-button' : undefined} className={styles.searchInput}>
+        <div className={styles.searchInput}>
           <TextField
             inputRef={inputRef}
-            placeholder={searchPlaceholder}
+            placeholder={t('header.searchPlaceholder')}
             variant="outlined"
             size="small"
             fullWidth
-            value={isClimbListPage ? nameFilter : ''}
-            onChange={(e) => setNameFilter?.(e.target.value)}
+            value=""
             onFocus={handleSearchFocus}
             aria-label={t('ariaLabels.searchClimbsByName')}
             slotProps={{
               input: {
-                readOnly: !isClimbListPage,
+                readOnly: true,
                 startAdornment: (
                   <InputAdornment position="start">
                     <SearchOutlined sx={{ fontSize: 18 }} />
                   </InputAdornment>
                 ),
-                endAdornment:
-                  useClimbSearchBridge && nameFilter ? (
-                    <InputAdornment position="end">
-                      <IconButton
-                        size="small"
-                        onClick={() => setNameFilter?.('')}
-                        aria-label={t('ariaLabels.clearSearch')}
-                        edge="end"
-                        sx={{ padding: '2px' }}
-                      >
-                        <ClearOutlined sx={{ fontSize: 16 }} />
-                      </IconButton>
-                    </InputAdornment>
-                  ) : undefined,
               },
             }}
           />
         </div>
-
-        {isClimbListPage && (
-          <div className={styles.iconButtonWrapper}>
-            <IconButton
-              onClick={handleFilterClick}
-              aria-label={t('ariaLabels.openFilters')}
-              size="small"
-              disabled={!useClimbSearchBridge}
-            >
-              <FilterListOutlined />
-            </IconButton>
-            {nonNameFiltersActive && <span className={styles.filterActiveIndicator} />}
-          </div>
-        )}
 
         <StartClimbingButton
           label={t('header.startClimbing')}

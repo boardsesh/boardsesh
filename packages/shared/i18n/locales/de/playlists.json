@@ -5,8 +5,7 @@
       "description": "Entdecke öffentliche Kletter-Playlists und verwalte nach dem Anmelden deine eigenen."
     },
     "detail": {
-      "fallbackTitle": "Playlist",
-      "fallbackDescription": "Kletter-Playlist auf Boardsesh"
+      "fallbackTitle": "Playlist"
     }
   },
   "library": {
