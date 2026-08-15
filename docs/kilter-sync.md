@@ -363,7 +363,7 @@ than persisting an unrenewable credential.
 
 ### Access gate
 
-Account linking is gated client-side by the `kilter-oauth-linking` PostHog feature flag. The web and mobile settings UIs read the flag (`useFeatureFlag('kilter-oauth-linking')`) and only show the Kilter sign-in card when it's on (or when a Kilter account is already linked, so it stays manageable if the flag flips off). Toggling the flag in PostHog rolls the importer in or out without a redeploy. The backend OAuth/password endpoints stay authenticated and rate-limited but no longer enforce a user allowlist.
+Account linking is gated client-side by the `kilter-oauth-linking` PostHog feature flag. The app reads the flag (`useFeatureFlag('kilter-oauth-linking')`) and only shows the Kilter sign-in card when it's on (or when a Kilter account is already linked, so it stays manageable if the flag flips off). Toggling the flag in PostHog rolls the importer in or out without a redeploy. The backend OAuth/password endpoints stay authenticated and rate-limited but no longer enforce a user allowlist.
 
 ## Daemon
 

@@ -10,25 +10,17 @@
     "profileError": "Impossible de charger le profil"
   },
   "profile": {
-    "title": "Profil",
     "subtitle": "Choisissez comment vous apparaissez sur Boardsesh",
     "editAction": "Modifier le profil",
     "avatar": {
-      "label": "Photo de profil",
       "upload": "Importer",
       "change": "Modifier",
-      "remove": "Retirer",
-      "hint": "JPG, PNG, GIF ou WebP. Jusqu'à 10 Mo, compression automatique.",
       "hintMobile": "Recadrée en carré et compressée automatiquement.",
       "permissionDenied": "Autorisez l'accès aux photos dans Réglages pour choisir une photo de profil."
     },
     "displayName": {
       "label": "Nom affiché",
       "placeholder": "Votre nom"
-    },
-    "instagram": {
-      "label": "Profil Instagram",
-      "placeholder": "https://instagram.com/utilisateur"
     },
     "email": {
       "label": "E-mail",
@@ -39,32 +31,19 @@
     "saveError": "Impossible d'enregistrer les paramètres",
     "validation": {
       "displayNameTooLong": "Le nom doit faire moins de 100 caractères",
-      "invalidInstagramUrl": "Saisissez une URL de profil Instagram valide",
-      "invalidImageType": "Seules les images JPG, PNG, GIF et WebP sont acceptées",
-      "imageTooLarge": "L'image doit faire moins de 10 Mo",
       "compressionFailed": "Compression impossible, prenez une image plus petite"
     },
     "avatarUploadFailed": "Impossible d'importer la photo"
   },
-  "preferences": {
-    "title": "Affichage",
-    "subtitle": "Personnalisez l'affichage des cotations et autres données",
-    "gradeFormat": {
-      "label": "Format des cotations",
-      "vGrade": "V-Grade (V3, V6, ...)",
-      "font": "Font (6A, 7C+, ...)"
-    }
-  },
-  "logbook": {
-    "title": "Votre carnet",
-    "subtitle": "Vos blocs enregistrés, filtrables"
+  "appHandoff": {
+    "title": "Le reste est dans l'app",
+    "subtitle": "Votre profil, les applications connectées et la suppression de compte sont dans l'app Boardsesh.",
+    "cta": "Ouvrir l'app"
   },
   "deleteAccount": {
     "title": "Supprimer le compte",
-    "warning": "Supprime définitivement votre compte et toutes les données associées. Action irréversible.",
     "button": "Supprimer le compte",
     "dialog": {
-      "title": "Supprimer votre compte ?",
       "warning": "Définitif. Votre profil, vos brouillons de blocs, votre carnet et toutes les autres données seront supprimés sans possibilité de récupération.",
       "checking": "Vérification de vos blocs...",
       "publishedClimbs_one": "Vous avez <strong>{{count}}</strong> bloc publié qui sera conservé après la suppression.",
@@ -159,7 +138,6 @@
   },
   "aurora": {
     "title": "Comptes de board",
-    "subtitle": "Liez vos comptes de board pour importer vos données Aurora dans Boardsesh, ou importez depuis un fichier d'export JSON. On synchronise votre carnet, vos enchaînements et vos blocs DEPUIS Aurora toutes les 12 heures. Les données créées dans Boardsesh restent locales et ne repartent pas vers Aurora.",
     "card": {
       "boardSuffix": "Board",
       "username": "Identifiant :",
@@ -215,7 +193,6 @@
       "description": "Saisissez votre identifiant et mot de passe Kilter. Votre mot de passe est échangé contre un jeton sécurisé et n'est jamais stocké. Vos croix se synchronisent sous quelques heures.",
       "passwordHelp": "Fonctionne avec votre connexion Kilter habituelle. Les comptes avec double authentification ou connexion sociale uniquement ne peuvent pas se connecter ainsi — utilisez Importer."
     },
-    "unlinkSuccess": "Compte délié",
     "unlinkError": "Déliaison du compte impossible",
     "unlinkPartial": "Nous avons délié votre compte de notre côté, mais l'app Kilter peut rester connectée. Déconnectez-vous aussi dans Kilter si vous voulez couper le lien complètement.",
     "loadRetry": "Réessayer",
@@ -223,9 +200,7 @@
       "connectedAs": "Connecté en tant que {{name}}",
       "connected": "Connecté",
       "notConnected": "Non connecté",
-      "kilterConnected": "Kilter connecté",
       "kilterNotAllowed": "La synchronisation Kilter n'est pas encore activée pour ce compte.",
-      "kilterConnectFailed": "Impossible de connecter Kilter. Réessaie.",
       "linkSuccess": "{{boardName}} lié",
       "unlinkSuccess": "{{boardName}} délié",
       "unlinkPartial": "{{boardName}} a été retiré ici, mais la session du fournisseur peut rester active.",
@@ -252,7 +227,6 @@
         "attempts": "Importation des essais",
         "circuits": "Importation des circuits"
       },
-      "fileLabel": "Importer un fichier d'export JSON Aurora",
       "tooLarge": "Fichier trop volumineux (max 200 Mo). Vérifiez que vous avez choisi le bon fichier.",
       "parseError": "Lecture du JSON impossible. Vérifiez le format du fichier.",
       "readError": "Lecture du fichier impossible. Réessayez.",
@@ -290,8 +264,6 @@
         "unresolvedAttemptsTitle_other": "{{count}} essais sans bloc associé",
         "unresolvedCircuitsTitle_one": "{{count}} bloc du circuit n'a pas pu être associé",
         "unresolvedCircuitsTitle_other": "{{count}} blocs du circuit n'ont pas pu être associés",
-        "unresolvedTitle_one": "{{count}} bloc n'a pas pu être associé",
-        "unresolvedTitle_other": "{{count}} blocs n'ont pas pu être associés",
         "unresolvedMore": "...et {{count}} de plus",
         "partialTitle": "Importation interrompue",
         "partialBody": "Certaines données n'ont peut-être pas été importées. Réimporter le même fichier est sûr et complétera ce qui manque."
@@ -319,14 +291,12 @@
         "body": "Name: [full name]\nMoonBoard username: [username]\nAccount email: [email address]\n\nMy MoonBoard logbook is personal data because it records my climbing activity and sporting achievements and is linked to my identifiable account. Please treat this as a UK GDPR subject access request and, where applicable, a data portability request. ICO guidance on personal data, subject access requests, data portability, and response time limits is linked below for reference:\nhttps://ico.org.uk/for-the-public/time-limits-for-responding-to-data-protection-rights-requests/\n\nPlease include all personal data linked to my MoonBoard account, including where available:\n\naccount/profile details;\nusername and account identifiers;\nproblems I have created or logged;\nsends, ascents, benchmarks, grades, repeats, attempts, dates, and session/history data;\nfavourites, saved problems, custom problems, and user-generated content linked to my account;\nboard/setup preferences and app/service usage data linked to my account;\nany related metadata or identifiers associated with my MoonBoard profile.\n\nThe ICO’s guidance says organisations should respond to subject access requests without undue delay and within one month. If you require identity verification, clarification, or a secure delivery method, please let me know promptly.\n\nWhere technically feasible, I would prefer the export in CSV or JSON format. Alternatively, please provide the data in another structured, commonly used, machine-readable format.\n\nPlease confirm receipt of this request and the date by which you expect to respond.\n\nKind regards,\n[name]"
       },
       "csvImport": {
-        "fileLabel": "Export CSV MoonBoard",
         "parseError": "Impossible de lire ce CSV MoonBoard. Vérifiez qu'il commence par ProblemId,Grade,Tries,Attempts,Rating,Date.",
         "parserUnavailable": "L'import CSV MoonBoard n'est pas encore disponible dans cette version.",
         "failed": "L'import MoonBoard a échoué. Réessayez.",
         "successCount": "{{count}} éléments du carnet MoonBoard importés",
         "partialWarning": "L'import MoonBoard s'est terminé partiellement. Réimporter le fichier est sûr.",
         "interrupted": "L'import MoonBoard s'est arrêté avant la fin. Réimporter le fichier est sûr.",
-        "interruptedShort": "L'import MoonBoard s'est arrêté avant la fin.",
         "steps": {
           "resolving": "Association des problèmes MoonBoard",
           "dedup": "Recherche de doublons",
@@ -358,7 +328,6 @@
         "attempts": "Essais",
         "attemptsSummary": "{{imported}} importés, {{skipped}} ignorés (déjà existants), {{failed}} non associés",
         "unresolvedTitle": "{{count}} problèmes MoonBoard n'ont pas pu être associés",
-        "partialTitle": "Importation interrompue",
         "partialBody": "Certaines données MoonBoard n'ont peut-être pas été importées. Réimporter le même fichier est sûr et complétera ce qui manque."
       }
     }
@@ -509,7 +478,6 @@
     "expiresIn": "Expire dans {{seconds}} s",
     "expired": "Code expiré — obtiens-en un nouveau",
     "generating": "Obtention d'un code…",
-    "error": "Impossible d'obtenir un code. Réessaie.",
-    "close": "Terminé"
+    "error": "Impossible d'obtenir un code. Réessaie."
   }
 }

@@ -15,14 +15,6 @@ export type AuroraCredentialsResponse = {
   credentials: AuroraCredentialStatus[];
 };
 
-export type UnsyncedCounts = Record<
-  string,
-  {
-    ascents: number;
-    climbs: number;
-  }
->;
-
 export type DeleteCredentialResult =
   | { success: true }
   | { success: false; localCleared: true; reason: 'revocation_failed' };
@@ -96,11 +88,6 @@ export async function getAuroraCredentials(transport: AuroraBackendTransport): P
   return requestBackendJson<AuroraCredentialsResponse>(transport, '/api/aurora-credentials');
 }
 
-export async function getAuroraUnsyncedCounts(transport: AuroraBackendTransport): Promise<UnsyncedCounts> {
-  const response = await requestBackendJson<{ counts: UnsyncedCounts }>(transport, '/api/aurora-credentials/unsynced');
-  return response.counts;
-}
-
 export async function saveAuroraCredential(
   transport: AuroraBackendTransport,
   input: { boardType: AuroraBoardName; username: string; password: string },
@@ -135,29 +122,4 @@ export async function createKilterHandoffStartUrl(
     body: JSON.stringify({ returnUrl }),
   });
   return response.startUrl;
-}
-
-export async function finalizeKilterCredential(
-  transport: AuroraBackendTransport,
-  completion: string,
-): Promise<{ success: true }> {
-  return requestBackendJson<{ success: true }>(transport, '/api/board-credentials/kilter/finalize', {
-    method: 'POST',
-    body: JSON.stringify({ completion }),
-  });
-}
-
-/**
- * Link a Kilter account from a username + password (Keycloak ROPC). Used instead
- * of the OAuth handoff because Kilter hasn't registered a redirect URI for us. The
- * password is exchanged for a refresh token server-side and never stored.
- */
-export async function saveKilterCredentialViaPassword(
-  transport: AuroraBackendTransport,
-  input: { username: string; password: string },
-): Promise<{ success: true }> {
-  return requestBackendJson<{ success: true }>(transport, '/api/board-credentials/kilter/password', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  });
 }

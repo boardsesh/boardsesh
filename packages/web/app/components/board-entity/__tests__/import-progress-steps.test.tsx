@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vite-plus/test';
 import { render, screen } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
-import { ImportProgressSteps, STEP_ORDER, STEP_LABELS, type ImportProgress } from '../aurora-credentials-section';
+import { ImportProgressSteps, STEP_ORDER, type ImportProgress } from '../board-credential-card';
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
@@ -14,10 +14,15 @@ vi.mock('react-i18next', () => ({
 
 describe('ImportProgressSteps', () => {
   it('renders all step labels', () => {
+    // Asserted against the catalog the component actually reads. The old
+    // hardcoded `STEP_LABELS` map passed only because its six strings happened
+    // to equal the six en-US values verbatim, so a copy edit would have red-ed
+    // this test and been "fixed" by editing a constant nothing rendered. The
+    // map is deleted; this is the assertion that replaces it.
     render(<ImportProgressSteps progress={null} />);
 
     for (const step of STEP_ORDER) {
-      expect(screen.getByText(STEP_LABELS[step])).toBeTruthy();
+      expect(screen.getByText(tFromCatalog('settings', `aurora.import.steps.${step}`))).toBeTruthy();
     }
   });
 

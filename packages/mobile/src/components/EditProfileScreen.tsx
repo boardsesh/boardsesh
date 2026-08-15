@@ -17,9 +17,9 @@ import { Button } from './Button';
 import { Text } from './Text';
 
 const DISPLAY_NAME_MAX = 100;
-// Match the web client (settings-page-content.tsx): cap the longest side at
-// 1024px and re-encode as JPEG q0.85 so a multi-megapixel camera photo lands
-// comfortably under the backend's 2MB avatar limit.
+// Cap the longest side at 1024px and re-encode as JPEG q0.85 so a
+// multi-megapixel camera photo lands comfortably under the backend's 2MB
+// avatar limit.
 const MAX_DIMENSION = 1024;
 const COMPRESSION_QUALITY = 0.85;
 

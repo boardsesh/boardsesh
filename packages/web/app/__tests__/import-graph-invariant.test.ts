@@ -98,6 +98,7 @@ const DELETED_COMPONENT_DIRS = [
   'board-presence',
   'connection-manager',
   'notifications',
+  'settings',
 ];
 
 /**
@@ -150,9 +151,13 @@ const DELETED_HOOK_STEMS = [
 const KEPT_BLE_FILES = new Set(['app/lib/ble/capacitor-utils.ts', 'app/lib/ble/capacitor-types.d.ts']);
 
 /**
- * `components/settings` is deliberately absent: a later PR keeps two of its
- * sections, so it is not an unconditional delete and this test must not
- * pre-judge it.
+ * `components/settings` joined `DELETED_COMPONENT_DIRS` in W-21 (#4440): the
+ * directory is gone. `controllers-section` and `set-password-section` moved to
+ * `components/account/` back in W-11, and the two exports `board-import-prompt`
+ * still renders — `BoardCredentialCard` and `ImportProgressSteps` — were lifted
+ * to `components/board-entity/board-credential-card.tsx`. The delete set has no
+ * existence check, so listing it is a forward guard: if the directory is ever
+ * re-created and a keep root imports it, `deleteSetLabel` flags that edge.
  */
 function deleteSetLabel(webRelativePath: string): string | null {
   for (const componentDir of DELETED_COMPONENT_DIRS) {
