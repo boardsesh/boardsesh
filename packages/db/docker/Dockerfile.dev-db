@@ -22,6 +22,8 @@ FROM postgres:18.4-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2d
 ARG POSTGIS_PACKAGE_VERSION=3.6.4+dfsg-2.pgdg12+1
 ARG HYPOPG_PACKAGE_VERSION=1.4.3-1.pgdg12+1
 
+# The Debian build revision is intentionally exact: it is part of the
+# digest-pinned base artifact contract. Update this assertion with the digest.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       "postgresql-18-postgis-3=${POSTGIS_PACKAGE_VERSION}" \
@@ -257,9 +259,12 @@ RUN set -e && \
         hash=$(sha256sum "$sql_file" | cut -d' ' -f1); \
         applied=$((applied + 1)); \
         echo "  [$applied/$migration_count] Applying: $tag"; \
-        gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -f "$sql_file" || { echo "  WARNING: migration $tag had errors, continuing..."; true; }; \
-        gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -c "INSERT INTO \"__drizzle_migrations\" (hash, created_at) VALUES ('$hash', $(date +%s)000)" && \
-        gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -c "INSERT INTO drizzle.\"__drizzle_migrations\" (hash, created_at) VALUES ('$hash', $(date +%s)000)"; \
+        if ! gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -f "$sql_file"; then \
+          echo "  ERROR: migration $tag failed; refusing to record it as applied"; \
+          exit 1; \
+        fi; \
+        gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -c "INSERT INTO \"__drizzle_migrations\" (hash, created_at) VALUES ('$hash', $(date +%s)000)" || exit 1; \
+        gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -c "INSERT INTO drizzle.\"__drizzle_migrations\" (hash, created_at) VALUES ('$hash', $(date +%s)000)" || exit 1; \
       else \
         echo "  ERROR: Migration file not found: $sql_file" && false; \
       fi; \

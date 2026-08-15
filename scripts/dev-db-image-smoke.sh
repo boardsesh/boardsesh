@@ -36,7 +36,8 @@ fi
 wait_for_postgres() {
   local attempt=0
   while [[ "$attempt" -lt 300 ]]; do
-    if docker exec "$CONTAINER_NAME" pg_isready -U postgres -d main -q >/dev/null 2>&1; then
+    if docker exec "$CONTAINER_NAME" psql -X -Atq -U postgres -d main \
+      -c 'SELECT 1;' >/dev/null 2>&1; then
       return
     fi
     attempt=$((attempt + 1))

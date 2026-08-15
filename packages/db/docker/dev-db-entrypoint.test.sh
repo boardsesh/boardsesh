@@ -66,6 +66,18 @@ if run_entrypoint "$PARTIAL_ROOT" "$TEST_ROOT/partial-result" 2>"$TEST_ROOT/part
 fi
 grep -Fq 'is incomplete' "$TEST_ROOT/partial-error"
 
+readonly PARTIAL_WITHOUT_VERSION_ROOT="$TEST_ROOT/partial-without-version"
+mkdir -p "$PARTIAL_WITHOUT_VERSION_ROOT/18/docker/base"
+printf 'partial\n' >"$PARTIAL_WITHOUT_VERSION_ROOT/18/docker/base/1"
+if run_entrypoint \
+  "$PARTIAL_WITHOUT_VERSION_ROOT" \
+  "$TEST_ROOT/partial-without-version-result" \
+  2>"$TEST_ROOT/partial-without-version-error"; then
+  printf 'expected a non-empty PGDATA without PG_VERSION to be rejected\n' >&2
+  exit 1
+fi
+grep -Fq 'PGDATA is partially initialized' "$TEST_ROOT/partial-without-version-error"
+
 readonly UNSEEDED_ROOT="$TEST_ROOT/unseeded"
 mkdir -p "$UNSEEDED_ROOT/18/docker"
 printf '18\n' >"$UNSEEDED_ROOT/18/docker/PG_VERSION"
