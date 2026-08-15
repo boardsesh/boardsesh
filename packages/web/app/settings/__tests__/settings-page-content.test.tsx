@@ -12,7 +12,12 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
-import { APP_URL } from '@/app/lib/app-origin';
+
+// Hand-written rather than rebuilt from `APP_URL`: an expectation assembled the
+// same way as the code under test cannot catch a malformed URL. Safe to pin
+// because `NEXT_PUBLIC_APP_URL` is unset under vitest, so the origin resolves to
+// the shared prod default (same premise as middleware.test.ts:617).
+const EXPECTED_HANDOFF_HREF = 'https://app.boardsesh.com/profile/more';
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
@@ -43,7 +48,9 @@ vi.mock('next-auth/react', () => ({
 }));
 
 // The two kept sections are stubbed so this file asserts what the page renders,
-// not what they render. Both have their own unit tests.
+// not what they render. Both carry their own render coverage —
+// `components/account/__tests__/set-password-section.test.tsx` and
+// `components/account/__tests__/controllers-section.test.tsx`.
 vi.mock('@/app/components/account/controllers-section', () => ({
   default: () => <div data-testid="controllers-section" />,
 }));
@@ -100,9 +107,12 @@ describe('SettingsPageContent', () => {
   });
 
   it('renders no logbook shortcut', async () => {
+    // Suffix match, not an exact one: `LocaleLink` prefixes the href with the
+    // active locale, so `a[href="/playlists"]` would go quietly inert the day
+    // this file's i18n mock exercises `es` / `fr` / `de`.
     const { container } = await renderSettings();
 
-    expect(container.querySelectorAll('a[href="/playlists"]').length).toBe(0);
+    expect(container.querySelectorAll('a[href$="/playlists"]').length).toBe(0);
   });
 
   it('renders no delete-account section', async () => {
@@ -123,13 +133,20 @@ describe('SettingsPageContent', () => {
     expect(screen.queryByText(tFromCatalog('settings', 'aurora.title'))).toBeNull();
   });
 
-  it('links to the app profile screen for everything it dropped', async () => {
-    // Built literally rather than through the same-path hand-off helper: the SPA
-    // has no /settings route, so `${APP_URL}/settings` would be a 404.
+  it('links to the app profile screen, and links nowhere else', async () => {
+    // The destination is named explicitly rather than mirrored from this
+    // pathname: the SPA has no /settings route, so the same-path form would be
+    // a 404.
+    //
+    // Asserted as the page's whole href list, which is the "and nothing else"
+    // half of the issue's Verifies row: a bound on the hand-off link alone lets
+    // a re-added shortcut card pointing anywhere else slip past every assertion
+    // in this file. Two links is the whole page — the header logo home link and
+    // the hand-off CTA. BackButton is a <button>, so it is not in the list.
     const { container } = await renderSettings();
 
-    const handoffLinks = container.querySelectorAll(`a[href="${APP_URL}/profile/more"]`);
-    expect(handoffLinks.length).toBe(1);
+    const hrefs = Array.from(container.querySelectorAll('a')).map((anchor) => anchor.getAttribute('href'));
+    expect(hrefs).toEqual(['/', EXPECTED_HANDOFF_HREF]);
     expect(screen.getByText(tFromCatalog('settings', 'appHandoff.cta'))).toBeTruthy();
   });
 

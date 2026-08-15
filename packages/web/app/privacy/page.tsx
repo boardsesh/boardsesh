@@ -3,6 +3,7 @@ import Typography from '@mui/material/Typography';
 import Container from '@mui/material/Container';
 import Divider from '@mui/material/Divider';
 import Link from '@mui/material/Link';
+import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 
@@ -116,7 +117,11 @@ export default async function PrivacyPolicyPage() {
         <Paragraph>
           <strong>{t('privacy.deletion.onWeb')}</strong>
           {t('privacy.deletion.onWebBody')}
-          <Link href="https://boardsesh.com/settings" target="_blank" rel="noopener">
+          {/* W-21 (#4440) moved account deletion off www's /settings and into the
+              app's More screen, so the policy's stated web route points at the
+              app origin now. Legally load-bearing copy — keep it matching the
+              button that actually exists. */}
+          <Link href={buildAppHandoffUrl('/profile/more')} target="_blank" rel="noopener">
             {t('privacy.deletion.onWebLink')}
           </Link>
           {t('privacy.deletion.onWebBodyEnd')}

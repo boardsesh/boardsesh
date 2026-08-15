@@ -8,7 +8,6 @@ import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
-import OpenInNewOutlined from '@mui/icons-material/OpenInNewOutlined';
 import { useSession } from 'next-auth/react';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import { localeHref } from '@/app/lib/i18n/locale-href';
@@ -19,16 +18,21 @@ import ControllersSection from '@/app/components/account/controllers-section';
 import SetPasswordSection from '@/app/components/account/set-password-section';
 import BackButton from '@/app/components/back-button';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import { APP_URL } from '@/app/lib/app-origin';
+import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
 
 /**
  * Web settings keeps only what the app can't do: register an ESP32 controller
  * (Web Bluetooth/serial hardware that never moved to the SPA) and set a first
  * password for an OAuth-only account (the app has reset-password, not
- * set-password). Profile, grade format, board accounts, watch pairing and
- * account deletion all live in the app now — W-21 (#4440).
+ * set-password). Profile, board accounts and account deletion all live in the
+ * app now — W-21 (#4440).
+ *
+ * The destination is named explicitly rather than mirroring this pathname: the
+ * SPA has no `/settings` route, so the same-path form would hand out a 404. The
+ * helper is still the right call for the origin half — it trims a trailing
+ * slash off `NEXT_PUBLIC_APP_URL`, which local Expo-web work routinely sets.
  */
-const APP_SETTINGS_URL = `${APP_URL}/profile/more`;
+const APP_MORE_URL = buildAppHandoffUrl('/profile/more');
 
 type UserProfile = {
   email: string;
@@ -158,16 +162,17 @@ export default function SettingsPageContent() {
         <MuiDivider sx={{ my: 2 }} />
 
         {/* Everything this page used to carry now lives in the app, so point
-            people there by name rather than leaving them to guess. Built
-            literally: the SPA has no `/settings` route, so the generic
-            same-path hand-off helper would send them to a 404. */}
+            people there by name rather than leaving them to guess. Same-tab
+            `component="a"`, matching the two other www→app CTAs
+            (`start-climbing-button.tsx`, `playlists/library-page-content.tsx`).
+            No open-in-new glyph, because it does not open a new tab. */}
         <Card>
           <CardContent>
             <Typography variant="h5">{t('appHandoff.title')}</Typography>
             <Typography variant="body2" component="span" color="text.secondary" sx={{ display: 'block', mb: 3 }}>
               {t('appHandoff.subtitle')}
             </Typography>
-            <Button variant="contained" href={APP_SETTINGS_URL} endIcon={<OpenInNewOutlined />} fullWidth>
+            <Button component="a" variant="contained" href={APP_MORE_URL} fullWidth>
               {t('appHandoff.cta')}
             </Button>
           </CardContent>

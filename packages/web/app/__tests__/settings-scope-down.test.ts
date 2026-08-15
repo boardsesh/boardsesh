@@ -50,6 +50,54 @@ const configModule = await import('../../next.config.mjs');
 const nextConfig = configModule.default as unknown as NextConfigWithRedirects;
 const redirects = (await nextConfig.redirects?.()) ?? [];
 
+/** `:name`, an optional `(custom-regex)` group, and an optional `* + ?` modifier. */
+const PARAM_TOKEN = /:(\w+)(\([^)]*\))?([*+?])?/g;
+
+function escapeLiteral(literal: string): string {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Next matches a redirect `source` with path-to-regexp, not by string equality,
+ * so a guard that compares sources as strings is blind to every wildcard shape
+ * this repo actually writes: `/my-library/:path*` and `/you/:path*` are both in
+ * `BASE_REDIRECTS` today, and `/settings/:path*` would match the bare
+ * `/settings` (path-to-regexp folds the preceding `/` into an optional group).
+ * Rebuild enough of that grammar to answer one question — does this rule swallow
+ * `/settings`?
+ */
+function sourceMatcher(source: string): RegExp {
+  let pattern = '';
+  let cursor = 0;
+
+  for (const match of source.matchAll(PARAM_TOKEN)) {
+    const [token, , customGroup, modifier] = match;
+    const literal = source.slice(cursor, match.index);
+    const inner = customGroup ? customGroup.slice(1, -1) : '[^/]+';
+    // `/:path*` and `/:path?` swallow the slash in front of them.
+    const swallowsSlash = (modifier === '*' || modifier === '?') && literal.endsWith('/');
+
+    pattern += escapeLiteral(swallowsSlash ? literal.slice(0, -1) : literal);
+
+    const repeated = modifier === '*' || modifier === '+';
+    const body = repeated ? `(?:${inner})(?:/(?:${inner}))*` : `(?:${inner})`;
+    const optional = modifier === '*' || modifier === '?';
+
+    if (optional) {
+      pattern += swallowsSlash ? `(?:/${body})?` : `(?:${body})?`;
+    } else {
+      pattern += swallowsSlash ? `/${body}` : body;
+    }
+
+    cursor = (match.index ?? 0) + token.length;
+  }
+
+  pattern += escapeLiteral(source.slice(cursor));
+  return new RegExp(`^${pattern}$`);
+}
+
+const SETTINGS_PATHS = ['/settings', '/es/settings', '/fr/settings', '/de/settings'];
+
 describe('settings scope-down', () => {
   it('leaves no trace of the dropped settings components', () => {
     const surviving = DELETED_PATHS.filter((path) => existsSync(join(WEB_ROOT, path)));
@@ -65,9 +113,14 @@ describe('settings scope-down', () => {
     // `/settings` survives the reposition as ESP32 controllers + set-password.
     // A 30x here would strand shipped hardware: the SPA has no equivalent
     // screen, so there is nowhere to send those owners.
+    //
+    // Matched the way Next matches, not by string equality — the natural shape
+    // for a later sweep is a wildcard (`/settings/:path*`, `/settings:rest(.*)`),
+    // and both swallow the bare `/settings` while an `endsWith('/settings')`
+    // filter shrugs.
     const settingsRules = redirects
-      .map((redirect) => redirect.source)
-      .filter((source) => source === '/settings' || source.endsWith('/settings'));
+      .filter((redirect) => SETTINGS_PATHS.some((path) => sourceMatcher(redirect.source).test(path)))
+      .map((redirect) => redirect.source);
 
     expect(settingsRules).toEqual([]);
   });

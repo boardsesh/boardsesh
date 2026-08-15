@@ -154,11 +154,11 @@
       "title": "Eliminación de cuenta",
       "intro": "Puedes borrar tu cuenta y todos los datos asociados en cualquier momento. Hay dos formas:",
       "inApp": "En la app:",
-      "inAppBody": " Ve a Ajustes, baja del todo y toca Eliminar Cuenta. Te pediremos confirmar antes de borrar nada.",
+      "inAppBody": " Abre Más desde tu perfil, baja del todo y toca Eliminar Cuenta. Te pediremos confirmar antes de borrar nada.",
       "onWeb": "En la web:",
       "onWebBody": " Inicia sesión en ",
-      "onWebLink": "boardsesh.com/settings",
-      "onWebBodyEnd": " y baja al final de la página para encontrar el mismo botón Eliminar Cuenta.",
+      "onWebLink": "app.boardsesh.com",
+      "onWebBodyEnd": " y abre Más desde tu perfil para encontrar el mismo botón Eliminar Cuenta.",
       "permanent": "La eliminación es inmediata y permanente. Una vez confirmada, eliminamos de nuestros servidores tu correo, nombre de usuario, entradas del logbook, datos de la cola y el historial de sesiones de fiesta. Esto no se puede deshacer."
     },
     "children": {

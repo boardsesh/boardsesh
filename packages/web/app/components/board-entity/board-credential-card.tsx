@@ -62,21 +62,6 @@ export type ImportProgress = {
 
 export const STEP_ORDER: ImportStep[] = ['climbs', 'resolving', 'dedup', 'ascents', 'attempts', 'circuits'];
 
-/**
- * Untranslated fallback labels, kept alongside `getStepLabels(t)` because the
- * moved `import-progress-steps` test asserts against them. No production caller
- * reads this map — that was already true before the lift; flagged for W-26
- * (#4442) rather than changed here.
- */
-export const STEP_LABELS: Record<ImportStep, string> = {
-  climbs: 'Importing draft climbs',
-  resolving: 'Resolving climb names',
-  dedup: 'Checking for duplicates',
-  ascents: 'Importing ascents',
-  attempts: 'Importing attempts',
-  circuits: 'Importing circuits',
-};
-
 function getStepLabels(t: TFunction<'settings'>): Record<ImportStep, string> {
   return {
     climbs: t('aurora.import.steps.climbs'),
