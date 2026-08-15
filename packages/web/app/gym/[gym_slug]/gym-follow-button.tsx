@@ -4,7 +4,9 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSession } from 'next-auth/react';
 import { FOLLOW_GYM, UNFOLLOW_GYM } from '@boardsesh/graphql/operations';
+import { gymPageCtaClicked } from '@boardsesh/analytics';
 import FollowButton from '@/app/components/ui/follow-button';
+import { trackGymFunnelEvent } from '@/app/lib/gym-funnel-analytics';
 
 type GymFollowButtonProps = {
   gymUuid: string;
@@ -35,6 +37,9 @@ export default function GymFollowButton({ gymUuid, ownerId, isFollowedByMe }: Gy
       unfollowMutation={UNFOLLOW_GYM}
       entityLabel={t('gymEntity.follow.entityLabel')}
       getFollowVariables={(id) => ({ input: { gymUuid: id } })}
+      // One event per accepted click. NOT onFollowChange — that fires again on
+      // rollback, so a failed follow would also report an unfollow.
+      onToggleClick={() => trackGymFunnelEvent(gymPageCtaClicked({ cta: 'follow', gymUuid }))}
     />
   );
 }

@@ -21,6 +21,12 @@ vi.mock('@/app/hooks/use-ws-auth-token', () => ({
   useWsAuthToken: () => ({ token: 'test-token' }),
 }));
 
+// Read for the `viewerState` on the claim CTA event; useSession() throws
+// outside a SessionProvider.
+vi.mock('next-auth/react', () => ({
+  useSession: () => ({ data: { user: { id: 'viewer-1' } }, status: 'authenticated' }),
+}));
+
 const mockRequest = vi.fn();
 vi.mock('@/app/lib/graphql/client', () => ({
   createGraphQLHttpClient: () => ({ request: mockRequest }),

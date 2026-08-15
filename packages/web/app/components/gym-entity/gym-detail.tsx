@@ -44,6 +44,8 @@ import {
   type DeleteGymMutationResponse,
 } from '@boardsesh/graphql/operations';
 import { useSession } from 'next-auth/react';
+import { gymClaimCtaClicked } from '@boardsesh/analytics';
+import { trackGymFunnelEvent, viewerStateFromSessionStatus } from '@/app/lib/gym-funnel-analytics';
 import { themeTokens } from '@/app/theme/theme-config';
 import FollowButton from '@/app/components/ui/follow-button';
 import LocaleLink from '@/app/components/i18n/locale-link';
@@ -77,7 +79,7 @@ export default function GymDetail({ gymUuid, open, onClose, onDeleted, anchor = 
   const [showClaimDialog, setShowClaimDialog] = useState(false);
   const [showReportDialog, setShowReportDialog] = useState(false);
   const { token } = useWsAuthToken();
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const { showMessage } = useSnackbar();
   const currentUserId = session?.user?.id ?? null;
 
@@ -305,7 +307,16 @@ export default function GymDetail({ gymUuid, open, onClose, onDeleted, anchor = 
                 variant="outlined"
                 size="small"
                 startIcon={<VerifiedUserOutlined />}
-                onClick={() => setShowClaimDialog(true)}
+                onClick={() => {
+                  trackGymFunnelEvent(
+                    gymClaimCtaClicked({
+                      placement: 'preview-sheet',
+                      viewerState: viewerStateFromSessionStatus(sessionStatus),
+                      gymUuid: gym.uuid,
+                    }),
+                  );
+                  setShowClaimDialog(true);
+                }}
                 sx={{ textTransform: 'none' }}
               >
                 {t('gymEntity.actions.claim')}

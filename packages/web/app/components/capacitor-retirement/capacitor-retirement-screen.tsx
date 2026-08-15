@@ -9,6 +9,7 @@ import { getPlatform } from '@/app/lib/ble/capacitor-utils';
 import { openExternalUrl } from '@/app/lib/open-external-url';
 import { storeHttpsUrlForPlatform, storeSchemeUrlForPlatform } from '@/app/lib/store-urls';
 import { track } from '@/app/lib/analytics';
+import { APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties } from '@/app/lib/app-install-event';
 import styles from './capacitor-retirement-screen.module.css';
 
 /**
@@ -21,7 +22,7 @@ export const CapacitorRetirementScreen: React.FC = () => {
 
   const openStoreApp = useCallback(() => {
     const platform = getPlatform();
-    track('App Install Click', { platform, source: 'capacitor-retirement' });
+    track(APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties({ platform, source: 'capacitor-retirement' }));
     // Scheme URL lands in the real App Store / Play Store app rather than an
     // in-WebView listing page — same hand-off requestInAppReview() uses.
     openExternalUrl(storeSchemeUrlForPlatform(platform));
@@ -31,7 +32,10 @@ export const CapacitorRetirementScreen: React.FC = () => {
   // out of a blocking screen, so offer the plain https listing too.
   const openStorePage = useCallback(() => {
     const platform = getPlatform();
-    track('App Install Click', { platform, source: 'capacitor-retirement-fallback' });
+    track(
+      APP_INSTALL_CLICK_EVENT,
+      buildAppInstallClickProperties({ platform, source: 'capacitor-retirement-fallback' }),
+    );
     openExternalUrl(storeHttpsUrlForPlatform(platform));
   }, []);
 

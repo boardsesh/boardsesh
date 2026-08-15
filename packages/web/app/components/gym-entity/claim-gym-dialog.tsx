@@ -22,8 +22,10 @@ import {
   emailDomainMatchesWebsite,
   GYM_CLAIM_MESSAGE_MAX_LENGTH,
 } from '@boardsesh/gym-claim';
+import { gymClaimResult, gymClaimSubmitted } from '@boardsesh/analytics';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import { trackGymFunnelEvent } from '@/app/lib/gym-funnel-analytics';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import {
   REQUEST_GYM_CLAIM,
@@ -87,6 +89,15 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
 
   const submit = async (variables: RequestGymClaimMutationVariables) => {
     if (!token) return;
+
+    // `method` comes from what is actually on the wire, not from `mode` state.
+    // The two diverge: the admin branch is also what renders when `mode` is
+    // 'domain' but the gym has no claimable domain, and a submit built by an
+    // earlier render can outlive a mode switch. `gymUuid` is read from props at
+    // fire time for the same reason — one dialog instance is reused across gyms
+    // (see the re-init effect above).
+    trackGymFunnelEvent(gymClaimSubmitted({ method: variables.input.claimEmail ? 'domain' : 'admin', gymUuid }));
+
     setSubmitting(true);
     setError(null);
     try {
@@ -96,8 +107,10 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
         variables,
       );
       if (data.requestGymClaim.status === 'email_sent') {
+        trackGymFunnelEvent(gymClaimResult({ status: 'email_sent', gymUuid }));
         setSentTo(data.requestGymClaim.email ?? email);
       } else if (data.requestGymClaim.status === 'approved') {
+        trackGymFunnelEvent(gymClaimResult({ status: 'approved', gymUuid }));
         setApproved(true);
         // Ownership just moved, so everything the viewer sees about this gym is
         // stale. `canClaim` is computed server-side on the gym page, so a cache
@@ -107,9 +120,14 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
         router.refresh();
         void queryClient.invalidateQueries({ queryKey: ['myGyms'] });
       } else {
+        // The only remaining GymClaimRequestStatus the backend returns.
+        trackGymFunnelEvent(gymClaimResult({ status: 'admin_review', gymUuid }));
         setAdminSent(true);
       }
     } catch (err) {
+      // `error` is ours, not a backend status: the mutation threw or the
+      // network failed, so there is no claim status to report.
+      trackGymFunnelEvent(gymClaimResult({ status: 'error', gymUuid }));
       setError(graphqlErrorMessage(err) ?? t('claimGym.errors.generic'));
     } finally {
       setSubmitting(false);
