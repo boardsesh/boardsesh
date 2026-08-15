@@ -34,9 +34,9 @@ function buildWorkerDatabaseUrl(): string {
   workerUrl.pathname = `/${name}`;
   // Migration 0200 makes catalog INSERT cursors database-owned. Existing tests
   // deliberately seed historical cursor values, so their superuser-only
-  // restore escape hatch is enabled for the worker pool. The adversarial fence
-  // test explicitly turns it off on its writer sessions and proves backdated
-  // input is overwritten.
+  // restore escape hatch is enabled only for this disposable worker pool. Any
+  // trigger-contract test must explicitly turn it off on its writer session;
+  // snapshot-replica-fence does so and proves backdated input is overwritten.
   const existingOptions = workerUrl.searchParams.get('options')?.trim();
   workerUrl.searchParams.set(
     'options',
