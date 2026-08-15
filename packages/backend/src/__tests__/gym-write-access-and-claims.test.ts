@@ -1847,10 +1847,14 @@ describe('requestGymClaim — auto-approval', () => {
 
   it('does not auto-approve a domain claim — it still has to prove the domain', async () => {
     await setAutoApprove(true);
+    // Owner-vouched on purpose: that is now the precondition for the email path
+    // existing at all, so it is what keeps this test about auto-approval rather
+    // than about the vouch guard. The un-vouched case is the next test.
     const claimGym = await insertGym({
-      ownerId: SYSTEM_OWNER,
+      ownerId: OWNER,
       name: 'Domain Listing',
       website: 'https://www.domainlisting.com',
+      websiteVouchedByOwner: true,
     });
 
     await expect(
@@ -1861,9 +1865,33 @@ describe('requestGymClaim — auto-approval', () => {
       ),
     ).resolves.toEqual({ status: 'email_sent', email: 'boss@domainlisting.com' });
 
-    expect(await gymOwnerId(claimGym.uuid)).toBe(SYSTEM_OWNER);
+    expect(await gymOwnerId(claimGym.uuid)).toBe(OWNER);
     expect(await claimRows(claimGym.id)).toEqual([expect.objectContaining({ method: 'domain', status: 'pending' })]);
     expect(sendGymClaimVerificationEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses the email path on a SYSTEM-owned gym and points at admin review', async () => {
+    await setAutoApprove(true);
+    // A synced catalog gym's owner is the never-logged-in import user, so nobody
+    // can ever vouch its website. The domain path is closed for it permanently —
+    // the deliberate cost of closing the editor-repoints-the-website escalation.
+    const claimGym = await insertGym({
+      ownerId: SYSTEM_OWNER,
+      name: 'Catalog Listing',
+      website: 'https://www.cataloglisting.com',
+    });
+
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, claimEmail: 'boss@cataloglisting.com' } },
+        authCtx(CLAIMANT),
+      ),
+    ).rejects.toThrow(/hasn't been confirmed by the gym's owner/);
+
+    expect(await gymOwnerId(claimGym.uuid)).toBe(SYSTEM_OWNER);
+    expect(await claimRows(claimGym.id)).toEqual([]);
+    expect(sendGymClaimVerificationEmail).not.toHaveBeenCalled();
   });
 });
 
