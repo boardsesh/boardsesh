@@ -71,7 +71,7 @@ jobs:
     # like @next/swc, sharp, lightningcss load against, and keeps the
     # shared node_modules cache safe across the build → e2e boundary.
     container:
-      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
     steps:
       - uses: actions/checkout@v6
 
@@ -215,7 +215,7 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
     container:
-      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
 
     services:
       postgres:
@@ -470,7 +470,7 @@ jobs:
     timeout-minutes: 20
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
 
     services:
       postgres:
