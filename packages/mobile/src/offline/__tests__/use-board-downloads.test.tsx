@@ -35,7 +35,7 @@ vi.mock('../offline-sync-adapter', () => ({
 }));
 vi.mock('../use-snapshot-source', () => ({ useSnapshotSource: () => fixtures.snapshotSource }));
 vi.mock('../../lib/graphql/client', () => ({
-  getHttpClient: () => ({ request: spies.graphqlRequest }),
+  getOfflineSyncHttpClient: () => ({ request: spies.graphqlRequest }),
 }));
 vi.mock('../../settings', () => ({
   getSetting: () => ['kilter:1:10', 'tension:2:11'],

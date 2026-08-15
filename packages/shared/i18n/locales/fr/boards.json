@@ -293,6 +293,7 @@
     "offline": {
       "available": "Disponible hors ligne",
       "pending": "En attente de téléchargement",
+      "finalizing": "Finalisation du téléchargement…",
       "bootstrapping": "Téléchargement de la board…",
       "bootstrapPreparing": "Préparation du téléchargement…",
       "bootstrapDownloading": "Téléchargement de {{done}} sur {{total}}",

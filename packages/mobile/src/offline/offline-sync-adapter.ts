@@ -4,7 +4,7 @@
 //   - connectivity probe   → React Query's onlineManager (wired to NetInfo in
 //                            query-provider)
 //   - scheduler wake-ups   → AppState 'active' transitions + NetInfo changes
-//   - schema-drift + cycle telemetry → Sentry / dev-only console.warn
+//   - schema-drift + cycle telemetry → Sentry / PostHog / dev console
 //
 // RULE: mobile code never imports drainMutationQueue / startSyncScheduler /
 // triggerSync / pullSync from '@boardsesh/offline-sync' directly — always from
@@ -48,10 +48,12 @@ import {
   type AbandonedDownloadInfo,
 } from '@boardsesh/offline-sync';
 import { SHARED_EVENTS, sanitizeErrorForAnalytics } from '@boardsesh/analytics';
+import { getErrorStatus, isNetworkError } from '@boardsesh/offline-sync/error-classification';
 import { reportHandledError } from '../lib/error-reporting';
 import { isOfflineEngineEnabled } from '../lib/offline-engine';
 import { takeDownloadTrigger } from '../settings';
 import { track } from '../lib/analytics';
+import { getSyncStatusSnapshot } from '../sync/sync-status';
 
 // Exported so non-drain reporters can record the one dimension that decides
 // whether a failed local write actually lost data: a tick that falls through to
@@ -453,14 +455,78 @@ export function __resetMeteredStateForTests(): void {
   isConnectionMetered = null;
 }
 
-// A failed cycle is routine for offline users (the reconnect trigger retries),
-// so production neither spams the console nor reports expected network errors
-// as handled exceptions.
+// A failed cycle is recoverable — the scheduler retries after 30 seconds — but
+// it still needs an operational terminal event. Artifact events alone cannot
+// reveal whether the later deletion/user-data/board-data handoff failed, which
+// made the multi-board "Waiting to download" incident look like a CDN wedge.
 const warnCycleError = (error: unknown) => {
+  const syncStatus = getSyncStatusSnapshot();
+  // A drain can throw before this cycle emits progress. Do not attribute that
+  // error to the idle frame left by the previous completed cycle.
+  const progress = syncStatus.isSyncing ? syncStatus.progress : null;
+  const expected = isNetworkError(error);
+  const status = getErrorStatus(error);
+  const errorKind =
+    error instanceof Error && error.name === 'AbortError'
+      ? 'aborted'
+      : expected
+        ? 'network'
+        : status !== null
+          ? 'server'
+          : error instanceof Error
+            ? 'exception'
+            : 'non-error';
+  const phase = progress?.phase ?? null;
+  const currentTable = progress?.currentTable ?? null;
+  const errorSignature = `${phase ?? 'unknown'}|${currentTable ?? 'none'}|${errorKind}|${status ?? 'none'}`;
+  const now = Date.now();
+  const shouldReport =
+    errorSignature !== lastCycleErrorSignature || now < lastCycleErrorAt || now - lastCycleErrorAt >= 300_000;
+  if (shouldReport) {
+    track(SHARED_EVENTS.OfflineSyncCycleFailed, {
+      phase,
+      currentTable,
+      documentsProcessed: progress?.documentsProcessed ?? 0,
+      expected,
+      status,
+      errorKind,
+      offlineEngineEnabled: isOfflineEngineEnabled(),
+    });
+    lastCycleErrorSignature = errorSignature;
+    lastCycleErrorAt = now;
+  }
+
+  // Expected reachability failures remain out of Sentry: a phone moving between
+  // networks is routine and PostHog now carries the retry/funnel signal. A
+  // non-transport throw means the engine/database itself failed and deserves a
+  // searchable handled exception as well.
+  if (!expected && shouldReport) {
+    reportHandledError(error, {
+      tags: {
+        source: 'offline-sync',
+        kind: 'cycle',
+        phase: progress?.phase ?? 'unknown',
+      },
+      extra: {
+        currentTable: progress?.currentTable ?? null,
+        documentsProcessed: progress?.documentsProcessed ?? 0,
+      },
+    });
+  }
+
   if (__DEV__) {
     console.warn('[Sync] Sync cycle failed:', error instanceof Error ? error.message : 'unknown');
   }
 };
+
+let lastCycleErrorSignature: string | null = null;
+let lastCycleErrorAt = 0;
+
+/** Test-only reset for the cycle-error telemetry throttle. */
+export function __resetCycleErrorDedupeForTests(): void {
+  lastCycleErrorSignature = null;
+  lastCycleErrorAt = 0;
+}
 
 // Feeds setBackgrounded() (Sentry BOARDSESH-AN) and the metered-link flag above;
 // call once for the app's lifetime — see OfflineSyncBridge.

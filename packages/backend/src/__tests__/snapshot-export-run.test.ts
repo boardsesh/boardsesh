@@ -23,6 +23,7 @@ vi.mock('../storage/s3', () => ({
 import { Readable } from 'node:stream';
 import { sql } from 'drizzle-orm';
 import { LATEST_SCHEMA_VERSION, type SnapshotManifest, type SnapshotManifestEntry } from '@boardsesh/offline-sync';
+import { createPool } from '@boardsesh/db/client';
 import { db } from '../db/client';
 import { uploadToS3, getFromS3Strict, deleteFromS3, listS3Objects } from '../storage/s3';
 import { runExport, mergeManifestEntries } from '../scripts/export-board-snapshots';
@@ -270,6 +271,33 @@ describe('runExport — threshold refresh', () => {
     expect(manifest.entries.find((entry) => entry.layoutId === 1)?.key).not.toBe(staleLayout.key);
     expect(manifest.entries.find((entry) => entry.layoutId === 2)).toEqual(currentLayout);
     // A partial live refresh never has enough information to prune safely.
+    expect(listS3Objects).not.toHaveBeenCalled();
+  });
+
+  it('keeps the previous live entry and uploads no replacement when the replay-boundary probe falls back', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await seedStatsDelta('kilter', 'k1-a', 1);
+    const previousEntry = manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`);
+    serveExistingManifest(manifestFixture([previousEntry]));
+
+    // Temporarily advertise one connection so the observer probe fails closed:
+    // the export transaction can still run, but its LayoutSnapshotResult carries
+    // observer-pool-capacity and no boundary. Restore the shared pool immediately.
+    const poolOptions = createPool().options as { max: number };
+    const originalPoolMax = poolOptions.max;
+    poolOptions.max = 1;
+    try {
+      await expect(runExport(['--gzip', '--key-prefix', GZIP_PREFIX, '--refresh-threshold', '1'])).rejects.toThrow(
+        /Export failed for 1 layout\(s\): kilter:1/,
+      );
+    } finally {
+      poolOptions.max = originalPoolMax;
+    }
+
+    const artifactUploads = vi.mocked(uploadToS3).mock.calls.filter(([, key]) => key !== GZIP_MANIFEST_KEY);
+    expect(artifactUploads).toHaveLength(0);
+    expect(uploadToS3).toHaveBeenCalledTimes(1);
+    expect(uploadedManifest(GZIP_MANIFEST_KEY).entries).toEqual([previousEntry]);
     expect(listS3Objects).not.toHaveBeenCalled();
   });
 
@@ -603,6 +631,16 @@ describe('runExport — gzip + key-prefix (dual-publish transition)', () => {
     await seedClimb('kilter', 1, 'k1-a');
     await expect(runExport(['--key-prefix', '../evil'])).rejects.toThrow(/--key-prefix expects a safe key/);
     await expect(runExport(['--key-prefix'])).rejects.toThrow(/--key-prefix expects a safe key/);
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('rejects an identity export aimed at the live gzip prefix before any upload', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+
+    await expect(runExport(['--key-prefix', GZIP_PREFIX])).rejects.toThrow(
+      '--key-prefix board-snapshots/v1-gzip requires --gzip',
+    );
+
     expect(uploadToS3).not.toHaveBeenCalled();
   });
 

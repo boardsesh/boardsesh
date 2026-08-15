@@ -73,7 +73,71 @@ export function createGraphQLHttpClient(): GraphQLClient {
   });
 }
 
+/**
+ * Offline pulls are retried by the sync scheduler, but it can only do that
+ * after the current request settles. A fetch that never resolves would
+ * otherwise hold the scheduler's single-flight lock forever and leave every
+ * newly enabled board waiting behind it.
+ *
+ * Keep this deadline scoped to offline sync. Interactive GraphQL requests use
+ * the ordinary client above and retain their existing transport behaviour.
+ */
+export const OFFLINE_SYNC_GRAPHQL_REQUEST_TIMEOUT_MS = 30_000;
+
+function createAbortError(message: string): Error {
+  const error = new Error(message);
+  error.name = 'AbortError';
+  return error;
+}
+
+export async function graphqlFetchWithOfflineSyncTimeout(
+  url: string | URL | Request,
+  options: RequestInit = {},
+  timeoutMs = OFFLINE_SYNC_GRAPHQL_REQUEST_TIMEOUT_MS,
+): Promise<Response> {
+  const callerSignal = options.signal;
+  if (callerSignal?.aborted) {
+    throw callerSignal.reason ?? createAbortError('GraphQL request aborted');
+  }
+
+  const requestController = new AbortController();
+  let rejectCancellation: (reason: unknown) => void = () => undefined;
+  const cancellation = new Promise<never>((_resolve, reject) => {
+    rejectCancellation = reject;
+  });
+
+  const abortFromCaller = (): void => {
+    const reason = callerSignal?.reason ?? createAbortError('GraphQL request aborted');
+    requestController.abort(reason);
+    rejectCancellation(reason);
+  };
+  callerSignal?.addEventListener('abort', abortFromCaller, { once: true });
+
+  const timeout = setTimeout(() => {
+    const error = createAbortError(`Offline sync GraphQL request timed out after ${timeoutMs}ms`);
+    requestController.abort(error);
+    rejectCancellation(error);
+  }, timeoutMs);
+
+  try {
+    return await Promise.race([
+      graphqlFetchWithEmptyBodyGuard(url, { ...options, signal: requestController.signal }),
+      cancellation,
+    ]);
+  } finally {
+    clearTimeout(timeout);
+    callerSignal?.removeEventListener('abort', abortFromCaller);
+  }
+}
+
+export function createOfflineSyncGraphQLHttpClient(): GraphQLClient {
+  return new GraphQLClient(getGraphQLHttpUrl(), {
+    fetch: graphqlFetchWithOfflineSyncTimeout,
+  });
+}
+
 let httpClient: GraphQLClient | null = null;
+let offlineSyncHttpClient: GraphQLClient | null = null;
 
 export function getHttpClient(): GraphQLClient {
   if (!httpClient) {
@@ -82,6 +146,14 @@ export function getHttpClient(): GraphQLClient {
   return httpClient;
 }
 
+export function getOfflineSyncHttpClient(): GraphQLClient {
+  if (!offlineSyncHttpClient) {
+    offlineSyncHttpClient = createOfflineSyncGraphQLHttpClient();
+  }
+  return offlineSyncHttpClient;
+}
+
 export function resetHttpClient(): void {
   httpClient = null;
+  offlineSyncHttpClient = null;
 }

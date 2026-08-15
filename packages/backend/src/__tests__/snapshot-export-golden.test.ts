@@ -34,7 +34,7 @@ import { createPool } from '@boardsesh/db/client';
 import { db } from '../db/client';
 import { syncQueries } from '../graphql/resolvers/sync/queries';
 import { toIso } from '../graphql/resolvers/sync/row-normalize';
-import { exportLayoutSnapshot } from '../scripts/export-board-snapshots';
+import { exportLayoutSnapshot, selectDeletionReplayBoundary } from '../scripts/export-board-snapshots';
 
 const USER_ID = 'snapshot-export-user';
 const BOARD_TYPE = 'kilter';
@@ -229,6 +229,107 @@ afterEach(() => {
 });
 
 describe('board-snapshot export ↔ live pull parity', () => {
+  it('models a long-running delete older than the stability window and fails closed without activity visibility', () => {
+    const boundary = selectDeletionReplayBoundary({
+      artifactBuiltAt: '2026-06-01T11:59:50.000Z',
+      exportTransactionStartedAt: '2026-06-01T12:00:00.000Z',
+      // This DELETE began two minutes before the export. Its deleted_at can be
+      // older than the ordinary 30-second stability boundary even though its
+      // uncommitted row remains visible in the artifact snapshot.
+      oldestActiveTransactionStartedAt: '2026-06-01T11:58:00.000Z',
+      stabilityWindowSeconds: 30,
+      visibilityEstablished: true,
+    });
+    expect(boundary).toBe('2026-06-01T11:58:00.000Z');
+
+    expect(
+      selectDeletionReplayBoundary({
+        artifactBuiltAt: '2026-06-01T11:59:50.000Z',
+        exportTransactionStartedAt: '2026-06-01T12:00:00.000Z',
+        oldestActiveTransactionStartedAt: null,
+        stabilityWindowSeconds: 30,
+        visibilityEstablished: false,
+      }),
+    ).toBeNull();
+
+    expect(
+      selectDeletionReplayBoundary({
+        artifactBuiltAt: new Date('invalid'),
+        exportTransactionStartedAt: '2026-06-01T12:00:00.000Z',
+        oldestActiveTransactionStartedAt: null,
+        stabilityWindowSeconds: 30,
+        visibilityEstablished: true,
+      }),
+    ).toBeNull();
+  });
+
+  it('samples an open delete transaction before fixing the artifact snapshot', async () => {
+    await insertClimb({ uuid: 'open-delete', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+
+    let releaseDeleteTransaction = (): void => {};
+    const deleteTransactionRelease = new Promise<void>((resolve) => {
+      releaseDeleteTransaction = resolve;
+    });
+    let resolveDeleteStarted!: (startedAt: string) => void;
+    let rejectDeleteStarted!: (error: unknown) => void;
+    const deleteStarted = new Promise<string>((resolve, reject) => {
+      resolveDeleteStarted = resolve;
+      rejectDeleteStarted = reject;
+    });
+    const deleteTransaction = createPool()
+      .begin(async (transaction) => {
+        await transaction.unsafe('DELETE FROM board_climbs WHERE uuid = $1', ['open-delete']);
+        const startRows = await transaction.unsafe('SELECT transaction_timestamp() AS xact_start');
+        const startRow = startRows[0] as unknown as { xact_start: unknown };
+        resolveDeleteStarted(new Date(Date.parse(toIso(startRow.xact_start))).toISOString());
+        await deleteTransactionRelease;
+      })
+      .catch((error: unknown) => {
+        rejectDeleteStarted(error);
+        throw error;
+      });
+
+    const deleteStartedAt = await deleteStarted;
+    const builtAtRow = (await db.execute(sql`SELECT clock_timestamp() AS built_at`))[0] as { built_at: unknown };
+    const artifactBuiltAt = toIso(builtAtRow.built_at);
+    const filePath = join(workDir, 'open-delete-artifact.db');
+    let replayBoundary: string | null = null;
+    try {
+      const result = await exportLayoutSnapshot({
+        sqlClient: createPool(),
+        boardType: BOARD_TYPE,
+        layoutId: LAYOUT_ID,
+        filePath,
+        builtAt: artifactBuiltAt,
+        stabilityWindowSeconds: 0,
+      });
+
+      // The uncommitted DELETE is invisible to the RR snapshot, so the row is
+      // present in the artifact. Its old transaction timestamp must therefore
+      // be the replay boundary that catches the tombstone after commit.
+      expect(readArtifactRows(filePath, 'board_climbs', ['uuid'])).toEqual([{ uuid: 'open-delete' }]);
+      const rawReplayBoundary = readArtifactMeta(filePath, 'sync_deletions')?.watermark_updated_at;
+      replayBoundary = typeof rawReplayBoundary === 'string' ? rawReplayBoundary : null;
+      expect(replayBoundary).toBe(deleteStartedAt);
+      expect(result.deletionsReplayFrom).toBe(deleteStartedAt);
+      expect(result.deletionsReplayFallbackReason).toBeNull();
+    } finally {
+      releaseDeleteTransaction();
+      await deleteTransaction;
+    }
+
+    const tombstone = (
+      await db.execute(sql`
+        SELECT deleted_at
+        FROM sync_deletions
+        WHERE table_name = 'board_climbs' AND record_id = 'open-delete'
+        ORDER BY id DESC
+        LIMIT 1
+      `)
+    )[0] as { deleted_at: unknown };
+    expect(Date.parse(replayBoundary ?? '')).toBeLessThanOrEqual(Date.parse(toIso(tombstone.deleted_at)));
+  });
+
   it('produces byte-identical board_climbs / board_climb_stats rows via the export core and the real resolver pull', async () => {
     // Tricky shapes: booleans, int[] and text[] arrays, NULLs in arrays/text,
     // fractional-second timestamps, multi-angle stats, and a climb with no stats.
@@ -385,6 +486,48 @@ describe('board-snapshot export ↔ live pull parity', () => {
     expect(statsMeta.watermark_sync_seq).toBe(String(statsWatermarkRow.sync_seq));
   });
 
+  it('records a deletion replay boundary from the export transaction clock minus the stability window', async () => {
+    await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    const stabilityWindowSeconds = 30;
+    const beforeRow = (
+      await db.execute(sql`
+        SELECT
+          clock_timestamp() AS built_at,
+          clock_timestamp() - (${stabilityWindowSeconds} * INTERVAL '1 second') AS replay_from
+      `)
+    )[0] as { built_at: unknown; replay_from: unknown };
+    const artifactBuiltAt = toIso(beforeRow.built_at);
+
+    const filePath = join(workDir, 'artifact-deletion-replay.db');
+    await exportLayoutSnapshot({
+      sqlClient: createPool(),
+      boardType: BOARD_TYPE,
+      layoutId: LAYOUT_ID,
+      filePath,
+      builtAt: artifactBuiltAt,
+      stabilityWindowSeconds,
+    });
+
+    const afterRow = (
+      await db.execute(sql`
+        SELECT clock_timestamp() - (${stabilityWindowSeconds} * INTERVAL '1 second') AS replay_from
+      `)
+    )[0] as { replay_from: unknown };
+    const deletionMeta = readArtifactMeta(filePath, 'sync_deletions')!;
+    const replayFromMs = Date.parse(String(deletionMeta.watermark_updated_at));
+
+    expect(replayFromMs).toBeGreaterThanOrEqual(Date.parse(toIso(beforeRow.replay_from)));
+    expect(replayFromMs).toBeLessThanOrEqual(Date.parse(toIso(afterRow.replay_from)));
+    expect(deletionMeta).toMatchObject({
+      table_name: 'sync_deletions',
+      watermark_sync_seq: '0',
+      row_count: 0,
+      built_at: artifactBuiltAt,
+      schema_version: expect.any(Number),
+      format_version: 1,
+    });
+  });
+
   it('excludes a row inside the stability window from both the artifact and its watermark', async () => {
     // Old rows are well outside any window; the recent row is inside a 30s window.
     await insertClimb({ uuid: 'old-1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
@@ -483,11 +626,11 @@ describe('board_climb_grades snapshot artifact', () => {
     expect(artifactGrades).toHaveLength(3);
   });
 
-  it('leaves the WHOLE-LAYOUT artifact untouched — same tables, same two snapshot_meta rows', async () => {
-    // Every already-shipped binary verifies the whole-layout artifact against
-    // its own two-table list and throws "snapshot_meta missing row for <table>"
-    // on a mismatch. That failure is COUNTED, and two of them settle the scope
-    // onto the paged crawl — so growing this file's meta would break the fleet.
+  it('adds deletion replay metadata without changing the whole-layout data tables', async () => {
+    // Every already-shipped binary queries its two required snapshot_meta rows
+    // by name rather than requiring an exact row count. The metadata-only
+    // sync_deletions row is therefore ignored by old clients, while the file's
+    // actual board data tables remain byte-compatible.
     await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
     await insertGrade({ climbUuid: 'c1', angle: 40, localGrade: 20, computedAt: '2026-05-01T00:00:00Z' });
 
@@ -502,8 +645,34 @@ describe('board_climb_grades snapshot artifact', () => {
       stabilityWindowSeconds: 0,
     });
 
-    expect(readArtifactMetaTableNames(filePath)).toEqual(['board_climb_stats', 'board_climbs']);
+    expect(readArtifactMetaTableNames(filePath)).toEqual(['board_climb_stats', 'board_climbs', 'sync_deletions']);
     expect(readArtifactTableNames(filePath)).not.toContain('board_climb_grades');
+    expect(readArtifactTableNames(filePath)).not.toContain('sync_deletions');
+  });
+
+  it('surfaces a bounded fallback reason when a second observer connection is unavailable', async () => {
+    await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+
+    const primaryPool = createPool();
+    const singleConnectionObserverView = new Proxy(primaryPool, {
+      get(target, property) {
+        if (property === 'options') return { ...target.options, max: 1 };
+        return Reflect.get(target, property, target);
+      },
+    });
+    const filePath = join(workDir, 'observer-fallback-artifact.db');
+    const result = await exportLayoutSnapshot({
+      sqlClient: singleConnectionObserverView,
+      boardType: BOARD_TYPE,
+      layoutId: LAYOUT_ID,
+      filePath,
+      builtAt: BUILT_AT,
+      stabilityWindowSeconds: 0,
+    });
+
+    expect(result.deletionsReplayFrom).toBeNull();
+    expect(result.deletionsReplayFallbackReason).toBe('observer-pool-capacity');
+    expect(readArtifactMetaTableNames(filePath)).toEqual(['board_climb_stats', 'board_climbs']);
   });
 
   it('carries ONLY board_climb_grades and its own one-row snapshot_meta', async () => {

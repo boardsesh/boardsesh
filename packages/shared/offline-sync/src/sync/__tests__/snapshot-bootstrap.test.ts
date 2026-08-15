@@ -29,6 +29,7 @@ import {
   BOOTSTRAP_METADATA_QUERY,
   BOOTSTRAP_METADATA_PATTERNS,
   SnapshotPermanentMissError,
+  SnapshotBackgroundTransferInterruptedError,
   SnapshotSchemaStaleError,
   type SnapshotSource,
 } from '../snapshot-bootstrap';
@@ -108,6 +109,9 @@ type ArtifactSpec = {
   statsRowCountOverride?: number;
   climbsDdl?: string;
   statsDdl?: string;
+  builtAt?: string;
+  /** Optional metadata-only replay boundary; omitted to model an old artifact. */
+  deletionsReplayFrom?: string;
 };
 
 /** Builds a gzip-free SQLite artifact carrying board_climbs + stats + meta. */
@@ -160,12 +164,13 @@ function buildArtifact(spec: ArtifactSpec): void {
     );
     const formatVersion = spec.formatVersion ?? 1;
     const schemaVersion = spec.schemaVersion ?? LATEST_SCHEMA_VERSION;
+    const builtAt = spec.builtAt ?? '2026-06-01T00:00:00.000Z';
     meta.run(
       'board_climbs',
       spec.climbsWatermark.updatedAt,
       spec.climbsWatermark.syncSeq,
       spec.climbsRowCountOverride ?? spec.climbs.length,
-      '2026-06-01T00:00:00.000Z',
+      builtAt,
       schemaVersion,
       formatVersion,
     );
@@ -174,10 +179,13 @@ function buildArtifact(spec: ArtifactSpec): void {
       spec.statsWatermark.updatedAt,
       spec.statsWatermark.syncSeq,
       spec.statsRowCountOverride ?? spec.stats.length,
-      '2026-06-01T00:00:00.000Z',
+      builtAt,
       schemaVersion,
       formatVersion,
     );
+    if (spec.deletionsReplayFrom) {
+      meta.run('sync_deletions', spec.deletionsReplayFrom, '0', 0, builtAt, schemaVersion, formatVersion);
+    }
   } finally {
     db.close();
   }
@@ -731,6 +739,27 @@ describe('bootstrapScopeFromSnapshot', () => {
     await expect(
       bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: 'kilter:1:5', filePath }),
     ).rejects.toThrow(/row_count/);
+    expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toBeNull();
+  });
+
+  it('rejects inconsistent embedded snapshot_meta built_at timestamps', async () => {
+    const filePath = join(workDir, 'inconsistent-built-at.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const artifact = new DatabaseSync(filePath);
+    artifact
+      .prepare('UPDATE snapshot_meta SET built_at = ? WHERE table_name = ?')
+      .run('2026-06-01T00:00:01.000Z', 'board_climb_stats');
+    artifact.close();
+
+    await expect(
+      bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: 'kilter:1:5', filePath }),
+    ).rejects.toThrow(/inconsistent snapshot_meta built_at/);
     expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toBeNull();
   });
 
@@ -2536,7 +2565,34 @@ describe('pullSync onScopeDownloadComplete', () => {
 // ---------------------------------------------------------------------------
 
 describe('deletions checkpoint rewind on bootstrap', () => {
-  it('rewinds the deletions checkpoint to min(watermarks) when it sits ahead of the snapshot', async () => {
+  it('uses the export-transaction replay boundary instead of a quiet layout row watermark', async () => {
+    await setCheckpoint(db, DELETIONS_CHECKPOINT_KEY, { updatedAt: '2026-09-01T00:00:00Z', syncSeq: '5000' });
+
+    const filePath = join(workDir, 'transaction-boundary-rewind.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      // This layout has been quiet for a month. Replaying from this row cursor
+      // would needlessly scan a month of global tombstones.
+      climbsWatermark: { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '10' },
+      statsWatermark: { updatedAt: '2026-05-02T00:00:00Z', syncSeq: '20' },
+      // The exporter captured this from the SAME REPEATABLE READ transaction,
+      // after subtracting its stability window.
+      deletionsReplayFrom: '2026-05-31T23:59:30.000Z',
+    });
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+
+    expect(await getCheckpoint(db, DELETIONS_CHECKPOINT_KEY)).toEqual({
+      updatedAt: '2026-05-31T23:59:30.000Z',
+      syncSeq: '0',
+    });
+  });
+
+  it('falls back to min(watermarks) for an old artifact without deletion replay metadata', async () => {
     // Deletions already advanced well past the snapshot's watermark.
     await setCheckpoint(db, DELETIONS_CHECKPOINT_KEY, { updatedAt: '2026-09-01T00:00:00Z', syncSeq: '5000' });
 
@@ -2556,6 +2612,57 @@ describe('deletions checkpoint rewind on bootstrap', () => {
 
     // Rewound to the OLDER (climbs) timestamp, with deletion-domain seq 0 so
     // tombstones at exactly that timestamp are replayed too.
+    expect(await getCheckpoint(db, DELETIONS_CHECKPOINT_KEY)).toEqual({
+      updatedAt: '2026-05-01T00:00:00Z',
+      syncSeq: '0',
+    });
+  });
+
+  it('falls back to min(watermarks) when deletion replay metadata is malformed', async () => {
+    await setCheckpoint(db, DELETIONS_CHECKPOINT_KEY, { updatedAt: '2026-09-01T00:00:00Z', syncSeq: '5000' });
+
+    const filePath = join(workDir, 'malformed-transaction-boundary.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '10' },
+      statsWatermark: { updatedAt: '2026-05-02T00:00:00Z', syncSeq: '20' },
+      deletionsReplayFrom: '2026-05-31T23:59:30.000Z',
+    });
+    const artifact = new DatabaseSync(filePath);
+    artifact
+      .prepare('UPDATE snapshot_meta SET watermark_sync_seq = ? WHERE table_name = ?')
+      .run('not-zero', 'sync_deletions');
+    artifact.close();
+
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const { fetch } = makeGraphqlFetch();
+    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+
+    expect(await getCheckpoint(db, DELETIONS_CHECKPOINT_KEY)).toEqual({
+      updatedAt: '2026-05-01T00:00:00Z',
+      syncSeq: '0',
+    });
+  });
+
+  it('falls back to min(watermarks) when the replay boundary is after artifact built_at', async () => {
+    await setCheckpoint(db, DELETIONS_CHECKPOINT_KEY, { updatedAt: '2026-09-01T00:00:00Z', syncSeq: '5000' });
+
+    const filePath = join(workDir, 'future-transaction-boundary.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '10' },
+      statsWatermark: { updatedAt: '2026-05-02T00:00:00Z', syncSeq: '20' },
+      builtAt: '2026-06-01T00:00:00.000Z',
+      deletionsReplayFrom: '2026-06-01T00:00:01.000Z',
+    });
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const { fetch } = makeGraphqlFetch();
+    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+
     expect(await getCheckpoint(db, DELETIONS_CHECKPOINT_KEY)).toEqual({
       updatedAt: '2026-05-01T00:00:00Z',
       syncSeq: '0',
@@ -4594,10 +4701,12 @@ describe('pullSync grades bootstrap', () => {
     expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
   });
 
-  it('a grades download that fails during a teardown does not burn a grades attempt', async () => {
+  it('interrupts the cycle when a grades download rejects after backgrounding and foregrounding', async () => {
     // The grades artifact only ever gets three tries, and a pocketed phone was
     // spending them: three screen locks left a Kilter board crawling grades over
-    // GraphQL for the life of the install (issue #4390).
+    // GraphQL for the life of the install (issue #4390). AppState can already be
+    // active by the time the native rejection reaches JS, so the transfer must
+    // carry its latched teardown verdict out to the parent cycle.
     const climbsPath = join(workDir, 'grades-teardown-climbs.db');
     buildArtifact({
       filePath: climbsPath,
@@ -4611,26 +4720,46 @@ describe('pullSync grades bootstrap', () => {
       downloadArtifact: vi.fn(async () => ({ filePath: climbsPath })),
       downloadGradesArtifact: vi.fn(async () => {
         setBackgrounded(true);
+        setBackgrounded(false);
         throw new Error('The network connection was lost.');
       }),
       deleteArtifact: vi.fn(async () => {}),
     } as unknown as SnapshotSource;
     const onSnapshotBootstrapError = vi.fn();
+    const progressFrames: SyncProgress[] = [];
+    const { fetch } = makeGraphqlFetch();
 
     try {
-      await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      await pullSync(db, noopQueryClient(), fetch, {
         enabledBoards: ['kilter:1:5'],
         snapshotSource: source,
         onSnapshotBootstrapError,
+        onProgress: (progress) => progressFrames.push(progress),
       });
     } finally {
       setBackgrounded(false);
     }
 
+    // The main artifact landed before grades began, and stays imported.
+    expect(await countRows('board_climbs')).toBe(1);
     expect(await getGradesBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
     expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
       expect.objectContaining({ stage: 'grades-download', attempt: 0, aborted: true, reason: 'aborted-background' }),
     );
+    expect(
+      fetch.mock.calls.some(([query]) =>
+        ['syncDeletions', 'syncClimbs', 'syncClimbStats', 'syncClimbGrades'].some((field) =>
+          String(query).includes(field),
+        ),
+      ),
+    ).toBe(false);
+    expect(progressFrames.at(-1)).toEqual({
+      phase: 'idle',
+      currentTable: null,
+      documentsProcessed: 0,
+      interrupted: true,
+    });
+    expect(progressFrames.filter((progress) => progress.phase === 'idle')).toHaveLength(1);
   });
 
   it('stops trying grades once its own attempt budget is spent', async () => {
@@ -4966,43 +5095,44 @@ describe('pullSync bootstrap funnel invariant', () => {
     expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
   });
 
-  it('does not burn an attempt when a backgrounded phone returns before the abort is handled', async () => {
-    // The race a review flagged on #4345: the teardown flags are LIVE, so a phone
-    // that woke between our own AbortController firing and the throw being
-    // handled read as "no teardown" — and the download we cancelled ourselves was
-    // settled as a real transport failure, burning an attempt and scheduling a
-    // cooldown. A pocketed phone is not a failure (#4326's taxonomy), so the
-    // reason is now latched at the moment we abort.
+  it('ends the cycle as interrupted when a suspended transfer rejects after the phone foregrounds', async () => {
+    // Background URLSession work is allowed to continue, but the OS can still
+    // kill the transfer while the process is suspended. The phone may foreground
+    // before that rejection reaches JS, so the suspension window — not the live
+    // AppState flag — must stop this stale cycle before deletions or paged pulls.
     const filePath = join(workDir, 'backgrounded-then-foregrounded.db');
     buildScopeArtifact(filePath);
+    let seenSignal: AbortSignal | undefined;
     const source: SnapshotSource = {
       fetchManifest: async () => makeManifest([makeEntry()]),
       downloadArtifact: async (_entry, options) => {
-        // Backgrounding notifies the teardown listeners synchronously, which is
-        // what aborts the transfer.
+        seenSignal = options?.signal;
         setBackgrounded(true);
-        expect(options?.signal?.aborted).toBe(true);
-        // ...and the climber pulls the phone back out before the rejection is
-        // handled, so every live flag reads clean at the check below.
         setBackgrounded(false);
-        throw new Error('Aborted');
+        throw new Error('The network connection was lost.');
       },
       deleteArtifact: vi.fn(async () => {}),
     };
     const onSnapshotBootstrapError = vi.fn();
     const onBootstrapRetryScheduled = vi.fn();
+    const progressFrames: SyncProgress[] = [];
+    const { fetch } = makeGraphqlFetch();
 
     try {
-      await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      await pullSync(db, noopQueryClient(), fetch, {
         enabledBoards: ['kilter:1:5'],
         snapshotSource: source,
         onSnapshotBootstrapError,
         onBootstrapRetryScheduled,
+        onProgress: (progress) => progressFrames.push(progress),
       });
     } finally {
       setBackgrounded(false);
     }
 
+    // Kept outside the downloader: an assertion thrown inside that callback is
+    // intentionally caught as a download failure and cannot prove anything.
+    expect(seenSignal?.aborted).toBe(false);
     expect(onSnapshotBootstrapError).toHaveBeenCalledTimes(1);
     expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -5020,6 +5150,105 @@ describe('pullSync bootstrap funnel invariant', () => {
     const { state } = await readBootstrapRetryState(db, 'kilter:1:5', { now: BASE_NOW, random: () => 0 }, false);
     expect(state.transportFailures).toBe(0);
     expect(state.structuralFailures).toBe(0);
+    expect(progressFrames.at(-1)).toEqual({
+      phase: 'idle',
+      currentTable: null,
+      documentsProcessed: 0,
+      interrupted: true,
+    });
+    expect(progressFrames.filter((progress) => progress.phase === 'idle')).toHaveLength(1);
+    expect(
+      fetch.mock.calls.some(([query]) =>
+        ['syncDeletions', 'syncClimbs', 'syncClimbStats', 'syncClimbGrades'].some((field) =>
+          String(query).includes(field),
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it('charges a typed background-task marker to transport when AppState is active', async () => {
+    const marker = new SnapshotBackgroundTransferInterruptedError('cannot decode raw data');
+    const source: SnapshotSource = {
+      fetchManifest: async () => makeManifest([makeEntry()]),
+      downloadArtifact: async () => {
+        throw marker;
+      },
+      deleteArtifact: vi.fn(async () => {}),
+    };
+    const onSnapshotBootstrapError = vi.fn();
+    const onBootstrapRetryScheduled = vi.fn();
+    const progressFrames: SyncProgress[] = [];
+
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+      onBootstrapRetryScheduled,
+      onProgress: (progress) => progressFrames.push(progress),
+      now: () => BASE_NOW,
+      random: () => 0,
+    });
+
+    const { state } = await readBootstrapRetryState(db, 'kilter:1:5', { now: BASE_NOW, random: () => 0 }, false);
+    expect(state.transportFailures).toBe(1);
+    expect(state.backgroundPauses).toBe(0);
+    expect(onBootstrapRetryScheduled).toHaveBeenCalledWith(
+      expect.objectContaining({ failureKind: 'transport', transportFailures: 1 }),
+    );
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'background-transfer-decode',
+        expected: true,
+        aborted: false,
+        attempt: 1,
+      }),
+    );
+    expect(progressFrames.at(-1)).toEqual(expect.objectContaining({ phase: 'idle', currentTable: null }));
+    expect(progressFrames.at(-1)?.interrupted).toBeUndefined();
+  });
+
+  it('treats the typed marker as a bounded background pause while the suspension window stays open', async () => {
+    const source: SnapshotSource = {
+      fetchManifest: async () => makeManifest([makeEntry()]),
+      downloadArtifact: async () => {
+        setBackgrounded(true);
+        setBackgrounded(false);
+        throw new SnapshotBackgroundTransferInterruptedError('cannot decode raw data');
+      },
+      deleteArtifact: vi.fn(async () => {}),
+    };
+    const onSnapshotBootstrapError = vi.fn();
+    const onBootstrapRetryScheduled = vi.fn();
+    const progressFrames: SyncProgress[] = [];
+
+    try {
+      await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+        onSnapshotBootstrapError,
+        onBootstrapRetryScheduled,
+        onProgress: (progress) => progressFrames.push(progress),
+        now: () => BASE_NOW,
+        random: () => 0,
+      });
+    } finally {
+      setBackgrounded(false);
+    }
+
+    const { state } = await readBootstrapRetryState(db, 'kilter:1:5', { now: BASE_NOW, random: () => 0 }, false);
+    expect(state.backgroundPauses).toBe(1);
+    expect(state.transportFailures).toBe(0);
+    expect(onBootstrapRetryScheduled).not.toHaveBeenCalled();
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'aborted-background',
+        aborted: true,
+        attempt: 0,
+      }),
+    );
+    expect(progressFrames.at(-1)).toEqual(
+      expect.objectContaining({ phase: 'idle', currentTable: null, interrupted: true }),
+    );
   });
 
   it('emits exactly one terminal event for a download that genuinely failed', async () => {
@@ -5284,18 +5513,41 @@ describe('pullSync bootstrap purge scoping', () => {
       setBackgrounded(true);
       return result;
     };
+    const onSnapshotBootstrapError = vi.fn();
+    const progressFrames: SyncProgress[] = [];
+    const { fetch } = makeGraphqlFetch();
 
     try {
-      await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      await pullSync(db, noopQueryClient(), fetch, {
         enabledBoards: [KILTER_KEY],
         snapshotSource: source,
+        onSnapshotBootstrapError,
+        onProgress: (progress) => progressFrames.push(progress),
       });
     } finally {
       setBackgrounded(false);
     }
 
+    expect(await countRows('board_climbs')).toBe(1);
     expect(await getCheckpoint(db, `checkpoint:board_climb_grades:${KILTER_KEY}`)).toBeNull();
     expect(await getGradesBootstrapAttempts(db, KILTER_KEY)).toBe(0);
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'grades-download', attempt: 0, aborted: true, reason: 'aborted-background' }),
+    );
+    expect(
+      fetch.mock.calls.some(([query]) =>
+        ['syncDeletions', 'syncClimbs', 'syncClimbStats', 'syncClimbGrades'].some((field) =>
+          String(query).includes(field),
+        ),
+      ),
+    ).toBe(false);
+    expect(progressFrames.at(-1)).toEqual({
+      phase: 'idle',
+      currentTable: null,
+      documentsProcessed: 0,
+      interrupted: true,
+    });
+    expect(progressFrames.filter((progress) => progress.phase === 'idle')).toHaveLength(1);
   });
 
   // THE FUNNEL INVARIANT under `break` → `continue`: every Started still gets

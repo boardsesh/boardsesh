@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import {
   GRAPHQL_EMPTY_RESPONSE_ERROR_NAME,
   getErrorStatus,
@@ -13,12 +13,20 @@ vi.mock('../../auth-interceptor', () => ({
 }));
 
 import { authenticatedFetch } from '../../auth-interceptor';
-import { graphqlFetchWithEmptyBodyGuard, GraphQLEmptyResponseError } from '../client';
+import {
+  graphqlFetchWithEmptyBodyGuard,
+  graphqlFetchWithOfflineSyncTimeout,
+  GraphQLEmptyResponseError,
+} from '../client';
 
 const mockAuthenticatedFetch = authenticatedFetch as Mock;
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('graphqlFetchWithEmptyBodyGuard', () => {
@@ -115,5 +123,56 @@ describe('graphqlFetchWithEmptyBodyGuard', () => {
     await graphqlFetchWithEmptyBodyGuard('https://api.example.com/graphql', options);
 
     expect(mockAuthenticatedFetch).toHaveBeenCalledWith('https://api.example.com/graphql', options);
+  });
+});
+
+describe('graphqlFetchWithOfflineSyncTimeout', () => {
+  it('aborts and rejects a request that never settles once the offline-sync deadline elapses', async () => {
+    vi.useFakeTimers();
+    mockAuthenticatedFetch.mockImplementation(() => new Promise<Response>(() => undefined));
+
+    const request = graphqlFetchWithOfflineSyncTimeout('https://api.example.com/graphql', {}, 1_000);
+    // Attach the rejection handler before advancing time so Vitest never sees
+    // the intentional timeout as an unhandled rejection.
+    const rejection = expect(request).rejects.toMatchObject({
+      name: 'AbortError',
+      message: 'Offline sync GraphQL request timed out after 1000ms',
+    });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await rejection;
+
+    const requestOptions = mockAuthenticatedFetch.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(requestOptions?.signal?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('forwards caller cancellation and clears its deadline', async () => {
+    vi.useFakeTimers();
+    mockAuthenticatedFetch.mockImplementation(() => new Promise<Response>(() => undefined));
+    const callerController = new AbortController();
+    const callerReason = new Error('caller cancelled');
+
+    const request = graphqlFetchWithOfflineSyncTimeout(
+      'https://api.example.com/graphql',
+      { signal: callerController.signal },
+      1_000,
+    );
+    const rejection = expect(request).rejects.toBe(callerReason);
+    callerController.abort(callerReason);
+
+    await rejection;
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('clears its deadline after a successful response', async () => {
+    vi.useFakeTimers();
+    const responseBody = JSON.stringify({ data: { boardClimbs: [] } });
+    mockAuthenticatedFetch.mockResolvedValue(new Response(responseBody, { status: 200 }));
+
+    const response = await graphqlFetchWithOfflineSyncTimeout('https://api.example.com/graphql', {}, 1_000);
+
+    await expect(response.text()).resolves.toBe(responseBody);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

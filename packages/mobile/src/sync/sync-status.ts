@@ -15,7 +15,7 @@ export type SyncStatus = {
   progress: SyncProgress | null;
   /** Whether a sync cycle is mid-flight (progress emitted, not yet idle). */
   isSyncing: boolean;
-  /** Epoch ms of the last cycle that reached the idle phase, or null. */
+  /** Epoch ms of the last cycle that reached a successful idle phase, or null. */
   lastSyncedAt: number | null;
   /**
    * Advances after each bootstrap scope settles. Consumers that read bootstrap
@@ -58,12 +58,12 @@ export function getSyncStatusSnapshot(): SyncStatus {
 /**
  * Publish a progress frame from a running pull. Wire this as pullSync's
  * `onProgress`. The terminal `phase: 'idle'` frame flips `isSyncing` off and —
- * unless it is the scheduler's `failed` frame after a thrown cycle — stamps
- * `lastSyncedAt`; every other frame keeps `isSyncing` true.
+ * unless it is a failed or lifecycle-interrupted cycle — stamps `lastSyncedAt`;
+ * every other frame keeps `isSyncing` true.
  */
 export function setSyncProgress(progress: SyncProgress): void {
   const reachedIdle = progress.phase === 'idle';
-  const completed = reachedIdle && !progress.failed;
+  const completed = reachedIdle && !progress.failed && !progress.interrupted;
   currentStatus = {
     progress,
     isSyncing: !reachedIdle,

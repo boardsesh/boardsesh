@@ -47,6 +47,8 @@ export type SnapshotBootstrapFailureReason =
   | 'artifact-invalid'
   /** The transfer finished but the body was the wrong length — a cut-short response, not corrupt bytes. */
   | 'artifact-truncated'
+  /** iOS's background URLSession could not decode the response body; retry as transport. */
+  | 'background-transfer-decode'
   /** Offline, or the connection dropped. The normal state of a phone on a plane. */
   | 'network'
   /** Nothing above matched — the bucket that should stay near zero. */
@@ -85,6 +87,7 @@ export function classifySnapshotBootstrapFailure(cause: unknown): SnapshotBootst
   if (name === 'SnapshotWatermarkRegressionError') return 'watermark-regression';
   if (name === 'SnapshotPermanentMissError') return 'permanent-miss';
   if (name === 'SnapshotArtifactTruncatedError') return 'artifact-truncated';
+  if (name === 'SnapshotBackgroundTransferInterruptedError') return 'background-transfer-decode';
 
   if (classifySqliteLockError(cause).locked) return 'database-locked';
 

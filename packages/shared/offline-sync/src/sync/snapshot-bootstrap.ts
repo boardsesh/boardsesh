@@ -309,6 +309,20 @@ export class SnapshotArtifactTruncatedError extends Error {
   }
 }
 
+/**
+ * The iOS background URLSession was interrupted while decoding a response body.
+ * Expo surfaces NSURLErrorCannotDecodeRawData as English prose without a stable
+ * code, so the mobile adapter converts that one platform-shaped error into this
+ * renderer-independent signal. It belongs on the bounded transport retry
+ * ladder, not the structural artifact/device budget.
+ */
+export class SnapshotBackgroundTransferInterruptedError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'SnapshotBackgroundTransferInterruptedError';
+  }
+}
+
 // --- Attempt / done markers (sync_meta, NOT under the checkpoint: prefix so the
 // sign-out checkpoint wipe leaves them alone, matching the board rows they
 // describe, which survive as the shared cache) ---------------------------------
@@ -776,9 +790,66 @@ type SnapshotMetaRow = {
   watermark_updated_at: string;
   watermark_sync_seq: string;
   row_count: number;
+  built_at: string;
   schema_version: number;
   format_version: number;
 };
+
+const DELETIONS_SNAPSHOT_META_TABLE = 'sync_deletions';
+
+type VerifiedSnapshotMeta = {
+  builtAt: string;
+  /**
+   * Optional for backwards compatibility. Artifacts published before this
+   * metadata row shipped fall back to the older scoped-row watermark rewind.
+   */
+  deletionsReplayFrom: SyncCheckpoint | null;
+};
+
+function normalizeSnapshotTimestamp(rawTimestamp: unknown): string | null {
+  if (typeof rawTimestamp !== 'string') return null;
+  const timestampMs = Date.parse(rawTimestamp);
+  return Number.isFinite(timestampMs) ? new Date(timestampMs).toISOString() : null;
+}
+
+/**
+ * Read the optional metadata-only sync_deletions row. Any defect degrades to
+ * the legacy scoped-watermark rewind instead of rejecting an otherwise valid
+ * artifact: old artifacts have no row, and a boundary after artifact builtAt is
+ * unsafe. This preserves the legacy scoped-watermark behaviour for already
+ * published artifacts; new live gzip exports are gated on carrying this row.
+ */
+async function readDeletionsReplayFrom(
+  db: SqlExecutor,
+  alias: string,
+  artifactBuiltAt: string,
+): Promise<SyncCheckpoint | null> {
+  const meta = await db.getFirstAsync<SnapshotMetaRow>(
+    `SELECT table_name, watermark_updated_at, watermark_sync_seq, row_count, built_at, schema_version, format_version
+     FROM ${alias}.snapshot_meta WHERE table_name = ?`,
+    [DELETIONS_SNAPSHOT_META_TABLE],
+  );
+  if (!meta) return null;
+
+  const metaBuiltAt = normalizeSnapshotTimestamp(meta.built_at);
+  const replayFrom = normalizeSnapshotTimestamp(meta.watermark_updated_at);
+  const replayFromMs = replayFrom ? Date.parse(replayFrom) : Number.NaN;
+  const artifactBuiltAtMs = Date.parse(artifactBuiltAt);
+  if (
+    meta.table_name !== DELETIONS_SNAPSHOT_META_TABLE ||
+    meta.format_version !== SNAPSHOT_MANIFEST_FORMAT_VERSION ||
+    meta.schema_version < LATEST_SCHEMA_VERSION ||
+    meta.row_count !== 0 ||
+    String(meta.watermark_sync_seq) !== '0' ||
+    metaBuiltAt !== artifactBuiltAt ||
+    !replayFrom ||
+    replayFromMs > artifactBuiltAtMs
+  ) {
+    return null;
+  }
+
+  return { updatedAt: replayFrom, syncSeq: '0' };
+}
 
 /**
  * Thrown when the artifact was built at an older client schema version than this
@@ -824,19 +895,23 @@ export class SnapshotWatermarkRegressionError extends Error {
 /**
  * Read + validate the artifact's `snapshot_meta`: every snapshot table present,
  * `format_version` matching this client, `schema_version` not older than this
- * client's schema, and each recorded `row_count` equal to the artifact's ACTUAL
- * table count (a truncated/partial download is caught here before any row is
- * imported). Artifact-level watermarks are validation/export metadata; the
- * imported scope's checkpoints are computed from scoped artifact rows.
+ * client's schema, one consistent parseable `built_at`, and each recorded
+ * `row_count` equal to the artifact's ACTUAL table count (a truncated/partial
+ * download is caught here before any row is imported). Artifact-level
+ * watermarks are validation/export metadata; the imported scope's checkpoints
+ * are computed from scoped artifact rows. A valid optional sync_deletions meta
+ * row supplies the narrower replay boundary; missing/malformed rows fall back
+ * to the legacy scoped-watermark rewind.
  */
 async function verifySnapshotMeta(
   db: SqlExecutor,
   alias: string = SNAPSHOT_ALIAS,
   tables: readonly string[] = SNAPSHOT_TABLES,
-): Promise<void> {
+): Promise<VerifiedSnapshotMeta> {
+  let artifactBuiltAt: string | null = null;
   for (const tableName of tables) {
     const meta = await db.getFirstAsync<SnapshotMetaRow>(
-      `SELECT table_name, watermark_updated_at, watermark_sync_seq, row_count, schema_version, format_version
+      `SELECT table_name, watermark_updated_at, watermark_sync_seq, row_count, built_at, schema_version, format_version
        FROM ${alias}.snapshot_meta WHERE table_name = ?`,
       [tableName],
     );
@@ -851,6 +926,14 @@ async function verifySnapshotMeta(
     if (meta.schema_version < LATEST_SCHEMA_VERSION) {
       throw new SnapshotSchemaStaleError(meta.schema_version);
     }
+    const rowBuiltAt = normalizeSnapshotTimestamp(meta.built_at);
+    if (!rowBuiltAt) {
+      throw new Error(`snapshot bootstrap: invalid snapshot_meta built_at for ${tableName}`);
+    }
+    if (artifactBuiltAt !== null && artifactBuiltAt !== rowBuiltAt) {
+      throw new Error(`snapshot bootstrap: inconsistent snapshot_meta built_at for ${tableName}`);
+    }
+    artifactBuiltAt = rowBuiltAt;
     const actual = await db.getFirstAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM ${alias}.${tableName}`);
     const actualCount = actual?.n ?? 0;
     if (actualCount !== meta.row_count) {
@@ -859,6 +942,12 @@ async function verifySnapshotMeta(
       );
     }
   }
+
+  if (!artifactBuiltAt) throw new Error('snapshot bootstrap: snapshot_meta did not contain a built_at');
+  return {
+    builtAt: artifactBuiltAt,
+    deletionsReplayFrom: await readDeletionsReplayFrom(db, alias, artifactBuiltAt),
+  };
 }
 
 // --- Bootstrap ----------------------------------------------------------------
@@ -916,6 +1005,7 @@ export async function bootstrapScopeFromSnapshot(params: {
   const purgeKey = purgeNamespaceKey(scope);
 
   let watermarks: Record<SnapshotTableName, SyncCheckpoint> | null = null;
+  let deletionsReplayFrom: SyncCheckpoint | null = null;
   let imported = { climbsImported: 0, statsImported: 0 };
   try {
     await db.withExclusiveTransactionAsync(async (txn) => {
@@ -935,7 +1025,8 @@ export async function bootstrapScopeFromSnapshot(params: {
           );
         }
 
-        await verifySnapshotMeta(txn);
+        const snapshotMeta = await verifySnapshotMeta(txn);
+        deletionsReplayFrom = snapshotMeta.deletionsReplayFrom;
         watermarks = await scopedWatermarks(txn, scope);
 
         // Refuse BEFORE the exclusive transaction opens, so a regression writes
@@ -971,17 +1062,26 @@ export async function bootstrapScopeFromSnapshot(params: {
       await setCheckpoint(txn, getCheckpointKey('board_climbs', scopeKey), watermarks.board_climbs);
       await setCheckpoint(txn, getCheckpointKey('board_climb_stats', scopeKey), watermarks.board_climb_stats);
 
-      // Rewind the global deletions cursor to the OLDER of the two table
-      // watermarks IN THE SAME transaction as the import: once the board
+      // Rewind the global deletions cursor IN THE SAME transaction as the
+      // import: once the board
       // checkpoints exist this scope is never bootstrap-eligible again, so a
       // crash between the import commit and a separate rewind would leave
-      // board-row deletions in `(watermark, deletions-head]` permanently
+      // board-row deletions in `(replay boundary, deletions-head]` permanently
       // unreplayed against the imported rows.
+      //
+      // New artifacts carry a metadata-only sync_deletions row whose timestamp
+      // is the oldest of run builtAt, the export transaction's stability
+      // boundary, and every visible same-role active transaction start. That
+      // covers a long DELETE transaction which was invisible to the artifact's
+      // REPEATABLE READ snapshot but later commits with an older deleted_at.
+      // Old/malformed artifacts retain the pre-existing min(scoped watermarks)
+      // compatibility path. New live gzip exports refuse publication without
+      // the stronger boundary above.
       const minWatermark =
         compareCheckpoints(watermarks.board_climbs, watermarks.board_climb_stats) <= 0
           ? watermarks.board_climbs
           : watermarks.board_climb_stats;
-      await rewindDeletionsCheckpoint(txn, minWatermark);
+      await rewindDeletionsCheckpoint(txn, deletionsReplayFrom ?? minWatermark);
     });
   } finally {
     // On expo the wrapper's connection teardown already detached; this covers

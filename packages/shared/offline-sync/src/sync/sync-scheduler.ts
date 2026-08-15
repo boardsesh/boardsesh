@@ -61,10 +61,8 @@ export type SchedulerOptions = {
    */
   isOnline?: () => boolean;
   /**
-   * Called when a sync cycle throws. A failed cycle is routine for offline
-   * users (the reconnect trigger retries), so the mobile adapter passes a
-   * dev-only console.warn — production neither spams the console nor reports
-   * expected network errors as handled exceptions.
+   * Called when a sync cycle throws. Observational only: a reporter that throws
+   * is swallowed so it cannot suppress the failed-idle frame or the retry wake.
    */
   onCycleError?: (error: unknown) => void;
   /** Threaded through to pullSync — see SchemaDriftReporter. */
@@ -200,7 +198,12 @@ async function runSync(request: SyncRunRequest): Promise<void> {
         retryAt: Date.now() + CYCLE_ERROR_RETRY_DELAY_MS,
       });
     }
-    options?.onCycleError?.(error);
+    try {
+      options?.onCycleError?.(error);
+    } catch {
+      // Telemetry is observational. A broken reporter must never strand the
+      // scheduler in the exact failed cycle it was trying to describe.
+    }
     // pullSync only emits its terminal `idle` frame on success, so a throw mid-pull
     // would leave the Settings status row stuck on "Downloading…". Emit idle here so
     // the in-flight flag always clears — marked `failed` so the status store does
