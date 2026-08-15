@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-14T21:50:00.293Z",
+  "generatedAt": "2026-08-14T23:26:10.704Z",
   "entries": [
+    {
+      "prNumber": 4450,
+      "category": "fixed",
+      "title": "Switching a board off and straight back on no longer leaves it stuck on \"waiting to download\" — the download starts again as soon as the old copy finishes clearing out.",
+      "mergedAt": "2026-08-14T23:24:56Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4450"
+    },
     {
       "prNumber": 4431,
       "category": "fixed",

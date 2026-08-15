@@ -28,6 +28,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Switching a board off and straight back on no longer leaves it stuck on "waiting to download" — the download starts again as soon as the old copy finishes clearing out. ([#4450](https://github.com/boardsesh/boardsesh/pull/4450))
 - The playlists page shows loading placeholders and gives you somewhere to go when it is empty. ([#4431](https://github.com/boardsesh/boardsesh/pull/4431))
 - Fixed: holds can be tapped again when creating or editing a climb on Android. ([#4425](https://github.com/boardsesh/boardsesh/pull/4425))
 - Clearing one board out of storage no longer stops your other boards downloading — remove a wall you're done with and the rest keep coming down. ([#4404](https://github.com/boardsesh/boardsesh/pull/4404))
