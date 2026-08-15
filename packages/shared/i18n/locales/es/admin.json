@@ -18,7 +18,7 @@
   "tabs": {
     "roles": "Roles",
     "settings": "Ajustes",
-    "gyms": "Gimnasios"
+    "gyms": "Rocódromos"
   },
   "roles": {
     "heading": "Roles de la comunidad",
@@ -120,24 +120,24 @@
     }
   },
   "gymSettings": {
-    "heading": "Ajustes de gimnasios",
+    "heading": "Ajustes de rocódromos",
     "autoApprove": {
       "label": "Aprobar reclamaciones automáticamente",
-      "description": "Entrega los gimnasios sin dueño a quien los reclame. Las reclamaciones sobre un gimnasio que ya tiene dueño te siguen llegando a ti.",
+      "description": "Entrega los rocódromos sin dueño a quien los reclame. Las reclamaciones sobre un rocódromo que ya tiene dueño te siguen llegando a ti.",
       "queueNote": "Las reclamaciones que ya están en la cola se quedan ahí."
     },
     "snackbar": {
       "enabled": "Aprobación automática activada.",
       "disabled": "Aprobación automática desactivada.",
       "saveFailed": "No se pudo guardar. Inténtalo de nuevo.",
-      "loadFailed": "No se pudieron cargar los ajustes de gimnasios."
+      "loadFailed": "No se pudieron cargar los ajustes de rocódromos."
     }
   },
   "nav": {
     "retention": "Panel de retención",
-    "gymClaims": "Reclamaciones de gimnasios",
+    "gymClaims": "Reclamaciones de rocódromos",
     "feedback": "Reportes de errores",
-    "gymDuplicates": "Gimnasios duplicados",
+    "gymDuplicates": "Rocódromos duplicados",
     "locationSync": "Bloqueos de sincronización de ubicaciones"
   },
   "feedback": {
@@ -235,7 +235,7 @@
     }
   },
   "gymClaims": {
-    "title": "Reclamaciones de gimnasios",
+    "title": "Reclamaciones de rocódromos",
     "backToAdmin": "Volver al panel",
     "heading": "Reclamaciones pendientes",
     "empty": "No hay reclamaciones pendientes",
@@ -254,7 +254,7 @@
     },
     "table": {
       "claimant": "Solicitante",
-      "gym": "Gimnasio",
+      "gym": "Rocódromo",
       "method": "Método",
       "detail": "Detalle",
       "date": "Fecha",
@@ -268,7 +268,7 @@
     "intro": "Libera una edición manual solo cuando la ficha original deba volver a prevalecer. Esto no ejecuta una sincronización; la próxima actualización de una fuente coincidente puede reemplazar detalles o recuperar una ficha eliminada.",
     "tabs": {
       "label": "Tipo de ficha",
-      "gyms": "Gimnasios",
+      "gyms": "Rocódromos",
       "boards": "Plafones"
     },
     "search": {
@@ -304,8 +304,8 @@
       "title": "¿Liberar este bloqueo de sincronización?",
       "body": "La próxima sincronización de ubicación coincidente podrá actualizar {{name}} de nuevo. Revisa los avisos y registra por qué se libera el bloqueo.",
       "deletedWarning": "Esta ficha está eliminada. Una fuente coincidente puede recuperarla en la próxima sincronización.",
-      "ownerProtectedWarning": "Este gimnasio tiene propietario o una reclamación aprobada. La protección de propiedad sigue activa después de liberar el bloqueo.",
-      "noSourceWarning": "Ahora mismo no hay ninguna fuente de sincronización vinculada a este gimnasio. Liberar el bloqueo no tendrá efecto hasta que coincida una fuente.",
+      "ownerProtectedWarning": "Este rocódromo tiene propietario o una reclamación aprobada. La protección de propiedad sigue activa después de liberar el bloqueo.",
+      "noSourceWarning": "Ahora mismo no hay ninguna fuente de sincronización vinculada a este rocódromo. Liberar el bloqueo no tendrá efecto hasta que coincida una fuente.",
       "moonBoardWarning": "Las sincronizaciones de ubicaciones de MoonBoard se lanzan a mano, no siguen ninguna programación. Tras liberar el bloqueo, los cambios de la fuente se aplicarán cuando alguien lance la siguiente sincronización de ubicaciones de MoonBoard.",
       "reasonLabel": "Motivo",
       "reasonPlaceholder": "¿Por qué deben volver a prevalecer los datos originales?",
@@ -322,7 +322,7 @@
     }
   },
   "gymDuplicates": {
-    "title": "Gimnasios duplicados",
+    "title": "Rocódromos duplicados",
     "backToAdmin": "Volver al panel",
     "heading": "Cola de revisión de duplicados",
     "tabs": {
@@ -348,17 +348,17 @@
     "merge": "Fusionar",
     "dismiss": "No es un duplicado",
     "confirm": {
-      "title": "¿Fusionar estos gimnasios?",
-      "body": "Esto une {{count}} gimnasios duplicados en {{canonical}} y le mueve {{boards}} plafones, {{follows}} seguidores, {{members}} miembros, {{kiosks}} kioscos y {{claims}} reclamaciones. No se puede deshacer.",
+      "title": "¿Fusionar estos rocódromos?",
+      "body": "Esto une {{count}} rocódromos duplicados en {{canonical}} y le mueve {{boards}} plafones, {{follows}} seguidores, {{members}} miembros, {{kiosks}} kioscos y {{claims}} reclamaciones. No se puede deshacer.",
       "cancel": "Cancelar",
       "confirm": "Fusionar",
-      "overrideWarning": "Atención: vas a conservar una ficha del sistema como superviviente frente a un gimnasio que alguien posee o ha reclamado. Su gimnasio se fusionará con el del sistema. Hazlo solo si la ficha del sistema es realmente la correcta.",
+      "overrideWarning": "Atención: vas a conservar una ficha del sistema como superviviente frente a un rocódromo que alguien posee o ha reclamado. Su rocódromo se fusionará con el del sistema. Hazlo solo si la ficha del sistema es realmente la correcta.",
       "confirmOverride": "Fusionar de todos modos"
     },
     "kioskWarning": "El kiosco «{{name}}» pasó de /{{previous}} a /{{next}}",
     "snackbar": {
-      "merged": "Gimnasios fusionados",
-      "mergeFailed": "No se pudieron fusionar los gimnasios",
+      "merged": "Rocódromos fusionados",
+      "mergeFailed": "No se pudieron fusionar los rocódromos",
       "dismissed": "Marcado como no duplicado",
       "dismissFailed": "No se pudo descartar el grupo"
     },
@@ -367,14 +367,14 @@
     "retry": "Reintentar",
     "loadMore": "Cargar más",
     "orphans": {
-      "summary": "{{count}} gimnasios del sistema sin fuente de sincronización de ubicación",
-      "empty": "No hay gimnasios huérfanos",
-      "name": "Gimnasio",
+      "summary": "{{count}} rocódromos del sistema sin fuente de sincronización de ubicación",
+      "empty": "No hay rocódromos huérfanos",
+      "name": "Rocódromo",
       "address": "Dirección",
       "counts": "Totales"
     },
     "ownerReports": {
-      "note": "Los propietarios ahora pueden señalar duplicados desde la página de su gimnasio. Por ahora esos reportes llegan por correo al equipo, así que revisa la bandeja junto a esta cola."
+      "note": "Los propietarios ahora pueden señalar duplicados desde la página de su rocódromo. Por ahora esos reportes llegan por correo al equipo, así que revisa la bandeja junto a esta cola."
     }
   }
 }
