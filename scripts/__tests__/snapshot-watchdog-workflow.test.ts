@@ -102,6 +102,14 @@ describe('snapshot watchdog workflow shell boundaries', () => {
     );
   });
 
+  it('bounds the serialized watchdog fallback while retaining both cutoff proofs', () => {
+    const watchdogJob = mappingBlock(workflowSource, 'homelab-watchdog');
+    expect(watchdogJob).toContain('timeout-minutes: 45');
+    expect(watchdogJob).toContain('-e SNAPSHOT_MAX_CUTOFF_AGE_SECONDS');
+    expect(watchdogJob).toContain('src/scripts/export-board-snapshots.ts --source=primary --fence');
+    expect(watchdogJob).toContain('--source=primary --fence --gzip --key-prefix board-snapshots/v1-gzip --heartbeat');
+  });
+
   it('encodes untrusted multiline reasons into exactly four workflow outputs', () => {
     const heartbeatScript = runBlock(workflowSource, 'Check snapshot publisher heartbeats');
     const outputScriptStart = heartbeatScript.indexOf('echo "$decision" | jq .');

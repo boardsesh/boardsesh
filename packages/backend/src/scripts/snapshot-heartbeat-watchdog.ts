@@ -1,10 +1,10 @@
 import { pathToFileURL } from 'node:url';
 import { parseSnapshotManifest } from '@boardsesh/offline-sync';
+import { DEFAULT_SNAPSHOT_MAX_CUTOFF_AGE_SECONDS } from './snapshot-contract';
 
 const LIVE_KEY_PREFIX = 'board-snapshots/v1-gzip';
 const DEFAULT_REFRESH_MAX_AGE_SECONDS = 45 * 60;
 const DEFAULT_FULL_MAX_AGE_SECONDS = 30 * 60 * 60;
-const DEFAULT_MAX_CUTOFF_AGE_SECONDS = 10 * 60;
 const MAX_FUTURE_CLOCK_SKEW_SECONDS = 5 * 60;
 const HEARTBEAT_FETCH_TIMEOUT_MS = 10_000;
 const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
@@ -158,7 +158,7 @@ export function evaluateSnapshotHeartbeat(params: {
       };
     }
     const cutoffAgeAtCompletionSeconds = (completedAtMs - stableBeforeMs) / 1000;
-    const maxCutoffAgeSeconds = params.maxCutoffAgeSeconds ?? DEFAULT_MAX_CUTOFF_AGE_SECONDS;
+    const maxCutoffAgeSeconds = params.maxCutoffAgeSeconds ?? DEFAULT_SNAPSHOT_MAX_CUTOFF_AGE_SECONDS;
     if (cutoffAgeAtCompletionSeconds < 0) {
       return {
         stale: true,
@@ -255,7 +255,7 @@ export async function snapshotHeartbeatDecision(params: {
   }
   const refreshMaxAgeSeconds = params.refreshMaxAgeSeconds ?? DEFAULT_REFRESH_MAX_AGE_SECONDS;
   const fullMaxAgeSeconds = params.fullMaxAgeSeconds ?? DEFAULT_FULL_MAX_AGE_SECONDS;
-  const maxCutoffAgeSeconds = params.maxCutoffAgeSeconds ?? DEFAULT_MAX_CUTOFF_AGE_SECONDS;
+  const maxCutoffAgeSeconds = params.maxCutoffAgeSeconds ?? DEFAULT_SNAPSHOT_MAX_CUTOFF_AGE_SECONDS;
   const [refreshFetched, fullFetched] = await Promise.all([
     fetchOne(`${publicBaseUrl}/board-snapshots/ops/refresh.json?watchdog=${cacheBuster}`, fetchHeartbeat),
     fetchOne(`${publicBaseUrl}/board-snapshots/ops/full.json?watchdog=${cacheBuster}`, fetchHeartbeat),
@@ -332,7 +332,7 @@ if (invokedPath === import.meta.url) {
     ),
     maxCutoffAgeSeconds: positiveSeconds(
       process.env.SNAPSHOT_MAX_CUTOFF_AGE_SECONDS,
-      DEFAULT_MAX_CUTOFF_AGE_SECONDS,
+      DEFAULT_SNAPSHOT_MAX_CUTOFF_AGE_SECONDS,
       'SNAPSHOT_MAX_CUTOFF_AGE_SECONDS',
     ),
   });

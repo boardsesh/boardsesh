@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateSnapshotHeartbeat, snapshotHeartbeatDecision } from '../scripts/snapshot-heartbeat-watchdog';
+import { DEFAULT_SNAPSHOT_MAX_CUTOFF_AGE_SECONDS } from '../scripts/snapshot-contract';
 
 const NOW_MS = Date.parse('2026-08-15T12:00:00.000Z');
 const IMAGE_DIGEST = `sha256:${'a'.repeat(64)}`;
@@ -174,10 +175,11 @@ describe('snapshot heartbeat watchdog', () => {
     expect(decision.full).toMatchObject({ stale: true, reason: expect.stringContaining('lineage') });
   });
 
-  it('rejects a fresh completion timestamp for an expired read cutoff', () => {
+  it('rejects an expired cutoff with the shared publisher and verifier default', () => {
+    const completedAtMs = NOW_MS - 5 * 60 * 1000;
     const expiredCutoff = {
-      ...(heartbeat('refresh') as Record<string, unknown>),
-      stableBefore: '2026-08-15T11:40:00.000Z',
+      ...(heartbeat('refresh', new Date(completedAtMs).toISOString()) as Record<string, unknown>),
+      stableBefore: new Date(completedAtMs - (DEFAULT_SNAPSHOT_MAX_CUTOFF_AGE_SECONDS + 1) * 1000).toISOString(),
     };
     expect(
       evaluateSnapshotHeartbeat({
@@ -187,7 +189,6 @@ describe('snapshot heartbeat watchdog', () => {
         expectedManifestGeneratedAt: MANIFEST_GENERATED_AT,
         nowMs: NOW_MS,
         maxAgeSeconds: 45 * 60,
-        maxCutoffAgeSeconds: 10 * 60,
       }),
     ).toMatchObject({ stale: true, reason: expect.stringContaining('cutoff') });
   });
