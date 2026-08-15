@@ -125,6 +125,9 @@ vi.mock('../../settings', async () => {
   const { useState } = await import('react');
   return {
     useSetting: (key: string) => {
+      // Mirror the real custom hook: every call owns one state slot. BluetoothProvider
+      // invokes its settings unconditionally in a fixed order, so this setter can
+      // rerender the provider without a test-only rerender seam.
       const initialValue = key === 'autoDisconnectBle' || key === 'moonboardLightAdjacentHolds' ? false : 30;
       return useState(initialValue);
     },
