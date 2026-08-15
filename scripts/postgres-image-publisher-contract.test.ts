@@ -296,7 +296,25 @@ describe('trusted PostgreSQL image publisher contract', () => {
           dependencySetup + '      - name: Remove registry credentials before image smoke\n',
         );
       },
-      expected: /smoke-portable dependency setup must occur only after registry credentials are removed/,
+      expected: /smoke-portable tool and dependency setup must occur only after registry credentials are removed/,
+    },
+    {
+      name: 'portable Vite+ setup runs while registry credentials remain',
+      mutate: (workflow: string) => {
+        const viteSetup = `      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+
+`;
+        const withoutViteSetup = replaceRequiredInJob(workflow, 'smoke-portable', 'smoke-seeded', viteSetup, '');
+        return replaceRequiredInJob(
+          withoutViteSetup,
+          'smoke-portable',
+          'smoke-seeded',
+          '      - name: Remove registry credentials before image smoke\n',
+          viteSetup + '      - name: Remove registry credentials before image smoke\n',
+        );
+      },
+      expected: /smoke-portable tool and dependency setup must occur only after registry credentials are removed/,
     },
     {
       name: 'seeded smoke dependencies installed without the lockfile',

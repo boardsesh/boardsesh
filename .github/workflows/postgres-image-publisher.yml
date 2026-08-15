@@ -616,9 +616,6 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Set up Vite+
-        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
-
       - name: Enable multi-architecture emulation
         if: matrix.platform == 'linux/arm64'
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
@@ -671,6 +668,9 @@ jobs:
           find "$DOCKER_CONFIG" -depth -delete
           [[ ! -e "$DOCKER_CONFIG" ]]
 
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+
       - name: Set up Bun after registry credential removal
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
@@ -705,9 +705,6 @@ jobs:
           ref: ${{ inputs.expected_main_sha }}
           persist-credentials: false
           fetch-depth: 1
-
-      - name: Set up Vite+
-        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
 
       - name: Create temporary read-only registry boundary
         run: |
@@ -752,6 +749,9 @@ jobs:
           find "$DOCKER_CONFIG" -type f -exec sh -c ': >"$1"' _ {} \;
           find "$DOCKER_CONFIG" -depth -delete
           [[ ! -e "$DOCKER_CONFIG" ]]
+
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
 
       - name: Set up Bun after registry credential removal
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2

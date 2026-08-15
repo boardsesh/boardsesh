@@ -57,25 +57,25 @@ const PUBLISHER_STEPS: Record<string, ExpectedStep[]> = {
   ],
   'smoke-portable': [
     { name: 'Checkout exact current main commit', uses: ACTIONS.checkout },
-    { name: 'Set up Vite+', uses: ACTIONS.setupVp },
     { name: 'Enable multi-architecture emulation', uses: ACTIONS.setupQemu },
     { name: 'Create temporary read-only registry boundary' },
     { name: 'Recheck exact current main immediately before registry authentication' },
     { name: 'Log in to GHCR for exact digest pull', uses: ACTIONS.login },
     { name: 'Pull exact portable digest and platform' },
     { name: 'Remove registry credentials before image smoke' },
+    { name: 'Set up Vite+', uses: ACTIONS.setupVp },
     { name: 'Set up Bun after registry credential removal', uses: ACTIONS.setupBun },
     { name: 'Install locked dependencies after registry credential removal' },
     { name: 'Verify labels and boot exact portable platform' },
   ],
   'smoke-seeded': [
     { name: 'Checkout exact current main commit', uses: ACTIONS.checkout },
-    { name: 'Set up Vite+', uses: ACTIONS.setupVp },
     { name: 'Create temporary read-only registry boundary' },
     { name: 'Recheck exact current main immediately before registry authentication' },
     { name: 'Log in to GHCR for exact digest pull', uses: ACTIONS.login },
     { name: 'Pull exact seeded digest' },
     { name: 'Remove registry credentials before image smoke' },
+    { name: 'Set up Vite+', uses: ACTIONS.setupVp },
     { name: 'Set up Bun after registry credential removal', uses: ACTIONS.setupBun },
     { name: 'Install locked dependencies after registry credential removal' },
     { name: 'Verify labels, architecture, and seeded database' },
@@ -223,8 +223,8 @@ const PRIVILEGED_JOB_SHA256: Record<string, string> = {
   'validate-main': '79a3b6710f2f3268d467ae5a8d467d78fd212627f90f3da8c6505b1a4c51b29d',
   'publish-images': 'ca9d253928f2c8132fa71dfa7c6b49c085390bffab88da15604e1ad058c20f17',
   'verify-published-images': '05f165fb989b0c7c920b470b19bf4f14b5f3dd1f0c2880bd79e3f2b79228e1c8',
-  'smoke-portable': '0e08ebdbd32457c9b5bc08b2a3cd69411cfbe2431ed8d0e3561e2030693ed2fb',
-  'smoke-seeded': '4673065731fa518f9825de2fde82b8488cccc7832eb0328ab74c1f779b0c0c8d',
+  'smoke-portable': 'b5061e0cb86febdc3216af60b967ddf3825b7c74b43016d006d0d1aa245351ba',
+  'smoke-seeded': '95bf708acbe676a46dde4981cc83ba978c37f6b6c3ca463ef2239647260ebdf9',
   'attest-published-digests': 'd4955025ba90ce538e2966676a44c4d65c4a400a407e557550427349d603991b',
   'verify-attestations': 'e3e536f61601ef9d8681dc5809065ff814612c227a70afbc14e1c3cb21a6ff8c',
   'record-published-digests': '976efd6082d212f82b1acacfd9fd4c82155428de80fec5b5c3b5fcec212d65eb',
@@ -779,6 +779,7 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
     const credentialRemovalIndex = smokeSteps.findIndex(
       (step) => step.name === 'Remove registry credentials before image smoke',
     );
+    const setupVpIndex = smokeSteps.findIndex((step) => step.name === 'Set up Vite+');
     const setupBunIndex = smokeSteps.findIndex((step) => step.name === 'Set up Bun after registry credential removal');
     const dependencyInstallIndex = smokeSteps.findIndex(
       (step) => step.name === 'Install locked dependencies after registry credential removal',
@@ -790,11 +791,12 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
     const candidateSmokeIndex = smokeSteps.findIndex((step) => step.name === candidateSmokeStepName);
     if (
       credentialRemovalIndex < 0 ||
-      setupBunIndex <= credentialRemovalIndex ||
+      setupVpIndex <= credentialRemovalIndex ||
+      setupBunIndex <= setupVpIndex ||
       dependencyInstallIndex <= setupBunIndex ||
       candidateSmokeIndex <= dependencyInstallIndex
     ) {
-      failures.push(`${smokeName} dependency setup must occur only after registry credentials are removed`);
+      failures.push(`${smokeName} tool and dependency setup must occur only after registry credentials are removed`);
     }
   }
   const smokePortable = recordAt(jobs, 'smoke-portable') ?? {};
