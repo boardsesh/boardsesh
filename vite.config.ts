@@ -240,7 +240,7 @@ export default defineConfig({
       },
       'test:postgres18-contract': {
         command:
-          'bash packages/db/docker/dev-db-entrypoint.test.sh && bash -n scripts/postgres-migration-audit.sh scripts/postgres-migration-verify-data.sh scripts/neon-to-railway-replication.sh',
+          'bash packages/db/docker/dev-db-entrypoint.test.sh && bash packages/db/docker/apply-drizzle-migrations.test.sh && bash -n scripts/postgres-migration-audit.sh scripts/postgres-migration-verify-data.sh scripts/neon-to-railway-replication.sh',
         cache: false,
       },
       'test:postgres18-image': {

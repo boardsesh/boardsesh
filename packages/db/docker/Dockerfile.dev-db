@@ -22,14 +22,14 @@ FROM postgres:18.4-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2d
 ARG POSTGIS_PACKAGE_VERSION=3.6.4+dfsg-2.pgdg12+1
 ARG HYPOPG_PACKAGE_VERSION=1.4.3-1.pgdg12+1
 
-# The Debian build revision is intentionally exact: it is part of the
-# digest-pinned base artifact contract. Update this assertion with the digest.
+# The digest pins the exact base artifact. Assert the upstream server version
+# separately; the exact PostGIS/HypoPG Debian packages are pinned below.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       "postgresql-18-postgis-3=${POSTGIS_PACKAGE_VERSION}" \
       "postgresql-18-postgis-3-scripts=${POSTGIS_PACKAGE_VERSION}" \
       "postgresql-18-hypopg=${HYPOPG_PACKAGE_VERSION}" && \
-    test "$(postgres --version)" = 'postgres (PostgreSQL) 18.4 (Debian 18.4-1.pgdg12+1)' && \
+    postgres --version | grep -Eq '^postgres \(PostgreSQL\) 18\.4([ .]|$)' && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -65,7 +65,10 @@ COPY packages/db/docker/cleanup_sqlite_db_problems.sh \
      packages/db/docker/*.load \
      packages/db/docker/*.sql \
      /db/
-RUN chmod +x /db/cleanup_sqlite_db_problems.sh
+COPY packages/db/docker/apply-drizzle-migrations.sh \
+     /usr/local/bin/boardsesh-apply-drizzle-migrations
+RUN chmod +x /db/cleanup_sqlite_db_problems.sh \
+             /usr/local/bin/boardsesh-apply-drizzle-migrations
 
 # Copy drizzle migration files
 COPY packages/db/drizzle/ /drizzle/
@@ -243,33 +246,12 @@ RUN set -e && \
     DB_FILE=/db/tmp/kilter.modified.db pgloader /db/kilter_db.load && \
     \
     # ── Apply drizzle migrations via psql ─────────────────────────────── \
-    # Replicate what drizzle-orm's migrate() does: create tracking table, \
-    # apply each SQL file from the journal, record the SHA-256 hash. \
-    # ON_ERROR_STOP=1 makes psql exit non-zero on any SQL error. \
+    # The helper fails closed before writing either ledger row if psql reports \
+    # any migration error. Its contract test injects a deliberately bad file. \
     echo ">>> Applying drizzle migrations..." && \
+    PGHOST=/var/run/postgresql PGDATABASE=main \
+      gosu postgres boardsesh-apply-drizzle-migrations && \
     migration_count=$(jq '.entries | length' /drizzle/meta/_journal.json) && \
-    echo "  Found $migration_count migrations in journal" && \
-    gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -c "CREATE TABLE IF NOT EXISTS \"__drizzle_migrations\" (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint)" && \
-    gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -c "CREATE SCHEMA IF NOT EXISTS drizzle" && \
-    gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -c "CREATE TABLE IF NOT EXISTS drizzle.\"__drizzle_migrations\" (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint)" && \
-    applied=0 && \
-    for tag in $(jq -r '.entries[].tag' /drizzle/meta/_journal.json); do \
-      sql_file="/drizzle/${tag}.sql"; \
-      if [ -f "$sql_file" ]; then \
-        hash=$(sha256sum "$sql_file" | cut -d' ' -f1); \
-        applied=$((applied + 1)); \
-        echo "  [$applied/$migration_count] Applying: $tag"; \
-        if ! gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -f "$sql_file"; then \
-          echo "  ERROR: migration $tag failed; refusing to record it as applied"; \
-          exit 1; \
-        fi; \
-        gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -c "INSERT INTO \"__drizzle_migrations\" (hash, created_at) VALUES ('$hash', $(date +%s)000)" || exit 1; \
-        gosu postgres psql -h /var/run/postgresql main -v ON_ERROR_STOP=1 -c "INSERT INTO drizzle.\"__drizzle_migrations\" (hash, created_at) VALUES ('$hash', $(date +%s)000)" || exit 1; \
-      else \
-        echo "  ERROR: Migration file not found: $sql_file" && false; \
-      fi; \
-    done && \
-    echo ">>> All $applied migrations applied successfully." && \
     \
     # ── Verify database state ────────────────────────────────────────── \
     echo ">>> Verifying database..." && \

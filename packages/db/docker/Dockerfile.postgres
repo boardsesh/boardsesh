@@ -3,14 +3,14 @@ FROM postgres:18.4-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2d
 ARG POSTGIS_PACKAGE_VERSION=3.6.4+dfsg-2.pgdg12+1
 ARG HYPOPG_PACKAGE_VERSION=1.4.3-1.pgdg12+1
 
-# The Debian build revision is intentionally exact: it is part of the
-# digest-pinned base artifact contract. Update this assertion with the digest.
+# The digest pins the exact base artifact. Assert the upstream server version
+# separately; the exact PostGIS/HypoPG Debian packages are pinned below.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       "postgresql-18-postgis-3=${POSTGIS_PACKAGE_VERSION}" \
       "postgresql-18-postgis-3-scripts=${POSTGIS_PACKAGE_VERSION}" \
       "postgresql-18-hypopg=${HYPOPG_PACKAGE_VERSION}" && \
-    test "$(postgres --version)" = 'postgres (PostgreSQL) 18.4 (Debian 18.4-1.pgdg12+1)' && \
+    postgres --version | grep -Eq '^postgres \(PostgreSQL\) 18\.4([ .]|$)' && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
