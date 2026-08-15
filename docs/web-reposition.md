@@ -370,14 +370,78 @@ tells Google the missing URLs were deleted. Three more cases fail the same way:
 a shard past its URL budget, a shard that `expectsUrls` but built none (a
 poisoned cache or a regressed query silently emptying `static` or `boards`), and
 a boards fetch whose `hasMore` says the 100-config API cap — the schema's hard
-max, so the fix is paging, not a bigger constant — dropped the tail. The index
-applies the same rule: it throws rather than publishing an index that quietly
-dropped a shard, and it lists only shards carrying at least one URL. For the
+max, so the fix is paging, not a bigger constant — dropped the tail. For the
 same reason the boards shard uses a _throwing_ popular-configs fetch, not the
 homepage's swallow-and-return-`[]` wrapper. `playlists` is deliberately **not**
 `expectsUrls` — zero public playlists holding a climb is a legitimate state, and
 failing closed there would take the whole index down over nobody having shared
 a list.
+
+**The index degrades; only the shard fails closed (#4476).** W-22 shipped the
+index under the same all-or-nothing rule, and production disagreed: `/sitemap.xml`
+503'd on a cold cache and failed the post-deploy smoke twice, while
+`/sitemaps/static.xml` passed in the same run. The index is the one path that runs
+_every_ builder, so one cold boards fetch took the four shards that were ready
+down with it. The split is now by layer — a shard route still 503s when its own
+builder throws, misses its budget or comes back unexpectedly empty, but the index
+logs loudly, omits that shard's `<sitemap>` entry and still answers 200 with
+whatever built. A partial sitemap beats no sitemap when every shard it does list
+is served fail-closed at its own URL, and Google keeps the copy of the omitted
+shard it already has. `buildSitemapIndexXml` throws only when nothing is left to
+publish; an empty `<sitemapindex>` under an hour of `s-maxage` is the harm the
+doctrine was written against.
+
+**A degraded index is cached for a minute, not for 25 hours.** This is the half
+that makes degradation safe rather than a worse bug. The full window is
+`s-maxage=3600` plus a day of `stale-while-revalidate`, and the 503 it replaced
+was `no-store` and therefore never cached at all — so before this change the copy
+the CDN eventually held was always complete. Serving a partial index under the
+full window would trade a self-healing 503 for a cacheable lie: one cold start
+pinning "boards.xml does not exist" at the edge for 25 hours while the URL serves
+perfectly the whole time. A degraded 200 gets `s-maxage=60, must-revalidate` and
+an `X-Sitemap-Degraded` header naming the shards it dropped, so the next crawl
+re-attempts and the degradation is visible on the response rather than only in a
+log line.
+
+The post-deploy smoke was widened in the same PR for the same reason. It asserted
+"any one shard `<loc>`", which a degraded index satisfies — and `static` is a
+hardcoded builder that cannot fail, so the detector that caught #4476 would have
+been permanently green afterwards. It now names both `expectsUrls` shards
+(`static.xml`, `boards.xml`); the three declared-empty ones are legitimately
+absent and stay out of it.
+
+**Slow is a failure mode, and a try/catch cannot see it.** Each builder in the
+index walk is raced against `SHARD_DEADLINE_MS` (3 s, the value W-23 settled on
+for its paged summary, so the two collapse into one constant on merge). Be
+precise about why: the two recorded production failures were _rejections_ — a 503
+is the route's own `unavailableResponse`, and `getAllBoardConfigsOrThrow`'s 10 s
+abort surfaces as a throw — so the try/catch alone covers what was measured. The
+deadline covers the mode a try/catch structurally cannot see, a builder that never
+settles (`fetchPlaylistSitemapRows` has no bound of its own), which would hold the
+index to the platform timeout and 5xx all five shards. The index's 3 s and the
+boards builder's own 10 s are _supposed_ to disagree: failing the shard route
+costs a working URL, while missing the index deadline costs one shard for sixty
+seconds. Cheap to be wrong, so be impatient.
+
+**Concurrent, with only a per-shard deadline.** An earlier draft of this fix
+sequenced the walk under a total 8 s budget, and that made the tail of the
+registry the deterministic victim: five builders each a comfortable 1.9 s — every
+one inside its own deadline — spend the budget before `playlists` runs, so it is
+dropped for its position rather than its latency. `Promise.allSettled` bounds the
+walk by max(builder) instead of sum(builder), which removes the starvation and
+the need for a total budget at once. The fan-out is two I/O calls against two
+different backends plus three hardcoded builders — not the many-concurrent-heavy-
+scans shape of #4461, which W-23 sequences _within_ its climbs query for exactly
+that reason. Sequencing would not have bounded pool load anyway: `withDeadline`
+stops waiting, it does not cancel.
+
+**Known follow-ups.** `withDeadline` bounds this request's latency, not the
+abandoned query still holding a connection — a real bound needs an `AbortSignal`
+threaded into `fetchPlaylistSitemapRows` or a statement timeout on its query.
+`getAllBoardConfigsOrThrow` is uncached (the `unstable_cache` in that file wraps
+`fetchPopularBoardConfigs`, the limit=12 homepage variant) and `/sitemap.xml` is
+`force-dynamic`, so every CDN miss re-runs it live; caching the per-shard
+summaries is what would make 3 s comfortably attainable on a cold instance.
 
 **Two shards ship declared-empty, and that is the point.** `gyms.xml` waits on
 #4381's public-gyms enumeration query, which the gym-discovery epic (#4372)

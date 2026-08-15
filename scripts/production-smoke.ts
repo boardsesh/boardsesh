@@ -149,6 +149,15 @@ export const WWW_CHECKS: SmokeCheck[] = [
   {
     // A `<loc>`-only check would pass on the old flat `<urlset>` too — and on a
     // broken index — so assert the index shape *and* that it points at a shard.
+    //
+    // Both mandatory shards are named, not "any one `<loc>`". Since #4476 the
+    // index *degrades*: a builder that fails is omitted and the index still 200s.
+    // That is the right behaviour for crawlers and the wrong behaviour for a
+    // detector — the original wording passes on an index that lost everything but
+    // `static.xml`, which is a pure hardcoded builder that cannot fail, so this
+    // check could never have gone red again. `static` and `boards` are exactly
+    // the shards the registry marks `expectsUrls`, so both must always be there;
+    // `gyms`, `setters` and `playlists` are legitimately empty and stay out of it.
     name: 'sitemap.xml serves a sitemap index pointing at shards',
     path: '/sitemap.xml',
     assert: (response) =>
@@ -156,7 +165,8 @@ export const WWW_CHECKS: SmokeCheck[] = [
         expectStatus(response, 200),
         expectContentType(response, 'xml'),
         expectBodyContains(response, '<sitemapindex', '<sitemapindex> root element'),
-        expectBodyContains(response, '<loc>https://www.boardsesh.com/sitemaps/', 'shard <loc> entry'),
+        expectBodyContains(response, '<loc>https://www.boardsesh.com/sitemaps/static.xml', 'static shard <loc> entry'),
+        expectBodyContains(response, '<loc>https://www.boardsesh.com/sitemaps/boards.xml', 'boards shard <loc> entry'),
       ),
   },
   {
