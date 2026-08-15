@@ -25,11 +25,10 @@ import type { ConnectionContext, SyncCursorInput } from '@boardsesh/shared-schem
 import type { QueryInvalidator } from '@boardsesh/offline-sync';
 import { pullSync, runMigrations, TABLE_CONFIGS } from '@boardsesh/offline-sync';
 import { createTestDatabase } from '@boardsesh/offline-sync/testing';
-// createPool is the SAME accessor runExport uses (primary-only: replica
-// commit-order snapshots can omit lower-cursor rows, so the export never reads
-// a replica). It GUARANTEES the drizzle wrapper is constructed before the raw
-// pool is returned (packages/db/src/client/postgres.ts), so the pool used here
-// carries drizzle's transparent timestamp parsers exactly like production.
+// createPool supplies the real worker Postgres connection to this core-level
+// test. The production CLI creates isolated primary/replica pools and declares
+// their observer capability explicitly; parser parity is covered separately by
+// snapshot-replica-fence.test.ts.
 import { createPool } from '@boardsesh/db/client';
 import { db } from '../db/client';
 import { syncQueries } from '../graphql/resolvers/sync/queries';
@@ -305,6 +304,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
     try {
       const result = await exportLayoutSnapshot({
         sqlClient: createPool(),
+        deletionObserverConnectionAvailable: true,
         boardType: BOARD_TYPE,
         layoutId: LAYOUT_ID,
         filePath,
@@ -510,6 +510,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
     const filePath = join(workDir, 'artifact-deletion-replay.db');
     await exportLayoutSnapshot({
       sqlClient: createPool(),
+      deletionObserverConnectionAvailable: true,
       boardType: BOARD_TYPE,
       layoutId: LAYOUT_ID,
       filePath,
@@ -638,6 +639,7 @@ describe('board_climb_grades snapshot artifact', () => {
     const filePath = join(workDir, 'artifact.db');
     await exportLayoutSnapshot({
       sqlClient: createPool(),
+      deletionObserverConnectionAvailable: true,
       boardType: BOARD_TYPE,
       layoutId: LAYOUT_ID,
       filePath,
@@ -651,19 +653,19 @@ describe('board_climb_grades snapshot artifact', () => {
     expect(readArtifactTableNames(filePath)).not.toContain('sync_deletions');
   });
 
-  it('surfaces a bounded fallback reason when a second observer connection is unavailable', async () => {
+  it('fails closed without inspecting private pool options when observer capacity is not declared', async () => {
     await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
 
     const primaryPool = createPool();
-    const singleConnectionObserverView = new Proxy(primaryPool, {
+    const clientWithoutPublicCapacityMetadata = new Proxy(primaryPool, {
       get(target, property) {
-        if (property === 'options') return { ...target.options, max: 1 };
+        if (property === 'options') throw new Error('private postgres.js options must not be inspected');
         return Reflect.get(target, property, target);
       },
     });
     const filePath = join(workDir, 'observer-fallback-artifact.db');
     const result = await exportLayoutSnapshot({
-      sqlClient: singleConnectionObserverView,
+      sqlClient: clientWithoutPublicCapacityMetadata,
       boardType: BOARD_TYPE,
       layoutId: LAYOUT_ID,
       filePath,
@@ -680,16 +682,10 @@ describe('board_climb_grades snapshot artifact', () => {
     await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
 
     const primaryPool = createPool();
-    const singleConnectionReader = new Proxy(primaryPool, {
-      get(target, property) {
-        if (property === 'options') return { ...target.options, max: 1 };
-        return Reflect.get(target, property, target);
-      },
-    });
     const stableBefore = '2026-05-31T23:59:30.000Z';
     const filePath = join(workDir, 'fenced-boundary-artifact.db');
     const result = await exportLayoutSnapshot({
-      sqlClient: singleConnectionReader,
+      sqlClient: primaryPool,
       boardType: BOARD_TYPE,
       layoutId: LAYOUT_ID,
       filePath,
@@ -704,7 +700,7 @@ describe('board_climb_grades snapshot artifact', () => {
 
     const builtAtFirstFilePath = join(workDir, 'fenced-built-at-boundary-artifact.db');
     const builtAtFirstResult = await exportLayoutSnapshot({
-      sqlClient: singleConnectionReader,
+      sqlClient: primaryPool,
       boardType: BOARD_TYPE,
       layoutId: LAYOUT_ID,
       filePath: builtAtFirstFilePath,

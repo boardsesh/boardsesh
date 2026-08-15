@@ -159,7 +159,9 @@ less likely; neither proves the absent transaction has finished.
 `--source=replica` therefore fails closed unless this protocol succeeds:
 
 1. A dedicated, direct (never transaction-pooled) primary session takes advisory lock `(4340, 1)` through
-   `ops.acquire_board_snapshot_fence()` and keeps that session alive through manifest publication.
+   `ops.acquire_board_snapshot_fence()` and keeps that session alive through manifest publication. This
+   runbook reserves the pair for the board-snapshot protocol: `4340` records issue #4340 and `1` is this
+   protocol's lock discriminator. Do not reuse the pair for another advisory-lock owner.
 2. The function sees every other same-database backend with an open transaction and sets `stableBefore` to
    the lesser of primary clock minus the 30-second stability window and the oldest `xact_start` minus one
    microsecond. It refuses prepared transactions, any remaining logical subscription, and logical apply
@@ -1050,13 +1052,21 @@ node --import tsx src/scripts/export-board-snapshots.ts \
 - `--heartbeat` implies `--fence` and is accepted only for an unfiltered, gzip export to
   `board-snapshots/v1-gzip`. It writes no-store `board-snapshots/ops/{refresh,full}.json` only after a
   successful run (including a healthy threshold no-op). It requires an exact
-  `SNAPSHOT_EXPORTER_IMAGE_DIGEST=sha256:...`. Shadow or filtered runs must not emit production health.
+  `SNAPSHOT_EXPORTER_IMAGE_DIGEST=sha256:...`. `--source=replica --heartbeat` is the intended homelab
+  live-publisher path; the watchdog accepts either replica or Railway-primary fallback heartbeats only after
+  the same image, manifest-generation, cutoff, and PostgreSQL-lineage checks. Shadow or filtered runs must
+  not emit production health.
 
 ### Primary coordinator role
 
 `DATABASE_DIRECT_URL` must be a direct PostgreSQL endpoint. PgBouncer transaction mode can move two
 statements to different server sessions and therefore cannot hold this advisory lock. A pooler URL fails
 safe at the first lock assertion, but it is still a configuration error.
+
+The exporter calls `ops.board_snapshot_fence_held()` as a standalone statement on that same reserved
+session. Treat it as a statement-level assertion: never compose it with `release_board_snapshot_fence()` in
+one SQL statement. Only the owning session can release its session advisory lock, and every production call
+site checks it before publishing.
 
 The migration deliberately revokes every `ops` function from `PUBLIC`. Create a narrow login outside the
 schema migration (password from 1Password), then grant only:

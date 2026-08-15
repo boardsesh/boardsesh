@@ -251,6 +251,8 @@ export type SnapshotReadBoundary = {
 type SnapshotDatabaseContext = {
   sqlClient: Sql;
   boundary: SnapshotReadBoundary;
+  /** The client has a spare connection which can observe its export transaction. */
+  deletionObserverConnectionAvailable: boolean;
   assertPublishFence: () => Promise<void>;
   close: () => Promise<void>;
 };
@@ -662,6 +664,7 @@ async function createPrimarySnapshotContext(): Promise<SnapshotDatabaseContext> 
     const targetLsn = String(row.target_lsn);
     return {
       sqlClient,
+      deletionObserverConnectionAvailable: true,
       boundary: {
         source: 'primary',
         stableBefore: toIso(row.stable_before),
@@ -799,6 +802,7 @@ async function createFencedPrimarySnapshotContext(): Promise<SnapshotDatabaseCon
       // reserved backend. A mixed/load-balanced URL cannot validate against one
       // server and stream rows from another.
       sqlClient: snapshotPrimaryReader,
+      deletionObserverConnectionAvailable: false,
       boundary: {
         source: 'primary',
         stableBefore: fence.stableBefore,
@@ -864,6 +868,7 @@ async function createReplicaSnapshotContext(): Promise<SnapshotDatabaseContext> 
       // Replay checks and all bulk transactions stay on the exact same local
       // standby backend for the full run.
       sqlClient: snapshotReplicaReader,
+      deletionObserverConnectionAvailable: false,
       boundary: {
         source: 'replica',
         stableBefore: fence.stableBefore,
@@ -1132,16 +1137,16 @@ function selectFencedDeletionReplayBoundary(artifactBuiltAt: unknown, stableBefo
  */
 async function probeDeletionReplayBoundary(params: {
   sqlClient: Sql;
+  observerConnectionAvailable: boolean;
   applicationName: string;
   artifactBuiltAt: string;
   stableBefore: string;
 }): Promise<DeletionReplayMetadataResult> {
-  const { sqlClient, applicationName, artifactBuiltAt, stableBefore } = params;
+  const { sqlClient, observerConnectionAvailable, applicationName, artifactBuiltAt, stableBefore } = params;
   // The observer must not queue behind the export connection forever. The
-  // unfenced primary pool has max=2; a generic/max=1 caller still gets a valid
-  // artifact, just without this optional optimization.
-  const configuredPoolMax = (sqlClient as Sql & { options?: { max?: unknown } }).options?.max;
-  if (typeof configuredPoolMax !== 'number' || configuredPoolMax < 2) {
+  // production unfenced context explicitly provisions max=2. Generic callers
+  // fail closed unless they explicitly guarantee equivalent capacity.
+  if (!observerConnectionAvailable) {
     return { deletionsReplayFrom: null, deletionsReplayFallbackReason: 'observer-pool-capacity' };
   }
   try {
@@ -1279,6 +1284,8 @@ export async function exportLayoutSnapshot(params: {
   stableBefore: string;
   /** True only when the primary fence folded every open primary transaction into stableBefore. */
   stableBeforeIncludesActiveTransactions?: boolean;
+  /** The SQL client has a spare connection which can observe this export transaction. */
+  deletionObserverConnectionAvailable?: boolean;
   streamBatchSize?: number;
 }): Promise<LayoutSnapshotResult> {
   const {
@@ -1290,6 +1297,7 @@ export async function exportLayoutSnapshot(params: {
     gradesFilePath,
     stableBefore,
     stableBeforeIncludesActiveTransactions = false,
+    deletionObserverConnectionAvailable = false,
   } = params;
   const streamBatchSize = params.streamBatchSize ?? 5000;
   const scopeParams: (string | number)[] = [boardType, layoutId, stableBefore];
@@ -1335,6 +1343,7 @@ export async function exportLayoutSnapshot(params: {
           : { deletionsReplayFrom: null, deletionsReplayFallbackReason: 'invalid-probe-timestamp' }
         : await probeDeletionReplayBoundary({
             sqlClient,
+            observerConnectionAvailable: deletionObserverConnectionAvailable,
             applicationName: exportApplicationName,
             artifactBuiltAt: builtAt,
             stableBefore,
@@ -1924,6 +1933,7 @@ export async function runExport(argv: string[]): Promise<void> {
           builtAt,
           stableBefore: databaseContext.boundary.stableBefore,
           stableBeforeIncludesActiveTransactions: databaseContext.boundary.stableBeforeIncludesActiveTransactions,
+          deletionObserverConnectionAvailable: databaseContext.deletionObserverConnectionAvailable,
           // GZIP PASS ONLY. The nightly runs twice — once at the identity `v1`
           // prefix kept as a rollback target, once at `v1-gzip` where the fleet
           // actually points. Publishing grades only in the gzip pass means a
