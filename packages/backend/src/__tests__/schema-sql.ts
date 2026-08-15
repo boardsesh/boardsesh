@@ -1320,7 +1320,7 @@ export const schemaSQL = `
   CREATE TRIGGER trg_board_climbs_delete AFTER DELETE ON board_climbs
     FOR EACH ROW EXECUTE FUNCTION log_deletion_board_climbs();
 
-  -- Sync-field maintenance on UPDATE, mirroring 0144 + the 0146 WHEN guards:
+  -- Sync-field maintenance on UPDATE, mirroring 0144 + the later WHEN guards:
   -- internal-only (synced/sync_error) and no-op writes must not advance the
   -- sync cursors, and bookkeeping-only tick writes must not bump updated_at.
   CREATE OR REPLACE FUNCTION set_board_climbs_sync_fields() RETURNS TRIGGER AS $$
@@ -1350,7 +1350,29 @@ export const schemaSQL = `
   DROP TRIGGER IF EXISTS trg_board_climb_stats_set_sync_fields ON board_climb_stats;
   CREATE TRIGGER trg_board_climb_stats_set_sync_fields BEFORE UPDATE ON board_climb_stats
     FOR EACH ROW
-    WHEN (OLD.* IS DISTINCT FROM NEW.*)
+    WHEN (ROW(
+            OLD.board_type,
+            OLD.climb_uuid,
+            OLD.angle,
+            OLD.display_difficulty,
+            OLD.benchmark_difficulty,
+            OLD.ascensionist_count,
+            OLD.difficulty_average,
+            OLD.quality_average,
+            OLD.fa_username,
+            OLD.fa_at
+          ) IS DISTINCT FROM ROW(
+            NEW.board_type,
+            NEW.climb_uuid,
+            NEW.angle,
+            NEW.display_difficulty,
+            NEW.benchmark_difficulty,
+            NEW.ascensionist_count,
+            NEW.difficulty_average,
+            NEW.quality_average,
+            NEW.fa_username,
+            NEW.fa_at
+          ))
     EXECUTE FUNCTION set_board_climb_stats_sync_fields();
 
   CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$

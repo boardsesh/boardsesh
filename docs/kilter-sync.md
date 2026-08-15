@@ -301,6 +301,12 @@ A single Boardsesh layout maps to several Grips `product_layout_uuid`s (size var
 - **`--apply` writes inside a single transaction** (overwrite + materialized-total recompute are atomic) and prints `topAfter`. A fetch error aborts before any write, since writes only run after the full fetch loop completes.
 - Run it with the **daemon paused** so a concurrent catalog sync doesn't interleave, and run it **unscoped** (no `--layouts`) for the production cleanup — the materialized-total recompute pass touches all Kilter rows, so a scoped run can leave inconsistent state. Rows for climbs Grips no longer lists aren't re-fetched, so this tool does not correct delisted-climb inflation.
 
+An applied repair that changes 500 or more rows is picked up by the live board-snapshot threshold scan and
+republished to the fleet's gzip CDN prefix. Do not leave devices to replay a bulk repair through hundreds of
+GraphQL pages. The scan runs on a best-effort 15-minute cadence; for a planned repair that should not wait
+for the next scheduled scan, manually dispatch **Export Board Snapshots** after the transaction commits with
+`gzip_only`, `board=kilter`, and the affected layout when it is known.
+
 ### Quality scale — every board on 1–5
 
 Kilter Grips reports `quality_average` on a 1–5 scale (MoonBoard too), but Aurora reports 1–3. To keep `board_climb_stats.quality_average` one scale the UI renders uniformly, every writer stores 1–5: aurora-sync normalises its writes via `normalizeQualityTo5` (`×5/3`, continuous — it's a stored average, so unlike `convertQuality` it isn't rounded to integer star steps); Kilter Grips and Boardsesh-tick quality are already 1–5 and stored as-is.

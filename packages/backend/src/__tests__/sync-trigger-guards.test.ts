@@ -10,6 +10,15 @@ import { db } from '../db/client';
 const USER_ID = 'trigger-guard-user';
 
 type SyncFields = { updated_at: string; sync_seq: number };
+type StatsSyncFields = SyncFields & {
+  upstream_synced_at: string | null;
+  upstream_ascensionist_count: string | null;
+  boardsesh_ascensionist_count: string | null;
+  upstream_quality_average: number | null;
+  boardsesh_quality_sum: number | null;
+  boardsesh_quality_count: string | null;
+  quality_normalized: boolean;
+};
 
 async function insertUser(id: string): Promise<void> {
   await db.execute(sql`
@@ -84,11 +93,19 @@ describe('board_climbs sync-field trigger guard', () => {
 describe('board_climb_stats sync-field trigger guard', () => {
   const climbUuid = 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb';
 
-  async function syncFields(): Promise<SyncFields> {
+  async function syncFields(): Promise<StatsSyncFields> {
     const rows = (await db.execute(sql`
-      SELECT updated_at::text AS updated_at, sync_seq FROM board_climb_stats
+      SELECT updated_at::text AS updated_at, sync_seq,
+        upstream_synced_at::text AS upstream_synced_at,
+        upstream_ascensionist_count::text AS upstream_ascensionist_count,
+        boardsesh_ascensionist_count::text AS boardsesh_ascensionist_count,
+        upstream_quality_average,
+        boardsesh_quality_sum,
+        boardsesh_quality_count::text AS boardsesh_quality_count,
+        quality_normalized
+      FROM board_climb_stats
       WHERE board_type = 'kilter' AND climb_uuid = ${climbUuid} AND angle = 40
-    `)) as unknown as SyncFields[];
+    `)) as unknown as StatsSyncFields[];
     return rows[0];
   }
 
@@ -110,6 +127,49 @@ describe('board_climb_stats sync-field trigger guard', () => {
     `);
 
     const after = await syncFields();
+    expect(after.updated_at).toBe(before.updated_at);
+    expect(Number(after.sync_seq)).toBe(Number(before.sync_seq));
+  });
+
+  it('does not bump the cursor when only upstream sync provenance changes', async () => {
+    const before = await syncFields();
+
+    // Every Aurora/Kilter catalog pass refreshes this server-only timestamp,
+    // even when none of the stats shipped to a device changed.
+    await db.execute(sql`
+      UPDATE board_climb_stats SET upstream_synced_at = '2026-08-15T12:00:00Z'
+      WHERE board_type = 'kilter' AND climb_uuid = ${climbUuid} AND angle = 40
+    `);
+
+    const after = await syncFields();
+    expect(after.upstream_synced_at).not.toBe(before.upstream_synced_at);
+    expect(after.updated_at).toBe(before.updated_at);
+    expect(Number(after.sync_seq)).toBe(Number(before.sync_seq));
+  });
+
+  it('does not bump the cursor when only server-side aggregate components change', async () => {
+    const before = await syncFields();
+
+    // These columns explain how the materialized values were derived, but
+    // syncClimbStats ships only ascensionist_count / quality_average.
+    await db.execute(sql`
+      UPDATE board_climb_stats SET
+        upstream_ascensionist_count = 5,
+        boardsesh_ascensionist_count = 0,
+        upstream_quality_average = 3.5,
+        boardsesh_quality_sum = 0,
+        boardsesh_quality_count = 0,
+        quality_normalized = true
+      WHERE board_type = 'kilter' AND climb_uuid = ${climbUuid} AND angle = 40
+    `);
+
+    const after = await syncFields();
+    expect(after.upstream_ascensionist_count).toBe('5');
+    expect(after.boardsesh_ascensionist_count).toBe('0');
+    expect(after.upstream_quality_average).toBe(3.5);
+    expect(after.boardsesh_quality_sum).toBe(0);
+    expect(after.boardsesh_quality_count).toBe('0');
+    expect(after.quality_normalized).toBe(true);
     expect(after.updated_at).toBe(before.updated_at);
     expect(Number(after.sync_seq)).toBe(Number(before.sync_seq));
   });
