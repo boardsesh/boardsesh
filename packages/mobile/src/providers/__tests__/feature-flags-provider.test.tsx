@@ -8,6 +8,7 @@ import {
   useBoardseshGradeEnabled,
   useFeatureFlag,
   useFeatureFlags,
+  useOfflineDownloadProgressEnabled,
   useOfflineDownloadsEnabled,
   useSnapshotBootstrapEnabled,
 } from '../feature-flags-provider';
@@ -96,28 +97,50 @@ describe('FeatureFlagsProvider', () => {
     expect(result.current).toBe(true);
   });
 
-  it('useOfflineDownloadsEnabled is on when the flag never resolved', () => {
+  it('keeps shipped offline capabilities on without PostHog values', () => {
+    const wrapper = ({ children }: { children: ReactNode }) => <FeatureFlagsProvider>{children}</FeatureFlagsProvider>;
+    const { result } = renderHook(
+      () => ({
+        engine: useOfflineDownloadsEnabled(),
+        snapshot: useSnapshotBootstrapEnabled(),
+        progress: useOfflineDownloadProgressEnabled(),
+      }),
+      { wrapper },
+    );
+    expect(result.current).toEqual({ engine: true, snapshot: true, progress: true });
+  });
+
+  it('ignores stale PostHog false values for permanently shipped offline capabilities', () => {
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <FeatureFlagsProvider
+        flags={{
+          'offline-board-downloads': false,
+          'offline-snapshot-bootstrap-v2': false,
+          'offline-download-progress': false,
+        }}
+      >
+        {children}
+      </FeatureFlagsProvider>
+    );
+    const { result } = renderHook(
+      () => ({
+        engine: useOfflineDownloadsEnabled(),
+        snapshot: useSnapshotBootstrapEnabled(),
+        progress: useOfflineDownloadProgressEnabled(),
+      }),
+      { wrapper },
+    );
+    expect(result.current).toEqual({ engine: true, snapshot: true, progress: true });
+  });
+
+  it('ignores a stale tester override for the baked-on offline engine', () => {
+    setFeatureFlagOverride('offline-board-downloads', false);
     const wrapper = ({ children }: { children: ReactNode }) => <FeatureFlagsProvider>{children}</FeatureFlagsProvider>;
     const { result } = renderHook(() => useOfflineDownloadsEnabled(), { wrapper });
     expect(result.current).toBe(true);
   });
 
-  it('useOfflineDownloadsEnabled is off on an explicit false (the kill switch)', () => {
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <FeatureFlagsProvider flags={{ 'offline-board-downloads': false }}>{children}</FeatureFlagsProvider>
-    );
-    const { result } = renderHook(() => useOfflineDownloadsEnabled(), { wrapper });
-    expect(result.current).toBe(false);
-  });
-
-  it('a tester override to off beats the default-on for an unresolved flag', () => {
-    setFeatureFlagOverride('offline-board-downloads', false);
-    const wrapper = ({ children }: { children: ReactNode }) => <FeatureFlagsProvider>{children}</FeatureFlagsProvider>;
-    const { result } = renderHook(() => useOfflineDownloadsEnabled(), { wrapper });
-    expect(result.current).toBe(false);
-  });
-
-  it('the offline default-on does not leak to the other flags', () => {
+  it('the baked-on snapshot path does not leak to ordinary flags', () => {
     const wrapper = ({ children }: { children: ReactNode }) => <FeatureFlagsProvider>{children}</FeatureFlagsProvider>;
     const { result } = renderHook(
       () => ({
@@ -126,7 +149,7 @@ describe('FeatureFlagsProvider', () => {
       }),
       { wrapper },
     );
-    expect(result.current.snapshotBootstrap).toBe(false);
+    expect(result.current.snapshotBootstrap).toBe(true);
     expect(result.current.boardseshGrade).toBe(false);
   });
 

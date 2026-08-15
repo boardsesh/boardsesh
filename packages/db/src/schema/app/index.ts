@@ -28,6 +28,7 @@ export * from './climb-embeddings';
 export * from './climb-similar';
 export * from './integration-exports';
 export * from './location-sync';
+export * from './location-sync-unfreeze-audit';
 export * from './sync-deletions';
 export * from './sync-daemon-leases';
 export * from './logbook-sync-skips';

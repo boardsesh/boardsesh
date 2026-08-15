@@ -12,9 +12,9 @@ import { useSnapshotSource } from './use-snapshot-source';
  * the engine is handed, so the UI and the engine can never disagree about which
  * manifest is live.
  *
- * `enabled` follows `useSnapshotSource()`: with the flag off or no build-time base
- * URL, a fresh board downloads via the paged crawl, which has no byte total — so
- * there is nothing to show and no reason to fetch.
+ * `enabled` follows `useSnapshotSource()`: with no build-time base URL, a fresh
+ * board downloads via the paged crawl, which has no byte total — so there is
+ * nothing to show and no reason to fetch.
  *
  * Callers read this from cache at tap time; the screen mounting is what warms it.
  * Keep it that way — awaiting a manifest fetch inside a press handler would stall

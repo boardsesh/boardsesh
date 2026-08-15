@@ -67,14 +67,19 @@ export function applySessionRuntimeEvent<
       const selfInSnapshot = snapshotUsers.find((user) => user.id === prev.participantId);
       const selfRow = prev.users.find((user) => user.id === prev.participantId);
       const users = selfInSnapshot || !selfRow ? snapshotUsers : [...snapshotUsers, selfRow];
+      // The roster is participant-scoped: for a signed-in user, upsertLocalParticipant
+      // ORs leadership sticky-true across every device that participant has open, so
+      // the snapshot's self row carries no connection-scoped information for that user
+      // — it can't tell us whether THIS device is the leader, only whether ANY of their
+      // devices is. Only trust it when this connection's participant id IS the
+      // connection id (anonymous users, where participant and connection coincide);
+      // otherwise leave top-level isLeader alone and let the JOIN response and
+      // LeaderChanged — both genuinely connection-scoped — remain the sole authorities.
+      const snapshotSpeaksForThisConnection = prev.participantId === prev.clientId;
       return {
         ...prev,
         users,
-        // Re-derive top-level leadership from the snapshot's own self entry (keyed
-        // by participant id). When the snapshot omits us it has no opinion on our
-        // leadership — it raced our JOIN — so keep the prior value rather than
-        // silently demoting on incomplete data.
-        isLeader: selfInSnapshot ? selfInSnapshot.isLeader : prev.isLeader,
+        isLeader: selfInSnapshot && snapshotSpeaksForThisConnection ? selfInSnapshot.isLeader : prev.isLeader,
         // Falsy (empty/absent) boardPath keeps the current one — a real boardPath
         // is always a non-empty route, so `||` only ever falls through on the
         // unreachable session-vanished-mid-subscribe case the seed guards.

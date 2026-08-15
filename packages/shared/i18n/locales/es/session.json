@@ -610,6 +610,7 @@
     "pause": "Pausar",
     "replay": "Repetir",
     "speed": "Velocidad de reproducción",
+    "peerFrameMismatch": "Reproduciendo por tu cuenta. Alguien de la sesión usa otra versión de la app que lee los fotogramas de esta vía de otra forma.",
     "audienceCount_one": "{{count}} más mirando",
     "audienceCount_other": "{{count}} más mirando",
     "yourAscents_one": "Tu ascenso ({{count}})",

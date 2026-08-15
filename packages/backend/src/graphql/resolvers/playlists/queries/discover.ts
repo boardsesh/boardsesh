@@ -5,6 +5,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { validateInput } from '../../shared/helpers';
 import { DiscoverPlaylistsInputSchema, GetPlaylistCreatorsInputSchema } from '../../../../validation/schemas';
 import { formatPublicPlaylist } from '../helpers/enrichment';
+import { escapeLikePattern } from '../../../../utils/like-pattern';
 
 /** Shared select fields for public playlist queries (discover + search). */
 const PUBLIC_PLAYLIST_SELECT = {
@@ -102,7 +103,7 @@ export const discoverPlaylists = async (
     conditions.push(or(eq(dbSchema.playlists.layoutId, input.layoutId), isNull(dbSchema.playlists.layoutId))!);
   }
   if (input.name) {
-    conditions.push(sql`LOWER(${dbSchema.playlists.name}) LIKE LOWER(${'%' + input.name + '%'})`);
+    conditions.push(sql`LOWER(${dbSchema.playlists.name}) LIKE LOWER(${'%' + escapeLikePattern(input.name) + '%'})`);
   }
   if (input.creatorIds && input.creatorIds.length > 0) {
     conditions.push(inArray(dbSchema.playlistOwnership.userId, input.creatorIds));
@@ -139,6 +140,7 @@ export const discoverPlaylists = async (
         ? desc(sql`count(DISTINCT ${dbSchema.playlistClimbs.id})`)
         : desc(dbSchema.playlists.createdAt),
       desc(dbSchema.playlists.updatedAt),
+      desc(dbSchema.playlists.id),
     )
     .limit(pageSize + 1)
     .offset(page * pageSize);
@@ -180,7 +182,7 @@ export const playlistCreators = async (
   ];
 
   if (input.searchQuery) {
-    conditions.push(sql`LOWER(${dbSchema.users.name}) LIKE LOWER(${'%' + input.searchQuery + '%'})`);
+    conditions.push(sql`LOWER(${dbSchema.users.name}) LIKE LOWER(${'%' + escapeLikePattern(input.searchQuery) + '%'})`);
   }
 
   const results = await db

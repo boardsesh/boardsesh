@@ -76,7 +76,7 @@ export type NudgeDecisionInput = {
   surface: NudgeSurface;
   state: OfflineNudgeState;
   nowMs: number;
-  /** `useOfflineDownloadsEnabled()` — the whole engine's kill switch. */
+  /** `useOfflineDownloadsEnabled()` — native/web platform availability. */
   offlineEngineEnabled: boolean;
   /** `useOfflineNudgesEnabled()` — this feature's own ramp flag. */
   nudgesEnabled: boolean;

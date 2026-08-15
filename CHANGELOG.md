@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-15
+
+### Fixed
+
+- Offline board downloads recover automatically and keep bulk catalog updates on the fast CDN download instead of crawling through hundreds of 500-climb batches. ([#4456](https://github.com/boardsesh/boardsesh/pull/4456))
+
 ## 2026-08-14
 
 ### New
@@ -28,6 +34,12 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Internal-only fix to a connection-scoped in-memory flag with no shipped ([#4284](https://github.com/boardsesh/boardsesh/pull/4284))
+  user-visible consumer (mobile only reads it for a drift-telemetry signature).
+- Editing a board's or gym's location saves cleanly on self-hosted setups without PostGIS, instead of erroring out on a save that already went through. ([#4269](https://github.com/boardsesh/boardsesh/pull/4269))
+- Moving the last board off an auto-generated gym listing now folds that listing into your gym instead of leaving an empty duplicate in gym search — old links still land on the right place. ([#4277](https://github.com/boardsesh/boardsesh/pull/4277))
+  The Boards tab tells you when a board is the last one on its listing, and asks before it merges.
+- Switching a board off and straight back on no longer leaves it stuck on "waiting to download" — the download starts again as soon as the old copy finishes clearing out. ([#4450](https://github.com/boardsesh/boardsesh/pull/4450))
 - The playlists page shows loading placeholders and gives you somewhere to go when it is empty. ([#4431](https://github.com/boardsesh/boardsesh/pull/4431))
 - Fixed: holds can be tapped again when creating or editing a climb on Android. ([#4425](https://github.com/boardsesh/boardsesh/pull/4425))
 - Clearing one board out of storage no longer stops your other boards downloading — remove a wall you're done with and the rest keep coming down. ([#4404](https://github.com/boardsesh/boardsesh/pull/4404))

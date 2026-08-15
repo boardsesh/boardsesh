@@ -117,10 +117,71 @@ const insertGymMember = (gymId: number, userId: string, role: string) =>
     VALUES (${gymId}, ${userId}, ${role}, now())
   `);
 
+const insertGymClaim = (gymId: number, claimantUserId: string, status: string) =>
+  db.execute(sql`
+    INSERT INTO gym_claims (gym_id, claimant_user_id, method, status, created_at, updated_at)
+    VALUES (${gymId}, ${claimantUserId}, 'admin', ${status}, now(), now())
+  `);
+
+const insertGymKiosk = (gymId: number, slug: string) =>
+  db.execute(sql`
+    INSERT INTO gym_kiosks (uuid, gym_id, slug, name, created_at, updated_at)
+    VALUES (${uuidv4()}, ${gymId}, ${slug}, ${'Kiosk ' + slug}, now(), now())
+  `);
+
+const insertGymSourceAlias = (gymId: number, sourceKey: string) =>
+  db.execute(sql`
+    INSERT INTO location_sync_gym_sources (source_key, gym_id, created_at, updated_at)
+    VALUES (${sourceKey}, ${gymId}, now(), now())
+  `);
+
 const boardGymId = async (boardUuid: string): Promise<number | null> => {
   const result = await db.execute(sql`SELECT gym_id FROM user_boards WHERE uuid = ${boardUuid}`);
   const row = Array.from(result as Iterable<{ gym_id: number | null }>)[0];
   return row?.gym_id != null ? Number(row.gym_id) : null;
+};
+
+const boardSyncFrozen = async (boardUuid: string): Promise<boolean> => {
+  const result = await db.execute(sql`SELECT sync_frozen_at FROM user_boards WHERE uuid = ${boardUuid}`);
+  const row = Array.from(result as Iterable<{ sync_frozen_at: Date | null }>)[0];
+  return row?.sync_frozen_at != null;
+};
+
+type GymRetireState = { deletedAt: Date | null; isPublic: boolean; mergedIntoGymId: number | null };
+
+const gymRetireState = async (gymId: number): Promise<GymRetireState> => {
+  const result = await db.execute(sql`
+    SELECT deleted_at, is_public, merged_into_gym_id FROM gyms WHERE id = ${gymId}
+  `);
+  const row = Array.from(
+    result as Iterable<{ deleted_at: Date | null; is_public: boolean; merged_into_gym_id: number | null }>,
+  )[0];
+  return {
+    deletedAt: row.deleted_at,
+    isPublic: row.is_public,
+    mergedIntoGymId: row.merged_into_gym_id != null ? Number(row.merged_into_gym_id) : null,
+  };
+};
+
+const sourceAliasGymId = async (sourceKey: string): Promise<number | null> => {
+  const result = await db.execute(sql`SELECT gym_id FROM location_sync_gym_sources WHERE source_key = ${sourceKey}`);
+  const row = Array.from(result as Iterable<{ gym_id: number | null }>)[0];
+  return row?.gym_id != null ? Number(row.gym_id) : null;
+};
+
+const mergeAuditRows = async (duplicateGymId: number) => {
+  const result = await db.execute(sql`
+    SELECT canonical_gym_id, duplicate_gym_id, action, performed_by
+      FROM gym_merge_audit
+     WHERE duplicate_gym_id = ${duplicateGymId}
+  `);
+  return Array.from(
+    result as Iterable<{
+      canonical_gym_id: number | null;
+      action: string;
+      performed_by: string | null;
+    }>,
+  );
 };
 
 const strayBoardsForGym = (gymUuid: string, ctx: ConnectionContext) =>
@@ -379,5 +440,300 @@ describe('attachBoardToGym', () => {
 
     await expect(attachBoardToGym({ gymUuid: target.uuid, boardUuid: board.uuid }, authCtx(OTHER))).rejects.toThrow();
     expect(await boardGymId(board.uuid)).toBeNull();
+  });
+
+  it('freezes the attached board so the next location sync cannot re-point it', async () => {
+    const target = await seedTargetGym();
+    const board = await insertBoard({
+      ownerId: SYSTEM_OWNER,
+      name: 'Synced Kilter',
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+    });
+
+    await attachBoardToGym({ gymUuid: target.uuid, boardUuid: board.uuid }, authCtx(OWNER));
+
+    expect(await boardSyncFrozen(board.uuid)).toBe(true);
+  });
+});
+
+// ============================================
+// #4188: the listing an attach empties
+// ============================================
+
+describe('attachBoardToGym — retiring the emptied source listing', () => {
+  /** A SYSTEM listing at the same spot as the target gym, holding `boardCount` synced boards. */
+  const seedSyncedListing = async (boardCount: number, name = 'Boulder Base (synced)') => {
+    const listing = await insertGym({
+      ownerId: SYSTEM_OWNER,
+      name,
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+    });
+    const boards = [];
+    for (let index = 0; index < boardCount; index++) {
+      boards.push(
+        await insertBoard({
+          ownerId: SYSTEM_OWNER,
+          name: `${name} wall ${index + 1}`,
+          gymId: listing.id,
+          latitude: LAT_60M,
+          longitude: BASE.longitude,
+        }),
+      );
+    }
+    return { listing, boards };
+  };
+
+  it('folds the emptied listing into the target gym instead of leaving it live and empty', async () => {
+    const target = await seedTargetGym();
+    const { listing, boards } = await seedSyncedListing(1);
+
+    await attachBoardToGym({ gymUuid: target.uuid, boardUuid: boards[0].uuid }, authCtx(OWNER));
+
+    const state = await gymRetireState(listing.id);
+    expect(state.deletedAt).not.toBeNull();
+    expect(state.isPublic).toBe(false);
+    expect(state.mergedIntoGymId).toBe(target.id);
+  });
+
+  it('writes a merge-audit row naming the attaching user so an admin can reverse it', async () => {
+    const target = await seedTargetGym();
+    const { listing, boards } = await seedSyncedListing(1);
+
+    await attachBoardToGym({ gymUuid: target.uuid, boardUuid: boards[0].uuid }, authCtx(OWNER));
+
+    const auditRows = await mergeAuditRows(listing.id);
+    expect(auditRows.length).toBe(1);
+    expect(auditRows[0].action).toBe('merged');
+    expect(Number(auditRows[0].canonical_gym_id)).toBe(target.id);
+    expect(auditRows[0].performed_by).toBe(OWNER);
+  });
+
+  it("moves the listing's location-sync alias to the target so the sync can't re-mint it", async () => {
+    const target = await seedTargetGym();
+    const { listing, boards } = await seedSyncedListing(1);
+    await insertGymSourceAlias(listing.id, 'kilter:gym-4188');
+
+    await attachBoardToGym({ gymUuid: target.uuid, boardUuid: boards[0].uuid }, authCtx(OWNER));
+
+    expect(await sourceAliasGymId('kilter:gym-4188')).toBe(target.id);
+  });
+
+  it('leaves the source listing live when it still has another board', async () => {
+    const target = await seedTargetGym();
+    const { listing, boards } = await seedSyncedListing(2);
+
+    await attachBoardToGym({ gymUuid: target.uuid, boardUuid: boards[0].uuid }, authCtx(OWNER));
+
+    const state = await gymRetireState(listing.id);
+    expect(state.deletedAt).toBeNull();
+    expect(state.isPublic).toBe(true);
+    expect(state.mergedIntoGymId).toBeNull();
+    expect(await mergeAuditRows(listing.id)).toEqual([]);
+  });
+
+  it('does not retire a listing with a pending claim', async () => {
+    const target = await seedTargetGym();
+    const { listing, boards } = await seedSyncedListing(1);
+    await insertGymClaim(listing.id, OTHER, 'pending');
+
+    await attachBoardToGym({ gymUuid: target.uuid, boardUuid: boards[0].uuid }, authCtx(OWNER));
+
+    expect((await gymRetireState(listing.id)).deletedAt).toBeNull();
+    expect(await boardGymId(boards[0].uuid)).toBe(target.id);
+  });
+
+  it('does not retire a listing with an approved claim', async () => {
+    const target = await seedTargetGym();
+    const { listing, boards } = await seedSyncedListing(1);
+    await insertGymClaim(listing.id, OTHER, 'approved');
+
+    await attachBoardToGym({ gymUuid: target.uuid, boardUuid: boards[0].uuid }, authCtx(OWNER));
+
+    expect((await gymRetireState(listing.id)).deletedAt).toBeNull();
+  });
+
+  it('does not retire a listing that has staff on it', async () => {
+    const target = await seedTargetGym();
+    const { listing, boards } = await seedSyncedListing(1);
+    await insertGymMember(listing.id, OTHER, 'editor');
+
+    await attachBoardToGym({ gymUuid: target.uuid, boardUuid: boards[0].uuid }, authCtx(OWNER));
+
+    expect((await gymRetireState(listing.id)).deletedAt).toBeNull();
+  });
+
+  it('does not retire a listing with a live kiosk', async () => {
+    const target = await seedTargetGym();
+    const { listing, boards } = await seedSyncedListing(1);
+    await insertGymKiosk(listing.id, 'front-desk');
+
+    await attachBoardToGym({ gymUuid: target.uuid, boardUuid: boards[0].uuid }, authCtx(OWNER));
+
+    expect((await gymRetireState(listing.id)).deletedAt).toBeNull();
+  });
+
+  it('leaves an already-merged twin listing untouched — it is not a second merge', async () => {
+    const target = await seedTargetGym();
+    const twin = await insertGym({
+      ownerId: OTHER,
+      name: 'Someone Else Gym',
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+      mergedIntoGymId: target.id,
+    });
+    const board = await insertBoard({ ownerId: OTHER, name: 'Leftover Wall', gymId: twin.id });
+
+    await attachBoardToGym({ gymUuid: target.uuid, boardUuid: board.uuid }, authCtx(OWNER));
+
+    const state = await gymRetireState(twin.id);
+    expect(state.deletedAt).toBeNull();
+    expect(state.mergedIntoGymId).toBe(target.id); // the pre-existing pointer, not a fresh fold
+    expect(await mergeAuditRows(twin.id)).toEqual([]);
+  });
+
+  it('retires nothing when the target gym is itself a synced listing', async () => {
+    // An editor member can manage a SYSTEM gym, but folding one synced listing
+    // into another is not this feature's job.
+    const syncedTarget = await insertGym({
+      ownerId: SYSTEM_OWNER,
+      name: 'Synced Target',
+      latitude: BASE.latitude,
+      longitude: BASE.longitude,
+    });
+    await insertGymMember(syncedTarget.id, OWNER, 'editor');
+    const { listing, boards } = await seedSyncedListing(1);
+
+    await attachBoardToGym({ gymUuid: syncedTarget.uuid, boardUuid: boards[0].uuid }, authCtx(OWNER));
+
+    expect(await boardGymId(boards[0].uuid)).toBe(syncedTarget.id);
+    expect((await gymRetireState(listing.id)).deletedAt).toBeNull();
+    expect(await mergeAuditRows(listing.id)).toEqual([]);
+  });
+
+  it('retires nothing when the attached board was unlinked', async () => {
+    const target = await seedTargetGym();
+    const board = await insertBoard({
+      ownerId: SYSTEM_OWNER,
+      name: 'Loose Wall',
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+    });
+
+    const ok = await attachBoardToGym({ gymUuid: target.uuid, boardUuid: board.uuid }, authCtx(OWNER));
+
+    expect(ok).toBe(true);
+    expect(await boardGymId(board.uuid)).toBe(target.id);
+    expect((await gymRetireState(target.id)).deletedAt).toBeNull();
+  });
+});
+
+describe('strayBoardsForGym — isLastBoardAtCurrentGym', () => {
+  it('flags the sole board on a listing, and not a board that has company', async () => {
+    const target = await seedTargetGym();
+    const soleListing = await insertGym({
+      ownerId: SYSTEM_OWNER,
+      name: 'One Wall Spot',
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+    });
+    const soleBoard = await insertBoard({
+      ownerId: SYSTEM_OWNER,
+      name: 'Only Wall',
+      gymId: soleListing.id,
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+    });
+    const busyListing = await insertGym({
+      ownerId: SYSTEM_OWNER,
+      name: 'Two Wall Spot',
+      latitude: LAT_120M,
+      longitude: BASE.longitude,
+    });
+    const busyBoard = await insertBoard({
+      ownerId: SYSTEM_OWNER,
+      name: 'First Of Two',
+      gymId: busyListing.id,
+      latitude: LAT_120M,
+      longitude: BASE.longitude,
+    });
+    await insertBoard({
+      ownerId: SYSTEM_OWNER,
+      name: 'Second Of Two',
+      gymId: busyListing.id,
+      latitude: LAT_120M,
+      longitude: BASE.longitude,
+    });
+
+    const results = await strayBoardsForGym(target.uuid, authCtx(OWNER));
+
+    expect(results.find((candidate) => candidate.uuid === soleBoard.uuid)?.isLastBoardAtCurrentGym).toBe(true);
+    expect(results.find((candidate) => candidate.uuid === busyBoard.uuid)?.isLastBoardAtCurrentGym).toBe(false);
+  });
+
+  it('never flags an unlinked board', async () => {
+    const target = await seedTargetGym();
+    const loose = await insertBoard({
+      ownerId: SYSTEM_OWNER,
+      name: 'Loose Wall',
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+    });
+
+    const results = await strayBoardsForGym(target.uuid, authCtx(OWNER));
+
+    expect(results.find((candidate) => candidate.uuid === loose.uuid)?.isLastBoardAtCurrentGym).toBe(false);
+  });
+
+  it('never flags a leftover board on an already-merged twin listing', async () => {
+    // The flag promises that attaching folds the listing away. A twin is already
+    // folded, so retireEmptiedSourceGym refuses it — flagging it here would put
+    // a merge confirm in front of a merge that never happens.
+    const target = await seedTargetGym();
+    const twin = await insertGym({
+      ownerId: SYSTEM_OWNER,
+      name: 'Already Folded',
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+      mergedIntoGymId: target.id,
+    });
+    const leftover = await insertBoard({
+      ownerId: SYSTEM_OWNER,
+      name: 'Leftover Wall',
+      gymId: twin.id,
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+    });
+
+    const results = await strayBoardsForGym(target.uuid, authCtx(OWNER));
+
+    const candidate = results.find((stray) => stray.uuid === leftover.uuid);
+    expect(candidate?.reason).toBe('MERGED_TWIN');
+    expect(candidate?.isLastBoardAtCurrentGym).toBe(false);
+  });
+
+  it('never flags a board sitting on a listing a real person owns', async () => {
+    // Only a SYSTEM listing is ever folded, so a user-owned listing must not
+    // carry the promise either.
+    const target = await seedTargetGym();
+    const ownedListing = await insertGym({
+      ownerId: OTHER,
+      name: 'Someone Elses Listing',
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+      mergedIntoGymId: target.id,
+    });
+    const board = await insertBoard({
+      ownerId: OWNER,
+      name: 'My Wall On Their Listing',
+      gymId: ownedListing.id,
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+    });
+
+    const results = await strayBoardsForGym(target.uuid, authCtx(OWNER));
+
+    expect(results.find((stray) => stray.uuid === board.uuid)?.isLastBoardAtCurrentGym).toBe(false);
   });
 });

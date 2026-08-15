@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Climb, BoardDetails } from '@/app/lib/types';
 import { useClimbFrames } from '../board-renderer/util';
-import { usePlaybackEngine, type ExternalPlaybackState } from '@boardsesh/playback-react/use-playback-engine';
+import {
+  usePlaybackEngine,
+  type ExternalPlaybackState,
+  type LocalPlaybackState,
+  type PeerFrameMismatch,
+} from '@boardsesh/playback-react/use-playback-engine';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { usePersistentSessionActions } from '../persistent-session';
 import { useBluetoothContext } from '../board-bluetooth-control/bluetooth-context';
 import { renderBoard } from '@/app/lib/board-render-worker/worker-manager';
@@ -72,6 +78,9 @@ export function useDrawerPlayback({
       if (event.climbUuid !== activeClimbUuid) return;
       setExternalPlayback({
         frameIndex: event.frameIndex,
+        // Null from peers that predate the field — the engine falls back to
+        // its legacy clamp when there's no count to compare against.
+        frameCount: event.frameCount ?? null,
         isPlaying: event.isPlaying,
         speed: event.speed,
         paceMs: event.paceMs,
@@ -83,11 +92,14 @@ export function useDrawerPlayback({
   }, [activeClimbUuid, subscribeToQueueEvents]);
 
   const handleLocalPlaybackChange = useCallback(
-    (state: ExternalPlaybackState) => {
+    (state: LocalPlaybackState) => {
       if (!activeClimbUuid) return;
       void publishPlaybackState({
         climbUuid: activeClimbUuid,
         frameIndex: state.frameIndex,
+        // Lets peers detect that we read this climb's frames differently
+        // instead of clamping our index into their range (issue #3989).
+        frameCount: state.frameCount,
         isPlaying: state.isPlaying,
         speed: state.speed,
         paceMs: state.paceMs,
@@ -100,6 +112,21 @@ export function useDrawerPlayback({
     [activeClimbUuid, publishPlaybackState, playbackClientId],
   );
 
+  // Telemetry only — the drawer shows no notice for this (the web climbing
+  // surface is frozen, #3122). Without it the event would be mobile-only and
+  // under-count how often a mixed fleet actually skews playback.
+  const handlePeerFrameMismatch = useCallback(
+    ({ peerFrameCount, localFrameCount }: PeerFrameMismatch) => {
+      track(SHARED_EVENTS.PlaybackPeerFrameMismatch, {
+        peerFrameCount,
+        localFrameCount,
+        boardName: boardDetails.board_name,
+        climbUuid: activeClimbUuid,
+      });
+    },
+    [boardDetails.board_name, activeClimbUuid],
+  );
+
   const playback = usePlaybackEngine({
     frames: climbFrames.frames,
     frameStrings: climbFrames.frameStrings,
@@ -107,6 +134,7 @@ export function useDrawerPlayback({
     clientId: playbackClientId,
     externalState: externalPlayback,
     onLocalStateChange: handleLocalPlaybackChange,
+    onPeerFrameMismatch: handlePeerFrameMismatch,
   });
 
   // Latest-wins BLE serialization: Web Bluetooth on Android can't cancel an

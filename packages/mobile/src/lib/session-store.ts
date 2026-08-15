@@ -32,11 +32,15 @@ export async function clearStoredSessionId(_owner?: UserStorageOwner | null): Pr
  * (`SessionUser.isLeader`, `connectionState`, distinct-user counts) is
  * participant-scoped and structurally blind to the second device. The
  * per-connection `Session.isLeader` from the JOIN response looks like the free
- * answer but is not: `upsertLocalParticipant` ORs leadership across a
- * participant's connections (sticky true) and the SessionRosterSnapshot handler
- * re-derives our own flag from that participant row, so the second device is
- * told `isLeader: true` by its very first roster snapshot (see #3502 / the
- * follow-up issue on that inconsistency).
+ * answer but historically was not: `upsertLocalParticipant` ORs leadership
+ * across a participant's connections (sticky true), and the
+ * SessionRosterSnapshot handler used to re-derive our own top-level flag from
+ * that participant row, so the second device was told `isLeader: true` by its
+ * very first roster snapshot (#3502's follow-up, fixed for the top-level flag
+ * in #3952). The roster row itself (`SessionUser.isLeader`) is still
+ * participant-scoped by design and stays structurally blind to which device is
+ * which — this provenance-based approach remains the right one for device-level
+ * UI.
  *
  * This drives EMPHASIS ONLY — which action a confirmation sheet leads with —
  * never whether an action is available. That is what makes losing it harmless:

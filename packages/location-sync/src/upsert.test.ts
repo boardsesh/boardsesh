@@ -34,6 +34,9 @@ type AliasedGymRow = {
   id: number;
   ownerId: string;
   hasApprovedClaim: boolean;
+  deletedAt?: Date | null;
+  syncFrozenAt?: Date | null;
+  mergedIntoGymId?: number | null;
 };
 
 type CapturedLog = { message: string; fields?: LocationSyncLogFields };
@@ -334,7 +337,9 @@ class FakeSelectBuilder {
     // The alias lookup (findAliasedGym) joins the alias table to gyms; the
     // createOrUpdateSourceGym fallback selects gyms by uuid with no join.
     if (this.usedInnerJoin) {
-      return this.fakeDb.aliasedGym === null ? [] : [this.fakeDb.aliasedGym];
+      return this.fakeDb.aliasedGym === null
+        ? []
+        : [{ deletedAt: null, syncFrozenAt: null, mergedIntoGymId: null, ...this.fakeDb.aliasedGym }];
     }
     // A soft-deleted fallback gym is excluded by the `isNull(gyms.deletedAt)`
     // filter, so it must NOT be returned — that's what keeps boards from being
@@ -667,14 +672,14 @@ describe('public board location upsert gym resolution', () => {
 
   it('does NOT relink boards to a soft-DELETED frozen gym via the by-uuid fallback', async () => {
     // A gym the owner deleted (deleteGym freezes it + unlinks its boards). On the
-    // next sync it isn't found by alias/physical match (both filter deleted rows),
-    // so createOrUpdateSourceGym's setWhere blocks the resurrect and falls back to
-    // the by-uuid SELECT — which is filtered to LIVE rows, so it resolves nothing.
+    // This fixture has no persisted alias, so createOrUpdateSourceGym's setWhere
+    // blocks the resurrect and falls back to the by-uuid SELECT — which is
+    // filtered to LIVE rows, so it resolves nothing.
     // The source stays unlinked instead of relinking boards to the deleted gym.
     const gymSourceKey = 'tension:gym-deleted-frozen';
     const frozenGymUuid = gymUuidForSource(gymSourceKey);
     const fakeDb = new FakeLocationSyncDb({
-      aliasedGym: null, // deleted gym isn't returned by the alias lookup
+      aliasedGym: null, // this legacy deterministic row has no source alias
       physicalCandidates: [], // nor by physical match
       frozenGymUuids: [frozenGymUuid], // the conflicting row exists and is frozen
       fallbackGymId: 999, // it WOULD resolve by uuid...

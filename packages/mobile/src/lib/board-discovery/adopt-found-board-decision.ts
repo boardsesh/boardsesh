@@ -15,7 +15,7 @@ export type AdoptFoundBoardParams = {
   isOwned: boolean;
   /** Viewer already follows this board. */
   isFollowedByMe: boolean;
-  /** The `offline-board-downloads` feature flag is on. */
+  /** Native offline mode is available on this platform. */
   offlineEnabled: boolean;
   /** The user's "keep all boards offline by default" setting. */
   autoOffline: boolean;

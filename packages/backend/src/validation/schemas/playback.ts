@@ -19,6 +19,18 @@ export const PlaybackStateInputSchema = z.object({
     .int('Frame index must be an integer')
     .min(0, 'Frame index cannot be negative')
     .max(GRAPHQL_INT_MAX, 'Frame index is too large'),
+  // How many frames the publisher's reader produced. Optional and nullable so
+  // clients that predate the field keep publishing successfully. A broadcast
+  // only happens for a climb with frames, so 1 is the floor — a 0 would mean
+  // the publisher had nothing to play and should not have broadcast at all.
+  frameCount: z
+    .number()
+    .finite('Frame count must be finite')
+    .int('Frame count must be an integer')
+    .min(1, 'Frame count must be at least 1')
+    .max(GRAPHQL_INT_MAX, 'Frame count is too large')
+    .nullable()
+    .optional(),
   isPlaying: z.boolean(),
   speed: z
     .number()

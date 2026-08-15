@@ -252,6 +252,8 @@ The location writer creates deterministic system-owned public rows:
 
 It never deletes rows that disappear upstream. Rows with missing layout mappings, unsupported product/size data, or invalid coordinates are reported as skipped.
 
+A human edit or deletion freezes that row by setting `sync_frozen_at`, so later source pulls cannot overwrite it. A global admin can release the freeze from `/admin/location-sync`; the action clears only the marker, requires a recorded reason, and writes `location_sync_unfreeze_audit`. It does not launch a sync. The next successful catalog/location pull may refresh or resurrect the row, while the separate gym-owner/approved-claim guard still prevents an upstream takeover of an owner-curated gym.
+
 The catalog sync refreshes locations after a successful catalog pull. You can also run the location-only path:
 
 ```bash
@@ -298,6 +300,12 @@ A single Boardsesh layout maps to several Grips `product_layout_uuid`s (size var
 - **Dry-run is the default and is read-only.** It reports `changedKilterRows`, `maxKilterDrop` / `maxKilterRise` (largest per-row decrease/increase), `statsDeduped`, `statsUnresolved`, and a `topBefore` list. Review these before applying — a large `maxKilterDrop` can also signal a partial Grips fetch (delisted climbs, rate-limit truncation), so treat it as a stop-and-investigate signal rather than blindly applying.
 - **`--apply` writes inside a single transaction** (overwrite + materialized-total recompute are atomic) and prints `topAfter`. A fetch error aborts before any write, since writes only run after the full fetch loop completes.
 - Run it with the **daemon paused** so a concurrent catalog sync doesn't interleave, and run it **unscoped** (no `--layouts`) for the production cleanup — the materialized-total recompute pass touches all Kilter rows, so a scoped run can leave inconsistent state. Rows for climbs Grips no longer lists aren't re-fetched, so this tool does not correct delisted-climb inflation.
+
+An applied repair that changes 500 or more rows is picked up by the live board-snapshot threshold scan and
+republished to the fleet's gzip CDN prefix. Do not leave devices to replay a bulk repair through hundreds of
+GraphQL pages. The scan runs on a best-effort 15-minute cadence; for a planned repair that should not wait
+for the next scheduled scan, manually dispatch **Export Board Snapshots** after the transaction commits with
+`gzip_only`, `board=kilter`, and the affected layout when it is known.
 
 ### Quality scale — every board on 1–5
 

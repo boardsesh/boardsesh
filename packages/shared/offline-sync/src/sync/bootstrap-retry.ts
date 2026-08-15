@@ -1,9 +1,9 @@
 // Snapshot-bootstrap retry accounting (issue #4313).
 //
 // The problem this replaces: `MAX_BOOTSTRAP_ATTEMPTS = 2` was doing two jobs at
-// once. It was the retry policy (there is none — the artifact GET is unresumable
-// and never retried) AND the total-spend bound (a ~103 MB download must not
-// restart on every foreground). Because a dropped connection at the DOWNLOAD
+// once. It stood in for retry frequency even though the artifact GET is
+// unresumable, AND for the total-spend bound (a ~103 MB download must not restart
+// on every foreground). Because a dropped connection at the DOWNLOAD
 // stage burned the same counter as a corrupt artifact, two flaky-network launches
 // condemned a board to the 400+-round-trip paged crawl for the life of the
 // install — 123 Sentry events across 75 users in 60 days.
@@ -144,9 +144,9 @@ export type BootstrapRetryState = {
   /** Epoch ms before which this scope is not bootstrap-eligible. */
   readonly retryAfter: number | null;
   /**
-   * Whether this scope has ever failed on the snapshot path. Gates
-   * heal-over-partial: a scope with a checkpoint and no failure history is
-   * simply a mid-crawl board that never had a snapshot to begin with.
+   * Whether this scope has ever failed on the snapshot path. Retained for
+   * recovery attribution and compatibility with older bundles; incomplete
+   * checkpointed scopes are now heal-eligible even without failure history.
    */
   readonly hasPriorSnapshotFailure: boolean;
   /**
@@ -348,12 +348,9 @@ export function clearRetryStateForUserRequest(state: BootstrapRetryState): Boots
     // overrides the metered-link defer — otherwise the climber confirms ~100 MB
     // on a cellular link and the engine silently sits on it for 6 hours.
     userRequested: true,
-    // The failure history is KEPT on purpose. A settled scope has always crawled
-    // (a terminal scope is never in `skipPagedPull`), so it carries board
-    // checkpoints — and `evaluateBootstrapEligibility` only lets a checkpointed
-    // scope back onto the artifact path as a `heal-over-partial`, which requires
-    // this evidence. Resetting it to false would make the whole "Try the fast
-    // download again" action a silent no-op: `no-failure-evidence`.
+    // Keep the failure history for recovery attribution and rollback safety.
+    // Checkpointed incomplete scopes are now heal-eligible without this bit, but
+    // older bundles still require it after an OTA rollback.
     hasPriorSnapshotFailure: state.hasPriorSnapshotFailure,
     mirroredAttempts: state.mirroredAttempts,
     legacyHealSpent: true,
@@ -380,7 +377,7 @@ export type BootstrapEligibility =
   | { eligible: true; kind: 'fresh' | 'heal-over-partial' }
   | {
       eligible: false;
-      reason: 'scope-complete' | 'bootstrap-done' | 'terminal' | 'cooling-down' | 'no-failure-evidence';
+      reason: 'scope-complete' | 'bootstrap-done' | 'terminal' | 'cooling-down';
       /** Only a `terminal` scope can ever be revived by tonight's export. */
       canRearm: boolean;
     };
@@ -391,10 +388,13 @@ export type BootstrapEligibility =
  * the UI quotes can never disagree with what the engine would do — the two used
  * to be a comment promising they mirrored each other.
  *
- * `heal-over-partial` is the un-strand: a scope that holds a partly-crawled
- * catalog, never finished it, and has snapshot-path failures behind it is allowed
- * to import an artifact over the top. A `scope-complete:` scope is NOT — it
- * already serves the whole catalog locally, so 103 MB buys it nothing.
+ * `heal-over-partial` is the un-strand: any scope that holds a partly-crawled
+ * catalog and never finished it may import an artifact over the top. Requiring
+ * prior failure metadata made a launch that paged before snapshot I/O became
+ * available impossible to heal: page one wrote a checkpoint but no snapshot
+ * failure. The caller still restricts automatic heals to unmetered links, and
+ * the import refuses to move a checkpoint backwards. A `scope-complete:` scope
+ * is NOT healed — it already serves the whole catalog locally.
  */
 export function evaluateBootstrapEligibility(input: {
   retryState: BootstrapRetryState;
@@ -413,8 +413,7 @@ export function evaluateBootstrapEligibility(input: {
     return { eligible: false, reason: 'cooling-down', canRearm: false };
   }
   if (!hasBoardCheckpoint) return { eligible: true, kind: 'fresh' };
-  if (retryState.hasPriorSnapshotFailure) return { eligible: true, kind: 'heal-over-partial' };
-  return { eligible: false, reason: 'no-failure-evidence', canRearm: false };
+  return { eligible: true, kind: 'heal-over-partial' };
 }
 
 /**

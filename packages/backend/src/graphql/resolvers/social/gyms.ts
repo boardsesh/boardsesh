@@ -24,6 +24,7 @@ import {
 import { distanceMeters } from '@boardsesh/db/queries';
 import { logger } from '../../../utils/logger';
 import { PROXIMITY_MATCH_RADIUS_METERS } from './gym-matching';
+import { syncLocationGeography } from './location-geography';
 
 // ============================================
 // Helpers
@@ -81,6 +82,9 @@ function mapRawGymRow(row: Record<string, unknown>): typeof dbSchema.gyms.$infer
     ownerId: row.owner_id as string,
     address: (row.address as string | null) ?? null,
     website: (row.website as string | null) ?? null,
+    // The raw query is a `SELECT *`, so the column is present; fall back to the
+    // safe value (un-vouched) rather than trusting a missing key (#3431).
+    websiteVouchedByOwner: row.website_vouched_by_owner === true,
     contactEmail: (row.contact_email as string | null) ?? null,
     contactPhone: (row.contact_phone as string | null) ?? null,
     latitude: row.latitude != null ? Number(row.latitude) : null,
@@ -950,6 +954,11 @@ export const socialGymMutations = {
         description: validatedInput.description ?? null,
         address: validatedInput.address ?? null,
         website: validatedInput.website ?? null,
+        // The creator IS the owner, so a website supplied at creation is
+        // owner-vouched and may drive the self-service domain claim (#3431).
+        // Written explicitly rather than leaning on the DB default so the intent
+        // reads here, next to the website it describes.
+        websiteVouchedByOwner: validatedInput.website != null,
         contactEmail: validatedInput.contactEmail ?? null,
         contactPhone: validatedInput.contactPhone ?? null,
         latitude: validatedInput.latitude ?? null,
@@ -959,11 +968,15 @@ export const socialGymMutations = {
       })
       .returning();
 
-    // Populate PostGIS location column if lat/lon provided
+    // Populate PostGIS location column if lat/lon provided (guarded — see syncLocationGeography)
     if (validatedInput.latitude != null && validatedInput.longitude != null) {
-      await db.execute(
-        sql`UPDATE gyms SET location = ST_MakePoint(${validatedInput.longitude}, ${validatedInput.latitude})::geography WHERE id = ${gym.id}`,
-      );
+      await syncLocationGeography({
+        table: 'gyms',
+        id: gym.id,
+        latitude: validatedInput.latitude,
+        longitude: validatedInput.longitude,
+        operation: 'createGym',
+      });
     }
 
     // Optionally link a board
@@ -990,6 +1003,7 @@ export const socialGymMutations = {
     const userId = ctx.userId!;
 
     const gym = await requireGymEditAccess(validatedInput.gymUuid, userId);
+    const callerIsGymOwner = gym.ownerId === userId;
 
     const updateValues: Record<string, unknown> = {
       updatedAt: new Date(),
@@ -1001,7 +1015,29 @@ export const socialGymMutations = {
     if (validatedInput.name !== undefined) updateValues.name = validatedInput.name;
     if (validatedInput.description !== undefined) updateValues.description = validatedInput.description;
     if (validatedInput.address !== undefined) updateValues.address = validatedInput.address;
-    if (validatedInput.website !== undefined) updateValues.website = validatedInput.website;
+    if (validatedInput.website !== undefined) {
+      const nextWebsite = validatedInput.website;
+      updateValues.website = nextWebsite;
+      // Provenance for the domain-claim path (#3431): only an actual write of the
+      // website re-evaluates the vouch, and only the owner's own write vouches.
+      // An unchanged website leaves the flag alone in both directions — the manage
+      // form posts every field on every save, so an editor fixing the description
+      // must not silently disable the owner's claim path, and an owner saving the
+      // form must not silently re-vouch a URL an editor put there.
+      //
+      // "Changed?" is decided by the UPDATE itself, against the row as it stands
+      // when the statement runs — NOT against the snapshot requireGymEditAccess
+      // read above. Comparing in JS is a TOCTOU hole: an editor reads website=A
+      // (their own attacker URL), the owner concurrently commits website=B and
+      // vouches it, then the editor's write lands A while "A === snapshot A"
+      // decides the flag is untouched — leaving the attacker's URL flagged as
+      // owner-vouched. Inside one statement the CASE sees B, calls it a change,
+      // and un-vouches. This is also the invariant the column's doc comment and
+      // migration 0192 state: website and website_vouched_by_owner are always
+      // written together, in the same statement.
+      const vouchesOnChange = callerIsGymOwner && nextWebsite != null;
+      updateValues.websiteVouchedByOwner = sql`CASE WHEN ${dbSchema.gyms.website} IS DISTINCT FROM ${nextWebsite}::text THEN ${vouchesOnChange}::boolean ELSE ${dbSchema.gyms.websiteVouchedByOwner} END`;
+    }
     if (validatedInput.contactEmail !== undefined) updateValues.contactEmail = validatedInput.contactEmail;
     if (validatedInput.contactPhone !== undefined) updateValues.contactPhone = validatedInput.contactPhone;
     if (validatedInput.latitude !== undefined) updateValues.latitude = validatedInput.latitude;
@@ -1039,17 +1075,15 @@ export const socialGymMutations = {
 
     const [updated] = await db.update(dbSchema.gyms).set(updateValues).where(eq(dbSchema.gyms.id, gym.id)).returning();
 
-    // Update PostGIS location column
+    // Update PostGIS location column (guarded — see syncLocationGeography)
     if (validatedInput.latitude !== undefined || validatedInput.longitude !== undefined) {
-      const lat = validatedInput.latitude ?? updated.latitude;
-      const lon = validatedInput.longitude ?? updated.longitude;
-      if (lat != null && lon != null) {
-        await db.execute(
-          sql`UPDATE gyms SET location = ST_MakePoint(${lon}, ${lat})::geography WHERE id = ${updated.id}`,
-        );
-      } else {
-        await db.execute(sql`UPDATE gyms SET location = NULL WHERE id = ${updated.id}`);
-      }
+      await syncLocationGeography({
+        table: 'gyms',
+        id: updated.id,
+        latitude: validatedInput.latitude ?? updated.latitude,
+        longitude: validatedInput.longitude ?? updated.longitude,
+        operation: 'updateGym',
+      });
     }
 
     return enrichGym(updated, userId);

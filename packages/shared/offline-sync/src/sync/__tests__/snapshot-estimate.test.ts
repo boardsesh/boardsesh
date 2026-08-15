@@ -121,13 +121,12 @@ describe('estimateScopeDownload', () => {
     expect(eligible({ manifest: null })).toEqual({ kind: 'unknown' });
   });
 
-  it('is unknown when the scope has a checkpoint and no snapshot failures — a re-enable pulls a delta, not 270 MB', () => {
-    expect(eligible({ hasBoardCheckpoint: true })).toEqual({ kind: 'unknown' });
+  it('quotes the artifact for an incomplete checkpoint created before snapshot I/O was ready', () => {
+    expect(eligible({ hasBoardCheckpoint: true })).toMatchObject({ kind: 'snapshot', bytes: 269873152 });
   });
 
   it('quotes the artifact for a mid-crawl scope the engine would heal', () => {
-    // The heal-over-partial path (issue #4313): the scope holds a fraction of the
-    // catalog, never finished the crawl, and has snapshot failures behind it.
+    // The retry-history variant of the same heal-over-partial path.
     expect(
       eligible({
         hasBoardCheckpoint: true,

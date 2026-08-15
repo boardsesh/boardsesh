@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const onlineManagerIsOnline = vi.fn(() => true);
+const onlineManagerSetOnline = vi.fn();
 // The adapter reads the persisted download-trigger attribution (issue #4316),
 // which pulls the settings store — and its native MMKV entry breaks the test
 // bundler's scan. Same in-memory stand-in as remove-offline-board.test.ts.
@@ -21,7 +22,10 @@ vi.mock('react-native-mmkv', () => {
 });
 
 vi.mock('@tanstack/react-query', () => ({
-  onlineManager: { isOnline: () => onlineManagerIsOnline() },
+  onlineManager: {
+    isOnline: () => onlineManagerIsOnline(),
+    setOnline: (online: boolean) => onlineManagerSetOnline(online),
+  },
 }));
 
 type AppStateListener = (state: string) => void;
@@ -87,7 +91,9 @@ import {
   triggerSync,
   pullSync,
   startBackgroundTracking,
+  hasUsableInternetConnection,
   subscribeMutationDelivery,
+  reportScopeDownloadAbandoned,
   __resetCoverageVerdictDedupeForTests,
   __resetMeteredStateForTests,
 } from '../offline-sync-adapter';
@@ -374,6 +380,16 @@ describe('scheduler trigger bindings', () => {
     expect(callback).toHaveBeenCalledWith(true);
   });
 
+  it('reads current upstream reachability for an already-consumed reconnect edge', async () => {
+    netInfoFetch.mockResolvedValueOnce({ isConnected: true, isInternetReachable: true, type: 'wifi' });
+    await expect(hasUsableInternetConnection()).resolves.toBe(true);
+    expect(onlineManagerSetOnline).toHaveBeenCalledWith(true);
+
+    netInfoFetch.mockResolvedValueOnce({ isConnected: true, isInternetReachable: false, type: 'wifi' });
+    await expect(hasUsableInternetConnection()).resolves.toBe(false);
+    expect(onlineManagerSetOnline).toHaveBeenCalledTimes(1);
+  });
+
   it('binds schema-drift telemetry to Sentry with the offline-sync tags', () => {
     const { options } = startAndGetTriggers();
     options.onSchemaDrift?.({ tableName: 'boardsesh_ticks', column: 'shiny_new_column' });
@@ -526,6 +542,34 @@ describe('snapshot-bootstrap bindings', () => {
         causeName: 'TypeError',
       }),
     );
+  });
+
+  // The abandoned-download terminal's event shape is a permanent analytics
+  // contract (issue #4406): reason and stage are enumerated by dashboards, and
+  // `aborted: true` is what keeps a Remove tap out of Sentry and out of every
+  // failure-rate query. The engine test asserts WHEN the seam fires and the
+  // remove-offline-board test asserts it is wired; this pins WHAT it emits.
+  it('reports an abandoned download as the funnel Failed shape, and never to Sentry', () => {
+    reportScopeDownloadAbandoned({
+      scopeKey: 'tension:11:8',
+      scope: { boardType: 'tension', layoutId: 11, sizeId: 8 },
+    });
+
+    expect(trackMock).toHaveBeenCalledTimes(1);
+    expect(trackMock).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineBoardDownloadFailed,
+      expect.objectContaining({
+        scopeKey: 'tension:11:8',
+        stage: 'board-removed',
+        reason: 'abandoned-removed',
+        aborted: true,
+        expected: true,
+        attempt: 0,
+      }),
+    );
+    // A Remove tap is not a defect: `aborted: true` must stop the report at the
+    // funnel, or every board removal would land in Sentry as a bootstrap failure.
+    expect(reportHandledError).not.toHaveBeenCalled();
   });
 
   it('captures a PostHog event on scope-download completion with the method + duration', () => {

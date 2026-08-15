@@ -716,7 +716,8 @@ export const schemaSQL = `
     "created_at" timestamp DEFAULT now() NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "deleted_at" timestamp,
-    "sync_frozen_at" timestamp
+    "sync_frozen_at" timestamp,
+    "website_vouched_by_owner" boolean DEFAULT false NOT NULL
   );
   CREATE INDEX IF NOT EXISTS "gyms_merged_into_idx" ON "gyms" ("merged_into_gym_id") WHERE "merged_into_gym_id" IS NOT NULL;
 
@@ -1150,6 +1151,26 @@ export const schemaSQL = `
   CREATE INDEX IF NOT EXISTS "gym_merge_audit_signature_action_idx" ON "gym_merge_audit" ("cluster_signature", "action");
   CREATE INDEX IF NOT EXISTS "gym_merge_audit_canonical_idx" ON "gym_merge_audit" ("canonical_gym_id");
 
+  -- Durable audit for the global-admin location-sync unfreeze action. Production
+  -- uses a Postgres enum; text + CHECK keeps the backend test schema portable.
+  DROP TABLE IF EXISTS "location_sync_unfreeze_audit" CASCADE;
+  CREATE TABLE IF NOT EXISTS "location_sync_unfreeze_audit" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "entity_type" text NOT NULL,
+    "entity_uuid" text NOT NULL,
+    "previous_sync_frozen_at" timestamp NOT NULL,
+    "previous_deleted_at" timestamp,
+    "previous_owner_id" text NOT NULL,
+    "reason" text NOT NULL,
+    "performed_by" text NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    CONSTRAINT "location_sync_unfreeze_audit_entity_type_check" CHECK (entity_type IN ('gym', 'board'))
+  );
+  CREATE INDEX IF NOT EXISTS "location_sync_unfreeze_audit_entity_history_idx"
+    ON "location_sync_unfreeze_audit" ("entity_type", "entity_uuid", "created_at");
+  CREATE INDEX IF NOT EXISTS "location_sync_unfreeze_audit_performed_by_idx"
+    ON "location_sync_unfreeze_audit" ("performed_by");
+
   -- Board followers (enrichBoard counts these per board).
   DROP TABLE IF EXISTS "board_follows" CASCADE;
   CREATE TABLE IF NOT EXISTS "board_follows" (
@@ -1300,7 +1321,7 @@ export const schemaSQL = `
   CREATE TRIGGER trg_board_climbs_delete AFTER DELETE ON board_climbs
     FOR EACH ROW EXECUTE FUNCTION log_deletion_board_climbs();
 
-  -- Sync-field maintenance on UPDATE, mirroring 0144 + the 0146 WHEN guards:
+  -- Sync-field maintenance on UPDATE, mirroring 0144 + the later WHEN guards:
   -- internal-only (synced/sync_error) and no-op writes must not advance the
   -- sync cursors, and bookkeeping-only tick writes must not bump updated_at.
   CREATE OR REPLACE FUNCTION set_board_climbs_sync_fields() RETURNS TRIGGER AS $$
@@ -1330,7 +1351,29 @@ export const schemaSQL = `
   DROP TRIGGER IF EXISTS trg_board_climb_stats_set_sync_fields ON board_climb_stats;
   CREATE TRIGGER trg_board_climb_stats_set_sync_fields BEFORE UPDATE ON board_climb_stats
     FOR EACH ROW
-    WHEN (OLD.* IS DISTINCT FROM NEW.*)
+    WHEN (ROW(
+            OLD.board_type,
+            OLD.climb_uuid,
+            OLD.angle,
+            OLD.display_difficulty,
+            OLD.benchmark_difficulty,
+            OLD.ascensionist_count,
+            OLD.difficulty_average,
+            OLD.quality_average,
+            OLD.fa_username,
+            OLD.fa_at
+          ) IS DISTINCT FROM ROW(
+            NEW.board_type,
+            NEW.climb_uuid,
+            NEW.angle,
+            NEW.display_difficulty,
+            NEW.benchmark_difficulty,
+            NEW.ascensionist_count,
+            NEW.difficulty_average,
+            NEW.quality_average,
+            NEW.fa_username,
+            NEW.fa_at
+          ))
     EXECUTE FUNCTION set_board_climb_stats_sync_fields();
 
   CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$

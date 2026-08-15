@@ -36,6 +36,7 @@ import {
 } from './snapshot-bootstrap';
 import { classifySnapshotBootstrapFailure, type SnapshotBootstrapFailureReason } from './bootstrap-failure-reason';
 import { createDownloadFunnelGuard } from './download-funnel-guard';
+import { noteScopeDownloadTerminal } from './download-terminal-registry';
 import {
   classifyBootstrapFailure,
   clearBootstrapPagedFallback,
@@ -54,7 +55,12 @@ import {
   type BootstrapFailureKind,
   type BootstrapRetryState,
 } from './bootstrap-retry';
-import { parseSnapshotManifest, type SnapshotManifest, type SnapshotManifestEntry } from './snapshot-manifest';
+import {
+  parseSnapshotManifest,
+  SNAPSHOT_MANIFEST_FORMAT_VERSION,
+  type SnapshotManifest,
+  type SnapshotManifestEntry,
+} from './snapshot-manifest';
 import { findSnapshotEntry, isSnapshotEntryUsable } from './snapshot-estimate';
 import {
   createDownloadFractionAnchor,
@@ -78,6 +84,7 @@ import {
   isBackgrounded,
   onTeardown,
   capturePurgeToken,
+  getWipeEpoch,
   hasPurgeLanded,
   type PurgeToken,
 } from '../mutation-queue/drainer';
@@ -379,6 +386,18 @@ export type BootstrapRetryScheduledInfo = {
 export type BootstrapRetryScheduledReporter = (info: BootstrapRetryScheduledInfo) => void;
 
 /**
+ * Internal scheduler signal for the absolute time at which a snapshot retry is
+ * due. Unlike `BootstrapRetryScheduledInfo`, this is a lifecycle hook rather
+ * than analytics: it is also emitted when a persisted cooldown is observed on
+ * launch, so the scheduler can wake without waiting for foreground/reconnect.
+ */
+export type BootstrapRetryWakeInfo = {
+  scopeKey: string;
+  retryAt: number;
+};
+export type BootstrapRetryWakeReporter = (info: BootstrapRetryWakeInfo) => void;
+
+/**
  * Fired when a scope that had previously failed the snapshot path gets back on
  * it — the measurement that tells us whether #4313's recovery actually reaches
  * stranded installs.
@@ -431,6 +450,10 @@ export type SyncOptions = {
   onCoverageEvaluated?: CoverageEvaluatedReporter;
   /** Telemetry for a scheduled snapshot retry (issue #4313). */
   onBootstrapRetryScheduled?: BootstrapRetryScheduledReporter;
+  /** Scheduler lifecycle hook; may repeat and must not be treated as analytics. */
+  onBootstrapRetryDue?: BootstrapRetryWakeReporter;
+  /** Clears a stale scheduler deadline once a scope no longer has a cooldown. */
+  onBootstrapRetryCleared?: (scopeKey: string) => void;
   /** Telemetry for a scope getting back onto the snapshot path (issue #4313). */
   onBootstrapPathRecovered?: BootstrapPathRecoveredReporter;
   /**
@@ -448,8 +471,8 @@ export type SyncOptions = {
    */
   isOnUnmeteredNetwork?: () => boolean | Promise<boolean>;
   /**
-   * Wall clock for the bootstrap retry ladder. Injected so the cooldown schedule
-   * is testable without fake timers fighting the SQLite test double.
+   * Wall clock for the bootstrap retry ladder and progress throttle. Injected so
+   * both schedules are testable without fake timers fighting the SQLite double.
    * Defaults to `Date.now`.
    */
   now?: () => number;
@@ -833,15 +856,63 @@ async function processDeletions(
 }
 
 // The manifest is fetched at most once per pullSync run and its outcome cached
-// across scopes. `absent` = no usable manifest THIS cycle (missing 404 or
-// unparseable) → a permanent miss that burns NO attempt (a layout not yet
-// exported must not disqualify bootstrap two cycles from now). `error` = a
-// transport failure reaching the manifest → a counted attempt, retried next
-// cycle. `ok` carries the parsed manifest.
+// across scopes. `absent` = the manifest is genuinely missing, or uses an
+// unsupported format version → a permanent miss this cycle. `error` = the
+// request failed or the current-format response was malformed. Manifest errors
+// are global publication/transport failures, never per-scope budget failures;
+// fresh scopes wait for the scheduler's short retry instead of stamping a
+// page-one checkpoint. `ok` carries the parsed manifest.
 type ManifestResolution =
   | { status: 'ok'; manifest: SnapshotManifest }
   | { status: 'absent' }
   | { status: 'error'; cause: unknown };
+
+type ManifestResolutionCache = {
+  value?: ManifestResolution;
+  failurePolicy?: { failOpen: boolean };
+};
+
+// The manifest is only a few KB, so a short retry is cheap while still keeping
+// a captive portal or transient CDN error from becoming a tight request loop.
+const MANIFEST_RETRY_DELAY_MS = 30_000;
+// A globally broken manifest must not leave every fresh board empty forever.
+// Two short waits preserve the CDN fast path; the third cycle starts the paged
+// crawl and keeps probing less aggressively so a partial scope can heal later.
+const MAX_MANIFEST_WAIT_FAILURES = 2;
+const MANIFEST_FAIL_OPEN_RETRY_DELAY_MS = 5 * 60_000;
+const manifestFailureCounts = new WeakMap<OfflineDatabase, { wipeEpoch: number; count: number }>();
+
+function settleManifestPublicationStateOnce(
+  db: OfflineDatabase,
+  resolution: ManifestResolution,
+  cache: ManifestResolutionCache,
+  options: { countError?: boolean } = {},
+): { failOpen: boolean } {
+  if (cache.failurePolicy) return cache.failurePolicy;
+
+  if (resolution.status !== 'error') {
+    manifestFailureCounts.delete(db);
+    cache.failurePolicy = { failOpen: false };
+    return cache.failurePolicy;
+  }
+
+  // A complete-scope grades retrofit may share this fetch with a later fresh
+  // scope. Its error neither waits nor consumes the fresh board's two chances;
+  // leave the cache unsettled so the eligible path can count it if reached.
+  if (options.countError === false) return { failOpen: false };
+
+  // Deliberately process-local rather than SQLite-backed. Persisting this
+  // optional publication counter introduced a forbidden post-sign-out write:
+  // the fetch could resume after the wipe and recreate global metadata for the
+  // next owner. Two 30-second waits in one foreground session are enough to
+  // protect the fast path; a relaunch safely gets the same small grace again.
+  const wipeEpoch = getWipeEpoch();
+  const previous = manifestFailureCounts.get(db);
+  const failureCount = previous?.wipeEpoch === wipeEpoch ? previous.count + 1 : 1;
+  manifestFailureCounts.set(db, { wipeEpoch, count: failureCount });
+  cache.failurePolicy = { failOpen: failureCount > MAX_MANIFEST_WAIT_FAILURES };
+  return cache.failurePolicy;
+}
 
 /**
  * Settle one bootstrap failure: burn the budget its KIND spends, schedule the
@@ -855,9 +926,11 @@ type ManifestResolution =
  * budget it spends is `classifyBootstrapFailure`'s call, and a transport failure
  * now spends the transport budget instead of the structural one.
  *
- * The MANIFEST stage stays entirely free for transport failures (issue #4238):
- * it is a few KB of JSON and the stage an offline launch dies at. Everything
- * else — a 500 from the CDN, a short artifact, a disk-full device — is charged.
+ * The MANIFEST stage stays entirely free of per-scope budgets (issue #4238):
+ * it is one small global object, so charging every enabled scope for one bad
+ * publish could terminal the whole device. A separate global counter bounds
+ * how long fresh scopes wait before failing open to the paged crawl. Failures
+ * after manifest resolution — a short artifact or disk-full device — are charged.
  */
 async function settleBootstrapFailure(
   db: OfflineDatabase,
@@ -881,9 +954,11 @@ async function settleBootstrapFailure(
   const { state, cause, stage, builtAt, now, random } = input;
   const failureKind = classifyBootstrapFailure({ cause, stage });
   const expected = isNetworkError(cause);
-  if (stage === 'manifest' && failureKind === 'transport') {
-    // Cap-exempt and cooldown-exempt: nothing is persisted, so the scope is
-    // exactly as eligible on the next cycle as it was on this one.
+  if (stage === 'manifest') {
+    // The manifest is one global object shared by every scope in this cycle.
+    // Charging a per-scope budget for a bad response can terminal every board
+    // on a device from one broken publish. Keep all manifest failures cap- and
+    // cooldown-exempt; the scheduler supplies the bounded-frequency retry.
     return { state, failureKind, expected, cause, persisted: false };
   }
   const scheduled = nextRetryState({ state, failureKind, builtAt, now, random });
@@ -901,7 +976,7 @@ async function settleBootstrapFailure(
 
 async function resolveManifestOnce(
   source: SnapshotSource,
-  cache: { value?: ManifestResolution },
+  cache: ManifestResolutionCache,
 ): Promise<ManifestResolution> {
   if (cache.value) return cache.value;
   let raw: unknown;
@@ -916,7 +991,26 @@ async function resolveManifestOnce(
     return cache.value;
   }
   const manifest = parseSnapshotManifest(raw);
-  cache.value = manifest ? { status: 'ok', manifest } : { status: 'absent' };
+  if (manifest) {
+    cache.value = { status: 'ok', manifest };
+    return cache.value;
+  }
+  // A client cannot consume an older/newer contract, so fail open to the paged
+  // path. A malformed response claiming THIS contract is different: it may be
+  // a truncated CDN/proxy body, and must get a short retry rather than turning
+  // the first 500-row page into a durable slow-path choice.
+  const formatVersion =
+    typeof raw === 'object' && raw !== null && 'formatVersion' in raw
+      ? (raw as { formatVersion?: unknown }).formatVersion
+      : undefined;
+  if (typeof formatVersion === 'number' && formatVersion !== SNAPSHOT_MANIFEST_FORMAT_VERSION) {
+    cache.value = { status: 'absent' };
+    return cache.value;
+  }
+  cache.value = {
+    status: 'error',
+    cause: new Error('snapshot manifest has an invalid current-format payload'),
+  };
   return cache.value;
 }
 
@@ -934,19 +1028,20 @@ async function resolveManifestOnce(
  * disagree with what this function does. Two kinds pass it:
  *   - `fresh` — no checkpoint on either board table (the original rule).
  *   - `heal-over-partial` — a scope that HAS checkpoints but never finished its
- *     crawl and carries snapshot-path failures behind it. This is the un-strand
- *     for issue #4313's victims: their board data is a fraction of the catalog
- *     and the paged crawl that was going to finish it is 400+ serial round trips.
+ *     crawl. This includes retry victims and scopes whose first 500-row page ran
+ *     before snapshot I/O was available on cold launch. Their board data is a
+ *     fraction of the catalog and finishing via GraphQL is 400+ serial trips.
  *     A `scope-complete:` scope is never healed — it already serves the whole
  *     catalog locally, so an artifact buys it nothing.
  *
  * FAILURE ACCOUNTING is `classifyBootstrapFailure` + `nextRetryState` (same
  * module). Per stage:
- *   - manifest `absent` (missing/unparseable) → permanent miss, NO burn →
- *     normal paged pull.
- *   - manifest `error`, TRANSPORT-shaped → NO burn, nothing persisted, no
- *     cooldown → SKIP paged pull this cycle, reported as `expected` (#4238).
- *   - manifest `error`, anything else → structural-device burn + cooldown.
+ *   - manifest `absent` (404 or unsupported format version) → permanent miss,
+ *     NO burn → normal paged pull.
+ *   - manifest `error` (network, HTTP, malformed current-format payload) → NO
+ *     per-scope burn; SKIP paged pull and wake the scheduler again in 30s. The
+ *     third consecutive global failure starts the paged crawl and probes again
+ *     after 5m, so a broken publication cannot leave fresh boards empty forever.
  *   - manifest `ok` but no entry for (boardType, layoutId) → permanent miss, NO
  *     burn → normal paged pull (layout not exported yet).
  *   - download fails/returns null, TRANSPORT-shaped → transport burn + the
@@ -1070,8 +1165,19 @@ async function runBootstrapPhase(params: {
   // own catch, a consumer callback blowing up — still closes the funnel. See
   // download-funnel-guard.ts for what counts as settled and why only a genuinely
   // unexplained exit reaches Sentry.
+  //
+  // Every report leaving this phase — the guard's own included — passes through
+  // `recordTerminal` first, so the teardown that is about to delete this scope
+  // knows a terminal event has already been spent on its removal (issue #4406).
+  const recordTerminal = (report: SnapshotBootstrapErrorReport): void => {
+    // Only the teardown-shaped reason: an ordinary failure ends this ATTEMPT but
+    // leaves the download itself owed a terminal, which is exactly the case the
+    // teardown must still report.
+    if (report.reason === 'aborted-wipe') noteScopeDownloadTerminal(report.scopeKey);
+    rawSnapshotBootstrapError?.(report);
+  };
   const funnelGuard = createDownloadFunnelGuard({
-    report: rawSnapshotBootstrapError,
+    report: rawSnapshotBootstrapError ? recordTerminal : undefined,
     // Scope-aware: an unexplained exit that merely COINCIDES with another
     // board's removal is no longer laundered as `aborted-wipe`, so it still
     // reaches Sentry as `unknown-exit` (issue #4370).
@@ -1087,7 +1193,7 @@ async function runBootstrapPhase(params: {
   const onSnapshotBootstrapError = rawSnapshotBootstrapError
     ? (report: BootstrapErrorInput): void => {
         funnelGuard.settle(report.scopeKey);
-        rawSnapshotBootstrapError({
+        recordTerminal({
           ...report,
           reason: report.reason ?? classifySnapshotBootstrapFailure(report.cause),
           aborted: report.aborted ?? false,
@@ -1114,23 +1220,12 @@ async function runBootstrapPhase(params: {
   };
 
   const onBootstrapMetadataChanged = options?.onBootstrapMetadataChanged;
+  const onBootstrapRetryDue = options?.onBootstrapRetryDue;
+  const onBootstrapRetryCleared = options?.onBootstrapRetryCleared;
   const isOnUnmeteredNetwork = options?.isOnUnmeteredNetwork ?? (() => true);
 
   const skipPagedPull = new Set<string>();
-  const manifestCache: { value?: ManifestResolution } = {};
-  // Progress frames (issue #4311). Every emission below is SYNCHRONOUS — the
-  // throttle is a pure state machine — so none of this introduces a new `await`
-  // and none of it shifts where a wipe can land relative to the epoch checks.
-  const progressThrottle = createSnapshotProgressThrottle({ now: () => Date.now() });
-  const emitSnapshotFrame = (frame: SnapshotBootstrapProgress | null): void => {
-    if (!frame) return;
-    onProgress?.({
-      phase: 'bootstrap',
-      currentTable: frame.scopeKey,
-      documentsProcessed: 0,
-      snapshot: frame,
-    });
-  };
+  const manifestCache: ManifestResolutionCache = {};
   type LayoutDownloadRecord = {
     file: SnapshotArtifactHandle | null;
     cause: unknown;
@@ -1279,6 +1374,7 @@ async function runBootstrapPhase(params: {
     stage: 'manifest' | 'download' | 'import',
     settled: Awaited<ReturnType<typeof settleBootstrapFailure>>,
     evaluatedAt: number,
+    retryDelayMs = MANIFEST_RETRY_DELAY_MS,
   ): void => {
     const burned =
       settled.failureKind === 'transport' ? settled.state.transportFailures : settled.state.structuralFailures;
@@ -1289,7 +1385,10 @@ async function runBootstrapPhase(params: {
       cause: settled.cause,
       expected: settled.expected,
     });
-    if (!settled.persisted) return;
+    if (!settled.persisted) {
+      onBootstrapRetryDue?.({ scopeKey: scope.scopeKey, retryAt: evaluatedAt + retryDelayMs });
+      return;
+    }
     const terminal = isTerminal(settled.state);
     options?.onBootstrapRetryScheduled?.({
       scopeKey: scope.scopeKey,
@@ -1302,10 +1401,30 @@ async function runBootstrapPhase(params: {
       structuralFailures: settled.state.structuralFailures,
       terminal,
     });
+    if (!terminal && settled.state.retryAfter !== null) {
+      onBootstrapRetryDue?.({ scopeKey: scope.scopeKey, retryAt: settled.state.retryAfter });
+    } else {
+      onBootstrapRetryCleared?.(scope.scopeKey);
+    }
   };
 
   try {
     for (const scope of scopes) {
+      // Progress state belongs to one scope. Keeping the high-water mark or
+      // throttle window across boards can make scope B inherit scope A's last
+      // fraction if a future path omits one of today's explicit stage flushes.
+      // Every emission is synchronous, so this pure state machine adds no await
+      // boundary and cannot move a purge check.
+      const progressThrottle = createSnapshotProgressThrottle({ now });
+      const emitSnapshotFrame = (frame: SnapshotBootstrapProgress | null): void => {
+        if (!frame) return;
+        onProgress?.({
+          phase: 'bootstrap',
+          currentTable: frame.scopeKey,
+          documentsProcessed: 0,
+          snapshot: frame,
+        });
+      };
       let metadataSettled = false;
       try {
         const loopTopVerdict = teardownVerdict(scope.scopeKey);
@@ -1354,6 +1473,14 @@ async function runBootstrapPhase(params: {
           isBootstrapDone: isAlreadyBootstrapped,
           now: evaluatedAt,
         });
+        if (!verdict.eligible && verdict.reason === 'cooling-down' && retryState.retryAfter !== null) {
+          // This includes cooldowns restored from SQLite on a cold launch. The
+          // analytics callback only fires when a failure is first settled, so a
+          // separate lifecycle signal is what makes the retry survive remounts.
+          onBootstrapRetryDue?.({ scopeKey: scope.scopeKey, retryAt: retryState.retryAfter });
+        } else {
+          onBootstrapRetryCleared?.(scope.scopeKey);
+        }
         // A terminal scope whose last failure was the ARTIFACT's fault is the one
         // case worth spending a manifest request on: a differently-built artifact
         // re-arms it. Everything else terminal skips the fetch entirely, which is
@@ -1401,6 +1528,7 @@ async function runBootstrapPhase(params: {
                 if (retrofitVerdict.kind === 'cycle') break;
                 continue;
               }
+              settleManifestPublicationStateOnce(db, retrofitResolution, manifestCache, { countError: false });
               const retrofitEntry =
                 retrofitResolution.status === 'ok'
                   ? findSnapshotEntry(retrofitResolution.manifest, scope.boardType, scope.layoutId)
@@ -1435,6 +1563,10 @@ async function runBootstrapPhase(params: {
           if (manifestVerdict.kind === 'cycle') break;
           continue;
         }
+        // Manifest retry bookkeeping is intentionally deferred until AFTER the
+        // network await's purge/sign-out check. The resolver itself is pure, so
+        // a stale cycle cannot recreate global metadata after an account wipe.
+        const manifestFailurePolicy = settleManifestPublicationStateOnce(db, resolution, manifestCache);
 
         // Shared with the pre-download size estimate (snapshot-estimate.ts) so the
         // UI can never quote a number for an artifact this phase would skip.
@@ -1487,8 +1619,17 @@ async function runBootstrapPhase(params: {
           // A cap-exempt transport failure persists nothing, so there is no settled
           // decision for the UI to re-read — only a counted one changed sync_meta.
           metadataSettled = metadataSettled || settled.persisted;
-          reportSettledFailure(scope, 'manifest', settled, evaluatedAt);
-          if (shouldSkipPagedPull({ retryState, hasBoardCheckpoint, now: evaluatedAt })) {
+          reportSettledFailure(
+            scope,
+            'manifest',
+            settled,
+            evaluatedAt,
+            manifestFailurePolicy.failOpen ? MANIFEST_FAIL_OPEN_RETRY_DELAY_MS : MANIFEST_RETRY_DELAY_MS,
+          );
+          if (manifestFailurePolicy.failOpen) {
+            await markBootstrapPagedFallback(db, scope.scopeKey);
+            metadataSettled = true;
+          } else if (shouldSkipPagedPull({ retryState, hasBoardCheckpoint, now: evaluatedAt })) {
             skipPagedPull.add(scope.scopeKey);
           }
           continue;
@@ -1527,6 +1668,9 @@ async function runBootstrapPhase(params: {
         if (bootstrapKind === 'heal-over-partial' && !isUserRequested && !(await isOnUnmeteredNetwork())) {
           retryState = await writeBootstrapRetryState(db, scope.scopeKey, deferHeal(retryState, evaluatedAt));
           metadataSettled = true;
+          if (retryState.retryAfter !== null) {
+            onBootstrapRetryDue?.({ scopeKey: scope.scopeKey, retryAt: retryState.retryAfter });
+          }
           continue;
         }
 
@@ -1724,7 +1868,7 @@ async function runBootstrapPhase(params: {
           if (cachedDownload.file) {
             bootstrapTimings.set(scope.scopeKey, {
               bytes: entry.bytes,
-              downloadMs: Date.now() - downloadStartedAt,
+              downloadMs: cachedDownload.downloadMs,
             });
           }
         }
@@ -1801,6 +1945,11 @@ async function runBootstrapPhase(params: {
                 structuralFailures: retryState.structuralFailures,
                 terminal: isTerminal(retryState),
               });
+              if (!isTerminal(retryState) && retryState.retryAfter !== null) {
+                onBootstrapRetryDue?.({ scopeKey: scope.scopeKey, retryAt: retryState.retryAfter });
+              } else {
+                onBootstrapRetryCleared?.(scope.scopeKey);
+              }
               if (isTerminal(retryState)) await markBootstrapPagedFallback(db, scope.scopeKey);
             } else {
               reportBootstrapAbort(scope.scopeKey, 'download', downloadTeardown, cachedDownload.cause);
@@ -1821,8 +1970,8 @@ async function runBootstrapPhase(params: {
             // (mobile only raises it after the artifact lands and turns out to
             // still be gzip-compressed). Before heal-over-partial only a
             // checkpoint-free scope could reach this line, so the crawl's first
-            // checkpoint ended the loop by itself. A checkpointed scope with
-            // failure history is eligible EVERY cycle, so leaving it uncharged
+            // checkpoint ended the loop by itself. A checkpointed incomplete
+            // scope is eligible again after cooldown, so leaving it uncharged
             // would re-download the same unusable artifact forever. It burns the
             // DEVICE budget — nothing about bytes already on disk is a network
             // problem, and a nightly rebuild cannot fix an HTTP stack that will
@@ -2053,6 +2202,10 @@ async function runBootstrapPhase(params: {
         funnelGuard.settleUncaught(error);
         throw error;
       } finally {
+        // A native callback may arrive after this scope has settled while the
+        // phase is already working on another board. Cancel here so it cannot
+        // re-light the old row or contaminate the next scope's progress state.
+        progressThrottle.cancel();
         // Un-bypassable: a `break` or `continue` a future change adds below the
         // Started emission closes the funnel here whether or not it remembers to.
         funnelGuard.close();
@@ -2060,10 +2213,6 @@ async function runBootstrapPhase(params: {
       }
     }
   } finally {
-    // Before the artifact cleanup awaits, so an onProgress callback still queued
-    // behind them cannot emit a frame after the phase is over and re-light a row
-    // the UI already moved past.
-    progressThrottle.cancel();
     // Hand every artifact back rather than deleting it outright. A source with
     // no retention support falls through to deleteArtifact and behaves exactly
     // as it did before #4310; a retention-capable one keeps the files the phase
@@ -2444,6 +2593,17 @@ export async function pullSync(
     // purge only invalidates its own scope — the one being deleted right now,
     // which is still in this stale list — so it skips that scope and lets every
     // other board finish (issue #4370).
+    //
+    // NONE of the exits below reports a terminal event, and that is deliberate
+    // (issue #4406). A board-data crawl legitimately spans cycles — a 40k-climb
+    // layout is hundreds of pages, and the durable `scope-started:` marker keeps
+    // ONE Started open across all of them — so a Failed per interrupted cycle
+    // would turn every normal multi-cycle download into a stream of failures.
+    // The one exit that ends a download for good is the removal these purge
+    // checks are dodging, and `removeBoardScopeData` reports it from the other
+    // side: it is the last code that can still see the Started marker before
+    // deleting it, and it de-dups against the bootstrap phase's own
+    // `aborted-wipe` through the purge generation.
     if (cycleAborted()) return;
     if (scopePurged(boardScope)) continue;
     const scopeKey = boardScope.scopeKey;

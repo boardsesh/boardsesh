@@ -13,11 +13,43 @@ export type PlaybackSnapshot = {
   anchorTimestamp: number;
 };
 
+/**
+ * Peer state arriving over the wire. `frameCount` is optional and nullable
+ * because publishers older than the field omit it entirely — see
+ * `LocalPlaybackState` for the outbound shape, where it is always present.
+ */
 export type ExternalPlaybackState = PlaybackSnapshot & {
   /** Native per-frame pace from the climb metadata. */
   paceMs: number;
   /** Identifier of the client that produced this state. Used for echo suppression. */
   clientId: string | null;
+  /**
+   * Frames the publishing peer's reader produced. When it disagrees with our
+   * own frame list the two sides are counting frames differently and the
+   * event is ignored rather than clamped into range. Absent from peers that
+   * predate the field — those keep the legacy clamp.
+   */
+  frameCount?: number | null;
+};
+
+/**
+ * State the local engine emits for broadcast. Distinct from
+ * `ExternalPlaybackState` purely so `frameCount` can be required here (we
+ * always know our own frame count) while staying optional on the inbound side.
+ */
+export type LocalPlaybackState = PlaybackSnapshot & {
+  paceMs: number;
+  clientId: string | null;
+  /** Frames our reader produced for this climb. Always ≥ 1 — the engine never emits for a frameless climb. */
+  frameCount: number;
+};
+
+/** Details handed to `onPeerFrameMismatch` when a peer's frame count disagrees. */
+export type PeerFrameMismatch = {
+  /** Frames the peer reported. */
+  peerFrameCount: number;
+  /** Frames our own reader produced. */
+  localFrameCount: number;
 };
 
 type UsePlaybackEngineInput = {
@@ -32,7 +64,13 @@ type UsePlaybackEngineInput = {
    */
   externalState?: ExternalPlaybackState | null;
   /** Fires whenever the local engine produces a new state worth broadcasting. */
-  onLocalStateChange?: (state: ExternalPlaybackState) => void;
+  onLocalStateChange?: (state: LocalPlaybackState) => void;
+  /**
+   * Fires on the transition into a frame-count disagreement with a peer
+   * (once per stretch of mismatched events, not per event). Telemetry seam —
+   * the host wires it to its analytics transport.
+   */
+  onPeerFrameMismatch?: (mismatch: PeerFrameMismatch) => void;
 };
 
 export type UsePlaybackEngineOutput = {
@@ -45,6 +83,13 @@ export type UsePlaybackEngineOutput = {
   currentFrameString: string;
   /** Whether the engine has more than one frame (i.e. controls should render). */
   isAnimatable: boolean;
+  /**
+   * True while a peer is broadcasting a frame count that disagrees with ours,
+   * meaning the two clients read this climb's frames differently. Local
+   * playback keeps running on its own; the peer is simply not followed.
+   * Clears on climb change and as soon as a peer's count agrees again.
+   */
+  peerFrameMismatch: boolean;
   play: () => void;
   pause: () => void;
   seek: (frameIndex: number) => void;
@@ -69,12 +114,14 @@ export function usePlaybackEngine({
   clientId,
   externalState,
   onLocalStateChange,
+  onPeerFrameMismatch,
 }: UsePlaybackEngineInput): UsePlaybackEngineOutput {
   const isAnimatable = frameStrings.length > 1;
 
   const [frameIndex, setFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeedState] = useState(1);
+  const [peerFrameMismatch, setPeerFrameMismatch] = useState(false);
 
   // Refs so the timer callback doesn't capture stale state.
   const frameIndexRef = useRef(frameIndex);
@@ -82,11 +129,17 @@ export function usePlaybackEngine({
   const speedRef = useRef(speed);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onLocalStateChangeRef = useRef(onLocalStateChange);
+  const onPeerFrameMismatchRef = useRef(onPeerFrameMismatch);
+  // Mirrors `peerFrameMismatch` so the convergence effect only writes state on
+  // a real transition. A stale peer scrubbing a slider republishes constantly;
+  // without this every one of those events would queue a render.
+  const peerFrameMismatchRef = useRef(peerFrameMismatch);
 
   frameIndexRef.current = frameIndex;
   isPlayingRef.current = isPlaying;
   speedRef.current = speed;
   onLocalStateChangeRef.current = onLocalStateChange;
+  onPeerFrameMismatchRef.current = onPeerFrameMismatch;
 
   const clearTimer = () => {
     if (timerRef.current !== null) {
@@ -95,16 +148,29 @@ export function usePlaybackEngine({
     }
   };
 
-  // Reset to frame 0 + paused whenever the underlying climb changes.
+  const updatePeerFrameMismatch = useCallback((next: boolean) => {
+    if (peerFrameMismatchRef.current === next) return;
+    peerFrameMismatchRef.current = next;
+    setPeerFrameMismatch(next);
+  }, []);
+
+  // Reset to frame 0 + paused whenever the underlying climb changes. A frame
+  // disagreement is per-climb (it comes out of how each side read THIS climb's
+  // frames), so it clears here too.
   const framesKey = frameStrings.join('|');
   useEffect(() => {
     clearTimer();
     setFrameIndex(0);
     setIsPlaying(false);
-  }, [framesKey]);
+    updatePeerFrameMismatch(false);
+  }, [framesKey, updatePeerFrameMismatch]);
 
   const emitLocalState = useCallback(
     (nextIndex: number, nextIsPlaying: boolean, nextSpeed: number) => {
+      // A frameless climb has nothing to play and nothing meaningful to
+      // broadcast — `setSpeed` is the one control that isn't gated on
+      // `isAnimatable`, so without this it would publish frameCount: 0.
+      if (frameStrings.length === 0) return;
       onLocalStateChangeRef.current?.({
         frameIndex: nextIndex,
         isPlaying: nextIsPlaying,
@@ -112,9 +178,10 @@ export function usePlaybackEngine({
         anchorTimestamp: Date.now(),
         paceMs,
         clientId,
+        frameCount: frameStrings.length,
       });
     },
-    [clientId, paceMs],
+    [clientId, paceMs, frameStrings.length],
   );
 
   // Timer driver: a single effect owns the timer for the whole engine life.
@@ -164,9 +231,35 @@ export function usePlaybackEngine({
   // out-of-range values would otherwise poison local state and get re-broadcast
   // on the next user action.
   useEffect(() => {
-    if (!externalState) return;
+    // Host dropped the peer state (climb change, session left). Nothing left to
+    // disagree with, so the notice shouldn't outlive it.
+    if (!externalState) {
+      updatePeerFrameMismatch(false);
+      return;
+    }
     if (externalState.clientId && externalState.clientId === clientId) return;
     if (frameStrings.length === 0) return;
+    // Frame-count check first, before anything is clamped. A peer whose reader
+    // produced a different number of frames is indexing a different sequence:
+    // its index N is not our frame N, and clamping it into our range would
+    // silently park us on the last frame and stop playback (issue #3989).
+    // Stop following instead and let the host say so. Peers that don't send a
+    // count (older than the field) keep the legacy clamp — there is nothing to
+    // compare against and same-version sessions must not regress.
+    const peerFrameCount = externalState.frameCount;
+    if (typeof peerFrameCount === 'number' && Number.isInteger(peerFrameCount) && peerFrameCount > 0) {
+      if (peerFrameCount !== frameStrings.length) {
+        if (!peerFrameMismatchRef.current) {
+          onPeerFrameMismatchRef.current?.({
+            peerFrameCount,
+            localFrameCount: frameStrings.length,
+          });
+        }
+        updatePeerFrameMismatch(true);
+        return;
+      }
+      updatePeerFrameMismatch(false);
+    }
     const safeSpeed = Number.isFinite(externalState.speed) ? Math.max(0.1, externalState.speed) : 1;
     const safePaceMs = Number.isFinite(externalState.paceMs)
       ? Math.max(MIN_PACE_MS, externalState.paceMs)
@@ -185,7 +278,7 @@ export function usePlaybackEngine({
     setFrameIndex(projected);
     setIsPlaying(externalState.isPlaying && !reachedEnd);
     setSpeedState(safeSpeed);
-  }, [externalState, clientId, frameStrings.length]);
+  }, [externalState, clientId, frameStrings.length, updatePeerFrameMismatch]);
 
   const play = useCallback(() => {
     if (!isAnimatable) return;
@@ -247,11 +340,24 @@ export function usePlaybackEngine({
       currentLitUpHoldsMap,
       currentFrameString,
       isAnimatable,
+      peerFrameMismatch,
       play,
       pause,
       seek,
       setSpeed,
     }),
-    [frameIndex, isPlaying, speed, currentLitUpHoldsMap, currentFrameString, isAnimatable, play, pause, seek, setSpeed],
+    [
+      frameIndex,
+      isPlaying,
+      speed,
+      currentLitUpHoldsMap,
+      currentFrameString,
+      isAnimatable,
+      peerFrameMismatch,
+      play,
+      pause,
+      seek,
+      setSpeed,
+    ],
   );
 }

@@ -171,9 +171,55 @@ export function beginScopePurge(namespace: string): () => void {
     if (released) return;
     released = true;
     const inFlight = _purgesInFlight.get(namespace) ?? 0;
-    if (inFlight <= 1) _purgesInFlight.delete(namespace);
-    else _purgesInFlight.set(namespace, inFlight - 1);
+    if (inFlight <= 1) {
+      _purgesInFlight.delete(namespace);
+      notifyPurgeSettled(namespace);
+    } else _purgesInFlight.set(namespace, inFlight - 1);
   };
+}
+
+/**
+ * This namespace's purge generation. Read by the download funnel's terminal
+ * bookkeeping (issue #4406) so a removal and the cycle it tore down can tell
+ * they are talking about the SAME removal: both read the epoch the purge bumped,
+ * so the teardown's abandoned terminal and the pull client's own `aborted-wipe`
+ * terminal can never double up, while a LATER removal of the same scope reads a
+ * different epoch and reports its own.
+ */
+export function getPurgeEpoch(namespace: string): number {
+  return _purgeEpochs.get(namespace) ?? 0;
+}
+
+/**
+ * Fired when a namespace's LAST in-flight purge releases — the delete
+ * transaction has committed and work for that namespace is allowed again.
+ *
+ * The mirror image of `onTeardown`, and the reason it exists (issue #4406): a
+ * sync cycle that runs while the latch is set reads "purged" at every guard and
+ * skips the scope from top to bottom, reporting nothing. That is correct — but
+ * the trigger that kicked it is spent, and the scheduler has no interval, so a
+ * board switched back on DURING a removal sat on "waiting to download"
+ * indefinitely. Listeners must never throw.
+ */
+const purgeSettledListeners = new Set<(namespace: string) => void>();
+
+export function onPurgeSettled(listener: (namespace: string) => void): () => void {
+  purgeSettledListeners.add(listener);
+  return () => {
+    purgeSettledListeners.delete(listener);
+  };
+}
+
+function notifyPurgeSettled(namespace: string): void {
+  // Snapshot first, same as notifyTeardown: a listener that unsubscribes itself
+  // must not mutate the set being iterated.
+  for (const listener of [...purgeSettledListeners]) {
+    try {
+      listener(namespace);
+    } catch {
+      // A broken listener must never break a removal's release path.
+    }
+  }
 }
 
 /**
@@ -570,4 +616,5 @@ export function __resetDrainerStateForTests(): void {
   _purgesInFlight.clear();
   // A listener leaked by an aborted run would otherwise fire into the next test.
   teardownListeners.clear();
+  purgeSettledListeners.clear();
 }

@@ -153,13 +153,9 @@ export type BoardDownloadProgressInput = Pick<
   /** From useSyncStatus().progress?.snapshot — the live frame, whichever scope it names. */
   snapshot?: SyncProgress['snapshot'];
   /**
-   * `useOfflineDownloadProgressEnabled()`. Required, not defaulted, because the
-   * kill switch has two halves and forgetting this one is invisible: the engine
-   * emits its three stage frames (manifest / download-at-zero / import) whether
-   * or not a downloader ever reports a byte, so a caller that skipped the flag
-   * would leave the row on "Downloading 0 MB of 103 MB" with the switch off —
-   * a worse frozen look than the static caption the switch restores. The other
-   * half lives in `useSnapshotSource`, which drops the native callback.
+   * `useOfflineDownloadProgressEnabled()`. Required for compatibility with the
+   * row API; the native hook is permanently true now that every snapshot uses a
+   * progress-capable DownloadTask.
    */
   progressEnabled: boolean;
 };

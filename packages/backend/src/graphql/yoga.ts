@@ -2,9 +2,11 @@ import { createYoga } from 'graphql-yoga';
 import { v4 as uuidv4 } from 'uuid';
 import { GraphQLError } from 'graphql';
 import * as Sentry from '@sentry/node';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { schema } from './index';
 import { validateToken } from '../middleware/auth';
 import type { AuthResult } from '../middleware/auth';
+import { resolveWebSocketClientIp } from '../websocket/client-ip';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { maxDepthPlugin } from '@escape.tech/graphql-armor-max-depth';
 import { costLimitPlugin } from '@escape.tech/graphql-armor-cost-limit';
@@ -26,6 +28,61 @@ async function authenticateHttpBearer(authHeader: string | null): Promise<AuthRe
 }
 
 /**
+ * Node server context Yoga hands to the context factory.
+ *
+ * `server.ts` serves `/graphql` with `yoga.handle(req, res)`, so the Node
+ * request (and its TCP socket) is available on every real HTTP request. The
+ * `yoga.fetch` path — used by tests and by any non-Node adapter — supplies
+ * neither, hence both are optional.
+ */
+type NodeServerContext = { req?: IncomingMessage; res?: ServerResponse };
+
+/**
+ * Build the connection context for an HTTP GraphQL request.
+ *
+ * Exported so tests can drive the exact shape Yoga passes in. HTTP requests are
+ * stateless and are not tracked in the connections Map; only WebSocket
+ * connections are stored there (they have onDisconnect cleanup).
+ *
+ * The anonymous rate-limit identity comes from `resolveWebSocketClientIp`, the
+ * same trusted-hop resolver the WebSocket transport uses (issue #4034):
+ * `cf-connecting-ip` -> LAST `x-forwarded-for` hop -> `req.socket.remoteAddress`
+ * -> undefined. Two bypasses this closes, both live before it:
+ *
+ *  - the FIRST forwarded hop is client-authored (Cloudflare appends rather than
+ *    strips), so a scripted client could send `x-forwarded-for: <random>` per
+ *    request and mint a fresh `applyRateLimit` bucket every time — or pin a
+ *    victim's IP to exhaust theirs.
+ *  - a direct-to-origin client sending no proxy headers at all resolved to
+ *    `undefined` and fell through to the per-request `http-<uuid>` bucket, which
+ *    is no limit at all. The socket fallback keys it on the real peer.
+ *
+ * `x-real-ip` is deliberately no longer consulted: nothing in our chain sets it,
+ * so it was pure spoof surface.
+ *
+ * When no IP resolves (the `yoga.fetch` path) `clientIp` stays undefined and
+ * `applyRateLimit` falls back to the connectionId branch, exactly as before.
+ */
+export async function buildHttpConnectionContext({
+  request,
+  req,
+}: { request: Request } & NodeServerContext): Promise<ConnectionContext> {
+  const authHeader = request.headers.get('authorization');
+  const clientIp = resolveWebSocketClientIp(req);
+
+  const authResult = await authenticateHttpBearer(authHeader);
+
+  return {
+    connectionId: `http-${uuidv4()}`,
+    transport: 'http' as const,
+    sessionId: undefined,
+    userId: authResult?.userId,
+    isAuthenticated: authResult !== null,
+    clientIp,
+  };
+}
+
+/**
  * Create and configure the GraphQL Yoga instance
  *
  * Note: This Yoga instance is primarily used for HTTP GraphQL requests.
@@ -33,44 +90,16 @@ async function authenticateHttpBearer(authHeader: string | null): Promise<AuthRe
  * to maintain protocol compatibility with the frontend.
  */
 export function createYogaInstance() {
-  const yoga = createYoga({
+  const yoga = createYoga<NodeServerContext>({
     schema,
     graphqlEndpoint: '/graphql',
     // Depth/cost limiting for HTTP GraphQL requests.
     // WebSocket subscriptions are protected separately via onSubscribe in websocket/setup.ts
     plugins: [maxDepthPlugin({ n: 10 }), costLimitPlugin({ maxCost: 5000 })],
-    // Context function - extract auth from HTTP requests
-    // HTTP requests are stateless and don't need to be tracked in the connections Map.
-    // Only WebSocket connections are stored there (they have onDisconnect cleanup).
-    context: async ({ request }): Promise<ConnectionContext> => {
-      // Extract Authorization header
-      const authHeader = request.headers.get('authorization');
-
-      // Extract client IP for rate limiting anonymous HTTP requests
-      const clientIp =
-        request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || undefined;
-
-      const authResult = await authenticateHttpBearer(authHeader);
-      if (authResult) {
-        return {
-          connectionId: `http-${uuidv4()}`,
-          transport: 'http' as const,
-          sessionId: undefined,
-          userId: authResult.userId,
-          isAuthenticated: true,
-          clientIp,
-        };
-      }
-
-      return {
-        connectionId: `http-${uuidv4()}`,
-        transport: 'http' as const,
-        sessionId: undefined,
-        userId: undefined,
-        isAuthenticated: false,
-        clientIp,
-      };
-    },
+    // Context function - extract auth and the trusted client IP from HTTP requests.
+    // `req` is the Node request `server.ts` hands to `yoga.handle`; it carries the
+    // TCP socket the client cannot forge.
+    context: ({ request, req }): Promise<ConnectionContext> => buildHttpConnectionContext({ request, req }),
     // Disable GraphiQL in production
     graphiql:
       process.env.NODE_ENV !== 'production'

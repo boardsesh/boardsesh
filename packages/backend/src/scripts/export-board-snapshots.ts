@@ -1,4 +1,4 @@
-// Nightly board-snapshot export (offline-sync Phase 2).
+// Board-snapshot export + live stale-artifact refresh (offline-sync Phase 2).
 //
 // For every (board_type, layout_id) that has climbs, builds a small SQLite file
 // carrying ONLY `board_climbs` + `board_climb_stats` (plus a `snapshot_meta`
@@ -179,6 +179,11 @@ export type LayoutGradesSnapshotResult = {
 
 export type LayoutPair = { boardType: string; layoutId: number };
 
+type SnapshotWatermark = {
+  watermarkUpdatedAt: string;
+  watermarkSyncSeq: string;
+};
+
 // --- DDL ----------------------------------------------------------------------
 
 /**
@@ -250,6 +255,100 @@ const GRADES_WHERE = `board_type = $1
       WHERE bc.uuid = board_climb_grades.climb_uuid AND bc.board_type = $1 AND bc.layout_id = $2
     )
     AND computed_at < now() - make_interval(secs => $3)`;
+
+function whereClauseFor(tableName: SnapshotTableName | SnapshotGradesTableName): string {
+  switch (tableName) {
+    case 'board_climbs':
+      return CLIMBS_WHERE;
+    case 'board_climb_stats':
+      return STATS_WHERE;
+    case 'board_climb_grades':
+      return GRADES_WHERE;
+  }
+}
+
+/**
+ * Whether at least `threshold` stable rows landed after one manifest watermark.
+ *
+ * This is deliberately a bounded existence probe, not COUNT(*): the scheduled
+ * live-prefix scan only needs to know whether a client would hit a full 500-row
+ * GraphQL page after importing the artifact. With the board-leading cursor
+ * indexes this stops as soon as the threshold is reached, even when a bulk
+ * catalog refresh touched hundreds of thousands of rows.
+ */
+async function hasDeltaAtThreshold(params: {
+  sqlClient: Sql;
+  pair: LayoutPair;
+  tableName: SnapshotTableName | SnapshotGradesTableName;
+  watermark: SnapshotWatermark;
+  threshold: number;
+}): Promise<boolean> {
+  const { sqlClient, pair, tableName, watermark, threshold } = params;
+  const cursorColumn = cursorColumnFor(tableName);
+  const rows = await sqlClient.unsafe(
+    `SELECT 1
+     FROM ${tableName}
+     WHERE ${whereClauseFor(tableName)}
+       AND (${cursorColumn}, sync_seq) > ($4::timestamp, $5::bigint)
+     ORDER BY ${cursorColumn} ASC, sync_seq ASC
+     LIMIT $6`,
+    [
+      pair.boardType,
+      pair.layoutId,
+      DEFAULT_STABILITY_WINDOW_SECONDS,
+      watermark.watermarkUpdatedAt,
+      watermark.watermarkSyncSeq,
+      threshold,
+    ],
+  );
+  return rows.length >= threshold;
+}
+
+type RefreshReason = SnapshotTableName | SnapshotGradesTableName | 'missing-entry' | 'stale-schema';
+
+/** Return the first reason this pair needs a new artifact, or null when current. */
+async function layoutRefreshReason(params: {
+  sqlClient: Sql;
+  pair: LayoutPair;
+  previousEntry: SnapshotManifestEntry | undefined;
+  threshold: number;
+  includeGrades: boolean;
+}): Promise<RefreshReason | null> {
+  const { sqlClient, pair, previousEntry, threshold, includeGrades } = params;
+  if (!previousEntry) return 'missing-entry';
+  if (previousEntry.schemaVersion < LATEST_SCHEMA_VERSION) return 'stale-schema';
+  if (includeGrades && previousEntry.grades && previousEntry.grades.schemaVersion < LATEST_SCHEMA_VERSION) {
+    return 'stale-schema';
+  }
+
+  const tableWatermarks: Array<{
+    tableName: SnapshotTableName | SnapshotGradesTableName;
+    watermark: SnapshotWatermark;
+  }> = [
+    { tableName: 'board_climbs', watermark: previousEntry.tables.board_climbs },
+    { tableName: 'board_climb_stats', watermark: previousEntry.tables.board_climb_stats },
+  ];
+  if (includeGrades) {
+    tableWatermarks.push({
+      tableName: 'board_climb_grades',
+      // No grades artifact can mean either "this layout has no grades" or "the
+      // entry predates grades artifacts". Probe from epoch and only rebuild
+      // once there are enough rows to replace a full paged response; this keeps
+      // permanently grade-less MoonBoard layouts a cheap no-op.
+      watermark: previousEntry.grades?.tables.board_climb_grades ?? {
+        watermarkUpdatedAt: EPOCH_WATERMARK_UPDATED_AT,
+        watermarkSyncSeq: EPOCH_WATERMARK_SYNC_SEQ,
+      },
+    });
+  }
+
+  for (const { tableName, watermark } of tableWatermarks) {
+    if (await hasDeltaAtThreshold({ sqlClient, pair, tableName, watermark, threshold })) {
+      return tableName;
+    }
+  }
+  return null;
+}
 
 /**
  * Stream one table's scoped rows from Postgres through the shared row shaping into
@@ -510,6 +609,8 @@ type ExportOptions = {
   // comment in the pair loop).
   gzip: boolean;
   keyPrefix: string;
+  /** Rebuild only layouts with at least this many rows past a manifest watermark. */
+  refreshThreshold?: number;
   boardFilter?: string;
   layoutFilter?: number;
 };
@@ -527,6 +628,10 @@ function parseArgs(argv: string[]): ExportOptions {
       options.keyPrefix = parseKeyPrefix(argv[(index += 1)]);
     } else if (arg.startsWith('--key-prefix=')) {
       options.keyPrefix = parseKeyPrefix(arg.slice('--key-prefix='.length));
+    } else if (arg === '--refresh-threshold') {
+      options.refreshThreshold = parseRefreshThreshold(argv[(index += 1)]);
+    } else if (arg.startsWith('--refresh-threshold=')) {
+      options.refreshThreshold = parseRefreshThreshold(arg.slice('--refresh-threshold='.length));
     } else if (arg === '--board') {
       options.boardFilter = parseBoardFilter(argv[(index += 1)]);
     } else if (arg.startsWith('--board=')) {
@@ -564,6 +669,14 @@ function parseLayoutFilter(raw: string | undefined): number {
     throw new Error(`--layout expects an integer layout id, got ${JSON.stringify(raw)}`);
   }
   return layoutId;
+}
+
+function parseRefreshThreshold(raw: string | undefined): number {
+  const threshold = Number(raw);
+  if (!Number.isSafeInteger(threshold) || threshold <= 0) {
+    throw new Error(`--refresh-threshold expects a positive integer, got ${JSON.stringify(raw)}`);
+  }
+  return threshold;
 }
 
 function buildManifestEntry(
@@ -754,8 +867,15 @@ export async function runExport(argv: string[]): Promise<void> {
   const options = parseArgs(argv);
   const builtAt = new Date().toISOString();
   const isFilteredRun = options.boardFilter !== undefined || options.layoutFilter !== undefined;
+  const isThresholdRefresh = options.refreshThreshold !== undefined;
   const keyPrefix = options.keyPrefix;
   const manifestKey = manifestKeyForPrefix(keyPrefix);
+
+  if (options.dryRun && isThresholdRefresh) {
+    throw new Error(
+      '--dry-run cannot be combined with --refresh-threshold: threshold selection requires the live manifest',
+    );
+  }
 
   if (!options.dryRun && !isS3Configured()) {
     throw new Error(
@@ -783,11 +903,11 @@ export async function runExport(argv: string[]): Promise<void> {
   const failures: LayoutFailure[] = [];
 
   try {
-    const pairs = await discoverLayoutPairs(sqlClient, {
+    const discoveredPairs = await discoverLayoutPairs(sqlClient, {
       boardType: options.boardFilter,
       layoutId: options.layoutFilter,
     });
-    if (pairs.length === 0 && isFilteredRun) {
+    if (discoveredPairs.length === 0 && isFilteredRun) {
       // A filter that matches nothing is an operator error (e.g. --board=kilterr).
       // Exiting zero here would silently leave the filtered board's artifacts
       // stale, so fail loudly instead.
@@ -801,14 +921,57 @@ export async function runExport(argv: string[]): Promise<void> {
       filtered: isFilteredRun,
       gzip: options.gzip,
       keyPrefix,
-      pairs: pairs.length,
+      pairs: discoveredPairs.length,
+      refreshThreshold: options.refreshThreshold ?? null,
       builtAt,
       stabilityWindowSeconds: DEFAULT_STABILITY_WINDOW_SECONDS,
     });
 
     // Fetch the previous manifest BEFORE any upload: if it is unreadable the
     // run aborts with S3 completely untouched (matrix in fetchPreviousManifest).
-    const previousManifest = options.dryRun ? null : await fetchPreviousManifest({ isFilteredRun, manifestKey });
+    const previousManifest = options.dryRun
+      ? null
+      : await fetchPreviousManifest({ isFilteredRun: isFilteredRun || isThresholdRefresh, manifestKey });
+
+    let pairs = discoveredPairs;
+    if (options.refreshThreshold !== undefined && previousManifest) {
+      const previousEntriesByPair = new Map(
+        previousManifest.entries.map((entry) => [`${entry.boardType}:${entry.layoutId}`, entry]),
+      );
+      const stalePairs: LayoutPair[] = [];
+      for (const pair of discoveredPairs) {
+        const reason = await layoutRefreshReason({
+          sqlClient,
+          pair,
+          previousEntry: previousEntriesByPair.get(`${pair.boardType}:${pair.layoutId}`),
+          threshold: options.refreshThreshold,
+          includeGrades: options.gzip,
+        });
+        if (reason) {
+          stalePairs.push(pair);
+          logger.info('[export-snapshots] threshold refresh selected layout', {
+            boardType: pair.boardType,
+            layoutId: pair.layoutId,
+            reason,
+            threshold: options.refreshThreshold,
+          });
+        }
+      }
+      pairs = stalePairs;
+    }
+
+    // A live-prefix scan that found no full page of post-artifact data is a
+    // true no-op: do not churn generatedAt, invalidate the CDN manifest cache,
+    // upload objects, or prune. A missing manifest is different — every pair
+    // lacks an entry and is rebuilt so the live prefix can recover.
+    if (isThresholdRefresh && pairs.length === 0) {
+      logger.info('[export-snapshots] threshold refresh complete — no stale layouts', {
+        scanned: discoveredPairs.length,
+        threshold: options.refreshThreshold,
+        keyPrefix,
+      });
+      return;
+    }
 
     for (const pair of pairs) {
       const startedAt = Date.now();
@@ -969,7 +1132,10 @@ export async function runExport(argv: string[]): Promise<void> {
       const mergedEntries = mergeManifestEntries({
         previousEntries: previousManifest?.entries ?? [],
         newEntries,
-        livePairs: isFilteredRun ? null : pairs,
+        // Threshold refreshes only inspect/rebuild a subset. Treat them like a
+        // filtered run so a layout below threshold (or vanished since the last
+        // full export) can never be dropped from the live manifest.
+        livePairs: isFilteredRun || isThresholdRefresh ? null : discoveredPairs,
       });
       const manifest: SnapshotManifest = {
         formatVersion: SNAPSHOT_MANIFEST_FORMAT_VERSION,
@@ -990,7 +1156,7 @@ export async function runExport(argv: string[]): Promise<void> {
       // nights just defers pruning to the next green nightly. Scoped to this
       // run's key prefix, so a gzip run never prunes the identity prefix's
       // artifacts (and vice versa).
-      if (!isFilteredRun && failures.length === 0) {
+      if (!isFilteredRun && !isThresholdRefresh && failures.length === 0) {
         await pruneStaleArtifacts(manifest, Date.now(), keyPrefix);
       }
     }

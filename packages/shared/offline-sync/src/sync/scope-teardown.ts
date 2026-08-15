@@ -41,10 +41,14 @@ import type { OfflineBoardScope } from '../offline-board-key';
 import { climbsScopeFilter, isSizeScopedBoard, sizeMembershipClause } from './board-scope-sql';
 import {
   getCheckpointKey,
+  isScopeDownloadComplete,
+  isScopeDownloadStarted,
   SCOPE_COMPLETE_PREFIX,
   SCOPE_STARTED_PREFIX,
   SCOPE_DOWNLOAD_STARTED_PREFIX,
 } from './checkpoints';
+import { claimAbandonedDownloadTerminal } from './download-terminal-registry';
+import { purgeNamespaceKey } from '../offline-board-key';
 import {
   BOOTSTRAP_DONE_PREFIX,
   REUSED_IMPORT_FAILED_PREFIX,
@@ -64,6 +68,12 @@ export type ScopeUsage = {
   scope: OfflineBoardScope;
   climbCount: number;
   estimatedBytes: number;
+};
+
+/** A download that announced itself and was removed before it finished (#4406). */
+export type AbandonedDownloadInfo = {
+  scopeKey: string;
+  scope: OfflineBoardScope;
 };
 
 export type ScopeTeardownResult = {
@@ -242,8 +252,27 @@ export async function removeBoardScopeData(params: {
   scope: OfflineBoardScope;
   scopeKey: string;
   retainedScopes: readonly OfflineBoardScope[];
+  /**
+   * The download funnel's missing terminal (issue #4406). Called at most once per
+   * `Offline Board Download Started`, when this teardown is what ended a download
+   * that had announced itself and never completed. See the read below for why it
+   * has to happen here and nowhere else.
+   */
+  onDownloadAbandoned?: (info: AbandonedDownloadInfo) => void;
 }): Promise<ScopeTeardownResult> {
-  const { db, scope, scopeKey, retainedScopes } = params;
+  const { db, scope, scopeKey, retainedScopes, onDownloadAbandoned } = params;
+
+  // READ BEFORE THE TRANSACTION. `scope-started:` and `scope-complete:` are two
+  // of the rows `clearScopeSyncMeta` is about to delete, and they are the only
+  // durable record that a download was announced and never finished — the pull
+  // client's own exits cannot report it, because a board-data crawl legitimately
+  // spans cycles and the Started stays open across all of them. Once this
+  // transaction commits, nothing anywhere can tell an abandoned download from a
+  // board that was never downloaded at all.
+  const abandonedDownload =
+    onDownloadAbandoned !== undefined &&
+    (await isScopeDownloadStarted(db, scopeKey)) &&
+    !(await isScopeDownloadComplete(db, scopeKey));
 
   const retainedSizeIds = retainedScopes
     .filter((retained) => retained.boardType === scope.boardType && retained.layoutId === scope.layoutId)
@@ -307,6 +336,15 @@ export async function removeBoardScopeData(params: {
       removedAnyRows: climbs.changes + stats.changes + grades.changes > 0,
     };
   });
+
+  // AFTER the commit, deliberately: a cycle torn down by this same purge is
+  // still unwinding while the transaction holds its lock, and reporting first
+  // would race its `aborted-wipe` — the claim below would then be made before
+  // the report it exists to defer to. By the time the delete has committed, the
+  // in-flight cycle has had every one of its guards fire.
+  if (abandonedDownload && claimAbandonedDownloadTerminal(scopeKey, purgeNamespaceKey(scope))) {
+    onDownloadAbandoned?.({ scopeKey, scope });
+  }
 
   return result;
 }

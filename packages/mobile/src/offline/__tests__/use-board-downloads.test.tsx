@@ -18,6 +18,7 @@ const fixtures = vi.hoisted(() => ({
 const spies = vi.hoisted(() => ({
   drainMutationQueue: vi.fn(),
   graphqlRequest: vi.fn(),
+  hasUsableInternetConnection: vi.fn(),
   rememberOfflineBoards: vi.fn(),
   rememberDownloadTrigger: vi.fn(),
   setOfflineBoardEnabled: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock('expo-sqlite', () => ({ useSQLiteContext: () => fixtures.database }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => fixtures.queryClient }));
 vi.mock('../offline-sync-adapter', () => ({
   drainMutationQueue: spies.drainMutationQueue,
+  hasUsableInternetConnection: spies.hasUsableInternetConnection,
   triggerSync: spies.triggerSync,
 }));
 vi.mock('../use-snapshot-source', () => ({ useSnapshotSource: () => fixtures.snapshotSource }));
@@ -64,6 +66,7 @@ beforeEach(() => {
   // The ordinary launch: init won on its first attempt, so the schema is stamped
   // before any screen renders. The contended launch has its own case below.
   setSchemaReady(true);
+  spies.hasUsableInternetConnection.mockResolvedValue(false);
 });
 
 afterEach(() => {
@@ -167,20 +170,51 @@ describe('useBoardDownloads', () => {
     expect(spies.triggerSync).not.toHaveBeenCalled();
   });
 
-  // This assertion is the guard, not a description: `onlineManager.isOnline()` is
-  // TRUE on captive-portal wifi, so a cycle kicked from an offline surface would
-  // run, fail, and spend one of the two MAX_BOOTSTRAP_ATTEMPTS per tap — pinning
-  // the scope to the paged crawl after two (#4313). The scheduler's own reconnect
-  // trigger pulls it instead.
-  it('arms a board without kicking a sync cycle', () => {
+  // A captive portal can look connected to React Query. The explicit NetInfo
+  // reachability read must keep that tap armed without starting doomed work.
+  it('leaves an armed board waiting when current reachability is false', async () => {
     const board = makeBoard('garage', 'kilter', 1, 10);
     const { result } = renderHook(() => useBoardDownloads());
 
     result.current.armBoardsOffline(board);
+    await act(async () => Promise.resolve());
 
     expect(spies.setOfflineBoardEnabled).toHaveBeenCalledWith('kilter:1:10', true);
     expect(spies.rememberOfflineBoards).toHaveBeenCalledWith([board]);
     expect(spies.triggerSync).not.toHaveBeenCalled();
+  });
+
+  it('kicks an armed board when reconnect already landed before the setting write', async () => {
+    spies.hasUsableInternetConnection.mockResolvedValue(true);
+    const board = makeBoard('garage', 'kilter', 1, 10);
+    const { result } = renderHook(() => useBoardDownloads());
+
+    result.current.armBoardsOffline(board);
+    await act(async () => Promise.resolve());
+
+    expect(spies.setOfflineBoardEnabled).toHaveBeenCalledWith('kilter:1:10', true);
+    expect(spies.triggerSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-probes after a transient NetInfo failure instead of losing the wake', async () => {
+    vi.useFakeTimers();
+    try {
+      spies.hasUsableInternetConnection
+        .mockRejectedValueOnce(new Error('NetInfo unavailable'))
+        .mockResolvedValueOnce(true);
+      const board = makeBoard('garage', 'kilter', 1, 10);
+      const { result } = renderHook(() => useBoardDownloads());
+
+      result.current.armBoardsOffline(board);
+      await act(async () => Promise.resolve());
+      expect(spies.triggerSync).not.toHaveBeenCalled();
+
+      await act(async () => vi.advanceTimersByTimeAsync(750));
+      expect(spies.hasUsableInternetConnection).toHaveBeenCalledTimes(2);
+      expect(spies.triggerSync).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does nothing for an empty board list on either entry point', () => {

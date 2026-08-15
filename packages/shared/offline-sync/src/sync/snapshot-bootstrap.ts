@@ -89,8 +89,10 @@ export const BOOTSTRAP_DONE_PREFIX = 'bootstrap-done:';
 const EPOCH_WATERMARK: SyncCheckpoint = { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' };
 
 // Only snake_case identifiers may be spliced into the INSERT/SELECT column list.
-// The names come from PRAGMA table_info over our own DDL (trusted), but validating
-// keeps the string-built SQL provably injection-free — same guard the export uses.
+// Every offline DDL column uses that contract (`board_type`, never the app-level
+// `boardType`), and the snapshot exporter enforces the same regex. The names come
+// from PRAGMA table_info over our own DDL (trusted), but validating keeps the
+// string-built SQL provably injection-free.
 const SAFE_IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
 
 /** Byte progress for one artifact download, as the transport observes it. */
@@ -135,9 +137,9 @@ export interface SnapshotSource {
    * Fetch the raw manifest JSON (the engine validates it via parseSnapshotManifest).
    * Return `null` when the manifest resource does not exist yet (e.g. a 404 before
    * the first export run) — a permanent miss this cycle, not a failure. THROW on a
-   * transport/network error, which the engine counts as a bootstrap attempt so it
-   * retries next cycle. (`unknown` already admits `null`; the return is `unknown`
-   * rather than `unknown | null` only because the linter forbids that redundancy.)
+   * transport/parse error so the engine applies its global, cap-exempt manifest
+   * retry policy. (`unknown` already admits `null`; the return is `unknown` rather
+   * than `unknown | null` only because the linter forbids that redundancy.)
    */
   fetchManifest(): Promise<unknown>;
   /**
@@ -198,7 +200,14 @@ export interface SnapshotSource {
 /** Where a bootstrap failed, for telemetry. */
 export type SnapshotBootstrapErrorReport = {
   scopeKey: string;
-  stage: 'manifest' | 'download' | 'import' | 'grades-download' | 'grades-import';
+  /**
+   * How far the attempt got. `board-removed` is the one value no bootstrap stage
+   * produces: it is reported by the teardown when a board is removed mid-download
+   * (issue #4406), which can happen at any stage — including the paged delta
+   * crawl that runs long after the bootstrap phase has finished — so naming a
+   * bootstrap stage there would invent a precision the teardown does not have.
+   */
+  stage: 'manifest' | 'download' | 'import' | 'grades-download' | 'grades-import' | 'board-removed';
   attempt: number;
   cause: unknown;
   /**
@@ -343,6 +352,11 @@ export const BOOTSTRAP_METADATA_PATTERNS = [
   `${BOARD_STATS_CHECKPOINT_PREFIX}*`,
   `${SCOPE_COMPLETE_PREFIX}*`,
 ] as const;
+
+// GRADES_BOOTSTRAP_ATTEMPTS_PREFIX is intentionally absent. That independent
+// retry budget is read on demand by the grades importer and is not a field in
+// BootstrapScopeMetadata; pulling it into this UI batch would create phantom
+// metadata rows for scopes whose whole-layout bootstrap state is untouched.
 
 // GLOB's literal-prefix optimization uses sync_meta's binary primary-key index.
 // SQLite's default case-insensitive LIKE cannot use that index and scans every

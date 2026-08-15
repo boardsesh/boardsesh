@@ -137,7 +137,8 @@
     "retention": "Panel de retención",
     "gymClaims": "Reclamaciones de gimnasios",
     "feedback": "Reportes de errores",
-    "gymDuplicates": "Gimnasios duplicados"
+    "gymDuplicates": "Gimnasios duplicados",
+    "locationSync": "Bloqueos de sincronización de ubicaciones"
   },
   "feedback": {
     "title": "Errores y comentarios",
@@ -260,6 +261,65 @@
       "actions": "Acciones"
     },
     "loadMore": "Cargar más"
+  },
+  "locationSync": {
+    "title": "Bloqueos de sincronización de ubicaciones",
+    "backToAdmin": "Volver al panel",
+    "intro": "Libera una edición manual solo cuando la ficha original deba volver a prevalecer. Esto no ejecuta una sincronización; la próxima actualización de una fuente coincidente puede reemplazar detalles o recuperar una ficha eliminada.",
+    "tabs": {
+      "label": "Tipo de ficha",
+      "gyms": "Gimnasios",
+      "boards": "Plafones"
+    },
+    "search": {
+      "label": "Buscar fichas bloqueadas",
+      "placeholder": "Nombre, slug o UUID",
+      "submit": "Buscar"
+    },
+    "summary": "Se muestran {{shown}} de {{total}} fichas bloqueadas",
+    "retry": "Reintentar",
+    "error": "No se pudieron cargar las fichas bloqueadas.",
+    "empty": "Ninguna ficha bloqueada coincide con esta búsqueda.",
+    "loadMore": "Cargar más",
+    "notAvailable": "esta ficha",
+    "table": {
+      "listing": "Ficha",
+      "state": "Estado",
+      "frozenAt": "Bloqueada el",
+      "sources": "Fuentes de sincronización",
+      "actions": "Acciones",
+      "noRecordedSources": "Sin fuente registrada"
+    },
+    "state": {
+      "deleted": "Eliminada",
+      "live": "Activa",
+      "systemOwned": "Del sistema",
+      "userOwned": "De un usuario",
+      "ownerProtected": "Propietario protegido"
+    },
+    "actions": {
+      "release": "Liberar bloqueo"
+    },
+    "confirm": {
+      "title": "¿Liberar este bloqueo de sincronización?",
+      "body": "La próxima sincronización de ubicación coincidente podrá actualizar {{name}} de nuevo. Revisa los avisos y registra por qué se libera el bloqueo.",
+      "deletedWarning": "Esta ficha está eliminada. Una fuente coincidente puede recuperarla en la próxima sincronización.",
+      "ownerProtectedWarning": "Este gimnasio tiene propietario o una reclamación aprobada. La protección de propiedad sigue activa después de liberar el bloqueo.",
+      "noSourceWarning": "Ahora mismo no hay ninguna fuente de sincronización vinculada a este gimnasio. Liberar el bloqueo no tendrá efecto hasta que coincida una fuente.",
+      "moonBoardWarning": "Las sincronizaciones de ubicaciones de MoonBoard se lanzan a mano, no siguen ninguna programación. Tras liberar el bloqueo, los cambios de la fuente se aplicarán cuando alguien lance la siguiente sincronización de ubicaciones de MoonBoard.",
+      "reasonLabel": "Motivo",
+      "reasonPlaceholder": "¿Por qué deben volver a prevalecer los datos originales?",
+      "reasonRemaining": "Caracteres que faltan: {{count}}",
+      "reasonStored": "Este motivo se guardará en el registro de auditoría.",
+      "cancel": "Cancelar",
+      "releasing": "Liberando…",
+      "release": "Liberar bloqueo"
+    },
+    "snackbar": {
+      "alreadyReleased": "El bloqueo ya estaba liberado",
+      "released": "Bloqueo de sincronización liberado",
+      "failed": "No se pudo liberar el bloqueo de sincronización. La lista se ha actualizado."
+    }
   },
   "gymDuplicates": {
     "title": "Gimnasios duplicados",

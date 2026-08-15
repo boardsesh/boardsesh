@@ -22,7 +22,7 @@ vi.mock('../storage/s3', () => ({
 
 import { Readable } from 'node:stream';
 import { sql } from 'drizzle-orm';
-import type { SnapshotManifest, SnapshotManifestEntry } from '@boardsesh/offline-sync';
+import { LATEST_SCHEMA_VERSION, type SnapshotManifest, type SnapshotManifestEntry } from '@boardsesh/offline-sync';
 import { db } from '../db/client';
 import { uploadToS3, getFromS3Strict, deleteFromS3, listS3Objects } from '../storage/s3';
 import { runExport, mergeManifestEntries } from '../scripts/export-board-snapshots';
@@ -38,7 +38,7 @@ function manifestEntryFixture(boardType: string, layoutId: number, key: string):
     bytes: 1234,
     contentEncoding: 'gzip',
     builtAt: '2026-06-01T00:00:00.000Z',
-    schemaVersion: 3,
+    schemaVersion: LATEST_SCHEMA_VERSION,
     tables: {
       board_climbs: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '10', rowCount: 5 },
       board_climb_stats: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '7', rowCount: 3 },
@@ -65,8 +65,8 @@ function serveManifestBody(body: string): void {
 }
 
 /** Parses the manifest JSON out of the uploadToS3 mock's manifest-key call. */
-function uploadedManifest(): SnapshotManifest {
-  const manifestCalls = vi.mocked(uploadToS3).mock.calls.filter(([, key]) => key === MANIFEST_KEY);
+function uploadedManifest(manifestKey = MANIFEST_KEY): SnapshotManifest {
+  const manifestCalls = vi.mocked(uploadToS3).mock.calls.filter(([, key]) => key === manifestKey);
   expect(manifestCalls.length).toBeGreaterThan(0);
   const [buffer] = manifestCalls[manifestCalls.length - 1];
   return JSON.parse(buffer.toString('utf8')) as SnapshotManifest;
@@ -77,6 +77,60 @@ async function seedClimb(boardType: string, layoutId: number, uuid: string): Pro
     INSERT INTO board_climbs (uuid, board_type, layout_id, name, is_listed, is_draft, compatible_size_ids, updated_at)
     VALUES (${uuid}, ${boardType}, ${layoutId}, ${'Climb ' + uuid}, true, false, '{5}'::int[], '2026-05-01T00:00:00Z')
   `);
+}
+
+async function seedStatsDelta(boardType: string, climbUuid: string, count: number): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty, updated_at)
+    SELECT ${boardType}, ${climbUuid}, delta_number, 20, '2026-06-02T00:00:00Z'::timestamp
+    FROM generate_series(1, ${count}) AS delta_number
+  `);
+}
+
+async function seedClimbDelta(boardType: string, layoutId: number, count: number): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO board_climbs
+      (uuid, board_type, layout_id, name, is_listed, is_draft, compatible_size_ids, updated_at)
+    SELECT ${boardType + '-delta-'} || delta_number, ${boardType}, ${layoutId},
+           'Delta climb ' || delta_number, true, false, '{5}'::int[], '2026-06-02T00:00:00Z'::timestamp
+    FROM generate_series(1, ${count}) AS delta_number
+  `);
+}
+
+async function seedGradesDelta(boardType: string, climbUuid: string, count: number): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO board_climb_grades
+      (board_type, climb_uuid, angle, local_grade, universal_grade, confidence,
+       ascensionist_count, model_version, coeff_version, computed_at)
+    SELECT ${boardType}, ${climbUuid}, delta_number, 20, 19, 'high',
+           100, 'test-model', 'test-coeff', '2026-06-02T00:00:00Z'::timestamp
+    FROM generate_series(1, ${count}) AS delta_number
+  `);
+}
+
+function withGradesArtifact(
+  entry: SnapshotManifestEntry,
+  schemaVersion = LATEST_SCHEMA_VERSION,
+): SnapshotManifestEntry {
+  const gradesKey = entry.key.replace(/\.db$/, '-grades.db');
+  return {
+    ...entry,
+    grades: {
+      key: gradesKey,
+      url: `https://cdn.example/${gradesKey}`,
+      bytes: 42,
+      contentEncoding: 'gzip',
+      builtAt: entry.builtAt,
+      schemaVersion,
+      tables: {
+        board_climb_grades: {
+          watermarkUpdatedAt: '2026-05-01T00:00:00Z',
+          watermarkSyncSeq: '10',
+          rowCount: 1,
+        },
+      },
+    },
+  };
 }
 
 beforeEach(async () => {
@@ -175,6 +229,119 @@ describe('runExport — manifest merge on filtered runs', () => {
 
     const manifest = uploadedManifest();
     expect(manifest.entries.map((entry) => `${entry.boardType}:${entry.layoutId}`)).toEqual(['kilter:1']);
+  });
+});
+
+describe('runExport — threshold refresh', () => {
+  const GZIP_PREFIX = 'board-snapshots/v1-gzip';
+  const GZIP_MANIFEST_KEY = `${GZIP_PREFIX}/manifest.json`;
+  const thresholdArgs = ['--gzip', '--key-prefix', GZIP_PREFIX, '--refresh-threshold', '500'];
+
+  it('is a true no-op below 500 post-manifest rows, including no manifest rewrite or prune', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await seedStatsDelta('kilter', 'k1-a', 499);
+    serveExistingManifest(manifestFixture([manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`)]));
+
+    await runExport(thresholdArgs);
+
+    expect(getFromS3Strict).toHaveBeenCalledWith(GZIP_MANIFEST_KEY);
+    expect(uploadToS3).not.toHaveBeenCalled();
+    expect(listS3Objects).not.toHaveBeenCalled();
+  });
+
+  it('rebuilds only the layout at the exact 500-row threshold and preserves every other entry', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await seedClimb('kilter', 2, 'k2-a');
+    await seedStatsDelta('kilter', 'k1-a', 500);
+    await seedStatsDelta('kilter', 'k2-a', 499);
+    const staleLayout = manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`);
+    const currentLayout = manifestEntryFixture('kilter', 2, `${GZIP_PREFIX}/kilter/2/old.db`);
+    serveExistingManifest(manifestFixture([staleLayout, currentLayout]));
+
+    await runExport(thresholdArgs);
+
+    const artifactKeys = vi
+      .mocked(uploadToS3)
+      .mock.calls.map(([, key]) => key)
+      .filter((key) => !key.endsWith('/manifest.json'));
+    expect(artifactKeys).toHaveLength(1);
+    expect(artifactKeys[0]).toContain(`${GZIP_PREFIX}/kilter/1/`);
+    const manifest = uploadedManifest(GZIP_MANIFEST_KEY);
+    expect(manifest.entries.find((entry) => entry.layoutId === 1)?.key).not.toBe(staleLayout.key);
+    expect(manifest.entries.find((entry) => entry.layoutId === 2)).toEqual(currentLayout);
+    // A partial live refresh never has enough information to prune safely.
+    expect(listS3Objects).not.toHaveBeenCalled();
+  });
+
+  it('uses the climbs watermark too', async () => {
+    await seedClimbDelta('kilter', 1, 1);
+    const previousEntry = manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`);
+    serveExistingManifest(manifestFixture([previousEntry]));
+
+    await runExport(['--gzip', '--key-prefix', GZIP_PREFIX, '--refresh-threshold', '1']);
+
+    expect(uploadedManifest(GZIP_MANIFEST_KEY).entries[0].key).not.toBe(previousEntry.key);
+  });
+
+  it('uses the grades computed_at/sync_seq watermark and rebuilds at 500 rows', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await seedGradesDelta('kilter', 'k1-a', 500);
+    const previousEntry = withGradesArtifact(manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`));
+    serveExistingManifest(manifestFixture([previousEntry]));
+
+    await runExport(thresholdArgs);
+
+    const refreshedEntry = uploadedManifest(GZIP_MANIFEST_KEY).entries[0];
+    expect(refreshedEntry.key).not.toBe(previousEntry.key);
+    expect(refreshedEntry.grades?.tables.board_climb_grades.rowCount).toBe(500);
+    expect(vi.mocked(uploadToS3).mock.calls.some(([, key]) => key.endsWith('-grades.db'))).toBe(true);
+  });
+
+  it('rebuilds when an existing grades artifact has an older client schema', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await seedGrade('kilter', 'k1-a', 40);
+    const previousEntry = withGradesArtifact(
+      manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`),
+      LATEST_SCHEMA_VERSION - 1,
+    );
+    serveExistingManifest(manifestFixture([previousEntry]));
+
+    await runExport(thresholdArgs);
+
+    const refreshedEntry = uploadedManifest(GZIP_MANIFEST_KEY).entries[0];
+    expect(refreshedEntry.key).not.toBe(previousEntry.key);
+    expect(refreshedEntry.grades?.schemaVersion).toBe(LATEST_SCHEMA_VERSION);
+  });
+
+  it('rebuilds every discovered layout when the live manifest is missing', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await seedClimb('tension', 9, 't9-a');
+    // getFromS3Strict defaults to null: a genuinely missing manifest.
+
+    await runExport(thresholdArgs);
+
+    expect(uploadedManifest(GZIP_MANIFEST_KEY).entries.map((entry) => `${entry.boardType}:${entry.layoutId}`)).toEqual([
+      'kilter:1',
+      'tension:9',
+    ]);
+  });
+
+  it('treats an invalid manifest as fatal before uploading because a partial refresh cannot merge safely', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    serveManifestBody('{{{ not json');
+
+    await expect(runExport(thresholdArgs)).rejects.toThrow(/filtered run cannot merge safely/);
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing, zero, or non-integer threshold before touching S3', async () => {
+    await expect(runExport(['--refresh-threshold'])).rejects.toThrow(/expects a positive integer/);
+    await expect(runExport(['--refresh-threshold=0'])).rejects.toThrow(/expects a positive integer/);
+    await expect(runExport(['--refresh-threshold=1.5'])).rejects.toThrow(/expects a positive integer/);
+    await expect(runExport(['--dry-run', '--refresh-threshold=500'])).rejects.toThrow(
+      /cannot be combined with --refresh-threshold/,
+    );
+    expect(uploadToS3).not.toHaveBeenCalled();
   });
 });
 
@@ -563,7 +730,7 @@ describe('runExport — board_climb_grades artifacts', () => {
         bytes: 42,
         contentEncoding: 'gzip',
         builtAt: '2026-06-01T00:00:00.000Z',
-        schemaVersion: 3,
+        schemaVersion: LATEST_SCHEMA_VERSION,
         tables: {
           board_climb_grades: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '9', rowCount: 4 },
         },

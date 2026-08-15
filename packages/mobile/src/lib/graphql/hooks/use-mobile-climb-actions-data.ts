@@ -32,6 +32,7 @@ import {
   type Playlist,
   type GetAllUserPlaylistsQueryResponse,
   type AddClimbToPlaylistMutationResponse,
+  type RemoveClimbFromPlaylistMutationResponse,
   type CreatePlaylistMutationResponse,
 } from '@boardsesh/graphql/operations/playlists';
 import { getHttpClient } from '../client';
@@ -93,7 +94,6 @@ type MobileClimbActionsData = {
   };
   playlistsProviderProps: {
     playlists: Playlist[];
-    playlistMemberships: Map<string, Set<string>>;
     addToPlaylist: (playlistId: string, climbUuid: string, angle: number) => Promise<void>;
     removeFromPlaylist: (playlistId: string, climbUuid: string) => Promise<void>;
     createPlaylist: (
@@ -181,21 +181,35 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
         input: { playlistId: vars.playlistId, climbUuid: vars.climbUuid, angle: vars.angle },
       });
     },
-    onSuccess: (_response, vars) => {
+    // Gate the +1 on server truth. The picker decides "add vs remove" from a
+    // membership cache that is empty or stale until its per-climb query lands,
+    // so tapping a row for a climb the playlist already holds sends an add —
+    // which the backend idempotently no-ops. Bumping unconditionally inflated
+    // the cached count on every such tap (#4014). A pre-`wasAlreadyInPlaylist`
+    // server (or a response that omits the field) yields undefined, which keeps
+    // the old +1 behaviour.
+    onSuccess: (response, vars) => {
       invalidatePlaylistDetail(mutationDepsRef.current.queryClient, vars.playlistId);
-      bumpPlaylistClimbCount(mutationDepsRef.current.queryClient, vars.playlistId, 1);
+      if (response.addClimbToPlaylist.wasAlreadyInPlaylist !== true) {
+        bumpPlaylistClimbCount(mutationDepsRef.current.queryClient, vars.playlistId, 1);
+      }
     },
   });
 
   const removePlaylistMutation = useMutation({
     mutationFn: async (vars: { playlistId: string; climbUuid: string }) => {
-      return getHttpClient().request(REMOVE_CLIMB_FROM_PLAYLIST, {
+      return getHttpClient().request<RemoveClimbFromPlaylistMutationResponse>(REMOVE_CLIMB_FROM_PLAYLIST, {
         input: { playlistId: vars.playlistId, climbUuid: vars.climbUuid },
       });
     },
-    onSuccess: (_response, vars) => {
+    // Mirror of the add gating: the resolver now returns false when nothing was
+    // deleted (the climb wasn't in the playlist), so a no-op remove no longer
+    // decrements the cached count.
+    onSuccess: (response, vars) => {
       invalidatePlaylistDetail(mutationDepsRef.current.queryClient, vars.playlistId);
-      bumpPlaylistClimbCount(mutationDepsRef.current.queryClient, vars.playlistId, -1);
+      if (response.removeClimbFromPlaylist === true) {
+        bumpPlaylistClimbCount(mutationDepsRef.current.queryClient, vars.playlistId, -1);
+      }
     },
   });
 
@@ -297,9 +311,15 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
       isLoading: isAuthLoading,
       isAuthenticated,
     },
+    // `playlistMemberships` is deliberately not passed: PlaylistsProvider's prop
+    // is optional and falls back to a module-level empty Map, which keeps its
+    // `getPlaylistsForClimb` memo (and the context value hanging off it)
+    // referentially stable. Handing it a fresh Map per render busted both memos
+    // and re-rendered every consumer on every parent render (#4014). Real
+    // per-climb memberships come from `playlistMembershipStore` plus
+    // InlinePlaylistPicker's `playlistsForClimb` query, not from this hook.
     playlistsProviderProps: {
       playlists,
-      playlistMemberships: new Map<string, Set<string>>(),
       addToPlaylist,
       removeFromPlaylist,
       createPlaylist,

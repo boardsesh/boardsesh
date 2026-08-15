@@ -1359,6 +1359,34 @@
       "when": 1786535125616,
       "tag": "0193_moonboard_angle_dedup_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 194,
+      "version": "7",
+      "when": 1786749886043,
+      "tag": "0194_location_sync_unfreeze_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 195,
+      "version": "7",
+      "when": 1786757947852,
+      "tag": "0195_guard_stats_sync_cursor",
+      "breakpoints": true
+    },
+    {
+      "idx": 196,
+      "version": "7",
+      "when": 1786758703296,
+      "tag": "0196_left_tinkerer",
+      "breakpoints": true
+    },
+    {
+      "idx": 197,
+      "version": "7",
+      "when": 1786758703297,
+      "tag": "0197_backfill_gym_website_vouched",
+      "breakpoints": true
     }
   ]
 }

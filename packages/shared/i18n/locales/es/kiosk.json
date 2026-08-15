@@ -267,6 +267,10 @@
         "attach": "Añadir al rocódromo",
         "attached": "Plafón añadido a tu rocódromo.",
         "attachFailed": "No se pudo añadir ese plafón.",
+        "lastBoardNote": "Último plafón de esa ficha",
+        "lastBoardTitle": "Esto deja vacía la otra ficha",
+        "lastBoardBody": "«{{name}}» no tiene más plafones. Añade este y esa ficha se fusiona con tu rocódromo: los enlaces antiguos siguen llegando aquí y deja de aparecer en las búsquedas como un duplicado vacío.",
+        "lastBoardConfirm": "Añadir y fusionar",
         "empty": "Nada suelto por ahora. Todos los plafones cerca de tu rocódromo ya están en tu ficha.",
         "loadError": "No se pudieron buscar plafones sueltos.",
         "retry": "Reintentar"

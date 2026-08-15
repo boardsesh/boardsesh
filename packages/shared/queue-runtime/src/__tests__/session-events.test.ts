@@ -190,7 +190,8 @@ describe('applySessionRuntimeEvent', () => {
           ...overrides,
         });
 
-      // Re-derives OWN leadership from the snapshot even though id !== clientId.
+      // Roster row (participant-scoped) IS still re-derived from the snapshot,
+      // even though id !== clientId — that's the id-space fix from PR #3907.
       const promoted = applySessionRuntimeEvent(authSession({ isLeader: false }), {
         __typename: 'SessionRosterSnapshot',
         users: [
@@ -198,7 +199,11 @@ describe('applySessionRuntimeEvent', () => {
           user({ id: 'user-uuid-2', userId: 'user-uuid-2', isLeader: false }),
         ],
       });
-      expect(promoted?.isLeader).toBe(true);
+      expect(promoted?.users.find((entry) => entry.id === 'user-uuid-1')?.isLeader).toBe(true);
+      // But top-level (connection-scoped) isLeader is NOT re-derived from a
+      // snapshot for an authenticated connection (#3952) — see the dedicated
+      // "connection-scoped isLeader" describe block below for the full story.
+      expect(promoted?.isLeader).toBe(false);
 
       // Re-injects OUR row when a JOIN-racing snapshot omits it (keyed by
       // participant id, not the connection id).
@@ -210,6 +215,60 @@ describe('applySessionRuntimeEvent', () => {
       expect(reinjected?.users.find((entry) => entry.id === 'user-uuid-1')?.username).toBe('me');
       expect(reinjected?.clientId).toBe('conn-abc');
       expect(reinjected?.participantId).toBe('user-uuid-1');
+    });
+  });
+
+  // Regression coverage for #3952: the snapshot's self row is participant-scoped
+  // (leadership ORed sticky-true across a signed-in user's devices by
+  // upsertLocalParticipant), so it cannot speak for a SPECIFIC connection. Only
+  // an anonymous connection (participantId === clientId) may re-derive its
+  // top-level isLeader from the snapshot; an authenticated connection must keep
+  // relying on the JOIN response and LeaderChanged, which are genuinely
+  // connection-scoped.
+  describe('SessionRosterSnapshot connection-scoped isLeader (#3952)', () => {
+    const authSession = (overrides: Partial<TestSession> = {}): TestSession =>
+      session({
+        clientId: 'conn-b', // this device's WebSocket connection id
+        participantId: 'user-uuid-1', // stable DB user UUID, shared across this user's devices
+        users: [user({ id: 'user-uuid-1', userId: 'user-uuid-1', username: 'me' })],
+        ...overrides,
+      });
+
+    it('does not promote a non-leader device even when the snapshot self row says isLeader: true', () => {
+      // e.g. this user's OTHER device is the leader, so upsertLocalParticipant's
+      // sticky-OR makes the participant-scoped roster row isLeader: true, but
+      // THIS connection is not the leader and must not be told otherwise.
+      const prev = authSession({ isLeader: false });
+      const next = applySessionRuntimeEvent(prev, {
+        __typename: 'SessionRosterSnapshot',
+        users: [user({ id: 'user-uuid-1', userId: 'user-uuid-1', isLeader: true })],
+      });
+
+      expect(next?.isLeader).toBe(false);
+      // The roster row itself is still the participant-scoped truth — untouched.
+      expect(next?.users.find((entry) => entry.id === 'user-uuid-1')?.isLeader).toBe(true);
+    });
+
+    it('does not spuriously demote the leader device when the snapshot self row says isLeader: true', () => {
+      const prev = authSession({ isLeader: true });
+      const next = applySessionRuntimeEvent(prev, {
+        __typename: 'SessionRosterSnapshot',
+        users: [user({ id: 'user-uuid-1', userId: 'user-uuid-1', isLeader: true })],
+      });
+
+      expect(next?.isLeader).toBe(true);
+    });
+
+    it('still re-derives top-level isLeader from the snapshot for anonymous connections', () => {
+      // Anonymous: participantId === clientId, so the snapshot's self row IS
+      // connection-scoped and the healing path from before #3952 still applies.
+      const prev = session({ clientId: 'participant-1', participantId: 'participant-1', isLeader: false });
+      const next = applySessionRuntimeEvent(prev, {
+        __typename: 'SessionRosterSnapshot',
+        users: [user({ id: 'participant-1', isLeader: true })],
+      });
+
+      expect(next?.isLeader).toBe(true);
     });
   });
 

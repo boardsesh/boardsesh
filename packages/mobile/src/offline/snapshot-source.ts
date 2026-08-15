@@ -45,35 +45,14 @@ import { reportHandledError } from '../lib/error-reporting';
 import { resolveSnapshotDownloadStrategy, type SnapshotDownloadStrategy } from './download-strategy';
 import { reportArtifactTransfer, type ArtifactTransferOutcome } from './artifact-transfer-telemetry';
 
-// Which transport the next transfer rides (issue #4394). MODULE STATE rather
-// than a factory on purpose: `mobileSnapshotSource`'s object identity is a
-// dependency of the scheduler effect in offline-sync-bridge.tsx, so rebuilding
-// the source when a PostHog flag resolves would restart the whole sync scheduler
-// mid-download. Mirrors the `isConnectionMetered` pattern in
-// offline-sync-adapter.ts.
-let activeStrategy: SnapshotDownloadStrategy = resolveSnapshotDownloadStrategy({
-  taskApiFlag: undefined,
-  backgroundSessionFlag: undefined,
-  platform: Platform.OS,
-});
-
-/** Called from `useSnapshotSource`'s effect whenever either flag resolves or changes. */
-export function setSnapshotDownloadStrategyFromFlags(flags: {
-  taskApiFlag: boolean | undefined;
-  backgroundSessionFlag: boolean | undefined;
-}): void {
-  activeStrategy = resolveSnapshotDownloadStrategy({ ...flags, platform: Platform.OS });
-}
-
-export function __resetSnapshotDownloadStrategyForTests(): void {
-  activeStrategy = resolveSnapshotDownloadStrategy({
-    taskApiFlag: undefined,
-    backgroundSessionFlag: undefined,
-    platform: Platform.OS,
-  });
-}
+// Fixed per platform for the lifetime of the bundle: iOS uses a background
+// URLSession so locking the phone does not kill a 100 MB transfer; Android uses
+// the DownloadTask foreground arm (its native implementation ignores session
+// type, but uses the task-specific OkHttp client).
+const activeStrategy: SnapshotDownloadStrategy = resolveSnapshotDownloadStrategy(Platform.OS);
 
 const MANIFEST_URL = `${SNAPSHOT_BASE_URL}/manifest.json`;
+export const SNAPSHOT_MANIFEST_FETCH_TIMEOUT_MS = 15_000;
 
 // The directory name lives in `snapshot-paths.ts` — an import-free module — so
 // the cache sweeper can reap artifacts from the same directory this writes to
@@ -343,13 +322,8 @@ function sweepSupersededArtifacts(keepFileName: string): void {
 }
 
 /**
- * The one place the two download APIs differ.
- *
- * `download-file-async` is byte-for-byte today's shipped call, including the
- * exact options object shape the `offline-download-progress` kill switch
- * restores. The task strategies pass `sessionType` EXPLICITLY on both arms
- * rather than relying on expo's `.background` default, so the telemetry label
- * and the native behaviour can never drift.
+ * The task strategy passes `sessionType` explicitly on both platforms so the
+ * telemetry label and native behaviour cannot drift.
  */
 async function runTransfer(args: {
   strategy: SnapshotDownloadStrategy;
@@ -358,15 +332,6 @@ async function runTransfer(args: {
   onProgress?: (progress: { bytesWritten: number; totalBytes: number }) => void;
   signal?: AbortSignal;
 }): Promise<File> {
-  if (args.strategy === 'download-file-async') {
-    return File.downloadFileAsync(
-      args.url,
-      args.destination,
-      args.onProgress
-        ? { idempotent: true, signal: args.signal, onProgress: args.onProgress }
-        : { idempotent: true, signal: args.signal },
-    );
-  }
   const task = File.createDownloadTask(args.url, args.destination, {
     sessionType: args.strategy === 'task-background' ? 'background' : 'foreground',
     ...(args.signal ? { signal: args.signal } : {}),
@@ -388,17 +353,19 @@ async function runTransfer(args: {
 
 /**
  * Fetch the manifest JSON. Returns `null` only when the manifest is genuinely
- * absent or unparseable (permanent miss this cycle, no attempt). HTTP outages
- * throw so the engine treats them as retryable manifest errors.
+ * absent. HTTP outages and malformed responses throw so the engine retries the
+ * manifest path instead of silently falling back to the paged crawl.
  */
 async function fetchManifest(): Promise<unknown> {
-  const response = await fetch(MANIFEST_URL, { cache: 'no-store' });
-  if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`snapshot manifest fetch failed with HTTP ${response.status}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SNAPSHOT_MANIFEST_FETCH_TIMEOUT_MS);
   try {
+    const response = await fetch(MANIFEST_URL, { cache: 'no-store', signal: controller.signal });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`snapshot manifest fetch failed with HTTP ${response.status}`);
     return await response.json();
-  } catch {
-    return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -547,13 +514,9 @@ async function downloadSnapshotFile(
 
     let downloaded: File;
     try {
-      // `onProgress` is only passed when the caller asked for it (the engine
-      // omits it when the kill switch is off), because supplying it makes
-      // expo-file-system take a different native download implementation — an
-      // 8 KB streaming copy loop on Android, a delegate-driven URLSession on iOS
-      // — rather than its plain path. Omitting it keeps the call byte-identical
-      // to the pre-#4311 one. `signal` rides both shapes: it only cancels the
-      // transfer and does not switch implementations.
+      // Progress and cancellation ride the permanent DownloadTask path. Progress
+      // is required for a truthful large-download UI; signal still lets a board
+      // removal or sign-out stop bytes that can no longer be used.
       downloaded = await runTransfer({
         strategy,
         url: artifact.url,

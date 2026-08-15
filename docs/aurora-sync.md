@@ -132,6 +132,8 @@ use the same classification because they are part of the board-wide run.
 
 For non-Kilter Aurora boards, the shared sync also refreshes public gym/board locations through `GET /pins?gyms=1`. The location writer lives in `@boardsesh/location-sync`; it upserts a deterministic system-owned `gyms` row per source gym and one public, unowned `user_boards` row per board install. It does not delete gyms or boards that disappear upstream.
 
+A human edit or deletion freezes that row by setting `sync_frozen_at`, so later source pulls cannot overwrite it. A global admin can release the freeze from `/admin/location-sync`; the action clears only the marker, requires a recorded reason, and writes `location_sync_unfreeze_audit`. It does not launch a sync. The next matching source pull may refresh or resurrect the row, while the separate gym-owner/approved-claim guard still prevents an upstream takeover of an owner-curated gym.
+
 Run it directly with:
 
 ```bash

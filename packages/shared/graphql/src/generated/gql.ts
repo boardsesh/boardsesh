@@ -45,6 +45,8 @@ type Documents = {
   '\n  mutation SubmitAppFeedback($input: SubmitAppFeedbackInput!) {\n    submitAppFeedback(input: $input)\n  }\n': typeof types.SubmitAppFeedbackDocument;
   '\n  query AdminAppFeedback($input: AdminAppFeedbackInput) {\n    adminAppFeedback(input: $input) {\n      reports {\n        id\n        source\n        rating\n        comment\n        platform\n        appVersion\n        boardName\n        angle\n        contactConsent\n        createdAt\n        status\n        resolvedAt\n        resolvedBy\n        githubIssueNumber\n        githubIssueUrl\n        reporter {\n          userId\n          email\n          name\n        }\n        context {\n          climbUuid\n          climbName\n          difficulty\n          sessionId\n          sessionName\n          url\n          userAgent\n        }\n      }\n      totalCount\n      hasMore\n      statusCounts {\n        new\n        inProgress\n        resolved\n        wontFix\n      }\n    }\n  }\n': typeof types.AdminAppFeedbackDocument;
   '\n  mutation UpdateAppFeedbackStatus($input: UpdateAppFeedbackStatusInput!) {\n    updateAppFeedbackStatus(input: $input) {\n      id\n      source\n      rating\n      comment\n      platform\n      appVersion\n      boardName\n      angle\n      contactConsent\n      createdAt\n      status\n      resolvedAt\n      resolvedBy\n      githubIssueNumber\n      githubIssueUrl\n      reporter {\n        userId\n        email\n        name\n      }\n      context {\n        climbUuid\n        climbName\n        difficulty\n        sessionId\n        sessionName\n        url\n        userAgent\n      }\n    }\n  }\n': typeof types.UpdateAppFeedbackStatusDocument;
+  '\n  query FrozenLocationSyncEntities($input: FrozenLocationSyncEntitiesInput!) {\n    frozenLocationSyncEntities(input: $input) {\n      entities {\n        entityType\n        entityUuid\n        slug\n        name\n        boardType\n        isSystemOwned\n        ownerProtected\n        isDeleted\n        deletedAt\n        syncFrozenAt\n        sourceKeys\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.FrozenLocationSyncEntitiesDocument;
+  '\n  mutation ClearLocationSyncFreeze($input: ClearLocationSyncFreezeInput!) {\n    clearLocationSyncFreeze(input: $input) {\n      status\n      entityType\n      entityUuid\n      previousSyncFrozenAt\n    }\n  }\n': typeof types.ClearLocationSyncFreezeDocument;
   '\n  query GetNewClimbFeed($input: NewClimbFeedInput!) {\n    newClimbFeed(input: $input) {\n      items {\n        uuid\n        name\n        boardType\n        layoutId\n        setterDisplayName\n        setterAvatarUrl\n        angle\n        frames\n        difficultyName\n        isNoMatch\n        createdAt\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetNewClimbFeedDocument;
   '\n  query GetMyNewClimbSubscriptions {\n    myNewClimbSubscriptions {\n      id\n      boardType\n      layoutId\n      createdAt\n    }\n  }\n': typeof types.GetMyNewClimbSubscriptionsDocument;
   '\n  mutation SubscribeNewClimbs($input: NewClimbSubscriptionInput!) {\n    subscribeNewClimbs(input: $input)\n  }\n': typeof types.SubscribeNewClimbsDocument;
@@ -74,7 +76,7 @@ type Documents = {
   '\n  \n  mutation CreatePlaylist($input: CreatePlaylistInput!) {\n    createPlaylist(input: $input) {\n      ...PlaylistFields\n    }\n  }\n': typeof types.CreatePlaylistDocument;
   '\n  \n  mutation UpdatePlaylist($input: UpdatePlaylistInput!) {\n    updatePlaylist(input: $input) {\n      ...PlaylistFields\n    }\n  }\n': typeof types.UpdatePlaylistDocument;
   '\n  mutation DeletePlaylist($playlistId: ID!) {\n    deletePlaylist(playlistId: $playlistId)\n  }\n': typeof types.DeletePlaylistDocument;
-  '\n  mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) {\n    addClimbToPlaylist(input: $input) {\n      id\n      playlistId\n      climbUuid\n      angle\n      position\n      addedAt\n    }\n  }\n': typeof types.AddClimbToPlaylistDocument;
+  '\n  mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) {\n    addClimbToPlaylist(input: $input) {\n      id\n      playlistId\n      climbUuid\n      angle\n      position\n      addedAt\n      wasAlreadyInPlaylist\n    }\n  }\n': typeof types.AddClimbToPlaylistDocument;
   '\n  mutation RemoveClimbFromPlaylist($input: RemoveClimbFromPlaylistInput!) {\n    removeClimbFromPlaylist(input: $input)\n  }\n': typeof types.RemoveClimbFromPlaylistDocument;
   '\n  mutation ReorderPlaylistClimb($input: ReorderPlaylistClimbInput!) {\n    reorderPlaylistClimb(input: $input)\n  }\n': typeof types.ReorderPlaylistClimbDocument;
   '\n  query GetPlaylistClimbs($input: GetPlaylistClimbsInput!) {\n    playlistClimbs(input: $input) {\n      climbs {\n        uuid\n        layoutId\n        boardType\n        setter_username\n        name\n        description\n        frames\n        framesCount\n        framesPace\n        angle\n        ascensionist_count\n        difficulty\n        quality_average\n        stars\n        difficulty_error\n        benchmark_difficulty\n        boardseshDifficulty\n        boardseshConfidence\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetPlaylistClimbsDocument;
@@ -197,6 +199,10 @@ const documents: Documents = {
     types.AdminAppFeedbackDocument,
   '\n  mutation UpdateAppFeedbackStatus($input: UpdateAppFeedbackStatusInput!) {\n    updateAppFeedbackStatus(input: $input) {\n      id\n      source\n      rating\n      comment\n      platform\n      appVersion\n      boardName\n      angle\n      contactConsent\n      createdAt\n      status\n      resolvedAt\n      resolvedBy\n      githubIssueNumber\n      githubIssueUrl\n      reporter {\n        userId\n        email\n        name\n      }\n      context {\n        climbUuid\n        climbName\n        difficulty\n        sessionId\n        sessionName\n        url\n        userAgent\n      }\n    }\n  }\n':
     types.UpdateAppFeedbackStatusDocument,
+  '\n  query FrozenLocationSyncEntities($input: FrozenLocationSyncEntitiesInput!) {\n    frozenLocationSyncEntities(input: $input) {\n      entities {\n        entityType\n        entityUuid\n        slug\n        name\n        boardType\n        isSystemOwned\n        ownerProtected\n        isDeleted\n        deletedAt\n        syncFrozenAt\n        sourceKeys\n      }\n      totalCount\n      hasMore\n    }\n  }\n':
+    types.FrozenLocationSyncEntitiesDocument,
+  '\n  mutation ClearLocationSyncFreeze($input: ClearLocationSyncFreezeInput!) {\n    clearLocationSyncFreeze(input: $input) {\n      status\n      entityType\n      entityUuid\n      previousSyncFrozenAt\n    }\n  }\n':
+    types.ClearLocationSyncFreezeDocument,
   '\n  query GetNewClimbFeed($input: NewClimbFeedInput!) {\n    newClimbFeed(input: $input) {\n      items {\n        uuid\n        name\n        boardType\n        layoutId\n        setterDisplayName\n        setterAvatarUrl\n        angle\n        frames\n        difficultyName\n        isNoMatch\n        createdAt\n      }\n      totalCount\n      hasMore\n    }\n  }\n':
     types.GetNewClimbFeedDocument,
   '\n  query GetMyNewClimbSubscriptions {\n    myNewClimbSubscriptions {\n      id\n      boardType\n      layoutId\n      createdAt\n    }\n  }\n':
@@ -255,7 +261,7 @@ const documents: Documents = {
     types.UpdatePlaylistDocument,
   '\n  mutation DeletePlaylist($playlistId: ID!) {\n    deletePlaylist(playlistId: $playlistId)\n  }\n':
     types.DeletePlaylistDocument,
-  '\n  mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) {\n    addClimbToPlaylist(input: $input) {\n      id\n      playlistId\n      climbUuid\n      angle\n      position\n      addedAt\n    }\n  }\n':
+  '\n  mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) {\n    addClimbToPlaylist(input: $input) {\n      id\n      playlistId\n      climbUuid\n      angle\n      position\n      addedAt\n      wasAlreadyInPlaylist\n    }\n  }\n':
     types.AddClimbToPlaylistDocument,
   '\n  mutation RemoveClimbFromPlaylist($input: RemoveClimbFromPlaylistInput!) {\n    removeClimbFromPlaylist(input: $input)\n  }\n':
     types.RemoveClimbFromPlaylistDocument,
@@ -577,6 +583,18 @@ export function graphql(
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
+  source: '\n  query FrozenLocationSyncEntities($input: FrozenLocationSyncEntitiesInput!) {\n    frozenLocationSyncEntities(input: $input) {\n      entities {\n        entityType\n        entityUuid\n        slug\n        name\n        boardType\n        isSystemOwned\n        ownerProtected\n        isDeleted\n        deletedAt\n        syncFrozenAt\n        sourceKeys\n      }\n      totalCount\n      hasMore\n    }\n  }\n',
+): (typeof documents)['\n  query FrozenLocationSyncEntities($input: FrozenLocationSyncEntitiesInput!) {\n    frozenLocationSyncEntities(input: $input) {\n      entities {\n        entityType\n        entityUuid\n        slug\n        name\n        boardType\n        isSystemOwned\n        ownerProtected\n        isDeleted\n        deletedAt\n        syncFrozenAt\n        sourceKeys\n      }\n      totalCount\n      hasMore\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation ClearLocationSyncFreeze($input: ClearLocationSyncFreezeInput!) {\n    clearLocationSyncFreeze(input: $input) {\n      status\n      entityType\n      entityUuid\n      previousSyncFrozenAt\n    }\n  }\n',
+): (typeof documents)['\n  mutation ClearLocationSyncFreeze($input: ClearLocationSyncFreezeInput!) {\n    clearLocationSyncFreeze(input: $input) {\n      status\n      entityType\n      entityUuid\n      previousSyncFrozenAt\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
   source: '\n  query GetNewClimbFeed($input: NewClimbFeedInput!) {\n    newClimbFeed(input: $input) {\n      items {\n        uuid\n        name\n        boardType\n        layoutId\n        setterDisplayName\n        setterAvatarUrl\n        angle\n        frames\n        difficultyName\n        isNoMatch\n        createdAt\n      }\n      totalCount\n      hasMore\n    }\n  }\n',
 ): (typeof documents)['\n  query GetNewClimbFeed($input: NewClimbFeedInput!) {\n    newClimbFeed(input: $input) {\n      items {\n        uuid\n        name\n        boardType\n        layoutId\n        setterDisplayName\n        setterAvatarUrl\n        angle\n        frames\n        difficultyName\n        isNoMatch\n        createdAt\n      }\n      totalCount\n      hasMore\n    }\n  }\n'];
 /**
@@ -751,8 +769,8 @@ export function graphql(
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
-  source: '\n  mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) {\n    addClimbToPlaylist(input: $input) {\n      id\n      playlistId\n      climbUuid\n      angle\n      position\n      addedAt\n    }\n  }\n',
-): (typeof documents)['\n  mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) {\n    addClimbToPlaylist(input: $input) {\n      id\n      playlistId\n      climbUuid\n      angle\n      position\n      addedAt\n    }\n  }\n'];
+  source: '\n  mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) {\n    addClimbToPlaylist(input: $input) {\n      id\n      playlistId\n      climbUuid\n      angle\n      position\n      addedAt\n      wasAlreadyInPlaylist\n    }\n  }\n',
+): (typeof documents)['\n  mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) {\n    addClimbToPlaylist(input: $input) {\n      id\n      playlistId\n      climbUuid\n      angle\n      position\n      addedAt\n      wasAlreadyInPlaylist\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

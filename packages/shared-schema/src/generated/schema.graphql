@@ -1864,6 +1864,13 @@ type PlaylistClimb {
   position: Int!
   "When added (ISO 8601)"
   addedAt: String!
+  """
+  Populated only by addClimbToPlaylist: true when the climb was already in the
+  playlist and the add was an idempotent no-op, false when this call inserted
+  the row. Null everywhere else (list/detail reads never set it). Clients read
+  it to skip the optimistic climb-count bump on a duplicate add.
+  """
+  wasAlreadyInPlaylist: Boolean
 }
 
 """
@@ -2877,6 +2884,8 @@ type StrayBoard {
   distanceMeters: Float
   "Why this board is a candidate for this gym."
   reason: StrayBoardReason!
+  "True when attaching this board empties the auto-synced listing it sits on, which then folds into this gym. False for an unlinked board, and for a listing that never folds (already merged, or owned by a person)."
+  isLastBoardAtCurrentGym: Boolean!
 }
 
 """
@@ -4967,6 +4976,63 @@ type SyncDeletionsResult {
   hasMore: Boolean!
 }
 
+enum LocationSyncEntityType {
+  GYM
+  BOARD
+}
+
+enum ClearLocationSyncFreezeStatus {
+  CLEARED
+  ALREADY_UNFROZEN
+}
+
+"A gym or board whose human-curation marker currently blocks location-sync writes."
+type FrozenLocationSyncEntity {
+  entityType: LocationSyncEntityType!
+  entityUuid: ID!
+  slug: String
+  name: String!
+  boardType: String
+  isSystemOwned: Boolean!
+  "A separate gym ownership or approved-claim guard still prevents source metadata refreshes."
+  ownerProtected: Boolean!
+  isDeleted: Boolean!
+  deletedAt: String
+  syncFrozenAt: String!
+  "Known upstream source aliases. Empty for boards because board source keys are not persisted."
+  sourceKeys: [String!]!
+}
+
+type FrozenLocationSyncEntityConnection {
+  entities: [FrozenLocationSyncEntity!]!
+  totalCount: Int!
+  hasMore: Boolean!
+}
+
+input FrozenLocationSyncEntitiesInput {
+  entityType: LocationSyncEntityType!
+  "Optional case-insensitive name, UUID, or slug search."
+  query: String
+  limit: Int
+  offset: Int
+}
+
+input ClearLocationSyncFreezeInput {
+  entityType: LocationSyncEntityType!
+  entityUuid: ID!
+  "Freeze timestamp shown to the administrator; prevents a stale dialog clearing a newer edit."
+  expectedSyncFrozenAt: String!
+  "Required operator explanation stored in the durable audit trail."
+  reason: String!
+}
+
+type ClearLocationSyncFreezeResult {
+  status: ClearLocationSyncFreezeStatus!
+  entityType: LocationSyncEntityType!
+  entityUuid: ID!
+  previousSyncFrozenAt: String
+}
+
 """
 Root query type for all read operations.
 """
@@ -5622,6 +5688,13 @@ type Query {
   audit list (admin only). List-only; no bulk action.
   """
   orphanGyms(input: OrphanGymsInput): OrphanGymConnection!
+
+  """
+  Frozen gym or board rows awaiting an explicit location-sync release (global
+  admin only). Includes soft-deleted rows because a later source sync may
+  deliberately resurrect them. Merged gyms are excluded.
+  """
+  frozenLocationSyncEntities(input: FrozenLocationSyncEntitiesInput!): FrozenLocationSyncEntityConnection!
 
   # ============================================
   # Gym Kiosk Queries
@@ -6432,6 +6505,13 @@ type Mutation {
   dismissGymCluster(input: DismissGymClusterInput!): Boolean!
 
   """
+  Clear a gym or board's human-curation freeze (global admin only). This does
+  not run a source sync, reverse ownership, or restore a soft-deleted row; it
+  only permits a later matching source refresh and writes an audit record.
+  """
+  clearLocationSyncFreeze(input: ClearLocationSyncFreezeInput!): ClearLocationSyncFreezeResult!
+
+  """
   Report that two gym listings are the same gym (any signed-in user). Surfaces the
   pair to admins for review in the merge queue. Rate-limited and de-duplicated per
   pair so repeated reports don't spam the team.
@@ -6753,7 +6833,13 @@ no replay buffer, so a single dropped delta silently diverges a party
 member's crew list until they fully rejoin. This snapshot re-baselines the
 roster on every (re)subscribe, closing the JOIN-to-subscribe race and giving
 reconnects a fresh authoritative crew list. Clients apply it as a REPLACE
-(preserving their own connection identity + re-deriving their leadership).
+(preserving their own connection identity). Its roster rows carry NO
+connection-scoped leadership — each `SessionUser.isLeader` is
+participant-scoped (OR'd sticky-true across a signed-in user's devices), so
+only an anonymous connection (whose participant id IS its connection id) may
+re-derive its own top-level leadership from this snapshot; an authenticated
+connection keeps relying on its JOIN response and `LeaderChanged`, both of
+which are genuinely connection-scoped.
 Additive: a stale client whose `sessionUpdates` document lacks the
 `... on SessionRosterSnapshot` fragment drops it via its mapper's
 unknown-`__typename` default and keeps using the JOIN roster.
@@ -7051,6 +7137,18 @@ input PlaybackStateInput {
   climbUuid: ID!
   "Frame index that became current at `anchorTimestamp`."
   frameIndex: Int!
+  """
+  Number of frames the publisher's frames reader produced for this climb.
+  Receivers compare it against their own frame list and stop following the
+  peer on a mismatch instead of clamping `frameIndex` into range — a clamp
+  turns a skew into a board stuck on its last frame. Null from clients that
+  predate this field.
+
+  Forward protection only: a peer that doesn't send the field can't be
+  checked, so this does nothing for frames-reader changes that already
+  shipped. It starts protecting from the next one.
+  """
+  frameCount: Int
   "Whether the engine is auto-advancing."
   isPlaying: Boolean!
   "Playback multiplier (1.0 = native pace)."
@@ -7078,6 +7176,12 @@ type PlaybackStateChanged {
   climbUuid: ID!
   "Frame index that was current at `anchorTimestamp`"
   frameIndex: Int!
+  """
+  Number of frames the publisher's frames reader produced. Receivers compare
+  it against their own frame list and stop following on a mismatch rather
+  than clamping. Null from publishers that predate the field.
+  """
+  frameCount: Int
   "Whether the engine is auto-advancing"
   isPlaying: Boolean!
   "Playback multiplier (1.0 = native pace)"

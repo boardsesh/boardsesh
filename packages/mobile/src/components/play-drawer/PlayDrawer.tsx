@@ -969,6 +969,7 @@ export function PlayDrawer({
                           isPlaying={playback.isPlaying}
                           speed={playback.speed}
                           paceMs={playback.paceMs}
+                          peerFrameMismatch={playback.peerFrameMismatch}
                           onPlay={playback.play}
                           onPause={playback.pause}
                           onSeek={playback.seek}

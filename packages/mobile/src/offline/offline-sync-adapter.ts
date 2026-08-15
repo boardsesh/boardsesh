@@ -45,6 +45,7 @@ import {
   type SnapshotSource,
   type SyncOptions,
   type SyncProgressSink,
+  type AbandonedDownloadInfo,
 } from '@boardsesh/offline-sync';
 import { SHARED_EVENTS, sanitizeErrorForAnalytics } from '@boardsesh/analytics';
 import { reportHandledError } from '../lib/error-reporting';
@@ -56,6 +57,28 @@ import { track } from '../lib/analytics';
 // whether a failed local write actually lost data: a tick that falls through to
 // the network save is fine online and gone offline (see board-adapter).
 export const isOnline = () => onlineManager.isOnline();
+
+function isUsableConnection(state: Pick<NetInfoState, 'isConnected' | 'isInternetReachable'>): boolean {
+  // `null` means NetInfo has not finished probing, not that the upstream is
+  // unavailable, so a connected link is provisionally usable. A known captive
+  // portal/dead upstream is the explicit `false` case. This is the same
+  // interpretation the scheduler listener uses.
+  return (state.isConnected ?? false) && state.isInternetReachable !== false;
+}
+
+/**
+ * Read current reachability after an offline-surface download request is armed.
+ * This closes the ordering race where the reconnect edge lands just before the
+ * setting write: the scheduler consumed the edge, but this current-state probe
+ * can still kick the newly enabled scope. A verified usable result also updates
+ * React Query's process-wide online singleton before the caller triggers sync;
+ * otherwise its slower seed/listener can make that just-verified cycle no-op.
+ */
+export async function hasUsableInternetConnection(): Promise<boolean> {
+  const isUsable = isUsableConnection(await NetInfo.fetch());
+  if (isUsable) onlineManager.setOnline(true);
+  return isUsable;
+}
 
 const mutationDeliveryListeners = new Set<(event: MutationDeliveryEvent) => void>();
 
@@ -199,6 +222,32 @@ const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({
       },
     },
   );
+};
+
+/**
+ * The funnel's other missing terminal (issue #4406): the climber removed the
+ * board while its download was still running.
+ *
+ * Routed through `reportSnapshotBootstrapError` rather than a `track()` of its
+ * own so the Failed leg has exactly one shape and one call site — the two could
+ * otherwise disagree about what a failed download looks like. `aborted: true`
+ * keeps it out of Sentry (a Remove tap is not a defect) and out of any failure
+ * RATE, while the `abandoned-removed` reason is what makes abandonment
+ * countable: it fires at most once per `Offline Board Download Started`, from
+ * the teardown that deletes the marker.
+ */
+export const reportScopeDownloadAbandoned = ({ scopeKey }: AbandonedDownloadInfo): void => {
+  reportSnapshotBootstrapError({
+    scopeKey,
+    stage: 'board-removed',
+    // No retry budget was spent — the same "nothing was burned" zero every other
+    // teardown report sends.
+    attempt: 0,
+    cause: new Error(`Offline download for ${scopeKey} was removed before it finished`),
+    expected: true,
+    reason: 'abandoned-removed',
+    aborted: true,
+  });
 };
 
 // Fired once per board scope's initial download so the snapshot-bootstrap
@@ -449,7 +498,7 @@ const schedulerTriggers: SchedulerTriggers = {
       //
       // `null` is "not probed yet", never "unreachable" — treating it as a
       // disconnect would invent an edge on every platform that answers late.
-      callback((state.isConnected ?? false) && state.isInternetReachable !== false);
+      callback(isUsableConnection(state));
     });
   },
 };
@@ -492,9 +541,9 @@ export type SyncRunOptions = {
   onBootstrapMetadataChanged?: BootstrapMetadataChangedReporter;
   /** UI invalidation after each scope completes, composed with telemetry. */
   onScopeDownloadComplete?: ScopeDownloadCompleteReporter;
-  // Injected only when the offline-snapshot-bootstrap flag is on (see
-  // useSnapshotSource) — undefined here reproduces the pure paged-crawl
-  // behaviour exactly, byte-identical to before this seam existed.
+  // Injected whenever the mobile build has a snapshot base URL (see
+  // useSnapshotSource). Undefined retains the safe paged fallback for builds
+  // without that URL.
   snapshotSource?: SnapshotSource;
 };
 

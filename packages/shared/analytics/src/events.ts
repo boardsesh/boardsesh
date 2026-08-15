@@ -58,6 +58,14 @@ export const SHARED_EVENTS = {
   // title text.
   SessionRenamed: 'Session Renamed',
   AngleChanged: 'Angle Changed',
+  // A party peer broadcast a playback frame count that disagrees with ours, so
+  // the two clients read the same climb's frames differently and we stopped
+  // following them instead of clamping onto a wrong frame (issue #3989).
+  // Props: { peerFrameCount, localFrameCount, boardName } — counts only. Fires
+  // once per stretch of disagreement, not per broadcast. Expected to stay
+  // silent until the frames reader next changes shape; any volume at all means
+  // a mixed-fleet rollout is skewing playback in the field.
+  PlaybackPeerFrameMismatch: 'Playback Peer Frame Mismatch',
   // Queue sync-gate telemetry (createQueueSyncGate in @boardsesh/queue-runtime)
   // — observability for the sequence-gap / stale-event / hash-drift guards so
   // a resync loop or a dropped duplicate shows up in the field instead of only
@@ -413,8 +421,9 @@ export const SHARED_EVENTS = {
   // is shared, so a future web offline consumer would fire this too).
   OfflineBoardDownloadCompleted: 'Offline Board Download Completed',
   // A bootstrap stage failed, or was cut short. Props: { scopeKey, stage:
-  // 'manifest' | 'download' | 'import' | 'grades-download' | 'grades-import',
-  // attempt, expected, reason, aborted, errorMessage, offlineEngineEnabled }.
+  // 'manifest' | 'download' | 'import' | 'grades-download' | 'grades-import' |
+  // 'board-removed', attempt, expected, reason, aborted, errorMessage,
+  // offlineEngineEnabled }.
   // `expected: true` is a transport/reachability failure — a phone in a tunnel,
   // not a defect — and is the normal case, not an alarm. These previously went
   // only to Sentry, where they could not be joined to the funnel.
@@ -429,13 +438,22 @@ export const SHARED_EVENTS = {
   // `Failed where aborted = false` over Started.
   //
   // `reason` is a closed, low-cardinality bucket — 'aborted-wipe' |
-  // 'aborted-background' | 'database-locked' | 'schema-stale' |
-  // 'watermark-regression' | 'permanent-miss' | 'artifact-invalid' |
-  // 'artifact-truncated' | 'network' | 'unknown' | 'unknown-exit' — for
-  // grouping. The verbatim text stays on `errorMessage`. Dashboards that
-  // ENUMERATE reasons need 'artifact-truncated' added (issue #4394's exact
-  // decoded-size gate); failure-rate queries (`aborted = false`) pick it up on
-  // their own.
+  // 'aborted-background' | 'abandoned-removed' | 'database-locked' |
+  // 'schema-stale' | 'watermark-regression' | 'permanent-miss' |
+  // 'artifact-invalid' | 'artifact-truncated' | 'network' | 'unknown' |
+  // 'unknown-exit' — for grouping. The verbatim text stays on `errorMessage`.
+  // Dashboards that ENUMERATE reasons need 'artifact-truncated' (issue #4394's
+  // exact decoded-size gate) and 'abandoned-removed' (#4406) added;
+  // failure-rate queries (`aborted = false`) pick them up on their own.
+  //
+  // 'abandoned-removed' is the one reason that is a COUNT of abandonments rather
+  // than of interruptions (issue #4406): the climber removed the board while its
+  // download was still running, so it fires at most once per Started — from the
+  // teardown, which is the last code that can see the durable start marker — and
+  // always with `stage: 'board-removed'`. Every other abort-shaped reason can
+  // repeat for one download (a pocketed phone, a sibling board's removal), which
+  // is why "downloads given up on" was previously only derivable as
+  // Started-minus-Completed.
   //
   // One pairing changed with #4390: `aborted: true` can now arrive alongside an
   // `Offline Snapshot Retry Scheduled` with `failureKind: 'transport'` — the
@@ -455,7 +473,9 @@ export const SHARED_EVENTS = {
   // offlineEngineEnabled }. It needs a live progress frame naming the scope, so
   // today only the My Boards toggle mid-snapshot fires it: a paged crawl
   // publishes no such frame, and removing a board from Storage reports its exit
-  // as `Offline Board Toggled { enabled: false, source: 'storage' }` instead.
+  // as `Offline Board Toggled { enabled: false, source: 'storage' }` plus the
+  // funnel's own `Offline Board Download Failed { reason: 'abandoned-removed' }`
+  // (issue #4406) instead.
   OfflineBoardDownloadCancelled: 'Offline Board Download Cancelled',
   // One artifact transfer that actually moved bytes — the per-download
   // throughput measurement the funnel could not give us (issue #4394). Completed

@@ -882,6 +882,25 @@ export type CheckMoonBoardClimbDuplicatesInput = {
   layoutId: Scalars['Int']['input'];
 };
 
+export type ClearLocationSyncFreezeInput = {
+  entityType: LocationSyncEntityType;
+  entityUuid: Scalars['ID']['input'];
+  /** Freeze timestamp shown to the administrator; prevents a stale dialog clearing a newer edit. */
+  expectedSyncFrozenAt: Scalars['String']['input'];
+  /** Required operator explanation stored in the durable audit trail. */
+  reason: Scalars['String']['input'];
+};
+
+export type ClearLocationSyncFreezeResult = {
+  __typename?: 'ClearLocationSyncFreezeResult';
+  entityType: LocationSyncEntityType;
+  entityUuid: Scalars['ID']['output'];
+  previousSyncFrozenAt?: Maybe<Scalars['String']['output']>;
+  status: ClearLocationSyncFreezeStatus;
+};
+
+export type ClearLocationSyncFreezeStatus = 'ALREADY_UNFROZEN' | 'CLEARED';
+
 /**
  * A climbing problem/route on an interactive training board.
  * Contains all information needed to display and light up the climb on the board.
@@ -2032,6 +2051,39 @@ export type FreezeClimbInput = {
   reason?: InputMaybe<Scalars['String']['input']>;
 };
 
+export type FrozenLocationSyncEntitiesInput = {
+  entityType: LocationSyncEntityType;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  /** Optional case-insensitive name, UUID, or slug search. */
+  query?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** A gym or board whose human-curation marker currently blocks location-sync writes. */
+export type FrozenLocationSyncEntity = {
+  __typename?: 'FrozenLocationSyncEntity';
+  boardType?: Maybe<Scalars['String']['output']>;
+  deletedAt?: Maybe<Scalars['String']['output']>;
+  entityType: LocationSyncEntityType;
+  entityUuid: Scalars['ID']['output'];
+  isDeleted: Scalars['Boolean']['output'];
+  isSystemOwned: Scalars['Boolean']['output'];
+  name: Scalars['String']['output'];
+  /** A separate gym ownership or approved-claim guard still prevents source metadata refreshes. */
+  ownerProtected: Scalars['Boolean']['output'];
+  slug?: Maybe<Scalars['String']['output']>;
+  /** Known upstream source aliases. Empty for boards because board source keys are not persisted. */
+  sourceKeys: Array<Scalars['String']['output']>;
+  syncFrozenAt: Scalars['String']['output'];
+};
+
+export type FrozenLocationSyncEntityConnection = {
+  __typename?: 'FrozenLocationSyncEntityConnection';
+  entities: Array<FrozenLocationSyncEntity>;
+  hasMore: Scalars['Boolean']['output'];
+  totalCount: Scalars['Int']['output'];
+};
+
 /**
  * Full queue state sync event.
  * Sent on initial connection or when delta sync isn't possible.
@@ -2955,6 +3007,8 @@ export type LinkBoardToGymInput = {
   gymUuid?: InputMaybe<Scalars['String']['input']>;
 };
 
+export type LocationSyncEntityType = 'BOARD' | 'GYM';
+
 /** Input for merging duplicate gyms into a canonical survivor (admin only). */
 export type MergeGymsInput = {
   /** Explicit acknowledgement required to keep a SYSTEM listing as the survivor over a user-owned or claim-approved duplicate. Rejected without it. */
@@ -3045,6 +3099,12 @@ export type Mutation = {
    * actually carry the serial.
    */
   chooseBoardForSerial: ResolvedBoard;
+  /**
+   * Clear a gym or board's human-curation freeze (global admin only). This does
+   * not run a source sync, reverse ownership, or restore a soft-deleted row; it
+   * only permits a later matching source refresh and writes an audit record.
+   */
+  clearLocationSyncFreeze: ClearLocationSyncFreezeResult;
   /**
    * Confirm to all session participants that a climb was successfully relayed to the wall
    * over BLE from this client's phone. Any session participant may call — the BLE-capable
@@ -3520,6 +3580,11 @@ export type MutationAuthorizeControllerForSessionArgs = {
 export type MutationChooseBoardForSerialArgs = {
   boardId: Scalars['Int']['input'];
   serial: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationClearLocationSyncFreezeArgs = {
+  input: ClearLocationSyncFreezeInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4321,6 +4386,12 @@ export type PlaybackStateChanged = {
   clientId?: Maybe<Scalars['ID']['output']>;
   /** UUID of the climb whose playback changed */
   climbUuid: Scalars['ID']['output'];
+  /**
+   * Number of frames the publisher's frames reader produced. Receivers compare
+   * it against their own frame list and stop following on a mismatch rather
+   * than clamping. Null from publishers that predate the field.
+   */
+  frameCount?: Maybe<Scalars['Int']['output']>;
   /** Frame index that was current at `anchorTimestamp` */
   frameIndex: Scalars['Int']['output'];
   /** Whether the engine is auto-advancing */
@@ -4347,6 +4418,18 @@ export type PlaybackStateInput = {
   clientId?: InputMaybe<Scalars['ID']['input']>;
   /** Climb the playback applies to. Peers ignore the event if it's for a different climb than they're showing. */
   climbUuid: Scalars['ID']['input'];
+  /**
+   * Number of frames the publisher's frames reader produced for this climb.
+   * Receivers compare it against their own frame list and stop following the
+   * peer on a mismatch instead of clamping `frameIndex` into range — a clamp
+   * turns a skew into a board stuck on its last frame. Null from clients that
+   * predate this field.
+   *
+   * Forward protection only: a peer that doesn't send the field can't be
+   * checked, so this does nothing for frames-reader changes that already
+   * shipped. It starts protecting from the next one.
+   */
+  frameCount?: InputMaybe<Scalars['Int']['input']>;
   /** Frame index that became current at `anchorTimestamp`. */
   frameIndex: Scalars['Int']['input'];
   /** Whether the engine is auto-advancing. */
@@ -4411,6 +4494,13 @@ export type PlaylistClimb = {
   playlistId: Scalars['ID']['output'];
   /** Position in playlist */
   position: Scalars['Int']['output'];
+  /**
+   * Populated only by addClimbToPlaylist: true when the climb was already in the
+   * playlist and the add was an idempotent no-op, false when this call inserted
+   * the row. Null everywhere else (list/detail reads never set it). Clients read
+   * it to skip the optimistic climb-count bump on a duplicate add.
+   */
+  wasAlreadyInPlaylist?: Maybe<Scalars['Boolean']['output']>;
 };
 
 /** Result of fetching playlist climbs. */
@@ -4796,6 +4886,12 @@ export type Query = {
    * Requires authentication.
    */
   followingClimbAscents: FollowingClimbAscentsResult;
+  /**
+   * Frozen gym or board rows awaiting an explicit location-sync release (global
+   * admin only). Includes soft-deleted rows because a later source sync may
+   * deliberately resurrect them. Merged gyms are excluded.
+   */
+  frozenLocationSyncEntities: FrozenLocationSyncEntityConnection;
   /**
    * Get global activity feed of all recent ascents.
    * No authentication required.
@@ -5388,6 +5484,11 @@ export type QueryFollowingAscentsFeedArgs = {
 /** Root query type for all read operations. */
 export type QueryFollowingClimbAscentsArgs = {
   input: FollowingClimbAscentsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryFrozenLocationSyncEntitiesArgs = {
+  input: FrozenLocationSyncEntitiesInput;
 };
 
 /** Root query type for all read operations. */
@@ -6676,7 +6777,13 @@ export type SessionParticipant = {
  * member's crew list until they fully rejoin. This snapshot re-baselines the
  * roster on every (re)subscribe, closing the JOIN-to-subscribe race and giving
  * reconnects a fresh authoritative crew list. Clients apply it as a REPLACE
- * (preserving their own connection identity + re-deriving their leadership).
+ * (preserving their own connection identity). Its roster rows carry NO
+ * connection-scoped leadership — each `SessionUser.isLeader` is
+ * participant-scoped (OR'd sticky-true across a signed-in user's devices), so
+ * only an anonymous connection (whose participant id IS its connection id) may
+ * re-derive its own top-level leadership from this snapshot; an authenticated
+ * connection keeps relying on its JOIN response and `LeaderChanged`, both of
+ * which are genuinely connection-scoped.
  * Additive: a stale client whose `sessionUpdates` document lacks the
  * `... on SessionRosterSnapshot` fragment drops it via its mapper's
  * unknown-`__typename` default and keeps using the JOIN roster.
@@ -7114,6 +7221,8 @@ export type StrayBoard = {
   currentGymUuid?: Maybe<Scalars['ID']['output']>;
   /** Metres from this gym's location to the board; null when either lacks coordinates. */
   distanceMeters?: Maybe<Scalars['Float']['output']>;
+  /** True when attaching this board empties the auto-synced listing it sits on, which then folds into this gym. False for an unlinked board, and for a listing that never folds (already merged, or owned by a person). */
+  isLastBoardAtCurrentGym: Scalars['Boolean']['output'];
   /** The board's display name. */
   name: Scalars['String']['output'];
   /** Why this board is a candidate for this gym. */
@@ -8566,6 +8675,48 @@ export type UpdateAppFeedbackStatusMutation = {
   };
 };
 
+export type FrozenLocationSyncEntitiesQueryVariables = Exact<{
+  input: FrozenLocationSyncEntitiesInput;
+}>;
+
+export type FrozenLocationSyncEntitiesQuery = {
+  __typename?: 'Query';
+  frozenLocationSyncEntities: {
+    __typename?: 'FrozenLocationSyncEntityConnection';
+    totalCount: number;
+    hasMore: boolean;
+    entities: Array<{
+      __typename?: 'FrozenLocationSyncEntity';
+      entityType: LocationSyncEntityType;
+      entityUuid: string;
+      slug?: string | null;
+      name: string;
+      boardType?: string | null;
+      isSystemOwned: boolean;
+      ownerProtected: boolean;
+      isDeleted: boolean;
+      deletedAt?: string | null;
+      syncFrozenAt: string;
+      sourceKeys: Array<string>;
+    }>;
+  };
+};
+
+export type ClearLocationSyncFreezeMutationVariables = Exact<{
+  input: ClearLocationSyncFreezeInput;
+}>;
+
+export type ClearLocationSyncFreezeMutation = {
+  __typename?: 'Mutation';
+  clearLocationSyncFreeze: {
+    __typename?: 'ClearLocationSyncFreezeResult';
+    status: ClearLocationSyncFreezeStatus;
+    entityType: LocationSyncEntityType;
+    entityUuid: string;
+    previousSyncFrozenAt?: string | null;
+  };
+};
+
 export type GetNewClimbFeedQueryVariables = Exact<{
   input: NewClimbFeedInput;
 }>;
@@ -9076,6 +9227,7 @@ export type AddClimbToPlaylistMutation = {
     angle?: number | null;
     position: number;
     addedAt: string;
+    wasAlreadyInPlaylist?: boolean | null;
   };
 };
 
@@ -12278,6 +12430,114 @@ export const UpdateAppFeedbackStatusDocument = {
     },
   ],
 } as unknown as DocumentNode<UpdateAppFeedbackStatusMutation, UpdateAppFeedbackStatusMutationVariables>;
+export const FrozenLocationSyncEntitiesDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'FrozenLocationSyncEntities' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'FrozenLocationSyncEntitiesInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'frozenLocationSyncEntities' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'entities' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'entityType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'entityUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'slug' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isSystemOwned' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'ownerProtected' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isDeleted' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'deletedAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'syncFrozenAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sourceKeys' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<FrozenLocationSyncEntitiesQuery, FrozenLocationSyncEntitiesQueryVariables>;
+export const ClearLocationSyncFreezeDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'ClearLocationSyncFreeze' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'ClearLocationSyncFreezeInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'clearLocationSyncFreeze' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'entityType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'entityUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'previousSyncFrozenAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ClearLocationSyncFreezeMutation, ClearLocationSyncFreezeMutationVariables>;
 export const GetNewClimbFeedDocument = {
   kind: 'Document',
   definitions: [
@@ -13694,6 +13954,7 @@ export const AddClimbToPlaylistDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'position' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'addedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'wasAlreadyInPlaylist' } },
               ],
             },
           },
