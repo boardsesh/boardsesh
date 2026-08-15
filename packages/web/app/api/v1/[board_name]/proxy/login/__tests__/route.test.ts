@@ -60,12 +60,14 @@ describe('POST /api/v1/[board_name]/proxy/login', () => {
 
     await POST(request, routeProps);
 
-    // Endpoint and board only — the request body carried Aurora credentials.
+    // Endpoint, board and verb only — the request body carried Aurora
+    // credentials, and the headers are allowlisted so the caller's cookie never
+    // leaves here. `app/lib/__tests__/api-deprecation.test.ts` pins both directly.
     expect(mockTrack).toHaveBeenCalledTimes(1);
     expect(mockTrack).toHaveBeenCalledWith(
       DEPRECATED_AURORA_PROXY_EVENT,
-      { endpoint: 'login', boardName: 'kilter' },
-      { headers: request.headers },
+      { endpoint: 'login', boardName: 'kilter', method: 'POST' },
+      { headers: { 'user-agent': '', 'x-forwarded-for': '' } },
     );
   });
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
+import * as openApiRegistry from '../openapi-registry';
 import { generateOpenApiDocument } from '../generate-openapi';
 
 const document = generateOpenApiDocument();
@@ -31,11 +32,21 @@ describe('generated OpenAPI document', () => {
     expect(document.info.description ?? '').not.toContain('Aurora Proxy');
   });
 
-  it('exposes no Aurora proxy component schema', () => {
+  it('keeps no Aurora proxy schema, in the document or in the registry module', () => {
     const schemas = Object.keys(document.components?.schemas ?? {});
     expect(schemas).not.toContain('AuroraLoginRequest');
     expect(schemas).not.toContain('AuroraLoginResponse');
     expect(schemas).not.toContain('SaveAscentRequest');
+
+    // The document half above cannot see a restored dead export on its own:
+    // zod-to-openapi only emits a `components.schemas` entry for a schema some
+    // *registered path* references, so a half-revert that brings the schemas
+    // back without the registerPath blocks would leave it green. Assert the
+    // module surface, which is where the half-revert actually lands.
+    const registryExports = Object.keys(openApiRegistry);
+    expect(registryExports).not.toContain('AuroraLoginRequestSchema');
+    expect(registryExports).not.toContain('AuroraLoginResponseSchema');
+    expect(registryExports).not.toContain('SaveAscentRequestSchema');
   });
 
   it('still publishes the surviving public surface', () => {

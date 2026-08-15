@@ -246,7 +246,7 @@
         "feature1": "Fetching climb data and statistics",
         "feature2": "User registration and authentication",
         "feature3": "Profile management",
-        "feature4": "Resolving URL slugs to board IDs",
+        "feature4": "Resolving URL slugs to numeric IDs",
         "baseUrlLabel": "Base URL:"
       },
       "ws": {
@@ -267,6 +267,10 @@
         "wsLabel": "WebSocket API:",
         "wsBody": "Obtain a JWT token from",
         "wsBodyEnd": "and include it in the connection parameters:"
+      },
+      "retired": {
+        "title": "Retired endpoints",
+        "body": "The Aurora proxy endpoints below answer 410 Gone — they no longer reach Aurora. The URLs stop existing on {{sunset}}, after which they return 404. Board login and tick logging run on the GraphQL API described above."
       },
       "rateLimit": {
         "title": "Rate Limiting",

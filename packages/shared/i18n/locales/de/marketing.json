@@ -268,6 +268,10 @@
         "wsBody": "Hol dir ein JWT-Token von",
         "wsBodyEnd": "und gib es in den Verbindungsparametern mit:"
       },
+      "retired": {
+        "title": "Stillgelegte Endpoints",
+        "body": "Die unten stehenden Aurora-Proxy-Endpoints antworten mit 410 Gone – sie erreichen Aurora nicht mehr. Die URLs verschwinden am {{sunset}} und liefern danach 404. Board-Login und das Eintragen von Begehungen laufen über die GraphQL-API oben."
+      },
       "rateLimit": {
         "title": "Rate-Limits",
         "body": "Die Endpunkte zur Authentifizierung sind rate-limitiert, um Missbrauch zu verhindern. Die Rate-Limit-Header stehen in den Antworten. Öffentliche Lese-Endpunkte haben großzügige Limits."

@@ -47,7 +47,7 @@ Node.js HTTP Server
 
 ## Phase 2: REST API Reimplementation (IN PROGRESS)
 
-Reimplement Next.js REST APIs as GraphQL queries/mutations. Only endpoints that query our database - Aurora proxy routes stay in Next.js.
+Reimplement Next.js REST APIs as GraphQL queries/mutations. Only endpoints that query our database - Aurora proxy routes stay in Next.js _(superseded — retired by W-25a, #4441; see §2.5)_.
 
 ### 2.1 Board Configuration Queries (High Priority)
 
@@ -111,13 +111,13 @@ Reimplement Next.js REST APIs as GraphQL queries/mutations. Only endpoints that 
 
 ### 2.5 Endpoints Staying in Next.js
 
-| Endpoint                                 | Reason                                              |
-| ---------------------------------------- | --------------------------------------------------- |
+| Endpoint                                 | Reason                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------- |
 | `/api/v1/[board_name]/proxy/*`           | ❌ GONE — retired by W-25a (#4441); W-25b removes the last two URLs |
-| `/api/auth/*`                            | NextAuth authentication                             |
-| `/api/internal/ws-auth`                  | WebSocket auth token fetch      |
-| `/api/internal/shared-sync/[board_name]` | Cron job / server-side sync     |
-| `/api/og/climb`                          | Image generation (Edge runtime) |
+| `/api/auth/*`                            | NextAuth authentication                                             |
+| `/api/internal/ws-auth`                  | WebSocket auth token fetch                                          |
+| `/api/internal/shared-sync/[board_name]` | Cron job / server-side sync                                         |
+| `/api/og/climb`                          | Image generation (Edge runtime)                                     |
 
 ---
 
