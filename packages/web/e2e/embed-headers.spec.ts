@@ -1,5 +1,13 @@
 import { test, expect, type APIResponse } from '@playwright/test';
 
+// These are raw APIRequestContext gets against a server that is concurrently
+// SSR-ing front-door pages for the other worker's browser tests. On a 2-core
+// CI runner that contention can hold a response past the default 15s (the
+// header assertions themselves are latency-independent), and which files share
+// a shard reshuffles every time a spec is added or removed — so give every
+// request the headroom explicitly instead of inheriting the default.
+const REQUEST_TIMEOUT_MS = 30_000;
+
 /**
  * Security headers for the /embed/** iframe widgets (board view + gym
  * leaderboard) — the ONLY routes Boardsesh serves without a frame-denying
@@ -40,7 +48,10 @@ function setCookieValues(response: APIResponse): string[] {
 
 test.describe('embed security headers', () => {
   test('board embed is frameable, cookieless, and drops X-Frame-Options (even on 404)', async ({ request }) => {
-    const response = await request.get(`/embed/board/${MISSING_BOARD_UUID}`, { maxRedirects: 0 });
+    const response = await request.get(`/embed/board/${MISSING_BOARD_UUID}`, {
+      maxRedirects: 0,
+      timeout: REQUEST_TIMEOUT_MS,
+    });
 
     // Nonexistent board → 404 (backend up) or the retry screen (backend
     // down); the route headers apply either way.
@@ -54,7 +65,10 @@ test.describe('embed security headers', () => {
   });
 
   test('gym leaderboard embed carries the same frameable, cookieless headers', async ({ request }) => {
-    const response = await request.get(`/embed/gym/${MISSING_GYM_UUID}/leaderboard?period=day`, { maxRedirects: 0 });
+    const response = await request.get(`/embed/gym/${MISSING_GYM_UUID}/leaderboard?period=day`, {
+      maxRedirects: 0,
+      timeout: REQUEST_TIMEOUT_MS,
+    });
 
     expect([200, 404]).toContain(response.status());
     expect(headerValue(response, 'content-security-policy')).toContain('frame-ancestors *');
@@ -63,13 +77,13 @@ test.describe('embed security headers', () => {
   });
 
   test('non-embed routes keep X-Frame-Options: SAMEORIGIN', async ({ request }) => {
-    const homeResponse = await request.get('/', { maxRedirects: 0 });
+    const homeResponse = await request.get('/', { maxRedirects: 0, timeout: REQUEST_TIMEOUT_MS });
     expect(homeResponse.status()).toBe(200);
     expect(headerValue(homeResponse, 'x-frame-options')).toBe('SAMEORIGIN');
 
     // A kiosk TV page (here a nonexistent one → 404) is NOT frameable either —
     // only /embed/** opted out of the frame-denying default.
-    const kioskResponse = await request.get('/kiosk/whatever', { maxRedirects: 0 });
+    const kioskResponse = await request.get('/kiosk/whatever', { maxRedirects: 0, timeout: REQUEST_TIMEOUT_MS });
     expect(headerValue(kioskResponse, 'x-frame-options')).toBe('SAMEORIGIN');
     expect(headerValue(kioskResponse, 'content-security-policy') ?? '').not.toContain('frame-ancestors *');
   });
@@ -77,7 +91,7 @@ test.describe('embed security headers', () => {
   test('an embed-lookalike path outside /embed/ keeps the frame-denying default', async ({ request }) => {
     // Regex sanity for the `/((?!embed/).*)` exclusion: only the /embed/**
     // subtree opts out, not paths merely starting with the word "embed".
-    const response = await request.get('/embedded', { maxRedirects: 0 });
+    const response = await request.get('/embedded', { maxRedirects: 0, timeout: REQUEST_TIMEOUT_MS });
     expect(headerValue(response, 'x-frame-options')).toBe('SAMEORIGIN');
   });
 
@@ -88,7 +102,7 @@ test.describe('embed security headers', () => {
     // slash, so bare /embed matches the SAMEORIGIN rule; the embed rule uses
     // `:path+` so it does NOT also match — one response must never carry the
     // contradictory XFO SAMEORIGIN + frame-ancestors * pair.
-    const response = await request.get('/embed', { maxRedirects: 0 });
+    const response = await request.get('/embed', { maxRedirects: 0, timeout: REQUEST_TIMEOUT_MS });
     expect(headerValue(response, 'x-frame-options')).toBe('SAMEORIGIN');
     expect(headerValue(response, 'content-security-policy') ?? '').not.toContain('frame-ancestors');
     // The middleware still treats it as an embed path (no cookies).
@@ -101,14 +115,14 @@ test.describe('embed security headers', () => {
     // carve-out must therefore be case-insensitive too — otherwise this
     // request would run the full pipeline and the ?session= branch would
     // Set-Cookie on a frameable response.
-    const response = await request.get('/EMBED/board/x?session=abc', { maxRedirects: 0 });
+    const response = await request.get('/EMBED/board/x?session=abc', { maxRedirects: 0, timeout: REQUEST_TIMEOUT_MS });
     expect(headerValue(response, 'content-security-policy')).toContain('frame-ancestors *');
     expect(headerValue(response, 'x-frame-options')).toBeUndefined();
     expect(setCookieValues(response)).toEqual([]);
   });
 
   test('locale-prefixed embed paths 308 to the un-prefixed embed path, cookieless', async ({ request }) => {
-    const spanishResponse = await request.get('/es/embed/board/x', { maxRedirects: 0 });
+    const spanishResponse = await request.get('/es/embed/board/x', { maxRedirects: 0, timeout: REQUEST_TIMEOUT_MS });
     expect(spanishResponse.status()).toBe(308);
     expect(new URL(spanishResponse.headers()['location'], 'http://localhost').pathname).toBe('/embed/board/x');
     expect(setCookieValues(spanishResponse)).toEqual([]);
