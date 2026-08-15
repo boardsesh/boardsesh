@@ -1,8 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
-import { eq, and, inArray, isNull, sql } from 'drizzle-orm';
+import { eq, and, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm/alias';
 import { GraphQLError } from 'graphql';
 import { betaLinkIdentity, type ConnectionContext, type TickStatus } from '@boardsesh/shared-schema';
+import { rowsFromResult } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sessions } from '../../../db/schema';
@@ -39,6 +40,109 @@ import {
   notAuroraTwinDuplicate,
   resolveCanonicalClimbUuid,
 } from '@boardsesh/db/queries';
+
+type TickBoardLockDb = Pick<typeof db, 'execute'>;
+
+type LockedTickBoard = {
+  id: number | string;
+  uuid: string;
+  deletedAt: Date | string | null;
+  mergedIntoBoardUuid: string | null;
+};
+
+export function buildTickBoardLockQuery(requestedBoardId: number) {
+  return sql`
+    WITH RECURSIVE requested_board AS (
+      SELECT id, uuid, serial_number, merged_into_board_uuid
+        FROM user_boards
+       WHERE id = ${requestedBoardId}
+    ),
+    merge_chain AS (
+      SELECT id, uuid, merged_into_board_uuid, 0 AS depth
+        FROM requested_board
+      UNION ALL
+      SELECT next_board.id,
+             next_board.uuid,
+             next_board.merged_into_board_uuid,
+             merge_chain.depth + 1
+        FROM merge_chain
+        JOIN user_boards next_board
+          ON next_board.uuid = merge_chain.merged_into_board_uuid
+       WHERE merge_chain.depth < 3
+    ),
+    candidate_ids AS (
+      SELECT id FROM merge_chain
+      UNION
+      SELECT active_board.id
+        FROM requested_board
+        JOIN user_boards active_board
+          ON active_board.serial_number = requested_board.serial_number
+         AND active_board.serial_number IS NOT NULL
+         AND active_board.serial_number <> ''
+         AND active_board.deleted_at IS NULL
+       WHERE requested_board.serial_number IS NOT NULL
+         AND requested_board.serial_number <> ''
+    )
+    SELECT board.id AS "id",
+           board.uuid AS "uuid",
+           board.deleted_at AS "deletedAt",
+           board.merged_into_board_uuid AS "mergedIntoBoardUuid"
+      FROM user_boards board
+      JOIN candidate_ids ON candidate_ids.id = board.id
+     ORDER BY board.id
+     FOR NO KEY UPDATE OF board
+  `;
+}
+
+/**
+ * Pin a tick's board association against the serial-board dedupe transaction.
+ *
+ * The maintenance merge locks every board in a serial cluster in id order,
+ * moves existing ticks, tombstones the losers, then commits. Merely relying on
+ * the tick FK's later KEY SHARE lock leaves a gap: saveTick can resolve an
+ * active loser before the merge, wait behind the merge during INSERT, and then
+ * insert onto the loser after the one-time repoint has already run.
+ *
+ * Locking the complete same-serial set here, in the same deterministic order as
+ * the merge, closes that gap without introducing a lock-order inversion. The
+ * NO KEY UPDATE mode still conflicts with the merge's UPDATE/DELETE locks but
+ * deliberately permits unrelated FK KEY SHARE checks, which may visit several
+ * boards in caller order. If we win the lock, the tick commits before the merge
+ * and is repointed with the rest. If the merge wins, this query resumes against
+ * its committed tombstone and we follow the (bounded, flattened) chain to the
+ * locked survivor.
+ */
+export async function lockCanonicalTickBoardId(
+  transactionDb: TickBoardLockDb,
+  requestedBoardId: number,
+): Promise<number | null> {
+  const lockedBoards = rowsFromResult<LockedTickBoard>(
+    await transactionDb.execute(buildTickBoardLockQuery(requestedBoardId)),
+  );
+
+  const requestedBoard = lockedBoards.find((board) => Number(board.id) === requestedBoardId);
+  if (!requestedBoard) return null;
+  if (requestedBoard.deletedAt === null) return Number(requestedBoard.id);
+
+  const boardsByUuid = new Map(lockedBoards.map((board) => [board.uuid, board]));
+  let nextBoardUuid = requestedBoard.mergedIntoBoardUuid;
+  for (let hop = 0; hop < 3 && nextBoardUuid; hop++) {
+    const candidate = boardsByUuid.get(nextBoardUuid);
+    if (!candidate) {
+      logger.warn(
+        `[saveTick] merged board ${requestedBoardId} points outside its locked serial cluster at ${nextBoardUuid}`,
+      );
+      return null;
+    }
+    if (candidate.deletedAt === null) return Number(candidate.id);
+    nextBoardUuid = candidate.mergedIntoBoardUuid;
+  }
+
+  if (nextBoardUuid) {
+    logger.warn(`[saveTick] merged board ${requestedBoardId} exceeded the tombstone hop limit at ${nextBoardUuid}`);
+  }
+  return null;
+}
 
 // Beta links are only attached on successful ascents (flash / send), never
 // on `attempt`. Returns the URL to attach, or null if the tick shouldn't
@@ -777,10 +881,11 @@ export const tickMutations = {
     //     exact board entity even when the climber doesn't own it (e.g. a
     //     seeded gym board owned by the system user). Config-gated exactly like
     //     rungs 2 and 3, so knowing a uuid isn't enough to stamp a tick onto
-    //     another board's stats (#4219). Best-effort: a deleted uuid, a stale
-    //     uuid, a config mismatch, or an input carrying no layout/size/set all
-    //     record the tick unassociated rather than rejecting it, and none of
-    //     them fall back to config resolution.
+    //     another board's stats (#4219). A merged loser UUID is canonicalised
+    //     below. Best-effort otherwise: an unknown uuid, an ordinary
+    //     soft-delete, a config mismatch, or an input carrying no
+    //     layout/size/set all record the tick unassociated rather than rejecting
+    //     it, and none of them fall back to config resolution.
     //  2. boardId — the board-presence connected wall (resolveBoardForSerial),
     //     flag-gated. On a stale/mismatched id we warn and fall back to the
     //     config lookup rather than surfacing a raw FK/type mismatch.
@@ -793,7 +898,9 @@ export const tickMutations = {
     //     a configuration rather than a board; it takes the owner's lowest-id
     //     board with that config.
     let boardId: number | null = null;
+    let boardAssociationSource: 'boardUuid' | 'explicitBoardId' | 'config' | null = null;
     if (validatedInput.boardUuid) {
+      boardAssociationSource = 'boardUuid';
       const [board] = await db
         .select({
           id: dbSchema.userBoards.id,
@@ -803,14 +910,21 @@ export const tickMutations = {
           setIds: dbSchema.userBoards.setIds,
         })
         .from(dbSchema.userBoards)
-        .where(and(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid), isNull(dbSchema.userBoards.deletedAt)))
+        .where(
+          and(
+            eq(dbSchema.userBoards.uuid, validatedInput.boardUuid),
+            or(isNull(dbSchema.userBoards.deletedAt), isNotNull(dbSchema.userBoards.mergedIntoBoardUuid)),
+          ),
+        )
         .limit(1);
 
-      // Board may have been deleted or the client sent a stale UUID — just
+      // An ordinary soft-delete or unknown UUID is deliberately absent here;
       // record the tick without a board association rather than rejecting it.
-      // board_id is nullable (onDelete: 'set null') so this is always valid.
-      // Same for a config mismatch: knowing a board's uuid must not be enough
-      // to add a tick to a wall the climber wasn't on (#4219).
+      // A merge tombstone supplies its id so the transaction lock below can
+      // follow it safely. board_id is nullable (onDelete: 'set null') so an
+      // unresolved uuid is always valid. Same for a config mismatch: knowing a
+      // board's uuid must not be enough to add a tick to a wall the climber
+      // wasn't on (#4219).
       if (board && boardConfigMatchesTick(board, validatedInput)) {
         boardId = board.id;
       } else if (board) {
@@ -833,6 +947,7 @@ export const tickMutations = {
       // the wrong wall and corrupt that board's presence stats.
       if (explicitBoard && boardConfigMatchesTick(explicitBoard, validatedInput)) {
         boardId = explicitBoard.id;
+        boardAssociationSource = 'explicitBoardId';
       } else {
         logger.warn(
           `[board-presence] Ignoring tick boardId ${validatedInput.boardId} — config mismatch for ${validatedInput.boardType}`,
@@ -879,6 +994,7 @@ export const tickMutations = {
         validatedInput.sizeId,
         validatedInput.setIds,
       );
+      if (boardId !== null) boardAssociationSource = 'config';
     }
 
     // Run write-time beta-link validation before opening the transaction so a
@@ -924,75 +1040,104 @@ export const tickMutations = {
     // Insert into database. When the client supplied a uuid that already exists
     // (offline replay), the insert is a no-op and `createdTick` is undefined —
     // we detect that, return the original row, and skip every side effect below.
-    const [tick] = await db.transaction(async (tx) => {
-      const [createdTick] = await tx
-        .insert(dbSchema.boardseshTicks)
-        .values({
-          uuid,
-          userId,
-          boardType: validatedInput.boardType,
-          climbUuid,
-          angle: effectiveAngle,
-          isMirror: validatedInput.isMirror,
-          status: validatedInput.status,
-          attemptCount: validatedInput.attemptCount,
-          quality: validatedInput.quality ?? null,
-          difficulty: validatedInput.difficulty ?? null,
-          isBenchmark: validatedInput.isBenchmark,
-          comment: validatedInput.comment,
-          climbedAt,
-          createdAt: now,
-          updatedAt: now,
-          sessionId: resolvedSessionId,
-          boardId,
-          // Aurora sync fields are null - will be populated by periodic sync job
-          auroraType: null,
-          auroraId: null,
-          auroraSyncedAt: null,
-          auroraSyncError: null,
-        })
-        .onConflictDoNothing({
-          target: dbSchema.boardseshTicks.uuid,
-        })
-        .returning();
-
-      if (!createdTick) return [];
-
-      if (resolvedSessionId) {
-        await tx.update(sessions).set({ lastActivity: new Date() }).where(eq(sessions.id, resolvedSessionId));
-      }
-
-      // Attach the video URL as community beta for this climb if the user
-      // provided one on a successful ascent and the helper said to insert
-      // (i.e. it wasn't a same-climb dup we silently skipped). The
-      // (boardType, climbUuid, link) PK makes re-submission idempotent.
-      if (attachedVideoUrl && betaPlan.action === 'insert') {
-        await tx
-          .insert(dbSchema.boardBetaLinks)
+    const [tick] = await db.transaction(
+      async (tx) => {
+        // Re-lock and canonicalise the association immediately before INSERT.
+        // Board resolution above intentionally stays outside this transaction so
+        // its network/catalog work does not lengthen the row-lock hold time.
+        const lockedBoardId = boardId === null ? null : await lockCanonicalTickBoardId(tx, boardId);
+        const boardAssociationBecameUnavailable = boardId !== null && lockedBoardId === null;
+        const [createdTick] = await tx
+          .insert(dbSchema.boardseshTicks)
           .values({
+            uuid,
+            userId,
             boardType: validatedInput.boardType,
             climbUuid,
-            link: attachedVideoUrl,
-            shortcode: getInstagramMediaId(attachedVideoUrl),
-            videoIdentity: betaLinkIdentity(attachedVideoUrl),
-            tickUuid: createdTick.uuid,
-            boardId: createdTick.boardId,
-            // The beta row's angle must move with the tick: the mobile home feed
-            // opens the video at THIS angle, so a beta pinned to 25° on a
-            // 40°-graded problem opens a page the problem isn't graded at. Same
-            // reasoning as the updateTick beta-angle move below.
+            // The angle this tick actually belongs at (#3529), resolved before
+            // the transaction opened so the lock below stays short. The snap is
+            // reported after the commit, off the RETURNING row.
             angle: effectiveAngle,
-            isListed: true,
-            thumbnail: betaPlan.thumbnail,
-            foreignUsername: betaPlan.foreignUsername,
+            isMirror: validatedInput.isMirror,
+            status: validatedInput.status,
+            attemptCount: validatedInput.attemptCount,
+            quality: validatedInput.quality ?? null,
+            difficulty: validatedInput.difficulty ?? null,
+            isBenchmark: validatedInput.isBenchmark,
+            comment: validatedInput.comment,
+            climbedAt,
             createdAt: now,
-            createdByUserId: userId,
+            updatedAt: now,
+            sessionId: resolvedSessionId,
+            boardId: lockedBoardId,
+            // Aurora sync fields are null - will be populated by periodic sync job
+            auroraType: null,
+            auroraId: null,
+            auroraSyncedAt: null,
+            auroraSyncError: null,
           })
-          .onConflictDoNothing();
-      }
+          .onConflictDoNothing({
+            target: dbSchema.boardseshTicks.uuid,
+          })
+          .returning();
 
-      return [createdTick];
-    });
+        if (!createdTick) return [];
+
+        if (boardAssociationBecameUnavailable) {
+          // The board was valid when we resolved it above, but a concurrent
+          // delete or dangling tombstone chain won the canonical row lock. Keep
+          // the valid tick and deliberately leave its nullable association empty;
+          // falling back to config here could stamp it onto a different wall.
+          // Emit only after a new row was returned: a concurrent idempotent replay
+          // that won the UUID insert must not produce this warning for our no-op.
+          logger.warn('[saveTick] Board association became unavailable; saving tick without board association', {
+            tickUuid: uuid,
+            userId,
+            requestedBoardId: boardId,
+            boardAssociationSource,
+            boardType: validatedInput.boardType,
+            climbUuid,
+            angle: effectiveAngle,
+          });
+        }
+
+        if (resolvedSessionId) {
+          await tx.update(sessions).set({ lastActivity: new Date() }).where(eq(sessions.id, resolvedSessionId));
+        }
+
+        // Attach the video URL as community beta for this climb if the user
+        // provided one on a successful ascent and the helper said to insert
+        // (i.e. it wasn't a same-climb dup we silently skipped). The
+        // (boardType, climbUuid, link) PK makes re-submission idempotent.
+        if (attachedVideoUrl && betaPlan.action === 'insert') {
+          await tx
+            .insert(dbSchema.boardBetaLinks)
+            .values({
+              boardType: validatedInput.boardType,
+              climbUuid,
+              link: attachedVideoUrl,
+              shortcode: getInstagramMediaId(attachedVideoUrl),
+              videoIdentity: betaLinkIdentity(attachedVideoUrl),
+              tickUuid: createdTick.uuid,
+              boardId: createdTick.boardId,
+              // The beta row's angle must move with the tick: the mobile home feed
+              // opens the video at THIS angle, so a beta pinned to 25° on a
+              // 40°-graded problem opens a page the problem isn't graded at. Same
+              // reasoning as the updateTick beta-angle move below.
+              angle: effectiveAngle,
+              isListed: true,
+              thumbnail: betaPlan.thumbnail,
+              foreignUsername: betaPlan.foreignUsername,
+              createdAt: now,
+              createdByUserId: userId,
+            })
+            .onConflictDoNothing();
+        }
+
+        return [createdTick];
+      },
+      { isolationLevel: 'read committed' },
+    );
 
     // Settle the catalog observation started before the board/session lookups.
     // By now it has overlapped every round-trip above, so this is a no-op wait
@@ -1053,7 +1198,7 @@ export const tickMutations = {
     // Publish ascent.logged event for feed fan-out (only for successful ascents)
     if (tick.status === 'flash' || tick.status === 'send') {
       // Fire-and-forget with retry: don't block the response on event publishing
-      publishAscentEvent(tick, userId, boardId).catch(() => {
+      publishAscentEvent(tick, userId, tick.boardId).catch(() => {
         // Final failure already logged inside publishAscentEvent
       });
     }
@@ -1076,8 +1221,8 @@ export const tickMutations = {
     // ticks can't pair a stale snapshot with a higher seq. Runs after the tick
     // has committed (the recompute sees it) and self-guards, so a presence push
     // can never fail the tick that triggered it.
-    if (boardId != null) {
-      queueBoardStatsPublish(boardId, tick.boardType);
+    if (tick.boardId != null) {
+      queueBoardStatsPublish(tick.boardId, tick.boardType);
     }
 
     logger.info(

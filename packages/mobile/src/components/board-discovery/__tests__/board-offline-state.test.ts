@@ -11,6 +11,7 @@ import type { SnapshotBootstrapProgress } from '@boardsesh/offline-sync';
 const base = {
   scopeKey: 'kilter:1:5',
   enabled: true,
+  isBootstrapDone: false,
   isSyncing: false,
   downloaded: false,
   currentTable: null as string | null,
@@ -53,6 +54,7 @@ describe('boardDownloadState', () => {
       boardDownloadState({
         scopeKey: 'kilter:1:50',
         enabled: true,
+        isBootstrapDone: false,
         isSyncing: true,
         downloaded: false,
         currentTable: 'board_climbs:kilter:1:5',
@@ -65,6 +67,7 @@ describe('boardDownloadState', () => {
       boardDownloadState({
         scopeKey: 'kilter:1:50',
         enabled: true,
+        isBootstrapDone: false,
         isSyncing: true,
         downloaded: false,
         currentTable: 'board_climb_grades:kilter:1:5',
@@ -82,6 +85,58 @@ describe('boardDownloadState', () => {
         currentTable: 'board_climbs:tension:8:10',
       }),
     ).toBe('pending');
+  });
+
+  it.each([
+    ['bootstrap', 'tension:8:10'],
+    ['deletions', null],
+    ['user_data', 'boardsesh_ticks'],
+    ['board_data', 'board_climbs:tension:8:10'],
+  ] as const)(
+    'is finalizing during the active %s phase once its snapshot imported but the scope is incomplete',
+    (phase, currentTable) => {
+      expect(
+        boardDownloadState({
+          ...base,
+          isBootstrapDone: true,
+          isSyncing: true,
+          downloaded: false,
+          currentTable,
+          phase,
+        }),
+      ).toBe('finalizing');
+    },
+  );
+
+  it.each([
+    ['bootstrap', 'tension:8:10'],
+    ['deletions', null],
+    ['user_data', 'boardsesh_ticks'],
+    ['board_data', 'board_climbs:tension:8:10'],
+  ] as const)('stays pending during active %s work when snapshot bootstrap did not land', (phase, currentTable) => {
+    expect(
+      boardDownloadState({
+        ...base,
+        isBootstrapDone: false,
+        isSyncing: true,
+        currentTable,
+        phase,
+      }),
+    ).toBe('pending');
+  });
+
+  it('does not call an incomplete board finalizing when no sync cycle is active', () => {
+    expect(boardDownloadState({ ...base, isBootstrapDone: true, isSyncing: false, phase: 'deletions' })).toBe(
+      'pending',
+    );
+  });
+
+  it.each([null, 'idle'] as const)('does not call an imported board finalizing for a %s progress phase', (phase) => {
+    expect(boardDownloadState({ ...base, isBootstrapDone: true, isSyncing: true, phase })).toBe('pending');
+  });
+
+  it('keeps a completed board downloaded during shared finalizing work', () => {
+    expect(boardDownloadState({ ...base, isSyncing: true, downloaded: true, phase: 'deletions' })).toBe('downloaded');
   });
 
   it('stays downloaded when a later cycle is syncing a different board', () => {
@@ -106,6 +161,7 @@ describe('boardDownloadState', () => {
       boardDownloadState({
         scopeKey: 'kilter:1:50',
         enabled: true,
+        isBootstrapDone: false,
         isSyncing: true,
         downloaded: false,
         currentTable: 'kilter:1:5',
@@ -151,6 +207,7 @@ describe('boardIsBootstrapping', () => {
       boardIsBootstrapping({
         scopeKey: 'kilter:1:50',
         enabled: true,
+        isBootstrapDone: false,
         isSyncing: true,
         downloaded: false,
         currentTable: 'kilter:1:5',
@@ -186,6 +243,17 @@ describe('boardDownloadNotice', () => {
     expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 1, retryAfter: 1_800_000_000_000 })).toBe(
       'snapshot-retrying',
     );
+  });
+
+  it('shows the live paged-fallback notice when a crawl is active after snapshot retry evidence', () => {
+    expect(
+      boardDownloadNotice({
+        ...noticeBase,
+        bootstrapAttempts: 1,
+        retryAfter: 1_800_000_000_000,
+        isPagedDownloadActive: true,
+      }),
+    ).toBe('paged-fallback');
   });
 
   it('shows a paged-fallback notice once both snapshot budgets are spent', () => {

@@ -1455,6 +1455,8 @@ export type CreateBoardInput = {
    * a physically different wall (another gym, another room) — never by default.
    */
   allowDuplicateConfig?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Create even when the serial is already registered to another user's board with the same configuration (default false — such creates fail with BOARD_SERIAL_EXISTS so clients can route the user to the existing board) */
+  allowDuplicateSerial?: InputMaybe<Scalars['Boolean']['input']>;
   /** Default angle for this board (default 40) */
   angle?: InputMaybe<Scalars['Int']['input']>;
   /** Board type */

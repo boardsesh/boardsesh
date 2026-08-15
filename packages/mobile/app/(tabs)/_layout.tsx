@@ -112,8 +112,9 @@ export default function TabLayout() {
   // iPhones keeping every tab resident would add to the 4GB-device board-art OOM risk
   // (#3479, docs/react-native-performance.md §7), so those stay on the default + freeze.
   const keepInactiveTabsResident = Platform.OS === 'android';
-  // Regular-width iPad opts into the sidebar shell; compact width (every iPhone,
-  // a narrow iPad split) keeps the native / Material tab bars below verbatim.
+  // A regular-width tablet-sized surface opts into the sidebar shell; compact
+  // width (every phone and a narrow tablet/browser window) keeps the native /
+  // Material tab bars below verbatim.
   // (deviceLayout.expanded is computed but intentionally unconsumed here — it's
   // reserved for the Phase-3 master+detail Climbs browser; see size-class.ts.)
   const deviceLayout = useDeviceLayout();
@@ -241,12 +242,13 @@ export default function TabLayout() {
     />,
   ];
 
-  // iPad adaptive shell. ONE JS `Tabs` navigator is mounted across the
+  // Large-screen adaptive shell. ONE JS `Tabs` navigator is mounted across the
   // regular↔compact boundary, so resizing an iPad window across the breakpoint (a
   // Split View drag, a Stage Manager resize) swaps only the CHROME — the glass
   // sidebar + content panes at regular width, the Material tab bar in a narrow
   // split — and keeps each tab's scroll offset and nested-stack depth instead of
-  // remounting the navigator. The navigator still owns routing; at regular width
+  // remounting the navigator. Web follows this path with Material chrome. The
+  // navigator still owns routing; at regular width
   // its bar is hidden and the sidebar drives it through the global router. iPad
   // never uses NativeTabs (that would swap navigator *types* on the boundary cross
   // and remount); NativeTabs stays the iPhone-only glass path below. The `content`

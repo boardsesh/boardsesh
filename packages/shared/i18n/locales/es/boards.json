@@ -265,6 +265,7 @@
     "offline": {
       "available": "Disponible sin conexión",
       "pending": "Esperando para descargar",
+      "finalizing": "Finalizando la descarga…",
       "bootstrapping": "Descargando el plafón…",
       "bootstrapPreparing": "Preparando la descarga…",
       "bootstrapDownloading": "Descargando {{done}} de {{total}}",
@@ -416,6 +417,15 @@
       "duplicateBodyGeneric": "Con este cambio el plafón queda igual que otro que su propietario ya tiene.",
       "saveAnyway": "Guardar igualmente",
       "cancel": "Cancelar"
+    },
+    "serialReuse": {
+      "warning": "Este número de serie ya pertenece a «{{name}}». Si te unes a ese plafón, los encadenes y las estadísticas de todos se quedan en un solo muro.",
+      "warningPrivate": "Este número de serie ya está registrado en el plafón privado de otro escalador.",
+      "dialogTitle": "Este muro ya está en Boardsesh",
+      "dialogBody": "El número de serie {{serial}} está registrado a nombre de «{{name}}». Si creas un duplicado, tus encadenes y sesiones quedarán separados del grupo que ya escala allí.",
+      "dialogBodyPrivate": "El número de serie {{serial}} ya está registrado en el plafón privado de otro escalador. Si de verdad es un muro distinto, puedes crear el tuyo igualmente.",
+      "useExisting": "Usar el plafón existente",
+      "createAnyway": "Crear un duplicado de todos modos"
     }
   },
   "editBoard": {

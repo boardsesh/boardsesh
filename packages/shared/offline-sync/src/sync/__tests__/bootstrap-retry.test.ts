@@ -32,7 +32,7 @@ import {
   type BootstrapFailureKind,
   type BootstrapRetryState,
 } from '../bootstrap-retry';
-import { SnapshotArtifactTruncatedError } from '../snapshot-bootstrap';
+import { SnapshotArtifactTruncatedError, SnapshotBackgroundTransferInterruptedError } from '../snapshot-bootstrap';
 import { runMigrations } from '../../db/migrations';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
 
@@ -90,6 +90,15 @@ describe('classifyBootstrapFailure', () => {
     expect(classifyBootstrapFailure({ cause, stage: 'download' })).toBe('transport');
     // At the IMPORT stage every failure is artifact-attributable, unchanged.
     expect(classifyBootstrapFailure({ cause, stage: 'import' })).toBe('structural-artifact');
+  });
+
+  it('routes a background-transfer marker to transport by its stable error name', () => {
+    const localMarker = new SnapshotBackgroundTransferInterruptedError('cannot decode raw data');
+    const crossBundleMarker = new Error('cannot decode raw data');
+    crossBundleMarker.name = 'SnapshotBackgroundTransferInterruptedError';
+
+    expect(classifyBootstrapFailure({ cause: localMarker, stage: 'download' })).toBe('transport');
+    expect(classifyBootstrapFailure({ cause: crossBundleMarker, stage: 'download' })).toBe('transport');
   });
 
   it('attributes an unclassifiable download failure to the DEVICE, not the artifact', () => {

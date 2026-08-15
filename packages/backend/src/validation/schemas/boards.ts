@@ -52,6 +52,10 @@ export const CreateBoardInputSchema = z.object({
   // them confirm this is a different physical wall. Skips the duplicate-config
   // guard entirely — see board-duplicates.ts.
   allowDuplicateConfig: z.boolean().optional(),
+  // Escape hatch for the cross-owner duplicate-serial backstop: when the caller
+  // has confirmed this really is a separate physical wall that happens to reuse
+  // a serial, they pass true to skip the BOARD_SERIAL_EXISTS guard.
+  allowDuplicateSerial: z.boolean().optional(),
 });
 
 /**

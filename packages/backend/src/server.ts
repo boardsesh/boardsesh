@@ -63,7 +63,7 @@ import {
 import { startApnsHeartbeat, stopApnsHeartbeat } from './services/apns/heartbeat';
 import { startApnsStaleTokenCleanup, stopApnsStaleTokenCleanup } from './services/apns/cleanup';
 import { buildContentStateFromQueueState } from './services/apns/content-state';
-import { getBoardSeqFloor, resolveBoardHolder } from './graphql/resolvers/board-presence/shared';
+import { allocateBoardPresenceSeq, resolveBoardHolder } from './graphql/resolvers/board-presence/shared';
 import { registerBoardQueuePreviewHook } from './services/board-queue-preview';
 import { logger, setInstanceIdProvider } from './utils/logger';
 import { isClientAbortError } from './utils/http-errors';
@@ -119,10 +119,10 @@ export async function startServer(): Promise<ServerResources> {
   // the board images root). Never throws — on failure GET /og/climb returns 503.
   await initBoardRenderer();
 
-  // Wire the durable seq-floor lookup for board-presence's dormancy reseed
-  // (A3) — pubsub stays DB-free at import time, but the running server needs
-  // Postgres to answer "what's the highest seq we've durably persisted".
-  pubsub.setBoardSeqFloorProvider(getBoardSeqFloor);
+  // PostgreSQL owns sequence reservations; Redis supplies a fast candidate and
+  // is mirrored up to the committed value. This also serializes allocations
+  // against board-merge row locks, so resequencing cannot create collisions.
+  pubsub.setBoardSeqAllocator(allocateBoardPresenceSeq);
 
   // Wire the logger to the pubsub instance id. The format step in the
   // logger reads this provider at log time, so we get the `[i:abcd1234]`

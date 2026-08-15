@@ -265,6 +265,7 @@
     "offline": {
       "available": "Offline verfügbar",
       "pending": "Wartet auf Download",
+      "finalizing": "Download wird abgeschlossen…",
       "bootstrapping": "Board wird geladen…",
       "bootstrapPreparing": "Download wird vorbereitet…",
       "bootstrapDownloading": "{{done}} von {{total}} geladen",
@@ -416,6 +417,15 @@
       "duplicateBodyGeneric": "Mit dieser Änderung ist das Board identisch mit einem anderen Board desselben Kontos.",
       "saveAnyway": "Trotzdem speichern",
       "cancel": "Abbrechen"
+    },
+    "serialReuse": {
+      "warning": "Diese Seriennummer gehört schon zu „{{name}}“. Wenn du dich diesem Board anschließt, bleiben die Begehungen und Stats aller an einer Wand.",
+      "warningPrivate": "Diese Seriennummer ist schon für das private Board einer anderen Kletterer*in registriert.",
+      "dialogTitle": "Diese Wand ist schon auf Boardsesh",
+      "dialogBody": "Die Seriennummer {{serial}} ist für „{{name}}“ registriert. Legst du ein Duplikat an, laufen deine Begehungen und Sessions getrennt von der Crew, die dort schon klettert.",
+      "dialogBodyPrivate": "Die Seriennummer {{serial}} ist schon für das private Board einer anderen Kletterer*in registriert. Wenn das wirklich eine andere Wand ist, kannst du deine trotzdem anlegen.",
+      "useExisting": "Vorhandenes Board nutzen",
+      "createAnyway": "Trotzdem ein Duplikat anlegen"
     }
   },
   "editBoard": {

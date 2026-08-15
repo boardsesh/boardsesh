@@ -55,6 +55,32 @@ describe('sync-status store', () => {
     expect(status.lastSyncedAt).toBe(fixedNow);
   });
 
+  it('interrupted idle clears isSyncing without stamping lastSyncedAt', () => {
+    const previousSuccessAt = 1_700_000_000_000;
+    const interruptedAt = previousSuccessAt + 60_000;
+    const now = vi.spyOn(Date, 'now').mockReturnValue(previousSuccessAt);
+    setSyncProgress({ phase: 'idle', currentTable: null, documentsProcessed: 10 });
+
+    now.mockReturnValue(interruptedAt);
+    setSyncProgress({ phase: 'bootstrap', currentTable: 'kilter:1:5', documentsProcessed: 0 });
+    setSyncProgress({
+      phase: 'idle',
+      currentTable: null,
+      documentsProcessed: 0,
+      interrupted: true,
+    });
+
+    const status = getSyncStatusSnapshot();
+    expect(status.isSyncing).toBe(false);
+    expect(status.lastSyncedAt).toBe(previousSuccessAt);
+    expect(status.progress).toEqual({
+      phase: 'idle',
+      currentTable: null,
+      documentsProcessed: 0,
+      interrupted: true,
+    });
+  });
+
   it('keeps the prior lastSyncedAt across a subsequent non-idle frame', () => {
     const firstSync = 1_700_000_000_000;
     vi.spyOn(Date, 'now').mockReturnValue(firstSync);

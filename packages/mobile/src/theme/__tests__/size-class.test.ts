@@ -86,6 +86,14 @@ describe('resolveIsTablet', () => {
       expect(resolveIsTablet({ platformOS: 'android', isPad: false, screenShortSide })).toBe(true);
     }
   });
+
+  it('uses the same physical short-side qualifier for web screens', () => {
+    expect(resolveIsTablet({ platformOS: 'web', isPad: false, screenShortSide: TABLET_MIN_SHORT_SIDE_DP - 1 })).toBe(
+      false,
+    );
+    expect(resolveIsTablet({ platformOS: 'web', isPad: false, screenShortSide: TABLET_MIN_SHORT_SIDE_DP })).toBe(true);
+    expect(resolveIsTablet({ platformOS: 'web', isPad: false, screenShortSide: 900 })).toBe(true);
+  });
 });
 
 describe('resolveWallSurface', () => {
@@ -119,7 +127,9 @@ describe('resolveWallDeviceClass', () => {
   it('is always sheet-only on a phone, whatever the screen size', () => {
     // Phones never mount the persistent wall panel — the wall lives in the sheet.
     for (const screenLongSide of [844, 932, 1133, 1366]) {
-      expect(resolveWallDeviceClass({ screenLongSide, isPad: false, isAndroidTablet: false })).toBe('sheet-only');
+      expect(resolveWallDeviceClass({ screenLongSide, isPad: false, isTablet: false, platformOS: 'ios' })).toBe(
+        'sheet-only',
+      );
     }
   });
 
@@ -127,14 +137,18 @@ describe('resolveWallDeviceClass', () => {
     // Below the 11" Pro's long side (1194): iPad mini (1133), base iPad and Air
     // 11" (1180), and one point under the floor.
     for (const screenLongSide of [1133, 1180, WALL_PANEL_MIN_DEVICE_LONG_SIDE - 1]) {
-      expect(resolveWallDeviceClass({ screenLongSide, isPad: true, isAndroidTablet: false })).toBe('sheet-only');
+      expect(resolveWallDeviceClass({ screenLongSide, isPad: true, isTablet: true, platformOS: 'ios' })).toBe(
+        'sheet-only',
+      );
     }
   });
 
   it('keeps the panel on the 11" Pro and every 13"', () => {
     // 11" Pro (1194 / M4 1210) and all 13" (12.9" 1366, M4 13" 1376).
     for (const screenLongSide of [WALL_PANEL_MIN_DEVICE_LONG_SIDE, 1210, 1366, 1376]) {
-      expect(resolveWallDeviceClass({ screenLongSide, isPad: true, isAndroidTablet: false })).toBe('panel-capable');
+      expect(resolveWallDeviceClass({ screenLongSide, isPad: true, isTablet: true, platformOS: 'ios' })).toBe(
+        'panel-capable',
+      );
     }
   });
 
@@ -143,8 +157,16 @@ describe('resolveWallDeviceClass', () => {
     // decides column/strip/none, so even a small tablet is panel-capable here and
     // gets a strip (not a column) when the width is tight.
     for (const screenLongSide of [960, 1024, 1280, 1600]) {
-      expect(resolveWallDeviceClass({ screenLongSide, isPad: false, isAndroidTablet: true })).toBe('panel-capable');
+      expect(resolveWallDeviceClass({ screenLongSide, isPad: false, isTablet: true, platformOS: 'android' })).toBe(
+        'panel-capable',
+      );
     }
+  });
+
+  it('is panel-capable on a qualifying web screen', () => {
+    expect(resolveWallDeviceClass({ screenLongSide: 900, isPad: false, isTablet: true, platformOS: 'web' })).toBe(
+      'panel-capable',
+    );
   });
 });
 

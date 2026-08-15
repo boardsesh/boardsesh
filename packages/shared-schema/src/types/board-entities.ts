@@ -93,6 +93,9 @@ export type CreateBoardInput = {
    * place. Set only after the user confirms it is a different physical wall.
    */
   allowDuplicateConfig?: boolean;
+  // Opt-in for creating a board whose serial is already registered to another
+  // user's same-config board; without it such creates fail BOARD_SERIAL_EXISTS.
+  allowDuplicateSerial?: boolean;
 };
 
 export type UpdateBoardInput = {

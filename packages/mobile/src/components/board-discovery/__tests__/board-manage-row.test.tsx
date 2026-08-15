@@ -172,6 +172,13 @@ describe('BoardManageRow offline toggle gating', () => {
     expect(offlineToggleProps.last?.state).toBe('downloaded');
   });
 
+  it('shows a finishing caption while shared post-download work is still running', () => {
+    const { queryByText } = render(<BoardManageRow {...rowProps} downloadState="finalizing" />);
+    expect(queryByText('mobile.offline.finalizing')).not.toBeNull();
+    expect(queryByText('mobile.offline.pending')).toBeNull();
+    expect(offlineToggleProps.last?.state).toBe('finalizing');
+  });
+
   it('shows the bootstrapping caption (not the climb count) during the snapshot warm-up', () => {
     const { queryByText } = render(
       <BoardManageRow {...rowProps} downloadState="downloading" isBootstrapping downloadCount={0} />,
