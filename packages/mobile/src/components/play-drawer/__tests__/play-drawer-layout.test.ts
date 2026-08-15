@@ -4,6 +4,7 @@ import {
   computeContainedBoardSize,
   computeFirstScreenHeight,
   computeLogbookScrollTarget,
+  shouldShowPanePlaceholder,
 } from '../play-drawer-layout';
 
 describe('computeContainedBoardSize', () => {
@@ -56,6 +57,14 @@ describe('computeFirstScreenHeight', () => {
 
   it('honours a custom floor fraction', () => {
     expect(computeFirstScreenHeight(1000, 900, 0.6)).toBe(600);
+  });
+});
+
+describe('shouldShowPanePlaceholder', () => {
+  it('shows only for an empty persistent pane', () => {
+    expect(shouldShowPanePlaceholder(true, false)).toBe(true);
+    expect(shouldShowPanePlaceholder(true, true)).toBe(false);
+    expect(shouldShowPanePlaceholder(false, false)).toBe(false);
   });
 });
 

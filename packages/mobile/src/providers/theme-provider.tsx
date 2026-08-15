@@ -45,6 +45,7 @@ import { variantFeatures, type VariantFeatures } from '../theme/variants/variant
 import { secureStorePreferences } from '../lib/preferences/secure-store-adapter';
 import { assertNever } from '../lib/assert-never';
 import { SCREENSHOT_THEME_OVERRIDE, SCREENSHOT_VARIANT_PREFERENCE } from '../lib/screenshot-mode';
+import { syncDocumentAppearance } from '../lib/theme/document-appearance';
 
 type ColorScheme = 'light' | 'dark';
 
@@ -242,14 +243,17 @@ type ThemeProviderProps = {
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
   const deviceColorScheme = useColorScheme();
-  // `'system'` until SecureStore hydrates — same value as a brand-new user, so
-  // the first paint matches the OS preference. Once hydration completes the
-  // resolved scheme switches to the saved override (if any) without a visible
-  // flash when the OS already matches the override. In screenshot mode the
-  // theme is locked to a fixed value (light by default) so captures can't flip
-  // mid-run when the keychain read resolves.
+  // Native starts on `system`, matching the OS. Web starts dark so a fresh
+  // browser session matches the deployed app's dark shell before preference
+  // hydration completes. A saved light/dark/system choice still replaces this
+  // launch default once IndexedDB resolves. Screenshot mode remains pinned to
+  // its explicit fixture value so captures cannot flip mid-run.
   const [themeOverride, setThemeOverrideState] = useState<ThemeOverride>(
-    process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? SCREENSHOT_THEME_OVERRIDE : 'system',
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1'
+      ? SCREENSHOT_THEME_OVERRIDE
+      : Platform.OS === 'web'
+        ? 'dark'
+        : 'system',
   );
   // `'auto'` until SecureStore hydrates — same value as a brand-new user, so the
   // first paint resolves to the platform default (Liquid Glass on iOS 26,
@@ -277,9 +281,9 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
         if (isThemeOverride(value)) setThemeOverrideState(value);
       })
       .catch(() => {
-        // Storage read can fail if SecureStore is unavailable (rare). Stay on
-        // the 'system' default rather than crashing — the user's override is
-        // lost for this session but the app remains usable.
+        // Storage read can fail if the platform store is unavailable (rare).
+        // Keep the platform launch default rather than crashing: dark on web,
+        // system-following on native.
       });
     secureStorePreferences
       .get<UiVariantPreference>(UI_VARIANT_KEY)
@@ -399,6 +403,13 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
       features: variantFeatures[variant],
     };
   }, [colorScheme, variant, themeOverride, setThemeOverride, uiVariantPreference, setUiVariant, m3Colors]);
+
+  useEffect(() => {
+    const backgroundColor = theme.systemColors.background;
+    if (typeof backgroundColor === 'string') {
+      syncDocumentAppearance(colorScheme, backgroundColor);
+    }
+  }, [colorScheme, theme.systemColors.background]);
 
   // React 19 context provider syntax (Expo SDK 53+ / React 19)
   return (

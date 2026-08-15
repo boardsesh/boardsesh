@@ -1,5 +1,5 @@
 /**
- * Pure size-class arbitration for the adaptive iPad shell. No react-native
+ * Pure size-class arbitration for the adaptive large-screen shell. No react-native
  * imports, so it unit-tests as plain functions (mirrors the pure
  * `bottom-chrome-metrics.ts` pattern). The React wrapper that feeds it window
  * dimensions lives in `hooks/use-device-layout.ts`.
@@ -44,10 +44,10 @@ export type DeviceLayout = {
 
 /**
  * Resolve the size class from the app window width and whether the device is a
- * tablet (an iPad, or an Android tablet — see {@link resolveIsTablet}). Only a
- * tablet opts into the adaptive shell — every phone stays `compact` regardless of
- * width — and a tablet in a narrow split is `compact` too, so the sidebar appears
- * only when there is genuinely room for two columns.
+ * tablet-sized surface (an iPad, Android tablet, or qualifying browser screen —
+ * see {@link resolveIsTablet}). Only those surfaces opt into the adaptive shell;
+ * a narrow live window remains `compact`, so the rail appears only when there is
+ * genuinely room for multiple columns.
  */
 export function resolveDeviceLayout({ width, isTablet }: { width: number; isTablet: boolean }): DeviceLayout {
   if (!isTablet || width < REGULAR_WIDTH_BREAKPOINT) {
@@ -72,18 +72,17 @@ export const TABLET_MIN_SHORT_SIDE_DP = 600;
 export type PlatformOS = 'ios' | 'android' | 'windows' | 'macos' | 'web';
 
 /**
- * Whether this device opts into the adaptive shell: an iPad, or an Android tablet
- * whose smallest screen width clears {@link TABLET_MIN_SHORT_SIDE_DP}. Pure (the
+ * Whether this device opts into the adaptive shell: an iPad, or an Android/web
+ * screen whose smallest physical-screen width clears {@link TABLET_MIN_SHORT_SIDE_DP}. Pure (the
  * platform and the physical-screen short side are injected) so it unit-tests
  * without react-native, mirroring the width resolvers; the React wrapper reads
  * `Platform.OS` / `Dimensions.get('screen')` in `use-device-layout.ts`.
  *
  * Launch-fixed like `Platform.isPad` — the short side comes from the PHYSICAL
- * screen, not the app window (which shrinks under Split View / multi-window / DeX),
- * so an Android tablet in a small freeform window is still a tablet (`isTablet`
- * true) but resolves `compact` from the live width, exactly like an iPad in a
- * narrow Split View. The mount decision must not flip the navigator type
- * mid-session; the live axis is `widthClass`.
+ * screen, not the app window (which shrinks under Split View / multi-window / DeX
+ * or when a desktop browser is resized), so an eligible device stays a tablet
+ * surface while the live width can still resolve `compact`. The mount decision
+ * must not flip the navigator type mid-session; the live axis is `widthClass`.
  */
 export function resolveIsTablet({
   platformOS,
@@ -94,7 +93,8 @@ export function resolveIsTablet({
   isPad: boolean;
   screenShortSide: number;
 }): boolean {
-  return isPad || (platformOS === 'android' && screenShortSide >= TABLET_MIN_SHORT_SIDE_DP);
+  const usesShortSideTabletQualifier = platformOS === 'android' || platformOS === 'web';
+  return isPad || (usesShortSideTabletQualifier && screenShortSide >= TABLET_MIN_SHORT_SIDE_DP);
 }
 
 /**
@@ -108,7 +108,7 @@ export type WallDeviceClass = 'panel-capable' | 'sheet-only';
  * Resolve the wall device class from the physical screen long side (see
  * {@link WALL_PANEL_MIN_DEVICE_LONG_SIDE}).
  *
- * - **Android tablets are always `panel-capable`.** The iPad points floor exists
+ * - **Android tablets and qualifying web screens are always `panel-capable`.** The iPad points floor exists
  *   only because iPad points can't separate an iPad mini from an 11" Pro at the
  *   same size class; on Android the live width budget (`resolveWallSurface`)
  *   already decides column/strip/none, and density-bucketed dp isn't comparable to
@@ -123,13 +123,15 @@ export type WallDeviceClass = 'panel-capable' | 'sheet-only';
 export function resolveWallDeviceClass({
   screenLongSide,
   isPad,
-  isAndroidTablet,
+  isTablet,
+  platformOS,
 }: {
   screenLongSide: number;
   isPad: boolean;
-  isAndroidTablet: boolean;
+  isTablet: boolean;
+  platformOS: PlatformOS;
 }): WallDeviceClass {
-  if (isAndroidTablet) return 'panel-capable';
+  if (isTablet && (platformOS === 'android' || platformOS === 'web')) return 'panel-capable';
   if (!isPad || screenLongSide < WALL_PANEL_MIN_DEVICE_LONG_SIDE) return 'sheet-only';
   return 'panel-capable';
 }
