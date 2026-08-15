@@ -1,0 +1,40 @@
+name: PostgreSQL Image Publisher Contract
+
+on:
+  pull_request:
+    paths: &publisher_contract_paths
+      - '.github/workflows/postgres-image-publisher.yml'
+      - '.github/workflows/postgres-image-publisher-contract.yml'
+      - 'scripts/lib/postgres-image-publisher-contract.ts'
+      - 'scripts/postgres-image-publisher-contract.test.ts'
+      - 'docs/postgres-image-publishing.md'
+      - 'package.json'
+      - 'bun.lock'
+  push:
+    branches: [main]
+    paths: *publisher_contract_paths
+
+permissions:
+  contents: read
+
+jobs:
+  verify-trust-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository without persisted credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Verify publisher authority and artifact contracts
+        run: vp test run --project scripts scripts/postgres-image-publisher-contract.test.ts --reporter=agent
