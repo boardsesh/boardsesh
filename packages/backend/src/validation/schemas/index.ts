@@ -11,6 +11,7 @@ export * from './comments';
 export * from './feeds';
 export * from './proposals';
 export * from './boards';
+export * from './standings';
 export * from './gyms';
 export * from './gym-kiosks';
 export * from './feedback';

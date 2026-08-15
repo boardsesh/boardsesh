@@ -74,6 +74,7 @@
         "@boardsesh/gym-claim": "*",
         "@boardsesh/kilter-sync": "*",
         "@boardsesh/kiosk": "*",
+        "@boardsesh/leaderboard": "workspace:*",
         "@boardsesh/offline-sync": "*",
         "@boardsesh/queue": "*",
         "@boardsesh/shared-schema": "*",
@@ -232,6 +233,7 @@
         "@boardsesh/gym-claim": "*",
         "@boardsesh/i18n": "*",
         "@boardsesh/key-value-storage": "*",
+        "@boardsesh/leaderboard": "workspace:*",
         "@boardsesh/logbook": "*",
         "@boardsesh/offline-sync": "*",
         "@boardsesh/party-profile": "*",
@@ -584,6 +586,13 @@
       "dependencies": {
         "zod": "^4.4.3",
       },
+      "devDependencies": {
+        "typescript": "~7.0.2",
+      },
+    },
+    "packages/shared/leaderboard": {
+      "name": "@boardsesh/leaderboard",
+      "version": "1.0.0",
       "devDependencies": {
         "typescript": "~7.0.2",
       },
@@ -1193,6 +1202,8 @@
     "@boardsesh/kilter-sync": ["@boardsesh/kilter-sync@workspace:packages/kilter-sync"],
 
     "@boardsesh/kiosk": ["@boardsesh/kiosk@workspace:packages/shared/kiosk"],
+
+    "@boardsesh/leaderboard": ["@boardsesh/leaderboard@workspace:packages/shared/leaderboard"],
 
     "@boardsesh/location-sync": ["@boardsesh/location-sync@workspace:packages/location-sync"],
 

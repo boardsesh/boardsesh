@@ -553,6 +553,20 @@ export const queriesTypeDefs = /* GraphQL */ `
     boardLeaderboard(input: BoardLeaderboardInput!): BoardLeaderboard!
 
     """
+    Ranked standings for a scope over a rolling window.
+
+    Ranks on DISTINCT climbs topped, so re-logging one climb does not climb the
+    ranking, and tied climbers genuinely share a rank. Excludes the frozen bulk
+    logbook import, internal accounts, system pseudo-boards, and climbers who
+    opted out of ranked surfaces.
+
+    When the requested scope has nobody in it, walks up the fallback ladder
+    rather than returning an empty list — compare resolvedScope against
+    requestedScope and tell the reader when they differ.
+    """
+    standings(input: StandingsInput!): Standings!
+
+    """
     Get the user's default board (first owned, then most used).
     Requires authentication.
     """

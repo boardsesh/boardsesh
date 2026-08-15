@@ -5174,6 +5174,19 @@ export type Query = {
    */
   smartPlaylist: SmartPlaylistResult;
   /**
+   * Ranked standings for a scope over a rolling window.
+   *
+   * Ranks on DISTINCT climbs topped, so re-logging one climb does not climb the
+   * ranking, and tied climbers genuinely share a rank. Excludes the frozen bulk
+   * logbook import, internal accounts, system pseudo-boards, and climbers who
+   * opted out of ranked surfaces.
+   *
+   * When the requested scope has nobody in it, walks up the fallback ladder
+   * rather than returning an empty list — compare resolvedScope against
+   * requestedScope and tell the reader when they differ.
+   */
+  standings: Standings;
+  /**
    * Boards that probably belong to a gym but aren't linked to it yet, for the
    * gym's Boards tab. Requires edit access to the gym. Returns two kinds of
    * candidate: boards on a listing whose merged_into chain resolves to this gym
@@ -5769,6 +5782,11 @@ export type QuerySimilarClimbsArgs = {
 /** Root query type for all read operations. */
 export type QuerySmartPlaylistArgs = {
   input: GetSmartPlaylistInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryStandingsArgs = {
+  input: StandingsInput;
 };
 
 /** Root query type for all read operations. */
@@ -7241,6 +7259,117 @@ export type SocialEntityType =
 
 export type SortMode = 'controversial' | 'hot' | 'new' | 'top';
 
+/** A ranking for one scope and one window. */
+export type Standings = {
+  __typename?: 'Standings';
+  /**
+   * Share of recent sends this scope kind can attribute at all, 0-1. Below 1 the
+   * surface should say why — sends synced from the Kilter or Aurora app carry no
+   * wall, so a per-wall ranking cannot see them.
+   */
+  coverage: Scalars['Float']['output'];
+  /** Set when resolvedScope differs from requestedScope. A stable machine-readable reason, not display copy. */
+  demotionReason?: Maybe<StandingsDemotionReason>;
+  entries: Array<StandingsEntry>;
+  hasMore: Scalars['Boolean']['output'];
+  /** The scope that was asked for. */
+  requestedScope: StandingsScope;
+  /**
+   * The scope actually ranked. Differs from requestedScope when the requested
+   * one had nobody in it and the server walked up the fallback ladder. Never
+   * silent — pair it with demotionReason and say so.
+   */
+  resolvedScope: StandingsScope;
+  /** Distinct climbers in the resolved scope, i.e. the denominator behind every rank. */
+  totalCount: Scalars['Int']['output'];
+  /** Where the requesting climber sits. Null when they are signed out, opted out, or logged nothing in this window. */
+  viewer?: Maybe<ViewerStanding>;
+};
+
+export type StandingsDemotionReason =
+  /** Nobody has logged a qualifying send in the requested scope during the window. */
+  | 'empty'
+  /** The requested scope key does not resolve to a board, gym or layout that exists. */
+  | 'unknownScope';
+
+/** A climber's row in a ranking. */
+export type StandingsEntry = {
+  __typename?: 'StandingsEntry';
+  /** Null when the climber is anonymous on this surface. */
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  /** Null when the climber is anonymous on this surface, or simply never set a name. */
+  displayName?: Maybe<Scalars['String']['output']>;
+  /** Hardest grade sent in the window, on the shared 1-39 scale. Null on mixed-board-type scopes, where grades are not comparable, and on MoonBoard, which has no universal grade. */
+  hardestGrade?: Maybe<Scalars['Int']['output']>;
+  /** Counted but not named. Render an unnamed climber rather than hiding the row, which would leave a hole in the ranking. */
+  isAnonymous: Scalars['Boolean']['output'];
+  /** True when this row is the requesting climber. */
+  isViewer: Scalars['Boolean']['output'];
+  /** RANK(): tied climbers SHARE a rank and the next rank skips (1, 2, 2, 4). Neither dense nor unique. */
+  rank: Scalars['Int']['output'];
+  /** Distinct climbs topped in the window. Repeats of one climb count once. */
+  score: Scalars['Int']['output'];
+  /** How many climbers hold this exact rank, including this one. */
+  tieSize: Scalars['Int']['output'];
+  /** Opaque stable pseudonym rather than a real user id when isAnonymous. Safe as a list key either way. */
+  userId: Scalars['ID']['output'];
+};
+
+export type StandingsInput = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  scope: StandingsScopeInput;
+  window?: InputMaybe<StandingsWindow>;
+};
+
+export type StandingsScope = {
+  __typename?: 'StandingsScope';
+  /** Distinct climbers with at least one qualifying send in the window. */
+  climberCount: Scalars['Int']['output'];
+  key: Scalars['String']['output'];
+  kind: StandingsScopeKind;
+  /** Human label for this specific scope — a board's name, a layout's name, or the localized 'Everyone'. Resolved server-side because only the server can turn a key into a name. */
+  label: Scalars['String']['output'];
+};
+
+export type StandingsScopeInput = {
+  /** Empty for global; required for every other kind. */
+  key?: InputMaybe<Scalars['String']['input']>;
+  kind: StandingsScopeKind;
+};
+
+/**
+ * Which slice of climbers a ranking covers.
+ *
+ * Every kind is keyed the same way — `{ kind, key }` — so adding a new
+ * granularity later (city, serial, crew, event) is a registry entry rather than
+ * a new query. The kinds differ sharply in how much of the data they can
+ * attribute; see `coverage` on the result.
+ */
+export type StandingsScopeKind =
+  /** One physical wall. Key is a user_boards uuid. */
+  | 'board'
+  /** One board type. Key is 'kilter' | 'tension' | 'moonboard'. */
+  | 'boardType'
+  /** Every climber, every board. Key must be empty. */
+  | 'global'
+  /** Every wall at one gym. Key is a gym uuid. */
+  | 'gym'
+  /** One board type + layout, e.g. Kilter Board Original. Key is 'boardType:layoutId'. */
+  | 'layout';
+
+/**
+ * Rolling windows only. There is deliberately no all-time option: 69.4% of the
+ * tick history is a frozen one-off logbook import, so an all-time ranking ranks
+ * whoever uploaded a file. A rolling window also cannot reach that corpus, whose
+ * newest entry is 2026-03-26.
+ */
+export type StandingsWindow =
+  /** Rolling last 30 days. The default. */
+  | 'month'
+  /** Rolling last 7 days. */
+  | 'week';
+
 /**
  * A board that probably belongs to a gym but isn't linked to it yet — either it
  * followed a listing that got merged into this gym, or it sits at the gym's
@@ -7975,6 +8104,21 @@ export type UserSearchResult = {
   recentAscentCount: Scalars['Int']['output'];
   /** The matching user profile */
   user: PublicUserProfile;
+};
+
+/**
+ * Where the requesting climber sits, resolved with a window function so the
+ * client never has to page until it finds itself.
+ */
+export type ViewerStanding = {
+  __typename?: 'ViewerStanding';
+  /** Share of the scope at or below this score, 0-1. Suppress in the UI inside a big tie — most climbers are in one. */
+  percentile: Scalars['Float']['output'];
+  rank: Scalars['Int']['output'];
+  score: Scalars['Int']['output'];
+  /** Distinct scores immediately above, nearest first. Feeds the 'two more and you're 81st' line without naming a person. */
+  scoresAbove: Array<Scalars['Int']['output']>;
+  tieSize: Scalars['Int']['output'];
 };
 
 /** Input for voting on an entity. */

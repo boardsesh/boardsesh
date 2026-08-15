@@ -669,5 +669,46 @@
     "sent": "Danke, wir schauen es uns an und führen sie zusammen.",
     "alreadyReported": "Du hast dieses Paar schon gemeldet. Wir sind dran.",
     "errorGeneric": "Da ging etwas schief. Versuch es nochmal."
+  },
+  "standings": {
+    "title": "Rangliste",
+    "anonymousClimber": "Ein*e Kletterer*in",
+    "you": "Du",
+    "youInitial": "•",
+    "climberCount_one": "{{count}} Kletterer*in",
+    "climberCount_other": "{{count}} Kletterer*innen",
+    "error": "Rangliste konnte nicht geladen werden. Zieh zum Neuladen.",
+    "rowAccessibility": "Rang {{rank}}, {{name}}, {{climbs}} Boulder",
+    "window": {
+      "label": "Zeitraum",
+      "month": "Letzte 30 Tage",
+      "week": "Letzte 7 Tage"
+    },
+    "scope": {
+      "global": "Alle",
+      "boardType": "Board",
+      "layout": "Aufbau",
+      "board": "Wand",
+      "gym": "Halle"
+    },
+    "viewer": {
+      "rankOf": "{{rank}} von {{total}}",
+      "rankTied_one": "{{rank}}, mit {{others}} weiteren Kletterer*in",
+      "rankTied_other": "{{rank}}, mit {{others}} weiteren Kletterer*innen",
+      "climbs_one": "{{count}} Boulder in diesem Zeitraum",
+      "climbs_other": "{{count}} Boulder in diesem Zeitraum",
+      "nextRank_one": "Einer mehr und du bist {{rank}}.",
+      "nextRank_other": "{{count}} mehr und du bist {{rank}}."
+    },
+    "demoted": {
+      "empty": "In diesem Zeitraum hat niemand auf {{requested}} etwas eingetragen, deshalb siehst du {{scope}}.",
+      "unknown": "Diese Wand konnten wir nicht finden, deshalb siehst du {{scope}}."
+    },
+    "footnote": {
+      "metric": "Verschiedene Boulder, die du in diesem Zeitraum getoppt hast. Wiederholungen zählen einmal. Massen-Importe zählen nicht.",
+      "attribution": "Begehungen, die aus der Kilter- oder Aurora-App synchronisiert wurden, tragen keine Wand und zählen hier nicht."
+    },
+    "moreRowLabel": "Rangliste ansehen",
+    "moreRowSubtitle": "Wo du diesen Monat stehst"
   }
 }

@@ -8,6 +8,7 @@ export default function ProfileLayout() {
   const { t } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
   const { t: tNotifications } = useTranslation('notifications');
+  const { t: tBoards } = useTranslation('boards');
   const screenOptions = useStackScreenOptions();
 
   return (
@@ -29,6 +30,7 @@ export default function ProfileLayout() {
         <Stack.Screen name="accessibility" options={{ title: t('mobile.more.accessibility.title') }} />
         <Stack.Screen name="storage" options={{ title: t('mobile.more.storage.title') }} />
         <Stack.Screen name="edit" options={{ title: tSettings('profile.editAction') }} />
+        <Stack.Screen name="standings" options={{ title: tBoards('standings.title') }} />
         <Stack.Screen name="standings-privacy" options={{ title: tSettings('standings.title') }} />
         <Stack.Screen name="integrations" options={{ title: tSettings('integrations.title') }} />
         <Stack.Screen name="watch-pair" options={{ title: tSettings('watchPairing.title') }} />

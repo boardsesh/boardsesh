@@ -37,6 +37,7 @@
     "@boardsesh/gym-claim": "*",
     "@boardsesh/kilter-sync": "*",
     "@boardsesh/kiosk": "*",
+    "@boardsesh/leaderboard": "workspace:*",
     "@boardsesh/offline-sync": "*",
     "@boardsesh/queue": "*",
     "@boardsesh/shared-schema": "*",

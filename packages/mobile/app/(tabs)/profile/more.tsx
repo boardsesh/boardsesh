@@ -591,9 +591,18 @@ export default function MoreScreen() {
   // maps plus an Android Material XML asset, and "how you appear" is exactly
   // what person.crop.circle already says.
   sections.push({
-    key: 'standings-privacy',
+    key: 'standings',
+    title: tBoards('standings.title'),
     footer: tSettings('standings.rowFooter'),
     rows: [
+      {
+        kind: 'nav',
+        key: 'standings',
+        label: tBoards('standings.moreRowLabel'),
+        subtitle: tBoards('standings.moreRowSubtitle'),
+        icon: 'gyms',
+        onPress: navAction(() => router.push('/(tabs)/profile/standings')),
+      },
       {
         kind: 'nav',
         key: 'standings-privacy',
