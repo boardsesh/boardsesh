@@ -66,15 +66,30 @@ function createCacheKeyFromVariables(variables: Variables | undefined): string[]
  * @param variables - Query variables
  * @param cacheTag - Tag for cache invalidation (e.g., 'climb-search')
  * @param revalidate - Cache duration in seconds
+ * @param timeoutMs - Optional wall-clock ceiling. Without one a wedged backend
+ *   hangs the caller indefinitely; `graphql-request` honours the signal, so the
+ *   call rejects with an abort error the caller can degrade on.
  */
 export function createCachedGraphQLQuery<T = unknown, V extends Variables = Variables>(
   document: RequestDocument,
   cacheTag: string,
   revalidate: number,
+  timeoutMs?: number,
 ) {
   return async (variables?: V): Promise<T> => {
     const cachedFn = unstable_cache(
-      async () => executeGraphQLInternal<T, V>(document, variables),
+      async () => {
+        if (!timeoutMs) {
+          return executeGraphQLInternal<T, V>(document, variables);
+        }
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          return await executeGraphQLInternal<T, V>(document, variables, controller.signal);
+        } finally {
+          clearTimeout(timer);
+        }
+      },
       ['graphql', cacheTag, ...createCacheKeyFromVariables(variables)],
       {
         revalidate,

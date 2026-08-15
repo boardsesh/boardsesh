@@ -24,6 +24,13 @@ import type { BoardName } from '@/app/lib/types';
 
 const SIMILAR_CLIMBS_REVALIDATE_SECONDS = 3600;
 const BETA_LINKS_REVALIDATE_SECONDS = 3600;
+/**
+ * Wall-clock ceiling on each backend round trip. Both callers already degrade to
+ * an empty section, so this turns "the page hangs behind a wedged backend" into
+ * "the page renders without that section". Shorter than the DB read deadline:
+ * these two sections are supplementary, the climb itself is not.
+ */
+const FRONT_DOOR_BACKEND_TIMEOUT_MS = 3000;
 
 type SimilarClimbsQueryVariables = {
   input: {
@@ -48,6 +55,7 @@ export async function getFrontDoorSimilarClimbs(params: {
     SIMILAR_CLIMBS_QUERY,
     'similar-climbs',
     SIMILAR_CLIMBS_REVALIDATE_SECONDS,
+    FRONT_DOOR_BACKEND_TIMEOUT_MS,
   );
 
   try {
@@ -77,6 +85,7 @@ export async function getFrontDoorBetaLinks(params: { boardType: BoardName; clim
     GET_BETA_LINKS,
     `beta-links-${params.climbUuid}`,
     BETA_LINKS_REVALIDATE_SECONDS,
+    FRONT_DOOR_BACKEND_TIMEOUT_MS,
   );
 
   try {

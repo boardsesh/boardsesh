@@ -1,6 +1,13 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { getClimb } from '../queries';
+import type { Climb } from '@/app/lib/types';
+
+/** `getClimb` resolves `null` for a genuinely missing row; these cases all expect a hit. */
+function assertClimb(climb: Climb | null): Climb {
+  if (!climb) throw new Error('expected getClimb to resolve a climb row');
+  return climb;
+}
 
 const { mockSqlTag, rowsFromResultMock } = vi.hoisted(() => {
   const mockSqlTag = vi.fn();
@@ -57,14 +64,16 @@ describe('getClimb', () => {
       },
     ]);
 
-    const climb = await getClimb({
-      board_name: 'kilter',
-      layout_id: 8,
-      size_id: 10,
-      set_ids: [1, 2],
-      angle: 40,
-      climb_uuid: 'climb-uuid-1',
-    });
+    const climb = assertClimb(
+      await getClimb({
+        board_name: 'kilter',
+        layout_id: 8,
+        size_id: 10,
+        set_ids: [1, 2],
+        angle: 40,
+        climb_uuid: 'climb-uuid-1',
+      }),
+    );
 
     expect(mockSqlTag).toHaveBeenCalledTimes(2);
     expect(climb.uuid).toBe('climb-uuid-1');
@@ -102,14 +111,16 @@ describe('getClimb', () => {
       },
     ]);
 
-    const climb = await getClimb({
-      board_name: 'kilter',
-      layout_id: 1,
-      size_id: 10,
-      set_ids: [1, 2],
-      angle: 40,
-      climb_uuid: 'climb-uuid-2',
-    });
+    const climb = assertClimb(
+      await getClimb({
+        board_name: 'kilter',
+        layout_id: 1,
+        size_id: 10,
+        set_ids: [1, 2],
+        angle: 40,
+        climb_uuid: 'climb-uuid-2',
+      }),
+    );
 
     expect(climb.layoutId).toBe(1);
     expect(climb.boardType).toBe('kilter');
@@ -144,14 +155,16 @@ describe('getClimb', () => {
       },
     ]);
 
-    const climb = await getClimb({
-      board_name: 'tension',
-      layout_id: 1,
-      size_id: 10,
-      set_ids: [1],
-      angle: 40,
-      climb_uuid: 'climb-uuid-3',
-    });
+    const climb = assertClimb(
+      await getClimb({
+        board_name: 'tension',
+        layout_id: 1,
+        size_id: 10,
+        set_ids: [1],
+        angle: 40,
+        climb_uuid: 'climb-uuid-3',
+      }),
+    );
 
     expect(climb.boardType).toBe('tension');
     expect(climb.difficulty).toBe('7a/V6');
@@ -185,14 +198,16 @@ describe('getClimb', () => {
       },
     ]);
 
-    const climb = await getClimb({
-      board_name: 'moonboard',
-      layout_id: 3,
-      size_id: 1,
-      set_ids: [1],
-      angle: 40,
-      climb_uuid: 'old-alias-uuid-9', // a bookmarked link to the now-delisted row
-    });
+    const climb = assertClimb(
+      await getClimb({
+        board_name: 'moonboard',
+        layout_id: 3,
+        size_id: 1,
+        set_ids: [1],
+        angle: 40,
+        climb_uuid: 'old-alias-uuid-9', // a bookmarked link to the now-delisted row
+      }),
+    );
 
     expect(mockSqlTag).toHaveBeenCalledTimes(2);
     // The climb query (2nd call) must have queried by the RESOLVED canonical
@@ -203,5 +218,24 @@ describe('getClimb', () => {
     expect(climbQueryValues).toContain('canonical-uuid-9');
     expect(climbQueryValues).not.toContain('old-alias-uuid-9');
     expect(climb.uuid).toBe('canonical-uuid-9');
+  });
+
+  it('resolves null when no row matches, instead of throwing on an undefined row', async () => {
+    mockSqlTag.mockResolvedValueOnce([]); // alias lookup: no alias
+    mockSqlTag.mockResolvedValueOnce([]); // climb select: no such climb
+
+    const climb = await getClimb({
+      board_name: 'kilter',
+      layout_id: 8,
+      size_id: 10,
+      set_ids: [1, 2],
+      angle: 40,
+      climb_uuid: 'does-not-exist',
+    });
+
+    // The distinction the pages depend on: null means "no such climb" (404), a
+    // rejection means "could not read" (500). Before this, dereferencing the
+    // undefined row threw, and the page turned that throw into a 404 as well.
+    expect(climb).toBeNull();
   });
 });

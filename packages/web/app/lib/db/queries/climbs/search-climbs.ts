@@ -6,12 +6,21 @@ import { getBoardClimbSearchTag } from '@/app/lib/climb-search-cache';
 import type { ParsedBoardRouteParameters, SearchRequestPagination, BoardName, Climb } from '@/app/lib/types';
 import { sortObjectKeys } from '@/app/lib/cache-utils';
 import { isNoMatch, isNoMatchClimb } from '@/app/lib/no-match-climb';
+import { withReadDeadline } from '@/app/lib/db/read-deadline';
 
 /**
  * Cache durations for climb search queries (in seconds)
  */
 const CACHE_DURATION_DEFAULT_SEARCH = 24 * 60 * 60; // 24 hours for default searches
 const CACHE_DURATION_FILTERED_SEARCH = 60 * 60; // 1 hour for filtered searches
+/**
+ * MoonBoard front doors only. Short enough that an in-progress import shows up
+ * within a quarter hour — the freshness the blanket bypass below was protecting
+ * — but not so short that a crawler pays a live search per page view. MoonBoard
+ * is the largest board in the catalogue, so it is also the biggest single
+ * contributor to the crawl surface.
+ */
+const CACHE_DURATION_MOONBOARD_FRONT_DOOR = 15 * 60;
 
 /**
  * Module-level query function with explicit arguments so unstable_cache holds a
@@ -41,7 +50,14 @@ async function _executeClimbSearch(
   // `mapSearchInputToParams` lives in `@boardsesh/db` so the SSR path and the
   // GraphQL resolver share the same input → params shape. Don't duplicate the
   // falsy-collapse rules here.
-  const result = await sharedSearchClimbs(db, params, mapSearchInputToParams(searchParams), userId);
+  //
+  // The deadline is what stops a saturated pool turning this into an unbounded
+  // wait — postgres.js queues with no acquire timeout. drizzle exposes no
+  // `.cancel()`, so this bounds the caller, not the statement.
+  const result = await withReadDeadline(
+    'climb-search',
+    sharedSearchClimbs(db, params, mapSearchInputToParams(searchParams), userId),
+  );
 
   const climbs: Climb[] = result.climbs.map((row) => ({
     ...row,
@@ -149,12 +165,21 @@ export async function cachedSearchClimbs(
   userId?: string,
   options?: { cacheable?: boolean },
 ): Promise<{ climbs: Climb[]; hasMore: boolean }> {
-  // MoonBoard list data is still being actively imported/curated, so bypass
-  // the server cache there to surface new climbs immediately. Random sort also
-  // bypasses: each shuffle carries a unique ~31-bit seed, so caching per seed is a
-  // 0%-hit-rate entry that only bloats the Next.js data cache.
+  // MoonBoard list data is still being actively imported/curated, so it bypasses
+  // the server cache by default to surface new climbs immediately — except when
+  // a caller asks for caching explicitly. Only the `/list` front door does
+  // (`fetchFrontDoorListPage`), and every one of those renders was a live search
+  // on the biggest board in the catalogue; a 15-minute entry keeps the import
+  // freshness the bypass was protecting, and `revalidateClimbSearchTags` still
+  // clears it on demand via the board-level tag.
+  //
+  // Random sort bypasses unconditionally: each shuffle carries a unique ~31-bit
+  // seed, so caching per seed is a 0%-hit-rate entry that only bloats the
+  // Next.js data cache.
+  const isMoonboard = params.board_name === 'moonboard';
+  const explicitlyCacheable = options?.cacheable === true;
   const cacheable =
-    (options?.cacheable ?? !userId) && params.board_name !== 'moonboard' && searchParams.sortBy !== 'random';
+    (options?.cacheable ?? !userId) && searchParams.sortBy !== 'random' && (explicitlyCacheable || !isMoonboard);
 
   const setIdsStr = [...params.set_ids].sort((a, b) => a - b).join(',');
   const searchParamsJson = buildClimbSearchParamsJson(searchParams);
@@ -171,7 +196,11 @@ export async function cachedSearchClimbs(
     );
   }
 
-  const revalidate = isDefaultSearch ? CACHE_DURATION_DEFAULT_SEARCH : CACHE_DURATION_FILTERED_SEARCH;
+  const revalidate = isMoonboard
+    ? CACHE_DURATION_MOONBOARD_FRONT_DOOR
+    : isDefaultSearch
+      ? CACHE_DURATION_DEFAULT_SEARCH
+      : CACHE_DURATION_FILTERED_SEARCH;
   return _getCachedFn(params.board_name, revalidate)(
     params.board_name,
     params.layout_id,

@@ -7,7 +7,7 @@ import { hasUserSpecificFilters } from '@/app/lib/list-page-cache';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { resolveSsrInitialPageSize } from '@/app/lib/climb-list-constants';
 import { authOptions } from '@/app/lib/auth/auth-options';
-import { scheduleOverlayWarming } from '@/app/lib/warm-overlay-cache';
+import { FRONT_DOOR_WARM_LIMIT, scheduleOverlayWarming } from '@/app/lib/warm-overlay-cache';
 import { buildOverlayUrl } from '@/app/components/board-renderer/util';
 import { DEFAULT_SEARCH_PARAMS, parsedRouteSearchParamsToSearchParams } from '@/app/lib/url-utils';
 import { FRONT_DOOR_PAGE_SIZE } from '@/app/lib/seo/list-page-robots';
@@ -143,15 +143,28 @@ export async function fetchFrontDoorListPage(
     // applied — which is what lets the query ride the shared cache.
     searchResponse = await cachedSearchClimbs(parsedParams, searchParams, true, undefined, { cacheable: true });
   } catch (error) {
+    // Rethrow, deliberately. This used to degrade to an empty list, which
+    // rendered a 200 with zero climbs on a sitemapped URL — Google reads that
+    // as legitimate thin content and drops the page, where a 5xx makes it
+    // retry and keep the URL. The CDN's stale-while-revalidate window keeps
+    // serving the last good copy meanwhile.
     console.error(
-      'Error fetching front-door climbs (degrading to empty results for SSR):',
+      'Error fetching front-door climbs:',
       { boardName: parsedParams.board_name, page: zeroBasedPage },
       error,
     );
-    searchResponse = { climbs: [], hasMore: false };
+    throw error;
   }
 
-  scheduleOverlayWarming({ boardDetails, climbs: searchResponse.climbs, variant: 'thumbnail' });
+  // 50 climbs × one same-origin WASM render each is a 20× invocation amplifier
+  // on the page whose whole purpose is to be crawled. Six covers what a reader
+  // sees before scrolling; the rest warm lazily on demand.
+  scheduleOverlayWarming({
+    boardDetails,
+    climbs: searchResponse.climbs,
+    variant: 'thumbnail',
+    maxImages: FRONT_DOOR_WARM_LIMIT,
+  });
 
   const firstClimb = searchResponse.climbs[0];
   const preloadUrl = firstClimb?.frames ? buildOverlayUrl(boardDetails, firstClimb.frames, true) : null;

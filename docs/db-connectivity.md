@@ -99,6 +99,80 @@ off) rather than reaching into postgres.js's backoff.
 The connect-retry tests pin their pools to `backoff: () => 0` so they measure this
 wrapper's loop rather than that ramp.
 
+## Front-door read deadlines and pool sizing (#4461)
+
+The connect retry above bounds a _failed_ connect. It does nothing about a
+_saturated_ pool, and that is the failure the climb sitemaps invite: postgres.js
+has no acquire timeout, and its internal queue is unbounded and untimed
+(`postgres/src/index.js:341`). A statement that cannot get a connection waits
+forever, so many concurrent SSR renders against a slow database look like a hang
+rather than an error.
+
+`packages/web/app/lib/db/read-deadline.ts` bounds one read client-side. It races
+the pending query against a timer, rejects with `DbReadTimeoutError`
+(`code: 'DB_READ_TIMEOUT'`) when the timer wins, and calls `query.cancel()` the
+way the health probe does, so a timed-out statement does not fire later against
+a recovered pool. It is wired at the four front-door reads only — the two
+statements behind `getClimb`, the all-angles stats select, and the shared climb
+search — and deliberately **not** inside `withConnectRetry` or `packages/db`,
+where it would change behaviour for the backend, the sync runners and every
+script.
+
+### What the reader sees when it fires
+
+| condition                           | before                               | after                                                   |
+| ----------------------------------- | ------------------------------------ | ------------------------------------------------------- |
+| climb row absent                    | 404                                  | 404 (unchanged — now for the right reason)              |
+| read fails or deadlines, climb page | hung to the platform limit, then 404 | 500 at ~6 s; the CDN stale window keeps serving readers |
+| read fails or deadlines, list page  | 200 with zero climbs                 | 500 at ~6 s; same CDN window                            |
+| backend GraphQL wedged              | climb page hung indefinitely         | similar climbs / beta links render empty at 3 s         |
+
+The 5xx is the point. Google retries a 5xx and keeps the URL, while a 404 — or a
+200 with nothing on it — on a sitemapped URL reads as "drop this page".
+
+### Budgets
+
+| knob                      | default | meaning                                                                                  |
+| ------------------------- | ------- | ---------------------------------------------------------------------------------------- |
+| `DB_READ_DEADLINE_MS`     | 6000    | web front door: wall clock for one read (queue wait + connect + execute)                 |
+| `DB_POOL_MAX`             | 10      | postgres.js `max`, clamped to a floor of 2                                               |
+| `DB_POOL_IDLE_TIMEOUT_S`  | 30      | seconds an idle connection is held open                                                  |
+| `DB_STATEMENT_TIMEOUT_MS` | unset   | emits a `statement_timeout` startup parameter — **off by default**, see the hazard below |
+
+6000 sits deliberately below `DB_CONNECT_RETRY_BUDGET_MS` (10000): during a
+brownout the front door should shed load rather than spend a second and third
+connect attempt holding a pool slot while a crawler waits.
+
+The pool knobs default to the values that used to be hard-coded, so nothing
+changes for a deployment that does not set them. They exist because peak
+server-side connections scale with **instance count × connections held idle**,
+not with per-instance `max` — a fleet of serverless instances each sitting on a
+few idle connections for 30 s is the term that grows during a crawl burst.
+Lowering `DB_POOL_MAX` and `DB_POOL_IDLE_TIMEOUT_S` on a serverless deployment
+shrinks that footprint; raising `max` never helps.
+
+### The `statement_timeout` hazard
+
+`DB_STATEMENT_TIMEOUT_MS` ships off. PgBouncer in transaction-pooling mode
+rejects startup parameters that are not in `ignore_startup_parameters`, and
+`statement_timeout` is not among the defaults — so setting it against a pooled
+`DATABASE_URL` fails _every connection_ instead of bounding one query. Two
+paths, chosen by what the URL actually points at:
+
+- **Direct Postgres** — set `DB_STATEMENT_TIMEOUT_MS` on the deployment.
+- **Pooled (PgBouncer) URL** — do it database-side instead, with
+  `ALTER ROLE <app_role> SET statement_timeout = '8s'`, which passes through a
+  pooler transparently.
+
+`psql "$DATABASE_URL" -c 'show pool_mode;'` tells you which you have: a direct
+Postgres errors, PgBouncer answers.
+
+### There is no web health probe
+
+`/health` and `/health/db` below are **backend** endpoints. `packages/web` has
+none, so during a web-pool incident `/health/db` stays green and says nothing
+about the surface that is actually failing. That gap is not filled here.
+
 ## Where the retry is wired
 
 `createDb()` / `createReadDb()` hand drizzle a retry-wrapped view of the pool

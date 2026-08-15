@@ -4,6 +4,19 @@ import type { BoardDetails, Climb } from '@/app/lib/types';
 
 const BASE_URL = process.env.VERCEL_URL ? SITE_URL : 'http://localhost:3000';
 
+/**
+ * How many list rows the `/list` front door warms per SSR render.
+ *
+ * Each warm target is a same-origin `/api/internal/board-render` call — a
+ * CPU-bound WASM render in the same runtime — so the default 20 turned one
+ * crawled list page into 20 extra invocations competing with the request that
+ * spawned them. Six is roughly what a reader sees before scrolling.
+ */
+export const FRONT_DOOR_WARM_LIMIT = 6;
+
+/** Ceiling on a single warm fetch. A never-settling one keeps the instance (and its pool slots) alive. */
+const WARM_FETCH_TIMEOUT_MS = 5000;
+
 type WarmOverlaysOptions = {
   boardDetails: BoardDetails;
   climbs: Pick<Climb, 'frames'>[];
@@ -55,7 +68,7 @@ export async function warmOverlays(options: WarmOverlaysOptions): Promise<void> 
 
     await Promise.allSettled(
       warmTargets.map((url) =>
-        fetch(url)
+        fetch(url, { signal: AbortSignal.timeout(WARM_FETCH_TIMEOUT_MS) })
           .then((response) => response.body?.cancel())
           .catch(() => {}),
       ),

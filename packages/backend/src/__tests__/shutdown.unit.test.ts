@@ -84,9 +84,29 @@ describe('shutdown: ordering', () => {
 });
 
 describe('pool configuration', () => {
-  it('idle_timeout is 30 seconds', () => {
-    const source = readFileSync(resolve(ROOT, '../db/src/client/postgres.ts'), 'utf-8');
-    expect(source).toContain('idle_timeout: 30');
+  // Was a grep of postgres.ts for the literal `idle_timeout: 30`. #4461 made
+  // both knobs env-derived (`DB_POOL_MAX` / `DB_POOL_IDLE_TIMEOUT_S`, defaults
+  // unchanged), which would have left that grep green-but-meaningless. Assert
+  // on the options postgres-js actually resolved instead — the backend must
+  // keep the pre-#4461 sizing unless someone sets the env vars on it, which
+  // only the Vercel project is expected to do.
+  it('keeps the pre-#4461 pool defaults when the env knobs are unset', async () => {
+    const { createPool, closePool } = await import('@boardsesh/db/client');
+    const previousMax = process.env.DB_POOL_MAX;
+    const previousIdle = process.env.DB_POOL_IDLE_TIMEOUT_S;
+    delete process.env.DB_POOL_MAX;
+    delete process.env.DB_POOL_IDLE_TIMEOUT_S;
+
+    await closePool();
+    try {
+      const { max, idle_timeout: idleTimeout } = createPool().options;
+      expect(max).toBe(10);
+      expect(idleTimeout).toBe(30);
+    } finally {
+      await closePool();
+      if (previousMax !== undefined) process.env.DB_POOL_MAX = previousMax;
+      if (previousIdle !== undefined) process.env.DB_POOL_IDLE_TIMEOUT_S = previousIdle;
+    }
   });
 });
 

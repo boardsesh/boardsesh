@@ -20,16 +20,71 @@ const sqlLogger = process.env.DEBUG_SQL === 'true' ? new QueryLogger() : undefin
 
 const fullSchema = { ...schema, ...relations };
 
-// `prepare: false` is required when the target is PgBouncer in transaction
-// pooling mode (Railway's pooled URL): backends are reused across transactions
-// so per-connection prepared statement caches collide. The flag is a safe no-op
-// against direct PostgreSQL.
-const BASE_POOL_OPTIONS = {
-  max: 10,
-  idle_timeout: 30,
-  connect_timeout: 30,
-  prepare: false,
-} as const;
+/** Pool size when `DB_POOL_MAX` is unset — unchanged from before the knob existed. */
+export const DEFAULT_POOL_MAX = 10;
+/** Seconds an idle connection is held when `DB_POOL_IDLE_TIMEOUT_S` is unset. */
+export const DEFAULT_POOL_IDLE_TIMEOUT_S = 30;
+/**
+ * `getClimb` issues two sequential statements and drizzle's connect-retry can
+ * hold a slot while it re-dials, so a pool of one serialises everything behind
+ * a single connection. Clamp rather than trust a typo in a dashboard.
+ */
+export const MIN_POOL_MAX = 2;
+
+/**
+ * Mirrors `readEnvInt` in connect-retry.ts: a missing or unparseable value falls
+ * back, a parseable one is clamped to `minimum`.
+ */
+function readPoolInt(name: string, fallback: number, minimum: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(minimum, parsed);
+}
+
+/**
+ * Per-deployment pool knobs. Both default to the values that were hard-coded
+ * here before, so backend, sync jobs and scripts are unchanged unless the env
+ * var is set — today only the Vercel project is expected to set them, because
+ * peak server-side connections scale with *instance count* × held-idle
+ * connections, not with per-instance `max`.
+ *
+ * `prepare: false` is required when the target is PgBouncer in transaction
+ * pooling mode (Railway's pooled URL): backends are reused across transactions
+ * so per-connection prepared statement caches collide. The flag is a safe no-op
+ * against direct PostgreSQL.
+ *
+ * Read at pool-construction time rather than module load so a process that
+ * rebuilds its pool (tests, HMR) picks up the current environment.
+ */
+function basePoolOptions() {
+  return {
+    max: readPoolInt('DB_POOL_MAX', DEFAULT_POOL_MAX, MIN_POOL_MAX),
+    idle_timeout: readPoolInt('DB_POOL_IDLE_TIMEOUT_S', DEFAULT_POOL_IDLE_TIMEOUT_S, 1),
+    connect_timeout: 30,
+    prepare: false,
+    ...statementTimeoutOption(),
+  };
+}
+
+/**
+ * `DB_STATEMENT_TIMEOUT_MS` emits a `statement_timeout` startup parameter.
+ * Deliberately OFF by default: PgBouncer in transaction-pooling mode rejects
+ * startup parameters that are not in `ignore_startup_parameters`, and
+ * `statement_timeout` is not allowed there by default — so turning this on
+ * against a pooled URL fails *every* connection rather than bounding one query.
+ * Against a pooler, set it on the role instead:
+ * `ALTER ROLE <app_role> SET statement_timeout = '8s'`. See docs/db-connectivity.md.
+ */
+function statementTimeoutOption(): { connection?: { statement_timeout: number } } {
+  const raw = process.env.DB_STATEMENT_TIMEOUT_MS;
+  if (!raw) return {};
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return {};
+  // Unitless `statement_timeout` is milliseconds to PostgreSQL.
+  return { connection: { statement_timeout: parsed } };
+}
 
 const LOCAL_HOST_PATTERN = /@(localhost|127\.0\.0\.1|\[::1\]|postgres|postgres-test)(:|\/|$)/;
 const TAILSCALE_IPV4_PATTERN = /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./;
@@ -63,7 +118,8 @@ function buildPoolOptions(connectionString: string) {
   // silently degrade to plaintext against Railway. Local docker and generated
   // tailnet dev DB URLs stay plain.
   const isLocal = LOCAL_HOST_PATTERN.test(connectionString) || isPlaintextDevelopmentDatabase(connectionString);
-  return isLocal ? BASE_POOL_OPTIONS : { ...BASE_POOL_OPTIONS, ssl: 'require' as const };
+  const options = basePoolOptions();
+  return isLocal ? options : { ...options, ssl: 'require' as const };
 }
 
 // Cache the pool/db on globalThis so Next.js HMR re-evaluating this module in

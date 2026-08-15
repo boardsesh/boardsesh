@@ -5,6 +5,7 @@
  * performant.
  */
 import 'server-only';
+import { cache } from 'react';
 import { unstable_cache } from 'next/cache';
 // oxlint-disable-next-line no-restricted-imports -- raw postgres-js sql usage; migrate to drizzle
 import { rowsFromResult, sql } from '@/app/lib/db/db';
@@ -13,6 +14,7 @@ import { getGradeLabel } from '@boardsesh/db/queries';
 import type { Climb, ParsedBoardRouteParametersWithUuid, BoardName, LayoutId, Size } from '../types';
 import { getSizesForLayoutId, getAllLayouts, getSetsForLayoutAndSize } from '@/app/lib/board-constants';
 import { isNoMatchClimb, isNoMatch } from '@/app/lib/no-match-climb';
+import { withReadDeadline } from '@/app/lib/db/read-deadline';
 
 // Resolves an old/bookmarked/shared climb link through board_climb_aliases:
 // a climb that's since been merged into another (e.g. the MoonBoard
@@ -24,27 +26,43 @@ import { isNoMatchClimb, isNoMatch } from '@/app/lib/no-match-climb';
 // takes a drizzle db handle and this file's queries are raw postgres-js sql).
 async function resolveCanonicalClimbUuidWeb(boardName: BoardName, climbUuid: string): Promise<string> {
   const result = rowsFromResult<{ canonical_uuid: string }>(
-    await sql`
+    await withReadDeadline(
+      'climb-alias',
+      sql`
       SELECT canonical_uuid FROM board_climb_aliases
       WHERE board_type = ${boardName} AND alias_uuid = ${climbUuid}
       LIMIT 1
     `,
+    ),
   );
   return result[0]?.canonical_uuid ?? climbUuid;
 }
 
-async function fetchClimbFromDb(params: ParsedBoardRouteParametersWithUuid): Promise<Climb> {
-  const climbUuid = await resolveCanonicalClimbUuidWeb(params.board_name, params.climb_uuid);
+/**
+ * Returns `null` when no row matches — a genuinely missing climb. Anything else
+ * (a saturated pool, a read deadline, a dead database) throws, so the page can
+ * tell "this climb does not exist" from "we could not answer right now". The
+ * two used to be indistinguishable, and both rendered a 404 on an indexed URL.
+ */
+async function fetchClimbFromDb(
+  boardName: BoardName,
+  layoutId: LayoutId,
+  angle: number,
+  requestedClimbUuid: string,
+): Promise<Climb | null> {
+  const climbUuid = await resolveCanonicalClimbUuidWeb(boardName, requestedClimbUuid);
 
   // Direct-by-UUID lookups intentionally do NOT filter `frames_count = 1`.
   // Search/dedupe still skip multi-frame climbs (see queries/climbs/*),
   // but the player needs to be able to render them when a URL points at one.
   const result = rowsFromResult<Climb & { difficulty_id: number | null }>(
-    await sql`
+    await withReadDeadline(
+      'climb-select',
+      sql`
         SELECT climbs.uuid, climbs.setter_username, climbs.user_id as "userId", climbs.name, climbs.description,
         climbs.layout_id as "layoutId", climbs.board_type as "boardType",
         climbs.frames, climbs.frames_count as "framesCount", climbs.frames_pace as "framesPace",
-        COALESCE(climb_stats.angle, ${params.angle}) as angle, COALESCE(climb_stats.ascensionist_count, 0) as ascensionist_count,
+        COALESCE(climb_stats.angle, ${angle}) as angle, COALESCE(climb_stats.ascensionist_count, 0) as ascensionist_count,
         ROUND(climb_stats.display_difficulty::numeric, 0) as difficulty_id,
         ROUND(climb_stats.quality_average::numeric, 2) as quality_average,
         ROUND(climb_stats.difficulty_average::numeric - climb_stats.display_difficulty::numeric, 2) AS difficulty_error,
@@ -53,15 +71,17 @@ async function fetchClimbFromDb(params: ParsedBoardRouteParametersWithUuid): Pro
         FROM board_climbs climbs
         LEFT JOIN board_climb_stats climb_stats
           ON climb_stats.climb_uuid = climbs.uuid
-          AND climb_stats.angle = ${params.angle}
-          AND climb_stats.board_type = ${params.board_name}
-        WHERE climbs.board_type = ${params.board_name}
-        AND climbs.layout_id = ${params.layout_id}
+          AND climb_stats.angle = ${angle}
+          AND climb_stats.board_type = ${boardName}
+        WHERE climbs.board_type = ${boardName}
+        AND climbs.layout_id = ${layoutId}
         AND climbs.uuid = ${climbUuid}
         limit 1
       `,
+    ),
   );
   const row = result[0];
+  if (!row) return null;
   return {
     ...row,
     difficulty: getGradeLabel(row.difficulty_id),
@@ -69,16 +89,41 @@ async function fetchClimbFromDb(params: ParsedBoardRouteParametersWithUuid): Pro
   } as Climb;
 }
 
-export async function getClimb(params: ParsedBoardRouteParametersWithUuid): Promise<Climb> {
-  const cachedFn = unstable_cache(
-    async () => fetchClimbFromDb(params),
-    ['climb', params.board_name, String(params.layout_id), params.climb_uuid, String(params.angle)],
-    {
-      revalidate: 3600,
-      tags: [`climb-${params.climb_uuid}`],
-    },
-  );
-  return cachedFn();
+/**
+ * `unstable_cache` is constructed per call because its `tags` carry the climb
+ * uuid — a module-level instance could only hold one static tag set, and a
+ * uuid-keyed registry of instances would grow without bound on a crawl. What
+ * *is* hoisted is the executor: `unstable_cache` keys on the callback's source
+ * text, so passing a stable module-level function with explicit primitive
+ * arguments (the pattern `search-climbs.ts` documents) keeps the key derivation
+ * deterministic instead of resting on a fresh closure per request.
+ */
+function cachedClimbFetch(boardName: BoardName, layoutId: LayoutId, angle: number, climbUuid: string) {
+  return unstable_cache(fetchClimbFromDb, ['climb', boardName, String(layoutId), climbUuid, String(angle)], {
+    revalidate: 3600,
+    tags: [`climb-${climbUuid}`],
+  })(boardName, layoutId, angle, climbUuid);
+}
+
+/**
+ * React-`cache`d on primitives, so `generateMetadata` and the page body share
+ * one read per request. `unstable_cache` has no in-flight single-flight and
+ * Next renders the two concurrently, so on a cold key both used to miss and
+ * both used to run the alias lookup and the climb select — four statements
+ * where two would do.
+ * Keying on primitives (rather than the params object) makes the dedupe work in
+ * the `/b/{slug}` tree too, where the two entry points build their own objects.
+ *
+ * Resolves to `null` when the climb genuinely does not exist; rejects when the
+ * read failed.
+ */
+const getClimbCached = cache(
+  async (boardName: BoardName, layoutId: LayoutId, angle: number, climbUuid: string): Promise<Climb | null> =>
+    cachedClimbFetch(boardName, layoutId, angle, climbUuid),
+);
+
+export async function getClimb(params: ParsedBoardRouteParametersWithUuid): Promise<Climb | null> {
+  return getClimbCached(params.board_name, params.layout_id, params.angle, params.climb_uuid);
 }
 
 export type ClimbStatsForAngle = {
@@ -93,10 +138,13 @@ export type ClimbStatsForAngle = {
 };
 
 async function fetchClimbStatsForAllAnglesFromDb(
-  params: ParsedBoardRouteParametersWithUuid,
+  boardName: BoardName,
+  climbUuid: string,
 ): Promise<ClimbStatsForAngle[]> {
   const result = rowsFromResult<ClimbStatsForAngle & { difficulty_id: number | null }>(
-    await sql`
+    await withReadDeadline(
+      'climb-stats-all-angles',
+      sql`
     SELECT
       climb_stats.angle,
       COALESCE(climb_stats.ascensionist_count, 0) as ascensionist_count,
@@ -107,10 +155,11 @@ async function fetchClimbStatsForAllAnglesFromDb(
       climb_stats.fa_at,
       ROUND(climb_stats.display_difficulty::numeric, 0) as difficulty_id
     FROM board_climb_stats climb_stats
-    WHERE climb_stats.board_type = ${params.board_name}
-    AND climb_stats.climb_uuid = ${params.climb_uuid}
+    WHERE climb_stats.board_type = ${boardName}
+    AND climb_stats.climb_uuid = ${climbUuid}
     ORDER BY climb_stats.angle ASC
   `,
+    ),
   );
   return result.map((row) => ({
     ...row,
@@ -126,18 +175,18 @@ async function fetchClimbStatsForAllAnglesFromDb(
  * `revalidateTag` clears both: a page that renders the climb's own facts from a
  * fresh row and its angle table from an hour-old one is worse than either.
  */
+const getClimbStatsForAllAnglesCached = cache(
+  async (boardName: BoardName, climbUuid: string): Promise<ClimbStatsForAngle[]> =>
+    unstable_cache(fetchClimbStatsForAllAnglesFromDb, ['climb-stats-all-angles', boardName, climbUuid], {
+      revalidate: 3600,
+      tags: [`climb-${climbUuid}`],
+    })(boardName, climbUuid),
+);
+
 export async function getClimbStatsForAllAngles(
   params: ParsedBoardRouteParametersWithUuid,
 ): Promise<ClimbStatsForAngle[]> {
-  const cachedFn = unstable_cache(
-    async () => fetchClimbStatsForAllAnglesFromDb(params),
-    ['climb-stats-all-angles', params.board_name, params.climb_uuid],
-    {
-      revalidate: 3600,
-      tags: [`climb-${params.climb_uuid}`],
-    },
-  );
-  return cachedFn();
+  return getClimbStatsForAllAnglesCached(params.board_name, params.climb_uuid);
 }
 
 export type LayoutRow = {
