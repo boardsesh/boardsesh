@@ -942,6 +942,7 @@ jobs:
   record-published-digests:
     name: Record verified digest manifest
     needs:
+      - authorize-current-main
       - publish-images
       - attest-published-digests
       - verify-attestations

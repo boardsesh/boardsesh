@@ -131,7 +131,12 @@ const PUBLISHER_NEEDS: Record<string, string[]> = {
     'smoke-seeded',
   ],
   'verify-attestations': ['authorize-current-main', 'publish-images', 'attest-published-digests'],
-  'record-published-digests': ['publish-images', 'attest-published-digests', 'verify-attestations'],
+  'record-published-digests': [
+    'authorize-current-main',
+    'publish-images',
+    'attest-published-digests',
+    'verify-attestations',
+  ],
 };
 
 // These hashes cover every parsed YAML run scalar in the publisher. The
@@ -227,7 +232,7 @@ const PRIVILEGED_JOB_SHA256: Record<string, string> = {
   'smoke-seeded': '95bf708acbe676a46dde4981cc83ba978c37f6b6c3ca463ef2239647260ebdf9',
   'attest-published-digests': 'd4955025ba90ce538e2966676a44c4d65c4a400a407e557550427349d603991b',
   'verify-attestations': 'e3e536f61601ef9d8681dc5809065ff814612c227a70afbc14e1c3cb21a6ff8c',
-  'record-published-digests': '976efd6082d212f82b1acacfd9fd4c82155428de80fec5b5c3b5fcec212d65eb',
+  'record-published-digests': '8332efc25368a20c05a3ed6e4c79ecb7eef69b1886e41e9ff90963b765d9a5ed',
 };
 
 const CONTRACT_PATHS = [

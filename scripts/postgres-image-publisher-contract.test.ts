@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { parse, stringify } from 'yaml';
 
 import {
   containsDockerfileSyntaxDirective,
@@ -28,20 +29,80 @@ function replaceRequired(source: string, expected: string, replacement: string):
   return source.replace(expected, replacement);
 }
 
-function replaceRequiredInJob(
+type MutableRecord = Record<string, unknown>;
+
+function requireRecord(value: unknown, label: string): MutableRecord {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`Cannot structurally mutate ${label}: expected a YAML mapping`);
+  }
+  return value as MutableRecord;
+}
+
+function mutateWorkflowJob(source: string, jobName: string, mutate: (job: MutableRecord) => void): string {
+  const workflow = requireRecord(parse(source) as unknown, 'workflow root');
+  const jobs = requireRecord(workflow.jobs, 'workflow jobs');
+  const job = requireRecord(jobs[jobName], `workflow job ${jobName}`);
+  mutate(job);
+  return stringify(workflow, { lineWidth: 0 });
+}
+
+function requireJobSteps(job: MutableRecord, jobName: string): MutableRecord[] {
+  if (!Array.isArray(job.steps) || !job.steps.every((step) => typeof step === 'object' && step !== null)) {
+    throw new Error(`Cannot structurally mutate workflow job ${jobName}: expected a steps sequence`);
+  }
+  return job.steps as MutableRecord[];
+}
+
+function requireNamedStep(steps: MutableRecord[], jobName: string, stepName: string): MutableRecord {
+  const matches = steps.filter((step) => step.name === stepName);
+  if (matches.length !== 1) {
+    throw new Error(`Cannot structurally mutate workflow job ${jobName}: expected exactly one ${stepName} step`);
+  }
+  return matches[0];
+}
+
+function mutateWorkflowStep(
   source: string,
   jobName: string,
-  nextJobName: string,
-  expected: string,
-  replacement: string,
+  stepName: string,
+  mutate: (step: MutableRecord) => void,
 ): string {
-  const jobStart = source.indexOf(`\n  ${jobName}:\n`);
-  const nextJobStart = source.indexOf(`\n  ${nextJobName}:\n`, jobStart + 1);
-  expect(jobStart).toBeGreaterThanOrEqual(0);
-  expect(nextJobStart).toBeGreaterThan(jobStart);
-  const jobSource = source.slice(jobStart, nextJobStart);
-  expect(jobSource).toContain(expected);
-  return source.slice(0, jobStart) + jobSource.replace(expected, replacement) + source.slice(nextJobStart);
+  return mutateWorkflowJob(source, jobName, (job) => {
+    mutate(requireNamedStep(requireJobSteps(job, jobName), jobName, stepName));
+  });
+}
+
+function moveWorkflowStepsBefore(
+  source: string,
+  jobName: string,
+  movedStepNames: string[],
+  beforeStepName: string,
+): string {
+  return mutateWorkflowJob(source, jobName, (job) => {
+    const steps = requireJobSteps(job, jobName);
+    const movedSteps = movedStepNames.map((stepName) => requireNamedStep(steps, jobName, stepName));
+    const movedStepNameSet = new Set(movedStepNames);
+    const remainingSteps = steps.filter((step) => !movedStepNameSet.has(String(step.name)));
+    const beforeIndex = remainingSteps.findIndex((step) => step.name === beforeStepName);
+    if (beforeIndex < 0) {
+      throw new Error(`Cannot structurally mutate workflow job ${jobName}: missing ${beforeStepName} step`);
+    }
+    remainingSteps.splice(beforeIndex, 0, ...movedSteps);
+    job.steps = remainingSteps;
+  });
+}
+
+function removeWorkflowNeed(source: string, jobName: string, removedNeed: string): string {
+  return mutateWorkflowJob(source, jobName, (job) => {
+    if (!Array.isArray(job.needs) || !job.needs.every((need) => typeof need === 'string')) {
+      throw new Error(`Cannot structurally mutate workflow job ${jobName}: expected a string needs sequence`);
+    }
+    const matchingNeeds = job.needs.filter((need) => need === removedNeed);
+    if (matchingNeeds.length !== 1) {
+      throw new Error(`Cannot structurally mutate workflow job ${jobName}: expected exactly one ${removedNeed} need`);
+    }
+    job.needs = job.needs.filter((need) => need !== removedNeed);
+  });
 }
 
 describe('trusted PostgreSQL image publisher contract', () => {
@@ -56,6 +117,7 @@ describe('trusted PostgreSQL image publisher contract', () => {
     '\uFEFF# syntax=evil.example/frontend:latest',
     '\uFEFF \t#  SYNTAX = evil.example/frontend@sha256:abc',
     'FROM postgres:18\n  # syntax=evil.example/frontend:latest',
+    'FROM postgres:18\r\n\t# syntax = evil.example/frontend:windows\r\nRUN true\r\n',
   ])('recognizes whitespace- and BOM-prefixed Dockerfile frontend directive %j', (dockerfile) => {
     expect(containsDockerfileSyntaxDirective(dockerfile)).toBe(true);
   });
@@ -179,13 +241,10 @@ describe('trusted PostgreSQL image publisher contract', () => {
     {
       name: 'validate-main timeout widened',
       mutate: (workflow: string) =>
-        replaceRequiredInJob(
-          workflow,
-          'validate-main',
-          'publish-images',
-          '    timeout-minutes: 30',
-          '    timeout-minutes: 90',
-        ),
+        mutateWorkflowJob(workflow, 'validate-main', (job) => {
+          if (job['timeout-minutes'] !== 30) throw new Error('validate-main must start with a 30-minute timeout');
+          job['timeout-minutes'] = 90;
+        }),
       expected: /validate-main timeout must remain 30 minutes/,
     },
     {
@@ -220,29 +279,20 @@ describe('trusted PostgreSQL image publisher contract', () => {
     },
     {
       name: 'package write on the recorder',
-      mutate: (workflow: string) => {
-        const recordStart = workflow.indexOf('\n  record-published-digests:\n');
-        expect(recordStart).toBeGreaterThan(0);
-        const prefix = workflow.slice(0, recordStart);
-        const record = workflow
-          .slice(recordStart)
-          .replace('      contents: read\n', '      contents: read\n      packages: write\n');
-        return prefix + record;
-      },
+      mutate: (workflow: string) =>
+        mutateWorkflowJob(workflow, 'record-published-digests', (job) => {
+          const permissions = requireRecord(job.permissions, 'record-published-digests permissions');
+          permissions.packages = 'write';
+        }),
       expected: /record-published-digests permissions must match/,
     },
     {
       name: 'OIDC on the build job',
-      mutate: (workflow: string) => {
-        const publishStart = workflow.indexOf('\n  publish-images:\n');
-        const verifyStart = workflow.indexOf('\n  verify-published-images:\n');
-        expect(publishStart).toBeGreaterThan(0);
-        expect(verifyStart).toBeGreaterThan(publishStart);
-        const publish = workflow
-          .slice(publishStart, verifyStart)
-          .replace('      packages: write\n', '      packages: write\n      id-token: write\n');
-        return workflow.slice(0, publishStart) + publish + workflow.slice(verifyStart);
-      },
+      mutate: (workflow: string) =>
+        mutateWorkflowJob(workflow, 'publish-images', (job) => {
+          const permissions = requireRecord(job.permissions, 'publish-images permissions');
+          permissions['id-token'] = 'write';
+        }),
       expected: /publish-images permissions must match/,
     },
     {
@@ -273,71 +323,52 @@ describe('trusted PostgreSQL image publisher contract', () => {
     },
     {
       name: 'portable dependencies installed while registry credentials remain',
-      mutate: (workflow: string) => {
-        const dependencySetup = `      - name: Set up Bun after registry credential removal
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-
-      - name: Install locked dependencies after registry credential removal
-        run: bun install --frozen-lockfile
-
-`;
-        const withoutDependencySetup = replaceRequiredInJob(
+      mutate: (workflow: string) =>
+        moveWorkflowStepsBefore(
           workflow,
           'smoke-portable',
-          'smoke-seeded',
-          dependencySetup,
-          '',
-        );
-        return replaceRequiredInJob(
-          withoutDependencySetup,
-          'smoke-portable',
-          'smoke-seeded',
-          '      - name: Remove registry credentials before image smoke\n',
-          dependencySetup + '      - name: Remove registry credentials before image smoke\n',
-        );
-      },
+          [
+            'Set up Bun after registry credential removal',
+            'Install locked dependencies after registry credential removal',
+          ],
+          'Remove registry credentials before image smoke',
+        ),
       expected: /smoke-portable tool and dependency setup must occur only after registry credentials are removed/,
     },
     {
       name: 'portable Vite+ setup runs while registry credentials remain',
-      mutate: (workflow: string) => {
-        const viteSetup = `      - name: Set up Vite+
-        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
-
-`;
-        const withoutViteSetup = replaceRequiredInJob(workflow, 'smoke-portable', 'smoke-seeded', viteSetup, '');
-        return replaceRequiredInJob(
-          withoutViteSetup,
+      mutate: (workflow: string) =>
+        moveWorkflowStepsBefore(
+          workflow,
           'smoke-portable',
-          'smoke-seeded',
-          '      - name: Remove registry credentials before image smoke\n',
-          viteSetup + '      - name: Remove registry credentials before image smoke\n',
-        );
-      },
+          ['Set up Vite+'],
+          'Remove registry credentials before image smoke',
+        ),
       expected: /smoke-portable tool and dependency setup must occur only after registry credentials are removed/,
     },
     {
       name: 'seeded smoke dependencies installed without the lockfile',
       mutate: (workflow: string) =>
-        replaceRequiredInJob(
+        mutateWorkflowStep(
           workflow,
           'smoke-seeded',
-          'attest-published-digests',
-          '        run: bun install --frozen-lockfile',
-          '        run: bun install',
+          'Install locked dependencies after registry credential removal',
+          (step) => {
+            if (step.run !== 'bun install --frozen-lockfile') throw new Error('seeded smoke install must be frozen');
+            step.run = 'bun install';
+          },
         ),
       expected: /smoke-seeded must install only the reviewed lockfile graph/,
     },
     {
       name: 'unpinned portable smoke Bun setup',
       mutate: (workflow: string) =>
-        replaceRequiredInJob(
-          workflow,
-          'smoke-portable',
-          'smoke-seeded',
-          'oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6',
-          'oven-sh/setup-bun@v2',
-        ),
+        mutateWorkflowStep(workflow, 'smoke-portable', 'Set up Bun after registry credential removal', (step) => {
+          if (step.uses !== 'oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6') {
+            throw new Error('portable smoke Bun setup must start at its reviewed pin');
+          }
+          step.uses = 'oven-sh/setup-bun@v2';
+        }),
       expected: /must use only oven-sh\/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6/,
     },
     {
@@ -477,7 +508,12 @@ describe('trusted PostgreSQL image publisher contract', () => {
     },
     {
       name: 'digest artifact before attestation verification',
-      mutate: (workflow: string) => replaceRequired(workflow, '      - verify-attestations\n', ''),
+      mutate: (workflow: string) => removeWorkflowNeed(workflow, 'record-published-digests', 'verify-attestations'),
+      expected: /record-published-digests dependencies must match/,
+    },
+    {
+      name: 'digest artifact without direct current-main authorization dependency',
+      mutate: (workflow: string) => removeWorkflowNeed(workflow, 'record-published-digests', 'authorize-current-main'),
       expected: /record-published-digests dependencies must match/,
     },
     {
