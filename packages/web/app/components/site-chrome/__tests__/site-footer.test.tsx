@@ -48,6 +48,13 @@ describe('SiteFooter', () => {
     mockPathname = '/';
   });
 
+  // Pinned here because `e2e/site-chrome.spec.ts` selects on it and e2e is
+  // workflow_dispatch-only — a rename would otherwise go unnoticed.
+  it('carries the site-footer testid the e2e spec selects', () => {
+    const { container } = render(<SiteFooter />);
+    expect(container.querySelector('[data-testid="site-footer"]')).toBeTruthy();
+  });
+
   it('links to every static page in the sitemap', () => {
     const { container } = render(<SiteFooter />);
 

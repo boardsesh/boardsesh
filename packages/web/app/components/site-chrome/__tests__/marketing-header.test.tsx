@@ -101,6 +101,30 @@ describe('MarketingHeader', () => {
     mockProfileHeaderShareState = { isActive: false, displayName: null };
   });
 
+  // `e2e/site-chrome.spec.ts` selects the chrome by this testid rather than by
+  // tag, because kiosk/embed page content renders its own <header>/<footer>.
+  // e2e is workflow_dispatch-only (standing rule 6), so pin the contract here
+  // where every PR runs it.
+  it('tags every header branch with the marketing-header testid the e2e spec selects', () => {
+    for (const pathname of [
+      '/some-page',
+      '/',
+      '/you',
+      '/you/sessions',
+      '/settings',
+      '/profile/user-2',
+      '/aurora-migration',
+    ]) {
+      mockPathname = pathname;
+      const { container, unmount } = render(<MarketingHeader />);
+      expect(
+        container.querySelector('[data-testid="marketing-header"]'),
+        `${pathname} must tag its header`,
+      ).toBeTruthy();
+      unmount();
+    }
+  });
+
   it('renders the brand link and the app hand-off, and no search field', () => {
     render(<MarketingHeader />);
 
