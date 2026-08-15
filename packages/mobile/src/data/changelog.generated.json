@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-15T06:30:54.301Z",
+  "generatedAt": "2026-08-15T06:43:20.639Z",
   "entries": [
+    {
+      "prNumber": 4464,
+      "category": "new",
+      "title": "Boardsesh pages are easier to find from search — every board setup and public playlist now tells search engines where to look. Gym and setter pages are wired up and land next.",
+      "mergedAt": "2026-08-15T06:42:20Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4464"
+    },
     {
       "prNumber": 4467,
       "category": "improved",

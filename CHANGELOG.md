@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Boardsesh pages are easier to find from search — every board setup and public playlist now tells search engines where to look. Gym and setter pages are wired up and land next. ([#4464](https://github.com/boardsesh/boardsesh/pull/4464))
 - Expo web now starts dark and uses the roomy tablet layout on desktop. ([#4471](https://github.com/boardsesh/boardsesh/pull/4471))
   Open a climb without losing the full action bar, queue, logbook, beta, community, or similar climbs.
 
