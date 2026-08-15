@@ -14,6 +14,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Improved
 
+- Your feed, your stats and your profile live in the app now. Share links you've already sent keep working — www still opens every session, join link and climb page. ([#4479](https://github.com/boardsesh/boardsesh/pull/4479))
+- Installing the browser app now works. Open `app.boardsesh.com` in Chrome or Safari and you'll get the "Add to Home Screen" prompt, launching straight into the app instead of a browser tab. ([#4480](https://github.com/boardsesh/boardsesh/pull/4480))
 - The website is now the fast front door — browse and share climbs there, and do your climbing in the app. ([#4467](https://github.com/boardsesh/boardsesh/pull/4467))
 - Board pages slim down to the essentials — browsing and climbing live in the app now. ([#4448](https://github.com/boardsesh/boardsesh/pull/4448))
   Every old board link still works: liked climbs, logbooks and playlists send you to the right place, and creating or remixing a climb opens the app on the board you were already looking at.
@@ -21,6 +23,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- [x] This change is internal-only and needs no release note. ([#4484](https://github.com/boardsesh/boardsesh/pull/4484))
 - Download several boards for offline use without getting stuck after the snapshot finishes. ([#4469](https://github.com/boardsesh/boardsesh/pull/4469))
   Pocketing your phone now resumes the download cleanly, and a slower fallback shows real progress instead of an interrupted spinner.
 - Similar climbs and offline board stats keep loading during busy sessions. ([#4468](https://github.com/boardsesh/boardsesh/pull/4468))

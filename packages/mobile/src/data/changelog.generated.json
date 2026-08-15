@@ -1,6 +1,27 @@
 {
-  "generatedAt": "2026-08-15T06:43:20.639Z",
+  "generatedAt": "2026-08-15T10:44:34.177Z",
   "entries": [
+    {
+      "prNumber": 4479,
+      "category": "improved",
+      "title": "Your feed, your stats and your profile live in the app now. Share links you've already sent keep working — www still opens every session, join link and climb page.",
+      "mergedAt": "2026-08-15T10:43:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4479"
+    },
+    {
+      "prNumber": 4480,
+      "category": "improved",
+      "title": "Installing the browser app now works. Open `app.boardsesh.com` in Chrome or Safari and you'll get the \"Add to Home Screen\" prompt, launching straight into the app instead of a browser tab.",
+      "mergedAt": "2026-08-15T10:42:51Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4480"
+    },
+    {
+      "prNumber": 4484,
+      "category": "fixed",
+      "title": "[x] This change is internal-only and needs no release note.",
+      "mergedAt": "2026-08-15T10:42:39Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4484"
+    },
     {
       "prNumber": 4464,
       "category": "new",
