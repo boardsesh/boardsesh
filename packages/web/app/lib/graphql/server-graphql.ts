@@ -1,7 +1,7 @@
 import 'server-only';
 import { type RequestDocument, type Variables, GraphQLClient } from 'graphql-request';
 import { getGraphQLHttpUrl } from './client';
-import type { GroupedNotificationConnection, UserBoard } from '@boardsesh/shared-schema';
+import type { UserBoard } from '@boardsesh/shared-schema';
 import { GET_MY_BOARDS, type GetMyBoardsQueryResponse } from '@boardsesh/graphql/operations/boards';
 import {
   GET_ALL_USER_PLAYLISTS,
@@ -13,7 +13,6 @@ import {
   type GetPlaylistClimbsQueryResponse,
   type GetPlaylistClimbsInput,
 } from '@boardsesh/graphql/operations/playlists';
-import { GET_GROUPED_NOTIFICATIONS } from '@boardsesh/graphql/operations/notifications';
 
 /**
  * Execute a GraphQL query with an auth token (non-cached, per-user data).
@@ -78,26 +77,6 @@ export async function serverUserPlaylists(
     return response.allUserPlaylists;
   } catch (error) {
     console.error('serverUserPlaylists failed:', error);
-    return null;
-  }
-}
-
-/**
- * Fetch the first page of grouped notifications server-side.
- * Returns null on failure so the client can fall back to client-side fetching.
- */
-export async function serverGroupedNotifications(
-  authToken: string,
-  limit: number = 20,
-  offset: number = 0,
-): Promise<GroupedNotificationConnection | null> {
-  type Response = { groupedNotifications: GroupedNotificationConnection };
-
-  try {
-    const data = await executeAuthenticatedGraphQL<Response>(GET_GROUPED_NOTIFICATIONS, { limit, offset }, authToken);
-    return data.groupedNotifications;
-  } catch (error) {
-    console.error('serverGroupedNotifications failed:', error);
     return null;
   }
 }

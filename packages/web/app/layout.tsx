@@ -9,7 +9,6 @@ import QueryClientProvider from './components/providers/query-client-provider';
 import SiteChrome from './components/providers/site-chrome';
 import { SnackbarProvider } from './components/providers/snackbar-provider';
 import { AuthModalProvider } from './components/providers/auth-modal-provider';
-import { NotificationSubscriptionManager } from './components/providers/notification-subscription-manager';
 import I18nProvider from './components/providers/i18n-provider';
 import { VercelToolbar } from '@vercel/toolbar/next';
 import { EMPTY_FEATURE_FLAGS } from './flags';
@@ -108,9 +107,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     <CapacitorRetirementGate>
                       <AuthModalProvider>
                         <FeatureFlagsProvider flags={EMPTY_FEATURE_FLAGS}>
-                          <SiteChrome>
-                            <NotificationSubscriptionManager>{children}</NotificationSubscriptionManager>
-                          </SiteChrome>
+                          <SiteChrome>{children}</SiteChrome>
                         </FeatureFlagsProvider>
                       </AuthModalProvider>
                     </CapacitorRetirementGate>

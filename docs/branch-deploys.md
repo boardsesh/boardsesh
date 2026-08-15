@@ -1179,7 +1179,6 @@ Organized by migration priority (pure reads first, then mutations, then proxies)
 | `/api/v1/grades/[board]`                                      | `query gradeSystem(board)`      |
 | `/api/v1/[board]/slugs/**`                                    | `query slugs(board, ...)`       |
 | `/api/internal/profile/[userId]`                              | `query profile(userId)`         |
-| `/api/internal/climb-redirect`                                | `query climbRedirect(...)`      |
 
 #### Batch 2: Mutations
 

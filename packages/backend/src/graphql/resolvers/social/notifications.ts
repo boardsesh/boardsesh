@@ -29,7 +29,9 @@ type NotificationRow = {
  * and `angle` are the two that let a client build a board URL that resolves:
  * `climb(uuid, layoutId)` filters on the layout, so a client that guesses the
  * board's first layout misses every Kilter Homewall / Tension Board 2 climb.
- * Web reads the same pair in `/api/internal/climb-redirect`.
+ * This is the only place the pair is resolved: www's `/api/internal/climb-redirect`
+ * read the same two columns and went with the web notification centre in W-20b
+ * (#4439).
  */
 const NOTIFICATION_CLIMB_COLUMNS = {
   uuid: dbSchema.boardClimbs.uuid,
@@ -281,8 +283,9 @@ export const socialNotificationQueries = {
     // Batch-fetch climbs. `layoutId` + `angle` ride along because a client can't
     // open a climb without them: `climb(uuid, layoutId)` filters on the layout,
     // so a client guessing the board's first layout misses every Kilter Homewall
-    // and Tension Board 2 climb. Web reads the same two columns server-side in
-    // `/api/internal/climb-redirect`; this is that resolution for GraphQL clients.
+    // and Tension Board 2 climb. www used to resolve the same two columns
+    // server-side; that route went with the web notification centre in W-20b
+    // (#4439), so this is now the only resolution.
     const climbMap = new Map<string, NotificationClimb>();
     if (climbEntityIds.length > 0) {
       const climbRows = await db

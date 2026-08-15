@@ -1,5 +1,5 @@
 /**
- * W-19 (#4437): the private web surfaces are gone from www.
+ * W-19 (#4437) and W-20b (#4439): the private web surfaces are gone from www.
  *
  * A delete PR has a weak correctness oracle — nothing fails when a deleted tree
  * quietly comes back in a merge, and nothing fails when a redirect that was
@@ -38,6 +38,21 @@ const DELETED_PATHS = [
   'app/lib/server-board-configs.ts',
   'app/components/activity-feed/proposal-feed.tsx',
   'app/components/activity-feed/comment-feed.tsx',
+  // W-20b (#4439): the notification centre. The route tree and its components
+  // are listed alongside the four hooks and the root-layout subscription
+  // manager, because a merge can restore any one of them independently —
+  // `import-graph-invariant` only sees a resurrected file once a kept surface
+  // imports it, which is true of the subscription manager and of nothing else
+  // here. `climb-redirect` is a live HTTP endpoint if it comes back.
+  'app/notifications',
+  'app/components/notifications',
+  'app/components/providers/notification-subscription-manager.tsx',
+  'app/hooks/use-grouped-notifications.ts',
+  'app/hooks/use-mark-notifications-read.ts',
+  'app/hooks/use-notification-subscription.ts',
+  'app/hooks/use-unread-notification-count.ts',
+  'app/api/internal/climb-redirect',
+  'app/lib/ssr-timeout.ts',
 ];
 
 /**
@@ -72,7 +87,7 @@ const KEPT_PATHS = [
 const LOCALE_PREFIXES = ['/es', '/fr', '/de'];
 
 /** Base sources this PR must 30x, before locale expansion. */
-const REDIRECTED_SOURCES = ['/you', '/you/:path*', '/feed', '/discover', '/import-beta'];
+const REDIRECTED_SOURCES = ['/you', '/you/:path*', '/feed', '/discover', '/import-beta', '/notifications'];
 
 type Redirect = { source: string; destination: string; permanent: boolean };
 type NextConfigWithRedirects = { redirects?: () => Promise<Redirect[]> };

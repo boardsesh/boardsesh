@@ -14,8 +14,8 @@ import MarketingHeader from '../marketing-header';
  * the route; everything the profile / `/settings` surfaces still depend on is
  * re-asserted here, plus two obligations this header picked up: the account
  * affordance that replaces the deleted UserDrawer (the only sign-in entry point
- * outside `/auth`, and now the only route to /notifications and /settings) and
- * the chrome-less bail.
+ * outside `/auth`, and now the only route to /settings) and the chrome-less
+ * bail.
  */
 
 vi.mock('react-i18next', () => ({
@@ -58,10 +58,6 @@ vi.mock('next/link', () => ({
 const mockShareWithFallback = vi.fn();
 vi.mock('@/app/lib/share-utils', () => ({
   shareWithFallback: (...args: unknown[]) => mockShareWithFallback(...args),
-}));
-
-vi.mock('@/app/hooks/use-unread-notification-count', () => ({
-  useUnreadNotificationCount: () => 3,
 }));
 
 let mockStatsFilterBridgeState = {
@@ -145,14 +141,26 @@ describe('MarketingHeader', () => {
       expect(screen.getByLabelText('Your profile').closest('a')?.getAttribute('href')).toBe('/profile/user-1');
     });
 
-    // W-19 (#4437) deleted /you, which carried the only links to /notifications
-    // and /settings. The account affordance is now the sole entry point to both;
-    // W-20b (#4439) removes the bell again when it deletes /notifications.
-    it('keeps notifications and settings reachable from the account affordance', () => {
+    // W-19 (#4437) deleted /you, which carried the only link to /settings. The
+    // account affordance is now the sole entry point, and stays that way until
+    // W-21 decides what happens to /settings itself.
+    it('keeps settings reachable from the account affordance', () => {
       const { container } = render(<MarketingHeader />);
 
-      expect(container.querySelector('a[href="/notifications"]')).toBeTruthy();
       expect(container.querySelector('a[href="/settings"]')).toBeTruthy();
+    });
+
+    // W-19 parked the notifications bell here so /notifications stayed reachable
+    // for one deploy. W-20b (#4439) deleted the page, so the link has to go too —
+    // otherwise a signed-in visitor taps a bell that looks local and gets bounced
+    // cross-origin by a 307.
+    it('links nowhere into /notifications — the surface moved to the app', () => {
+      for (const pathname of ['/some-page', '/', '/profile/user-2', '/settings']) {
+        mockPathname = pathname;
+        const { container, unmount } = render(<MarketingHeader />);
+        expect(container.querySelectorAll('a[href^="/notifications"]').length, pathname).toBe(0);
+        unmount();
+      }
     });
 
     it('links nowhere into /you', () => {
@@ -267,14 +275,14 @@ describe('MarketingHeader', () => {
     });
 
     // Accepted with W-19's Q3 ruling: the account icons ride the transparent
-    // hero bar too, because they are the only route to /notifications and
-    // /settings now that /you is gone.
+    // hero bar too, because they are the only route to /settings now that /you
+    // is gone.
     it('carries the account affordance for a signed-in visitor', () => {
       mockPathname = '/';
       const { container } = render(<MarketingHeader />);
 
       expect(container.querySelector('a[href="/settings"]')).toBeTruthy();
-      expect(container.querySelector('a[href="/notifications"]')).toBeTruthy();
+      expect(container.querySelector('a[href="/profile/user-1"]')).toBeTruthy();
     });
 
     it('shows a sign-in link and no account icons when signed out', () => {

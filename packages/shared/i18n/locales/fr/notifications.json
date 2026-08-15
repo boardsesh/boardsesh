@@ -1,10 +1,4 @@
 {
-  "metadata": {
-    "notifications": {
-      "title": "Notifications",
-      "description": "Tes notifications sur Boardsesh"
-    }
-  },
   "title": "Notifications",
   "empty": "Rien pour l'instant",
   "markAllRead": "Tout marquer comme lu",
@@ -35,12 +29,6 @@
     "gymClaimApproved": "Tu gères maintenant {{gym}}",
     "gymClaimApprovedGeneric": "Tu es désormais le propriétaire : ta revendication de la salle est validée",
     "default": "Tu as une nouvelle notification"
-  },
-  "time": {
-    "justNow": "à l'instant",
-    "minutes": "{{count}} min",
-    "hours": "{{count}} h",
-    "days": "{{count}} j"
   },
   "errors": {
     "load": "Impossible de charger tes notifications"

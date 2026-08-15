@@ -110,7 +110,6 @@ export const notificationsTypeDefs = /* GraphQL */ `
     Layout the climb was set on. Clients need this to build a board URL that
     actually resolves: the climb query filters on layoutId, so guessing the
     board's first layout misses every Kilter Homewall / Tension Board 2 climb.
-    Web reads the same column server-side in /api/internal/climb-redirect.
     """
     climbLayoutId: Int
     """

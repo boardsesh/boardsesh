@@ -11,8 +11,8 @@ let safeWsCounter = 0;
 // Re-export shared primitives so every importer of this module keeps getting
 // `execute`/`subscribe` and friends from one place. The `components/graphql-queue`
 // tree that used to drive most of this went with W-16; the surviving consumers
-// are `board-presence-client.ts`, `kiosk/presence/kiosk-presence-hub.tsx`,
-// `social/comment-section.tsx` and `use-notification-subscription.ts`.
+// are `board-presence-client.ts`, `kiosk/presence/kiosk-presence-hub.tsx` and
+// `social/comment-section.tsx`.
 export {
   execute,
   subscribe,

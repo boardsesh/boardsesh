@@ -328,14 +328,6 @@ const sharedComponents: Components<Theme> = {
       },
     },
   },
-  MuiBadge: {
-    styleOverrides: {
-      badge: {
-        fontWeight: themeTokens.typography.fontWeight.semibold,
-        boxShadow: '0 0 0 2px var(--semantic-surface)',
-      },
-    },
-  },
   MuiRating: {
     styleOverrides: {
       iconFilled: {
