@@ -83,6 +83,12 @@ function isAppAffecting(filePath) {
     filePath.startsWith('packages/shared/') ||
     filePath.startsWith('packages/shared-schema/') ||
     filePath === 'scripts/build-expo-web-export.sh' ||
+    // The export recipe shells out to this: it rewrites the shipped shell's
+    // manifest href and the manifest's start_url/scope from the export's
+    // baseUrl (W-24, #4438). A patcher-only change alters the artifact
+    // app.boardsesh.com serves, so it has to redeploy the subdomain — and run
+    // the post-deploy manifest smoke that would catch a bad patch.
+    filePath === 'scripts/lib/patch-expo-web-pwa-manifest.mjs' ||
     filePath === 'deploy/app-subdomain/_headers' ||
     filePath === 'deploy/app-subdomain/_redirects'
   );

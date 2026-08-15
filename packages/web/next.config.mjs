@@ -321,20 +321,13 @@ const nextConfig = {
         source: '/.well-known/apple-app-site-association',
         headers: [{ key: 'Content-Type', value: 'application/json' }],
       },
-      {
-        // Expo web is an authenticated utility surface. Keep it out of search
-        // while it is rolled out behind the /app proxy.
-        source: '/app/:path*',
-        headers: [{ key: 'X-Robots-Tag', value: 'noindex, follow' }],
-      },
-      {
-        // Exported Expo web bundles are content-hashed (entry-<hash>.js under
-        // _expo/static, md5-named files under assets/), so they can be cached
-        // forever. The SPA shell (/app/index.html) and the fixed-name WASM glue
-        // under /app/wasm keep the default no-store-ish behaviour on purpose.
-        source: '/app/:hashedDir(_expo|assets)/:path*',
-        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
-      },
+      // No /app rules live here any more (W-24, #4438). The browser app ships at
+      // app.boardsesh.com, whose response headers come from
+      // deploy/app-subdomain/_headers. The only /app surface left on www is the
+      // dev Metro proxy, and an external rewrite forwards Metro's own response
+      // headers straight past headers() — so middleware.ts is what stamps
+      // noindex/XFO/nosniff/HSTS there, pinned against Metro's canonical
+      // constants by expo-web-header-parity.test.ts.
       {
         // Every route EXCEPT /embed/** keeps the frame-denying default.
         // If this exclusion ever regresses, the fail-safe is SAMEORIGIN
@@ -379,33 +372,26 @@ const nextConfig = {
 
     const expoWebOrigin = resolveExpoWebDevOrigin(process.env.BOARDSESH_EXPO_WEB_ORIGIN);
     if (!expoWebOrigin) {
-      // In dev, BOARDSESH_WEB=1 with no BOARDSESH_EXPO_WEB_ORIGIN usually means
-      // a half-configured Metro proxy — surface it (the static-export fallback
-      // below still applies if public/app was built). In production this is the
-      // intended configuration: no Metro, serve the static export.
-      if (process.env.NODE_ENV === 'development') {
-        console.warn(
-          '[next.config] BOARDSESH_WEB=1 but BOARDSESH_EXPO_WEB_ORIGIN is unset — Expo web /app dev proxy is disabled; serving the static export from public/app if present.',
-        );
-      }
-      // Production: no Metro to proxy to. The static Expo web export is copied
-      // into public/app (scripts/build-expo-web-export.sh; Dockerfile.web runs
-      // it in the builder stage), so real files — /app/_expo/* bundles,
-      // /app/assets/*, /app/wasm/* — are served straight from public/ before
-      // these afterFiles rewrites are consulted. Everything else under /app is
-      // an Expo Router SPA route and falls back to the exported shell. When the
-      // export was not built into the deploy, /app/index.html resolves to
-      // nothing and /app 404s — that absence is the rollback lever (see
-      // docs/expo-web-deployment.md).
+      // Production never serves /app (W-24, #4438). The Expo browser app ships
+      // only at app.boardsesh.com; www's /app was a legacy static-export path
+      // whose artifact the Vercel build never produced, so it 404'd anyway.
+      // Keeping the SPA fallback behind NODE_ENV=development preserves
+      // `vp run dev:mobile:web-static` (bake once, serve at /app over the
+      // tailnet for device QA) while guaranteeing no production build — Vercel
+      // or Dockerfile.web — can ever bake an /app route again. That guarantee
+      // is what makes #3795 (web → Railway, whose image DOES build from
+      // Dockerfile.web) safe to land after this.
+      if (process.env.NODE_ENV !== 'development') return [];
+
+      console.warn(
+        '[next.config] BOARDSESH_WEB=1 but BOARDSESH_EXPO_WEB_ORIGIN is unset — serving the static export from public/app if present (development only; production never serves /app).',
+      );
       return [
         { source: '/app', destination: '/app/index.html' },
-        // SPA fallback for Expo Router routes ONLY. The content-hashed namespaces
-        // (_expo/, assets/) and the fixed-name WASM glue (wasm/) are excluded so a
-        // request for a missing hashed bundle 404s instead of falling through to
-        // the shell. Otherwise Next's headers() would stamp the index.html body
-        // with the immutable Cache-Control that matches the incoming .js/.wasm path
-        // (line 105), and a stale-shell or mid-deploy client would cache an HTML
-        // page at a bundle URL forever — permanently bricking that URL.
+        // SPA fallback for Expo Router routes ONLY. The content-hashed
+        // namespaces (_expo/, assets/) and the fixed-name WASM glue (wasm/) stay
+        // excluded so a request for a missing hashed bundle 404s instead of
+        // silently serving the HTML shell at a .js/.wasm URL.
         { source: '/app/:path((?!_expo/|assets/|wasm/).*)', destination: '/app/index.html' },
       ];
     }

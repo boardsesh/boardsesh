@@ -29,6 +29,7 @@ function createFixtureRepo() {
   // Declared as extraSourceFiles entries on the web service; context
   // generation fails when one is missing, so the fixture repo carries stubs.
   writeFixtureFile(repoRoot, 'scripts/build-expo-web-export.sh', '#!/usr/bin/env bash\n');
+  writeFixtureFile(repoRoot, 'scripts/lib/patch-expo-web-pwa-manifest.mjs', 'export {};\n');
   writeFixtureFile(repoRoot, 'scripts/lib/tailscale-hostname.ts', 'export {};\n');
   // Same for the backend service's extraSourceDirs entry.
   writeFixtureFile(repoRoot, 'packages/web/public/images/stub.webp', '');

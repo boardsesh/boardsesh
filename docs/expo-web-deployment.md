@@ -4,19 +4,20 @@ The Expo app's browser target ships in two serving shapes, both gated on
 `BOARDSESH_WEB=1`:
 
 - **Development** — Next proxies `/app` to the live Metro dev server.
-- **Production (target)** — a standalone static export served at the **root of
-  `app.boardsesh.com`** (its own subdomain / static host / CDN).
+- **Production** — a standalone static export served at the **root of
+  `app.boardsesh.com`** (Cloudflare Pages), published by `production-deploy.yml`'s
+  `deploy-app-web` job.
 
-The export's base URL is the only difference between the two production shapes,
-and it is driven by `BOARDSESH_WEB_BASE_URL` (read by `resolveWebPlatforms` in
+The export's base URL is the only difference between the two shapes, and it is
+driven by `BOARDSESH_WEB_BASE_URL` (read by `resolveWebPlatforms` in
 `packages/mobile/app.config.ts`, default `/app`). That env var is only read when
 `BOARDSESH_WEB=1`, so native builds (flag unset) resolve a byte-identical config
 and keep their OTA fingerprint.
 
-> The older **`/app` prod-static** path (Next serving the export out of
-> `packages/web/public/app`) still works and is documented below, but the
-> subdomain root is the deployment target. New work should build the subdomain
-> export; the `/app` path is kept for the dev proxy and as a fallback.
+`/app` on `www.boardsesh.com` is **not** a production surface. Since W-24
+(#4438) it is the dev Metro proxy plus the local static bake behind
+`vp run dev:mobile:web-static`, and nothing else — see
+[Retired: the /app static path](#retired-the-app-static-path-w-24-4438).
 
 ## Development: proxy to Metro
 
@@ -27,7 +28,7 @@ and keep their OTA fingerprint.
 phase) so a stale local export sitting in `packages/web/public/app` can never
 shadow the live dev server. The dev export keeps `baseUrl` `/app`.
 
-## Production (target): standalone subdomain at app.boardsesh.com
+## Production: standalone subdomain at app.boardsesh.com
 
 The browser app is exported with `BOARDSESH_WEB_BASE_URL=/` so every asset and
 route is rooted at the origin, then served as a plain static directory at the
@@ -61,6 +62,51 @@ separated substrings, e.g. `"https://ws.boardsesh.com https://www.boardsesh.com"
 so the script greps the emitted JS bundles for each expected origin and fails
 loudly if one is missing — the direct detector for a stale-env artifact
 reaching production.
+
+#### PWA manifest (patched per export)
+
+Two of the export's inputs are baseUrl-blind. `packages/mobile/public/index.html`
+is a checked-in template whose `<link rel="manifest">` href is a fixed
+`/app/manifest.json` (the value the dev Metro proxy needs), and
+`packages/mobile/public/manifest.json` is copied verbatim with `start_url`/`scope`
+written for root serving. Neither knows which baseUrl an export was built with.
+
+Do **not** hand-edit that href to `/manifest.json` to "fix" the install prompt —
+it is the value the dev Metro proxy needs, a single literal cannot be right for
+both baseUrls, and `packages/mobile/src/__tests__/web-shell-appearance.test.ts`
+reds if you try. The same suite pins `%WEB_TITLE%` / `%LANG_ISO_CODE%` in the
+template, because the patcher treats their survival into an export as proof that
+`copyPublicFolderAsync` clobbered Expo's rendered shell with the raw template.
+
+`scripts/lib/patch-expo-web-pwa-manifest.mjs` runs after the WASM assertion and
+rewrites both from `WEB_BASE_URL`:
+
+| mode          | href                 | `start_url` / `scope` |
+| ------------- | -------------------- | --------------------- |
+| default       | `/app/manifest.json` | `/app/`               |
+| `--subdomain` | `/manifest.json`     | `/`                   |
+
+`start_url` carries a trailing slash because PWA scope matching is a path-prefix
+string compare — `/app` does not sit inside `/app/`.
+
+It then re-reads both files from disk and asserts the values landed. That
+read-back is the point: before it existed, the subdomain export shipped the
+template's `/app/manifest.json`, `_redirects`' `/* /index.html 200` answered that
+path with the SPA shell, and the browser got HTML where a manifest belongs — no
+install prompt, a console error every load, HTTP 200 the whole way. The patch
+runs in **both** modes so the CI gate (`vp run check:mobile-web-bundle`, which
+only ever exercises the default mode) covers the code path that ships.
+
+`deploy-app-web`'s post-deploy smoke re-checks it against the live subdomain
+(`PWA manifest → JSON with start_url/scope /`): the shell's href, the fetched
+content-type, and the manifest body's `start_url`/`scope`. Body included because
+a manifest can serve as perfectly valid JSON at the right URL and still put
+`start_url` outside `scope` — parses clean, never offers the install prompt.
+
+Known dev gap: under the Metro proxy the shell and manifest come straight from
+Metro and never pass through this script, so an install prompt in dev keeps
+`start_url: "/"`. The href is already correct there via `next.config.mjs`'s
+`/app/manifest.json` → Metro `/manifest.json` rewrite.
 
 ### What the host must do
 
@@ -290,53 +336,49 @@ These are DNS / hosting operations outside this repo's build:
 4. **Backend env** — set `APP_ORIGIN` if the app is ever served from a non-prod
    origin (defaults to `https://app.boardsesh.com`).
 
-## Legacy production: static export served by Next at /app
+## Retired: the /app static path (W-24, #4438)
 
-Superseded by the subdomain target above, still functional. With
-`BOARDSESH_WEB=1` and **no** `BOARDSESH_EXPO_WEB_ORIGIN`, `next.config.mjs`
-switches to static mode:
+`www.boardsesh.com/app` used to be a second serving shape: Next serving a
+static export out of `packages/web/public/app`, with two afterFiles rewrites for
+the SPA fallback and two `/app/*` header rules. It never actually served anyone
+— the Vercel build (`vercel.json`'s command resolves to
+`generate:openapi && next build`) never ran the export, so the rewrite target did
+not exist and `/app` 404'd in production, at 0 pageviews over the 90 days to
+2026-08-15 against 55,442 total www pageviews.
 
-- The export artifact lives in `packages/web/public/app` (gitignored), so
-  Next — including the standalone `server.js` used by `Dockerfile.web` — serves
-  the real files directly: `/app/_expo/*` bundles, `/app/assets/*`,
-  `/app/wasm/*`, `/app/index.html`. Content-hashed paths (`_expo`, `assets`)
-  get `Cache-Control: immutable`.
-- Two afterFiles rewrites (`/app`, `/app/:path*` → `/app/index.html`) give the
-  Expo Router SPA its deep-link fallback: any `/app/...` path that is not a
-  real file serves the exported shell.
+What changed:
 
-### Artifact flow (/app)
+- **`next.config.mjs` bakes no `/app` rewrite outside `NODE_ENV=development`.**
+  The static fallback survives only for the dev bake below. No production build —
+  Vercel or `Dockerfile.web` — can serve `/app`, which is the property #3795
+  (web → Railway, whose image builds from `Dockerfile.web`) needs before it lands.
+- **`headers()` owns no `/app` rule.** `noindex` and immutable caching moved to
+  the surface that serves the app, `deploy/app-subdomain/_headers`. The dev proxy
+  is an external rewrite, so Next forwards Metro's own headers past `headers()`
+  entirely; `middleware.ts` stamps `noindex`/XFO/nosniff/HSTS there and is pinned
+  against Metro by `expo-web-header-parity.test.ts`.
+- **`Dockerfile.web` runs no export.** The builder-stage `ARG BOARDSESH_WEB` and
+  the `apk add bash` that existed for it are gone too. The **runner-stage**
+  `ARG`/`ENV` stays: `BOARDSESH_WEB` is still read at request time for the
+  cross-subdomain Expo auth bridge (`app/layout.tsx`) and the `/app` middleware
+  carve-out. `--build-arg BOARDSESH_WEB=0` is **no longer a rollback lever** —
+  there is nothing left to roll back, and setting it to 0 only breaks sign-in on
+  the subdomain. Nothing in CI builds this Dockerfile, so
+  `scripts/__tests__/dockerfile-web-no-expo-export.test.ts` is the guard.
+- **No redirect.** `/app` still 404s. Nothing linked to it, no sitemap entry, no
+  `robots.txt` `Disallow`, and it was `noindex` from the start.
 
-`scripts/build-expo-web-export.sh [output-dir]` (no `--subdomain`) is the `/app`
-export recipe (default output: `packages/web/public/app`, baseUrl `/app`).
-Consumers:
+### What still uses the `/app` export
 
-- **`Dockerfile.web` (builder stage)** — the deployed `/app` path. The generated
-  web Docker context includes `packages/mobile` + its workspace deps and this
-  script (`scripts/create-service-docker-context.mjs`). The builder runs the
-  export into `packages/web/public/app` before `next build`, and the runner
-  stage's existing `public/` COPY ships it. `BASE_URL` is forwarded as
-  `EXPO_PUBLIC_WEB_URL` (Expo Router head origin); backend/WS URLs use the
-  production fallbacks in `packages/mobile/src/lib/env.ts`.
-- **`vp run build:expo-web`** — local verification: run it, then
-  `BOARDSESH_WEB=1 vp run build:web`, copy `public/` + `.next/static` into the
-  standalone output, and `/app` serves exactly like production.
+`scripts/build-expo-web-export.sh [output-dir]` (no `--subdomain`, baseUrl
+`/app`, default output `packages/web/public/app`, gitignored) remains a dev and
+CI recipe:
+
+- **`vp run dev:mobile:web-static`** (`scripts/dev-expo-web-static.sh`) bakes it
+  with the Tailscale origin inlined and starts the dev stack with
+  `BOARDSESH_WEB=1` and no proxy origin, so Next serves it at `/app` over the
+  tailnet for real-device QA. This is the loop the `NODE_ENV=development` gate
+  exists to keep alive.
+- **`vp run build:expo-web`** — the same bake by hand.
 - **`vp run check:mobile-web-bundle`** — CI bundle check; exports to a temp dir
-  via the same script (default `/app` base URL).
-
-The Vercel production web deploy (`production-deploy.yml`) does not run the
-export step; `/app` there simply 404s (see rollback below) until it is wired up
-or web serving moves to the Docker image / the subdomain host.
-
-### Rollback
-
-Ship a web image without the export: `--build-arg BOARDSESH_WEB=0` on the
-`Dockerfile.web` build (or simply don't produce/copy the export in whatever
-pipeline builds web). Without the flag the Next build bakes no `/app` rewrites;
-without the artifact the SPA fallback rewrite finds no `/app/index.html` and
-`/app` 404s. Either way the failure is contained to `/app`: the middleware's
-`/app` branch only sets headers and never routes, so the rest of the site is
-unaffected. Native apps are untouched — this surface is browser-only and none
-of it enters the OTA fingerprint graph. The subdomain deployment is independent:
-taking `app.boardsesh.com` offline is a DNS/host operation and never touches the
-main site or native apps.
+  via the same script.

@@ -110,6 +110,12 @@ jobs:
               - 'scripts/mobile-platform-imports-check.sh'
               - 'scripts/mobile-web-bundle-check.sh'
               - 'scripts/sync-mobile-board-renderer-wasm.sh'
+              # check:mobile-web-bundle drives the real Expo export, so these two
+              # only ever run against a genuinely rendered shell here. A
+              # unit-test fixture cannot catch a patcher that breaks on Expo's
+              # actual output. W-24 / #4438.
+              - 'scripts/build-expo-web-export.sh'
+              - 'scripts/lib/patch-expo-web-pwa-manifest.mjs'
               # The live fingerprint gates run in the mobile-bundle job; a PR
               # editing only their logic must still trigger that job.
               - 'scripts/mobile-fingerprint-inputs-check.ts'
@@ -151,6 +157,7 @@ jobs:
             deployConfig:
               - 'deploy/app-subdomain/**'
               - 'scripts/build-expo-web-export.sh'
+              - 'scripts/lib/patch-expo-web-pwa-manifest.mjs'
               - 'Dockerfile.web'
               - '.github/workflows/production-deploy.yml'
             # Everything scripts/store-metadata-limits.test.ts reads via fs at
@@ -498,6 +505,18 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Validate deploy/app-subdomain config (_headers, _redirects, no-CSP rule)
         run: vp test run --project deploy-app-subdomain
+      # Same fs-reading blind spot, one project over: both suites read
+      # Dockerfile.web / build-expo-web-export.sh / create-service-docker-context.mjs
+      # with readFileSync, so test-default's `--changed` never relates them to a
+      # diff that only touches those files — and a Dockerfile- or .sh-only PR
+      # matches no other job's gate at all. Nothing in CI builds Dockerfile.web
+      # (branch-deploy.yml is workflow_dispatch-only), so these pins are the only
+      # thing standing between #3795 and a restored /app export step. W-24 / #4438.
+      - name: Validate the retired /app export stays retired
+        run: >-
+          vp test run --project scripts
+          scripts/__tests__/dockerfile-web-no-expo-export.test.ts
+          scripts/__tests__/build-expo-web-export.test.ts
 
   listing-guards:
     needs: [changes]

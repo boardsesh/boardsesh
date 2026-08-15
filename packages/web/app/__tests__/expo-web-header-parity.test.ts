@@ -2,12 +2,20 @@ import { createRequire } from 'node:module';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
 
-// The /app response-header set lives in three places that external rewrites and
-// Metro can each serve independently: this middleware, next.config's headers(),
-// and Metro's expo-web-response-headers.cjs. Each already has its own test, so a
-// divergence (e.g. tightening HSTS in one) would leave every suite green. Pin
-// all three to a single canonical source — the Metro `.cjs` constants — so drift
-// fails loudly here.
+// The /app response-header set lives in two places that can each serve a
+// request independently: this middleware and Metro's
+// expo-web-response-headers.cjs. Each already has its own test, so a divergence
+// (e.g. tightening HSTS in one) would leave every suite green. Pin both to a
+// single canonical source — the Metro `.cjs` constants — so drift fails loudly
+// here.
+//
+// This used to be a three-way pin. W-24 (#4438) retired the /app static path
+// and with it next.config's `/app/:path*` X-Robots-Tag rule: /app on www is now
+// only the dev Metro proxy, which is an EXTERNAL rewrite — Next forwards
+// Metro's own response headers and never runs headers() over them. A
+// next.config /app rule would be dead code that this test made look
+// load-bearing. Do not "restore" it. The global `/((?!embed/).*)` rule is the
+// only next.config input left on that path, and it is still asserted below.
 const require = createRequire(import.meta.url);
 const { EXPO_WEB_SECURITY_HEADERS, EXPO_WEB_ROBOTS_VALUE, EXPO_WEB_STRICT_TRANSPORT_SECURITY } =
   require('../../../mobile/expo-web-response-headers.cjs') as {
@@ -61,11 +69,8 @@ describe('/app security-header parity across middleware, next.config, and Metro'
     expect(response.headers.get('Strict-Transport-Security')).toBe(EXPO_WEB_STRICT_TRANSPORT_SECURITY);
   });
 
-  it('next.config /app rule and global security rule match the canonical Metro headers', async () => {
+  it('next.config global security rule matches the canonical Metro headers', async () => {
     const headers = (await nextConfig.headers?.()) ?? [];
-
-    const appRule = headers.find(({ source }) => source === '/app/:path*');
-    expect(headerMap(appRule?.headers ?? [])['X-Robots-Tag']).toBe(EXPO_WEB_ROBOTS_VALUE);
 
     // /app responses inherit the global (non-embed) security headers, including
     // the canonical HSTS value which next.config sets unconditionally.

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vite-plus/test';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 type Rewrite = { source: string; destination: string };
 type RewriteResult = Rewrite[] | { beforeFiles?: Rewrite[]; afterFiles?: Rewrite[]; fallback?: Rewrite[] };
@@ -24,6 +24,11 @@ afterEach(() => {
 
   if (originalProxyOrigin === undefined) delete process.env.BOARDSESH_EXPO_WEB_ORIGIN;
   else process.env.BOARDSESH_EXPO_WEB_ORIGIN = originalProxyOrigin;
+
+  // The static /app fallback is gated on NODE_ENV === 'development' (W-24,
+  // #4438); vitest runs with NODE_ENV=test, so every test that exercises that
+  // branch stubs it and this puts it back.
+  vi.unstubAllEnvs();
 });
 
 describe('Expo web Next proxy', () => {
@@ -94,9 +99,29 @@ describe('Expo web Next proxy', () => {
     expect((phasedRewrites.fallback ?? []).filter(isExpoNamespace)).toEqual([]);
   });
 
-  it('falls back /app routes to the exported SPA shell when no proxy origin is configured', async () => {
+  it('bakes no /app rewrite into a production build (the retirement)', async () => {
+    // W-24 (#4438): the Expo browser app ships only at app.boardsesh.com. A
+    // production build must not be able to serve /app even with the web flag on
+    // — that is the property #3795 (web → Railway, whose image builds from
+    // Dockerfile.web) depends on.
     process.env.BOARDSESH_WEB = '1';
     delete process.env.BOARDSESH_EXPO_WEB_ORIGIN;
+    vi.stubEnv('NODE_ENV', 'production');
+
+    const appRewrites = flattenRewrites((await nextConfig.rewrites?.()) ?? []).filter(
+      ({ source }) => source === '/app' || source.startsWith('/app/'),
+    );
+
+    expect(appRewrites).toEqual([]);
+  });
+
+  it('keeps the SPA fallback in dev so vp run dev:mobile:web-static still serves /app', async () => {
+    // scripts/dev-expo-web-static.sh bakes the default (/app baseUrl) export
+    // into packages/web/public/app and starts the orchestrator with the web flag
+    // on and no proxy origin — the tailnet device-QA loop lands here.
+    process.env.BOARDSESH_WEB = '1';
+    delete process.env.BOARDSESH_EXPO_WEB_ORIGIN;
+    vi.stubEnv('NODE_ENV', 'development');
 
     const rewriteResult = (await nextConfig.rewrites?.()) ?? [];
 
@@ -117,6 +142,7 @@ describe('Expo web Next proxy', () => {
   it('keeps content-hashed and WASM namespaces out of the SPA fallback so missing assets 404', async () => {
     process.env.BOARDSESH_WEB = '1';
     delete process.env.BOARDSESH_EXPO_WEB_ORIGIN;
+    vi.stubEnv('NODE_ENV', 'development');
 
     const appRewrites = flattenRewrites((await nextConfig.rewrites?.()) ?? []).filter(
       ({ source }) => source === '/app' || source.startsWith('/app/'),
@@ -137,9 +163,10 @@ describe('Expo web Next proxy', () => {
     expect(tailMatcher.test('session/history')).toBe(true);
   });
 
-  it('keeps Metro-only support namespaces out of the production static configuration', async () => {
+  it('keeps Metro-only support namespaces out of the static configuration', async () => {
     process.env.BOARDSESH_WEB = '1';
     delete process.env.BOARDSESH_EXPO_WEB_ORIGIN;
+    vi.stubEnv('NODE_ENV', 'development');
 
     const rewrites = flattenRewrites((await nextConfig.rewrites?.()) ?? []);
 
@@ -172,20 +199,18 @@ describe('Expo web Next proxy', () => {
     ).toBe(false);
   });
 
-  it('keeps the authenticated Expo utility surface out of search results', async () => {
+  it('headers() owns no /app rule after the retirement', async () => {
+    // W-24 (#4438): the noindex and immutable-cache rules moved to the surface
+    // that actually serves the app (deploy/app-subdomain/_headers). The dev
+    // Metro proxy is an external rewrite, which forwards Metro's own headers
+    // past headers() entirely — middleware.ts covers that surface instead.
     const headers = (await nextConfig.headers?.()) ?? [];
 
-    expect(headers).toContainEqual({
-      source: '/app/:path*',
-      headers: [{ key: 'X-Robots-Tag', value: 'noindex, follow' }],
-    });
-  });
-
-  it('marks content-hashed export bundles as immutable without touching the SPA shell or wasm', async () => {
-    const headers = (await nextConfig.headers?.()) ?? [];
-
-    const immutableRule = headers.find(({ source }) => source.includes('_expo'));
-    expect(immutableRule?.source).toBe('/app/:hashedDir(_expo|assets)/:path*');
-    expect(immutableRule?.headers).toEqual([{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }]);
+    expect(headers.filter(({ source }) => source === '/app' || source.startsWith('/app/'))).toEqual([]);
+    // The global (non-embed) catch-all is `/((?!embed/).*)`, which does match
+    // /app requests at runtime — it must survive, so assert it is still there
+    // rather than letting a blunt "no rule mentions app" check pass by
+    // deleting it.
+    expect(headers.some(({ source }) => source === '/((?!embed/).*)')).toBe(true);
   });
 });

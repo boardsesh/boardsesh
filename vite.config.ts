@@ -364,17 +364,20 @@ export default defineConfig({
         command: 'bun run --filter=@boardsesh/web build',
         dependsOn: ['build:shared', 'build:crypto', 'build:db', 'build:constants'],
         // Forwarded into the task (vp runs tasks with a filtered environment)
-        // and part of the cache key: BOARDSESH_WEB=1 bakes the /app static
-        // serving rewrites into the standalone build (see next.config.mjs).
+        // and part of the cache key. Since W-24 (#4438) BOARDSESH_WEB no longer
+        // bakes any /app rewrite into a production build — next.config.mjs gates
+        // the static fallback on NODE_ENV=development — but the flag is still
+        // read at request time (the Expo auth bridge in app/layout.tsx, the
+        // middleware /app carve-out), so keep it in the key.
         env: ['BOARDSESH_WEB'],
       },
       'build:expo-web': {
-        // Static Expo web export into packages/web/public/app — the same
-        // artifact Dockerfile.web bakes into the production image. Run this
-        // before a BOARDSESH_WEB=1 `vp run build:web` to verify /app serving
-        // locally; pass `-- <output-dir>` for a different target (the script
-        // strips vp's forwarded `--`). The output is gitignored
-        // (packages/web/public/app).
+        // Static Expo web export into packages/web/public/app (gitignored) —
+        // a LOCAL/dev artifact since W-24 (#4438) retired the /app static path.
+        // It backs `dev:mobile:web-static` and the CI bundle check; production
+        // publishes the `--subdomain` (baseUrl /) export to app.boardsesh.com.
+        // Pass `-- <output-dir>` for a different target (the script strips vp's
+        // forwarded `--`).
         command: 'bash scripts/build-expo-web-export.sh',
         dependsOn: ['mobile:web-runtime:install'],
         cache: false,
