@@ -103,7 +103,7 @@ in a higher window, not native sheets.
 
 **How a dismiss "settles."** The coordinator needs to know when a dismiss animation has
 really finished before it starts the next transition. On **iOS** that's the accurate native
-signal: our `@expo/ui` patch (`patches/@expo%2Fui@57.0.8.patch` — the version is baked into the
+signal: our `@expo/ui` patch (`patches/@expo%2Fui@57.0.11.patch` — the version is baked into the
 filename, so it moves on every bump) forwards SwiftUI's
 post-animation `.sheet(onDismiss:)` out of the community wrapper as `onFullyDismissed`, which
 `useManagedSheet` routes into `coordinator.notifyFullyDismissed`. So a surface that renders the

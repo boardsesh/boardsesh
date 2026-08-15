@@ -349,11 +349,11 @@ describe('@expo/fingerprint resolver parity', () => {
     const requireFromExpo = createRequire(expoPackageJsonPath);
     const expoFingerprintPath = requireFromExpo.resolve('@expo/fingerprint/package.json');
 
-    expect(mobilePackage.devDependencies?.['@expo/fingerprint']).toBe('0.20.6');
-    expect(rootPackage.patchedDependencies?.['@expo/fingerprint@0.20.6']).toBe(
-      'patches/@expo%2Ffingerprint@0.20.6.patch',
+    expect(mobilePackage.devDependencies?.['@expo/fingerprint']).toBe('0.20.7');
+    expect(rootPackage.patchedDependencies?.['@expo/fingerprint@0.20.7']).toBe(
+      'patches/@expo%2Ffingerprint@0.20.7.patch',
     );
-    expect(installedPackage.version).toBe('0.20.6');
+    expect(installedPackage.version).toBe('0.20.7');
     expect(realpathSync(expoFingerprintPath)).toBe(realpathSync(fingerprintPackageJsonPath));
     expect(readFileSync(resolve(dirname(expoPackageJsonPath), 'fingerprint.js'), 'utf8').trim()).toBe(
       "module.exports = require('@expo/fingerprint');",
