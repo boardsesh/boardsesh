@@ -1,6 +1,4 @@
 Novedades de 2.4:
 
 - MoonBoard: activa «Iluminar la presa de arriba» para añadir un LED más tenue sobre cada presa de inicio o de mano iluminada en controladores compatibles.
-- En Android, los paneles se cierran bien después de dejar la app en segundo plano o cambiar de pantalla.
 - En iOS, las fotos del plafón y las superposiciones de presas cargan sin la pausa extra.
-- En Android, los archivos compartidos con Boardsesh se quedan dentro de su caché aunque otra app envíe un nombre poco habitual.

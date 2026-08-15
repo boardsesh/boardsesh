@@ -1,6 +1,4 @@
 Nouveautés de la version 2.4 :
 
 - MoonBoard : active « Allumer la prise du dessus » pour ajouter une LED plus tamisée au-dessus de chaque prise de départ ou de main allumée sur les contrôleurs compatibles.
-- Sur Android, les panneaux se ferment correctement après un passage en arrière-plan ou un changement d’écran.
 - Sur iOS, les photos de board et les superpositions de prises s’affichent sans pause supplémentaire.
-- Sur Android, les fichiers partagés avec Boardsesh restent dans son cache même si une autre app fournit un nom inhabituel.

@@ -1,6 +1,4 @@
 New in 2.4:
 
 - MoonBoard: turn on “Light the hold above” to add a dimmer LED above each lit start and hand hold on supported controllers.
-- Sheets on Android close reliably after backgrounding or moving between screens.
 - Board photos and hold overlays load without the extra pause on iOS.
-- Files shared into Boardsesh on Android stay safely inside its cache, even when another app sends an unusual filename.

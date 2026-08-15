@@ -1,6 +1,4 @@
 Neu in 2.4:
 
 - MoonBoard: Aktiviere „Griff darüber beleuchten“, damit unterstützte Controller eine zweite, gedimmte LED über jedem beleuchteten Start- oder Handgriff einschalten.
-- Android-Panels schließen nach dem Wechsel in den Hintergrund oder zwischen Screens zuverlässig.
 - Boardfotos und Griff-Overlays laden auf iOS ohne zusätzliche Pause.
-- Auf Android geteilte Dateien bleiben im Boardsesh-Cache, auch wenn eine andere App einen ungewöhnlichen Namen liefert.
