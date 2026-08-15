@@ -70,6 +70,35 @@ export function allLocalesUrlCount(items: readonly SitemapItem[]): number {
   return items.length * SUPPORTED_LOCALES.length;
 }
 
+/**
+ * One `<url>` per item — default locale only, and no `xhtml:link` block.
+ *
+ * The climb shards' expansion, and a deliberate inconsistency with the boards
+ * shard (which does fan out to all four locales). The difference is volume:
+ * boards is 690 items → 2,760 URLs, climbs is ~128,655 items → 514,620 URLs
+ * with a 5-entry alternates block on each, which is ~36 MB per 45k-URL shard —
+ * past Vercel's 4.5 MB response ceiling and past any sane crawl budget. Do not
+ * "fix" the inconsistency by fanning climbs out.
+ *
+ * Dropping the sitemap-side hreflang costs nothing: `createPageMetadata` already
+ * emits `alternates.languages` for en-US/es/fr/de/x-default on both climb-view
+ * trees, so every locale twin carries reciprocal HTML annotations — one of
+ * Google's three supported hreflang methods, and the one that is symmetric by
+ * construction. A partial sitemap-side annotation would be a second,
+ * non-reciprocal signal for the same cluster: strictly worse than none.
+ *
+ * Nothing is noindexed. `/es`, `/fr` and `/de` climb pages stay indexable and
+ * link-discovered — the same treatment `/profile/[user_id]` already gets.
+ */
+export function expandDefaultLocaleOnly(items: readonly SitemapItem[]): SitemapUrlEntry[] {
+  return items.map((item) => ({
+    loc: absoluteUrl(localeHref(item.path, DEFAULT_LOCALE)),
+    lastModified: item.lastModified ?? null,
+    changeFrequency: item.changeFrequency,
+    priority: item.priority,
+  }));
+}
+
 /** Newest real timestamp across a shard's items, or null when none carries one. */
 export function latestLastModified(items: readonly SitemapItem[]): Date | null {
   let latest: Date | null = null;

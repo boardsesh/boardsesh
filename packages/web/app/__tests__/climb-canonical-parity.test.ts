@@ -155,6 +155,9 @@ vi.mock('@/app/components/climb-front-door/static-list-front-door', () => ({ def
 // `@/app/lib/url-utils` is deliberately left REAL: the canonical every page
 // emits must reflect the true helper output, which is the whole point of A1.
 
+const { climbRowsToItems } = await import('@/app/lib/seo/sitemap/climb-entries');
+const { expandDefaultLocaleOnly } = await import('@/app/lib/seo/sitemap/entries');
+
 const legacyViewPage =
   await import('@/app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]/page');
 const slugViewPage = await import('@/app/b/[board_slug]/[angle]/view/[climb_uuid]/page');
@@ -267,6 +270,42 @@ describe('climb-view canonical parity (A1 landed in W-15)', () => {
 
     expect(metadata.robots).toEqual({ index: false, follow: true });
     expect(metadata.alternates).toBeUndefined();
+  });
+});
+
+describe('sitemap ↔ canonical parity (W-23)', () => {
+  /**
+   * The own-goal the climb shards exist to avoid: submitting ~128k URLs that
+   * differ from the pages' own canonicals, which Google drops wholesale as
+   * "alternate page with proper canonical". `toBe` against the literal string
+   * the page emits — not a regex, not `toContain`.
+   */
+  const sitemapPath = (sizeId: number) =>
+    climbRowsToItems(
+      [{ uuid: CLIMB_UUID, name: 'My Test Climb', angle: boardConfig.angle, updatedAt: new Date('2026-05-04') }],
+      { boardType: 'kilter', layoutId: boardConfig.layoutId, sizeId, setIds: boardConfig.setIds },
+    ).items[0].path;
+
+  it('the sitemap URL is byte-identical to the canonical both trees emit', async () => {
+    const [legacy, slug] = await Promise.all([legacyViewMetadata(), slugViewMetadata()]);
+
+    expect(sitemapPath(boardConfig.sizeId)).toBe(canonicalPath(legacy.alternates?.canonical));
+    expect(sitemapPath(boardConfig.sizeId)).toBe(canonicalPath(slug.alternates?.canonical));
+  });
+
+  it('the emitted <loc> is the absolute form of that same canonical', () => {
+    const [entry] = expandDefaultLocaleOnly([{ path: sitemapPath(boardConfig.sizeId) }]);
+
+    expect(entry.loc).toBe(`https://www.boardsesh.com${sitemapPath(boardConfig.sizeId)}`);
+    expect(entry.alternates).toBeUndefined();
+  });
+
+  it('follows both trees onto the shadowed size (Kilter layout 1 size 27)', async () => {
+    boardConfig.sizeId = 27;
+    const legacy = await legacyViewMetadata();
+
+    expect(sitemapPath(27)).toBe(canonicalPath(legacy.alternates?.canonical));
+    expect(sitemapPath(27)).not.toBe(sitemapPath(10));
   });
 });
 

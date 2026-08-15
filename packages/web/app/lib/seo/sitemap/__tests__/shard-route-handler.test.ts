@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import type { SitemapItem } from '../entries';
-import { MAX_ITEMS_PER_SHARD } from '../sitemap-xml';
+import { CLIMB_URLS_PER_SHARD, MAX_ITEMS_PER_SHARD } from '../sitemap-xml';
 
 vi.mock('server-only', () => ({}));
 
@@ -25,7 +25,8 @@ const KILTER_CONFIG: PopularBoardConfig = {
 
 const boardConfigs = vi.hoisted(() => ({ shouldThrow: false, empty: false, hang: false, delayMs: 0 }));
 const playlistRows = vi.hoisted(() => ({ count: 1, shouldThrow: false, hang: false, delayMs: 0 }));
-/** `static`, `gyms` and `setters` are pure builders — flags let all five fail, or stall, at once. */
+const climbSummary = vi.hoisted(() => ({ itemCount: 25_000, shouldThrow: false, hang: false, delayMs: 0 }));
+/** `static`, `gyms` and `setters` are pure builders — flags let the full index fail, or stall, at once. */
 const pureBuilders = vi.hoisted(() => ({ shouldThrow: false, hang: false, delayMs: 0 }));
 
 /** Never settles: the failure mode a try/catch cannot see. */
@@ -98,6 +99,22 @@ vi.mock('../setter-entries', async (importOriginal) => {
   return { ...actual, buildSetterEntries: () => pureBuilder(actual.buildSetterEntries) };
 });
 
+vi.mock('../climb-query', () => ({
+  fetchTier2Summary: async () => {
+    if (climbSummary.hang) {
+      return forever<never>();
+    }
+    if (climbSummary.shouldThrow) {
+      throw new Error('climbs summary unavailable');
+    }
+    if (climbSummary.delayMs > 0) {
+      await after(climbSummary.delayMs);
+    }
+    return { itemCount: climbSummary.itemCount, lastModified: new Date('2026-05-04T00:00:00.000Z') };
+  },
+  buildTier2ClimbItems: async () => [],
+}));
+
 const { SHARD_DEADLINE_MS, buildSitemapIndexXml, shardRouteHandler, sitemapIndexRouteHandler } =
   await import('../shard-registry');
 
@@ -126,6 +143,7 @@ afterEach(() => {
   vi.useRealTimers();
   Object.assign(boardConfigs, { shouldThrow: false, empty: false, hang: false, delayMs: 0 });
   Object.assign(playlistRows, { count: 1, shouldThrow: false, hang: false, delayMs: 0 });
+  Object.assign(climbSummary, { itemCount: 25_000, shouldThrow: false, hang: false, delayMs: 0 });
   Object.assign(pureBuilders, { shouldThrow: false, hang: false, delayMs: 0 });
   vi.restoreAllMocks();
 });
@@ -214,6 +232,17 @@ describe('buildSitemapIndexXml', () => {
     expect(degradedShards).toEqual([]);
   });
 
+  it('lists one climb page per CLIMB_URLS_PER_SHARD items the summary reports', async () => {
+    // 25,000 items at a 10,000-URL page budget is three pages — derived, never
+    // a hardcoded shard count.
+    const { xml } = await buildSitemapIndexXml();
+    const pages = Math.ceil(climbSummary.itemCount / CLIMB_URLS_PER_SHARD);
+    for (let page = 1; page <= pages; page += 1) {
+      expect(xml).toContain(`https://www.boardsesh.com/sitemaps/climbs/${page}.xml`);
+    }
+    expect(xml).not.toContain(`/sitemaps/climbs/${pages + 1}.xml`);
+  });
+
   it('serves the shards that built when one builder throws, and logs the one that did not', async () => {
     // #4476: the index was the one path that ran every builder inside a
     // `Promise.all`, so a cold boards fetch took static and playlists — which
@@ -250,6 +279,19 @@ describe('buildSitemapIndexXml', () => {
     // Named on the response, not only in a log line: a silent partial index is
     // what would make the post-deploy smoke that caught #4476 permanently green.
     expect(degraded.headers.get('x-sitemap-degraded')).toBe('boards');
+  });
+
+  it('applies the same degraded response contract to the paged climbs summary', async () => {
+    climbSummary.shouldThrow = true;
+
+    const response = await sitemapIndexRouteHandler();
+    const xml = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(xml).toContain('/sitemaps/static.xml');
+    expect(xml).not.toContain('/sitemaps/climbs/');
+    expect(response.headers.get('cache-control')).toBe(DEGRADED_CACHE_CONTROL);
+    expect(response.headers.get('x-sitemap-degraded')).toBe('climbs');
   });
 
   it('omits — and logs — a shard that expects URLs but comes back empty', async () => {
@@ -290,13 +332,14 @@ describe('buildSitemapIndexXml', () => {
     // fail-closed doctrine exists to avoid.
     boardConfigs.shouldThrow = true;
     playlistRows.shouldThrow = true;
+    climbSummary.shouldThrow = true;
     pureBuilders.shouldThrow = true;
 
     const response = await sitemapIndexRouteHandler();
 
     expect(response.status).toBe(503);
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(errors.join(' ')).toContain('5 of 5 builders failed');
+    expect(errors.join(' ')).toContain('6 of 6 builders failed');
   });
 
   it('serves the rest of the index when a builder never settles', async () => {
@@ -320,7 +363,7 @@ describe('buildSitemapIndexXml', () => {
     expect(errors.join(' ')).toContain(`exceeded its ${SHARD_DEADLINE_MS}ms deadline`);
   });
 
-  it('keeps every shard when all five are slow but each is inside its own deadline', async () => {
+  it('keeps every shard when all six are slow but each is inside its own deadline', async () => {
     // The walk is bounded by max(builder), not sum(builder). An earlier draft
     // sequenced the shards under a shared 8s budget, which made this exact case
     // drop `playlists` — last in the registry, so the deterministic victim —
@@ -330,6 +373,7 @@ describe('buildSitemapIndexXml', () => {
     const slowButFine = SHARD_DEADLINE_MS - 1;
     boardConfigs.delayMs = slowButFine;
     playlistRows.delayMs = slowButFine;
+    climbSummary.delayMs = slowButFine;
     pureBuilders.delayMs = slowButFine;
 
     const pending = sitemapIndexRouteHandler();
@@ -351,6 +395,7 @@ describe('buildSitemapIndexXml', () => {
     // an empty index would turn the 503 above into a 200.
     boardConfigs.shouldThrow = true;
     playlistRows.shouldThrow = true;
+    climbSummary.shouldThrow = true;
     pureBuilders.shouldThrow = true;
 
     await expect(buildSitemapIndexXml()).rejects.toThrow('refusing to publish an empty index');

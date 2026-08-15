@@ -83,6 +83,15 @@ describe('StaticClimbRow climb-view href', () => {
     );
   });
 
+  it('uses the display-name fallback for an unnamed climb, matching that climb’s canonical', () => {
+    // Three URLs for one page is the failure this pins: the row anchor, the
+    // page's own canonical and the sitemap `<loc>` all run the climb name
+    // through `resolveClimbDisplayName` first.
+    expect(rowHref(makeBoardDetails(10), makeClimb({ name: null as unknown as string }))).toBe(
+      '/kilter/original/12x12-square/screw_bolt/40/view/kilter-climb-ABC123',
+    );
+  });
+
   it('renders no anchor at all when the climb has no resolvable URL', () => {
     // A session tick the catalog lookup missed carries no name, no layout and
     // no frames, so every part of a climb URL for it would be invented. The

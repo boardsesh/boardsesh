@@ -9,6 +9,7 @@ import { frontDoorPagePath, isIndexableFrontDoorPage } from '@/app/lib/seo/list-
 import { themeTokens } from '@/app/theme/theme-config';
 import type { BoardDetails, Climb } from '@/app/lib/types';
 import ClimbHandoffCta, { type HandoffTree } from './climb-handoff-cta';
+import ClimbListJsonLd from './climb-list-json-ld';
 
 type StaticListFrontDoorProps = {
   boardDetails: BoardDetails;
@@ -64,6 +65,8 @@ export default async function StaticListFrontDoor({
 
   return (
     <Box component="main" sx={containerSx}>
+      <ClimbListJsonLd climbs={climbs} boardDetails={boardDetails} page={page} />
+
       <Box component="header">
         <h1>{t('list.frontDoor.heading', { boardName, angle })}</h1>
         <Typography component="p" sx={introSx}>

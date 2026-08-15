@@ -479,6 +479,131 @@ robots at all, so an errored profile was indexable. Profiles are not sitemapped
 `{name} | Boardsesh` shape onto `{name}'s {board} Sessions`, driven by the
 climber's most-ticked board.
 
+## W-23 — the climb shards and JSON-LD (#4436)
+
+Tier 2 — listed, non-draft climbs with at least ten ascents — now ships as paged
+sitemap shards, and the five JSON-LD types the front doors were missing are
+emitted from one escaping helper.
+
+**The climb shards submit the default locale only.** This is a deliberate
+inconsistency with the boards shard, which does fan out to all four locales, and
+the difference is volume: boards is 690 items → 2,760 URLs, climbs is ~128,655
+items → 514,620 URLs, each carrying a five-entry `xhtml:link` block. That renders
+~36 MB per 45,000-URL shard, past Vercel's 4.5 MB serverless response ceiling and
+past any sane crawl budget. Do not "fix" the inconsistency by fanning climbs out.
+Nothing is noindexed — the locked decision on `/es`, `/fr` and `/de` climbing
+pages is untouched. They stay indexable, they stay link-discovered, and they
+carry reciprocal HTML hreflang from `createPageMetadata`'s `alternates.languages`,
+which is one of Google's three supported annotation methods and the one that is
+symmetric by construction. A one-sided sitemap-side annotation would be a
+_second_, non-reciprocal signal for the same cluster — strictly worse than none.
+`/profile/[user_id]` already gets exactly this treatment.
+
+**The byte guard runs on the rendered body, not on a row count.**
+`CLIMB_URLS_PER_SHARD` is 10,000 (~2.5 MB at our path lengths) and
+`MAX_SHARD_BYTES` is 4,000,000. A constant that nothing measures is a comment, so
+`pagedShardRouteHandler` byte-lengths the XML it is about to serve and 503s
+instead of letting Vercel truncate a 200 into something that looks like a sitemap
+outage. `MAX_URLS_PER_SHARD` (45,000) stays as the protocol guard for the fixed
+shards.
+
+**Shard shape is count-driven.** `app/sitemaps/climbs/[page]/route.ts` serves
+`/sitemaps/climbs/1.xml … N.xml`; `N` comes from a cached summary at request
+time. Next has no partial dynamic segments, so a `climbs-1.xml` shape would need
+one directory per page and would freeze today's page count into the filesystem.
+A malformed or out-of-range page 404s (a page that was never valid is not
+transient); a page the summary listed that builds nothing 503s.
+
+**Fail-closed at the shard, degrade at the index.** A climbs page that renders
+zero URLs 503s — telling Google "no climbs exist" is worse than telling it to
+retry. But `/sitemap.xml` does **not** inherit that: if the climbs summary throws,
+the index logs loudly, omits the climb `<sitemap>` entries and still answers 200
+with the other five shards. A partial sitemap beats no sitemap, and taking
+static/boards/playlists down because a 128k-row count timed out is not a trade
+worth making. The six-hour `unstable_cache` on the summary is the first line of
+defence; this is the second.
+
+**Config resolution.** A climb URL names a size and a set list, and neither is a
+property of a climb — `board_climbs` carries `board_type`, `layout_id`,
+`compatible_size_ids[]` and `required_set_ids[]`. The shard therefore picks one
+configuration per `(board_type, layout_id)` from `getAllBoardConfigsOrThrow()`,
+ranked by board count, then climb count, then lowest size id, then lowest set
+list. Determinism is the point: an unstable pick churns 128k URLs between crawls.
+A group whose configuration has no readable URL is dropped whole (resolvability
+depends only on board/layout/size/sets, never on the angle, uuid or name), which
+is what keeps the count query and the item builder selecting one identical set. A
+layout with no listed board config contributes zero URLs — that is the expected
+gap against the addressable tier-2 universe.
+
+**Drop, never fall back.** `tryConstructSlugViewUrl` is the first branch of
+`buildCanonicalClimbViewUrl`, so anything it resolves is byte-identical to the
+page's own canonical. If it returns null the climb is dropped and counted, not
+published under the name-based or numeric fallback — a URL we cannot prove
+matches is the "alternate page with proper canonical" own-goal at 128k scale.
+The name always goes through `resolveClimbDisplayName` first, so an unnamed
+climb's sitemap URL carries the same `-{board} Climb-` slug its canonical does.
+`static-climb-row.tsx` was fixed in the same PR for the same reason: its anchor
+used the raw name, which made a third URL for one page.
+
+**One angle per climb.** `DISTINCT ON (climb_uuid)` ordered by ascents desc, then
+the climb's own angle, then the lowest angle. The tie-break is
+`COALESCE(stats.angle = climbs.angle, false)` and not a bare comparison, because
+`board_climbs.angle` is nullable and Postgres orders `DESC` with NULLS FIRST — a
+null-angle climb would otherwise outrank the angle that actually matches. Other
+angles stay self-canonical and reachable through W-15's cross-links.
+
+**Alias uuids are excluded.** `board_climb_aliases` maps duplicate uuids onto a
+canonical one, but an alias URL self-canonicalises to itself, so submitting both
+forms is duplicate content by construction.
+
+**`<lastmod>` is `board_climb_stats.updated_at`** for the chosen angle — a real
+column that moves when ascents or grades move, never `new Date()`. The known risk
+is that a bulk upstream re-sync stamps `updated_at` across the board and flattens
+the signal for one cycle; dropping the field is a one-line change if that turns
+out to hurt, and the boards shard already ships without one.
+
+**Four caching layers, because a 128k-row scan is not a playlists query.**
+`dbzRead` (the read pool), `withSerialPlan` (the parallel-hash-join guard behind
+the `could not resize shared memory segment` class), an in-process TTL plus
+single-flight promise so one instance builds the list once, and a six-hour CDN
+window with a seven-day stale-while-revalidate. Group queries run **sequentially**
+— a fan-out of concurrent heavy scans on a ten-connection pool is the
+pool-starvation failure #4461 describes. The index reads `summary()` and never
+`buildPage()`; a unit test asserts zero builder calls, and it is the assertion
+most likely to be quietly broken later. The full item list is **not** in
+`unstable_cache`: ~20 MB serialised is past the Data Cache's 2 MB entry ceiling,
+so it would silently never cache. The summary — two numbers — is.
+
+**JSON-LD.** `BreadcrumbList` already shipped in W-15. This wave adds
+`CreativeWork` (+ `aggregateRating`) on the climb front door, `Organization` +
+`WebSite` on `/`, `ProfilePage` on `/profile/[user_id]`, and `ItemList` on
+`/list`, all through one `JsonLd` component that escapes `<` so user content
+cannot close the script block.
+
+`aggregateRating` is emitted only when three conditions hold: `quality_normalized`
+is true, `quality_average` is present and inside [1, 5], and the rating count is
+at least 1. The first is not paranoia — Aurora reports quality on 1-3 and ~235k
+JSON-imported Kilter rows are still on that scale, so publishing an unnormalized
+average with `bestRating: 5` understates every one of them. The count is the
+blend's **own** denominator (`upstream_ascensionist_count` where the upstream side
+actually supplied a quality, plus `boardsesh_quality_count`), never
+`ascensionist_count`: ascents are not ratings, and over-claiming is what gets
+structured data penalised.
+
+`Organization`/`WebSite` carry **no** `potentialAction` / `SearchAction`. www has
+no site search after the W-16 teardown, and pointing one at an endpoint that does
+not exist is a fabricated capability; a deep-scan test fails if anyone adds one.
+`sameAs` lists only the two external URLs the site already publishes.
+
+`ProfilePage` renders on the success path only — the `notFound()` and the
+metadata `catch` branch are both `noindex, follow`. Note the interaction with
+#4473: `/setter/[username]` is a client-only shell today, and no JSON-LD was added
+there.
+
+**Not in this wave, and pinned by tests:** no `VideoObject` (beta links are
+third-party embeds and need a policy call), and no tier 3 —
+`TIER_2_MIN_ASCENTS === 10` is asserted, so lowering it is a deliberate act.
+
 ## Phase A0 — blocking pre-delete QA gate (real devices)
 
 The teardown is a **hard delete** with no retained `?classic=1` runtime fallback,

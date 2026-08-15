@@ -14,6 +14,7 @@ import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { BetaLink } from '@/app/lib/beta-video-url';
 import type { BoardDetails, BoardName, Climb } from '@/app/lib/types';
 import AngleCrossLinks from './angle-cross-links';
+import ClimbCreativeWorkJsonLd from './climb-creative-work-json-ld';
 import ClimbFacts from './climb-facts';
 import ClimbHandoffCta, { type HandoffTree } from './climb-handoff-cta';
 import FrontDoorBreadcrumb from './front-door-breadcrumb';
@@ -84,6 +85,20 @@ export default async function ClimbFrontDoor({
   const overlayUrl = climb.frames ? buildOverlayUrl(boardDetails, climb.frames, false) : null;
   const currentAngleStats = angleStats.find((stats) => stats.angle === angle);
   const layoutName = boardDetails.layout_name ?? '';
+  // The same catalog string `generateMetadata` fills, so the structured data and
+  // the meta description say one thing. Omitted rather than padded with English
+  // placeholders when the facts it interpolates are missing — schema.org treats
+  // `description` as optional, and a half-filled sentence is worse than none.
+  const jsonLdDescription =
+    climb.difficulty && climb.setter_username
+      ? t('metadata.view.description', {
+          climbName,
+          grade: climb.difficulty,
+          setter: climb.setter_username,
+          quality: climb.quality_average || 0,
+          ascents: climb.ascensionist_count || 0,
+        })
+      : null;
 
   return (
     <Box component="main" sx={containerSx}>
@@ -93,6 +108,15 @@ export default async function ClimbFrontDoor({
         boardListUrl={boardListUrl}
         currentLabel={climbName}
         currentUrl={canonicalClimbUrl}
+      />
+
+      <ClimbCreativeWorkJsonLd
+        climb={climb}
+        climbName={climbName}
+        canonicalClimbUrl={canonicalClimbUrl}
+        overlayUrl={overlayUrl}
+        currentAngleStats={currentAngleStats}
+        description={jsonLdDescription}
       />
 
       <ClimbViewSeoFragment climb={climb} boardDetails={boardDetails} />
