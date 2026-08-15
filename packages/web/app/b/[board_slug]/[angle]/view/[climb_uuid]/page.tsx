@@ -41,6 +41,14 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
 
     const boardDetails = getBoardDetailsForBoard(parsedParams);
     const currentClimb = await getClimb(parsedParams);
+    if (!currentClimb) {
+      return createPageMetadata({
+        title: t('metadata.view.fallbackTitle'),
+        description: t('metadata.view.fallbackDescription'),
+        locale,
+        robots: { index: false, follow: true },
+      });
+    }
 
     const climbName = resolveClimbDisplayName(currentClimb.name, boardDetails.board_name);
     const climbGrade = currentClimb.difficulty || 'Unknown Grade';
@@ -141,10 +149,14 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
       </>
     );
   } catch (error) {
-    if (error !== null && typeof error === 'object' && 'digest' in error) {
-      throw error;
+    // Same contract as the config-tuple twin: a missing climb is the
+    // `notFound()` above, a failed read is a 500. Swallowing a brownout into a
+    // 404 on an indexed URL reads as "delete this page". A digest is Next.js
+    // control flow (the `notFound()` above), not a failure — logging it would
+    // bury the brownout signal under routine 404s.
+    if (!(error !== null && typeof error === 'object' && 'digest' in error)) {
+      console.error('Error fetching climb view:', error);
     }
-    console.error('Error fetching climb view:', error);
-    notFound();
+    throw error;
   }
 }

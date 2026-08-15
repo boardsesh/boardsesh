@@ -28,6 +28,14 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
     const { parsedParams } = await parseRouteParams(params);
     const boardDetails = getBoardDetailsForBoard(parsedParams);
     const currentClimb = await getClimb(parsedParams);
+    if (!currentClimb) {
+      return createPageMetadata({
+        title: t('metadata.view.fallbackTitle'),
+        description: t('metadata.view.fallbackDescription'),
+        locale,
+        robots: { index: false, follow: true },
+      });
+    }
 
     const climbName = resolveClimbDisplayName(currentClimb.name, boardDetails.board_name);
     const climbGrade = currentClimb.difficulty || 'Unknown Grade';
@@ -161,12 +169,22 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
       </>
     );
   } catch (error) {
-    // Re-throw Next.js internal errors (permanentRedirect, notFound, etc.) so they
-    // are handled correctly instead of being replaced by a 404.
-    if (error !== null && typeof error === 'object' && 'digest' in error) {
-      throw error;
+    // Everything reaches the error boundary, which is a 500. Next.js internals
+    // (permanentRedirect, notFound) carry a digest and get their own handling;
+    // a read failure is genuinely a 5xx and must say so. This used to end in
+    // `notFound()`, which meant a saturated pool or a dead database emitted a
+    // 404 on an indexed climb URL — at sitemap scale, an instruction to
+    // deindex. Google retries a 5xx and keeps the URL; that is the property
+    // that matters here. `notFound()` above still fires for a climb that really
+    // is not there.
+    //
+    // A digest is control flow, not a failure: `needsSlugRedirect` fires a 308
+    // on every legacy/uuid-only URL and `notFound()` fires on every stale
+    // sitemap entry, both routine and both high-volume on the crawl path.
+    // Logging them would bury the brownout signal this catch exists to surface.
+    if (!(error !== null && typeof error === 'object' && 'digest' in error)) {
+      console.error('Error fetching results or climb:', error);
     }
-    console.error('Error fetching results or climb:', error);
-    notFound();
+    throw error;
   }
 }

@@ -35,8 +35,10 @@ export const FRONT_DOOR_PAGE_SIZE = 50;
  * That gating is the load-bearing half: `noindex, follow` on page 11 is an
  * explicit instruction to keep walking, so a `next` chain that ran past the cap
  * would invite crawlers down a corridor whose per-request `OFFSET` grows without
- * limit (and on MoonBoard, `cachedSearchClimbs` bypasses the server cache, so
- * every hop would be an uncached origin query).
+ * limit. (MoonBoard front doors used to compound that by bypassing the server
+ * cache entirely; they now cache for 15 minutes like every other board — see
+ * `CACHE_DURATION_MOONBOARD_FRONT_DOOR` — so the cap is about `OFFSET` growth
+ * alone.)
  */
 export const FRONT_DOOR_MAX_INDEXABLE_PAGE = 10;
 

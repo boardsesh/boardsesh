@@ -44,6 +44,75 @@ void describe('postgres client', () => {
     });
   });
 
+  void describe('per-deployment pool knobs', () => {
+    // Asserts on the options postgres-js actually resolved, not on the source
+    // text of postgres.ts. A source grep goes green-but-meaningless the moment
+    // the value stops being a literal.
+    async function poolOptionsWith(env: Record<string, string | undefined>) {
+      const { createPool, closePool } = await import('../postgres');
+      const previous: Record<string, string | undefined> = {};
+      for (const [name, value] of Object.entries(env)) {
+        previous[name] = process.env[name];
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      await closePool();
+      try {
+        return createPool().options;
+      } finally {
+        await closePool();
+        for (const [name, value] of Object.entries(previous)) {
+          if (value === undefined) delete process.env[name];
+          else process.env[name] = value;
+        }
+      }
+    }
+
+    void it('defaults to the values that were hard-coded before the knobs existed', async () => {
+      const options = await poolOptionsWith({ DB_POOL_MAX: undefined, DB_POOL_IDLE_TIMEOUT_S: undefined });
+      assert.equal(options.max, 10);
+      assert.equal(options.idle_timeout, 30);
+    });
+
+    void it('honours DB_POOL_MAX and DB_POOL_IDLE_TIMEOUT_S', async () => {
+      const options = await poolOptionsWith({ DB_POOL_MAX: '4', DB_POOL_IDLE_TIMEOUT_S: '10' });
+      assert.equal(options.max, 4);
+      assert.equal(options.idle_timeout, 10);
+    });
+
+    void it('clamps DB_POOL_MAX to the two-connection floor', async () => {
+      // getClimb issues two sequential statements; a pool of one serialises
+      // every front-door render behind a single connection.
+      const options = await poolOptionsWith({ DB_POOL_MAX: '1' });
+      assert.equal(options.max, 2);
+    });
+
+    void it('falls back to the default when DB_POOL_MAX is not a number', async () => {
+      const options = await poolOptionsWith({ DB_POOL_MAX: 'abc' });
+      assert.equal(options.max, 10);
+    });
+
+    void it('keeps DB_POOL_IDLE_TIMEOUT_S=0 as "never close an idle connection"', async () => {
+      // postgres.js treats a falsy idle_timeout as disabled, so 0 is meaningful
+      // and must not be clamped up the way DB_POOL_MAX is.
+      const options = await poolOptionsWith({ DB_POOL_IDLE_TIMEOUT_S: '0' });
+      assert.equal(options.idle_timeout, 0);
+    });
+
+    void it('emits no statement_timeout startup parameter by default', async () => {
+      // PgBouncer in transaction-pooling mode rejects unknown startup
+      // parameters, so this must stay off until the Railway URL is confirmed
+      // direct. See docs/db-connectivity.md.
+      const options = await poolOptionsWith({ DB_STATEMENT_TIMEOUT_MS: undefined });
+      assert.equal(options.connection.statement_timeout, undefined);
+    });
+
+    void it('emits statement_timeout when DB_STATEMENT_TIMEOUT_MS is set', async () => {
+      const options = await poolOptionsWith({ DB_STATEMENT_TIMEOUT_MS: '8000' });
+      assert.equal(options.connection.statement_timeout, 8000);
+    });
+  });
+
   void describe('read replica fallback', () => {
     void it('createReadDb returns the primary db when READ_REPLICA_URL is unset', async () => {
       const previous = process.env.READ_REPLICA_URL;

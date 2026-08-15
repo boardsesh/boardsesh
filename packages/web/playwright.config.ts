@@ -18,14 +18,21 @@ export default defineConfig({
   retries: 1,
   /* 1 in CI, deliberately. The suite already fans out as 8 shard jobs, each
    * with its own server + database, so cross-shard parallelism carries the
-   * wall-clock. A second in-shard worker makes front-door page loads (SSR
-   * with direct Postgres reads) compete for the web server's DB pool against
-   * the raw-request specs, and on the 2-core runner's postgres that queue can
-   * exceed any sane request timeout. Which files share a shard reshuffles
-   * whenever specs are added or removed, so the resulting flake jumps between
-   * unrelated files instead of staying put. (Diagnosed on #4448: the embed
-   * header checks hung >60s whenever they shared shard 7 with the rewritten
-   * tab-bar spec's front-door loads.) */
+   * wall-clock. A second in-shard worker makes front-door page loads compete
+   * with the raw-request specs on a 2-core runner; the observed symptom was the
+   * embed header checks hanging >60s whenever they shared shard 7 with the
+   * rewritten tab-bar spec's front-door loads (#4448).
+   *
+   * Attribution corrected in #4461: this is NOT web DB-pool contention, as this
+   * comment used to claim. `/embed/**` issues zero web-side Postgres statements
+   * — it fetches the backend over HTTP (`embed-fetchers.ts`), so it cannot
+   * queue behind the web pool. The likelier mechanism is the event loop: a
+   * `/list` SSR render fires same-origin `/api/internal/board-render` warm
+   * requests, each a CPU-bound WASM render in the same runtime, and unrelated
+   * raw requests queue behind those. #4461 capped that fan-out; whether it is
+   * enough to restore 2 workers is #4463's call, not a change to make here.
+   * Which files share a shard reshuffles whenever specs are added or removed,
+   * so the flake jumps between unrelated files instead of staying put. */
   workers: process.env.CI ? 1 : undefined,
   /* Global per-test timeout — some tests (zoom, login flows) need more than Playwright's 30 s default */
   timeout: 60_000,
