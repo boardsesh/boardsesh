@@ -53,6 +53,7 @@ import { closePool } from '@boardsesh/db/client';
 import { normalizeRow, toIso, type RawRow } from '../graphql/resolvers/sync/row-normalize';
 import { uploadToS3, isS3Configured, getPublicUrl, getFromS3Strict, deleteFromS3, listS3Objects } from '../storage/s3';
 import { logger } from '../utils/logger';
+import { DEFAULT_SNAPSHOT_MAX_CUTOFF_AGE_SECONDS } from './snapshot-contract';
 
 // This exporter deliberately uses postgres.js directly instead of Drizzle: it
 // needs reserved sessions, cursors, PostgreSQL control functions, and the exact
@@ -80,7 +81,6 @@ const ARTIFACT_CONTENT_TYPE = 'application/x-sqlite3';
 const HEARTBEAT_CACHE_CONTROL = 'no-store, max-age=0';
 const DEFAULT_REPLICA_MAX_LAG_SECONDS = 30;
 const DEFAULT_REPLICA_WAIT_SECONDS = 10 * 60;
-const DEFAULT_MAX_CUTOFF_AGE_SECONDS = 10 * 60;
 
 // Public base for the manifest's artifact URLs. Tigris serves PUBLIC objects
 // only on the bucket's virtual-host domain (https://<bucket>.t3.tigrisfiles.io);
@@ -731,7 +731,7 @@ async function acquirePrimaryFence(): Promise<PrimaryFenceHandle> {
 
     const maxCutoffAgeSeconds = positiveEnvironmentSeconds(
       'SNAPSHOT_MAX_CUTOFF_AGE_SECONDS',
-      DEFAULT_MAX_CUTOFF_AGE_SECONDS,
+      DEFAULT_SNAPSHOT_MAX_CUTOFF_AGE_SECONDS,
     );
 
     const assertCutoffAge = async (): Promise<void> => {

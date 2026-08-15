@@ -152,6 +152,10 @@ jobs:
         github.event.schedule == '12,27,42,57 * * * *'
       }}
     runs-on: ubuntu-latest
+    # Both full-fallback passes acquire a fresh fence and refuse to publish once
+    # its cutoff exceeds 10 minutes. A 45-minute ceiling leaves overhead for the
+    # two bounded passes without letting a wedged job hold shared concurrency for
+    # 90 minutes. Rehearse this ceiling if the cutoff-age gate is ever loosened.
     timeout-minutes: 45
     concurrency:
       group: export-board-snapshots
