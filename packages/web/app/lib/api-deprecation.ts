@@ -1,3 +1,8 @@
+// Route-handler-only: the counter below reaches `analytics.server`. Importing
+// this from a client component should fail at the boundary, not deep inside a
+// transitive import.
+import 'server-only';
+
 import { NextResponse } from 'next/server';
 
 import { track } from '@/app/lib/analytics.server';

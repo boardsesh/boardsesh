@@ -66,6 +66,13 @@ describe('the Aurora proxy deprecation contract', () => {
     expect(fragment).toBeTruthy();
     expect(docsClient).toContain(`id="${fragment}"`);
     expect(docsClient).toContain('docs.overview.retired.title');
+
+    // The card names the sunset date in prose. It cannot import the constant —
+    // this module is `server-only` and docs-client.tsx is a client component —
+    // so pin the two together here instead, or a slipped sunset leaves the page
+    // advertising a date the `Sunset` header disagrees with.
+    const sunsetDay = AURORA_PROXY_SUNSET_DATE.toISOString().slice(0, 10);
+    expect(docsClient).toContain(`sunset: '${sunsetDay}'`);
   });
 });
 
