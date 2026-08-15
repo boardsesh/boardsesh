@@ -1373,6 +1373,13 @@
       "when": 1786757947852,
       "tag": "0195_guard_stats_sync_cursor",
       "breakpoints": true
+    },
+    {
+      "idx": 196,
+      "version": "7",
+      "when": 1786758894567,
+      "tag": "0196_favorites_key_by_climb_uuid",
+      "breakpoints": true
     }
   ]
 }

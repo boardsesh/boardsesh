@@ -641,12 +641,18 @@ export const schemaSQL = `
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "unique_user_playlist_pin" ON "user_playlist_pins" ("user_id", "playlist_id");
 
+  -- Dropped before create (not a bare IF NOT EXISTS) because worker DBs are
+  -- reused between runs: a table left over from before the (user_id, climb_uuid)
+  -- re-keying would survive and the whole favorites suite would silently
+  -- exercise the old 4-column key.
+  -- board_name/angle are vestigial — see packages/db/src/schema/app/favorites.ts.
+  DROP TABLE IF EXISTS "user_favorites" CASCADE;
   CREATE TABLE IF NOT EXISTS "user_favorites" (
     "id" bigserial PRIMARY KEY NOT NULL,
     "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
-    "board_name" text NOT NULL,
+    "board_name" text NOT NULL DEFAULT '',
     "climb_uuid" text NOT NULL,
-    "angle" integer NOT NULL DEFAULT 40,
+    "angle" integer NOT NULL DEFAULT 0,
     "created_at" timestamp DEFAULT now() NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL
   );
@@ -1180,7 +1186,13 @@ export const schemaSQL = `
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "board_follows_unique_user_board" ON "board_follows" ("user_id", "board_uuid");
 
-  CREATE UNIQUE INDEX IF NOT EXISTS "unique_user_favorite" ON "user_favorites" ("user_id", "board_name", "climb_uuid", "angle");
+  CREATE UNIQUE INDEX IF NOT EXISTS "unique_user_favorite" ON "user_favorites" ("user_id", "climb_uuid");
+  CREATE INDEX IF NOT EXISTS "user_favorites_climb_idx" ON "user_favorites" ("climb_uuid");
+  -- Deploy-window compatibility index (migration 0194): the previous backend's
+  -- ON CONFLICT (user_id, board_name, climb_uuid, angle) needs SOME unique index
+  -- on that column set to infer against while old instances are still serving.
+  -- Dropped in Release 2 with the columns.
+  CREATE UNIQUE INDEX IF NOT EXISTS "unique_user_favorite_legacy" ON "user_favorites" ("user_id", "board_name", "climb_uuid", "angle");
 
   DROP TABLE IF EXISTS "sync_deletions" CASCADE;
   CREATE TABLE IF NOT EXISTS "sync_deletions" (
@@ -1266,7 +1278,7 @@ export const schemaSQL = `
   CREATE OR REPLACE FUNCTION log_deletion_favorites() RETURNS TRIGGER AS $$
   BEGIN
     INSERT INTO sync_deletions (table_name, record_id, user_id)
-    VALUES (TG_TABLE_NAME, OLD.board_name || ':' || OLD.climb_uuid || ':' || OLD.angle::text, OLD.user_id);
+    VALUES (TG_TABLE_NAME, OLD.climb_uuid, OLD.user_id);
     RETURN OLD;
   END;
   $$ LANGUAGE plpgsql;

@@ -195,10 +195,12 @@ describe('sync layer — real-DDL integration', () => {
       expect(await readCheckpoint(db, 'checkpoint:boardsesh_ticks')).toEqual(cursor);
     });
 
-    it('user_favorites: board_name/climb_uuid/angle/user_id/timestamps round-trip; user_id may be null', async () => {
+    it('user_favorites: climb_uuid PK + still-emitted board_name/angle round-trip; user_id may be null', async () => {
       // queries.ts:syncFavorites selects board_name, climb_uuid, angle, user_id,
-      // created_at, updated_at — note board_name (NOT board_type). A null user_id
-      // models a row that was written offline before the next sync filled it.
+      // created_at, updated_at. The local PK is climb_uuid alone; board_name and
+      // angle are vestigial columns kept so the server's still-emitted values
+      // land quietly rather than tripping onSchemaDrift every launch. A null
+      // user_id models a row written offline before the next sync filled it.
       const favoriteDocument = {
         board_name: 'tension',
         climb_uuid: 'climb-fav-1',
@@ -215,10 +217,9 @@ describe('sync layer — real-DDL integration', () => {
         makeSingleTableFetch({ queryName: 'syncFavorites', documents: [favoriteDocument], cursor }),
       );
 
-      const row = await db.getFirstAsync<Record<string, unknown>>(
-        'SELECT * FROM user_favorites WHERE board_name = ? AND climb_uuid = ? AND angle = ?',
-        ['tension', 'climb-fav-1', 25],
-      );
+      const row = await db.getFirstAsync<Record<string, unknown>>('SELECT * FROM user_favorites WHERE climb_uuid = ?', [
+        'climb-fav-1',
+      ]);
       expect(row).toMatchObject({
         board_name: 'tension',
         climb_uuid: 'climb-fav-1',
@@ -228,6 +229,27 @@ describe('sync layer — real-DDL integration', () => {
         updated_at: '2024-05-29T08:00:00Z',
       });
       expect(await readCheckpoint(db, 'checkpoint:user_favorites')).toEqual(cursor);
+    });
+
+    it('user_favorites: the same climb favorited at two angles collapses to ONE local row', async () => {
+      // The whole point of the re-keying: a climb is the same climb whichever
+      // angle it was hearted at.
+      await pullSync(
+        db,
+        queryClient,
+        makeSingleTableFetch({
+          queryName: 'syncFavorites',
+          documents: [
+            { board_name: 'kilter', climb_uuid: 'climb-two-angles', angle: 40, user_id: 'u1' },
+            { board_name: 'kilter', climb_uuid: 'climb-two-angles', angle: 50, user_id: 'u1' },
+          ],
+        }),
+      );
+
+      const rows = await db.getAllAsync<Record<string, unknown>>('SELECT * FROM user_favorites WHERE climb_uuid = ?', [
+        'climb-two-angles',
+      ]);
+      expect(rows).toHaveLength(1);
     });
 
     it('user_follows: following_id PK + follower_id + timestamps round-trip', async () => {
@@ -452,23 +474,23 @@ describe('sync layer — real-DDL integration', () => {
     });
 
     it('SANITY: a resolver emitting a misnamed key still fails loudly on the DDL NOT NULL (catches resolver↔DDL drift)', async () => {
-      // If a backend resolver emitted `board_type` for favorites (the DDL column
-      // is `board_name`), the unknown key is skipped and the row arrives without
-      // its NOT NULL primary-key component — SQLite rejects it and the error
-      // propagates out of pullSync. Required-column drift stays a loud failure;
-      // only additive drift (new server columns) is tolerated.
+      // If a backend resolver emitted `climb_id` for favorites (the DDL column is
+      // `climb_uuid`), the unknown key is skipped and the row arrives without its
+      // NOT NULL primary key — SQLite rejects it and the error propagates out of
+      // pullSync. Required-column drift stays a loud failure; only additive drift
+      // (new server columns) is tolerated.
       const driftedFavorite = {
-        board_type: 'tension', // WRONG: DDL column is board_name
-        climb_uuid: 'climb-drift',
+        climb_id: 'climb-drift', // WRONG: DDL column is climb_uuid
+        board_name: 'tension',
         angle: 25,
       };
 
       await expect(
         pullSync(db, queryClient, makeSingleTableFetch({ queryName: 'syncFavorites', documents: [driftedFavorite] })),
-      ).rejects.toThrow(/NOT NULL|board_name/i);
+      ).rejects.toThrow(/NOT NULL|climb_uuid/i);
 
-      // And the correctly-keyed document (board_name) does NOT throw — proving the
-      // failure above is specifically the wrong column, not a harness artifact.
+      // And the correctly-keyed document does NOT throw — proving the failure
+      // above is specifically the wrong column, not a harness artifact.
       await expect(
         pullSync(
           db,
@@ -592,14 +614,12 @@ describe('sync layer — real-DDL integration', () => {
       );
     }
 
-    it('deletes a 1-segment tick (record_id = uuid), a 3-segment favorite, and a 3-segment stat row', async () => {
+    it('deletes a 1-segment tick, a 1-segment favorite, and a 3-segment stat row', async () => {
       // Seed the three target rows directly (deletion is independent of how a row
       // arrived). board_climb_stats local PK is (board_type, climb_uuid, angle).
       await seedTick('tick-del-1');
       await seedTick('tick-keep'); // a row the deletion must NOT touch
-      await db.runAsync(
-        "INSERT INTO user_favorites (board_name, climb_uuid, angle, user_id) VALUES ('kilter', 'fav-climb', 40, 'u1')",
-      );
+      await db.runAsync("INSERT INTO user_favorites (climb_uuid, user_id) VALUES ('fav-climb', 'u1')");
       await db.runAsync(
         "INSERT INTO board_climb_stats (board_type, climb_uuid, angle, sync_seq) VALUES ('kilter', 'stat-climb', 40, 1)",
       );
@@ -607,8 +627,8 @@ describe('sync layer — real-DDL integration', () => {
       const deletions: DeletionRecord[] = [
         // ticks: record_id = OLD.uuid (1 segment)
         { tableName: 'boardsesh_ticks', recordId: 'tick-del-1', deletedAt: '2024-06-01T00:00:00Z' },
-        // user_favorites: record_id = board_name:climb_uuid:angle (3 segments)
-        { tableName: 'user_favorites', recordId: 'kilter:fav-climb:40', deletedAt: '2024-06-01T00:00:01Z' },
+        // user_favorites: record_id = climb_uuid (1 segment) since the re-keying
+        { tableName: 'user_favorites', recordId: 'fav-climb', deletedAt: '2024-06-01T00:00:01Z' },
         // board_climb_stats: record_id = board_type:climb_uuid:angle (3 segments)
         { tableName: 'board_climb_stats', recordId: 'kilter:stat-climb:40', deletedAt: '2024-06-01T00:00:02Z' },
       ];
@@ -621,10 +641,7 @@ describe('sync layer — real-DDL integration', () => {
       // Each targeted row is gone.
       expect(await db.getFirstAsync('SELECT uuid FROM boardsesh_ticks WHERE uuid = ?', ['tick-del-1'])).toBeNull();
       expect(
-        await db.getFirstAsync(
-          'SELECT climb_uuid FROM user_favorites WHERE board_name = ? AND climb_uuid = ? AND angle = ?',
-          ['kilter', 'fav-climb', 40],
-        ),
+        await db.getFirstAsync('SELECT climb_uuid FROM user_favorites WHERE climb_uuid = ?', ['fav-climb']),
       ).toBeNull();
       expect(
         await db.getFirstAsync(
@@ -673,18 +690,18 @@ describe('sync layer — real-DDL integration', () => {
       // row and the strict > cursor would never fetch it again — the favorite
       // silently vanishes on this device forever.
       await db.runAsync(
-        `INSERT INTO user_favorites (board_name, climb_uuid, angle, user_id, updated_at)
-         VALUES ('kilter', 'refav-climb', 40, 'u1', '2024-06-02T00:00:00Z')`,
+        `INSERT INTO user_favorites (climb_uuid, user_id, updated_at)
+         VALUES ('refav-climb', 'u1', '2024-06-02T00:00:00Z')`,
       );
       // An OLD row the same-shaped tombstone SHOULD delete (updated_at pre-dates it).
       await db.runAsync(
-        `INSERT INTO user_favorites (board_name, climb_uuid, angle, user_id, updated_at)
-         VALUES ('kilter', 'oldfav-climb', 40, 'u1', '2024-05-01T00:00:00Z')`,
+        `INSERT INTO user_favorites (climb_uuid, user_id, updated_at)
+         VALUES ('oldfav-climb', 'u1', '2024-05-01T00:00:00Z')`,
       );
 
       const deletions: DeletionRecord[] = [
-        { tableName: 'user_favorites', recordId: 'kilter:refav-climb:40', deletedAt: '2024-06-01T00:00:00Z' },
-        { tableName: 'user_favorites', recordId: 'kilter:oldfav-climb:40', deletedAt: '2024-06-01T00:00:00Z' },
+        { tableName: 'user_favorites', recordId: 'refav-climb', deletedAt: '2024-06-01T00:00:00Z' },
+        { tableName: 'user_favorites', recordId: 'oldfav-climb', deletedAt: '2024-06-01T00:00:00Z' },
       ];
 
       await pullSync(db, queryClient, makeSingleTableFetch({ queryName: 'syncTicks', documents: [], deletions }));

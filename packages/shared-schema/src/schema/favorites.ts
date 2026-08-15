@@ -4,15 +4,16 @@ export const favoritesTypeDefs = /* GraphQL */ `
   # ============================================
 
   """
-  Input for toggling a climb as favorite.
+  Input for toggling a climb as favorite. Favorites are keyed by climb UUID —
+  a climb stays hearted whichever board config or angle you switch to.
   """
   input ToggleFavoriteInput {
-    "Board type"
-    boardName: String!
+    "Deprecated, ignored. Kept so binaries that shipped before favorites were re-keyed keep validating."
+    boardName: String
     "Climb UUID to favorite/unfavorite"
     climbUuid: String!
-    "Board angle"
-    angle: Int!
+    "Deprecated, ignored. Kept so binaries that shipped before favorites were re-keyed keep validating."
+    angle: Int
   }
 
   """
@@ -27,23 +28,23 @@ export const favoritesTypeDefs = /* GraphQL */ `
   Input for adding a climb to favorites (idempotent, sync-safe).
   """
   input AddFavoriteInput {
-    "Board type"
-    boardName: String!
+    "Deprecated, ignored. Kept so binaries that shipped before favorites were re-keyed keep validating."
+    boardName: String
     "Climb UUID to favorite"
     climbUuid: String!
-    "Board angle"
-    angle: Int!
+    "Deprecated, ignored. Kept so binaries that shipped before favorites were re-keyed keep validating."
+    angle: Int
   }
 
   """
   Input for removing a climb from favorites (idempotent, sync-safe).
   """
   input RemoveFavoriteInput {
-    "Board type"
-    boardName: String!
+    "Deprecated, ignored. Kept so binaries that shipped before favorites were re-keyed keep validating."
+    boardName: String
     "Climb UUID to unfavorite"
     climbUuid: String!
-    "Board angle"
-    angle: Int!
+    "Deprecated, ignored. Kept so binaries that shipped before favorites were re-keyed keep validating."
+    angle: Int
   }
 `;

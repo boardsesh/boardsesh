@@ -141,14 +141,9 @@ export function useClimbActions({
   // Server-truth favourite state, so the favorite row shows a filled heart when the
   // climb is already favourited. Only fetched while the menu is open (the hook is
   // mounted only then). useToggleFavorite invalidates this query, so it stays fresh.
-  const { data: isFavorited } = useFavoriteStatus(
-    boardConfig?.boardName ?? '',
-    climb?.uuid ?? null,
-    boardConfig?.angle ?? 0,
-    {
-      enabled: !!climb && !!boardConfig,
-    },
-  );
+  const { data: isFavorited } = useFavoriteStatus(climb?.uuid ?? null, {
+    enabled: !!climb && !!boardConfig,
+  });
 
   const after = useCallback(() => onAfterAction?.(), [onAfterAction]);
 
@@ -234,7 +229,7 @@ export function useClimbActions({
           layoutId,
           source: 'mobile_climb_actions',
         });
-        toggleFavoriteMutate({ input: { boardName, climbUuid: climb.uuid, angle } });
+        toggleFavoriteMutate({ input: { climbUuid: climb.uuid } });
         after();
       },
     });

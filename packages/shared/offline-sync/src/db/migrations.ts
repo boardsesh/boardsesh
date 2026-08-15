@@ -70,6 +70,38 @@ export const MIGRATIONS: Migration[] = [
 );`,
     ],
   },
+  {
+    // Favorites re-keyed to (climb_uuid): a climb is the same climb whichever
+    // board config or angle you hearted it on. SQLite can't change a primary key
+    // in place, so the table is rebuilt.
+    //
+    // board_name/angle survive as NULLABLE columns: syncFavorites still emits
+    // them for one release (a device on older JS declares them NOT NULL), and
+    // keeping them here means those values land quietly instead of firing an
+    // onSchemaDrift report on every launch. Local writes leave them NULL.
+    //
+    // The copy is ordered oldest-first so INSERT OR REPLACE collapses a climb
+    // favorited at two angles onto the NEWEST row. Clearing the checkpoint makes
+    // the device re-pull the whole (small) favorites set under the new shape.
+    version: 5,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS user_favorites_new (
+  climb_uuid TEXT NOT NULL PRIMARY KEY,
+  board_name TEXT,
+  angle INTEGER,
+  user_id TEXT,
+  created_at TEXT,
+  updated_at TEXT
+);`,
+      `INSERT OR REPLACE INTO user_favorites_new (climb_uuid, board_name, angle, user_id, created_at, updated_at)
+  SELECT climb_uuid, board_name, angle, user_id, created_at, updated_at
+  FROM user_favorites
+  ORDER BY created_at;`,
+      'DROP TABLE user_favorites;',
+      'ALTER TABLE user_favorites_new RENAME TO user_favorites;',
+      `DELETE FROM sync_meta WHERE key = 'checkpoint:user_favorites';`,
+    ],
+  },
 ];
 
 const SCHEMA_VERSION_TABLE = `

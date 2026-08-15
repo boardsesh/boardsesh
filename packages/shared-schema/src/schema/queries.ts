@@ -168,21 +168,11 @@ export const queriesTypeDefs = /* GraphQL */ `
 
     """
     Check which climbs from a list are favorited by the current user.
-    Returns array of favorited climb UUIDs.
+    Returns array of favorited climb UUIDs. Favorites are keyed by climb UUID,
+    so the answer is board- and angle-independent; boardName and angle are
+    accepted and ignored so older binaries keep validating.
     """
-    favorites(boardName: String!, climbUuids: [String!]!, angle: Int!): [String!]!
-
-    """
-    Get count of favorited climbs per board for the current user.
-    Requires authentication.
-    """
-    userFavoritesCounts: [FavoritesCount!]!
-
-    """
-    Get board names where the current user has playlists or favorites.
-    Requires authentication.
-    """
-    userActiveBoards: [String!]!
+    favorites(boardName: String, climbUuids: [String!]!, angle: Int): [String!]!
 
     """
     Get user's favorite climbs with full climb data.

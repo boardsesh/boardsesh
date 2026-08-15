@@ -190,7 +190,7 @@ describe('useMobileClimbActionsData', () => {
       expect(requestMock).not.toHaveBeenCalled();
     });
 
-    it('sends boardName + angle from the active board and returns the favorited flag', async () => {
+    it('sends the climb uuid alone and returns the favorited flag', async () => {
       // First the playlists query, then the favorite mutation.
       requestMock.mockResolvedValueOnce({ allUserPlaylists: { playlists: [] } });
       requestMock.mockResolvedValueOnce({ toggleFavorite: { favorited: true } });
@@ -201,32 +201,37 @@ describe('useMobileClimbActionsData', () => {
 
       await expect(result.current.favoritesProviderProps.toggleFavorite('climb-x')).resolves.toBe(true);
       expect(requestMock).toHaveBeenCalledWith(TOGGLE_FAVORITE, {
-        input: { boardName: 'kilter', climbUuid: 'climb-x', angle: 40 },
+        input: { climbUuid: 'climb-x' },
       });
     });
 
-    it('rejects with a helpful error when no active board is selected', async () => {
+    it('works with no active board at all (favorites are board-independent)', async () => {
+      // Used to throw "no active board" — hearting a climb from search or a
+      // shared link needed a board selected first, which made no sense.
       withActiveBoard(null);
+      requestMock.mockImplementation((document: unknown) =>
+        document === TOGGLE_FAVORITE
+          ? Promise.resolve({ toggleFavorite: { favorited: true } })
+          : Promise.resolve({ allUserPlaylists: { playlists: [] } }),
+      );
       const { Wrapper } = makeWrapper();
       const { result } = renderHook(() => useMobileClimbActionsData(), { wrapper: Wrapper });
 
-      await expect(result.current.favoritesProviderProps.toggleFavorite('climb-x')).rejects.toThrow(/no active board/);
+      await expect(result.current.favoritesProviderProps.toggleFavorite('climb-x')).resolves.toBe(true);
+      expect(requestMock).toHaveBeenCalledWith(TOGGLE_FAVORITE, { input: { climbUuid: 'climb-x' } });
     });
 
-    it('rejects when the active board has no angle (no silent angle-0 fallback)', async () => {
-      // Active board with angle missing — common during a board switch before
-      // the angle picker has been resolved. Defaulting to 0 would silently
-      // file the favorite under the wrong climb variant.
+    it('works when the active board has no angle yet (mid board switch)', async () => {
+      // Used to throw "no angle" during a board switch before the angle picker
+      // resolved. The angle is irrelevant to a favorite now.
       withActiveBoard({ ...kilterBoard, angle: null } as unknown as UserBoard);
+      requestMock.mockResolvedValueOnce({ allUserPlaylists: { playlists: [] } });
+      requestMock.mockResolvedValueOnce({ toggleFavorite: { favorited: true } });
       const { Wrapper } = makeWrapper();
       const { result } = renderHook(() => useMobileClimbActionsData(), { wrapper: Wrapper });
 
-      await expect(result.current.favoritesProviderProps.toggleFavorite('climb-x')).rejects.toThrow(/no angle/);
-      // Server must not have been called with a fabricated angle.
-      expect(requestMock).not.toHaveBeenCalledWith(
-        TOGGLE_FAVORITE,
-        expect.objectContaining({ input: expect.objectContaining({ angle: 0 }) }),
-      );
+      await expect(result.current.favoritesProviderProps.toggleFavorite('climb-x')).resolves.toBe(true);
+      expect(requestMock).toHaveBeenCalledWith(TOGGLE_FAVORITE, { input: { climbUuid: 'climb-x' } });
     });
 
     it('offline flag ON + DB handle: writes locally and schedules a drain, no network toggle', async () => {
@@ -255,7 +260,7 @@ describe('useMobileClimbActionsData', () => {
 
       await expect(result.current.favoritesProviderProps.toggleFavorite('climb-x')).resolves.toBe(true);
       expect(requestMock).toHaveBeenCalledWith(TOGGLE_FAVORITE, {
-        input: { boardName: 'kilter', climbUuid: 'climb-x', angle: 40 },
+        input: { climbUuid: 'climb-x' },
       });
       expect(addFavoriteLocalMock).not.toHaveBeenCalled();
       expect(removeFavoriteLocalMock).not.toHaveBeenCalled();

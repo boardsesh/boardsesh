@@ -27,7 +27,7 @@ const EXPECTED_PRIMARY_KEYS: Record<string, string[]> = {
   boardsesh_ticks: ['uuid'],
   playlists: ['uuid'],
   playlist_climbs: ['playlist_uuid', 'climb_uuid'],
-  user_favorites: ['board_name', 'climb_uuid', 'angle'],
+  user_favorites: ['climb_uuid'],
   user_follows: ['following_id'],
   setter_follows: ['setter_username'],
   playlist_follows: ['playlist_uuid'],
@@ -174,6 +174,61 @@ describe('runMigrations', () => {
     await runMigrations(upgradedDb);
     expect(await listTables(upgradedDb)).toContain('board_climb_grades');
     expect(await pkQuery(upgradedDb)).toEqual(['board_type', 'climb_uuid', 'angle']);
+  });
+
+  it('v5 re-keys user_favorites to climb_uuid, collapsing a climb favorited at two angles', async () => {
+    // Simulate a v4 device holding the same climb favorited at 40 and 50 (two
+    // rows under the old (board_name, climb_uuid, angle) key) plus a live
+    // favorites checkpoint.
+    const db = createTestDatabase();
+    await runMigrations(db);
+    await db.execAsync('DROP TABLE user_favorites');
+    await db.execAsync(`CREATE TABLE user_favorites (
+      board_name TEXT NOT NULL,
+      climb_uuid TEXT NOT NULL,
+      angle INTEGER NOT NULL,
+      user_id TEXT,
+      created_at TEXT,
+      updated_at TEXT,
+      PRIMARY KEY (board_name, climb_uuid, angle)
+    );`);
+    await db.runAsync(
+      `INSERT INTO user_favorites (board_name, climb_uuid, angle, user_id, created_at, updated_at)
+       VALUES ('kilter', 'climb-1', 40, 'user-1', '2024-01-01T00:00:00.000Z', '2024-01-01T00:00:00.000Z'),
+              ('kilter', 'climb-1', 50, 'user-1', '2024-03-01T00:00:00.000Z', '2024-03-01T00:00:00.000Z'),
+              ('tension', 'climb-2', 40, 'user-1', '2024-02-01T00:00:00.000Z', '2024-02-01T00:00:00.000Z')`,
+      [],
+    );
+    await db.runAsync("INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('checkpoint:user_favorites', '{}')", []);
+    await db.runAsync("INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('checkpoint:boardsesh_ticks', '{}')", []);
+    await db.runAsync('UPDATE schema_version SET version = 4 WHERE id = 1');
+
+    await runMigrations(db);
+
+    expect(await primaryKeyColumns(db, 'user_favorites')).toEqual(['climb_uuid']);
+    // board_name/angle survive as vestigial columns so the server's still-emitted
+    // values land instead of tripping onSchemaDrift on every launch.
+    const columns = await tableColumns(db, 'user_favorites');
+    expect(columns).toContain('board_name');
+    expect(columns).toContain('angle');
+
+    const rows = await db.getAllAsync<{ climb_uuid: string; created_at: string }>(
+      'SELECT climb_uuid, created_at FROM user_favorites ORDER BY climb_uuid',
+    );
+    expect(rows.map((row) => row.climb_uuid)).toEqual(['climb-1', 'climb-2']);
+    // The newest of the two collapsed rows wins.
+    expect(rows[0].created_at).toBe('2024-03-01T00:00:00.000Z');
+
+    // The favorites checkpoint is cleared so the device re-pulls the whole set
+    // under the new shape; other tables' checkpoints are untouched.
+    const favoriteCheckpoint = await db.getFirstAsync<{ key: string }>(
+      "SELECT key FROM sync_meta WHERE key = 'checkpoint:user_favorites'",
+    );
+    expect(favoriteCheckpoint).toBeNull();
+    const tickCheckpoint = await db.getFirstAsync<{ key: string }>(
+      "SELECT key FROM sync_meta WHERE key = 'checkpoint:boardsesh_ticks'",
+    );
+    expect(tickCheckpoint?.key).toBe('checkpoint:boardsesh_ticks');
   });
 
   it('applies a newly appended migration on top of an older version', async () => {

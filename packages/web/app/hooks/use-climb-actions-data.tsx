@@ -30,6 +30,11 @@ import { useIncrementalQuery } from '@/app/hooks/use-incremental-query';
 type UseClimbActionsDataOptions = {
   boardName: string;
   layoutId: number;
+  /**
+   * Part of the board context callers already carry. Favorites no longer use it
+   * (they are keyed by climb UUID alone), so the hook deliberately ignores it
+   * rather than making every call site drop the field.
+   */
   angle: number;
   climbUuids: string[];
 };
@@ -60,7 +65,7 @@ type RemovePlaylistVars = { playlistId: string; climbUuid: string };
 // is preserved if its onMutate ran between this mutation's onMutate and onError.
 type PlaylistMutationContext = { membershipChanged: boolean };
 
-export function useClimbActionsData({ boardName, layoutId, angle, climbUuids }: UseClimbActionsDataOptions) {
+export function useClimbActionsData({ boardName, layoutId, climbUuids }: UseClimbActionsDataOptions) {
   const { t } = useTranslation('climbs');
   const { token, isAuthenticated, isLoading: isAuthLoading } = useWsAuthToken();
   const { showMessage } = useSnackbar();
@@ -68,25 +73,25 @@ export function useClimbActionsData({ boardName, layoutId, angle, climbUuids }: 
 
   // === Favorites (incremental) ===
 
-  const favAccKey = useMemo(() => ['favorites', boardName, angle, 'accumulated'] as const, [boardName, angle]);
-  const favFetchKeyPrefix = useMemo(() => ['favorites', boardName, angle, 'fetch'] as const, [boardName, angle]);
+  // Board- and angle-independent: a favorite is keyed by climb UUID alone, so the
+  // heart carries across a board or angle switch instead of resetting.
+  const favAccKey = useMemo(() => ['favorites', 'accumulated'] as const, []);
+  const favFetchKeyPrefix = useMemo(() => ['favorites', 'fetch'] as const, []);
 
   const favFetchChunk = useCallback(
     async (uuids: string[]): Promise<Set<string>> => {
       const client = createGraphQLHttpClient(token);
       try {
         const result = await client.request<FavoritesQueryResponse>(GET_FAVORITES, {
-          boardName,
           climbUuids: uuids,
-          angle,
         });
         return new Set(result.favorites);
       } catch (error) {
-        console.error(`[GraphQL] Favorites query error for ${boardName} (${uuids.length} uuids):`, error);
+        console.error(`[GraphQL] Favorites query error (${uuids.length} uuids):`, error);
         throw error;
       }
     },
-    [token, boardName, angle],
+    [token],
   );
 
   const {
@@ -105,11 +110,11 @@ export function useClimbActionsData({ boardName, layoutId, angle, climbUuids }: 
 
   // Toggle favorite mutation — targets the accumulated cache key
   const toggleFavoriteMutation = useMutation({
-    mutationKey: ['toggleFavorite', boardName, angle],
+    mutationKey: ['toggleFavorite'],
     mutationFn: async (climbUuid: string): Promise<{ uuid: string; favorited: boolean }> => {
       const client = createGraphQLHttpClient(token);
       const result = await client.request<ToggleFavoriteMutationResponse>(TOGGLE_FAVORITE, {
-        input: { boardName, climbUuid, angle },
+        input: { climbUuid },
       });
       return { uuid: climbUuid, favorited: result.toggleFavorite.favorited };
     },

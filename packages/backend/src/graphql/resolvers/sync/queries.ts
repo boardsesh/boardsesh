@@ -263,8 +263,13 @@ export const syncQueries = {
   },
 
   /**
-   * Pull the authenticated user's favorites. Local PK =
-   * (board_name, climb_uuid, angle). Seq = id.
+   * Pull the authenticated user's favorites. Local PK = (climb_uuid). Seq = id.
+   *
+   * `board_name` and `angle` are still in the select list even though nothing
+   * reads them: a device on pre-re-keying JS declares both NOT NULL in its local
+   * SQLite, and dropping them from the page would make its INSERT fail — killing
+   * that device's ENTIRE pull cycle, not just favorites. They come out once the
+   * fleet has rolled past this release.
    */
   syncFavorites: async (
     _: unknown,

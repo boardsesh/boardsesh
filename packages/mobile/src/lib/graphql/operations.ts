@@ -1688,16 +1688,14 @@ export type UnregisterActivityPushTokenMutationResponse = {
 // Favorite Mutations (Idempotent)
 // ============================================
 
+// Keyed by climb UUID alone. The server still accepts (and ignores) boardName +
+// angle so favorite mutations queued by an older build keep draining.
 export type AddFavoriteInput = {
-  boardName: string;
   climbUuid: string;
-  angle: number;
 };
 
 export type RemoveFavoriteInput = {
-  boardName: string;
   climbUuid: string;
-  angle: number;
 };
 
 export const ADD_FAVORITE = gql`

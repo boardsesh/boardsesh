@@ -67,6 +67,48 @@ describe('useClimbActionsData', () => {
     mockRequest.mockReset();
   });
 
+  it('sends only climbUuids to the favorites query (no board, no angle)', async () => {
+    mockRequest.mockResolvedValueOnce({ favorites: ['climb-1'] });
+    mockRequest.mockResolvedValueOnce({ allUserPlaylists: { playlists: [], totalCount: 0, hasMore: false } });
+    mockRequest.mockResolvedValueOnce({ playlistsForClimbs: [] });
+
+    const wrapper = createQueryWrapper();
+    const { result } = renderHook(() => useClimbActionsData(defaultOptions), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.favoritesProviderProps.favorites.has('climb-1')).toBe(true);
+    });
+
+    expect(mockRequest).toHaveBeenCalledWith('GET_FAVORITES', { climbUuids: ['climb-1', 'climb-2'] });
+  });
+
+  it('keeps the heart across a board + angle switch (cache key is board-independent)', async () => {
+    // The accumulated favorites key used to carry boardName + angle, so switching
+    // board reset every heart and re-fetched. Keyed on nothing but 'favorites',
+    // the switch is a no-op: same set, no extra request.
+    mockRequest.mockResolvedValueOnce({ favorites: ['climb-1'] });
+    mockRequest.mockResolvedValue({ allUserPlaylists: { playlists: [], totalCount: 0, hasMore: false } });
+
+    const wrapper = createQueryWrapper();
+    const { result, rerender } = renderHook((props: typeof defaultOptions) => useClimbActionsData(props), {
+      wrapper,
+      initialProps: defaultOptions,
+    });
+
+    await waitFor(() => {
+      expect(result.current.favoritesProviderProps.favorites.has('climb-1')).toBe(true);
+    });
+    const favoriteRequestsBefore = mockRequest.mock.calls.filter(([document]) => document === 'GET_FAVORITES').length;
+
+    rerender({ ...defaultOptions, boardName: 'tension', angle: 25 });
+
+    await waitFor(() => {
+      expect(result.current.favoritesProviderProps.favorites.has('climb-1')).toBe(true);
+    });
+    const favoriteRequestsAfter = mockRequest.mock.calls.filter(([document]) => document === 'GET_FAVORITES').length;
+    expect(favoriteRequestsAfter).toBe(favoriteRequestsBefore);
+  });
+
   it('returns favorites set from GraphQL response', async () => {
     mockRequest.mockResolvedValueOnce({ favorites: ['climb-1'] });
     // Playlists queries
