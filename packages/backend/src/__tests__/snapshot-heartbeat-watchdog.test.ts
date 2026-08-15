@@ -25,7 +25,7 @@ function heartbeat(runKind: 'refresh' | 'full', completedAt = '2026-08-15T11:55:
 }
 
 describe('snapshot heartbeat watchdog', () => {
-  it('accepts a fresh immutable-image heartbeat for the live prefix', () => {
+  it('accepts a fresh live-prefix heartbeat from the intended homelab replica publisher', () => {
     expect(
       evaluateSnapshotHeartbeat({
         payload: heartbeat('refresh'),
