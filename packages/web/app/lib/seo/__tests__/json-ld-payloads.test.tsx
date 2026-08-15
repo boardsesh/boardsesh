@@ -66,9 +66,12 @@ function stats(overrides: Partial<ClimbStatsForAngle> = {}): ClimbStatsForAngle 
 /** The single JSON-LD payload an element renders, parsed. */
 function payload(element: React.ReactElement): Record<string, unknown> {
   const html = renderToString(element);
-  const match = /<script type="application\/ld\+json">([\s\S]*)<\/script>/.exec(html);
-  if (!match) throw new Error(`no JSON-LD script rendered: ${html}`);
-  return JSON.parse(match[1].replace(/\\u003c/g, '<')) as Record<string, unknown>;
+  const matches = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
+  if (matches.length !== 1) {
+    throw new Error(`expected exactly one JSON-LD payload, found ${matches.length}: ${html}`);
+  }
+
+  return JSON.parse(matches[0][1].replace(/\\u003c/g, '<')) as Record<string, unknown>;
 }
 
 const CANONICAL = buildCanonicalClimbViewUrl(BOARD_DETAILS, 40, CLIMB_UUID, 'Test Climb');

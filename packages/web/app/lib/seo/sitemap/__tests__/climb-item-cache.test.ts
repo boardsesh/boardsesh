@@ -199,4 +199,20 @@ describe('the tier-2 summary cache', () => {
     expect(second).toBe(first);
     expect(third).toBe(first);
   });
+
+  it('clears a failed in-flight build so the next caller retries', async () => {
+    reads.summaryRow = { itemCount: 4, lastModified: '2026-05-04T11:22:33.000Z' };
+    reads.gate = Promise.reject(new Error('summary pool exhausted'));
+
+    await expect(fetchTier2Summary()).rejects.toThrow('summary pool exhausted');
+
+    // The rejected single-flight promise must not poison the in-process cache.
+    reads.gate = null;
+    await expect(fetchTier2Summary()).resolves.toEqual({
+      itemCount: 12,
+      lastModified: new Date('2026-05-04T11:22:33.000Z'),
+    });
+    // One failed first-group scan, then all three groups on the successful retry.
+    expect(reads.count).toBe(4);
+  });
 });
