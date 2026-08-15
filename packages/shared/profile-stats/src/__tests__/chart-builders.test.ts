@@ -673,4 +673,16 @@ describe('buildPeriodComparison', () => {
     expect(result.current.sends).toBe(1); // only 'a'
     expect(result.previous.sends).toBe(1); // only 'b'
   });
+
+  it('counts a tick exactly on the trailing seam (previous.end === current.start) once, in current', () => {
+    const now = dayjs('2024-06-15T00:00:00.000Z');
+    const kilter: LogbookEntry[] = [
+      // Exactly `now - 1 week`: current.start and (trailing) previous.end land
+      // on the same instant. Must be counted in current only.
+      makeEntry({ climbed_at: now.subtract(1, 'week').toISOString(), status: 'send', climbUuid: 'seam' }),
+    ];
+    const result = buildPeriodComparison({ kilter }, 'lastWeek', 'trailing', now)!;
+    expect(result.current.sends).toBe(1);
+    expect(result.previous.sends).toBe(0);
+  });
 });

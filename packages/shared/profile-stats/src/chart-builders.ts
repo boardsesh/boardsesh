@@ -553,7 +553,20 @@ export function getComparisonWindows(
   return { current, previous };
 }
 
-function periodSnapshot(entries: LogbookEntry[], start: dayjs.Dayjs, end: dayjs.Dayjs): RawPeriodSnapshot {
+/**
+ * `inclusiveEnd` matters at the trailing-mode seam: `previous.end` and
+ * `current.start` are the same instant (`now - 1 unit`), so a tick landing
+ * exactly on that boundary would otherwise satisfy both windows and get
+ * double-counted. `current`'s end (`now`) stays inclusive — it's the
+ * outermost edge, shared with nothing — while `previous`'s end is exclusive
+ * so the shared instant belongs to `current` alone.
+ */
+function periodSnapshot(
+  entries: LogbookEntry[],
+  start: dayjs.Dayjs,
+  end: dayjs.Dayjs,
+  inclusiveEnd: boolean,
+): RawPeriodSnapshot {
   const sends = new Set<string>();
   const flashes = new Set<string>();
   for (const entry of entries) {
@@ -561,7 +574,8 @@ function periodSnapshot(entries: LogbookEntry[], start: dayjs.Dayjs, end: dayjs.
     // without a climbUuid don't count toward a distinct-climb tally.
     if (entry.status === 'attempt' || !entry.climbUuid) continue;
     const climbedAt = parseTickTime(entry.climbed_at);
-    if (!(climbedAt.isSameOrAfter(start) && climbedAt.isSameOrBefore(end))) continue;
+    if (!climbedAt.isSameOrAfter(start)) continue;
+    if (inclusiveEnd ? !climbedAt.isSameOrBefore(end) : !climbedAt.isBefore(end)) continue;
     sends.add(entry.climbUuid);
     if (entry.status === 'flash') flashes.add(entry.climbUuid);
   }
@@ -591,8 +605,8 @@ export function buildPeriodComparison(
   const allEntries = Object.values(allBoardsTicks).flat();
   const { current, previous } = getComparisonWindows(timeframe, mode, now);
 
-  const currentSnapshot = periodSnapshot(allEntries, current.start, current.end);
-  const previousSnapshot = periodSnapshot(allEntries, previous.start, previous.end);
+  const currentSnapshot = periodSnapshot(allEntries, current.start, current.end, true);
+  const previousSnapshot = periodSnapshot(allEntries, previous.start, previous.end, false);
   const sendsDelta = currentSnapshot.sends - previousSnapshot.sends;
   const sendsPercentChange = previousSnapshot.sends === 0 ? null : (sendsDelta / previousSnapshot.sends) * 100;
 

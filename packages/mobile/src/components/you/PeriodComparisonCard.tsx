@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { PeriodComparisonMode, RawPeriodComparison } from '@boardsesh/profile-stats';
@@ -27,13 +28,24 @@ function formatPercent(value: number | null): string {
  * produces a comparison for those three, mirroring every other chart card's
  * data-absent convention.
  */
-export function PeriodComparisonCard({
+export const PeriodComparisonCard = memo(function PeriodComparisonCard({
   periodComparison,
   comparisonMode,
   onComparisonModeChange,
 }: PeriodComparisonCardProps) {
   const { t } = useTranslation('profile');
   const { systemColors, brandColors } = useTheme();
+
+  // Only the label strings are locale-derived; memoizing on `t` keeps this
+  // array referentially stable across renders that don't change language, so
+  // SegmentedControl doesn't see a "new" options prop on every parent render.
+  const modeOptions = useMemo(
+    () => [
+      { key: 'trailing' as const, label: t('stats.periodComparison.trailing') },
+      { key: 'yearOverYear' as const, label: t('stats.periodComparison.yearOverYear') },
+    ],
+    [t],
+  );
 
   if (!periodComparison) return null;
 
@@ -44,11 +56,6 @@ export function PeriodComparisonCard({
   const hasComparison = previous.sends > 0;
   const deltaColor =
     sendsDelta > 0 ? brandColors.success : sendsDelta < 0 ? brandColors.error : systemColors.secondaryLabel;
-
-  const modeOptions = [
-    { key: 'trailing' as const, label: t('stats.periodComparison.trailing') },
-    { key: 'yearOverYear' as const, label: t('stats.periodComparison.yearOverYear') },
-  ];
 
   return (
     <Card style={styles.card}>
@@ -93,7 +100,7 @@ export function PeriodComparisonCard({
       </View>
     </Card>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: { marginHorizontal: spacing[4], marginTop: spacing[3] },
