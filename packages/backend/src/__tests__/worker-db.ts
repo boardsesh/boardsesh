@@ -33,11 +33,55 @@ function buildWorkerDatabaseUrl(): string {
   return raw.replace(/\/[^/]+$/, `/${name}`);
 }
 
+/** Redis ships with 16 logical databases (`databases 16`) unless configured otherwise. */
+const REDIS_LOGICAL_DB_COUNT = 16;
+
+/**
+ * The worker's own Redis logical database, mirroring its own Postgres database.
+ *
+ * Giving each worker a private Postgres DB while leaving Redis shared is only
+ * half an isolation story, and the missing half bites: every worker's
+ * `user_boards_id_seq` restarts at 1, so several workers hold a *different*
+ * board that is numerically id 3 at the same moment — and the Redis keys are
+ * keyed on that number alone (`boardsesh:board-stats:v1:3`,
+ * `boardsesh:debounce:board-stats:3`, `presence:board:3:user:…`).
+ *
+ * The debounce key is the sharpest edge. `queueBoardStatsPublish` writes a nonce,
+ * then 2s later re-reads it and publishes ONLY if the nonce is still its own —
+ * multi-instance leader election. A neighbouring worker's board 3 overwrites the
+ * nonce, so our publish is silently suppressed and the stats cache is never
+ * written. That is a test-harness artefact, not a product bug: in production
+ * those ids are globally unique.
+ *
+ * `SELECT`ing a per-worker database costs nothing and keeps the whole keyspace
+ * apart. Workers past the 16th wrap, which is still far better than everyone
+ * sharing db 0.
+ */
+function buildWorkerRedisUrl(rawUrl: string): string {
+  const poolId = Number.parseInt(process.env.VITEST_POOL_ID || '0', 10);
+  const logicalDb = (Number.isFinite(poolId) ? poolId : 0) % REDIS_LOGICAL_DB_COUNT;
+  try {
+    const url = new URL(rawUrl);
+    url.pathname = `/${logicalDb}`;
+    return url.toString();
+  } catch {
+    // Not a URL we can parse (unix socket, sentinel list) — leave it alone
+    // rather than hand ioredis something malformed.
+    return rawUrl;
+  }
+}
+
 // Module-load side effect: redirect DATABASE_URL to the worker's dedicated DB
 // BEFORE any ESM import can materialise `db/client`'s cached connection against
 // the template DB. Import worker-db.ts first in setupFiles.
+//
+// REDIS_URL rides along for the same reason: `redis/client.ts` reads it into a
+// module-level const, so the rewrite has to beat that import too.
 if (!process.env.__BOARDSESH_WORKER_DB_INITIALIZED__) {
   process.env.DATABASE_URL = buildWorkerDatabaseUrl();
+  if (process.env.REDIS_URL) {
+    process.env.REDIS_URL = buildWorkerRedisUrl(process.env.REDIS_URL);
+  }
   process.env.__BOARDSESH_WORKER_DB_INITIALIZED__ = '1';
 }
 

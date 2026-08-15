@@ -2985,6 +2985,29 @@ describe('board-presence stats cache (Redis)', () => {
     };
   }
 
+  /**
+   * Wait for the read path's fire-and-forget cache SET to land.
+   *
+   * `boardPresenceStats` returns before its Redis write resolves, so a fixed
+   * sleep is a bet on how loaded the machine is — a 50ms one lost that bet on a
+   * full-suite CI shard and made the two cases below fail as "the cache missed".
+   * Poll for the key instead, so the wait costs a couple of milliseconds when
+   * things are quick and still holds up when they are not.
+   */
+  async function waitForCachedStats(
+    testRedisClient: Redis,
+    boardId: number,
+    timeoutMs = 10_000,
+  ): Promise<string | null> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const cachedRaw = await testRedisClient.get(statsCacheKey(boardId));
+      if (cachedRaw !== null) return cachedRaw;
+      if (Date.now() >= deadline) return null;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
   it('populates the cache on a miss and serves the same snapshot on a subsequent read', async () => {
     if (!redisOn || !testRedis) return;
     const boardId = await makeStatsBoard();
@@ -2995,9 +3018,7 @@ describe('board-presence stats cache (Redis)', () => {
     const first = await boardPresenceQueries.boardPresenceStats(undefined, { boardId }, authCtx());
     expect(first.climbsSentCount).toBe(1);
 
-    // The SET is fire-and-forget — give it a tick to land.
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const cachedRaw = await testRedis.get(statsCacheKey(boardId));
+    const cachedRaw = await waitForCachedStats(testRedis, boardId);
     expect(cachedRaw).not.toBeNull();
     expect(JSON.parse(cachedRaw!)).toEqual(first);
   });
@@ -3009,7 +3030,9 @@ describe('board-presence stats cache (Redis)', () => {
 
     const first = await boardPresenceQueries.boardPresenceStats(undefined, { boardId }, authCtx());
     expect(first.climbsSentCount).toBe(1);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // The second read below only exercises the cache once this landed; without
+    // the wait it silently becomes a second cold query and asserts nothing.
+    expect(await waitForCachedStats(testRedis, boardId)).not.toBeNull();
 
     // A second send lands straight in Postgres, bypassing saveTick (and so
     // never calling queueBoardStatsPublish) — the query must still serve the
