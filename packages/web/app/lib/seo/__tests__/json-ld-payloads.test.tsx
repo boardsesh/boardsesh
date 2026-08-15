@@ -162,6 +162,7 @@ describe('Organization / WebSite JSON-LD', () => {
 
     expect(graph.map((node) => node['@type'])).toEqual(['Organization', 'WebSite']);
     expect(graph[0].url).toBe('https://www.boardsesh.com');
+    expect(graph[0].logo).toBe('https://www.boardsesh.com/brand/boardsesh-mark.png');
     expect(graph[0].sameAs).toEqual(['https://github.com/marcodejongh/boardsesh', 'https://discord.gg/YXA8GsXfQK']);
     expect(graph[1].inLanguage).toBe('en-US');
   });

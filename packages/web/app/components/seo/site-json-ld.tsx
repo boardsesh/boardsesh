@@ -35,7 +35,10 @@ export default async function SiteJsonLd() {
             // Brand name — not translated, per the trademark rules.
             name: SITE_NAME,
             url: siteUrl,
-            logo: absoluteUrl('/opengraph-image'),
+            // The brand mark the site itself renders (`components/brand/logo.tsx`),
+            // not `/opengraph-image` — a social card is a composed banner, and
+            // Google's logo guidelines want the mark on its own.
+            logo: absoluteUrl('/brand/boardsesh-mark.png'),
             sameAs: SAME_AS,
           },
           {
