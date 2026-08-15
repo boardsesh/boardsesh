@@ -131,11 +131,13 @@ const DELETED_HOOK_STEMS = [
  * `app/lib/ble` goes with the board-control UI, except two files:
  *  - `capacitor-utils.ts`, which the Capacitor retirement notice on the
  *    surviving web shell still reads.
- *  - `capacitor-types.d.ts`, the ambient `window.Capacitor` declaration that
- *    ~25 surviving modules type against (open-external-url, dev-url,
- *    in-app-review, worker-manager, use-wake-lock, use-geolocation,
- *    home-page-content, capacitor-retirement/*). Deleting it reds the whole
- *    typecheck in files that have nothing to do with Bluetooth.
+ *  - `capacitor-types.d.ts`, the ambient `window.Capacitor` declaration. Six
+ *    surviving source files type against it — home-page-content,
+ *    capacitor-retirement-gate, auth/social-login-buttons, use-geolocation,
+ *    open-external-url, lib/hooks/use-wake-lock — plus four test files.
+ *    Deleting it reds the typecheck in files that have nothing to do with
+ *    Bluetooth, which is why it is pinned here rather than swept with the rest
+ *    of the directory.
  */
 const KEPT_BLE_FILES = new Set(['app/lib/ble/capacitor-utils.ts', 'app/lib/ble/capacitor-types.d.ts']);
 
