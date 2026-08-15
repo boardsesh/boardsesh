@@ -65,7 +65,7 @@ export default async function StaticListFrontDoor({
 
   return (
     <Box component="main" sx={containerSx}>
-      <ClimbListJsonLd climbs={climbs} boardDetails={boardDetails} page={page} />
+      <ClimbListJsonLd climbs={climbs} boardDetails={boardDetails} page={page} locale={locale} />
 
       <Box component="header">
         <h1>{t('list.frontDoor.heading', { boardName, angle })}</h1>

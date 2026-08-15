@@ -34,6 +34,19 @@ type ClimbFrontDoorProps = {
    */
   handoffPath: string;
   tree: HandoffTree;
+  /**
+   * True when the page is asking Google not to index it — today only `/b/{slug}`
+   * on an unlisted or non-public board.
+   *
+   * It gates the `CreativeWork` payload, and the reason is the same one that
+   * makes that page pass no `path` to `createPageMetadata`: a noindex URL that
+   * names an indexable twin is a conflicting signal Google can resolve by
+   * propagating the noindex, deindexing a public config-tuple climb page because
+   * one private board happens to share its configuration. `url` is the field
+   * Google uses for page association, so emitting it here would walk straight
+   * around the guard the metadata puts up.
+   */
+  noindex?: boolean;
 };
 
 const containerSx = {
@@ -74,6 +87,7 @@ export default async function ClimbFrontDoor({
   betaLinks,
   handoffPath,
   tree,
+  noindex = false,
 }: ClimbFrontDoorProps) {
   const { t, locale } = await getServerTranslation('climbs');
 
@@ -110,14 +124,17 @@ export default async function ClimbFrontDoor({
         currentUrl={canonicalClimbUrl}
       />
 
-      <ClimbCreativeWorkJsonLd
-        climb={climb}
-        climbName={climbName}
-        canonicalClimbUrl={canonicalClimbUrl}
-        overlayUrl={overlayUrl}
-        currentAngleStats={currentAngleStats}
-        description={jsonLdDescription}
-      />
+      {noindex ? null : (
+        <ClimbCreativeWorkJsonLd
+          climb={climb}
+          climbName={climbName}
+          canonicalClimbUrl={canonicalClimbUrl}
+          overlayUrl={overlayUrl}
+          currentAngleStats={currentAngleStats}
+          description={jsonLdDescription}
+          locale={locale}
+        />
+      )}
 
       <ClimbViewSeoFragment climb={climb} boardDetails={boardDetails} />
 

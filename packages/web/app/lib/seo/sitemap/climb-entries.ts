@@ -96,10 +96,41 @@ export function resolveClimbSitemapGroups(configs: readonly PopularBoardConfig[]
  */
 const PROBE_UUID = '00000000000000000000000000000000';
 
+/**
+ * MoonBoard configurations are held out of the shard, and `isResolvableGroup`
+ * cannot see why.
+ *
+ * The set slug this builder emits does not round-trip through the parser the
+ * MoonBoard page uses. `generateSetSlug` joins set-name slugs with `_`
+ * (`readable-url-utils.ts`), while `getMoonBoardSetsBySlug`
+ * (`url-utils.server.ts`) splits the slug on `-` and substring-matches the
+ * parts — so `…/wooden-holds_screw_original-school-holds_…` parses back to a
+ * DIFFERENT set-id list, and `generateMetadata` then emits a `<link
+ * rel="canonical">` that is not the URL we submitted. Measured over the static
+ * MoonBoard tables: 212 of 227 layout×set combinations mismatch, including the
+ * full set list on masters-2017 and masters-2019. Every such URL is one Google
+ * drops as "alternate page with proper canonical".
+ *
+ * `tryConstructSlugViewUrl` returns a URL for all 227, so the resolvability
+ * probe is green on every one of them — which is precisely why this is a
+ * separate, named exclusion rather than a tweak to the probe.
+ *
+ * Not live today (`getPopularConfigs()` emits no MoonBoard rows — there is no
+ * `board_product_sizes_layouts_sets` seed for it, and `/sitemaps/boards.xml`
+ * carries zero `/moonboard/` URLs), so this costs nothing now and stops the
+ * shard from going wrong the moment a seed lands. Lifting it means making
+ * `getMoonBoardSetsBySlug` an exact `generateSetNameSlug` match on `_`-split
+ * parts — a routing-parser change, not a sitemap one.
+ */
+function hasRoundTrippableSetSlug(group: ClimbConfigGroup): boolean {
+  return toBoardName(group.boardType) !== 'moonboard';
+}
+
 export function isResolvableGroup(group: ClimbConfigGroup): boolean {
   return (
+    hasRoundTrippableSetSlug(group) &&
     tryConstructSlugViewUrl(group.boardType, group.layoutId, group.sizeId, group.setIds, 0, PROBE_UUID, 'probe') !==
-    null
+      null
   );
 }
 

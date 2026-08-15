@@ -12,7 +12,11 @@ const { buildTier2ClimbQuery, buildTier2ClimbSummaryQuery, TIER_2_MIN_ASCENTS } 
 
 const db = drizzle({} as never);
 
-const KILTER: ClimbConfigGroup = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: [1, 20] };
+// sizeId 27 / setIds [26, 31] deliberately: the Kilter angle list bound into the
+// same params array is 0,5,…,70, so a fixture using size 10 and set 20 makes
+// `params).toContain(10)` / `toContain(20)` pass even with the size and set
+// predicates deleted. These three ids appear nowhere else in the rendered params.
+const KILTER: ClimbConfigGroup = { boardType: 'kilter', layoutId: 1, sizeId: 27, setIds: [26, 31] };
 const MOONBOARD: ClimbConfigGroup = { boardType: 'moonboard', layoutId: 8, sizeId: 17, setIds: [24] };
 
 function render(group: ClimbConfigGroup) {
@@ -44,9 +48,14 @@ describe('the tier-2 climbs query', () => {
     expect(normalised).toMatch(/"board_climb_stats"\."ascensionist_count" desc/);
   });
 
-  it('breaks the angle tie with COALESCE, because board_climbs.angle is nullable', () => {
-    // Postgres orders DESC with NULLS FIRST, so a bare `stats.angle = climbs.angle`
-    // would let a null-angle climb outrank the angle that actually matches.
+  it('breaks the angle tie with COALESCE (defensive, not load-bearing)', () => {
+    // Correction to an earlier claim: this cannot currently change a result.
+    // `board_climbs.uuid` is the primary key and the join is on
+    // `(uuid, board_type)`, so every row in one DISTINCT ON group joins the SAME
+    // `board_climbs` row — a NULL `climbs.angle` makes the comparison NULL for
+    // the whole group, NULLs sort equal, and the tie-break falls through to
+    // `asc(stats.angle)` either way (measured: zero differing rows over kilter
+    // layout 1's 16,233 NULL-angle tier-2 climbs). Kept because it is free.
     expect(normalised).toContain('coalesce(');
     expect(normalised).toMatch(/coalesce\("board_climb_stats"\."angle" = "board_climbs"\."angle", false\) desc/);
   });
@@ -60,14 +69,24 @@ describe('the tier-2 climbs query', () => {
   it('applies the same size and set predicates the /list front door filters on', () => {
     expect(normalised).toContain('"board_climbs"."compatible_size_ids" @> array[');
     expect(normalised).toContain('"board_climbs"."required_set_ids" <@ array[');
-    expect(params).toContain(10);
-    expect(params).toContain(20);
+    // 27, 26 and 31 are not Kilter angles, so these bindings cannot be satisfied
+    // by the angle list the way `10` and `20` were.
+    expect(params).toContain(27);
+    expect(params).toContain(26);
+    expect(params).toContain(31);
   });
 
-  it('excludes alias uuids, which self-canonicalise to themselves', () => {
+  it('excludes GENUINE alias uuids only, never the self-aliases every Kilter climb has', () => {
+    // `board_climb_aliases` is mostly self-aliases: migration 0160 gave every
+    // synced Kilter climb a row mapping its uuid to itself so deletion
+    // reconciliation can resolve upstream removals. Measured on the full-board
+    // dev image: 344,504 kilter rows, ZERO non-self. Without the `<>` the guard
+    // excludes 23,936 of 23,936 Kilter tier-2 climbs — the largest board shipping
+    // nothing, silently, because the other boards keep the shard non-empty.
     expect(normalised).toContain('not exists');
     expect(normalised).toContain('"board_climb_aliases"');
     expect(normalised).toMatch(/"board_climb_aliases"\."alias_uuid" = "board_climbs"\."uuid"/);
+    expect(normalised).toMatch(/"board_climb_aliases"\."alias_uuid" <> "board_climb_aliases"\."canonical_uuid"/);
   });
 
   it('orders the page deterministically and caps the rows it will hold', () => {
@@ -93,16 +112,43 @@ describe('the MoonBoard variant', () => {
   });
 });
 
+/** Everything between the subquery's `where (` and its `order by` — the selection. */
+function selectionOf(rendered: { sql: string; params: unknown[] }) {
+  const normalisedSql = rendered.sql.replace(/\s+/g, ' ');
+  const start = normalisedSql.indexOf('where (');
+  const end = normalisedSql.indexOf('order by "board_climb_stats"."climb_uuid"');
+  expect(start, 'no where clause in the rendered SQL').toBeGreaterThan(-1);
+  expect(end, 'no distinct-on order by in the rendered SQL').toBeGreaterThan(start);
+  return normalisedSql.slice(start, end);
+}
+
 describe('the summary query', () => {
   const rendered = buildTier2ClimbSummaryQuery(db, KILTER).toSQL();
   const sql = rendered.sql.toLowerCase().replace(/\s+/g, ' ');
 
-  it('counts and dates exactly what the item query would return', () => {
-    // Same DISTINCT ON subquery, so the page count the index publishes and the
-    // items the pages serve cannot describe two different sets.
+  it('counts what the item query returns and dates it in explicit UTC', () => {
     expect(sql).toContain('count(*)::int');
-    expect(sql).toContain('max("updated_at")');
+    // NOT a bare `max("updated_at")`: a raw aggregate bypasses drizzle's
+    // timestamp mapper, so the driver returns pg text like
+    // `2026-08-10 20:39:19.492499`, which `new Date()` reads in the PROCESS
+    // timezone. On any non-UTC runtime the index `<lastmod>` would then disagree
+    // with the per-URL `<lastmod>` built from the same column.
+    expect(sql).toContain('to_char(max("updated_at"), \'yyyy-mm-dd"t"hh24:mi:ss.ms"z"\')');
     expect(sql).toContain('distinct on ("board_climb_stats"."climb_uuid")');
     expect(sql).toContain('"board_climbs"."is_listed"');
+  });
+
+  it('selects the IDENTICAL set the item query selects, predicate for predicate', () => {
+    // The page count the index publishes and the items the pages serve must not
+    // describe two different sets. A byte-comparison of the recorded WHERE
+    // clauses is what reds when a predicate is added to one and not the other —
+    // grepping each for a keyword it already contains never will.
+    const items = buildTier2ClimbQuery(db, KILTER).toSQL();
+    const summary = buildTier2ClimbSummaryQuery(db, KILTER).toSQL();
+
+    expect(selectionOf(summary)).toBe(selectionOf(items));
+    // ...and the same bindings, so the two cannot differ by a parameter either.
+    // The item query carries one extra trailing param: its LIMIT.
+    expect(summary.params).toEqual(items.params.slice(0, summary.params.length));
   });
 });

@@ -31,7 +31,10 @@ const LAST_MODIFIED = new Date('2026-05-04T11:22:33.000Z');
 
 const climbs = vi.hoisted(() => ({
   itemCount: 3,
+  /** Length of the list the BUILD returns; null means "same as itemCount". */
+  builtCount: null as number | null,
   summaryThrows: false,
+  summaryHangs: false,
   buildThrows: false,
   buildsEmpty: false,
   pathLength: 0,
@@ -41,6 +44,8 @@ const climbs = vi.hoisted(() => ({
 vi.mock('../climb-query', () => ({
   fetchTier2Summary: async () => {
     if (climbs.summaryThrows) throw new Error('climbs summary unavailable');
+    // A summary that never settles: the failure a try/catch cannot see.
+    if (climbs.summaryHangs) return new Promise<never>(() => {});
     return { itemCount: climbs.itemCount, lastModified: new Date('2026-05-04T11:22:33.000Z') };
   },
   buildTier2ClimbItems: async () => {
@@ -50,7 +55,7 @@ vi.mock('../climb-query', () => ({
     // Padding lives in the PATH, so the byte guard is driven by a real rendered
     // body rather than by mutating the constant it is supposed to enforce.
     const padding = climbs.pathLength > 0 ? 'x'.repeat(climbs.pathLength) : '';
-    return Array.from({ length: climbs.itemCount }, (_, index) => ({
+    return Array.from({ length: climbs.builtCount ?? climbs.itemCount }, (_, index) => ({
       path: `/kilter/original/12x12-square/screw_bolt/40/view/climb-${index}${padding}`,
       lastModified: new Date('2026-05-04T11:22:33.000Z'),
     })) satisfies SitemapItem[];
@@ -61,7 +66,9 @@ const { PAGED_SHARD_REGISTRY, buildSitemapIndexXml, pagedShardRouteHandler } = a
 
 beforeEach(() => {
   climbs.itemCount = 3;
+  climbs.builtCount = null;
   climbs.summaryThrows = false;
+  climbs.summaryHangs = false;
   climbs.buildThrows = false;
   climbs.buildsEmpty = false;
   climbs.pathLength = 0;
@@ -104,7 +111,11 @@ describe('the paged climbs shard', () => {
   it('404s a malformed or out-of-range page rather than 503ing it', async () => {
     // A page that was never valid is not transient: 503 would have the crawler
     // retry forever.
-    for (const page of ['0.xml', 'abc.xml', '1.txt', '999.xml', '-1.xml']) {
+    // The zero-padded forms are the same doctrine: `Number('007')` is 7, so a
+    // `\\d+` parser gives every real page an unbounded family of alias URLs that
+    // each 200 under the six-hour cache header and each look to Search Console
+    // like a separate submission of the same URLs.
+    for (const page of ['0.xml', 'abc.xml', '1.txt', '999.xml', '-1.xml', '01.xml', '007.xml', '0000001.xml']) {
       const response = await pagedShardRouteHandler('climbs', page);
       expect(response.status, page).toBe(404);
       expect(response.headers.get('cache-control'), page).toBe('no-store');
@@ -150,6 +161,21 @@ describe('the paged climbs shard', () => {
     expect(response.status).toBe(503);
   });
 
+  it('404s — not 503s — a page the summary listed but the item list is too short for', async () => {
+    // The summary lives in the Next Data Cache (global) and the item list in an
+    // in-process TTL (per instance), so their epochs are independent: a warm
+    // instance holding exactly one page of items can meet a refreshed summary
+    // reporting one more. Without reconciling against the built list, Googlebot
+    // gets a 503 on a URL the index told it to fetch, for up to the item TTL.
+    climbs.itemCount = CLIMB_URLS_PER_SHARD + 1;
+    climbs.builtCount = CLIMB_URLS_PER_SHARD;
+
+    const response = await pagedShardRouteHandler('climbs', '2.xml');
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+  });
+
   it('503s the shard when the summary itself fails', async () => {
     climbs.summaryThrows = true;
     expect((await pagedShardRouteHandler('climbs', '1.xml')).status).toBe(503);
@@ -192,20 +218,54 @@ describe('the index and the climbs shard', () => {
     expect(degradedShards).toContain('climbs');
   });
 
-  it('omits the climb pages entirely when there are none', async () => {
+  it('degrades the same way when the climbs summary HANGS rather than throwing', async () => {
+    // A try/catch only covers a summary that rejects. A stalled one — the
+    // saturated-pool case, #4461/#4476 — would otherwise hang the index to the
+    // platform timeout, which is a 5xx on all six shards: strictly worse than the
+    // 503 ruling 4 was written to prevent.
+    climbs.summaryHangs = true;
+
+    const { xml, degradedShards } = await Promise.race([
+      buildSitemapIndexXml(),
+      new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('index hung')), 10_000)),
+    ]);
+
+    expect(xml).toContain('<sitemapindex');
+    expect(xml).toContain('https://www.boardsesh.com/sitemaps/static.xml');
+    expect(xml).not.toContain('/sitemaps/climbs/');
+    expect(degradedShards).toContain('climbs');
+  }, 15_000);
+
+  it('omits the climb pages when there are none, but says so loudly', async () => {
+    // Still a 200 — the index degrades rather than 503ing. But a shard that
+    // expects URLs and reports zero has lost its whole surface, and dropping
+    // ~128k URLs behind six hours of s-maxage with nothing in the logs is how
+    // that goes unnoticed until Search Console reports them removed.
     climbs.itemCount = 0;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const { xml, degradedShards } = await buildSitemapIndexXml();
 
     expect(xml).toContain('/sitemaps/static.xml');
     expect(xml).not.toContain('/sitemaps/climbs/');
     expect(degradedShards).toContain('climbs');
+    expect(errors.mock.calls.flat().join(' ')).toContain('expects URLs but its summary reports 0');
+    errors.mockRestore();
   });
 });
 
 describe('the deferred work stays deferred', () => {
-  it('ships no VideoObject anywhere in a climb shard body', async () => {
+  it('is still tier 2, and the shard body carries no video namespace', async () => {
+    // Deliberately NOT a `not.toContain('VideoObject')` on this body: it is a
+    // `<urlset>` built from paths and dates, so no change to any source file in
+    // this PR could put a JSON-LD type name into it — an assertion that cannot
+    // fail. The real VideoObject pin lives in json-ld-payloads.test.tsx, over the
+    // payloads that could actually carry one. What a climb shard CAN violate is
+    // the video sitemap extension, so pin that. (`TIER_2_MIN_ASCENTS === 10` is
+    // pinned in climb-query.test.ts, against the real module rather than a mock.)
     const body = await (await pagedShardRouteHandler('climbs', '1.xml')).text();
-    expect(body).not.toContain('VideoObject');
+
+    expect(body).not.toContain('<video:');
+    expect(body).not.toContain('xmlns:video');
   });
 });

@@ -1,5 +1,6 @@
 import React from 'react';
-import { absoluteUrl } from '@/app/lib/seo/base-url';
+import { absoluteLocaleUrl, absoluteUrl } from '@/app/lib/seo/base-url';
+import type { Locale } from '@/app/lib/i18n/config';
 import { JsonLd } from '@/app/lib/seo/json-ld';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { Climb } from '@/app/lib/types';
@@ -16,6 +17,8 @@ type ClimbCreativeWorkJsonLdProps = {
   currentAngleStats: ClimbStatsForAngle | undefined;
   /** Already-translated description, or null when the facts to fill it are missing. */
   description: string | null;
+  /** The locale this page is rendering on — the canonical is locale-prefixed. */
+  locale: Locale;
 };
 
 /**
@@ -34,9 +37,14 @@ const BEST_RATING = 5;
  *     and publishing it with `bestRating: 5` understates the climb. ~235k
  *     JSON-imported Kilter tick rows are still on that scale.
  *  2. `quality_average` is present and lands inside [1, 5].
- *  3. The rating count is at least 1, and it is the *blend's own denominator* —
- *     never `ascensionist_count`. Ascents are not ratings; claiming them as
- *     ratings is exactly the kind of inflation Google penalises.
+ *  3. The rating count is at least 1, and it is the *blend's own denominator*,
+ *     not `ascensionist_count`. Stated precisely, because the loose version
+ *     ("never ascents") is not a promise this expression can make: on a climb
+ *     whose quality came from Aurora and which has no native ratings yet, the
+ *     denominator is `upstream_ascensionist_count` — and that is correct, since
+ *     Aurora's average IS taken over the ascents that rated it. What is excluded
+ *     is the Boardsesh ascent count, and the upstream ascents of a climb upstream
+ *     never rated at all (`upstream_quality_average IS NULL` → 0).
  *
  * A climb that fails any of them ships without a rating. Omitting is free;
  * publishing a wrong one is a manual action.
@@ -78,6 +86,7 @@ export default function ClimbCreativeWorkJsonLd({
   overlayUrl,
   currentAngleStats,
   description,
+  locale,
 }: ClimbCreativeWorkJsonLdProps) {
   const aggregateRating = buildAggregateRating(currentAngleStats);
   const setter = climb.setter_username?.trim();
@@ -87,8 +96,10 @@ export default function ClimbCreativeWorkJsonLd({
     '@context': 'https://schema.org',
     '@type': 'CreativeWork',
     name: climbName,
-    // The canonical, so the structured data names the URL the page claims.
-    url: absoluteUrl(canonicalClimbUrl),
+    // The canonical, on THIS locale, so the structured data names the exact URL
+    // the page's own `<link rel="canonical">` claims. `/es/...` pages canonicalise
+    // to the `/es` URL, and naming the en-US one here would contradict it.
+    url: absoluteLocaleUrl(canonicalClimbUrl, locale),
     ...(description ? { description } : {}),
     // `/api/internal/board-render` is Googlebot-Image-allowed in app/robots.ts.
     ...(overlayUrl ? { image: absoluteUrl(overlayUrl) } : {}),

@@ -176,8 +176,16 @@ export type ClimbStatsForAngle = {
   quality_normalized: boolean;
   /**
    * The quality blend's OWN denominator — how many ratings are behind
-   * `quality_average` — not the ascent count. Ascents are not ratings, and
-   * over-claiming a rating count is what Google penalises.
+   * `quality_average`.
+   *
+   * Not `ascensionist_count`, which is the blended ascent total
+   * (`upstream + boardsesh`). Precisely: the upstream side counts only when
+   * upstream actually supplied a quality, plus Boardsesh's one-vote-per-climber
+   * count. On an upstream-sourced climb with no native ratings that lands close
+   * to `upstream_ascensionist_count`, and legitimately so — Aurora's quality
+   * average IS an average over the ascents that rated it, so those ascents are
+   * its rating population. What it never does is claim Boardsesh ascents, or
+   * upstream ascents on a climb upstream never rated, as ratings.
    */
   rating_count: string; // comes as string from DB
 };

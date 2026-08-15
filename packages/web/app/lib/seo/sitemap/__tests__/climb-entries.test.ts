@@ -180,3 +180,57 @@ describe('isResolvableGroup', () => {
     expect(isResolvableGroup({ ...KILTER_GROUP, layoutId: 999_999 })).toBe(false);
   });
 });
+
+describe('the MoonBoard hold-out', () => {
+  /** masters-2017 (layout 4), the FULL static set list — the best case, and it still fails. */
+  const MOONBOARD_GROUP: ClimbConfigGroup = {
+    boardType: 'moonboard',
+    layoutId: 4,
+    sizeId: 1,
+    setIds: [11, 12, 13, 14, 15, 16],
+  };
+
+  it('builds a readable URL for a MoonBoard configuration — the probe alone is not enough', () => {
+    // The trap this test exists to document: `tryConstructSlugViewUrl` happily
+    // returns a URL, so a resolvability-only filter would ship all 227 MoonBoard
+    // configurations.
+    const path = climbRowsToItems([row()], MOONBOARD_GROUP).items[0]?.path;
+
+    // `Screw-on Feet` (id 15) is in the slug this emits and NOT in what the page
+    // parses back: `getMoonBoardSetsBySlug` splits on `-`, so no part of
+    // `…_screw_…` ever matches `screw-on-feet`, and the canonical comes back
+    // without it. Byte-identity fails on 212 of 227 MoonBoard configurations.
+    expect(path).toBe(
+      '/moonboard/masters-2017/standard-11x18-grid/wooden-holds_screw_original-school-holds_hold-set-c_hold-set-b_hold-set-a/40/view/test-climb-abcdef1234567890abcdef1234567890',
+    );
+  });
+
+  it('holds MoonBoard out of the shard until the set slug round-trips', () => {
+    expect(isResolvableGroup(MOONBOARD_GROUP)).toBe(false);
+    expect(
+      resolveClimbSitemapGroups([
+        config({
+          boardType: 'moonboard',
+          layoutId: 4,
+          sizeId: 1,
+          setIds: [11, 12, 13, 14, 15, 16],
+          setNames: [
+            'Wooden Holds',
+            'Screw-on Feet',
+            'Original School Holds',
+            'Hold Set C',
+            'Hold Set B',
+            'Hold Set A',
+          ],
+        }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it('still ships the Aurora boards, so the hold-out is scoped and not a blanket', () => {
+    expect(resolveClimbSitemapGroups([config({})])).toHaveLength(1);
+    expect(
+      resolveClimbSitemapGroups([config({ boardType: 'tension', layoutId: 9, sizeId: 1, setIds: [8, 9, 10, 11] })]),
+    ).toHaveLength(1);
+  });
+});

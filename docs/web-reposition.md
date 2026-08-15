@@ -516,12 +516,34 @@ transient); a page the summary listed that builds nothing 503s.
 
 **Fail-closed at the shard, degrade at the index.** A climbs page that renders
 zero URLs 503s — telling Google "no climbs exist" is worse than telling it to
-retry. But `/sitemap.xml` does **not** inherit that: if the climbs summary throws,
-the index logs loudly, omits the climb `<sitemap>` entries and still answers 200
-with the other five shards. A partial sitemap beats no sitemap, and taking
-static/boards/playlists down because a 128k-row count timed out is not a trade
-worth making. The six-hour `unstable_cache` on the summary is the first line of
-defence; this is the second.
+retry. But `/sitemap.xml` does **not** inherit that: if the climbs summary throws
+**or misses a three-second deadline**, the index logs loudly, omits the climb
+`<sitemap>` entries and still answers 200 with the other five shards. The
+deadline is the half that matters in practice: a try/catch only sees a summary
+that rejects, and the likelier failure — a saturated pool, a stalled aggregate,
+the #4461/#4476 condition — is a summary that never settles, which without a race
+hangs the request to the platform timeout and 5xxes all six shards. That is
+strictly worse than the 503 the doctrine was written to prevent. The six-hour
+`unstable_cache` on the summary is the first line of defence, the in-process
+single-flight is the second, and this is the third.
+
+**A published page that builds an empty slice 404s, it does not 503.** The
+summary (Next Data Cache, global) and the item list (in-process TTL, per
+instance) have independent epochs, so a warm instance can hold 10,000 items while
+a refreshed summary reports 10,001 and the index publishes page 2. The route
+therefore re-derives the bound from the list the build actually returned: an
+empty slice of a NON-empty list is out of range (404, and the crawler stops
+asking), while an empty slice of an empty list is the regressed query
+`expectsUrls` exists for (503). And when the summary itself reports zero while
+`expectsUrls` is set, the index still serves 200 but logs loudly — dropping the
+whole tier-2 surface behind six hours of `s-maxage` with nothing in the logs is
+how that goes unnoticed until Search Console reports the URLs removed.
+
+**Page numbers are canonical or they 404.** `Number('007')` is 7, so a `\d+`
+parser would give every real page an unbounded family of alias URLs — `01.xml`,
+`0000001.xml` — each serving page 1's body under the six-hour cache header and
+each looking to Search Console like a separate submission of the same URLs. The
+parser is `^([1-9]\d*)\.xml$`.
 
 **Config resolution.** A climb URL names a size and a set list, and neither is a
 property of a climb — `board_climbs` carries `board_type`, `layout_id`,
@@ -547,14 +569,42 @@ used the raw name, which made a third URL for one page.
 
 **One angle per climb.** `DISTINCT ON (climb_uuid)` ordered by ascents desc, then
 the climb's own angle, then the lowest angle. The tie-break is
-`COALESCE(stats.angle = climbs.angle, false)` and not a bare comparison, because
-`board_climbs.angle` is nullable and Postgres orders `DESC` with NULLS FIRST — a
-null-angle climb would otherwise outrank the angle that actually matches. Other
-angles stay self-canonical and reachable through W-15's cross-links.
+`COALESCE(stats.angle = climbs.angle, false)` rather than a bare comparison —
+**defensive, not load-bearing**, and an earlier draft of this section claimed
+otherwise. `board_climbs.uuid` is the primary key and the join is on
+`(uuid, board_type)`, so every row inside one `DISTINCT ON` group joins the same
+`board_climbs` row: a null `climbs.angle` makes the comparison NULL for the whole
+group, NULLs sort equal, and the ordering falls through to `asc(stats.angle)`
+either way. Measured over kilter layout 1 (16,233 tier-2 climbs with a null
+`board_climbs.angle`): zero differing rows. It is kept because it is free and
+survives a future join that does compare across climbs. Other angles stay
+self-canonical and reachable through W-15's cross-links.
 
-**Alias uuids are excluded.** `board_climb_aliases` maps duplicate uuids onto a
-canonical one, but an alias URL self-canonicalises to itself, so submitting both
-forms is duplicate content by construction.
+**Genuine alias uuids are excluded — self-aliases are not.**
+`board_climb_aliases` maps duplicate uuids onto a canonical one, and an alias URL
+self-canonicalises to itself, so submitting both forms is duplicate content by
+construction. But the table is mostly **self**-aliases: every synced Kilter climb
+has a row mapping its uuid to itself, written by migration
+`0160_backfill_kilter_self_aliases` and by catalog-sync's identity path, because
+deletion reconciliation resolves upstream removals through this table. Measured on
+the full-board dev image: 344,504 Kilter alias rows, **zero** of them non-self.
+So the exclusion carries `alias_uuid <> canonical_uuid`. Without it the guard
+removes 23,936 of 23,936 Kilter tier-2 climbs — the largest board shipping no
+URLs at all, and silently, because the other boards keep the shard non-empty and
+`expectsUrls` never fires.
+
+**MoonBoard configurations are held out of the shard.** `generateSetSlug` joins
+set-name slugs with `_`, while the MoonBoard page's parser
+(`getMoonBoardSetsBySlug`) splits the slug on `-` and substring-matches the parts
+— so the set slug the shard emits does not round-trip, and the page's own
+canonical comes back with a different set-id list. 212 of 227 layout×set
+combinations mismatch, the full set lists on masters-2017 and masters-2019
+included. `tryConstructSlugViewUrl` returns a URL for all 227, so the
+resolvability probe cannot see it; the hold-out is a separate, named exclusion.
+Costs nothing today (`getPopularConfigs()` emits no MoonBoard rows) and stops the
+shard going wrong the moment a `board_product_sizes_layouts_sets` seed lands.
+Lifting it means making `getMoonBoardSetsBySlug` an exact `generateSetNameSlug`
+match on `_`-split parts — a routing-parser change, not a sitemap one.
 
 **`<lastmod>` is `board_climb_stats.updated_at`** for the chosen angle — a real
 column that moves when ascents or grades move, never `new Date()`. The known risk
@@ -568,11 +618,40 @@ the `could not resize shared memory segment` class), an in-process TTL plus
 single-flight promise so one instance builds the list once, and a six-hour CDN
 window with a seven-day stale-while-revalidate. Group queries run **sequentially**
 — a fan-out of concurrent heavy scans on a ten-connection pool is the
-pool-starvation failure #4461 describes. The index reads `summary()` and never
-`buildPage()`; a unit test asserts zero builder calls, and it is the assertion
-most likely to be quietly broken later. The full item list is **not** in
-`unstable_cache`: ~20 MB serialised is past the Data Cache's 2 MB entry ceiling,
-so it would silently never cache. The summary — two numbers — is.
+pool-starvation failure #4461 describes, and the test that pins it asserts
+_concurrency depth_, not a call count, because a `Promise.all` rewrite leaves the
+call count identical. The index reads `summary()` and never `buildPage()`; a unit
+test asserts zero builder calls, and it is the assertion most likely to be
+quietly broken later. The full item list is **not** in `unstable_cache`: ~20 MB
+serialised is past the Data Cache's 2 MB entry ceiling, so it would silently
+never cache.
+
+The summary's **result** is two numbers; its **cost** is not. It is the same
+`DISTINCT ON` scan as the item build, once per `(board_type, layout_id)` group —
+measured on the full-board dev image at 9.2 s cold and 0.94 s warm for the single
+largest group, across ~18 groups. `unstable_cache` does not deduplicate
+concurrent misses, so on a cold Data Cache the index plus every shard page would
+each run their own full scan; the summary therefore carries the same in-process
+TTL and single-flight the item build does.
+
+**What none of this covers: a genuinely cold cross-instance crawl.** The item
+list is per-instance by construction, so if Googlebot fetches N shard pages that
+all miss the CDN and land on N lambdas, the cost really is N full builds. Per-page
+Data Cache entries would not help — building page N still needs the whole ordered
+list before it can slice. The real fix is a materialised tier-2 table, which is
+the tier-3 follow-up. State this plainly rather than letting the four layers read
+as more protection than they are.
+
+**Every climb page in the index carries the same `<lastmod>`** — the shard's
+global `max(updated_at)` — so one stat update anywhere makes all N pages look
+changed. Bounded to ~4×/day by the summary cache. A per-page value would require
+building the items to know which page a climb fell on, which is the exact scan the
+summary/build split exists to avoid, so the uniform value is the deliberate trade.
+The aggregate is read through `to_char(..., 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` and
+not a bare `max()`: a raw `sql` aggregate bypasses drizzle's timestamp mapper, and
+`new Date()` reads the resulting pg text in the _process_ timezone, which would
+silently offset the index `<lastmod>` on any non-UTC runtime while the per-URL
+`<lastmod>` on the same column stayed correct.
 
 **JSON-LD.** `BreadcrumbList` already shipped in W-15. This wave adds
 `CreativeWork` (+ `aggregateRating`) on the climb front door, `Organization` +
@@ -580,15 +659,29 @@ so it would silently never cache. The summary — two numbers — is.
 `/list`, all through one `JsonLd` component that escapes `<` so user content
 cannot close the script block.
 
+Every JSON-LD `url` is built with `absoluteLocaleUrl(path, locale)` — the same
+`localeHref` call `createPageMetadata` makes for the canonical — so on `/es`,
+`/fr` and `/de` the structured data names the locale-prefixed URL the page itself
+claims rather than the en-US twin. And on a `/b/{slug}` page for an unlisted or
+private board the `CreativeWork` is not emitted at all: `generateMetadata`
+withholds `alternates` there precisely so a noindex URL never names its indexable
+twin, and `CreativeWork.url` — the field Google uses for page association — would
+have walked straight around that guard. (The pre-existing `BreadcrumbList` leaf
+still emits it; that is W-15 code and is left for a follow-up.)
+
 `aggregateRating` is emitted only when three conditions hold: `quality_normalized`
 is true, `quality_average` is present and inside [1, 5], and the rating count is
 at least 1. The first is not paranoia — Aurora reports quality on 1-3 and ~235k
 JSON-imported Kilter rows are still on that scale, so publishing an unnormalized
 average with `bestRating: 5` understates every one of them. The count is the
 blend's **own** denominator (`upstream_ascensionist_count` where the upstream side
-actually supplied a quality, plus `boardsesh_quality_count`), never
-`ascensionist_count`: ascents are not ratings, and over-claiming is what gets
-structured data penalised.
+actually supplied a quality, plus `boardsesh_quality_count`), not
+`ascensionist_count`. Stated precisely, because the loose version — "never
+ascents" — is not a promise the expression can make: on an upstream-sourced climb
+with no native ratings yet the denominator _is_ `upstream_ascensionist_count`, and
+that is right, since Aurora's quality average is itself taken over the ascents
+that rated the climb. What is excluded is the Boardsesh ascent count, and the
+upstream ascents of a climb upstream never rated at all.
 
 `Organization`/`WebSite` carry **no** `potentialAction` / `SearchAction`. www has
 no site search after the W-16 teardown, and pointing one at an endpoint that does

@@ -112,6 +112,7 @@ export default async function ProfilePage({ params }: PageProps) {
       <ProfileJsonLd
         userId={user_id}
         displayName={initialProfile.profile?.displayName || initialProfile.name || null}
+        locale={locale}
       />
       <ProfilePageContent
         userId={user_id}

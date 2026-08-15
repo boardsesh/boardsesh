@@ -230,8 +230,18 @@ export type ShardExpansion = 'all-locales' | 'default-locale-only';
 
 export type PagedShardId = 'climbs';
 
-/** Two numbers, cheap enough for the index to read on every hit. */
+/**
+ * The shard's total item count and freshness.
+ *
+ * A small ANSWER, not a cheap question: the climbs summary is the same
+ * `DISTINCT ON` scan as the item build. That is why the index calls it behind a
+ * deadline (`SHARD_DEADLINE_MS`) and why `fetchTier2Summary` keeps its own
+ * single-flight in front of the Data Cache.
+ */
 export type PagedShardSummary = { itemCount: number; lastModified: Date | null };
+
+/** One page's slice, plus the length of the list it was sliced from. */
+export type PagedShardPage = { items: SitemapItem[]; totalItems: number };
 
 /**
  * A shard too large for one file, split across `/sitemaps/<dir>/1.xml … N.xml`.
@@ -249,9 +259,9 @@ export type PagedSitemapShard = {
   urlsPerShard: number;
   expectsUrls: boolean;
   cacheControl: string;
-  /** MUST be cheap: the index calls this, never `buildPage`. */
+  /** The index calls this, never `buildPage`. Raced against `SHARD_DEADLINE_MS`. */
   summary: () => Promise<PagedShardSummary>;
-  buildPage: (page: number) => Promise<SitemapItem[]>;
+  buildPage: (page: number) => Promise<PagedShardPage>;
 };
 
 export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
@@ -269,7 +279,7 @@ export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
     buildPage: async (page: number) => {
       const items = await buildTier2ClimbItems();
       const start = (page - 1) * CLIMB_URLS_PER_SHARD;
-      return items.slice(start, start + CLIMB_URLS_PER_SHARD);
+      return { items: items.slice(start, start + CLIMB_URLS_PER_SHARD), totalItems: items.length };
     },
   },
 ];
@@ -288,12 +298,17 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
     return unavailableResponse();
   }
 
-  const parsed = /^(\d+)\.xml$/.exec(rawPage);
+  // `[1-9]\d*` and not `\d+`: `Number('007')` is 7, so a permissive parser gives
+  // every real page an unbounded family of alias URLs (`01.xml`, `0000001.xml`)
+  // that each 200 with a six-hour cache header and each look to Search Console
+  // like a separate submission of the same URLs. A page number that was never
+  // canonical is exactly the "never valid" case this route 404s.
+  const parsed = /^([1-9]\d*)\.xml$/.exec(rawPage);
   if (!parsed) {
     return notFoundResponse();
   }
   const page = Number(parsed[1]);
-  if (!Number.isSafeInteger(page) || page < 1) {
+  if (!Number.isSafeInteger(page)) {
     return notFoundResponse();
   }
 
@@ -304,7 +319,19 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
       return notFoundResponse();
     }
 
-    const items = await shard.buildPage(page);
+    const { items, totalItems } = await shard.buildPage(page);
+    // The bound is re-derived from the list the build ACTUALLY returned, not
+    // only from the summary. The two have independent epochs — the summary is in
+    // the Next Data Cache (global), the item list is an in-process TTL (per
+    // instance) — so a warm instance holding 10,000 items can meet a refreshed
+    // summary reporting 10,001. The index then publishes page 2, whose slice is
+    // empty. Without this, `expectsUrls` turns that into a 503 on a URL the index
+    // told Googlebot to fetch, for up to the item TTL. An empty slice of a
+    // NON-empty list is an out-of-range page (404, and the crawler stops asking);
+    // an empty slice of an empty list is the regressed query `expectsUrls` is for.
+    if (items.length === 0 && totalItems > 0) {
+      return notFoundResponse();
+    }
     if (items.length === 0 && shard.expectsUrls) {
       throw new Error(
         `[sitemap] paged shard "${shard.id}" page ${page} built no items although the summary listed it — refusing to publish an empty page`,
@@ -440,6 +467,11 @@ async function buildPagedIndexEntries(shard: PagedSitemapShard): Promise<Sitemap
     return null;
   }
 
+  // Every page carries the shard's GLOBAL max(updated_at), so one stat update
+  // anywhere can make all N pages look changed. A per-page `<lastmod>` would
+  // require building the items to know which page a climb fell on — the exact
+  // scan the summary/build split exists to avoid — so the uniform value is the
+  // deliberate trade.
   return Array.from({ length: pageCount }, (_, pageIndex) => ({
     loc: absoluteUrl(shard.pagePath(pageIndex + 1)),
     lastModified: summary.lastModified,

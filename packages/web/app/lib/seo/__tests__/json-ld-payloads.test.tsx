@@ -9,6 +9,7 @@ import { absoluteUrl } from '@/app/lib/seo/base-url';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { Locale } from '@/app/lib/i18n/config';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/app/lib/i18n/server', () => ({
@@ -78,6 +79,7 @@ function creativeWork(
     currentAngleStats?: ClimbStatsForAngle | undefined;
     description?: string | null;
     overlayUrl?: string | null;
+    locale?: Locale;
   } = {},
 ) {
   return payload(
@@ -88,6 +90,7 @@ function creativeWork(
       overlayUrl={overrides.overlayUrl === undefined ? '/api/internal/board-render?x=1' : overrides.overlayUrl}
       currentAngleStats={'currentAngleStats' in overrides ? overrides.currentAngleStats : stats()}
       description={overrides.description === undefined ? 'a climb' : overrides.description}
+      locale={overrides.locale ?? 'en-US'}
     />,
   );
 }
@@ -150,6 +153,31 @@ describe('CreativeWork JSON-LD', () => {
     expect(creativeWork({ currentAngleStats: undefined })).not.toHaveProperty('aggregateRating');
   });
 
+  it('emits the rating count the blend actually has, upstream-only rows included', () => {
+    // The production shape, not a hand-picked split: Aurora supplied a quality,
+    // Boardsesh has no native ratings yet. `rating_count` is then the upstream
+    // ascent population Aurora averaged over — which IS its rating count, and is
+    // still not `ascensionist_count` (the blended total, 4,850 here). The claim
+    // this pins is narrow and true: the count is the quality blend's own
+    // denominator, never the ascent total.
+    const data = creativeWork({
+      climb: { ...climb(), ascensionist_count: 4850 } as Climb,
+      currentAngleStats: stats({ rating_count: '4800', ascensionist_count: '4850', quality_average: '3.10' }),
+    });
+
+    expect((data.aggregateRating as Record<string, unknown>).ratingCount).toBe(4800);
+    expect((data.aggregateRating as Record<string, unknown>).ratingCount).not.toBe(4850);
+  });
+
+  it('names the URL on THIS locale, matching the page canonical beside it', () => {
+    // `createPageMetadata` runs the canonical through `localeHref`, so an /es
+    // page canonicalises to the /es URL. Structured data naming the en-US URL on
+    // that page contradicts the canonical it sits next to.
+    expect(creativeWork({ locale: 'es' }).url).toBe(`https://www.boardsesh.com/es${CANONICAL}`);
+    expect(creativeWork({ locale: 'de' }).url).toBe(`https://www.boardsesh.com/de${CANONICAL}`);
+    expect(creativeWork().url).toBe(absoluteUrl(CANONICAL));
+  });
+
   it('ships no VideoObject', () => {
     expect(JSON.stringify(creativeWork())).not.toContain('VideoObject');
   });
@@ -186,8 +214,8 @@ describe('ItemList JSON-LD', () => {
   ] as Climb[];
 
   it('numbers positions globally so page 2 does not restart at 1', () => {
-    const first = payload(<ClimbListJsonLd climbs={climbs} boardDetails={BOARD_DETAILS} page={1} />);
-    const second = payload(<ClimbListJsonLd climbs={climbs} boardDetails={BOARD_DETAILS} page={2} />);
+    const first = payload(<ClimbListJsonLd climbs={climbs} boardDetails={BOARD_DETAILS} page={1} locale="en-US" />);
+    const second = payload(<ClimbListJsonLd climbs={climbs} boardDetails={BOARD_DETAILS} page={2} locale="en-US" />);
 
     const positions = (list: Record<string, unknown>) =>
       (list.itemListElement as Array<Record<string, unknown>>).map((item) => item.position);
@@ -200,7 +228,7 @@ describe('ItemList JSON-LD', () => {
   it('advertises exactly the URLs the rows link to, unnamed climbs included', () => {
     // This is what pins the static-climb-row fix: the row anchor, the page
     // canonical and this url are one string, or a climb has three URLs.
-    const data = payload(<ClimbListJsonLd climbs={climbs} boardDetails={BOARD_DETAILS} page={1} />);
+    const data = payload(<ClimbListJsonLd climbs={climbs} boardDetails={BOARD_DETAILS} page={1} locale="en-US" />);
     const urls = (data.itemListElement as Array<Record<string, unknown>>).map((item) => item.url);
 
     expect(urls).toEqual(
@@ -218,14 +246,23 @@ describe('ItemList JSON-LD', () => {
     expect(urls[1]).toContain('kilter-climb-');
   });
 
+  it('prefixes every url with the rendering locale', () => {
+    const data = payload(<ClimbListJsonLd climbs={climbs} boardDetails={BOARD_DETAILS} page={1} locale="fr" />);
+    const urls = (data.itemListElement as Array<Record<string, unknown>>).map((item) => item.url as string);
+
+    expect(urls.every((url) => url.startsWith('https://www.boardsesh.com/fr/'))).toBe(true);
+  });
+
   it('renders nothing for an empty page', () => {
-    expect(renderToString(<ClimbListJsonLd climbs={[]} boardDetails={BOARD_DETAILS} page={1} />)).toBe('');
+    expect(renderToString(<ClimbListJsonLd climbs={[]} boardDetails={BOARD_DETAILS} page={1} locale="en-US" />)).toBe(
+      '',
+    );
   });
 });
 
 describe('ProfilePage JSON-LD', () => {
   it('names the person and the profile canonical', () => {
-    const data = payload(<ProfileJsonLd userId="marco de jongh" displayName="Marco" />);
+    const data = payload(<ProfileJsonLd userId="marco de jongh" displayName="Marco" locale="en-US" />);
 
     expect(data['@type']).toBe('ProfilePage');
     expect(data.url).toBe('https://www.boardsesh.com/profile/marco%20de%20jongh');
@@ -239,11 +276,18 @@ describe('ProfilePage JSON-LD', () => {
   it('emits nothing when there is no name to claim', () => {
     // The notFound() and catch branches are both `noindex, follow`; structured
     // data there would describe a page we are asking Google to skip.
-    expect(renderToString(<ProfileJsonLd userId="ghost" displayName={null} />)).toBe('');
+    expect(renderToString(<ProfileJsonLd userId="ghost" displayName={null} locale="en-US" />)).toBe('');
+  });
+
+  it('prefixes the profile url with the rendering locale', () => {
+    const data = payload(<ProfileJsonLd userId="marco" displayName="Marco" locale="es" />);
+
+    expect(data.url).toBe('https://www.boardsesh.com/es/profile/marco');
+    expect((data.mainEntity as Record<string, unknown>).url).toBe('https://www.boardsesh.com/es/profile/marco');
   });
 
   it('leaks no email or counts', () => {
-    const serialised = JSON.stringify(payload(<ProfileJsonLd userId="marco" displayName="Marco" />));
+    const serialised = JSON.stringify(payload(<ProfileJsonLd userId="marco" displayName="Marco" locale="en-US" />));
     expect(serialised).not.toContain('email');
     expect(serialised).not.toContain('interactionStatistic');
   });
@@ -256,8 +300,10 @@ describe('the deferred work stays deferred', () => {
     const payloads = [
       JSON.stringify(creativeWork()),
       JSON.stringify(payload(await SiteJsonLd())),
-      JSON.stringify(payload(<ClimbListJsonLd climbs={[climb()]} boardDetails={BOARD_DETAILS} page={1} />)),
-      JSON.stringify(payload(<ProfileJsonLd userId="marco" displayName="Marco" />)),
+      JSON.stringify(
+        payload(<ClimbListJsonLd climbs={[climb()]} boardDetails={BOARD_DETAILS} page={1} locale="en-US" />),
+      ),
+      JSON.stringify(payload(<ProfileJsonLd userId="marco" displayName="Marco" locale="en-US" />)),
     ];
 
     for (const serialised of payloads) {
@@ -269,7 +315,7 @@ describe('the deferred work stays deferred', () => {
 
 describe('the escaping helper', () => {
   it('escapes `<` so user content cannot close the script block', () => {
-    const html = renderToString(<ProfileJsonLd userId="x" displayName={'</script><img src=x>'} />);
+    const html = renderToString(<ProfileJsonLd userId="x" displayName={'</script><img src=x>'} locale="en-US" />);
 
     expect(html).not.toContain('</script><img');
     expect(html).toContain('\\u003c/script');

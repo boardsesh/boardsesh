@@ -1,5 +1,6 @@
 import React from 'react';
-import { absoluteUrl } from '@/app/lib/seo/base-url';
+import { absoluteLocaleUrl } from '@/app/lib/seo/base-url';
+import type { Locale } from '@/app/lib/i18n/config';
 import { JsonLd } from '@/app/lib/seo/json-ld';
 
 type ProfileJsonLdProps = {
@@ -7,6 +8,8 @@ type ProfileJsonLdProps = {
   userId: string;
   /** Profile display name, then the account name. Null when neither exists. */
   displayName: string | null;
+  /** The locale this page is rendering on — the canonical is locale-prefixed. */
+  locale: Locale;
 };
 
 /**
@@ -20,21 +23,24 @@ type ProfileJsonLdProps = {
  * counts we would have to keep in step, no `interactionStatistic`. `mainEntity`
  * is the person, `url` is the profile's own canonical path.
  */
-export default function ProfileJsonLd({ userId, displayName }: ProfileJsonLdProps) {
+export default function ProfileJsonLd({ userId, displayName, locale }: ProfileJsonLdProps) {
   if (!displayName) return null;
 
-  const path = `/profile/${encodeURIComponent(userId)}`;
+  // Locale-prefixed, the same call `createPageMetadata` makes: on `/es/profile/…`
+  // the page canonicalises to the `/es` URL, and naming the en-US one here would
+  // have the structured data contradict the canonical beside it.
+  const url = absoluteLocaleUrl(`/profile/${encodeURIComponent(userId)}`, locale);
 
   return (
     <JsonLd
       data={{
         '@context': 'https://schema.org',
         '@type': 'ProfilePage',
-        url: absoluteUrl(path),
+        url,
         mainEntity: {
           '@type': 'Person',
           name: displayName,
-          url: absoluteUrl(path),
+          url,
         },
       }}
     />

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { renderToString } from 'react-dom/server';
 
 /**
  * Reposition invariant — A1 (canonical consolidation), LANDED in W-15 (#4369).
@@ -149,7 +150,16 @@ vi.mock('@/app/components/board-renderer/util', () => ({
   buildOverlayUrl: vi.fn(() => '/api/internal/board-render'),
 }));
 vi.mock('@/app/lib/warm-overlay-cache', () => ({ scheduleOverlayWarming: vi.fn() }));
-vi.mock('@/app/components/climb-front-door/climb-front-door', () => ({ default: () => null }));
+// Recorded rather than discarded: the `noindex` prop is what stops the
+// CreativeWork JSON-LD from naming the indexable twin on a hidden `/b` page, and
+// the prop is the only place that decision is made.
+const frontDoorProps = vi.fn();
+vi.mock('@/app/components/climb-front-door/climb-front-door', () => ({
+  default: (props: Record<string, unknown>) => {
+    frontDoorProps(props);
+    return null;
+  },
+}));
 vi.mock('@/app/components/climb-front-door/static-list-front-door', () => ({ default: () => null }));
 
 // `@/app/lib/url-utils` is deliberately left REAL: the canonical every page
@@ -205,6 +215,19 @@ function legacyListMetadata(searchParams: Record<string, string> = {}) {
     }),
     searchParams: Promise.resolve(searchParams as never),
   });
+}
+
+/** Renders the `/b` view page body so the props it hands the front door are observable. */
+async function renderSlugViewPage() {
+  renderToString(
+    await slugViewPage.default({
+      params: Promise.resolve({
+        board_slug: 'kilter-original-12x12',
+        angle: String(boardConfig.angle),
+        climb_uuid: CLIMB_UUID,
+      }),
+    } as never),
+  );
 }
 
 function slugListMetadata(searchParams: Record<string, string> = {}) {
@@ -270,6 +293,30 @@ describe('climb-view canonical parity (A1 landed in W-15)', () => {
 
     expect(metadata.robots).toEqual({ index: false, follow: true });
     expect(metadata.alternates).toBeUndefined();
+  });
+
+  it('tells the front door to withhold the CreativeWork url on a hidden /b board', async () => {
+    // `generateMetadata` withholding `alternates` is only half the guard: the
+    // page body renders the same canonical again as `CreativeWork.url`, which is
+    // the field Google actually uses for page association. Both halves have to
+    // agree, so the body gets the same `shouldNoindex` decision.
+    for (const hidden of [{ isUnlisted: true }, { isPublic: false }]) {
+      frontDoorProps.mockClear();
+      resolveBoardBySlug.mockResolvedValueOnce({ ...resolvedBoard, ...hidden });
+
+      await renderSlugViewPage();
+
+      expect(frontDoorProps.mock.calls[0]?.[0]).toMatchObject({ noindex: true });
+    }
+  });
+
+  it('still emits the CreativeWork url on a public /b board', async () => {
+    // Non-vacuous: the gate must be the hidden-board condition, not "always on".
+    frontDoorProps.mockClear();
+
+    await renderSlugViewPage();
+
+    expect(frontDoorProps.mock.calls[0]?.[0]).toMatchObject({ noindex: false });
   });
 });
 
