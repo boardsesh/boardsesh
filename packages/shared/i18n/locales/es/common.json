@@ -27,7 +27,8 @@
     "userMenu": "Menú de usuario",
     "startClimbing": "Empieza a escalar en la app",
     "home": "Inicio de Boardsesh",
-    "yourProfile": "Tu perfil"
+    "yourProfile": "Tu perfil",
+    "yourDashboard": "Tu panel"
   },
   "header": {
     "you": "Tú",

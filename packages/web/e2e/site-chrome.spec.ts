@@ -158,9 +158,12 @@ test.describe('Site chrome - chrome-less surfaces', () => {
 
   // Socket budget. Before W-16 the root `PersistentSessionWrapper` opened a
   // `connectionName: 'session'` client on *every* route, kiosk TVs and embeds
-  // included. A kiosk should now hold exactly the one presence socket, and an
-  // embed none at all — `embed-access.test.ts` and the leaderboard page have
-  // pinned embeds as socket-free all along.
+  // included. Both routes below are unseeded and 404 through `notFound()`, so
+  // neither mounts a product socket of its own — `KioskPresenceHub` never
+  // renders. That makes zero the only correct count on both, and what these two
+  // guard is precisely the root socket coming back: a restored root client
+  // attaches before the route resolves and would push either count to 1.
+  // `embed-access.test.ts` and the leaderboard page pin the embed side.
   async function countSockets(page: Page, url: string): Promise<number> {
     let sockets = 0;
     page.on('websocket', () => {
@@ -172,8 +175,8 @@ test.describe('Site chrome - chrome-less surfaces', () => {
     return sockets;
   }
 
-  test('opens at most one WebSocket on a kiosk route', async ({ page }) => {
-    expect(await countSockets(page, '/kiosk/does-not-exist/does-not-exist')).toBeLessThanOrEqual(1);
+  test('opens no root WebSocket on a kiosk route', async ({ page }) => {
+    expect(await countSockets(page, '/kiosk/does-not-exist/does-not-exist')).toBe(0);
   });
 
   test('opens zero WebSockets on an embed route', async ({ page }) => {

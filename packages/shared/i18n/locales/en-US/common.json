@@ -390,7 +390,8 @@
     "userMenu": "User menu",
     "startClimbing": "Start climbing in the app",
     "home": "Boardsesh home",
-    "yourProfile": "Your profile"
+    "yourProfile": "Your profile",
+    "yourDashboard": "Your dashboard"
   },
   "header": {
     "you": "You",

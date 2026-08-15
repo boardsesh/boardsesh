@@ -1,12 +1,10 @@
 import React, { type PropsWithChildren } from 'react';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { resolveBoardBySlug, boardToRouteParams } from '@/app/lib/board-slug-utils';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import { resolveBoardBySlug } from '@/app/lib/board-slug-utils';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 
-import { constructBoardSlugListUrl } from '@/app/lib/url-utils';
 import { themeTokens } from '@/app/theme/theme-config';
 
 type BoardSlugRouteParams = {
@@ -46,12 +44,6 @@ export default async function BoardSlugLayout(props: PropsWithChildren<{ params:
     return notFound();
   }
 
-  const angle = Number(params.angle);
-  const parsedParams = boardToRouteParams(board, angle);
-
-  const boardDetails = getBoardDetailsForBoard(parsedParams);
-
-  const listUrl = constructBoardSlugListUrl(board.slug, angle);
   const locale = await getLocale();
 
   return (

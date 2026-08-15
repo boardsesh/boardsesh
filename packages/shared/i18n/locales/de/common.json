@@ -390,7 +390,8 @@
     "userMenu": "Nutzer*innen-Menü",
     "startClimbing": "In der App loslegen",
     "home": "Boardsesh-Startseite",
-    "yourProfile": "Dein Profil"
+    "yourProfile": "Dein Profil",
+    "yourDashboard": "Dein Dashboard"
   },
   "header": {
     "you": "Du",

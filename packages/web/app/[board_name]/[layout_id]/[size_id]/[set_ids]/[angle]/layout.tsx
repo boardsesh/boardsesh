@@ -86,34 +86,6 @@ export default async function BoardLayout(props: PropsWithChildren<BoardLayoutPr
     }
   }
 
-  const { angle } = parsedParams;
-
-  // Fetch the board details server-side
-  const boardDetails = getBoardDetailsForBoard(parsedParams);
-
-  // Compute the list URL for last-used-board tracking. Persisted and navigated
-  // to later, so it takes the id-aware builder for the same reason the redirect
-  // above does — a bare size slug would send the climber back to a board that
-  // isn't the one they were on.
-  const listUrl =
-    tryConstructSlugListUrl(
-      parsedParams.board_name,
-      parsedParams.layout_id,
-      parsedParams.size_id,
-      parsedParams.set_ids,
-      angle,
-    ) ??
-    (boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names
-      ? constructClimbListWithSlugs(
-          boardDetails.board_name,
-          boardDetails.layout_name,
-          boardDetails.size_name,
-          boardDetails.size_description,
-          boardDetails.set_names,
-          angle,
-        )
-      : `/${boardDetails.board_name}`);
-
   const locale = await getLocale();
 
   return (

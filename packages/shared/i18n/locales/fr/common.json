@@ -390,7 +390,8 @@
     "userMenu": "Menu utilisateur",
     "startClimbing": "Commencer à grimper dans l'appli",
     "home": "Accueil Boardsesh",
-    "yourProfile": "Votre profil"
+    "yourProfile": "Votre profil",
+    "yourDashboard": "Votre tableau de bord"
   },
   "header": {
     "you": "Vous",

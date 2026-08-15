@@ -26,21 +26,18 @@ The board most specs land on:
   `[data-testid="climb-thumbnail"]` is the only row marker it emits — the
   classic list's `#onboarding-climb-card` and `[data-testid="climb-card"]` are
   gone from this route. `global-setup.ts` and `helpers/waits.ts` both accept all
-  three so the check keeps working either side of the remaining W-16 cut; the
-  seeded data requirement is unchanged (≥1 listed climb with stats at 40°).
+  three; the seeded data requirement is unchanged (≥1 listed climb with stats at
+  40°).
 - No onboarding-tagged rows are required any more. The queue-population flows
   that needed `#onboarding-climb-card` / `#onboarding-climb-card-2` are gone with
-  the interactive list: `queue-persistence.spec.ts` and
-  `play-view-swipe-close.spec.ts` are deleted, and `bottom-tab-bar.spec.ts`'s
-  queue block is skipped pending W-16.
+  the interactive list: `queue-persistence.spec.ts`,
+  `play-view-swipe-close.spec.ts` and `bottom-tab-bar.spec.ts` are all deleted.
 
 ## Per-spec assumptions
 
 | Spec                                                            | Additional data needed                                                                                                                                                                                                                                                                           | Status                                |
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------- |
-| `bottom-tab-bar.spec.ts`                                        | Default test board contract (above). `/playlists` and `/feed` reachable for the global-setup warmup. The `Queue Integration` describe is skipped pending W-16 — it double-clicks a climb card the front door doesn't render. The `Create tab` test went with the create route in W-17.           | ✅                                    |
-| `help-screenshots.spec.ts` (unauthenticated)                    | None — the whole describe is skipped pending W-16, which owns the `/help` rewrite and its replacement screenshots.                                                                                                                                                                               | ⏸️                                    |
-| `help-screenshots.spec.ts` (authenticated)                      | Test user contract. Still live, and now route-independent: W-17 (#4433) removed the board header, so the `personal progress filters` shot is gone and W-16 re-homes the drawer shots. The `party mode active session` test runs off the dummy sesh mount, not a real session.                    | ✅                                    |
+| `site-chrome.spec.ts`                                           | Test user contract (the signed-in header/footer checks run through `loginAs`). Default test board contract (above) for the board-route socket budget. `/settings`, `/notifications` and `/playlists` reachable for the signed-in link walk.                                                      | ✅                                    |
 | `layout-screenshots.spec.ts`                                    | One climb row (`[data-testid="climb-thumbnail"]`) on every supported Kilter/Tension layout URL, whose anchor resolves to that climb's front door — the spec follows it and shoots the board art there.                                                                                           | ✅                                    |
 | `board-route-teardown.spec.ts`                                  | Default test board contract (above), plus `/playlists` reachable. The deleted-path redirects are config rules, so they need no seeded board on the `/b` tree; the WebSocket checks need a real climb row to follow into a climb front door.                                                      | ✅                                    |
 | `i18n-locale-routing.spec.ts`, `i18n-locale-navigation.spec.ts` | English and Spanish locale catalogs present (covered by the in-repo `packages/shared/i18n/locales/` checked into git).                                                                                                                                                                           | ✅                                    |

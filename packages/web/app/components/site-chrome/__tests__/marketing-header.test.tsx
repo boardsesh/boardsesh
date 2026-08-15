@@ -150,6 +150,15 @@ describe('MarketingHeader', () => {
 
       expect(screen.getByLabelText('Your profile').closest('a')?.getAttribute('href')).toBe('/profile/user-1');
     });
+
+    // The bottom tab bar carried the only link to /you, and the /you header
+    // carries the only link to /notifications, so without this one both
+    // surfaces are live but unreachable.
+    it('links to /you when signed in — the only entry point left to the dashboard', () => {
+      render(<MarketingHeader />);
+
+      expect(screen.getByLabelText('Your dashboard').closest('a')?.getAttribute('href')).toBe('/you');
+    });
   });
 
   // -----------------------------------------------------------------------

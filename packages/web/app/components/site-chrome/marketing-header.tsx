@@ -10,6 +10,7 @@ import SettingsOutlined from '@mui/icons-material/SettingsOutlined';
 import IosShareOutlined from '@mui/icons-material/IosShare';
 import NotificationsOutlined from '@mui/icons-material/NotificationsOutlined';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
+import InsightsOutlined from '@mui/icons-material/InsightsOutlined';
 import TuneOutlined from '@mui/icons-material/TuneOutlined';
 import { useSession } from 'next-auth/react';
 import { useTranslation } from 'react-i18next';
@@ -225,15 +226,24 @@ export default function MarketingHeader() {
     </Button>
   );
 
+  // Signed-in climbers get two destinations here: the private dashboard and the
+  // public profile. The dashboard link is the only entry point to `/you` now
+  // that the bottom tab bar is gone, and `/you` is in turn the only place that
+  // carries the notification bell.
   const accountAction = session?.user?.id ? (
-    <IconButton
-      component={LocaleLink}
-      href={`/profile/${session.user.id}`}
-      aria-label={t('ariaLabels.yourProfile')}
-      size="small"
-    >
-      <PersonOutlined />
-    </IconButton>
+    <>
+      <IconButton component={LocaleLink} href="/you" aria-label={t('ariaLabels.yourDashboard')} size="small">
+        <InsightsOutlined />
+      </IconButton>
+      <IconButton
+        component={LocaleLink}
+        href={`/profile/${session.user.id}`}
+        aria-label={t('ariaLabels.yourProfile')}
+        size="small"
+      >
+        <PersonOutlined />
+      </IconButton>
+    </>
   ) : (
     <Button component={LocaleLink} href="/auth/login" size="small" sx={{ textTransform: 'none', flexShrink: 0 }}>
       {t('header.signIn')}

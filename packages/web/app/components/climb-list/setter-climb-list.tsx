@@ -8,8 +8,6 @@ import {
   type GetSetterClimbsFullQueryVariables,
   type GetSetterClimbsFullQueryResponse,
 } from '@boardsesh/graphql/operations';
-import { getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
-import type { UserBoard } from '@boardsesh/shared-schema';
 import type { Climb } from '@/app/lib/types';
 import MultiboardClimbList, { type SortBy } from './multiboard-climb-list';
 
@@ -20,11 +18,10 @@ type SetterClimbListProps = {
 };
 
 export default function SetterClimbList({ username, boardTypes, authToken }: SetterClimbListProps) {
-  const [selectedBoard] = useState<UserBoard | null>(null);
   const [sortBy, setSortBy] = useState<SortBy>('popular');
 
   const { data, fetchNextPage, hasNextPage, isFetching, isLoading } = useInfiniteQuery({
-    queryKey: ['setterClimbs', username, selectedBoard?.uuid ?? 'all', sortBy],
+    queryKey: ['setterClimbs', username, sortBy],
     queryFn: async ({ pageParam }) => {
       const client = createGraphQLHttpClient(authToken ?? null);
       const variables: GetSetterClimbsFullQueryVariables = {
@@ -35,14 +32,6 @@ export default function SetterClimbList({ username, boardTypes, authToken }: Set
           offset: pageParam,
         },
       };
-
-      if (selectedBoard) {
-        variables.input.boardType = selectedBoard.boardType;
-        variables.input.layoutId = selectedBoard.layoutId;
-        variables.input.sizeId = selectedBoard.sizeId;
-        variables.input.setIds = selectedBoard.setIds;
-        variables.input.angle = selectedBoard.angle ?? getDefaultAngleForBoard(selectedBoard.boardType);
-      }
 
       const response = await client.request<GetSetterClimbsFullQueryResponse, GetSetterClimbsFullQueryVariables>(
         GET_SETTER_CLIMBS_FULL,
@@ -74,7 +63,7 @@ export default function SetterClimbList({ username, boardTypes, authToken }: Set
       isLoading={isLoading}
       hasMore={hasNextPage ?? false}
       onLoadMore={handleLoadMore}
-      selectedBoard={selectedBoard}
+      selectedBoard={null}
       showSortToggle
       sortBy={sortBy}
       onSortChange={setSortBy}

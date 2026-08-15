@@ -30,13 +30,7 @@ import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { useSessionDetail } from '@/app/hooks/use-session-detail';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { Climb, BoardDetails } from '@/app/lib/types';
-import SessionOverviewPanel, { buildSessionSummaryParts } from './session-overview-panel';
-import CollapsibleSection, {
-  type CollapsibleSectionConfig,
-} from '@/app/components/collapsible-section/collapsible-section';
-import { CssBarChart } from '@/app/components/charts/css-bar-chart';
-import { buildSessionGradeBars, SESSION_GRADE_LEGEND } from '@/app/components/charts/session-grade-bars';
-import { useGradeFormat } from '@/app/hooks/use-grade-format';
+import SessionOverviewPanel from './session-overview-panel';
 import { generateSessionName } from '@/app/lib/session-utils';
 import { ConfirmPopover } from '@/app/components/ui/confirm-popover';
 import { useDeleteTick } from '@/app/hooks/use-delete-tick';
@@ -44,23 +38,14 @@ import { useDeleteTick } from '@/app/hooks/use-delete-tick';
 type SessionDetailContentProps = {
   session: SessionDetail | null;
   sessionId?: string;
-  embedded?: boolean;
   fallbackBoardDetails?: BoardDetails | null;
   afterParticipants?: React.ReactNode;
-  /** Invite content to show as a collapsible pill when embedded */
-  inviteContent?: React.ReactNode;
   /** Current board angle for display in the board preview */
   currentAngle?: number;
   /** Callback when user changes the angle via the angle selector */
   onAngleChange?: (angle: number) => void;
   /** User-facing name of the named board (e.g., "My Home Wall") */
   namedBoardName?: string;
-  /**
-   * When set, forces the CollapsibleSection to render with this key active
-   * and disables user interaction with the section headers. Used by the
-   * onboarding tour to guide the user through each section.
-   */
-  tourActiveSection?: 'invite' | 'activity' | 'analytics' | null;
 };
 
 function formatDate(isoString: string): string {
@@ -309,14 +294,11 @@ function SessionTickItem({
 export default function SessionDetailContent({
   session: initialSession,
   sessionId: sessionIdProp,
-  embedded = false,
   fallbackBoardDetails = null,
   afterParticipants,
-  inviteContent,
   currentAngle: _currentAngle,
   onAngleChange: _onAngleChange,
   namedBoardName: _namedBoardName,
-  tourActiveSection,
 }: SessionDetailContentProps) {
   const { t } = useTranslation('session');
   const { data: authSession } = useSession();
@@ -326,10 +308,9 @@ export default function SessionDetailContent({
   const { session: hookSession } = useSessionDetail({
     sessionId: sessionIdProp ?? initialSession?.sessionId,
     initialData: initialSession,
-    enabled: !embedded,
   });
 
-  const session = embedded ? initialSession : hookSession;
+  const session = hookSession;
 
   const [sessionCommentsOpen, setSessionCommentsOpen] = useState(false);
 
@@ -455,152 +436,6 @@ export default function SessionDetailContent({
 
   const noopLoadMore = useCallback(() => {}, []);
 
-  const { formatGrade, loaded: gradeFormatLoaded } = useGradeFormat();
-
-  // Compute grade distribution from ticks client-side. Ticks are the ground
-  // truth during live sessions — the backend's gradeDistribution can lag behind.
-  const effectiveGradeDistribution = useMemo(() => {
-    if (ticks.length === 0) return gradeDistribution;
-
-    const gradeMap = new Map<string, { flash: number; send: number; attempt: number }>();
-    for (const tick of ticks) {
-      const grade = tick.difficultyName ?? 'Ungraded';
-      const entry = gradeMap.get(grade) ?? { flash: 0, send: 0, attempt: 0 };
-      if (tick.status === 'flash') entry.flash++;
-      else if (tick.status === 'send') entry.send++;
-      else entry.attempt++;
-      gradeMap.set(grade, entry);
-    }
-
-    return Array.from(gradeMap.entries()).map(([grade, counts]) => ({
-      grade,
-      ...counts,
-    }));
-  }, [gradeDistribution, ticks]);
-
-  const gradeBars = useMemo(
-    () => buildSessionGradeBars(effectiveGradeDistribution, formatGrade),
-    [effectiveGradeDistribution, formatGrade],
-  );
-
-  // Build collapsible sections for embedded (drawer) mode
-  const embeddedSections = useMemo((): CollapsibleSectionConfig[] => {
-    if (!embedded) return [];
-
-    const sections: CollapsibleSectionConfig[] = [];
-
-    if (inviteContent) {
-      sections.push({
-        key: 'invite',
-        label: t('detail.sections.invite'),
-        title: t('detail.sections.inviteTitle'),
-        defaultSummary: t('detail.sections.inviteSummary'),
-        getSummary: () => [],
-        content: inviteContent,
-        defaultActive: true,
-      });
-    }
-
-    sections.push({
-      key: 'activity',
-      label: t('detail.sections.activity'),
-      title: t('detail.climbsLogged', { count: sessionClimbs.length }),
-      defaultSummary: t('detail.noClimbsYet'),
-      getSummary: () =>
-        buildSessionSummaryParts(
-          {
-            totalFlashes,
-            totalSends,
-            totalAttempts,
-            tickCount,
-            hardestGrade,
-            formatGrade: gradeFormatLoaded ? formatGrade : undefined,
-          },
-          t,
-        ),
-      flush: true,
-      content:
-        effectiveBoardDetails && sessionClimbs.length > 0 ? (
-          <VoteSummaryProvider entityType="tick" entityIds={tickUuids}>
-            <StaticClimbList
-              boardDetails={effectiveBoardDetails}
-              boardDetailsByClimb={boardDetailsByClimb}
-              unlinkedClimbUuids={unknownClimbUuids}
-              climbs={sessionClimbs}
-              isFetching={false}
-              hasMore={false}
-              onLoadMore={noopLoadMore}
-              hideEndMessage
-              renderItemExtra={renderTickDetails}
-            />
-          </VoteSummaryProvider>
-        ) : (
-          <Typography variant="body2" color="text.secondary">
-            {t('detail.noClimbsYet')}
-          </Typography>
-        ),
-    });
-
-    sections.push({
-      key: 'analytics',
-      label: t('detail.sections.analytics'),
-      title: t('detail.gradeDistribution'),
-      defaultSummary: t('detail.gradesClimbedThisSession'),
-      getSummary: () => {
-        if (effectiveGradeDistribution.length === 0) return [];
-        const count = effectiveGradeDistribution.length;
-        return [t('detail.gradesCount', { count })];
-      },
-      lazy: true,
-      content:
-        effectiveGradeDistribution.length > 0 ? (
-          <Box>
-            <CssBarChart
-              bars={gradeBars}
-              height={160}
-              mobileHeight={120}
-              gap={3}
-              ariaLabel={t('detail.sessionGradeDistribution')}
-            />
-            <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'center', mt: 1 }}>
-              {SESSION_GRADE_LEGEND.map((entry) => (
-                <Box key={entry.label} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Box sx={{ width: 10, height: 10, borderRadius: '2px', bgcolor: entry.color }} />
-                  <Typography variant="caption" color="text.secondary">
-                    {entry.label}
-                  </Typography>
-                </Box>
-              ))}
-            </Box>
-          </Box>
-        ) : (
-          <Typography variant="body2" color="text.secondary">
-            {t('detail.logSomeClimbs')}
-          </Typography>
-        ),
-    });
-
-    return sections;
-  }, [
-    embedded,
-    inviteContent,
-    sessionClimbs,
-    totalFlashes,
-    totalSends,
-    totalAttempts,
-    tickCount,
-    hardestGrade,
-    gradeFormatLoaded,
-    formatGrade,
-    effectiveBoardDetails,
-    tickUuids,
-    boardDetailsByClimb,
-    noopLoadMore,
-    renderTickDetails,
-    effectiveGradeDistribution,
-    gradeBars,
-  ]);
-
   if (!session) {
     return (
       <Box sx={{ p: 2 }}>
@@ -618,42 +453,40 @@ export default function SessionDetailContent({
   return (
     <Box
       sx={{
-        minHeight: embedded ? 'auto' : '100dvh',
-        pb: embedded ? 0 : '60px',
-        pt: embedded ? 0 : 'var(--global-header-height)',
+        minHeight: '100dvh',
+        pb: '60px',
+        pt: 'var(--global-header-height)',
       }}
     >
-      {!embedded && (
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-            px: 2,
-            py: 1.5,
-            borderBottom: `1px solid ${themeTokens.neutral[200]}`,
-          }}
-        >
-          <IconButton component={LocaleLink} href="/" size="small">
-            <ArrowBackOutlined />
-          </IconButton>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="h6" noWrap>
-              {displayName}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {formatDate(firstTickAt)}
-            </Typography>
-          </Box>
-          <IconButton size="small" onClick={handleShare} aria-label={t('detail.share')}>
-            <IosShare fontSize="small" />
-          </IconButton>
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          px: 2,
+          py: 1.5,
+          borderBottom: `1px solid ${themeTokens.neutral[200]}`,
+        }}
+      >
+        <IconButton component={LocaleLink} href="/" size="small">
+          <ArrowBackOutlined />
+        </IconButton>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography variant="h6" noWrap>
+            {displayName}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {formatDate(firstTickAt)}
+          </Typography>
         </Box>
-      )}
+        <IconButton size="small" onClick={handleShare} aria-label={t('detail.share')}>
+          <IosShare fontSize="small" />
+        </IconButton>
+      </Box>
 
       <Box
         sx={{
-          px: embedded ? { xs: 1, sm: 2 } : 2,
+          px: 2,
           py: 2,
           display: 'flex',
           flexDirection: 'column',
@@ -671,62 +504,51 @@ export default function SessionDetailContent({
           durationMinutes={durationMinutes}
           goal={goal}
           notes={notes}
-          afterParticipants={!embedded ? afterParticipants : undefined}
-          compact={embedded}
+          afterParticipants={afterParticipants}
         />
 
-        {/* Collapsible pills for embedded (drawer) mode */}
-        {embedded && embeddedSections.length > 0 && (
-          <CollapsibleSection sections={embeddedSections} forcedActiveKey={tourActiveSection ?? undefined} />
-        )}
-
-        {/* Full layout for standalone page */}
-        {!embedded && (
-          <>
-            {/* Session-level social */}
-            <Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                <VoteButton
-                  entityType="session"
-                  entityId={sessionId}
-                  initialUpvotes={upvotes}
-                  initialDownvotes={downvotes}
-                  likeOnly
-                />
-                <IconButton
-                  size="small"
-                  data-testid="session-comment-toggle"
-                  onClick={() => setSessionCommentsOpen((prev) => !prev)}
-                  sx={{ color: sessionCommentsOpen ? 'text.primary' : 'text.secondary' }}
+        {/* Session-level social */}
+        <Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+            <VoteButton
+              entityType="session"
+              entityId={sessionId}
+              initialUpvotes={upvotes}
+              initialDownvotes={downvotes}
+              likeOnly
+            />
+            <IconButton
+              size="small"
+              data-testid="session-comment-toggle"
+              onClick={() => setSessionCommentsOpen((prev) => !prev)}
+              sx={{ color: sessionCommentsOpen ? 'text.primary' : 'text.secondary' }}
+            >
+              <ChatBubbleOutlineOutlined fontSize="small" />
+              {commentCount > 0 && (
+                <Typography
+                  variant="caption"
+                  component="span"
+                  sx={{ ml: 0.5, color: 'inherit', userSelect: 'none', fontSize: 12 }}
                 >
-                  <ChatBubbleOutlineOutlined fontSize="small" />
-                  {commentCount > 0 && (
-                    <Typography
-                      variant="caption"
-                      component="span"
-                      sx={{ ml: 0.5, color: 'inherit', userSelect: 'none', fontSize: 12 }}
-                    >
-                      {commentCount}
-                    </Typography>
-                  )}
-                </IconButton>
-              </Box>
-              <Collapse in={sessionCommentsOpen} unmountOnExit>
-                <CommentSection entityType="session" entityId={sessionId} title={t('detail.comments')} />
-              </Collapse>
-            </Box>
+                  {commentCount}
+                </Typography>
+              )}
+            </IconButton>
+          </Box>
+          <Collapse in={sessionCommentsOpen} unmountOnExit>
+            <CommentSection entityType="session" entityId={sessionId} title={t('detail.comments')} />
+          </Collapse>
+        </Box>
 
-            <Divider />
+        <Divider />
 
-            {/* Climbs list */}
-            <Typography variant="subtitle1" fontWeight={600}>
-              {t('detail.climbsCount', { count: sessionClimbs.length })}
-            </Typography>
-          </>
-        )}
+        {/* Climbs list */}
+        <Typography variant="subtitle1" fontWeight={600}>
+          {t('detail.climbsCount', { count: sessionClimbs.length })}
+        </Typography>
       </Box>
 
-      {!embedded && effectiveBoardDetails && sessionClimbs.length > 0 && (
+      {effectiveBoardDetails && sessionClimbs.length > 0 && (
         <VoteSummaryProvider entityType="tick" entityIds={tickUuids}>
           <StaticClimbList
             boardDetails={effectiveBoardDetails}

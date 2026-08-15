@@ -255,9 +255,11 @@ the same reason, as the one allowlisted edge W-16 cuts.
 
 ## W-16 (+W-18) — deleting the climbing UI and swapping the root chrome (#4435)
 
-The irreversible one. `git diff --stat` against the merge base: **677 files
-changed, 1,725 insertions, 131,350 deletions** — a net **−129,625** lines,
-against the epic row's estimate of −110k. The gap is second-order orphanage the row did not
+The irreversible one. `git diff --stat` against the merge base: roughly **1.7k
+insertions against −131,350 deletions across ~680 files** — a net loss of about
+**−130k** lines, against the epic row's estimate of −110k. (Run
+`git diff --shortstat origin/main...HEAD` for the exact figure at merge; the
+insertion count moves every time this section is edited.) The gap is second-order orphanage the row did not
 name (the 338-line `persistent-session-wrapper` and its 402-line test, the
 `climb-detail` tree, 22 `app/lib` modules, 19 orphaned hooks, four
 `social/*-search-results`, the `lib/ble` adapters) plus the `public/help/`
@@ -308,9 +310,13 @@ Kept, all with live importers: `gym-welcome-db`, `moonboard-climbs-db`,
 ### Two files that look deletable and are not
 
 - **`app/lib/ble/capacitor-types.d.ts`** — the ambient `window.Capacitor`
-  declaration ~25 surviving modules type against. Taking the epic row's "delete
-  `lib/ble/*` except `capacitor-utils.ts`" literally reds the whole typecheck in
-  files that have nothing to do with Bluetooth. It is pinned in `KEPT_BLE_FILES`.
+  declaration. Six surviving source files type against it (`home-page-content`,
+  `capacitor-retirement-gate`, `auth/social-login-buttons`, `use-geolocation`,
+  `open-external-url`, `lib/hooks/use-wake-lock`) plus four test files — the
+  count `import-graph-invariant.test.ts` records alongside `KEPT_BLE_FILES`.
+  Taking the epic row's "delete `lib/ble/*` except `capacitor-utils.ts`"
+  literally reds the whole typecheck in files that have nothing to do with
+  Bluetooth. It is pinned in `KEPT_BLE_FILES`.
 - **`middleware.ts`'s `?session=` → `CLIMB_SESSION_COOKIE` rewrite** — it lost
   its last client-side _reader_ here, but `api/internal/join/[sessionId]/route.ts`
   still _writes_ the same cookie and the app reads it. Written-and-not-read on

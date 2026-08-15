@@ -22,6 +22,21 @@ This document describes the WebSocket implementation used for real-time party se
 
 ---
 
+> **Status (W-16, #4435): every web-client section below is historical.**
+> Climbing moved to the Expo app, and with it the entire web party-session
+> client — `components/persistent-session/`, `components/graphql-queue/`,
+> `components/queue-control/`, `app/lib/live-activity/` and the root
+> `PersistentSessionWrapper`. Sections that describe those modules ("Context
+> Split Pattern", "Shared queue-actions factory", "QueueBridgeProvider", "Web
+> Root Event Processor") are kept because they document behaviour the **mobile**
+> client still implements against the same protocol; the `packages/web/...`
+> paths they cite no longer resolve. The protocol, the backend resolvers and the
+> mobile client are unchanged. On www the only surviving `graphql-ws` consumers
+> are `components/kiosk/presence/kiosk-presence-hub.tsx`,
+> `social/comment-section.tsx` and `hooks/use-notification-subscription.ts`.
+
+---
+
 ## Architecture Overview
 
 The party session system uses a GraphQL-over-WebSocket architecture with the following key components:
@@ -84,6 +99,8 @@ The party session system uses a GraphQL-over-WebSocket architecture with the fol
 
 ### Context Split Pattern
 
+> Removed from web in W-16 (#4435) — the mobile client keeps the split.
+
 Both `PersistentSessionContext` and `QueueContext` are split into separate **Actions** and **Data** contexts to prevent unnecessary re-renders:
 
 - **ActionsContext** — stable callback functions (`addToQueue`, `setCurrentClimb`, etc.). Uses a `latestRef` pattern so callbacks have empty `[]` dependency arrays and never change identity. Components that only call actions (e.g., list item "add to queue" buttons) subscribe here and avoid re-rendering when queue data changes.
@@ -93,6 +110,8 @@ Both `PersistentSessionContext` and `QueueContext` are split into separate **Act
 Targeted hooks: `useQueueActions()`, `useQueueData()`, `usePersistentSessionActions()`, `usePersistentSessionState()`.
 
 ### Shared queue-actions factory
+
+> Removed from web in W-16 (#4435); `queue-control/queue-actions-core.ts` no longer exists.
 
 The queue-action surface itself (add/remove/set-current/navigate/mirror/replace/report-wall-disconnect) has a single implementation: `createQueueActionsCore(deps)` in `packages/web/app/components/queue-control/queue-actions-core.ts`. Both `GraphQLQueueProvider` (board routes) and the bridge's `usePersistentSessionQueueAdapter` (off-board) wire it with their own dependencies.
 
@@ -106,7 +125,9 @@ The queue-action surface itself (add/remove/set-current/navigate/mirror/replace/
 
 ### QueueBridgeProvider — root-level QueueContext
 
-`QueueBridgeProvider` (`packages/web/app/components/queue-control/queue-bridge-context.tsx`) is mounted once at the root inside `PersistentSessionWrapper` so a `QueueContext` value is always available, even off board routes (e.g. `/you/logbook`, `/session/[sessionId]`, `/playlists/...`). It has two modes:
+> Removed from web in W-16 (#4435); `queue-control/queue-bridge-context.tsx` no longer exists.
+
+`QueueBridgeProvider` (`packages/web/app/components/queue-control/queue-bridge-context.tsx`) is mounted once at the root inside `PersistentSessionWrapper` so a `QueueContext` value is always available, even off board routes (e.g. `/session/[sessionId]`, `/playlists/...`). It has two modes:
 
 - **Injected mode** — when a board route mounts `GraphQLQueueProvider`, it injects its full context (with the GraphQL data fetcher and route-scoped search state) into the bridge. Consumers transparently see the board route's queue context. Since the queue itself is root-owned (W6), there's no queue data to copy back on injection/eject anymore — only board-context bookkeeping (`ps.setBoardContext(boardPath, boardDetails)`, on inject AND on eject) needs syncing.
 - **Adapter mode** — off board routes, `usePersistentSessionQueueAdapter` reads `queue`/`currentClimbQueueItem`/`playlistSuggestionSource` straight from the root `persistent-session` provider, unconditionally (party or solo, no branching). Mutations still branch on `ps.activeSession` for where the _network_ call goes:
@@ -408,7 +429,7 @@ This ensures `BoardSessionBridge` only calls `activateSession()` when the actual
 
 Board presence powers the mobile "now on the wall" feed, board sheet history, and board sheet stats. It is independent of party-session join: the mobile app resolves a board id for the wall feed before subscribing to `boardNowPlaying` or fetching board-presence history/stats.
 
-The web gym kiosk (`/kiosk/{gym-slug}`, `packages/web/app/components/kiosk/presence/kiosk-presence-hub.tsx`) is a second consumer of the same feed: one graphql-ws client per TV (`connectionName: 'kiosk'`, anonymous-capable — the token from `useWsAuthToken` is simply `null` for a logged-out TV) multiplexes one `boardNowPlaying` subscription per kiosk board through one `BoardPresenceProvider` each. It never resolves board ids itself — the `gymKiosk` query returns each board's presence-channel `boardId` pre-resolved (public boards only for anonymous viewers). Kiosk reliability (5-minute manual catch-ups, config-poll reload) sits on top of the same reconnect/catch-up machinery described below. Since W-16 (#4435) the kiosk client is the only web graphql-ws consumer besides `social/comment-section.tsx` and `hooks/use-notification-subscription.ts` — the root `'session'` client that used to open a second socket on every route, kiosk TVs included, came out with `PersistentSessionWrapper`, so a kiosk now holds exactly one socket and an `/embed/…` page holds none.
+The web gym kiosk (`/kiosk/{gym-slug}`, `packages/web/app/components/kiosk/presence/kiosk-presence-hub.tsx`) is a second consumer of the same feed: one graphql-ws client per TV (`connectionName: 'kiosk'`, anonymous-capable — the token from `useWsAuthToken` is simply `null` for a logged-out TV) multiplexes one `boardNowPlaying` subscription per kiosk board through one `BoardPresenceProvider` each. It never resolves board ids itself — the `gymKiosk` query returns each board's presence-channel `boardId` pre-resolved (public boards only for anonymous viewers). Kiosk reliability (5-minute manual catch-ups, config-poll reload) sits on top of the same reconnect/catch-up machinery described below. Since W-16 (#4435) the kiosk client is the only web graphql-ws consumer besides `social/comment-section.tsx` and `hooks/use-notification-subscription.ts` — the root `'session'` client that used to open a second socket on every route, kiosk TVs included, came out with `PersistentSessionWrapper`, so an anonymous kiosk TV now holds exactly one socket and an `/embed/…` page holds none. A _signed-in_ viewer additionally holds the notification socket: `NotificationSubscriptionManager` is mounted at the root on every route (`app/layout.tsx`) and `use-notification-subscription.ts` opens its own client whenever there is an auth token — unchanged by W-16, and irrelevant to the kiosk/embed case, which is anonymous.
 
 Mobile resolves the feed board id in this order:
 
@@ -895,6 +916,8 @@ sequenceDiagram
 ```
 
 ### Web Root Event Processor (the single queue-state owner, W6)
+
+> Removed from web in W-16 (#4435) — the root `persistent-session/` provider went with the climbing UI. The reducer contract it describes is `@boardsesh/queue`, which the mobile client still owns.
 
 The web app's queue state (`queue`, `currentClimbQueueItem`, `playlistSuggestionSource`, `pendingCurrentClimbUpdates`) lives in exactly one place: the root `persistent-session/hooks/use-event-processor.ts`, which runs every incoming queue event through the shared `queueReducer` (`@boardsesh/queue`) and exposes its `dispatch` through `usePersistentSession()`. Board routes (`graphql-queue/QueueContext.tsx`) and the off-board bridge (`queue-control/queue-bridge-context.tsx`) both read this state directly and dispatch local/optimistic actions into it — see "Shared queue-actions factory" above. There is no second reducer copy to keep in sync anymore; this consolidation is what workstream W6 did. Resync decisions — sequence gating, the reconnect strategy, the 60s hash watchdog's 3-strike backoff, and the corruption-resync cooldown — all live in one `createQueueSyncGate` instance (`@boardsesh/queue-runtime`, see `sync-gate.ts`) created by `PersistentSessionProvider` and shared by the event processor, `use-session-lifecycle` (which resets it on connection teardown), and `use-session-subscriptions`.
 
@@ -2167,8 +2190,15 @@ All except `/api/watch/pair` take `Authorization: Bearer <mobile JWT>`. `navigat
 ## Onboarding tour integration points
 
 **Removed in W-16 (#4435).** The web onboarding tour (`components/onboarding/`) drove
-the real session UI with mock data, and every escape hatch it needed —
-`SeshSettingsDrawer`'s `tourMockSession` / `tourActiveSection` props,
-`CollapsibleSection`'s `forcedActiveKey`, and the `TOUR_*` window events on
-`QueueControlBar`, `ClimbsList` and `PlayViewDrawer` — went with the components
-that carried them. Nothing in the surviving web tree branches on a tour.
+the real session UI with mock data. Every escape hatch that lived on a deleted
+component went with it — `SeshSettingsDrawer`'s `tourMockSession` /
+`tourActiveSection` props and the `TOUR_*` window events on `QueueControlBar`,
+`ClimbsList` and `PlayViewDrawer` — and `SessionDetailContent`'s
+`embedded`/`tourActiveSection` drawer branch was deleted in the same PR once its
+last caller was gone. Nothing in the surviving web tree branches on a tour.
+
+One remnant is deliberate: `CollapsibleSection` (`components/collapsible-section/`)
+still implements its controlled `forcedActiveKey` mode, exercised by its own unit
+tests. It survives because `social/proposal-section.tsx` still renders the
+component (in uncontrolled mode); removing the controlled path is a separate
+cleanup, not part of the climbing teardown.
