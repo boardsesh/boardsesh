@@ -10,7 +10,9 @@ import { describe, expect, it } from 'vitest';
 // `[deploy]` block for the backend image alone. So there is no build to fail if
 // the retired Expo export step comes back — this text pin is the only oracle.
 // W-24 / #4438.
-const dockerfile = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'Dockerfile.web'), 'utf8');
+const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const dockerfile = readFileSync(join(repositoryRoot, 'Dockerfile.web'), 'utf8');
+const contextBuilder = readFileSync(join(repositoryRoot, 'scripts', 'create-service-docker-context.mjs'), 'utf8');
 
 describe('Dockerfile.web after the /app retirement', () => {
   it('runs no Expo web export', () => {
@@ -37,5 +39,13 @@ describe('Dockerfile.web after the /app retirement', () => {
     // it just happens to be the COPY the export used to ride on, so it is the
     // plausible collateral casualty of removing the export step.
     expect(dockerfile).toContain('COPY --from=builder /app/packages/web/public ./packages/web/public');
+  });
+
+  it('keeps a stale local export out of the web build context', () => {
+    // With no builder-stage rebuild left to overwrite it, this exclusion is the
+    // only thing stopping a developer's packages/web/public/app (from
+    // `vp run build:expo-web` or `dev:mobile:web-static`) riding into the image
+    // and being served as real files under /app by the runner's public/ COPY.
+    expect(contextBuilder).toContain("new Set(['packages/web/public/app'])");
   });
 });

@@ -66,10 +66,16 @@ const ignoredFileNames = new Set(['.DS_Store']);
 // Repo-relative directory paths to keep out of every context. Unlike
 // `ignoredDirectoryNames` (matched by basename, so it can't target `public/app`
 // without also dropping `packages/web/app` / `packages/mobile/app`), these match
-// the exact path from the repo root. `packages/web/public/app` is the default
-// local output of `vp run build:expo-web`; a stale copy must never ride into the
-// web image (it would ship the old shell at /app/index.html and defeat the
-// BOARDSESH_WEB=0 rollback). The Dockerfile.web builder rebuilds it from source.
+// the exact path from the repo root.
+//
+// `packages/web/public/app` is the default local output of
+// `vp run build:expo-web` (and of `vp run dev:mobile:web-static`). This
+// exclusion is load-bearing on its own since W-24 (#4438): the builder stage no
+// longer rebuilds the export, so a stale local copy riding into the context
+// would be copied verbatim to the runner's `public/` and served as real files
+// under /app — the exact second-SPA-copy problem the retirement closes, and the
+// one #3795 must not reintroduce. Guarded by
+// scripts/__tests__/dockerfile-web-no-expo-export.test.ts.
 const ignoredRepoRelativePaths = new Set(['packages/web/public/app']);
 
 const toPosix = (filePath) => filePath.split(sep).join(posix.sep);
