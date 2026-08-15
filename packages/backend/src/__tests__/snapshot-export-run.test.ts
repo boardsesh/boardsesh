@@ -31,9 +31,25 @@ import { runExport, mergeManifestEntries } from '../scripts/export-board-snapsho
 import { getWorkerDatabaseUrl } from './worker-db';
 
 const MANIFEST_KEY = 'board-snapshots/v1/manifest.json';
+const TEST_EXPORTER_IMAGE_DIGEST = `sha256:${'a'.repeat(64)}`;
 
 function quoteIdentifier(identifier: string): string {
   return `"${identifier.replaceAll('"', '""')}"`;
+}
+
+async function runHeartbeatExport(args: string[]): Promise<void> {
+  const previousDirectUrl = process.env.DATABASE_DIRECT_URL;
+  const previousImageDigest = process.env.SNAPSHOT_EXPORTER_IMAGE_DIGEST;
+  process.env.DATABASE_DIRECT_URL = getWorkerDatabaseUrl();
+  process.env.SNAPSHOT_EXPORTER_IMAGE_DIGEST = TEST_EXPORTER_IMAGE_DIGEST;
+  try {
+    await runExport([...args, '--heartbeat']);
+  } finally {
+    if (previousDirectUrl === undefined) delete process.env.DATABASE_DIRECT_URL;
+    else process.env.DATABASE_DIRECT_URL = previousDirectUrl;
+    if (previousImageDigest === undefined) delete process.env.SNAPSHOT_EXPORTER_IMAGE_DIGEST;
+    else process.env.SNAPSHOT_EXPORTER_IMAGE_DIGEST = previousImageDigest;
+  }
 }
 
 function manifestEntryFixture(boardType: string, layoutId: number, key: string): SnapshotManifestEntry {
@@ -256,6 +272,30 @@ describe('runExport — threshold refresh', () => {
     expect(listS3Objects).not.toHaveBeenCalled();
   });
 
+  it('publishes only a refresh heartbeat for a healthy threshold no-op', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await seedStatsDelta('kilter', 'k1-a', 499);
+    const previousManifest = manifestFixture([manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`)]);
+    serveExistingManifest(previousManifest);
+
+    await runHeartbeatExport(thresholdArgs);
+
+    expect(vi.mocked(uploadToS3).mock.calls.map(([, key]) => key)).toEqual(['board-snapshots/ops/refresh.json']);
+    const [body, , contentType, options] = vi.mocked(uploadToS3).mock.calls[0];
+    expect(contentType).toBe('application/json');
+    expect(options).toEqual({ cacheControl: 'no-store, max-age=0' });
+    expect(JSON.parse((body as Buffer).toString('utf8'))).toMatchObject({
+      formatVersion: 1,
+      runKind: 'refresh',
+      source: 'primary',
+      imageDigest: TEST_EXPORTER_IMAGE_DIGEST,
+      keyPrefix: GZIP_PREFIX,
+      manifestGeneratedAt: previousManifest.generatedAt,
+      refreshedLayouts: 0,
+    });
+    expect(listS3Objects).not.toHaveBeenCalled();
+  });
+
   it('rebuilds only the layout at the exact 500-row threshold and preserves every other entry', async () => {
     await seedClimb('kilter', 1, 'k1-a');
     await seedClimb('kilter', 2, 'k2-a');
@@ -292,6 +332,8 @@ describe('runExport — threshold refresh', () => {
     const testSuffix = `w${process.env.VITEST_POOL_ID ?? '0'}_p${process.pid}`;
     const roleName = `snapshot_visibility_peer_${testSuffix}`;
     const quotedRole = quoteIdentifier(roleName);
+    // Fixed credential for a disposable local test role, never a production
+    // secret. CREATE ROLE does not accept a bind parameter in this position.
     const peerPassword = 'snapshot-visibility-peer-test';
     const adminPool = createPool();
     await adminPool.unsafe(`DROP ROLE IF EXISTS ${quotedRole}`);
@@ -605,6 +647,46 @@ describe('runExport — gzip + key-prefix (dual-publish transition)', () => {
     expect(options).toEqual({ contentEncoding: 'gzip' });
     expect((body as Buffer)[0]).toBe(0x1f); // gzip magic
     expect((body as Buffer)[1]).toBe(0x8b);
+  });
+
+  it('publishes a successful full manifest before matching full and refresh heartbeats', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+
+    await runHeartbeatExport(['--gzip', '--key-prefix', GZIP_PREFIX]);
+
+    const uploadCalls = vi.mocked(uploadToS3).mock.calls;
+    const uploadedKeys = uploadCalls.map(([, key]) => key);
+    expect(uploadedKeys.slice(-3)).toEqual([
+      GZIP_MANIFEST_KEY,
+      'board-snapshots/ops/full.json',
+      'board-snapshots/ops/refresh.json',
+    ]);
+    const manifest = uploadedManifest(GZIP_MANIFEST_KEY);
+    const fullHeartbeatCall = uploadCalls.find(([, key]) => key === 'board-snapshots/ops/full.json')!;
+    const refreshHeartbeatCall = uploadCalls.find(([, key]) => key === 'board-snapshots/ops/refresh.json')!;
+    const fullHeartbeat = JSON.parse((fullHeartbeatCall[0] as Buffer).toString('utf8')) as Record<string, unknown>;
+    const refreshHeartbeat = JSON.parse((refreshHeartbeatCall[0] as Buffer).toString('utf8')) as Record<
+      string,
+      unknown
+    >;
+
+    expect(fullHeartbeatCall.slice(2)).toEqual(['application/json', { cacheControl: 'no-store, max-age=0' }]);
+    expect(refreshHeartbeatCall.slice(2)).toEqual(['application/json', { cacheControl: 'no-store, max-age=0' }]);
+    expect(fullHeartbeat).toMatchObject({
+      formatVersion: 1,
+      runKind: 'full',
+      source: 'primary',
+      imageDigest: TEST_EXPORTER_IMAGE_DIGEST,
+      keyPrefix: GZIP_PREFIX,
+      manifestGeneratedAt: manifest.generatedAt,
+      refreshedLayouts: 1,
+    });
+    expect(refreshHeartbeat).toMatchObject({ ...fullHeartbeat, runKind: 'refresh' });
+    expect(fullHeartbeat.completedAt).toBe(refreshHeartbeat.completedAt);
+    expect(fullHeartbeat.systemIdentifier).toMatch(/^\d+$/);
+    expect(fullHeartbeat.timelineId).toBeGreaterThan(0);
+    expect(fullHeartbeat.targetLsn).toMatch(/^[0-9A-F]+\/[0-9A-F]+$/);
+    expect(fullHeartbeat.replayLsn).toBe(fullHeartbeat.targetLsn);
   });
 
   it('--gzip publishes the pre-compression size in uncompressedBytes, distinct from the stored bytes', async () => {

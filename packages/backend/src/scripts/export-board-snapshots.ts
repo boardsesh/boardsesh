@@ -128,11 +128,11 @@ const SNAPSHOT_TABLES: readonly SnapshotTableName[] = ['board_climbs', 'board_cl
 const DELETIONS_SNAPSHOT_META_TABLE = 'sync_deletions';
 const SNAPSHOT_EXPORT_APPLICATION_PREFIX = 'boardsesh-snapshot-export-';
 
-// postgres.js normally converts scalar dates/timestamps to Date and parses
-// their array forms. Snapshot normalization needs the exact server text so it
-// can preserve microseconds and timestamp-without-time-zone wall clocks. Use
-// postgres.js's documented custom-type boundary directly instead of relying on
-// drizzle() to mutate client.options as a constructor side effect.
+// Match the exact transparent-parser OID list installed by the pinned Drizzle
+// postgres-js driver without depending on its constructor side effect. Most are
+// date/time scalars and arrays; 1231 is intentionally numeric[] because Drizzle
+// also preserves that value as server text. OID 1183 (time[]) is intentionally
+// absent from Drizzle's list. The parity test fails if either contract changes.
 const passthroughSnapshotPostgresValue = (value: unknown): unknown => value;
 const SNAPSHOT_POSTGRES_TYPES = {
   snapshotText: {
@@ -416,6 +416,38 @@ export function createIsolatedSnapshotPool(connectionString: string, max: number
     types: SNAPSHOT_POSTGRES_TYPES,
   });
   return sqlClient;
+}
+
+/**
+ * postgres.js ReservedSql deliberately lacks `.begin()`. Snapshot reads still
+ * need one REPEATABLE READ transaction on the exact backend whose identity or
+ * replay state was validated, so expose a pool-shaped view whose transaction
+ * runner issues BEGIN/COMMIT/ROLLBACK on that reserved session itself.
+ */
+export function reservedSnapshotClient(reservedClient: ReservedSql): Sql {
+  const beginReservedTransaction = async (
+    callback: (transaction: TransactionSql) => Promise<unknown>,
+  ): Promise<unknown> => {
+    await reservedClient.unsafe('BEGIN');
+    try {
+      const result = await callback(reservedClient as unknown as TransactionSql);
+      await reservedClient.unsafe('COMMIT');
+      return result;
+    } catch (error) {
+      await reservedClient.unsafe('ROLLBACK').catch(() => {});
+      throw error;
+    }
+  };
+
+  return new Proxy(reservedClient as unknown as Sql, {
+    apply(target, _thisArgument, argumentsList) {
+      return Reflect.apply(target, target, argumentsList);
+    },
+    get(target, property) {
+      if (property === 'begin') return beginReservedTransaction;
+      return Reflect.get(target, property, target);
+    },
+  });
 }
 
 function fenceRowFrom(rows: readonly unknown[], description: string): FenceRow {
@@ -750,6 +782,7 @@ async function createFencedPrimarySnapshotContext(): Promise<SnapshotDatabaseCon
   try {
     primaryReader = await primaryPool.reserve();
     const reservedPrimaryReader = primaryReader;
+    const snapshotPrimaryReader = reservedSnapshotClient(reservedPrimaryReader);
     fence = await acquirePrimaryFence();
     const assertPublishFence = async (): Promise<void> => {
       if (!fence) throw new Error('snapshot coordinator connection was released before publish');
@@ -765,7 +798,7 @@ async function createFencedPrimarySnapshotContext(): Promise<SnapshotDatabaseCon
       // Identity checks and every REPEATABLE READ bulk transaction stay on one
       // reserved backend. A mixed/load-balanced URL cannot validate against one
       // server and stream rows from another.
-      sqlClient: reservedPrimaryReader,
+      sqlClient: snapshotPrimaryReader,
       boundary: {
         source: 'primary',
         stableBefore: fence.stableBefore,
@@ -799,6 +832,7 @@ async function createReplicaSnapshotContext(): Promise<SnapshotDatabaseContext> 
   let fence: PrimaryFenceHandle | null = null;
   try {
     replicaReader = await replicaPool.reserve();
+    const snapshotReplicaReader = reservedSnapshotClient(replicaReader);
     fence = await acquirePrimaryFence();
 
     const maxLagSeconds = positiveEnvironmentSeconds(
@@ -807,7 +841,7 @@ async function createReplicaSnapshotContext(): Promise<SnapshotDatabaseContext> 
     );
     const timeoutSeconds = positiveEnvironmentSeconds('SNAPSHOT_REPLICA_WAIT_SECONDS', DEFAULT_REPLICA_WAIT_SECONDS);
     const replayStatus = await waitForReplicaReplay({
-      sqlClient: replicaReader,
+      sqlClient: snapshotReplicaReader,
       targetLsn: fence.targetLsn,
       maxLagSeconds,
       timeoutSeconds,
@@ -829,7 +863,7 @@ async function createReplicaSnapshotContext(): Promise<SnapshotDatabaseContext> 
     return {
       // Replay checks and all bulk transactions stay on the exact same local
       // standby backend for the full run.
-      sqlClient: replicaReader,
+      sqlClient: snapshotReplicaReader,
       boundary: {
         source: 'replica',
         stableBefore: fence.stableBefore,
