@@ -128,6 +128,7 @@ export default function SettingsPageContent() {
   const { showMessage } = useSnackbar();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { gradeFormat, setGradeFormat, loaded: gradeFormatLoaded } = useGradeFormat();
+
   // Redirect unauthenticated users to login with a return URL
   useEffect(() => {
     if (status === 'unauthenticated') {

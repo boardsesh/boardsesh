@@ -44,6 +44,7 @@ export default function FeedPageContent({
   } else {
     isAuthenticated = false;
   }
+
   // Read state from URL params (with fallbacks to server-provided initial values)
   const tabParam = searchParams.get('tab');
   const activeTab: FeedTab = VALID_TABS.includes(tabParam as FeedTab) ? (tabParam as FeedTab) : initialTab;
