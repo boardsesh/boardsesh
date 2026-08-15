@@ -85,7 +85,23 @@ export function createPageMetadata({
     : undefined;
 
   return {
-    title: fullTitle,
+    // `absolute`, not a bare string. The root layout sets
+    // `title.template = '%s | Boardsesh'` (app/layout.tsx), and Next applies that
+    // template to any descendant whose title is a plain string. `fullTitle`
+    // already carries the suffix, so a plain string here renders
+    // `… | Boardsesh | Boardsesh` — which is exactly what production served on
+    // every page outside the board tree until #4472.
+    //
+    // The board tree escaped only by accident: its
+    // `[board_name]/…/[angle]/layout.tsx` exports its own `generateMetadata`
+    // returning a plain `title` string, which consumes the inherited template
+    // before `/list` and `/view/[climb_uuid]` ever see it. Do not rely on that —
+    // `absolute` makes the outcome the same in both trees.
+    //
+    // `openGraph.title` and `twitter.title` below are already immune: Next never
+    // applies the template to them, which is why they were correct in production
+    // while `<title>` — the one Google renders in the SERP — was not.
+    title: { absolute: fullTitle },
     description,
     alternates,
     robots,

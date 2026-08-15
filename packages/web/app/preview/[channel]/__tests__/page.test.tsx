@@ -47,7 +47,7 @@ describe('OTA preview page', () => {
   it('names the PR in the title and keeps the page out of the index', async () => {
     const metadata = await pageModule.generateMetadata({ params: Promise.resolve({ channel: 'pr-1234' }) });
 
-    expect(metadata.title).toBe('Try PR #1234 in the app | Boardsesh');
+    expect(metadata.title).toEqual({ absolute: 'Try PR #1234 in the app | Boardsesh' });
     expect(metadata.robots).toEqual({ index: false, follow: true });
   });
 

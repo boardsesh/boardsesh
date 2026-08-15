@@ -29,7 +29,7 @@ describe('SEO metadata helper', () => {
         path: 'docs',
       });
 
-      expect(metadata.title).toBe('API Documentation | Boardsesh');
+      expect(metadata.title).toEqual({ absolute: 'API Documentation | Boardsesh' });
       expect(metadata.description).toBe('REST and WebSocket docs for Boardsesh.');
       expect(metadata.alternates?.canonical).toBe('/docs');
       expect(metadata.openGraph).toEqual({
@@ -96,7 +96,64 @@ describe('SEO metadata helper', () => {
 
       expect(metadata.robots).toEqual({ index: false, follow: true });
       expect(metadata.alternates?.canonical).toBe('/auth/login');
-      expect(metadata.title).toBe('Login | Boardsesh');
+      expect(metadata.title).toEqual({ absolute: 'Login | Boardsesh' });
+    });
+  });
+
+  // #4472. Production shipped `<title>… | Boardsesh | Boardsesh</title>` on every
+  // page outside the board tree, because two independent things brand the title:
+  // `withBrandTitle` here, and the root layout's `title.template = '%s | Boardsesh'`
+  // (app/layout.tsx), which Next applies to any descendant whose title is a plain
+  // string. Returning `{ absolute }` is what stops the second one.
+  describe('brand suffix is applied exactly once (#4472)', () => {
+    const brandOccurrences = (value: string) => value.match(/\|\s*Boardsesh/g)?.length ?? 0;
+
+    it('never returns a bare-string title for the root layout template to re-brand', () => {
+      const metadata = createPageMetadata({
+        title: "Marco's Kilter Sessions",
+        description: 'Sessions and sends.',
+        path: '/profile/123',
+      });
+
+      // The load-bearing assertion. A bare string here is silently re-branded by
+      // the ancestor template, and no assertion on its *value* can see that
+      // happen — the doubling occurs after this function returns.
+      expect(typeof metadata.title).not.toBe('string');
+      expect(metadata.title).toEqual({ absolute: "Marco's Kilter Sessions | Boardsesh" });
+    });
+
+    it('carries the suffix once in the page, Open Graph and Twitter titles alike', () => {
+      const metadata = createPageMetadata({
+        title: 'Kilter climbs at 40°',
+        description: 'Browse climbs.',
+        path: '/kilter/original/12x12-square/screw_bolt/40/list',
+      });
+
+      const pageTitle = (metadata.title as { absolute: string }).absolute;
+      expect(brandOccurrences(pageTitle)).toBe(1);
+      expect(brandOccurrences(String(metadata.openGraph?.title))).toBe(1);
+      expect(brandOccurrences(String(metadata.twitter?.title))).toBe(1);
+    });
+
+    it('does not add a second suffix to a title that already carries one', () => {
+      const metadata = createPageMetadata({
+        title: 'API Documentation | Boardsesh',
+        description: 'Docs.',
+        path: '/docs',
+      });
+
+      expect(metadata.title).toEqual({ absolute: 'API Documentation | Boardsesh' });
+      expect(brandOccurrences((metadata.title as { absolute: string }).absolute)).toBe(1);
+    });
+
+    it('leaves a Boardsesh-prefixed title alone', () => {
+      const metadata = createPageMetadata({
+        title: 'Boardsesh - Train smarter on your climbing board',
+        description: 'Home.',
+        path: '/',
+      });
+
+      expect(metadata.title).toEqual({ absolute: 'Boardsesh - Train smarter on your climbing board' });
     });
   });
 });
