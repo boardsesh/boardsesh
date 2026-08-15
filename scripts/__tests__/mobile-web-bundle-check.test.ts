@@ -11,10 +11,28 @@ const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = join(currentDirectory, '..', '..');
 const sourceGuardScript = join(repositoryRoot, 'scripts', 'mobile-web-bundle-check.sh');
 const sourceExportScript = join(repositoryRoot, 'scripts', 'build-expo-web-export.sh');
+const sourcePatchScript = join(repositoryRoot, 'scripts', 'lib', 'patch-expo-web-pwa-manifest.mjs');
 
 const GLUE_PATH = 'board_renderer_wasm.js';
 const WASM_PATH = 'board_renderer_wasm_bg.wasm';
 const WORKER_PATH = 'board-render.worker.js';
+
+// The export script's PWA-manifest step (W-24, #4438) reads the rendered shell
+// and manifest.json back out of the export, so the stub has to emit real ones —
+// a `touch`ed empty index.html would fail every case here for the wrong reason.
+const EXPORT_SHELL_AND_MANIFEST = `cat > "$output_dir/index.html" <<'SHELL_EOF'
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Boardsesh</title>
+    <link rel="manifest" href="/app/manifest.json" />
+  </head>
+  <body><div id="root"></div></body>
+</html>
+SHELL_EOF
+cat > "$output_dir/manifest.json" <<'MANIFEST_EOF'
+{ "name": "Boardsesh", "start_url": "/", "scope": "/" }
+MANIFEST_EOF`;
 
 describe('mobile-web-bundle-check.sh', () => {
   let fixtureRoot: string;
@@ -36,6 +54,9 @@ describe('mobile-web-bundle-check.sh', () => {
     // The guard delegates the export to build-expo-web-export.sh; ship it too.
     copyFileSync(sourceGuardScript, fixtureGuardScript);
     copyFileSync(sourceExportScript, join(fixtureRoot, 'scripts', 'build-expo-web-export.sh'));
+    // …and the PWA-manifest patcher the export script shells out to.
+    mkdirSync(join(fixtureRoot, 'scripts', 'lib'), { recursive: true });
+    copyFileSync(sourcePatchScript, join(fixtureRoot, 'scripts', 'lib', 'patch-expo-web-pwa-manifest.mjs'));
     // Pre-seed the isolated web-runtime install so the export script skips its
     // `bun install` step (no network in the test).
     mkdirSync(join(fixtureRoot, 'packages', 'mobile', 'web-runtime', 'node_modules', 'react-native-web'), {
@@ -61,7 +82,7 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 mkdir -p "$output_dir/wasm"
-touch "$output_dir/index.html"
+${EXPORT_SHELL_AND_MANIFEST}
 touch "$output_dir/wasm/${GLUE_PATH}"
 touch "$output_dir/wasm/${WASM_PATH}"
 touch "$output_dir/wasm/${WORKER_PATH}"
@@ -134,7 +155,7 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 mkdir -p "$output_dir/wasm"
-touch "$output_dir/index.html"
+${EXPORT_SHELL_AND_MANIFEST}
 touch "$output_dir/wasm/${GLUE_PATH}"
 touch "$output_dir/wasm/${WASM_PATH}"
 `,

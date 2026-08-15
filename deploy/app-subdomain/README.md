@@ -27,7 +27,9 @@ else falls through to the shell.
 ## `_headers` — security + caching
 
 - `X-Robots-Tag: noindex` — this is an authenticated utility surface, kept out of
-  search indexes (mirrors the `/app` surface's `noindex`, see docs/expo-web.md).
+  search indexes. Since W-24 (#4438) retired the `/app` static path this file is
+  the only production source of that header for the browser app; the dev `/app`
+  proxy gets its own from `packages/web/middleware.ts` (see docs/expo-web.md).
 - `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`
   — standard hardening.
 - `/_expo/*` and `/assets/*` → `Cache-Control: public, max-age=31536000, immutable`.
@@ -43,9 +45,8 @@ else falls through to the shell.
 `@boardsesh/board-renderer-wasm` glue instantiates the WASM module via
 `new Function(...)`, so the renderer depends on `unsafe-eval` /
 `wasm-unsafe-eval` being permitted. A strict `script-src` (without those
-allowances) breaks board rendering outright. This is the same constraint the
-`/app` surface documents — see the "WASM glue needs `Function()`" note in
-`docs/expo-web.md`.
+allowances) breaks board rendering outright. See the "WASM glue needs
+`Function()`" note in `docs/expo-web.md`.
 
 `__tests__/headers.test.ts` enforces it. A policy that restricts script sources
 fails CI unless it grants both `'unsafe-eval'` and `'wasm-unsafe-eval'`, and

@@ -704,12 +704,30 @@ jobs:
             echo "$cc" | grep -qi 'immutable'
           }
 
+          check_manifest_link() {
+            # The bug this guards (W-24, #4438): index.html asked for
+            # /app/manifest.json, _redirects' `/* /index.html 200` answered it
+            # with the SPA shell, and the browser silently got HTML where a
+            # manifest belongs — no install prompt, console error every load,
+            # HTTP 200 the whole way. scripts/lib/patch-expo-web-pwa-manifest.mjs
+            # rewrites the href from the export's baseUrl; this is the
+            # end-to-end proof it landed on the real deploy.
+            local href
+            href=$(curl -sS "$base/" \
+              | grep -oE '<link[^>]*rel="manifest"[^>]*>' \
+              | grep -oE 'href="[^"]+"' | head -n1 | cut -d'"' -f2)
+            [ "$href" = "/manifest.json" ] || { echo "  manifest href is '$href', expected /manifest.json"; return 1; }
+            local out; out=$(curl -sS -o /dev/null -w '%{http_code} %{content_type}' "$base$href")
+            echo "$out" | grep -q '^200 ' && echo "$out" | grep -qi 'application/json'
+          }
+
           retry "root / → 200 text/html"                 check_root
           retry "deep route /climbs → 200 (SPA shell)"    check_deep_route
           retry "X-Robots-Tag: noindex on /"              check_noindex
           retry "wasm binary → 200 wasm/octet-stream"     check_wasm
           retry "index.html is NOT immutable-cached"      check_index_not_immutable
           retry "hashed _expo asset is immutable-cached"  check_hashed_asset_immutable
+          retry "PWA manifest link → 200 application/json"  check_manifest_link
 
       - name: Install Playwright chromium
         run: cd packages/web && bunx playwright install --with-deps chromium
