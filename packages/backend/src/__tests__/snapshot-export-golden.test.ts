@@ -240,12 +240,12 @@ describe('board-snapshot export ↔ live pull parity', () => {
   it('models a long-running delete older than the stability window and fails closed without activity visibility', () => {
     const boundary = selectDeletionReplayBoundary({
       artifactBuiltAt: '2026-06-01T11:59:50.000Z',
+      stableBefore: '2026-06-01T11:59:30.000Z',
       exportTransactionStartedAt: '2026-06-01T12:00:00.000Z',
       // This DELETE began two minutes before the export. Its deleted_at can be
       // older than the ordinary 30-second stability boundary even though its
       // uncommitted row remains visible in the artifact snapshot.
       oldestActiveTransactionStartedAt: '2026-06-01T11:58:00.000Z',
-      stabilityWindowSeconds: 30,
       visibilityEstablished: true,
     });
     expect(boundary).toBe('2026-06-01T11:58:00.000Z');
@@ -253,9 +253,9 @@ describe('board-snapshot export ↔ live pull parity', () => {
     expect(
       selectDeletionReplayBoundary({
         artifactBuiltAt: '2026-06-01T11:59:50.000Z',
+        stableBefore: '2026-06-01T11:59:30.000Z',
         exportTransactionStartedAt: '2026-06-01T12:00:00.000Z',
         oldestActiveTransactionStartedAt: null,
-        stabilityWindowSeconds: 30,
         visibilityEstablished: false,
       }),
     ).toBeNull();
@@ -263,9 +263,9 @@ describe('board-snapshot export ↔ live pull parity', () => {
     expect(
       selectDeletionReplayBoundary({
         artifactBuiltAt: new Date('invalid'),
+        stableBefore: '2026-06-01T11:59:30.000Z',
         exportTransactionStartedAt: '2026-06-01T12:00:00.000Z',
         oldestActiveTransactionStartedAt: null,
-        stabilityWindowSeconds: 30,
         visibilityEstablished: true,
       }),
     ).toBeNull();
@@ -310,7 +310,6 @@ describe('board-snapshot export ↔ live pull parity', () => {
         filePath,
         builtAt: artifactBuiltAt,
         stableBefore: artifactBuiltAt,
-        stabilityWindowSeconds: 0,
       });
 
       // The uncommitted DELETE is invisible to the RR snapshot, so the row is
@@ -495,17 +494,18 @@ describe('board-snapshot export ↔ live pull parity', () => {
     expect(statsMeta.watermark_sync_seq).toBe(String(statsWatermarkRow.sync_seq));
   });
 
-  it('records a deletion replay boundary from the export transaction clock minus the stability window', async () => {
+  it('uses the authoritative run-wide stable_before as the deletion replay boundary', async () => {
     await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
     const stabilityWindowSeconds = 30;
     const beforeRow = (
       await db.execute(sql`
         SELECT
           clock_timestamp() AS built_at,
-          clock_timestamp() - (${stabilityWindowSeconds} * INTERVAL '1 second') AS replay_from
+          clock_timestamp() - (${stabilityWindowSeconds} * INTERVAL '1 second') AS stable_before
       `)
-    )[0] as { built_at: unknown; replay_from: unknown };
+    )[0] as { built_at: unknown; stable_before: unknown };
     const artifactBuiltAt = toIso(beforeRow.built_at);
+    const stableBefore = toIso(beforeRow.stable_before);
 
     const filePath = join(workDir, 'artifact-deletion-replay.db');
     await exportLayoutSnapshot({
@@ -514,20 +514,11 @@ describe('board-snapshot export ↔ live pull parity', () => {
       layoutId: LAYOUT_ID,
       filePath,
       builtAt: artifactBuiltAt,
-      stableBefore: artifactBuiltAt,
-      stabilityWindowSeconds,
+      stableBefore,
     });
 
-    const afterRow = (
-      await db.execute(sql`
-        SELECT clock_timestamp() - (${stabilityWindowSeconds} * INTERVAL '1 second') AS replay_from
-      `)
-    )[0] as { replay_from: unknown };
     const deletionMeta = readArtifactMeta(filePath, 'sync_deletions')!;
-    const replayFromMs = Date.parse(String(deletionMeta.watermark_updated_at));
-
-    expect(replayFromMs).toBeGreaterThanOrEqual(Date.parse(toIso(beforeRow.replay_from)));
-    expect(replayFromMs).toBeLessThanOrEqual(Date.parse(toIso(afterRow.replay_from)));
+    expect(Date.parse(String(deletionMeta.watermark_updated_at))).toBe(Date.parse(stableBefore));
     expect(deletionMeta).toMatchObject({
       table_name: 'sync_deletions',
       watermark_sync_seq: '0',
@@ -678,12 +669,50 @@ describe('board_climb_grades snapshot artifact', () => {
       filePath,
       builtAt: BUILT_AT,
       stableBefore: INCLUDE_ALL_STABLE_BEFORE,
-      stabilityWindowSeconds: 0,
     });
 
     expect(result.deletionsReplayFrom).toBeNull();
     expect(result.deletionsReplayFallbackReason).toBe('observer-pool-capacity');
     expect(readArtifactMetaTableNames(filePath)).toEqual(['board_climb_stats', 'board_climbs']);
+  });
+
+  it('uses a primary-fenced cutoff without requiring a second reader connection', async () => {
+    await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+
+    const primaryPool = createPool();
+    const singleConnectionReader = new Proxy(primaryPool, {
+      get(target, property) {
+        if (property === 'options') return { ...target.options, max: 1 };
+        return Reflect.get(target, property, target);
+      },
+    });
+    const stableBefore = '2026-05-31T23:59:30.000Z';
+    const filePath = join(workDir, 'fenced-boundary-artifact.db');
+    const result = await exportLayoutSnapshot({
+      sqlClient: singleConnectionReader,
+      boardType: BOARD_TYPE,
+      layoutId: LAYOUT_ID,
+      filePath,
+      builtAt: BUILT_AT,
+      stableBefore,
+      stableBeforeIncludesActiveTransactions: true,
+    });
+
+    expect(result.deletionsReplayFrom).toBe(stableBefore);
+    expect(result.deletionsReplayFallbackReason).toBeNull();
+    expect(readArtifactMetaTableNames(filePath)).toEqual(['board_climb_stats', 'board_climbs', 'sync_deletions']);
+
+    const builtAtFirstFilePath = join(workDir, 'fenced-built-at-boundary-artifact.db');
+    const builtAtFirstResult = await exportLayoutSnapshot({
+      sqlClient: singleConnectionReader,
+      boardType: BOARD_TYPE,
+      layoutId: LAYOUT_ID,
+      filePath: builtAtFirstFilePath,
+      builtAt: BUILT_AT,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
+      stableBeforeIncludesActiveTransactions: true,
+    });
+    expect(builtAtFirstResult.deletionsReplayFrom).toBe(BUILT_AT);
   });
 
   it('carries ONLY board_climb_grades and its own one-row snapshot_meta', async () => {

@@ -156,8 +156,9 @@ jobs:
     concurrency:
       group: export-board-snapshots
       cancel-in-progress: false
-      # A newer watchdog superseding a queued one is intentional: it checks the
-      # same mutable heartbeat objects at a later, more useful point in time.
+      # The running job is never cancelled. Actions keeps one pending run, so a
+      # newer watchdog may replace only that queued run; it checks the same
+      # mutable heartbeat objects at a later, more useful point in time.
     environment: Production
     env:
       SNAPSHOT_EXPORTER_IMAGE_DIGEST: ${{ vars.SNAPSHOT_EXPORTER_IMAGE_DIGEST }}
@@ -248,16 +249,18 @@ jobs:
             # Match the homelab full-run contract: identity first, then the live
             # gzip pass which publishes both heartbeats. If gzip fails, no
             # partial-success marker is trusted; retrying identity is harmless
-            # and safer than inferring completion from mutable artifacts.
+            # and safer than inferring completion from mutable artifacts. The
+            # two prefixes are independent publications, so each invocation
+            # acquires and proves its own primary fence.
             docker run --rm "${common_env[@]}" "$EXPORTER_IMAGE" \
               node --import tsx src/scripts/export-board-snapshots.ts --source=primary --fence
             docker run --rm "${common_env[@]}" "$EXPORTER_IMAGE" \
               node --import tsx src/scripts/export-board-snapshots.ts \
-              --source=primary --gzip --key-prefix board-snapshots/v1-gzip --heartbeat
+              --source=primary --fence --gzip --key-prefix board-snapshots/v1-gzip --heartbeat
           else
             docker run --rm "${common_env[@]}" "$EXPORTER_IMAGE" \
               node --import tsx src/scripts/export-board-snapshots.ts \
-              --source=primary --gzip --key-prefix board-snapshots/v1-gzip \
+              --source=primary --fence --gzip --key-prefix board-snapshots/v1-gzip \
               --refresh-threshold=500 --heartbeat
           fi
 

@@ -41,6 +41,36 @@ function runBlock(source: string, stepName: string): string {
   return blockLines.join('\n');
 }
 
+function mappingBlock(source: string, mappingName: string): string {
+  const lines = source.split('\n');
+  const mappingIndex = lines.findIndex((line) => line.trim() === `${mappingName}:`);
+  if (mappingIndex < 0) throw new Error(`missing YAML mapping: ${mappingName}`);
+  const mappingIndentation = indentation(lines[mappingIndex]);
+  let endIndex = lines.length;
+  for (let lineIndex = mappingIndex + 1; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex];
+    if (line.trim() && indentation(line) <= mappingIndentation) {
+      endIndex = lineIndex;
+      break;
+    }
+  }
+  return lines.slice(mappingIndex + 1, endIndex).join('\n');
+}
+
+function foldedCondition(source: string): string {
+  const lines = source.split('\n');
+  const conditionIndex = lines.findIndex((line) => line.trim() === 'if: >-');
+  if (conditionIndex < 0) throw new Error('missing folded if condition');
+  const conditionIndentation = indentation(lines[conditionIndex]);
+  const conditionLines: string[] = [];
+  for (let lineIndex = conditionIndex + 1; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex];
+    if (line.trim() && indentation(line) <= conditionIndentation) break;
+    if (line.trim()) conditionLines.push(line.trim());
+  }
+  return conditionLines.join(' ');
+}
+
 function runBash(script: string, environment: NodeJS.ProcessEnv) {
   return spawnSync('/bin/bash', ['-c', `set -euo pipefail\n${script}`], {
     cwd: process.cwd(),
@@ -57,6 +87,18 @@ describe('snapshot watchdog workflow shell boundaries', () => {
       .join('\n');
     expect(runBlock(reindentedWorkflow, 'Check snapshot publisher heartbeats')).toBe(
       runBlock(workflowSource, 'Check snapshot publisher heartbeats'),
+    );
+  });
+
+  it('keeps legacy and watchdog schedules mutually exclusive across the homelab feature flag', () => {
+    const legacyCondition = foldedCondition(mappingBlock(workflowSource, 'legacy-or-manual-export'));
+    const watchdogCondition = foldedCondition(mappingBlock(workflowSource, 'homelab-watchdog'));
+
+    expect(legacyCondition).toBe(
+      "${{ github.event_name == 'workflow_dispatch' || ( vars.SNAPSHOT_HOMELAB_EXPORT_ENABLED != 'true' && github.event_name == 'schedule' && ( github.event.schedule == '15 7 * * *' || github.event.schedule == '7,22,37,52 0-6,8-23 * * *' ) ) }}",
+    );
+    expect(watchdogCondition).toBe(
+      "${{ vars.SNAPSHOT_HOMELAB_EXPORT_ENABLED == 'true' && github.event_name == 'schedule' && github.event.schedule == '12,27,42,57 * * * *' }}",
     );
   });
 
@@ -164,7 +206,7 @@ docker() {
       expect(fullCalls).toHaveLength(2);
       expect(fullCalls[0]).toContain('src/scripts/export-board-snapshots.ts --source=primary --fence');
       expect(fullCalls[1]).toContain(
-        'src/scripts/export-board-snapshots.ts --source=primary --gzip --key-prefix board-snapshots/v1-gzip --heartbeat',
+        'src/scripts/export-board-snapshots.ts --source=primary --fence --gzip --key-prefix board-snapshots/v1-gzip --heartbeat',
       );
 
       rmSync(dockerCalls, { force: true });
@@ -177,7 +219,7 @@ docker() {
       const refreshCalls = readFileSync(dockerCalls, 'utf8').trimEnd().split('\n');
       expect(refreshCalls).toHaveLength(1);
       expect(refreshCalls[0]).toContain(
-        'src/scripts/export-board-snapshots.ts --source=primary --gzip --key-prefix board-snapshots/v1-gzip --refresh-threshold=500 --heartbeat',
+        'src/scripts/export-board-snapshots.ts --source=primary --fence --gzip --key-prefix board-snapshots/v1-gzip --refresh-threshold=500 --heartbeat',
       );
     } finally {
       rmSync(fixtureDirectory, { recursive: true, force: true });

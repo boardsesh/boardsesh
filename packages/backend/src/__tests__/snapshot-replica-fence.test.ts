@@ -100,12 +100,18 @@ describe('replica snapshot fence', () => {
 
   it('requires certificate and hostname verification for every non-local database URL', async () => {
     const remotePool = createIsolatedSnapshotPool('postgresql://snapshot@example.test:5432/boardsesh', 1);
+    const dockerServicePool = createIsolatedSnapshotPool('postgresql://snapshot@postgres:5432/boardsesh', 1);
+    const dockerTestServicePool = createIsolatedSnapshotPool('postgresql://snapshot@postgres-test:5432/boardsesh', 1);
     const loopbackPool = createIsolatedSnapshotPool('postgresql://snapshot@127.0.0.1:5432/boardsesh', 1);
     try {
       expect(remotePool.options.ssl).toBe('verify-full');
+      expect(dockerServicePool.options.ssl).toBe('verify-full');
+      expect(dockerTestServicePool.options.ssl).toBe('verify-full');
       expect(loopbackPool.options.ssl).toBe(false);
     } finally {
       await remotePool.end({ timeout: 0 });
+      await dockerServicePool.end({ timeout: 0 });
+      await dockerTestServicePool.end({ timeout: 0 });
       await loopbackPool.end({ timeout: 0 });
     }
   });
@@ -181,6 +187,45 @@ describe('replica snapshot fence', () => {
       // the shared function's owner while another test or connection uses it.
       await pool.unsafe(`DROP FUNCTION IF EXISTS ops.${quotedFunction}(integer)`).catch(() => {});
       await pool.unsafe(`REVOKE pg_read_all_stats FROM ${quotedRole}`).catch(() => {});
+      await pool.unsafe(`DROP ROLE IF EXISTS ${quotedRole}`).catch(() => {});
+    }
+  });
+
+  it('uses SECURITY DEFINER owner visibility for a narrow caller with only EXECUTE', async () => {
+    const pool = createPool();
+    const testSuffix = `w${process.env.VITEST_POOL_ID ?? '0'}_p${process.pid}`;
+    const roleName = `boardsesh_snapshot_caller_${testSuffix}`;
+    const quotedRole = quoteIdentifier(roleName);
+    await pool.unsafe(`DROP ROLE IF EXISTS ${quotedRole}`);
+    await pool.unsafe(`CREATE ROLE ${quotedRole} NOLOGIN`);
+    await pool.unsafe(`GRANT USAGE ON SCHEMA ops TO ${quotedRole}`);
+    await pool.unsafe(`GRANT EXECUTE ON FUNCTION ops.acquire_board_snapshot_fence(integer) TO ${quotedRole}`);
+    await pool.unsafe(`GRANT EXECUTE ON FUNCTION ops.release_board_snapshot_fence() TO ${quotedRole}`);
+
+    const caller = await pool.reserve();
+    let fenceHeld = false;
+    try {
+      const visibilityRows = await pool.unsafe(`SELECT pg_has_role($1, 'pg_read_all_stats', 'USAGE') AS usage`, [
+        roleName,
+      ]);
+      expect(visibilityRows).toMatchObject([{ usage: false }]);
+
+      await caller.unsafe(`SET SESSION AUTHORIZATION ${quotedRole}`);
+      const fenceRows = await caller.unsafe('SELECT * FROM ops.acquire_board_snapshot_fence(0)');
+      fenceHeld = true;
+      expect(fenceRows).toHaveLength(1);
+      expect(fenceRows[0]).toMatchObject({ primary_system_identifier: expect.stringMatching(/^\d+$/) });
+    } finally {
+      if (fenceHeld) await caller.unsafe('SELECT ops.release_board_snapshot_fence()').catch(() => {});
+      await caller.unsafe('RESET SESSION AUTHORIZATION').catch(() => {});
+      caller.release();
+      await pool
+        .unsafe(`REVOKE EXECUTE ON FUNCTION ops.acquire_board_snapshot_fence(integer) FROM ${quotedRole}`)
+        .catch(() => {});
+      await pool
+        .unsafe(`REVOKE EXECUTE ON FUNCTION ops.release_board_snapshot_fence() FROM ${quotedRole}`)
+        .catch(() => {});
+      await pool.unsafe(`REVOKE USAGE ON SCHEMA ops FROM ${quotedRole}`).catch(() => {});
       await pool.unsafe(`DROP ROLE IF EXISTS ${quotedRole}`).catch(() => {});
     }
   });

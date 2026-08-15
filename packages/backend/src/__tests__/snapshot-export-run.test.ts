@@ -21,14 +21,20 @@ vi.mock('../storage/s3', () => ({
 }));
 
 import { Readable } from 'node:stream';
+import postgres from 'postgres';
 import { sql } from 'drizzle-orm';
 import { LATEST_SCHEMA_VERSION, type SnapshotManifest, type SnapshotManifestEntry } from '@boardsesh/offline-sync';
 import { createPool } from '@boardsesh/db/client';
 import { db } from '../db/client';
 import { uploadToS3, getFromS3Strict, deleteFromS3, listS3Objects } from '../storage/s3';
 import { runExport, mergeManifestEntries } from '../scripts/export-board-snapshots';
+import { getWorkerDatabaseUrl } from './worker-db';
 
 const MANIFEST_KEY = 'board-snapshots/v1/manifest.json';
+
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replaceAll('"', '""')}"`;
+}
 
 function manifestEntryFixture(boardType: string, layoutId: number, key: string): SnapshotManifestEntry {
   return {
@@ -280,18 +286,32 @@ describe('runExport — threshold refresh', () => {
     const previousEntry = manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`);
     serveExistingManifest(manifestFixture([previousEntry]));
 
-    // Temporarily advertise one connection so the observer probe fails closed:
-    // the export transaction can still run, but its LayoutSnapshotResult carries
-    // observer-pool-capacity and no boundary. Restore the shared pool immediately.
-    const poolOptions = createPool().options as { max: number };
-    const originalPoolMax = poolOptions.max;
-    poolOptions.max = 1;
+    // Hold a transaction under another authenticated role. The unfenced
+    // compatibility path cannot prove full pg_stat_activity visibility across
+    // roles, so it must preserve the previous live artifact and fail closed.
+    const testSuffix = `w${process.env.VITEST_POOL_ID ?? '0'}_p${process.pid}`;
+    const roleName = `snapshot_visibility_peer_${testSuffix}`;
+    const quotedRole = quoteIdentifier(roleName);
+    const peerPassword = 'snapshot-visibility-peer-test';
+    const adminPool = createPool();
+    await adminPool.unsafe(`DROP ROLE IF EXISTS ${quotedRole}`);
+    await adminPool.unsafe(`CREATE ROLE ${quotedRole} LOGIN PASSWORD '${peerPassword}'`);
+    const peerUrl = new URL(getWorkerDatabaseUrl());
+    peerUrl.username = roleName;
+    peerUrl.password = peerPassword;
+    const peerPool = postgres(peerUrl.toString(), { max: 1, ssl: false });
+    const peer = await peerPool.reserve();
     try {
+      await peer.unsafe('BEGIN');
+      await peer.unsafe('SELECT 1');
       await expect(runExport(['--gzip', '--key-prefix', GZIP_PREFIX, '--refresh-threshold', '1'])).rejects.toThrow(
         /Export failed for 1 layout\(s\): kilter:1/,
       );
     } finally {
-      poolOptions.max = originalPoolMax;
+      await peer.unsafe('ROLLBACK').catch(() => {});
+      peer.release();
+      await peerPool.end({ timeout: 5 });
+      await adminPool.unsafe(`DROP ROLE IF EXISTS ${quotedRole}`).catch(() => {});
     }
 
     const artifactUploads = vi.mocked(uploadToS3).mock.calls.filter(([, key]) => key !== GZIP_MANIFEST_KEY);

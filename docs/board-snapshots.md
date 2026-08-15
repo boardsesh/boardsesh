@@ -76,8 +76,10 @@ Before cutover, prove anonymous PUT and DELETE requests receive 403, scope the w
   (`docs/board-snapshots-dataset.md`).
 
 Each prefix is a self-contained, single-encoding manifest: the merge and prune logic below scope entirely
-to whichever prefix the run targets, so a gzip run never reads or prunes the identity prefix. A later
-cleanup drops the identity pass and deletes the `v1` prefix (see Rollout plan).
+to whichever prefix the run targets, so a gzip run never reads or prunes the identity prefix. They are not
+an atomic cross-prefix pair: each pass acquires and proves its own database fence, and a different complete
+export may run between them without invalidating either manifest. A later cleanup drops the identity pass
+and deletes the `v1` prefix (see Rollout plan).
 
 **Live threshold refresh.** The 15-minute schedule targets only `board-snapshots/v1-gzip`, the prefix the
 fleet reads, with `--refresh-threshold 500`. For every discovered layout it reads the published manifest
@@ -128,15 +130,17 @@ For every `(board_type, layout_id)` pair with at least one climb (`discoverLayou
    **same transaction snapshot** as the row stream, and writes it into `snapshot_meta` alongside
    `row_count`, `schema_version` (`LATEST_SCHEMA_VERSION`), and `format_version`. The transaction also
    captures a conservative tombstone boundary into a metadata-only `sync_deletions` row: the oldest of
-   run `builtAt`, export-transaction start minus `SYNC_STABILITY_WINDOW_SECONDS`, and the oldest active
-   same-role transaction start. A second primary-pool connection samples `pg_stat_activity` while the
-   export transaction is open but before its first artifact SELECT fixes the `REPEATABLE READ` snapshot.
-   That ordering covers a delete transaction that began before the snapshot but committed after it.
-   The row is omitted (clients use the legacy scoped-watermark fallback) if the pool has fewer than two
-   connections, the activity probe fails, another-role client or prepared transaction exists in the
-   database, activity tracking/visibility is incomplete, or any timestamp is invalid. Every per-layout
-   build/upload log carries `deletionsReplayFrom` and `deletionsReplayFallbackReason`: success is a
-   timestamp plus a null reason; fallback is a null timestamp plus one stable, low-cardinality reason.
+   run `builtAt` and the authoritative `stableBefore`. A fenced cutoff already precedes every transaction
+   open during the primary scan, so fenced-primary and physical-replica readers need no local activity
+   probe. On the unfenced compatibility path, the boundary also includes the export-transaction start and
+   oldest active same-role transaction start. A second primary-pool connection samples `pg_stat_activity`
+   while the export transaction is open but before its first artifact SELECT fixes the `REPEATABLE READ`
+   snapshot. That ordering covers a delete transaction that began before the snapshot but committed after
+   it. The row is omitted (clients use the legacy scoped-watermark fallback) if the unfenced pool has fewer
+   than two connections, the activity probe fails, another-role client or prepared transaction exists in
+   the database, activity tracking/visibility is incomplete, or any timestamp is invalid. Every per-layout
+   build/upload log carries `deletionsReplayFrom` and `deletionsReplayFallbackReason`: success is a timestamp
+   plus a null reason; fallback is a null timestamp plus one stable, low-cardinality reason.
 5. Uploads the SQLite file to `<keyPrefix>/<boardType>/<layoutId>/<builtAt-colon-free>.db` — identity by
    default, or `gzip` (with `Content-Encoding: gzip`) under `--gzip`. The manifest's `contentEncoding`
    field records which, so the client stays agnostic.
@@ -171,7 +175,8 @@ less likely; neither proves the absent transaction has finished.
    the exporter rechecks both the primary session lock and standby replay barrier on the same reserved
    backend that streams the rows, and rechecks that the cutoff is still at most ten minutes old. Remote
    primary/coordinator connections require certificate and hostname verification; plaintext is allowed only
-   for an explicit loopback/dev-service URL. A pre-manifest failure leaves the old manifest untouched. A failure
+   for a literal loopback URL. Docker service names and private DNS names still require verified TLS. A pre-manifest
+   failure leaves the old manifest untouched. A failure
    immediately after the manifest PUT cannot roll that PUT back, but it emits no success heartbeat; failed
    layouts retain their previous manifest entries while successful layout updates remain valid.
 
@@ -1071,8 +1076,11 @@ GRANT EXECUTE ON FUNCTION ops.board_snapshot_cluster_identity()
 
 The `SECURITY DEFINER` fence owner must be a superuser or have effective `USAGE` of `pg_read_all_stats`;
 membership granted with inheritance disabled is rejected because it leaves other sessions' transaction
-timestamps masked. The function checks this on every acquisition. Audit its owner and grants after every
-logical restore. The coordinator
+timestamps masked. The function deliberately checks `current_user`, which is the owner while a
+`SECURITY DEFINER` body runs: that is the identity PostgreSQL uses to read `pg_stat_activity`. Checking
+`session_user` instead would test the narrow caller and force it to receive the broad stats role. Caller
+authorization remains the separately revoked-and-granted `EXECUTE` privilege. Audit the owner and grants
+after every logical restore. The coordinator
 needs no table DML. Also grant `USAGE` on `ops` and `EXECUTE` on
 `ops.board_snapshot_cluster_identity()` to the read-only role embedded in `DATABASE_URL`; each fenced
 primary export proves that the read pool is writable and belongs to the coordinator's exact system and

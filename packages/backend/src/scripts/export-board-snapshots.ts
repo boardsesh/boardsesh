@@ -49,10 +49,16 @@ import {
   type SnapshotGradesTableName,
   type SnapshotTableName,
 } from '@boardsesh/offline-sync';
-import { createPool, closePool } from '@boardsesh/db/client';
+import { closePool } from '@boardsesh/db/client';
 import { normalizeRow, toIso, type RawRow } from '../graphql/resolvers/sync/row-normalize';
 import { uploadToS3, isS3Configured, getPublicUrl, getFromS3Strict, deleteFromS3, listS3Objects } from '../storage/s3';
 import { logger } from '../utils/logger';
+
+// This exporter deliberately uses postgres.js directly instead of Drizzle: it
+// needs reserved sessions, cursors, PostgreSQL control functions, and the exact
+// text representation of timestamp values. Query values are bind parameters.
+// The only interpolated SQL is either a strict identifier allowlist or the
+// separately validated application_name SET documented at its call site.
 
 // --- Constants ----------------------------------------------------------------
 
@@ -130,6 +136,10 @@ const SNAPSHOT_EXPORT_APPLICATION_PREFIX = 'boardsesh-snapshot-export-';
 const passthroughSnapshotPostgresValue = (value: unknown): unknown => value;
 const SNAPSHOT_POSTGRES_TYPES = {
   snapshotText: {
+    // postgres.js's public custom-type contract requires one outbound OID.
+    // Snapshot SQL never uses the named helper to write; 1184 is the canonical
+    // timestamp type and mirrors Drizzle's identity serializer if a bound
+    // timestamp is ever passed to one of these queries.
     to: 1184,
     from: [1184, 1082, 1083, 1114, 1182, 1185, 1115, 1231],
     serialize: passthroughSnapshotPostgresValue,
@@ -230,6 +240,8 @@ type SnapshotDatabaseSource = 'primary' | 'replica';
 export type SnapshotReadBoundary = {
   source: SnapshotDatabaseSource;
   stableBefore: string;
+  /** The primary fence already folded every open primary transaction into stableBefore. */
+  stableBeforeIncludesActiveTransactions: boolean;
   targetLsn: string;
   replayLsn: string;
   systemIdentifier: string;
@@ -384,7 +396,7 @@ function positiveEnvironmentSeconds(name: string, fallback: number): number {
 function isLocalDatabaseUrl(connectionString: string): boolean {
   try {
     const hostname = new URL(connectionString).hostname.toLowerCase().replace(/^\[(.*)\]$/, '$1');
-    return ['localhost', '127.0.0.1', '::1', 'postgres', 'postgres-test'].includes(hostname);
+    return ['localhost', '127.0.0.1', '::1'].includes(hostname);
   } catch {
     return false;
   }
@@ -398,7 +410,8 @@ export function createIsolatedSnapshotPool(connectionString: string, max: number
     prepare: false,
     // The coordinator crosses the public internet. `require` encrypts but does
     // not authenticate the server certificate/hostname; `verify-full` does.
-    // Plaintext is accepted only for an explicit loopback/dev-service URL.
+    // Plaintext is accepted only for a literal loopback URL. A Docker DNS name
+    // is not proof that the connection stayed on the local machine.
     ssl: isLocalDatabaseUrl(connectionString) ? false : 'verify-full',
     types: SNAPSHOT_POSTGRES_TYPES,
   });
@@ -603,29 +616,38 @@ export async function waitForReplicaReplay(params: {
 }
 
 async function createPrimarySnapshotContext(): Promise<SnapshotDatabaseContext> {
-  const sqlClient = createPool();
-  const rows = await sqlClient.unsafe(
-    `SELECT ((clock_timestamp() - make_interval(secs => $1)) AT TIME ZONE 'UTC') AS stable_before,
-            pg_current_wal_insert_lsn()::text AS target_lsn`,
-    [DEFAULT_STABILITY_WINDOW_SECONDS],
-  );
-  const row = fenceRowFrom(rows, 'primary snapshot boundary');
-  const targetLsn = String(row.target_lsn);
-  return {
-    sqlClient,
-    boundary: {
-      source: 'primary',
-      stableBefore: toIso(row.stable_before),
-      targetLsn,
-      replayLsn: targetLsn,
-      systemIdentifier: 'unfenced',
-      timelineId: 0,
-    },
-    assertPublishFence: async () => {},
-    // The shared primary pool is closed by the CLI entrypoint, preserving the
-    // existing integration-test contract where runExport shares that pool.
-    close: async () => {},
-  };
+  // Keep the unfenced compatibility path on the same explicit timestamp
+  // parser and TLS contract as fenced/replica reads. Two connections are
+  // required: one holds the export transaction while the other observes it.
+  const sqlClient = createIsolatedSnapshotPool(requiredEnvironment('DATABASE_URL'), 2);
+  try {
+    const rows = await sqlClient.unsafe(
+      `SELECT ((clock_timestamp() - make_interval(secs => $1)) AT TIME ZONE 'UTC') AS stable_before,
+              pg_current_wal_insert_lsn()::text AS target_lsn`,
+      [DEFAULT_STABILITY_WINDOW_SECONDS],
+    );
+    const row = fenceRowFrom(rows, 'primary snapshot boundary');
+    const targetLsn = String(row.target_lsn);
+    return {
+      sqlClient,
+      boundary: {
+        source: 'primary',
+        stableBefore: toIso(row.stable_before),
+        stableBeforeIncludesActiveTransactions: false,
+        targetLsn,
+        replayLsn: targetLsn,
+        systemIdentifier: 'unfenced',
+        timelineId: 0,
+      },
+      assertPublishFence: async () => {},
+      close: async () => {
+        await sqlClient.end({ timeout: 5 }).catch(() => {});
+      },
+    };
+  } catch (error) {
+    await sqlClient.end({ timeout: 5 }).catch(() => {});
+    throw error;
+  }
 }
 
 type PrimaryFenceHandle = {
@@ -747,6 +769,7 @@ async function createFencedPrimarySnapshotContext(): Promise<SnapshotDatabaseCon
       boundary: {
         source: 'primary',
         stableBefore: fence.stableBefore,
+        stableBeforeIncludesActiveTransactions: true,
         targetLsn: fence.targetLsn,
         replayLsn: fence.targetLsn,
         systemIdentifier: fence.systemIdentifier,
@@ -810,6 +833,7 @@ async function createReplicaSnapshotContext(): Promise<SnapshotDatabaseContext> 
       boundary: {
         source: 'replica',
         stableBefore: fence.stableBefore,
+        stableBeforeIncludesActiveTransactions: true,
         targetLsn: fence.targetLsn,
         replayLsn: replayStatus.replayLsn,
         systemIdentifier: fence.systemIdentifier,
@@ -1021,32 +1045,38 @@ function normalizedProbeTimestamp(rawTimestamp: unknown): { iso: string; timesta
 }
 
 /**
- * Pick the oldest safe replay bound. Export `builtAt` is included deliberately:
- * it is chosen before any layout transaction, so it both supplies a client-side
- * validation ceiling and safely widens later layouts whose transaction clock is
- * more than one stability window after the run began.
+ * Pick the oldest safe replay bound for an unfenced primary export. The
+ * run-wide stableBefore is authoritative for row filtering; builtAt and the
+ * export/oldest transaction starts can only widen the tombstone rewind.
  */
 export function selectDeletionReplayBoundary(params: {
   artifactBuiltAt: unknown;
+  stableBefore: unknown;
   exportTransactionStartedAt: unknown;
   oldestActiveTransactionStartedAt: unknown;
-  stabilityWindowSeconds: number;
   visibilityEstablished: boolean;
 }): string | null {
   if (!params.visibilityEstablished) return null;
   const artifactBuiltAt = normalizedProbeTimestamp(params.artifactBuiltAt);
+  const stableBefore = normalizedProbeTimestamp(params.stableBefore);
   const exportTransactionStartedAt = normalizedProbeTimestamp(params.exportTransactionStartedAt);
-  if (!artifactBuiltAt || !exportTransactionStartedAt) return null;
+  if (!artifactBuiltAt || !stableBefore || !exportTransactionStartedAt) return null;
 
-  const stabilityBoundaryMs =
-    exportTransactionStartedAt.timestampMs - Math.max(0, params.stabilityWindowSeconds) * 1000;
   const oldestActiveTransaction = normalizedProbeTimestamp(params.oldestActiveTransactionStartedAt);
   const replayFromMs = Math.min(
     artifactBuiltAt.timestampMs,
-    stabilityBoundaryMs,
+    stableBefore.timestampMs,
+    exportTransactionStartedAt.timestampMs,
     oldestActiveTransaction?.timestampMs ?? Number.POSITIVE_INFINITY,
   );
   return new Date(replayFromMs).toISOString();
+}
+
+function selectFencedDeletionReplayBoundary(artifactBuiltAt: unknown, stableBefore: unknown): string | null {
+  const normalizedArtifactBuiltAt = normalizedProbeTimestamp(artifactBuiltAt);
+  const normalizedStableBefore = normalizedProbeTimestamp(stableBefore);
+  if (!normalizedArtifactBuiltAt || !normalizedStableBefore) return null;
+  return new Date(Math.min(normalizedArtifactBuiltAt.timestampMs, normalizedStableBefore.timestampMs)).toISOString();
 }
 
 /**
@@ -1070,12 +1100,12 @@ async function probeDeletionReplayBoundary(params: {
   sqlClient: Sql;
   applicationName: string;
   artifactBuiltAt: string;
-  stabilityWindowSeconds: number;
+  stableBefore: string;
 }): Promise<DeletionReplayMetadataResult> {
-  const { sqlClient, applicationName, artifactBuiltAt, stabilityWindowSeconds } = params;
+  const { sqlClient, applicationName, artifactBuiltAt, stableBefore } = params;
   // The observer must not queue behind the export connection forever. The
-  // production primary pool has max=10; a generic/max=1 caller still gets a
-  // valid artifact, just without this optional optimization.
+  // unfenced primary pool has max=2; a generic/max=1 caller still gets a valid
+  // artifact, just without this optional optimization.
   const configuredPoolMax = (sqlClient as Sql & { options?: { max?: unknown } }).options?.max;
   if (typeof configuredPoolMax !== 'number' || configuredPoolMax < 2) {
     return { deletionsReplayFrom: null, deletionsReplayFallbackReason: 'observer-pool-capacity' };
@@ -1134,9 +1164,9 @@ async function probeDeletionReplayBoundary(params: {
     }
     const deletionsReplayFrom = selectDeletionReplayBoundary({
       artifactBuiltAt,
+      stableBefore,
       exportTransactionStartedAt: probe.export_xact_start,
       oldestActiveTransactionStartedAt: probe.oldest_same_role_xact_start,
-      stabilityWindowSeconds,
       visibilityEstablished: true,
     });
     if (!deletionsReplayFrom) {
@@ -1213,11 +1243,20 @@ export async function exportLayoutSnapshot(params: {
   gradesFilePath?: string;
   /** Primary-issued, run-wide exclusive cursor cutoff. */
   stableBefore: string;
-  stabilityWindowSeconds?: number;
+  /** True only when the primary fence folded every open primary transaction into stableBefore. */
+  stableBeforeIncludesActiveTransactions?: boolean;
   streamBatchSize?: number;
 }): Promise<LayoutSnapshotResult> {
-  const { sqlClient, boardType, layoutId, filePath, builtAt, gradesFilePath, stableBefore } = params;
-  const stabilityWindowSeconds = params.stabilityWindowSeconds ?? DEFAULT_STABILITY_WINDOW_SECONDS;
+  const {
+    sqlClient,
+    boardType,
+    layoutId,
+    filePath,
+    builtAt,
+    gradesFilePath,
+    stableBefore,
+    stableBeforeIncludesActiveTransactions = false,
+  } = params;
   const streamBatchSize = params.streamBatchSize ?? 5000;
   const scopeParams: (string | number)[] = [boardType, layoutId, stableBefore];
 
@@ -1253,12 +1292,19 @@ export async function exportLayoutSnapshot(params: {
         throw new Error('snapshot export application name failed validation');
       }
       await tx.unsafe(`SET LOCAL application_name = '${exportApplicationName}'`);
-      const deletionReplayMetadata = await probeDeletionReplayBoundary({
-        sqlClient,
-        applicationName: exportApplicationName,
-        artifactBuiltAt: builtAt,
-        stabilityWindowSeconds,
-      });
+      const fencedReplayBoundary = stableBeforeIncludesActiveTransactions
+        ? selectFencedDeletionReplayBoundary(builtAt, stableBefore)
+        : null;
+      const deletionReplayMetadata: DeletionReplayMetadataResult = stableBeforeIncludesActiveTransactions
+        ? fencedReplayBoundary
+          ? { deletionsReplayFrom: fencedReplayBoundary, deletionsReplayFallbackReason: null }
+          : { deletionsReplayFrom: null, deletionsReplayFallbackReason: 'invalid-probe-timestamp' }
+        : await probeDeletionReplayBoundary({
+            sqlClient,
+            applicationName: exportApplicationName,
+            artifactBuiltAt: builtAt,
+            stableBefore,
+          });
 
       const climbColumns = TABLE_CONFIGS.board_climbs.localColumns;
       const statsColumns = TABLE_CONFIGS.board_climb_stats.localColumns;
@@ -1843,6 +1889,7 @@ export async function runExport(argv: string[]): Promise<void> {
           filePath,
           builtAt,
           stableBefore: databaseContext.boundary.stableBefore,
+          stableBeforeIncludesActiveTransactions: databaseContext.boundary.stableBeforeIncludesActiveTransactions,
           // GZIP PASS ONLY. The nightly runs twice — once at the identity `v1`
           // prefix kept as a rollback target, once at `v1-gzip` where the fleet
           // actually points. Publishing grades only in the gzip pass means a
@@ -2063,10 +2110,9 @@ export async function runExport(argv: string[]): Promise<void> {
 }
 
 // Only run when executed directly (`node --import tsx .../export-board-snapshots.ts`),
-// never when imported by a test. The pool is closed HERE, not inside runExport:
-// tests invoke runExport against the process-wide cached primary pool, and
-// closing it there would kill the connection every other test in the worker
-// shares.
+// never when imported by a test. closePool remains defensive for storage or
+// future helper code that materializes the process-wide database client; every
+// snapshot read context closes its own explicit postgres.js pool.
 const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : '';
 if (invokedPath === import.meta.url) {
   runExport(process.argv.slice(2))
