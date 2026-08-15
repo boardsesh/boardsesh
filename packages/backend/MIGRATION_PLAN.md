@@ -8,7 +8,7 @@ Migrate the backend from Express to GraphQL Yoga, then reimplement Next.js REST 
 - **Server**: Pure GraphQL Yoga (replace Express entirely)
 - **Authentication**: JWT in Authorization header (same as WebSocket auth)
 - **Scope**: High priority APIs first, incremental implementation
-- **Exclusions**: Aurora proxy routes (`/api/v1/[board_name]/proxy/*`) stay in Next.js
+- **Exclusions**: Aurora proxy routes (`/api/v1/[board_name]/proxy/*`) stay in Next.js _(superseded — retired by W-25a, #4441: three routes deleted, `login` and `saveAscent` answer 410 until W-25b removes them)_
 
 ---
 
@@ -47,7 +47,7 @@ Node.js HTTP Server
 
 ## Phase 2: REST API Reimplementation (IN PROGRESS)
 
-Reimplement Next.js REST APIs as GraphQL queries/mutations. Only endpoints that query our database - Aurora proxy routes stay in Next.js.
+Reimplement Next.js REST APIs as GraphQL queries/mutations. Only endpoints that query our database - Aurora proxy routes stay in Next.js _(superseded — retired by W-25a, #4441; see §2.5)_.
 
 ### 2.1 Board Configuration Queries (High Priority)
 
@@ -111,13 +111,13 @@ Reimplement Next.js REST APIs as GraphQL queries/mutations. Only endpoints that 
 
 ### 2.5 Endpoints Staying in Next.js
 
-| Endpoint                                 | Reason                          |
-| ---------------------------------------- | ------------------------------- |
-| `/api/v1/[board_name]/proxy/*`           | Aurora API proxy (external API) |
-| `/api/auth/*`                            | NextAuth authentication         |
-| `/api/internal/ws-auth`                  | WebSocket auth token fetch      |
-| `/api/internal/shared-sync/[board_name]` | Cron job / server-side sync     |
-| `/api/og/climb`                          | Image generation (Edge runtime) |
+| Endpoint                                 | Reason                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------- |
+| `/api/v1/[board_name]/proxy/*`           | ❌ GONE — retired by W-25a (#4441); W-25b removes the last two URLs |
+| `/api/auth/*`                            | NextAuth authentication                                             |
+| `/api/internal/ws-auth`                  | WebSocket auth token fetch                                          |
+| `/api/internal/shared-sync/[board_name]` | Cron job / server-side sync                                         |
+| `/api/og/climb`                          | Image generation (Edge runtime)                                     |
 
 ---
 

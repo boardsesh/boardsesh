@@ -1189,6 +1189,10 @@ Organized by migration priority (pure reads first, then mutations, then proxies)
 
 #### Batch 3: Aurora API Proxies
 
+> **Retired 2026-08-15 (W-25a, #4441).** `getLogbook`, `saveClimb` and `user-sync` are deleted;
+> `login` and `saveAscent` answer `410 Gone` until the `Sunset` date, 2026-10-01, when W-25b (#4443)
+> removes them. The table below is kept as a record of the GraphQL migration.
+
 | Current Route                      | GraphQL Query/Mutation                  |
 | ---------------------------------- | --------------------------------------- |
 | `/api/v1/[board]/proxy/login`      | `mutation auroraLogin(board, ...)`      |

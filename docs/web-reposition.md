@@ -24,13 +24,18 @@ web proxies. The only web endpoints `packages/mobile/src` fetches are
 
 | Route                                                                     | Runtime callers                                                                                                   | Verdict                               |
 | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `/api/v1/[board]/proxy/{login,saveAscent,saveClimb,getLogbook,user-sync}` | **None** — already migrated to GraphQL (see `docs/branch-deploys.md`)                                             | delete (dead code)                    |
+| `/api/v1/[board]/proxy/{login,saveAscent,saveClimb,getLogbook,user-sync}` | **None** — already migrated to GraphQL (see `docs/branch-deploys.md`)                                             | W-25a: 3 deleted, 2 → 410 (see below) |
 | `/api/internal/{join,controllers,favorites}`                              | Only web session-app UI slated for teardown (`join/*` page, `account/controllers-section.tsx`, `climb-actions/*`) | delete with that UI                   |
 | `/api/internal/ws-auth`                                                   | `use-ws-auth-token.ts` → ~85 web files incl. kiosk presence; mobile `auth-store.web.ts:343`                       | **KEEP** — `/app` + kiosk auth bridge |
 
 Loose ends to clean when the routes go (not runtime callers, but they'd go stale):
 `app/lib/api-docs/openapi-routes.ts` (documents `proxy/login`, `proxy/saveAscent`),
 `docs/branch-deploys.md` migration table, and the routes' own `__tests__`.
+**All three are discharged by W-25a (#4441)**, which also split the proxy row's
+verdict: `saveClimb`, `getLogbook` and `user-sync` are deleted, while `login` and
+`saveAscent` answer `410 Gone` until the 2026-10-01 sunset, when W-25b (#4443)
+removes the URLs. W-25b reads the `Deprecated Aurora Proxy Called` counter before
+deleting, and inherits the orphaned implementation modules listed on that issue.
 
 ### Shipped hardware pins `www` URL shapes (two different ones)
 

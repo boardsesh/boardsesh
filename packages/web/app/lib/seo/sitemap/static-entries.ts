@@ -15,7 +15,9 @@ export const STATIC_ENTRIES: readonly SitemapItem[] = [
   { path: '/about', changeFrequency: 'monthly', priority: 0.8, lastModified: new Date('2026-04-30') },
   // /help was rewritten text-first when W-16 removed the interactive climbing UI.
   { path: '/help', changeFrequency: 'monthly', priority: 0.7, lastModified: new Date('2026-08-15') },
-  { path: '/docs', changeFrequency: 'monthly', priority: 0.5, lastModified: new Date('2026-04-30') },
+  // /docs lost both Aurora proxy operations (plus the tag, the overview bullet and
+  // three schemas) and gained a "Retired endpoints" card when W-25a deprecated them.
+  { path: '/docs', changeFrequency: 'monthly', priority: 0.5, lastModified: new Date('2026-08-15') },
   { path: '/legal', changeFrequency: 'monthly', priority: 0.4, lastModified: new Date('2026-02-08') },
   { path: '/privacy', changeFrequency: 'monthly', priority: 0.4, lastModified: new Date('2026-04-01') },
   { path: '/playlists', changeFrequency: 'weekly', priority: 0.6, lastModified: new Date('2026-04-30') },
