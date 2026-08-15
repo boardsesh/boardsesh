@@ -32,6 +32,19 @@ const SLUG_EXAMPLE_KEY_PATHS = new Set([
 // The board is a `plafón`, the gym is a `rocódromo`. A sloppy find/replace in
 // either direction eats one of them; pin the board term so we notice.
 const BOARD_TERM = 'plafón';
+// Floor, not an exact count: 188 Spanish strings say `plafón` today. A bare
+// "at least one" assertion would survive a replace that ate 187 of them — which
+// is precisely the accident being guarded against — so hold a floor just under
+// today's number. Ordinary copy churn stays green; a sweep goes red. Raise this
+// if the catalogs grow; never lower it to turn a red test green.
+const BOARD_TERM_FLOOR = 180;
+
+// Remove URLs and email addresses from a token so the accent check can look at
+// what is left. `rocodromo` is correct inside an address someone types; anywhere
+// else it is a dropped accent.
+function withoutAddresses(token: string): string {
+  return token.replace(/https?:\/\/\S+/gi, ' ').replace(/\S+@\S+/g, ' ');
+}
 
 type CatalogEntry = { file: string; keyPath: string; value: string };
 
@@ -86,8 +99,10 @@ describe('Spanish gym terminology', () => {
       .flatMap((entry) =>
         entry.value
           .split(/\s+/)
-          .filter((token) => UNACCENTED_TERM.test(token))
-          .filter((token) => !token.includes('@') && !token.includes('://'))
+          // Exempt only the address itself, not the whole token it sits in:
+          // stripping the URL/email first means a genuine missing accent glued to
+          // one — "https://x.com/tu-rocodromo,rocodromo" — is still caught.
+          .filter((token) => UNACCENTED_TERM.test(withoutAddresses(token)))
           .map((token) => `${entry.file}:${entry.keyPath} — ${token}`),
       );
 
@@ -104,7 +119,10 @@ describe('Spanish gym terminology', () => {
 
   it('still calls the board a plafón', () => {
     const boardTermUses = spanishStrings.filter((entry) => entry.value.includes(BOARD_TERM));
-    expect(boardTermUses.length).toBeGreaterThan(0);
+    expect(
+      boardTermUses.length,
+      `Spanish catalogs say "${BOARD_TERM}" in only ${boardTermUses.length} strings, below the floor of ${BOARD_TERM_FLOOR}. A find/replace on the gym term has probably eaten the board term too.`,
+    ).toBeGreaterThanOrEqual(BOARD_TERM_FLOOR);
   });
 
   it('pins the gym term on the strings that drifted', () => {
