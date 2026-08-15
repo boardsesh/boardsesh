@@ -62,6 +62,32 @@ if run_entrypoint "$LEGACY_ROOT" "$TEST_ROOT/legacy-result" 2>"$TEST_ROOT/legacy
 fi
 grep -Fq 'contains a PostgreSQL 17 cluster' "$TEST_ROOT/legacy-error"
 
+readonly SIBLING_LEGACY_ROOT="$TEST_ROOT/sibling-legacy"
+mkdir -p "$SIBLING_LEGACY_ROOT/17/docker"
+printf '17\n' >"$SIBLING_LEGACY_ROOT/17/docker/PG_VERSION"
+if run_entrypoint \
+  "$SIBLING_LEGACY_ROOT" \
+  "$TEST_ROOT/sibling-legacy-result" \
+  2>"$TEST_ROOT/sibling-legacy-error"; then
+  printf 'expected a sibling PostgreSQL 17 cluster to be rejected\n' >&2
+  exit 1
+fi
+grep -Fq 'contains a PostgreSQL 17 cluster outside' "$TEST_ROOT/sibling-legacy-error"
+
+readonly MOUNTED_WRONG_MAJOR_ROOT="$TEST_ROOT/mounted-wrong-major"
+mkdir -p "$MOUNTED_WRONG_MAJOR_ROOT/18/docker"
+printf '17\n' >"$MOUNTED_WRONG_MAJOR_ROOT/18/docker/PG_VERSION"
+touch "$MOUNTED_WRONG_MAJOR_ROOT/18/docker/.boardsesh-dev-db-ready"
+if run_entrypoint \
+  "$MOUNTED_WRONG_MAJOR_ROOT" \
+  "$TEST_ROOT/mounted-wrong-major-result" \
+  2>"$TEST_ROOT/mounted-wrong-major-error"; then
+  printf 'expected a wrong-major cluster at PGDATA to be rejected\n' >&2
+  exit 1
+fi
+grep -Fq 'mounted PGDATA is PostgreSQL 17; expected 18' \
+  "$TEST_ROOT/mounted-wrong-major-error"
+
 # Simulate a crash after PG_VERSION and some seed files were copied but before
 # the completion marker was written. Restart must reject, not boot, that cluster.
 readonly PARTIAL_SEEDED_ROOT="$TEST_ROOT/partial-seeded-copy"
