@@ -32,25 +32,38 @@ Fix the surrounding grammar when you swap the word — articles and adjectives h
 - **`aurora.card.boardSuffix` = `"Board"`** in `settings.json`. It renders as `{boardName} Board` → "Kilter Board" / "Tension Board", so it must stay English.
 - **JSON keys** (`board`, `boardTypeLabel`, `boardsTitle`, …) and **ICU placeholders** (`{{board}}`, which interpolates a board's name). Only translate values.
 
+## The gym is a **rocódromo**
+
+Every gym in Boardsesh is a climbing gym, so the word is always **`rocódromo`** — never `gimnasio`, which is the generic fitness gym. There is no conditional: if a Spanish string names the place where the wall lives, it says rocódromo.
+
+- Masculine, like `gimnasio`, so articles and adjectives stay put: **el** rocódromo, **un** rocódromo, **del/al** rocódromo, **este** rocódromo.
+- Plural: **rocódromos** (los rocódromos, tus rocódromos).
+- Capitalise it the same way the old word was capitalised: sentence-initial `Gimnasio` → `Rocódromo`.
+
+Two things it does **not** touch:
+
+- **URLs, slugs and email examples drop the accent** — `hola@rocodromo.com`, `https://turocodromo.com`, `tu-rocodromo`. Accented characters do not belong in a placeholder someone is meant to type into a URL or address field.
+- **`plafón` is a different word.** The board is the plafón, the building is the rocódromo. A find/replace that turns one into the other is a bug — `gym-term-consistency.test.ts` guards both directions.
+
 ## Other climbing terms
 
 These are already used consistently in the catalogs — keep using them so we don't drift.
 
-| English                 | Spanish                            |
-| ----------------------- | ---------------------------------- |
-| hold                    | presa                              |
-| climb / boulder problem | bloque                             |
-| route                   | vía                                |
-| send (logged ascent)    | encadene                           |
-| attempt                 | intento                            |
-| wall                    | muro                               |
-| gym                     | gimnasio (climbing gym: rocódromo) |
-| angle                   | ángulo                             |
-| grade                   | grado                              |
-| session                 | sesión                             |
-| queue                   | cola                               |
-| climber                 | escalador / escaladora             |
-| Party Mode              | Modo Fiesta                        |
+| English                 | Spanish                |
+| ----------------------- | ---------------------- |
+| hold                    | presa                  |
+| climb / boulder problem | bloque                 |
+| route                   | vía                    |
+| send (logged ascent)    | encadene               |
+| attempt                 | intento                |
+| wall                    | muro                   |
+| gym                     | rocódromo              |
+| angle                   | ángulo                 |
+| grade                   | grado                  |
+| session                 | sesión                 |
+| queue                   | cola                   |
+| climber                 | escalador / escaladora |
+| Party Mode              | Modo Fiesta            |
 
 Kept in English by convention (technical board-config terms): **layout**, **set / sets**, **logbook**, **setter**, **beta**.
 

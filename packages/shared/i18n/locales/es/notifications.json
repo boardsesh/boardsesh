@@ -27,7 +27,7 @@
     "newClimbsSyncedSetter": "{{setter}} montó nuevos bloques",
     "newClimbsSynced": "{{actor}} montó nuevos bloques",
     "gymClaimApproved": "Ahora gestionas {{gym}}",
-    "gymClaimApprovedGeneric": "Ya eres el propietario: se aprobó tu reclamación del gimnasio",
+    "gymClaimApprovedGeneric": "Ya eres el propietario: se aprobó tu reclamación del rocódromo",
     "default": "Tienes una nueva notificación"
   },
   "errors": {
