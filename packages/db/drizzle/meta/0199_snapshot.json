@@ -1,6 +1,6 @@
 {
-  "id": "1b02ae1d-9f92-45b7-bb46-2956f5b355e6",
-  "prevId": "d79e6a34-c132-4d7a-a99c-05ed35aa8584",
+  "id": "53832fff-dc6f-40e5-86a2-2dd4c5435ea5",
+  "prevId": "6c5fe287-034c-47e3-85d8-1f84045fab15",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4505,6 +4505,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "website_vouched_by_owner": {
+          "name": "website_vouched_by_owner",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "contact_email": {
           "name": "contact_email",
