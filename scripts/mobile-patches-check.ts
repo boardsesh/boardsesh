@@ -177,6 +177,24 @@ export const RULES: readonly PatchRule[] = [
     sentinels: ['onFullyDismissedRef', 'handleNativeDismiss'],
     patchedKey: '@expo/ui@57.0.8',
   },
+  // ExpoModulesCore uses relative file URLs for xcasset names, so
+  // `localAssetName` must keep those while rejecting absolute/hosted file URLs
+  // before the leading slash is stripped and `UIImage(named:)` synchronously
+  // enumerates the bundle for a guaranteed board-art miss (#3928). Silently
+  // dropping this patch on the next expo-image bump wouldn't fail typecheck or
+  // the bundle — board art would just resume the per-reload main-thread stall.
+  {
+    package: 'expo-image',
+    file: 'ios/ImageView.swift',
+    sentinels: [
+      'boardsesh/boardsesh#3928',
+      'let hasFileHost = url.scheme == "file" && !(url.host?.isEmpty ?? true)',
+      'let hasAbsoluteFilePath = url.scheme == "file" && path.hasPrefix("/")',
+      'if hasFileHost || hasAbsoluteFilePath',
+      'Images/MyIcon',
+    ],
+    patchedKey: 'expo-image@57.0.1',
+  },
 ];
 
 /**
