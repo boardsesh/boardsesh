@@ -1,4 +1,5 @@
 import { useCallback, useEffect } from 'react';
+import { isMoonboardBoardName } from '@boardsesh/board-config';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { BleControlSheet } from './BleControlSheet';
@@ -25,7 +26,7 @@ export function BleControlSheetHost({ visible, onClose }: BleControlSheetHostPro
   const [autoDisconnectEnabled, setAutoDisconnectEnabled] = useSetting('autoDisconnectBle');
   const [lightOnSwipe, setLightOnSwipe] = useSetting('lightOnSwipe');
   const [lightOnClimbTap, setLightOnClimbTap] = useSetting('lightOnClimbTap');
-  const showLightAdjacentHolds = bluetooth?.boardName === 'moonboard';
+  const showLightAdjacentHolds = isMoonboardBoardName(bluetooth?.boardName);
   const timeoutSeconds = bluetooth?.autoDisconnectTimeoutSeconds ?? 30;
   const timeoutLabels = useAutoDisconnectTimeoutLabels();
   const autoDisconnectTimeoutLabel = timeoutLabels[timeoutSeconds] ?? String(timeoutSeconds);

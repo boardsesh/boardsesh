@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toBoardName } from '../board-name';
+import { isMoonboardBoardName, toBoardName } from '../board-name';
 
 describe('toBoardName', () => {
   it('returns the board name for a supported board', () => {
@@ -31,5 +31,23 @@ describe('toBoardName', () => {
   it('returns null for numeric-like strings', () => {
     expect(toBoardName('0')).toBeNull();
     expect(toBoardName('1')).toBeNull();
+  });
+});
+
+describe('isMoonboardBoardName', () => {
+  it('returns true for the canonical MoonBoard board name', () => {
+    expect(isMoonboardBoardName('moonboard')).toBe(true);
+  });
+
+  it('returns false for a non-MoonBoard board name', () => {
+    expect(isMoonboardBoardName('kilter')).toBe(false);
+  });
+
+  it('returns false for null', () => {
+    expect(isMoonboardBoardName(null)).toBe(false);
+  });
+
+  it('returns false for undefined', () => {
+    expect(isMoonboardBoardName(undefined)).toBe(false);
   });
 });

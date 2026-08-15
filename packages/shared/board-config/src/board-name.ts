@@ -5,6 +5,8 @@ import { AURORA_BOARDS, SUPPORTED_BOARDS, type AuroraBoardName, type BoardName }
 // platform's MoonBoard feature flag.
 const SUPPORTED_BOARD_SET: ReadonlySet<string> = new Set(SUPPORTED_BOARDS);
 
+export const MOONBOARD_BOARD_NAME = 'moonboard' satisfies BoardName;
+
 /**
  * Narrows a loose board string (e.g. `UserBoard.boardType`, which the schema
  * types as plain `string`) to the `BoardName` union, or `null` when it is
@@ -29,6 +31,16 @@ export function toAuroraBoardName(value: string | null | undefined): AuroraBoard
 }
 
 /**
+ * Whether a loose board-name value identifies Boardsesh's canonical MoonBoard
+ * board type. This is intentionally distinct from BLE device-name detection:
+ * advertised peripheral names have prefixes such as `MoonBoard A`, while app
+ * board names use the schema's lowercase `moonboard` identifier.
+ */
+export function isMoonboardBoardName(boardName: string | null | undefined): boardName is typeof MOONBOARD_BOARD_NAME {
+  return boardName === MOONBOARD_BOARD_NAME;
+}
+
+/**
  * Whether a board type's climbs are scoped by product size. MoonBoard has a single
  * fixed size, so its climbs are never size-filtered; every other board has size
  * variants (compatible_size_ids). One source of truth for the `!== 'moonboard'`
@@ -36,7 +48,7 @@ export function toAuroraBoardName(value: string | null | undefined): AuroraBoard
  * the offline download-availability check.
  */
 export function isSizeScopedBoard(boardType: string): boolean {
-  return boardType !== 'moonboard';
+  return !isMoonboardBoardName(boardType);
 }
 
 /**

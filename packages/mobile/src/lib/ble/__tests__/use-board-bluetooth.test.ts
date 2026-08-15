@@ -146,6 +146,7 @@ import {
   useBoardBluetooth,
   type BleConnectionHandle,
 } from '../use-board-bluetooth';
+import { getBleEncodingSignature } from '../encoding-signature';
 import type { BleWriteDiagnostics } from '../types';
 import { reportHandledError } from '../../error-reporting';
 import { createBleWriteActivityStore } from '../write-activity-store';
@@ -2753,6 +2754,7 @@ describe('useBoardBluetooth connect() initial frame write (#3875)', () => {
       frames: 'p100r12',
       mirrored: false,
       colorSignature: expect.any(String),
+      encodingSignature: 'default',
     });
   });
 
@@ -3211,6 +3213,18 @@ describe('bleConnectReportLevel', () => {
     expect(bleConnectReportLevel('unavailable')).toBe('error');
     expect(bleConnectReportLevel('service_missing')).toBe('error');
     expect(bleConnectReportLevel('unknown')).toBe('error');
+  });
+});
+
+describe('getBleEncodingSignature', () => {
+  it('changes when MoonBoard adjacent-hold encoding is enabled', () => {
+    expect(getBleEncodingSignature('moonboard', false)).toBe('default');
+    expect(getBleEncodingSignature('moonboard', true)).toBe('moonboard:adjacent-holds');
+  });
+
+  it('ignores the MoonBoard-only preference for Aurora boards', () => {
+    expect(getBleEncodingSignature('kilter', false)).toBe('default');
+    expect(getBleEncodingSignature('kilter', true)).toBe('default');
   });
 });
 

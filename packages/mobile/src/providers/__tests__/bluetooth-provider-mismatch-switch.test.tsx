@@ -11,6 +11,7 @@ import type { BleConnectionHandle, PickerState } from '../../lib/ble/use-board-b
 type BluetoothHookOptions = {
   onConnectSuccess?: (serial: string | null, connection: BleConnectionHandle) => void;
   holdsData?: unknown;
+  encodingSignature?: string;
 };
 
 const analytics = vi.hoisted(() => ({
@@ -45,7 +46,14 @@ const bluetooth = vi.hoisted(() => {
       sendFramesToBoard: vi.fn(async () => true as boolean | undefined),
       pickerState: null as PickerState | null,
       reconnectSerialForCurrentBoard: null,
-      connectInitialSendRef: { current: null as { frames: string; mirrored: boolean; colorSignature: string } | null },
+      connectInitialSendRef: {
+        current: null as {
+          frames: string;
+          mirrored: boolean;
+          colorSignature: string;
+          encodingSignature: string;
+        } | null,
+      },
     },
     useBoardBluetooth: vi.fn((options: BluetoothHookOptions) => {
       mock.options = options;
@@ -871,6 +879,7 @@ describe('BluetoothProvider spill skip', () => {
       frames: 'frames-lit',
       mirrored: false,
       colorSignature: 'default',
+      encodingSignature: 'default',
     };
     queue.currentClimbQueueItem = spill;
     queue.queue = [spill, lit];
