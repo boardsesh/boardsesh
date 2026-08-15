@@ -196,6 +196,9 @@ export async function cachedSearchClimbs(
     );
   }
 
+  // Keyed on the board, not on `explicitlyCacheable`: the front door is the only
+  // cacheable MoonBoard caller today, and if a second one appears it inherits
+  // the *shorter* TTL — erring toward import freshness rather than away from it.
   const revalidate = isMoonboard
     ? CACHE_DURATION_MOONBOARD_FRONT_DOOR
     : isDefaultSearch

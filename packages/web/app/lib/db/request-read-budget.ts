@@ -5,6 +5,10 @@ import { FRONT_DOOR_READ_DEADLINE_MS } from '@/app/lib/db/read-deadline';
  * A read that gets less than this is not worth issuing, and a floor keeps an
  * exhausted budget from turning into a 0 ms deadline that can beat an already
  * resolved promise on a busy event loop.
+ *
+ * The cost of the floor, stated plainly: a request whose budget is already spent
+ * can still overrun it by up to this much per remaining read, so the climb
+ * page's worst case is ~6 s + 2 × 500 ms rather than exactly 6 s.
  */
 export const MIN_REMAINING_READ_BUDGET_MS = 500;
 
