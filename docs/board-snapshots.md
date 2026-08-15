@@ -114,7 +114,9 @@ For every `(board_type, layout_id)` pair with at least one climb (`discoverLayou
    `snapshot_meta` table (`boardSnapshotDdlStatements`). No hand-maintained DDL: a column added to the
    client schema shows up in the next artifact automatically.
 2. Inside one Postgres `REPEATABLE READ` transaction, streams both tables through the **same row shaping**
-   the live sync resolvers use (`row-normalize.ts` + `toSqliteValue`), so an artifact row is byte-identical
+   the live sync resolvers use (`row-normalize.ts` + `toSqliteValue`). The isolated postgres.js pools register
+   explicit text parsers for PostgreSQL date/time OIDs rather than depending on Drizzle constructor side effects,
+   so they preserve microseconds and timestamp-without-time-zone wall clocks. An artifact row remains byte-identical
    to what an incremental `syncClimbs`/`syncClimbStats` pull would have written. `snapshot-export-golden.test.ts`
    pins that equivalence by running both paths against the same seeded rows and diffing them.
 3. Excludes rows at or after one run-wide `stableBefore` cutoff. On an unfenced local primary dry-run this
@@ -177,8 +179,10 @@ Migration `0200_board_snapshot_replica_fence` makes the cursor contract a databa
 UPDATE triggers stamp `board_climbs.updated_at`, `board_climb_stats.updated_at`, and
 `board_climb_grades.computed_at` from the transaction timestamp converted to UTC; INSERTs into
 `sync_deletions` receive the same UTC transaction-time stamp. Caller-supplied/backdated values are ignored.
-The only bypass (`boardsesh.snapshot_cursor_restore=on`) checks that `session_user` is a real superuser and
-exists for controlled historical restores/tests. The fence itself rejects every remaining logical
+The only INSERT bypass (`boardsesh.snapshot_cursor_restore=on`) checks that `session_user` is a real superuser and
+exists for controlled historical restores/tests. UPDATE triggers deliberately continue to restamp cursors while
+the setting is on, matching climbs, stats, and grades and preventing a long-lived restore session from backdating
+ordinary updates. The fence itself rejects every remaining logical
 subscription/apply worker. Arbitrary superuser trigger bypass remains outside the proof, so normal writer
 roles must not receive `SET` on `session_replication_role` or trigger-alter privileges. Replica export stays
 disabled until the final PG18 physical standby has been seeded after the upgrade subscription is removed.
@@ -1299,9 +1303,10 @@ This cutover is independently reversible and does not require promoting the stan
 3. Remove the one-way PG16→PG18 logical-upgrade subscription after its rollback window, then seed the final
    PG18 physical standby. Do not reuse a standby which observed logical apply. Confirm streaming/replay
    alerts, then run replica exports under a shadow key prefix for seven days **without `--heartbeat`**.
-   Pause catalog/grade writers for one controlled
-   comparison and compare the primary and standby row sets and watermarks at the same fixed cutoff. Also
-   exercise the held-old-transaction test against the candidate environment.
+   This is the required end-to-end `createReplicaSnapshotContext()` acceptance because CI has no physical
+   streaming standby. Pause catalog/grade writers for one controlled comparison and compare the primary
+   and standby row sets and watermarks at the same fixed cutoff. Also exercise the held-old-transaction
+   test against the candidate environment.
 4. Install the digest-pinned systemd timers but leave them disabled. Manually exercise full, threshold
    no-op, lag-too-high, replay-paused, lost-primary-session, and S3-failure paths. Only successful live
    gzip runs may update the public heartbeat. Every failure must emit no new success heartbeat; failures

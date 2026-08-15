@@ -1522,6 +1522,8 @@ export const schemaSQL = `
     v_restore_requested boolean := current_setting('boardsesh.snapshot_cursor_restore', true) = 'on';
     v_session_is_superuser boolean;
   BEGIN
+    -- Restore mode preserves COPY/INSERT history only. UPDATE stays stamped,
+    -- matching the separate climbs/stats UPDATE triggers.
     IF TG_OP = 'INSERT' AND v_restore_requested THEN
       SELECT role.rolsuper INTO v_session_is_superuser FROM pg_roles AS role WHERE role.rolname = session_user;
       IF NOT COALESCE(v_session_is_superuser, false) THEN

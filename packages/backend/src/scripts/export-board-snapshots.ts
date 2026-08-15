@@ -11,9 +11,9 @@
 // watermarks recorded here.
 //
 // The row shaping is the SAME code the live sync resolvers use (row-normalize.ts
-// + toSqliteValue), read through the SAME drizzle-constructed postgres.js client
-// (transparent timestamp parsers), so an artifact row is byte-identical to what a
-// live `syncClimbs`/`syncClimbStats` pull would have written. The
+// + toSqliteValue), with explicit postgres.js text parsers preserving timestamp
+// precision and wall-clock semantics, so an artifact row is byte-identical to
+// what a live `syncClimbs`/`syncClimbStats` pull would have written. The
 // snapshot-export-golden test pins that equivalence.
 //
 // Primary reads remain the default. Replica reads are allowed only through the
@@ -29,7 +29,6 @@
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { drizzle } from 'drizzle-orm/postgres-js';
 import { DatabaseSync } from 'node:sqlite';
 import { gzipSync } from 'node:zlib';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -122,6 +121,21 @@ const SNAPSHOT_TABLES: readonly SnapshotTableName[] = ['board_climbs', 'board_cl
 // required table names, so an extra snapshot_meta row is backwards-compatible.
 const DELETIONS_SNAPSHOT_META_TABLE = 'sync_deletions';
 const SNAPSHOT_EXPORT_APPLICATION_PREFIX = 'boardsesh-snapshot-export-';
+
+// postgres.js normally converts scalar dates/timestamps to Date and parses
+// their array forms. Snapshot normalization needs the exact server text so it
+// can preserve microseconds and timestamp-without-time-zone wall clocks. Use
+// postgres.js's documented custom-type boundary directly instead of relying on
+// drizzle() to mutate client.options as a constructor side effect.
+const passthroughSnapshotPostgresValue = (value: unknown): unknown => value;
+const SNAPSHOT_POSTGRES_TYPES = {
+  snapshotText: {
+    to: 1184,
+    from: [1184, 1082, 1083, 1114, 1182, 1185, 1115, 1231],
+    serialize: passthroughSnapshotPostgresValue,
+    parse: passthroughSnapshotPostgresValue,
+  },
+};
 
 // The SEPARATE per-layout grades artifact's single table (issue #4310). It is
 // not folded into SNAPSHOT_TABLES on purpose: the client verifies a whole-layout
@@ -386,11 +400,8 @@ export function createIsolatedSnapshotPool(connectionString: string, max: number
     // not authenticate the server certificate/hostname; `verify-full` does.
     // Plaintext is accepted only for an explicit loopback/dev-service URL.
     ssl: isLocalDatabaseUrl(connectionString) ? false : 'verify-full',
+    types: SNAPSHOT_POSTGRES_TYPES,
   });
-  // Drizzle installs passthrough parsers for timestamp/date OIDs on the raw
-  // postgres.js client. Snapshot shaping relies on exact PostgreSQL text,
-  // including microseconds and timestamp-without-time-zone semantics.
-  void drizzle(sqlClient);
   return sqlClient;
 }
 
@@ -501,11 +512,17 @@ export async function readReplicaReplayStatus(sqlClient: Sql, targetLsn: string)
   if (typeof row.receiver_status !== 'string') throw new Error('snapshot database returned an invalid receiver status');
   const timelineId = Number(row.timeline_id);
   const receiverTimelineId = Number(row.receiver_timeline_id);
-  if (!Number.isSafeInteger(timelineId) || timelineId <= 0 || !Number.isSafeInteger(receiverTimelineId)) {
+  const inRecovery = row.in_recovery === true;
+  if (
+    !Number.isSafeInteger(timelineId) ||
+    timelineId <= 0 ||
+    !Number.isSafeInteger(receiverTimelineId) ||
+    (inRecovery && receiverTimelineId <= 0)
+  ) {
     throw new Error('snapshot database returned an invalid PostgreSQL timeline');
   }
   return {
-    inRecovery: row.in_recovery === true,
+    inRecovery,
     replayPaused: row.replay_paused === true,
     replayLsn: row.replay_lsn ?? '',
     reachedTarget: row.reached_target === true,
@@ -522,6 +539,16 @@ function assertReplicaIdentityAndReceiver(
   expectedSystemIdentifier: string,
   expectedTimelineId: number,
 ): void {
+  if (
+    !Number.isSafeInteger(expectedTimelineId) ||
+    expectedTimelineId <= 0 ||
+    !Number.isSafeInteger(status.timelineId) ||
+    status.timelineId <= 0 ||
+    !Number.isSafeInteger(status.receiverTimelineId) ||
+    status.receiverTimelineId <= 0
+  ) {
+    throw new Error('snapshot replica returned an invalid PostgreSQL timeline');
+  }
   if (status.systemIdentifier !== expectedSystemIdentifier) {
     throw new Error('snapshot replica belongs to a different PostgreSQL system');
   }
@@ -545,12 +572,19 @@ export async function waitForReplicaReplay(params: {
   pollMilliseconds?: number;
   readStatus?: (sqlClient: Sql, targetLsn: string) => Promise<ReplicaReplayStatus>;
   sleep?: (milliseconds: number) => Promise<void>;
+  now?: () => number;
 }): Promise<ReplicaReplayStatus> {
-  const startedAt = Date.now();
+  const now = params.now ?? Date.now;
+  const deadline = now() + params.timeoutSeconds * 1000;
   const pollMilliseconds = params.pollMilliseconds ?? 1000;
   const readStatus = params.readStatus ?? readReplicaReplayStatus;
   const sleep = params.sleep ?? delay;
+  let firstPoll = true;
+  const timeoutError = (): Error =>
+    new Error(`snapshot replica did not replay target ${params.targetLsn} within ${params.timeoutSeconds}s`);
   while (true) {
+    if (!firstPoll && now() >= deadline) throw timeoutError();
+    firstPoll = false;
     const status = await readStatus(params.sqlClient, params.targetLsn);
     if (!status.inRecovery) throw new Error('snapshot replica is not in recovery; refusing to read a writable server');
     assertReplicaIdentityAndReceiver(status, params.expectedSystemIdentifier, params.expectedTimelineId);
@@ -562,10 +596,9 @@ export async function waitForReplicaReplay(params: {
         `snapshot replica replay lag is ${status.replayLagSeconds ?? 'unknown'}s; maximum is ${params.maxLagSeconds}s`,
       );
     }
-    if (Date.now() - startedAt >= params.timeoutSeconds * 1000) {
-      throw new Error(`snapshot replica did not replay target ${params.targetLsn} within ${params.timeoutSeconds}s`);
-    }
-    await sleep(pollMilliseconds);
+    const remainingMilliseconds = deadline - now();
+    if (remainingMilliseconds <= 0) throw timeoutError();
+    await sleep(Math.min(pollMilliseconds, remainingMilliseconds));
   }
 }
 
@@ -1208,7 +1241,17 @@ export async function exportLayoutSnapshot(params: {
       // SET does not acquire the REPEATABLE READ data snapshot. The second-
       // connection activity probe MUST finish before the first artifact SELECT;
       // see probeDeletionReplayBoundary for the commit-between-sample race this
-      // ordering closes. The generated value contains only a fixed prefix + UUID.
+      // ordering closes. SELECT set_config(...) is not equivalent here because
+      // it can establish the transaction snapshot before the probe. Fail the
+      // generated prefix + UUID through a strict allowlist before the one SET
+      // statement which PostgreSQL does not accept a bind parameter for.
+      if (
+        !/^boardsesh-snapshot-export-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+          exportApplicationName,
+        )
+      ) {
+        throw new Error('snapshot export application name failed validation');
+      }
       await tx.unsafe(`SET LOCAL application_name = '${exportApplicationName}'`);
       const deletionReplayMetadata = await probeDeletionReplayBoundary({
         sqlClient,

@@ -62,6 +62,9 @@ jobs:
     timeout-minutes: 45
     # Job-level, not workflow-level: schedule ticks whose feature-gated job is
     # skipped must not consume/replace the one pending mutating export.
+    # Actions has no supported FIFO/`queue: max` setting: the newest pending
+    # threshold scan intentionally replaces an older one. The refresh-free
+    # 07:00 UTC hour prevents that policy from displacing the daily full run.
     concurrency:
       group: export-board-snapshots
       cancel-in-progress: false
@@ -153,6 +156,8 @@ jobs:
     concurrency:
       group: export-board-snapshots
       cancel-in-progress: false
+      # A newer watchdog superseding a queued one is intentional: it checks the
+      # same mutable heartbeat objects at a later, more useful point in time.
     environment: Production
     env:
       SNAPSHOT_EXPORTER_IMAGE_DIGEST: ${{ vars.SNAPSHOT_EXPORTER_IMAGE_DIGEST }}
@@ -216,6 +221,7 @@ jobs:
         if: steps.heartbeat.outputs.refresh_stale == 'true' || steps.heartbeat.outputs.full_stale == 'true'
         env:
           EXPORTER_IMAGE: ${{ steps.image.outputs.image }}
+          FULL_STALE: ${{ steps.heartbeat.outputs.full_stale }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_DIRECT_URL: ${{ secrets.DATABASE_DIRECT_URL }}
           AWS_S3_BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME }}
@@ -238,7 +244,11 @@ jobs:
             -e SYNC_STABILITY_WINDOW_SECONDS
           )
 
-          if [ "${{ steps.heartbeat.outputs.full_stale }}" = 'true' ]; then
+          if [ "$FULL_STALE" = 'true' ]; then
+            # Match the homelab full-run contract: identity first, then the live
+            # gzip pass which publishes both heartbeats. If gzip fails, no
+            # partial-success marker is trusted; retrying identity is harmless
+            # and safer than inferring completion from mutable artifacts.
             docker run --rm "${common_env[@]}" "$EXPORTER_IMAGE" \
               node --import tsx src/scripts/export-board-snapshots.ts --source=primary --fence
             docker run --rm "${common_env[@]}" "$EXPORTER_IMAGE" \
