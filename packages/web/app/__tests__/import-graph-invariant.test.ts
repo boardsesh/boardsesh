@@ -97,6 +97,7 @@ const DELETED_COMPONENT_DIRS = [
   'grade-picker',
   'board-presence',
   'connection-manager',
+  'notifications',
 ];
 
 /**
@@ -117,7 +118,10 @@ const DELETED_CLIMB_CARD_STEMS = [
   'heart-animation-overlay',
 ];
 
-/** Hooks that only exist to serve the classic client climbing UI. */
+/**
+ * Hooks that only existed to serve deleted web surfaces — the classic client
+ * climbing UI, and the notification centre W-20b (#4439) moved to the app.
+ */
 const DELETED_HOOK_STEMS = [
   'use-tick-save',
   'use-effective-angle',
@@ -125,6 +129,10 @@ const DELETED_HOOK_STEMS = [
   'use-submit-app-feedback',
   'use-create-session',
   'use-climb-actions-data',
+  'use-notification-subscription',
+  'use-unread-notification-count',
+  'use-grouped-notifications',
+  'use-mark-notifications-read',
 ];
 
 /**
@@ -201,7 +209,6 @@ const KEPT_ROUTE_DIRS = [
   'join',
   'moonboard-import',
   'settings',
-  'notifications',
   // W-22's sitemap index + shard routes. Both are directories (`sitemap.xml/`,
   // `sitemaps/`), so they live here rather than in the filename scan the old
   // single-file `app/sitemap.ts` needed.
@@ -223,7 +230,6 @@ const KEPT_COMPONENT_DIRS = [
   'beta-videos',
   'charts',
   'home-gym-card',
-  'notifications',
   'board-renderer',
   'moonboard-renderer',
   'ui',

@@ -61,14 +61,14 @@ things. Neither is fixable by us for the copies already in the field.
 
 ### `/app` redirect destinations (for the route redirects in A6)
 
-| Web route removed  | `/app` destination                                          | Status                                                                                                                                         |
-| ------------------ | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `join/[sessionId]` | `/app/join/{sessionId}`                                     | exists (`packages/mobile/app/join/[sessionId].tsx`; universal-link `/join` registered)                                                         |
-| `/you`             | `/app/profile`                                              | exists (`(tabs)/profile/index.tsx`)                                                                                                            |
-| `/settings`        | `/app/profile/more`                                         | no bare `/app/settings` — redirect to `/app/profile/more`                                                                                      |
-| `/notifications`   | —                                                           | **no mobile route** — point at `/app/profile` or defer                                                                                         |
-| climb view         | `/app/climbs/{uuid}?boardName&layoutId&sizeId&setIds&angle` | exists; **all five query params required**, numeric IDs                                                                                        |
-| `/list`            | `/app/climbs`                                               | exists, but the Climbs tab reads its board from the persisted active board, **not** the URL — board context is lost on a bare `/list` redirect |
+| Web route removed  | `/app` destination                                          | Status                                                                                                                                                 |
+| ------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `join/[sessionId]` | `/app/join/{sessionId}`                                     | exists (`packages/mobile/app/join/[sessionId].tsx`; universal-link `/join` registered)                                                                 |
+| `/you`             | `/app/profile`                                              | exists (`(tabs)/profile/index.tsx`)                                                                                                                    |
+| `/settings`        | `/app/profile/more`                                         | no bare `/app/settings` — redirect to `/app/profile/more`                                                                                              |
+| `/notifications`   | `/home/notifications`                                       | exists (`packages/mobile/app/(tabs)/home/notifications.tsx`, W-20a #4432); `(tabs)/profile/notifications.tsx` renders the same screen in the You stack |
+| climb view         | `/app/climbs/{uuid}?boardName&layoutId&sizeId&setIds&angle` | exists; **all five query params required**, numeric IDs                                                                                                |
+| `/list`            | `/app/climbs`                                               | exists, but the Climbs tab reads its board from the persisted active board, **not** the URL — board context is lost on a bare `/list` redirect         |
 
 ### Board layout provider mounts (asymmetric — matters for A5)
 

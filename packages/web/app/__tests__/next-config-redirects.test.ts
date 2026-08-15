@@ -17,6 +17,9 @@
  *     `/import` rule has to come before the `/:board/…` catch-all.
  */
 import { describe, expect, it } from 'vite-plus/test';
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DEFAULT_APP_ORIGIN } from '@boardsesh/shared-schema/app-origins';
 
 type Redirect = { source: string; destination: string; permanent: boolean };
@@ -161,6 +164,30 @@ describe('next.config redirects', () => {
       expect(rule?.permanent, source).toBe(false);
       expect(rule?.destination.startsWith(configuredAppOrigin), source).toBe(true);
     }
+  });
+
+  it('30x-es the deleted /notifications page into the app', () => {
+    const rule = baseRedirects.find((redirect) => redirect.source === '/notifications');
+
+    expect(rule).toBeDefined();
+    expect(rule?.destination).toBe(`${configuredAppOrigin}/home/notifications`);
+    // Cross-origin, so it stays recoverable: a permanent hop to app.boardsesh.com
+    // is browser-cached indefinitely with no server-side hatch left.
+    expect(rule?.permanent).toBe(false);
+  });
+
+  it('points /notifications at an Expo route that actually exists', () => {
+    // `deploy/app-subdomain/_redirects` is `/*  /index.html  200`, so ANY path on
+    // app.boardsesh.com answers 200 with the SPA shell. A wrong destination
+    // therefore fails silently in production — no 404, no 5xx, no log line. The
+    // only cheap oracle is the Expo Router file that backs the URL, so the path
+    // is read off the rule rather than restated here. `(tabs)` is a group
+    // segment and is stripped from the browser path.
+    const rule = baseRedirects.find((redirect) => redirect.source === '/notifications');
+    const appPath = new URL(rule?.destination ?? '', configuredAppOrigin).pathname;
+    const routeFile = resolve(dirname(fileURLToPath(import.meta.url)), '../../../mobile/app/(tabs)', `.${appPath}.tsx`);
+
+    expect(existsSync(routeFile), routeFile).toBe(true);
   });
 
   it('does not send the deleted /you logbook tab to a deleted page', () => {

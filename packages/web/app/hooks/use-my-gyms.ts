@@ -39,8 +39,7 @@ export function useMyGyms(enabled: boolean, limit = 50) {
   // re-minted on its own ~5min revalidation cycle (see use-ws-auth-token.ts)
   // even when the signed-in user hasn't changed, and gyms data has no reason
   // to change alongside it — keying on it would re-fetch the whole gyms list
-  // on every silent token refresh. Same convention as
-  // useGroupedNotifications/useUnreadNotificationCount/InsightsTab's gymStats
+  // on every silent token refresh. Same convention as InsightsTab's gymStats
   // query. `queryFn` still closes over the latest `token` on every actual
   // fetch, so a genuine token rotation is never used stale.
   const query = useInfiniteQuery<

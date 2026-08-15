@@ -228,6 +228,15 @@ const BASE_REDIRECTS = [
     destination: `${APP_ORIGIN}/home`,
     permanent: false,
   },
+  // W-20b (#4439): the notification centre. The Home tab's bell is the app's
+  // primary entry point, and backing out of it lands on the feed — the same
+  // place `/feed` above already sends people, so the hand-off is one story
+  // rather than two. Cross-origin, so `permanent: false`.
+  {
+    source: '/notifications',
+    destination: `${APP_ORIGIN}/home/notifications`,
+    permanent: false,
+  },
   // `/discover` lost its page in W-13a and this PR removes the orphan layout,
   // but the URL still took 435 views from 117 people over the last 90 days.
   // The app carries the surface under the same path, which is already how

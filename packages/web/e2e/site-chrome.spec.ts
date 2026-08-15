@@ -50,7 +50,6 @@ test.describe('Site chrome - visibility', () => {
     ['the home page', '/'],
     ['a board list page', boardUrl],
     ['the settings page', '/settings'],
-    ['the notifications page', '/notifications'],
     ['the playlists page', '/playlists'],
   ] as const) {
     test(`renders the header and footer on ${label}`, async ({ page }) => {

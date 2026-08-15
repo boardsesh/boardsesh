@@ -4,11 +4,9 @@ import React, { useCallback } from 'react';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import Button from '@mui/material/Button';
-import Badge from '@mui/material/Badge';
 import Typography from '@mui/material/Typography';
 import SettingsOutlined from '@mui/icons-material/SettingsOutlined';
 import IosShareOutlined from '@mui/icons-material/IosShare';
-import NotificationsOutlined from '@mui/icons-material/NotificationsOutlined';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import TuneOutlined from '@mui/icons-material/TuneOutlined';
 import { useSession } from 'next-auth/react';
@@ -16,7 +14,6 @@ import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import BackButton from '@/app/components/back-button';
 import StartClimbingButton from '@/app/components/start-climbing-button';
-import { useUnreadNotificationCount } from '@/app/hooks/use-unread-notification-count';
 import { shareWithFallback } from '@/app/lib/share-utils';
 import { isChromeLessPath } from '@/app/lib/chrome-less-routes';
 import { usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
@@ -25,8 +22,6 @@ import { useProfileHeaderShare } from '@/app/components/profile-header-bridge/pr
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { themeTokens } from '@/app/theme/theme-config';
 import styles from './marketing-header.module.css';
-
-const BADGE_SMALL_SX = { '& .MuiBadge-badge': themeTokens.badge.small } as const;
 
 // Compact brand-fill capsule for the persistent "Start climbing" CTA that hands
 // off to the Expo-web app. Matches the hero CTA's fill without the amber glow.
@@ -166,7 +161,7 @@ function getProfileHeaderConfig(pathname: string, t: (key: string) => string): P
  * The www header. Boardsesh's climbing surfaces live in the app now, so this
  * carries no search field, no board context and no session state — it is the
  * brand link, the hand-off to the app, and the small set of account affordances
- * the marketing site still owns (`/notifications`, `/profile`, `/settings`).
+ * the marketing site still owns (`/profile`, `/settings`).
  *
  * The deleted UserDrawer used to be the only sign-in entry point outside
  * `/auth`, so the account slot below replaces it: a "Sign in" link when signed
@@ -177,7 +172,6 @@ export default function MarketingHeader() {
   const { data: session } = useSession();
   const { showMessage } = useSnackbar();
 
-  const notificationUnreadCount = useUnreadNotificationCount();
   const statsFilterBridge = useStatsFilterBridge();
   const profileHeaderShare = useProfileHeaderShare();
   const pathname = usePathnameWithoutLocale();
@@ -210,21 +204,12 @@ export default function MarketingHeader() {
     </Button>
   );
 
-  const notificationButton = (
-    <IconButton component={LocaleLink} href="/notifications" aria-label={t('ariaLabels.notifications')} size="small">
-      <Badge badgeContent={notificationUnreadCount} color="error" max={99} sx={BADGE_SMALL_SX}>
-        <NotificationsOutlined />
-      </Badge>
-    </IconButton>
-  );
-
-  // Signed-in climbers get three destinations here: notifications, the public
-  // profile and settings. `/you` is gone — your feed, stats and logbook live in
-  // the app now — so this account slot is what keeps `/notifications` and
-  // `/settings` reachable from www at all.
+  // Signed-in climbers get two destinations here: the public profile and
+  // settings. `/you` is gone and W-20b (#4439) moved notifications into the
+  // app, so this account slot is what keeps `/settings` reachable from www at
+  // all.
   const accountAction = session?.user?.id ? (
     <>
-      {notificationButton}
       <IconButton
         component={LocaleLink}
         href={`/profile/${session.user.id}`}
