@@ -1,6 +1,6 @@
 {
-  "id": "b731f6a5-674a-46e6-bc32-f4ffc9d54954",
-  "prevId": "0b165712-1164-48bf-9840-16bbf0593c36",
+  "id": "ea93f64a-377f-40c4-948b-e6242e08ccd4",
+  "prevId": "d79e6a34-c132-4d7a-a99c-05ed35aa8584",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -11808,6 +11808,118 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.location_sync_unfreeze_audit": {
+      "name": "location_sync_unfreeze_audit",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "entity_type": {
+          "name": "entity_type",
+          "type": "location_sync_entity_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity_uuid": {
+          "name": "entity_uuid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "previous_sync_frozen_at": {
+          "name": "previous_sync_frozen_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "previous_deleted_at": {
+          "name": "previous_deleted_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "previous_owner_id": {
+          "name": "previous_owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "performed_by": {
+          "name": "performed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "location_sync_unfreeze_audit_entity_history_idx": {
+          "name": "location_sync_unfreeze_audit_entity_history_idx",
+          "columns": [
+            {
+              "expression": "entity_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "entity_uuid",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "location_sync_unfreeze_audit_performed_by_idx": {
+          "name": "location_sync_unfreeze_audit_performed_by_idx",
+          "columns": [
+            {
+              "expression": "performed_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.sync_deletions": {
       "name": "sync_deletions",
       "schema": "",
@@ -12301,6 +12413,14 @@
         "in_progress",
         "resolved",
         "wont_fix"
+      ]
+    },
+    "public.location_sync_entity_type": {
+      "name": "location_sync_entity_type",
+      "schema": "public",
+      "values": [
+        "gym",
+        "board"
       ]
     },
     "public.logbook_sync_skip_reason": {
