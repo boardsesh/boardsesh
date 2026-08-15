@@ -489,17 +489,20 @@ emitted from one escaping helper.
 
 **The climb shards submit the default locale only.** This is a deliberate
 inconsistency with the boards shard, which does fan out to all four locales, and
-the difference is volume: boards is 690 items → 2,760 URLs, climbs is ~85,600
-items → ~342,000 URLs, each carrying a five-entry `xhtml:link` block. That renders
-~36 MB per 45,000-URL shard, past Vercel's 4.5 MB serverless response ceiling and
-past any sane crawl budget.
+the difference is volume: boards is 690 items → 2,760 URLs; production emits
+52,842 climb items, which would fan out to 211,368 locale URLs, each carrying a
+five-entry `xhtml:link` block. Even one 10,000-item climb page would expand to
+40,000 URL entries and exceed Vercel's 4.5 MB serverless response ceiling.
 
-(Measured on the full-board dev image, one row per climb: 85,596 tier-2 climbs,
-of which 44,011 sit on MoonBoard layouts with no popular board config, leaving
-~41,600 shippable → 5 pages. The epic's 128,655 counted tier-2 **(climb, angle)
-pairs** — 124,253 on the same snapshot — and this shard emits one URL per climb,
-so the pair count was never the right target. Nothing in the code depends on
-either figure; the page count is derived from the summary at request time.) Do not "fix" the inconsistency by fanning climbs out.
+(Measured against production with the branch's exact angle, size, set, listing,
+ascent and alias predicates: 127,131 tier-2 climbs exist, while 52,842 resolve
+through a selected public board configuration → 6 pages. All 73,412 MoonBoard
+climbs are absent because there is no MoonBoard configuration, 69 Kilter layout-5
+climbs have no selected layout, and the chosen size/set predicates exclude 808
+more. An earlier 53,650 estimate stopped at the layout intersection and therefore
+overstated the emitted set by those 808. Nothing in the code depends on the
+snapshot count; the page count comes from the summary at request time.) Do not
+"fix" the inconsistency by fanning climbs out.
 Nothing is noindexed — the locked decision on `/es`, `/fr` and `/de` climbing
 pages is untouched. They stay indexable, they stay link-discovered, and they
 carry reciprocal HTML hreflang from `createPageMetadata`'s `alternates.languages`,
@@ -536,17 +539,16 @@ strictly worse than the 503 the doctrine was written to prevent. The six-hour
 `unstable_cache` on the summary is the first line of defence, the in-process
 single-flight is the second, and this is the third.
 
-**A published page that builds an empty slice 404s, it does not 503.** The
+**A summary-advertised page whose cached item slice is empty 503s.** The
 summary (Next Data Cache, global) and the item list (in-process TTL, per
 instance) have independent epochs, so a warm instance can hold 10,000 items while
 a refreshed summary reports 10,001 and the index publishes page 2. The route
-therefore re-derives the bound from the list the build actually returned: an
-empty slice of a NON-empty list is out of range (404, and the crawler stops
-asking), while an empty slice of an empty list is the regressed query
-`expectsUrls` exists for (503). And when the summary itself reports zero while
-`expectsUrls` is set, the index still serves 200 but logs loudly — dropping the
-whole tier-2 surface behind six hours of `s-maxage` with nothing in the logs is
-how that goes unnoticed until Search Console reports the URLs removed.
+therefore treats an empty slice as transient cache disagreement and returns
+503/no-store until the item epoch catches up. A malformed page or one the current
+summary itself says is past the end still 404s. When the summary reports zero
+while `expectsUrls` is set, the index degrades under its one-minute cache window
+and names `climbs` in `X-Sitemap-Degraded` rather than quietly dropping the whole
+tier-2 surface.
 
 **Page numbers are canonical or they 404.** `Number('007')` is 7, so a `\d+`
 parser would give every real page an unbounded family of alias URLs — `01.xml`,
@@ -595,12 +597,11 @@ self-canonicalises to itself, so submitting both forms is duplicate content by
 construction. But the table is mostly **self**-aliases: every synced Kilter climb
 has a row mapping its uuid to itself, written by migration
 `0160_backfill_kilter_self_aliases` and by catalog-sync's identity path, because
-deletion reconciliation resolves upstream removals through this table. Measured on
-the full-board dev image: 344,504 Kilter alias rows, **zero** of them non-self.
-So the exclusion carries `alias_uuid <> canonical_uuid`. Without it the guard
-removes 23,936 of 23,936 Kilter tier-2 climbs — the largest board shipping no
-URLs at all, and silently, because the other boards keep the shard non-empty and
-`expectsUrls` never fires.
+deletion reconciliation resolves upstream removals through this table. In
+production, the broken predicate matches **106,550 of 127,131** tier-2 climbs
+(84%), while zero genuine aliases currently reach tier 2. So the exclusion
+carries `alias_uuid <> canonical_uuid`; without it most of the sitemap vanishes
+silently while the remaining boards keep the shard non-empty.
 
 **MoonBoard configurations are held out of the shard.** `generateSetSlug` joins
 set-name slugs with `_`, while the MoonBoard page's parser
@@ -610,18 +611,22 @@ canonical comes back with a different set-id list. 212 of 227 layout×set
 combinations mismatch, the full set lists on masters-2017 and masters-2019
 included. `tryConstructSlugViewUrl` returns a URL for all 227, so the
 resolvability probe cannot see it; the hold-out is a separate, named exclusion.
-Costs nothing today (`getPopularConfigs()` emits no MoonBoard rows) and stops the
+Costs nothing today (`getPopularConfigs()` emits no MoonBoard rows, excluding all
+73,412 production tier-2 MoonBoard climbs before this guard runs) and stops the
 shard going wrong the moment a `board_product_sizes_layouts_sets` seed lands.
 Lifting it means making `getMoonBoardSetsBySlug` an exact `generateSetNameSlug`
 match on `_`-split parts — a routing-parser change, not a sitemap one.
 
-**`<lastmod>` is `board_climb_stats.updated_at`** for the chosen angle — a real
-column that moves when ascents or grades move, never `new Date()`. The known risk
-is that a bulk upstream re-sync stamps `updated_at` across the board and flattens
-the signal for one cycle; dropping the field is a one-line change if that turns
-out to hurt, and the boards shard already ships without one.
+**`<lastmod>` is the later of the climb-content and chosen-angle stats clocks.**
+Ascents and grades advance `board_climb_stats.updated_at`; name, description and
+frame edits independently advance `board_climbs.updated_at` through the live
+`trg_board_climbs_set_sync_fields` trigger. Both per-URL items and the summary pick
+the later clock (the summary through `GREATEST`) so a renamed climb cannot publish
+a new slug with an older timestamp.
+The known risk is that a bulk upstream stats refresh flattens the signal for one
+cycle; dropping the field remains a one-line fallback if that hurts crawling.
 
-**Four caching layers, because a ~124k-row scan is not a playlists query.**
+**Four caching layers, because a 52,842-item grouped scan is not a playlists query.**
 `dbzRead` (the read pool), `withSerialPlan` (the parallel-hash-join guard behind
 the `could not resize shared memory segment` class), an in-process TTL plus
 single-flight promise so one instance builds the list once, and a six-hour CDN
@@ -638,7 +643,7 @@ never cache.
 The summary's **result** is two numbers; its **cost** is not. It is the same
 `DISTINCT ON` scan as the item build, once per `(board_type, layout_id)` group —
 measured on the full-board dev image at 9.2 s cold and 0.94 s warm for the single
-largest group, across ~18 groups. `unstable_cache` does not deduplicate
+largest group; production currently resolves 12 groups. `unstable_cache` does not deduplicate
 concurrent misses, so on a cold Data Cache the index plus every shard page would
 each run their own full scan; the summary therefore carries the same in-process
 TTL and single-flight the item build does.
@@ -652,15 +657,16 @@ the tier-3 follow-up. State this plainly rather than letting the four layers rea
 as more protection than they are.
 
 **Every climb page in the index carries the same `<lastmod>`** — the shard's
-global `max(updated_at)` — so one stat update anywhere makes all N pages look
-changed. Bounded to ~4×/day by the summary cache. A per-page value would require
+global `max(GREATEST(climb_updated_at, stats_updated_at))` — so one content or
+stats update anywhere makes all N pages look changed. Bounded to ~4×/day by the
+summary cache. A per-page value would require
 building the items to know which page a climb fell on, which is the exact scan the
 summary/build split exists to avoid, so the uniform value is the deliberate trade.
 The aggregate is read through `to_char(..., 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` and
 not a bare `max()`: a raw `sql` aggregate bypasses drizzle's timestamp mapper, and
 `new Date()` reads the resulting pg text in the _process_ timezone, which would
 silently offset the index `<lastmod>` on any non-UTC runtime while the per-URL
-`<lastmod>` on the same column stayed correct.
+`<lastmod>` from the same clocks stayed correct.
 
 **JSON-LD.** `BreadcrumbList` already shipped in W-15. This wave adds
 `CreativeWork` (+ `aggregateRating`) on the climb front door, `Organization` +

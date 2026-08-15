@@ -79,10 +79,9 @@ describe('the tier-2 climbs query', () => {
   it('excludes GENUINE alias uuids only, never the self-aliases every Kilter climb has', () => {
     // `board_climb_aliases` is mostly self-aliases: migration 0160 gave every
     // synced Kilter climb a row mapping its uuid to itself so deletion
-    // reconciliation can resolve upstream removals. Measured on the full-board
-    // dev image: 344,504 kilter rows, ZERO non-self. Without the `<>` the guard
-    // excludes 23,936 of 23,936 Kilter tier-2 climbs — the largest board shipping
-    // nothing, silently, because the other boards keep the shard non-empty.
+    // reconciliation can resolve upstream removals. Production measured the
+    // broken predicate excluding 106,550 of 127,131 tier-2 climbs (84%), while
+    // no genuine alias currently reaches tier 2.
     expect(normalised).toContain('not exists');
     expect(normalised).toContain('"board_climb_aliases"');
     expect(normalised).toMatch(/"board_climb_aliases"\."alias_uuid" = "board_climbs"\."uuid"/);
@@ -126,14 +125,19 @@ describe('the summary query', () => {
   const rendered = buildTier2ClimbSummaryQuery(db, KILTER).toSQL();
   const sql = rendered.sql.toLowerCase().replace(/\s+/g, ' ');
 
-  it('counts what the item query returns and dates it in explicit UTC', () => {
+  it('counts what the item query returns and dates content or stats changes in explicit UTC', () => {
     expect(sql).toContain('count(*)::int');
-    // NOT a bare `max("updated_at")`: a raw aggregate bypasses drizzle's
+    // Both independent clocks feed the value: content edits advance
+    // board_climbs, while ascents and grades advance board_climb_stats.
+    expect(sql).toContain('greatest("stats_updated_at", "climb_updated_at")');
+    // NOT a bare timestamp aggregate: raw SQL bypasses drizzle's
     // timestamp mapper, so the driver returns pg text like
     // `2026-08-10 20:39:19.492499`, which `new Date()` reads in the PROCESS
     // timezone. On any non-UTC runtime the index `<lastmod>` would then disagree
-    // with the per-URL `<lastmod>` built from the same column.
-    expect(sql).toContain('to_char(max("updated_at"), \'yyyy-mm-dd"t"hh24:mi:ss.ms"z"\')');
+    // with the per-URL `<lastmod>` built from the same clocks.
+    expect(sql).toContain(
+      'to_char(max(greatest("stats_updated_at", "climb_updated_at")), \'yyyy-mm-dd"t"hh24:mi:ss.ms"z"\')',
+    );
     expect(sql).toContain('distinct on ("board_climb_stats"."climb_uuid")');
     expect(sql).toContain('"board_climbs"."is_listed"');
   });

@@ -344,7 +344,7 @@ describe('buildSitemapIndexXml', () => {
 
   it('serves the rest of the index when a builder never settles', async () => {
     // The case a try/catch cannot see: a builder that stalls rather than
-    // rejecting holds the request to the platform timeout, which 5xxes all five
+    // rejecting holds the request to the platform timeout, which 5xxes all six
     // shards. `fetchPlaylistSitemapRows` has no bound of its own, so this is not
     // hypothetical.
     vi.useFakeTimers();

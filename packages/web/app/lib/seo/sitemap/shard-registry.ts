@@ -320,17 +320,17 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
     }
 
     const { items, totalItems } = await shard.buildPage(page);
-    // The bound is re-derived from the list the build ACTUALLY returned, not
-    // only from the summary. The two have independent epochs — the summary is in
-    // the Next Data Cache (global), the item list is an in-process TTL (per
-    // instance) — so a warm instance holding 10,000 items can meet a refreshed
-    // summary reporting 10,001. The index then publishes page 2, whose slice is
-    // empty. Without this, `expectsUrls` turns that into a 503 on a URL the index
-    // told Googlebot to fetch, for up to the item TTL. An empty slice of a
-    // NON-empty list is an out-of-range page (404, and the crawler stops asking);
-    // an empty slice of an empty list is the regressed query `expectsUrls` is for.
+    // The summary and item list have independent epochs — the summary is in the
+    // Next Data Cache (global), while the list is an in-process TTL (per instance).
+    // A fresh summary can therefore advertise page 2 while a warm instance still
+    // holds exactly 10,000 items. That empty slice is transient disagreement, not
+    // a permanently invalid URL: 503/no-store asks the crawler to retry after the
+    // item epoch catches up. A true out-of-range page was already rejected above
+    // by the current summary and remains a 404.
     if (items.length === 0 && totalItems > 0) {
-      return notFoundResponse();
+      throw new Error(
+        `[sitemap] paged shard "${shard.id}" page ${page} is listed by a ${summary.itemCount}-item summary but its cached ${totalItems}-item build has no slice — cache epochs disagree`,
+      );
     }
     if (items.length === 0 && shard.expectsUrls) {
       throw new Error(
@@ -467,11 +467,11 @@ async function buildPagedIndexEntries(shard: PagedSitemapShard): Promise<Sitemap
     return null;
   }
 
-  // Every page carries the shard's GLOBAL max(updated_at), so one stat update
-  // anywhere can make all N pages look changed. A per-page `<lastmod>` would
-  // require building the items to know which page a climb fell on — the exact
-  // scan the summary/build split exists to avoid — so the uniform value is the
-  // deliberate trade.
+  // Every page carries the shard's global max of the climb-content and stats
+  // clocks, so one content or stats update can make all N pages look changed. A
+  // per-page `<lastmod>` would require building the items to know which page a
+  // climb fell on — the exact scan the summary/build split exists to avoid — so
+  // the uniform value is the deliberate trade.
   return Array.from({ length: pageCount }, (_, pageIndex) => ({
     loc: absoluteUrl(shard.pagePath(pageIndex + 1)),
     lastModified: summary.lastModified,

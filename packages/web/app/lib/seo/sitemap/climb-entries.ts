@@ -36,7 +36,7 @@ function groupKey(boardType: string, layoutId: number): string {
 /**
  * The winner is the config with the most physical boards, then the most listed
  * climbs, then the lowest size id, then the lowest set-id list. Determinism is
- * the point, not the ranking: an unstable pick churns ~85k URLs between crawls
+ * the point, not the ranking: an unstable pick churns the whole emitted set between crawls
  * and teaches Google that every climb URL is ephemeral.
  */
 function isBetterConfig(candidate: PopularBoardConfig, incumbent: PopularBoardConfig): boolean {

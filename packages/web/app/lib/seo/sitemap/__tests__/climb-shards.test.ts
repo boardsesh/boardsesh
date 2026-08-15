@@ -161,18 +161,18 @@ describe('the paged climbs shard', () => {
     expect(response.status).toBe(503);
   });
 
-  it('404s — not 503s — a page the summary listed but the item list is too short for', async () => {
+  it('503s until an older item epoch catches up with a summary-advertised page', async () => {
     // The summary lives in the Next Data Cache (global) and the item list in an
     // in-process TTL (per instance), so their epochs are independent: a warm
     // instance holding exactly one page of items can meet a refreshed summary
-    // reporting one more. Without reconciling against the built list, Googlebot
-    // gets a 503 on a URL the index told it to fetch, for up to the item TTL.
+    // reporting one more. The page is newly valid, so 404 would tell Googlebot a
+    // transiently empty cached slice is permanently absent.
     climbs.itemCount = CLIMB_URLS_PER_SHARD + 1;
     climbs.builtCount = CLIMB_URLS_PER_SHARD;
 
     const response = await pagedShardRouteHandler('climbs', '2.xml');
 
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(503);
     expect(response.headers.get('cache-control')).toBe('no-store');
   });
 
@@ -196,7 +196,7 @@ describe('the index and the climbs shard', () => {
 
   it('NEVER builds the items to render the index', async () => {
     // The pool-starvation guard (#4461), and the assertion most likely to be
-    // quietly broken later: a ~124k-row scan on every /sitemap.xml hit is the
+    // quietly broken later: the full grouped item build on every /sitemap.xml hit is the
     // failure this whole summary/build split exists to avoid.
     await buildSitemapIndexXml();
 

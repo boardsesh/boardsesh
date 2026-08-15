@@ -70,7 +70,11 @@ function buildChosenSubquery(db: SerialPlanDb, group: ClimbConfigGroup) {
       uuid: boardClimbStats.climbUuid,
       angle: boardClimbStats.angle,
       name: boardClimbs.name,
-      updatedAt: boardClimbStats.updatedAt,
+      // Both source columns are named `updated_at`; explicit aliases keep them
+      // distinct through the `chosen` subquery. `mapWith` preserves drizzle's
+      // UTC timestamp decoder for the per-URL item path.
+      statsUpdatedAt: sql`${boardClimbStats.updatedAt}`.mapWith(boardClimbStats.updatedAt).as('stats_updated_at'),
+      climbUpdatedAt: sql`${boardClimbs.updatedAt}`.mapWith(boardClimbs.updatedAt).as('climb_updated_at'),
     })
     .from(boardClimbStats)
     .innerJoin(
@@ -105,11 +109,11 @@ function buildChosenSubquery(db: SerialPlanDb, group: ClimbConfigGroup) {
         // has a row mapping its uuid to itself (migration
         // 0160_backfill_kilter_self_aliases, plus catalog-sync's identity path),
         // because deletion reconciliation resolves upstream removals through this
-        // table. Measured on the full-board dev image: 344,504 kilter alias rows,
-        // ZERO of them non-self. Excluding "any uuid present as alias_uuid" would
-        // therefore drop 23,936 of 23,936 Kilter tier-2 climbs — the largest
-        // board shipping no URLs at all, silently, because the other boards keep
-        // the shard non-empty and `expectsUrls` never fires.
+        // table. Measured in production: the broken predicate would drop 106,550
+        // of 127,131 tier-2 climbs (84%), while zero genuine aliases currently
+        // meet the tier-2 threshold. Excluding "any uuid present as alias_uuid"
+        // would therefore remove most of the sitemap silently, because the
+        // remaining boards keep the shard non-empty and `expectsUrls` never fires.
         notExists(
           db
             .select({ one: sql<number>`1` })
@@ -156,23 +160,26 @@ export function buildTier2ClimbQuery(db: SerialPlanDb, group: ClimbConfigGroup, 
  * The count and freshness of exactly what `buildTier2ClimbQuery` would return —
  * same `buildChosenSubquery`, so the two can never describe different sets.
  *
- * `to_char(...)` rather than a bare `max(updated_at)`: the aggregate goes through
- * a raw `sql` fragment, which bypasses drizzle's timestamp column mapper, so the
- * driver hands back pg text like `2026-08-10 20:39:19.492499`. `new Date()` reads
- * that non-ISO form in the *process* timezone, so on any non-UTC runtime (local
- * dev, a self-hosted container with TZ set — the portability posture the repo
- * requires) the index's `<lastmod>` would be silently offset, while the per-URL
- * `<lastmod>` on the same column went through drizzle's mapper and was correct.
- * `board_climb_stats.updated_at` is `timestamp without time zone` holding UTC,
- * and drizzle's own mapper parses it as `value + '+0000'`; rendering the same
- * fields with an explicit `Z` makes both paths agree by construction.
+ * The freshness clock covers both halves of the visible page. Stats changes
+ * advance `board_climb_stats.updated_at`; name, description and frame edits
+ * independently advance `board_climbs.updated_at`. Production's update triggers
+ * guarantee both clocks, so the later one is the honest `<lastmod>`.
+ *
+ * `to_char(...)` rather than a bare timestamp aggregate: the raw `sql` fragment
+ * bypasses drizzle's timestamp mapper, so the driver otherwise hands back pg text
+ * like `2026-08-10 20:39:19.492499`. `new Date()` reads that non-ISO form in the
+ * process timezone. Both columns are `timestamp without time zone` holding UTC;
+ * rendering an explicit `Z` keeps the summary aligned with the per-row values
+ * that go through drizzle's ordinary timestamp mapper.
  */
 export function buildTier2ClimbSummaryQuery(db: SerialPlanDb, group: ClimbConfigGroup) {
   const chosen = buildChosenSubquery(db, group);
   return db
     .select({
       itemCount: sql<number>`count(*)::int`,
-      lastModified: sql<string | null>`to_char(max(${chosen.updatedAt}), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
+      lastModified: sql<
+        string | null
+      >`to_char(max(GREATEST(${chosen.statsUpdatedAt}, ${chosen.climbUpdatedAt})), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
     })
     .from(chosen);
 }
@@ -190,14 +197,14 @@ export async function fetchTier2ClimbRows(group: ClimbConfigGroup): Promise<Clim
     uuid: row.uuid,
     name: row.name,
     angle: row.angle,
-    updatedAt: row.updatedAt,
+    updatedAt: row.climbUpdatedAt > row.statsUpdatedAt ? row.climbUpdatedAt : row.statsUpdatedAt,
   }));
 }
 
 /**
- * `unstable_cache`d, and only the summary is: an ~85k-item payload serialises to
- * well over 10 MB, past Vercel's 2 MB Data Cache entry ceiling, so caching the
- * items there would silently never cache.
+ * `unstable_cache`d, and only the summary is: the production 52,842-item payload
+ * serialises to well over 10 MB, past Vercel's 2 MB Data Cache entry ceiling, so
+ * caching the items there would silently never cache.
  *
  * The summary's RESULT is two numbers. Its COST is not: it is the same
  * `DISTINCT ON` scan as the item build, once per `(board_type, layout_id)` group

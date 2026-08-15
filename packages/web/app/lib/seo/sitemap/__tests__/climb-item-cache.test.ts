@@ -68,7 +68,13 @@ vi.mock('@boardsesh/db/queries', () => ({
       if (reads.gate) await reads.gate;
       if (reads.summaryRow) return [reads.summaryRow];
       return [
-        { uuid: 'abcdef1234567890abcdef1234567890', name: 'Test Climb', angle: 40, updatedAt: new Date('2026-05-04') },
+        {
+          uuid: 'abcdef1234567890abcdef1234567890',
+          name: 'Test Climb',
+          angle: 40,
+          statsUpdatedAt: new Date('2026-05-04'),
+          climbUpdatedAt: new Date('2026-05-05'),
+        },
       ];
     } finally {
       reads.inFlight -= 1;
@@ -96,6 +102,7 @@ describe('the tier-2 item cache', () => {
     expect(reads.count).toBe(3);
     expect(second).toBe(first);
     expect(first).toHaveLength(3);
+    expect(first[0]?.lastModified?.toISOString()).toBe('2026-05-05T00:00:00.000Z');
   });
 
   it('runs the group scans one at a time, never fanned out onto the pool', async () => {
