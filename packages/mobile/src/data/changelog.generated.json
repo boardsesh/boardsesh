@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-08-15T04:22:42.677Z",
+  "generatedAt": "2026-08-15T05:39:09.758Z",
   "entries": [
+    {
+      "prNumber": 4469,
+      "category": "fixed",
+      "title": "Download several boards for offline use without getting stuck after the snapshot finishes.",
+      "mergedAt": "2026-08-15T05:37:55Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4469",
+      "body": "Pocketing your phone now resumes the download cleanly, and a slower fallback shows real progress instead of an interrupted spinner."
+    },
+    {
+      "prNumber": 4468,
+      "category": "fixed",
+      "title": "Similar climbs and offline board stats keep loading during busy sessions.",
+      "mergedAt": "2026-08-15T04:34:57Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4468"
+    },
     {
       "prNumber": 3422,
       "category": "fixed",

@@ -14,6 +14,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Download several boards for offline use without getting stuck after the snapshot finishes. ([#4469](https://github.com/boardsesh/boardsesh/pull/4469))
+  Pocketing your phone now resumes the download cleanly, and a slower fallback shows real progress instead of an interrupted spinner.
+- Similar climbs and offline board stats keep loading during busy sessions. ([#4468](https://github.com/boardsesh/boardsesh/pull/4468))
 - Keep every climber's sends and sessions together when the same wall was registered more than once ([#3422](https://github.com/boardsesh/boardsesh/pull/3422))
   Saved walls now switch to the surviving board automatically after a merge
   When a wall is already on Boardsesh, join the existing board or deliberately create a separate one
