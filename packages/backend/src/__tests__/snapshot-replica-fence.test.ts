@@ -98,6 +98,51 @@ describe('replica snapshot fence', () => {
     }
   });
 
+  it('requires certificate and hostname verification for every non-local database URL', async () => {
+    const remotePool = createIsolatedSnapshotPool('postgresql://snapshot@example.test:5432/boardsesh', 1);
+    const loopbackPool = createIsolatedSnapshotPool('postgresql://snapshot@127.0.0.1:5432/boardsesh', 1);
+    try {
+      expect(remotePool.options.ssl).toBe('verify-full');
+      expect(loopbackPool.options.ssl).toBe(false);
+    } finally {
+      await remotePool.end({ timeout: 0 });
+      await loopbackPool.end({ timeout: 0 });
+    }
+  });
+
+  it('preserves restored grade cursors on insert but stamps later updates', async () => {
+    const pool = createPool();
+    await pool.begin(async (transaction) => {
+      await transaction.unsafe("SET LOCAL boardsesh.snapshot_cursor_restore = 'on'");
+      await transaction.unsafe(
+        `INSERT INTO board_climb_grades
+           (board_type, climb_uuid, angle, confidence, model_version, coeff_version, computed_at, sync_seq)
+         VALUES ('kilter', 'restore-grade', 40, 'provisional', 'test', 'test',
+                 '2000-01-01'::timestamp, 41)`,
+      );
+      const insertedRows = await transaction.unsafe(
+        `SELECT computed_at, sync_seq::text
+         FROM board_climb_grades
+         WHERE board_type = 'kilter' AND climb_uuid = 'restore-grade' AND angle = 40`,
+      );
+      expect(insertedRows).toMatchObject([{ computed_at: '2000-01-01 00:00:00', sync_seq: '41' }]);
+
+      await transaction.unsafe(
+        `UPDATE board_climb_grades
+         SET confidence = 'confirmed', computed_at = '2001-01-01'::timestamp, sync_seq = 42
+         WHERE board_type = 'kilter' AND climb_uuid = 'restore-grade' AND angle = 40`,
+      );
+      const updatedRows = await transaction.unsafe(
+        `SELECT computed_at, sync_seq::text
+         FROM board_climb_grades
+         WHERE board_type = 'kilter' AND climb_uuid = 'restore-grade' AND angle = 40`,
+      );
+      const updated = updatedRows[0] as unknown as { computed_at: unknown; sync_seq: unknown };
+      expect(toIso(updated.computed_at)).not.toBe('2001-01-01T00:00:00.000Z');
+      expect(String(updated.sync_seq)).not.toBe('42');
+    });
+  });
+
   it('rejects pg_read_all_stats membership when privileges are not inherited', async () => {
     const pool = createPool();
     const testSuffix = `w${process.env.VITEST_POOL_ID ?? '0'}_p${process.pid}`;
@@ -370,6 +415,76 @@ describe('replica snapshot fence', () => {
         readStatus: async () => baseStatus,
       }),
     ).rejects.toThrow('did not replay target');
+  });
+
+  it('rejects a non-streaming receiver and every non-positive receiver timeline', async () => {
+    const baseStatus = {
+      inRecovery: true,
+      replayPaused: false,
+      replayLsn: '0/2',
+      reachedTarget: true,
+      replayLagSeconds: 0,
+      systemIdentifier: 'test-system',
+      timelineId: 1,
+      receiverStatus: 'streaming',
+      receiverTimelineId: 1,
+    };
+    const wait = (status: typeof baseStatus) =>
+      waitForReplicaReplay({
+        sqlClient: createPool(),
+        targetLsn: '0/2',
+        maxLagSeconds: 30,
+        timeoutSeconds: 1,
+        expectedSystemIdentifier: 'test-system',
+        expectedTimelineId: 1,
+        readStatus: async () => status,
+      });
+
+    await expect(wait({ ...baseStatus, receiverStatus: 'catchup' })).rejects.toThrow(
+      'WAL receiver is catchup, expected streaming',
+    );
+    await expect(wait({ ...baseStatus, receiverTimelineId: 0 })).rejects.toThrow('invalid PostgreSQL timeline');
+    await expect(wait({ ...baseStatus, receiverTimelineId: -1 })).rejects.toThrow('invalid PostgreSQL timeline');
+  });
+
+  it('never sleeps past the replica replay deadline', async () => {
+    let nowMs = 1000;
+    let polls = 0;
+    const sleeps: number[] = [];
+    const status = {
+      inRecovery: true,
+      replayPaused: false,
+      replayLsn: '0/1',
+      reachedTarget: false,
+      replayLagSeconds: 1,
+      systemIdentifier: 'test-system',
+      timelineId: 1,
+      receiverStatus: 'streaming',
+      receiverTimelineId: 1,
+    };
+
+    await expect(
+      waitForReplicaReplay({
+        sqlClient: createPool(),
+        targetLsn: '0/2',
+        maxLagSeconds: 30,
+        timeoutSeconds: 1,
+        expectedSystemIdentifier: 'test-system',
+        expectedTimelineId: 1,
+        pollMilliseconds: 5000,
+        now: () => nowMs,
+        readStatus: async () => {
+          polls += 1;
+          return status;
+        },
+        sleep: async (milliseconds) => {
+          sleeps.push(milliseconds);
+          nowMs += milliseconds;
+        },
+      }),
+    ).rejects.toThrow('did not replay target');
+    expect(sleeps).toEqual([1000]);
+    expect(polls).toBe(1);
   });
 
   it('returns only after the target LSN is reported replayed', async () => {
