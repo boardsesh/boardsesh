@@ -40,7 +40,11 @@ wait_for_postgres() {
   local container_name="${1:-$CONTAINER_NAME}"
   local attempt=0
   while [[ "$attempt" -lt 120 ]]; do
-    if docker exec "$container_name" psql -X -Atq -U postgres -d main \
+    # The official entrypoint's temporary init server accepts Unix-socket
+    # connections, then shuts down before starting the final postmaster. Only
+    # the final server listens on TCP, so this cannot report readiness mid-init.
+    if docker exec --env PGPASSWORD=postgres "$container_name" \
+      psql -X -Atq -h 127.0.0.1 -U postgres -d main \
       -c 'SELECT 1;' >/dev/null 2>&1; then
       return
     fi
