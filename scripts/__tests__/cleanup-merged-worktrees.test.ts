@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import { spawn, spawnSync } from 'node:child_process';
-import { access, chmod, cp, mkdtemp, mkdir, rm, utimes, writeFile } from 'node:fs/promises';
+import { access, chmod, cp, mkdtemp, mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -126,7 +126,6 @@ async function createFixture(headAgeSeconds: number, candidateRelativePath = 'fe
     '#!/bin/sh\n' +
       'if [ "$1" = auth ] && [ "$2" = status ]; then exit 0; fi\n' +
       'if [ "$1" = pr ] && [ "$2" = list ]; then\n' +
-      '  if [ -n "${GH_PR_JSON_FILE:-}" ]; then cat "$GH_PR_JSON_FILE"; exit 0; fi\n' +
       '  printf "%s\\n" "$GH_PR_JSON"\n' +
       '  exit 0\n' +
       'fi\n' +
@@ -354,19 +353,26 @@ describe('cleanup-merged-worktrees safety policy', () => {
 
   it('uses lsof CWD records when procfs is unavailable', async () => {
     const fixture = await createFixture(8 * 24 * 60 * 60);
+    const lsofCountFile = join(dirname(fixture.primaryWorktree), 'lsof-count');
     await writeExecutable(
       join(fixture.stubBinDirectory, 'lsof'),
-      '#!/bin/sh\nprintf "p12345\\nn%s/active-subdirectory\\n" "$LSOF_ACTIVE_WORKTREE"\n',
+      '#!/bin/sh\n' +
+        'count=0\n' +
+        'if [ -f "$LSOF_COUNT_FILE" ]; then IFS= read -r count < "$LSOF_COUNT_FILE"; fi\n' +
+        'printf "%s\\n" "$((count + 1))" > "$LSOF_COUNT_FILE"\n' +
+        'printf "p12345\\nn%s/active-subdirectory\\n" "$LSOF_ACTIVE_WORKTREE"\n',
     );
 
     const result = runCleanup(fixture, [], ['--apply'], {
       LSOF_ACTIVE_WORKTREE: fixture.candidateWorktree,
+      LSOF_COUNT_FILE: lsofCountFile,
       WORKTREE_CWD_PROC_ROOT_OVERRIDE: '/proc-not-mounted-for-test',
     });
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('a live process has its CWD in this worktree');
     expect(result.stdout).toContain('Eligible for removal: 0');
+    expect(await readFile(lsofCountFile, 'utf8')).toBe('1\n');
     expect(runGit(['worktree', 'list', '--porcelain'], fixture.primaryWorktree)).toContain(fixture.candidateWorktree);
   });
 
@@ -416,22 +422,6 @@ describe('cleanup-merged-worktrees safety policy', () => {
     expect(runGit(['rev-parse', recoveryRef], fixture.primaryWorktree)).toBe(fixture.candidateHead);
     await expect(access(fixture.candidateWorktree)).rejects.toThrow();
   }, 15_000);
-
-  it('fails closed when the PR metadata query reaches its safety limit', async () => {
-    const fixture = await createFixture(8 * 24 * 60 * 60);
-    const pullRequestFile = join(dirname(fixture.primaryWorktree), 'pull-requests.json');
-    const pullRequests = Array.from({ length: 10_000 }, (_, index) => ({
-      ...mergedPullRequest(fixture.candidateHead),
-      number: index + 1,
-    }));
-    await writeFile(pullRequestFile, JSON.stringify(pullRequests), 'utf8');
-
-    const result = runCleanup(fixture, [], ['--apply'], { GH_PR_JSON_FILE: pullRequestFile });
-
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('reached the 10000-PR safety limit; no worktrees were changed');
-    expect(runGit(['worktree', 'list', '--porcelain'], fixture.primaryWorktree)).toContain(fixture.candidateWorktree);
-  });
 
   it('preserves an unreachable detached commit even when its final tree matches main', async () => {
     const fixture = await createFixture(8 * 24 * 60 * 60);

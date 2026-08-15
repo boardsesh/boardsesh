@@ -117,6 +117,9 @@ skipped_in_use=0
 skipped_locked=0
 PROCESS_CWD_WARNING_SHOWN=0
 PROCESS_CWD_PROC_ROOT="${WORKTREE_CWD_PROC_ROOT_OVERRIDE:-/proc}"
+PROCESS_CWD_SNAPSHOT_READY=0
+PROCESS_CWD_SNAPSHOT_TRUSTED=0
+declare -a PROCESS_CWD_SNAPSHOT=()
 
 # Every removal has an inactivity floor. Agent worktrees are intentionally
 # shorter-lived because a live process CWD is checked both during the scan and
@@ -139,8 +142,9 @@ else
   echo "Warning: upstream main could not be refreshed; all local refs will be preserved" >&2
 fi
 
-# Fetch PR metadata once. Per-worktree `gh pr list --head` calls make cleanup of
-# large agent-worktree collections unnecessarily slow.
+# Fetch only the newest PR metadata once. Older unmatched PR branches follow
+# the more conservative no-PR policy: seven days of inactivity and no ref
+# deletion. This avoids downloading the repository's full PR history.
 GITHUB_REPOSITORY="${GITHUB_REPOSITORY_OVERRIDE:-}"
 if [ -z "$GITHUB_REPOSITORY" ]; then
   GITHUB_REPOSITORY=$(github_repository_from_origin) || {
@@ -148,7 +152,7 @@ if [ -z "$GITHUB_REPOSITORY" ]; then
     exit 1
   }
 fi
-PR_METADATA_LIMIT=10000
+PR_METADATA_LIMIT=1000
 if ! ALL_PR_JSON=$(gh pr list --repo "$GITHUB_REPOSITORY" --state all --limit "$PR_METADATA_LIMIT" \
   --json number,state,createdAt,mergedAt,url,headRefName,headRefOid,mergeCommit,isCrossRepository); then
   echo "Could not load GitHub PR metadata; no worktrees were changed" >&2
@@ -156,11 +160,6 @@ if ! ALL_PR_JSON=$(gh pr list --repo "$GITHUB_REPOSITORY" --state all --limit "$
 fi
 if ! jq -e 'type == "array"' >/dev/null 2>&1 <<<"$ALL_PR_JSON"; then
   echo "GitHub PR metadata was not a valid JSON array; no worktrees were changed" >&2
-  exit 1
-fi
-PR_METADATA_COUNT=$(jq 'length' <<<"$ALL_PR_JSON")
-if [ "$PR_METADATA_COUNT" -ge "$PR_METADATA_LIMIT" ]; then
-  echo "GitHub PR metadata reached the ${PR_METADATA_LIMIT}-PR safety limit; no worktrees were changed" >&2
   exit 1
 fi
 
@@ -201,42 +200,55 @@ warn_process_cwd_scan_unavailable() {
   fi
 }
 
-worktree_in_use() {
-  local path="$1"
-  local canonical_path process_cwd cwd_link
-  canonical_path=$(canonical_directory "$path") || return 0
-
+refresh_process_cwd_snapshot() {
+  local process_cwd cwd_link lsof_output
+  PROCESS_CWD_SNAPSHOT=()
+  PROCESS_CWD_SNAPSHOT_READY=1
+  PROCESS_CWD_SNAPSHOT_TRUSTED=0
   if [ -d "$PROCESS_CWD_PROC_ROOT" ] \
      && readlink "$PROCESS_CWD_PROC_ROOT/self/cwd" >/dev/null 2>&1; then
     for cwd_link in "$PROCESS_CWD_PROC_ROOT"/[0-9]*/cwd; do
       process_cwd=$(readlink "$cwd_link" 2>/dev/null) || continue
       process_cwd="${process_cwd% (deleted)}"
-      if path_contains "$canonical_path" "$process_cwd"; then
-        return 0
-      fi
+      PROCESS_CWD_SNAPSHOT+=("$process_cwd")
     done
-    return 1
+    PROCESS_CWD_SNAPSHOT_TRUSTED=1
+    return 0
   fi
 
   if command -v lsof >/dev/null 2>&1; then
-    local lsof_output
     if ! lsof_output=$(lsof -a -d cwd -Fn 2>/dev/null); then
       warn_process_cwd_scan_unavailable
-      return 0
+      return 1
     fi
     while IFS= read -r process_cwd; do
       [[ "$process_cwd" == n* ]] || continue
       process_cwd="${process_cwd#n}"
       process_cwd="${process_cwd% (deleted)}"
-      if path_contains "$canonical_path" "$process_cwd"; then
-        return 0
-      fi
+      PROCESS_CWD_SNAPSHOT+=("$process_cwd")
     done <<<"$lsof_output"
-    return 1
+    PROCESS_CWD_SNAPSHOT_TRUSTED=1
+    return 0
   fi
 
   warn_process_cwd_scan_unavailable
-  return 0
+  return 1
+}
+
+worktree_in_use() {
+  local path="$1"
+  local canonical_path process_cwd
+  canonical_path=$(canonical_directory "$path") || return 0
+  if [ "$PROCESS_CWD_SNAPSHOT_READY" -eq 0 ]; then
+    refresh_process_cwd_snapshot || return 0
+  fi
+  [ "$PROCESS_CWD_SNAPSHOT_TRUSTED" -eq 1 ] || return 0
+  for process_cwd in "${PROCESS_CWD_SNAPSHOT[@]}"; do
+    if path_contains "$canonical_path" "$process_cwd"; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 # Returns 0 if HEAD at $1 has no content beyond UPSTREAM_MAIN — either it's an
@@ -578,8 +590,8 @@ for i in "${!TO_REMOVE_PATHS[@]}"; do
   # Every candidate is revalidated. This is deliberately redundant with the
   # scan because a process, edit, commit, or checkout can happen while GitHub
   # metadata is being inspected.
-  if worktree_in_use "$path" || worktree_locked "$path"; then
-    printf "  %s!%s skipped %s (worktree is in use or locked)\n" \
+  if worktree_locked "$path"; then
+    printf "  %s!%s skipped %s (worktree is locked)\n" \
       "$C_YELLOW" "$C_RESET" "$path"
     skipped_during_apply=$((skipped_during_apply + 1))
     continue
@@ -616,7 +628,8 @@ for i in "${!TO_REMOVE_PATHS[@]}"; do
   if [ "$branch_action" = "recover-detached" ]; then
     recovery_path=$(canonical_directory "$path" || printf '%s' "$path")
     recovery_path_hash=$(printf '%s' "$recovery_path" | git_root hash-object --stdin)
-    recovery_slug=$(basename "$path" | tr -cs 'A-Za-z0-9._-' '-')
+    recovery_slug_source="$(basename "$path")-$(basename "$(dirname "$path")")"
+    recovery_slug=$(printf '%s' "$recovery_slug_source" | tr -cs 'A-Za-z0-9._-' '-')
     recovery_slug="${recovery_slug#-}"
     recovery_slug="${recovery_slug%-}"
     recovery_base="recovery/worktree-${recovery_slug:-detached}-${recovery_path_hash:0:10}-${current_head:0:12}"
@@ -647,6 +660,9 @@ for i in "${!TO_REMOVE_PATHS[@]}"; do
   final_head=$(git -C "$path" rev-parse HEAD 2>/dev/null || echo "")
   final_branch=$(git -C "$path" symbolic-ref --quiet --short HEAD 2>/dev/null || echo "")
   final_inactivity=$(worktree_inactivity_seconds "$path" || echo 0)
+  if ! refresh_process_cwd_snapshot; then
+    : # An untrusted snapshot makes worktree_in_use fail closed below.
+  fi
   if worktree_in_use "$path" || worktree_locked "$path" || ! worktree_clean "$path" \
      || [ "$final_head" != "$expected_head" ] || [ "$final_branch" != "$branch" ] \
      || [ "$final_inactivity" -lt "$minimum_inactivity" ]; then
