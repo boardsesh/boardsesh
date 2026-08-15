@@ -9,11 +9,10 @@
  * Co-located with its only consumer so the lift removes a cross-directory edge
  * instead of relocating one.
  *
- * Moved verbatim. Two branches are unreachable from the surviving consumer (the
- * `kilterNew` variant and the `totalUnsynced > 0` alert, which
- * `board-import-prompt` never triggers); trimming them would cascade into the
- * `settings:aurora.card.*` / `settings:aurora.unsynced.*` catalog keys, so they
- * stay for W-26 (#4442) to judge.
+ * The surviving web API is narrowed to the two variants its only consumer can
+ * pass. The `totalUnsynced > 0` alert remains unreachable because
+ * `board-import-prompt` always passes zero counts; W-26 (#4442) will decide
+ * whether that broader credential-card state still belongs on www.
  */
 
 import React from 'react';
@@ -86,10 +85,10 @@ function buildKilterDataRequestMailto(
   return `mailto:peter@auroraclimbing.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
-// Kilter renders two cards: `kilterAurora` for the legacy Aurora-built app (JSON
-// import + data request) and `kilterNew` for the new Kilter Grips account, which
-// links via username/password (ROPC). Every other board is a single `aurora` card.
-export type BoardCredentialCardVariant = 'aurora' | 'kilterAurora' | 'kilterNew';
+// The surviving web prompt renders `kilterAurora` for the legacy Aurora-built
+// app (JSON import + data request). Every other board is a single `aurora` card.
+// New Kilter account linking lives in the mobile app's Integrations screen.
+export type BoardCredentialCardVariant = 'aurora' | 'kilterAurora';
 
 export type BoardCredentialCardProps = {
   boardType: AuroraBoardName;
@@ -123,11 +122,7 @@ export function BoardCredentialCard({
   const totalUnsynced = unsyncedCounts.ascents + unsyncedCounts.climbs;
   const isExpired = credential?.syncStatus === 'expired';
   const cardTitle =
-    variant === 'kilterAurora'
-      ? t('aurora.card.kilterAuroraTitle')
-      : variant === 'kilterNew'
-        ? t('aurora.card.kilterNewTitle')
-        : `${boardName} ${t('aurora.card.boardSuffix')}`;
+    variant === 'kilterAurora' ? t('aurora.card.kilterAuroraTitle') : `${boardName} ${t('aurora.card.boardSuffix')}`;
 
   const getSyncStatusTag = () => {
     if (!credential) return null;
@@ -161,30 +156,7 @@ export function BoardCredentialCard({
               {cardTitle}
             </Typography>
           </div>
-          {/* Unreachable from the only consumer: `board-import-prompt` passes
-              `kilterAurora` or `aurora`, never `kilterNew`. Kept verbatim by the
-              W-21 lift because dropping it cascades into
-              `settings:aurora.card.kilterNew*` — W-26 (#4442) decides its fate. */}
-          {variant === 'kilterNew' ? (
-            <>
-              <Typography variant="body2" component="span" color="text.secondary" className={styles.notConnectedText}>
-                {t('aurora.card.kilterNewCopy')}
-              </Typography>
-              <div className={styles.buttonRowStacked}>
-                <Button variant="contained" startIcon={<LinkOutlined />} onClick={onAdd}>
-                  {t('aurora.card.kilterSignIn')}
-                </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={isImporting ? <CircularProgress size={16} /> : <FileUploadOutlined />}
-                  onClick={onImportJson}
-                  disabled={isImporting}
-                >
-                  {t('aurora.card.import')}
-                </Button>
-              </div>
-            </>
-          ) : variant === 'kilterAurora' ? (
+          {variant === 'kilterAurora' ? (
             <>
               <Typography variant="body2" component="span" color="text.secondary" className={styles.notConnectedText}>
                 {t('aurora.card.kilterAuroraCopy')}
@@ -276,8 +248,9 @@ export function BoardCredentialCard({
             </div>
           )}
           {/* Also unreachable today: `board-import-prompt` always passes
-              `{ ascents: 0, climbs: 0 }`. Same W-26 (#4442) note as `kilterNew`
-              above — dropping it would strand `settings:aurora.unsynced.*`. */}
+              `{ ascents: 0, climbs: 0 }`. W-26 (#4442) decides whether this
+              broader credential state remains on www; dropping it now would
+              strand `settings:aurora.unsynced.*`. */}
           {totalUnsynced > 0 && (
             <MuiAlert severity="warning" icon={<WarningOutlined />} className={styles.unsyncedAlert}>
               <AlertTitle>{t('aurora.unsynced.title', { count: totalUnsynced })}</AlertTitle>

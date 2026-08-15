@@ -63,6 +63,7 @@ import SettingsPageContent from '../settings-page-content';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.history.replaceState({}, '', '/settings');
   global.fetch = vi.fn().mockResolvedValue({
     ok: true,
     json: async () => ({ email: 'climber@example.com', hasPassword: false, linkedProviders: ['google'] }),
@@ -133,20 +134,32 @@ describe('SettingsPageContent', () => {
     expect(screen.queryByText(tFromCatalog('settings', 'aurora.title'))).toBeNull();
   });
 
+  it.each(['?kilter=error&reason=account_already_linked', '?kilter=error'])(
+    'ignores the retired Kilter callback params in %s',
+    async (search) => {
+      window.history.replaceState({}, '', `/settings${search}`);
+
+      await renderSettings();
+
+      expect(screen.getByTestId('set-password-section')).toBeTruthy();
+      expect(mockShowMessage).not.toHaveBeenCalled();
+    },
+  );
+
   it('links to the app profile screen, and links nowhere else', async () => {
     // The destination is named explicitly rather than mirrored from this
     // pathname: the SPA has no /settings route, so the same-path form would be
     // a 404.
     //
-    // Asserted as the page's whole href list, which is the "and nothing else"
-    // half of the issue's Verifies row: a bound on the hand-off link alone lets
-    // a re-added shortcut card pointing anywhere else slip past every assertion
-    // in this file. Two links is the whole page — the header logo home link and
-    // the hand-off CTA. BackButton is a <button>, so it is not in the list.
+    // Asserted as the main content's whole href list, which is the "and nothing
+    // else" half of the issue's Verifies row: a bound on the hand-off link alone
+    // lets a re-added shortcut card pointing anywhere else slip past every
+    // assertion in this file. Header navigation is outside this page-content
+    // invariant, and BackButton is a <button>.
     const { container } = await renderSettings();
 
-    const hrefs = Array.from(container.querySelectorAll('a')).map((anchor) => anchor.getAttribute('href'));
-    expect(hrefs).toEqual(['/', EXPECTED_HANDOFF_HREF]);
+    const hrefs = Array.from(container.querySelectorAll('main a')).map((anchor) => anchor.getAttribute('href'));
+    expect(hrefs).toEqual([EXPECTED_HANDOFF_HREF]);
     expect(screen.getByText(tFromCatalog('settings', 'appHandoff.cta'))).toBeTruthy();
   });
 
