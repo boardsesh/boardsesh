@@ -1,6 +1,29 @@
 {
-  "generatedAt": "2026-08-14T23:26:10.704Z",
+  "generatedAt": "2026-08-15T00:10:49.738Z",
   "entries": [
+    {
+      "prNumber": 4284,
+      "category": "fixed",
+      "title": "Internal-only fix to a connection-scoped in-memory flag with no shipped",
+      "mergedAt": "2026-08-14T23:35:09Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4284",
+      "body": "user-visible consumer (mobile only reads it for a drift-telemetry signature)."
+    },
+    {
+      "prNumber": 4269,
+      "category": "fixed",
+      "title": "Editing a board's or gym's location saves cleanly on self-hosted setups without PostGIS, instead of erroring out on a save that already went through.",
+      "mergedAt": "2026-08-14T23:33:37Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4269"
+    },
+    {
+      "prNumber": 4277,
+      "category": "fixed",
+      "title": "Moving the last board off an auto-generated gym listing now folds that listing into your gym instead of leaving an empty duplicate in gym search — old links still land on the right place.",
+      "mergedAt": "2026-08-14T23:32:23Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4277",
+      "body": "The Boards tab tells you when a board is the last one on its listing, and asks before it merges."
+    },
     {
       "prNumber": 4450,
       "category": "fixed",
