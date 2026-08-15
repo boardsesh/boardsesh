@@ -712,12 +712,15 @@ jobs:
             # HTTP 200 the whole way. scripts/lib/patch-expo-web-pwa-manifest.mjs
             # rewrites the href from the export's baseUrl; this is the
             # end-to-end proof it landed on the real deploy.
+            # --max-time so an unreachable edge fails this attempt and lets the
+            # retry loop above do its job, instead of hanging the release. The
+            # sibling checks predate this and are left alone here on purpose.
             local href
-            href=$(curl -sS "$base/" \
+            href=$(curl -sS --max-time 20 "$base/" \
               | grep -oE '<link[^>]*rel="manifest"[^>]*>' \
               | grep -oE 'href="[^"]+"' | head -n1 | cut -d'"' -f2)
             [ "$href" = "/manifest.json" ] || { echo "  manifest href is '$href', expected /manifest.json"; return 1; }
-            local out; out=$(curl -sS -o /dev/null -w '%{http_code} %{content_type}' "$base$href")
+            local out; out=$(curl -sS --max-time 20 -o /dev/null -w '%{http_code} %{content_type}' "$base$href")
             echo "$out" | grep -q '^200 ' && echo "$out" | grep -qi 'application/json'
           }
 

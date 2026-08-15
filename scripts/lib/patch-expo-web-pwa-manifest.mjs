@@ -23,7 +23,11 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const LOG_PREFIX = '[patch-expo-web-pwa-manifest]';
-const MANIFEST_LINK_PATTERN = /<link\b[^>]*\brel=["']manifest["'][^>]*>/gi;
+// A factory, not a module-level literal. A `/g` regex carries `lastIndex`
+// between uses; `String.prototype.match` resets it, but anything reaching for
+// `.exec()` or `.test()` later would silently start mid-string on the second
+// call. Handing out a fresh regex removes the trap rather than documenting it.
+const manifestLinkPattern = () => /<link\b[^>]*\brel=["']manifest["'][^>]*>/gi;
 // Expo substitutes these when it renders public/index.html as the SPA shell
 // (@expo/cli's webTemplate.js). Their survival into the export means
 // copyPublicFolderAsync clobbered the rendered shell with the raw template — a
@@ -38,13 +42,14 @@ function readRequired(filePath, label) {
   try {
     return readFileSync(filePath, 'utf8');
   } catch {
-    fail(`missing ${label} at ${filePath}`);
-    return '';
+    // Throw here rather than call fail(): a `fail(); return ''` tail would be
+    // unreachable code that reads like an empty-string fallback.
+    throw new Error(`${LOG_PREFIX} missing ${label} at ${filePath}`);
   }
 }
 
 function findManifestLinks(shellHtml) {
-  return shellHtml.match(MANIFEST_LINK_PATTERN) ?? [];
+  return shellHtml.match(manifestLinkPattern()) ?? [];
 }
 
 function hrefOf(linkTag) {
